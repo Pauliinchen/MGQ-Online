@@ -3,27 +3,27 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Read who joined the battle from its popup instead of the chat
-#                            - Checked that a host whose battle turned live has its skip settings back as the battle ends, before the victory autosave
-#                            - Checked that a guest drops an enemy of the host's troop whose fields are no numbers, logged once per field and kind, instead of failing
-#                            - Checked that the host's enemies keep their places in the changed troop when a place or mark is no number, and that an enemy whose id is no enemy of this game keeps the guest's own troop
-#      Paulinchen  2026-10-11: Checked the party members' offers about a battle outside the party, the battles that take nobody in, and that a host takes in as many players and enemies as it has room for
-#                            - Checked that an encounter joins no running battle whose host stands farther than NEARBY_TILES
-#                            - Checked that the host reads in the chat log who joined its battle, that it tells the guests whom it waits for as a command phase opens, and that a late guest's box tells how long the wait may last
-#                            - Read the windows opened from battle_support.rb instead of keeping them itself
-#      Paulinchen  2026-10-10: Checked that a requester whose running battle broke off before the roster fights its encounter from its start with its own enemy rates, and that a guest has its own rates back as the battle ends, before the game's autosave
-#                            - Checked that the players a refused, silent or taken back request brought along walk on unless the encounter invites them anew
-#                            - Checked that a battle whose party command called the Library or Config still tells itself as a battle and takes encounters in
-#                            - Checked that an encounter finds a battle under the Library or Config whose players' windows are in the background, which tell "away"
-#                            - Checked that the fallen enemies count toward the troop's limit, and that a guest starts the enemies it adds, enters them in the Library and rescales a raid boss's pools
-#      Paulinchen  2026-10-09: Checked that a host tells its guests a troop that grew, whose hidden enemy appeared or whose enemy transformed once, before the send that names it and as a command phase opens, together with an encounter taken in, and that a guest shows or transforms its own enemy, keeping it
-#                            - Checked that an enemy the host's party ate stays fallen and shown for the guests, so its defeat pays out, and that an encounter whose player joins first keeps clear of the place of one still to join
-#                            - Checked that an encounter whose enemies find no room any more once enemies were added after its request adds only those that fit, or none
-#                            - Checked that a guest and an encounter taken in fight with the host's enemy rates and get their own back
-#                            - Checked that an encounter brings along a player whose game window is in the background
-#                            - Checked that the enemies of an encounter taken in fill the place of an enemy that fell before its player joined
-#                            - Checked that an all-foes skill after a hotjoin reaches every enemy standing, and that a guest who joins names and finds the enemies as the host does
+#                            - Checked that a live host has its skip settings back as the battle ends
+#                            - Checked that a guest drops a host's enemy whose fields are no numbers
+#                            - Checked the guest's troop against host enemies with odd places, marks or ids
+#      Paulinchen  2026-10-11: Checked party members' offers, closed battles and a host's room for joiners
+#                            - Checked that an encounter joins no running battle whose host stands far
+#                            - Checked the join notice, the host's waiting list and a late guest's box
+#                            - Read the opened windows from battle_support.rb
+#      Paulinchen  2026-10-10: Checked a requester whose battle broke off and a guest's rates at the end
+#                            - Checked that players a failed request brought along walk on
+#                            - Checked that a battle under the Library or Config still takes encounters in
+#                            - Checked that an encounter finds a battle under the Library or Config
+#                            - Checked the troop limit with fallen enemies and a guest's added enemies
+#      Paulinchen  2026-10-09: Checked how a host tells a grown or changed troop and a guest takes it
+#                            - Checked eaten enemies for guests and the places of encounters joining in turn
+#                            - Checked that an encounter without room adds only the enemies that fit
+#                            - Checked that guests fight with the host's enemy rates and get their own back
+#                            - Checked that an encounter brings along a player whose window is in the background
+#                            - Checked that an encounter's enemies fill the place of a fallen enemy
+#                            - Checked an all-foes skill after a hotjoin and a joining guest's enemy names
 #                            - Checked that a battle that calls the Library or Config ends nothing
-#                            - Checked that a player another request brought along is taken in with their own encounter and ignores the invite it sent, and that an encounter brings along nobody who fights
+#                            - Checked two crossing requests and that an encounter brings along no fighter
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -42,15 +42,17 @@ scene = Scene_Battle.new
 spriteset = Spriteset_Battle.new
 scene.instance_variable_set(:@spriteset, spriteset)
 
-# Stand-ins for what the recorder reads of every battler and of the game's settings.
+# The game's settings, whose skip settings a live battle's host turns off.
 class Game_System
   attr_reader :conf
   def initialize; @conf = {}; end
 end
+# An actor with the values the recorder reads.
 class Game_Actor
   attr_accessor :tp
   def states; []; end
 end
+# An enemy with the values the recorder reads.
 class Game_Enemy
   attr_accessor :hp, :mp, :tp
   def states; []; end
@@ -58,13 +60,19 @@ class Game_Enemy
   def death_state_id; 1; end
 end
 $data_states = [nil, :death]
+# The party with the game's time stop fields.
 class Game_Party; attr_accessor :od_turn, :od_user; end
+# The troop with the game's turn count.
 class Game_Troop; def turn_count; @turn_count.to_i; end; end
+# Stands in for the world, a Raid World while $raid is set.
 module MGQ_MpWorld; def self.raid?; $raid; end; end
+# Stands in for trading, with no trade running.
 module MGQ_MpTrade; def self.session; nil; end; end
-# Enemy pictures: those of the enemies named here are as wide as told, the rest unknown.
+# An enemy's database entry, naming its picture.
 EnemyData = Struct.new(:battler_name, :battler_hue)
+# An enemy's picture, of which only the width is read.
 Picture = Struct.new(:width)
+# Enemy pictures: those named in $widths are as wide as told, the rest raise KeyError.
 module Cache; def self.battler(name, _hue); Picture.new($widths.fetch(name)); end; end
 $widths = { "Wide" => 600, "Full" => 640 }
 $data_enemies[60] = EnemyData.new("Wide", 0)
@@ -288,7 +296,8 @@ check("leaving the player it brings along standing still, and letting the member
 MGQ_MpOverworldSync::Peers.all.replace([host, guest, free])
 reset
 
-# A party member near, for whom the running battle outside the party has no room along with the player.
+# A party member near, for whom the running battle outside the party has no room along with the
+# player.
 member = player(9)
 member.member = true
 host.state["rbn"] = "3"
@@ -584,6 +593,8 @@ check("and forgets the player's own battle", [hotjoin.state_fields, sync.role], 
 reset
 
 # A battle whose party command called the Library or Config, which waits on the scene stack.
+
+# Stands in for the game's Library scene.
 class Scene_Library; end
 $scene_now = scene
 own_troop
@@ -664,7 +675,8 @@ coop.take(asker, request.merge("bid" => "own12", "seats" => ""))
 check("a boss battle taken over from its host takes no encounter in", map_sent("hot_no").map(&:first), [8])
 reset
 
-# An enemy that falls before the encounter's player joins leaves its place to the encounter's enemies.
+# An enemy that falls before the encounter's player joins leaves its place to the encounter's
+# enemies.
 $scene_now = scene
 $game_troop.members = [Game_Enemy.new(0, 31), Game_Enemy.new(1, 32)]
 $game_troop.members.zip([240, 400]).each { |enemy, x| enemy.screen_x = x; enemy.screen_y = 300 }
@@ -1011,11 +1023,16 @@ reset
 
 # A guest adds the host's new enemies as the host's add_enemies does, through
 # battles_raid_pool.rbx and the game's Library, which stand in here.
+
+# An enemy that notes its battle start.
 class Game_Enemy; def on_battle_start; @battle_started = true; end; end
+# The Library's enemy entries, noting the ids found.
 Discovery = Struct.new(:found) do
   def set_discovery(ids); found.concat(ids); end
 end
+# The game's Library.
 Library = Struct.new(:enemy)
+# Stands in for the raid boss's pools, counting rescales in $rescaled.
 module MGQ_MpRaidPool
   def self.rescale; $rescaled = ($rescaled || 0) + 1; end
   def self.note_invite(_message); end

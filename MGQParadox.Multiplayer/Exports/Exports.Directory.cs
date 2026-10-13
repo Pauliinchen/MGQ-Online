@@ -5,13 +5,13 @@
 //      Paulinchen  2026-10-09: Took whether a world turns other mods off in mp_dir_create and mp_dir_edit
 //                            - Took a Raid World's difficulty in mp_dir_create and mp_dir_edit
 //      Paulinchen  2026-10-08: Took the world's type and how a Raid World shares companions in mp_dir_create
-//      Paulinchen  2026-10-06: Added mp_dir_unlock_code, which opens a world with its world code
-//                            - Added mp_dir_set_settings, which replaces a world's mod settings, and left them out of mp_dir_edit
-//                            - Took the creator's hashes of required mods outside the catalog and its mod settings in mp_dir_create and mp_dir_edit
-//      Paulinchen  2026-10-04: Added mp_dir_set_data, which replaces a world's game data
-//                            - Added mp_dir_watch and mp_dir_find, which list and look up hidden worlds by their ids
-//                            - Added mp_dir_edit, which changes a world's seats, description and mods
-//                            - Took a world's description, the mods it needs, the creator's game data and whether only games with the same data may enter in mp_dir_create
+//      Paulinchen  2026-10-06: Added mp_dir_unlock_code
+//                            - Added mp_dir_set_settings and left the mod settings out of mp_dir_edit
+//                            - Took the creator's mod hashes and mod settings in mp_dir_create and mp_dir_edit
+//      Paulinchen  2026-10-04: Added mp_dir_set_data
+//                            - Added mp_dir_watch and mp_dir_find
+//                            - Added mp_dir_edit
+//                            - Took a world's description, mods, game data and strictness in mp_dir_create
 //      Paulinchen  2026-10-02: Took whether new players choose where to start in mp_dir_create
 //      Paulinchen  2026-09-30: Created
 //
@@ -199,7 +199,7 @@ internal static unsafe partial class Exports
 
     /// <summary>
     /// Opens a world with its world code instead of its password, as a Discord invite hands it over.
-    /// Returns at once; the action tells the same as mp_dir_unlock.
+    /// Returns at once; the action tells the same as <c>mp_dir_unlock</c>.
     /// </summary>
     /// <param name="code">The world code, UTF-8 and null-terminated.</param>
     /// <returns>1 when started, 0 while another action runs or when it failed.</returns>
@@ -229,7 +229,7 @@ internal static unsafe partial class Exports
     /// <param name="modHashes">The creator's hashes of required mods outside the mod catalog, UTF-8 and null-terminated.</param>
     /// <param name="own">1 when the player is the world's creator, whose mod hashes go along; 0 for an admin, who leaves them.</param>
     /// <param name="difficulty">A Raid World's new difficulty, the game's own value from -2 (VERY EASY) to 4 (PARADOX).</param>
-    /// <param name="setDifficulty">1 when the world is a Raid World, whose difficulty goes along; 0 to leave it out.</param>
+    /// <param name="setDifficulty">1 when the difficulty goes along, 0 to leave it out.</param>
     /// <param name="otherModsOff">1 when the world now turns off every mod of its players it does not name, 0 when it leaves their mods on.</param>
     /// <param name="setOtherModsOff">1 when the player changed whether the world turns other mods off, which then goes along; 0 to leave it out.</param>
     /// <returns>1 when started, 0 while another action runs, for seats or a difficulty out of range, for neither 0 nor 1 whether other mods are off, or when it failed.</returns>

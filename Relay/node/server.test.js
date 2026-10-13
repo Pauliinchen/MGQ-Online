@@ -2,37 +2,37 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Tested that a newer release of the mod reaches every game of a world with players online as the relay's chat line, once
-//                            - Sent X-MGQ-Features on the world directory and mod catalog requests, and tested that they and the Raid World admin routes refuse a request without it
+//      Paulinchen  2026-10-12: Tested that a newer release of the mod reaches every game of a world with players online
+//                            - Sent X-MGQ-Features on the world directory and mod catalog requests and tested refusals without it
 //                            - Tested the update code on the 400 of a refused world room and the World Admin tool passing with 0.0.0-dev
-//                            - Sent X-MGQ-Features as released games do, and tested that games without it or with a version below the lowest are turned away with 426, PvP rooms without it still pair, and the admin routes need none
-//                            - Tested a world room refused with 400 and no code, a request without X-MGQ-Version taken as 0.6.4 on every gated route and the world directory and the mod catalog held to MIN_VERSION
-//                            - Tested that a bug report sent while another is handled is answered busy over HTTP, its body drained, and that the screenshot blob goes up before the branch is read
+//                            - Sent X-MGQ-Features as released games do and tested that games without it or below the lowest version are turned away with 426
+//                            - Tested a world room refused with 400, a request without X-MGQ-Version taken as 0.6.4 and the directory and mod catalog held to MIN_VERSION
+//                            - Tested a busy bug report over HTTP and the screenshot blob uploaded before the branch is read
 //                            - Checked that the sweep drops the sealed offers of a trade it cancels
-//      Paulinchen  2026-10-11: Tested a bug report over HTTP: its unpacked files committed to GitHub in one commit, refused without a player key, too long or without a token
-//      Paulinchen  2026-10-10: Tested that only a game naming the dev feature in X-MGQ-Features makes a Raid World with a starting save and uploads it over HTTP
-//                            - Tested boss pools that keep the share of a raid max HP left over HTTP: turn reports, a kill named by its player, the frame every game hears and the admin view
-//      Paulinchen  2026-10-09: Tested that every game of a world hears that it turns other mods off, with its mods, once its creator changes either over HTTP
-//                            - Tested a Raid World's boss pools over HTTP: reports, the frame every game hears, the admin routes and a deleted world, and that a Classic world keeps none
-//                            - Tested that every game of a Raid World hears its new difficulty once its creator changes it over HTTP
+//      Paulinchen  2026-10-11: Tested a bug report over HTTP
+//      Paulinchen  2026-10-10: Tested a Raid World starting save from a game naming the dev feature over HTTP
+//                            - Tested boss pools that keep the share of a raid max HP left over HTTP
+//      Paulinchen  2026-10-09: Tested that every game of a world hears whether it turns other mods off
+//                            - Tested a Raid World's boss pools over HTTP
+//                            - Tested that every game of a Raid World hears its new difficulty
 //                            - Tested that a story write whose body comes after the world was deleted leaves no story behind
-//      Paulinchen  2026-10-08: Tested a Raid World's story over HTTP: writes, conflicts, checkpoints, the route lock, companions, the frame every game hears, removed players and a deleted world, and that a Classic world keeps none
+//      Paulinchen  2026-10-08: Tested a Raid World's story over HTTP
 //                            - Tested that a world room lets into a Raid World only the games that name it in X-MGQ-Features
-//                            - Tested the chat's rate limit and a chat frame without a line, which keeps the connection
-//      Paulinchen  2026-10-07: Tested a world's chat: a game's mirrored line kept, an admin's line reaching every game, and other text still closing the connection
-//                            - Tested the auth key header, the request and error log lines, every mod catalog route, editing a world, the address behind a proxy, the sweep and a text body over the cap
+//                            - Tested the chat's rate limit and a chat frame without a line
+//      Paulinchen  2026-10-07: Tested a world's chat
+//                            - Tested the auth key header, the log lines, the mod catalog routes, editing a world, the address behind a proxy, the sweep and a text body over the cap
 //                            - Expected 400 for a path that is no route and 426 for a room path without an upgrade
-//      Paulinchen  2026-10-06: Tested a guest waiting alone, counted keep-alives, a room ended by the relay, a replaced world connection, the player key header, named refusals, the rate limits and a body over the limit
+//      Paulinchen  2026-10-06: Tested a guest waiting alone, keep-alives, ended rooms, replaced connections, the player key header, refusals, the rate limits and a body over the limit
 //                            - Tested a trade between two players of a world over HTTP
 //      Paulinchen  2026-10-04: Expected the lock without the mods, the game data and the rule for it again
-//                            - Expected the lock to name the mods a world needs, its creator's game data and whether only games with the same data may enter
+//                            - Expected the lock to name a world's mods, game data and same-data rule
 //      Paulinchen  2026-10-02: Expected the lock to say whether new players choose where to start
 //                            - Expected the list to say when each player was last seen
 //      Paulinchen  2026-09-30: Tested the starting save over HTTP, as bytes both ways
 //                            - Expected the lock to name its world
-//      Paulinchen  2026-09-29: Made every world in the directory first, and tested the directory over HTTP
+//      Paulinchen  2026-09-29: Made every world in the directory first and tested the directory over HTTP
 //                            - Tested world rooms over real WebSockets
-//      Paulinchen  2026-09-29: Created
+//                            - Created
 //
 //----------------------------------------------------------------
 

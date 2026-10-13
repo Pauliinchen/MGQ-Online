@@ -2,23 +2,22 @@
 #  loader_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Stood in for Ini.load, which Player reads Player.ini through
+#      Paulinchen  2026-10-12: Stood in for Ini.load
 #                            - Checked the mouse wheel's notches, read once a frame
-#      Paulinchen  2026-10-11: Checked that a log past MAX_BYTES keeps its newest lines from a whole line on, behind a line that says so
-#      Paulinchen  2026-10-10: Checked that a text read from the DLL that grew again between asking its size and copying it is asked for again, three more times at most
+#      Paulinchen  2026-10-11: Checked that a log past MAX_BYTES keeps its newest lines
+#      Paulinchen  2026-10-10: Checked that a text that grew while read from the DLL is asked for again
 #      Paulinchen  2026-10-09: Checked that story_state.rbx loads before the story scripts that build on it
-#      Paulinchen  2026-10-08: Checked that a watched key goes down once per frame, ended by a game window's own Input.update
-#                            - Checked that a held key reads as one press however often Input.update runs in a frame
-#                            - Checked that the sessions kept are counted by the scripts' logs, keeping a DLL's log named a moment early, that a game started
-#                              for the options dump deletes nothing, and that only the logs deleted are counted
-#      Paulinchen  2026-10-07: Checked that starting a session deletes the logs of all but the last five sessions and leaves other files
+#      Paulinchen  2026-10-08: Checked that a watched key goes down once per frame
+#                            - Checked that a held key reads as one press per frame
+#                            - Checked how the sessions kept are counted and which logs are deleted
+#      Paulinchen  2026-10-07: Checked that a session start deletes all but the last five sessions' logs
 #                            - Checked how the log's last line tells the game closing
 #                            - Checked that the press closing the last screen reaches the game from the next frame only
-#                            - Checked that the DLL's export table names each export once, every export the scripts call and every one the DLL has
-#                            - Checked that the in-game log writes a file per session, named after the game's start, without a line limit, and counts the scripts loaded
-#                            - Checked that clearing the chosen name brings the name on Discord back instead of A friend
-#      Paulinchen  2026-10-06: Checked that a screen closing leaves the buttons with another that holds them, and that the guard passes Input on only while the game is in front
-#                            - Checked that the in-game log counts a repeated line, while it repeats and when the game closes, and moves a log grown too large aside
+#                            - Checked the DLL's export table against the scripts and the DLL
+#                            - Checked the in-game log's file per session and its count of scripts loaded
+#                            - Checked that clearing the chosen name brings the name on Discord back
+#      Paulinchen  2026-10-06: Checked the buttons a closing screen leaves and the guard of Input
+#                            - Checked the in-game log's repeated lines and a log grown too large
 #                            - Checked that ui_wheel.rbx loads before both wheels
 #      Paulinchen  2026-10-04: Checked that coop_gather.rbx loads after coop_events.rbx and coop_castle.rbx after coop_story.rbx
 #                            - Followed the scripts to their new names, without mp_
@@ -178,6 +177,7 @@ Dir.mktmpdir do |game|
 end
 
 # The session's start as Windows tells it: the process's creation time, made local.
+# Stands in for the Windows functions the session's start is read through.
 module MGQ_Multiplayer
   module Windows
     # A stand-in for a kernel32 function, filling its output buffers as Windows would.
@@ -193,6 +193,7 @@ module MGQ_Multiplayer
       end
     end
 
+    # Hands out the stand-in of a kernel32 function by its name.
     def self.api(_library, name, _arguments, _result); Function.new(name); end
   end
 end
@@ -204,7 +205,9 @@ MGQ_Multiplayer::Log.define_singleton_method(:write) { |_message| }
 # Input answers nothing past the guard but what a screen asks past the capture.
 MGQ_Multiplayer.module_eval(source[/  module Capture\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  module Background\n.*?\n  end\n/m])
+# Stands in for whether the game's window is in front, kept in $front.
 module MGQ_Multiplayer; module Windows; def self.game_in_front?; $front; end; end; end
+# Stands in for the game's input: C always held, the updates counted in $input_updates.
 module Input
   def self.update; $input_updates = ($input_updates || 0) + 1; end
   def self.press?(button); button == :C; end
@@ -240,9 +243,12 @@ Input.update
 # A watched key, told frame by frame as Input.trigger? tells the game's buttons, such as the
 # numpad's 0, which is the game's cancel button too with Num Lock on.
 MGQ_Multiplayer.module_eval(source[/  module Key\n.*?\n  end\n/m])
+# Stands in for the Windows key state a watched key is read through.
 module MGQ_Multiplayer
   module Windows
+    # A stand-in for GetAsyncKeyState, the keys in $keys_down held.
     KeyState = Struct.new(:name) { def call(code); $keys_down.include?(code) ? -32_768 : 0; end }
+    # Hands out the key state stand-in.
     def self.api(_library, name, _arguments, _result); KeyState.new(name); end
   end
 end
@@ -290,6 +296,7 @@ check("a key nobody asked about for frames reads as pressed again", key.pressed?
 # after a frame nobody asked in, and none while the game is behind, the boxes are arranged or the
 # DLL lacks the export.
 MGQ_Multiplayer.module_eval(source[/  module Mouse\n.*?\n  end\n/m])
+# Stands in for ui_layout.rbx, the boxes arranged while $arranging is.
 module MGQ_MpUi; module Layout; def self.arranging?; $arranging == true; end; end; end
 $wheel_turned = []
 $wheel_reads = 0
@@ -299,6 +306,7 @@ wheel_export.define_singleton_method(:call) do |*args|
   $wheel_reads += 1
   $wheel_turned.shift || 0
 end
+# Stands in for the link, whose function each check sets.
 module MGQ_Multiplayer; module Link; end; end
 MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| name == "mp_mouse_wheel" ? wheel_export : raise("no #{name}") }
 mouse = MGQ_Multiplayer::Mouse
@@ -343,14 +351,19 @@ check("the log's last line tells a game that ended from one quit and one an erro
 # The player's name: a chosen one replaces the name on Discord, and clearing it brings that back.
 MGQ_Multiplayer.const_set(:MAX_NAME_LENGTH, 32) unless defined?(MGQ_Multiplayer::MAX_NAME_LENGTH)
 MGQ_Multiplayer.module_eval(source[/  def self\.clean\(name.*?\n  end\n/m])
+# Stands in for the paths, Player.ini, the name on Discord and the link that Player uses.
 module MGQ_Multiplayer
+  # Takes a file's name as its path.
   def self.path(name); name; end
+  # Stands in for Ini, keeping the values written in $player_ini_written.
   module Ini
     def self.read(_path); {}; end
     def self.load(_path, _quiet = false); {}; end
     def self.write(_path, values); $player_ini_written = values.dup; true; end
   end
+  # Stands in for the name on Discord, kept in $discord_name.
   module Discord; def self.player_name; $discord_name; end; end
+  # Stands in for the link, keeping the name shared in $shared_name.
   module Link
     def self.new_id; "key"; end
     def self.set_player(_key, name); $shared_name = name; true; end

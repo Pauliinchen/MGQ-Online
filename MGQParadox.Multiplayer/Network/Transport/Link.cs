@@ -2,11 +2,11 @@
 //  Link.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Logged each message of the game script sent, refused or received, and a link this game closed
-//                            - Dropped the oldest message once the inbox is full, logged once, and took only the message the game script read
-//      Paulinchen  2026-10-06: Started its threads through Threads, shared with the other connections
+//      Paulinchen  2026-10-07: Logged each game script message and a link this game closed
+//                            - Dropped the oldest message once the inbox is full and took only the message the game script read
+//      Paulinchen  2026-10-06: Started its threads through Threads
 //      Paulinchen  2026-09-29: Measured messages against the frame channel's longest frame
-//                            - Carried encrypted frames over any frame channel instead of a TCP connection
+//                            - Carried encrypted frames over any frame channel
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -161,7 +161,8 @@ internal sealed class Link
     }
 
     /// <summary>
-    /// Takes the oldest message that arrived, if it is the one the game script read, since a full inbox may have dropped it meanwhile.
+    /// Takes the oldest message that arrived, if it is the one the game script read, since a full
+    /// inbox may have dropped it meanwhile.
     /// </summary>
     /// <param name="message">The message <see cref="Peek"/> handed out.</param>
     public void Take(string message)

@@ -2,7 +2,7 @@
 #  coop_teleport.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Named a request that waits for its member in the line above the player's head, with the seconds it stands for still
+#      Paulinchen  2026-10-11: Named a waiting request in the line above the player's head
 #      Paulinchen  2026-10-10: Created
 #
 #----------------------------------------------------------------
@@ -27,7 +27,11 @@ module MGQ_MpCoopTeleport
   # Characters of a request's number.
   NONCE_LENGTH = 6
 
+  # The player's standing request (member id, name, number, frame asked, whether to the leader),
+  # nil for none.
   @ask = nil
+
+  # The number of the last request answered, by the id of the member who asked.
   @answered = {}
 
   extend MGQ_MpLog
@@ -35,7 +39,8 @@ module MGQ_MpCoopTeleport
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "co-op teleport"
 
-  # Reports whether a member is the party's leader, whom every member may teleport to without asking.
+  # Reports whether a member is the party's leader, whom every member may teleport to without
+  # asking.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
   # @return [Boolean] Whether they are.
@@ -111,7 +116,8 @@ module MGQ_MpCoopTeleport
     @answered[peer.state["id"].to_s] == nonce ? nil : nonce
   end
 
-  # As the party's leader, lets a member who asks come at once. Called whenever a player told their state.
+  # As the party's leader, lets a member who asks come at once. Called whenever a player told their
+  # state.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
   def self.observe(peer)
@@ -201,7 +207,8 @@ module MGQ_MpCoopTeleport
     log_once(:tick, "tick failed: #{e.class}: #{e.message}")
   end
 
-  # Forgets the player's request and the requests answered, as when the world closes or a save is loaded.
+  # Forgets the player's request and the requests answered, as when the world closes or a save is
+  # loaded.
   #
   # @param reason [String] Why, for the log.
   def self.forget(reason)
@@ -246,7 +253,8 @@ module MGQ_MpCoopTeleport
                                 lambda { MGQ_MpCoopTeleport.allow(peer) }, lambda { MGQ_MpCoopTeleport.decline(peer) }, nonce)
     end
 
-    # The choice for a member in the World overview: allowing their request, else teleporting to them.
+    # The choice for a member in the World overview: allowing their request, else teleporting to
+    # them.
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
     # @return [MGQ_MpActions::Option, nil] The choice, nil for another player than a member.

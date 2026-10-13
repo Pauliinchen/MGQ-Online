@@ -3,19 +3,16 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Kept the newest release of the mod the relay has seen
-//                            - Kept each trade's sealed offers in a table of their own beside the trade, written and removed with it in one transaction
+//                            - Kept each trade's sealed offers in a table of their own beside the trade
 //      Paulinchen  2026-10-09: Kept each Raid World's boss pools
 //      Paulinchen  2026-10-08: Kept each Raid World's story and its checkpoints
-//      Paulinchen  2026-10-07: Kept each world's chat, which goes with the world
+//      Paulinchen  2026-10-07: Kept each world's chat
 //                            - Created
 //
 //----------------------------------------------------------------
 
-// The world directory's, the mod catalog's, the trades' and the Raid Worlds' stories' and boss
-// pools' stores over one SQLite database, for the Node relay on a rented machine, so worlds, mods,
-// trades, stories and pools outlast a restart. Entries, records, chats, stories and pools are kept
-// as JSON, a trade's sealed offers in a table beside the trades, starting saves and uploaded mods'
-// zips as blobs.
+// The Node relay's stores over one SQLite database, so worlds, mods, trades, stories and boss pools
+// outlast a restart. Records are kept as JSON, starting saves and uploaded mods' zips as blobs.
 
 import { DatabaseSync } from "node:sqlite";
 

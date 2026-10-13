@@ -4,128 +4,177 @@
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked the World, Quests and Unlocks pages with a head, a list and a pane
 #                            - Checked the Quests page and the catch-up experience on the Levels page
-#                            - Checked that a refused overview hotkey is logged under the hotkeys, and not while the player types
-#                            - Checked that Part 2 starts at progress 19 and Part 3 at 34, with a route shown before the Great Decision
-#      Paulinchen  2026-10-11: Checked the Levels page of a Raid World, its rows drawn and its absence in a Classic world, and counted its tab among the tabs
-#                            - Checked that the level told is the formation's highest, Luka included, and kept during a co-op battle
-#                            - Checked a Raid World's objective on the World page: Amira's first words in a branch, plain, past her network's branch, read every few seconds and wrapped
-#                            - Expected Part 2 to start with Bonnie and Ashel and end with Sonya Mazda, Sonya Mainyu and Sonya Chaos
-#                            - Checked that a Raid World's box lists the party wherever its members are, with Frontline levels, and the others on the map below it, and stays with the party alone on the map
-#                            - Checked the overview as a box the player moves and resizes: its default, a placement Player.ini keeps, its least size, the lines, the scroll, the menu and the clicks following it, the sprite placed, offered and drawn anew on a new size or preset, and a box at its least size still drawing every column, the title, the tabs and the whole hint on both pages
-#                            - Expected the raid bosses' gauges in the edge and well colors, and the box, its tabs and its title in the preset's colors
-#                            - Loaded ui_theme.rbx and ui_layout.rbx, which the overview draws and lies by
-#                            - Checked the raid bosses grouped by the story's sections, only those the world's story reached or holding a pool, a fight's own pool in its section and an unknown one under Other
-#                            - Left the map box's size hint out of the texts read, as the pings are
-#                            - Read the small party box's left, which its motion places, instead of its x, and compared its green against the shared style's member color
-#                            - Checked the World page: turning with the arrows and the tabs, a cancel held with a click on a tab, its rows in a Classic and a Raid World, the raid bosses from their pools, a share rounded, scrolling, the title with the type and difficulty, the hint, a boss's row and the Players tab's mark while a call waits
-#                            - Checked the confirm box before leaving the party and removing a member, that the overview waits while it asks, and that yes leaves no party that dissolved under the box
-#                            - Stood in for the open world, its difficulty, its story and the raid bosses' pools, and for pictures
-#      Paulinchen  2026-10-10: Expected the teleport to the party's leader in a member's menu, in place of the line that they are in the party
+#                            - Checked the log of a refused overview hotkey
+#                            - Checked the starts of Part 2 and Part 3
+#      Paulinchen  2026-10-11: Checked the Levels page of a Raid World
+#                            - Checked the level told and kept during a co-op battle
+#                            - Checked a Raid World's objective on the World page
+#                            - Expected the first and last bosses of Part 2
+#                            - Checked the Raid World box listing the party and the others on the map
+#                            - Checked the overview as a box the player moves and resizes
+#                            - Expected the raid boss gauges and the box in the preset's colors
+#                            - Loaded ui_theme.rbx and ui_layout.rbx
+#                            - Checked the raid bosses grouped by the story's sections
+#                            - Left the map box's size hint out of the texts read
+#                            - Read the small party box's left and compared its green with the member color
+#                            - Checked the World page
+#                            - Checked the confirm box before leaving the party and removing a member
+#                            - Stood in for the open world, its difficulty, story and pools, and for pictures
+#      Paulinchen  2026-10-10: Expected the teleport to the party's leader in a member's menu
 #                            - Named the map box's players outside the party with placeholders
 #                            - Named the party member in the checks with a placeholder
-#      Paulinchen  2026-10-08: Checked the map box of a Raid World: its players and order, the Frontline level, its colors, its cap and its key
-#                            - Expected the Frontline level of a Raid World from its one Frontline character, and of a share of two from the first two
-#      Paulinchen  2026-10-07: Measured places with an object that measures texts, and checked the log of a name the game lacks
-#                            - Expected no place on a map the game names nowhere, headed Unnamed place in the list
-#      Paulinchen  2026-10-06: Checked that the emote wheel keeps the overview shut, and the menu of a player nothing is offered with
-#                            - Read the open menu without the reader the overview dropped
-#      Paulinchen  2026-10-04: Checked the party box's size key, its small rows and its setting
-#                            - Followed the scripts to their new names, without mp_
+#      Paulinchen  2026-10-08: Checked the map box of a Raid World
+#                            - Expected the Frontline level of a Raid World
+#      Paulinchen  2026-10-07: Measured places with a text measurer and checked the log of a name the game lacks
+#                            - Expected no place on an unnamed map, headed Unnamed place
+#      Paulinchen  2026-10-06: Checked the overview kept shut by the emote wheel and an empty player menu
+#                            - Read the open menu without the dropped reader
+#      Paulinchen  2026-10-04: Checked the party box's size hotkey, small rows and setting
+#                            - Followed the scripts to their new names
 #      Paulinchen  2026-10-03: Followed the choices to the scripts that offer them
 #                            - Added a stand-in for duels without PvP battles
-#                            - Named the member in the leader's invite, which admits them
-#      Paulinchen  2026-10-02: Opened the overview with the key mp_keys.rbx binds instead of a stand-in for the PvP battle screen's
+#                            - Named the member in the leader's invite
+#      Paulinchen  2026-10-02: Opened the overview with the hotkey of mp_keys.rbx
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
 
-# Covers the World overview, world_overview.rbx: what the player tells the others (place,
-# formation's highest level, place in the story), the list by place, opening with F11 and the
-# wheel, the arrows, the menu of a player, the mouse, the places the party box shortens, the
-# map box that replaces the party box in a Raid World, the World page with the world's rows and
-# its raid bosses, the box the player moves and resizes, and the confirm box before leaving the
-# party or removing a member.
+# Covers the World overview, world_overview.rbx and world_overview_pages.rbx: what the player tells
+# the others, the Players page with its menus, keys and mouse, the party box and the map box it
+# feeds, the World, Quests and Unlocks pages, the box the player moves and resizes, and the confirm
+# box before leaving the party or removing a member.
 
 require_relative "world_support"
 
-# Stand-ins for the mouse, the open world, its difficulty, its story as the relay told it, the
-# raid bosses' pools, pictures and the game's data.
+# Reopens the stand-ins of Multiplayer.rb.
 module MGQ_Multiplayer
+  # Stands in for the mouse: at $mouse, clicked once while $click is set, its wheel's notches in
+  # $wheel.
   module Mouse
+    # Answers where the mouse is, as $mouse says.
     def self.position; $mouse; end
+    # Answers whether the mouse was clicked, taking $click.
     def self.clicked?; c = $click; $click = false; c; end
+    # Answers the wheel's notches in $wheel.
     def self.wheel; $wheel.to_i; end
   end
 end
+# The open world: its name and seats.
 World = Struct.new(:name, :seats)
 $world = World.new("Test World", 8)
+# Stands in for the world: the one in $world, a Raid World while $raid is set.
 module MGQ_MpWorld
+  # The difficulties' names, from -2 to 4.
   DIFFICULTY_NAMES = ["VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"]
+  # Answers the world in $world.
   def self.world; $world; end
+  # Answers whether the world is a Raid World, as $raid says.
   def self.raid?; $raid; end
+  # Names a difficulty, nil for none.
   def self.difficulty_name(value); value ? DIFFICULTY_NAMES[value + 2] : nil; end
 end
+# Stands in for the world's difficulty, read from $difficulty.
 module MGQ_MpWorldDifficulty; def self.value; $difficulty; end; end
+# Stands in for the world's story as the relay told it, in $world_story, kept in a Raid World.
 module MGQ_MpWorldStory
+  # The story progress Part 2 starts at.
   PART_TWO = 19
+  # The story progress Part 3 starts at.
   PART_THREE = 34
+  # The routes' keys in the world's story.
   ROUTES = %w(ad mr chaos)
+  # The variables that count each route's progress, in the order of ROUTES.
   ROUTE_VARIABLES = [1141, 1142, 1143]
+  # Answers the story in $world_story.
   def self.world; $world_story; end
+  # Answers whether the world keeps a story, as a Raid World does.
   def self.active?; $raid; end
+  # Reads the part from a story's counters.
   def self.part_of(counters); counters["part"]; end
 end
-# The catch-up's list of what it hands out by level, and the level it counts.
+# Stands in for the catch-up: its list of what it hands out by level in $unlocks, and the level it
+# counts in $counted_level.
 module MGQ_MpWorldCatchup
+  # What the catch-up hands out at a level.
   Unlock = Struct.new(:level, :kind, :name, :icon, :got, :due, :id, :gains)
+  # Something moving on from a part brings along.
   Gain = Struct.new(:kind, :id, :item_kind, :amount, :name, :icon)
+  # Answers the list in $unlocks.
   def self.unlocks; $unlocks; end
+  # Answers the level in $counted_level.
   def self.counted_level; $counted_level; end
 end
 $unlocks = []
 $counted_level = nil
 $pools = {}
+# Stands in for the raid bosses' pools, as the relay told them in $pools.
 module MGQ_MpRaidPool
+  # A boss's pool: the share left, the most HP, whether defeated, who emptied it and when it held.
   Pool = Struct.new(:left, :max, :defeated, :by, :at)
+  # Answers a copy of $pools.
   def self.pools; $pools.dup; end
+  # Answers the boss a pool's key names, without the number of its enemy.
   def self.boss_key(key); key.sub(/#\d+\z/, ""); end
+  # Answers Sisel's troop, none for any other key.
   def self.troop_of_key(key); key == "Sisel" ? 2016 : nil; end
+  # Answers the share left, none once defeated.
   def self.left_now(pool, _now = Time.now); pool.defeated ? 0.0 : pool.left; end
 end
 load_script "battles_raid_bosses"
+# Gives the sprite stand-in what the overview sets and calls.
 class Sprite
   attr_accessor :bitmap, :x, :y, :z, :ox, :oy, :opacity, :visible
+  # Disposes of the sprite.
   def dispose; @disposed = true; end
+  # Answers whether the sprite was disposed.
   def disposed?; @disposed ? true : false; end
 end
 # A picture that records what it draws, measuring each character at half the font's size.
 class Bitmap
+  # The picture's font.
   Font = Struct.new(:size, :color, :bold, :outline, :out_color)
   attr_reader :width, :height, :font, :drawn
+  # Makes an empty picture with a font of size 24.
   def initialize(width, height); @width = width; @height = height; @font = Font.new(24, nil, false, false, nil); @drawn = []; end
+  # Answers the picture's rectangle.
   def rect; Rect.new(0, 0, @width, @height); end
+  # Measures a text at half the font's size a character.
   def text_size(text); Rect.new(0, 0, text.to_s.size * @font.size / 2, @font.size); end
+  # Records a text with its color, left, width and alignment.
   def draw_text(x, y, width, height, text, align = 0); @drawn << [:text, text, @font.color, x, width, align]; end
+  # Records a fill.
   def fill_rect(*args); @drawn << [:fill, args]; end
+  # Records a picture drawn on it.
   def stretch_blt(*args); @drawn << [:blt, args]; end
+  # Forgets everything drawn.
   def clear; @drawn.clear; end
+  # Disposes of the picture.
   def dispose; @disposed = true; end
+  # Answers whether the picture was disposed.
   def disposed?; @disposed ? true : false; end
+  # Tells the texts drawn.
   def texts; @drawn.select { |kind, _| kind == :text }.map { |_, text, _| text }; end
 end
-# A character, whose levels the game keeps as a Hash of base, class and race level.
+# A character with a base level, Luka or not.
 Actor = Struct.new(:base_level, :luca) do
+  # Answers whether the character is Luka.
   def luca?; luca; end
+  # Answers Luka, or the character's level as a name.
   def name; luca ? "Luka" : "Lv#{base_level}"; end
+  # Answers the levels as a Hash of base, class and race level.
   def level; { :base => base_level, :class => 1, :tribe => 1 }; end
 end
+# A map's entry in the game's map list, named as in the editor.
 MapInfo = Struct.new(:name)
 $data_mapinfos = { 5 => MapInfo.new("Ilias Village (editor)") }
 
-# Duels without PvP battles, which the overview greys out.
+# Stands in for duels without PvP battles, which the overview greys out.
 module MGQ_MpBattlesDuel
+  # Answers a greyed duel choice for every player.
   def self.peer_option(_peer); MGQ_MpActions::Option.new("Duel", nil, "Duels need PvP battles, which are off or out of date."); end
+  # Answers that no duel is offered on the player's own row.
   def self.own_options; []; end
+  # Answers that no other player challenges the player.
   def self.call_of(_peer); nil; end
 end
 MGQ_MpActions.offer(MGQ_MpBattlesDuel)
@@ -134,12 +183,13 @@ load_script "ui_layout" unless defined?(MGQ_MpUi::Layout)
 load_script "world_catchup_exp"
 load_script "world_overview"
 load_script "world_overview_pages"
+# Stands in for the emote wheel, shut until a test opens it.
 module MGQ_MpEmotes; def self.open?; false; end; end
 load_script "ui_party_box"
 
 overview = MGQ_MpWorldOverview
 
-# The place in the story.
+# The player's place in the story: the part, the side and the route.
 $data_system.variables[1001] = "Overall Events Progress"
 $data_system.switches[50] = "Alice Chosen"
 $data_system.variables[1142] = "天界ルート進行度"
@@ -174,9 +224,10 @@ check("a name the game lacks reads 0 or off, logged once", [overview.variable(["
       [0, 0, false, ["overview: no variable of the game is named No Such, reading 0", "overview: no switch of the game is named Nor This, reading off"]])
 MGQ_Multiplayer::Log.define_singleton_method(:write, write)
 
-# The formation's highest level and the place.
+# The formation's highest level and the place the player tells.
 $game_party.all_members = [Actor.new(30, true), Actor.new(55, false), Actor.new(99, false)]
 $game_party.stand_members = [Actor.new(80, false)]
+# Answers the formation: the first two characters.
 def $game_party.battle_members; all_members.first(2); end
 check("the formation's highest, Luka included, the reserve and waiting ones left out", overview.formation_level, 55)
 $game_party.all_members = [Actor.new(60, true), Actor.new(55, false), Actor.new(99, false)]
@@ -188,7 +239,7 @@ $game_map.display_name = "Ilias Village"
 overview.tick(true)
 check("the state tells place, level and story", MGQ_MpOverworldSync::Me.current.values_at("place", "lv", "progress"), ["Ilias Village", 55, "3:destroyer"])
 
-# The list by place.
+# The list groups the players by place, the player's own first.
 other = { "id" => "other", "name" => "member", "map" => 5, "x" => 30, "y" => 30, "d" => 2, "scene" => "menu", "place" => "Ilias Village", "lv" => 12, "progress" => "1", "ping" => 40 }
 friend = { "id" => "friend", "name" => "Friend", "map" => 7, "x" => 1, "y" => 1, "d" => 2, "scene" => "battle", "place" => "Forest", "lv" => 30, "progress" => "2:ilias", "ping" => 250 }
 $inbox << entry("seat", 0) << entry("in", 2) << entry("message", 2, told(friend)) << entry("in", 3) << entry("message", 3, told(other))
@@ -199,7 +250,7 @@ check("places: the player's first, each with its players, the player first", lin
 friend_row = lines[4][1]
 check("a player's row", [friend_row.level, friend_row.story, friend_row.ping[0], friend_row.icon], ["Lv 30", "Part 2: Ilias side", "250 ms", 451])
 
-# Opening and the arrows.
+# F11 opens the overview, the arrows pick a player, and confirm opens and takes their menu.
 $pressed = 0x7A
 overview.on_map
 check("F11 opens it and holds the buttons", [overview.open?, MGQ_Multiplayer::Capture.on?], [true, true])
@@ -238,7 +289,8 @@ check("an update reads the players once, and keeps the view for the picture", [r
 2.times { $buttons << :B; overview.on_map }
 check("cancel closes the menu, then the overview", [overview.open?, MGQ_Multiplayer::Capture.on?], [false, false])
 
-# The emote wheel and empty menus.
+# The emote wheel keeps the overview shut, and a player nothing is offered with gets a menu that
+# says so.
 MGQ_MpEmotes.define_singleton_method(:open?) { true }
 $pressed = 0x7A
 refused = logged_lines { overview.on_map }
@@ -256,7 +308,7 @@ MGQ_MpActions.offers.clear
 check("a player nothing is offered with gets a menu that says so", overview.menu_options(friend_row).map { |option| [option.text, option.run] }, [["Nothing to do", nil]])
 MGQ_MpActions.offers.concat(registered)
 
-# An invite from afar.
+# An invite from a player elsewhere shows on their row and is accepted from the overview.
 $inbox << entry("message", 2, told(friend.merge("party" => "friend-p", "invite" => 1, "invite_to" => "me")))
 MGQ_MpOverworldSync.tick
 check("an invite naming the player is accepted from the overview", MGQ_MpCoop::Offers.peer_option(MGQ_MpOverworldSync::Peers.at(2)).text, "Accept party invite")
@@ -264,7 +316,7 @@ check("and shows on the inviter's row in place of the story", overview.row_of(MG
 check("but not on another player's", overview.row_of(MGQ_MpOverworldSync::Peers.at(3)).call, nil)
 check("outside a party the player's own row is white", [overview.rows.first.member, overview.party_rows], [false, []])
 
-# The mouse.
+# The mouse picks a player and a choice of their menu.
 $pressed = 0x7A
 overview.on_map
 overview.on_map
@@ -285,7 +337,7 @@ check("the party box lists the party, its leader first, with levels", overview.p
       [["Friend", "Lv 30", true], ["Me", "Lv 55", false]])
 check("and where each one is", overview.party_rows.map(&:place), overview.party_rows.map { |row| overview.rows.find { |r| r.name.start_with?(row.name) }.place })
 
-# The party box's size.
+# The party box's size hotkey, whose choice Player.ini keeps.
 overview.close
 check("the party box starts full", MGQ_MpPartyBox.small?, false)
 $pressed = MGQ_MpHotkeys.code(:party_box)
@@ -302,9 +354,12 @@ canvas.define_singleton_method(:fill_rect) { |*args| drawn << [:fill, args[2]] }
 canvas.define_singleton_method(:text_size) { |text| Rect.new(0, 0, text.to_s.size * 8, 16) }
 canvas.define_singleton_method(:stretch_blt) { |_dest, _set, rect, *_| drawn << (rect == MGQ_MpUi.icon_rect(MGQ_MpOverworld::CROWN_ICON) ? [:crown] : [:icon]) }
 canvas.define_singleton_method(:draw_text) { |_x, _y, _w, _h, text, *_| drawn << [:text, text] }
+# Stands in for the game's cache, which has no system pictures here.
 module Cache; def self.system(_name); nil; end; end
+# Stands in for the screen, 640 wide.
 module Graphics; def self.width; 640; end; end
 box = Sprite_MpPartyBox.allocate
+# Lets the box take a place.
 class << box; attr_accessor :x, :y; end
 box.define_singleton_method(:bitmap) { canvas }
 box.draw_small(overview.party_rows)
@@ -320,9 +375,10 @@ $pressed = MGQ_MpHotkeys.code(:party_box)
 MGQ_MpPartyBox.on_map
 check("then makes it full again", [MGQ_MpPartyBox.small?, $player_ini["party_box_small"]], [false, "0"])
 
-# Places shortened to fit the party box, measured at 10 pixels a letter in 300 pixels.
+# Places are shortened to fit the party box, measured at 10 pixels a letter in 300 pixels.
 ruler = Object.new
 ruler.define_singleton_method(:text_size) { |text| Struct.new(:width).new(text.length * 10) }
+# Fits a place into 300 pixels.
 fit = lambda { |place| overview.fit_place(place, 300, ruler) }
 check("a short place stays", fit.call("Iliasville"), "Iliasville")
 check("the Pocket Castle takes its short name", fit.call("Pocket Monster Lord's Castle Conference Room"), "Pocket Castle Conference Room")
@@ -334,7 +390,7 @@ $click = true
 overview.on_map
 check("a click outside the box closes it", overview.open?, false)
 
-# Leaving the map or typing closes it.
+# The chat box closes the overview.
 $pressed = 0x7A
 overview.on_map
 $pressed = 0x54
@@ -353,10 +409,12 @@ $inbox << entry("message", 3, told(other.merge("party" => MGQ_MpCoop::Party.id, 
 MGQ_MpOverworldSync.tick
 check("the leader may remove a member", MGQ_MpCoop::Offers.peer_option(member_peer).text, "Remove from party")
 
-# The map box of a Raid World.
-# A team within four, which coop_squad.rbx keeps as it is in a Raid World.
+# The Frontline level a Raid World tells, and its map box.
+# Answers that the party is out of battle.
 def $game_party.in_battle; false; end
+# Answers that no story's temporary party plays.
 def $game_party.temp_actors_use?; false; end
+# Answers no characters, so coop_squad.rbx moves none past four to standby in a Raid World.
 def $game_party.actors; []; end
 own_order = MGQ_MpCoopSquad.method(:own_order)
 MGQ_MpCoopSquad.define_singleton_method(:own_order) { $front }
@@ -375,6 +433,7 @@ MGQ_MpCoopSquad.define_singleton_method(:own_share, own_share)
 overview.instance_variable_set(:@frames, 0)
 overview.tick(true)
 check("a Raid World tells it as flv beside lv", MGQ_MpOverworldSync::Me.current.values_at("lv", "flv"), [55, 40])
+# Stands in for co-op battles, one running while $coop_battle is set.
 module MGQ_MpBattlesCoop; def self.active?; $coop_battle; end; end
 $coop_battle = true
 $front = [Actor.new(5, true)]
@@ -404,10 +463,13 @@ canvas.define_singleton_method(:text_size) { |text| Rect.new(0, 0, text.to_s.siz
 canvas.define_singleton_method(:stretch_blt) { |_dest, _set, rect, *_| drawn << (rect == MGQ_MpUi.icon_rect(MGQ_MpOverworld::CROWN_ICON) ? [:crown] : [:icon]) }
 canvas.define_singleton_method(:draw_text) { |_x, _y, _w, _h, text, *_| drawn << [:text, text, font.color] }
 map_box = Sprite_MpPartyBox.allocate
+# Lets the map box take a place.
 class << map_box; attr_accessor :x, :y; end
 map_box.define_singleton_method(:bitmap) { canvas }
 size_hint = Sprite_MpPartyBox::SIZE_HINT % MGQ_MpHotkeys.label(:party_box)
+# Tells the texts drawn, without the pings and the size hint.
 texts = lambda { drawn.select { |kind, _| kind == :text }.map { |_, text, _| text }.reject { |text| text.end_with?("ms") || text == size_hint } }
+# Answers whether a name is drawn in the party's green.
 green = lambda { |name| drawn.find { |kind, text, _| kind == :text && text == name }[2].equal?(MGQ_MpUi::Style::MEMBER) }
 row_height = Sprite_MpPartyBox::ROW
 map_box.draw_map(map_rows)
@@ -449,7 +511,8 @@ MGQ_MpCoop.define_singleton_method(:in_party?, in_party)
 MGQ_MpCoop::Scope.define_singleton_method(:peers_here, peers_here)
 $raid = false
 check("back in a Classic world the party box lists the party alone", overview.party_rows.map(&:name), ["Me", "member"])
-# The World page, turned with the arrows.
+
+# Left and Right turn the pages.
 $mouse = nil
 $buttons.clear
 $pressed = 0x7A
@@ -475,13 +538,13 @@ $buttons << :LEFT
 overview.on_map
 check("and Left turns back", overview.page, :world)
 
-# A Raid World with a difficulty, a story and pools.
+# The world turns into a Raid World with a difficulty and a story.
 $raid = true
 $difficulty = 1
 $world_story = { "part" => "2" }
 
-# The Unlocks page of a Raid World: Luka with the catch-up experience at the top, the levels in the
-# list, what a level brings in the pane.
+# The Unlocks page of a Raid World: the catch-up experience at the top, the levels in the list,
+# what a level brings in the pane.
 unlock = MGQ_MpWorldCatchup::Unlock
 gain = MGQ_MpWorldCatchup::Gain
 $unlocks = [unlock.new(10, :story, "Part 1", nil, true, false, nil, [gain.new(:item, 5, "i", 1, "Herb", 20)]),
@@ -507,8 +570,10 @@ pane = overview.pane_of(unlocks.rows[2][1])
 check("its pane lists key items and unlocks first, then moving on, the companions, the skills, the Makina and the other items, each with its icon or portrait, the note they share once in the title",
       [pane.title, pane.lines.map { |kind, item| item ? [item.name, item.icon, item.note] : kind }],
       ["Level 25 · Due", [["Informant Papers", 230, nil], :gap, ["Moving on from Part 2", nil, nil], :gap, ["Lime", nil, nil], :gap, ["Hero Slash", 40, nil], :gap, ["Herb x3", 20, nil]]])
+# Makes a pane's lines of items, one per name.
 group = lambda { |*names| names.map { |name| [:item, overview::PaneItem.new(nil, nil, name, nil, false)] } }
 crowd = overview::Pane.new("Level 25", nil, group.call("Moving on from Part 2") + [[:gap]] + group.call("Lime", "Ilias", "Alice", "Lime", "Ilias") + [[:gap]] + group.call("Herb", "Herb"))
+# Tells how the box sets the crowded pane: each row's items and columns, or a gap.
 laid = lambda { Sprite_MpWorldOverview.pane_layout(crowd).map { |kind, (items, columns)| kind == :items ? [items.size, columns] : kind } }
 check("in the box's least width the pane sets each group in as many columns as its longest name fits",
       laid.call, [[1, 1], :gap, [3, 3], [2, 3], :gap, [2, 3]])
@@ -558,6 +623,8 @@ $world_story = $world_story.reject { |key, _| key == "caps" }
 $raid = false
 overview.on_map
 check("a Classic world has no Unlocks page, which turns back to the Players page", [overview.page, overview.pages.map(&:first)], [:players, [:players, :world, :quests]])
+
+# The World page of a Raid World: its head, and its raid bosses under the story's sections.
 $raid = true
 overview.turn_to(:world, "the test")
 overview.on_map
@@ -565,6 +632,7 @@ world = overview.view[:model]
 sections = MGQ_MpRaidBosses.sections
 check("a Raid World heads its type and difficulty, its players and its story, then lists its raid bosses under a heading per section with how many it holds",
       [world.head.note, world.head.lines, [world.rows.first[0], world.rows.first[1].title]], ["Raid | Hard", ["Players online: #{online} / 8", "Story: Part 2"], [:fold, "Part 1 (#{sections[0][1].size})"]])
+# Tells a page's section headings without their counts.
 headings = lambda { |model| model.rows.select { |kind, _| kind == :fold }.map { |_, fold| fold.title.sub(/ \(\d+\)\z/, "") } }
 bosses = world.rows.select { |kind, _| kind == :entry }.map { |_, entry| entry.boss }
 check("at Part 2 only Part 1 and Part 2 follow, each boss once in the order the story meets them, with its tier, untouched while the relay told no pool",
@@ -580,6 +648,7 @@ check("the sections run in story order, the Chaos route's by the order of the tr
 check("a boss's section is found by its troop or its name",
       [MGQ_MpRaidBosses.section(838), MGQ_MpRaidBosses.section("1509"), MGQ_MpRaidBosses.section("Tamamo (cap 83)"), MGQ_MpRaidBosses.section(2221), MGQ_MpRaidBosses.section("Chaos Maria"), MGQ_MpRaidBosses.section("Nobody")],
       ["Part 2", "Part 3", "Monster Realm", "Chaos route", "Chaos Domain", nil])
+# Tells the section headings the World page shows for a world's story.
 reached = lambda do |story|
   $world_story = story
   headings.call(overview.world_model)
@@ -603,10 +672,14 @@ check("so is the Chaos route", overview.world_story_text, "Part 3: Chaos route")
 $world_story = nil
 check("before the relay told the story", overview.world_story_text, "Not told yet")
 
-# The story's objective, as Amira's event tells it asked for information.
+# The story's objective is what Amira's event tells when asked for information.
+# An event command: its code, indent and parameters.
 ObjectiveCommand = Struct.new(:code, :indent, :parameters)
+# A common event: its commands.
 ObjectiveEvent = Struct.new(:list)
+# Makes an event command.
 command = lambda { |code, indent, *params| ObjectiveCommand.new(code, indent, params) }
+# Makes a message: the command that shows Amira's face, then a command per line.
 message = lambda { |indent, *lines| [command.call(101, indent, "amira_fc1", 0, 0, 2)] + lines.map { |line| command.call(401, indent, line) } }
 amira = message.call(0, "\\n<Amira>", "Let's see, your current primary objective is...") +
         [command.call(111, 0, 1, 1009, 0, 1, 2)] + message.call(1, "\\n<Amira>Give me some time until my information network is developed.") + [command.call(115, 1), command.call(412, 0)] +
@@ -617,6 +690,7 @@ amira = message.call(0, "\\n<Amira>", "Let's see, your current primary objective
 $data_common_events = []
 $data_common_events[overview::OBJECTIVE_EVENT] = ObjectiveEvent.new(amira)
 $data_common_events[120] = ObjectiveEvent.new(message.call(0, "\\n<Amira>Cross the eastern mountains."))
+# Tells the main quest's texts at a story progress, nil for none.
 objective = lambda do |progress|
   $game_variables[1001] = progress
   main = overview.main_quest
@@ -635,6 +709,7 @@ check("the World page lists it first as the objective, its first sentence in the
       ["Objective", ["Objective", "Head to the Tartarus rift south of Iliasville.", nil, false, nil], [[:text, "Head to the Tartarus rift south of Iliasville."]]])
 
 # The Quests page: the main quest, Amira's side quests and the board's companion quests.
+# Makes the command that marks where a quest's entry starts.
 mark = lambda { |indent| command.call(122, indent, overview::QUEST_COUNT, overview::QUEST_COUNT, 0, 0, 1) }
 main = message.call(0, "\\n<Amira>", "Let's see, your current primary objective is...") +
        [command.call(111, 0, 1, 1001, 0, 10, 0)] + message.call(1, "\\n<Amira>Cross the mountains.") + message.call(1, "\\n<Amira>Buy golden equipment.") + [command.call(412, 0)] +
@@ -652,17 +727,25 @@ board = message.call(0, "It seems your companions have written a variety of mess
         [command.call(111, 0, 12, "actor_class_level_over?(1, 151, 10)"), mark.call(1)] + message.call(1, "\\n<Kamuro>Homework.") + [command.call(412, 0)] +
         [command.call(111, 0, 12, "$game_switches[1] = true"), mark.call(1)] + message.call(1, "\\n<Gigi>Never.") + [command.call(412, 0)] +
         [command.call(111, 0, 0, 1060, 0), mark.call(1)] + message.call(1, "【ポチ】", "犬に会いたい") + [command.call(412, 0)]
+# A page of the board's event: its commands.
 BoardPage = Struct.new(:list)
+# The board's event: its pages.
 BoardEvent = Struct.new(:pages)
+# The board's map: its events by id.
 BoardMap = Struct.new(:events)
 $board_loads = 0
+# Stands in for the game's loading of data, which hands out the board's map, counting each load in
+# $board_loads.
 Object.send(:define_method, :load_data) do |path|
   $board_loads += 1
   raise "unexpected #{path}" unless path == "Data/Map228.rvdata2"
 
   BoardMap.new({ overview::BOARD_EVENT => BoardEvent.new([BoardPage.new(board)]) })
 end
+# Stands in for the game's interpreter, whose methods the overview calls for the board's checks.
 class Game_Interpreter
+  # Answers $class_levels for the board's check of character 1's job 151 at level 10, false for
+  # any other.
   def actor_class_level_over?(actor, job, level); $class_levels && [actor, job, level] == [1, 151, 10]; end
 end
 overview.instance_variable_set(:@board_list, nil)
@@ -670,6 +753,7 @@ $data_items = []
 $data_items[151] = :iron_ore
 $held_items = []
 $class_levels = true
+# Answers whether the party holds an item, as $held_items lists it.
 def $game_party.has_item?(item); $held_items.include?(item); end
 $data_common_events = []
 $data_common_events[overview::OBJECTIVE_EVENT] = ObjectiveEvent.new(main)
@@ -686,6 +770,7 @@ check("the main quest is every message of Amira's objective, her side quests lef
       overview.main_quest.to_a, [:main, "Amira", ["Cross the mountains.", "Buy golden equipment."], nil, nil])
 check("and Amira's lists of side quests never count as the main quest, so a step without one of its own has none", ($game_variables[1001] = 12; overview.main_quest), nil)
 $game_variables[1001] = 10
+# Tells each quest's texts as one line.
 texts = lambda { |quests| quests.map { |quest| quest.texts.join(" ") } }
 check("the side quests are the entries Amira tells now, each in her words alone, her network counting",
       texts.call(overview.side_quests), ["Strange crying near Iliasville.", "A troublesome job. Go to the slums.", "Iron ore in the Pornof mines.", "The engineer wants makina."])
@@ -701,6 +786,7 @@ check("the companion quests are the board's entries by their companion, a check 
       [[:companion, "Rami", ["Take me to Harpy Village♪"], nil], [:companion, "Kamuro", ["Homework."], nil], [:companion, "ポチ", ["犬に会いたい"], nil]])
 overview.companion_quests
 check("the board's map is read once a session", $board_loads, 1)
+# A character of the game's data: its id, name, map sprite and face.
 LooksActor = Struct.new(:id, :name, :character_name, :character_index, :face_name, :face_index)
 $data_actors = [nil, LooksActor.new(1, "Luka", "Main01_cip", 0, "luka_fc", 0), LooksActor.new(56, "Rami", "Evil01_cip", 5, "rami_fc", 1),
                 LooksActor.new(57, "Rami", "Evil02_cip", 2, "rami_fc", 2), LooksActor.new(103, "Kamuro", "", 0, "kamuro_fc", 0),
@@ -733,7 +819,7 @@ check("the list heads the side and companion quests with how many each holds, th
 check("a quest's row in the list, none for the main quest at the top", [0, 2, 3, 5].map { |pick| Sprite_MpWorldOverview.entry_row(data, pick) }, [nil, 1, 2, 4])
 check("the head holds Amira with the main quest's first sentence", [data.head.title, data.head.lines, data.head.entry.equal?(data.picks.first)], ["Main quest", ["Cross the mountains."], true])
 
-# Picking a quest and reading it.
+# The keys and the mouse pick a quest, and the page draws it with its portraits.
 $raid = true
 overview.turn_to(:quests, "the test")
 overview.on_map
@@ -769,8 +855,12 @@ check("the page draws the main quest's first sentence at the top, the list's fir
         .map { |text| quest_drawing.bitmap.texts.any? { |drawn| drawn.to_s.start_with?(text[0, 12]) } }, [true] * 8)
 $portraits_drawn = []
 $portrait_fills = []
+# Stands in for the Leader HUD's drawing of portraits, recording each in $portraits_drawn and what it
+# stands on in $portrait_fills.
 class Sprite_MpLeaderHud < Sprite
+  # Records a map sprite drawn as a portrait.
   def self.draw_figure(_bitmap, name, index, x, y, side, fill); $portraits_drawn << [:sprite, name, index, x, y, side]; $portrait_fills << fill; end
+  # Records a face drawn as a portrait.
   def self.draw_face(_bitmap, name, index, x, y, side, fill); $portraits_drawn << [:face, name, index, x, y, side]; $portrait_fills << fill; end
 end
 $data_actors[540] = LooksActor.new(540, "Amira", "Civlian01_cip", 0, "amira_fc1", 0)
@@ -832,7 +922,9 @@ quest_sprite = Sprite_MpWorldOverview.allocate
 quest_sprite.bitmap = Bitmap.new(560, 404)
 quest_sprite.draw_backdrop
 check("without Amira's Library picture the page draws none", quest_sprite.bitmap.drawn.none? { |kind, _| kind == :blt }, true)
+# Stands in for the Library's pictures of characters, Amira's alone.
 module NWConst; module Library; ACTOR_IMAGE = { 540 => ["Graphics/Pictures/", "80_amira_st01", 0, 0, -20, 0.9] }; end; end
+# Stands in for loading a picture, recording which in $loaded_picture.
 def Cache.load_bitmap(folder, name); $loaded_picture = [folder, name]; Bitmap.new(640, 480); end
 overview.instance_variable_set(:@backdrop_missing, nil)
 quest_sprite.draw_backdrop
@@ -847,6 +939,8 @@ objective.call(5)
 check("without Amira's event the World page lists no objective", overview.world_model.rows.any? { |kind, entry| kind == :entry && entry.is_a?(overview::Note) }, false)
 $world_story = nil
 $world_story = { "part" => "2" }
+
+# The raid bosses' pools, as the relay tells them, fill in the World page's bosses.
 told = Time.at(1_000_000)
 pool = MGQ_MpRaidPool::Pool
 $pools = { "Queen Harpy" => pool.new(0.4, 6000, false, "Player A", told), "Four bandits" => pool.new(0.0, 6000, true, "Player B", told),
@@ -855,6 +949,7 @@ $pools = { "Queen Harpy" => pool.new(0.4, 6000, false, "Player A", told), "Four 
            "Unknown Boss" => pool.new(0.5, 1, false, "Player F", told) }
 pooled = overview.boss_sections
 bosses = pooled.map(&:last).flatten(1)
+# Finds a boss of the pooled sections by its name.
 boss_named = lambda { |name| bosses.find { |boss| boss.name == name } }
 check("a pool tells a boss's share left and who last hurt it", boss_named.call("Queen Harpy").to_a, ["Queen Harpy", 9, 0.4, false, "Player A"])
 check("an empty pool tells it defeated", boss_named.call("Four bandits").to_a[2..4], [0.0, true, "Player B"])
@@ -868,7 +963,8 @@ check("before the relay told the story only the sections with a pool show", over
 $world_story = { "part" => "2" }
 check("the share is written in percent, rounded, never 0% while any is left", %w[1.0 0.4 0.55 0.07 0.001 0.0].map { |left| overview.share_text(left.to_f) }, ["100%", "40%", "55%", "7%", "1%", "0%"])
 
-# Picking on the World page, the mouse wheel, and the tabs.
+# Picks on the World page keep the list in sight, the mouse wheel scrolls it, and a click on a tab
+# turns the page.
 overview.on_map
 world = overview.view[:model]
 $buttons << :DOWN
@@ -908,7 +1004,7 @@ check("the room between the tabs and the room past them is no tab",
       [Sprite_MpWorldOverview.tab_at(box.x + Sprite_MpWorldOverview::MARGIN + Sprite_MpWorldOverview::TAB_WIDTH + 1, tab_y), Sprite_MpWorldOverview.tab_at(box.x + Sprite_MpWorldOverview::MARGIN + 4 * tab_step, tab_y)], [nil, nil])
 $mouse = nil
 
-# The picture: the title with the world's type and difficulty before the party, the tabs, the
+# The picture shows the title with the world's type and difficulty before the party, the tabs, the
 # hint and a raid boss's row.
 sprite = Sprite_MpWorldOverview.allocate
 sprite.bitmap = Bitmap.new(box.width, box.height)
@@ -917,6 +1013,7 @@ style = MGQ_MpUi::Style
 check("the title says the world's type and difficulty after its name, the party at the right, then the tabs",
       sprite.bitmap.texts.first(4), ["Party 2 / 4", "Test World | Raid | Hard", "Players", "World"])
 check("the hint names Left and Right, picking, reading on and the numpad's 0", sprite.bitmap.texts.last, "Left or right: page   Up or down: pick   Page Up or Down: read on   Esc, Numpad 0 or F11: close")
+# Counts the marks drawn in gold.
 gold_marks = lambda { sprite.bitmap.drawn.count { |kind, args| kind == :fill && args[4].equal?(style::GOLD) } }
 check("the invite from afar still waits on the Players page, which marks its tab in gold while the World page shows", [overview.view[:calls], gold_marks.call], [true, 1])
 $inbox << entry("message", 2, told(friend.merge("party" => "friend-p", "invite" => 0)))
@@ -944,9 +1041,8 @@ check("a defeated boss says so in place of its share, dimmed, without a gauge",
       [sprite.bitmap.texts, sprite.bitmap.drawn.select { |kind, _| kind == :text }.last[2].equal?(style::DIM), sprite.bitmap.drawn.count { |kind, _| kind == :fill }],
       [["Defeated", "Four bandits"], true, 0])
 
-# The box among those the player moves and resizes: its default, a placement Player.ini keeps, its
-# least size, the lines, the menu and the clicks following it, and a box at its least size still
-# drawing every column, tab and hint.
+# The overview is a box the player moves and resizes: its default, a placement Player.ini keeps,
+# its least size, and the lines, the menu and the clicks following it.
 layout = MGQ_MpUi::Layout
 sprite_class = Sprite_MpWorldOverview
 # Keeps a placement in Player.ini as the layout stores it, nil for none, and forgets the one read.
@@ -976,8 +1072,8 @@ check("the longest menu stays whole above the hint in the lowest box, below or a
       [sprite_class.menu_origin(menu_view, 560, 166), sprite_class.menu_origin(menu_view, 560, 404), sprite_class.menu_origin(menu_view.merge(:selected => 9), 560, 404)],
       [[menu_left, 0], [menu_left, sprite_class::LIST_TOP + 3 * sprite_class::ROW], [menu_left, sprite_class::LIST_TOP + 9 * sprite_class::ROW - 6 * sprite_class::ROW]])
 
-# The picked player kept in sight and the World page's scroll kept within its lines as the box's
-# height changes.
+# As the box's height changes, the picked player stays in sight and the World page's scroll stays
+# within its rows.
 place_box.call(nil)
 overview.turn_to(:players, "the test")
 overview.on_map
@@ -1002,8 +1098,9 @@ rows = overview.view[:model].rows.size
 check("the World page's list scrolls further in a lower box, and back within its rows in a taller one",
       [low_scroll > 0, overview.view[:list_scroll] <= [rows - sprite_class.list_rows_shown, 0].max], [true, true])
 
-# The sprite: placed where the box lies, its picture as large, offered to the layout, drawn anew
-# once the box's size or the preset changed.
+# The sprite lies where the box lies, its picture as large, offers its place to the layout, and
+# draws anew once the box's size or the preset changed.
+# Gives the sprite stand-in an update unless it has one.
 class Sprite; def update; end; end unless Sprite.method_defined?(:update)
 place_box.call("20,150,600,300")
 overview_sprite = Sprite_MpWorldOverview.new(nil)
@@ -1035,7 +1132,8 @@ MGQ_MpUi::Theme.apply("Legacy", "the test")
 overview_sprite.dispose
 
 # A box at its least size still draws every column, the title, the tabs and the whole hint.
-# Reports whether every text drawn lies inside the picture.
+
+# Answers whether every text drawn lies inside the picture.
 inside_box = lambda { |bitmap| bitmap.drawn.select { |kind, _| kind == :text }.all? { |_, _, _, x, width, _| x >= 0 && x + width <= bitmap.width } }
 narrow = Sprite_MpWorldOverview.allocate
 narrow.bitmap = Bitmap.new(sprite_class::MIN_WIDTH, sprite_class::MIN_HEIGHT)
@@ -1124,6 +1222,7 @@ $frame += 1
 2.times { confirm.tick }
 check("yes once the party dissolved under the box leaves nothing, so nothing says so", [confirm.open?, MGQ_MpOverworldSync::Status.lines.size], [false, notices])
 
+# Closing the world forgets what the player told.
 MGQ_MpCoopSquad.define_singleton_method(:own_order, own_order)
 overview.tick(false)
 check("a closed world forgets what the player told, so the next one reads it at once",

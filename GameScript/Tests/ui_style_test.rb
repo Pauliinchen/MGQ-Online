@@ -2,20 +2,17 @@
 #  ui_style_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked the scrollbar, the list box's scrollbar and the list windows' wheel and scrollbar
-#      Paulinchen  2026-10-11: Checked the list box, the message box and the confirm box in the layout: kept in Player.ini, their least sizes with every column and hint still drawn, their mouse tests, and their frames drawn anew in a new interface look
-#                            - Checked that an outlined text is drawn without the font's own outline, which doubled it
-#                            - Checked that an outlined text keeps its color, with a font that copies a color into its own as the game does, and that a player outside the party is plain white
+#      Paulinchen  2026-10-12: Checked the scrollbars and the list windows' wheel
+#      Paulinchen  2026-10-11: Checked the list, message and confirm boxes in the layout
+#                            - Checked that an outlined text is drawn without the font's own outline
+#                            - Checked that an outlined text keeps its color and a stranger is plain white
 #                            - Created
 #
 #----------------------------------------------------------------
 
 # Covers what the mod's boxes share in ui.rbx: the style's colors, sizes and drawing helpers, the
-# motion of a sprite, the color of a player, the confirm box with its keys, its two ticks, its
-# guards and its hook, and the list box and the message box placed by the screen's size, cut to
-# their room but for their hints, which stay whole, the list box fading in and out; and the list,
-# message and confirm boxes in the layout, moved and resized but never below their least sizes;
-# and the scrollbar, and the list windows scrolled by the mouse wheel.
+# motion of a sprite, the color of a player, the confirm box, the list box and the message box,
+# their places in the layout, the scrollbar and the list windows' mouse wheel.
 
 require_relative "support"
 
@@ -27,35 +24,60 @@ $sounds = []
 $watched = []
 $frame = 0
 $player_ini = {}
+# The mod's base script: the log in $log, the keys held in $keys_down, the buttons in $buttons and
+# Player.ini in $player_ini.
 module MGQ_Multiplayer
+  # The mod's log, kept in $log.
   module Log; def self.write(message); $log << message; end; end
+  # Windows' keys: those watched go to $watched, those in $keys_down are held and triggered.
   module Key
+    # Records the keys watched in $watched.
     def self.watch(*codes); $watched.concat(codes); end
+    # Whether a key in $keys_down was pressed.
     def self.triggered?(code); $keys_down.include?(code); end
+    # Whether a key in $keys_down is pressed.
     def self.pressed?(code); $keys_down.include?(code); end
+    # Whether a key in $keys_down is held.
     def self.down?(code); $keys_down.include?(code); end
   end
+  # The mouse, off the screen.
   module Mouse; def self.position; nil; end; end
+  # The capture: kept by its owners, its buttons taken from $buttons once each.
   module Capture
     @owners = []
+    # Adds an owner of the capture.
     def self.start(owner); @owners.push(owner) unless @owners.include?(owner); end
+    # Removes an owner of the capture.
     def self.stop(owner); @owners.delete(owner); end
+    # Whether anyone holds the capture.
     def self.on?; !@owners.empty?; end
+    # Takes a button from $buttons as pressed.
     def self.trigger?(button); $buttons.delete(button) ? true : false; end
+    # Takes a button from $buttons as repeated.
     def self.repeat?(button); $buttons.delete(button) ? true : false; end
   end
+  # Player.ini, kept in $player_ini.
   module Player
+    # A setting of Player.ini.
     def self.setting(key); $player_ini[key]; end
+    # Stores a setting.
     def self.store(key, value); $player_ini[key] = value.to_s; true; end
+    # Forgets a setting.
     def self.forget(key); $player_ini.delete(key); true; end
   end
 end
+# Mod Config with its Return row alone.
 module NWConst; module Config; MOD_CONTENTS = [{ :key => :return }]; end; end
+# The game's color.
 Color = Struct.new(:red, :green, :blue, :alpha)
+# The game's rectangle.
 Rect = Struct.new(:x, :y, :width, :height)
 # A font that keeps one color of its own, as RGSS does: color hands out that color and color=
 # copies a color's values into it.
 class Font < Struct.new(:size, :color, :bold, :outline, :out_color)
+  # Copies a color's values into the font's own color.
+  #
+  # @param value [Color] The color.
   def color=(value)
     self[:color] ||= Color.new
     self[:color].red, self[:color].green, self[:color].blue, self[:color].alpha = value.red, value.green, value.blue, value.alpha
@@ -63,10 +85,23 @@ class Font < Struct.new(:size, :color, :bold, :outline, :out_color)
 end
 # A picture that records its texts, its fills and how many outline copies it drew.
 class Bitmap
+  # Its size, its font, the texts and fills drawn, the outline copies and whether a text was drawn
+  # with the font's own outline on.
   attr_reader :width, :height, :font, :texts, :fills, :outlines, :outlined_twice
+  # Creates an empty picture in a white font of 24 without an outline.
   def initialize(width, height); @width = width; @height = height; @font = Font.new(24, Color.new(255, 255, 255, 255), false, false, nil); @texts = []; @fills = []; @outlines = 0; end
+  # The picture's whole rectangle.
   def rect; Rect.new(0, 0, @width, @height); end
+  # Measures a text at half the font's size a character.
   def text_size(text); Rect.new(0, 0, text.to_s.size * @font.size / 2, @font.size); end
+  # Records a text drawn, or counts it as an outline copy when drawn in the outline's color.
+  #
+  # @param x [Integer] Its left.
+  # @param y [Integer] Its top.
+  # @param width [Integer] Its width.
+  # @param height [Integer] Its height.
+  # @param text [String] The text.
+  # @param align [Integer] Its alignment.
   def draw_text(x, y, width, height, text, align = 0)
     @outlined_twice = true if @font.outline
     if @font.color == MGQ_MpUi::Style::OUTLINE
@@ -75,27 +110,46 @@ class Bitmap
       @texts << [x, y, text, @font.size, @font.color.dup, align]
     end
   end
+  # Records a fill with its rectangle and color.
+  #
+  # @param args [Array] A rectangle and a color, or x, y, width, height and a color.
   def fill_rect(*args)
     x, y, w, h, color = args[0].is_a?(Rect) ? [args[0].x, args[0].y, args[0].width, args[0].height, args[1]] : args
     @fills << [x, y, w, h, color]
   end
+  # Forgets the texts, fills and outline copies.
   def clear; @texts.clear; @fills.clear; @outlines = 0; end
+  # Frees the picture.
   def dispose; @disposed = true; end
+  # Whether the picture was freed.
   def disposed?; @disposed ? true : false; end
 end
+# The game's sprite.
 class Sprite
+  # Its picture, place, depth, origin, opacity, whether it shows and its viewport.
   attr_accessor :bitmap, :x, :y, :z, :ox, :oy, :opacity, :visible, :viewport
+  # Creates a visible, opaque sprite at the top left.
   def initialize(viewport = nil); @viewport = viewport; @x = @y = @z = @ox = @oy = 0; @opacity = 255; @visible = true; end
+  # Updates nothing.
   def update; end
+  # Frees the sprite.
   def dispose; @disposed = true; end
+  # Whether the sprite was freed.
   def disposed?; @disposed ? true : false; end
 end
+# The game's screen of 640 by 480 pixels, at frame $frame.
 module Graphics; def self.width; 640; end; def self.height; 480; end; def self.frame_count; $frame; end; def self.update; end; end
+# The game's system sounds: each one played is added to $sounds.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
+# The game's scene manager, whose scene is $scene.
 module SceneManager; def self.scene; $scene; end; end
+# The game's scene base, which does nothing.
 class Scene_Base; def update; end; def start; end; end
+# The game's window base, which draws nothing.
 class Window_Base; def initialize(*); end; end
+# The open world, whose player is me.
 module MGQ_MpOverworldSync; module Me; def self.id; "me"; end; end; end
+# The party p1.
 module MGQ_MpCoop; module Party; def self.member?(state); state["party"] == "p1"; end; end; end
 $scene = Scene_Base.new
 
@@ -196,6 +250,7 @@ check("nor do show, place and slide_to", [other.x, other.y, other.visible], [0, 
 
 # The color of a player.
 colors = MGQ_MpUi::PlayerColor
+# Another player: their seat, their state and whether they are in the party.
 Peer = Struct.new(:seat, :state, :member)
 peer = Peer.new(2, { "id" => "p-other", "name" => "Player A" }, false)
 mate = Peer.new(3, { "id" => "p-mate" }, true)
@@ -211,6 +266,7 @@ capture = MGQ_Multiplayer::Capture
 
 # Opens a box with the frame moved on, so its keys read.
 #
+# @param confirm [Module] The confirm box.
 # @return [Array<Boolean>] Where the answers land.
 def ask_box(confirm)
   $keys_down = []
@@ -355,6 +411,7 @@ box = list.new
 long = "A name that goes on and on and on far past the room it has"
 view = list::View.of(long, "Players", [[:head, "Online"], [:item, long, :good, "a note"]])
 box.show(view)
+# The texts the list box drew in a font size.
 drawn = lambda { |size| box.bitmap.texts.select { |t| t[3] == size } }
 title, note = drawn.call(style::TITLE_SIZE).partition { |t| t[5] == 0 }.map(&:first)
 item = drawn.call(style::TEXT_SIZE).find { |t| t[4] == style::GOOD }
@@ -392,7 +449,9 @@ check("its title is cut to its width, its hint drawn whole and smaller", [title[
 # The list box in the layout: where the player left it, at its size, its mouse tests following it.
 layout = MGQ_MpUi::Layout
 stored = layout.instance_variable_get(:@stored)
+# The rectangle the layout offers a box, nil without an offer.
 offered = lambda { |id| (offer = layout.instance_variable_get(:@offers).find { |o| o.id == id }) && offer.rect.to_a }
+# Keeps a box's place in Player.ini, or forgets it for nil, and has the layout read it anew.
 place = lambda { |id, text| text ? $player_ini["ui_#{id}"] = text : $player_ini.delete("ui_#{id}"); stored.delete(id) }
 place.call(:list_box, "100,60,480,200")
 box = list.new
@@ -486,24 +545,42 @@ check("a thumb never gets shorter than SCROLLBAR_THUMB", bitmap.fills.last[3], s
 
 # The list windows' wheel and scrollbar, on a stand-in for the game's Window_Selectable.
 class FakeListWindow
+  # Its place, size, depth, whether it takes input, the cursor's row and its viewport.
   attr_accessor :x, :y, :width, :height, :z, :active, :index, :viewport
+  # Whether it shows and every row selected.
   attr_reader :visible, :selected
+  # Creates a visible window of four rows a page, the cursor on its first row.
   def initialize(rows); @rows = rows; @top = 0; @x = 100; @y = 50; @width = 200; @height = 4 * 24 + 24; @z = 100; @visible = true; @active = true; @index = 0; @selected = []; end
+  # Updates nothing.
   def update; end
+  # Frees the window.
   def dispose; @disposed = true; end
+  # Shows or hides the window.
   def visible=(visible); @visible = visible; end
+  # The window is always open.
   def open?; true; end
+  # The padding around the contents.
   def padding; 12; end
+  # The padding below the contents.
   def padding_bottom; 12; end
+  # The number of rows.
   def row_max; @rows; end
+  # The number of items.
   def item_max; @rows; end
+  # One column.
   def col_max; 1; end
+  # Four rows a page.
   def page_row_max; 4; end
+  # The first row in sight.
   def top_row; @top; end
+  # Scrolls to a row, never past the last page.
   def top_row=(row); @top = [[row, row_max - page_row_max].min, 0].max; end
+  # Puts the cursor on a row and records it.
   def select(index); @index = index; @selected << index; end
+  # Counts the cursor's updates.
   def update_cursor; @cursor_updates = (@cursor_updates || 0) + 1; end
 end
+# The list window as the mod's list windows are: it scrolls with the wheel and draws a scrollbar.
 class ScrollingFakeList < FakeListWindow
   include MGQ_MpUi::ScrollingWindow
 end

@@ -3,8 +3,8 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Passed the level caps of the world's story to the game script
-//                            - Told a write found already accepted on a retry with the revision of that write, not the revision of a later route lock or companion
-//      Paulinchen  2026-10-09: Logged a fetch of the world's story only when its outcome changed, since the game script fetches it once a minute
+//                            - Told a write found already accepted on a retry with the revision of that write
+//      Paulinchen  2026-10-09: Logged a fetch of the world's story only when its outcome changes
 //      Paulinchen  2026-10-08: Created
 //
 //----------------------------------------------------------------

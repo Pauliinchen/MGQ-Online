@@ -2,7 +2,7 @@
 //  IFrameChannel.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Took over the longest frame from Frame, which went with the direct connection
+//      Paulinchen  2026-09-29: Took over the longest frame from Frame
 //                            - Created
 //
 //----------------------------------------------------------------

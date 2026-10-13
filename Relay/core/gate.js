@@ -2,9 +2,11 @@
 //  gate.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Held the world directory's and the mod catalog's routes, the Raid World admin routes included, to X-MGQ-Features as well
-//                            - Named the update code in X-MGQ-Refusal on the 400 of a world room refused to a game too old
-//                            - Refused a world room of a game too old with 400 and no X-MGQ-Refusal code, counted a request without X-MGQ-Version as 0.6.4, held the world directory's and the mod catalog's routes to the lowest version and passed only the 0.0.0-dev stamp as a development build
+//      Paulinchen  2026-10-12: Held the world directory's and the mod catalog's routes to X-MGQ-Features
+//                            - Named the update code on the 400 of a world room refused to a game too old
+//                            - Refused a world room of a game too old with 400 and counted a request without X-MGQ-Version as 0.6.4
+//                            - Held the world directory's and the mod catalog's routes to the lowest version
+//                            - Passed only the 0.0.0-dev stamp as a development build
 //                            - Created
 //
 //----------------------------------------------------------------

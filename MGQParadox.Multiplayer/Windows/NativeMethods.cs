@@ -2,7 +2,7 @@
 //  NativeMethods.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Added WineVersion, which tells whether the game runs under Wine or Proton
+//      Paulinchen  2026-10-08: Added WineVersion
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------

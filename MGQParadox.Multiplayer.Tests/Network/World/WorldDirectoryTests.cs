@@ -2,27 +2,27 @@
 //  WorldDirectoryTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Covered a 429 without a code told as the creator limit for a create, and in the relay's own words for a ban
-//      Paulinchen  2026-10-10: Covered a Raid World made with a starting save by a development build, which names the dev feature, and expected the dev feature in its requests
-//      Paulinchen  2026-10-09: Covered whether a world turns other mods off, made, changed and listed at the end of its line, by its type when the relay names none
+//      Paulinchen  2026-10-12: Covered a 429 without a code for a create and for a ban
+//      Paulinchen  2026-10-10: Covered a Raid World with a starting save made by a development build
+//      Paulinchen  2026-10-09: Covered whether a world turns other mods off
 //                            - Expected whether a world turns other mods off at the end of its line
-//                            - Covered a Raid World made and changed with its difficulty, listed at the end of its line, and a Classic world listed without one
-//      Paulinchen  2026-10-08: Covered a Raid World made with how it shares companions, listed with both at the end of its line, and the features header sent
+//                            - Covered a Raid World's difficulty
+//      Paulinchen  2026-10-08: Covered a Raid World's companion sharing and the features header
 //                            - Expected a world's type and companion sharing at the end of its line
-//      Paulinchen  2026-10-06: Covered a starting save too large to share, which leaves no world behind, and expected the unknown relay's new reason
+//      Paulinchen  2026-10-06: Covered a starting save too large to share and the unknown relay's new reason
 //                            - Covered opening a world with its world code
 //                            - Expected the creator's mod hashes and mod settings at the end of a world's line
 //      Paulinchen  2026-10-04: Expected what a creator tells about a world in the list only
 //                            - Covered a creator replacing a world's game data
 //                            - Covered a hidden world looked up and listed by its id
 //                            - Covered changing a world's seats, description and mods
-//                            - Covered a world's description, the mods it needs, its creator's game data and whether only games with the same data may enter
+//                            - Covered a world's description, mods, game data and same-data rule
 //      Paulinchen  2026-10-02: Covered worlds whose new players choose where to start
 //                            - Covered worlds without a password
-//      Paulinchen  2026-10-01: Covered an admin who is no longer marked as one once the list fails to load
-//      Paulinchen  2026-09-30: Covered an admin, who sees hidden worlds and deletes another player's world
-//                            - Covered making a world with a starting save and fetching it as a new player
-//                            - Covered hidden worlds, listed for their creator only and opened by their id
+//      Paulinchen  2026-10-01: Covered clearing the admin mark when the list fails
+//      Paulinchen  2026-09-30: Covered admins seeing and deleting hidden worlds
+//                            - Covered making a world with a starting save and fetching it
+//                            - Covered hidden worlds
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------

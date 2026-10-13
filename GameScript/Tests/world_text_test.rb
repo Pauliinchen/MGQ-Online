@@ -15,61 +15,105 @@
 require_relative "support"
 
 # Stand-ins for the game's pictures, windows and scenes.
+
+# The game's rectangle.
 Rect = Struct.new(:x, :y, :width, :height) do
+  # Takes another rectangle's place and size.
   def set(other); self.x, self.y, self.width, self.height = other.to_a; end
+  # Shrinks to nothing.
   def empty; set([0, 0, 0, 0]); end
 end
+# The game's color, as far as its alpha.
 class Color
+  # Its opacity, 255 when opaque.
   attr_accessor :alpha
+  # Creates an opaque color.
   def initialize(*); @alpha = 255; end
 end
+# The game's screen of 640 by 480 pixels.
 module Graphics
+  # The screen's width.
   def self.width; 640; end
+  # The screen's height.
   def self.height; 480; end
 end
 
 # A window's contents, which keep the underlines filled and the texts drawn since they were cleared.
 class Contents
+  # The rectangles filled, the texts drawn as [text, rect, enabled] and how often they were cleared.
   attr_reader :fills, :texts, :clears
+  # Creates empty contents.
   def initialize; @fills = []; @texts = []; @clears = 0; end
+  # Forgets the fills and texts and counts the clear.
   def clear; @fills.clear; @texts.clear; @clears += 1; end
+  # Keeps a filled rectangle.
   def fill_rect(rect, _color); @fills << rect.dup; end
 end
 
 # Window_Base as far as Window_NameEdit draws: the font's "A" 14 pixels wide, lines 24 high.
 class Window_Base
+  # The window's place, size and whether it shows.
   attr_accessor :x, :y, :width, :height, :visible
+  # The window's contents and its cursor's rectangle.
   attr_reader :contents, :cursor_rect
+  # Creates a visible window with empty contents.
+  #
+  # @param x [Integer] Its left.
+  # @param y [Integer] Its top.
+  # @param width [Integer] Its width.
+  # @param height [Integer] Its height.
   def initialize(x, y, width, height)
     @x, @y, @width, @height = x, y, width, height
     @cursor_rect = Rect.new(0, 0, 0, 0)
     @visible = true
     create_contents
   end
+  # The padding around the contents.
   def standard_padding; 12; end
+  # The height of a line.
   def line_height; 24; end
+  # The window height that fits a number of lines.
   def fitting_height(lines); lines * line_height + standard_padding * 2; end
+  # The contents' width.
   def contents_width; width - standard_padding * 2; end
+  # The contents' height.
   def contents_height; height - standard_padding * 2; end
+  # Gives the window empty contents.
   def create_contents; @contents = Contents.new; end
+  # Measures a text at 14 pixels a character.
   def text_size(text); Rect.new(0, 0, text.to_s.length * 14, line_height); end
+  # The color of plain text.
   def normal_color; Color.new; end
+  # Keeps whether the next texts are drawn enabled or dim.
   def change_color(_color, enabled = true); @enabled = enabled; end
+  # Keeps a text drawn with its rectangle and whether it is enabled.
+  #
+  # @param args [Array] A rectangle and a text, or x, y, width, height and a text.
   def draw_text(*args)
     rect = args[0].is_a?(Rect) ? args[0].dup : Rect.new(*args[0, 4])
     text = args[0].is_a?(Rect) ? args[1] : args[4]
     contents.texts << [text.to_s, rect, @enabled]
   end
+  # Takes no input.
   def deactivate; end
+  # Takes input.
   def activate; end
+  # Shows the window.
   def show; @visible = true; end
+  # Hides the window.
   def hide; @visible = false; end
 end
+# The game's window with a cursor.
 class Window_Selectable < Window_Base; end
 
 # The game's Window_NameEdit, its layout and drawing as the game has them.
 class Window_NameEdit < Window_Base
+  # The name typed, the cursor's place and the most characters.
   attr_reader :name, :index, :max_char
+  # Creates the box centred above the letters, with the actor's name to start from.
+  #
+  # @param actor [Object] The actor whose name is typed.
+  # @param max_char [Integer] The most characters.
   def initialize(actor, max_char)
     x = (Graphics.width - 360) / 2
     y = (Graphics.height - (fitting_height(4) + fitting_height(9) + 8)) / 2
@@ -81,12 +125,19 @@ class Window_NameEdit < Window_Base
     deactivate
     refresh
   end
+  # Puts the starting name back.
+  #
+  # @return [Boolean] Whether that name is not empty.
   def restore_default
     @name = @default_name
     @index = @name.size
     refresh
     !@name.empty?
   end
+  # Adds a character at the end.
+  #
+  # @param ch [String] The character.
+  # @return [Boolean] Whether there was room for it.
   def add(ch)
     return false if @index >= @max_char
     @name += ch
@@ -94,6 +145,9 @@ class Window_NameEdit < Window_Base
     refresh
     true
   end
+  # Removes the last character.
+  #
+  # @return [Boolean] Whether there was one.
   def back
     return false if @index == 0
     @index -= 1
@@ -101,14 +155,24 @@ class Window_NameEdit < Window_Base
     refresh
     true
   end
+  # The width of the face left of the name.
   def face_width; 96; end
+  # The width of a character's place.
   def char_width; text_size("A").width; end
+  # The left of the name's first place.
+  #
+  # @return [Integer] The left in the contents.
   def left
     name_center = (contents_width + face_width) / 2
     name_width = (@max_char + 1) * char_width
     [name_center - name_width / 2, contents_width - name_width].min
   end
+  # The rectangle of a character's place.
   def item_rect(index); Rect.new(left + index * char_width, 36, char_width, line_height); end
+  # The rectangle of a place's underline.
+  #
+  # @param index [Integer] The place.
+  # @return [Rect] The rectangle.
   def underline_rect(index)
     rect = item_rect(index)
     rect.x += 1
@@ -117,8 +181,13 @@ class Window_NameEdit < Window_Base
     rect.height = 2
     rect
   end
+  # The faint color of the underlines.
   def underline_color; color = normal_color; color.alpha = 48; color; end
+  # Draws a place's underline.
   def draw_underline(index); contents.fill_rect(underline_rect(index), underline_color); end
+  # Draws the character of a place.
+  #
+  # @param index [Integer] The place.
   def draw_char(index)
     rect = item_rect(index)
     rect.x -= 1
@@ -126,6 +195,7 @@ class Window_NameEdit < Window_Base
     change_color(normal_color)
     draw_text(rect, @name[index] || "")
   end
+  # Draws the face, the underlines and the name, and puts the cursor after it.
   def refresh
     contents.clear
     draw_actor_face(@actor, 0, 0)
@@ -137,44 +207,71 @@ end
 
 # The game's letters, placed below the box as the game places them.
 class Window_NameInput < Window_Selectable
+  # Creates the letters below the box, as wide as it and nine lines high.
+  #
+  # @param edit_window [Window_NameEdit] The box.
   def initialize(edit_window)
     super(edit_window.x, edit_window.y + edit_window.height + 8, edit_window.width, fitting_height(9))
     @edit_window = edit_window
   end
+  # Takes no handlers.
   def set_handler(*); end
 end
+# The game's scene base: returning to the last scene ends the scene.
 class Scene_Base
+  # Starts nothing.
   def start; end
+  # Updates nothing.
   def update; end
+  # Ends nothing.
   def terminate; end
+  # Whether the scene returned to the last one.
   def scene_changing?; @returned == true; end
+  # Returns to the last scene.
   def return_scene; @returned = true; end
 end
+# The game's base of menu scenes.
 class Scene_MenuBase < Scene_Base; end
 $sounds = []
+# The game's system sounds: each one played is added to $sounds.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
 
 # Stand-ins for the mod's base script and the world screen.
 $typed = ["", 0]
+# The mod's base script: the link hands out $typed, the game runs in the background, the mouse
+# is at $mouse with $wheel notches.
 module MGQ_Multiplayer
+  # The link to the DLL as far as typing goes.
   module Link
+    # Takes the typing state without keeping it.
     def self.typing(_on); end
+    # Hands out what $typed holds once.
     def self.take_typed; typed = $typed; $typed = ["", 0]; typed; end
   end
+  # The game always runs in the background.
   module Background; def self.running?; true; end; end
+  # The mouse at $mouse, with $wheel notches.
   module Mouse; def self.position; $mouse; end; def self.wheel; $wheel.to_i; end; end
 end
 # The scrollbar of ui.rbx, which records what it was asked to draw.
 $scrollbars = []
+# The interface script, as far as its scrollbar.
 module MGQ_MpUi
+  # The shared style's scrollbar.
   module Style
+    # The scrollbar's width.
     SCROLLBAR_WIDTH = 4
+    # Records the scrollbar's arguments past its canvas.
     def self.draw_scrollbar(*args); $scrollbars << args[1..-1]; end
   end
 end
+# The world script: keeps the text screen's result, logs nothing and has no gamepad held.
 module MGQ_MpWorld
+  # The text screen's result.
   class << self; attr_accessor :text_result; end
+  # Logs nothing.
   def self.log(_line); end
+  # No gamepad button is held.
   def self.gamepad_pressed?; false; end
 end
 

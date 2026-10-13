@@ -2,42 +2,32 @@
 #  coop_choices.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Dropped Amira's choice in Iliasburg, whose outcomes both end with her joining later, so her switches and her join follow the story
-#      Paulinchen  2026-10-10: Forgot the choices waiting to be picked and a Raid World's route waiting to be confirmed once the world closes
-#      Paulinchen  2026-10-09: Read the story and the roster and brought companions through the state model of story_state.rbx instead of coop_story.rbx
-#                            - Forgot the choices waiting to be picked when a new game starts, so a Raid World's route waiting to be confirmed never plays on a fresh game
-#      Paulinchen  2026-10-08: Left drawing and turning the switches to Window_MpWorldForm, which the world screen's forms share
-#                            - Kept every choice's outcome each player's own in a Raid World, and asked a player the world's story carried past a choice, their side included, for their own outcome
-#                            - Offered at the Great Decision of a Raid World only the routes the world may still take, the third way once the world cleared both other routes, and played only the player's own half of the route the world took
-#                            - Offered no story sync in a Raid World, whose story is the world's
+#      Paulinchen  2026-10-11: Dropped Amira's choice in Iliasburg
+#      Paulinchen  2026-10-10: Forgot the waiting choices and route once the world closes
+#      Paulinchen  2026-10-09: Read the story and the roster and brought companions through story_state.rbx
+#                            - Forgot the waiting choices when a new game starts
+#      Paulinchen  2026-10-08: Left drawing and turning the switches to Window_MpWorldForm
+#                            - Kept every choice's outcome each player's own in a Raid World
+#                            - Offered only the routes a Raid World may still take at the Great Decision
+#                            - Offered no story sync in a Raid World
 #      Paulinchen  2026-10-07: Created
 #
 #----------------------------------------------------------------
 
-# The story's choices a member makes for themselves: who Luka takes along, Magistea Village,
-# Plansect, Succubus Village, the Spider Princess, the Sphinx and the Great Decision. Each is the
-# member's own, whatever the leader chose: their outcome's switches and variables stay out of the
-# leader's story the member plays, and the companions it brings join them, never the leader's.
-#
-# A party's leader offers a member behind them to bring their story up to the leader's ("Sync
-# story"): the member accepts in the notification box, picks on one screen every choice the catch-up
-# carries them past, and is then brought there; one who takes the other side of the Great Decision
-# starts their own route. While a member plays the leader's story, the same screen asks them their
-# own outcome of each choice the story passes.
-#
-# In a Raid World every choice's outcome is each player's own, and a player the world's story
-# carries past a choice picks their own on the same screen; at the Great Decision the screen offers
-# the route the world took, whose global half the world's story brings, so only the player's own half
-# plays: the companions the side changes and the side.
+# The story's choices a member makes for themselves, whatever the leader chose: their outcome's
+# switches and variables stay out of the leader's story the member plays, and the companions it
+# brings join them, never the leader's. A party's leader offers a member behind them to bring their
+# story up to the leader's ("Sync story"), and the member picks on one screen every choice the
+# catch-up carries them past. The same screen asks a member their own outcome of each choice the
+# leader's story passes, and in a Raid World each choice the world's story passes.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopChoices
-  # A choice of the story: where it is, by the main story's progress (variable 1001) from which it
-  # can be made, and its outcomes.
+  # A choice of the story and its outcomes.
   #
   # @!attribute key [Symbol] Its name.
   # @!attribute title [String] What the screen calls it.
-  # @!attribute point [Integer] The main story's progress from which it can be made.
+  # @!attribute point [Integer] The main story's progress (variable 1001) from which it can be made.
   # @!attribute hint [String] What the lines at the top say while the cursor is on it.
   # @!attribute outcomes [Array<Hash>] Each outcome's :label, :switches (by id, on or off),
   #   :variables (by id), :joins (companions) and :note (what it brings).
@@ -116,12 +106,19 @@ module MGQ_MpCoopChoices
   # Color of the offer in the notification box and the World overview.
   OFFER_COLOR = MGQ_MpActions::LINE_COLOR
 
+  # The leader's standing offers: by the member's id, the offer's number, its start frame and name.
   @offers = {}
+  # The choices waiting for the player to pick their own outcome, in the order they came.
   @prompts = []
+  # The leader's offer the player accepted, until the leader's whole story came.
   @accepted = nil
+  # The screen waiting to show, see show_screen.
   @screen = nil
+  # The commands of the Great Decision's outcome waiting to play once the player is free.
   @queued = nil
+  # The number of the leader's latest offer.
   @nonce = 0
+  # The route a Raid World took at the Great Decision, waiting for the player to confirm it.
   @raid_route = nil
 
   extend MGQ_MpLog

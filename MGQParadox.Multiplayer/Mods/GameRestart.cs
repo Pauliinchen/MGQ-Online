@@ -2,10 +2,10 @@
 //  GameRestart.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-09: Started the parked mods' watchdog, which starts the game again into the world and moves the mods back once it closed
-//      Paulinchen  2026-10-08: Started the mod's updater, which updates the mod once the game closed and starts it again
-//                            - Started neither the updater nor the restart under Wine, which has no PowerShell for them, and told so apart from a failure
-//                            - Started the game again through ProcessStartInfo instead of Start-Process, which took brackets in the game's folder for wildcards
+//      Paulinchen  2026-10-09: Started the parked mods' watchdog
+//      Paulinchen  2026-10-08: Started the mod's updater
+//                            - Started neither the updater nor the restart under Wine
+//                            - Started the game again through ProcessStartInfo instead of Start-Process
 //      Paulinchen  2026-10-06: Created
 //
 //----------------------------------------------------------------
@@ -115,7 +115,8 @@ internal static class GameRestart
             return RestartStart.Failed;
         }
 
-        // Start-Process reads its paths as wildcards, so a folder such as "MGQ Paradox [EN]" would not be found.
+        // Start-Process reads its paths as wildcards, so a folder such as "MGQ Paradox [EN]" would
+        // not be found.
         var command = $"Wait-Process -Id {Environment.ProcessId} -ErrorAction SilentlyContinue; $start = New-Object System.Diagnostics.ProcessStartInfo -ArgumentList {Quoted(game)}; $start.WorkingDirectory = {Quoted(gameFolder)}; $start.UseShellExecute = $true; [void][System.Diagnostics.Process]::Start($start)";
         var start = new ProcessStartInfo("powershell.exe")
         {
@@ -167,7 +168,8 @@ internal static class GameRestart
             return RestartStart.Failed;
         }
 
-        // The shell starts it without handing down the game's handles, which would outlive the game in it.
+        // The shell starts it without handing down the game's handles, which would outlive the
+        // game in it.
         var start = new ProcessStartInfo("powershell.exe")
         {
             UseShellExecute = true,

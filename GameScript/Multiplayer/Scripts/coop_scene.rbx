@@ -2,26 +2,26 @@
 #  coop_scene.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Left out the teller's picture and screen changes whose arguments this game cannot take, and erased the picture's place instead of showing a picture this game lacks, either of which ended the viewer's game
-#                            - Told the viewers the scene's changes of a frame in one message, and only every ten frames while the teller holds the game's skip, keeping only the last move of a picture, the camera's last place and while skipping the last sound effect, so a skipped scene no longer runs past the relay's limit
-#                            - Took a message of several changes, each through the gates of a single one, and dropped one of more than 256 changes or of anything but changes
-#                            - Kept the changes of one message within 240 KB, below the largest world message the DLL sends, so a long batch is no longer dropped whole
-#      Paulinchen  2026-10-11: Let the catch-up follow the teller's story values as a story laid over the viewer's, so a viewer gets what the watched scene gave and loses the key items it took
-#                            - Told the viewers the switches that only stay on while a scene runs, which are each player's own, and put them back once the viewer no longer sees the scene
-#                            - Let the teller's move routes skip a blocked step and ended the one the player's character walks once the viewer no longer sees the scene, so it never holds the player for good
-#                            - Kept the character shown or hidden as the story left it once it brought the viewer to another map, so a new game's hidden start no longer hides them again
-#                            - Told the viewers the story's music, background sounds, fanfares and sound effects, played, stopped and faded with the game's defaults for what the story left out, which a viewer plays on the teller's map screen alone, holding the music for when they are there, and its changes of the map's tileset, battle backgrounds and parallax
-#                            - Told a Raid World's viewers the switches, variables and self switches the story changes once a frame, so their games show the scene's characters on the pages the story turns on and keep watching the telling, without writing them as their own story
-#                            - Told the move routes the story gives the map's events and the player's character, without their scripts, and the animations, balloons and erasures it shows on them, so the viewers see the characters move and react, their own character walking the teller's route without starting what it touches
-#                            - Told where the teller's camera stands while the story plays, which the viewers' cameras ease to, and the game's map zoom, putting both back once the viewer no longer sees the scene
-#                            - Told whether the commands running now are the map's main event's, a common event it calls included
-#      Paulinchen  2026-10-09: Told each change of the scene to a Raid World's viewers in one message instead of one per viewer
-#      Paulinchen  2026-10-08: Took the teller, those who see the scene and the gate of its messages from MGQ_MpCoop::Scope, so in a Raid World the teller on the map shows it to everyone there whose story matches
-#      Paulinchen  2026-10-07: Registered the save hook through core_hooks.rbx instead of a wrap of its own, and named the number of pictures the screen holds
-#                            - Told the leader's story scene only to the members synced with the leader, who follow it, and showed it to them alone
-#                            - Logged each change of the scene told and applied, with the picture's name and the tone, the changes ignored and why, and what was put back and why
-#      Paulinchen  2026-10-06: Told the story's changes by the interpreter whose update runs, so the first change after the party gathered goes out too
-#                            - Put the member's own tint back instead of none, and only on the map they watched from
+#      Paulinchen  2026-10-12: Left out picture and screen changes this game cannot take
+#                            - Told the viewers a frame's changes in one message, less often while skipping
+#                            - Took a message of several changes, each through the gates of a single one
+#                            - Kept the changes of one message within 240 KB
+#      Paulinchen  2026-10-11: Let the catch-up follow the teller's story values as a story laid over the viewer's
+#                            - Told the viewers the switches that only stay on while a scene runs
+#                            - Let the teller's move routes skip a blocked step
+#                            - Kept the character shown or hidden as the story left it on another map
+#                            - Told the viewers the story's music, sounds and changes of the map's look
+#                            - Told a Raid World's viewers the story values the story changes
+#                            - Told the move routes, animations, balloons and erasures of the map's characters
+#                            - Told where the teller's camera stands and the game's map zoom
+#                            - Told whether the commands running now are the map's main event's
+#      Paulinchen  2026-10-09: Told each change of the scene to a Raid World's viewers in one message
+#      Paulinchen  2026-10-08: Took the teller, the viewers and the message gate from MGQ_MpCoop::Scope
+#      Paulinchen  2026-10-07: Registered the save hook through core_hooks.rbx and named the picture count
+#                            - Told the leader's story scene only to the members synced with the leader
+#                            - Logged each change of the scene told, applied, ignored and put back
+#      Paulinchen  2026-10-06: Told the story's changes by the interpreter whose update runs
+#                            - Put the member's own tint back, only on the map they watched from
 #                            - Kept the leader's changes for two seconds before the leader's state says the story plays
 #                            - Took pictures whose names hold dots, and the party's leader from coop.rbx
 #      Paulinchen  2026-10-04: Created
@@ -31,13 +31,13 @@
 # What the leader's story shows besides its dialogue: its pictures, such as a story's CG, the
 # screen's fades, tints, flashes and shakes, whether the leader's character is hidden, as on a
 # theater show's stage, the move routes, animations, balloons and erasures of the map's events, its
-# music and sounds, the map's tileset, battle backgrounds and parallax, and
-# in a Raid World the story's switches and variables as they change, which turn the scene's
-# characters' pages on. While the story plays, the leader's game tells the party each change the
-# story makes, and every member on the leader's map sees it in their own game. Once the story ends,
-# or the leader or the member leaves the map, the member's screen is put back as it was. The
-# dialogue itself goes through coop_events.rbx. In a Raid World the player telling the story on the
-# map shows it to everyone there whose story matches theirs, see MGQ_MpCoop::Scope.
+# music and sounds, the map's tileset, battle backgrounds and parallax, and in a Raid World the
+# story's switches and variables as they change, which turn the scene's characters' pages on.
+# While the story plays, the leader's game tells the party each change the story makes, and every
+# member on the leader's map sees it in their own game. Once the story ends, or the leader or the
+# member leaves the map, the member's screen is put back as it was. The dialogue itself goes
+# through coop_events.rbx. In a Raid World the player telling the story on the map shows it to
+# everyone there whose story matches theirs, see MGQ_MpCoop::Scope.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopScene
@@ -98,8 +98,10 @@ module MGQ_MpCoopScene
   # game must never run code in this one.
   LAST_ROUTE_CODE = 44
 
-  # Move route commands whose first argument is a file: a character's graphic and a sound.
+  # The move route command that changes a character's graphic, whose first argument is a file.
   GRAPHIC_CODE = 41
+
+  # The move route command that plays a sound, whose first argument is a file.
   SOUND_CODE = 44
 
   # A character's or sound's file name another game names, which must stay inside its folder.
@@ -135,13 +137,16 @@ module MGQ_MpCoopScene
   # Steps per tile the camera's place is told in.
   CAMERA_STEPS = 32
 
-  # Tiles a viewer's camera jumps over at once; nearer, it eases toward the teller's place, a
-  # CAMERA_EASE-th of the way each frame.
+  # Tiles a viewer's camera jumps over at once; nearer, it eases toward the teller's place.
   CAMERA_JUMP = 4
+
+  # What a viewer's camera divides the way to the teller's place by to ease it each frame.
   CAMERA_EASE = 4
 
-  # The map zoom of none and the largest, in percent, as the game's map_zoom keeps to them.
+  # The map zoom of none, in percent.
   NO_ZOOM = 100
+
+  # The largest map zoom, in percent, as the game's map_zoom keeps to it.
   MOST_ZOOM = 2000
 
   # What a message holding several changes of the scene names its change, see flush_changes.
@@ -155,13 +160,29 @@ module MGQ_MpCoopScene
   # 262,103 bytes (its 256 KB frame less the cipher), so this leaves room for the other fields.
   MAX_BATCH_BYTES = 240 * 1024
 
+  # The numbers of the pictures the leader's story showed on the player's screen, to erase after.
   @pictures = []
+
+  # The story values changed this frame, waiting for send_values, by their kind and key.
   @values = {}
+
+  # The changes waiting for flush_changes: kind, arguments, map and whether logged.
   @outgoing = []
+
+  # The map and the tone the player's screen had before the leader's scene changed it, nil for
+  # none.
   @screen = nil
+
+  # Whether the player's character was hidden before the leader's scene changed it, nil for none.
   @transparent = nil
+
+  # The interpreters whose update runs now, the innermost last.
   @updating = []
+
+  # The teller's last music and background sound held for their map's screen, by kind.
   @held_audio = {}
+
+  # The scene switches the teller's scene set, with the values they had before, by id.
   @scene_switches = {}
 
   extend MGQ_MpLog
@@ -502,8 +523,8 @@ module MGQ_MpCoopScene
   end
 
   # Sends those who see the story one message of changes of a map, see flush_changes. In a Raid
-  # World it names that map for the map's gate, as it did when the changes went out at once, since
-  # the teller may have moved on while they waited.
+  # World it names that map for the map's gate, since the teller may have moved on while the
+  # changes waited.
   #
   # @param viewers [Array<MGQ_MpOverworldSync::Peers::Peer>] Those who see the story.
   # @param map [Integer] The map the changes happened on.
@@ -599,7 +620,8 @@ module MGQ_MpCoopScene
       return log("ignored #{kind} on map #{map}: the player is still on the way, on map #{$game_map.map_id}")
     end
 
-    # The values move the player's story past where the telling started, which ended their watching.
+    # The values move the player's story past where the telling started, which would end their
+    # watching.
     MGQ_MpCoop::Scope::Raid.takes_values(peer) if kind == "story.values" && MGQ_MpCoop::Scope.raid?
     apply(kind, args, map)
   rescue => e
@@ -1179,7 +1201,6 @@ end
 # Game hooks shared with other scripts, through core_hooks.rbx.
 
 begin
-  # Around an interpreter's update, which interpreter runs its commands.
   MGQ_MpHooks.before(Game_Interpreter, :update, "coop_scene") { MGQ_MpCoopScene.updating(self) }
   MGQ_MpHooks.after(Game_Interpreter, :update, "coop_scene") { MGQ_MpCoopScene.updated }
 
@@ -1191,17 +1212,15 @@ begin
   end
   MGQ_MpHooks.after(Game_Player, :transparent=, "coop_scene") { |hidden| MGQ_MpCoopScene.transparency(self, hidden) }
 
-  # After the map's update, the member's screen comes back once the leader's story ended.
   MGQ_MpHooks.after(Game_Map, :update, "coop_scene") { MGQ_MpCoopScene.update }
 
-  # After a loaded save, which brings its own screen, the leader's scene is forgotten.
+  # A loaded save brings its own screen, so nothing of the leader's scene is put back.
   MGQ_MpHooks.after(DataManager.singleton_class, :extract_save_contents, "coop_scene") { |_contents| MGQ_MpCoopScene.forget("a save was loaded") }
 rescue => e
   MGQ_MpCoopScene.log("hooks FAILED: #{e.class}: #{e.message}")
 end
 
 begin
-  # The story's values, its events' move routes, animations, balloons and erasures, for the viewers.
   MGQ_MpHooks.after(Game_Switches, :[]=, "coop_scene") { |id, value| MGQ_MpCoopScene.story_value(0, id, value) }
   MGQ_MpHooks.after(Game_Variables, :[]=, "coop_scene") { |id, value| MGQ_MpCoopScene.story_value(1, id, value) }
   MGQ_MpHooks.after(Game_SelfSwitches, :[]=, "coop_scene") { |key, value| MGQ_MpCoopScene.story_value(2, key, value) }
@@ -1214,8 +1233,6 @@ rescue => e
 end
 
 begin
-  # The story's camera for the viewers: the game's map zoom, and after the player's update, which
-  # moves the camera with the player's character, the teller's camera's place.
   MGQ_MpHooks.after(Game_Player, :update, "coop_scene") { MGQ_MpCoopScene.follow_camera }
   MGQ_MpHooks.after(Game_Interpreter, :map_zoom, "coop_scene") { |*args| MGQ_MpCoopScene.zoom($game_system.zoom_mode) } if Game_Interpreter.method_defined?(:map_zoom)
 
@@ -1228,7 +1245,7 @@ rescue => e
 end
 
 begin
-  # The story's sounds, whichever way they reach the game's Audio, and the map's look, for the viewers.
+  # Audio itself is hooked, since the story reaches it in more than one way.
   MGQ_MpCoopScene::AUDIO_CALLS.each do |call|
     MGQ_MpHooks.before(Audio.singleton_class, call.to_sym, "coop_scene") { |*args| MGQ_MpCoopScene.audio(call, args) }
   end

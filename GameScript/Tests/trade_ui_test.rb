@@ -2,53 +2,77 @@
 #  trade_ui_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a cut with few measures cuts where a letter at a time does
-#                            - Checked the lists scrolled with the mouse wheel, the cursor drawn where its row lies
-#                            - Checked that a list's picture holds only the rows around those shown, also while it scrolls and after it shrinks
-#      Paulinchen  2026-10-11: Checked that the game's help window on the trade screen wears the interface look without the game's tint, loading ui_theme.rbx
-#                            - Checked the confirm box before cancelling the trade, with a stand-in that records the question and answers
-#                            - Checked that a no after the trade ended under the box leaves the disposed commands alone
-#      Paulinchen  2026-10-07: Cut names through MGQ_MpUi.cut, loading ui.rbx first
+#      Paulinchen  2026-10-12: Checked cuts with few measures
+#                            - Checked the lists scrolled with the mouse wheel
+#                            - Checked that a list's picture holds only the rows around those shown
+#      Paulinchen  2026-10-11: Checked the help window's interface look on the trade screen and loaded ui_theme.rbx
+#                            - Checked the confirm box before cancelling the trade
+#                            - Checked a no after the trade ended under the box
+#      Paulinchen  2026-10-07: Cut names through MGQ_MpUi.cut and loaded ui.rbx
 #                            - Created
 #
 #----------------------------------------------------------------
 
 # Covers the trade screen, ui_trade.rbx: an offer's first row, whose head never runs into whether
-# its player confirmed, the status line, which shows a message about the trade while it lasts,
-# the confirm box before cancelling, and the lists' pictures, which hold only the rows shown. The game's windows stand in, measuring each character at
-# four tenths of the font's size.
+# its player confirmed, the status line, the confirm box before cancelling, the help window's look,
+# and the lists' pictures, which hold only the rows shown and scroll with the mouse wheel.
 
 require_relative "support"
 
 # Stand-ins for the game's windows.
+
+# The game's color.
 Color = Struct.new(:red, :green, :blue, :alpha)
+# The game's rectangle.
 Rect = Struct.new(:x, :y, :width, :height)
+# The game's font, as far as its size.
 Font = Struct.new(:size)
+# The game's picture, as far as its font.
 Bitmap = Struct.new(:font)
+# The game's window base: measures each character at four tenths of the font's size and keeps what
+# it draws.
 class Window_Base
+  # The texts drawn, each [rect, text, width], and the window's picture.
   attr_reader :drawn, :contents
+  # Creates the window with a picture in the game's font size of 24.
   def initialize(*); @drawn = []; @contents = Bitmap.new(Font.new(24)); end
+  # Measures a text at four tenths of the font's size a character.
   def text_size(text); Rect.new(0, 0, (text.to_s.size * contents.font.size * 0.4).ceil, 24); end
+  # Puts the game's font size back.
   def reset_font_settings; contents.font.size = 24; end
+  # Keeps the color of the next texts.
   def change_color(color, *); @color = color; end
+  # The color of the game's labels.
   def system_color; :system; end
+  # Keeps a text drawn with its rectangle and width.
+  #
+  # @param args [Array] A rectangle and a text, or x, y, width, height and a text.
   def draw_text(*args)
     rect, text = args[0].is_a?(Rect) ? [args[0], args[1]] : [Rect.new(*args[0, 4]), args[4]]
     @drawn << [rect, text.to_s, text_size(text).width]
   end
 end
+# The game's window with a cursor.
 class Window_Selectable < Window_Base; def deactivate; end; end
+# The game's row of commands.
 class Window_HorzCommand < Window_Selectable; end
+# The game's base of menu scenes.
 class Scene_MenuBase; end
 
 # The trade, as trade.rbx keeps it.
 module MGQ_MpTrade
+  # A trade: the other player's name, whether the player confirmed, its stage, the notice it closes
+  # with and the revisions the other player confirmed.
   Session = Struct.new(:name, :confirmed, :stage, :leaving, :their_confirm)
+  # The message about the trade and the trade under way.
   class << self; attr_accessor :note, :session; end
+  # Nothing keeps the player from confirming.
   def self.confirm_refusal; nil; end
 end
 
+# The game's sprite, which draws nothing.
 class Sprite; def initialize(*); end; end
+# Player.ini without settings.
 module MGQ_Multiplayer; module Player; def self.setting(_key); nil; end; end; end
 load_script "ui"
 load_script "ui_theme"
@@ -69,6 +93,7 @@ def head_of(own, name)
   window.drawn
 end
 
+# Tells whether an offer's head ends before the status beside it, with the gap between them.
 fits = lambda do |drawn|
   status, head = drawn
   head[0].x + head[2] <= status[0].x + status[0].width - status[2] - MGQ_MpTradeUi::HEAD_GAP
@@ -88,6 +113,7 @@ check("a name cut keeps what follows it whole", MGQ_MpUi.cut(narrow, "Tester", 8
 measures = 0
 counting = Object.new
 counting.define_singleton_method(:text_size) { |text| measures += 1; Rect.new(0, 0, text.size * 7 + text.count(" ") * 2, 24) }
+# Cuts a text as cutting a letter at a time would, measuring with counting.
 one_by_one = lambda do |text, width, tail|
   next "#{text}#{tail}" if counting.text_size("#{text}#{tail}").width <= width
 
@@ -141,15 +167,21 @@ MGQ_MpTrade.session = nil
 scene.on_cancel_trade
 check("without a trade nothing is asked", [asked.size, cancelled, activated], [4, 1, 3])
 
-# A window of the game's own class on the trade screen wears the interface look, now and after a
+# A window of the game's own class on the trade screen wears the interface look at once and after a
 # change of it, without the game's tint.
+# The game's tone, which keeps the values set last.
 class Tone; attr_reader :values; def set(*values); @values = values; end; end
 # The game's help window: its update tints it in the game's window color, as the game's does.
 class HelpWindow < Window_Base
+  # The window's skin and the opacity of its back.
   attr_accessor :windowskin, :back_opacity
+  # The window's tone.
   def tone; @tone ||= Tone.new; end
+  # The window is never disposed.
   def disposed?; false; end
+  # Updates the window, tinting it.
   def update; update_tone; end
+  # Tints the window in the game's window color.
   def update_tone; tone.set(9, 9, 9, 0); end
 end
 MGQ_MpUi::Theme.define_singleton_method(:skin) { :preset_skin }
@@ -166,18 +198,30 @@ check("a new look dresses it anew as it updates", help.back_opacity, 235)
 # A list laid out as the game's Window_Selectable lays it out: one column, rows of 24 pixels and a
 # page of 10 rows, recording the picture's height and the rows drawn into it.
 class ListStandIn
+  # The picture's scroll and the number of rows.
   attr_accessor :oy, :item_max
+  # The heights of each picture made and the rows drawn into the last, each [index, top in the window].
   attr_reader :heights, :drawn
+  # Creates the list with its picture.
   def initialize(rows); @item_max = rows; @heights = []; create_contents; end
+  # One column.
   def col_max; 1; end
+  # Rows of 24 pixels.
   def item_height; 24; end
+  # Ten rows a page.
   def page_row_max; 10; end
+  # The rows of a page.
   def page_item_max; page_row_max * col_max; end
+  # The number of rows, at least one.
   def row_max; [(item_max + col_max - 1) / col_max, 1].max; end
+  # A row's rectangle in the whole list.
   def item_rect(index); Rect.new(0, index / col_max * item_height, 100, item_height); end
+  # Records the picture's height and forgets the rows drawn.
   def create_contents; @heights << contents_height; @drawn = []; end
+  # Records a row drawn with its top in the window.
   def draw_item(index); @drawn << [index, item_rect(index).y - oy]; end
 end
+# A list that keeps only the rows shown in its picture, as the trade lists do.
 class PagedList < ListStandIn; include MGQ_MpTradeUi::VisibleRows; end
 
 # Reports whether the window would show its up and its down scroll arrow.
@@ -210,20 +254,33 @@ empty = PagedList.new(0)
 check("an empty list still makes a picture of one row", empty.heights.last, 24)
 
 # The lists scrolled with the mouse wheel, the cursor drawn where its row lies in the new picture.
+# The mouse at $mouse, with $wheel notches.
 module MGQ_Multiplayer; module Mouse; def self.position; $mouse; end; def self.wheel; $wheel.to_i; end; end; end
+# A list as the trade lists are: it keeps the rows shown in its picture and scrolls with the wheel.
 class WheelList < ListStandIn
   include MGQ_MpTradeUi::VisibleRows
   include MGQ_MpUi::ScrollingWindow
+  # The cursor's row and whether it takes input.
   attr_accessor :index, :active
+  # The cursor's top in the window.
   attr_reader :cursor_top
+  # The list always shows.
   def visible; true; end
+  # The list is always open.
   def open?; true; end
+  # The window's left.
   def x; 0; end
+  # The window's top.
   def y; 0; end
+  # The window's width.
   def width; 640; end
+  # The window's height.
   def height; 264; end
+  # The window lies in no viewport.
   def viewport; nil; end
+  # Puts the cursor on a row.
   def select(index); @index = index; update_cursor; end
+  # Places the cursor where its row lies in the picture.
   def update_cursor; @cursor_top = item_rect(@index).y - oy; end
 end
 check("both trade lists scroll with the wheel and show a scrollbar",

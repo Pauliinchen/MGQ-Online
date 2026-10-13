@@ -2,41 +2,41 @@
 //  directory.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Covered the relay's own line said in the chat of the worlds with players online only
-//                            - Covered an edit with a presence, a removal with an edit, a starting save with a presence and two creates of one world, each made at once
-//                            - Covered featured, full and per-creator refusals of a new world costing its address no rate turn
-//      Paulinchen  2026-10-10: Covered a Raid World's starting save from a game that names the dev feature, made and uploaded, also through the public routes, and still refused a player's choice and every other game's starting save
+//      Paulinchen  2026-10-12: Covered the relay's own line in the chat of worlds with players online
+//                            - Covered requests on one world made at once
+//                            - Covered refusals of a new world costing its address no rate turn
+//      Paulinchen  2026-10-10: Covered a Raid World's starting save from a game that names the dev feature
 //                            - Covered the player's name member tells a world room
-//                            - Covered an edit that sends a Raid World's difficulty unchanged telling the world room nothing, and the first difficulty of a world made without one
-//      Paulinchen  2026-10-09: Covered whether a world turns other mods off: by type, as made, changed by its creator or an admin only, read by type for worlds kept from before, and told to the world room with the mods on a change only
-//                            - Expected mods past 300 characters refused instead of cut
+//                            - Covered an unchanged difficulty telling the world room nothing and the first difficulty of a world
+//      Paulinchen  2026-10-09: Covered whether a world turns other mods off
+//                            - Expected mods past 300 characters refused
 //                            - Covered telling a world room whether a key is an admin's
-//                            - Covered a Raid World's difficulty: kept, listed, changed by its creator or an admin only, refused for a Classic world and out of range
-//                            - Covered a Raid World refused with a starting save or a player's choice, and its starting save upload refused
-//                            - Covered member's refusal during an upload with a Classic world, since a Raid World takes no starting save
+//                            - Covered a Raid World's difficulty
+//                            - Covered a Raid World refused with a starting save or a player's choice
+//                            - Covered member's refusal during an upload with a Classic world
 //                            - Covered a world room's member question refused while the starting save is uploaded
 //      Paulinchen  2026-10-08: Covered telling a world room who plays its world
-//                            - Covered a world's type and companion sharing, fixed once made, and Raid Worlds kept from games that do not name them
-//                            - Covered lines said at once, all kept in order, and an admin's line for a world deleted meanwhile
-//      Paulinchen  2026-10-07: Covered a world's chat: the lines games mirror, the lines admins say, who reads them, the cap and the chat going with the world
-//                            - Covered the auth key header, the cap on removed players, and rate turns taken only after every check
+//                            - Covered a world's type and companion sharing and Raid Worlds kept from games that do not name them
+//                            - Covered chat lines said at once and an admin's line for a world deleted meanwhile
+//      Paulinchen  2026-10-07: Covered a world's chat
+//                            - Covered the auth key header, the cap on removed players and rate turns taken after every check
 //                            - Expected 413 for a JSON body over the limit and 404 for an unknown sub-route
-//      Paulinchen  2026-10-06: Covered the deleting of worlds whose starting save did not come in time, the budget for starting saves and the rate limits per address
-//                            - Covered refused mod settings over the limit, mod names of up to 100 characters, the codes of refusals and the player key header
+//      Paulinchen  2026-10-06: Covered stale worlds, the budget for starting saves and the rate limits per address
+//                            - Covered mod settings over the limit, long mod names, refusal codes and the player key header
 //                            - Expected up to 300 characters of mods
 //                            - Covered admins replacing a world's mod settings
-//                            - Covered a world's mod hashes and mod settings, which only its creator sets
+//                            - Covered a world's mod hashes and mod settings
 //      Paulinchen  2026-10-04: Expected the lock without the mods, the game data and the rule for it
-//                            - Covered a creator replacing a world's game data, which an admin may not
+//                            - Covered a creator replacing a world's game data
 //                            - Covered hidden worlds listed for a player who names their ids
 //                            - Covered changing a world's seats, description and mods
-//                            - Covered a world's description, the mods it needs, its creator's game data and whether only games with the same data may enter
+//                            - Covered a world's description, mods, game data and the same-data rule
 //      Paulinchen  2026-10-02: Covered worlds whose new players choose where to start
 //                            - Covered worlds without a password, featured worlds and when players were last seen
 //      Paulinchen  2026-10-01: Covered the refusal of a delete by someone who is neither the creator nor an admin
-//      Paulinchen  2026-09-30: Covered the relay's admins, who see every world and delete any
-//                            - Covered the starting save: uploaded once by the creator, fetched by players only
-//                            - Covered hidden worlds, listed only for their players, and the lock naming its world
+//      Paulinchen  2026-09-30: Covered the relay's admins
+//                            - Covered the starting save
+//                            - Covered hidden worlds and the lock naming its world
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------

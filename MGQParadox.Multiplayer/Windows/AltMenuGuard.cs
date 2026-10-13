@@ -2,7 +2,7 @@
 //  AltMenuGuard.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-11: Kept the menu closed for Alt pressed alone, which moves and resizes the mod's boxes with the mouse
+//      Paulinchen  2026-10-11: Kept the menu closed for Alt pressed alone
 //      Paulinchen  2026-10-08: Created
 //
 //----------------------------------------------------------------

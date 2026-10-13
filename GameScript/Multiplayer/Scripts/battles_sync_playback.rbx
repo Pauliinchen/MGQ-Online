@@ -2,31 +2,31 @@
 #  battles_sync_playback.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Left out a message of the battle's mode that fails and a line of the host's stream that fails to read, logged once, instead of ending the game
-#                            - Checked the host's picture and screen calls as the story's are checked in coop_scene.rbx, its picture names with dots included, and erased the picture's place instead of showing a cut-in this game lacks, either of which ended the guest's game
-#                            - Ended a time stop of the host whose character is no battler here, which the game would ask for its observer
-#      Paulinchen  2026-10-11: Named in the guest's waiting box the players the host still waits for, as the host tells them, with the seconds waited, the wait for the host worded as the waiting box words it
-#      Paulinchen  2026-10-08: Showed a message of the host without its face while this game lacks the face file
-#      Paulinchen  2026-10-07: Gave the states the host adds the counters the game keeps per state, without which a turn's end on the map ended the game
-#                            - Checked the arguments of the host's audio calls as a picture's are checked, and left out a call that fails, logged once
+#      Paulinchen  2026-10-12: Left out failing mode messages and unreadable stream lines
+#                            - Checked the host's picture and screen calls and erased a picture this game lacks
+#                            - Ended a host's time stop whose character is no battler here
+#      Paulinchen  2026-10-11: Named the players the host still waits for in the guest's waiting box
+#      Paulinchen  2026-10-08: Showed a host's message without a face file this game lacks
+#      Paulinchen  2026-10-07: Gave the states the host adds the game's per-state counters
+#                            - Checked the host's audio call arguments and left out failing calls
 #                            - Took the number of pictures the screen holds from coop_scene.rbx
-#                            - Logged each turn's playback with its waits and catching up, how the battle began, the items used up and the host's values this game cannot take
-#                            - Gave a battler the host's HP, MP, SP and states after the game read its features anew, which held HP below this game's own maximum
+#                            - Logged each turn's playback, the battle's start, items used up and values not taken
+#                            - Gave a battler the host's values after the game read its features anew
 #                            - Logged once per character when the host's HP lies above this game's maximum
-#      Paulinchen  2026-10-06: Showed how the host's battle began, and kept a surprised party from choosing in its first command phase
+#      Paulinchen  2026-10-06: Showed how the host's battle began and kept a surprised party from choosing
 #                            - Used up the consumable items the player's own characters used in the host's battle
 #                            - Took the turns each state has left and the barriers from the host
-#                            - Let a real monster's defeat on the host fade it out here too, keeping the silhouette to the other player's characters
-#                            - Checked the host's calls against the names the hooks list as texts, never making a symbol of the host's text
+#                            - Let a real monster's defeat fade it out here too
+#                            - Checked the host's calls against the hooks' names as texts
 #                            - Played the battle log's methods the hooks record, from their one list
-#                            - Showed the host's battle messages through the game's message alone, naming their speaker on it
+#                            - Showed the host's battle messages through the game's message alone
 #      Paulinchen  2026-10-04: Stopped playing for the player to choose again when the host names them
 #                            - Logged a host's call the guest leaves out, once per method
-#                            - Let the game read a guest's character's features anew once the host's states or buffs changed it, so Division's extra actions count
+#                            - Let the game read a guest's character's features anew after state or buff changes
 #                            - Renamed from mp_battles_sync_playback.rbx
 #      Paulinchen  2026-10-03: Found the characters outside the battle that its mode names
 #                            - Asked the running battle's mode instead of naming co-op battles and team duels
-#                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#                            - Reached the game's private fields and methods through MGQ_MpGame
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -304,8 +304,7 @@ module MGQ_MpBattlesSync
 
     # Reports whether the hooks record a method, which the guest then plays as the host called it.
     #
-    # The name came from the host, so it is compared as text and never made a symbol, since symbols
-    # are never freed.
+    # The host's name is compared as text and never made a symbol, see Wire.symbol.
     #
     # @param names [Array<Symbol>] The methods the hooks record.
     # @param method [String] The method the host called.
@@ -451,9 +450,10 @@ module MGQ_MpBattlesSync
       battler.animation_id = value.to_i if $data_animations[value.to_i]
     end
 
-    # Starts a sprite effect the host started. In a PvP battle the host's characters fall with an
-    # actor's collapse, but on the guest they are the enemy side, which stays as a silhouette after
-    # the defeat flash; a co-op battle's monsters fall as they do on the host.
+    # Starts a sprite effect the host started.
+    #
+    # In a PvP battle the host's characters fall with an actor's collapse, but on the guest they are
+    # the enemy side, which stays as a silhouette after the defeat flash.
     #
     # @param battler [Game_Battler, nil] The guest's battler.
     # @param effect [Symbol] The effect.
@@ -584,8 +584,10 @@ module MGQ_MpBattlesSync
     end
 
     # Starts an animation on the guest's battlers, unless the guest holds the skip key or has to
-    # catch up. It only starts it: the host's recorded waits that follow keep the pace, and the
-    # game's own animation methods would wait a second time.
+    # catch up.
+    #
+    # It only starts it, since the host's recorded waits that follow keep the pace and the game's own
+    # animation methods would wait a second time.
     #
     # @param scene [Scene_Battle] The battle.
     # @param subject [Game_Battler, nil] Who acts, whose weapons an attack animation shows.
@@ -725,8 +727,8 @@ module MGQ_MpBattlesSync
     # Lets the game read a character's features anew once its states or buffs changed.
     #
     # The game keeps each character's features until it refreshes the character, which values set
-    # past the game's setters never does, so a state's extra actions, such as Division's, or its
-    # counters never counted on the guest.
+    # past the game's setters never do, so a state's extra actions, such as Division's, would not
+    # count on the guest.
     #
     # @param battler [Game_Battler] The guest's battler.
     def self.features_changed(battler)

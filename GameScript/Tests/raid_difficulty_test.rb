@@ -2,60 +2,80 @@
 #  raid_difficulty_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Stood in for Ini.load, which a world's folder reads world.ini through
-#      Paulinchen  2026-10-10: Checked a release's Raid World without a starting save, and a development build's with an optional shared save beside
-#                              the Difficulty, sent to the DLL and fetched by new players, never with the player's choice
-#      Paulinchen  2026-10-09: Expected the starting point hidden in a Raid World's form, its row shared with Sharing companions, Turn off other mods in
-#                              the edit form, and the longer calls of mp_dir_create and mp_dir_edit
+#      Paulinchen  2026-10-12: Stood in for Ini.load
+#      Paulinchen  2026-10-10: Checked the Raid World starting save of releases and development builds
+#      Paulinchen  2026-10-09: Expected the new Raid World form rows and the longer calls of mp_dir_create and mp_dir_edit
 #                            - Created
 #
 #----------------------------------------------------------------
 
-# Covers a Raid World's difficulty and start: the new world's form without a starting point and
-# with the Difficulty switch for a Raid World only, the creator's edit form, what goes to the DLL,
-# no starting save or choice on entering, but a shared save in a development build (world.rbx,
-# world_save_distribution.rbx); the world's
-# difficulty on entry, load, new game and after the relay's push, the game's own choice and the
-# Reaper's change set to the world's, and the Labyrinth of Chaos's, the Colosseum's and the special
-# bosses' own values left alone (world_difficulty.rbx); and these values each Raid World player's
-# own in the story (story_state.rbx).
+# Covers a Raid World's difficulty and start: the Difficulty of the new world's and the edit form,
+# what goes to the DLL, and no starting save or choice on entering except a development build's
+# shared save (world.rbx, world_save_distribution.rbx); the world's difficulty on load, new game and
+# the relay's push, set over the game's own choice and the Reaper's change, while the Labyrinth of
+# Chaos, the Colosseum and the special bosses keep their own values (world_difficulty.rbx); and these
+# values each Raid World player's own in the story (story_state.rbx).
 
 require_relative "support"
 
-# Stand-ins for the game.
+# Stands in for the game's base scene.
 class Scene_Base; def return_scene; end; end
+# Stands in for the game's menu scenes.
 class Scene_MenuBase < Scene_Base; end
+# Stands in for the game's load screen.
 class Scene_Load < Scene_Base; end
+# Stands in for the game's base window.
 class Window_Base; def initialize(*); end; end
+# Stands in for the game's selectable windows.
 class Window_Selectable < Window_Base; end
+# Stands in for the game's command windows.
 class Window_Command < Window_Selectable; end
+# Stands in for the game's name entry.
 class Window_NameEdit < Window_Base; end
+# Stands in for the game's name entry's letters.
 class Window_NameInput < Window_Selectable; end
+# Stands in for the game's colors.
 class Color; def initialize(*); end; end
+# Stands in for the game's sprites.
 class Sprite; def initialize(*); end; end
+# Stands in for the game's rectangles.
 Rect = Struct.new(:x, :y, :width, :height)
+# Stands in for the game's title screen.
 class Scene_Title; def start; end; def create_command_window; end; def close_command_window; end; def update; end; def terminate; end; end
+# Stands in for the title screen's commands.
 class Window_TitleCommand; def make_command_list; end; end
+# Stands in for the game's sounds, which play nothing.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") {} }; end
+# Stands in for the game's scenes, calling none.
 module SceneManager; def self.call(_scene); end; end
+# Stands in for the game's data.
 module RPG
+  # An event command.
   EventCommand = Struct.new(:code, :indent, :parameters)
+  # A common event and its commands.
   CommonEvent = Struct.new(:list)
 end
+# Stands in for the game's switches, off unless set.
 class Game_Switches; def initialize; @data = []; end; def [](id); @data[id] || false; end; def []=(id, value); @data[id] = value; end; end
+# Stands in for the game's variables, 0 unless set.
 class Game_Variables; def initialize; @data = []; end; def [](id); @data[id] || 0; end; def []=(id, value); @data[id] = value; end; end
+# Stands in for the map, whose update the difficulty's look hooks into.
 class Game_Map; def update(_main = false); end; end
 $quiet = true
 # The map's interpreter, running while a test says an event runs.
 class MapInterpreter; def running?; !$quiet; end; end
 
 # Runs an event's commands as the game's interpreter does, as far as the tests need: a variable set
-# to a constant (122), a common event's call (117), a comment (108), a script line (355) and a
-# picture's erase (235).
+# to a constant (122), a common event's call (117), a script line (355) and a picture's erase (235).
 class Game_Interpreter
+  # Starts running an event's commands.
+  #
+  # @param list [Array<RPG::EventCommand>] The commands.
   def setup(list, _event_id = 0); @list = list; @index = 0; @running = true; end
+  # Answers whether the event still runs.
   def running?; @running; end
 
+  # Runs the event's commands to its end.
   def update
     while @list[@index]
       execute_command
@@ -64,6 +84,7 @@ class Game_Interpreter
     @running = false
   end
 
+  # Runs the command at the event's place.
   def execute_command
     command = @list[@index]
     case command.code
@@ -77,32 +98,54 @@ class Game_Interpreter
     end
   end
 end
+# Stands in for the game's saves, whose loads and new games the world's difficulty hooks into.
 module DataManager
+  # Stands in for writing the system save, doing nothing.
   def self.save_system; end
+  # Stands in for loading a save, which always loads.
   def self.load_game_without_rescue(_index); true; end
+  # Stands in for starting a new game, doing nothing.
   def self.setup_new_game; end
 end
 
-# Stand-ins for the mod's base script and its DLL.
 $calls = []
 $dll = {}
 $ini = {}
+# Stands in for the mod's base script and its DLL, whose calls go into $calls.
 module MGQ_Multiplayer
+  # Stands in for the text that asks for an update.
   UPDATE_MESSAGE = "Update."
+  # Stands in for whether the mod can run: answers true.
   def self.available?; true; end
+  # Stands in for whether the mod is outdated: answers false.
   def self.outdated?; false; end
+  # Stands in for a newer version: there is none.
   def self.newer_version; nil; end
+  # Stands in for cleaning a text for the screen, keeping it as it is.
   def self.clean(text); text; end
+  # Stands in for a path in the game's folder, keeping it as it is.
   def self.path(name); name; end
+  # Stands in for the log, which prints each line.
   module Log; def self.write(message); puts "  log: #{message}"; end; end
+  # Stands in for the player, named Me.
   module Player; def self.share; end; def self.name; "Me"; end; end
+  # Stands in for the ini files, which live in $ini by path.
   module Ini; def self.read(path); ($ini[path] || {}).dup; end; def self.load(path, _quiet = false); read(path); end; def self.write(path, values); $ini[path] = values.dup; true; end; end
+  # Stands in for the DLL link, whose state reads come from $dll by function.
   module Link
+    # A function of the DLL, which notes each call in $calls with its signature.
     Function = Struct.new(:name, :signature) do
+      # Notes the call, refusing arguments its signature does not name.
       def call(*args); check_dll_call(name, args); $calls << [name, signature, args]; 1; end
     end
+    # Answers a function of the DLL with its signature from Multiplayer.rb.
     def self.function(name); Function.new(name, dll_signature(name)); end
+    # Answers what $dll holds for a function.
     def self.read(name, _size); $dll[name].to_s; end
+    # Reads the DLL's description as Link.parse does: key=value lines, an empty line, the payload.
+    #
+    # @param text [String] The text.
+    # @return [Hash] The fields, with the payload under :payload.
     def self.parse(text)
       head, payload = text.split("\n\n", 2)
       state = { :payload => payload.to_s }
@@ -111,15 +154,22 @@ module MGQ_Multiplayer
     end
   end
 end
+# Stands in for the world's mods, sharing no settings.
 module MGQ_MpWorldMods; def self.shared?(_settings); false; end; end
 $notices = []
 $routes = {}
+# Stands in for the world's sync, keeping each field's handler in $routes and each notice in $notices.
 module MGQ_MpOverworldSync
+  # The field of the relay's push of a new difficulty.
   DIFFICULTY_FIELD = "difficulty_value"
+  # Keeps a field's handler in $routes.
   def self.route(field, &handler); $routes[field] = handler; end
+  # Notes a notice's text in $notices.
   def self.notice(text, _icon = nil); $notices << text; end
+  # Answers whether no event or message runs on the map: $quiet.
   def self.map_quiet?; $quiet; end
 end
+# Stands in for the co-op scope, in a Raid World whenever the open world is one.
 module MGQ_MpCoop; module Scope; def self.raid?; MGQ_MpWorld.raid?; end; end; end
 
 load_script "world_save_distribution"
@@ -142,7 +192,7 @@ def field_of(form, key)
   form.fields.find { |field| field.key == key }
 end
 
-# The new world's form.
+# The new world's form has the Difficulty for a Raid World only.
 form = MGQ_MpWorld::Form.create
 form[:name] = "Raid Night"
 starting = [:from_save, :choose].map { |key| field_of(form, key) }
@@ -166,7 +216,7 @@ check("its switch turns to the next difficulty", [form.difficulty, MGQ_MpWorld.d
 form[:type] = 0
 check("back on Classic the Save takes its place again", [field_of(form, :difficulty), field_of(form, :save).equal?(save), form.fields.size], [nil, true, 14])
 
-# What goes to the DLL.
+# What goes to the DLL carries a Raid World's difficulty.
 MGQ_MpWorld::Directory.create("Raid Night", "", 4, false, true, "Save01.rvdata2=Save/Save01.rvdata2", :type => "raid", :share => "story", :difficulty => 3)
 args = $calls.last[2]
 check("a Raid World goes without a starting save and the player's choice, with its difficulty", [$calls.last[1], args[4], args[5], args[12], args[14]],
@@ -181,7 +231,7 @@ check("an edit hands a Raid World's difficulty to the DLL", [$calls.last[1], $ca
 MGQ_MpWorld::Directory.edit("w1", 6, "", "")
 check("and none for a Classic world", $calls.last[2][6..7], [0, 0])
 
-# The creator's edit form.
+# The creator's edit form has the Difficulty for a Raid World only.
 listed = MGQ_MpWorld::Directory::ListedWorld.new("r1", 4, 0, "me", 0, "Me", "Raid Night", "none", [], false, false, false, false, false, "", "", "", "", "", "raid", "story", 2)
 edit = MGQ_MpWorld::Form.edit(listed, true)
 check("a Raid World's edit form has the Difficulty switch below Max Players, on its difficulty",
@@ -245,7 +295,7 @@ MGQ_MpWorld.instance_variable_set(:@world, plain_world)
 DataManager.load_game_without_rescue(0)
 check("and so does a Classic world", [$game_variables[902], $rates], [3, []])
 
-# A Raid World on HARD.
+# A Raid World on HARD puts a loaded save and a new game on it.
 MGQ_MpWorld.instance_variable_set(:@world, raid_world)
 DataManager.load_game_without_rescue(0)
 check("a save loaded in a Raid World plays on its difficulty, the enemy rates worked out at once", [$game_variables[902], $rates], [1, [1]])
@@ -321,7 +371,7 @@ check("the look comes every 30 frames", $game_variables[902], -1)
 $game_map.update
 check("and puts the game on the world's difficulty", [$game_variables[902], $rates.last], [2, 2])
 
-# The relay's push of a new difficulty.
+# The relay's push changes the world's difficulty.
 $routes[MGQ_MpOverworldSync::DIFFICULTY_FIELD].call(nil, MGQ_MpOverworldSync::DIFFICULTY_FIELD => "4")
 check("a push not from the relay is ignored", MGQ_MpWorld.difficulty, 2)
 $routes[MGQ_MpOverworldSync::DIFFICULTY_FIELD].call(nil, MGQ_MpOverworldSync::DIFFICULTY_FIELD => "4", :relay => true)
@@ -329,7 +379,7 @@ check("the relay's push changes the world's difficulty and says so", [MGQ_MpWorl
 $game_map.update
 check("which the next look plays on at once", [$game_variables[902], $rates.last], [4, 4])
 
-# The game's own difficulty choice and the Reaper's change.
+# The game's own difficulty choice and the Reaper's change set the world's.
 $data_common_events[110] = RPG::CommonEvent.new([RPG::EventCommand.new(122, 0, [902, 902, 0, 0, -2])])
 $data_common_events[146] = RPG::CommonEvent.new([RPG::EventCommand.new(117, 0, [110]), RPG::EventCommand.new(235, 0, [5])])
 $erased = []

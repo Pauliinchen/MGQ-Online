@@ -3,11 +3,11 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Gathered the mouse wheel's turns for the game script
-//      Paulinchen  2026-10-11: Told the Alt guard which character came with Alt, so Alt pressed alone never opens the window's menu
-//      Paulinchen  2026-10-08: Kept Alt from opening the window's menu while a text screen wants the keyboard, which stopped the game
-//                            - Kept the window's menu closed for an Alt press that began while a text screen wanted the keyboard, too
+//      Paulinchen  2026-10-11: Told the Alt guard which character came with Alt
+//      Paulinchen  2026-10-08: Kept Alt from opening the window's menu while a text screen wants the keyboard
+//                            - Kept the window's menu closed for an Alt press that began while typing
 //      Paulinchen  2026-10-07: Logged why the game cannot keep running in the background
-//                            - Caught what the window procedure's own work throws, logged once, and handed the message on all the same
+//                            - Caught and logged failures of the window procedure's own work
 //                            - Let the clipboard find the game's window
 //      Paulinchen  2026-09-29: Passed key presses and typed characters on to Keyboard while a text screen wants them
 //      Paulinchen  2026-09-28: Created
@@ -123,7 +123,8 @@ internal static unsafe partial class GameWindow
             return false;
         }
 
-        // The game may have started behind another application, which RGSS remembers until told otherwise.
+        // The game may have started behind another application, which RGSS remembers until told
+        // otherwise.
         PostMessageW(window, ActivateApp, 1, 0);
         return true;
     }
@@ -156,7 +157,7 @@ internal static unsafe partial class GameWindow
     /// mouse wheel's turns in <see cref="Wheel"/>.
     /// </summary>
     /// <remarks>
-    /// Nothing may throw out of it, since an exception crossing into the game ends it, so a failure of its own work is logged once and the message handed on.
+    /// Nothing may throw out of it, since an exception crossing into the game ends it.
     /// </remarks>
     /// <param name="window">The game's window.</param>
     /// <param name="message">The message.</param>

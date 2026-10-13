@@ -12,21 +12,27 @@
 
 require_relative "support"
 
+# Stands in for the game's color.
 class Color; def initialize(*); end; end
+# Stands in for the game's rectangle.
 class Rect; end
+# Stands in for a picture, telling when it is freed.
 class Bitmap
   def initialize(*); end
   def rect; Rect.new; end
   def fill_rect(*); end
   def dispose; @disposed = true; end
 end
+# Stands in for a viewport, of which only the depth is read.
 class Viewport; attr_accessor :z; def initialize; @z = 0; end; end
+# Stands in for a sprite, telling whether it shows and when it is freed.
 class Sprite
   attr_accessor :bitmap, :z, :visible
   def initialize(viewport = nil); @visible = true; end
   def dispose; @disposed = true; end
   def disposed?; @disposed; end
 end
+# Stands in for the screen, keeping its freezes and transitions in $screen.
 module Graphics
   def self.width; 640; end
   def self.height; 480; end
@@ -34,9 +40,12 @@ module Graphics
   def self.transition(*); $screen << :transition; end
 end
 $screen = []
+# Stands in for the loader's log, printing its lines.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
+# Stands in for world.rbx, a world open while $open is.
 module MGQ_MpWorld; def self.open?; $open; end; end
 
+# Stands in for the game's scene manager, its stack set by each test and its picture in $snapshot.
 module SceneManager
   @stack = []
   class << self; attr_accessor :scene; end
@@ -44,16 +53,23 @@ module SceneManager
 end
 $snapshot = Bitmap.new
 
+# Stands in for the scenes' base, counting its basic updates in $basic and fading as it ends and starts.
 class Scene_Base
   def update_basic; $basic += 1; end
   def terminate; Graphics.freeze; end
   def post_start; Graphics.transition(10); end
 end
+# Stands in for the map scene.
 class Scene_Map < Scene_Base; end
+# Stands in for the battle scene.
 class Scene_Battle < Scene_Base; end
+# Stands in for the title screen.
 class Scene_Title < Scene_Base; end
+# Stands in for the game over screen.
 class Scene_Gameover < Scene_Base; end
+# Stands in for a story scene.
 class Scene_Novel < Scene_Base; end
+# Stands in for the menus' base, whose background is the picture of the screen left.
 class Scene_MenuBase < Scene_Base
   attr_reader :background_sprite
   def create_background
@@ -62,11 +78,14 @@ class Scene_MenuBase < Scene_Base
   end
   def dispose_background; @background_sprite.dispose; end
 end
+# Stands in for the main menu.
 class Scene_Menu < Scene_MenuBase; end
+# Stands in for a menu with a background of its own.
 class Scene_Poker < Scene_MenuBase
   def create_background; @background_sprite = Sprite.new; @background_sprite.bitmap = Bitmap.new; end
 end
 
+# Stands in for the map's sprites, counting their updates.
 class Spriteset_Map
   attr_reader :viewport1, :viewport2, :viewport3, :updates
   def initialize; create_viewports; @updates = 0; end
@@ -76,6 +95,7 @@ class Spriteset_Map
   def disposed?; @disposed; end
 end
 
+# Stands in for the map, keeping each update's main flag and running its parallel event.
 class Game_Map
   attr_accessor :need_refresh, :need_refresh_autoplay_field, :map_id, :updates, :refreshed_with_music, :parallel
   def initialize; @map_id = 5; @updates = []; @need_refresh = false; end
@@ -86,9 +106,13 @@ class Game_Map
     @parallel.update if @parallel
   end
 end
+# Stands in for the game's timer, counting its ticks.
 class Game_Timer; attr_reader :ticks; def initialize; @ticks = 0; end; def update; @ticks += 1; end; end
 
+# An event command, of which only the code is read.
 Command = Struct.new(:code)
+# Stands in for the event interpreter, running its list in a fiber and keeping each code run in
+# @done.
 class Game_Interpreter
   attr_reader :done
   def initialize(list); @list = list; @done = []; end
@@ -106,15 +130,18 @@ class Game_Interpreter
     @fiber = nil
   end
   def execute_command; @done << @list[@index].code; end
+  # Runs the first command outside a fiber.
   def run_outside_fiber; @index = 0; execute_command; end
 end
 
+# Stands in for coop.rbx's tell and routes.
 module MGQ_MpCoop
   def self.tell(seat, field, value, fields = {})
     MGQ_MpOverworldSync::Link.send_to(seat, MGQ_MpOverworldSync::Me.encode({ field => value, "party" => Party.id }.merge(fields)))
   end
   def self.route(*); end
 end
+# Stands in for the world room's routes and hooks, ignored here.
 module MGQ_MpOverworldSync
   def self.route(*); end
   def self.on_tick(*); end

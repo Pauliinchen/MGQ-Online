@@ -2,24 +2,20 @@
 #  battles_balance_pvp.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-07: Logged what the balance changes per character as it starts, each hit it lowers and its end
-#      Paulinchen  2026-10-06: Let a check read the stats without the balance, and dropped active?, which only the tests asked
+#      Paulinchen  2026-10-07: Logged the balance's changes per character, its lowered hits and its end
+#      Paulinchen  2026-10-06: Added unbalanced and dropped active?
 #      Paulinchen  2026-10-04: Renamed from mp_balance_pvp.rbx
 #      Paulinchen  2026-10-03: Created
 #
 #----------------------------------------------------------------
 
-# The balance of a PvP battle. The game balances a character against monsters: it deals many times
-# its own HP in one hit, and stays alive by not being hit at all. Between two players that makes the
-# first hit or an untouchable team decide the battle, so while a PvP battle runs, skills deal what
-# they deal in a monster's hands, every character has more HP, one action takes only a part of a
-# character's HP however strong it is, and what kept a character from all harm keeps it from most
-# of it.
+# The balance of a PvP battle: while it runs, skills deal what they deal in a monster's hands, every
+# character has more HP, one action takes only a part of a character's HP however strong it is, and
+# what kept a character from all harm keeps it from most of it.
 #
-# Both games must use the same values, since the host's game works the battle out and the other
-# game shows it, so they are constants of the release and no setting.
-#
-# It must never interrupt the game, so every entry point rescues.
+# The game balances a character against monsters, so between two players the first hit or an
+# untouchable team would decide the battle; the values are constants, not settings, because the
+# host's game works the battle out and the other game only shows it.
 module MGQ_MpBalancePvp
   extend MGQ_MpLog
 
@@ -183,6 +179,7 @@ module MGQ_MpBalancePvp
   end
 
   # Lowers a stat a damage formula reads while the balance applies.
+  #
   # A skill that deals a share of max HP would otherwise grow with the HP the balance adds.
   #
   # @param param_id [Integer] The stat's id.
@@ -249,8 +246,10 @@ module MGQ_MpBalancePvp
   rescue
   end
 
-  # Installs the battle hooks. The game's plugins load after the Patch folder and define battle
-  # methods anew, so the hooks go in once every plugin is in.
+  # Installs the battle hooks.
+  #
+  # The game's plugins load after the Patch folder and define battle methods anew, so the hooks go
+  # in once every plugin is in.
   def self.install
     return if @installed
 
@@ -271,7 +270,9 @@ module MGQ_MpBalancePvp
     log("battle hooks FAILED: #{e.class}: #{e.message}")
   end
 
-  # Wraps the game's stats. The game reads them many times a frame, so the wrap is a plain alias.
+  # Wraps the game's stats.
+  #
+  # The game reads them many times a frame, so the wrap is a plain alias.
   def self.install_stats
     Game_BattlerBase.class_eval do
       alias_method :mgq_mp_balance_pvp_param, :param
@@ -310,7 +311,6 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # Installs the battle hooks as the game starts running.
   MGQ_MpHooks.before(SceneManager.singleton_class, :run, "battles_balance_pvp") { MGQ_MpBalancePvp.install }
 rescue => e
   MGQ_MpBalancePvp.log("SceneManager hook FAILED: #{e.class}: #{e.message}")

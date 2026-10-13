@@ -2,8 +2,8 @@
 //  ModFolder.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Removed PathOf, which nothing called
-//      Paulinchen  2026-10-01: Built the game's paths from the folder two above the mod folder, now that it is Patch\Multiplayer
+//      Paulinchen  2026-10-06: Removed PathOf
+//      Paulinchen  2026-10-01: Built the game's paths from the folder two above the mod folder
 //      Paulinchen  2026-09-30: Built paths the game script names relative to the game's folder
 //      Paulinchen  2026-09-28: Created
 //

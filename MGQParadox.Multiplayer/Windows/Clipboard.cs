@@ -2,8 +2,8 @@
 //  Clipboard.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Logged why the clipboard could not be written or read, with the Windows error
-//                            - Found the game's window through GameWindow, not through the process's main window
+//      Paulinchen  2026-10-07: Logged clipboard failures with the Windows error
+//                            - Found the game's window through GameWindow
 //      Paulinchen  2026-10-06: Read the clipboard's text no further than its memory goes
 //      Paulinchen  2026-09-28: Created
 //
@@ -15,7 +15,7 @@ using System.Runtime.InteropServices;
 namespace MGQParadox.Multiplayer.Windows;
 
 /// <summary>
-/// The Windows clipboard, which carries a join code when Discord's invites do not.
+/// The Windows clipboard, which the mod copies text to and pastes text from.
 /// </summary>
 internal static unsafe partial class Clipboard
 {

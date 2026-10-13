@@ -2,14 +2,14 @@
 //  worker.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Tested that the schedule checks the mod catalog every half hour and the mod releases otherwise, and that the directory tells only the world rooms with players online of a newer release, once
+//      Paulinchen  2026-10-12: Tested the schedules and the release notice to world rooms with players online
 //                            - Tested that the world directory, the mod catalog and the Raid World admin routes refuse a request without X-MGQ-Features
 //                            - Tested the update code on the 400 of a refused world room and the World Admin tool passing with 0.0.0-dev
-//                            - Tested that the Worker turns a game without X-MGQ-Features or below MIN_VERSION away with 426 before routing it, a WebSocket with the reason in X-MGQ-Refusal and a body read to its end first
-//                            - Tested a world room refused with 400 and no code, a request without X-MGQ-Version taken as 0.6.4 and the world directory and the mod catalog held to MIN_VERSION
-//                            - Tested that the reports object answers a report busy while it handles another, once it read the busy report body to its end
-//                            - Tested that a trade's sealed offers lie beside it, out of the list of trades, and go once it is cancelled
-//                            - Tested the directory's streamed downloads and their limit, a body without Content-Length read only up to its limit, and removals of more keys than storage deletes at once
+//                            - Tested that the Worker turns a game without X-MGQ-Features or below MIN_VERSION away with 426
+//                            - Tested a world room refused with 400, a request without X-MGQ-Version taken as 0.6.4 and the directory and mod catalog held to MIN_VERSION
+//                            - Tested that the reports object answers a report busy while it handles another
+//                            - Tested that a trade's sealed offers lie beside it and go once it is cancelled
+//                            - Tested streamed downloads, bodies read up to their limit and removals of many keys
 //                            - Tested that a game or peer the relay closed passes nothing on while its connection closes
 //                            - Created
 //

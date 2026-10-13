@@ -2,8 +2,8 @@
 #  ui_wheel.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Drew the hint under a wheel, which names Esc, the numpad's 0 and the wheel's hotkey, for both wheels
-#      Paulinchen  2026-10-06: Waited a moment before an arrow let go of a diagonal counts, since two arrows are seldom let go in the same frame
+#      Paulinchen  2026-10-11: Drew a close hint under both wheels
+#      Paulinchen  2026-10-06: Waited a moment before an arrow let go of a diagonal counts
 #                            - Spread a wheel's choices evenly over the directions the arrows point to
 #                            - Created
 #
@@ -32,7 +32,10 @@ module MGQ_MpWheel
   # Height of the hint under a wheel, see draw_hint.
   HINT_HEIGHT = 18
 
+  # The direction steady last reported.
   @steady = nil
+
+  # Frames one side of that diagonal has been held alone.
   @waited = 0
 
   # Finds the direction the arrows held point to, past the capture of the wheel's buttons.
@@ -79,8 +82,8 @@ module MGQ_MpWheel
     diagonal_row != 0 && diagonal_column != 0 && (row == 0 ? column == diagonal_column : column == 0 && row == diagonal_row)
   end
 
-  # Spreads a wheel's choices evenly over DIRECTIONS, clockwise from the top, so every count comes
-  # out mirror-symmetric: four take the sides, five add the two lower diagonals in place of the bottom.
+  # Spreads a wheel's choices evenly over DIRECTIONS, clockwise from the top, mirror-symmetric for
+  # every count.
   #
   # @param count [Integer] How many choices the wheel has, at most DIRECTIONS.size.
   # @return [Array<Symbol>] Each choice's direction, in the choices' order.

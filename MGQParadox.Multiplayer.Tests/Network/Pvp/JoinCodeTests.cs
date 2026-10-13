@@ -2,8 +2,8 @@
 //  JoinCodeTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Covered the join code of token and relay only, and telling codes of other versions
-//                            - Covered version 2 of the join code, with its relay and longer token
+//      Paulinchen  2026-09-29: Covered the join code of token and relay only and codes of other versions
+//                            - Covered version 2 of the join code
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------

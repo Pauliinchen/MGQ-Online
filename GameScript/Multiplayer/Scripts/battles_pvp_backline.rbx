@@ -3,7 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Listed the option among the settings of the Mod Config
-#      Paulinchen  2026-10-07: Registered the option through coop.rbx and named characters through battles_sync.rbx instead of copies of their helpers
+#      Paulinchen  2026-10-07: Registered the option through coop.rbx and named characters through battles_sync.rbx
 #                            - Logged the Backline's start, both sides' swaps and the commands they take away
 #      Paulinchen  2026-10-04: Renamed from mp_battles_pvp_backline.rbx
 #      Paulinchen  2026-10-03: Created
@@ -13,8 +13,6 @@
 # The Backline in a PvP battle: both players swap their Backline in with the battle's Party
 # command. A swap is chosen with the round's commands and stands from the round's start, and the
 # character swapped in gives no commands that round. It builds on battles_pvp.rbx.
-#
-# It must never interrupt the game, so every entry point rescues.
 module MGQ_MpBattlesPvp
   # The other side's characters outside its Frontline, the player's own swaps and what they cost,
   # and the option of the player who hosts.
@@ -333,7 +331,6 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # Installs the hooks as the game starts running.
   MGQ_MpHooks.before(SceneManager.singleton_class, :run, "battles_pvp_backline") { MGQ_MpBattlesPvp::Backline.install }
 rescue => e
   MGQ_MpBattlesPvp.log("SceneManager hook FAILED: #{e.class}: #{e.message}")

@@ -2,9 +2,9 @@
 #  world_save_export.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Read the menu's commands through MGQ_MpGame and left them alone when the menu has none, instead of raising into the game
-#      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
-#      Paulinchen  2026-10-07: Registered the menu's hooks through core_hooks.rbx instead of wraps of this script
+#      Paulinchen  2026-10-12: Read the menu's commands through MGQ_MpGame and left them alone when the menu has none
+#      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?
+#      Paulinchen  2026-10-07: Registered the menu's hooks through core_hooks.rbx
 #                            - Took the notice's depth from MGQ_MpUi
 #                            - Logged why a save is not copied and the thumbnail copied with it
 #      Paulinchen  2026-10-04: Renamed from mp_save_export.rbx

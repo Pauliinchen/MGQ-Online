@@ -2,30 +2,32 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Took a joining player's party_member_max only as a number, 0 for anything else, instead of failing to take them in
-#                            - Dropped an enemy of the host's changed troop whose id, place or mark is no number, logged once, instead of failing on every such troop
-#                            - Kept every enemy of the host's changed troop at its place, replacing a place or mark that is no number, and kept the player's own troop for an enemy whose id is no enemy of this game, since the host's stream names enemies by their place
-#      Paulinchen  2026-10-11: Asked the player's party members near along in the notification box when their encounter or their choice joins a battle outside the party: to join it with the player where it has room for them all, else to start a battle with the player instead
-#                            - Took an encounter in with as many of the players it brings and of its enemies as the battle has room for, instead of refusing it whole, and let those left out walk on
-#                            - Let a random encounter ask only a running battle that takes players in, bringing along no more players than it has room for
-#                            - Let a random encounter join only a running battle whose host stands near, as a Raid World invites only the players near
-#                            - Told the host in the battle's chat log of the players it took into its battle
-#      Paulinchen  2026-10-10: Named the raid boss's pools in the invite of players who join a battle that fights them late, and handed the pools an invite names to battles_raid_pool.rbx
-#                            - Told the battle the player fights, and its scene as a battle, also while its party command called the Library or Config
-#                            - Let an encounter join a battle that waits under the Library or Config while its player's window is in the background, whose state tells "away"
-#                            - Let the players an encounter brought along walk on once the running battle refused it, stayed silent or the request was taken back, unless the encounter invites them anew
-#                            - Counted every enemy of the troop toward TROOP_LIMIT, the fallen too, so the troop never holds more than it may
-#                            - Started the battle of the enemies a guest adds to its troop, entered them in the Library and gave a raid boss's pools their max HP, as the host does
-#      Paulinchen  2026-10-09: Added only the enemies of an encounter taken in that still find a place around the encounters still to join once enemies added after its request leave no room for them all, never more than the troop holds
-#                            - Told the guests the grown troop through battles_coop.rbx, which tells them every change of the troop once, and noted the troop a battle turned live with
-#                            - Let a guest transform, show or hide its enemies as the host's troop does, such as one that transformed or appeared, instead of building the whole troop anew
-#                            - Marked an enemy the game hid as it was eaten as fallen for the guests, who so count it among the defeated that pay out
-#                            - Sent the battle's enemy rates to the players it takes in, who fight with them
-#                            - Took in a player who asks with their own encounter while another request brought them along, instead of refusing them, and let them ignore that request's invite
-#                            - Took in a player who joins the battle by choice, without enemies, through battles_coop_join.rbx, and marked a boss battle in the invites of the players taken in
+#      Paulinchen  2026-10-12: Took a joining player's party_member_max only as a number
+#                            - Dropped an enemy of the host's changed troop whose id, place or mark is no number
+#                            - Kept every enemy of the host's changed troop at its place
+#      Paulinchen  2026-10-11: Asked the player's party members near along in the notification box
+#                            - Took an encounter in with as many players and enemies as the battle has room for
+#                            - Let a random encounter ask only a running battle that takes players in
+#                            - Let a random encounter join only a running battle whose host stands near
+#                            - Told the host in the battle's chat log of the players it took in
+#      Paulinchen  2026-10-10: Named the raid boss's pools in the invite of players who join late
+#                            - Told the battle the player fights also under the Library or Config
+#                            - Let an encounter join a battle that waits while its player is away
+#                            - Let the players an encounter brought along walk on once the running battle did not take it
+#                            - Counted every enemy of the troop toward TROOP_LIMIT, the fallen too
+#                            - Started the battle of the enemies a guest adds to its troop, as the host does
+#      Paulinchen  2026-10-09: Added only the enemies of an encounter taken in that still find a place
+#                            - Told the guests the grown troop through battles_coop.rbx
+#                            - Noted the troop a battle turned live with
+#                            - Let a guest transform, show or hide its enemies as the host's troop does
+#                            - Marked an enemy the game hid as it was eaten as fallen for the guests
+#                            - Sent the battle's enemy rates to the players it takes in
+#                            - Took in a player who asks with their own encounter while another request brought them along
+#                            - Took in a player who joins the battle by choice, without enemies
+#                            - Marked a boss battle in the invites of the players taken in
 #                            - Left the players whose state tells a battle out of those an encounter brings along
-#                            - Placed the enemies of an encounter taken in anew as its player joins, so they fill the places of enemies that fell meanwhile
-#                            - Laid the host's fallen new enemies down only once a guest lettered them, so the guest names them as the host does
+#                            - Placed the enemies of an encounter taken in anew as its player joins
+#                            - Laid the host's fallen new enemies down only once a guest lettered them
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -41,9 +43,8 @@
 # own as usual. Every game pays for the whole troop it fought, as in any co-op battle.
 #
 # Every game in a Raid World tells the battle it fights in its state (state_fields), so a player
-# who meets enemies knows whom to ask.
-#
-# It must never interrupt the game, so every entry point rescues.
+# who meets enemies knows whom to ask. It must never interrupt the game, so every entry point
+# rescues.
 module MGQ_MpBattlesHotjoin
   # Frames the player whose encounter asks to join a running battle waits for its host's answer,
   # three seconds.
@@ -84,8 +85,13 @@ module MGQ_MpBattlesHotjoin
   # late_entries.
   FALLEN = 2
 
+  # The encounters taken in whose players have not all joined yet.
   @pending = []
+
+  # The standing offers of party members to come along to a running battle, by their seat.
   @party_offers = {}
+
+  # The party members who said no to starting a battle with the player.
   @stays_out = []
 
   extend MGQ_MpLog
@@ -1236,8 +1242,8 @@ module MGQ_MpBattlesHotjoin
 
   # Places an encounter's enemies anew as its player joins, see add_enemies, around the places of
   # the encounters still to join. When the troop has no room for them all any more, such as after
-  # enemies added mid-battle by another mod, only the first of them that still find a place join
-  # it, none when no place is left.
+  # enemies added mid-battle, only the first of them that still find a place join it, none when no
+  # place is left.
   #
   # The places take_request found are never taken instead, since they may lie past TROOP_LIMIT now.
   #
@@ -1475,8 +1481,8 @@ module MGQ_MpBattlesHotjoin
     @called_off = false
   end
 
-  # Installs the hook on a method the game's plugins may define anew. Called once the first scene
-  # starts.
+  # Installs the hook on a method the game's plugins may define anew. Called as the game starts
+  # running.
   def self.install
     return if @installed
 
@@ -1510,8 +1516,8 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # Installs the hook as the game starts running. It wraps battles_sync_live.rbx's, which load
-  # later and so install first, so a battle turns live before its command phase opens.
+  # Installs the hook as the game starts running. It wraps battles_sync_live.rbx's hook, which
+  # loads later and so installs first, so a battle turns live before its command phase opens.
   MGQ_MpHooks.before(SceneManager.singleton_class, :run, "battles_coop_hotjoin") { MGQ_MpBattlesHotjoin.install }
 rescue => e
   MGQ_MpBattlesHotjoin.log("hooks FAILED: #{e.class}: #{e.message}")

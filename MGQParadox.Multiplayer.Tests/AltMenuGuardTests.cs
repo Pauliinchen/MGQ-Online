@@ -2,7 +2,7 @@
 //  AltMenuGuardTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-11: Checked that Alt pressed alone never opens the menu, and Alt with a letter does without typing
+//      Paulinchen  2026-10-11: Checked Alt pressed alone and Alt with a letter
 //      Paulinchen  2026-10-08: Created
 //
 //----------------------------------------------------------------

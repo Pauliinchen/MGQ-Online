@@ -2,24 +2,23 @@
 #  start_choice_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Expected the warning before a new player takes the creator's starting save, and none for the creator
-#                            - Stood in for Ini.load, which a world's folder reads world.ini through, and for the favourites in Player.ini
-#      Paulinchen  2026-10-11: Expected the created world's name followed by the screen's hint to confirm to enter it, and let the list stand-in take the world to put the cursor on
-#      Paulinchen  2026-10-09: Expected the longer call of mp_dir_create, which takes a Raid World's difficulty
-#                            - Expected Player's choice on the row Sharing companions takes in a Raid World's form, the call of mp_dir_create with
-#                              Turn off other mods, and loaded world_mods_parking.rbx, which the world screen calls
-#      Paulinchen  2026-10-08: Expected Player's choice in the form's World panel below Sharing companions, and the longer call of mp_dir_create
-#      Paulinchen  2026-10-07: Looked each DLL call's signature up in the export table of Multiplayer.rb
-#                            - Checked that every text of the save screen fits its line of help
+#      Paulinchen  2026-10-12: Expected the warning before a new player takes the creator's starting save
+#                            - Stood in for Ini.load and the favourites in Player.ini
+#      Paulinchen  2026-10-11: Expected the created world's name with the confirm hint and the cursor on it
+#      Paulinchen  2026-10-09: Expected the longer call of mp_dir_create
+#                            - Expected Player's choice beside Sharing companions and Turn off other mods, and loaded world_mods_parking.rbx
+#      Paulinchen  2026-10-08: Expected Player's choice below Sharing companions and the longer call of mp_dir_create
+#      Paulinchen  2026-10-07: Looked DLL signatures up in the export table of Multiplayer.rb
+#                            - Checked that every save screen text fits its help line
 #      Paulinchen  2026-10-06: Refused a DLL call whose arguments differ from its signature
 #                            - Expected the longer calls of mp_dir_create and mp_dir_edit
-#                            - Loaded world_mods.rbx, which the world screen calls
-#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
-#                            - Expected the button below the new rows of the form, and the longer call of mp_dir_create
+#                            - Loaded world_mods.rbx
+#      Paulinchen  2026-10-04: Followed the scripts to their new names
+#                            - Expected the button below the new form rows and the longer call of mp_dir_create
 #                            - Expected the shorter texts of the details' Start row
-#                            - Expected a new world to be left in the list as a favourite, and its creator asked where to start on entering it
-#                            - Gave the stand-in for the mod's base script its settings files, which the list's refresh reads
-#                            - Expected Player's choice beside Shared save in the form's Starting point panel
+#                            - Expected a new world kept as a favourite and its creator asked where to start
+#                            - Gave the base script stand-in its settings files
+#                            - Expected Player's choice beside Shared save
 #      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and ui.rbx
 #      Paulinchen  2026-10-02: Created
 #
@@ -34,23 +33,42 @@ require "fileutils"
 require "tmpdir"
 
 # Stand-ins for the game.
+
+# The game's scene base: returning to the last scene sets $returned.
 class Scene_Base; def return_scene; $returned = true; end; end
+# The game's base of menu scenes.
 class Scene_MenuBase < Scene_Base; end
+# The game's load screen.
 class Scene_Load < Scene_Base; end
+# The game's window base, which draws nothing.
 class Window_Base; def initialize(*); end; end
+# The game's window with a cursor.
 class Window_Selectable < Window_Base; end
+# The game's command window.
 class Window_Command < Window_Selectable; end
+# The game's name box of its text screen.
 class Window_NameEdit < Window_Base; end
+# The game's letter table of its text screen.
 class Window_NameInput < Window_Selectable; end
+# The game's color, which keeps nothing.
 class Color; def initialize(*); end; end
+# The game's sprite, which draws nothing.
 class Sprite; def initialize(*); end; end
+# The game's rectangle.
 Rect = Struct.new(:x, :y, :width, :height)
+# The game's title screen, which does nothing.
 class Scene_Title; def start; end; def create_command_window; end; def update; end; def terminate; end; end
+# The title screen's commands, which list nothing.
 class Window_TitleCommand; def make_command_list; end; end
+# The game's system sounds: each one played is added to $sounds.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
+# The game's scene manager: the scene called is recorded in $called.
 module SceneManager; def self.call(scene); $called = scene; end; end
+# The game's data manager, as far as its save files.
 module DataManager
+  # Saves nothing.
   def self.save_system; end
+  # The file of a slot, named as the game names it.
   def self.make_filename(index); format("Save/Save%02d.rvdata2", index + 1); end
 end
 
@@ -58,20 +76,38 @@ end
 $sounds = []
 $calls = []
 $dll = {}
+# The mod's base script: always available, never outdated, with a player named Me and an empty
+# world.ini.
 module MGQ_Multiplayer
+  # The DLL is always there.
   def self.available?; true; end
+  # The game is never outdated.
   def self.outdated?; false; end
+  # Leaves a text as it is.
   def self.clean(text); text; end
+  # A log that writes nothing.
   module Log; def self.write(_message); end; end
+  # The player Me, without favourites.
   module Player; def self.share; end; def self.name; "Me"; end; def self.keys_under(_prefix); []; end; end
+  # An ini file reader that reads every file as empty.
   module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; end
+  # Leaves a path as it is.
   def self.path(name); name; end
+  # The link to the DLL: records each call in $calls and reads its values from $dll.
   module Link
+    # A DLL function: a call is checked against its signature, recorded and answered with 1.
     Function = Struct.new(:name, :signature) do
+      # Checks a call's arguments against the signature, records the call in $calls and answers 1.
       def call(*args); check_dll_call(name, args); $calls << [name, signature, args]; 1; end
     end
+    # A DLL function with its signature from the export table of Multiplayer.rb.
     def self.function(name); Function.new(name, dll_signature(name)); end
+    # The DLL's value of a name, from $dll.
     def self.read(name, _size); $dll[name].to_s; end
+    # Reads a DLL answer: its name=value lines up to a blank line, and the rest as :payload.
+    #
+    # @param text [String] The answer.
+    # @return [Hash] The values by name, and the payload under :payload.
     def self.parse(text)
       head, payload = text.split("\n\n", 2)
       state = { :payload => payload.to_s }
@@ -92,6 +128,7 @@ load_script "world_screen"
 
 $started = []
 $start_error = nil
+# Records the world started in $started and answers $start_error.
 def MGQ_MpWorld.start(world, _scene); $started << world; $start_error; end
 
 # A small window of the world screen: keeps the commands it opened with and whether it takes input.
@@ -157,7 +194,7 @@ def new_scene
   scene
 end
 
-# The commands a window opened with, by their symbols.
+# The commands the start window opened with, by their symbols.
 #
 # @param scene [Scene_MpWorlds] The world screen.
 # @return [Array<Symbol>, nil] The symbols, nil while it is closed.
@@ -191,6 +228,7 @@ check("create hands Players choose to the DLL", $calls.last[0..1] + [$calls.last
 
 # What the details say.
 detail = Window_MpWorldDetail.allocate
+# A listed world with a starting save's state and whether its players choose.
 listed_as = lambda { |start, choose| MGQ_MpWorld::Directory::ListedWorld.new("w", 4, 0, "c", 0, "C", "W", start, [], false, choose) }
 check("details: choose with the creator's save", detail.start_text(listed_as.call("ready", true)), "Your choice: beginning, own or creator's save")
 check("details: choose without one", detail.start_text(listed_as.call("none", true)), "Your choice: beginning or own save")
@@ -208,7 +246,8 @@ Dir.mktmpdir do |root|
     world = MGQ_MpWorld::World.new("abcdef012345", "code" => "code", "name" => "Free")
     FileUtils.mkdir_p(world.folder)
 
-    # A world made with Player's choice: it is left in the list as a favourite, and its creator is asked on entering it.
+    # A world made with Player's choice: it is left in the list as a favourite, and its creator is
+    # asked on entering it.
     favourites = []
     MGQ_MpWorld::Favourites.define_singleton_method(:add) { |id| favourites << id }
     MGQ_MpWorld::World.define_singleton_method(:found) { |*| $found }

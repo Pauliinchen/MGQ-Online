@@ -3,8 +3,8 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-07: Kept only the newest 64 retired salts
-//      Paulinchen  2026-10-06: Authenticated each frame's target seat, which receivers check is theirs or everyone's
-//                            - Picked a new salt for each connection while keeping what the others sent, so frames seen before a reconnect are refused again
+//      Paulinchen  2026-10-06: Authenticated each frame's target seat
+//                            - Picked a new salt for each connection while keeping what the others sent
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -66,7 +66,7 @@ internal sealed class WorldCipher
     private const int KeySize = 32;
 
     /// <summary>
-    /// Size of an AES-GCM nonce: four empty bytes and the counter.
+    /// Size of an AES-GCM nonce.
     /// </summary>
     private const int NonceSize = 12;
 
@@ -239,7 +239,8 @@ internal sealed class WorldCipher
     }
 
     /// <summary>
-    /// Forgets the game that left a seat and refuses its frames from then on, since the seat may go to another game.
+    /// Forgets the game that left a seat and refuses its frames from then on, since the seat may go
+    /// to another game.
     /// </summary>
     /// <param name="seat">The seat.</param>
     public void Forget(int seat)
@@ -254,7 +255,8 @@ internal sealed class WorldCipher
     }
 
     /// <summary>
-    /// Refuses a salt from now on, forgetting the oldest retired one once there are more than <see cref="MaxRetired"/>. Called with the gate held.
+    /// Refuses a salt from now on, forgetting the oldest retired one once there are more than
+    /// <see cref="MaxRetired"/>. Called with the gate held.
     /// </summary>
     /// <param name="salt">The salt, as hexadecimal.</param>
     private void Retire(string salt)
@@ -285,7 +287,7 @@ internal sealed class WorldCipher
     }
 
     /// <summary>
-    /// Makes the nonce of a frame, unique per key and counter.
+    /// Makes the nonce of a frame, unique per key and counter: four empty bytes and the counter.
     /// </summary>
     /// <param name="counter">The frame's counter.</param>
     /// <returns>The nonce.</returns>

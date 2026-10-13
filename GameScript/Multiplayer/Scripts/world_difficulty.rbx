@@ -8,13 +8,10 @@
 
 # A Raid World's difficulty, which its creator sets for every player: each game in the world plays
 # on it from entering, loading a save and a new game on, and from the moment the creator or an
-# admin changes it. The game's own choice of the difficulty, at the start of a new game and at the
-# Reaper in Hades, which calls that choice, sets the world's instead.
+# admin changes it. The game's own choice of the difficulty sets the world's instead.
 #
-# The Labyrinth of Chaos, the Colosseum, the special bosses and the final battles set values of
-# their own for their fights, the same for every player, and keep the difficulty they replace to
-# put it back afterwards. While any of them has its values set, nothing here writes the difficulty
-# or works its enemy rates out again; the world's comes back once the game put its own back.
+# Fights with values of their own keep the difficulty they replace to put it back afterwards, so
+# nothing here writes the difficulty while one runs.
 module MGQ_MpWorldDifficulty
   # The game's difficulty, from -2 (VERY EASY) to 4 (PARADOX).
   VARIABLE = defined?(NWConst::Var::CURRENT_DIFFICULTY) ? NWConst::Var::CURRENT_DIFFICULTY : 902
@@ -48,6 +45,7 @@ module MGQ_MpWorldDifficulty
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "world difficulty"
 
+  # Frames since the last look whether the game plays on the world's difficulty.
   @frames = 0
 
   # Tells the difficulty the open Raid World sets for every player.

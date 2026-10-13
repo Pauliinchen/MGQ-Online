@@ -2,19 +2,15 @@
 //  bosses.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Kept each boss pool as the share of its raid max HP left, which every pooled battle's host reports turn by turn, instead of a count of kills
+//      Paulinchen  2026-10-10: Kept each boss pool as the share of its raid max HP left
 //      Paulinchen  2026-10-09: Created
 //
 //----------------------------------------------------------------
 
-// The raid bosses of a Raid World: one pool per story boss, whose HP the whole world shares. Every
-// battle fighting a boss reports what its players took off since its last report, as a share of
-// the boss's max HP, since each host's difficulty and mods set the boss's max HP in its own game.
-// The share left fills up again slowly; the report that empties it defeats the boss for the world
-// for good.
-//
-// The share left is kept as it stood at the last report and read lazily, so regeneration costs no
-// writes: only a report and an admin's reset write.
+// The raid bosses of a Raid World: one pool per story boss, whose HP the whole world shares. Each
+// battle reports its damage as a share of the boss's max HP, since each host's difficulty and mods
+// set that max HP in its own game. The share left is read lazily from the last report, so
+// regeneration costs no writes.
 
 import { badRequest, notFound, withJson } from "./http.js";
 import { CONTROL_CHARACTERS, isId } from "./ids.js";
@@ -32,7 +28,7 @@ export const BOSS_LIMITS = Object.freeze({
   maxPools: 500,
   // The battles each pool remembers with their last report, so a report sent again counts once.
   recentBattles: 32,
-  // The highest raid max HP a game may name; Void Image of Paradise reaches about 6e15 at tier 1 on Hell.
+  // The highest raid max HP a game may name.
   maxMax: 1e18,
   maxBodyLength: 4 * 1024,
   // Reports per player: a burst, then two a second, enough for a report per pool every two seconds
@@ -295,8 +291,9 @@ export class WorldBosses {
   }
 
   /**
-   * Reads every pool kept in the current shape; pools kept in kills before the shared HP read as
-   * never reported, so they never count.
+   * Reads every pool kept in the current shape; pools kept in kills read as never reported, so they
+   * never count.
+   *
    * @returns {Promise<BossPool[]>} The pools.
    */
   async pools() {

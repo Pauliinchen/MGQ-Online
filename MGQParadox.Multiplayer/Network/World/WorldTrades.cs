@@ -2,10 +2,10 @@
 //  WorldTrades.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Logged each commit as it starts and when a newer one replaced it, why a cancel, a done or a fetch did not start, a lost relay only once per commit, and each trade fetched
-//                            - Woke a commit's wait at once when a newer commit replaces it, and waited on the gate before each new try too
-//      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current, both shared with the world's other parts
-//                            - Cancelled a trade from its commit once the commit arrived, so a cancel that overtakes the commit still ends it
+//      Paulinchen  2026-10-07: Logged each commit, its replacement, refused starts, a lost relay once per commit and each trade fetched
+//                            - Woke a commit's wait when a newer commit replaces it and waited on the gate before each new try
+//      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current
+//                            - Cancelled a trade from its commit once the commit arrived
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -200,7 +200,8 @@ internal sealed class WorldTrades
     /// commit learns the outcome from the relay.
     /// </summary>
     /// <remarks>
-    /// The running commit of the trade cancels it again once its commit arrived, since this cancel may reach the relay first and find no trade.
+    /// The running commit of the trade cancels it again once its commit arrived, since this cancel
+    /// may reach the relay first and find no trade.
     /// </remarks>
     /// <param name="world">The world both players are in.</param>
     /// <param name="trade">The trade's id.</param>

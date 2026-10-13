@@ -2,11 +2,11 @@
 //  ModInstaller.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Logged each file's hash check, each file written or put back, and the files a zip holds that no catalog entry names
-//      Paulinchen  2026-10-06: Put every replaced file back when one cannot be written, so a failed install leaves the old version whole
-//                            - Deleted the files an older version of a zip mod shipped that the installed one no longer has
-//                            - Refused a zip that holds a file twice, as the relay does
-//                            - Read a zip whose files sit in a Patch folder, to extract into the game folder
+//      Paulinchen  2026-10-07: Logged hash checks, files written or put back, and zip files the catalog does not name
+//      Paulinchen  2026-10-06: Put every replaced file back when one cannot be written
+//                            - Deleted files that an older version of a zip mod shipped
+//                            - Refused a zip that holds a file twice
+//                            - Read a zip whose files sit in a Patch folder
 //                            - Installed a link to a zip of a release like an upload, and read zips written with backslashes
 //                            - Created
 //
@@ -21,11 +21,12 @@ using System.Linq;
 namespace MGQParadox.Multiplayer.Mods;
 
 /// <summary>
-/// Installs a world's mods into the game's Patch folder: every file is checked against the
-/// catalog's hash and kept in a folder of its own first, and only once every mod checked out are
-/// they moved into place, so a download that differs changes nothing; a file that cannot be
-/// written puts back the ones written before it.
+/// Installs a world's mods into the game's Patch folder.
 /// </summary>
+/// <remarks>
+/// Every file is staged and checked against the catalog's hash before any moves into place, so a
+/// download that differs changes nothing.
+/// </remarks>
 internal static class ModInstaller
 {
     /// <summary>

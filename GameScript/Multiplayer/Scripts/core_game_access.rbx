@@ -3,26 +3,26 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Named an event's page that applies now
-#                            - Named the map's viewports and character sprites, which the map's sprites of the mod are made in and follow
-#                            - Named the map scene's map name and medal windows, which the Leader HUD moves below itself
+#                            - Named the map's viewports and character sprites
+#                            - Named the map scene's map name and medal windows
 #                            - Named the map a vehicle stands on
 #      Paulinchen  2026-10-11: Named whether a forced move route moves a character
-#                            - Named the event's answer a battle ends with, which tells a story's battle
-#      Paulinchen  2026-10-10: Dropped the party's team, its temporary party with the personas it changed and the split party played, which only the raid boss's fall back read
-#                            - Named the game's HP bar of an enemy's sprite, which the raid boss's bar moves down
-#      Paulinchen  2026-10-09: Named the party's team, its temporary party with the personas it changed, and the split party played
+#                            - Named the event's answer a battle ends with
+#      Paulinchen  2026-10-10: Dropped the party's team, temporary party and split party
+#                            - Named the game's HP bar of an enemy's sprite
+#      Paulinchen  2026-10-09: Named the party's team, temporary party and split party
 #      Paulinchen  2026-10-08: Named whether a battle allows escaping and losing
 #                            - Named a battle's phase and the troop it fights
 #      Paulinchen  2026-10-07: Named the counters the game keeps per state, the turns held and the steps left
 #                            - Named an interpreter's event and map, the trades a save keeps and the title screen's command closing
-#      Paulinchen  2026-10-06: Left scene_changing? out of the private methods, since the game makes it public
-#                            - Named a battler's counters, which hold its barriers, and whether a battle starts with a first strike or a surprise
-#                            - Named whether the map's menu was asked for, and the entries of the game's switches and variables
-#                            - Found the database's items, weapons and armors by the letter of their kind, for every script that writes items as text
-#                            - Named the party's own companions, past a story's temporary party
-#                            - Named the title screen's commands, which show whether the player backed out of a world's new game
-#      Paulinchen  2026-10-04: Named a character's levels, which the level sync reads
-#                            - Counted a battle's acting battler as set only once needed, which ends the false log line about it
+#      Paulinchen  2026-10-06: Left scene_changing? out of the private methods
+#                            - Named a battler's counters and a battle's first strike and surprise
+#                            - Named the map's menu call and the entries of switches and variables
+#                            - Found database items by the letter of their kind
+#                            - Named the party's own companions
+#                            - Named the title screen's commands
+#      Paulinchen  2026-10-04: Named a character's levels
+#                            - Counted a battle's acting battler as set only once needed
 #                            - Named how deep an interpreter runs
 #                            - Named the command an interpreter runs
 #                            - Renamed from mp_game_access.rbx
@@ -31,9 +31,8 @@
 #
 #----------------------------------------------------------------
 
-# What the mod reads and writes of the game that the game keeps private: fields without accessors
-# and private methods, each named once here. When a game update renames one, this is the one place
-# to follow it, and the log names the field the game no longer has.
+# Reads and writes what the game keeps private, fields without accessors and private methods, each
+# named once here so a game update that renames one has a single place to follow.
 #
 # The game's classes are not reopened with accessors of the mod's own, which another mod's could
 # clash with.

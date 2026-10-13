@@ -3,46 +3,46 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Read the map's viewports and character sprites through MGQ_MpGame
-#      Paulinchen  2026-10-11: Made the line at the bottom left movable and widenable with the left Alt held, as "World status", its four rows kept, breaking the notices to its width and never narrower than two thirds of its default
-#                            - Drew the outline standing in for a follower in the shared style's member and text colors
-#                            - Named a ghost above its head in its player's color, through MGQ_MpUi::PlayerColor
-#                            - Showed a keyboard above a ghost whose player types, apart from the event's bubble
-#                            - Took the ping's colors, the dim party size and the font sizes from the shared style, and drew the icons of the labels and the status line through MGQ_MpUi.draw_icon
-#                            - Showed a ping past 999 ms as "999+ ms", and sized and drew the ping column of the party box and the World overview here, which it fits
-#                            - Wrote a party's title with its size here, which the party box and the World overview share
-#      Paulinchen  2026-10-09: Drew every other player's ghost solid in a Raid World, through ghost_opacity and SOLID_OPACITY
-#      Paulinchen  2026-10-08: Found the players on this map through MGQ_MpOverworldSync::Peers.on_this_map?, which the chat shares
-#                            - Showed a follower whose sprite this game lacks as the outline of Luka's sprite alone, instead of Luka, green while its player is in the player's party and white otherwise
-#                            - Loaded the graphics other players' games name through graphic, which remembers the files this game lacks for the last 64 names only
-#                            - Read Luka's sprite of the game's data once as the script loads instead of mid-frame
-#                            - Compared a ghost's and a follower's sprite with the one last sent without building a pair every frame
-#                            - Named a ghost above its head as the chat names its player, such as "Name (2)" for the second of two players sharing a name, drawn anew as players come and go
-#      Paulinchen  2026-10-07: Showed Luka's sprite of the game's data for a ghost whose sprite this game lacks, which kept the map's sprites from drawing
+#      Paulinchen  2026-10-11: Made the line at the bottom left movable and widenable with the left Alt held
+#                            - Drew the outline standing in for a follower in the shared style's colors
+#                            - Named a ghost above its head in its player's color
+#                            - Showed a keyboard above a ghost whose player types
+#                            - Took the colors and font sizes from the shared style and drew icons through it
+#                            - Showed a ping past 999 ms as "999+ ms" and sized the shared ping column here
+#                            - Wrote a party's title with its size here
+#      Paulinchen  2026-10-09: Drew every other player's ghost solid in a Raid World
+#      Paulinchen  2026-10-08: Found the players on this map through MGQ_MpOverworldSync::Peers.on_this_map?
+#                            - Showed a follower whose sprite this game lacks as the outline of Luka's sprite
+#                            - Remembered the graphics this game lacks for the last 64 names only
+#                            - Read Luka's sprite of the game's data once as the script loads
+#                            - Compared a ghost's and a follower's sprite without building a pair every frame
+#                            - Named a ghost above its head as the chat names its player
+#      Paulinchen  2026-10-07: Showed Luka's sprite for a ghost whose sprite this game lacks
 #                            - Took icons, white and the depths from MGQ_MpUi
 #                            - Logged each ghost shown and hidden, with the map and why
-#                            - Broke a notice longer than the status line into rows instead of cutting it off
-#      Paulinchen  2026-10-04: Stacked the labels of characters on one tile upwards, above the player's own ping
+#                            - Broke a notice longer than the status line into rows
+#      Paulinchen  2026-10-04: Stacked the labels of characters on one tile upwards
 #                            - Drew a notice's icon before its text
 #                            - Renamed from mp_overworld.rbx
-#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#      Paulinchen  2026-10-03: Sent messages and read the world through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #                            - Hid the ghost of a player whose connection is down
 #      Paulinchen  2026-10-02: Followed the map and its sprites through core_hooks.rbx
 #      Paulinchen  2026-10-01: Showed a party member's followers behind their ghost
-#                            - Showed the size of a player's party after their name and above the player's own head, and a crown for its leader
-#      Paulinchen  2026-09-30: Left the world's messages to overworld_sync.rbx, keeping what the player sees of the others
-#                            - Moved into Patch/Multiplayer/Scripts as overworld.rbx, which Multiplayer.rb loads
+#                            - Showed the size of a player's party and a crown for its leader
+#      Paulinchen  2026-09-30: Left the world's messages to overworld_sync.rbx
+#                            - Moved into Patch/Multiplayer/Scripts as overworld.rbx
 #                            - Called the battle and party scripts by their new names
-#                            - Kept a script's message's body, which co-op battles carry their data in
-#                            - Told scripts' messages apart before states, since some name a map too
+#                            - Kept a script's message's body
+#                            - Told scripts' messages apart before states
 #                            - Handed co-op battle messages to battles_coop.rbx and battles_sync.rbx
 #                            - Handed party event messages to coop_events.rbx
 #                            - Handed chest messages to coop_events.rbx
-#                            - Handed story messages to coop_story.rbx, routing scripts' messages through one table
+#                            - Handed story messages to coop_story.rbx through one routing table
 #                            - Told when the player entered their map, and handed NPC messages to coop_npcs.rbx
 #      Paulinchen  2026-09-29: Told the others while the player types in the chat
-#                            - Showed each player's ping, the own above the player's head and the others' beside their names
-#                            - Left parties to ui_actions.rbx, which it asks through Actions
+#                            - Showed each player's ping
+#                            - Left parties to ui_actions.rbx
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -59,7 +59,8 @@ module MGQ_MpOverworld
   # the same bubble on a state tile, which would not tell typing from an event at a glance.
   TYPING_ICON = 3930
 
-  # Icons of the game's icon set next to a ghost's name, by what its player does. Walking the map shows none.
+  # Icons of the game's icon set next to a ghost's name, by what its player does. Walking the map
+  # shows none.
   STATE_ICONS = {
     "battle" => 451,
     "event" => 4,
@@ -135,7 +136,8 @@ module MGQ_MpOverworld
   # Tells what marks a player's party: its size, and whether they lead it.
   #
   # @param player [MGQ_MpOverworldSync::Peers::Peer, Symbol] The player, :me for the player.
-  # @return [Array, nil] The size as "2 / 4" and whether they lead, nil outside a party of two or more.
+  # @return [Array, nil] The size as "2 / 4" and whether they lead, nil outside a party of two or
+  #   more.
   def self.party_badge(player)
     return nil unless defined?(MGQ_MpCoop)
 
@@ -158,7 +160,8 @@ module MGQ_MpOverworld
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "overworld"
 
-  # Writes a ping as it shows, such as "80 ms" or "999+ ms", with the color that says how good it is.
+  # Writes a ping as it shows, such as "80 ms" or "999+ ms", with the color that says how good it
+  # is.
   #
   # @param ping [String, Integer, nil] The milliseconds.
   # @return [Array, nil] The text and its color, nil for no ping.
@@ -240,8 +243,10 @@ module MGQ_MpOverworld
   end
 
   # Tells which sprite a ghost shows for one its player's game sent: that one, or Luka's of the
-  # game's data while this game lacks its file. A missing file raised in the map's sprites every
-  # frame, which kept the ghosts after it and the status line from drawing.
+  # game's data while this game lacks its file.
+  #
+  # A missing file raises in the map's sprites every frame, which keeps the ghosts after it and the
+  # status line from drawing.
   #
   # @param name [String] The sprite's file.
   # @param index [Integer] The sprite's index in the file.
@@ -434,9 +439,11 @@ end
 # A follower behind a party member's ghost: it steps where the one before it stood, as the game's
 # own followers do.
 class Game_MpGhostFollower < Game_Character
-  # Tells which outline the follower shows in place of its sprite, see MGQ_MpOverworld.follower_sprite.
+  # Tells which outline the follower shows in place of its sprite, see
+  # MGQ_MpOverworld.follower_sprite.
   #
-  # @return [Symbol, nil] The key of MGQ_MpOverworld::OUTLINE_COLORS, nil while it shows its own sprite.
+  # @return [Symbol, nil] The key of MGQ_MpOverworld::OUTLINE_COLORS, nil while it shows its own
+  #   sprite.
   attr_reader :outline
 
   # Creates the follower where the one before it stands.
@@ -804,7 +811,6 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # After the map's update, the ghosts on it move.
   MGQ_MpHooks.after(Game_Map, :update, "overworld") { MGQ_MpOverworld.update_ghosts }
 
   # After the map's sprites, a sprite and label per ghost on this map, a sprite per ghost's

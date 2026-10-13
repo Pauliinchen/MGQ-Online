@@ -2,42 +2,34 @@
 //  mods.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Stopped reading a release file from GitHub once it passes its size limit, instead of reading it in full first
-//                            - Read a mod again after its link was checked and kept only the check's result, so a change made meanwhile is no longer undone and a removed mod stays removed
+//      Paulinchen  2026-10-12: Stopped reading a release file from GitHub once it passes its size limit
+//                            - Read a mod again after its link was checked and kept only the check's result
 //                            - Kept a mod that a link replaces listed until the link was checked
-//                            - Refused a mod name with ':', whose key would share another mod's file pieces on Cloudflare
-//      Paulinchen  2026-10-09: Let admins mark any mod personal, which games never turn off, and add a mod by its name alone only to mark it personal
-//                            - Listed every personal mod for the games, checked or not, and left mods known by their name alone out of their list of mods
+//                            - Refused a mod name with ':'
+//      Paulinchen  2026-10-09: Let admins mark any mod personal and add a mod by its name alone
+//                            - Listed every personal mod for the games and left mods known by their name alone out of their list
 //                            - Kept whether a mod is personal when it changes between a link, an upload and a name
-//      Paulinchen  2026-10-08: Kept the Mod Config options of the newest version an admin's game sent, so an older copy no longer replaces a newer one's
-//      Paulinchen  2026-10-07: Kept the Mod Config options an admin's game sends from any version of a mod, until the current version's arrive
+//      Paulinchen  2026-10-08: Kept the Mod Config options of the newest version an admin's game sent
+//      Paulinchen  2026-10-07: Kept the Mod Config options an admin's game sends from any version of a mod
 //                            - Hashed an uploaded zip's files itself and refused an upload whose file list says otherwise
-//                            - Stopped inflating a zip entry past the size the zip says, so a lying header cannot fill the memory
-//                            - Answered an unknown sub-route with 404, and read ids, hashes, texts and bodies through ids.js and http.js
+//                            - Stopped inflating a zip entry past the size the zip says
+//                            - Answered an unknown sub-route with 404 and read ids, hashes, texts and bodies through ids.js and http.js
 //      Paulinchen  2026-10-06: Took the player's key from the X-MGQ-Player header too
-//                            - Read a mod's key in a request's address percent-decoded, as the games escape it
-//                            - Listed only checked mods for players, so a link the relay could not read yet keeps no game out
-//                            - Answered a request body that is too large with 413 instead of taking it for no admin's
+//                            - Read a mod's key in a request's address percent-decoded
+//                            - Listed only checked mods for players
+//                            - Answered a request body that is too large with 413
 //                            - Refused a zip that holds a file twice
-//                            - Kept the Mod Config options of a mod's current version, which an admin's game reads and sends
-//                            - Read a zip whose files sit in a Patch folder, to extract into the game folder
-//                            - Took a zip of a release too, laid out as in Patch, hashing each file inside
+//                            - Kept the Mod Config options of a mod's current version
+//                            - Read a zip whose files sit in a Patch folder
+//                            - Took a zip of a release, hashing each file inside
 //                            - Created
 //
 //----------------------------------------------------------------
 
 // The catalog of mods a world may require, the same on every server. Only the relay's admins add
-// mods: a single script or a zip laid out as in the game's Patch folder, by a download link on the
-// admins' GitHub, whose releases the relay checks on a schedule, or a mod of several files that an
-// admin uploads. The relay keeps a link mod's hash and version only, never the script, and never
-// runs anything it reads. Games compare their installed files with the catalog's hashes and
-// download what differs, checking every hash. An admin's game that has a mod's current version
-// sends the options the mod offers in Mod Config, which the relay keeps for the World Admin tool,
-// since only a running game can read them.
-//
-// An admin may mark a mod personal: a world that turns its players' other mods off leaves it on.
-// Such a mod may also be known by its name alone, with nothing to download, for a mod the admins
-// do not hand out themselves.
+// mods, by a download link on their GitHub or as an uploaded zip; of a link mod the relay keeps
+// only hashes and the version, and it never runs anything it reads. An admin's game sends a mod's Mod Config options,
+// which the relay keeps for the World Admin tool, since only a running game can read them.
 
 import { readLimited } from "./bodies.js";
 import { playerIdOf } from "./directory.js";
@@ -823,7 +815,7 @@ async function unpack(bytes, view, local, method, packedSize, size, name) {
  * header that lies about a small entry cannot fill the memory.
  *
  * @param {Uint8Array} packed The deflated bytes.
- * @param {number} size The size the zip claims, which the directory's limits already bound.
+ * @param {number} size The size the zip claims, which the catalog's limits already bound.
  * @param {string} name The entry's path, for the error.
  * @returns {Promise<Uint8Array>} The inflated bytes.
  */

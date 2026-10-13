@@ -2,43 +2,48 @@
 #  coop_gather_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that only a battle of the calling leader on the map the call leads to belongs to the call, while it stands
+#      Paulinchen  2026-10-12: Checked which battles belong to a leader's call
 #      Paulinchen  2026-10-11: Checked that a follow to another map shows the followers the map left behind hidden
 #                            - Stood in for the player's followers
 #                            - Checked that a map from 1000 on is found in the folder the game keeps it in
-#                            - Checked that the line above a member's head counts the seconds down before they come over, then names that they come once free, and that the leader's names the members still missing with the time the story holds
-#                            - Stood in for the line above the player's head with its doings and lapses, and for the members synced with the leader's story
+#                            - Checked the gathering lines above the heads of a member and the leader
+#                            - Stood in for the line above the head and the members synced with the story
 #      Paulinchen  2026-10-10: Checked that a Raid World's follow taken at once waits a minute for a busy player
-#                            - Checked that a follow taken in a Raid World names its teller and map while the player is on the way and after they arrived, until CALL_LAPSE_FRAMES passed
+#                            - Checked that a taken Raid World follow names its teller and map for a while
 #                            - Checked that a Raid World's teller in the story's battle holds nobody
-#                            - Checked that a loaded save forgets a teleport the player asked for, in place of the question where the leader stands
-#                            - Checked that only a player who watches a Raid World's teller and is not behind follows their story at once, and that any other is offered to follow in the notification box until they follow, decline, the telling ends, a minute passes or the world closes
+#                            - Checked that a loaded save forgets a teleport the player asked for
+#                            - Checked who follows a Raid World's teller at once and who is offered to
 #                            - Checked that a teleport to a map this game lacks tells the player so
-#                            - Checked that an offer to follow which comes before the teller's state tells them telling stands, that a follow accepted there waits a minute for a busy player, and that a leader's call taking over an asked teleport lapses as a call does
-#                            - Stood in for the notification box's offers, the free map, the reserved transfer and whether the player's story is behind
-#      Paulinchen  2026-10-09: Stood in for the warp ban of story_state.rbx, which names it now
-#                            - Stood in for MGQ_MpCoopEvents.tell_each, through which the story calls those it takes along in one message
-#                            - Checked that the story calls those it takes along in one message, keeps them through a moment between its events, and names its teller as the one the player follows
-#                            - Stood in for MGQ_MpOverworldSync::Peers.all, among whom the teller is found now
-#      Paulinchen  2026-10-08: Checked a Raid World: nobody is gathered, everyone on the map follows where the story moves its teller, only a player whose story matches stands still, and a teleport goes to where the story was told
-#                            - Checked that the story keeps telling the players it took along until they arrive, and that a teleport to the story takes over the warp ban there
-#                            - Checked that a teleport to the story goes to the endpoint the relay keeps, where this game saw the story told only while the relay keeps none
+#                            - Checked early follow offers, follows of a busy player and calls over teleports
+#                            - Stood in for the offers, the free map, the reserved transfer and a story behind
+#      Paulinchen  2026-10-09: Stood in for the warp ban of story_state.rbx
+#                            - Stood in for MGQ_MpCoopEvents.tell_each
+#                            - Checked how the story takes players along and names its teller
+#                            - Stood in for MGQ_MpOverworldSync::Peers.all
+#      Paulinchen  2026-10-08: Checked gathering, following and teleports to the story in a Raid World
+#                            - Checked the players taken along and the warp ban a story teleport takes
+#                            - Checked that a teleport to the story goes to the endpoint the relay keeps
 #      Paulinchen  2026-10-06: Created
 #
 #----------------------------------------------------------------
 
-# Covers coop_gather.rbx where time and the world end what it waits for: a leader's call lapses, and
-# a loaded save or the world closing forgets the calls, a teleport the player asked for and the
-# hold, since a loaded save sets the frame count back. In a Raid World nobody is gathered, and a
-# teleport goes to the story.
+# Covers coop_gather.rbx: a leader's call lapses, and a loaded save or the world closing forgets the
+# calls, a teleport the player asked for and the hold. In a Raid World nobody is gathered: players
+# follow the story's teller, and a teleport goes to the story.
 
 require_relative "support"
 
+# Stands in for the mod's log, printing each line.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
+# Stands in for RGSS graphics, whose frame count is $frame_count.
 module Graphics; def self.frame_count; $frame_count; end; def self.brightness; 255; end; end
+# Stands in for the game's event interpreter.
 class Game_Interpreter; def execute_command; end; end
+# Stands in for the game's map.
 class Game_Map; attr_accessor :map_id; def initialize; @map_id = 3; end; def update(main = false); end; end
+# Stands in for the game's player.
 class Game_Player
+  # The player's followers, shown while visible.
   Followers = Struct.new(:visible)
   attr_accessor :x, :y
   attr_reader :followers
@@ -51,28 +56,38 @@ class Game_Player
   def transfer?; false; end
   def make_encounter_count; end
 end
+# Stands in for the game's map scene.
 class Scene_Map; def update_call_menu; end; end
+# Stands in for the game's save loading.
 module DataManager; def self.extract_save_contents(contents); end; end
-# The line above the player's head, whose lapse stands in as the seconds left, which the checks read.
+# Stands in for the player's actions: the line above the player's head, whose lapses are the seconds
+# left, and the offers, kept in $offers.
 module MGQ_MpActions
+  # An entry of the notification box.
   Notice = Struct.new(:key, :text, :color, :action, :take, :decline, :mark)
   def self.own_doing_from(&doing); ($doings ||= []) << doing; end
   def self.lapse_in(frames); frames / 60.0; end
   def self.lapse_at(since, frames); lapse_in(since + frames - Graphics.frame_count); end
   def self.offer(offers); $offers = offers; end
 end
+# Stands in for the world's sync, keeping the tick handler and the notices shown.
 module MGQ_MpOverworldSync
+  # The other players in the world, each a Peer of a seat and the state they told.
   module Peers; Peer = Struct.new(:seat, :state); end
   def self.on_tick(&block); $tick = block; end
   def self.notice(text); ($notices ||= []) << text; end
 end
+# Stands in for the party, led by $leader, whose one member is $member.
 module MGQ_MpCoop
+  # Color of the invite line.
   INVITE_COLOR = :invite
+  # The party's members.
   module Party; def self.members; [$member]; end; end
   def self.party_leader; $leader; end
   def self.party_leading?; $leader == :me; end
   def self.in_party?; true; end
 end
+# Stands in for the shared story's events, whose messages land in $sent.
 module MGQ_MpCoopEvents
   def self.pvp_running?; false; end
   def self.tell(seat, kind, fields = {}); ($sent ||= []) << [seat, kind]; true; end
@@ -131,7 +146,7 @@ $frame_count += MGQ_MpCoopGather::CALL_LAPSE_FRAMES
 check("a leader's call that takes over a teleport the player asked for lapses as a call does",
       [gather.pending_call, $notices.last], [nil, "Leader's story started without you."])
 
-# The members synced with the leader's story, whom the leader's story waits for.
+# Stands in for the shared story, whose members synced with the leader's story are the party's.
 module MGQ_MpCoopStory; def self.synced_members; MGQ_MpCoop::Party.members; end; end
 $member = $leader
 $leader = :me
@@ -141,12 +156,14 @@ check("and the line above the leader's head names who is still missing, with the
       [gather.own_doing, $doings.map { |doing| doing.call }], [["Gathering: Leader", 30.0], [["Gathering: Leader", 30.0]]])
 $frame_count += 10 * 60
 check("counting it down", gather.own_doing, ["Gathering: Leader", 20.0])
+# A party of four members, none on the player's map.
 module MGQ_MpCoop::Party
   def self.members
     (1..4).map { |n| MGQ_MpOverworldSync::Peers::Peer.new(n + 1, { "name" => "Player #{n}", "map" => "9", "x" => "10", "y" => "10" }) }
   end
 end
 check("naming two missing members at most and how many more", gather.own_doing, ["Gathering: Player 1, Player 2 +2", 20.0])
+# The party of the one member again.
 module MGQ_MpCoop::Party; def self.members; [$member]; end; end
 DataManager.extract_save_contents({})
 check("until a save is loaded", gather.holding_story?, false)
@@ -156,19 +173,27 @@ check("the frames a moment has left count down from the frames given, into the p
       [200, -100, 350, true, false, false])
 
 # A Raid World gathers nobody: whoever is on the map watches.
+
+# Stands in for the world, a Raid World while $raid is set.
 module MGQ_MpWorld; def self.raid?; $raid; end; end
+# The world's sync in an open world, whose messages land in $told and whose map is free while
+# $map_free is set.
 module MGQ_MpOverworldSync
   def self.in_world?; true; end
   def self.who(peer); peer == :me ? "the player" : peer.state["name"].to_s; end
   def self.tell(seat, fields); $told << [seat, fields]; true; end
   def self.map_free?; $map_free; end
+  # The player, on their map since frame 2000.
   module Me; def self.map_since; 2000; end; def self.id; "me"; end; end
+  # The other players, kept in $peers.
   module Peers
     def self.present; $peers; end
     def self.all; $peers; end
     def self.on_this_map?(peer); peer.state["map"].to_i == $game_map.map_id; end
   end
 end
+# The shared story's events, telling while $telling and behind while $behind, which send through
+# coop_scope.rbx.
 module MGQ_MpCoopEvents
   def self.behind?; $behind; end
   def self.telling?; $telling; end
@@ -178,9 +203,9 @@ module MGQ_MpCoopEvents
   def self.tell(seat, kind, fields = {}); MGQ_MpCoop::Scope.tell(seat, "pevent", kind, fields); end
   def self.tell_each(peers, kind, fields = {}); MGQ_MpCoop::Scope.tell_each(peers, "pevent", kind, fields); end
 end
-# The switch that bans warping, as story_state.rbx names it.
+# Stands in for story_state.rbx, whose WARP_BAN names the switch that bans warping.
 module MGQ_MpStoryState; WARP_BAN = 100; end
-# How far each story is, as coop_story.rbx reads it.
+# How far each story is: markers read as coop_story.rbx reads them, the player's own in $own_markers.
 module MGQ_MpCoopStory
   def self.read_markers(text); values = text.to_s.split(","); values.size == 4 ? values.map(&:to_i) : nil; end
   def self.own_markers; $own_markers; end
@@ -338,7 +363,9 @@ check("the player's own telling notes the warp ban where they stand", [gather.st
 gather.forget
 $game_map.map_id = 3
 
-# The endpoint the relay keeps of the world's story, which world_story.rbx tells, wins.
+# The endpoint of the world's story that the relay keeps wins.
+
+# Stands in for world_story.rbx, whose endpoint the relay keeps is $relay_end.
 module MGQ_MpWorldStory; def self.endpoint; $relay_end; end; end
 $relay_end = [9, 7, 8, 2]
 check("a teleport to the story goes to the endpoint the relay keeps", gather.story_endpoint, [9, 7, 8, 2])
@@ -349,6 +376,10 @@ $relay_end = nil
 check("and where this game saw the story told while the relay keeps none", gather.story_endpoint[0], 3)
 
 # A call or a teleport to a map this game lacks is dropped, which the player is told.
+
+# Stands in for RGSS's load_data, which finds no file.
+#
+# @param path [String] The file.
 def load_data(path); raise Errno::ENOENT, path; end
 $map_free = true
 gather.come_to("Friend", [77, 1, 1, 2], false)
@@ -356,8 +387,16 @@ gather.update
 check("a teleport to a map this game lacks tells the player so", [gather.coming?, $notices.last, $game_player.reserved],
       [false, "Cannot teleport to Friend: this game has no map 77.", nil])
 
-# A map from 1000 on lies in a folder of its own, which only the game's own file name finds.
+# A map from 1000 on lies in a folder of its own, which only the game's map_file_name finds.
+
+# Stands in for the game's map file name, which keeps a map from 1000 on in Data/Map/Data.
+#
+# @param map_id [Integer] The map.
+# @return [String] The map's file.
 def DataManager.map_file_name(map_id); "Data/Map/Data/Map#{format('%03d', map_id % 1000)}.rvdata2"; end
+# Stands in for RGSS's load_data, which finds only map 1650's file.
+#
+# @param path [String] The file.
 def load_data(path); raise Errno::ENOENT, path unless path == "Data/Map/Data/Map650.rvdata2"; end
 check("a map from 1000 on is found where the game keeps it", [gather.map_file(1650), gather.map_known?(1650)], ["Data/Map/Data/Map650.rvdata2", true])
 class << DataManager; remove_method :map_file_name; end

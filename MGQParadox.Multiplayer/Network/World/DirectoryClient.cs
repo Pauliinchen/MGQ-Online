@@ -2,31 +2,31 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Named the version of this game in the X-MGQ-Version header of every request, which lets the relay turn away outdated games
-//      Paulinchen  2026-10-10: Named the dev feature in the X-MGQ-Features header of a development build, which lets it give a Raid World a starting save
-//      Paulinchen  2026-10-09: Made and changed a world with whether it turns other mods off, and read it from the list, by the world's type where the relay names none
-//                            - Read the mods the catalog marks personal, those of a name alone among them
+//      Paulinchen  2026-10-12: Named the version of this game in the X-MGQ-Version header of every request
+//      Paulinchen  2026-10-10: Named the dev feature in the X-MGQ-Features header of a development build
+//      Paulinchen  2026-10-09: Made, changed and listed worlds with whether they turn other mods off
+//                            - Read the mods the catalog marks personal
 //                            - Made and changed a Raid World with its difficulty, and read it from the list
-//      Paulinchen  2026-10-08: Read the answer of a status a route expects besides success, such as the 409 that hands back a Raid World's story
+//      Paulinchen  2026-10-08: Read the answer of a status a route expects besides success
 //                            - Named the Raid Worlds this game plays in the X-MGQ-Features header of every request
-//                            - Made worlds of a type, Classic or Raid, with how a Raid World shares companions, and read both from the list
+//                            - Made and listed worlds of a type, with how a Raid World shares companions
 //                            - Read whether the relay kept the Mod Config options sent, and the version whose options it keeps
-//      Paulinchen  2026-10-07: Logged every request with its method, route and outcome, and its time when it failed or was slow, a repeated request only once its outcome changed
-//                            - Sent the world's auth key in the X-MGQ-Auth header instead of the address, and kept the outcomes last logged to a bounded number
-//      Paulinchen  2026-10-06: Sent the player's key in the X-MGQ-Player header, and no longer in the addresses of the directory and the trades
-//                            - Wrote JSON without escaping letters beyond ASCII, which made long descriptions too large for the relay
+//      Paulinchen  2026-10-07: Logged every request with its outcome, a repeated one only when its outcome changes
+//                            - Sent the world's auth key in the X-MGQ-Auth header and bounded the outcomes last logged
+//      Paulinchen  2026-10-06: Sent the player's key in the X-MGQ-Player header
+//                            - Wrote JSON without escaping letters beyond ASCII
 //                            - Read the code a refusal names why with
 //                            - Committed, cancelled, read and finished trades, and listed those committed and not yet done
 //                            - Sent the Mod Config options of a catalog mod, and read the version they came from
-//                            - Sent a world's mod settings on their own, which the creator or an admin may, and no longer with the other changes
+//                            - Sent a world's mod settings on their own
 //                            - Read whether a link mod of the catalog is a zip
 //                            - Read the mod catalog and an uploaded mod's zip
 //                            - Made, changed and read worlds with the creator's hashes of required mods outside the catalog and its mod settings
-//      Paulinchen  2026-10-04: Read a world's lock without the mods, the game data and the rule for it, which the list tells
+//      Paulinchen  2026-10-04: Read a world's lock without the mods, the game data and its rule
 //                            - Replaced a world's game data
 //                            - Listed the hidden worlds named by their ids too
 //                            - Changed a world's seats, description and mods
-//                            - Made worlds with a description, the mods they need, the creator's game data and whether only games with the same data may enter, and read them
+//                            - Made and read worlds with a description, needed mods, the creator's game data and a strict rule
 //      Paulinchen  2026-10-02: Made worlds whose new players choose where to start, and read which worlds do
 //                            - Made worlds without a password, and read which worlds have none and which are featured
 //      Paulinchen  2026-09-30: Read whether the list was made for an admin
@@ -951,7 +951,7 @@ internal sealed record ListedWorld(string Id, string Name, int Seats, string Cre
 internal static class WorldType
 {
     /// <summary>
-    /// A world where each party plays its own story, as every world before Raid Worlds.
+    /// A world where each party plays its own story.
     /// </summary>
     public const string Classic = "classic";
 
@@ -991,7 +991,7 @@ internal static class WorldDifficulty
 internal static class CompanionSharing
 {
     /// <summary>
-    /// No companion is shared, and every Classic world.
+    /// No companion is shared, as in every Classic world.
     /// </summary>
     public const string Off = "off";
 

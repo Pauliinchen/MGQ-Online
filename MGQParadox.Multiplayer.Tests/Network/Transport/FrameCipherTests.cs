@@ -2,8 +2,8 @@
 //  FrameCipherTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Covered the host's salt, which turns a replayed guest away
-//      Paulinchen  2026-09-29: Covered the salt that gives each connection a key of its own
+//      Paulinchen  2026-10-06: Covered the host's salt
+//      Paulinchen  2026-09-29: Covered the salt of each connection
 //                            - Created
 //
 //----------------------------------------------------------------

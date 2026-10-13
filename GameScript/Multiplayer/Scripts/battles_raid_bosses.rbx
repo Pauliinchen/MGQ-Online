@@ -2,28 +2,26 @@
 #  battles_raid_bosses.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Counted 22 more story bosses as raid bosses, among them the four spirits, the Erubetie of the Forgotten Tower, and Queen Fairy, Queen Ant, Carmilla, Elizabeth, Sonya Mazda and Sonya Mainyu apart from the milestones they belonged to; Carmilla and Elizabeth only in the Vampire Castle
+#      Paulinchen  2026-10-11: Counted 22 more story bosses as raid bosses
 #                            - Moved Adramelech to tier 5 and Sonya Chaos to tier 4
 #                            - Moved Adramelech from tier 8 to tier 6 and Morrigan to tier 7
-#                            - Grouped the raid bosses by the story's sections, Part 1 to the Chaos route and the Chaos Domain, and found the section and the tier of a boss by its name
-#      Paulinchen  2026-10-10: Counted the Three Nobles of Black, fought before Black Alice and again before the Heavenly Knights of Part 3, as raid bosses
-#                            - Gave each raid boss a title for its HP bar, the group the game names it in
-#                            - Ranked the raid bosses in tiers 0 to 9, each with the factors it gives their stats: 50 times the max HP and 5 times the defense and magic defense at tier 0, down to 5 times the max HP and the game's defenses at tier 9
+#                            - Grouped the raid bosses by the story's sections and found a boss's section and tier by its name
+#      Paulinchen  2026-10-10: Counted the Three Nobles of Black as raid bosses
+#                            - Gave each raid boss a title for its HP bar
+#                            - Ranked the raid bosses in tiers 0 to 9, each with factors for their stats
 #                            - Counted the six one-time bosses of the Chaos Domain as raid bosses
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
 
 # The story's boss battles, by troop: the story milestone each belongs to, the highest base level
-# the milestone allows once beaten (its cap), and whether the troop is the fight's last phase. A
-# Raid World never lets a battle join a boss battle (battles_coop_hotjoin.rbx); the raid bosses'
-# pools count a fight on its last phase.
+# the milestone allows once beaten (its cap), and whether the troop is the fight's last phase; and
+# the raid bosses' tiers, sections and HP bar titles. A Raid World never lets a battle join a boss
+# battle (battles_coop_hotjoin.rbx); the raid bosses' pools count a fight on its last phase.
 #
-# The game keeps no list of its own: its events turn switch 22 on right before every story boss
-# battle and off right after it (see BOSS_SWITCH), and no story boss battle allows escaping or
-# losing. The table holds every phase of a fight with several, and the bosses a milestone's quest
-# fights before it. A boss outside the Level Cap mod's milestones is a milestone of its own, with
-# the cap the milestone before it set.
+# The game keeps no list of its own, only BOSS_SWITCH, so the table holds every phase of a fight
+# with several and the bosses a milestone's quest fights before it; a boss outside the Level Cap
+# mod's milestones is a milestone of its own, with the cap the milestone before it set.
 module MGQ_MpRaidBosses
   # The switch the game's events turn on right before every story boss battle and off right after
   # it, the one the game's ero offer in boss battles reads, which also covers the bosses outside the

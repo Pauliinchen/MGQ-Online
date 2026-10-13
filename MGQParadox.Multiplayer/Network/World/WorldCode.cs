@@ -63,7 +63,7 @@ internal sealed record WorldCode(string Token, string Relay, int Seats)
     /// Reads a code.
     /// </summary>
     /// <param name="text">The code, surrounding white space allowed.</param>
-    /// <returns>The code, or <see langword="null"/> when the text is none.</returns>
+    /// <returns>The code, or <see langword="null"/> when the text is not one.</returns>
     public static WorldCode? Parse(string? text)
     {
         var fields = (text ?? string.Empty).Trim().Split(FieldSeparator);

@@ -2,9 +2,9 @@
 //  JoinCode.cs
 //
 //  Changelog:
-//      Paulinchen  2026-09-29: Named only the token and the relay, since games meet at the relay only
+//      Paulinchen  2026-09-29: Named only the token and the relay
 //                            - Told a code of another mod version from no code at all
-//                            - Named the host's relay and lengthened the token, as version 2
+//                            - Named the host's relay and lengthened the token
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -73,7 +73,7 @@ internal sealed record JoinCode(string Token, string Relay)
     /// Reads a code.
     /// </summary>
     /// <param name="text">The code, surrounding white space allowed.</param>
-    /// <returns>The code, or <see langword="null"/> when the text is none.</returns>
+    /// <returns>The code, or <see langword="null"/> when the text is not one.</returns>
     public static JoinCode? Parse(string? text)
     {
         var fields = (text ?? string.Empty).Trim().Split(FieldSeparator);

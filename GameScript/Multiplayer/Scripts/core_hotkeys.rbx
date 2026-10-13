@@ -2,33 +2,28 @@
 #  core_hotkeys.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Logged every hotkey refused here, and not while the player types, whose letters would land in the log
-#                            - Added the hotkey that makes the Leader HUD small and large again, H unless bound
-#                            - Listed the hotkeys in their own group of the Mod Config, MGQ Online Hotkeys, apart from the settings
-#      Paulinchen  2026-10-11: Added the hotkey that opens the bug report, F3 unless bound
-#                            - Held every hotkey while a confirm box of the mod is open, which takes the press
-#      Paulinchen  2026-10-10: Told that the party box size hotkey also shows the battle's raid boss bar with or without its title and name
-#                            - Called every binding a hotkey in its help, and split the Party Box Size help into two lines
-#      Paulinchen  2026-10-09: Added the hotkey that joins the battle of a player nearby in a Raid World, J unless bound
-#      Paulinchen  2026-10-07: Logged the hotkeys bound as the game starts, each hotkey pressed and what it is for, and a setting that is no key
-#      Paulinchen  2026-10-04: Added the party box size key, Tab unless bound, and named Tab
-#                            - Added the emote wheel's key, E unless bound
+#      Paulinchen  2026-10-12: Logged every refused hotkey here
+#                            - Added the Leader HUD size hotkey
+#                            - Listed the hotkeys in their own Mod Config group
+#      Paulinchen  2026-10-11: Added the bug report hotkey
+#                            - Held every hotkey while a confirm box is open
+#      Paulinchen  2026-10-10: Mentioned the raid boss bar in the party box size help
+#                            - Called every binding a hotkey and split the Party Box Size help
+#      Paulinchen  2026-10-09: Added the join battle hotkey
+#      Paulinchen  2026-10-07: Logged the bound hotkeys, each press and unreadable settings
+#      Paulinchen  2026-10-04: Added the party box size hotkey and named Tab
+#                            - Added the emote wheel hotkey
 #                            - Renamed from mp_hotkeys.rbx
 #      Paulinchen  2026-10-03: Logged through MGQ_MpLog
-#                            - Added the keys that accept and decline the first invite of the notification box
-#                            - Renamed from mp_keys.rbx, with the module MGQ_MpHotkeys
+#                            - Added the accept and decline hotkeys
+#                            - Renamed from mp_keys.rbx with the module MGQ_MpHotkeys
 #      Paulinchen  2026-10-02: Created
 #
 #----------------------------------------------------------------
 
-# The hotkeys the player binds: what opens the action wheel, the emote wheel, the chat and the World
-# overview, what accepts and declines the first invite of the notification box, what makes the
-# party box small, what makes the Leader HUD small, what joins the battle of a player nearby in a
-# Raid World, and what opens the bug report. Each is a key binding in Mod Config Remake when it is
-# installed, listed in the group GROUP, and keeps its key in
-# Patch/Multiplayer/Player.ini, so it holds in every save and every world.
-#
-# It must never interrupt the game, so every entry point rescues.
+# The hotkeys the player binds. Each is a key binding in Mod Config Remake when it is installed,
+# listed in the group GROUP, and keeps its key in Patch/Multiplayer/Player.ini, so it holds in every
+# save and every world.
 module MGQ_MpHotkeys
   # The first words of every hotkey's row in the Mod Config, which list the hotkeys in a group of
   # their own, apart from the settings (see MGQ_MpUi::OPTION_PREFIX).
@@ -102,9 +97,10 @@ module MGQ_MpHotkeys
     log("bound #{BINDINGS[action].name} to #{label(action)} (key code #{code})")
   end
 
-  # Reports whether the key bound to an action went down since the last call for that key. A
-  # press while a confirm box of the mod is open goes to the box: the key is read, so the press is
-  # over, and nothing opens under the box.
+  # Reports whether the key bound to an action went down since the last call for that key.
+  #
+  # A press while a confirm box of the mod is open is read and dropped, so nothing opens under the
+  # box.
   #
   # @param action [Symbol] A key of BINDINGS.
   # @return [Boolean] Whether it went down.
@@ -126,8 +122,7 @@ module MGQ_MpHotkeys
     defined?(MGQ_MpUi::Confirm) && MGQ_MpUi::Confirm.open? ? true : false
   end
 
-  # Logs a hotkey pressed and what it is for. Not while the player types, whose letters would land
-  # in the log.
+  # Logs a hotkey pressed and what it is for.
   #
   # @param action [Symbol] A key of BINDINGS.
   def self.log_press(action)
@@ -135,12 +130,13 @@ module MGQ_MpHotkeys
   rescue
   end
 
-  # Logs why a hotkey pressed did nothing. Not while the player types, whose letters would land in
-  # the log, so every script that refuses a hotkey logs it here.
+  # Logs why a hotkey pressed did nothing, for every script that refuses one.
+  #
+  # Nothing is logged while the player types, whose letters would otherwise land in the log.
   #
   # @param action [Symbol] A key of BINDINGS.
   # @param reason [String] Why the hotkey did nothing.
-  # @return [nil]
+  # @return [nil] Always.
   def self.log_refusal(action, reason)
     log("hotkey #{label(action)} (#{BINDINGS[action].name}) ignored: #{reason}") unless $mgq_text_input
     nil
@@ -166,8 +162,8 @@ module MGQ_MpHotkeys
     defined?(ModConfigRemake::Keys) ? ModConfigRemake::Keys.name(key) : plain_name(key)
   end
 
-  # Names a key without Mod Config Remake 1.3.0, such as with an older version that bound it before:
-  # letters, digits, F keys and Tab by their own name.
+  # Names a key where Mod Config Remake 1.3.0 or later is missing: letters, digits, F keys and Tab
+  # by their own name, other keys by their code.
   #
   # @param code [Integer] Windows' code of the key.
   # @return [String] The name, such as "K", "F11" or "key 186".
@@ -180,8 +176,10 @@ module MGQ_MpHotkeys
     end
   end
 
-  # Adds a key binding per action to Mod Config Remake 1.3.0 or later. With an older version or the
-  # Mod Config Menu, which would show them as buttons that do nothing, the keys in Player.ini stay.
+  # Adds a key binding per action to Mod Config Remake 1.3.0 or later.
+  #
+  # Older versions and the Mod Config Menu would show them as buttons that do nothing, so they get
+  # none and the keys in Player.ini stay.
   def self.register
     log("hotkeys: #{summary}")
     unless defined?(ModConfigRemake::Keys)

@@ -2,8 +2,8 @@
 //  UpdateCheckTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Covered the version named to the relay, which leaves out the commit
-//      Paulinchen  2026-10-10: Covered that only the 0.0.0-dev stamp counts as a development build
+//      Paulinchen  2026-10-12: Covered the version named to the relay
+//      Paulinchen  2026-10-10: Covered telling a development build by its stamp
 //      Paulinchen  2026-09-30: Created
 //
 //----------------------------------------------------------------

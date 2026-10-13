@@ -4,21 +4,21 @@
 #  Changelog:
 #      Paulinchen  2026-10-12: Listed the option among the settings of the Mod Config
 #      Paulinchen  2026-10-11: Drew the line past a squad in the shared style's bad color
-#      Paulinchen  2026-10-10: Took a Raid World's squad for duels and co-op battles from the team's first three places, so a hidden squad member never brings the cut fourth along
-#      Paulinchen  2026-10-08: Gave every player one place on the Frontline and two on the Backline in a Raid World, in a party or not, the fourth place cut
-#                            - Capped party_member_max at 4 in a Raid World, once the companions past the fourth wait on standby, never for a story's temporary party
-#                            - Fought the player's own battles in a Raid World with one character on the Frontline and two on the Backline, the fourth out even when a squad member is hidden
-#                            - Brought only the squad to the duels and team duels of a Raid World, its Frontline alone to a duel without the Backline
-#                            - Moved Luka into the squad when fitting the team to a Raid World left him in the fourth place
+#      Paulinchen  2026-10-10: Took a Raid World's squad from the team's first three places
+#      Paulinchen  2026-10-08: Gave every player one Frontline and two Backline places in a Raid World
+#                            - Capped party_member_max at 4 in a Raid World
+#                            - Fought the player's own Raid World battles with the squad alone
+#                            - Brought only the squad to the duels and team duels of a Raid World
+#                            - Moved Luka into the squad when fitting the team to a Raid World
 #                            - Hid every follower in a Raid World
-#      Paulinchen  2026-10-07: Registered the followers' option through coop.rbx, and named the faces' and icons' sizes and columns
-#                            - Logged every player's share of the Frontline and the Backline and the followers' mode once they change
+#      Paulinchen  2026-10-07: Registered the followers' option through coop.rbx and named the face and icon sizes
+#                            - Logged every player's share and the followers' mode on change
 #      Paulinchen  2026-10-06: Took the party's leader from coop.rbx's party_leader
 #      Paulinchen  2026-10-04: Renamed from mp_coop_squad.rbx
-#      Paulinchen  2026-10-03: Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#      Paulinchen  2026-10-03: Sent messages and read the world through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Installed the hooks on the game's plugins through core_hooks.rbx
-#                            - Took whether the player plays in a party from coop.rbx, and dropped squad, which co-op battles count otherwise
+#                            - Took party membership from coop.rbx and dropped squad
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
@@ -29,12 +29,11 @@
 # and the rest are cut. Only the squad fights in co-op battles (battles_coop.rbx). The formation
 # screens show the squad's Frontline and Backline as the game shows its own, and the cut characters
 # monochrome under a line. On the map only each player's share of the Frontline follows them, or
-# nobody, as the leader chose in the Mod Config.
-#
-# A battle a player fights alone keeps their own full team, so nothing here changes the game's
-# party itself, except in a Raid World: there every player keeps a squad of one on the Frontline
-# and two on the Backline, in a party or not and in every battle, the team holds at most four (the
-# companions past them wait on standby), and nobody follows on the map.
+# nobody, as the leader chose in the Mod Config. A battle a player fights alone keeps their own
+# full team, so nothing here changes the game's party itself, except in a Raid World: there every
+# player keeps a squad of one on the Frontline and two on the Backline, in a party or not and in
+# every battle, the team holds at most four (the companions past them wait on standby), and nobody
+# follows on the map.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopSquad
@@ -66,8 +65,7 @@ module MGQ_MpCoopSquad
     LEADERS_ONLY => ["Leaders Only", "The players walk alone."],
   }
 
-  # Color of the line above the first character past a squad in the formation screens, the style's
-  # bad color.
+  # Color of the line above the first character past a squad in the formation screens.
   CUT_COLOR = MGQ_MpUi::Style::BAD
 
   # Shares of red, green and blue in a color's brightness, which a monochrome picture keeps.
@@ -85,8 +83,14 @@ module MGQ_MpCoopSquad
   # Width and height of an icon in the icon set, in pixels.
   ICON_SIZE = 24
 
+  # The player's share, the followers' mode and whether a Raid World is open, as tick last took
+  # them, nil outside a world.
   @shown = nil
+
+  # Monochrome copies of picture parts, by the picture's name and the part, see monochrome.
   @monochrome = {}
+
+  # The party fitted to a Raid World, which party_member_max caps, nil while no cap holds.
   @capped = nil
 
   extend MGQ_MpLog
@@ -239,6 +243,7 @@ module MGQ_MpCoopSquad
 
   # Reports whether a follower shows on the map: in a party only the player's share of the
   # Frontline, nobody when the party's leader chose the players alone, and nobody in a Raid World.
+  #
   # Reads the share and the choice tick took this frame, since the game asks for every follower
   # several times a frame.
   #
@@ -341,8 +346,8 @@ module MGQ_MpCoopSquad
   # and a loaded save bring a team of their own, which is fitted anew.
   #
   # The game cuts its party list down to party_member_max whenever it changes, so the cap holds
-  # only for a team fitted first. A team in a battle waits. A story's temporary party lifts the cap,
-  # and the team is fitted anew once it ends, since companions may have joined meanwhile.
+  # only for a team fitted first; the team is fitted anew after a story's temporary party, since
+  # companions may have joined meanwhile.
   #
   # @param raid [Boolean] Whether a Raid World is open.
   def self.fit_team(raid)
@@ -703,7 +708,6 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # Installs the hooks on the game's plugins as the game starts running.
   MGQ_MpHooks.before(SceneManager.singleton_class, :run, "coop_squad") { MGQ_MpCoopSquad.install }
 rescue => e
   MGQ_MpCoopSquad.log("SceneManager hook FAILED: #{e.class}: #{e.message}")

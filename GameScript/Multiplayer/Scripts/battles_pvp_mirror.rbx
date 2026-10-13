@@ -15,9 +15,8 @@
 # battles_pvp.rbx.
 
 module MGQ_MpBattlesPvp
-  # Logs/Mirror Match.log: each character of a mirror match next to its rebuild,
-  # outside of battle and at the first turn, every value that differs marked. Written anew for every
-  # match.
+  # Logs/Mirror Match.log: each character of a mirror match next to its rebuild, outside of battle
+  # and at the first turn, every value that differs marked. Written anew for every match.
   module MirrorReport
     # File inside the Logs folder.
     FILE = "Mirror Match.log"
@@ -76,7 +75,7 @@ module MGQ_MpBattlesPvp
       MGQ_MpBattlesPvp.log("mirror report failed: #{e.class}: #{e.message}")
     end
 
-    # Compares a character with its rebuild.
+    # Writes a character's part of a section, next to its rebuild.
     #
     # @param yours [Game_Actor] The player's character.
     # @param rebuilt [Opponent] Its rebuild.

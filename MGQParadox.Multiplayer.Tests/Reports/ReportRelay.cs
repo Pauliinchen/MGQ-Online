@@ -88,9 +88,7 @@ internal sealed class ReportRelay : IDisposable
         }
     }
 
-    /// <summary>
-    /// Stops the relay.
-    /// </summary>
+    /// <inheritdoc />
     public void Dispose()
     {
         Release.Set();

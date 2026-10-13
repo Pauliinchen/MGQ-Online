@@ -2,49 +2,49 @@
 #  ui_actions.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #                            - Read the map's viewports and character sprites through MGQ_MpGame
-#      Paulinchen  2026-10-11: Framed the wheel's boxes in the preset's colors, the picked one lit inside its frame, drawn anew once the preset changes
-#                            - Drew the wheel and the line above the player's own head in the shared style, fading them in and out, with the hint under the ring the wheels share, which names Esc, the numpad's 0 and the wheel's hotkey
-#                            - Made the line half the screen wide and cut it and a choice's text to their room, the line without its seconds once they make it too wide
-#                            - Drew the wheel's hint whole through the shared style, so a rebound key's longer name never cuts it, and its icons through MGQ_MpUi.draw_icon
-#                            - Showed the seconds left after a doing in the line above the player's own head, which a script names with the moment it lapses, also counted from a moment in frames
-#                            - Left a line or doing that fails out of the line, logged once, instead of losing the line and the wheel
-#                            - Told whether a screen of the mod lies over the map, which the edge arrows ask
-#      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
-#                            - Listed the choices of another player's menu and of the player's own here, which the World overview and the chat share
+#      Paulinchen  2026-10-11: Framed the wheel's boxes in the preset's colors
+#                            - Drew the wheel and the own line in the shared style with fades and the shared hint
+#                            - Made the own line half the screen wide and cut texts to their room
+#                            - Drew the wheel's hint whole and its icons through MGQ_MpUi.draw_icon
+#                            - Showed the seconds left after a doing in the own line
+#                            - Left a failing line or doing out of the own line
+#                            - Told whether a screen of the mod lies over the map
+#      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?
+#                            - Listed the choices of the player menus here
 #      Paulinchen  2026-10-07: Took the icon rect, white and the depths from MGQ_MpUi
-#                            - Logged the action wheel opening with its choices and closing with why, each choice taken or refused, a wheel key that went elsewhere, and the line above the player's head
-#      Paulinchen  2026-10-06: Kept the choice pointed at last once the arrows are let go, instead of going back to the middle, and the diagonal while its arrows are let go one after the other
-#                            - Built the wheel's ring from the choices the scripts register by order, spread over the arrows' eight directions, instead of four fixed sides
-#                            - Pointed at a choice with the arrows held, like a joystick, and at the middle while no arrow or a diagonal is held
+#                            - Logged the action wheel, its choices and the own line
+#      Paulinchen  2026-10-06: Kept the last pointed choice once the arrows are let go
+#                            - Built the wheel's ring from registered choices over eight directions
+#                            - Pointed at a choice with the arrows held
 #      Paulinchen  2026-10-04: Renamed from mp_actions.rbx
-#      Paulinchen  2026-10-03: Took the wheel's choices, the own line and what lies over the map from what the later scripts register, and kept their offers for the World overview and the notification box
+#      Paulinchen  2026-10-03: Took the wheel's choices, the own line and the covering screens from later scripts
 #                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
-#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Sent messages, showed notices and read the world through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
-#                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
-#      Paulinchen  2026-10-02: Opened the wheel with the key the player bound, and named the bound keys of the chat and the World overview
+#                            - Read the bound keys through MGQ_MpHotkeys
+#      Paulinchen  2026-10-02: Opened the wheel with its bound hotkey
 #                            - Followed the map and its sprites through core_hooks.rbx
-#                            - Took a choice through MGQ_MpActions.choose, which the World overview shares
-#      Paulinchen  2026-10-01: Showed a globe in a small square box in the wheel's middle instead of its text
+#                            - Took a choice through MGQ_MpActions.choose
+#      Paulinchen  2026-10-01: Showed a globe in the wheel's middle
 #                            - Refused to invite into a full party or to accept the invite of one
-#                            - Challenged the players nearby to a duel, or accepted their challenge, on the wheel's right
-#                            - Opened the World overview from the wheel's middle, where the wheel now opens
-#                            - Left the keys to the World overview while it is open, whose B closes it
+#                            - Added duel challenges to the wheel
+#                            - Opened the World overview from the wheel's middle
+#                            - Left the keys to the World overview while it is open
 #                            - Let only the party's leader invite
 #                            - Showed the wait for the party's story scene above the player's own head
-#      Paulinchen  2026-09-30: Left the chat to ui_chat.rbx, keeping the wheel's chat choice
-#                            - Left the party to coop.rbx, keeping the wheel's party choices
-#                            - Registered with overworld_sync.rbx for its messages instead of being asked by overworld.rbx
-#                            - Moved into Patch/Multiplayer/Scripts as ui_actions.rbx, which Multiplayer.rb loads
-#                            - Found the party's leader, the member who made the party
-#                            - Gave the chat box a blinking cursor, moved with the arrows, Home and End, with Delete
+#      Paulinchen  2026-09-30: Left the chat to ui_chat.rbx
+#                            - Left the party to coop.rbx
+#                            - Registered with overworld_sync.rbx for its messages
+#                            - Moved into Patch/Multiplayer/Scripts as ui_actions.rbx
+#                            - Found the party's leader
+#                            - Gave the chat box a blinking cursor
 #      Paulinchen  2026-09-29: Told overworld.rbx while the player types in the chat
 #                            - Showed the chat box's text as it is typed
 #                            - Left room right above the player's head for their ping
-#                            - Added chat, opened with T or the wheel: a bubble above the sender and a log at the bottom left
-#                            - Opened an action wheel with B, which invites, accepts, leaves the party, and holds chat and duels
+#                            - Added chat with bubbles and a log
+#                            - Added an action wheel opened with B
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -56,7 +56,7 @@
 # builds on ui_wheel.rbx, which reads the arrows, and overworld_sync.rbx, which knows the other
 # players.
 #
-# It must never interrupt the game, so every entry point rescues.
+# It must never interrupt the game, so its per-frame work rescues.
 module MGQ_MpActions
   # Pixels kept free right above the player's head, where overworld.rbx shows their ping.
   HEAD_ROOM = 16
@@ -92,11 +92,22 @@ module MGQ_MpActions
   # How the seconds left are written after a doing in the line above the player's own head.
   TIME_LEFT = " (#{MGQ_MpUi::SECONDS_TEXT})"
 
+  # The registered offers between two players, see offer.
   @offers = []
+
+  # The ring's choices as [order, registration index, block], sorted, see wheel_choice.
   @choices = []
+
+  # The block that fills the wheel's middle, nil while none does.
   @center = nil
+
+  # The blocks that say the own line, see own_line_from.
   @lines = []
+
+  # The blocks that name a doing, see own_doing_from.
   @doings = []
+
+  # The blocks that tell whether a screen lies over the map, see cover.
   @covers = []
 
   extend MGQ_MpLog
@@ -248,7 +259,7 @@ module MGQ_MpActions
   #
   # @param doing [String, Array] The doing, see own_doing_from.
   # @param now [Time] The moment the seconds count from.
-  # @return [Array(String, String)] The text alone, the log's key, and the text as shown.
+  # @return [Array(String, String)] The text alone, which the log keys on, and the text as shown.
   def self.doing_text(doing, now = Time.now)
     text, lapse = doing.is_a?(Array) ? doing : [doing, nil]
     seconds = lapse.is_a?(Time) ? (lapse - now).ceil : 0
@@ -358,7 +369,10 @@ module MGQ_MpActions
     # The choice over the player.
     CENTER = :CENTER
 
+    # Whether the wheel is open.
     @open = false
+
+    # The direction whose choice is picked.
     @selected = CENTER
 
     # Reports whether the wheel is open.
@@ -675,7 +689,6 @@ begin
   # scene change is in the way.
   MGQ_MpHooks.after(Scene_Map, :update_scene, "ui_actions") { MGQ_MpActions.on_map unless scene_changing? }
 
-  # After the map's sprites, the line above the player's own head and the action wheel around them.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_actions") do
     @mgq_mp_own_line ||= Sprite_MpOwnLine.new(MGQ_MpGame.get(self, :viewport1))
     @mgq_mp_wheel ||= Sprite_MpActionWheel.new(MGQ_MpGame.get(self, :viewport3))

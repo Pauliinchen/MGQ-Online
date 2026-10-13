@@ -2,14 +2,14 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that the relay's notice shows red between slashes in every tab, while a player of its name or an admin of another stays as before
+#      Paulinchen  2026-10-12: Checked the relay's notice in red between slashes
 #                            - Checked the open log scrolled with the mouse wheel and its scrollbar
-#                            - Checked that every chat tab, the help's too, goes back to All with the global chat as the world closes, and that the player's own line shows after it
-#      Paulinchen  2026-10-11: Checked that the dimmed tabs go with the closed log's last line, though a chat holds unread lines
-#                            - Expected the chat to start in the global chat, and to return to it once the world closes
-#                            - Checked the chat log's places in the layout: its default from chat_size, a kept place honored, its least size, its rows from its height, the battle's box apart, and every hint and tab fitting the least width
-#                            - Checked the open chat drawn in the preset's frame, open under the picked tab, anew once the preset changes, and no resizing of its own left
-#                            - Checked the map chat chosen with /m, /s sent as text, the global chat untagged in white, a line marked say landing in the map chat, and the Whisper tab hidden until a whisper and again once the world closes
+#                            - Checked every chat tab going back to All as the world closes
+#      Paulinchen  2026-10-11: Checked the dimmed tabs with the closed log's last line
+#                            - Expected the chat to start in and return to the global chat
+#                            - Checked the chat log's places in the layout
+#                            - Checked the open chat drawn in the preset's frame
+#                            - Checked the map chat, /s, the untagged global chat and the Whisper tab
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -183,6 +183,8 @@ check("the next frame buzzes again", $sounds, ["buzzer"])
 chat.stop_typing
 
 # The tabs above the closed log while one holds unread lines.
+
+# The game's sprite, which updates nothing.
 class Sprite; def update; end; end
 font = Struct.new(:color, :size, :outline, :bold).new
 parts = []
@@ -197,6 +199,7 @@ canvas.define_singleton_method(:rect) { Rect.new(0, 0, 400, 154) }
 canvas.define_singleton_method(:width) { 400 }
 canvas.define_singleton_method(:height) { Sprite_MpChatLog::TAB_ROW + Sprite_MpChatLog::ROW * 7 }
 canvas.define_singleton_method(:dispose) {}
+# The game's picture, whose new one is always the canvas above.
 Bitmap = Struct.new(:width, :height)
 Bitmap.define_singleton_method(:new) { |*_| canvas }
 depth = Struct.new(:z).new(100)
@@ -210,7 +213,9 @@ log_sprite.define_singleton_method(:y=) { |_| }
 log_sprite.define_singleton_method(:draw_unread_glow) { |right| events << [:glow, right] }
 { :@layout_id => :chat, :@wrapped => {}, :@tab_spots => [], :@name_spots => [], :@size => [400, 6], :@width => 400, :@rows => 6, :@bottom_room => 96, :@resting_z => 100,
   :@menu_sprite => Struct.new(:visible, :bitmap, :x, :y, :z).new(false) }.each { |name, value| log_sprite.instance_variable_set(name, value) }
+# The tab names drawn.
 tab_names = lambda { parts.map { |_, text, _| text } & MGQ_MpChat::TAB_NAMES.values }
+# The fills in the closed log's shade.
 shades = lambda { events.select { |kind, args| kind == :fill && args[4].equal?(Sprite_MpChatLog::CLOSED_SHADE) } }
 
 chat.start_typing
@@ -250,8 +255,12 @@ check("the All tab takes the lines as seen, after which the closed log draws no 
 
 # A line of the closed log fades over its last frames, each part of it at the same alpha; the open
 # log fades nothing.
+
+# The game's color, which keeps its values.
 class Color
+  # Its values, nil where not given.
   attr_reader :red, :green, :blue, :alpha
+  # Creates a color.
   def initialize(red = nil, green = nil, blue = nil, alpha = nil); @red, @green, @blue, @alpha = red, green, blue, alpha; end
 end
 going = chat.log_entries.last
@@ -274,6 +283,7 @@ going.left = MGQ_MpChat::LOG_FRAMES
 (1..12).each { |n| chat.system("wheel line #{n}") }
 chat.start_typing
 log_sprite.update
+# The scrollbar's fills, each x, y, width and height.
 bars = lambda { events.select { |kind, args| kind == :fill && args[2] == MGQ_MpUi::Style::SCROLLBAR_WIDTH }.map { |_, args| args[0, 4] } }
 total = chat.log_entries.size
 thumb = 6 * 19 * 6 / total
@@ -381,35 +391,56 @@ check("as does a whisper chosen from a player's menu", [chat.tabs.last, chat.cha
 layout = MGQ_MpUi::Layout
 style = MGQ_MpUi::Style
 log_class = Sprite_MpChatLog
+# The game's viewport, as far as its depth.
 class Viewport; attr_accessor :z; def dispose; end; end
+# The game's sprite, with its picture, place, depth and viewport.
 class Sprite
+  # Its picture, place, depth and whether it shows.
   attr_accessor :bitmap, :x, :y, :z, :visible
+  # The viewport it lies in.
   attr_reader :viewport
+  # Creates a visible sprite at the top left.
   def initialize(viewport = nil); @viewport = viewport; @x = @y = @z = 0; @visible = true; end
+  # Frees nothing.
   def dispose; end
 end
 # A picture that keeps its size and records its fills and texts.
 class Picture
+  # The picture's font.
   Font = Struct.new(:size, :color, :bold, :outline, :out_color)
+  # Its size, its font, and the fills and texts drawn, each with its place and size.
   attr_reader :width, :height, :font, :fills, :texts
+  # Creates an empty picture in a font of 16.
   def initialize(width, height); @width, @height = width, height; @font = Font.new(16); @fills = []; @texts = []; end
+  # Measures a text as VL Gothic does: half the size for an ASCII character, the whole size for others.
   def self.measure(text, size); text.to_s.each_char.inject(0) { |sum, char| sum + (char.ord < 128 ? size / 2 : size) }; end
+  # The picture's whole rectangle.
   def rect; Rect.new(0, 0, @width, @height); end
+  # Measures a text in the picture's font.
   def text_size(text); Rect.new(0, 0, Picture.measure(text, font.size), font.size); end
+  # Records a text drawn with its rectangle and font size.
   def draw_text(x, y, width, height, text, _align = 0); @texts << [x, y, width, height, text.to_s, font.size]; end
+  # Records a fill with its rectangle and color.
+  #
+  # @param args [Array] A rectangle and a color, or x, y, width, height and a color.
   def fill_rect(*args)
     x, y, width, height, color = args[0].is_a?(Rect) ? [args[0].x, args[0].y, args[0].width, args[0].height, args[1]] : args
     @fills << [x, y, width, height, color]
   end
+  # Forgets the fills and texts.
   def clear; @fills.clear; @texts.clear; end
+  # Frees nothing.
   def dispose; end
 end
 Bitmap.define_singleton_method(:new) { |width, height| Picture.new(width, height) }
+# The rectangle the layout offers a box, nil without an offer.
 offered = lambda do |id|
   offer = layout.instance_variable_get(:@offers).find { |each| each.id == id }
   offer && offer.rect.to_a
 end
+# Forgets the places kept and offered.
 forget_places = lambda { layout.instance_variable_get(:@stored).clear; layout.instance_variable_set(:@offers, []) }
+# The log's height for a number of rows: the tabs, the rows and the chat box's row.
 high = lambda { |rows| log_class::TAB_ROW + log_class::ROW * (rows + 1) }
 
 check("the map's and the battle's log are boxes of their own, resized both ways, no smaller than the tabs, the hints and the list of names need",

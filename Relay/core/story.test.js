@@ -5,10 +5,10 @@
 //      Paulinchen  2026-10-12: Covered the level caps of story writes
 //                            - Moved the test of the Worker refusing a story write too long to cloudflare/worker.test.js
 //      Paulinchen  2026-10-11: Covered a world that finished every route choosing and playing a route again
-//      Paulinchen  2026-10-10: Covered taking back the route lock refused while the route is under way, and a route lock refused while the story is on another route
-//                            - Covered the Worker refusing a story write by its Content-Length before reading the body, and by its length read for a body without one
+//      Paulinchen  2026-10-10: Covered route lock refusals while a route is under way
+//                            - Covered the Worker refusing a story write too long
 //      Paulinchen  2026-10-09: Covered an admin taking back the route lock
-//                            - Covered Part 3 keeping the checkpoint of its first end once the world leaves it again
+//                            - Covered Part 3 keeping the checkpoint of its first end
 //      Paulinchen  2026-10-08: Created
 //
 //----------------------------------------------------------------

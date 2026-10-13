@@ -11,6 +11,7 @@
 
 require_relative "support"
 
+# Stands in for the loader's log, printing its lines.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
 
 # The world's story: whether it is followed, and the counters the relay told.
@@ -34,6 +35,7 @@ class Game_Actor
     @gained = []
   end
 
+  # Keeps each grant of experience in @gained.
   def gain_exp(exp, cexp = nil)
     @gained << [exp, cexp]
   end

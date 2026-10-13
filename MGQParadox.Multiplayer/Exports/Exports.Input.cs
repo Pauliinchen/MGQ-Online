@@ -2,8 +2,8 @@
 //  Exports.Input.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Added mp_mouse_wheel, the mouse wheel's notches since the last call
-//      Paulinchen  2026-10-06: Kept what was typed when the game script's buffer was too small, for the call with a larger one
+//      Paulinchen  2026-10-12: Added mp_mouse_wheel
+//      Paulinchen  2026-10-06: Kept what was typed when the game script's buffer was too small
 //      Paulinchen  2026-09-30: Created
 //
 //----------------------------------------------------------------

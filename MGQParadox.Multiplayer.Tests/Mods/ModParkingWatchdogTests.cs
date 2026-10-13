@@ -2,8 +2,8 @@
 //  ModParkingWatchdogTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Covered read-only and changed parked files, an unreadable journal and a long path
-//                            - Covered read-only scripts kept read-only, a rejoin with an unreadable journal and giving up on one
+//      Paulinchen  2026-10-10: Covered read-only and changed parked files, unreadable journals and long paths
+//                            - Covered read-only scripts, unreadable journals on a rejoin and giving up on them
 //      Paulinchen  2026-10-09: Created
 //
 //----------------------------------------------------------------
@@ -219,7 +219,7 @@ public sealed class ModParkingWatchdogTests : IDisposable
     }
 
     /// <summary>
-    /// Asserts that a watchdog whose journal now names a later one neither starts the game nor moves a mod.
+    /// Asserts that a watchdog whose journal names a later one neither starts the game nor moves a mod.
     /// </summary>
     [Fact]
     public void Watchdog_LeavesALaterWatchdogsJournal()

@@ -2,29 +2,29 @@
 //  Session.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Stopped hosting or joining at once with the relay's text once it turns the game away as too old, instead of telling a relay out of reach
-//      Paulinchen  2026-10-07: Logged hosting, joining and cancelling with where the session stood, each step of the team swap, the player's name once it changes, and failures marked as PvP
-//                            - Woke the host's waits at once when hosting ends, read the role and the player's name under the gate, took only the message the game script read, and cleaned names through PlayerName
-//      Paulinchen  2026-10-06: Started its threads through Threads, shared with the other connections, and wrote the room in lowercase hexadecimal at once
-//                            - Kept an invite accepted during a PvP battle when its link ends, only the player's own stop turning it down
-//                            - Had the host send a salt of its own after the guest's, so a replayed guest is turned away
-//                            - Stopped hosting with a message once nobody joined for 30 minutes or the relay ended the lone wait
+//      Paulinchen  2026-10-12: Stopped hosting or joining at once when the relay turns the game away as too old
+//      Paulinchen  2026-10-07: Logged hosting, joining, cancelling, each step of the team swap and name changes
+//                            - Woke the host's waits when hosting ends, locked role and name reads, took only the read message and cleaned names through PlayerName
+//      Paulinchen  2026-10-06: Started its threads through Threads and wrote the room in lowercase hexadecimal
+//                            - Kept an invite accepted during a PvP battle when its link ends
+//                            - Had the host send a salt of its own after the guest's
+//                            - Stopped hosting once nobody joined for 30 minutes or the relay ended the lone wait
 //                            - Told a guest who finds no host that it may only be reconnecting
 //                            - Showed the innermost error when the connection broke off
 //                            - Refused a team too large for a frame before hosting or joining
 //      Paulinchen  2026-09-29: Told a world code from a join code of another version
-//                            - Tried the relay room again after 10 s the first time, since the relay may still hold the host's last connection
-//                            - Began every connection with the guest's salt, so each connection encrypts with a key of its own
-//                            - Met the friend at the relay only, dropping the listener, the addresses and the direct way
-//                            - Offered the join code once the host waits at the relay, and failed hosting when the relay is out of reach
+//                            - Tried the relay room again after 10 s the first time
+//                            - Began every connection with the guest's salt
+//                            - Met the friend at the relay only
+//                            - Offered the join code once the host waits at the relay and failed hosting without the relay
 //                            - Told a join code of another mod version from no join code
 //                            - Reached the host through its relay when not directly, and waited at the relay while hosting
-//                            - Swapped teams in encrypted frames over a frame channel, the join code's token no longer sent
-//                            - Ignored invites while hosting, counting them for the game script
+//                            - Swapped teams in encrypted frames over a frame channel
+//                            - Ignored and counted invites while hosting
 //                            - Logged what the join code offers and how each of the host's addresses went
 //                            - Told a guest without IPv6 why it cannot reach a host that offers only IPv6
 //                            - Let Describe leave the friend's team out
-//                            - Removed Advertised and Connected, which only the tests read
+//                            - Removed Advertised and Connected
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -291,7 +291,7 @@ internal sealed class Session
     public TimeSpan HostWaitLimit { get; init; } = TimeSpan.FromMinutes(30);
 
     /// <summary>
-    /// Takes the player's name, which the Discord mod knows, sent along with every later team, and logs it once it changes.
+    /// Takes the player's name, sent along with every later team, and logs it when it changes.
     /// </summary>
     /// <param name="name">The name, <see langword="null"/> while unknown.</param>
     public void SetPlayerName(string? name)
@@ -681,7 +681,8 @@ internal sealed class Session
     /// <param name="game">What tells this game version's data from another's.</param>
     /// <param name="team">The player's team.</param>
     /// <param name="linked">Whether the connection became the link, which then owns it.</param>
-    /// <returns><see langword="true"/> when the session ended, <see langword="false"/> to wait for another guest.</returns>
+    /// <returns><see langword="true"/> when the session ended, <see langword="false"/> to wait for another
+    /// guest.</returns>
     private bool Answer(int generation, IFrameChannel channel, string token, string game, string team, out bool linked)
     {
         linked = false;

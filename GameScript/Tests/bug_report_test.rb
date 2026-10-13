@@ -2,64 +2,83 @@
 #  bug_report_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that what the notification box says waits while it hides, says after a battle that the form opens once the player is free, and is dropped once the form opens, the report is forgotten or the outcome comes
+#      Paulinchen  2026-10-12: Checked when what the notification box says waits, shows or is dropped
 #                            - Checked that the wheel scrolling the box being typed into draws it anew
-#                            - Checked that a refused bug report hotkey is logged under the hotkeys, and not while the player types
+#                            - Checked that a refused bug report hotkey is logged under the hotkeys
 #                            - Checked the friendly words for a relay busy with other bug reports
-#                            - Stood in for Ini.load, which a world's folder reads world.ini through
+#                            - Stood in for Ini.load
 #      Paulinchen  2026-10-11: Created
 #
 #----------------------------------------------------------------
 
-# Covers the in-game bug report, ui_bug_report.rbx: the hotkey and the action wheel's choice, the
-# screenshot handed to the DLL, the form opening at once on the map and in menus and after a
-# battle, the refusals, the public facts and private details, the form and its typing, sending,
-# the outcome in the notification box, and the screenshot dropped when the form closes unsent. The
-# DLL and Windows stand in, the DLL answering from $results and $state, the game's memory from
-# $memory.
+# Covers the in-game bug report, ui_bug_report.rbx: the hotkey and the wheel's choice, the
+# screenshot, when the form opens, the refusals, the facts and details, the form and its typing,
+# sending and the outcome. The DLL answers from $results and $state, the game's memory from $memory.
 
 require_relative "support"
 
-# Stand-ins for the game.
+# Stands in for the game's base scene, counting return_scene in $returned.
 class Scene_Base
   def update; end
   def terminate; end
   def return_scene; $returned += 1; end
 end
+# Stands in for the game's menu screens.
 class Scene_MenuBase < Scene_Base; end
+# Stands in for the game's main menu.
 class Scene_Menu < Scene_MenuBase; end
+# Stands in for the mod's screen of the story's choices.
 class Scene_MpStoryChoices < Scene_MenuBase; end
+# Stands in for the game's load screen.
 class Scene_Load < Scene_Base; end
+# Stands in for the game's title screen.
 class Scene_Title < Scene_Base; end
+# Stands in for the game's battle scene.
 class Scene_Battle < Scene_Base; end
+# Stands in for the game's map, which is changing once SceneManager holds another scene.
 class Scene_Map < Scene_Base
   def update_scene; end
   def scene_changing?; SceneManager.scene != self; end
 end
+# Stands in for the game's base window.
 class Window_Base; def initialize(*); end; end
+# Stands in for the game's selectable window.
 class Window_Selectable < Window_Base; end
+# Stands in for the game's command window.
 class Window_Command < Window_Selectable; end
+# Stands in for the game's name edit window.
 class Window_NameEdit < Window_Base; end
+# Stands in for the game's name input window.
 class Window_NameInput < Window_Selectable; end
+# Stands in for the game's colors.
 class Color; def initialize(*); end; end
+# Stands in for the game's sprites.
 class Sprite; def initialize(*); end; end
+# A rectangle as the game's Rect holds it.
 Rect = Struct.new(:x, :y, :width, :height)
+# Stands in for the game's title menu.
 class Window_TitleCommand; def make_command_list; end; end
+# Stands in for the game's data manager.
 module DataManager; def self.save_system; end; end
+# Stands in for the game's sounds, recording each one played in $sounds.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
+# Stands in for the game's input, the buttons held in $held.
 module Input; def self.press?(button); $held.include?(button); end; end
+# Stands in for the game's scene manager, recording each scene called in $called.
 module SceneManager
   class << self; attr_accessor :scene; end
   def self.call(klass); $called << klass; @scene = klass.allocate; end
 end
 
-# The screen as Graphics.snap_to_bitmap gives it, which keeps whether it was disposed.
+# The screen as Graphics.snap_to_bitmap gives it, keeping whether it was disposed.
 class FakeBitmap
   attr_reader :width, :height
   def initialize(width, height); @width = width; @height = height; end
   def dispose; @disposed = true; end
   def disposed?; @disposed == true; end
 end
+# Stands in for the game's graphics; each snapshot is kept in $bitmaps and laid out in $memory, and
+# fails while $snap_fails holds.
 module Graphics
   def self.width; 640; end
   def self.height; 480; end
@@ -90,7 +109,7 @@ def lay_out(bitmap)
   $memory[PIXELS_AT] = (0...bitmap.width * bitmap.height * 4).map { |byte| (byte % 256).chr }.join
 end
 
-# A Windows function, which answers as Windows would from $memory.
+# A Windows function, recording its name in $windows; RtlMoveMemory copies from $memory.
 WindowsFunction = Struct.new(:name, :arguments) do
   def call(*args)
     $windows << name
@@ -104,7 +123,7 @@ WindowsFunction = Struct.new(:name, :arguments) do
   end
 end
 
-# Stand-ins for the mod's base script and its DLL.
+# Stands in for the mod's base script and its DLL.
 module MGQ_Multiplayer
   DLL = "Multiplayer.dll"
   UPDATE_MESSAGE = "Update."
@@ -112,20 +131,26 @@ module MGQ_Multiplayer
   def self.outdated?; false; end
   def self.clean(text, _fallback = nil); text; end
   def self.path(name); "Patch\\Multiplayer\\#{name}"; end
+  # Stands in for the mod's log, recording each line in $log.
   module Log; def self.write(message); $log << message; end; end
+  # Stands in for the ini reader, finding nothing.
   module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; end
+  # Stands in for the player's identity and Player.ini, from $name, $share and $player_ini.
   module Player
     def self.name; $name; end
     def self.share; $share; end
     def self.setting(key); $player_ini[key]; end
     def self.store(key, value); $player_ini[key] = value.to_s; true; end
   end
+  # Stands in for the background runner, the keyboard working while $running holds.
   module Background; def self.running?; $running; end; def self.in_front?; true; end; end
+  # Stands in for the hotkeys' keyboard: $pressed is pressed once, the numpad's 0 while $numpad.
   module Key
     def self.watch(*_codes); end
     def self.pressed?(code); $pressed == code ? (($pressed = nil) || true) : false; end
     def self.triggered?(code); code == 0x60 && $numpad; end
   end
+  # Stands in for the captured input, each button in $buttons triggered once.
   module Capture
     def self.start(_owner); end
     def self.stop(_owner); end
@@ -134,9 +159,13 @@ module MGQ_Multiplayer
     def self.repeat?(_button); false; end
     def self.on?; false; end
   end
+  # Stands in for the mouse, never clicked.
   module Mouse; def self.clicked?; false; end; end
+  # Stands in for the Windows API, handing out WindowsFunction.
   module Windows; def self.api(_library, name, arguments, _result); WindowsFunction.new(name, arguments); end; end
+  # Stands in for the DLL's link, recording each call in $calls and the typing in $typing_on.
   module Link
+    # A DLL export, checked against the contract and answering from $results.
     Function = Struct.new(:name, :signature) do
       def call(*args); check_dll_call(name, args); $calls << [name, args]; $results.fetch(name, 1); end
     end
@@ -144,7 +173,9 @@ module MGQ_Multiplayer
     def self.read(name, _size); name == "mp_report_state" ? $state.dup : ""; end
     def self.player_id; "0123abcd"; end
     def self.typing(on); $typing_on = on; end
+    # Hands out $typed once.
     def self.take_typed; text = $typed; $typed = ""; [text, text.size]; end
+    # Reads a message into its header fields, its body under :payload.
     def self.parse(text)
       head, payload = text.split("\n\n", 2)
       state = { :payload => payload.to_s }
@@ -190,29 +221,36 @@ $map_free = true
 $covered = false
 $in_world = true
 $shown = true
+# Stands in for the overworld sync, keeping each tick in $ticks; the map is free while $map_free.
 module MGQ_MpOverworldSync
   def self.on_tick(&block); $ticks << block; end
   def self.map_free?; $map_free; end
   def self.in_world?; $in_world; end
 end
+# Stands in for the action wheel, keeping each choice in $wheel; covered while $covered.
 module MGQ_MpActions
+  # A choice of the action wheel.
   Option = Struct.new(:text, :run, :refusal, :icon, :leaves)
   def self.wheel_choice(order, &option); $wheel << [order, option]; end
   def self.covered?; $covered; end
 end
+# Stands in for the notification box, keeping each message in $notices; shown while $shown.
 module MGQ_MpNotices
   def self.message(key, text, frames = 180); $notices << [key, text, frames]; end
   def self.shown?; $shown; end
 end
+# Stands in for the chat, keeping each system line in $chat.
 module MGQ_MpChat; def self.system(text); $chat << text; end; end
+# Stands in for the World overview, with the progress variable's English and Japanese names.
 module MGQ_MpWorldOverview; PROGRESS = ["Overall Events Progress", "総合イベント進行度"]; end
 
 load_script "ui_bug_report"
 
 report = MGQ_MpBugReport
 
-# The game as the report reads it: a player on map 154 of an open Raid World.
+# A party member, by name and level.
 Actor = Struct.new(:name, :level)
+# The game as the report reads it: a player on map 154 of an open Raid World.
 $game_map = Struct.new(:map_id, :display_name).new(154, "Test Village")
 $game_player = Struct.new(:x, :y).new(3, 4)
 $game_party = Struct.new(:members).new([Actor.new("Hero", 12), Actor.new("Fighter", 9)])
@@ -221,9 +259,11 @@ $data_system = Struct.new(:variables).new([nil, "Overall Events Progress"])
 $patch_ver = "v3.06.00"
 MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("folder", "name" => "Test World", "world" => "dir0123", "type" => "raid"))
 $results["mp_dev_build"] = 0
-# The world list as the directory last sent it, the open world public in it.
+# A world in the directory's list.
 Listed = Struct.new(:id, :name, :hidden)
+# The world list as the directory last sent it, the open world public in it.
 $listing = ["ready", "", [Listed.new("dir0123", "Test World", false)]]
+# Stands in for the world directory, listing $listing.
 module MGQ_MpWorld::Directory; def self.list; $listing; end; end
 
 # Runs a frame: the hooks after Graphics.update, then the map's update_scene when the map is the
@@ -233,7 +273,7 @@ def frame
   SceneManager.scene.update_scene if SceneManager.scene.is_a?(Scene_Map)
 end
 
-# Opens nothing more and forgets every call, so a check reads only what follows.
+# Drops the form waiting to open and forgets every call, so a check reads only what follows.
 def reset
   MGQ_MpBugReport.take_opening
   [$called, $calls, $notices, $chat, $sounds, $windows, $log].each(&:clear)
@@ -551,7 +591,8 @@ check("without a name nothing is sent", report.send_report(done, "T", "X", true,
 $share = true
 reset
 
-# The form's screen, with its window standing in.
+# Stands in for the form's window, counting redraws; the wheel scrolls once after wheel_scrolls is
+# set.
 class FakeForm
   attr_accessor :index, :active
   attr_reader :form, :redrawn
@@ -565,6 +606,7 @@ class FakeForm
   def scroll_area_by_wheel(_editor); scrolls = @wheel_scrolls == true; @wheel_scrolls = false; scrolls; end
   attr_writer :wheel_scrolls
 end
+# Stands in for the lines above the form, keeping the lines shown.
 class FakeInfo
   attr_reader :lines
   def show(lines); @lines = lines; end

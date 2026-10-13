@@ -2,9 +2,9 @@
 //  UpdateCheck.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Told the version this DLL names to the relay, without the commit
-//      Paulinchen  2026-10-10: Told whether this DLL is a development build, which may give a Raid World a starting save
-//      Paulinchen  2026-10-07: Started its thread through Threads, shared with the connections
+//      Paulinchen  2026-10-12: Told the version this DLL names to the relay
+//      Paulinchen  2026-10-10: Told whether this DLL is a development build
+//      Paulinchen  2026-10-07: Started its thread through Threads
 //      Paulinchen  2026-09-30: Asked the repository under its new name, MGQ-Online
 //                            - Created
 //
@@ -85,7 +85,7 @@ internal static class UpdateCheck
     /// Starts the check on a background thread, once per game session.
     /// </summary>
     /// <remarks>
-    /// A development build has no release to compare with, so it never asks.
+    /// A development or pre-release build has no release version to compare with, so it never asks.
     /// </remarks>
     public static void Start()
     {
@@ -109,7 +109,7 @@ internal static class UpdateCheck
     /// Reads the release version from the DLL's informational version.
     /// </summary>
     /// <param name="informationalVersion">The version the build stamped, like <c>0.1.0+&lt;commit&gt;</c>.</param>
-    /// <returns>The version, or <see langword="null"/> for a development build like <c>0.0.0-dev</c>.</returns>
+    /// <returns>The version, or <see langword="null"/> for one with a pre-release tag, like <c>0.0.0-dev</c>, or none.</returns>
     internal static Version? ReleaseVersionOf(string informationalVersion)
     {
         var version = informationalVersion.Split('+')[0];

@@ -3,7 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Covered the level caps of story writes
-//                            - Covered a write sent again after a route lock, found already accepted with its own revision
+//                            - Covered a write sent again after a route lock
 //      Paulinchen  2026-10-08: Created
 //
 //----------------------------------------------------------------

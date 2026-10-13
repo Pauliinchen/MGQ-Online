@@ -273,9 +273,7 @@ public sealed class WorldTradesTests
             return new TestWorld(WorldCode.Parse(made["code"])!, session);
         }
 
-        /// <summary>
-        /// Leaves the world.
-        /// </summary>
+        /// <inheritdoc />
         public void Dispose() => session.Close();
     }
 }

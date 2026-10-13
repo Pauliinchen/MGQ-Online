@@ -2,12 +2,12 @@
 #  coop_scope.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Sent a Classic world's message for several members as one message for the whole party, which those it is not for ignore, instead of one per member
-#      Paulinchen  2026-10-11: Kept a viewer watching a Raid World's telling once its story values moved their story past where the telling started, on both the teller's and the viewer's side, since the values alone dropped them out of the scene
-#      Paulinchen  2026-10-10: Kept the teller whose story the player follows to where it moved them as the teller while their state says they tell nothing for a moment, as it does between the story's events
-#      Paulinchen  2026-10-09: Sent a message for everyone on the map, or for several players, as one message the map's gate sorts on arrival instead of one per player, which ran past the relay's limit per connection on a busy map
-#                            - Counted a teller whose connection is down as telling until their game is forgotten, as the party's leader is
-#                            - Kept the teller whose story took the player along, or whose pages the player follows, over another player telling the story on the map they come to
+#      Paulinchen  2026-10-12: Sent a Classic world's message for several members as one party message
+#      Paulinchen  2026-10-11: Kept a viewer watching a Raid telling after taking its story values
+#      Paulinchen  2026-10-10: Kept the followed teller while their state briefly tells nothing
+#      Paulinchen  2026-10-09: Sent a message for the map or several players as one message
+#                            - Counted a teller with a dropped connection as telling until forgotten
+#                            - Preferred the teller who took the player along or whose pages they follow
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -29,6 +29,7 @@ module MGQ_MpCoop
   # separated; a message without it is for everyone on its map.
   TO_FIELD = "mto"
 
+  # The handlers of the map's gate, by the field their scripts registered.
   @map_routes = {}
 
   # Hands the messages marked by a field to a script, once they come from another player on the
@@ -61,7 +62,8 @@ module MGQ_MpCoop
   # Tells why the map's gate drops a message.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
-  # @param message [Hash] The message's fields; "mmap" names the map it is for, TO_FIELD the players.
+  # @param message [Hash] The message's fields; "mmap" names the map it is for, TO_FIELD the
+  #   players.
   # @return [String, nil] The reason, nil when the gate takes it.
   def self.map_drop_reason(peer, message)
     return "the sender has not told their state yet" unless peer
@@ -132,7 +134,8 @@ module MGQ_MpCoop
       raid? ? Raid : Classic
     end
 
-    # Lists the other players the player shares the map with: the party members on it, or everyone on it.
+    # Lists the other players the player shares the map with: the party members on it, or everyone
+    # on it.
     #
     # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
     def self.peers_here
@@ -151,7 +154,8 @@ module MGQ_MpCoop
     # Finds who tells the story the player shares: the party's leader, or the player telling it
     # on the player's map.
     #
-    # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The teller, :me for the player, nil for none.
+    # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The teller, :me for the player, nil
+    #   for none.
     def self.teller
       current.teller
     end
@@ -197,7 +201,8 @@ module MGQ_MpCoop
       current.leads_story?
     end
 
-    # Reports whether the player shares the map with anyone at all: plays in a party, or in a Raid World.
+    # Reports whether the player shares the map with anyone at all: plays in a party, or in a Raid
+    # World.
     #
     # @return [Boolean] Whether they do.
     def self.sharing?
@@ -236,7 +241,8 @@ module MGQ_MpCoop
 
     # Finds the first of players by when they entered their map, then by their id.
     #
-    # @param players [Array<MGQ_MpOverworldSync::Peers::Peer, Symbol>] The players, :me for the player.
+    # @param players [Array<MGQ_MpOverworldSync::Peers::Peer, Symbol>] The players, :me for the
+    #   player.
     # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The first, nil for none.
     def self.first(players)
       players.min_by { |player| key_of(player) }
@@ -277,7 +283,8 @@ module MGQ_MpCoop
 
       # Finds the party's leader, who tells the party's story.
       #
-      # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
+      # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil
+      #   outside a party.
       def self.teller
         MGQ_MpCoop.party_leader
       end
@@ -378,7 +385,8 @@ module MGQ_MpCoop
       # A story that moves its teller onto a map where another player tells one goes on, since only
       # two tellings started at the same moment break the tie, see first_teller_here.
       #
-      # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The teller, :me for the player, nil for none.
+      # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The teller, :me for the player, nil
+      #   for none.
       def self.teller
         return :me if telling?
 
@@ -431,7 +439,8 @@ module MGQ_MpCoop
       # telling, entered the map first: of two who start telling at the same moment, the one who
       # goes on.
       #
-      # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The first, :me for the player, nil for none.
+      # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The first, :me for the player, nil
+      #   for none.
       def self.first_teller_here
         here = $game_map ? $game_map.map_id : nil
         candidates = tellers.select { |peer| peer.state["map"].to_i == here }
@@ -485,7 +494,8 @@ module MGQ_MpCoop
       #
       # Remembers where the telling started, once the teller's state names it, and where the
       # player's story was before these values, which the telling matched; never the teller's
-      # progress now, which between the story's events on two maps stands in for the telling's start.
+      # progress now, which between the story's events on two maps stands in for the telling's
+      # start.
       #
       # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
       def self.takes_values(peer)

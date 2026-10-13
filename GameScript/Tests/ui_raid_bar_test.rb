@@ -2,16 +2,16 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that common events calling each other, or one called twice in a walk, keep every troop for later events
-#                            - Checked that Tab pressed while the chat box is open changes nothing and goes to the hotkeys' refusal log
-#      Paulinchen  2026-10-11: Covered the strip as a box of the layout: its least width, a kept place, narrow with three enemies, small mode cropped where it lies, the room at the top and the game's bar only while it lies there
-#                            - Covered the gauges and the title drawn anew in another interface preset's colors
-#                            - Expected the battle's small strip cropped from its top instead of slid up, and stood in for what the presets and the layout read
-#                            - Expected the strip's hint with the hotkey that makes it small, the plates with the shared style's padding, and read the plate and the slide timing from the style
-#                            - Checked a long title of the strip cut before the hint's room, and expected the title's box inset by that room
-#                            - Stood in for the scene the confirm box follows, so ui.rbx hooks without failing
-#      Paulinchen  2026-10-10: Covered a boss of several enemies with a name and a gauge per enemy, the names shrinking to fit, the wider map bar and a damage trail per gauge
-#                            - Covered a full boss whose shortened max is no multiple of the unit and the Hades rematch hall without bars
+#      Paulinchen  2026-10-12: Checked that common events calling each other keep every troop
+#                            - Checked Tab pressed while the chat box is open
+#      Paulinchen  2026-10-11: Covered the strip as a box of the layout
+#                            - Covered the gauges and the title in another preset's colors
+#                            - Expected the small strip cropped from its top and stood in for the presets and the layout
+#                            - Expected the strip's hotkey hint and read the plates and slide timing from the style
+#                            - Checked a long strip title cut before the hint
+#                            - Stood in for the scene the confirm box follows
+#      Paulinchen  2026-10-10: Covered a boss of several enemies with a name and a gauge per enemy
+#                            - Covered a full boss with an uneven shortened max and the Hades rematch hall
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -22,11 +22,11 @@
 # the game's top message, the game's own boss bar it pushes down, and on the map the bosses' events
 # found through their pages and common events, the bar above each that shows, the strip at the top
 # while none shows, and the room it takes from the boxes there; the strip where the player puts it
-# with Alt and the interface presets' colors. Pictures measure each character at half the font's
-# size.
+# with Alt and the interface presets' colors.
 
 require_relative "support"
 
+# The mod's log, printed with the checks.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
 $raid = true
 $frame = 0
@@ -34,89 +34,154 @@ $routes = {}
 
 # The clock, which stands still, so the pools gain nothing back meanwhile.
 $now = Time.at(1_000_000)
+# The time in $now.
 def Time.now; $now; end
 
 # Stand-ins for the game's pictures.
+
+# The game's color.
 Color = Struct.new(:red, :green, :blue, :alpha)
+# The game's rectangle.
 Rect = Struct.new(:x, :y, :width, :height)
 # A rectangle set in place, as a sprite's part of its picture is.
 class Rect; def set(x, y, width, height); self.x, self.y, self.width, self.height = x, y, width, height; end; end
+# The game's font.
 Font = Struct.new(:size, :outline, :color, :bold, :out_color)
+# The game's picture: measures each character at half the font's size and records its texts, their
+# boxes, gauges, fills and outline copies.
 class Bitmap
+  # Its size, its font, and what it drew: texts, their rectangles, gauges, outline copies and fills.
   attr_reader :width, :height, :font, :texts, :boxes, :gauges, :outlines, :fills
+  # Creates an empty picture in a font of 24.
   def initialize(width, height); @width = width; @height = height; @font = Font.new(24); clear; end
+  # Forgets everything drawn.
   def clear; @texts = []; @boxes = []; @gauges = []; @outlines = 0; @fills = []; end
+  # Measures a text at half the font's size a character.
   def text_size(text); Rect.new(0, 0, (text.to_s.size * font.size * 0.5).ceil, font.size); end
+  # Records a text drawn and its rectangle, or counts it as an outline copy when drawn in black.
+  #
+  # @param x [Integer] Its left.
+  # @param y [Integer] Its top.
+  # @param width [Integer] Its width.
+  # @param height [Integer] Its height.
+  # @param text [String] The text.
+  # @param align [Integer] Its alignment.
   def draw_text(x, y, width, height, text, align = 0)
     return @outlines += 1 if font.color.to_a == [0, 0, 0, 255]
 
     @texts << [x, text.to_s, font.size, align]
     @boxes << [x, y, width, height]
   end
+  # Records a fill with its rectangle and color.
+  #
+  # @param args [Array] A rectangle and a color, or x, y, width, height and a color.
   def fill_rect(*args)
     x, y, width, height, color = args[0].is_a?(Rect) ? [args[0].x, args[0].y, args[0].width, args[0].height, args[1]] : args
     @fills << [x, y, width, height, color]
   end
+  # Records a gauge's left and width.
   def gradient_fill_rect(x, _y, width, *); @gauges << [x, width]; end
+  # Frees the picture.
   def dispose; @disposed = true; end
+  # Whether the picture was freed.
   def disposed?; @disposed ? true : false; end
 end
+# The game's window base, which draws nothing.
 class Window_Base; def initialize(*); end; end
 # A sprite, the part of its picture it shows starting as the whole picture, as RGSS sets it anew with
 # each picture.
 class Sprite
+  # Its place, depth, origin, whether it shows and its viewport.
   attr_accessor :x, :y, :z, :ox, :visible, :viewport
+  # Its picture and the part of it shown.
   attr_reader :bitmap, :src_rect
+  # Creates a sprite at the top left without a picture.
   def initialize(viewport = nil); @viewport = viewport; @x = 0; @y = 0; @src_rect = Rect.new(0, 0, 0, 0); end
+  # Takes a picture and shows the whole of it.
   def bitmap=(bitmap); @bitmap = bitmap; @src_rect = Rect.new(0, 0, bitmap.width, bitmap.height); end
+  # Frees the sprite.
   def dispose; @disposed = true; end
+  # Whether the sprite was freed.
   def disposed?; @disposed; end
 end
+# The game's screen of 640 by 480 pixels, at frame $frame.
 module Graphics
+  # The screen's width.
   def self.width; 640; end
+  # The screen's height.
   def self.height; 480; end
+  # Shows nothing.
   def self.update; end
+  # The frame count.
   def self.frame_count; $frame; end
 end
 
 # Stand-ins for the world, the game's battles and the map.
+
+# The world room: keeps the routes in $routes.
 module MGQ_MpOverworldSync
+  # The state field naming the boss a player fights.
   BOSS_FIELD = "boss_key"
+  # Keeps a field's handler in $routes.
   def self.route(field, &block); $routes[field] = block; end
+  # Takes no tick.
   def self.on_tick(&_block); end
+  # Takes no state fields.
   def self.state_fields(&_block); end
 end
+# The scope, a Raid World while $raid.
 module MGQ_MpCoop; module Scope; def self.raid?; $raid; end; end; end
+# The world's story of world w1, active in a Raid World.
 module MGQ_MpWorldStory
+  # Whether the world's story is active.
   def self.active?; $raid; end
+  # The player plays the world's story.
   def self.mode; :world; end
+  # The world's id.
   def self.world_id; "w1"; end
 end
+# The live battle, in which the player is a guest.
 module MGQ_MpBattlesSync; def self.role; :guest; end; end
 # The party box's hotkey, held for one update by $tab_pressed and named Tab, its refusals kept in
 # $refusals, Player.ini and the cursor sound.
 module MGQ_MpHotkeys
+  # Whether the party box's hotkey is pressed.
   def self.pressed?(action); action == :party_box && $tab_pressed; end
+  # The hotkey's name.
   def self.label(_action); "Tab"; end
+  # Records a refused hotkey in $refusals.
   def self.log_refusal(action, reason); ($refusals ||= []) << [action, reason]; nil; end
 end
+# The mod's base script, as far as Player.ini, kept in $settings.
 module MGQ_Multiplayer
+  # Player.ini, kept in $settings.
   module Player
+    # A setting of Player.ini.
     def self.setting(name); ($settings ||= {})[name]; end
+    # Stores a setting.
     def self.store(name, value); ($settings ||= {})[name] = value.to_s; end
+    # Forgets a setting.
     def self.forget(name); ($settings ||= {}).delete(name); end
   end
 end
 # The left Alt and the mouse, which the layout reads, never held or pointing.
 module MGQ_Multiplayer
+  # Windows' keys, none held.
   module Key; def self.down?(_code); false; end; end
+  # The mouse, off the screen.
   module Mouse; def self.position; nil; end; end
 end
+# The game's cursor sound, which plays nothing.
 module Sound; def self.play_cursor; end; end
+# The game's switches, off until set.
 class Game_Switches; def initialize; @data = []; end; def [](id); @data[id] || false; end; def []=(id, value); @data[id] = value; end; end
+# The game's variables, 0 until set.
 class Game_Variables; def initialize; @data = []; end; def [](id); @data[id] || 0; end; def []=(id, value); @data[id] = value; end; end
+# An enemy of the database: its name and its parameters, max HP first.
 EnemyData = Struct.new(:name, :params)
+# A member of a troop of the database.
 TroopMember = Struct.new(:enemy_id)
+# A troop of the database.
 TroopData = Struct.new(:members)
 $data_enemies = []
 { 1 => ["Queen Harpy", 800], 4 => ["Metatronne", 2000], 5 => ["Sandalphone", 3000], 6 => ["Black Dahlia", 1200], 7 => ["Black Mamba", 1400], 8 => ["Black Rose", 1000] }.each { |id, (name, hp)| $data_enemies[id] = EnemyData.new(name, [hp]) }
@@ -125,56 +190,92 @@ $data_troops = []
 
 # An enemy, whose max HP grows with the game's difficulty variable 41 above 100.
 class Game_Enemy
+  # Its HP.
   attr_reader :hp
+  # Whether it is a boss.
   attr_accessor :boss
+  # Creates the enemy at its max HP.
   def initialize(_index, enemy_id); @enemy_id = enemy_id; @hp = mhp; end
+  # Its name.
   def name; $data_enemies[@enemy_id].name; end
+  # Its max HP, raised by the difficulty variable 41.
   def mhp; $data_enemies[@enemy_id].params[0] * [$game_variables[41], 100].max / 100; end
+  # Sets its HP between 0 and the max.
   def hp=(value); @hp = [[value, mhp].min, 0].max; end
+  # Whether it has no HP left.
   def dead?; @hp == 0; end
+  # Whether it is a boss.
   def boss?; boss; end
 end
+# The game's troop.
 class Game_Troop
+  # Its enemies.
   attr_reader :members
+  # Sets up a troop of the database.
   def setup(troop_id); @members = $data_troops[troop_id].members.each_with_index.map { |member, index| Game_Enemy.new(index, member.enemy_id) }; end
+  # The troop never falls.
   def all_dead?; false; end
 end
+# The game's battle manager: a battle's setup sets up its troop.
 module BattleManager; def self.setup(troop_id, *_rest); $game_troop.setup(troop_id); end; def self.battle_end(_result); end; end
+# The game's battle screen.
 class Scene_Battle; def start_party_command_selection; end; def turn_end; end; end
+# The game's title screen.
 class Scene_Title; def start; end; end
+# The game's scene manager, without a scene.
 module SceneManager; def self.run; end; def self.scene; nil; end; end
+# The game's interpreter, as far as its battle command.
 class Game_Interpreter; def command_301; end; end
+# The game's message: whether it shows and where.
 class Game_Message; attr_accessor :visible, :position; end
+# The battle's sprites.
 class Spriteset_Battle; def update; end; def dispose; end; end
+# The map's sprites: its viewports and its characters' sprites.
 class Spriteset_Map
+  # Creates the map's sprites with the characters' sprites.
   def initialize(sprites); @viewport1 = :characters; @viewport3 = :top; @character_sprites = sprites; end
+  # Updates nothing.
   def update; end
+  # Frees nothing.
   def dispose; end
 end
+# A battler's sprite with the game's own boss bar.
 class Sprite_Battler
+  # The battler.
   attr_reader :battler
+  # Creates the sprite with the game's boss bar at its place.
   def initialize(battler); @battler = battler; @hp_bar = Struct.new(:y, :visible).new(-12, true); end
+  # Puts the game's boss bar back at its place.
   def update_hp_bar; @hp_bar.y = -12; end
 end
 
-# A map event: its page's commands, its looks and where it stands.
+# A command of an event's page.
 Command = Struct.new(:code, :parameters)
+# A map event: its page's commands, its looks and where it stands.
 Game_Event = Struct.new(:list, :character_name, :tile_id, :transparent, :opacity, :x, :y)
+# A common event.
 CommonEvent = Struct.new(:list)
+# A character's sprite on the map.
 CharacterSprite = Struct.new(:character, :x, :y, :height, :visible, :opacity)
+# The map: its id and its events.
 class Game_Map
+  # The map's id and its events by id.
   attr_accessor :map_id, :events
+  # Creates map 5 without events.
   def initialize; @map_id = 5; @events = {}; end
+  # Runs no event.
   def update_interpreter; end
 end
 
+# The game's scene base, which does nothing.
 class Scene_Base; def update; end; def start; end; end
 load_script "ui"
 load_script "ui_theme"
 load_script "ui_layout"
 load_script "battles_raid_bosses"
 load_script "battles_raid_pool"
-# The battles below count on 7.5 times the max HP in every tier; the real tiers are checked on their own.
+# The real tiers, checked on their own; the battles below count on 7.5 times the max HP in every
+# tier.
 REAL_TIERS = MGQ_MpRaidBosses::TIERS.dup
 MGQ_MpRaidBosses::TIERS.replace(REAL_TIERS.keys.each_with_object({}) { |tier, tiers| tiers[tier] = { :mhp => 7.5 } })
 load_script "ui_raid_bar"
@@ -315,6 +416,7 @@ $tab_pressed = false
 MGQ_MpUi::Style::SLIDE_FRAMES.times { spriteset.update }
 sprite.update_hp_bar
 check("Tab again shows it in full", [strip.y, strip.src_rect.to_a, sprite.instance_variable_get(:@hp_bar).y, $settings["raid_bar_small"]], [0, [0, 0, 640, 86], 74, "0"])
+# The chat, which the player types in while $chat_typing.
 module MGQ_MpChat; def self.typing?; $chat_typing; end; end
 $chat_typing = true
 $tab_pressed = true
@@ -405,6 +507,7 @@ check("put back, it lies across the top again", [strip.x, strip.y, strip.bitmap.
 MGQ_MpUi::Theme.apply("Monarch", "a test")
 $frame += MGQ_MpRaidBar::REDRAW_FRAMES
 spriteset.update
+# The colors a sprite's picture was filled with.
 colors = lambda { |sprite_of| sprite_of.bitmap.fills.map { |fill| fill[4].to_a }.uniq }
 check("another preset draws the gauges anew in its edge and well, the outer frame staying black",
       [colors.call(strip).include?([200, 164, 96, 230]), colors.call(strip).include?([36, 10, 14, 235]), colors.call(strip).include?([0, 0, 0, 255])], [true, true, true])
@@ -426,6 +529,7 @@ gate = Game_Event.new([Command.new(117, [20])], "", 0, false, 255, 30, 4)
 $game_map.events = { 1 => harpy, 2 => gate, 3 => Game_Event.new(nil, "$Erased", 0, false, 255, 0, 0) }
 check("the events whose page starts a boss battle, through common events too, a beaten boss left out",
       bar.boss_events.map { |event, troop| [event.x, troop] }, [[10, 71], [30, 1599]])
+# A page that calls a common event.
 calls = lambda { |id| [Command.new(117, [id])] }
 $data_common_events[40] = CommonEvent.new([Command.new(117, [41]), battle(401)])
 $data_common_events[41] = CommonEvent.new([Command.new(117, [40]), battle(411)])
@@ -456,6 +560,7 @@ check("the pool the relay told counts with its max, the other keeps the enemy's 
       flat(bar.map_bar(1599)), ["Archangel", [["Metatronne", 22500, 22500], ["Sandalphone", 11250, 22500]]])
 check("names that repeat within a troop get letters, as the game letters them in battle", bar.map_names([4, 4, 5, 1, 1, 1]),
       ["Metatronne A", "Metatronne B", "Sandalphone", "Queen Harpy A", "Queen Harpy B", "Queen Harpy C"])
+# The letters the game gives repeated names.
 def $game_troop.letter_table; ["Ａ", "Ｂ"]; end
 twins = $data_troops[1599]
 $data_troops[1599] = TroopData.new([TroopMember.new(4), TroopMember.new(4)])
@@ -543,7 +648,9 @@ check("and its gauge shows a sliver, the HP it just lost in the damage trail beh
 
 # The damage trail: the HP of the last two seconds, draining down to the HP left.
 trail = Sprite_MpRaidBar.new(nil, true)
+# The Queen Harpy's bar at an HP.
 harpy = lambda { |hp| one("Queen Harpy", hp, 1000, "Tier 9 Raid Boss") }
+# The share each damage trail shows.
 shown = lambda { trail.instance_variable_get(:@trails).map { |each| each.shown } }
 trail.show(harpy.call(1000))
 $frame += 10
@@ -569,6 +676,7 @@ trail.show(harpy.call(900))
 check("healing rises at once, without a trail", shown.call, [0.9])
 trail.show(one("Morrigan", 100, 1000, "Tier 8 Raid Boss"))
 check("another boss starts without a trail", shown.call, [0.1])
+# The bar of two of the Three Nobles of Black at their HP.
 nobles = lambda { |dahlia, mamba| MGQ_MpRaidBar::Bar.new("Tier 5 Raid Boss", [MGQ_MpRaidBar::Gauge.new("Black Dahlia", dahlia, 1000), MGQ_MpRaidBar::Gauge.new("Black Mamba", mamba, 1000)]) }
 trail.show(nobles.call(1000, 1000))
 check("a boss of several enemies starts a trail per gauge", shown.call, [1.0, 1.0])

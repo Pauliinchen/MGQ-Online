@@ -3,9 +3,9 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-10: Covered carriage returns and line feeds in header values and keys
-//      Paulinchen  2026-10-07: Covered summing a message up for the log by its keys alone
-//      Paulinchen  2026-09-29: Dropped the frame tests, which went with the direct connection
-//                            - Covered frames of bytes, and dropping frames of the earlier exchange
+//      Paulinchen  2026-10-07: Covered summing a message up for the log
+//      Paulinchen  2026-09-29: Dropped the frame tests
+//                            - Covered frames of bytes and dropping frames of the earlier exchange
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------

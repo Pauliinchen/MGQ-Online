@@ -2,49 +2,49 @@
 #  battles_pvp.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
-#      Paulinchen  2026-10-08: Left out the message of a skill hit that names its target once none is left in co-op and live battles too, not in PvP battles alone
-#                            - Fought a duel in a Raid World with each player's squad, one character on the Frontline and two on the Backline, never the fourth
-#                            - Showed a message as the game does whenever checking it for a target fails, such as with a plugin's display_use_item of other arguments
-#                            - Loaded the face of a friend's character through MGQ_MpOverworld.graphic and kept a character without a picture as such, which tried and logged it every frame
-#                            - Left out the message of a skill hit that names its target once none is left, which ended the host game when a hit came after the whole Frontline fell
-#      Paulinchen  2026-10-07: Drew the friend's Luka with the rebuilt character's face, not this game's database's, which Luka Replacer fills with this game's hero
-#                            - Registered the map, troop, sprite, save and automatic skill hooks through core_hooks.rbx instead of wraps of its own, and the action and turn hooks once the game runs, where plugins define them anew
+#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
+#      Paulinchen  2026-10-08: Left out a skill hit's message without a target in co-op and live battles too
+#                            - Fought a duel in a Raid World with each player's squad
+#                            - Showed a message as the game does whenever its target check fails
+#                            - Loaded a friend's character's face through MGQ_MpOverworld.graphic and kept a missing picture as such
+#                            - Left out the message of a skill hit that names its target once none is left
+#      Paulinchen  2026-10-07: Drew the friend's Luka with the rebuilt character's face
+#                            - Registered the game hooks through core_hooks.rbx, the action and turn hooks once the game runs
 #                            - Named characters through battles_sync.rbx, and took the faces' columns from coop_squad.rbx
-#                            - Logged the exchange's stages, the teams swapped, the Backline rule, the result and the game put back
-#      Paulinchen  2026-10-06: Named the log in the game folder's Logs folder in the messages of a failed or broken battle
-#      Paulinchen  2026-10-04: Dropped a story's call that waited through the battle once the game is put back, and logged where it was put back
+#                            - Logged the exchange's stages, the teams, the Backline rule, the result and the restore
+#      Paulinchen  2026-10-06: Named the log in the Logs folder in the messages of a failed or broken battle
+#      Paulinchen  2026-10-04: Dropped a story's call that waited through the battle once the game is put back
 #                            - Renamed from mp_battles_pvp.rbx
-#                            - Counted the Backline of the friend's team for the stat boosts the game counts the whole party for
-#                            - Fired the automatic skills of a battle's start, a turn's start and a turn's end by speed instead of the host's team first
-#      Paulinchen  2026-10-03: Swapped the Backline's builds too, with the host's rule, and started a battle with the Backline of battles_pvp_backline.rbx
+#                            - Counted the friend's Backline for the whole party's stat boosts
+#                            - Fired the automatic skills of a battle's and a turn's start and a turn's end by speed
+#      Paulinchen  2026-10-03: Swapped the Backline's builds with the host's rule and started battles with the Backline
 #                            - Fought with the balance of battles_balance_pvp.rbx
 #                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
-#                            - Moved the mirror match's report into battles_pvp_mirror.rbx and the PvP battle screen into battles_pvp_lobby.rbx
-#                            - Called the scripts that load before this one without asking whether they loaded
+#                            - Moved the mirror match's report and the PvP battle screen into their own scripts
+#                            - Called the scripts that load before this one without checking that they loaded
 #                            - Logged through MGQ_MpLog
-#                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
-#      Paulinchen  2026-10-02: Opened the PvP battle screen with the key the player bound to the World overview
+#                            - Read the hotkeys through MGQ_MpHotkeys
+#      Paulinchen  2026-10-02: Opened the PvP battle screen with the World overview's hotkey
 #                            - Followed the map and the title screen through core_hooks.rbx
 #                            - Took the Frontline's size from coop_squad.rbx, and the seat, place and Luka from Game_MpActor
 #                            - Listed the PvP battle screen's commands once per change of the exchange
 #      Paulinchen  2026-10-01: Left F11 to the World overview in a world, also once a newer release is out
-#                            - Let a team duel start the battle with the other side's characters it rebuilt, each with its owner's seat
-#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as battles_pvp.rbx, which Multiplayer.rb loads, and named the log there
+#                            - Let a team duel start the battle with the other side's rebuilt characters
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as battles_pvp.rbx
 #                            - Renamed from pvp_battle.rb, with the module MGQ_MpBattlesPvp
-#                            - Disabled PvP battles once a newer release of the mod is out, telling the player on F11
+#                            - Disabled PvP battles once a newer release of the mod is out
 #                            - Left the rules every multiplayer battle shares to battles.rbx
 #                            - Left the builds and the rebuilt characters' shared parts to core_actors.rbx
 #      Paulinchen  2026-09-29: Kept the PvP battle screen closed while a world is open
-#                            - Joined an invite accepted after a failed exchange instead of turning it down with the failure
-#                            - Stopped asking for an open port and naming the way the team came, since every team comes through the relay
+#                            - Joined an invite accepted after a failed exchange
+#                            - Stopped asking for an open port
 #                            - Said that a host is reaching the relay until its join code is ready
 #                            - Said on the PvP battle screen when the friend's team came through the relay
 #                            - Said when a Discord invite arrived while hosting and was ignored
-#                            - Joined the host of an accepted Discord invite at once, loading the last save at the title screen
+#                            - Joined the host of an accepted Discord invite at once
 #                            - Said on the map when a live battle broke off
 #                            - Closed the link of a live battle that a reset interrupted
-#                            - Started the friend's characters' sprite effects through the setter the guest's stream records
+#                            - Started the friend's characters' sprite effects through the recorded setter
 #                            - Polled the connection without the friend's team
 #      Paulinchen  2026-09-28: Created
 #
@@ -54,8 +54,6 @@
 # commanding their own team, and the game is put back as it was once it ends. Only the Frontline
 # fights unless the host's battles have the Backline (battles_pvp_backline.rbx). A mirror match
 # fights the player's own team, played by the computer.
-#
-# It must never interrupt the game, so every entry point rescues.
 module MGQ_MpBattlesPvp
   # Turns PvP battles off without uninstalling them.
   ENABLED = true
@@ -89,13 +87,13 @@ module MGQ_MpBattlesPvp
     @mirror_requested = true
   end
 
-  # Opens the PvP battle screen when the key is pressed, starts a requested mirror match, starts
+  # Opens the PvP battle screen when the hotkey is pressed, starts a requested mirror match, starts
   # the battle once the friend's team arrived, and joins the host of a Discord invite. Called by the
   # map while nothing else runs.
   #
-  # Once a newer release is out, the key only tells the player to update instead.
+  # Once a newer release is out, the hotkey only tells the player to update instead.
   def self.on_map
-    # In a world the same key opens the World overview, and a key press is read only once, by
+    # In a world the same hotkey opens the World overview, and a press is read only once, by
     # whoever asks first.
     return if MGQ_MpWorld.open?
 
@@ -268,8 +266,9 @@ module MGQ_MpBattlesPvp
     Battle.start(MIRROR_NAME, Team.parse(team), true, Team.backline?(team))
   end
 
-  # The fields the Discord mod publishes about PvP battles, through its bridge. The Discord mod
-  # hears of hosting and the connection with the friend from Multiplayer.rb.
+  # The fields the Discord mod publishes about PvP battles, through its bridge.
+  #
+  # The Discord mod hears of hosting and the connection with the friend from Multiplayer.rb.
   #
   # @param scene [String] What the game is showing, see MGQ_Discord::GameState.scene.
   # @return [Hash] The fields, none outside a PvP battle.
@@ -291,8 +290,10 @@ module MGQ_MpBattlesPvp
   end
 
   # Leaves out the message of a skill's next hit that finds no target any more in every battle the
-  # mod runs, such as one after its last hits struck the whole Frontline down while the Backline
-  # keeps the battle going: the game names the first target in it and ended on finding none.
+  # mod runs.
+  #
+  # Once a skill's hits struck the whole Frontline down while the Backline keeps the battle going,
+  # the game's message names the first target and ends the game on finding none.
   def self.install_untargeted_messages
     MGQ_MpHooks.around(Scene_Battle, :display_use_item, "battles_pvp") do |scene, args, original|
       MGQ_MpBattlesPvp.leave_out_message?(scene, args) ? nil : original.call
@@ -538,7 +539,9 @@ module MGQ_MpBattlesPvp
     end
 
     # Answers what the battle's code asks only monsters, from the monster stand-in, and logs it
-    # once. A question the audit missed would otherwise end the game in the middle of a battle.
+    # once.
+    #
+    # A question the audit missed would otherwise end the game in the middle of a battle.
     #
     # @param name [Symbol] The method.
     # @param args [Array] Its arguments.
@@ -846,8 +849,8 @@ module MGQ_MpBattlesPvp
 
     # Cuts a character's face out of its face file and enlarges it.
     #
-    # The face is the rebuilt character's, not the database's: with Luka Replacer the database
-    # holds this game's hero in Luka's place, while the friend's Luka was rebuilt as their own.
+    # The face is the rebuilt character's, not the database's, since a mod may put this game's own
+    # hero in Luka's place in the database while the friend's Luka was rebuilt as their own.
     #
     # @param battler [Game_Actor] The friend's character.
     # @return [Bitmap, nil] The face, nil without a face file this game has.
@@ -897,7 +900,7 @@ module MGQ_MpBattlesPvp
       2 => "Your own team won.",
     }
 
-    # Actions of the friend's characters logged per battle, the log holds few lines per session.
+    # Actions of the friend's characters logged per battle, so the log stays short.
     LOGGED_ACTIONS = 12
 
     # The game's battle results as Multiplayer InGame.log names them.
@@ -1148,7 +1151,9 @@ module MGQ_MpBattlesPvp
     end
 
     # Runs a write of the system save with the shared data as it was before the battle, while a
-    # PvP battle runs. The game writes it at every scene change and when it closes.
+    # PvP battle runs.
+    #
+    # @return [Object] What the block returns.
     def self.as_before_for_system
       return yield unless running?
 
@@ -1163,6 +1168,8 @@ module MGQ_MpBattlesPvp
 
     # Runs a write of a save file with the save and the shared data as they were before the
     # battle, while a PvP battle runs, so nothing of the friend's team or the battle reaches it.
+    #
+    # @return [Object] What the block returns.
     def self.as_before_for_save
       return yield unless running?
 
@@ -1183,18 +1190,15 @@ end
 # Game hooks shared with other scripts, through core_hooks.rbx.
 
 begin
-  # After the map's update, the key and the exchange. The game checks its own keys there too, only
-  # while no event, message or scene change is in the way.
+  # The game checks its own keys after the map's update too, only while no event, message or scene
+  # change is in the way.
   MGQ_MpHooks.after(Scene_Map, :update_scene, "battles_pvp") { MGQ_MpBattlesPvp.on_map unless scene_changing? }
 
-  # Before the title screen starts, a PvP battle a reset interrupted is forgotten. The title screen
-  # interrupts a battle only through a reset, which loads the game data anew.
+  # The title screen interrupts a battle only through a reset, which loads the game data anew.
   MGQ_MpHooks.before(Scene_Title, :start, "battles_pvp") { MGQ_MpBattlesPvp::Battle.forget }
 
-  # After the title screen's update, the last save loads once the player accepted a Discord invite.
   MGQ_MpHooks.after(Scene_Title, :update, "battles_pvp") { MGQ_MpBattlesPvp.on_title unless scene_changing? }
 
-  # Installs the hooks on methods the game's plugins may define anew, as the game starts running.
   MGQ_MpHooks.before(SceneManager.singleton_class, :run, "battles_pvp") { MGQ_MpBattlesPvp.install }
 rescue => e
   MGQ_MpBattlesPvp.log("hooks FAILED: #{e.class}: #{e.message}")
@@ -1203,8 +1207,7 @@ end
 # Game hooks of this script alone, through core_hooks.rbx.
 
 begin
-  # Before the map starts, the game is put back after a PvP battle: the map starts again after one,
-  # so it is built from the game as it was before.
+  # The map starts again after a PvP battle, so the game is put back before the map builds from it.
   MGQ_MpHooks.before(Scene_Map, :start, "battles_pvp") { MGQ_MpBattlesPvp::Battle.restore if MGQ_MpBattlesPvp::Battle.running? }
 rescue => e
   MGQ_MpBattlesPvp.log("map hook FAILED: #{e.class}: #{e.message}")
@@ -1222,7 +1225,6 @@ rescue => e
 end
 
 begin
-  # The Library's picture for the friend's characters, the original for other battlers.
   MGQ_MpHooks.around(Sprite_Battler, :update_bitmap, "battles_pvp") do |sprite, _args, original|
     stand_in = MGQ_MpBattlesPvp::Pictures.stand_in_for(sprite.battler)
     next original.call unless stand_in
@@ -1230,12 +1232,11 @@ begin
     sprite.bitmap = stand_in if sprite.bitmap != stand_in
   end
 
-  # After a battler's sprite updates, the HP bar of a friend's character, which the game draws only
-  # for monsters, and a dead one turned into a grey, see-through silhouette once its defeat flash
-  # ends, or at once when it was swapped in dead, which the game draws as not there. The game marks
-  # a character dead as the hit lands, before the battle log tells of it, and every sprite effect
-  # makes the picture opaque again, so the flash starts the silhouette and its opacity is set every
-  # frame.
+  # Draws a friend's character's HP bar, which the game draws only for monsters, and turns a dead
+  # one into a grey, see-through silhouette once its defeat flash ends, or at once when it was
+  # swapped in dead. The game marks a character dead before the battle log tells of it, and every
+  # sprite effect makes the picture opaque again, so the flash starts the silhouette and its opacity
+  # is set every frame.
   MGQ_MpHooks.after(Sprite_Battler, :update, "battles_pvp") do
     next unless @battler.is_a?(MGQ_MpBattlesPvp::Opponent)
 
@@ -1281,13 +1282,10 @@ rescue => e
 end
 
 begin
-  # The automatic skills that fire, picked from the friend's side for the friend's characters.
   MGQ_MpHooks.around(BattleManager.singleton_class, :_auto_skill_per, "battles_pvp") do |_manager, args, original|
     args[1].is_a?(MGQ_MpBattlesPvp::Opponent) ? args[1].firing_auto_skills(args[0]) : original.call
   end
 
-  # After the automatic skills of a battle's start, a turn's start or a turn's end are queued, in a
-  # PvP battle the faster character's go first.
   MGQ_MpHooks.after(BattleManager.singleton_class, :set_auto_skill, "battles_pvp") do
     @action_game_masters = MGQ_MpBattlesPvp::Battle.by_speed(@action_game_masters) if MGQ_MpBattlesPvp::Battle.running?
   end

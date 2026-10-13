@@ -55,6 +55,9 @@ $Updater     = [IO.Path]::Combine($ModDir, 'Update.ps1')
 $LogDir      = [IO.Path]::Combine($GameFolder, 'Logs')
 $LogFile     = [IO.Path]::Combine($LogDir, 'Multiplayer Parking.log')
 $OldLogFile  = [IO.Path]::Combine($LogDir, 'Multiplayer Parking.old.log')
+
+# The size the log moves aside at, how often the watchdog polls, and since when the journal could
+# not be read, $null while it can.
 $MaxLogBytes = 262144
 $PollMilliseconds = 1000
 $JournalFailingSince = $null
@@ -307,6 +310,8 @@ function Remove-KeepingReadOnly([string]$Path) {
 # its carriage returns.
 #
 # $Path: the file.
+#
+# Returns the hash.
 function Get-ModHash([string]$Path) {
     $bytes = [IO.File]::ReadAllBytes($Path)
     if ($Path.EndsWith('.rb', [StringComparison]::OrdinalIgnoreCase)) {
@@ -328,6 +333,8 @@ function Get-ModHash([string]$Path) {
 
 # Names this restore's folder in "Parked mods\Conflicts": the time, and a number when that folder
 # exists already.
+#
+# Returns the folder's name.
 function New-ConflictStamp {
     $time = Get-Date -Format 'yyyy-MM-dd HH-mm-ss'
     $stamp = $time
@@ -536,7 +543,7 @@ try {
         }
 
         try {
-            # Read again under the lock, which no game can have changed it behind.
+            # Read again under the lock, so no game can change the journal meanwhile.
             $parked = Read-JournalWhilePolling
             if ($parked -isnot [bool] -and $parked -and $parked.Watch -eq $Watch) {
                 Write-Log "bringing back $($parked.Files.Count) mod(s) parked for world $($parked.World)"

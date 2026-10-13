@@ -2,28 +2,28 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Told the creator limit only for a create refused with 429, and the relay's own words for any other 429 without a code, such as a ban past the removed players a world keeps
-//      Paulinchen  2026-10-09: Made and changed a world with whether it turns other mods off, and told the game script so at the end of each world's line
+//      Paulinchen  2026-10-12: Told the creator limit only for a create refused with 429
+//      Paulinchen  2026-10-09: Made, changed and listed worlds with whether they turn other mods off
 //                            - Told the game script every mod the catalog marks personal
-//                            - Made and changed a Raid World with its difficulty, and told the game script the difficulty at the end of each world's line
-//      Paulinchen  2026-10-08: Made worlds of a type, Classic or Raid, with how a Raid World shares companions, and told the game script both at the end of each world's line
+//                            - Made, changed and listed Raid Worlds with their difficulty
+//      Paulinchen  2026-10-08: Made and listed worlds of a type, with how a Raid World shares companions
 //                            - Logged the type, code and stack of an action's unexpected failure
-//                            - Logged whether the relay kept the Mod Config options sent, or the version whose options it keeps instead
-//      Paulinchen  2026-10-07: Logged the list and the catalog when they change, every action with its result or why it was refused, and each mod's download
-//      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current, both shared with the world's other parts
-//                            - Told a player removed from a world, a world with as many players as it may and too many requests from one address apart from a creator-only refusal
-//                            - Refused a starting save too large to share before making the world, and opened a world code at the relay it names
-//                            - Opened a world with its world code, which a Discord invite carries, instead of its password
-//                            - Sent the Mod Config options of a catalog mod on a thread of their own, and told the game script the version the relay keeps them of
-//                            - Replaced a world's mod settings on their own, and no longer with the other changes
-//                            - Told the game script a link to a zip of a release apart, and installed it from GitHub
+//                            - Logged whether the relay kept the Mod Config options sent
+//      Paulinchen  2026-10-07: Logged list and catalog changes, every action's result and each mod's download
+//      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current
+//                            - Told removals, full worlds and rate limits apart from a creator-only refusal
+//                            - Refused a starting save too large to share and opened a world code at the relay it names
+//                            - Opened a world with its world code
+//                            - Sent a catalog mod's Mod Config options on a thread of their own and told the version the relay keeps
+//                            - Replaced a world's mod settings on their own
+//                            - Told a link to a release zip apart and installed it from GitHub
 //                            - Fetched the relay's mod catalog with the list, and installed a world's mods into the Patch folder
 //                            - Made, changed and listed worlds with the creator's hashes of required mods outside the catalog and its mod settings
-//      Paulinchen  2026-10-04: Told the game script the mods, the game data and the rule for it with the list only, no longer with an opened lock
+//      Paulinchen  2026-10-04: Told the game script the mods, the game data and its rule with the list only
 //                            - Replaced a world's game data for its creator
 //                            - Listed the hidden worlds the game script names by their ids, and looked one up by its id
 //                            - Changed a world's seats, description and mods for its creator or an admin
-//                            - Made worlds with a description, the mods they need, the creator's game data and whether only games with the same data may enter, and told the game script
+//                            - Made and listed worlds with a description, needed mods, the creator's game data and a strict rule
 //      Paulinchen  2026-10-02: Made worlds whose new players choose where to start, and told the game script which worlds do
 //                            - Made worlds without a password, and told the game script which worlds have none and which are featured
 //      Paulinchen  2026-10-01: Stopped offering admin deletes after the list failed to load
@@ -268,7 +268,8 @@ internal sealed class WorldDirectory
             }
             catch (Exception ex)
             {
-                // The worlds are listed all the same; the game script then checks only whether required mods are installed.
+                // The worlds are listed all the same; the game script then checks only whether required
+                // mods are installed.
                 catalogError = ReasonFor("catalog", ex);
             }
 
@@ -583,7 +584,8 @@ internal sealed class WorldDirectory
     }
 
     /// <summary>
-    /// Uploads a new world's starting save, deleting the world again when that fails, since nobody could ever enter it.
+    /// Uploads a new world's starting save, deleting the world again when that fails, since nobody
+    /// could ever enter it.
     /// </summary>
     /// <param name="client">The directory's client.</param>
     /// <param name="id">The world.</param>
@@ -655,7 +657,8 @@ internal sealed class WorldDirectory
     });
 
     /// <summary>
-    /// Looks a world up by its id alone, which gives its name, so the game script may add a hidden world to its list.
+    /// Looks a world up by its id alone, which gives its name, so the game script may add a hidden
+    /// world to its list.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <returns><see langword="false"/> while another action runs.</returns>

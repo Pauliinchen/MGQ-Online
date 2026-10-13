@@ -2,8 +2,8 @@
 //  DirectoryClient.Bosses.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Read a boss pool as the share of its raid max HP left, the raid max HP and who defeated it, and reported a battle's turn as its sequence number, the share lost, the raid max HP and whether the boss died
-//      Paulinchen  2026-10-09: Sent boss requests with the timeout of other requests, and logged the fetch of the pools only when its outcome changed or it was slow
+//      Paulinchen  2026-10-10: Read boss pools as shares of a raid max HP with who defeated them, and reported turns by sequence number
+//      Paulinchen  2026-10-09: Sent boss requests with the usual timeout and logged pool fetches only when their outcome changes
 //                            - Created
 //
 //----------------------------------------------------------------

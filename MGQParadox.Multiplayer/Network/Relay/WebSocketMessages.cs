@@ -65,7 +65,7 @@ internal static class WebSocketMessages
     }
 
     /// <summary>
-    /// Tells the relay the connection closes, as far as that takes no longer than a moment, and disposes the WebSocket.
+    /// Tells the relay the connection closes, waiting at most a moment, and disposes the WebSocket.
     /// </summary>
     /// <remarks>
     /// Closing is a courtesy to the relay; the connection ends either way.

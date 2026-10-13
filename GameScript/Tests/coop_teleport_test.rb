@@ -2,9 +2,9 @@
 #  coop_teleport_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that a request to another member is named in the line above the player's head with the seconds it stands for still, and one to the leader not
+#      Paulinchen  2026-10-11: Checked that the line above the head names a request to another member
 #                            - Stood in for the line above the player's head with its doings and lapses
-#      Paulinchen  2026-10-10: Checked that an allowed teleport waits a minute for a busy player, as long as the request stood
+#      Paulinchen  2026-10-10: Checked that an allowed teleport waits a minute for a busy player
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -15,10 +15,15 @@
 
 require_relative "support"
 
+# Stands in for the mod's log, printing each line.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
+# Stands in for RGSS graphics, whose frame count is $frame_count.
 module Graphics; def self.frame_count; $frame_count; end; def self.brightness; 255; end; end
+# Stands in for the game's event interpreter.
 class Game_Interpreter; def execute_command; end; end
+# Stands in for the game's map.
 class Game_Map; attr_accessor :map_id; def initialize; @map_id = 3; end; def update(main = false); end; end
+# Stands in for the game's player, who notes the transfer reserved.
 class Game_Player
   attr_accessor :x, :y
   def initialize; @x = 0; @y = 0; end
@@ -31,23 +36,33 @@ class Game_Player
   attr_accessor :reserved
   def reserve_transfer(*args); @reserved = args; end
 end
+# Stands in for the shared story's events, with no PvP battle running.
 module MGQ_MpCoopEvents; def self.pvp_running?; false; end; end
+# Stands in for the game's map scene.
 class Scene_Map; def update_call_menu; end; end
+# Stands in for the game's save loading.
 module DataManager; def self.extract_save_contents(contents); end; end
-# The line above the player's head, whose lapse stands in as the seconds left, which the checks read.
+# Stands in for the player's actions: the line above the player's head, whose lapses are the seconds
+# left, and the offers, kept in $offers.
 module MGQ_MpActions
+  # An option of a row in the World overview.
   Option = Struct.new(:text, :run, :refusal, :icon, :leaves)
+  # An entry of the notification box.
   Notice = Struct.new(:key, :text, :color, :action, :take, :decline, :mark)
   def self.own_doing_from(&doing); ($doings ||= []) << doing; end
   def self.lapse_in(frames); frames / 60.0; end
   def self.lapse_at(since, frames); lapse_in(since + frames - Graphics.frame_count); end
   def self.offer(offers); $offers = offers; end
 end
+# Stands in for the world's sync, keeping the handlers the scripts register and the notices shown.
 module MGQ_MpOverworldSync
+  # The other players in the world, kept in $peers.
   module Peers
+    # Another player: their seat and the state they told.
     Peer = Struct.new(:seat, :state)
     def self.all; $peers; end
   end
+  # The player, whose id is "me".
   module Me; def self.id; "me"; end; end
   def self.on_tick(&block); ($ticks ||= []) << block; end
   def self.state_fields(&block); $state_fields = block; end
@@ -57,9 +72,13 @@ module MGQ_MpOverworldSync
   def self.in_world?; true; end
   def self.map_free?; $map_free; end
 end
+# Stands in for the party, led by $leader, whose messages land in $sent.
 module MGQ_MpCoop
+  # Frames an invite to a player named from afar stands, as coop.rbx sets it.
   NAMED_INVITE_FRAMES = 3600
+  # Color of the invite line.
   INVITE_COLOR = :invite
+  # The party: every player whose state names party "p1".
   module Party
     def self.members; $peers.select { |peer| member?(peer.state) }; end
     def self.member?(state); state["party"] == "p1"; end
@@ -69,8 +88,10 @@ module MGQ_MpCoop
   def self.party_leading?; $leader == :me; end
   def self.tell(seat, field, value, fields = {}); $sent << [seat, { field => value }.merge(fields)]; true; end
   def self.route(field, &handler); $route = [field, handler]; end
+  # Counts up the ids, "n1" first, so the checks know each request's id.
   def self.random_id(length); $nonce = $nonce.to_i + 1; "n#{$nonce}"; end
 end
+# Stands in for the story state, whose WARP_BAN names the switch that bans warping.
 module MGQ_MpStoryState; WARP_BAN = 100; end
 
 load_script "coop_scope"

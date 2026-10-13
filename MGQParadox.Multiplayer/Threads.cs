@@ -24,7 +24,7 @@ internal static class Threads
     /// The work catches everything itself, since an exception escaping a thread would end the whole game.
     /// </remarks>
     /// <param name="name">The thread's name.</param>
-    /// <param name="work">The work, which catches everything itself.</param>
+    /// <param name="work">The work to run.</param>
     public static void Start(string name, Action work) =>
         new Thread(() => work()) { IsBackground = true, Name = name }.Start();
 }

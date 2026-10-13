@@ -2,23 +2,23 @@
 #  coop_scene_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a picture this game lacks erases its place, and that picture and screen changes with arguments of the wrong kind, too many or past the limits are left out
-#                            - Checked that the changes of a frame go out at its end in one message, a lone change as earlier builds take it, and while the teller skips those of ten frames, only the last move of a picture, camera place and sound effect kept and the story values merged, and at once once the skip is let go or the story stopped
-#                            - Checked that a viewer makes the changes of one message in their order, each through its own gate, and drops one of too many changes or of anything but changes
-#                            - Checked that the changes of one message stay within MAX_BATCH_BYTES, below the largest world message the DLL sends, and that a longer change goes out alone
-#      Paulinchen  2026-10-11: Checked that a scene switch, though each player's own, reaches the viewers, is not taken as the world's and goes back once the viewer no longer sees the scene
+#      Paulinchen  2026-10-12: Checked missing pictures and picture and screen changes with bad arguments
+#                            - Checked that a frame's changes go out at its end in one message, also while skipping
+#                            - Checked how a viewer takes the changes of one message
+#                            - Checked that the changes of one message stay within MAX_BATCH_BYTES
+#      Paulinchen  2026-10-11: Checked that a scene switch reaches the viewers and goes back after the scene
 #                            - Checked that a viewer the story brought to another map keeps the character the story showed
-#                            - Checked that the viewer's character skips a blocked step of the teller's route and walks none of it once the viewer no longer sees the scene
-#                            - Checked that the story's music, sounds and fades and the map's tileset, battle backgrounds and parallax reach the viewers, never a path, a file or a tileset the game lacks, the game's defaults filled in, and that a viewer away from the teller's map screen hears the music once there and none of the sound effects
-#                            - Checked that the player's route, the camera's place and the map's zoom reach the viewers, whose own character walks the route without starting what it touches
-#                            - Checked that a viewer the story values moved on keeps watching the telling, on the teller's side and their own, also with values between the story's events on two maps
-#                            - Checked that a Raid World teller tells the story values, move routes without scripts, balloons and erasures, and that a viewer takes the values as the world, the routes without what this game lacks and the effects on the right characters
+#                            - Checked that the viewer's character skips blocked steps and stops after the scene
+#                            - Checked that the story's audio and the map's look reach the viewers
+#                            - Checked that the player's route, the camera and the map's zoom reach the viewers
+#                            - Checked that a viewer the story values moved on keeps watching the telling
+#                            - Checked that a Raid World teller tells story values, routes, balloons and erasures
 #      Paulinchen  2026-10-09: Checked that a Raid World's scene goes to several viewers in one message
-#                            - Stood in for MGQ_MpOverworldSync::Peers.all, among whom the teller is found now
-#      Paulinchen  2026-10-08: Checked a Raid World: the player telling the story shows its scene to the players on the map whose story matches, through the map's gate, and sees only the teller's whose story matches theirs
+#                            - Stood in for MGQ_MpOverworldSync::Peers.all
+#      Paulinchen  2026-10-08: Checked that a Raid World teller shows the scene to players whose story matches
 #                            - Stood in for the players the story took along, of coop_gather.rbx
-#      Paulinchen  2026-10-07: Checked that the scene goes to the members who follow the story alone, and that one who plays their own sees none of it
-#      Paulinchen  2026-10-06: Covered the first change after the party gathered, the member's own tint coming back, the grace before the leader's state and picture names with dots
+#      Paulinchen  2026-10-07: Checked that the scene goes only to the members who follow the story
+#      Paulinchen  2026-10-06: Covered the first change after gathering, the tint, the state grace and dotted names
 #      Paulinchen  2026-10-04: Created
 #
 #----------------------------------------------------------------
@@ -30,18 +30,31 @@
 
 require_relative "support"
 
+# Stands in for the loader's log, printing its lines.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
+# Stands in for a battler.
 class Game_Battler; end
+# Stands in for a battler's action.
 class Game_Action; end
+# Stands in for an action's result.
 class Game_ActionResult; end
+# Stands in for an action's item.
 class Game_BaseItem; end
+# Stands in for the game's data classes.
 module RPG
+  # Stands in for the base of every item.
   class BaseItem; end
+  # Stands in for a skill.
   class Skill < BaseItem; end
+  # Stands in for an item.
   class Item < BaseItem; end
+  # Stands in for a state.
   class State < BaseItem; end
+  # Stands in for a weapon.
   class Weapon < BaseItem; end
+  # Stands in for an armor.
   class Armor < BaseItem; end
+  # An event's command.
   EventCommand = Struct.new(:code, :indent, :parameters)
   # A move route, with the game's defaults.
   class MoveRoute
@@ -53,7 +66,7 @@ module RPG
     attr_accessor :code, :parameters
     def initialize(code = 0, parameters = []); @code = code; @parameters = parameters; end
   end
-  # A sound, which notes what is played, stopped and faded.
+  # A sound, which notes what is played, stopped and faded in $played.
   class SE
     attr_reader :name, :volume, :pitch
     def initialize(name = "", volume = 100, pitch = 100); @name = name; @volume = volume; @pitch = pitch; end
@@ -61,11 +74,16 @@ module RPG
     def self.stop; ($played ||= []) << [name.split("::").last, :stop]; end
     def self.fade(time); ($played ||= []) << [name.split("::").last, :fade, time]; end
   end
+  # A piece of music.
   class BGM < SE; end
+  # A background sound.
   class BGS < SE; end
+  # A music effect.
   class ME < SE; end
 end
+# A screen or picture tint.
 Tone = Struct.new(:red, :green, :blue, :gray)
+# A color of a flash.
 Color = Struct.new(:red, :green, :blue, :alpha)
 
 # A picture that notes what was done to it.
@@ -95,20 +113,27 @@ class Game_Screen
   def clear_flash; @done << [:clear_flash]; end
   def clear_shake; @done << [:clear_shake]; end
 end
+# Stands in for the game's interpreter, whose update runs the work a test hands it.
 class Game_Interpreter
   def initialize(depth = 0); @depth = depth; @list = []; @index = 0; end
   def update; @work.call if @work; end
   attr_accessor :list, :index, :work
   def map_zoom(rate = 100); $game_system.zoom_mode = rate; end
 end
-# The story's switches, variables and self switches.
+# Stands in for the story's switches.
 class Game_Switches; def initialize; @data = []; end; def [](id); @data[id]; end; def []=(id, value); @data[id] = value; end; end
+# Stands in for the story's variables.
 class Game_Variables; def initialize; @data = []; end; def [](id); @data[id]; end; def []=(id, value); @data[id] = value; end; end
+# Stands in for the story's self switches.
 class Game_SelfSwitches; def initialize; @data = {}; end; def [](key); @data[key]; end; def []=(key, value); @data[key] = value; end; end
-# Characters that note their routes, animations, balloons and erasure.
+# Stands in for the base of every character, with its animation and balloon.
 class Game_CharacterBase; attr_accessor :animation_id, :balloon_id; end
+# Stands in for a character, keeping its forced route and noting its restore in $restored.
 class Game_Character < Game_CharacterBase; attr_reader :route; def force_move_route(route); @route = route; end; def restore_move_route; $restored = true; $forcing = false; end; end
+# Stands in for a map event, noting its erasure.
 class Game_Event < Game_Character; attr_reader :id, :erased; def initialize(id); @id = id; end; def erase; @erased = true; end; end
+# Stands in for the player's character at 3, 4, forced while $forcing is and noting in
+# $nonmoving and $touched what the game would start.
 class Game_Player < Game_Character
   attr_accessor :transparent
   def move_route_forcing; $forcing; end
@@ -119,8 +144,9 @@ class Game_Player < Game_Character
   def center(x, y); $game_map.set_display_pos(x - 8.5, y - 6.5); end
   def update; end
 end
-# The game's map zoom.
+# Stands in for the game's system, holding the map's zoom.
 class Game_System; attr_accessor :zoom_mode; def initialize; @zoom_mode = 100; end; end
+# Stands in for map 7, noting the changes of its look in looks.
 class Game_Map
   attr_accessor :map_id, :interpreter, :events
   attr_reader :screen
@@ -134,34 +160,44 @@ class Game_Map
   def display_y; @display_y || 0.0; end
   def set_display_pos(x, y); @display_x = x; @display_y = y; end
 end
+# Stands in for the map's screen.
 class Scene_Map; end
-# The game's Audio, which notes its calls.
+# The game's Audio, which notes its calls in $audio.
 module Audio
   %w(bgm_play bgm_stop bgm_fade bgs_play bgs_stop bgs_fade me_play me_stop me_fade se_play se_stop).each do |call|
     define_singleton_method(call) { |*args| ($audio ||= []) << [call, *args] }
   end
 end
+# Stands in for the scene manager, holding the scene shown.
 module SceneManager; class << self; attr_accessor :scene; end; end
+# Stands in for the data manager.
 module DataManager; def self.extract_save_contents(contents); end; end
+# Stands in for the world room's players, each a Peer of seat and state.
 module MGQ_MpOverworldSync; module Peers; Peer = Struct.new(:seat, :state); end; end
+# Stands in for coop.rbx: routes in $routes, tells in $sent and the leader in $leader.
 module MGQ_MpCoop
   def self.route(field, &handler); ($routes ||= {})[field] = handler; end
   def self.tell(seat, field, value, fields = {}); ($sent ||= []) << [seat, { field => value }.merge(fields)]; true; end
   def self.party_leader; $leader; end
   def self.party_leading?; $leader == :me; end
 end
+# Stands in for coop_events.rbx, the story playing while $playing is and skipped while $skipping is.
 module MGQ_MpCoopEvents
+  # Frames between two messages of a teller holding the game's skip.
   SKIP_SEND_FRAMES = 10
   def self.story_playing?; $playing; end
   def self.skip_held?; $skipping ? true : false; end
   def self.leading_story?; $leader == :me && !$followers.empty?; end
   def self.following?; $follows != false; end
 end
-# The members who follow the leader's story, as coop_story.rbx tells them.
+# Stands in for coop_story.rbx, the members who follow the leader's story kept in $followers.
 module MGQ_MpCoopStory; def self.synced_members; $followers; end; end
 $followers = [MGQ_MpOverworldSync::Peers::Peer.new(4, { "name" => "Friend" })]
+# Stands in for the game's frames, counted in $frame_count.
 module Graphics; def self.frame_count; $frame_count; end; end
 
+# Stands in for coop_gather.rbx: the story's map is this one or the one in $following, and nobody
+# is taken along.
 module MGQ_MpCoopGather; def self.story_map?(map_id); map_id == $game_map.map_id || map_id == $following; end; def self.taken_along; []; end; end
 load_script "battles_sync_wire"
 load_script "coop_scope"
@@ -174,11 +210,11 @@ $frame_count = 1000
 main = $game_map.interpreter
 pictures = $game_map.screen.pictures
 run = lambda { |interpreter, work| interpreter.work = work; interpreter.update; interpreter.work = nil }
-# A frame of the map: the interpreter's update, then the map's update's end, where the frame's
+# A frame of the map: the interpreter's update, then the map's update, at whose end the frame's
 # changes go out.
 frame = lambda { |interpreter, work| run.call(interpreter, work); $game_map.update }
-# The changes in the messages sent, each of a message of several on its own: its seat, kind,
-# arguments and map.
+# The changes in the messages sent, a batch split into its changes, each as seat, kind, arguments
+# and map.
 changes = lambda do |messages, field|
   messages.map do |seat, fields|
     if fields[field] == "batch"
@@ -237,9 +273,9 @@ $playing = true
 $game_map.update
 $sent.clear
 
-# While the teller holds the game's skip, the changes of SKIP_SEND_FRAMES go out in one message:
-# of the moves of a picture only the last that nothing else of it followed, the camera's last
-# place and the last sound effect, but every move route.
+# While the teller holds the game's skip, the changes of SKIP_SEND_FRAMES frames go out in one
+# message, keeping of a picture's moves in a row only the last, the camera's last place and the
+# last sound effect, but every move route.
 $skipping = true
 $frame_count += MGQ_MpCoopEvents::SKIP_SEND_FRAMES
 frame.call(main, lambda { pictures[3].move(0, 10, 10, 100, 100, 255, 0, 30) })
@@ -322,7 +358,7 @@ $game_player.transparent = false
 $game_map.screen.start_tone_change(Tone.new(-34, -34, -34, 0), 0)
 $game_map.screen.done.clear
 wire = MGQ_MpBattlesSync::Wire
-# The pictures this game has.
+# Stands in for overworld.rbx, knowing only these pictures of this game.
 module MGQ_MpOverworld; def self.graphic?(folder, name); folder == :picture && %w(story_cg ev_aguni._hb1 ahead elsewhere).include?(name); end; end
 take = lambda { |kind, args, map = 7| $routes["pscene"].call(leader, { "pscene" => kind, "map" => map.to_s, "args" => wire.line(args) }) }
 take.call("picture.show", [3, "story_cg", 0, 0, 0, 100, 100, 255, 0])
@@ -398,8 +434,8 @@ done = $game_map.screen.done.size
 $game_map.update
 check("only once", $game_map.screen.done.size, done)
 
-# A member the story brought to another map keeps the story's last tint and shown character, as a
-# new game's hidden start the story ended.
+# A member the story brought to another map keeps the story's last tint and shown character, as
+# when the story ends a new game's hidden start.
 leader.state["telling"] = "1"
 $game_player.transparent = true
 take.call("screen.start_tone_change", [Tone.new(-68, -68, 0, 0), 30])
@@ -411,8 +447,12 @@ $game_map.update
 check("on another map the story's tint stays", $game_map.screen.done.last(3), [[:tone, [-68, -68, 0, 0], 30], [:clear_flash], [:clear_shake]])
 check("and the character the story showed stays shown", $game_player.transparent, false)
 
-# In a Raid World the player telling the story on the map shows it to everyone there whose story matches.
+# In a Raid World the player telling the story on the map shows it to everyone there whose story
+# matches.
+
+# Stands in for world.rbx, a Raid World while $raid is.
 module MGQ_MpWorld; def self.raid?; $raid; end; end
+# Gives the world room stand-in who, tell into $told, the player's own state and $peers.
 module MGQ_MpOverworldSync
   def self.in_world?; true; end
   def self.who(peer); peer == :me ? "the player" : peer.state["name"].to_s; end
@@ -424,12 +464,13 @@ module MGQ_MpOverworldSync
     def self.on_this_map?(peer); peer.state["map"].to_i == $game_map.map_id; end
   end
 end
+# Lets the coop_events.rbx stand-in tell while $playing is, from the story markers 12, 0, 0, 0.
 module MGQ_MpCoopEvents
   def self.telling?; $playing; end
   def self.leading_story?; MGQ_MpCoop::Scope.leads_story?; end
   def self.told_markers; $playing ? [12, 0, 0, 0] : nil; end
 end
-# How far each story is, as coop_story.rbx reads it.
+# Lets the coop_story.rbx stand-in read story markers, the player's own kept in $own_markers.
 module MGQ_MpCoopStory
   def self.read_markers(text); values = text.to_s.split(","); values.size == 4 ? values.map(&:to_i) : nil; end
   def self.own_markers; $own_markers; end
@@ -476,11 +517,16 @@ $raid = false
 
 # In a Raid World the teller's story values, the move routes it gives the map's events and the
 # effects it shows on them reach the viewers, and the viewers' games take the values as the world's.
+
+# Stands in for world_story.rbx: switches 4 and 2029 are each player's own, and the values taken as
+# the world's are noted in $mirrored.
 module MGQ_MpWorldStory
   def self.personal?(kind, key); kind == 0 && [4, 2029].include?(key); end
   def self.mirrored(kind, key, value); ($mirrored ||= []) << [kind, key, value]; end
 end
+# Stands in for story_state.rbx: ids below 5000 are known and switch 2029 is a scene switch.
 module MGQ_MpStoryState; def self.known_id?(_kind, id); id < 5000; end; def self.scene_switch?(id); id == 2029; end; end
+# Lets the overworld.rbx stand-in know only the graphic Actor1.
 module MGQ_MpOverworld; def self.graphic?(_folder, name); name == "Actor1"; end; end
 $data_animations = Array.new(10)
 $raid = true
@@ -605,8 +651,8 @@ check("the values moved the viewer's story past where the telling started, and t
 teller.state["tsm"] = "13,0,0,0"
 check("and the teller's next telling, which starts where they are now", MGQ_MpCoop::Scope.watches?(teller), true)
 teller.state["tsm"] = "12,0,0,0"
-# Values that come between the story's events on two maps, while the teller's state names no telling
-# start but their progress now, leave the start the viewer keeps.
+# Values that come between the story's events on two maps, while the teller's state names only
+# their progress and no telling start, leave the start the viewer keeps.
 teller.state.delete("tsm")
 teller.state["sm"] = "13,0,0,0"
 scene.call("story.values", [[0, 41, true]])
@@ -668,6 +714,7 @@ check("a viewer on the way to the teller's map hears its background sound once t
 $game_map.map_id = 7
 $following = nil
 $data_tilesets = [nil, 1, 2, 3, 4, 5]
+# Lets the overworld.rbx stand-in know the graphics Actor1 and Sky.
 module MGQ_MpOverworld; def self.graphic?(_folder, name); %w(Actor1 Sky).include?(name); end; end
 scene.call("map.tileset", [5])
 scene.call("map.tileset", [99])

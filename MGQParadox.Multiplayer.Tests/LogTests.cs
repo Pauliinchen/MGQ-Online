@@ -2,7 +2,7 @@
 //  LogTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-11: Checked that a log cut down keeps its newest whole lines behind the line that says so
+//      Paulinchen  2026-10-11: Checked cutting a log down to its newest lines
 //      Paulinchen  2026-10-07: Created
 //
 //----------------------------------------------------------------

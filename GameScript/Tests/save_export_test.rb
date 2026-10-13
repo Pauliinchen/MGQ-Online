@@ -2,58 +2,95 @@
 #  save_export_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked the menu's commands taking input again after the notice, and a menu without commands making no hook fail
-#      Paulinchen  2026-10-09: Loaded world_mods_parking.rbx, which the world screen calls
+#      Paulinchen  2026-10-12: Checked the menu taking input after the notice and a menu without commands
+#      Paulinchen  2026-10-09: Loaded world_mods_parking.rbx
 #      Paulinchen  2026-10-07: Checked the menu's handler once its commands are made
-#      Paulinchen  2026-10-06: Loaded world_mods.rbx, which the world screen calls
-#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
+#      Paulinchen  2026-10-06: Loaded world_mods.rbx
+#      Paulinchen  2026-10-04: Followed the scripts to their new names
 #      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and ui.rbx
 #      Paulinchen  2026-10-02: Created
 #
 #----------------------------------------------------------------
 
-# Checks copying a world's latest save into the player's own game (world_save_export.rbx): the first
-# free slot, the thumbnail, the own Save folder also while a world is open, a full Save folder, and
-# the game menu's command.
+# Covers world_save_export.rbx: copying a world's latest save into the first free slot of the
+# player's own game with its thumbnail, into the own Save folder also while a world is open, a full
+# Save folder, and the game menu's command and notice.
 
 require_relative "support"
 require "fileutils"
 require "tmpdir"
 
-# Stand-ins for the game.
+# Stands in for the game's base scene.
 class Scene_Base; def return_scene; end; def update; end; def terminate; end; end
+# Stands in for the game's menu scenes.
 class Scene_MenuBase < Scene_Base; end
+# Stands in for the game's load screen.
 class Scene_Load < Scene_Base; end
+# Stands in for the game's menu, whose commands the export hooks into.
 class Scene_Menu < Scene_MenuBase; def create_command_window; end; end
+# Stands in for the game's base window.
 class Window_Base; def initialize(*); end; end
+# Stands in for the game's selectable windows.
 class Window_Selectable < Window_Base; end
+# Stands in for the game's command windows.
 class Window_Command < Window_Selectable; end
+# Stands in for the game menu's commands, which it keeps in commands.
 class Window_MenuCommand < Window_Command
   attr_reader :commands
+  # Stands in for the game's extra commands: starts the list with the Library.
   def add_original_commands; @commands = [["Library", :library, true]]; end
+  # Adds a command to the list.
+  #
+  # @param name [String] Its name.
+  # @param symbol [Symbol] Its handler's symbol.
+  # @param enabled [Boolean] Whether it can be chosen.
   def add_command(name, symbol, enabled = true); @commands << [name, symbol, enabled]; end
 end
+# Stands in for the game's name entry.
 class Window_NameEdit < Window_Base; end
+# Stands in for the game's name entry's letters.
 class Window_NameInput < Window_Selectable; end
+# Stands in for the game's colors.
 class Color; def initialize(*); end; end
+# Stands in for the game's sprites.
 class Sprite; def initialize(*); end; end
+# Stands in for the game's rectangles.
 Rect = Struct.new(:x, :y, :width, :height)
+# Stands in for the game's title screen.
 class Scene_Title; def start; end; def create_command_window; end; def update; end; def terminate; end; end
+# Stands in for the title screen's commands.
 class Window_TitleCommand; def make_command_list; end; end
+# Stands in for the game's sounds, which play nothing.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { } }; end
+# Stands in for the game's scenes, calling none.
 module SceneManager; def self.call(_scene); end; end
+# Stands in for the game's saves: three slots, named as the game names them.
 module DataManager
+  # Stands in for writing the system save, doing nothing.
   def self.save_system; end
+  # Answers the number of the player's save slots.
   def self.savefile_max; 3; end
+  # Names a slot's save file as the game does.
+  #
+  # @param index [Integer, String] The slot's index, or an autosave's number.
+  # @return [String] The file.
   def self.make_filename(index); index.is_a?(Integer) ? format("Save/Save%02d.rvdata2", index + 1) : format("Save/AutoSave%s.rvdata2", index); end
+  # Names a slot's thumbnail as the game does.
+  #
+  # @param index [Integer, String] The slot's index, or an autosave's number.
+  # @return [String] The file.
   def self.make_thumbnailname(index); index.is_a?(Integer) ? format("Save/Save%02d.png", index + 1) : format("Save/AutoSave%s.png", index); end
 end
 
-# Stand-ins for the mod's base script.
+# Stands in for the mod's base script.
 module MGQ_Multiplayer
+  # Stands in for whether the mod can run: answers true.
   def self.available?; true; end
+  # Stands in for whether the mod is outdated: answers false.
   def self.outdated?; false; end
+  # Stands in for cleaning a text for the screen, keeping it as it is.
   def self.clean(text); text; end
+  # Stands in for the log, which writes nothing.
   module Log; def self.write(_message); end; end
 end
 
@@ -99,7 +136,7 @@ Dir.mktmpdir do |root|
 
     check("a full Save folder says so", MGQ_MpSaveExport.export(world), "Your own game has no free save slot. Delete one of your saves first.")
 
-    # The game's menu.
+    # The game's menu offers Copy to my game inside a world.
     menu = Window_MenuCommand.new
     menu.add_original_commands
     check("the menu has no Copy to my game outside a world", menu.commands.map { |command| command[1] }, [:library])
@@ -124,13 +161,20 @@ menu_scene.create_command_window
 check("the menu's handler is in place once its commands are made", handlers.keys, [:mgq_mp_save_export])
 
 # The menu's commands take input again once the notice closes, or once it could not open.
+
+# Stands in for the menu's commands, noting in active whether they take input.
 class MenuCommands
   attr_reader :active
+  # Lets the commands take input.
   def activate; @active = true; end
+  # Answers whether the window is gone: never.
   def disposed?; false; end
 end
+# Stands in for a notice the player closed, noting in disposed whether it went.
 ClosedNotice = Struct.new(:disposed) do
+  # Answers whether the player closed the notice: always.
   def closed?; true; end
+  # Takes the notice off the screen.
   def dispose; self.disposed = true; end
 end
 commands = MenuCommands.new
@@ -156,6 +200,8 @@ check("a menu without commands makes its commands and closes the notice without 
 Window_MpSaveExportNotice.define_singleton_method(:new, failing)
 
 # The notice ignores the press that opened it.
+
+# Stands in for the game's input, with OK pressed in every frame.
 module Input; def self.trigger?(button); button == :C; end; end
 notice = Window_MpSaveExportNotice.allocate
 notice.instance_variable_set(:@frames, 0)

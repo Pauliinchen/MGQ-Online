@@ -4,17 +4,17 @@
 #  Changelog:
 #      Paulinchen  2026-10-12: Read the live map's viewports through MGQ_MpGame
 #      Paulinchen  2026-10-07: Read an interpreter's event and map through MGQ_MpGame
-#                            - Logged when the world starts and stops running behind a screen, each event command held and let run, the map refreshes that wait, the instant switches and the live map shown
-#      Paulinchen  2026-10-06: Wrapped the screens, the screen's freeze and transition and the menus' backgrounds through core_hooks.rbx instead of wraps of its own
+#                            - Logged the world behind screens, held commands, waiting refreshes and the live map
+#      Paulinchen  2026-10-06: Wrapped the screens, freeze, transition and menu backgrounds through core_hooks.rbx
 #                            - Read the command an interpreter runs through MGQ_MpGame
 #      Paulinchen  2026-10-04: Renamed from mp_async.rbx
-#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#      Paulinchen  2026-10-03: Reached the game's private fields and methods through MGQ_MpGame
 #                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Held event commands through core_hooks.rbx
 #                            - Asked behind? directly where the live map is decided
-#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as core_async.rbx, which Multiplayer.rb loads
-#                            - Skipped the screen's freeze between the map and menus, since even a transition of no frames took seven
-#                            - Switched between the map and menus at once, since a fade froze the world behind them
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as core_async.rbx
+#                            - Skipped the screen's freeze between the map and menus
+#                            - Switched between the map and menus at once
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -23,8 +23,6 @@
 # the map goes on as if the player stood on it. Other players walk on, NPCs move, background events
 # and the timer run, and a menu shows the live map behind it. What needs the player, such as a
 # message, a battle, a transfer or an event they touched, waits until they are back on the map.
-#
-# It must never interrupt the game, so every entry point rescues.
 module MGQ_MpAsync
   # Event commands that need the player, or that would reach into the screen in front, and so wait
   # until the player is back on the map: messages, choices and inputs; transfers and vehicles;
@@ -36,6 +34,7 @@ module MGQ_MpAsync
   # Screens the world does not run behind, since they leave it.
   LEAVING_SCENES = [:Scene_Title, :Scene_Gameover]
 
+  # Whether tick runs the map now, the only time event commands are held.
   @ticking = false
 
   extend MGQ_MpLog
@@ -119,7 +118,6 @@ module MGQ_MpAsync
     yield
     log("let command #{command.code} of event #{event} on map #{map} run, the player is back")
   rescue FiberError
-    # An interpreter run outside a fiber cannot wait, so its command runs at once.
     log("could not hold command #{command.code} of event #{event} on map #{map}: its interpreter runs outside a fiber, so it runs at once")
   end
 
@@ -155,10 +153,10 @@ module MGQ_MpAsync
     to.is_a?(Scene_Map) || map_waiting?
   end
 
-  # Leaves a screen, skipping the freeze of the screen when the next one comes in at once. The
-  # engine's transition from a frozen screen takes about seven frames even when it lasts none,
-  # during which nothing moves; without a freeze, the screen keeps its last picture until the next
-  # one draws its first.
+  # Leaves a screen, skipping the freeze of the screen when the next one comes in at once.
+  #
+  # The engine's transition from a frozen screen takes about seven frames even when it lasts none,
+  # during which nothing moves.
   #
   # @param from [Scene_Base] The screen left.
   # @yield The screen's own leaving, which freezes the screen.
@@ -170,7 +168,8 @@ module MGQ_MpAsync
     @skip_freeze = false
   end
 
-  # Reports whether to skip a freeze of the screen, and remembers it was skipped. Called by Graphics.freeze.
+  # Reports whether to skip a freeze of the screen, and remembers it was skipped. Called by
+  # Graphics.freeze.
   #
   # @return [Boolean] Whether to skip it.
   def self.skip_freeze?

@@ -3,7 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked around with other arguments
-#      Paulinchen  2026-10-08: Checked that the hook report counts each method once and names it, and that a wrap of a method not defined yet is made at the next try
+#      Paulinchen  2026-10-08: Checked the hook report and a wrap of a method defined later
 #                            - Checked that the hooks are logged as one line per script, once
 #      Paulinchen  2026-10-07: Checked that who holds the player is logged when it changes
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
@@ -12,15 +12,16 @@
 #
 #----------------------------------------------------------------
 
-# Covers core_hooks.rbx: the blocks run on the object with the method's arguments, in the order nested
-# wraps would run them, the method's result and visibility stay, a failing block is logged once and
-# keeps the others running, and a second registration replaces the first.
+# Covers core_hooks.rbx: the blocks run on the object with the method's arguments, in the order
+# nested wraps would run them, the method's result and visibility stay, a failing block is logged
+# once and keeps the others running, and a second registration replaces the first.
 
 require_relative "support"
 
 $calls = []
 $log = []
 
+# Stands in for the loader's log, keeping its lines in $log.
 module MGQ_Multiplayer; module Log; def self.write(m); $log << m; end; end; end
 
 # A stand-in for a game class.
@@ -91,6 +92,7 @@ check("a private method stays private around too", Scene_Around.private_method_d
 MGQ_MpHooks.around(Scene_Around, :double, "two") { |_scene, _args, original| [original.call, :again] }
 check("a script registering again replaces its wrap instead of wrapping once more", Scene_Around.new.double(2), [5, :again])
 check("and the replacement is logged", $log.grep(/two wrapped Scene_Around#double again/).size, 1)
+# A game class whose method takes two arguments.
 class Scene_Arguments
   def add(a, b); a + b; end
 end
@@ -108,6 +110,7 @@ MGQ_MpHooks.report
 check("and once only", $log, [])
 
 # A method the game defines only later, as a plugin does: the first try fails and keeps nothing.
+# A game class whose method is defined only after the first wrap.
 class Scene_Late; end
 failed = begin
   MGQ_MpHooks.around(Scene_Late, :value, "late") { |_scene, _args, original| original.call + 1 }
@@ -123,7 +126,9 @@ MGQ_MpHooks.report
 check("and counts it once", $log.grep(/hooks: late: follows 0, wraps 1 game method\(s\): wraps Scene_Late#value\z/).size, 1)
 
 # Holding the player: no moving, no menu, while any script says so.
+# Stands in for the map's player, always movable.
 class Game_Player; def movable?; true; end; end
+# Stands in for the map scene, telling whether the menu was called.
 class Scene_Map; attr_reader :menu_calling; def update_call_menu; @menu_calling = true; end; end
 $held = false
 MGQ_MpHooks.hold_player("one") { $held }

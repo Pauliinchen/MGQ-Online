@@ -2,14 +2,14 @@
 //  RelayWorldChannel.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Gave up connecting at once when told to stop, so a world left meanwhile no longer takes a seat afterwards
-//                            - Read why the relay turned the game away through Relays, which the PvP room channel shares
+//      Paulinchen  2026-10-12: Gave up connecting at once when told to stop
+//                            - Read why the relay turned the game away through Relays
 //                            - Named the version of this game in the X-MGQ-Version header
 //      Paulinchen  2026-10-08: Named the Raid Worlds this game plays in the X-MGQ-Features header
-//      Paulinchen  2026-10-07: Sent any text frame, such as a chat line the relay keeps, not only the ping
-//                            - Sent the world's auth key in the X-MGQ-Auth header instead of the address, and closed the WebSocket through the shared helper
-//      Paulinchen  2026-10-06: Sent the player's key in the X-MGQ-Player header instead of the address, and read the code a refusal names why with and the reason of a close
-//      Paulinchen  2026-09-29: Named the relay's answer to a ping, which times the round trip
+//      Paulinchen  2026-10-07: Sent any text frame, not only the ping
+//                            - Sent the world's auth key in the X-MGQ-Auth header and closed the WebSocket through the shared helper
+//      Paulinchen  2026-10-06: Sent the player's key in the X-MGQ-Player header and read refusal codes and close reasons
+//      Paulinchen  2026-09-29: Named the relay's answer to a ping
 //                            - Entered with the player's key and name and the world's auth key, and told how the relay refused or closed
 //                            - Created
 //
@@ -31,9 +31,7 @@ namespace MGQParadox.Multiplayer.Network.Relay;
 /// world and passes frames to one or all of them.
 /// </summary>
 /// <remarks>
-/// The relay speaks the world room protocol in Relay/README.md: text tells the seats, and each binary
-/// message starts with a seat, the target on the way out and the sender on the way in. Only one
-/// thread may send and one receive at a time.
+/// Only one thread may send and one receive at a time.
 /// </remarks>
 internal sealed class RelayWorldChannel : IDisposable
 {
@@ -138,7 +136,8 @@ internal sealed class RelayWorldChannel : IDisposable
     /// Receives one message from the relay.
     /// </summary>
     /// <param name="timeout">How long the relay may stay silent before the connection counts as broken.</param>
-    /// <returns>The message and whether it is binary, or <see langword="null"/> once the relay closed the connection.</returns>
+    /// <returns>The message and whether it is binary, a binary one starting with its sender's seat, or
+    /// <see langword="null"/> once the relay closed the connection.</returns>
     /// <exception cref="IOException">The relay stayed silent too long.</exception>
     public (bool Binary, byte[] Data)? Receive(TimeSpan timeout)
     {

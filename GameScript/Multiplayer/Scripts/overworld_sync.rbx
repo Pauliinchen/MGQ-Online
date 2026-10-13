@@ -2,35 +2,35 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Announced only the players who join after the player, not those already in the world they enter
-#                            - Set the time the player entered their map anew once they left the world, loaded a save or started a new game, which let a returning player take Map Owner at once
-#                            - Told nobody a state while the player is on the title screen or a world's new game waits there, which told the previous game's map
-#      Paulinchen  2026-10-10: Handed on the share left, the max HP and whether a Raid World's boss pool is defeated with the relay's push of it, instead of its kills
-#      Paulinchen  2026-10-09: Handed the relay's push that a Raid World's boss pool changed to the script registered for it, marked as the relay's
-#                            - Handed the relay's push that a Raid World's difficulty changed to the script registered for it, marked as the relay's
-#                            - Handed the relay's push that a world's rule on other mods or its mods changed to the script registered for it, marked as the relay's
-#      Paulinchen  2026-10-08: Marked an admin's line from the relay with a key no player's message can carry, which let any player post as an admin
-#                            - Handed the relay's push of a Raid World's story to the script registered for it, marked the same way
-#                            - Passed on whether the relay got a chat line or the DLL dropped it for coming too fast, instead of whether it went out
-#                            - Listed the players whose connection stands, found them by name and id and told whether one is on the player's map, which the chat and the map share
-#                            - Numbered a name that several players share, such as "Name (2)", so each is found by it, and found nobody by a missing name or id
-#      Paulinchen  2026-10-07: Mirrored a chat line to the relay through say, and handed an admin's line from the relay to the chat's route
-#                            - Kept the player's seat as the inbox and the status tell it, asking the DLL only while none was told
+#      Paulinchen  2026-10-12: Announced only the players who join after the player
+#                            - Set the time the player entered their map anew after leaving the world or loading
+#                            - Told nobody a state while the player is on the title screen or a new game waits
+#      Paulinchen  2026-10-10: Handed on the share left, the max HP and the defeat with the relay's boss pool push
+#      Paulinchen  2026-10-09: Handed the relay's boss pool push to the script registered for it
+#                            - Handed the relay's difficulty push to the script registered for it
+#                            - Handed the relay's mods rule push to the script registered for it
+#      Paulinchen  2026-10-08: Marked an admin's line from the relay with a key no player's message can carry
+#                            - Handed the relay's push of a Raid World's story to the script registered for it
+#                            - Passed on whether the relay got a chat line or the DLL dropped it
+#                            - Listed the players whose connection stands and found them by name, id and map
+#                            - Numbered a name that several players share, such as "Name (2)"
+#      Paulinchen  2026-10-07: Mirrored a chat line to the relay and handed an admin's line to the chat
+#                            - Kept the player's seat as the inbox and the status tell it
 #                            - Logged a failing route once
-#                            - Named the DLL's exports alone, their signatures living in Multiplayer.rb
-#                            - Logged players joining, leaving, going away, coming back and moving seats, their changes of map and screen, the player's own, every change of the connection's status with how it closed, the notices and dropped messages
-#      Paulinchen  2026-10-06: Moved a player who tells from a new seat while their old one still stands, without telling anyone they left
+#                            - Named the DLL's exports alone
+#                            - Logged the players, the connection's status, the notices and dropped messages
+#      Paulinchen  2026-10-06: Moved a player who tells from a new seat while their old one still stands
 #                            - Dropped Status.lines, which only the tests read
-#                            - Handed the Discord mod the world code, which its invites into the world carry
+#                            - Handed the Discord mod the world code
 #      Paulinchen  2026-10-04: Took an icon with a notice
 #                            - Renamed from mp_overworld_sync.rbx
-#      Paulinchen  2026-10-03: Added map_quiet? and map_free?, which the scripts check before they act on the map
-#                            - Added tell, notice, Me.id and Me.seat, which every script sends, notifies and names the player with
+#      Paulinchen  2026-10-03: Added map_quiet? and map_free?
+#                            - Added tell, notice, Me.id and Me.seat
 #                            - Logged through MGQ_MpLog
-#                            - Kept a player whose connection dropped for fifteen seconds, and every player across the game's own reconnect, so a party and a battle outlast it
+#                            - Kept a dropped player for fifteen seconds and every player across a reconnect
 #      Paulinchen  2026-10-02: Told Discord the open world's name, its players and its seats through the Discord mod
 #                            - Followed Graphics.update through core_hooks.rbx
-#                            - Marked the player's state, which tells it apart from the scripts' messages
+#                            - Marked the player's state apart from the scripts' messages
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
@@ -38,15 +38,14 @@
 # The open world's messages: each game tells the others where its player stands, how they look and
 # whether they are on the map, in a battle, a menu or an event, takes what the others told, and
 # hands every other message to the script that registered for the field that marks it. What the
-# player sees of it is overworld.rbx's.
-#
-# Scripts that load after this one take part through its registry: route for their messages,
-# state_fields and busy_scene for the player's state, on_tick, on_observe and on_leave to follow
-# the others, and label_line for the line above a ghost's name.
+# player sees of it is overworld.rbx's. Scripts that load after this one take part through its
+# registry: route for their messages, state_fields and busy_scene for the player's state, on_tick,
+# on_observe and on_leave to follow the others, and label_line for the line above a ghost's name.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpOverworldSync
-  # What a player does on a screen of the game, by the screen's class name; any other screen is a menu.
+  # What a player does on a screen of the game, by the screen's class name; any other screen is a
+  # menu.
   SCREENS = {
     /\AScene_(Item|Storehouse)\z/ => "items",
     /\AScene_(Equip|EquipStone\w*|Smith|Synthesize)\z/ => "equip",
@@ -71,7 +70,8 @@ module MGQ_MpOverworldSync
   # Milliseconds a ping must differ from the one the others know before they are told again.
   PING_STEP = 20
 
-  # Share of the ping the others know that a new ping must differ by, too, before they are told again.
+  # Share of the ping the others know that a new ping must differ by, too, before they are told
+  # again.
   PING_SHARE = 0.25
 
   # The field that marks a message as a player's state, which no route may be named like.
@@ -95,7 +95,11 @@ module MGQ_MpOverworldSync
   # registers its route for.
   MODS_RULE_FIELD = "mods_rule_value"
 
+  # The scripts' message handlers, by the field that marks their messages, see route.
   @routes = {}
+
+  # The blocks the scripts registered, by kind: :tick, :state_fields, :busy_scene, :observe, :leave
+  # and :label_line.
   @handlers = Hash.new { |handlers, kind| handlers[kind] = [] }
 
   extend MGQ_MpLog
@@ -365,7 +369,8 @@ module MGQ_MpOverworldSync
 
     # Reads how the connection stands.
     #
-    # @return [Hash] "state" ("idle", "connecting", "open", "reconnecting" or "failed"), "seat", "others" and "error".
+    # @return [Hash] "state" ("idle", "connecting", "open", "reconnecting" or "failed"), "seat",
+    #   "others" and "error".
     def self.status
       text = MGQ_Multiplayer::Link.read('mp_world_status', 1024)
       text.empty? ? { "state" => "idle" } : MGQ_Multiplayer::Link.parse(text)
@@ -453,7 +458,8 @@ module MGQ_MpOverworldSync
     end
 
     # The seat of the player's game in the world's room, as the DLL last told it: the inbox tells
-    # it on every connection and Status every STATUS_FRAMES; the DLL is asked only while none was told.
+    # it on every connection and Status every STATUS_FRAMES; the DLL is asked only while none was
+    # told.
     #
     # @return [Integer] The seat, -1 while the game holds none.
     def self.seat
@@ -527,17 +533,22 @@ module MGQ_MpOverworldSync
     # Another player: their seat, what they last told, and their ghost while on this map.
     #
     # @!attribute seat [Integer] Their game's seat.
-    # @!attribute state [Hash] What they last told: "name", "sprite", "index", "map", "x", "y", "d", "speed", "hidden", "scene".
+    # @!attribute state [Hash] What they last told: "name", "sprite", "index", "map", "x", "y",
+    #   "d", "speed", "hidden", "scene".
     # @!attribute ghost [Game_MpGhost, nil] Their ghost, while they are on this map.
     # @!attribute member [Boolean] Whether they were in the player's party at their last message.
-    # @!attribute away [Integer, nil] The frames they are still kept for while their connection is down, nil while it stands.
+    # @!attribute away [Integer, nil] The frames they are still kept for while their connection is
+    #   down, nil while it stands.
     Peer = Struct.new(:seat, :state, :ghost, :member, :away)
 
     # Frames after entering a world in which a game that tells its first state is one already
     # there, as every game tells a newcomer at once, and joins without a notice.
     SETTLE_FRAMES = 300
 
+    # The other games, by seat.
     @peers = {}
+
+    # Frames since the player entered the world, see SETTLE_FRAMES.
     @in_world = 0
 
     # Takes what a game told. A player who tells from another seat, away or not, is the same player
@@ -769,18 +780,13 @@ module MGQ_MpOverworldSync
         MGQ_MpOverworldSync.log("the relay tells the world's story is at revision #{entry['rev']}")
         MGQ_MpOverworldSync.hand_over(nil, { STORY_FIELD => entry["rev"].to_s, :relay => true })
       when "boss"
-        # The relay tells a Raid World's boss pool changed, marked as the relay's like the story.
         MGQ_MpOverworldSync.log("the relay tells the boss pool #{entry['key']} holds #{entry['left']} of #{entry['max']}#{entry['defeated'] == '1' ? ', defeated' : ''}")
         MGQ_MpOverworldSync.hand_over(nil, { BOSS_FIELD => entry["key"].to_s, "left" => entry["left"].to_s, "max" => entry["max"].to_s,
                                              "defeated" => entry["defeated"].to_s, "by" => entry["by"].to_s, :relay => true })
       when "difficulty"
-        # The relay tells a Raid World's creator or an admin changed its difficulty, marked as the
-        # relay's like the story.
         MGQ_MpOverworldSync.log("the relay tells the world's difficulty is #{entry['value']} now")
         MGQ_MpOverworldSync.hand_over(nil, { DIFFICULTY_FIELD => entry["value"].to_s, :relay => true })
       when "mods_rule"
-        # The relay tells a world's creator or an admin changed whether it turns other mods off, or
-        # its mods, marked as the relay's like the story.
         mods = entry["mods"].to_s
         MGQ_MpOverworldSync.log("the relay tells the world #{entry['value'] == '1' ? 'turns other mods off' : 'allows other mods'} now, with mods \"#{mods}\"")
         MGQ_MpOverworldSync.hand_over(nil, { MODS_RULE_FIELD => entry["value"].to_s, "mods" => mods, :relay => true })
@@ -801,7 +807,10 @@ module MGQ_MpOverworldSync
   # What the line at the bottom left of the map shows: who came and went, and when the connection
   # is down.
   module Status
+    # Frames since the connection was last looked at, see STATUS_FRAMES.
     @frames = 0
+
+    # The notices shown: each one's text, frames left and icon.
     @notices = []
 
     # Adds a notice, shown for a few seconds.
@@ -867,7 +876,8 @@ module MGQ_MpOverworldSync
 
     # Tells what the line shows now, with each notice's icon.
     #
-    # @return [Array<Array>] Each line's text and icon, nil for none; the connection's problem first.
+    # @return [Array<Array>] Each line's text and icon, nil for none; the connection's problem
+    #   first.
     def self.shown
       (@problem ? [[@problem, nil]] : []) + @notices.map { |text, _, icon| [text, icon] }
     end
@@ -877,7 +887,10 @@ module MGQ_MpOverworldSync
   # player sees each new one; the others are told only once it moved noticeably, since every
   # message counts against the relay's free plan.
   module Ping
+    # The last ping measured in milliseconds, nil while there is no connection.
     @measured = nil
+
+    # The ping the others are told, empty before the first.
     @told = ""
 
     # Takes the ping the connection's status tells.

@@ -19,8 +19,8 @@ namespace MGQParadox.Multiplayer.Network.World;
 /// <see cref="Rfc2898DeriveBytes.Pbkdf2(byte[], byte[], int, HashAlgorithmName, int)"/>.
 /// </summary>
 /// <remarks>
-/// .NET derives PBKDF2 on Windows through a BCrypt pseudo-handle that no Proton release supports,
-/// so on a Steam Deck every world lock failed with "Unknown error (0xc1000008)".
+/// .NET derives PBKDF2 on Windows through a BCrypt pseudo-handle that fails under Proton with
+/// "Unknown error (0xc1000008)".
 /// </remarks>
 internal static class Pbkdf2Sha256
 {

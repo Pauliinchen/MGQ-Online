@@ -2,8 +2,8 @@
 //  Relays.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Named the text a game too old for the relay shows, and read why the relay turned a WebSocket away for both kinds of room
-//      Paulinchen  2026-10-06: Pointed every relay at the address in MGQMP_RELAY when it is set, for testing against a relay on this PC
+//      Paulinchen  2026-10-12: Named the text for a game too old for the relay and read its refusal reason for both kinds of room
+//      Paulinchen  2026-10-06: Pointed every relay at the address in MGQMP_RELAY when it is set
 //                            - Wrote hexadecimal in lowercase at once
 //      Paulinchen  2026-09-29: Named the world room of a world's token
 //                            - Created

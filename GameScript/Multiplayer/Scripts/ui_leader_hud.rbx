@@ -3,8 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Let other boxes draw a face or a map sprite as the HUD does
-#                            - Held the Small HUD to its own least size at the edges of the screen instead of the Large one's
-#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#                            - Held the Small HUD to its own least size at the edges of the screen
+#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #                            - Read the map's viewport through MGQ_MpGame
 #                            - Created
 #
@@ -13,10 +13,9 @@
 # The Leader HUD: the player's Formation Leader at the top left of the map, until the player moves
 # it, with their name and base level, their HP and MP, and how far they are to their next base, job
 # and race level. The Large size shows their face and writes the numbers into the HP and MP bars,
-# the Small size shows their map sprite and the bars alone. The player turns it
-# on and off and picks its size in the Mod Config, or switches the size with its hotkey (H unless
-# the player binds another, see core_hotkeys.rbx), kept in Player.ini, so it shows in single
-# player too.
+# the Small size shows their map sprite and the bars alone. The player turns it on and off and
+# picks its size in the Mod Config, or switches the size with its hotkey (H unless the player binds
+# another, see core_hotkeys.rbx), kept in Player.ini, so it shows in single player too.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpLeaderHud
@@ -26,22 +25,38 @@ module MGQ_MpLeaderHud
   # The setting in Player.ini that keeps the HUD's size, LARGE or SMALL.
   SIZE_SETTING = "leader_hud_size"
 
-  # The sizes, the first the one until the player picks another.
+  # The size that shows the face and the numbers in the bars.
   LARGE = "Large"
+
+  # The size that shows the map sprite and the bars alone.
   SMALL = "Small"
+
+  # The sizes, the first the one until the player picks another.
   SIZES = [LARGE, SMALL]
 
-  # The Mod Config rows' values that turn the HUD on and off.
+  # The Mod Config row's value that turns the HUD on.
   ON = "On"
+
+  # The Mod Config row's value that turns the HUD off.
   OFF = "Off"
 
-  # The Mod Config rows: their keys, names and help.
+  # The key of the Mod Config row that turns the HUD on and off.
   SHOWN_OPTION = :mp_leader_hud
+
+  # The name of the Mod Config row that turns the HUD on and off.
   SHOWN_OPTION_NAME = "Leader HUD"
+
+  # The help of the Mod Config row that turns the HUD on and off.
   SHOWN_OPTION_HELP = "Shows the Formation Leader at the top left of the map with their HP, MP and how far they are\n" \
                       "to their next base, job and race level. Hold the left Alt and drag it to move it."
+
+  # The key of the Mod Config row that picks the HUD's size.
   SIZE_OPTION = :mp_leader_hud_size
+
+  # The name of the Mod Config row that picks the HUD's size.
   SIZE_OPTION_NAME = "Leader HUD Size"
+
+  # The help of the Mod Config row that picks the HUD's size.
   SIZE_OPTION_HELP = "Large shows the face and the numbers in the HP and MP bars, Small the map sprite\n" \
                      "and the bars alone. The Leader HUD Size hotkey switches them on the map."
 
@@ -54,7 +69,10 @@ module MGQ_MpLeaderHud
   # name and the medal just won.
   TOP_LEFT_WINDOWS = [:map_name_window, :gain_medal_window]
 
+  # The pixels the HUD takes at its default place, see room.
   @room = 0
+
+  # Where the game put each of TOP_LEFT_WINDOWS, by the window.
   @tops = {}
 
   # Reports whether the player wants the HUD, as Player.ini keeps it, on until they turn it off.
@@ -95,7 +113,8 @@ module MGQ_MpLeaderHud
   end
 
   # Switches the HUD between its sizes on its hotkey, on the map while nothing else takes the keys.
-  # Called by the map every frame no scene change is in the way, so a press of the key is seen once.
+  # Called by the map every frame no scene change is in the way, so a press of the hotkey is seen
+  # once.
   def self.on_map
     return unless MGQ_MpHotkeys.pressed?(:leader_hud)
 
@@ -108,9 +127,9 @@ module MGQ_MpLeaderHud
     log_once(:on_map, "changing the Leader HUD's size failed: #{e.class}: #{e.message}")
   end
 
-  # Tells why the size key does nothing now.
+  # Tells why the size hotkey does nothing now.
   #
-  # @return [String, nil] The first reason that holds, nil when the key may change the size.
+  # @return [String, nil] The first reason that holds, nil when the hotkey may change the size.
   def self.busy_reason
     return "the HUD is off" unless shown?
     return "the chat box is open" if MGQ_MpChat.typing?
@@ -220,10 +239,13 @@ class Sprite_MpLeaderHud < Sprite
     MGQ_MpLeaderHud::SMALL => Layout.new(170, 5, MGQ_MpUi::Style::SMALL_SIZE, 0, 18, 6, 2, 3, 1, true),
   }
 
-  # Colors of each bar, from its left end to its right end: HP red, MP blue, and the base, job and
-  # race levels gold, green and violet.
+  # Colors of the HP bar, from its left end to its right end.
   HP_COLORS = [Color.new(150, 20, 20), Color.new(230, 60, 50)]
+
+  # Colors of the MP bar, from its left end to its right end.
   MP_COLORS = [Color.new(30, 80, 170), Color.new(70, 150, 240)]
+
+  # Colors of each level bar, from its left end to its right end, by EXP_KINDS.
   EXP_COLORS = {
     :base => [Color.new(200, 150, 40), Color.new(255, 220, 110)],
     :class => [Color.new(40, 150, 70), Color.new(110, 220, 120)],
@@ -242,10 +264,13 @@ class Sprite_MpLeaderHud < Sprite
   # Faces in a row of a face sheet.
   FACES_PER_ROW = 4
 
-  # Characters in a row of a sheet of eight, and the frames of a character's walk across and its
-  # directions down; a sheet whose name holds $ holds one character.
+  # Characters in a row of a sprite sheet of eight.
   CHARACTERS_PER_ROW = 4
+
+  # Frames of a character's walk, across.
   WALK_FRAMES = 3
+
+  # Directions a character faces, down.
   DIRECTIONS = 4
 
   # The frame of the walk the character stands in.
@@ -580,7 +605,7 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # After the map's update, the size key. The game checks its own keys there too, only while no
+  # After the map's update, the size hotkey. The game checks its own keys there too, only while no
   # scene change is in the way.
   MGQ_MpHooks.after(Scene_Map, :update_scene, "ui_leader_hud") { MGQ_MpLeaderHud.on_map unless scene_changing? }
 

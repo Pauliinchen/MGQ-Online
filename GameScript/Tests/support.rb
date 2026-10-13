@@ -2,15 +2,15 @@
 #  support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Collected the log lines a block writes, for the checks of what the log leaves out
-#      Paulinchen  2026-10-08: Stood in for watching keys, which ui.rbx does for the numpad's 0 as it loads
-#      Paulinchen  2026-10-07: Read each DLL export's signature from the table in Multiplayer.rb, as Link does, so a stand-in refuses an export the table lacks
-#      Paulinchen  2026-10-06: Refused a DLL call whose arguments differ from its signature, as RGSS does
-#                            - Loaded Zlib, which RGSS has built in
-#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
+#      Paulinchen  2026-10-12: Collected the log lines a block writes
+#      Paulinchen  2026-10-08: Stood in for watching keys
+#      Paulinchen  2026-10-07: Read each DLL export's signature from the table in Multiplayer.rb
+#      Paulinchen  2026-10-06: Refused a DLL call whose arguments differ from its signature
+#                            - Loaded Zlib
+#      Paulinchen  2026-10-04: Followed the scripts to their new names
 #      Paulinchen  2026-10-03: Loaded core_game_access.rbx before the first script too
 #                            - Loaded core_log.rbx before the first script too
-#      Paulinchen  2026-10-02: Loaded core_hooks.rbx before the first script, as Multiplayer.rb does
+#      Paulinchen  2026-10-02: Loaded core_hooks.rbx before the first script
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
@@ -99,6 +99,7 @@ end
 
 # Collects the log lines a block writes, then lets the log write as before.
 #
+# @yield The block whose log lines are collected.
 # @return [Array<String>] The lines.
 def logged_lines
   lines = []
@@ -113,8 +114,7 @@ def logged_lines
 end
 
 # Loads one of the mod's scripts as Multiplayer.rb does, from GameScript/Multiplayer/Scripts, after
-# core_log.rbx, which gives the scripts their log, and core_hooks.rbx, which they register their hooks
-# with.
+# core_log.rbx, core_hooks.rbx and core_game_access.rbx, which every script builds on.
 #
 # @param name [String] The script's name without its extension, such as "coop".
 def load_script(name)

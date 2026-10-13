@@ -2,9 +2,9 @@
 //  Log.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-11: Cut the session's log to its newest 2 MB once it passes 4 MB, so it never grows without end and a bug report still sends where the trouble is
-//      Paulinchen  2026-10-07: Wrote the file on a thread of the log's own, so no caller waits for the disk, flushed what is queued as the process exits, and exposed Flush for the tests
-//                            - Wrote each game session into a log of its own, named after the game's start, without a size limit, and counted a line repeated as it is instead of writing it again
+//      Paulinchen  2026-10-11: Cut the session's log to its newest 2 MB once it passes 4 MB
+//      Paulinchen  2026-10-07: Wrote the file on a thread of the log's own and flushed the queue on exit
+//                            - Wrote each game session into a log of its own and counted repeated lines
 //      Paulinchen  2026-10-06: Wrote the log into the game folder's Logs folder
 //      Paulinchen  2026-09-29: Kept the game and network threads from writing at once
 //      Paulinchen  2026-09-28: Created

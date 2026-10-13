@@ -2,7 +2,7 @@
 //  Exports.Mods.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Answered mp_restart_game with 2 under Wine, whose missing PowerShell cannot restart the game
+//      Paulinchen  2026-10-08: Answered mp_restart_game with 2 under Wine
 //      Paulinchen  2026-10-06: Sent the Mod Config options an admin's game reads for the catalog
 //                            - Created
 //

@@ -2,16 +2,16 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Stood in for the settings' group of the Mod Config, which ui.rbx names
-#      Paulinchen  2026-10-11: Stood in for the shared style's bad color, which the line past a squad takes
-#      Paulinchen  2026-10-10: Checked that a hidden squad member never brings the cut fourth into a duel or a co-op battle
-#                            - Checked that a Raid World offers the teleport to the story whenever its endpoint is known
-#      Paulinchen  2026-10-08: Checked a Raid World's squads: one and two for every player, the team of four with the rest on standby, no followers, the line after the third place and the battles of the player's own
-#                            - Checked that a Raid World's duels fight with the squad, team duels with their own party, and that fitting a team moves Luka into the squad
-#                            - Checked that a story's temporary party keeps the game's size and that a hidden squad member never lets the fourth into a battle
-#                            - Stood in for the game's party list, which every change cuts down to party_member_max, and its standby
-#      Paulinchen  2026-10-07: Gave the world stand-in who, which the log names players with
-#                            - Checked only that no line of the log tells a failure, since the party logs what it does
+#      Paulinchen  2026-10-12: Stood in for the settings' group of the Mod Config
+#      Paulinchen  2026-10-11: Stood in for the shared style's bad color
+#      Paulinchen  2026-10-10: Checked that a hidden squad member never brings in the cut fourth
+#                            - Checked that a Raid World offers the teleport to the story when known
+#      Paulinchen  2026-10-08: Checked a Raid World's squads, team of four and own battles
+#                            - Checked a Raid World's duels and that fitting a team moves Luka in
+#                            - Checked a story's temporary party and hidden squad members in battle
+#                            - Stood in for the game's party list and its standby
+#      Paulinchen  2026-10-07: Gave the world stand-in who
+#                            - Checked only that no line of the log tells a failure
 #      Paulinchen  2026-10-06: Stood in for wheel_choice instead of wheel_slot
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Added a stand-in for the action wheel's registries
@@ -22,19 +22,19 @@
 #
 #----------------------------------------------------------------
 
-# Covers a party's squads, coop_squad.rbx with coop.rbx: the shares of the Frontline and the
-# Backline, the leader's choice of followers, the followers shown, the formation screens' cut, the
-# option in the Mod Config, the cap of four players, and a Raid World's squads, team of four and
-# battles of the player's own.
+# Covers a party's squads, coop_squad.rbx with coop.rbx: the Frontline and Backline shares, the
+# followers and the leader's choice of them, the formation screens' cut, the cap of four players,
+# and a Raid World's squads, team of four and battles of the player's own.
 
 require_relative "support"
 
-# Stand-ins for the game.
+# Stands in for the game's colors.
 class Color
   attr_reader :red, :green, :blue, :alpha
   def initialize(red = 0, green = 0, blue = 0, alpha = 255); @red, @green, @blue, @alpha = red, green, blue, alpha; end
   def to_a; [@red.round, @green.round, @blue.round]; end
 end
+# A rectangle as the game's Rect holds it.
 Rect = Struct.new(:x, :y, :width, :height)
 # A picture of 2 by 2 pixels, enough to see each pixel turned grey.
 class Bitmap
@@ -45,12 +45,16 @@ class Bitmap
   def set_pixel(x, y, color); @pixels[[x, y]] = color; end
   def disposed?; false; end
 end
+# Stands in for the game's picture cache: a red face, a blue system picture.
 module Cache
   def self.face(name); Bitmap.new.tap { |b| b.set_pixel(0, 0, Color.new(255, 0, 0)) }; end
   def self.system(name); Bitmap.new.tap { |b| b.set_pixel(0, 0, Color.new(0, 0, 255)) }; end
 end
+# Stands in for the game's scene manager.
 module SceneManager; def self.run; end; end
+# Stands in for the game's constants.
 module NWConst
+  # Stands in for the Mod Config's entries, holding only the Return row.
   module Config
     MOD_CONTENTS = [{ :key => :return }]
     DATA = {}
@@ -58,8 +62,10 @@ module NWConst
     DEFAULT = {}
   end
 end
+# The game's system, holding the Mod Config's settings.
 System = Struct.new(:conf)
 $game_system = System.new({})
+# Stands in for the game's actors, which do not exist while hidden; Luka has id 1.
 class Game_Actor
   attr_reader :id
   def initialize(id); @id = id; end
@@ -91,11 +97,13 @@ class Game_Party
 end
 # A skill or item, which reaches the Backline too or not.
 Usable = Struct.new(:include_bench?)
+# Stands in for the game's followers.
 class Game_Follower
   attr_reader :character_name, :character_index
   def initialize(member_index, name); @member_index = member_index; @character_name = name; @character_index = member_index; end
   def visible?; true; end
 end
+# Stands in for the game's player, counting refreshes.
 class Game_Player
   attr_accessor :followers, :refreshed
   def refresh; @refreshed = (@refreshed || 0) + 1; end
@@ -123,10 +131,12 @@ class Window_MenuStatus
   def draw_icon(_icon, _x, _y, _enabled = true); @contents.pictures << :colored_icon; end
   def item_rect(index); Rect.new(0, index * 10, 100, 10); end
 end
+# Stands in for the namespace of the game's party edit script.
 module Foo
+  # Stands in for the game's party edit script.
   module PTEdit
-    # Draws a row as the game's party edit screen does: the Frontline of single player in the
-    # normal color, the rest in the system color.
+    # Draws a row as the game's party edit screen does: the first four in the normal color, the
+    # rest in the system color.
     class Window_PartyMember
       attr_reader :contents, :rows
       def initialize(actors); @actors = actors; @contents = Contents.new; @rows = []; end
@@ -148,11 +158,17 @@ module Foo
 end
 
 $log = []
+# Stands in for the mod's base script.
 module MGQ_Multiplayer
+  # Stands in for the mod's log, recording each line in $log.
   module Log; def self.write(m); $log << m; end; end
+  # Stands in for the DLL's link, giving the own player's id.
   module Link; def self.player_id; "me-id-000"; end; end
+  # Stands in for Discord, never there.
   module Discord; def self.available?; false; end; end
 end
+# Stands in for the overworld sync, keeping the ticks and state fields the scripts register; a
+# world is open while $open.
 module MGQ_MpOverworldSync
   @fields = []
   @ticks = []
@@ -163,26 +179,35 @@ module MGQ_MpOverworldSync
   def self.on_observe(*); end
   def self.on_leave(*); end
   def self.label_line(*); end
+  # Merges the fields every registered block tells.
   def self.fields; @fields.map(&:call).inject({}) { |all, f| all.merge(f) }; end
+  # Runs every registered tick.
   def self.tick(in_world); @ticks.each { |t| t.call(in_world) }; end
   def self.notice(text); Status.notice(text); end
   def self.who(peer); peer == :me ? "the player" : "#{peer && peer.state['name']}"; end
+  # Stands in for the other players seen, kept in @all.
   module Peers
+    # Another player as the overworld sync keeps them.
     Peer = Struct.new(:seat, :state, :ghost, :member)
     @all = []
     def self.all; @all; end
   end
+  # Stands in for the own player's id and name.
   module Me; def self.identity; ["me-id-000", "Me"]; end; def self.id; identity[0]; end; end
+  # Stands in for the status line, keeping the last notice in $notice.
   module Status; def self.notice(text); $notice = text; end; end
 end
 
+# Stands in for the action wheel's registries.
 module MGQ_MpActions
+  # A choice of the action wheel.
   Option = Struct.new(:text, :run, :refusal, :icon, :leaves)
   LINE_COLOR = :line
   def self.offer(*); end
   def self.wheel_choice(*); end
   def self.own_doing_from; end
 end
+# Stands in for the shared style, with its bad color.
 module MGQ_MpUi; module Style; BAD = Color.new(255, 96, 96); end; end
 # The first words of the mod's settings in the Mod Config, as ui.rbx names them.
 module MGQ_MpUi; OPTION_PREFIX = "[MGQ Online Settings] " unless const_defined?(:OPTION_PREFIX); end
@@ -284,6 +309,8 @@ check("outside a world nothing is cut", [squad.own_share, squad.place_of(actors[
 check("nor told to Discord", MGQ_MpCoop.status_fields, {})
 
 # A Raid World: one on the Frontline and two on the Backline for everyone, a team of four.
+
+# Stands in for the world, a Raid World while one is open and $raid holds.
 module MGQ_MpWorld; def self.raid?; $open && $raid; end; end
 $raid = true
 $open = true
@@ -329,6 +356,7 @@ check("a hidden Frontline character never lets the fourth in", [$game_party.batt
 $game_actors[2].hidden = true
 check("nor does a hidden Backline character", [$game_party.battle_members.map(&:id), $game_party.bench_members.map(&:id)], [[3], []])
 $game_actors[1].hidden = $game_actors[2].hidden = false
+# Stands in for the battle sync, a team duel while $team_duel holds.
 module MGQ_MpBattlesSync; def self.team?; $team_duel; end; end
 check("a duel fights with the squad too", [$game_party.max_battle_members, $game_party.bench_members.map(&:id)], [1, [2, 3]])
 $team_duel = true
@@ -341,6 +369,8 @@ check("a hidden squad member never brings the cut fourth into a duel or a co-op 
 $game_actors[2].hidden = false
 
 # The teleport to the story on demand, which coop.rbx offers on the player's own row in a Raid World.
+
+# Stands in for the gathering, the story's endpoint from $story_end and a join kept in $joined_story.
 module MGQ_MpCoopGather; def self.story_endpoint; $story_end; end; def self.join_story; $joined_story = true; end; end
 story = lambda { MGQ_MpCoop::Offers.own_options.find { |option| option.text == "Teleport to the story" } }
 $story_end = nil

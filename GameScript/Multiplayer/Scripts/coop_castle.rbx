@@ -3,13 +3,13 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Read the map's viewport through MGQ_MpGame
-#      Paulinchen  2026-10-09: Read which variables are the player's own from story_state.rbx instead of coop_story.rbx
-#      Paulinchen  2026-10-08: Left the castle's Map Owner to the map's sync host in a Raid World, where parties lead nothing
-#      Paulinchen  2026-10-07: Named events through coop.rbx instead of a copy of its helper
-#                            - Logged each ghost of the leader's residents shown and hidden, with the event, the pages and why
-#      Paulinchen  2026-10-06: Took the party's leader from coop.rbx, and the ghosts' opacity and catch-up tiles from overworld.rbx
-#      Paulinchen  2026-10-04: Showed the leader's residents in the castle, those the member's game does not show as ghosts
-#                            - Noted where the castle's way out returns a member the party brings into the castle
+#      Paulinchen  2026-10-09: Read the player's own variables from story_state.rbx
+#      Paulinchen  2026-10-08: Left the castle's Map Owner to the map's sync host in a Raid World
+#      Paulinchen  2026-10-07: Named events through coop.rbx
+#                            - Logged each ghost shown and hidden
+#      Paulinchen  2026-10-06: Took the leader from coop.rbx and the ghosts' constants from overworld.rbx
+#      Paulinchen  2026-10-04: Showed the leader's residents the member's game lacks as ghosts
+#                            - Noted the castle's way out for a member the party brings in
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -23,8 +23,7 @@
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopCastle
-  # Maps of the Pocket Castle, the home the party returns to, whose companions, merchants, inn and
-  # maids each player talks to in their own game. The maps of the castle's side stories stay out.
+  # Maps of the Pocket Castle's residents, without the maps of the castle's side stories.
   MAPS = [227, 228, 229, 230] + (268..278).to_a
 
   # Common events of the Pocket Castle's services: Vanilla's shop (106), Papi's smithy (107), the
@@ -34,6 +33,7 @@ module MGQ_MpCoopCastle
   # Scripts of the Pocket Castle's coin shop, which lists its goods itself.
   SHOP_SCRIPTS = /\A\s*@goods\b/
 
+  # The ghosts of the leader's residents shown, by their event's id.
   @ghosts = {}
 
   # A variable shown in a speaker's name, which a companion's name shows for their affection.

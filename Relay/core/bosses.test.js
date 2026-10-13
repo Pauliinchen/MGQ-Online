@@ -2,7 +2,7 @@
 //  bosses.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Covered boss pools that keep the share of a raid max HP left: turn reports by number, healing, kills, regeneration, pools kept in kills, the frame and the admin view
+//      Paulinchen  2026-10-10: Covered boss pools that keep the share of a raid max HP left
 //      Paulinchen  2026-10-09: Created
 //
 //----------------------------------------------------------------

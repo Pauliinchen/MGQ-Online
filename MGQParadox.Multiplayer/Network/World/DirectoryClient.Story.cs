@@ -3,7 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Carried the level caps of the world's story
-//      Paulinchen  2026-10-09: Logged the fetch of a world's story only when its outcome changed or it was slow, and let a boss route's request name the client it is sent with
+//      Paulinchen  2026-10-09: Logged story fetches only when their outcome changes and let boss requests name their client
 //      Paulinchen  2026-10-08: Created
 //
 //----------------------------------------------------------------

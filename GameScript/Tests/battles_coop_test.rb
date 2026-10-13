@@ -3,72 +3,72 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Read who joined the battle from its popup instead of the chat
-#                            - Checked that the battle of the story that calls the player over is joined and drops the call, while another player's invite is turned down
+#                            - Checked invites while the leader's story calls the player over
 #                            - Checked that a leave from a player outside the battle tells nothing
-#                            - Checked that the host keeps the actions there when a guest's commands name an id or a target too large or fail to apply
-#                            - Checked that a defeat scene id too large for the game or an enemy that is no id is replaced by one here
+#                            - Checked that the host keeps the actions for a guest's broken commands
+#                            - Checked that a broken defeat scene id or enemy is replaced by one here
 #                            - Checked that a join whose party_member_max is no number still forms the party
-#                            - Checked that a player another game sends drops its fields of the wrong kind, logged once, and is left out when its seat is no number
-#                            - Checked that a guest drops an enemy of the host's troop whose fields are no numbers, logged once per field and kind, instead of failing
-#                            - Checked that the host's enemies keep their places in the troop when a place or mark is no number, and that an enemy whose id is no enemy of this game keeps the guest's own troop
-#                            - Checked that a guest leaving a story battle or taking a battle over picks a defeat scene of its enemies instead of none or a former battle's, that a host keeps its own, and that a battle without one is left as an escape
-#      Paulinchen  2026-10-11: Checked that leaving a story's battle without escape loses it for the player alone, and that any other battle is left as an escape
-#                            - Checked that the steps to the next random encounter stretch by half while another player stands near, in a party and in a Raid World, and that a Raid World's battle invites only the players near
-#                            - Checked that the party takes commands while the player's Frontline is down and their Backline may swap in, and not once it may not
-#                            - Checked that the status window names each character in its player's color, leaving a character in crisis to the game
-#                            - Checked that a guest reads in the chat log who joined the host's party, and nothing when a player leaves it
-#                            - Checked that the notice of a member's battle lasts as long as the player stands still and goes when they walk on early
-#                            - Checked that a status name the mod cannot draw is left to the game, and that the guests are told when the host chooses again
-#      Paulinchen  2026-10-10: Checked that a Raid World stretches the steps to the next random encounter by half a draw per other player on the map, no more than a battle holds
-#                            - Checked that a party of a Classic world stretches the steps to the next random encounter once per member on the map, within a wider margin
-#                            - Checked that a boss battle in a Raid World invites the players reading the story the player tells
-#                            - Checked that a guest who follows to the battle its host yields to fights the raid boss's pools of its invite
-#                            - Checked that a player who yields to a rival fights with its enemy rates and pools and has its own rates back as the battle ends, before the game's autosave
-#                            - Checked that a raid boss battle whose pools are all empty invites not even the host of a waiting invite, and that a rival's invite that comes twice is kept once
-#                            - Checked that a Raid World's battle invites no player whose battle waits under the Library or Config while their window is in the background
-#      Paulinchen  2026-10-09: Checked that a Classic co-op host tells its guest a troop that grew mid-battle once, before the send of its stream, and again should telling it fail
+#                            - Checked that a player's fields of the wrong kind are dropped
+#                            - Checked that a guest drops a host's enemy whose fields are no numbers
+#                            - Checked a host's troop whose places, marks or ids this game cannot take
+#                            - Checked the defeat scene a guest picks when leaving or taking a battle over
+#      Paulinchen  2026-10-11: Checked that leaving a story's battle without escape loses it for the player alone
+#                            - Checked the encounter stretch near other players and Raid invites of those near
+#                            - Checked that the party takes commands while the Backline may swap in
+#                            - Checked that the status window names each character in its player's color
+#                            - Checked that a guest reads in the chat log who joined the host's party
+#                            - Checked how long the notice of a member's battle lasts
+#                            - Checked status names the mod cannot draw and the host choosing again
+#      Paulinchen  2026-10-10: Checked how a Raid World stretches the steps to the next random encounter
+#                            - Checked how a Classic party stretches the steps to the next random encounter
+#                            - Checked that a Raid boss battle invites the players reading the player's story
+#                            - Checked that a guest following its host to another battle fights its pools
+#                            - Checked the enemy rates and pools of a player who yields to a rival
+#                            - Checked a raid boss battle with empty pools and a rival's invite that comes twice
+#                            - Checked that a Raid battle invites no player whose battle waits under the Library
+#      Paulinchen  2026-10-09: Checked that a Classic co-op host tells its guest a troop that grew mid-battle
 #                            - Checked that a player who yields to a rival's boss battle notes it as one
-#                            - Checked that a Raid World's battle takes a player whose game window is in the background, but not a busy one
+#                            - Checked that a Raid World's battle takes a player whose window is in the background
 #      Paulinchen  2026-10-08: Checked that a face this game lacks is left out of a message the host shows
-#                            - Checked that a Raid World's co-op battle gives every player one and two, also to a host left alone, and that its team duels split as before
+#                            - Checked that a Raid World's co-op battle gives every player one and two
 #                            - Checked that a player brings only their squad to a Raid World's team duel
-#                            - Checked whom a Raid World's battle takes, that the player who starts it hosts it and invites through the map's gate, its ten seconds to join and that the host comes first
-#                            - Checked that a host who gave a battle up takes its invite back, that a player who trades tells it and turns invites down, and that a Raid World refuses requests to lead
-#                            - Checked that of two battles started at the same moment the player who entered the map first hosts, and that only a random encounter yields
-#                            - Checked that a rival's invite that waited as the battle began is kept, that of two waiting invites or rivals the later host's is turned down, that a held encounter lets the players it leaves out walk on and that a Classic world takes no co-op message through the map's gate
-#                            - Checked that a battle invites the host of a waiting invite, that a random encounter yields to an event's battle, that a guest follows to the battle its host yields to and that another host's word that their battle is off keeps the player still for a waiting invite
-#      Paulinchen  2026-10-07: Read a rebuilt character's log line as the live battle names characters, its id after its name
-#                            - Checked that the log names the leader's answer, who joined, the roster, each rebuild and why an invite was turned down
-#                            - Checked that a guest who leaves takes their characters' actions along, and that the host's computer chooses none while it waits
+#                            - Checked whom a Raid World's battle takes and who hosts it
+#                            - Checked invites taken back, trading players and refused requests to lead
+#                            - Checked who hosts two battles started at the same moment
+#                            - Checked waiting invites and rivals, held encounters and the map's gate
+#                            - Checked yielding to waiting invites and event battles, and battles called off
+#      Paulinchen  2026-10-07: Read a rebuilt character's log line with its id after its name
+#                            - Checked what the log names of a co-op battle
+#                            - Checked the actions of a guest who leaves or is waited for
 #                            - Checked that a guest's party is named after its own characters
 #      Paulinchen  2026-10-06: Checked that another player's fallen character comes fallen
-#                            - Checked that a skill reaching the Backline too reaches the co-op party, and that the Library counts only the player's own characters
-#                            - Checked that the end drops the game's Retry, and that a reset forgets the co-op battle and its rules
-#                            - Checked that a guest who takes over starts the battle or sets its counters, and that a guest left out ends its battle
+#                            - Checked skills that reach the Backline and the Library's counts
+#                            - Checked that the end drops the game's Retry and a reset forgets the battle
+#                            - Checked a guest who takes over and a guest left out
 #                            - Checked that invites and requests the player cannot take are turned down at once
-#                            - Checked that a guest's commands go no further than the host's actions, and that an empty list takes them away
+#                            - Checked that a guest's commands go no further than the host's actions
 #                            - Checked that the guest takes the turns the host's states have left
-#                            - Checked that the guest shows the host's messages through the game's message, with their speaker
-#      Paulinchen  2026-10-04: Checked that only the players whose command was for a character another player swapped out choose again
+#                            - Checked that the guest shows the host's messages with their speaker
+#      Paulinchen  2026-10-04: Checked that only players who lost a target to a swap choose again
 #                            - Checked that a player who leaves mid-phase stays in the party until the next phase
-#                            - Checked that the roster carries the battle's level and that the party goes through the level sync
+#                            - Checked the battle's level in the roster and the level sync
 #                            - Checked that the host logs a rebuild that differs
 #                            - Checked that new states let the game read a guest's character's features anew
 #                            - Checked that a member's encounter holds the party members on the map
 #                            - Followed the scripts to their new names, without mp_
-#                            - Checked that the guest of a lost battle takes the host's defeat scene, or one of its own enemies
+#                            - Checked the defeat scene the guest of a lost battle takes
 #      Paulinchen  2026-10-03: Checked that the others' characters start the battle and each turn with a hit count
 #                            - Checked that the map shows the player's own leader again after the battle
-#                            - Checked that the party's leader leads a member's battle, and that the member hosts once the leader refuses or stays silent
-#                            - Checked that invites during a battle of the player's own or older than three seconds are turned down
+#                            - Checked that the party's leader leads a member's battle
+#                            - Checked that invites the player cannot take in time are turned down
 #                            - Checked that a random encounter waits up to three seconds for busy members on the map
 #                            - Checked that a guest's command the character may not give is left out
-#      Paulinchen  2026-10-02: Checked that a player who joined and left the world before the roster does not stop the battle
+#      Paulinchen  2026-10-02: Checked a player who joined and left the world before the roster
 #                            - Ended the guest's battle through guest_end
 #      Paulinchen  2026-10-01: Checked that every player hears at once when another leaves the battle
 #                            - Checked that a guest whose troop differs fights the host's enemies
 #                            - Checked the squads players bring, the leader first, and swaps with the Backline
-#                            - Took the stand-ins from battle_support.rb, which the team duel test shares
+#                            - Took the stand-ins from battle_support.rb
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
@@ -158,9 +158,10 @@ check("two players bring two each, the host's own first", party.map(&:name), ["A
 check("the others' characters keep their HP and MP", party[2, 2].map { |a| [a.hp, a.mp, a.mp_seat] }, [[50, 5, 2], [60, 6, 2]])
 check("the status windows show the party", $refreshed, true)
 
-# The status window names each character in its player's color: a stand-in that records what it
-# draws, with the game's max HP.
+# The status window names each character in its player's color.
+# A character's max HP.
 class Game_Actor; def mhp; 100; end; end
+# A status window that records what it draws.
 class Window_BattleStatus
   attr_reader :drawn, :color
   def change_color(color); @color = color; end
@@ -177,6 +178,7 @@ check("the status window names the player's own character in their color and ano
 party[2].hp = 24
 check("a character in crisis is left to the game's colors, as is one drawn without a width", [status.draw_actor_name(party[2], 4, 24, 100), status.draw_actor_name(party[0], 4, 0), status.drawn.size], [:original, :original, 2])
 party[2].hp = 50
+# A status window whose color fails.
 class Window_MpFailingStatus < Window_BattleStatus; def change_color(_color); raise "no color"; end; end
 failing = Window_MpFailingStatus.new
 check("a name the mod cannot draw is left to the game, logged once",
@@ -471,12 +473,15 @@ check("in co-op every player tries to escape as in any battle", MGQ_MpBattlesSyn
 
 # Leaving a story's battle without escape loses it for the player alone, since its event has no
 # branch for an escape; any other battle is left as an escape.
+# The defeat scene the battle picked and its enemy.
 class Game_Temp; attr_accessor :lose_event_id, :lose_event_enemy_id; end
+# An enemy whose defeat scene is 6000 plus its id.
 class Game_Enemy; def lose_event_id; 6000 + @enemy_id; end; def id; @enemy_id; end; end
 known_events = $data_common_events
 $data_common_events = []
 $data_common_events[6031] = $data_common_events[6032] = $data_common_events[6099] = :scene
 $game_temp.lose_event_id = 6031
+# Notes the defeat in $defeated.
 def BattleManager.process_defeat; $defeated = true; end
 scene.instance_variable_set(:@info_viewport, Struct.new(:visible).new(true))
 leave = lambda do |event_proc, can_escape|
@@ -596,13 +601,17 @@ MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[[], [], [], []]
 check("a broken order puts the guest's characters back in theirs", MGQ_MpBattlesCoop.instance_variable_get(:@players).find { |p| p[0] == 2 }[5], [0, 1, 2, 3])
 
 # Commands for one character of the party, which another player's swap takes away.
+# A skill's scope: for a friend, for one, for the user.
 Target = Struct.new(:friend, :one, :user) do
   def for_friend?; friend; end
   def for_one?; one; end
   def for_user?; user; end
 end
+# The id of the skill for one friend.
 RAISE_SKILL = 141
+# The scope of the skill for one friend.
 RAISE = Target.new(true, true, false)
+# An action whose RAISE_SKILL takes RAISE for its item.
 class Game_Action
   alias_method :plain_set_skill, :set_skill
   def set_skill(id); id == RAISE_SKILL ? @item = RAISE : plain_set_skill(id); end
@@ -821,8 +830,8 @@ $encounter_troop = 74
 check("a member in a battle of their own is not waited for", [$game_player.encounter, MGQ_MpBattlesCoop.holding?], [true, false])
 MGQ_MpBattlesCoop.ended
 
-# A member on the map stands still while another member's encounter waits for the party. The
-# notification box stands in, keeping what is posted and dropped.
+# A member on the map stands still while another member's encounter waits for the party.
+# The notification box, keeping what is posted in $notice_posts and dropped in $notice_drops.
 module MGQ_MpNotices
   def self.message(key, text, frames = nil); ($notice_posts ||= []) << [key, text, frames]; end
   def self.drop(key, reason = "taken away"); ($notice_drops ||= []) << [key, reason]; end
@@ -847,7 +856,9 @@ $scene_now = scene
 # A guest's character takes the host's states, and the game reads its features anew, so a state's
 # extra actions, such as Division's, count on the guest too.
 $data_states = [nil, :poison, :division]
+# The game's cache of features, keeping the id of each character it clears in $cleared.
 module CacheActorFeatures; def self.init_actor(actor); ($cleared ||= []) << actor.id; end; end
+# A character, which the game takes for an actor.
 class Game_Actor; def actor?; true; end; end
 guest_actor = Game_Actor.new(7)
 $cleared = []
@@ -859,6 +870,7 @@ check("the same states only change its values", [$cleared, MGQ_MpGame.get(guest_
 
 # The host logs where a rebuilt character differs from what its owner's game showed, its counter
 # rate among them.
+# A rebuilt character whose differences are $differences.
 class Game_MpActor; def differences; $differences || []; end; def on_battle_start; end; end
 $log.clear
 $differences = ["counter 0 (sent 500)"]
@@ -868,10 +880,12 @@ $differences = nil
 
 # The guest shows the host's messages through the game's message, which names their speaker, and
 # lets the game move an earlier message on before a new one starts.
+# The game's message, holding text while $game_message_texts has lines.
 class Game_Message
   attr_accessor :face_name, :face_index, :background, :position
   def has_text?; !$game_message_texts.to_a.empty?; end
 end
+# A battle whose wait for a message counts in $message_waits and moves the message on.
 class Scene_Battle; def wait_for_message; $message_waits += 1; $game_message_texts = []; end; end
 playback = MGQ_MpBattlesSync::Playback
 speaker = $game_troop.members[0]
@@ -900,6 +914,9 @@ check("another player's fallen character is rebuilt fallen", [fallen.hp, fallen.
 
 # Forms a guest's co-op battle with the host at seat 0 and the player's four characters at seat 2,
 # two of them on the Backline.
+#
+# @param scene [Scene_Battle] The battle.
+# @param bid [String] The battle's id.
 def form_guest_battle(scene, bid)
   $my_seat = 2
   MGQ_MpBattlesSync.join_world(:guest, bid, [0], "Host")
@@ -909,7 +926,8 @@ def form_guest_battle(scene, bid)
   MGQ_MpBattlesCoop.form(scene, [[0, "Host", "4,5", [[80, 8], [90, 9]], 8, [0, 1], 2, 0], [2, "Me", "1,2,3,4", [[100, 10]] * 4, 8, [0, 1, 2, 3], 2, 2]])
 end
 
-# A skill or item that reaches the Backline too.
+# Skills and items that reach the Backline too.
+# A skill or item that reaches the Backline too or not.
 class TargetItem
   def initialize(bench); @bench = bench; end
   def include_bench?; @bench; end
@@ -954,6 +972,7 @@ MGQ_MpBattlesSync.finish
 
 # A guest whose host leaves takes the battle over: one before the host's party came starts it as
 # its own, one later sets the counters the start sets and picks a defeat scene.
+# A battler that notes when its counters are set.
 class Game_Battler; attr_reader :counters_set; def set_counter; @counters_set = true; end; end
 $my_seat = 2
 MGQ_MpBattlesSync.join_world(:guest, "g32", [0], "Host")
@@ -1047,7 +1066,9 @@ check("alone on the map the game's draw stands", $game_player.encounter_count, 1
 mate.state["map"] = "5"
 pal.state["map"] = "5"
 
-# A Raid World: every player brings one on the Frontline and two on the Backline.
+# A Raid World: the steps stretched, and every player bringing one on the Frontline and two on the
+# Backline.
+# The world, a Raid World while $raid is set.
 module MGQ_MpWorld; def self.raid?; $raid; end; end
 $raid = true
 $log.clear
@@ -1099,7 +1120,9 @@ check("a Classic world's battles keep the whole team", [$game_party.max_battle_m
 $game_party.in_battle = false
 
 # A Raid World's battle takes the free players on the map, party or not.
+# The party, none while $no_party is set.
 module MGQ_MpCoop::Party; def self.id; $no_party ? nil : "p1"; end; end
+# The trading, whose session is $trade_session.
 module MGQ_MpTrade; def self.session; $trade_session; end; end
 
 # Reads the messages sent through the map's gate.
@@ -1150,6 +1173,7 @@ check("and a player whose game window is in the background, which keeps running"
 background.state["rb"] = "b4"
 check("but not one whose battle waits under the Library or Config", MGQ_MpBattlesCoop.raid_candidates.map(&:seat), [3, 6, 7])
 MGQ_MpOverworldSync::Peers.all.delete(background)
+# The players reading the story the player tells, $viewers while set.
 class << MGQ_MpCoop::Scope
   alias_method :viewers_of_scope, :viewers
   def viewers; $viewers || viewers_of_scope; end
@@ -1330,6 +1354,7 @@ MGQ_MpBattlesCoop.take(earliest, rival_invite.merge("bid" => "e0"))
 check("an earlier rival replaces the one kept, which is turned down", [MGQ_MpBattlesCoop.instance_variable_get(:@rival)[:message]["bid"], declines], ["e0", [[14, "e1"]]])
 MGQ_MpBattlesCoop.take(earliest, { "coop" => "off", "bid" => "e0" })
 check("a rival who gave their battle up is forgotten, the player's own goes on", MGQ_MpBattlesCoop.instance_variable_get(:@rival), nil)
+# Keeps the troop whose chance to escape is made in $escape_troop.
 def BattleManager.make_escape_ratio; $escape_troop = $game_troop.troop_id; end
 MGQ_MpBattlesCoop.adopt_troop(scene, rival_invite)
 check("a rival's troop gets its own chance to escape", $escape_troop, 90)
@@ -1357,6 +1382,7 @@ MGQ_MpBattlesSync.finish
 
 # A guest whose host yields follows to the battle it yields to, through battles_raid_pool.rbx,
 # which stands in here.
+# The raid boss pools, keeping each troop set up in $pool_set_ups and counting rescales in $rescaled.
 module MGQ_MpRaidPool
   def self.note_invite(_message); end
   def self.set_up(troop_id); ($pool_set_ups ||= []) << troop_id; end
@@ -1405,6 +1431,7 @@ MGQ_MpBattlesCoop.ended
 MGQ_MpBattlesSync.finish
 
 # A raid boss battle whose pools are all empty already is won at once and invites nobody.
+# Takes troop 95's pools for empty.
 def MGQ_MpRaidPool.won_already?(troop_id); troop_id.to_i == 95; end
 $my_since = 50
 MGQ_MpBattlesCoop.take(rival, rival_invite)
@@ -1413,6 +1440,7 @@ BattleManager.setup(95)
 check("a raid boss battle whose pools are all empty invites not even the host of a waiting invite",
       [map_sent("invite"), map_sent("freeze"), MGQ_MpBattlesSync.role, declines], [[], [], nil, [[13, "rv1"]]])
 MGQ_MpBattlesCoop.ended
+# Takes no troop's pools for empty.
 def MGQ_MpRaidPool.won_already?(_troop_id); false; end
 $my_since = 200
 

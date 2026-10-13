@@ -2,8 +2,8 @@
 //  ModFolderTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Checked the log of a session, named after the game's start
-//      Paulinchen  2026-10-06: Checked that the DLL's log lands in the game folder's Logs folder
+//      Paulinchen  2026-10-07: Checked the name of a session's log
+//      Paulinchen  2026-10-06: Checked that the DLL's log lands in the Logs folder
 //      Paulinchen  2026-10-01: Created
 //
 //----------------------------------------------------------------

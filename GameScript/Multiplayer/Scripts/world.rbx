@@ -2,96 +2,92 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Read the title screen's commands through MGQ_MpGame and left them alone when the title screen has none
-#                            - Kept the favourites and the hidden worlds added in Player.ini, moving the entries of Favourites.ini and
-#                              Added.ini into it once and deleting those files, never while one of the files cannot be read
-#                            - Left a world.ini that exists but could not be read as it is instead of making it anew
+#      Paulinchen  2026-10-12: Read the title screen's commands through MGQ_MpGame
+#                            - Kept the favourites and the added hidden worlds in Player.ini, moving the old files into it
+#                            - Left an unreadable world.ini as it is
 #      Paulinchen  2026-10-11: Took the featured worlds' gold and the Raid Worlds' red from the shared style
-#                            - Told whether a world's password is known, which this PC's folder of it answers for the world screen's
-#                              entry and details
-#      Paulinchen  2026-10-10: Let a development build give a Raid World a shared save, for testing: a Save beside the Difficulty in the new world's
-#                              form, optional, sent as a Classic world's starting save
-#                            - Put the parked mods back only once the updater started, so a failed updater leaves the session as it was
-#                            - Listed the worlds the directory no longer has after the others, Raid Worlds among them too
-#      Paulinchen  2026-10-09: Added Turn off other mods: a checkbox in the new world's form, ticked for a Raid World until the player ticks it themselves,
-#                              and in the edit form, sent with the world and, when it changed, with its edits, and read from the list
-#                            - Put the new world's Raid-only and Classic-only rows on one row, each shown for its type, which freed the row
-#                            - Had the parked mods come back as the game goes back to the title screen, and before the update, and noted the world entered
-#                            - Waited with a new game or a Discord invite while the title screen starts the game again for the parked mods
-#                            - Added a Raid World's difficulty: a switch in the new world's form and in the edit form of a Raid World, sent with the world and its edits, read from the list, kept in world.ini and told through difficulty
-#                            - Greyed out the new world's starting point for a Raid World, which starts from the beginning, and sent neither a starting save nor the player's choice with it
-#      Paulinchen  2026-10-08: Added the world's type, Classic or Raid, with how a Raid World shares companions: chosen in the new world's form, sent with the world, read from the list and kept in world.ini
-#                            - Showed Raid Worlds in red above every other world, red winning over the gold of a featured one
-#                            - Told whether the open world is a Raid World and how it shares companions, which every script asks through raid? and companion_sharing
-#                            - Put the new world's starting point into its World panel, which keeps the form on one page with the world type
-#                            - Let a form's field depend on any other field through a block, and gave a switch a label width of its own
-#                            - Added Shared Mod Settings to the forms of a new world and of the creator's own world
-#                            - Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
+#                            - Told whether a world's password is known
+#      Paulinchen  2026-10-10: Let a development build give a Raid World a shared save
+#                            - Put the parked mods back only once the updater started
+#                            - Listed the worlds the directory no longer has after the others
+#      Paulinchen  2026-10-09: Added Turn off other mods to the forms and the list
+#                            - Put the new world's Raid-only and Classic-only fields on one row
+#                            - Brought the parked mods back on the title screen and before the update, and noted the world entered
+#                            - Held a new game or a Discord invite while the title screen restarts for the parked mods
+#                            - Added a Raid World's difficulty to the forms, the list and world.ini
+#                            - Greyed out the new world's starting point for a Raid World
+#      Paulinchen  2026-10-08: Added the world's type, Classic or Raid, and a Raid World's companion sharing
+#                            - Showed Raid Worlds in red above every other world
+#                            - Added raid? and companion_sharing
+#                            - Put the new world's starting point into its World panel
+#                            - Let a form's field depend on any other field, and gave a switch its own label width
+#                            - Added Shared Mod Settings to the create and edit forms
+#                            - Closed with Numpad 0 through MGQ_MpUi.cancel?
 #                            - Told whether the world stays open on the title screen for its new game
 #                            - Logged the mod settings a new world starts with
-#                            - Left Multiplayer on the title screen enabled once a newer release is out, offering to update and install it in a message box in place of the notice on every title screen
+#                            - Offered to update and install from the Multiplayer command once a newer release is out
 #                            - Opened the world screen when the game started again after the update
-#                            - Kept the game open under Wine or Proton, where the updater cannot run, telling how to update by hand
-#                            - Offered the update on the title screen to an outdated game for a Discord invite into a world, instead of waiting without a word
-#                            - Let the world screen and the world's mod settings each claim the directory action they start and take only its answer
+#                            - Kept the game open under Wine or Proton, telling how to update by hand
+#                            - Offered the update for a Discord invite into a world in an outdated game
+#                            - Let each caller claim the directory action it starts
 #                            - Read how the world list stands without its worlds
-#      Paulinchen  2026-10-07: Registered the title screen's commands, its end and a world's new game through core_hooks.rbx, keeping only the path wraps as wraps of this script
-#                            - Kept the worlds on this PC and the favourites read until one changes, since the world screen asks every few frames
-#                            - Named the DLL's exports alone, their signatures living in Multiplayer.rb
-#                            - Added a form's switch between several outcomes, with a line of what the outcome picked brings
-#                            - Logged entering and leaving a world with the reason, the directory's requests and list, the hidden and favourite worlds, the folders and the system saves
-#      Paulinchen  2026-10-06: Built the form of a world's password, which world_screen.rbx typed into in place
-#                            - Asked a scene directly whether it changes, since the game makes that public
+#      Paulinchen  2026-10-07: Registered the title screen hooks through core_hooks.rbx
+#                            - Cached the worlds on this PC and the favourites until one changes
+#                            - Named the DLL's exports alone
+#                            - Added a form's switch between several outcomes
+#                            - Logged entering and leaving worlds, the directory's requests and list, and the system saves
+#      Paulinchen  2026-10-06: Built the form of a world's password
+#                            - Asked a scene directly whether it changes
 #                            - Called mp_dir_edit with as many arguments as its signature names
-#                            - Took an empty name in the form of the player's name while Discord knows theirs, and gave each text box its own reason when empty
-#                            - Removed missing_mods, which MGQ_MpWorldMods.differing replaced
-#                            - Took Discord invites into a world, which open the world screen on the title screen
+#                            - Took an empty player name while Discord knows theirs, and gave each text box its own empty reason
+#                            - Removed missing_mods
+#                            - Took Discord invites into a world
 #                            - Opened a world's lock with its world code, and told the directory's id of a code
-#                            - Left the world once the player backed out of its new game, as when a question before New Game is cancelled
+#                            - Left the world once the player backed out of its new game
 #                            - Added the form of the player's name
 #                            - Left Allow data mismatch unticked in a new world's form
-#                            - Kept a mod added by name in the mod picker when unlisted, removed only on its own
-#                            - Listed the installed mods for the mod picker, which names a world's mods in the forms, and took up to 300 characters of them
-#                            - Sent a world's mod settings on their own, and no longer with an edit
+#                            - Kept a mod added by name in the mod picker when unlisted
+#                            - Listed the installed mods for the mod picker, and took up to 300 characters of mods
+#                            - Sent a world's mod settings on their own
 #                            - Read and sent a world's mod hashes and mod settings from its creator
 #                            - Found a required mod's script in the Patch folder, and read the folder anew when asked
-#      Paulinchen  2026-10-04: Showed the update notice in a message box that stays until the player closes it
+#      Paulinchen  2026-10-04: Showed the update notice in a message box
 #                            - Greyed out the title command once the update check answers, and kept an outdated game out of worlds
-#                            - Kept the 50 hidden worlds added last, as many as the relay lists, so ids of deleted worlds do not crowd new ones out
-#                            - Removed Form#add, since MGQ_MpUi::TextEdit takes what is typed
+#                            - Kept only the 50 hidden worlds added last
+#                            - Removed Form#add
 #                            - Renamed from mp_world.rbx
-#                            - Let the creator describe a world, name the mods it needs and keep out games whose data differs from theirs
-#                            - Told a game's data from another's by which entries of the database and which maps exist
+#                            - Let the creator describe a world, name its mods and keep out games with other data
+#                            - Told a game's data from another's by its database entries and maps
 #                            - Kept the editor of the text box being typed into with its form
-#                            - Took a mod written with an exclamation mark in front as required, and looked for its script in the Patch folder
-#                            - Took a mod written with a question mark in front as essential, which no script tells of
-#                            - Let a world's creator replace its game data with that of their game as it is now, in the edit form too
-#                            - Told two readings of the same world apart from a changed one, so the world screen draws only what changed
+#                            - Took a mod marked with an exclamation mark as required
+#                            - Took a mod marked with a question mark as essential
+#                            - Let a world's creator replace its game data
+#                            - Told a changed world from the same one read again
 #                            - Marked a world as a favourite as its creator makes it, and took descriptions of up to 1000 characters
 #                            - Split the mods a world needs at each semicolon, and said create where a text said make
-#                            - Added a hidden world to the list by its id instead of entering it at once, and kept the ids added
-#                            - Let the creator or an admin change a world's Max Players, mods and description in a form of its own
-#                            - Shortened the fields' hints to the two lines the world screen has for them
+#                            - Added a hidden world to the list by its id
+#                            - Let the creator or an admin change a world's Max Players, mods and description
+#                            - Shortened the fields' hints
 #                            - Grouped the forms' fields, renamed From my save to Shared save and Players choose their start to Player's choice
-#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
-#                            - Moved the text screen into world_text.rbx and the world screen with its windows into world_screen.rbx
+#      Paulinchen  2026-10-03: Reached the game's private fields and methods through MGQ_MpGame
+#                            - Moved the text screen into world_text.rbx and the world screen into world_screen.rbx
 #                            - Logged through MGQ_MpLog
 #                            - Put the player's own system save and Save folder back when a world's system save cannot be loaded
 #      Paulinchen  2026-10-02: Told how many players a world seats, from its code
 #                            - Offered to copy a world's latest save into the player's own game
-#                            - Made worlds without a password, which their players enter without being asked for one
-#                            - Showed the featured worlds, which the relay's admins make, in gold after the favourites
+#                            - Made worlds without a password
+#                            - Showed the featured worlds in gold after the favourites
 #                            - Followed the title screen's start and update through core_hooks.rbx
 #                            - Put the Save folder back in one place as a world closes
-#                            - Let the creator tick Players choose, after which each new player starts at the beginning, from one of their own saves or from the starting save
+#                            - Added Players choose to the new world's form
 #      Paulinchen  2026-10-01: Said that the relay's admins see hidden worlds too
 #      Paulinchen  2026-09-30: Let the relay's admins see every world, hidden ones too, and delete any
-#                            - Moved into Patch/Multiplayer/Scripts as world.rbx, which Multiplayer.rb loads, with the worlds in Patch/Multiplayer/Worlds
+#                            - Moved into Patch/Multiplayer/Scripts as world.rbx
 #                            - Named the mod Monster Girl Quest! Online in the update notice
 #                            - Greyed out the title command and showed a notice once a newer release is out
-#                            - Let the creator pick one of their saves as the starting save of a new world, which new players fetch before entering it
-#                            - Made and joined worlds through forms at the right of the world screen, typed in place, and made hidden worlds, joined by their id
-#      Paulinchen  2026-09-29: Listed the relay's worlds with their players, favourites first, entered with a password once and typed names on the keyboard
+#                            - Let the creator pick one of their saves as a new world's starting save
+#                            - Made and joined worlds through forms on the world screen, and added hidden worlds by id
+#      Paulinchen  2026-09-29: Listed the relay's worlds with their players, favourites first, with a password asked once
 #                            - Let the creator delete a world or remove a player, and connected to a world while it is open
 #                            - Created
 #
@@ -99,17 +95,17 @@
 
 # Worlds: lasting places several players play in together, entered through Multiplayer on the
 # title screen. The relay's world directory lists every public world with its players, and hidden
-# ones only for their players and the relay's admins; others add a hidden world to their list by its id. An
-# admin may delete any world, and the admins' featured worlds show in gold. A world's password, if
-# it has one, is asked once, after which this game remembers the world. Each world keeps its own saves and its
-# own system save (Library, medals, system switches, affection) in Patch/Multiplayer/Worlds/<id>, so
-# playing in a world never touches the player's own saves. A new world's players start at the
-# beginning, from one of its creator's saves, or where each of them chooses (world_save_distribution.rbx).
-# A world's details show what its creator wrote about it and the mods it needs, and whether the
-# player's game data has the same entries as the creator's; a game that differs is warned, or kept
-# out when the creator said so. A world is Classic, where each party plays its own story, or a Raid
-# World, where the whole world plays one; its creator picks the type once, and Raid Worlds show in
-# red above every other world.
+# ones only for their players and the relay's admins; others add a hidden world to their list by
+# its id. An admin may delete any world, and the admins' featured worlds show in gold. A world's
+# password, if it has one, is asked once, after which this game remembers the world. Each world
+# keeps its own saves and its own system save (Library, medals, system switches, affection) in
+# Patch/Multiplayer/Worlds/<id>, so playing in a world never touches the player's own saves. A new
+# world's players start at the beginning, from one of its creator's saves, or where each of them
+# chooses (world_save_distribution.rbx). A world's details show what its creator wrote about it and
+# the mods it needs, and whether the player's game data has the same entries as the creator's; a
+# game that differs is warned, or kept out when the creator said so. A world is Classic, where each
+# party plays its own story, or a Raid World, where the whole world plays one; its creator picks
+# the type once, and Raid Worlds show in red above the other worlds the directory lists.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorld
@@ -177,24 +173,32 @@ module MGQ_MpWorld
   # Colour of the Raid Worlds, the style's bad color, which wins over the featured worlds' gold.
   RAID_COLOR = MGQ_MpUi::Style::BAD
 
-  # A world's types as the directory and world.ini name them, in the order the new world's form
-  # offers them: Classic, where each party plays its own story, and Raid, where the whole world plays one.
+  # The type of a Classic world, where each party plays its own story, as the directory and
+  # world.ini name it.
   CLASSIC = "classic"
+
+  # The type of a Raid World, where the whole world plays one story, as the directory and world.ini
+  # name it.
   RAID = "raid"
+
+  # A world's types, in the order the new world's form offers them.
   TYPES = [CLASSIC, RAID]
 
   # How a Raid World shares companions, as the directory and world.ini name it, in the order the new
-  # world's form offers it, and as companion_sharing tells it.
+  # world's form offers it.
   SHARING = ["off", "story", "all"]
+
+  # Each way of sharing companions of SHARING, as companion_sharing tells it.
   SHARING_SYMBOLS = { "off" => :off, "story" => :story, "all" => :all }
 
   # What the new world's form and the details call each way of sharing companions.
   SHARING_NAMES = ["Off", "Story companions", "Story + battle recruits"]
 
   # The difficulties a Raid World may set for every player, the game's own values of its
-  # difficulty variable, in the order the forms offer them, and their names as the game's own
-  # difficulty choice shows them.
+  # difficulty variable, in the order the forms offer them.
   DIFFICULTIES = [-2, -1, 0, 1, 2, 3, 4]
+
+  # The names of DIFFICULTIES, as the game's own difficulty choice shows them.
   DIFFICULTY_NAMES = ["VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"]
 
   # The difficulty the forms offer first, NORMAL.
@@ -682,7 +686,7 @@ module MGQ_MpWorld
 
   # A world as the world screen lists it: the directory's, this PC's folder of it, or both.
   #
-  # @!attribute id [String, nil] The directory's id of the world, nil for a world made before the directory.
+  # @!attribute id [String, nil] The directory's id of the world, nil for a world on this PC whose world.ini names none.
   # @!attribute name [String] The world's name.
   # @!attribute listed [Directory::ListedWorld, nil] The world in the directory, nil once its creator deleted it.
   # @!attribute local [World, nil] The world's folder on this PC, nil before the player entered it.
@@ -1576,13 +1580,13 @@ module MGQ_MpWorld
     # The world code, which lets its holder in.
     attr_reader :code
 
-    # The world's id in the directory, nil for a world made before the directory.
+    # The world's id in the directory, nil when world.ini names none.
     attr_reader :directory_id
 
     # When the world was played last.
     attr_reader :played_at
 
-    # The world's type, one of TYPES, nil for a world.ini from before types, which counts as Classic.
+    # The world's type, one of TYPES, nil when world.ini names none, which counts as Classic.
     attr_reader :type
 
     # How a Raid World shares companions, one of SHARING, nil when world.ini names none.
@@ -2481,6 +2485,8 @@ if MGQ_MpWorld.hookable?
       alias mgq_mp_world_initialize initialize
 
       # Loads a picture below the Save folder, such as a save's thumbnail, from the open world's folder.
+      #
+      # @param args [Array] The arguments Bitmap.new takes.
       def initialize(*args)
         mgq_mp_world_initialize(*MGQ_MpWorld::Files.mapped(args))
       end

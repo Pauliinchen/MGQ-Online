@@ -2,7 +2,7 @@
 //  raid_admin.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Showed each boss pool's HP left of its raid max HP and the pools' regeneration per minute, instead of kills
+//      Paulinchen  2026-10-10: Showed each boss pool's share of HP left and the pools' regeneration per minute
 //      Paulinchen  2026-10-09: Created
 //
 //----------------------------------------------------------------

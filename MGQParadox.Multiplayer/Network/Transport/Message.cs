@@ -2,9 +2,9 @@
 //  Message.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Kept header keys on their line too, as the values already were
+//      Paulinchen  2026-10-10: Kept header keys on their line too
 //      Paulinchen  2026-10-07: Summed a message up for the log by its keys alone
-//      Paulinchen  2026-09-29: Dropped the token header, since decrypting the first frame proves the join code
+//      Paulinchen  2026-09-29: Dropped the token header
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------

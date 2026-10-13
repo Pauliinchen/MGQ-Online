@@ -2,30 +2,30 @@
 #  ui_party_box.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #                            - Read the map's viewport through MGQ_MpGame
-#      Paulinchen  2026-10-11: Listed a Raid World's party in the box wherever its members are, as in a Classic world, and the other players on the map below it under the map's title, the map box alone only outside a party
-#                            - Made the box movable and widenable with the left Alt held, as "Party box", the map box too: the extra width goes to the names, levels and places, the ping stays at the right edge, the small box at the right of the box's place, never narrower than the full box's columns
-#                            - Framed the box in the preset's colors, drawn anew once the preset changes
-#                            - Drew the box's background and titles in the shared style, faded the box in and out, and named the hotkey that changes its size at the right of its title
-#                            - Kept the level and the ping apart in their own columns, with room for "Lv 100" and "999+ ms" (the ping column and the party's title are MGQ_MpOverworld's), the name column 116 pixels wide, and cut a long name to its column
-#                            - Left placing the box to its motion, which puts it at its left every frame, instead of each drawing placing it too
-#                            - Drew the icon of what each player does before their name, through MGQ_MpUi.draw_icon, in the small box too
-#                            - Named the player's own line yellow, a party member's green and anyone else's in their own color, through MGQ_MpUi::PlayerColor
-#                            - Marked a member whose connection is down dim, with the away icon
+#      Paulinchen  2026-10-11: Listed a Raid World's party in the box with the other players on the map below it
+#                            - Made the box movable and widenable with the left Alt held
+#                            - Framed the box in the preset's colors
+#                            - Drew the box in the shared style with fades and named its size hotkey in its title
+#                            - Kept the level and the ping apart in their own columns and cut a long name to its column
+#                            - Left placing the box to its motion
+#                            - Drew the icon of what each player does before their name
+#                            - Named each line in its player's color through MGQ_MpUi::PlayerColor
+#                            - Marked a member whose connection is down
 #                            - Logged each listed player's color and whether they are away
 #                            - Capped the map box's lines through MGQ_MpUi.capped, keeping the player's own line
-#      Paulinchen  2026-10-10: Moved the box down while a strip of the mod takes the top of the map's screen, such as the raid boss's bar
-#      Paulinchen  2026-10-08: Made the box a map box in a Raid World: everyone on the map, the party first in green, each with their Frontline's level and ping, as many as fit and how many more
+#      Paulinchen  2026-10-10: Moved the box below a strip of the mod at the top of the screen
+#      Paulinchen  2026-10-08: Made the box a map box in a Raid World
 #      Paulinchen  2026-10-07: Took the icon rect, white and the depth from MGQ_MpUi, and measured places with the box's picture
-#                            - Logged the box's size changes, a size key that does nothing and why, and who the box lists whenever that changes
+#                            - Logged the box's size changes, refused size hotkeys and who the box lists
 #      Paulinchen  2026-10-06: Logged a box that fails to draw under the party box's own tag
-#      Paulinchen  2026-10-04: Made the box small with its key, only names and pings, and kept the choice in Player.ini
+#      Paulinchen  2026-10-04: Made the box small with its hotkey and kept the choice in Player.ini
 #                            - Created
 #
 #----------------------------------------------------------------
 
-# The party box's size: its key (Tab unless the player binds another, see core_hotkeys.rbx) makes
+# The party box's size: its hotkey (Tab unless the player binds another, see core_hotkeys.rbx) makes
 # it small, with only each player's icon, name and ping, and full again. The choice holds in every
 # world, and for the map box that replaces the party box in a Raid World.
 #
@@ -47,6 +47,7 @@ module MGQ_MpPartyBox
   # What the log calls a party's leader.
   LEADER_LABEL = "leader"
 
+  # The box's kind and the players it listed when last logged, see note_rows.
   @names = []
 
   extend MGQ_MpLog
@@ -70,8 +71,8 @@ module MGQ_MpPartyBox
     Sound.play_cursor
   end
 
-  # Changes the box's size with its key, on the map of a world with no screen of the mod over it.
-  # Called by the map every frame, so a press of the key is seen once.
+  # Changes the box's size with its hotkey, on the map of a world with no screen of the mod over
+  # it. Called by the map every frame, so a press of the hotkey is seen once.
   def self.on_map
     pressed = MGQ_MpHotkeys.pressed?(:party_box)
     return unless pressed
@@ -84,9 +85,9 @@ module MGQ_MpPartyBox
     log("changing the box's size failed: #{e.class}: #{e.message}")
   end
 
-  # Tells why the box's key does nothing now.
+  # Tells why the box's hotkey does nothing now.
   #
-  # @return [String, nil] The first reason that holds, nil when the key may change the box.
+  # @return [String, nil] The first reason that holds, nil when the hotkey may change the box.
   def self.busy_reason
     return "no world is open" unless MGQ_MpOverworldSync.in_world?
     if map_box?
@@ -138,7 +139,7 @@ module MGQ_MpPartyBox
   end
 
   # Logs who the box lists whenever that changes: the names in their order, each with whether
-  # they lead the party and the color they are named in, such as "Player A (leader, member)".
+  # they lead the party and the color they are named in, such as "<Player> (leader, member)".
   #
   # @param rows [Array<MGQ_MpWorldOverview::Row>] The players, none while the box is hidden.
   # @param map [Boolean] Whether it is the map box.
@@ -192,9 +193,8 @@ end
 #
 # In a Raid World the party's members show with their Frontline's highest level, and the other
 # players on the player's map follow below the party under the map's title, a line each. Outside a
-# party it is the map box instead: everyone on the player's map, the party's members
-# first, each with their Frontline's highest level and ping, and no place, since all share the
-# player's.
+# party it is the map box instead: everyone on the player's map, the party's members first, each
+# with their Frontline's highest level and ping, and no place, since all share the player's.
 class Sprite_MpPartyBox < Sprite
   # The box's id in the layout, which names its setting in Player.ini; the map box shares it.
   LAYOUT = :party_box
@@ -323,11 +323,9 @@ class Sprite_MpPartyBox < Sprite
     self.bitmap = Bitmap.new(width, ROW + PLAYER_ROW * MGQ_MpCoop::MAX_PLAYERS + ROW + ROW * MGQ_MpPartyBox::MAP_LINES + 2 * SPACING)
   end
 
-  # Draws the party while the player is in one, in a Raid World with the others on the map below,
-  # else in a Raid World everyone on the map while someone else is on it, and the World overview is
-  # closed, if it, the width or the preset
-  # changed, fading the box in; fades it out once there is nobody to list, keeping its picture
-  # until it is gone.
+  # Reads the players, see MGQ_MpPartyBox.sections, and draws them if they, the width or the preset
+  # changed, fading the box in; fades it out while the World overview is open or there is nobody
+  # to list, keeping its picture until it is gone.
   #
   # @param overview [Boolean] Whether the World overview is open.
   # @param width [Integer] The box's width, see layout_rect.
@@ -560,7 +558,7 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # After the map's update, the box's key. The game checks its own keys there too, only while no
+  # After the map's update, the box's hotkey. The game checks its own keys there too, only while no
   # scene change is in the way.
   MGQ_MpHooks.after(Scene_Map, :update_scene, "ui_party_box") { MGQ_MpPartyBox.on_map unless scene_changing? }
 

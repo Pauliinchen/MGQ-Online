@@ -2,7 +2,7 @@
 //  TradeSeal.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Sealed the offers through SealedBox, shared with the world's lock and the starting save
+//      Paulinchen  2026-10-07: Sealed the offers through SealedBox
 //      Paulinchen  2026-10-06: Created
 //
 //----------------------------------------------------------------

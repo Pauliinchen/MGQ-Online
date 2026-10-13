@@ -2,7 +2,7 @@
 //  ReportFilesTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-11: Checked that mods.txt skips a file gone by the time it is read
+//      Paulinchen  2026-10-11: Checked that mods.txt skips a vanished file
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -49,13 +49,11 @@ public sealed class ReportFilesTests : IDisposable
     /// </summary>
     public ReportFilesTests() => Directory.CreateDirectory(_game);
 
-    /// <summary>
-    /// Deletes the game folder.
-    /// </summary>
+    /// <inheritdoc />
     public void Dispose() => Directory.Delete(_game, true);
 
     /// <summary>
-    /// Asserts that report.md lays the report out as agreed: title, text, the facts and details as
+    /// Asserts that report.md lays the report out as title, text, the facts and details as
     /// tables with each cell on one line and | escaped, the screenshot section and the files section.
     /// </summary>
     [Fact]

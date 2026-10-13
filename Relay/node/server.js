@@ -2,37 +2,37 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Watched the mod's own releases every five minutes, when given a watch, and told every world with players online of a new one in its chat
-//                            - Turned away games older than 0.6.0, which send no X-MGQ-Features header, and games whose X-MGQ-Version is older than the MIN_VERSION environment variable, with 426 before routing their requests
-//                            - Turned a game too old for a world room away with 400 and no X-MGQ-Refusal code, and passed on the gate's code of a PvP room
-//                            - Dropped the body of a bug report refused before it is read, and cut a report body still arriving after 60 seconds
+//      Paulinchen  2026-10-12: Watched the mod's own releases and told every world with players online of a new one
+//                            - Turned away games older than 0.6.0 or below the MIN_VERSION environment variable with 426
+//                            - Turned a game too old for a world room away with 400 and passed on the gate's code of a PvP room
+//                            - Drained the body of a refused bug report and cut a report body still arriving after 60 seconds
 //                            - Kept each trade's sealed offers in memory beside the trade
-//      Paulinchen  2026-10-11: Took the bug reports games send and handed them to GitHub with the GITHUB_ISSUES_TOKEN and GITHUB_BUG_FILES_TOKEN environment variables
-//      Paulinchen  2026-10-10: Passed what a game names in the X-MGQ-Features header on to the directory's public routes too, for a development build's Raid World starting save
-//                            - Told every game of a Raid World a boss pool's share of HP left, raid max HP and defeat when a report or an admin changed it, and handed a boss report the reporting player's name
-//      Paulinchen  2026-10-09: Told every game of a world whether it turns other mods off and which mods it names, once its creator or an admin changed either
-//                            - Kept each Raid World's boss pools, answered their routes for the world's players and the admin routes for the relay's admins, and told every game of the world when a pool changed
-//                            - Told every game of a Raid World its new difficulty once its creator or an admin changed it
+//      Paulinchen  2026-10-11: Took the bug reports games send and handed them to GitHub
+//      Paulinchen  2026-10-10: Passed the X-MGQ-Features header on to the directory's public routes
+//                            - Told every game of a Raid World a boss pool's share of HP left and handed a boss report the reporting player's name
+//      Paulinchen  2026-10-09: Told every game of a world whether it turns other mods off and which mods it names
+//                            - Kept each Raid World's boss pools and answered its admin routes
+//                            - Told every game of a Raid World its new difficulty
 //                            - Removed a Raid World's story and boss pools again when the world was deleted while a request to them ran
-//      Paulinchen  2026-10-08: Kept each Raid World's story, answered its routes for the world's players, and told every game of the world when it changed
-//                            - Passed what a game names in the X-MGQ-Features header on to the directory as it enters a world room
-//                            - Dropped a game's chat lines past the chat's rate limit, answering each with "slow chat", and ignored a chat frame without a line instead of closing the connection
-//      Paulinchen  2026-10-07: Kept the chat lines the games mirror as text frames, and told every game of a world what an admin said
-//                            - Logged every request as one line and every caught error with its stack, never a key
+//      Paulinchen  2026-10-08: Kept each Raid World's story
+//                            - Passed the X-MGQ-Features header on to the directory as a game enters a world room
+//                            - Dropped a game's chat lines past the chat's rate limit and ignored a chat frame without a line
+//      Paulinchen  2026-10-07: Kept the chat lines the games mirror and told every game of a world what an admin said
+//                            - Logged every request as one line and every caught error with its stack
 //                            - Kept the worlds, mods and trades in a SQLite database when MGQ_RELAY_DB names one
-//                            - Swept stale worlds and finished trades on a timer, not only when a request read them
+//                            - Swept stale worlds and finished trades on a timer
 //                            - Took the auth key of the X-MGQ-Auth header for world rooms and starting saves
-//                            - Answered a text body over 256 KB with 413, a path that is no route with 400 and a room path without an upgrade with 426, as the Cloudflare relay does
+//                            - Answered a text body over 256 KB with 413, a path that is no route with 400 and a room path without an upgrade with 426
 //      Paulinchen  2026-10-06: Passed the X-MGQ-Player header on to the trade and mod catalog routes too
-//                            - Answered a body over the limit with its refusal instead of cutting the connection, and read text bodies of up to 256 KB
-//                            - Took the player key of the X-MGQ-Player header, limited entering rooms per address, and named why a world room turned a game away
+//                            - Answered a body over the limit with its refusal and read text bodies of up to 256 KB
+//                            - Took the X-MGQ-Player header, limited entering rooms per address and named refusals
 //                            - Closed a player's earlier connection to a world room once the same player enters it again
-//                            - Took a peer the relay closes out of its room at once, and counted keep-alives against the message allowance
+//                            - Took a peer the relay closes out of its room at once and counted keep-alives against the message allowance
 //                            - Kept the trades between two players of a world in memory
-//                            - Kept the mod catalog in memory, checked its links every half hour
+//                            - Kept the mod catalog in memory
 //      Paulinchen  2026-09-30: Read the relay's admins from the ADMINS environment variable
-//                            - Kept each world's starting save in memory, taken and handed out as bytes
-//      Paulinchen  2026-09-29: Kept the world directory, and seated a game in a world room only once the directory let it in
+//                            - Kept each world's starting save in memory
+//      Paulinchen  2026-09-29: Kept the world directory and seated a game in a world room only once the directory let it in
 //                            - Added world rooms, which seat up to 32 games
 //                            - Created
 //

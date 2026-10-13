@@ -2,7 +2,7 @@
 //  ReportFiles.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-11: Left a file out of mods.txt that is gone by the time it is read, such as a world autosave's SaveTemp.rvdata2, instead of failing the report
+//      Paulinchen  2026-10-11: Left a file out of mods.txt that is gone by the time it is read
 //                            - Created
 //
 //----------------------------------------------------------------

@@ -2,24 +2,20 @@
 //  reports.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Handled one report at a time and refused a busy, rate-limited or keyless report before reading its body, which it drains unkept
+//      Paulinchen  2026-10-12: Handled one report at a time and refused a busy, rate-limited or keyless report before reading its body
 //                            - Read a report's body for at most 60 seconds
-//                            - Uploaded each text file over 64 KB, and any past 1 MB of inline text in all, as a blob of its own instead of inline in the tree
+//                            - Uploaded large text files as blobs of their own
 //                            - Checked every text file of a report before uploading any
-//                            - Counted a report against the rate limits before unpacking it, so reports sent at once no longer pass together, and handled at most two at a time
+//                            - Counted a report against the rate limits before unpacking it and handled at most two at a time
 //      Paulinchen  2026-10-11: Created
 //
 //----------------------------------------------------------------
 
-// The bug reports players send from the game, the same on every server. The relay checks a report,
-// commits its files as one folder of plain files to a private repository, report.md its index, and
-// opens a public issue that links them, so only the developer can open the files while the
-// player's title and text are public.
-//
-// A report's body is one line of JSON, then the base64 of each file with nothing between them. The
-// text files arrive gzipped and are unpacked here, since GitHub keeps them readable only as text;
-// the screenshot's base64 goes to GitHub as sent, since decoding it would only cost time a free
-// Cloudflare plan does not grant.
+// The bug reports players send from the game, the same on every server. The relay commits a
+// report's files to a private repository and opens a public issue that links them, so only the
+// developer can open the files while the player's title and text are public. Text files are
+// unpacked here, since GitHub keeps them readable only as text; the screenshot's base64 goes on as
+// sent, since decoding it would cost time a free Cloudflare plan does not grant.
 
 import { playerIdOf } from "./directory.js";
 import { badRequest, notFound, tooLarge } from "./http.js";

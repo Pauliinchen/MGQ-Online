@@ -3,8 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Synced no level in a Raid World
-#      Paulinchen  2026-10-07: Logged the battle's level and why, and each character's level and stats before and after the sync
-#      Paulinchen  2026-10-06: Dropped level, which only the tests read
+#      Paulinchen  2026-10-07: Logged the battle's level and each character's sync
+#      Paulinchen  2026-10-06: Dropped level
 #      Paulinchen  2026-10-04: Created
 #
 #----------------------------------------------------------------
@@ -15,9 +15,8 @@
 # once the battle is won, before its rewards, or ends.
 #
 # Every game of the battle syncs the same characters to the level the host sent, since the host's
-# game works the battle out and the others show it.
-#
-# It must never interrupt the game, so every entry point rescues.
+# game works the battle out and the others show it. It must never interrupt the game, so every
+# entry point rescues.
 module MGQ_MpCoopLevelSync
   extend MGQ_MpLog
 
@@ -37,9 +36,16 @@ module MGQ_MpCoopLevelSync
   # stat its equipment keeps.
   Sync = Struct.new(:bases, :equipment)
 
+  # The battle's level, nil while no level sync runs.
   @level = nil
+
+  # Each synced character's sync.
   @synced = {}
+
+  # Whether the player was told this battle that their characters fight at its level.
   @told = false
+
+  # The characters whose reason for fighting with their own stats was logged this battle.
   @noted = {}
 
   # Works out the level of a co-op battle: the highest of the party leader's characters in it, on
@@ -98,7 +104,9 @@ module MGQ_MpCoopLevelSync
     log("syncing #{actor.name rescue '?'} failed: #{e.class}: #{e.message}")
   end
 
-  # Finds what a character fights with. The game reads stats many times a frame.
+  # Finds what a character fights with.
+  #
+  # The game reads stats many times a frame, so an empty sync skips the lookup.
   #
   # @param actor [Game_Actor] The character.
   # @return [Sync, nil] Its sync, nil when it fights with its own stats.
@@ -235,8 +243,10 @@ module MGQ_MpCoopLevelSync
     log("told the player in the chat that their characters fight at level #{@level}")
   end
 
-  # Installs the stat and victory hooks. The game's plugins load after the Patch folder and define
-  # the stats anew, so the hooks go in once every plugin is in.
+  # Installs the stat and victory hooks.
+  #
+  # The game's plugins load after the Patch folder and define the stats anew, so the hooks go in
+  # once every plugin is in.
   def self.install
     return if @installed
 
@@ -252,7 +262,9 @@ module MGQ_MpCoopLevelSync
     log("stat hooks FAILED: #{e.class}: #{e.message}")
   end
 
-  # Wraps the game's stats. The game reads them many times a frame, so the wraps are plain aliases.
+  # Wraps the game's stats.
+  #
+  # The game reads them many times a frame, so the wraps are plain aliases.
   def self.install_stats
     Game_Actor.class_eval do
       alias_method :mgq_mp_level_sync_param_base, :param_base
@@ -268,6 +280,7 @@ module MGQ_MpCoopLevelSync
       end
 
       # Works a stat's growth from items and equipment out, the equipment's lowered while synced.
+      #
       # The equipment is lowered here rather than in equip_params, which the game's feature cache
       # calls through itself and would lower twice.
       #

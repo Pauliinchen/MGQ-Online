@@ -2,13 +2,13 @@
 //  WorldModsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-09: Covered the mods the catalog marks personal, an entry of a name alone among them, told to the game script and read by the client
+//      Paulinchen  2026-10-09: Covered the mods the catalog marks personal
 //                            - Expected whether a Classic world turns other mods off at the end of its line
 //                            - Expected the empty difficulty of a Classic world at the end of its line
 //      Paulinchen  2026-10-08: Expected a world's type and companion sharing at the end of its line
 //                            - Covered reading whether the relay kept the Mod Config options sent
-//      Paulinchen  2026-10-06: Covered the Mod Config options sent for a catalog mod, and the version the relay keeps them of
-//                            - Covered a world's mod settings set on their own by its creator or an admin
+//      Paulinchen  2026-10-06: Covered the Mod Config options sent for a catalog mod and their version
+//                            - Covered setting a world's mod settings on their own
 //                            - Covered telling a link to a zip of a release apart
 //                            - Created
 //

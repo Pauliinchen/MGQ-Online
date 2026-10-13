@@ -2,14 +2,14 @@
 //  bodies.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Stopped reading a body at a deadline too, and drained a body up to a limit without keeping it
+//      Paulinchen  2026-10-12: Stopped reading a body at a deadline and drained a body up to a limit
 //                            - Created
 //
 //----------------------------------------------------------------
 
 // How the relay reads and sends large bodies without holding more of them than it must: a body read
 // up to a limit and no further, a file sent piece by piece as it is stored, and a gate that lets
-// only a few such downloads run at once. Plain Web Streams, the same on every platform.
+// only a few such downloads run at once. It uses plain Web Streams, the same on every platform.
 
 import { RATE_LIMITS, RateLimiter } from "./relay.js";
 

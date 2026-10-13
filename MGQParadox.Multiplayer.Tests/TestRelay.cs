@@ -3,48 +3,48 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Kept the level caps of story writes
-//                            - Kept the address and the X-MGQ-Version header of every request, for the tests
-//                            - Turned world room and PvP room requests away with 426 once a test says so, with or without a text in X-MGQ-Refusal, as the relay does for a game too old for it
-//                            - Turned world room requests of a game too old away with 400 and the code "update" instead, as the relay does
-//                            - Turned world room requests away with a status and code a test sets, as an older or self-hosted relay may
-//                            - Closed a peer that sends more than 60 messages a second after a burst of 240 with 4003, as the relay does, and counted those closes for the tests
-//                            - Refused a create past a player's world limit and a ban past a world's removed players with 429, as the relay does, once a test sets the limits
-//                            - Closed the earlier connection of a player once the new one is let in, before its handshake, freed the seat of a handshake that fails, and let tests hold back the next world room request
-//      Paulinchen  2026-10-10: Refused a Raid World with a player's choice, and with a starting save unless the game names the dev feature, as the relay does
-//                            - Kept a Raid World's boss pools as the relay does now: the share of the raid max HP left, filled up by 3 % of it a minute, reports taken once per sequence number of a battle and the boss a kill or an emptying report defeats, telling every game of each change; and let tests drop the answers of reports the relay took
-//                            - Told a boss pool's change before answering, defeated a pool whose HP shows as 0 and left a report that takes nothing off unwritten, as the relay does, and let tests hold back the next boss answer or refuse the next reports as busy
-//      Paulinchen  2026-10-09: Kept whether a world turns other mods off, set when it is made, by its type unless named, and changed with an edit, telling its room of a change to it or to the mods, and listed it unless told to stand in for a relay from before
-//                            - Refused a mods text longer than the relay keeps, instead of cutting it
-//                            - Left the entries of a name alone out of the games' mod list, and named every mod marked personal in its personal list
-//                            - Kept a Raid World's boss pools as the relay does: reports counted once per battle, the pool that fills up again and the boss an emptying report defeats, telling every game of each change
-//                            - Kept a Raid World's difficulty, set when it is made and changed with an edit, and listed it
-//      Paulinchen  2026-10-08: Kept a Raid World's story as the relay does: writes on the last sealed story that are not behind it, checkpoints, the route lock and shared companions, telling every game of each change
-//                            - Kept a world's type and how a Raid World shares companions, and kept games that do not name Raid Worlds in X-MGQ-Features out of them
-//                            - Handed out the mirrored chat lines as a copy taken under the lock, and told any text to every game of a world room
-//                            - Answered the Mod Config options games send with whether it kept them, as the relay does
-//      Paulinchen  2026-10-07: Kept the chat lines games mirror as text frames, and said an admin's line to every game of a world room
-//                            - Took the world's auth key from the X-MGQ-Auth header too, for the starting save as well
-//      Paulinchen  2026-10-06: Took the player's key from the X-MGQ-Player header too, for the trades as well, and closed a player's earlier world room connection with 4009 "replaced" once the same player entered again
+//                            - Kept the address and the X-MGQ-Version header of every request
+//                            - Turned outdated games away with 426 once a test says so
+//                            - Turned outdated games away from world rooms with 400 and the code "update"
+//                            - Turned world room requests away with a status and code a test sets
+//                            - Closed peers that send too many messages with 4003 and counted them
+//                            - Refused creates and bans past the limits a test sets with 429
+//                            - Closed a player's earlier connection on entry and freed the seats of failed handshakes
+//      Paulinchen  2026-10-10: Refused a Raid World with a player's choice or a starting save from a release build
+//                            - Kept a Raid World's boss pools as shares of the raid max HP
+//                            - Told a boss pool's change before answering and let tests hold back or refuse boss reports
+//      Paulinchen  2026-10-09: Kept whether a world turns other mods off
+//                            - Refused a mods text longer than the relay keeps
+//                            - Left name-only entries out of the mod list and listed personal mods
+//                            - Kept a Raid World's boss pools
+//                            - Kept a Raid World's difficulty
+//      Paulinchen  2026-10-08: Kept a Raid World's story
+//                            - Kept a world's type and companion sharing and kept games without Raid Worlds out of them
+//                            - Handed out the mirrored chat lines as a copy and told any text to a world room
+//                            - Answered the Mod Config options games send with whether it kept them
+//      Paulinchen  2026-10-07: Kept the chat lines games mirror and said an admin's line to a world room
+//                            - Took the world's auth key from the X-MGQ-Auth header too
+//      Paulinchen  2026-10-06: Took the player's key from the X-MGQ-Player header too and closed replaced connections
 //                            - Closed every room's peers with a close code on request
-//                            - Refereed trades between two players of a world, committed once both sent the same hash
+//                            - Refereed trades between two players of a world
 //                            - Kept the Mod Config options games send for a catalog mod
 //                            - Let an admin replace a world's mod settings too
-//                            - Served a mod catalog the tests fill, and uploaded mods' zips
-//                            - Kept a world's mod hashes and mod settings, which only its creator replaces
+//                            - Served a mod catalog and uploaded mods' zips
+//                            - Kept a world's mod hashes and mod settings
 //      Paulinchen  2026-10-04: Left the mods, the game data and the rule for it out of a world's lock
 //                            - Let a world's creator replace its game data
 //                            - Listed the hidden worlds a player names by their ids
 //                            - Let a world's creator or an admin change its seats, description and mods
-//                            - Kept a world's description, the mods it needs, its creator's game data and whether only games with the same data may enter
+//                            - Kept a world's description, mods, game data and same-data rule
 //      Paulinchen  2026-10-02: Kept whether a world lets each new player choose where to start
 //                            - Kept whether a world has no password and whether it is featured
-//                            - Cut the connections outside the lock when stopping, since a cut can end a connection at once
-//      Paulinchen  2026-10-01: Let admins delete through a helper of their own, and named them in the refusal
+//                            - Cut the connections outside the lock when stopping
+//      Paulinchen  2026-10-01: Let admins delete through a helper of their own and named them in the refusal
 //      Paulinchen  2026-09-30: Listed every world for admins and let them delete any
-//                            - Kept a world's starting save, uploaded once by its creator and handed to its players
-//                            - Kept hidden worlds out of the list for everyone but their players, and named a world with its lock
-//      Paulinchen  2026-09-29: Kept a world directory, and seated only its players, closing those the creator removes or deletes the world of
-//                            - Seated games in world rooms, and cut them on request
+//                            - Kept a world's starting save
+//                            - Kept hidden worlds out of others' lists and named a world with its lock
+//      Paulinchen  2026-09-29: Kept a world directory and seated only its players
+//                            - Seated games in world rooms and cut them on request
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -71,9 +71,9 @@ namespace MGQParadox.Multiplayer.Tests;
 /// A relay inside the test process, following the protocol of Relay/README.md as far as the tests
 /// need: one host and one guest per room, <c>paired</c> once both are in, <c>ping</c> answered with
 /// <c>pong</c>, binary messages passed on, and the other side closed when one leaves; a world
-/// directory; trades between its players; and world rooms that seat the directory's players, tell who comes and goes, and pass
-/// messages on with the sender's seat in front. A peer that sends more messages than the relay
-/// keeps is closed with 4003, as there.
+/// directory; trades between its players; and world rooms that seat the directory's players, tell
+/// who comes and goes, and pass messages on with the sender's seat in front. A peer that sends
+/// more messages than the relay keeps is closed with 4003, as there.
 /// </summary>
 internal sealed class TestRelay : IDisposable
 {
@@ -83,7 +83,7 @@ internal sealed class TestRelay : IDisposable
     private const int PeerLeft = 4006;
 
     /// <summary>
-    /// The close code of a player the creator removed.
+    /// The close code of a player the creator removed, and of a connection the same player replaced.
     /// </summary>
     private const int Removed = 4009;
 
@@ -171,9 +171,7 @@ internal sealed class TestRelay : IDisposable
     public HashSet<string> Admins { get; init; } = [];
 
     /// <summary>
-    /// The mod catalog's mods as the relay keeps them, which the tests fill: the games' list leaves
-    /// out entries of a name alone (kind "name"), and names every entry marked personal in its
-    /// personal list, as the relay does.
+    /// The mod catalog's mods as the relay keeps them, which the tests fill.
     /// </summary>
     public JsonArray CatalogMods { get; } = [];
 
@@ -395,9 +393,7 @@ internal sealed class TestRelay : IDisposable
         }
     }
 
-    /// <summary>
-    /// Stops the relay and cuts every connection.
-    /// </summary>
+    /// <inheritdoc />
     public void Dispose()
     {
         _listener.Stop();
@@ -602,8 +598,8 @@ internal sealed class TestRelay : IDisposable
     }
 
 /// <summary>
-/// Answers the mod catalog's requests: the list, an uploaded mod's zip, and the Mod Config options
-/// a game sends.
+/// Answers the mod catalog's requests: the list, which leaves out entries of a name alone and names
+/// every entry marked personal, an uploaded mod's zip, and the Mod Config options a game sends.
 /// </summary>
 /// <param name="context">The request.</param>
 /// <param name="parts">The path's parts, "v1" and "mods" first.</param>

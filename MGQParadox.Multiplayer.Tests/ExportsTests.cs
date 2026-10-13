@@ -2,10 +2,10 @@
 //  ExportsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Covered mp_mouse_wheel, exported without arguments
-//      Paulinchen  2026-10-11: Covered the bug report exports, with their arguments
-//      Paulinchen  2026-10-10: Covered mp_dev_build, exported without arguments
-//      Paulinchen  2026-10-09: Covered the parked mods' exports and the world exports that take whether a world turns other mods off, with their arguments
+//      Paulinchen  2026-10-12: Covered the mp_mouse_wheel export
+//      Paulinchen  2026-10-11: Covered the bug report exports
+//      Paulinchen  2026-10-10: Covered the mp_dev_build export
+//      Paulinchen  2026-10-09: Covered the parked mods' exports and the world exports that turn other mods off
 //      Paulinchen  2026-10-07: Created
 //
 //----------------------------------------------------------------

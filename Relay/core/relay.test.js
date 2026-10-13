@@ -6,8 +6,8 @@
 //      Paulinchen  2026-10-07: Covered the auth key header
 //      Paulinchen  2026-10-06: Covered a guest waiting alone, the player key header, the rate limiter and replaced connections
 //      Paulinchen  2026-09-29: Read a world room's player key, name and auth key instead of its seats
-//                            - Tested world rooms: seats, routing and each connection's lifetime
-//      Paulinchen  2026-09-29: Created
+//                            - Tested world rooms
+//                            - Created
 //
 //----------------------------------------------------------------
 

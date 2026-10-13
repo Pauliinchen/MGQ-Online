@@ -2,18 +2,19 @@
 #  battles.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Let a mode act on the host right before a send of its stream goes out
-#      Paulinchen  2026-10-07: Logged the rules a battle sets and puts back, switch by switch
-#                            - Let a mode take in that a guest left the battle
-#      Paulinchen  2026-10-06: Forgot the rules of a battle a reset interrupted, keeping the switches of the save loaded next
-#      Paulinchen  2026-10-04: Let a mode name the players whose commands lost their target to a swap, who choose again
+#      Paulinchen  2026-10-09: Let a mode act before the host sends its stream
+#      Paulinchen  2026-10-07: Logged the rules a battle sets and puts back
+#                            - Let a mode take in a guest leaving the battle
+#      Paulinchen  2026-10-06: Forgot the rules of a battle a reset interrupted
+#      Paulinchen  2026-10-04: Let a mode name the players who choose again after a swap
 #                            - Renamed from mp_battles.rbx
-#      Paulinchen  2026-10-03: Let a PvP battle with the Backline swap it in, and let a mode name the characters outside the battle
-#                            - Added Mode, what a kind of live battle does differently from a duel, which the kinds register and the live battle asks
+#      Paulinchen  2026-10-03: Let a PvP battle with the Backline swap it in
+#                            - Let a mode name the characters outside the battle
+#                            - Added Mode
 #                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Installed the battle hooks through core_hooks.rbx
-#      Paulinchen  2026-10-01: Let co-op battles swap the Backline in, which only PvP battles forbid now
-#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as battles.rbx, which Multiplayer.rb loads
+#      Paulinchen  2026-10-01: Let co-op battles swap the Backline in
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -134,7 +135,7 @@ module MGQ_MpBattles
     def share_order
     end
 
-    # Lists the players a command of whose lost its target to another player's swap during the
+    # Lists the players with a command whose target another player's swap took away during the
     # command phase, once the host has every guest's commands. Asked by the host.
     #
     # @return [Array<Integer>] Their world seats, the host's own and those who left included.
@@ -215,6 +216,7 @@ module MGQ_MpBattles
     extend Mode
   end
 
+  # The registered modes by kind of live battle.
   @modes = {}
 
   # Registers what a kind of live battle does differently.
@@ -305,8 +307,10 @@ module MGQ_MpBattles
     rules
   end
 
-  # Installs the battle hooks. The game's plugins load after the Patch folder and define battle
-  # methods anew, so the hooks go in once every plugin is in.
+  # Installs the battle hooks.
+  #
+  # The game's plugins load after the Patch folder and define battle methods anew, so the hooks go
+  # in once every plugin is in.
   def self.install
     return if @installed
 

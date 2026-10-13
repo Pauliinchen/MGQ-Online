@@ -2,92 +2,92 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Faded the screen in once per arrival on a map whose story event that runs by itself another player's game runs, which left a player who came while its teller fought, as at Morrigan, on a black screen
-#                            - Let a page of the leader's story that fails to hold wait for the player as the game's own pages do instead of ending the game
-#                            - Told the viewers at most one page every ten frames while the teller holds the game's skip, always the last one, and that the teller moved past only the pages told, so a skipped dialogue no longer runs past the relay's limit and closes the connection
-#                            - Told a Classic party's members the story's pages in one message instead of one per member, and logged only once that a member who plays their own story ignores them
-#      Paulinchen  2026-10-11: Sorted a page with story behind a choice as no chest, so the story it moves on reaches the world's, as Amira's paid tip in Iliasburg, which a chest kept from it and so hid the rabbit in Pornof
-#                            - Kept a new game's opening from starting while its setup runs without its scene in a Raid World past it
-#                            - Told the party the dialogue of the common events the story calls, which the game runs in a child interpreter, such as the companions' lines
-#                            - Left a page of the leader's story a moment to read once the leader moved past it, confirm or the game's skip held reading on sooner, and left out only the oldest pages past three waiting, instead of every page the leader moved past, and gave way to whatever waits for the player to be free and lapses meanwhile, the story's follow and a battle's invite, which the pages kept from happening
-#                            - Kept a page of the leader's story the game's own transfer process starts under instead of cutting it short
-#                            - Watched a page sorted as travel whose story lies behind a choice as a talk is watched, so the Great Decision tells its story from the choice on and takes the players on the map along
-#                            - Kept a Raid World's story events from starting until the world's story came after the world opened or a save loaded
-#                            - Counted a branch on the variable an unlimited_choices script writes the choice into as a choice's branches, since the choice is not made yet when the page is sorted, so the story behind it is caught at the choice as any other
-#                            - Sorted a scene that runs by itself and hides its story behind such a choice as story, so a member's copy of it does not start over and over
-#                            - Sorted a page of dialogue and its own self switch alone as a talk, so a signpost or a villager who speaks once no longer waits for the leader
-#                            - Let a talk run the cosmetic scripts: custom move routes, waits, character zooms and angles, map zooms, key input and picture checks
-#      Paulinchen  2026-10-10: Went on with a telling that moved the player only at a story event that runs by itself, so one the player starts on the new map is a new telling, whose viewers are those whose story is where the player's is now
-#                            - Told world_story.rbx that the telling may still go on between the story's events on the new map, so the scene's state no longer goes out half done there
-#                            - Went on with a Raid World's telling that moved the player onto another map at the story's next event there, within CONTINUE_FRAMES of the move, through the game's transfer process between them, so its viewers keep seeing the story instead of a new telling nobody follows
-#                            - Kept a story event from starting while the player follows a teller's story to where it moved them, so their own copy of it no longer starts while the teller's state says they tell nothing for a moment
-#                            - Kept the game's map display, Pocket Castle call and post-battle processing to the player's own game, never the story, so a battle no longer makes its player a Raid World's teller whose story the others wait for
-#                            - Left the teleport to the party's leader to coop_teleport.rbx's messages
-#                            - Told the player why a story event waits for the world's story of a telling they watched, instead of keeping it back silently
-#                            - Sorted an event that calls the game's map display, Pocket Castle call, post-battle processing or transfer process by the rest of its list, since those common events are the player's own
-#                            - Held a Raid World's story event a second instead of half a second for a tie, so a later teller stops before its first command more often
-#      Paulinchen  2026-10-09: Asked story_state.rbx which switches and variables are the player's own instead of coop_story.rbx
-#                            - Kept story events from starting while the player's story is behind a Raid World's, telling the level that moves them on, and held those that run by themselves, so a teleport onto their map cannot loop
-#                            - Kept a Raid World's telling, how far its story was, where it started and whom it took along, through the story's next event that starts in the frame its last ended, so its viewers see the rest of the story
-#                            - Held a Raid World's story event at its start for TIE_HOLD_FRAMES while someone on the map entered it first, so a tie stops it before it changed anything
-#                            - Told the story's pages to a Raid World's viewers in one message instead of one per viewer
-#      Paulinchen  2026-10-08: Took the teller, the viewers and the gate of the story's messages from MGQ_MpCoop::Scope: the party's leader and synced members in a Classic world, the player telling the story on the map and those whose story matches in a Raid World
-#                            - Stopped a story event in a Raid World once a player who entered the map first started telling the story there at the same moment, within TIE_FRAMES of its start and on its map alone
-#                            - Told the story's progress and whether warping is banned at the start of the telling in a Raid World, which tells who sees the scene and what a teleport to the story takes
-#                            - Kept chests personal in a Raid World, whose parties share no loot
-#                            - Kept the Library's replays of scenes and the game's transfer process to the player's own game, never the party's story, so a leader's replay no longer brings the members over
-#                            - Showed a page of the leader's story without its face while this game lacks the face file
-#                            - Kept a story event in a Raid World from starting until the world's story of a telling the player watched on the map arrived, so they no longer play the scene again
-#      Paulinchen  2026-10-07: Took a common event's setup, which passes the list alone, instead of failing on it
-#                            - Registered the interpreter, map, message and party hooks through core_hooks.rbx instead of wraps of its own
-#                            - Let a page of the leader's story outside a fiber move on at once instead of failing, as the other waits do
-#                            - Named players, counted a message's bytes and made up the session's tag through coop.rbx and overworld_sync.rbx instead of copies of their helpers
-#                            - Blocked, watched and mirrored the leader's story only for members synced with the leader, whose own story events run otherwise, and told the leader's pages to them alone
-#                            - Logged how each event starting is sorted and who may run it, every message, the leader's pages told, shown and dropped and why, and the chests shared
-#                            - Ended the telling of the leader's story with its event, so the result of a PvP battle no longer reaches the party
-#      Paulinchen  2026-10-06: Took sound names that hold dots, as picture names may
+#      Paulinchen  2026-10-12: Faded the screen in once per arrival on a map whose self-running story another game runs
+#                            - Let a leader's page that fails to hold wait as the game's own pages do
+#                            - Told the viewers at most one page every ten frames while the teller skips
+#                            - Told a Classic party's members the story's pages in one message
+#      Paulinchen  2026-10-11: Sorted a page with story behind a choice as no chest
+#                            - Kept a new game's opening from starting in a Raid World past it
+#                            - Told the party the dialogue of common events the story calls
+#                            - Left a leader's page a moment to read and kept at most three pages waiting
+#                            - Kept a leader's page the game's transfer process starts under
+#                            - Watched travel with story behind a choice as a talk is watched
+#                            - Kept a Raid World's story events from starting until the world's story came
+#                            - Counted branches on an unlimited_choices variable as a choice's branches
+#                            - Sorted a scene that runs by itself with story behind such a choice as story
+#                            - Sorted a page of dialogue and its own self switch alone as a talk
+#                            - Let a talk run the cosmetic scripts
+#      Paulinchen  2026-10-10: Went on with a telling that moved the player only at a story event that runs by itself
+#                            - Told world_story.rbx that the telling may go on after a move
+#                            - Went on with a Raid World's telling at the story's next event on the new map
+#                            - Kept a story event from starting while the player follows a teller's move
+#                            - Kept the map display, Pocket Castle call and post-battle processing to the player's own game
+#                            - Left the teleport to the leader to coop_teleport.rbx
+#                            - Told the player why a story event waits for the world's story
+#                            - Sorted an event that calls the player's own common events by the rest of its list
+#                            - Held a Raid World's story event a second for a tie
+#      Paulinchen  2026-10-09: Asked story_state.rbx which switches and variables are the player's own
+#                            - Kept story events from starting while the player's story is behind a Raid World's
+#                            - Kept a Raid World's telling through the story's next event in the same frame
+#                            - Held a Raid World's story event at its start while someone who entered the map first may tie
+#                            - Told the story's pages to a Raid World's viewers in one message
+#      Paulinchen  2026-10-08: Took the teller, the viewers and the story's gate from MGQ_MpCoop::Scope
+#                            - Stopped a Raid World's story event on a tie with a player who entered the map first
+#                            - Told the story's progress and the warp ban at the start of a Raid World's telling
+#                            - Kept chests personal in a Raid World
+#                            - Kept the Library's replays and the transfer process to the player's own game
+#                            - Showed a leader's page without its face while the face file is missing
+#                            - Kept a Raid World's story event from starting until a watched telling's story arrived
+#      Paulinchen  2026-10-07: Took a common event's setup, which passes the list alone
+#                            - Registered the hooks through core_hooks.rbx
+#                            - Let a leader's page outside a fiber move on at once
+#                            - Used the shared helpers of coop.rbx and overworld_sync.rbx
+#                            - Blocked, watched and mirrored the leader's story only for synced members
+#                            - Logged event sorting, messages, the leader's pages and shared chests
+#                            - Ended the telling of the leader's story with its event
+#      Paulinchen  2026-10-06: Took sound names that hold dots
 #                            - Asked coop.rbx for the party's leader
-#                            - Forgot the pages of the story a former leader told, once another member leads
+#                            - Forgot a former leader's pages once another member leads
 #                            - Took a time from before a save the player loaded as long past
-#                            - Gave a chest's items with the gifts kept apart as every other gift
+#                            - Gave a chest's items with the gifts kept apart
 #                            - Found a chest's items through MGQ_MpGame.item
-#                            - Kept a chest the player leaves shut, such as a locked one, closed for them and the party
-#      Paulinchen  2026-10-04: Held back chests other members open during a PvP battle, and kept gifts out of a chest the player opens
-#                            - Sent the sound a chest played with its items, and let members hear it and see the first item's icon, after a battle once on the map
+#                            - Kept a chest the player leaves shut closed for the party
+#      Paulinchen  2026-10-04: Held back chests opened during a PvP battle and kept gifts out of chests
+#                            - Sent a chest's sound with its items and showed members its first item's icon
 #                            - Read where the Pocket Castle's way out returns as the player's own variables
 #                            - Kept the leader's pages of the map a member follows the leader to
-#                            - Kept a member's story events from starting anywhere, since only the leader starts story, and no longer asked the leader's game to play them
-#                            - Sorted called common events by what can run now, shops with a goods script as talks, and story behind a choice as a talk watched as it runs
+#                            - Kept a member's story events from starting anywhere
+#                            - Sorted called common events, shops with a goods script and story behind a choice
 #                            - Moved gathering the party for story scenes into coop_gather.rbx
 #                            - Moved the Pocket Castle's residents into coop_castle.rbx
 #                            - Renamed from mp_coop_events.rbx
-#      Paulinchen  2026-10-03: Sorted the Pocket Castle item as travel, which no longer gathers the party as a story scene
+#      Paulinchen  2026-10-03: Sorted the Pocket Castle item as travel
 #                            - Let a member teleport to the party's leader on their own
-#                            - Took over the warp ban of the leader's place when a story scene brings the player over, so a Harpy Feather works again outside a cave
+#                            - Took over the warp ban of the leader's place when a story scene brings the player over
 #                            - Said the story's line above the player's own head through MGQ_MpActions
 #                            - Held the player through MGQ_MpHooks.hold_player
 #                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
-#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Sent messages and read the world through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
-#                            - Left every starting story event to the leader, so one that starts by itself no longer keeps a member's other events from starting
-#                            - Knew a chest by any of its pages, so one the player opened stays their own
+#                            - Left every starting story event to the leader
+#                            - Knew a chest by any of its pages
 #      Paulinchen  2026-10-02: Told coop_story.rbx the items and gold the leader's story gives or takes
-#                            - Sorted a common event once per depth, so one sorted deep down no longer counts as story when called higher up
+#                            - Sorted a common event once per depth
 #                            - Held event commands and followed the map's update through core_hooks.rbx
 #                            - Took whether the player plays in a party, and an event's page, from coop.rbx
 #                            - Told the kinds of item a chest gives by their class alone
-#                            - Started no random encounter for a member the leader's story scene is about to bring over
-#      Paulinchen  2026-10-01: Sorted event pages by the branches that can run now, so an exit counts as story only while its story warning shows
-#                            - Let exits that only note a flag on the way stay travel, so a member leaves a town in their own game
+#                            - Started no random encounter for a member the leader's story scene brings over
+#      Paulinchen  2026-10-01: Sorted event pages by the branches that can run now
+#                            - Let exits that only note a flag on the way stay travel
 #                            - Shortened a member's time before the leader's story scene brings them over to five seconds
-#                            - Moved the leader's story pages on in a member's game only when the leader moves on, skipping those already past
+#                            - Moved the leader's pages on in a member's game only when the leader moves on
 #                            - Sorted the Pocket Castle's companions, merchants, inn and maids as talks
-#                            - Held the leader's story scene until every member stands near, at most thirty seconds, bringing members over after ten seconds or once out of battle
-#                            - Kept members on the leader's map from moving or opening the menu while the leader's story scene plays
-#                            - Stopped taking the members along to every map the leader goes to; only story scenes gather them
-#      Paulinchen  2026-09-30: Sent and took the party's messages through coop.rbx, which drops those of another party
-#                            - Registered with overworld_sync.rbx for its messages instead of being asked by overworld.rbx
-#                            - Moved into Patch/Multiplayer/Scripts as coop_events.rbx, which Multiplayer.rb loads
+#                            - Held the leader's story scene until every member stands near
+#                            - Kept members on the leader's map from moving or opening the menu during its story scene
+#                            - Stopped taking the members along to every map the leader goes to
+#      Paulinchen  2026-09-30: Sent and took the party's messages through coop.rbx
+#                            - Registered with overworld_sync.rbx for its messages
+#                            - Moved into Patch/Multiplayer/Scripts as coop_events.rbx
 #                            - Renamed from mp_events.rb, with the module MGQ_MpCoopEvents
 #                            - Played a party's story events in the leader's game and showed its messages to the members
 #                            - Took the party along where the leader goes, and gathered it for story scenes
@@ -113,11 +113,8 @@ module MGQ_MpCoopEvents
   # name input (303), game over and title (353, 354).
   STORY_CODES = [129, 206, 303, 353, 354]
 
-  # Scripts a talk may run: companions' own lines, choices, presents and affection, medals,
-  # music, skill names on screen, and the menus of job change, synthesis, the casino and the party.
-  # Shops that list their goods in a script, such as the Casino's coin sellers, are talks too, and
-  # so are the cosmetic scripts: custom move routes, waits, character zooms and angles, map zooms,
-  # key input of the mini-games and picture checks.
+  # Scripts a talk may run, such as companions' lines, choices, presents, menus, shops that list
+  # their goods in a script, and cosmetic scripts like move routes, waits and zooms.
   TALK_SCRIPTS = /\A\s*(actor_label_jump|unlimited_choices|ex_choice_\w+|present_start|change_friend|gain_medal|gain_coin|play_base_bgm|clear_skill_name|display_skill_name|call_synthesize|call_slot_scene|start_poker|call_party_edit|SceneManager\.call\(Scene_JobChange\)|names = party_members|@?goods\b|\w+ = RPG::MoveRoute\.new|wait\(|set_(angle|zoom|zoom_anime|swing_anime|circle_anime|cycle)\(|map_zoom|input_keys|check_picture_exist)/
 
   # A script that shows a choice and writes the answer into a variable, which the page then
@@ -177,10 +174,14 @@ module MGQ_MpCoopEvents
   # leader moved past are left out, so the member never lags far behind the scene.
   CATCH_UP_PAGES = 3
 
-  # Frames a page of the leader's story stays at least once the leader moved past it, a second and
-  # two frames more per character, three seconds at most; confirm moves on sooner.
+  # Frames a page of the leader's story stays at least once the leader moved past it, before its
+  # characters count; confirm moves on sooner.
   READ_FRAMES = 60
+
+  # Frames a page of the leader's story stays longer per character, see READ_FRAMES.
   READ_FRAMES_PER_CHARACTER = 2
+
+  # Frames a page of the leader's story stays at most once the leader moved past it.
   MOST_READ_FRAMES = 180
 
   # The game's message skip, held: its message window passes every page while it is down (the
@@ -223,10 +224,15 @@ module MGQ_MpCoopEvents
   # The game's switch that is on while the Library replays a scene, by its id in 3.06.
   LIBRARY_REPLAY_SWITCH = 443
 
+  # What each common event does, by its id and depth, sorted in the frame of @common_frame.
   @common_kinds = {}
+  # The checks of what waits for the player to be free, see give_way_to.
   @waits = []
+  # The chest the player opens: its interpreter, self switch, gains and sound.
   @chest = nil
+  # Whether a gift runs that neither a chest nor the leader's story gives, see granting.
   @granting = false
+  # Whether the message window waits for the input that ends a page, see page_end_input.
   @page_end = false
 
   extend MGQ_MpLog
@@ -263,14 +269,12 @@ module MGQ_MpCoopEvents
   end
 
   # Lists the commands of a list that can run now: a branch on a switch or a variable runs only
-  # when its condition holds, its else only when it does not; branches on anything else may run.
+  # when its condition holds, its else only when it does not; branches on anything else may run. A
+  # jump that can run makes the commands after its label run too, up to the end of the label's
+  # block, also inside a branch that does not hold.
   #
-  # Exits hold the story's warnings in such branches, as Iliasville's do ("I need to be on time for
-  # my baptism"), which would make every exit story long after the warnings passed.
-  #
-  # A jump that can run makes the commands after its label run too, up to the end of the label's
-  # block, also inside a branch that does not hold, as Amira's tip in Iliasburg jumps back into her
-  # first meeting once its self switch is on.
+  # Exits hold the story's warnings in such branches, as Iliasville's do, which would make every
+  # exit story long after the warnings passed.
   #
   # @param list [Array<RPG::EventCommand>] The commands.
   # @return [Array<RPG::EventCommand>] Those that can run.
@@ -1022,7 +1026,7 @@ module MGQ_MpCoopEvents
   # player's game runs, while the screen is dark.
   #
   # The game's scenes fade out, move the player without a fade and fade in with that event, so a
-  # player who came while its teller fought, as at Morrigan, saw black until the teller's story ended.
+  # player who came while its teller fought, as at Morrigan, would see black until the story ended.
   #
   # @param event [Game_Event] The story event kept from starting.
   # @param lead [MGQ_MpOverworldSync::Peers::Peer] The teller whose game runs it.
@@ -1269,7 +1273,7 @@ module MGQ_MpCoopEvents
     tell_followers("done", MGQ_MpCoopGather.place_fields.merge("page" => id), viewers)
   end
 
-  # As teller, tells the page show kept while the player holds the game's skip, and that the player
+  # As teller, tells the page kept while the player holds the game's skip, and that the player
   # moved past it if they did, once SKIP_SEND_FRAMES passed since the last page told, the skip is
   # let go, the telling ended or another scene was called, so the viewers end on the last page.
   # Called after the map's update, after the frame's pages.
@@ -1479,7 +1483,6 @@ module MGQ_MpCoopEvents
         frames += 1
       end
     rescue FiberError
-      # A message window outside a fiber cannot wait, so the page moves on at once.
       log_once(:page_fiber, "could not hold a page of the leader's story: the message window runs outside a fiber, so it moves on at once")
     rescue => e
       log_once(:hold_page, "holding a page of the leader's story failed, the player moves it on instead: #{e.class}: #{e.message}")
@@ -1716,8 +1719,7 @@ module MGQ_MpCoopEvents
   end
 
   # Takes a chest another member opened: gives its items, unless the player looted it already or it
-  # gave nothing, as a locked chest an earlier build tells about; never in a Raid World, whose
-  # chests are personal.
+  # gave nothing; never in a Raid World, whose chests are personal.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who opened it.
   # @param message [Hash] The message's fields.

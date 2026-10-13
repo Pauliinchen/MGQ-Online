@@ -2,39 +2,39 @@
 #  coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Told the frames an invite has left, which the line above the player's head counts down
-#                            - Counted the invite's seconds down in the line above the player's head
-#                            - Asked before the World overview leaves the party or removes a member, and left no party that dissolved while the box asked
-#      Paulinchen  2026-10-10: Offered the teleport to the party's leader in a Raid World too, through coop_teleport.rbx, which offers the teleport to every other member
-#      Paulinchen  2026-10-09: Closed the teleport to the story to a player behind the world's story in a Raid World
-#      Paulinchen  2026-10-08: Offered a teleport to the story on the player's own row of the World overview in a Raid World, in place of the teleport to the party's leader
-#      Paulinchen  2026-10-07: Added the helpers the party scripts shared copies of: a message's bytes and an event's name for the log, a random id and an option's registration in the Mod Config
-#                            - Logged invites sent, received, accepted, declined, run out and turned away with the reason, whom the leader admitted, the leader and why, and the party messages dropped
-#      Paulinchen  2026-10-06: Counted the player as a candidate for the party's leader only once the leader admitted them, so a player turned away as they join leaves the party
-#                            - Added party_leader and party_leading?, which every party script asks
-#                            - Added the party's choices to the action wheel's ring by order instead of to fixed sides
+#      Paulinchen  2026-10-11: Told the frames an invite has left
+#                            - Counted the invite's seconds down above the player's head
+#                            - Asked before the World overview leaves the party or removes a member
+#      Paulinchen  2026-10-10: Offered the teleport to the leader in a Raid World too
+#      Paulinchen  2026-10-09: Closed the teleport to the story to players behind the world's story
+#      Paulinchen  2026-10-08: Offered a teleport to the story in a Raid World
+#      Paulinchen  2026-10-07: Added helpers the party scripts shared copies of
+#                            - Logged invites, admissions, the leader and dropped party messages
+#      Paulinchen  2026-10-06: Counted the player as a leader candidate only once admitted
+#                            - Added party_leader and party_leading?
+#                            - Added the party's choices to the action wheel by order
 #      Paulinchen  2026-10-04: Handed the party chat's lines to ui_chat.rbx through the party's gate
 #                            - Teleported to the leader through coop_gather.rbx
 #                            - Renamed from mp_coop.rbx
-#      Paulinchen  2026-10-03: Offered a party's member to teleport to its leader, on the wheel in place of the invite and on the leader's row of the World overview
-#                            - Offered the party's choices and invites to the wheel, the World overview and the notification box through MGQ_MpActions
-#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#      Paulinchen  2026-10-03: Offered a party's members a teleport to its leader
+#                            - Offered the party's choices and invites through MGQ_MpActions
+#                            - Sent messages and read the world through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
-#                            - Counted only the players the party's leader admitted as its members, whom the leader's invite reached
-#                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
-#                            - Listed an event's pages, for the party's chests
-#                            - Let a party invite to a player named from afar stand a minute instead of fifteen seconds
-#                            - Declined a party invite, telling the inviter, whose invite stops naming the player
-#      Paulinchen  2026-10-02: Named the key the player bound to the action wheel in the invite line above a ghost
-#                            - Told whether the player plays in a party with someone else, for every party script
-#                            - Told which page an event shows, for the party's events and NPCs
-#                            - Turned away, as the leader, a player who joined a full party, and refused to join a full party
-#                            - Kept the invite's frames and targets in MGQ_MpCoop::Invite, which duels share
-#      Paulinchen  2026-10-01: Kept a party to four players, one per place of the Frontline
-#                            - Invited a player anywhere in the world by their id, besides the players nearby
-#                            - Told the size and the leader of any party, not only the player's own
-#                            - Told Discord the size of the player's party through the Discord mod
-#                            - Let only the leader invite, and let the leader remove members, whose games then leave the party
+#                            - Counted only the players the leader admitted as members
+#                            - Read the bound hotkeys through MGQ_MpHotkeys
+#                            - Listed an event's pages
+#                            - Let an invite to a player named from afar stand a minute
+#                            - Declined party invites
+#      Paulinchen  2026-10-02: Named the action wheel's hotkey in the invite line above a ghost
+#                            - Told whether the player plays in a party
+#                            - Told which page an event shows
+#                            - Turned away joiners of a full party and refused to join one
+#                            - Kept the invite's frames and targets in MGQ_MpCoop::Invite
+#      Paulinchen  2026-10-01: Kept a party to four players
+#                            - Invited a player anywhere in the world by their id
+#                            - Told the size and the leader of any party
+#                            - Told Discord the size of the player's party
+#                            - Let only the leader invite and remove members
 #      Paulinchen  2026-09-30: Created
 #
 #----------------------------------------------------------------
@@ -72,6 +72,7 @@ module MGQ_MpCoop
   # name, by the reason the leader gives.
   TURNED_AWAY = { "full" => "'s party is full", "late" => "'s invite is over" }
 
+  # The handlers of the party's messages, by the field that marks them.
   @routes = {}
 
   extend MGQ_MpLog
@@ -422,13 +423,21 @@ module MGQ_MpCoop
   # Anyone can read a party's id in its members' states, so naming it is not enough: the leader
   # admits only a player the invite reached, and tells whom it admitted.
   module Party
+    # The party's id, nil while the player is in none.
     @id = nil
+    # The player's invite to the party.
     @invite = Invite.new
+    # The ids of the players the leader admitted.
     @admitted = []
+    # Players turned away or removed while their state still names the party, by their id.
     @turned_away = {}
+    # Frames left in which others the closed invite reached may still join.
     @late_frames = 0
+    # The ids the closed invite named, for LATE_FRAMES.
     @late_targets = []
+    # Whether the player joined and waits for the leader to admit them.
     @joining = false
+    # Whether each other player's invite reached the player when last logged, by their id.
     @invites_seen = {}
 
     # The party's id, nil while the player is in none.
@@ -496,8 +505,7 @@ module MGQ_MpCoop
       MGQ_MpOverworldSync::Peers.all.select { |peer| member?(peer.state) }
     end
 
-    # Finds the party's leader: the member who made the party, whose id starts the party's id, or
-    # the member with the lowest id while they are gone, so every member's game finds the same one.
+    # Finds the leader of the player's party, as MGQ_MpCoop.leader_of finds it.
     #
     # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The leader, :me for the player, nil outside a party.
     def self.leader
@@ -870,15 +878,19 @@ module MGQ_MpCoop
       party_options(false).first || MGQ_MpActions::Option.new("Leave the party", nil, "You are in no party.")
     end
 
-    # What the World overview asks before the leader removes a member, with the member's name, and
-    # its choices.
+    # What the World overview asks before the leader removes a member, with the member's name.
     REMOVE_QUESTION = "Remove %s from the party?"
+
+    # The choices of REMOVE_QUESTION.
     REMOVE_CHOICES = ["Remove", "Keep"]
 
-    # What the World overview asks before the player leaves the party, and its choices. The
-    # wheel's choices ask nothing, since picking a wheel's side and confirming it is a deliberate
-    # pair of steps already.
+    # What the World overview asks before the player leaves the party.
+    #
+    # The wheel's choices ask nothing, since picking a wheel's side and confirming it is a
+    # deliberate pair of steps already.
     LEAVE_QUESTION = "Leave the party?"
+
+    # The choices of LEAVE_QUESTION.
     LEAVE_CHOICES = ["Leave", "Stay"]
 
     # Tells why the player may not invite now.

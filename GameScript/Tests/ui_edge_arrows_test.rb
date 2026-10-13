@@ -12,67 +12,109 @@
 # members, everyone in a Raid World, the nearest eight), where an arrow sits on each side and in
 # the corners and which way it points, the triangle's rows, the plate's clearance from the
 # triangle, what hides every arrow, the sprites given out and taken back as players come and go,
-# their fade in and out, and their log lines. Pictures measure each character at half the font's
-# size.
+# their fade in and out, and their log lines.
 
 require_relative "world_support"
 
 $logs = []
+# The mod's log, kept in $logs and printed with the checks.
 module MGQ_Multiplayer; module Log; def self.write(m); $logs << m; puts "  log: #{m}"; end; end; end
 
 # Stand-ins for the game's pictures.
+
+# The game's font.
 Font = Struct.new(:size, :outline, :color, :bold, :out_color)
+# The game's picture: counts the pictures made and records its texts and fills, and how many texts
+# were drawn in the outline's color.
 class Bitmap
+  # Its size, its font, the texts and fills drawn and the number of outline passes.
   attr_reader :width, :height, :font, :texts, :fills, :outlines
   @@made = 0
+  # How many pictures were made.
   def self.made; @@made; end
+  # Creates an empty picture in a font of 24 and counts it.
   def initialize(width, height); @@made += 1; @width = width; @height = height; @font = Font.new(24); @texts = []; @fills = []; @outlines = 0; end
+  # Measures a text at half the font's size a character.
   def text_size(text); Rect.new(0, 0, text.to_s.size * @font.size / 2, @font.size); end
+  # Records a text drawn, or counts it as an outline pass when drawn in the outline's color.
+  #
+  # @param x [Integer] Its left.
+  # @param y [Integer] Its top.
+  # @param width [Integer] Its width.
+  # @param height [Integer] Its height.
+  # @param text [String] The text.
+  # @param align [Integer] Its alignment.
+  # @return [Array, Integer] The texts drawn, or the outline passes counted.
   def draw_text(x, y, width, height, text, align = 0)
     return @outlines += 1 if @font.color.equal?(MGQ_MpUi::Style::OUTLINE)
 
     @texts << [x, y, width, text, align]
   end
+  # Records a fill with its rectangle and color.
+  #
+  # @param args [Array] A rectangle and a color, or x, y, width, height and a color.
   def fill_rect(*args)
     x, y, w, h, color = args[0].is_a?(Rect) ? [args[0].x, args[0].y, args[0].width, args[0].height, args[1]] : args
     @fills << [x, y, w, h, color]
   end
+  # Frees the picture.
   def dispose; @disposed = true; end
+  # Whether the picture was freed.
   def disposed?; @disposed ? true : false; end
 end
+# The game's sprite.
 class Sprite
+  # Its picture, place, depth, origin, opacity, whether it shows and its viewport.
   attr_accessor :bitmap, :x, :y, :z, :ox, :oy, :opacity, :visible, :viewport
+  # Creates a visible, opaque sprite at the top left.
   def initialize(viewport = nil); @viewport = viewport; @x = @y = @z = @ox = @oy = 0; @opacity = 255; @visible = true; end
+  # Updates nothing.
   def update; end
+  # Frees the sprite.
   def dispose; @disposed = true; end
+  # Whether the sprite was freed.
   def disposed?; @disposed ? true : false; end
 end
 
 # The map's view, from which a character's place on the screen follows.
+# The map, with its view's origin in tiles.
 class Game_Map; attr_accessor :display_x, :display_y; end
 $game_map.display_x = $game_map.display_y = 0
+# The game's character, placed on the screen by the map's view at 32 pixels a tile.
 class Game_Character
+  # The middle of its tile across the screen.
   def screen_x; (@x - $game_map.display_x) * 32 + 16; end
+  # The bottom of its tile on the screen.
   def screen_y; (@y - $game_map.display_y) * 32 + 32; end
 end
+# The player, placed on the screen as a character is.
 class Player
+  # The middle of the player's tile across the screen.
   def screen_x; (x - $game_map.display_x) * 32 + 16; end
+  # The bottom of the player's tile on the screen.
   def screen_y; (y - $game_map.display_y) * 32 + 32; end
 end
+# Another player's ghost on the map.
 class Ghost < Game_Character; end
 
 # The screens of the mod the arrows hide behind, which cover the action wheel as the real ones
 # do, and the kind of world.
+
+# The World overview, open while $overview.
 module MGQ_MpWorldOverview; def self.open?; $overview; end; end
+# The emote wheel, open while $emote_wheel.
 module MGQ_MpEmotes; def self.open?; $emote_wheel; end; end
 MGQ_MpActions.cover { |_wheel_key| MGQ_MpWorldOverview.open? }
 MGQ_MpActions.cover { |_wheel_key| MGQ_MpEmotes.open? }
+# The world script, which tells a Raid World from $raid.
 module MGQ_MpWorld; def self.raid?; $raid; end; end
 $raid = false
 
 load_script "ui_edge_arrows"
 
+# The script under test.
 Arrows = MGQ_MpEdgeArrows
+# The shared style.
 Style = MGQ_MpUi::Style
 
 # Puts another player on the map with a ghost standing on a tile.

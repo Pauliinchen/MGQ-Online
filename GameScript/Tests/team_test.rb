@@ -2,11 +2,11 @@
 #  team_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a guest takes who commands the characters of who left only as pairs of seats, and nobody from a line that does not read
-#      Paulinchen  2026-10-11: Let the stand-in of the waiting box take the names still waited for and their prefix
-#      Paulinchen  2026-10-06: Checked that the players of a team duel bring no share of the Backline
+#      Paulinchen  2026-10-12: Checked the commanders a guest takes for the characters of players who left
+#      Paulinchen  2026-10-11: Let the waiting box stand-in take the names waited for and their prefix
+#      Paulinchen  2026-10-06: Checked that team duel players bring no share of the Backline
 #                            - Checked that a guest names no commands for the others' characters
-#      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
+#      Paulinchen  2026-10-04: Followed the scripts to their new names
 #      Paulinchen  2026-10-02: Ended the guest's duel through guest_end
 #      Paulinchen  2026-10-01: Created
 #
@@ -18,9 +18,11 @@
 
 require_relative "battle_support"
 
-# Stand-ins for the PvP battle.
+# Stands in for the PvP battle.
 module MGQ_MpBattlesPvp
+  # Stands in for a rebuilt character of the other side.
   class Opponent < Game_MpActor; end
+  # Stands in for the opponents: stands them nowhere and answers them as they are.
   module Opponents; def self.stand(opponents); opponents; end; end
 end
 load_script "battles_team"
@@ -64,6 +66,11 @@ check("Discord names the other side's leader", team.opponent_name, "Rival")
 check("the player's Frontline characters past their share wait on no Backline", $game_party.bench_members, [])
 
 # Commands reach their owner's characters, on either side.
+
+# Builds one character's commands as a guest sends them: a skill on the first target.
+#
+# @param id [Integer] The skill.
+# @return [Array<Array>] The commands.
 skill = lambda { |id| [["skill", id, 0]] }
 MGQ_MpBattlesSync::Commands.apply(wire.line([[skill.call(11), skill.call(12), [], []]]), 5)
 check("a guest of the other side commands their characters in the host's troop", $game_troop.members.map { |o| o.actions.map(&:item) },
@@ -96,7 +103,7 @@ check("which the host's link check sees as the end", MGQ_MpBattlesSync::Channel.
 MGQ_MpBattlesCoop.ended
 sync.finish
 
-# A guest of the other side.
+# A guest of the other side sees the sides swapped.
 $my_seat = 5
 $game_party.own = mine.dup
 MGQ_MpBattlesCoop.team_build
@@ -122,7 +129,7 @@ check("a guest leaves a team duel rather than forfeiting it", MGQ_MpBattlesSync:
 MGQ_MpBattlesCoop.ended
 sync.finish
 
-# A guest of the host's side.
+# A guest of the host's side sees the sides as the host does.
 $my_seat = 2
 $game_party.own = mine.dup
 MGQ_MpBattlesCoop.team_build
@@ -142,11 +149,12 @@ MGQ_MpBattlesSync::Live.instance_variable_set(:@ready, [5, 6])
 MGQ_MpBattlesSync::Channel.receive(2, "ready", "")
 $answers = []
 $game_system = Struct.new(:conf).new({})
+# Stands in for the waiting box: records the block's first answer in $answers and ends the wait.
 def (MGQ_MpBattlesSync::Waiting).wait_for(scene, text, *rest); $answers << yield; :broken; end
 MGQ_MpBattlesSync::Live.host_start(scene)
 check("guests ready in an earlier wait do not count in the next", $answers, [nil])
 
-# Who commands the characters of who left, as a host that sends anything has it.
+# A guest takes only whole pairs of seats from the heirs the host sends.
 team.take_heirs(wire.line([[6, "x", 7, 5, [8], 2]]))
 check("a guest keeps only the pairs of seats", [team.heir_of(6), team.heir_of(7), team.heir_of(2)], [nil, 5, nil])
 team.take_heirs("[\t[")

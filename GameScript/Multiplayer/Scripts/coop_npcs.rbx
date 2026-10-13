@@ -2,25 +2,25 @@
 #  coop_npcs.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Sent a newcomer the whole map again every quarter second until it went out, and anew when they came onto the map again, instead of never once a send failed
-#      Paulinchen  2026-10-11: Started anew on every map the player enters, not only when their part changes, and moved no event before the Map Owner's whole map came, so a follower no longer puts the last map's places on the new map's events, as Hades' exit into a wall
-#      Paulinchen  2026-10-08: Shared the map through MGQ_MpCoop::Scope: with the party members on it in a Classic world, with everyone on it in a Raid World, who all block events there
+#      Paulinchen  2026-10-12: Sent a newcomer the whole map again until it went out
+#      Paulinchen  2026-10-11: Started anew on every map and moved no event before the whole map came
+#      Paulinchen  2026-10-08: Shared the map through MGQ_MpCoop::Scope
 #                            - Found the members on this map through MGQ_MpOverworldSync::Peers.on_this_map?
-#      Paulinchen  2026-10-07: Registered the event hooks through core_hooks.rbx instead of wraps of its own, and named events through coop.rbx
-#                            - Logged the Map Owner of each map and why, the whole maps sent and taken, events turning pages, events left alone and why, stuck events, and the NPC messages ignored
-#      Paulinchen  2026-10-06: Left out the party members whose connection is down, who no longer move the map's events
+#      Paulinchen  2026-10-07: Registered the event hooks through core_hooks.rbx and named events through coop.rbx
+#                            - Logged the Map Owner, whole maps, page turns, stuck events and ignored messages
+#      Paulinchen  2026-10-06: Left out the party members whose connection is down
 #                            - Took the tiles an event walks to catch up from overworld.rbx
-#      Paulinchen  2026-10-04: Made the party's leader the Map Owner of the Pocket Castle, and told coop_castle.rbx the Map Owner's events and pages
-#                            - Let a story's forced routes, and every event while the leader's story plays, walk through party members
+#      Paulinchen  2026-10-04: Made the party's leader the Map Owner of the Pocket Castle
+#                            - Let forced routes and events during the leader's story walk through party members
 #                            - Renamed from mp_coop_npcs.rbx
 #      Paulinchen  2026-10-03: Called the scripts that load before this one without asking whether they loaded
-#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Sent messages and read the world through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Followed the map's update through core_hooks.rbx
 #                            - Took an event's page from coop.rbx, and dropped the unused role
-#      Paulinchen  2026-09-30: Sent and took the party's messages through coop.rbx, which drops those of another party
-#                            - Registered with overworld_sync.rbx for its messages instead of being asked by overworld.rbx
-#                            - Moved into Patch/Multiplayer/Scripts as coop_npcs.rbx, which Multiplayer.rb loads
+#      Paulinchen  2026-09-30: Sent and took the party's messages through coop.rbx
+#                            - Registered with overworld_sync.rbx for its messages
+#                            - Moved into Patch/Multiplayer/Scripts as coop_npcs.rbx
 #                            - Renamed from mp_npcs.rb, with the module MGQ_MpCoopNpcs
 #                            - Created
 #
@@ -31,10 +31,8 @@
 # their game moves the map's events as the game does, and tells the others where each stands, which
 # way it faces and which page it shows. The others' games stop moving events on their own and walk
 # them where the Map Owner's are. In a Classic world players outside the party, or on other maps,
-# share nothing: each moves their own NPCs.
-#
-# The world's creator plays no part in this; every map has its own Map Owner, and it changes as
-# players come and go.
+# share nothing: each moves their own NPCs. Every map has its own Map Owner, which changes as
+# players come and go; the world's creator plays no part in this.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopNpcs
@@ -44,18 +42,29 @@ module MGQ_MpCoopNpcs
   # Frames an event may fail to walk to its place before it moves there at once.
   STUCK_FRAMES = 60
 
-  # Tiles within which an approaching event notices a party member, as the game's own check does for the player.
+  # Tiles within which an approaching event notices another player sharing the map, as the game's
+  # own check does for the player.
   NEAR_TILES = 20
 
+  # The player's part on the map: :owner, :follower, or nil while nobody shares it.
   @role = nil
+  # Frames since the Map Owner's last message, see SEND_FRAMES.
   @frames = 0
+  # The events' states the Map Owner last told everyone, by their id.
   @sent = {}
+  # When each player the Map Owner sent the whole map came onto it, by their seat.
   @present = {}
+  # When each player whose whole map failed to go out came onto it, by their seat.
   @failed = {}
+  # The Map Owner's events the player's game follows, see targets.
   @targets = {}
+  # Frames each event failed to walk to its place, by its id.
   @stuck = {}
+  # The ghosts of the others sharing the map, which block events and draw approaching ones.
   @blockers = []
+  # The map the player's part belongs to.
   @map_id = nil
+  # The map whose whole the follower took, before which no part of it is followed.
   @whole_map = nil
 
   extend MGQ_MpLog
@@ -80,9 +89,9 @@ module MGQ_MpCoopNpcs
     MGQ_MpCoop::Scope.peers_here
   end
 
-  # Finds the Map Owner among the players sharing the map: its sync host, the one who entered it
-  # first, the lower player id among equals, so every game finds the same one. On the Pocket
-  # Castle's maps of a Classic world it is the party's leader while they are there, see coop_castle.rbx.
+  # Finds the Map Owner among the players sharing the map: its sync host (see
+  # MGQ_MpCoop::Scope.sync_host), or on the Pocket Castle's maps of a Classic world the party's
+  # leader while they are there (see coop_castle.rbx).
   #
   # @param members [Array<MGQ_MpOverworldSync::Peers::Peer>] The others sharing the map.
   # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol] The player, or :me for the player.
@@ -396,13 +405,13 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # An event moves on its own, unless another party member's game moves it.
+  # An event moves on its own, unless the Map Owner's game moves it.
   MGQ_MpHooks.around(Game_Event, :update_self_movement, "coop_npcs") { |_event, _args, original| original.call unless MGQ_MpCoopNpcs.following? }
 
-  # Whether an event collides with a character on a tile, a party member included while the event
-  # walks on its own. A story moves its events on routes it waits for, which a member standing in
-  # the way would hold up for good, so members never block a forced route or an event while the
-  # leader's story plays.
+  # Whether an event collides with a character on a tile, another player sharing the map included
+  # while the event walks on its own. A story moves its events on routes it waits for, which a
+  # player standing in the way would hold up for good, so the others never block a forced route or
+  # an event while the player tells the story.
   MGQ_MpHooks.around(Game_Event, :collide_with_characters?, "coop_npcs") do |event, args, original|
     next true if original.call
     next false if event.move_route_forcing || !event.normal_priority? || (MGQ_MpCoopEvents.telling? rescue false)
@@ -410,11 +419,11 @@ begin
     MGQ_MpCoopNpcs.member_at?(args[0], args[1])
   end
 
-  # Whether the player, or on the Map Owner's map a party member, is near enough for an
+  # Whether the player, or on the Map Owner's map another player sharing it, is near enough for an
   # approaching event to go for them.
   MGQ_MpHooks.around(Game_Event, :near_the_player?, "coop_npcs") { |event, _args, original| original.call || MGQ_MpCoopNpcs.member_near?(event) }
 
-  # An approaching event walks toward the nearest party member, the player unless another member
+  # An approaching event walks toward the nearest player sharing the map, the player unless another
   # is nearer.
   MGQ_MpHooks.around(Game_Event, :move_toward_player, "coop_npcs") do |event, _args, original|
     member = MGQ_MpCoopNpcs.nearest_member(event)

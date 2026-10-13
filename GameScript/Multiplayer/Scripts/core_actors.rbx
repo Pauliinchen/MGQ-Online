@@ -2,21 +2,21 @@
 #  core_actors.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Named a rebuilt character's owner and its own name without the owner, which the battle status window colors by player
-#      Paulinchen  2026-10-07: Logged once when a hero, a counter or the switches of a character cannot be read, which stood in silently before
-#                            - Logged the builds written, what of a build this game's data lacks, each character rebuilt and what the owner's save decides for it
-#      Paulinchen  2026-10-06: Left the player's affection alone when the game raises a rebuilt character's after a won battle
-#                            - Checked enchanted equipment past the switch's setter, which took the enchanted items off the player's whole party at every check
-#                            - Told the weapons' and armors' databases apart in the fingerprint too, since builds carry their ids
+#      Paulinchen  2026-10-11: Named a rebuilt character's owner and its own name
+#      Paulinchen  2026-10-07: Logged once when a hero, a counter or switches cannot be read
+#                            - Logged the builds written, what they lack and each character rebuilt
+#      Paulinchen  2026-10-06: Left the player's affection alone after a won battle
+#                            - Checked enchanted equipment past the switch's setter
+#                            - Told the weapons' and armors' databases apart in the fingerprint
 #                            - Found a database item through MGQ_MpGame.item
-#      Paulinchen  2026-10-04: Sent the hero Luka Replacer plays in Luka's place, for a replaced Luka only, and rebuilt Luka as that hero
+#      Paulinchen  2026-10-04: Sent and rebuilt the hero of a replaced Luka
 #                            - Sent and compared a character's magic reflection and counter rate too
 #                            - Renamed from mp_actors.rbx
-#      Paulinchen  2026-10-03: Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#      Paulinchen  2026-10-03: Reached the game's private fields and methods through MGQ_MpGame
 #                            - Logged through MGQ_MpLog
-#      Paulinchen  2026-10-02: Kept the owner's seat and place, and that no rebuilt character is Luka, in Game_MpActor for both sides
-#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as core_actors.rbx, which Multiplayer.rb loads
-#                            - Cleared a rebuilt character's actions, so a pre-battle spell finds its chain input set
+#      Paulinchen  2026-10-02: Kept the owner's seat and place and the Luka check in Game_MpActor
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as core_actors.rbx
+#                            - Cleared a rebuilt character's actions
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -41,8 +41,9 @@ module MGQ_MpActors
   end
 
   # Characters' builds as plain numbers, which another game turns back into the characters from its
-  # own data. Nothing of the save format leaves the game, since loading someone else's save data can
-  # run code.
+  # own data.
+  #
+  # Nothing of the save format leaves the game, since loading someone else's save data can run code.
   module Builds
     # Starts every member line.
     PREFIX = "member="
@@ -82,13 +83,14 @@ module MGQ_MpActors
     Member = Struct.new(:actor_id, :base_level, :class_id, :tribe_id, :level_list, :param_plus, :skill_ids,
                         :abilities, :equip_abilities, :equips, :params, :rates, :counters, :switches_on, :hero)
 
-    # The build format, which both games must share. The HERO field kept it, since a line without
-    # it is as before.
+    # The build format, which both games must share.
     FORMAT = 3
 
-    # Tells this game version's data from another's by the size of its databases, which differ
-    # between versions, and this mod's build format from another's. Only equal ones may swap builds,
-    # since the ids and fields must mean the same things.
+    # Fingerprints this game's data by the sizes of its databases, which differ between versions,
+    # and this mod's build format.
+    #
+    # Only games with equal fingerprints may swap builds, since the ids and fields must mean the same
+    # things.
     #
     # @return [String] The fingerprint.
     def self.game
@@ -212,7 +214,8 @@ module MGQ_MpActors
     # Reads a member line.
     #
     # @param line [String] The line, see PREFIX.
-    # @return [Member, nil] The member, nil when the line is none or names no actor of this game.
+    # @return [Member, nil] The member, nil when the line is none, has the wrong number of fields or
+    #   names no actor of this game.
     def self.parse_member(line)
       return nil unless line.start_with?(PREFIX)
 
@@ -568,23 +571,26 @@ class Game_MpActor < Game_Actor
     actor.name
   end
 
-  # Tells whether the character is Luka.
+  # Tells whether the character is Luka, which no rebuilt character is.
   #
-  # @return [Boolean] Never; Luka's mechanics, binding and giving up, belong to the player's own Luka.
+  # Luka's mechanics, binding and giving up, belong to the player's own Luka.
+  #
+  # @return [Boolean] Always false.
   def luca?
     false
   end
 
-  # Has the extra accessory slot when the owner's game had it. The game reads a switch of the
-  # save for it, which the player's game may not have turned on yet.
+  # Has the extra accessory slot when the owner's game had it.
+  #
+  # The game reads a switch of the save for it, which the player's game may not have turned on yet.
   #
   # @return [Boolean] Whether the character has the extra accessory slot.
   def extra_accessory_slot?
     @member ? @member.equips.size > BASIC_SLOT_COUNT : super
   end
 
-  # Allows enchanted equipment, which the game takes off while the player's save has enchanting
-  # off (NWConst::Sw::ENCHANT_OFF). The owner's game let the character wear it.
+  # Allows the enchanted equipment the owner's game let the character wear, even while the player's
+  # save has enchanting off (NWConst::Sw::ENCHANT_OFF).
   #
   # The switch is turned off for the check in the switches' own entries, since the game's setter
   # takes every enchanted item off the player's party and refreshes it when the switch turns on.
@@ -605,7 +611,9 @@ class Game_MpActor < Game_Actor
     end
   end
 
-  # Takes items from the owner's bag, which this game cannot see: in a live battle the owner
+  # Checks whether the character may use an item, without the player's bag.
+  #
+  # The items come from the owner's bag, which this game cannot see: in a live battle the owner
   # chooses them, and their own game counts what they have.
   #
   # @param item [RPG::Item] The item.

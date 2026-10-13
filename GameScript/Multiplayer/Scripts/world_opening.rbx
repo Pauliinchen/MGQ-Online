@@ -2,24 +2,19 @@
 #  world_opening.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Left the random encounters to world_catchup.rbx, which moves every value of the player's own that the story sets on to the story's place
-#                            - Turned random encounters on again as the world's story is laid over, where it is past the talk that turns them on and the map does not turn them off itself
+#      Paulinchen  2026-10-11: Left the random encounters to world_catchup.rbx
+#                            - Turned random encounters on again as the world's story is laid over
 #                            - Created
 #
 #----------------------------------------------------------------
 
-# A new game's opening in a Raid World whose story is past it. The game's start map runs one event
-# by itself that sets the new game up (the story's progress back to 0, the starting switches, the
-# difficulty) and then plays the opening scene, which ends in Luka's house. Played after the world's
-# story was laid over the new game, it put the story back to its start and told the opening to
-# everyone on the map whose story matched the world's.
+# A new game's opening in a Raid World whose story is past it: the start map's event that sets the
+# new game up and then plays the opening scene runs in an interpreter of its own, which leaves the
+# scene out and keeps the game's own transfer to where it ends; the world's story is laid over
+# afterwards. A world whose story is still at the start plays the opening as the game has it.
 #
-# Here, once the world's story came and is past the start, that event's commands run in an
-# interpreter of their own, which leaves out the scene (messages, pictures, waits, sounds, routes)
-# and keeps the game's own transfer to where it ends; the world's story is laid over afterwards. A
-# world whose story is still at the start plays the opening as the game has it.
-#
-# It must never interrupt the game, so every entry point rescues.
+# Played as the game has it after the world's story was laid over, the setup would put the story
+# back to its start and show the opening to everyone on the map.
 module MGQ_MpWorldOpening
   # The commands of the opening's scene that are left out: messages and choices, move routes and
   # the waits for them, animations and balloons, the follower gathering, the screen's fades, tints,
@@ -32,6 +27,7 @@ module MGQ_MpWorldOpening
   # The trigger of an event that runs by itself.
   AUTORUN = 3
 
+  # Where the opening is: :new, :running, :done or nil for nothing to do.
   @state = nil
 
   extend MGQ_MpLog

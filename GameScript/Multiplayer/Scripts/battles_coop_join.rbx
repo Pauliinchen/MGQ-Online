@@ -2,15 +2,15 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #                            - Read the map's viewport and character sprites through MGQ_MpGame
-#      Paulinchen  2026-10-11: Asked the party members near along when the player asks to join a battle outside the party, unless they come along themselves
-#                            - Drew the prompt in the shared style's small font and solid outline, as the other labels, instead of the game's half-transparent one
-#                            - Drew the prompt in the color every request and offer shares
-#                            - Kept the prompt on the screen through MGQ_MpUi.within instead of a copy of it
-#      Paulinchen  2026-10-10: Offered a side battle against the same raid boss near a boss battle that takes the player in no more, on the same hotkey
+#      Paulinchen  2026-10-11: Asked the party members near along to a battle the player asks to join
+#                            - Drew the prompt in the shared style's small font and solid outline
+#                            - Drew the prompt in the color of requests and offers
+#                            - Kept the prompt on the screen through MGQ_MpUi.within
+#      Paulinchen  2026-10-10: Offered a side battle near a raid boss battle that takes nobody in
 #                            - Kept the prompt whole on the screen at the map's edges
-#                            - Offered a battle that waits under the Library or Config while its player's window is in the background, whose state tells "away"
+#                            - Offered a battle that waits while its player is away
 #      Paulinchen  2026-10-09: Created
 #
 #----------------------------------------------------------------
@@ -202,8 +202,9 @@ module MGQ_MpBattlesJoin
   end
 
   # Finds the battle the prompt offers and asks its host once the hotkey goes down. Called by the map
-  # every frame, so a press of the hotkey is seen once, also while the scene changes, which hides the
-  # prompt.
+  # every frame.
+  #
+  # The hotkey is read also while the scene changes, which hides the prompt, so a press is seen once.
   #
   # @param changing [Boolean] Whether the map's scene changes.
   def self.on_map(changing)
@@ -244,8 +245,9 @@ module MGQ_MpBattlesJoin
     false
   end
 
-  # Tells the prompt below the player's character, see Sprite_MpJoinPrompt. The map stops finding its
-  # battle while a message shows, so the prompt hides then too.
+  # Tells the prompt below the player's character, see Sprite_MpJoinPrompt.
+  #
+  # The map stops finding its battle while a message shows, so the prompt hides then too.
   #
   # @return [String, nil] The prompt, nil while no battle near the player takes them in and none
   #   offers a side battle.
@@ -489,6 +491,7 @@ begin
     @mgq_mp_join_prompt.show(MGQ_MpGame.get(self, :character_sprites).find { |sprite| sprite.character.equal?($game_player) })
   end
 
+  # Before the map's sprites go, the prompt goes with them.
   MGQ_MpHooks.before(Spriteset_Map, :dispose, "battles_coop_join") do
     @mgq_mp_join_prompt.dispose if @mgq_mp_join_prompt
     @mgq_mp_join_prompt = nil

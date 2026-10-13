@@ -2,13 +2,14 @@
 #  battles_team.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Took who commands the characters of who left only as pairs of seats, dropping the rest, and left out the players of a side that do not read
-#      Paulinchen  2026-10-07: Named players and characters through battles_sync.rbx instead of the co-op battle's copies
-#                            - Logged the sides and their shares, the rebuilt opponents and who takes over the characters of a player who left
+#      Paulinchen  2026-10-12: Took only pairs of seats as who commands the characters of who left
+#                            - Left out the players of a side that do not read
+#      Paulinchen  2026-10-07: Named players and characters through battles_sync.rbx
+#                            - Logged the sides, the rebuilt opponents and who takes over
 #      Paulinchen  2026-10-04: Renamed from mp_battles_team.rbx
-#      Paulinchen  2026-10-03: Registered what a team duel does differently in a live battle as its Mode
+#      Paulinchen  2026-10-03: Registered the team duel's Mode
 #                            - Read the sides' players as MGQ_MpBattlesCoop::Player records
-#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Sent messages, showed notices and read the world through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Took the Frontline's size from coop_squad.rbx
 #      Paulinchen  2026-10-01: Created
@@ -25,10 +26,19 @@
 # battles_duel.rbx gathers the players on the map; this script holds the sides once the duel
 # starts. It must never interrupt the game, so every entry point rescues.
 module MGQ_MpBattlesTeam
+  # The players of this game's side.
   @own = []
+
+  # The players of the other side.
   @other = []
+
+  # Whether this game's side is the host's.
   @same_side = false
+
+  # The seat of who commands the characters of each player who left, nil when their side is gone.
   @heirs = {}
+
+  # The other side's rebuilt characters by their owner's seat and place.
   @opponents = {}
 
   extend MGQ_MpLog
@@ -97,7 +107,7 @@ module MGQ_MpBattlesTeam
     @heirs.map { |seat, heir| "#{MGQ_MpBattlesSync.who(seat)} by #{heir ? MGQ_MpBattlesSync.who(heir) : 'nobody, their side is gone'}" }.join(", ")
   end
 
-  # Names who leads the other side, whose team Discord says the player fights.
+  # Names who leads the other side, the opponent Discord shows.
   #
   # @return [String] The name of the other side's first player.
   def self.opponent_name

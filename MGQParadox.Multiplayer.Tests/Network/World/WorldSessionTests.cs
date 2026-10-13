@@ -2,21 +2,21 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Covered a burst of messages paced below the relay limit, and the test relay closing a connection that sends too fast
-//                            - Covered entering a world again while the first connect still waits at the relay, which the relay lets in after the new one
-//                            - Covered a "replaced" close after the cut connect could no longer take a seat, which ends the session as a real replace, and the relay turning the game away as too old for good, with or without its text
-//                            - Covered a cut connect the relay holds past its own timeout, whose late "replaced" close still connects again, and the world room turning the game away as too old with 400 and the code "update", which tells to update MGQ Online
-//                            - Covered an older or self-hosted relay turning the world room down with 426, with or without its text, and with 400 naming no code or an unknown one
-//      Paulinchen  2026-10-09: Covered the relay's word that a world now turns other mods off handed to the game script with its mods, and a value that is neither 0 nor 1 ignored
-//                            - Covered the relay's word of a Raid World's new difficulty handed to the game script, and a value that is no difficulty ignored
-//      Paulinchen  2026-10-08: Covered entering a Raid World, which the relay lets in only games that name it in the features header
-//                            - Read the relay's chat lines under its lock, and covered chat lines that come too fast and the relay saying so
-//      Paulinchen  2026-10-07: Covered a chat line mirrored to the relay and an admin's line handed to the game script
-//      Paulinchen  2026-10-06: Covered a player entering the same world from another game, and took the entry the inbox handed out
+//      Paulinchen  2026-10-12: Covered paced message bursts and closing a connection that sends too fast
+//                            - Covered entering a world again while the first connect still waits
+//                            - Covered a late "replaced" close and the relay turning an outdated game away
+//                            - Covered a cut connect held past its own timeout and the "update" refusal
+//                            - Covered older relays turning the world room down with 426 or 400
+//      Paulinchen  2026-10-09: Covered the relay's word that a world turns other mods off
+//                            - Covered the relay's word of a Raid World's new difficulty
+//      Paulinchen  2026-10-08: Covered entering a Raid World
+//                            - Read the relay's chat lines under its lock and covered chat lines that come too fast
+//      Paulinchen  2026-10-07: Covered mirrored chat lines and an admin's line
+//      Paulinchen  2026-10-06: Covered a player entering from another game and took the entry the inbox handed out
 //      Paulinchen  2026-10-02: Made the test world with every player starting alike
 //      Paulinchen  2026-09-30: Made the test world without a starting save, public
 //      Paulinchen  2026-09-29: Covered the ping an open connection tells
-//                            - Made every world in the directory first, and covered deleted worlds, removed players and a missing player
+//                            - Made every world in the directory first and covered deleted worlds and removed or missing players
 //                            - Created
 //
 //----------------------------------------------------------------

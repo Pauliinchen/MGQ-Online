@@ -2,7 +2,7 @@
 //  WorldLockTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Opened a lock made with .NET's PBKDF2, as earlier versions made them
+//      Paulinchen  2026-10-08: Opened a lock made with .NET's PBKDF2
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------

@@ -3,39 +3,37 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked the level caps of the milestones a story beat
-#                            - Checked that a pool emptied while a live battle's host waits for commands fells the boss and leaves the victory to the wait
-#      Paulinchen  2026-10-11: Checked a boss outside the Level Cap milestones and Carmilla and Elizabeth counting only in the Vampire Castle
+#                            - Checked a pool emptied while a live battle's host waits for commands
+#      Paulinchen  2026-10-11: Checked a boss outside the Level Cap milestones and the Vampire Castle's Carmilla and Elizabeth
 #                            - Checked that a side battle's defeat is the game's
-#                            - Covered the readers the World overview uses: the pools as a copy, the share left now, a troop's label and a pool's boss key
+#                            - Covered the pool readers of the World overview
 #      Paulinchen  2026-10-10: Checked that the keys of the Three Nobles of Black carry their caps
-#                            - Covered a takeover the co-op battles tell as it happens, which reports the damage of the battle's start that follows
-#                            - Covered a guest that takes the battle over after the host reported an action, and a guest that never kills the boss by its own view of the pool
-#                            - Covered a boss whose max HP changes, small changes of the DLL's line in a row and the Hades rematch hall
-#                            - Covered the side battles' rewards once per boss, their troop's pages left out, side_battle? and the guests of a side battle
-#                            - Covered the pools' HP every few seconds while a battle waits for commands
+#                            - Covered takeovers the co-op battles tell as they happen
+#                            - Covered guest takeovers and guests that never kill the boss alone
+#                            - Covered changing boss max HP, small changes of the DLL's line and the Hades rematch hall
+#                            - Covered the side battles' rewards, troop pages and guests, and side_battle?
+#                            - Covered the pools' HP while a battle waits for commands
 #                            - Covered the bosses' titles
-#                            - Covered the reports as a battle's actions end, a few seconds apart
-#                            - Covered the boss tiers, their max HP, defense and magic defense factors and the factors they give the stats of pooled enemies
-#                            - Covered the one-time Chaos Domain bosses, which fight pools of their own
-#                            - Covered the shared fight against a raid boss's pools instead of the kills and the boss that falls back: the raised max HP, the reports and the pools' HP at each command phase (with the damage of the turn end and battle start, refused reports and word older than the player's own reports), the kills by the relay, the guests, the side battles and the pushes
-#      Paulinchen  2026-10-09: Covered the share of a kill and the boss's name that count only the troop's own enemies, never those added mid-battle
-#                            - Covered the boss fights whose events change the party, which fall back with the party as it was
-#                            - Covered the companions that join after the battle, the personas put back without marking them owned and the items a replay gives again
+#                            - Covered the reports at the end of a battle's actions
+#                            - Covered the boss tiers and their factors
+#                            - Covered the one-time Chaos Domain bosses
+#                            - Covered the shared fight against a raid boss's pools
+#      Paulinchen  2026-10-09: Covered the share of a kill and the boss's name counting only the troop's own enemies
+#                            - Covered boss fights whose events change the party
+#                            - Covered companions joining after the battle, personas put back and items given again
 #                            - Created
 #
 #----------------------------------------------------------------
 
-# Covers battles_raid_pool.rbx with battles_raid_bosses.rbx: which battles fight a raid boss's pools,
-# the max HP of their enemies, what they report at each command phase and as they end, the pools' HP they
-# take at each command phase (the regeneration, other battles' pushes and the player's own reports
-# the relay has not answered yet), an enemy the relay's empty pool kills, a boss troop of several
-# enemies, a battle against a pool that is empty already, the guests and a guest who takes the
-# battle over, the game's retry, the side battles with their rewards once per boss and without
-# their troop's pages, the invite's and the state's fields, the pushes told in the chat log and
-# fetching the pools. Events run in fibers as the game's interpreter runs them.
+# Covers battles_raid_pool.rbx with battles_raid_bosses.rbx: which battles fight a raid boss's pools
+# and with what max HP, the reports a battle sends and the pools' HP it takes, the kills by the
+# relay, bosses of several enemies, guests and takeovers, the game's retry, the side battles, the
+# invite's and the state's fields, the pushes and fetching the pools. Events run in fibers as the
+# game's interpreter runs them.
 
 require_relative "support"
 
+# Stands in for the mod's base script, whose log prints each line.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
 $calls = []
 $state = ""
@@ -55,23 +53,35 @@ $collapsed = []
 $won = []
 $called = []
 
-# The clock, which stands still unless a test moves it, so the pools gain nothing back meanwhile.
 $now = Time.at(1_000_000)
+# Stands in for the clock: answers $now, which stands still unless a test moves it, so the pools
+# regain nothing meanwhile.
 def Time.now; $now; end
 
 # The DLL: each call is noted, and the pools' state is what $state holds.
 module MGQ_Multiplayer
+  # Stands in for the DLL link.
   module Link
     # A function of the DLL, which notes its calls without their null bytes.
     Function = Struct.new(:name) do
+      # Notes the call in $calls, refusing arguments its signature does not name.
+      #
+      # @param args [Array] The arguments.
+      # @return [Integer] $report_result, 1 when the DLL took the call.
       def call(*args)
         check_dll_call(name, args)
         $calls << [name, args.map { |arg| arg.is_a?(String) ? arg.chomp("\0") : arg }]
         $report_result
       end
     end
+    # Answers a function of the DLL.
     def self.function(name); Function.new(name); end
+    # Answers the pools' state, $state, as the DLL hands it over.
     def self.read(name, size); check_dll_call(name, ["", size]); $state.dup.force_encoding("ASCII-8BIT"); end
+    # Reads the DLL's description as Link.parse does: key=value lines, an empty line, the payload.
+    #
+    # @param text [String] The text.
+    # @return [Hash] The fields, with the payload under :payload.
     def self.parse(text)
       head, payload = text.force_encoding("UTF-8").split("\n\n", 2)
       state = { :payload => payload.to_s }
@@ -80,48 +90,78 @@ module MGQ_Multiplayer
     end
   end
 end
+# Stands in for the world's sync, keeping its routes in $routes, its frame blocks in $ticks and the
+# state's blocks in $state_fields.
 module MGQ_MpOverworldSync
+  # The field of the relay's push of a pool.
   BOSS_FIELD = "boss_key"
+  # Keeps a field's handler in $routes.
   def self.route(field, &block); $routes[field] = block; end
+  # Keeps a block to run each frame in $ticks.
   def self.on_tick(&block); $ticks << block; end
+  # Keeps a block of the player's state fields in $state_fields.
   def self.state_fields(&block); $state_fields << block; end
 end
+# Stands in for the co-op scope, in a Raid World while $raid is set.
 module MGQ_MpCoop; module Scope; def self.raid?; $raid; end; end; end
+# Stands in for the story of world w1, active while $raid is set.
 module MGQ_MpWorldStory
+  # Answers whether the world's story is active: $raid.
   def self.active?; $raid; end
+  # Answers how the player plays the world's story: $mode, :world while they play it.
   def self.mode; $mode; end
+  # Answers the world's id.
   def self.world_id; "w1"; end
 end
+# Stands in for the chat log, noting its system lines in $chat.
 module MGQ_MpChat; def self.system(text); $chat << text; end; end
+# Stands in for the notification box, noting its messages in $notices.
 module MGQ_MpNotices; def self.message(_key, text, _frames); $notices << text; end; end
+# Stands in for the live battle, the player's role in it in $role.
 module MGQ_MpBattlesSync
+  # Answers the player's role in the live battle: $role.
   def self.role; $role; end
+  # Stands in for the host's wait for the other players' commands, waiting while $waiting is set.
   module Waiting; def self.active?; $waiting; end; end
 end
+# Stands in for the co-op battles' enemy rates, noting those borrowed in $borrowed and counting
+# those given back in $given_back.
 module MGQ_MpBattlesCoop
+  # Answers the player's enemy rates.
   def self.rates_text; "100,100,0"; end
+  # Notes the host's rates borrowed in $borrowed.
   def self.borrow_rates(message); $borrowed << message["rates"]; end
+  # Counts the rates given back in $given_back.
   def self.give_back_rates; $given_back += 1; end
 end
 
-# The game's story values, as the game keeps them.
+# The game's switches, as the game keeps them.
 class Game_Switches
+  # Makes the switches, all off.
   def initialize; @data = []; end
+  # Answers a switch, off unless set.
   def [](id); @data[id] || false; end
+  # Sets a switch.
   def []=(id, value); @data[id] = value; end
 end
+# The game's variables, as the game keeps them.
 class Game_Variables
+  # Makes the variables, all 0.
   def initialize; @data = []; end
+  # Answers a variable, 0 unless set.
   def [](id); @data[id] || 0; end
+  # Sets a variable.
   def []=(id, value); @data[id] = value; end
 end
 
 # The save's system object, where scripts keep notes of their own.
 class Game_System; end
 
-# The database's enemies and troops; Queen Harpy's troop has a battle event page.
+# An enemy of the database, its max HP first in its params.
 EnemyData = Struct.new(:name, :params)
+# An enemy of a troop of the database.
 TroopMember = Struct.new(:enemy_id)
+# A troop of the database, with its battle event pages.
 TroopData = Struct.new(:members, :pages)
 $data_enemies = []
 { 1 => ["Queen Harpy", 800], 2 => ["Alma Elma", 1000], 3 => ["Granberia", 1000], 4 => ["Metatronne", 2000], 5 => ["Sandalphone", 3000],
@@ -136,43 +176,73 @@ $pages_run = []
 # An enemy, whose HP the game keeps between 0 and its max and which dies at 0.
 class Game_Enemy
   attr_reader :hp
+  # Makes an enemy of the database with all its HP.
   def initialize(_index, enemy_id); @enemy_id = enemy_id; @dead = false; @hp = mhp; end
+  # Answers the enemy's name in the database.
   def name; $data_enemies[@enemy_id].name; end
+  # Answers the enemy's name before any change.
   def original_name; name; end
+  # Answers the enemy's max HP in the database.
   def mhp; $data_enemies[@enemy_id].params[0]; end
+  # Sets the HP, kept between 0 and the max, and kills the enemy at 0.
   def hp=(value); @hp = [[value, mhp].min, 0].max; @dead = @hp == 0; end
+  # Answers whether the enemy is dead.
   def dead?; @dead; end
+  # Notes the enemy's fall in $collapsed.
   def perform_collapse_effect; $collapsed << name; end
 end
+# The battle's troop, made from the database's troop, or a Slime for a troop it lacks.
 class Game_Troop
   attr_reader :members
+  # Makes the troop's enemies, leaving out those the database lacks.
+  #
+  # @param troop_id [Integer] The troop.
   def setup(troop_id)
     @troop_id = troop_id
     data = $data_troops[troop_id] || TroopData.new([TroopMember.new(6)], [])
     @members = data.members.select { |member| $data_enemies[member.enemy_id] }.each_with_index.map { |member, index| Game_Enemy.new(index, member.enemy_id) }
   end
+  # Answers the troop of the database.
   def troop; $data_troops[@troop_id]; end
+  # Runs the troop's battle event pages, noting each in $pages_run.
   def setup_battle_event(_timing = nil); troop.pages.each { |page| $pages_run << page } if troop; end
+  # Answers whether every enemy is dead.
   def all_dead?; @members.all? { |enemy| enemy.dead? }; end
 end
+# The player's party, as far as it is in a battle.
 class Game_Party; attr_accessor :in_battle; end
 
 # The battle's start and end as the game's are: the event's battle command sets up a battle and
 # hands its result back through event_proc, the retry sets the lost battle up again, and a troop
 # whose enemies are all dead wins.
 module BattleManager
+  # Sets a battle up, noting it in $setups and, while $side_at_setup is a list, whether it is a
+  # side battle as it is set up.
+  #
+  # @param troop_id [Integer] The troop.
+  # @param can_escape [Boolean] Whether the player may escape.
+  # @param can_lose [Boolean] Whether the event goes on after a defeat.
   def self.setup(troop_id, can_escape = true, can_lose = false)
     $side_at_setup << MGQ_MpRaidPool.side_battle?(troop_id) if $side_at_setup
     $game_troop.setup(troop_id)
     @troop_id = troop_id
     $setups << [troop_id, can_escape, can_lose]
   end
+  # Answers whether the victory gives EXP: yes, as the game's does.
   def self.enable_get_exp?; true; end
+  # Answers whether the victory gives gold: yes, as the game's does.
   def self.enable_get_gold?; true; end
+  # Answers whether the victory gives drops: yes, as the game's does.
   def self.enable_get_drop?; true; end
+  # Takes the handler the battle's result goes to.
   def self.event_proc=(proc); @event_proc = proc; end
+  # Ends the battle, handing its result to the event.
   def self.battle_end(result); @event_proc.call(result) if @event_proc; @event_proc = nil; $game_party.in_battle = false; end
+  # Sets the lost battle up again.
   def self.retry_battle; setup(@troop_id); $game_party.in_battle = true; true; end
+  # Wins the battle once its troop is all dead, noting the troop in $won.
+  #
+  # @return [Boolean] Whether it won.
   def self.judge_win_loss
     return false unless $game_troop.all_dead?
     $won << @troop_id
@@ -180,26 +250,40 @@ module BattleManager
     true
   end
 end
+# The battle's scene, whose command phases, turn ends, actions and frames the pools hook into.
 class Scene_Battle
+  # Answers whether the scene changes: never.
   def scene_changing?; false; end
+  # Opens a command phase, noting the enemies' HP in $phases.
   def start_party_command_selection; $phases << $game_troop.members.map(&:hp); end
+  # Ends the turn, running $turn_end for damage dealt then.
   def turn_end; $turn_end.call if $turn_end; end
+  # Stands in for running an action, doing nothing.
   def process_action; end
+  # Stands in for a frame of the battle, doing nothing.
   def update_basic; end
 end
+# Stands in for the game's scenes, the running one in $scene and those called in $called.
 module SceneManager
+  # Stands in for starting the game, doing nothing.
   def self.run; end
+  # Answers the running scene: $scene.
   def self.scene; $scene; end
+  # Notes the scene called in $called.
   def self.call(klass); $called << klass; end
 end
+# Stands in for the title screen.
 class Scene_Title; def start; end; end
 
 # The map, whose interpreter runs as the game's does.
 class Game_Map
   attr_accessor :map_id
   attr_reader :interpreter
+  # Makes map 5 with its interpreter.
   def initialize; @map_id = 5; @interpreter = Game_Interpreter.new; end
+  # Runs a frame of the map, its interpreter only in the main update.
   def update(main = false); update_interpreter if main; end
+  # Runs the interpreter and forgets a map event once it ended.
   def update_interpreter
     @interpreter.update
     @interpreter.clear if !@interpreter.running? && @interpreter.event_id > 0
@@ -210,9 +294,18 @@ end
 # [:battle, troop], [:call, list] for a common event and [:mark, label].
 class Game_Interpreter
   attr_reader :map_id, :event_id
+  # Makes an interpreter.
+  #
+  # @param depth [Integer] How deep in common event calls it runs.
   def initialize(depth = 0); @depth = depth; clear; end
+  # Forgets the event.
   def clear; @map_id = 0; @event_id = 0; @list = nil; @index = 0; @fiber = nil; end
+  # Starts an event on the map in a fiber of its own.
+  #
+  # @param list [Array] Its commands.
+  # @param event_id [Integer] The event, 0 for a common event.
   def setup(list, event_id = 0); clear; @map_id = $game_map.map_id; @event_id = event_id; @list = list; @fiber = Fiber.new { run } if @list; end
+  # Runs the commands to the end, then waits a frame before it ends.
   def run
     while @list[@index]
       execute_command
@@ -221,8 +314,11 @@ class Game_Interpreter
     Fiber.yield
     @fiber = nil
   end
+  # Answers whether an event runs.
   def running?; !@fiber.nil?; end
+  # Runs the event on to its next wait.
   def update; @fiber.resume if @fiber; end
+  # Runs the command at the event's place.
   def execute_command
     kind, a, b = @list[@index]
     case kind
@@ -233,6 +329,7 @@ class Game_Interpreter
     when :mark then $ran << a
     end
   end
+  # Starts the battle of a battle command and waits for it, as the game's command 301 does.
   def command_301
     return if $game_party.in_battle
 
@@ -245,7 +342,7 @@ end
 
 load_script "battles_raid_bosses"
 load_script "battles_raid_pool"
-# The battles below count on 7.5 times the max HP in every tier; the real tiers are checked on their own.
+# The real tiers, kept aside while the battles below count on 7.5 times the max HP in every tier.
 REAL_TIERS = MGQ_MpRaidBosses::TIERS.dup
 MGQ_MpRaidBosses::TIERS.replace(REAL_TIERS.keys.each_with_object({}) { |tier, tiers| tiers[tier] = { :mhp => 7.5 } })
 
@@ -291,12 +388,14 @@ def start(list, event_id = 7)
   frames
 end
 
-# The reports sent: each one's key, battle id and text.
+# Lists the reports sent.
+#
+# @return [Array<Array(String, String, String)>] Each one's key, battle id and text.
 def reports
   $calls.select { |name, _| name == "mp_raid_boss_report" }.map { |_, args| args[1..3] }
 end
 
-# The enemy of the battle at a place in its troop.
+# Finds the enemy of the battle at a place in its troop.
 #
 # @param index [Integer] The place.
 # @return [Game_Enemy] The enemy.
@@ -335,7 +434,7 @@ def ticks(count = MGQ_MpRaidPool::STATE_FRAMES)
   count.times { $ticks.each { |tick| tick.call(true) } }
 end
 
-# The data.
+# The boss tables and the pools' keys hold together.
 rows = MGQ_MpRaidBosses::TROOPS.values.map { |row| [row[0], row[1]] }.uniq
 check("every milestone has the markers that tell it beaten", rows - pool::BEATEN.keys, [])
 check("and no markers name a milestone the boss table lacks", pool::BEATEN.keys - rows, [])
@@ -371,12 +470,14 @@ check("and no name of the story table or of another boss", (MGQ_MpRaidBosses::OP
 start([[:battle, 3127], [:mark, :after]])
 check("its event battle fights that pool with 7.5 times the max HP", [pool.fight && pool.fight.key, enemy.mhp], ["Void Image of Paradise", 7500])
 
-# A story boss's last phase fights its pool with RAID_SCALE times the max HP.
+# A story boss's last phase fights its pool with its tier's factor of the max HP.
 reset
 start([[:var, 1001, 40], [:battle, 71], [:mark, :after]])
 fight = pool.fight
 check("a story boss's last phase fights its pool, even after the event moved the story", [$game_party.in_battle, fight && fight.key, fight && fight.own], [true, "Queen Harpy", 1])
 check("its enemy has 7.5 times its max HP, all of it", [enemy.mhp, enemy.hp], [6000, 6000])
+
+# Which troops are bosses, and their tiers, titles and stat factors.
 bosses = MGQ_MpRaidBosses
 check("each boss has the tier its list names, tier 0 the strongest",
       [bosses.tier(71), bosses.tier(752), bosses.tier(1725), bosses.tier(1807), bosses.tier(2188), bosses.tier(2219), bosses.tier(3127), bosses.tier(31)],
@@ -418,6 +519,8 @@ check("so Chaos, Chaos Ilias and Queen Harpy get these", [[2219, 1725, 71].map {
       [[50, 35, 5], [5.0, 3.0, 1]])
 check("which wraps both defenses of the game's enemies too", bosses.tier_stats, [:def, :mdf])
 bosses::TIERS.replace(REAL_TIERS.keys.each_with_object({}) { |tier, tiers| tiers[tier] = { :mhp => 7.5 } })
+
+# The story boss's battle has an id the relay takes and keeps its HP without word from the relay.
 check("its battle id is one the relay takes", fight.battle =~ /\A[a-z0-9]{3,64}\z/ ? true : false, true)
 $scene.start_party_command_selection
 check("a command phase without word from the relay keeps the HP", enemy.hp, 6000)
@@ -540,7 +643,7 @@ reset
 start([[:call, [[:battle, 71]]], [:mark, :after]])
 check("a boss battle in a common event the event calls fights the pool", pool.fight && pool.fight.key, "Queen Harpy")
 
-# A boss of several enemies: each has a pool of its own, and the battle shows them together.
+# A boss of several enemies has a pool per enemy, and falls once every one is empty.
 reset
 start([[:battle, 1599], [:mark, :after]])
 fight = pool.fight
@@ -635,7 +738,7 @@ BattleManager.retry_battle
 check("the retry fights the pool as a battle of its own", [pool.fight && pool.fight.battle != first, enemy.mhp], [true, 6000])
 check("with the HP the pool has left", enemy.hp, 3000)
 
-# The fields of the invite and of the player's state.
+# The invite and the player's state name the battle that fights a pool.
 check("the invite of a battle that fights a pool names how many enemies it has", pool.invite_fields, { "pool" => 1 })
 check("the state names the troop and the enemy rates while the player hosts it", pool.state_fields, { "rpb" => "71;100,100,0" })
 $role = :guest
@@ -646,8 +749,9 @@ check("nor outside the battle", pool.state_fields, { "rpb" => "" })
 $raid = false
 check("and not at all in a Classic world", pool.state_fields, {})
 
-# A side battle against the same boss.
+# A host's boss battle offers a side battle against the same pool.
 reset
+# Another player as far as their state goes.
 Host = Struct.new(:state)
 check("a host's boss battle offers a side battle", pool.side_of(Host.new({ "rpb" => "71;90,100,0" })), [71, "90,100,0"])
 check("one without a boss battle none", [pool.side_of(Host.new({ "rpb" => "" })), pool.side_of(Host.new({}))], [nil, nil])
@@ -665,7 +769,7 @@ reset
 $mode = :own
 check("nor for a player behind the world's story", pool.start_side(71, "1,2"), false)
 
-# Fetching the pools as the player enters the world and each map.
+# The pools are fetched as the player enters the world and each map.
 reset
 ticks(1)
 check("the pools are fetched as the player enters the world", $calls.select { |name, _| name == "mp_raid_bosses_fetch" }, [["mp_raid_bosses_fetch", ["w1"]]])
@@ -675,7 +779,7 @@ $game_map.map_id = 6
 ticks(1)
 check("and again on another map", $calls.count { |name, _| name == "mp_raid_bosses_fetch" }, 2)
 
-# The pushes.
+# The relay's pushes count, others are ignored.
 reset
 $routes[MGQ_MpOverworldSync::BOSS_FIELD].call(nil, { MGQ_MpOverworldSync::BOSS_FIELD => "Queen Harpy", "left" => "0", "defeated" => "1" })
 check("a push not from the relay is ignored", [pool.pool("Queen Harpy"), $chat], [nil, []])
@@ -715,7 +819,7 @@ $report_result = 1
 $scene.start_party_command_selection
 check("which goes with the next report", [reports.last[2], enemy.hp], ["1\t0.1000000000\t6000\t0", 2400])
 
-# Word of a pool older than the player's own reports the relay has not answered yet.
+# Word of a pool older than the player's own reports the relay has not answered yet is ignored.
 push("Queen Harpy", "0.5")
 $scene.start_party_command_selection
 check("a push older than an unanswered report is ignored", enemy.hp, 2400)
@@ -733,13 +837,13 @@ push("Queen Harpy", "1")
 $scene.start_party_command_selection
 check("an admin's reset counts at once", enemy.hp, 6000)
 
-# The DLL's state of another world.
+# The DLL's pools of another world are ignored.
 reset
 $state = "world=w2\n\nQueen Harpy\t0.2\t6000\t0\t\n"
 ticks
 check("the DLL's pools of another world are ignored", pool.pool("Queen Harpy"), nil)
 
-# A pool whose share rounds to 0 while it stands.
+# A pool whose share rounds to 0 while it stands never kills the boss.
 reset
 push("Queen Harpy", "0", "18000000000000")
 start([[:battle, 71], [:mark, :after]])
@@ -755,7 +859,7 @@ check("the retry's invite names the pool", pool.retrying { pool.invite_fields(71
 push("Queen Harpy", "0", "6000", true)
 check("and is won already once the pool is empty", pool.retrying { pool.won_already?(71) }, true)
 
-# A guest's troop built anew from its host's.
+# A guest's troop built anew from its host's gets the raised max HP at once.
 reset
 pool.note_invite("troop" => "71", "pool" => "1", "boss" => "1")
 $role = :guest
@@ -778,7 +882,7 @@ check("then again until it starts", $calls.count { |name, _| name == "mp_raid_bo
 ticks(pool::FETCH_RETRY_FRAMES * 2)
 check("and no more once it did", $calls.count { |name, _| name == "mp_raid_bosses_fetch" }, 2)
 
-# What the pools leave as they are.
+# A battle whose pool is forgotten keeps its enemy's own max HP.
 reset
 start([[:battle, 71]])
 pool.forget
@@ -922,7 +1026,7 @@ pool.note_invite("troop" => "71", "pool" => "1")
 BattleManager.setup(71)
 check("a guest of a boss's event battle does not", [pool.fight.side, BattleManager.enable_get_exp?], [false, true])
 
-# The readers the World overview uses.
+# The World overview reads the pools as a copy, and their shares, labels and boss keys.
 reset
 push("Queen Harpy", "0.4", "6000")
 pools = pool.pools

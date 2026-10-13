@@ -2,9 +2,9 @@
 //  RaidBossesTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Covered the pools as shares of a raid max HP: turns taken once per sequence number, queued reports sent in order, a lost answer sent again, kills and emptying reports, healing, the first max kept, keys with '#', regeneration per minute and the world room's word
-//                            - Covered reports sent again while the relay is busy, the full queue, answers older than the world room's word, a fetch that keeps what the world room told while it ran, the pool whose HP shows as 0 and the report that takes nothing off
-//                            - Covered a report the relay fails every try of, which is dropped so the next one is sent
+//      Paulinchen  2026-10-10: Covered the pools as shares of a raid max HP
+//                            - Covered a busy relay, the full queue, stale answers and fetches, 0 HP and empty reports
+//                            - Covered a report the relay fails every try of
 //      Paulinchen  2026-10-09: Created
 //
 //----------------------------------------------------------------
@@ -473,7 +473,7 @@ public sealed class RaidBossesTests
     /// <param name="relay">The test relay.</param>
     /// <param name="key">The player's key.</param>
     /// <param name="code">The world the player is in.</param>
-    /// <param name="now">Tells the time, the relay's fixed time when left out, which keeps the pools from filling up while a test reads them.</param>
+    /// <param name="now">Tells the time, <see cref="Fixed"/> when left out.</param>
     /// <returns>The pools.</returns>
     private static RaidBosses NewBosses(TestRelay relay, string key, WorldCode code, Func<DateTime>? now = null) => new()
     {

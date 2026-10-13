@@ -2,88 +2,88 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a story event that runs by itself, left to the teller's game, fades in a dark screen once per arrival
-#                            - Checked that a member stands free while the leader fights the story's battle, and still again once the story goes on
-#                            - Checked that a page of the leader's story that fails to hold waits for the member as the game's own pages do
-#                            - Checked that a leader holding the game's skip tells one page every ten frames and the end only of the pages told, and the last page once the skip is let go, the event ended or a battle was called
-#                            - Checked that a party of four hears each page in one message, which a member who plays their own story ignores, saying so once
-#      Paulinchen  2026-10-11: Checked that a chest turning on a chest flag stays a chest, in the game and in the generator, and stood in for the chest flags
-#                            - Stood in for the player's followers, which a move to another map shows
-#                            - Checked that a page with story behind a choice is no chest, as Amira's paid tip in Iliasburg
-#                            - Checked that Amira in Iliasburg is no choice any more
-#                            - Checked the generator's rules only where the event checker repository lies next to this one, as on this PC and not in the workflow
-#                            - Checked that a common event the story calls tells its pages and a parallel one does not, that a page the leader moved past stays to read, confirm reads on, and that only the oldest pages past CATCH_UP_PAGES are left out
+#      Paulinchen  2026-10-12: Checked that a story event left to the teller fades in a dark screen once per arrival
+#                            - Checked that a member stands free while the leader fights the story's battle
+#                            - Checked that a leader's page that fails to hold waits for the member
+#                            - Checked how a leader holding the game's skip tells pages
+#                            - Checked that a party of four hears each page in one message
+#      Paulinchen  2026-10-11: Checked chests turning on a chest flag and stood in for the chest flags
+#                            - Stood in for the player's followers
+#                            - Checked that a page with story behind a choice is no chest
+#                            - Checked that Amira in Iliasburg is no choice
+#                            - Checked the generator's rules only where the event checker repository exists
+#                            - Checked the pages of called common events and pages the leader moved past
 #                            - Checked that holding the game's skip passes a page the leader moved past
-#                            - Checked that no page starts while the story brings the player over, so the follow goes first
-#                            - Checked that a page whose transfer and story lie behind a choice is travel the leader tells as story from the choice on
-#                            - Checked that story events wait for the world's story after the world opened, and talks run meanwhile
-#                            - Read the generator from MGQ-Paradox-Event-Checker next to the repository, and left its lists unchecked without it
-#                            - Read the line above the player's head as a doing with its seconds left, the leader's naming the member missing
-#                            - Checked that a branch on a choice script's variable counts as the choice's, that such a scene running by itself is story, that a signpost with its own self switch, the cosmetic scripts and the game's battle flags keep a talk
-#      Paulinchen  2026-10-10: Checked that a transfer outside a telling goes on with none, and that only a story eventthat runs by itself goes on with the telling that moved the player, while one the player starts is a new telling
-#                            - Checked that a Raid World's telling that moved the player goes on at the story's next event on the new map, through the game's transfer process, with no tie there, and starts anew after CONTINUE_FRAMES
-#                            - Checked that a follower on the way to where the teller's story moved them starts no story event of their own, on the way or just arrived, keeps that teller while their state says they tell nothing, hears their pages from the new map, and that the follow ends by itself
-#                            - Kept the log's lines, which the checks read
-#                            - Checked that the game's map display, Pocket Castle call and post-battle processing are the player's own, never story
-#                            - Checked that a teleport coop_teleport.rbx asks for brings the member over at once, in place of the leader's answer where they stand
-#                            - Checked that an event calling the game's map display, Pocket Castle call, post-battle processing or transfer process is sorted by the rest of its list
-#                            - Moved the common events that call each other to 6 and 7, since 2 and 3 are the player's own
-#                            - Checked that the world closing forgets the choices waiting and a Raid World's route waiting to be confirmed
+#                            - Checked that no page starts while the story brings the player over
+#                            - Checked that travel with story behind a choice is told from the choice on
+#                            - Checked that story events wait for the world's story after the world opened
+#                            - Read the generator from MGQ-Paradox-Event-Checker next to the repository
+#                            - Read the line above the player's head as a doing with its seconds left
+#                            - Checked choice-variable branches, signposts, cosmetic scripts and battle flags
+#      Paulinchen  2026-10-10: Checked which story events go on with the telling that moved the player
+#                            - Checked that a Raid World's telling goes on at the story's next event on a new map
+#                            - Checked a follower on the way to where the teller's story moved them
+#                            - Kept the log's lines
+#                            - Checked that the game's map display, castle call and post-battle processing are never story
+#                            - Checked that a teleport of coop_teleport.rbx brings the member over at once
+#                            - Checked that an event calling the game's own common events is sorted by the rest
+#                            - Moved the common events that call each other to 6 and 7
+#                            - Checked that the world closing forgets the choices and route waiting
 #                            - Checked that a Raid World's story event holds a whole second for a tie
-#                            - Checked that no event of coop_story_rewards.rbx is marked by a Library Flag, by its English or its untranslated name
-#      Paulinchen  2026-10-09: Loaded story_state.rbx before coop_story.rbx and read the story's state model, what is each player's own, a whole story and granting, from MGQ_MpStoryState
+#                            - Checked that no event of coop_story_rewards.rbx is marked by a Library Flag
+#      Paulinchen  2026-10-09: Loaded story_state.rbx and read the story's state model from MGQ_MpStoryState
 #                            - Checked that a Raid World's pages go to the viewers in one message
 #                            - Checked that the story's next event goes on with its telling
-#                            - Checked that a story event waits at its start for a tie with a player who entered the map first
-#                            - Checked that a player behind a Raid World's story starts no story event, is told the level that moves them on once, and that story which runs by itself waits while talks run
-#      Paulinchen  2026-10-08: Checked a Raid World: a player telling the story on the map keeps the others' story events from starting, whoever entered the map first tells it when two start at once, its pages go to and show for the players whose story matches, the castle's Map Owner is the sync host, and no leader's story is borrowed
-#                            - Checked that a Raid World's tie between two tellers holds only at the telling's start on its map, and that its chests are personal
-#                            - Loaded coop_scope.rbx, which the party's scripts ask whom they share the map and the story with
-#                            - Checked that the game's transfer process and the Library's replays gather nobody, and that the transfer process runs in a member's own game
+#                            - Checked that a story event waits at its start for a tie
+#                            - Checked that a player behind a Raid World's story starts no story event
+#      Paulinchen  2026-10-08: Checked who tells a Raid World's story and whom its pages reach
+#                            - Checked a Raid World's tie between two tellers and its personal chests
+#                            - Loaded coop_scope.rbx
+#                            - Checked that the game's transfer process and the Library's replays gather nobody
 #                            - Stood in for the faces this game has, of overworld.rbx
 #      Paulinchen  2026-10-07: Checked that a common event set up with its list alone is sorted
-#                            - Took variable 151 as the story's sample, since 150 is each player's own now
-#                            - Stood in for the helpers of coop.rbx the party scripts share now, and gave the game's switches their full count, which the story bounds another game's by
-#                            - Checked the story's choices a member makes: what is asked, each outcome, the outcomes kept from the leader's story, the choices' companions left out, the prompts of synced play, the leader's offer declined, accepted and taken back, and the other route's start
-#                            - Checked when a member follows the leader's story: the rule's edges, a member too far behind, across the Great Decision, on another route, drifting apart and caught up, the leader's followers, and chests shared all the same
-#                            - Checked the generator's maps from 1000 on and set_actors, and that the table holds Puruel and Inuel
+#                            - Took variable 151 as the story's sample
+#                            - Stood in for the shared helpers of coop.rbx and gave the switches their full count
+#                            - Checked the story's choices a member makes
+#                            - Checked when a member follows the leader's story
+#                            - Checked the generator's maps from 1000 on, set_actors and the table
 #                            - Let every member follow the leader's story in the checks of other things
-#                            - Gave the world stand-in who, which the log names players with
+#                            - Gave the world stand-in who
 #                            - Checked that the end of the map's main event ends the telling of the leader's story
-#      Paulinchen  2026-10-06: Checked the Great Decision's companions, shops in the story, abilities, personas, held messages of another leader, a story too large to send whole, the generator's gold chests and switch recruits, old pages and frames from before a load
-#                            - Took the party's leader from a stand-in of coop.rbx, and the game's raw data from its field
+#      Paulinchen  2026-10-06: Checked the Great Decision's companions, story shops, personas and a too large story
+#                            - Took the leader from a coop.rbx stand-in and the raw data from its field
 #                            - Took the castle's ghosts' opacity and catch-up tiles from a stand-in of overworld.rbx
-#                            - Checked chests on every map, what waited before the whole story, a temporary party, a companion taken twice, the packed story, and that the generator leaves out each player's own switches and variables
-#                            - Checked rewards some event gives either side, the side after the Great Decision, own side quests, rewards outside the story, a companion let go and equipment at the castle
-#                            - Checked that a member behind the leader catches up with the story, its skills, companions and items, those of their own side, and chooses a side first
+#                            - Checked chests on every map, the packed story and the generator's own lists
+#                            - Checked the catch-up's edge cases, from either-side rewards to castle equipment
+#                            - Checked that a member behind the leader catches up with the story's rewards
 #                            - Checked that a member ahead of the leader is lent the key items instead
 #                            - Checked that a locked chest stays shut and tells the party nothing
-#      Paulinchen  2026-10-04: Checked lent key items and gifts through a load, a crash, a duel, a battle and all at once
-#                            - Checked that a chest's sound and first icon reach the members, after a battle once on the map
+#      Paulinchen  2026-10-04: Checked lent key items and gifts through a load, a crash, a duel and a battle
+#                            - Checked that a chest's sound and first icon reach the members
 #                            - Checked that the castle shows the leader's residents, those only the leader has as ghosts
 #                            - Checked that the Pocket Castle's way out returns each player where they came from
-#                            - Checked that a member not as far along is lent the story's key items, which go back and stay out of saves
-#                            - Checked that a call is kept out of a duel, dropped at its end, and waits for a dark screen
+#                            - Checked that a member not as far along is lent the story's key items
+#                            - Checked that a call is kept out of a duel and waits for a dark screen
 #                            - Checked that the members near the leader follow where the story moves the leader
 #                            - Checked that a member's story event starts nowhere and says so once
-#                            - Checked traders: a side quest that cannot run, a goods script, a quest step behind a choice, a chest that asks first, and the talk's watch
+#                            - Checked traders, a chest that asks first and the talk's watch
 #                            - Checked when the player only waits for the party's story
-#                            - Followed gathering into coop_gather.rbx and the Pocket Castle's residents into coop_castle.rbx
+#                            - Followed gathering into coop_gather.rbx and residents into coop_castle.rbx
 #                            - Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that the Pocket Castle item is travel
 #                            - Checked that a member teleports to the leader on their own
 #                            - Checked that a member brought to the leader takes over the warp ban of the leader's place
 #                            - Gave the world stand-in map_free?
 #                            - Gave the world stand-in tell, notice and the own id and seat
-#                            - Checked that a chest showing its opened page is still a chest, and that a story event left to the leader lets the next event start
-#      Paulinchen  2026-10-02: Checked that members as far along as the leader keep the story, its items, gold and companions, and their own changes
-#                            - Checked that a common event sorted deep down is sorted anew higher up, and where the awakening switches end
-#                            - Gave the stand-ins the party check and the event page that coop.rbx now holds
-#                            - Checked that no random encounter starts for a member the story scene is about to bring over
+#                            - Checked a chest showing its opened page and a story event left to the leader
+#      Paulinchen  2026-10-02: Checked that members as far along as the leader keep the story
+#                            - Checked deep common event chains and where the awakening switches end
+#                            - Gave the stand-ins the party check and the event page of coop.rbx
+#                            - Checked that no random encounter starts for a member about to come over
 #      Paulinchen  2026-10-01: Checked that a page counts only the branches that can run now
-#                            - Checked that exits noting a flag on the way are travel, and that members come over after five seconds
-#                            - Checked that only the leader moves the story dialogue on, and the Pocket Castle's residents sorted as talks
-#                            - Checked that a story scene waits for the whole party, at most thirty seconds, which comes over after ten seconds and stands still, and that a member it started without plays on
+#                            - Checked that exits noting a flag are travel and members come over after five seconds
+#                            - Checked that only the leader moves the dialogue on and the castle's residents are talks
+#                            - Checked that a story scene waits for the whole party at most thirty seconds
 #                            - Checked that members no longer follow the leader to other maps
 #      Paulinchen  2026-09-30: Created
 #
@@ -94,19 +94,28 @@
 
 require_relative "support"
 
+# The mod's log, which keeps each line in $log for the checks to read.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; $log << m; end; end; end
 $log = []
 $sent = []
 $notices = []
+# Stands in for the world's sync of overworld_sync.rbx, always in a world.
 module MGQ_MpOverworldSync
   def self.in_world?; true; end
+  # Shows a notice, its icon kept in $icons.
   def self.notice(text, icon = nil); Status.notice(text); ($icons ||= []) << icon; end
+  # Reports whether the player is free on the map, no event, message or transfer running.
   def self.map_free?; SceneManager.scene.is_a?(Scene_Map) && !$game_map.interpreter.running? && !$game_message.busy? && !$game_player.transfer?; end
   def self.tell(seat, fields, body = ""); Link.send_to(seat, Me.encode(fields) + body); end
   def self.who(peer); peer == :me ? "the player" : "#{peer && peer.state['name']}"; end
+  # The other players this game knows, each a Peer: their seat, state, ghost and whether they were
+  # in the player's party.
   module Peers; Peer = Struct.new(:seat, :state, :ghost, :member); end
+  # The player's own state, encoded as the game sends it.
   module Me; def self.encode(state); state.map { |k, v| "#{k}=#{v}" }.join("\n") + "\n\n"; end; end
+  # The link to the other games.
   module Link
+    # Notes each message sent in $sent, its seat and fields.
     def self.send_to(seat, text)
       fields = {}
       text.split("\n").each { |line| k, v = line.split("=", 2); fields[k] = v if v }
@@ -114,9 +123,12 @@ module MGQ_MpOverworldSync
       true
     end
   end
+  # The notices shown, kept in $notices.
   module Status; def self.notice(text); $notices << text; end; end
 end
+# Stands in for the party helpers of coop.rbx, the party taken from $party, $leader and $members.
 module MGQ_MpCoop
+  # The player's party.
   module Party
     def self.id; $party; end
     def self.leader; $leader; end
@@ -130,18 +142,28 @@ module MGQ_MpCoop
   def self.event_name(id); ""; end
   def self.random_id(length); rand(36**length).to_s(36); end
 end
+# Stands in for the game's data classes.
 module RPG
+  # An item, weapon or armor, its icon taken from its id.
   class BaseItem; attr_accessor :id, :name; def initialize(id, name); @id, @name = id, name; end; def icon_index; 100 + @id; end; end
-  # A sound effect, which notes that it played.
+  # A sound effect, which notes in $played that it played.
   class SE < Struct.new(:name, :volume, :pitch); def play; ($played ||= []) << to_a; end; end
+  # An item, a key item once set so.
   class Item < BaseItem; attr_writer :key; def key_item?; @key ? true : false; end; end
+  # A piece of equipment.
   class EquipItem < BaseItem; end
+  # A weapon.
   class Weapon < EquipItem; end
+  # An armor.
   class Armor < EquipItem; end
+  # An event command.
   EventCommand = Struct.new(:code, :indent, :parameters)
+  # A common event, its list alone.
   CommonEvent = Struct.new(:list)
+  # An event page, its list alone.
   Page = Struct.new(:list)
 end
+# The event command, by a shorter name.
 Command = RPG::EventCommand
 # Makes an event command.
 #
@@ -149,6 +171,7 @@ Command = RPG::EventCommand
 # @param params [Array] Its parameters.
 # @return [RPG::EventCommand] The command.
 def c(code, *params); Command.new(code, 0, params); end
+# The game's system data, the names of its switches and variables.
 System = Struct.new(:switches, :variables)
 $data_system = System.new(Array.new(8000, ""), Array.new(4000, ""))
 $data_system.switches[20] = "Event General-Purpose 1"
@@ -159,12 +182,16 @@ $data_items = [nil, RPG::Item.new(1, "Potion"), RPG::Item.new(2, "Elixir"), RPG:
 $data_items[3].key = true
 $data_weapons = [nil, RPG::Weapon.new(1, "Sword")]
 $data_armors = [nil]
+# Stands in for the game's terms.
 module Vocab; def self.currency_unit; "G"; end; end
 # The graphics this game has, of which it lacks only one face.
 module MGQ_MpOverworld; def self.graphic?(_folder, name); name != "MissingFace"; end; end
 
+# Stands in for the game's switches.
 class Game_Switches; def initialize; @data = []; end; def [](id); @data[id] || false; end; def []=(id, value); @data[id] = value; end; end
+# Stands in for the game's variables.
 class Game_Variables; def initialize; @data = []; end; def [](id); @data[id] || 0; end; def []=(id, value); @data[id] = value; end; end
+# Stands in for the game's self switches.
 class Game_SelfSwitches; def initialize; @data = {}; end; def [](key); @data[key] == true; end; def []=(key, value); @data[key] = value; end; end
 
 # Reads the data the game keeps for its switches, variables or self switches, past its handling.
@@ -172,6 +199,7 @@ class Game_SelfSwitches; def initialize; @data = {}; end; def [](key); @data[key
 # @param object [Game_Switches, Game_Variables, Game_SelfSwitches] The object.
 # @return [Array, Hash] The data itself.
 def raw(object); object.instance_variable_get(:@data); end
+# Stands in for the player's party: items by name, gold, the party and the roster.
 class Game_Party
   attr_reader :items, :gold, :actors, :include_actors
   attr_accessor :in_battle
@@ -187,12 +215,15 @@ class Game_Party
   def item_number(item); @items[item.name]; end
   # The items held, as the game lists them.
   def items_held; $data_items.compact.select { |item| @items[item.name] > 0 }; end
+  # Counts a party of two as full.
   def party_member_full?; @actors.size >= 2; end
 end
+# Stands in for the screen: the frame count from $frame_count, the brightness from $brightness.
 module Graphics; def self.frame_count; $frame_count; end; def self.brightness; $brightness || 255; end; end
-# The buttons, confirm pressed while $confirm is set.
+# The buttons: confirm pressed while $confirm is set, the skip held while $skipping is.
 module Input; def self.trigger?(button); button == :C && $confirm ? true : false; end; def self.press?(button); button == :X && $skipping ? true : false; end; end
 $frame_count = 0
+# Stands in for the game's interpreter, running while busy is set.
 class Game_Interpreter
   attr_accessor :busy
   def execute_command; end
@@ -208,6 +239,7 @@ class Game_Interpreter
   end
   def running?; @busy; end
 end
+# Stands in for the player on the map, with the transfer they reserved.
 class Game_Player
   attr_reader :x, :y, :direction, :reserved
   # Steps left before a random encounter.
@@ -234,12 +266,13 @@ class Game_Player
     @reserved = nil
   end
 end
-# The message window's wait for the player's input at a page's end.
+# The message window's wait for the player's input at a page's end, noted in $own_pause.
 class Window_Message
   attr_accessor :pause
   def process_input; input_pause; end
   def input_pause; $own_pause = true; end
 end
+# Stands in for the message the game shows.
 class Game_Message
   attr_accessor :busy, :face_name, :face_index, :background, :position
   attr_reader :texts, :choices
@@ -248,9 +281,13 @@ class Game_Message
   def add(text); @texts << text; end
   def busy?; @busy; end
 end
+# The map scene, which notes in menu_calling that the menu was asked for.
 class Scene_Map; def update_call_menu; @menu_calling = :asked; end; attr_reader :menu_calling; end
+# The battle scene.
 class Scene_Battle; end
+# The menu scene.
 class Scene_Menu; end
+# Stands in for the game's scene manager, its scene alone.
 module SceneManager; class << self; attr_accessor :scene; end; end
 class Game_Interpreter
   def wait_for_message; end
@@ -265,6 +302,7 @@ class Game_Character
   def set_direction(d); @direction = d; end
   def move_straight(d); @x += { 4 => -1, 6 => 1 }.fetch(d, 0); @y += { 8 => -1, 2 => 1 }.fetch(d, 0); end
 end
+# Stands in for an event on the map, which shows one of its pages.
 class Game_Event
   attr_reader :id, :starting, :trigger, :locked
   attr_writer :character_name
@@ -277,37 +315,44 @@ class Game_Event
   def unlock; @locked = false; end
   def mgq_mp_page; @page ? @event.pages.index(@page).to_i : -1; end
   def mgq_mp_pages; @event.pages; end
+  # Shows the page at the index, as the game does once that page's conditions hold.
   def show(index); @page = @event.pages[index]; end
 end
+# Stands in for the map, which notes in started the event it set up.
 class Game_Map
   attr_accessor :map_id, :events, :need_refresh, :interpreter, :started
   def initialize; @map_id = 3; @events = {}; @interpreter = Game_Interpreter.new; end
   def setup(map_id); @map_id = map_id; end
   def update(main = false); end
+  # Sets up the first event starting, as the game does.
   def setup_starting_map_event
     event = @events.values.find { |e| e.starting }
     event.clear_starting_flag if event
     @started = event
     event
   end
+  # Sets up the first common event running by itself whose switch is on, as the game does.
   def setup_autorun_common_event
     common = $data_common_events.find { |c| c && c.autorun? && $game_switches[c.switch_id] }
     @started = common
     common
   end
 end
+# Stands in for the game's saves.
 module DataManager
   def self.make_save_contents; {}; end
   def self.extract_save_contents(contents); end
   def self.create_game_objects; end
 end
 
+# The party's messages of coop.rbx, sent through the world's link.
 module MGQ_MpCoop
   def self.tell(seat, field, value, fields = {})
     MGQ_MpOverworldSync::Link.send_to(seat, MGQ_MpOverworldSync::Me.encode({ field => value, "party" => Party.id }.merge(fields)))
   end
   def self.route(*); end
 end
+# The world sync's hooks, left empty, and the player's own id.
 module MGQ_MpOverworldSync
   def self.route(*); end
   def self.on_tick(*); end
@@ -322,7 +367,7 @@ end
 class Game_Actor
   def learn_skill(id); (@skills ||= []) << id; end
 end
-# The line above the player's head, whose lapse stands in as the seconds left, which the checks read.
+# The line above the player's head, its lapse given as the seconds left for the checks to read.
 module MGQ_MpActions
   def self.lapse_in(frames); frames / 60.0; end
   def self.lapse_at(since, frames); lapse_in(since + frames - Graphics.frame_count); end
@@ -332,6 +377,7 @@ load_script "story_state"
 # The chest flags of coop_story_rewards.rbx, as the game has them; the rest of that table stays out,
 # since these checks build their own stories.
 CHEST_FLAGS = eval(File.read(File.join(SCRIPTS_DIR, "coop_story_rewards.rbx"), :encoding => "UTF-8")[/CHEST_FLAGS = (\[[\d, ]*\])/, 1])
+# Lists the chest flags from CHEST_FLAGS, see MGQ_MpStoryState.chest_flags.
 def MGQ_MpStoryState.chest_flags; CHEST_FLAGS; end
 load_script "coop_story"
 load_script "coop_events"
@@ -835,13 +881,14 @@ $game_map.setup_starting_map_event
 check("starting it again at once says nothing more", $notices, [])
 $game_map.events[12].start
 check("a talk runs in the member's own game", $game_map.setup_starting_map_event, $game_map.events[12])
-# The map's screen, faded out by the scene that brought the player, and when the player entered the map.
+# The map's screen, faded out by the scene that brought the player.
 class LateScreen
   attr_accessor :brightness, :fadein
   def initialize; @brightness = 0; end
   def start_fadein(duration); @fadein = duration; @brightness = 1; end
 end
 class Game_Map; attr_accessor :screen; end
+# When the player entered the map, from $map_since.
 module MGQ_MpOverworldSync; module Me; def self.map_since; $map_since; end; end; end
 $game_map.screen = LateScreen.new
 $map_since = 1000
@@ -881,6 +928,7 @@ $game_map.setup_starting_map_event
 check("a refusal from before a loaded save, whose frame count is lower, is long past", $notices.size, 1)
 leader.state["map"] = "7"
 
+# A common event, which runs by itself once it has a switch.
 class RPG::CommonEvent; attr_accessor :switch_id; def autorun?; !@switch_id.nil?; end; end
 raw($game_switches)[70] = true
 $data_common_events[4] = RPG::CommonEvent.new([c(101, "", 0, 0, 2), c(121, 60, 60, 0)])
@@ -898,7 +946,7 @@ $members = [friend]
 check("the leader's own game runs it", $game_map.setup_autorun_common_event, $data_common_events[4])
 $data_common_events[4] = nil
 
-# The leader tells the dialogue; a member's request to play a story event, as older builds sent, starts nothing.
+# The leader tells the dialogue; a member's request to play a story event starts nothing.
 $game_message.busy = false
 $game_map.interpreter.busy = false
 MGQ_MpCoopEvents.take(friend, { "pevent" => "run", "party" => "p1", "map" => "7", "event" => "11" })
@@ -919,6 +967,7 @@ say = says.first[1]
 check("and once the leader moved on, that it is done", $sent.map { |_, f| [f["pevent"], f["page"]] }.select { |kind, _| %w[say done].include?(kind) }, [["say", say["page"]], ["done", say["page"]]])
 # A common event the story calls runs in a child interpreter inside the main one's turn, and its
 # dialogue, such as a companion's lines, goes to the party too; a parallel one's does not.
+# Stands in for coop_scene.rbx, whether the map's turn runs read from $map_turn.
 module MGQ_MpCoopScene; def self.map_turn?; $map_turn; end; end
 child = Game_Interpreter.new
 $sent.clear
@@ -1117,6 +1166,7 @@ MGQ_MpCoopEvents.page_ended
 $game_message.clear
 
 # The leader tells the party what their story gives, takes and sends away.
+# A companion's data, their name alone.
 Actor = Struct.new(:name)
 $data_actors[3] = Actor.new("Alice")
 $data_actors[4] = Actor.new("Tamamo")
@@ -1152,11 +1202,11 @@ MGQ_MpCoopEvents.finished($game_map.interpreter)
 check("the end of the map's main event ends the telling, so a later message, such as a PvP battle's result, is not told",
       MGQ_MpCoopEvents.instance_variable_get(:@telling), false)
 
-# A member as far along as the leader keeps what they play together once the party ends.
 # Plays a member's game until the party ends, from their own story to the leader's.
 #
 # @param own_progress [Integer] The member's main story progress, variable 1001.
-# @return [Array] The member's switches, variables and save once back in their own story.
+# @return [Array] The notice on joining, the member's switches and variables once back in their own
+#   story, and what a save made in the party held.
 def play_along(own_progress)
   $game_party = Game_Party.new
   $game_party.add_actor(3)
@@ -1189,6 +1239,7 @@ def play_along(own_progress)
   [joined, $game_switches, $game_variables, saved]
 end
 
+# A member as far along as the leader keeps what they play together once the party ends.
 $story_leader = leader
 joined, switches, variables, saved = play_along(40)
 check("a member as far along hears they keep what they play together", joined,
@@ -1222,15 +1273,21 @@ check("and goes back once the party ends", [$game_party.items["Basement Key"], $
 # The Pocket Castle shows the party leader's residents: the leader is its Map Owner, and a
 # resident only the leader's game shows stands as a ghost in the member's.
 module MGQ_MpOverworld
+  # Tiles a ghost walks to catch up.
   CATCH_UP_TILES = 3
+  # Opacity of the ghost of a player outside the party.
   STRANGER_OPACITY = 150
 end
+# Stands in for coop_npcs.rbx: whether the map's events follow another game's, from
+# $following_npcs, and where they stand there, from $npc_targets.
 module MGQ_MpCoopNpcs
   def self.following?; $following_npcs; end
   def self.targets; $npc_targets; end
   def self.page_of(event, index); event && index >= 0 ? event.mgq_mp_pages[index] : nil; end
 end
+# An event page's graphic.
 Graphic = Struct.new(:tile_id, :character_name, :character_index, :direction, :pattern)
+# A resident's event page.
 ResidentPage = Struct.new(:graphic, :priority_type, :walk_anime, :step_anime, :move_speed, :list)
 empty_page = ResidentPage.new(Graphic.new(0, "", 0, 2, 0), 0, true, false, 3, [])
 tamamo_page = ResidentPage.new(Graphic.new(0, "tamamo", 1, 2, 1), 1, true, false, 3, [])
@@ -1369,14 +1426,21 @@ check("such as when the story takes one", $sent.select { |_, f| f["story"] == "k
 
 # A member who keeps the story catches up with the story's skills, companions and items the leader
 # holds, those of their own side where the sides differ; one without a side chooses first.
+# Stands in for the table of coop_story_rewards.rbx.
 module MGQ_MpCoopStoryRewards
+  # The skills Luka learns in events.
   SKILLS = [11, 12, 13]
+  # The companions who join in events.
   ACTORS = [4, 5, 6, 7, 8, 9]
+  # How many of each item the story's events give at most.
   ITEMS = { "w1" => 1 }
+  # The skills and companions only the events where the sides differ give.
   SIDED = { :skills => [11, 12], :actors => [5, 6, 7, 8, 9] }
   # The Great Decision brings Ilias with the route.
   ROUTE = { :skills => [], :actors => [5] }
+  # The self switch of every chest.
   CHESTS = [[40, 1, "A"], [40, 2, "A"]]
+  # The events where the sides differ.
   GROUPS = [
     # Training at a camp: each side learns its own skill, and nothing in the story tells it ran.
     { :alice => { :skills => [11], :actors => [] }, :ilias => { :skills => [12], :actors => [] }, :choice => false, :marks => [] },
@@ -1389,6 +1453,7 @@ module MGQ_MpCoopStoryRewards
     { :alice => { :skills => [], :actors => [] }, :ilias => { :skills => [], :actors => [9] }, :choice => true, :marks => [[[:v, 1001, 7]]] },
   ]
 end
+# A skill's data.
 Skill = Struct.new(:id, :name)
 $data_skills = Array.new(14)
 $data_skills[11] = Skill.new(11, "Demon Decapitation")
@@ -1511,9 +1576,9 @@ MGQ_MpCoopStory.update
 told = $sent.find { |_, f| f["story"] == "hold" }
 check("the leader tells the story's skills, companions, items and their side", told && told[1].values_at("sk", "ac", "it", "side"), ["11", "5", "w1:1", "a"])
 
-# What the code review of the catch-up found: rewards some event gives either side, the side after
-# the Great Decision, the member's own side quests, the leader's rewards outside the story, a
-# companion let go, and equipment at the castle.
+# The catch-up's edge cases: rewards some event gives either side, the side after the Great
+# Decision, the member's own side quests, the leader's rewards outside the story, a companion let
+# go, and equipment at the castle.
 $data_actors[10] = Actor.new("Morrigan")
 morrigan = holdings.merge("ac" => "4,5,8,10")
 member_game(30, 5)
@@ -1593,6 +1658,7 @@ $game_map.interpreter.busy = false
 
 # Story equipment a companion waiting at the castle wears counts, and during a story's temporary
 # party the player's own companions still count, never the temporary ones.
+# A companion, their equipment alone.
 Wearer = Struct.new(:equips)
 $game_party = Game_Party.new
 $game_party.add_stand_actor(7)
@@ -1918,18 +1984,27 @@ end
 
 # The story's choices a member makes for themselves, coop_choices.rbx: what is asked, each outcome
 # applied, the leader's offer to sync the story, and the Great Decision's other route.
+# The players' wheel and notices of ui_actions.rbx, the offers registered kept in $offered.
 module MGQ_MpActions
+  # Color of the line above the player's own head.
   LINE_COLOR = :line_color
+  # A choice of the wheel.
   Option = Struct.new(:text, :run, :refusal, :icon, :leaves)
+  # A notice of the notification box.
   Notice = Struct.new(:key, :text, :color, :action, :take, :decline, :mark)
   def self.offer(offers); ($offered ||= []) << offers; end
 end
 # The world screen's form, which the screen of choices draws with, stood in by its fields alone.
 class Window_MpWorldForm; def initialize(*); end; end
+# The base of the game's menu scenes.
 class Scene_MenuBase; end
+# The scenes called, kept in $scenes.
 module SceneManager; def self.call(scene); ($scenes ||= []) << scene; end; end
+# Stands in for the world screen of world.rbx, its form alone.
 module MGQ_MpWorld
+  # A form of the world screen: its fields and what is filled in.
   class Form
+    # A field of the form.
     Field = Struct.new(:key, :kind, :label, :row, :hint, :options) do
       def choices; options[:choices] || []; end
       def note_of(form); options[:note] ? options[:note].call(form, form[key].to_i).to_s : ""; end
@@ -2089,7 +2164,9 @@ MGQ_MpCoopStory.update
 
 # A Raid World: whoever tells the story on the map tells it to everyone there whose story matches,
 # party or not.
+# Whether the world is a Raid World, from $raid.
 module MGQ_MpWorld; def self.raid?; $raid; end; end
+# The players met, from $peers, and the player who entered the map at frame 2000.
 module MGQ_MpOverworldSync
   module Me; def self.map_since; 2000; end; end
   module Peers
@@ -2245,6 +2322,7 @@ MGQ_MpCoopEvents.instance_variable_set(:@chest_keys_map, nil)
 
 # A player behind the world's story starts no story event and hears the level that moves them on;
 # story that runs by itself waits silently, talks run.
+# Stands in for world_catchup.rbx, the player behind the world's story while $behind is set.
 module MGQ_MpWorldCatchup
   def self.holds_story?; $behind; end
   def self.refusal_text; "Reach level 25 to continue the story."; end
@@ -2271,6 +2349,7 @@ check("caught up, the player's story events start again", [MGQ_MpCoopEvents.hand
 
 # Until the world's story came after the world opened or a save loaded, story events wait, the
 # player's and those that run by themselves, without a word; talks run.
+# Stands in for world_story.rbx, waiting for the world's story.
 module MGQ_MpWorldStory
   def self.awaits_world?; true; end
   def self.awaits_teller?; false; end

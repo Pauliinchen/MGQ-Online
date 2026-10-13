@@ -2,10 +2,10 @@
 #  ui_bug_report.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Kept what the notification box tells the player until it shows, dropped once the form opens, the report is forgotten or the outcome comes, and said after a battle that the form opens once the player is free on the map
+#      Paulinchen  2026-10-12: Kept the report's messages until the notification box shows
 #                            - Scrolled the description being typed with the mouse wheel
-#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
-#                            - Told the player in friendly words when the relay is busy with other bug reports
+#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
+#                            - Told the player in friendly words when the relay is busy
 #      Paulinchen  2026-10-11: Created
 #
 #----------------------------------------------------------------
@@ -17,7 +17,7 @@
 # and the private details reach the developer only. The world screen's form window draws the form
 # (world_screen.rbx), and the notification box tells how the sending went (ui_notices.rbx).
 #
-# It must never interrupt the game, so every entry point rescues.
+# It must never interrupt the game, so its per-frame work rescues.
 module MGQ_MpBugReport
   # The action wheel's choice, and the form's title.
   WHEEL_TEXT = "Report a Bug"
@@ -28,26 +28,40 @@ module MGQ_MpBugReport
   # What the first line above the form says.
   HELP = "Title and text go public on GitHub. The screenshot and logs reach the developer only."
 
-  # Longest title and text, within what the relay takes.
+  # Longest title, within what the relay takes.
   MAX_TITLE_CHARS = 100
+
+  # Longest text, within what the relay takes.
   MAX_TEXT_CHARS = 2000
 
   # Lines the text's box shows.
   TEXT_LINES = 6
 
-  # What the lines above the form say while the cursor is on each field.
+  # What the lines above the form say while the cursor is on the title.
   TITLE_HINT = "A short name for the problem. It becomes the title of the issue on GitHub."
+
+  # What the lines above the form say while the cursor is on the text.
   TEXT_HINT = "What you did, what happened and what you expected. Confirm to type, Enter keeps the text."
+
+  # What the lines above the form say while the cursor is on the screenshot's checkbox.
   SCREENSHOT_HINT = "The screen as it was when you opened the report. Only the developer sees it."
+
+  # What the lines above the form say while the cursor is on the logs' checkbox.
   LOGS_HINT = "The mod's logs of this game session and the list of your mods. Only the developer sees them."
+
+  # What the lines above the form say while the cursor is on the send button.
   SEND_HINT = "Sends the report. Title and text become a public issue on GitHub."
 
-  # Why the form is not sent while its title or text is empty.
+  # Why the form is not sent while its title is empty.
   TITLE_MISSING = "The report needs a title."
+
+  # Why the form is not sent while its text is empty.
   TEXT_MISSING = "Say what happened."
 
-  # The bits of the DLL's flags: attach the screenshot, attach the logs.
+  # The bit of the DLL's flags that attaches the screenshot.
   ATTACH_SCREENSHOT = 1
+
+  # The bit of the DLL's flags that attaches the logs.
   ATTACH_LOGS = 2
 
   # Frames between two looks at how the sending stands, half a second.
@@ -56,10 +70,13 @@ module MGQ_MpBugReport
   # Bytes the DLL may write how the sending stands into at first.
   STATE_SIZE = 1024
 
-  # Limits of a public fact, as the relay takes them: the most facts, a label's and a value's
-  # length.
+  # Most public facts a report carries, as the relay takes them.
   MAX_FACTS = 12
+
+  # Longest label of a fact or detail, as the relay takes it.
   MAX_LABEL_CHARS = 32
+
+  # Longest value of a public fact, as the relay takes it.
   MAX_VALUE_CHARS = 120
 
   # Longest value of a private detail, which only report.txt holds.
@@ -71,9 +88,13 @@ module MGQ_MpBugReport
   # Frames the sending's messages show, ten seconds, since an upload may take a while.
   NOTICE_FRAMES = 600
 
-  # What the notification box says while the report is sent, once it went, and when it failed.
+  # What the notification box says while the report is sent.
   SENDING_TEXT = "Sending the bug report . . ."
+
+  # What the notification box says once the report went, with the issue's number.
   SENT_TEXT = "Bug report sent as issue #%s. Thank you!"
+
+  # What the notification box says when the report failed, with why.
   FAILED_TEXT = "The bug report failed: %s"
 
   # The friendly words for a failure, by the relay's code.
@@ -83,15 +104,25 @@ module MGQ_MpBugReport
     "busy" => "the relay is busy with other bug reports. Try again in a minute.",
   }
 
-  # What the player is told when the report waits: in a battle, and while the map is busy.
+  # What the player is told when the report waits for a battle to end.
   BATTLE_TEXT = "The bug report opens after the battle."
+
+  # What the player is told when the report waits for the player to be free on the map.
   BUSY_TEXT = "The bug report opens once you are free on the map."
 
-  # Why a report does not open or is not sent.
+  # Why a report does not open while the last one is still being sent.
   SENDING_REFUSAL = "The last bug report is still being sent."
+
+  # Why a report does not open while another waits to open.
   WAITING_REFUSAL = "A bug report waits to open already."
+
+  # Why a report does not open or is not sent without the player's name.
   NO_NAME_REFUSAL = "Bug reports need your name: pick Multiplayer on the title screen to choose one."
+
+  # Why the report cannot be typed while the keyboard cannot reach the game.
   NO_KEYBOARD_REFUSAL = "The keyboard cannot reach the game, so the report cannot be typed."
+
+  # Why the report is not sent once the DLL did not start sending it.
   NOT_STARTED_REFUSAL = "The report could not be sent. Multiplayer.log tells why."
 
   # Scenes a report never opens from, by their class's name: the title and game over screens,
@@ -116,12 +147,25 @@ module MGQ_MpBugReport
   # them apart.
   TRANSLATED_VARIABLE = "Overall Events Progress"
 
+  # The report asked for that waits to open, nil while none does.
   @pending = nil
+
+  # The report whose form opens, see take_opening.
   @opening = nil
+
+  # Frames left until the screenshot the wheel asked for, nil while none waits.
   @snap_in = nil
+
+  # Whether a report is being sent.
   @sending = false
+
+  # Frames since the last look at how the sending stands.
   @poll_frames = 0
+
+  # The sending's outcome kept for the notification box, nil while none waits.
   @outcome = nil
+
+  # What the player is told once the notification box shows, nil while nothing waits.
   @told = nil
 
   extend MGQ_MpLog
@@ -706,8 +750,10 @@ class Scene_MpBugReport < Scene_MenuBase
   # Lines above the form.
   INFO_LINES = 4
 
-  # Widest the form gets, and its room to the screen's edges.
+  # Widest the form gets.
   FORM_WIDTH = 520
+
+  # Room between the form and the screen's edges.
   MARGIN = 8
 
   # Builds the windows for the report the hotkey or the wheel asked for.

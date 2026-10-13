@@ -2,57 +2,54 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Watched the mod's own releases every five minutes and told every world with players online of a new one in its chat
-//                            - Turned away games older than 0.6.0, which send no X-MGQ-Features header, and games whose X-MGQ-Version is older than the MIN_VERSION variable, with 426 before routing their requests
-//                            - Turned a game too old for a world room away with 400 and no X-MGQ-Refusal code, and passed on the gate's code of a PvP room
-//                            - Dropped the body of a bug report refused before it is read, reading it up to 15 MB or 60 seconds, and stopped reading a report body after 60 seconds
-//                            - Kept each trade's sealed offers under keys of their own beside the trade, which listing the trades never reads
-//                            - Read every request body only up to its route's limit, also one sent without a Content-Length
-//                            - Sent starting saves and uploaded mods piece by piece as they are read, at most three at once and one per address, a request waiting up to 30 seconds for its turn
-//                            - Deleted a stored file's pieces by their keys, without reading them, and a world's checkpoints and boss pools at most 128 keys at a time
-//                            - Ignored what a game or peer the relay already closed sends while its connection closes, which reached a newcomer on its seat and the world's chat
-//                            - Took the bug reports in a Durable Object of their own, so a large report can no longer reset the world directory
-//      Paulinchen  2026-10-11: Took the bug reports games send in the directory object and handed them to GitHub with the GITHUB_ISSUES_TOKEN and GITHUB_BUG_FILES_TOKEN secrets
-//      Paulinchen  2026-10-10: Passed what a game names in the X-MGQ-Features header on to the directory's public routes too, for a development build's Raid World starting save
-//                            - Refused a Raid World request whose Content-Length is above the longest body these routes take before reading its body
-//                            - Told every game of a Raid World a boss pool's share of HP left, raid max HP and defeat when a report or an admin changed it, and handed a boss report the reporting player's name
-//      Paulinchen  2026-10-09: Told every game of a world whether it turns other mods off and which mods it names, once its creator or an admin changed either
-//                            - Kept a Raid World's boss pools in its world room's object, answered their routes there for the world's players and the admin routes for the relay's admins, and told every game of the world when a pool changed
-//                            - Told every game of a Raid World its new difficulty once its creator or an admin changed it
-//                            - Kept a removed player or a deleted world out of the world room's player list when the directory answered for it meanwhile, and asked the directory again for a player let in over 10 minutes ago
+//      Paulinchen  2026-10-12: Watched the mod's own releases and told every world with players online of a new one
+//                            - Turned away games older than 0.6.0 or below the MIN_VERSION variable with 426
+//                            - Turned a game too old for a world room away with 400 and passed on the gate's code of a PvP room
+//                            - Drained the body of a refused bug report and stopped reading a report body after 60 seconds
+//                            - Kept each trade's sealed offers under keys of their own beside the trade
+//                            - Read every request body only up to its route's limit
+//                            - Streamed starting saves and uploaded mods piece by piece, a few downloads at a time
+//                            - Deleted a stored file's pieces without reading them and removed keys at most 128 at a time
+//                            - Ignored what a game or peer the relay already closed sends while its connection closes
+//                            - Took the bug reports in a Durable Object of their own
+//      Paulinchen  2026-10-11: Took the bug reports games send and handed them to GitHub
+//      Paulinchen  2026-10-10: Passed the X-MGQ-Features header on to the directory's public routes
+//                            - Refused a Raid World request whose Content-Length is too long before reading its body
+//                            - Told every game of a Raid World a boss pool's share of HP left and handed a boss report the reporting player's name
+//      Paulinchen  2026-10-09: Told every game of a world whether it turns other mods off and which mods it names
+//                            - Kept a Raid World's boss pools and its admin routes in its world room's object
+//                            - Told every game of a Raid World its new difficulty
+//                            - Kept a removed player or a deleted world out of the world room's player list and asked the directory again after 10 minutes
 //                            - Removed a Raid World's story and boss pools again when the world was deleted while a request to them ran
-//                            - Read a Raid World request's body in full before handing it to the world room's object, which broke the request when it refused it unread
-//      Paulinchen  2026-10-08: Kept a Raid World's story in its world room's object, answered its routes there for the world's players, and told every game of the world when it changed
-//                            - Passed what a game names in the X-MGQ-Features header on to the directory as it enters a world room
-//                            - Dropped a game's chat lines past the chat's rate limit, answering each with "slow chat", and ignored a chat frame without a line instead of closing the connection
-//                            - Logged a chat line the directory could not keep instead of letting the error escape the world room
-//      Paulinchen  2026-10-07: Handed the chat lines the games mirror to the directory, and told every game of a world what an admin said
+//                            - Read a Raid World request's body in full before handing it to the world room's object
+//      Paulinchen  2026-10-08: Kept a Raid World's story in its world room's object
+//                            - Passed the X-MGQ-Features header on to the directory as a game enters a world room
+//                            - Dropped a game's chat lines past the chat's rate limit and ignored a chat frame without a line
+//                            - Logged a chat line the directory could not keep
+//      Paulinchen  2026-10-07: Handed the chat lines the games mirror to the directory and told every game of a world what an admin said
 //                            - Passed the X-MGQ-Auth header on to the world rooms and the directory
-//                            - Answered a text body over 256 KB with 413 instead of taking it for no JSON, and named the routes by the core's version
+//                            - Answered a text body over 256 KB with 413 and named the routes by the core's version
 //      Paulinchen  2026-10-06: Passed the X-MGQ-Player header on to the trade and mod catalog routes too
 //                            - Told the directory who is in a world room after its alarm closed connections too
 //                            - Closed a player's earlier connection to a world room once the same player enters it again
-//                            - Took a peer the relay closes out of its room at once, and closed a peer that waited alone too long whatever its role
-//                            - Passed the player key of the X-MGQ-Player header and each request's address on, limited entering rooms per address, and named why a world room turned a game away
+//                            - Took a peer the relay closes out of its room at once and closed a peer that waited alone too long
+//                            - Passed the X-MGQ-Player header and each request's address on, limited entering rooms per address and named refusals
 //                            - Read bodies the directory takes as text up to a limit
 //                            - Kept the trades between two players of a world in the directory object
-//                            - Kept the mod catalog in the directory object, checked its links every half hour
+//                            - Kept the mod catalog in the directory object
 //                            - Stored starting saves and uploaded mods in pieces through the same helpers
 //      Paulinchen  2026-09-30: Read the relay's admins from the ADMINS secret
 //                            - Kept each world's starting save in the directory's storage, in pieces
-//      Paulinchen  2026-09-29: Added the world directory, a Durable Object that world rooms ask before seating a game
-//                            - Added world rooms, each a Durable Object that seats up to 32 games
+//      Paulinchen  2026-09-29: Added the world directory
+//                            - Added world rooms
 //                            - Created
 //
 //----------------------------------------------------------------
 
 // The relay on Cloudflare: a Worker that sends each room's requests to a Durable Object of its own,
-// which keeps the room's WebSockets, the world directory's to the one directory object, and the
-// bug reports to the one report object. The rules come from the core, so the Node server keeps the
-// same ones.
-//
-// The directory and the world rooms also talk to each other under /internal, which the Worker
-// never passes on from outside.
+// the world directory's to the one directory object and the bug reports to the one report object.
+// The rules come from the core, so the Node server keeps the same ones. The directory and the world
+// rooms talk to each other under /internal, which the Worker never passes on from outside.
 
 import { DurableObject } from "cloudflare:workers";
 import { DownloadGate, drainLimited, piecesStream, readLimited } from "../core/bodies.js";

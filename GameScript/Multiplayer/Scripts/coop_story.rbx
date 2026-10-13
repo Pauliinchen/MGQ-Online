@@ -2,56 +2,56 @@
 #  coop_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Moved the story's state model, what is each player's own, how a story is read, joined, sent and granted, into story_state.rbx, which a Raid World's story shares
-#      Paulinchen  2026-10-08: Kept the leader's story to Classic worlds: in a Raid World no member borrows a leader's story and no leader tells one
-#                            - Kept the side each player's own in a Raid World, after the Great Decision too
-#                            - Let a join of stories keep the chests of a list the caller gives, every chest of the game for a Raid World's story
-#                            - Saved a Raid World's story as it is, which world_story.rbx lays over the player's own
-#      Paulinchen  2026-10-07: Kept the variables the game sets for each area and battle, such as the rarity of enchanted drops, each player's own, since the leader's ended a member's game at a drop
-#                            - Dropped the switches, variables and key items of another game's story beyond this game's own, logged once per kind
-#                            - Registered the companion, map and save hooks through core_hooks.rbx instead of wraps of its own
-#                            - Named players, entries of the game's data and a message's bytes through overworld_sync.rbx, core_log.rbx and coop.rbx instead of copies of their helpers
-#                            - Kept the outcomes of the story's choices the member made their own, left the choices' companions out of the catch-up, and followed the leader whose offer to sync the story the member accepted
-#                            - Let a member play the leader's story only while synced with the leader, close in the main story before the Great Decision or on the same route after it, told by each player's state, and their own story otherwise
-#                            - Logged how each member plays the leader's story and why, every message, what the catch-up gives and skips and why, sides, held messages, lent key items, chests and restores
-#      Paulinchen  2026-10-06: Read the game's switches, variables and self switches through MGQ_MpGame instead of opening their classes
-#                            - Told members nothing a shop or a menu in the leader's story changes, only what the story's own commands change
-#                            - Gave members the companions the Great Decision brings, waiting while the sides still differ
-#                            - Told the party a companion who joins in the story though the leader has them already, since the game's roster never holds one twice
+#      Paulinchen  2026-10-09: Moved the story's state model into story_state.rbx
+#      Paulinchen  2026-10-08: Kept the leader's story to Classic worlds
+#                            - Kept the side each player's own in a Raid World
+#                            - Let a join of stories keep the chests of a list the caller gives
+#                            - Saved a Raid World's story as it is
+#      Paulinchen  2026-10-07: Kept the variables the game sets for each area and battle each player's own
+#                            - Dropped switches, variables and key items beyond this game's own
+#                            - Registered the companion, map and save hooks through core_hooks.rbx
+#                            - Named players, data entries and message sizes through shared helpers
+#                            - Kept the outcomes of the member's own story choices their own
+#                            - Let a member play the leader's story only while synced with the leader
+#                            - Logged how each member plays the leader's story and why
+#      Paulinchen  2026-10-06: Read the game's switches, variables and self switches through MGQ_MpGame
+#                            - Told members only what the story's own commands change
+#                            - Gave members the companions the Great Decision brings
+#                            - Told the party a companion who joins in the story though the leader has them
 #                            - Counted Luka's story abilities, and companions by their main persona
-#                            - Found an event played by a reward only it gives either side, as the side the leader plays changes at the Great Decision
+#                            - Found an event played by a reward only it gives either side
 #                            - Kept what waits for the member for the leader who sent it
-#                            - Kept a member's own values in the gaps of a story too large to send whole no more
+#                            - Stopped keeping a member's own values in the gaps of a story too large to send whole
 #                            - Asked coop_events.rbx whether a PvP battle runs
-#                            - Let members behind the leader keep the story they play together too, catching up with the story's skills, companions and items the leader holds, and keeping their own side quests
+#                            - Let members behind the leader keep the story they play together too
 #                            - Told members the story skills Luka learns while the story plays
-#                            - Kept every chest the member's own when they catch up, on every map
+#                            - Kept every chest the member's own when they catch up
 #                            - Forgot what waited before the leader's whole story covered it
 #                            - Read the player's own companions past a story's temporary party
 #                            - Never took a companion into the roster twice in a world
-#                            - Packed the whole story, which a late story's lists would make too large for a message
-#                            - Kept switches from 7000, the story's boss flags, out of the awakening switches
+#                            - Packed the whole story
+#                            - Kept switches from 7000 out of the awakening switches
 #                            - Sent the switches and self switches the story turned off with the whole story
-#                            - Kept the side each player chose, Alice's or Ilias's, as their own until the Great Decision, and asked a member without one to choose, bringing in the companion the choice brings
-#                            - Gave a member the skills and companions their own side gets in the events where the sides differ, once the leader's story got past them, before the Great Decision
-#      Paulinchen  2026-10-04: Lent members the key items the leader holds, told with the story and on every change, so a crash, a load or a duel lends them again, and held back the story's gifts during a duel or before the story is borrowed again
+#                            - Kept the side each player chose their own until the Great Decision
+#                            - Gave a member their own side's skills and companions where the sides differ
+#      Paulinchen  2026-10-04: Lent members the leader's key items on every change and held back gifts in duels
 #                            - Kept where the Pocket Castle's way out returns each player their own
-#                            - Lent the key items of the leader's story to members not as far along, taken back when they get their own story back and left out of their saves
+#                            - Lent the key items of the leader's story to members not as far along
 #                            - Renamed from mp_coop_story.rbx
-#      Paulinchen  2026-10-03: Kept the warp ban as each player's own, since it tells of the place they stand in
-#                            - Called the scripts that load before this one without asking whether they loaded
-#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#      Paulinchen  2026-10-03: Kept the warp ban as each player's own
+#                            - Called the scripts that load before this one without checking them
+#                            - Sent messages and read the world through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
-#      Paulinchen  2026-10-02: Gave members as far along as the leader the items, gold and departures of the leader's story too
-#                            - Kept what a member as far along as the leader changed in their own game while in the party
-#                            - Ended the awakening switches with the last companion's, as the affection variables end
+#      Paulinchen  2026-10-02: Gave members as far along as the leader the story's items, gold and departures
+#                            - Kept what a member as far along as the leader changed in their own game
+#                            - Ended the awakening switches with the last companion's
 #                            - Followed the map's update through core_hooks.rbx
-#      Paulinchen  2026-10-01: Kept the places of the player's party their own, so the leader's fewer never cut it
-#      Paulinchen  2026-09-30: Sent and took the party's messages through coop.rbx, which drops those of another party
-#                            - Registered with overworld_sync.rbx for its messages instead of being asked by overworld.rbx
-#                            - Moved into Patch/Multiplayer/Scripts as coop_story.rbx, which Multiplayer.rb loads
+#      Paulinchen  2026-10-01: Kept the places of the player's party their own
+#      Paulinchen  2026-09-30: Sent and took the party's messages through coop.rbx
+#                            - Registered with overworld_sync.rbx for its messages
+#                            - Moved into Patch/Multiplayer/Scripts as coop_story.rbx
 #                            - Renamed from mp_story.rb, with the module MGQ_MpCoopStory
-#                            - Kept what members as far along as the leader play together, companions who join included
+#                            - Kept what members as far along as the leader play together
 #                            - Kept chests the player's own while they play the leader's story
 #                            - Created
 #
@@ -59,8 +59,8 @@
 
 # The story a party plays. Outside a party every player plays their own story. In a party, the
 # members synced with the leader, close to the leader in the story (see sync_state), borrow the
-# leader's story, the switches, variables and self switches the game's events
-# read, and get their own back when they leave or the leader goes. What is the player's own, their
+# leader's story, the switches, variables and self switches the game's events read, and get their
+# own back when they leave or the leader goes. What is the player's own, their
 # party, their side, their companions' awakening and their affection, stays theirs throughout, and
 # every save a member makes holds their own story. A member as far along as the leader keeps what
 # they play together: the story's changes, its items, gold and companions, and what changed in their
@@ -97,10 +97,20 @@ module MGQ_MpCoopStory
   # Messages that wait at most for the member to keep them.
   MAX_HELD = 100
 
+  # The player's own switches, variables and self switches, kept aside while they play the
+  # leader's story, nil while they play their own.
   @own = nil
+
+  # The id of the leader whose story the player asked for or follows, nil for none.
   @leader_id = nil
+
+  # The story as the player last sent it to the members as leader, nil before the first.
   @sent = nil
+
+  # Frames since the leader last told what changed, see SEND_FRAMES.
   @frames = 0
+
+  # Frames since the member last asked for the leader's story, see ASK_FRAMES.
   @ask_frames = 0
 
   extend MGQ_MpLog
@@ -519,7 +529,8 @@ module MGQ_MpCoopStory
   # Sends a message about the story to one member or to the whole party.
   #
   # @param seat [Integer] The member's seat, -1 for everyone, who ignore it outside the party.
-  # @param kind [String] "ask", "full", "delta", "keys", "hold", "learn", "recruit", "depart" or "gain".
+  # @param kind [String] "ask", "full", "delta", "keys", "hold", "learn", "recruit", "depart" or
+  #   "gain".
   # @param fields [Hash] The message's other fields.
   # @return [Boolean] Whether it went out.
   def self.tell(seat, kind, fields)
@@ -708,8 +719,8 @@ module MGQ_MpCoopStory
   end
 
   # As leader, tells the party about a companion who joined in the story, so members who keep the
-  # story get them too. A companion recruited outside the story, as after a battle, stays the leader's.
-  # Called when a companion joins.
+  # story get them too. A companion recruited outside the story, as after a battle, stays the
+  # leader's. Called when a companion joins.
   #
   # @param actor_id [Integer] The companion.
   def self.joined(actor_id)
@@ -770,8 +781,9 @@ module MGQ_MpCoopStory
   end
 
   # Reports whether the player leads a party through its story now, with members who follow it, on
-  # the map, whose rewards each player who follows it gets in their own game; never in a battle, nor in a shop or a menu the story opens,
-  # where the player buys, sells or changes their party of their own accord.
+  # the map, whose rewards each player who follows it gets in their own game; never in a battle,
+  # nor in a shop or a menu the story opens, where the player buys, sells or changes their party of
+  # their own accord.
   #
   # @return [Boolean] Whether they do.
   def self.telling_party?
@@ -951,7 +963,8 @@ module MGQ_MpCoopStory
   # Reads key items a leader wrote.
   #
   # @param text [String, nil] The items, see write_keys.
-  # @return [Hash{Integer => Integer}] How many of each, by the item's id; none for a count below one.
+  # @return [Hash{Integer => Integer}] How many of each, by the item's id; none for a count below
+  #   one.
   def self.read_keys(text)
     keys = {}
     MGQ_MpStoryState.entries(text).each { |id, count| keys[id.to_i] = count.to_i if MGQ_MpStoryState.known_id?(:items, id.to_i) && count.to_i > 0 }
@@ -1183,8 +1196,8 @@ module MGQ_MpCoopStory
 
   # Reports whether only the events where the sides differ give a reward, which comes with those
   # events alone, see MGQ_MpCoopStoryRewards::SIDED, so a member holds only their own side's; any
-  # other comes as the leader holds it, as does one the Final Chapter gives too once the story played
-  # is past the Great Decision, see MGQ_MpCoopStoryRewards::ROUTE.
+  # other comes as the leader holds it, as does one the Final Chapter gives too once the story
+  # played is past the Great Decision, see MGQ_MpCoopStoryRewards::ROUTE.
   #
   # @param kind [Symbol] :skills or :actors.
   # @param id [Integer] The reward.
@@ -1529,8 +1542,8 @@ module MGQ_MpCoopStory
     @own
   end
 
-  # As member, follows the story of a leader whose offer to sync the story the player accepted,
-  # whatever the rule of check_sync says, until their whole story came.
+  # As member, has check_sync decide anew once the player accepted a leader's offer to sync the
+  # story, which it then counts as synced, see MGQ_MpCoopChoices.offer_with?.
   #
   # @param leader [MGQ_MpOverworldSync::Peers::Peer] The leader.
   def self.start_offer(leader)
@@ -1563,14 +1576,12 @@ end
 # Game hooks shared with other scripts, through core_hooks.rbx.
 
 begin
-  # After the map's update, the party's story.
   MGQ_MpHooks.after(Game_Map, :update, "coop_story") { MGQ_MpCoopStory.update }
 rescue => e
   MGQ_MpCoopStory.log("map hook FAILED: #{e.class}: #{e.message}")
 end
 
 begin
-  # After a character learns a skill, as leader the party hears of one Luka learns in the story.
   MGQ_MpHooks.after(Game_Actor, :learn_skill, "coop_story") { |skill_id| MGQ_MpCoopStory.learned(self, skill_id) }
 rescue => e
   MGQ_MpCoopStory.log("skill hook FAILED: #{e.class}: #{e.message}")
@@ -1579,25 +1590,21 @@ end
 # Game hooks of this script alone, through core_hooks.rbx.
 
 begin
-  # After a companion joins the party's roster, as leader the party hears of them, also of one the
-  # roster holds already, whom a member may lack.
+  # The party hears of a companion the roster holds already too, whom a member may lack.
   MGQ_MpHooks.after(Game_Party, :add_stand_actor, "coop_story") { |actor_id| MGQ_MpCoopStory.joined(actor_id) }
 
-  # After a companion leaves the party's roster, as leader the party hears of it.
   MGQ_MpHooks.after(Game_Party, :remove_actor, "coop_story") { |actor_id| MGQ_MpCoopStory.left(actor_id) }
 rescue => e
   MGQ_MpCoopStory.log("companion hooks FAILED: #{e.class}: #{e.message}")
 end
 
 begin
-  # After a map is set up, the player's own chests show on it.
   MGQ_MpHooks.after(Game_Map, :setup, "coop_story") { |_map_id| MGQ_MpCoopStory.map_entered }
 rescue => e
   MGQ_MpCoopStory.log("map setup hook FAILED: #{e.class}: #{e.message}")
 end
 
 begin
-  # What the game saves, with a member's own story in place of the leader's.
   MGQ_MpHooks.around(DataManager.singleton_class, :make_save_contents, "coop_story") do |_manager, _args, original|
     contents = original.call
     begin
@@ -1608,14 +1615,13 @@ begin
     end
   end
 
-  # After a loaded save, which brings its own story, the player follows the leader's anew.
+  # A loaded save brings its own story, so the player follows the leader's anew.
   MGQ_MpHooks.after(DataManager.singleton_class, :extract_save_contents, "coop_story") do |_contents|
     MGQ_MpCoopStory.log("a loaded save brings its own story, so the player follows the leader's anew") if MGQ_MpCoopStory.guest?
     MGQ_MpCoopStory.forget
   end
 
-  # After the game's objects are made anew, as for a new game, which brings its own story, the
-  # player follows the leader's anew.
+  # A new game brings its own story too.
   MGQ_MpHooks.after(DataManager.singleton_class, :create_game_objects, "coop_story") do
     MGQ_MpCoopStory.log("a new game brings its own story, so the player follows the leader's anew") if MGQ_MpCoopStory.guest?
     MGQ_MpCoopStory.forget

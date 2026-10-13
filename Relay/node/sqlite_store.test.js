@@ -2,10 +2,10 @@
 //  sqlite_store.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Covered a trade's sealed offers kept beside it over a restart, dropped and removed with it
+//      Paulinchen  2026-10-12: Covered a trade's sealed offers kept beside it over a restart
 //      Paulinchen  2026-10-10: Covered boss pools that keep the share of a raid max HP left over a restart
-//      Paulinchen  2026-10-09: Covered a Raid World's boss pools kept over a restart and removed
-//      Paulinchen  2026-10-08: Covered a Raid World's story and its checkpoints kept over a restart and removed
+//      Paulinchen  2026-10-09: Covered a Raid World's boss pools kept over a restart
+//      Paulinchen  2026-10-08: Covered a Raid World's story and its checkpoints kept over a restart
 //      Paulinchen  2026-10-07: Covered a world's chat kept and removed with the world
 //                            - Created
 //

@@ -2,73 +2,62 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Listed the Shared Mod Settings row among the settings of the Mod Config, and left both groups of the mod, its settings and its hotkeys, out of the options dump
-#      Paulinchen  2026-10-09: Read the catalog's personal mods, which a world that turns other mods off leaves on
-#                            - Took the mods the relay tells the open world names now
-#                            - Waited with entering a world again while the title screen starts the game again for the parked mods, and put them
-#                              back instead of offering the update to an outdated game started again to enter a world with them parked
-#      Paulinchen  2026-10-08: Let the creator share their mod settings or not through a row of Mod Config every player sees, which replaced the button
-#                            - Sent the creator's options of the world's mods as its settings whenever they change while it shares them, keeping those the creator's game does not know
+#      Paulinchen  2026-10-12: Listed the Shared Mod Settings row among the mod's settings and left the mod's groups out of the options dump
+#      Paulinchen  2026-10-09: Read the catalog's personal mods
+#                            - Took the open world's mods from the relay
+#                            - Waited with entering a world again while the title screen restarts the game for the parked mods, and put them back instead of offering the update
+#      Paulinchen  2026-10-08: Let the creator share their mod settings or not through a Mod Config row every player sees
+#                            - Sent the creator's options of the world's mods as its settings whenever they change while it shares them
 #                            - Told every player in the world the new settings at once, and a player whose game holds others as they tell their state
-#                            - Told the players what a world that shares its settings sets for them, as they play and as it changes
+#                            - Told the players what a world that shares its settings sets for them
 #                            - Left out a value the player's copy of an option does not offer, and set and locked nothing in a world that shares none
-#                            - Wrote every mod's Mod Config options into a file for the World Admin tool, then quit, when started for it
-#                            - Opened the options dump's file by its name alone in the game's folder, or in UTF-8, so a path outside ASCII works
+#                            - Wrote every mod's Mod Config options into a file for the World Admin tool when started for it
+#                            - Opened the options dump's file by its name alone in the game's folder, or in UTF-8
 #                            - Kept the settings the relay took last over a list from before them, and checked a player anew who takes a seat someone left
-#                            - Said when settings could not be sent or got no answer, and kept every notice within three lines that fit the box
-#                            - Named the stay's settings anew instead of a change when they arrive right after the load, and kept what did not fit in it
+#                            - Said when settings could not be sent or got no answer, and kept every notice within three lines
+#                            - Named the stay's settings anew instead of a change when they arrive right after the load
 #                            - Counted and named only the options this game's Mod Config has, and said when a world shares none yet
-#                            - Applied only settings of options a world may set in a mod's group of this game's Mod Config, never the game's own options
-#                            - Kept the world to enter when the game cannot start itself again under Wine or Proton, for the start the player makes by hand
+#                            - Applied only settings of options a world may set in a mod's group of this game's Mod Config
+#                            - Kept the world to enter when the game cannot start itself again under Wine or Proton
 #                            - Offered the update on the title screen to an outdated game started again to enter a world
-#                            - Took only the directory's answer to its own settings, sending them again when another request took its place, and forgot them with the world
-#                            - Read the world's settings on the relay before sending the creator's and before telling a player whose game holds others, taking settings
-#                              someone else set there as the world's and joining the creator's changes to them
+#                            - Took only the directory's answer to its own settings, resent them when another request took its place, and forgot them with the world
+#                            - Read the world's settings on the relay before sending the creator's or telling a player whose game holds others
 #                            - Added the row of Shared Mod Settings to a Mod Config without entries too, and rescued noting the world entered
 #                            - Told the creator when the relay holds settings someone else set
-#      Paulinchen  2026-10-07: Sent the Mod Config options of every installed catalog mod, whatever its version, until the relay holds the current version's
+#      Paulinchen  2026-10-07: Sent the Mod Config options of every installed catalog mod, whatever its version
 #                            - Logged a catalog unknown at the first read too
-#                            - Followed a new game through an after block, since the hook only applies the world's mods
-#                            - Named the DLL's exports alone, their signatures living in Multiplayer.rb
-#                            - Logged each required mod's check, the catalog read, the downloads, the restart and rejoin, and the settings taken, applied or left out
-#      Paulinchen  2026-10-06: Said a world needs mods that are missing or in another version, since some may not be installed at all
-#                            - Asked a scene directly whether it changes, since the game makes that public
-#                            - Kept the catalog while the list is fetched again, so a mod is never let in by name only meanwhile
-#                            - Left catalog mods the relay could not read yet out of the catalog, so they no longer keep every game out
-#                            - Sent the Mod Config options once a session, not each time the world screen opens
-#                            - Read an option's values from its :values too, as Mod Config Remake does
+#                            - Followed a new game through an after block
+#                            - Named the DLL's exports alone
+#                            - Logged the mod checks, the catalog read, the downloads, the restart and rejoin, and the settings
+#      Paulinchen  2026-10-06: Said a world needs mods that are missing or in another version
+#                            - Asked a scene directly whether it changes
+#                            - Kept the catalog while the list is fetched again
+#                            - Left catalog mods the relay could not read yet out of the catalog
+#                            - Sent the Mod Config options once a session
+#                            - Read an option's values from its :values too
 #                            - Kept the world's settings within the 2000 characters the relay takes, and told the creator what was left out
 #                            - Left mod names longer than the relay takes out of the creator's hashes
-#                            - Sent the Mod Config options of each catalog mod this admin's game has in the catalog's version, for the World Admin tool
-#                            - Added a button to Mod Config for the world's creator, who sets the world's mod settings from their own, and left the creator's options unlocked
-#                            - Took the world's mod settings from every mod it names, listed ones too, not only the required ones
-#                            - Read decimal settings with a plus sign in their exponent, as Ruby writes large ones
-#                            - Applied the world's mod settings from load_game_without_rescue, which the newest translation's load_game still calls
-#                            - Checked a link to a zip of a release file by file, like an upload
+#                            - Sent the Mod Config options of each catalog mod this admin's game has in the catalog's version
+#                            - Added a Mod Config button for the world's creator to set the world's mod settings, and left the creator's options unlocked
+#                            - Took the world's mod settings from every mod it names
+#                            - Read decimal settings with a plus sign in their exponent
+#                            - Applied the world's mod settings from load_game_without_rescue
+#                            - Checked a link to a zip of a release file by file
 #                            - Created
 #
 #----------------------------------------------------------------
 
 # A world's mods: the ones its creator marked as required, which every game that enters must have
-# in the same version, and the creator's settings of every mod it names, required or listed, which
-# hold while the player is in the world.
+# in the same version, and the creator's settings of every mod it names, which hold while the
+# player is in the world. A game whose copy of a catalog mod is missing or differs may download the
+# world's version, checked file by file against the relay's catalog, then start again and enter
+# the world; a required mod outside the catalog is checked against the hash of the creator's copy.
+# A world shares its creator's Mod Config Remake options as its settings, or leaves every player
+# their own. An admin's game sends every catalog mod's options, and a game the World Admin tool
+# starts writes them into a file and quits.
 #
-# The relay's mod catalog, which only its admins fill, names the current version of each mod it
-# knows and the hashes of its files. A game whose copy is missing or differs cannot enter, and may
-# download the world's version, checked file by file against the catalog, then start again and
-# enter the world. A required mod outside the catalog is checked against the hash of the creator's
-# copy, which the creator's game sent with the world; that one the player gets from its author.
-#
-# A world shares its creator's settings or leaves every player their own, as its creator chose.
-# The settings come from the options each mod offers in Mod Config Remake, which the game keeps in
-# each save: a world has saves of its own, so the player's own saves keep their own settings, and
-# Mod Config Remake shows the world's as set by the world. While the creator plays in a world that
-# shares them, their options become its settings as they change, and every player in it gets them
-# at once. Mods build those options as they load, so an admin's game reads them for the catalog,
-# and a game the World Admin tool starts for them writes them into a file and quits.
-#
-# world_screen.rbx, which loads later, checks and installs from the world screen. It must never
-# interrupt the game, so every entry point rescues.
+# Mod Config Remake keeps the options in each save, and a world has saves of its own, so the
+# player's own saves keep their own settings.
 module MGQ_MpWorldMods
   extend MGQ_MpLog
 
@@ -147,10 +136,8 @@ module MGQ_MpWorldMods
   # Most lines a notice takes, which leaves room for two invites in the box's five rows.
   NOTICE_LINES = 3
 
-  # Most characters of a notice's line.
-  #
-  # The box draws 378 pixels wide at size 16, where the game's VL Gothic has Latin letters 8 pixels
-  # wide; a longer line is squeezed.
+  # Most characters of a notice's line, about as many as the notification box holds at its default
+  # width; a longer line is squeezed.
   NOTICE_LINE_CHARS = 46
 
   # Most mods a notice names before it counts the rest.
@@ -265,9 +252,13 @@ module MGQ_MpWorldMods
     end
   end
 
+  # Installed files' hashes by path, see hash_of.
   @hashes = {}
+  # The catalog version whose options this session sent, by the mod's key.
   @reported = {}
+  # The settings the relay took from this game last, by the world's id.
   @confirmed = {}
+  # The checksums of another player's settings and the world's they were told about, by seat.
   @told_peers = {}
   # Not nil, so an unknown catalog is logged at the first read too.
   @logged_catalog = false
@@ -1940,7 +1931,7 @@ end
 # Game hooks shared with other scripts, through core_hooks.rbx.
 
 begin
-  # As the title screen starts, Mod Config Remake no longer shows a world's settings.
+  # As the title screen starts, Mod Config Remake stops showing a world's settings.
   MGQ_MpHooks.before(Scene_Title, :start, "world_mods") { MGQ_MpWorldMods.on_title_start }
 
   # The title screen writes the options dump for the World Admin tool, and opens the world screen to

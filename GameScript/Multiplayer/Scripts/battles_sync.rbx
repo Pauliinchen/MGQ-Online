@@ -2,61 +2,61 @@
 #  battles_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Told a player joining or leaving the battle in the battle's popup instead of the chat, so the line stays out of the chat after it
+#      Paulinchen  2026-10-12: Told a player joining or leaving the battle in the battle's popup instead of the chat
 #                            - Told a player leaving the battle only when they are one of its players
-#                            - Kept the computer's actions when a guest's commands fail to read or to apply, and took a command's skill or item only within its database and its target only as a place of the battle
+#                            - Kept the computer's actions for unreadable commands and checked a command's ids and target
 #                            - Showed the host's names unswapped when they fail to read
-#                            - Told whether a wait for the players is open, so the raid pool leaves a victory meanwhile to the wait
-#                            - Put the host's skip settings back as the battle ends, before the victory autosave, and logged a failure to put them back
-#      Paulinchen  2026-10-11: Let the player move the waiting box and change its width with Alt, kept in Player.ini and never narrower than its text and the leave offer need, and dressed it in the interface look
-#                            - Let the waiting box name the players still waited for and count the seconds, written as the line above the player's head writes them, drawn once a second, before the leave offer takes the last line
-#                            - Named the wait for a player once, which the live battle and the playback share
-#                            - Named a player of the world by their seat for the waiting box, "you" for the player, through the peer's name the log's naming shares
+#                            - Told whether a wait for the players is open
+#                            - Put the host's skip settings back as the battle ends
+#      Paulinchen  2026-10-11: Let the player move and resize the waiting box with Alt and dressed it in the interface look
+#                            - Let the waiting box name the players still waited for and count the seconds
+#                            - Named the wait for a player once
+#                            - Named a player of the world by their seat for the waiting box
 #                            - Told in the waiting box's leave offer that leaving a story's battle loses it
-#                            - Told of a player who joined the running battle the way a departure is told, once per battle apart from their leaving
-#      Paulinchen  2026-10-08: Closed a command phase the live battle ended in as it finishes, such as after a reset
-#                            - Took the messages of the players a running co-op battle expects to join it, before they are among its guests
-#      Paulinchen  2026-10-07: Named a player by their name and seat as the other scripts do, the player themselves too, and listed characters with their ids for every battle script
-#                            - Logged the live battle's players, the messages sent and received, the commands given per character and what happens once a player leaves
-#                            - Told the battle's mode on the host when a guest leaves, which stops a co-op guest's characters at once
-#      Paulinchen  2026-10-06: Put the host's settings that leave parts of a battle unshown back once the live battle ends, which a co-op battle kept off
+#                            - Told of a player who joined the running battle
+#      Paulinchen  2026-10-08: Closed a command phase the live battle ended in as it finishes
+#                            - Took the messages of players expected to join a running co-op battle
+#      Paulinchen  2026-10-07: Named players by name and seat and listed characters with their ids
+#                            - Logged the live battle's players, messages, commands and departures
+#                            - Told the battle's mode on the host when a guest leaves
+#      Paulinchen  2026-10-06: Put the host's skip settings back once the live battle ends
 #                            - Sent a battle's messages to its players alone instead of the whole world
 #                            - Stopped streaming once the computer plays on for the guests who left
-#                            - Let a guest's empty commands take its characters' actions away, so a failed escape costs their turn
+#                            - Let a guest's empty commands take its characters' actions away
 #                            - Took no more of a guest's commands than the host's game gave the character actions
-#                            - Dropped the reader of the battle's kind, which the battle's mode had replaced
+#                            - Dropped the reader of the battle's kind
 #      Paulinchen  2026-10-04: Renamed from mp_battles_sync.rbx
-#      Paulinchen  2026-10-03: Named the characters outside the battle to the guest too, which a PvP battle with the Backline swaps in
+#      Paulinchen  2026-10-03: Named the characters outside the battle to the guest too
 #                            - Asked the running battle's mode instead of naming co-op battles and team duels
-#                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#                            - Reached the game's private fields and methods through MGQ_MpGame
 #                            - Read the sides' players as MGQ_MpBattlesCoop::Player records
-#                            - Moved the wire into battles_sync_wire.rbx, the recorder, the playback, and the hooks with the live battle's steps into scripts of their own
+#                            - Moved the wire, recorder, playback and live steps into scripts of their own
 #                            - Built the battle hooks with MGQ_MpHooks.around
 #                            - Called the scripts that load before this one without asking whether they loaded
-#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Reached the world through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
 #                            - Took from a guest only skills their character has and items a battle allows
 #                            - Waited at a member's battle start for the party's leader to lead it
-#                            - Streamed an animation once, played one a battler starts by itself, and kept actions and turn ends to the recording on file
+#                            - Streamed animations once and kept actions and turn ends to the file recording
 #      Paulinchen  2026-10-02: Installed the battle hooks through core_hooks.rbx
 #                            - Sent every message of a battle over the world's room through tell
 #                            - Played back only the picture, screen and audio methods the hooks record
 #                            - Ended a guest's co-op battle and a team duel on the host's side through one method
-#                            - Started every wait for the guests with nobody ready, whatever an earlier wait left behind
+#                            - Started every wait for the guests with nobody ready
 #      Paulinchen  2026-10-01: Told every player of a live battle at once when another leaves it or the world
-#                            - Carried a co-op guest's swaps with their commands, and told the party anew before the turn
-#                            - Carried duels, PvP battles between two players of a world, over the world's room
-#                            - Carried team duels, two parties with several players a side, whose players' commands each go to their own side
-#      Paulinchen  2026-09-30: Registered with overworld_sync.rbx for its messages instead of being asked by overworld.rbx
-#                            - Moved into Patch/Multiplayer/Scripts as battles_sync.rbx, which Multiplayer.rb loads
+#                            - Carried a co-op guest's swaps with their commands
+#                            - Carried duels over the world's room
+#                            - Carried team duels
+#      Paulinchen  2026-09-30: Registered with overworld_sync.rbx for its messages
+#                            - Moved into Patch/Multiplayer/Scripts as battles_sync.rbx
 #                            - Renamed from mp_sync.rb, with the module MGQ_MpBattlesSync
-#                            - Let a co-op player who got away leave the battle, which the others fight on
-#                            - Held the battle's menus while waiting, so a hidden party command no longer takes presses after auto battle
-#                            - Carried co-op battles over the world's room, several guests commanding their own characters in one party
-#                            - Left turning Give Up off to battles.rbx, which does it for every multiplayer battle
-#      Paulinchen  2026-09-29: Sent the start of a command phase before the host's own, which the host skips when none of its characters can act
-#                            - Streamed the battle log's lines, the skill lines and names and who appears as calls the guest makes in its own game's language
-#                            - Kept the untranslated game's speaker lines out of the name swap, and showed a translated host's name boxes as such lines on an untranslated guest
+#                            - Let a co-op player who got away leave the battle
+#                            - Held the battle's menus while waiting
+#                            - Carried co-op battles over the world's room
+#                            - Left turning Give Up off to battles.rbx
+#      Paulinchen  2026-09-29: Sent the start of a command phase before the host's own
+#                            - Streamed the battle's lines as calls the guest makes in its own language
+#                            - Kept speaker lines out of the name swap and showed name boxes on an untranslated guest
 #                            - Offered to leave the battle when a wait drags on
 #                            - Broke a live battle off for both players when the host's recording stops
 #                            - Stopped a recording when the live battle finishes
@@ -100,9 +100,10 @@ module MGQ_MpBattlesSync
   # about two thirds of a second behind.
   BEHIND_SENDS = 4
 
-  # The host's settings that leave parts of a battle unshown. The host turns them off for a live
-  # battle, since the guest sees only what the host's battle shows, and puts them back as
-  # BattleManager.battle_end ends, before the victory autosave writes them.
+  # The host's settings that leave parts of a battle unshown, which the host turns off for a live
+  # battle and puts back as BattleManager.battle_end ends.
+  #
+  # The guest sees only what the host's battle shows, and the victory autosave would write them off.
   SKIP_SETTINGS = [:bt_skip, :bt_skip_cutin, :bt_skip_enemy_cutin, :bt_skip_chain_action_cutin,
                    :skip_battle_start_skill_effect, :skip_skill_effect]
 
@@ -112,12 +113,13 @@ module MGQ_MpBattlesSync
     # @return [Symbol, nil] :host or :guest during a live battle, nil otherwise.
     attr_reader :role
 
-    # The friend who plays the other side.
+    # Who the waits name: the friend who plays the other side, a world battle's host, or "the party".
     #
-    # @return [String] The friend's name.
+    # @return [String] The name.
     attr_reader :player
 
-    # The world seats of the other games of a co-op battle: the guests for the host, the host for a guest.
+    # The world seats of the other games of a co-op battle: the guests for the host, the host for a
+    # guest.
     #
     # @return [Array<Integer>] The seats.
     attr_reader :seats
@@ -368,7 +370,8 @@ module MGQ_MpBattlesSync
     Channel.receive(peer.seat, kind, message[:payload].to_s)
   end
 
-  # Logs a battle message from the world's room that is left untaken, once per kind, reason and battle.
+  # Logs a battle message from the world's room that is left untaken, once per kind, reason and
+  # battle.
   #
   # @param kind [String] The message's kind.
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
@@ -407,8 +410,8 @@ module MGQ_MpBattlesSync
   end
 
   # Ends the live battle and closes the link, stops a recording and puts the host's settings back
-  # when the battle's end has not, such as after a reset or an early end.
-  # Called by the mode when it puts the game back, and after a reset.
+  # when the battle's end has not, such as after a reset or an early end. Called by the mode when it
+  # puts the game back, and after a reset.
   def self.finish
     Recorder.stop
     Live.end_phase
@@ -902,7 +905,8 @@ module MGQ_MpBattlesSync
     #
     # @param battler [Game_Battler] The character.
     # @param command [Array] "skill" or "item", the id and the target's index.
-    # @return [Game_Action, nil] The action, nil for a command it cannot read or the character may not give.
+    # @return [Game_Action, nil] The action, nil for a command it cannot read or the character may not
+    #   give.
     def self.action(battler, command)
       kind, id, target = command
       return nil unless command.is_a?(Array) && id.is_a?(Integer) && target.is_a?(Integer) && target.between?(-1, MAX_TARGET_INDEX)
@@ -939,7 +943,7 @@ module MGQ_MpBattlesSync
     #
     # @param battler [Game_Battler] The character.
     # @param item [RPG::UsableItem] The skill or item.
-    # @return [nil] Nothing.
+    # @return [nil] Always.
     def self.refuse(battler, item)
       name = item.name rescue nil
       MGQ_MpBattlesSync.log("left out #{item.class.name.split('::').last.downcase} #{item.id} #{name} for #{MGQ_MpBattlesSync.named(battler)}, who may not use it")
@@ -1018,9 +1022,10 @@ module MGQ_MpBattlesSync
     end
   end
 
-  # Tells the player at once when another player leaves the live battle, in the battle's popup at
-  # the top and in the world's status line: the battle itself takes them out only at its next
-  # command phase. Tells the same way when a player joins the running battle.
+  # Tells the player at once when another player leaves the live battle or joins it while it runs,
+  # in the battle's popup at the top and in a notice at the bottom left of the map.
+  #
+  # The battle itself takes a player who left out only at its next command phase.
   module Departures
     # Battles and seats already told, at most this many kept.
     KEPT = 32
@@ -1030,6 +1035,7 @@ module MGQ_MpBattlesSync
     # show once.
     POPUP_MARK = :mgq_mp_departure
 
+    # Battles, seats and kinds already told, oldest first.
     @told = []
 
     # Tells that a player of the battle left it, as their "leave" says; a "leave" of a player not in
@@ -1108,7 +1114,7 @@ module MGQ_MpBattlesSync
     # has it.
     PADDING = 12
 
-    # Height of the box. The contents are made once with the window, so the height is set at open.
+    # Height of the box, which the player cannot change.
     HEIGHT = LINE_HEIGHT * LINES + 2 * PADDING
 
     # Top of the box on the screen where it starts.
@@ -1117,8 +1123,10 @@ module MGQ_MpBattlesSync
     # How far above the battle's windows the box lies.
     Z = 250
 
-    # The box's place in the layout and its name in the outlines.
+    # The box's place in the layout.
     LAYOUT_ID = :waiting_box
+
+    # The box's name in the layout's outlines.
     LAYOUT_NAME = "Waiting box"
 
     # Frames a wait lasts before the box offers to leave the battle, ten seconds. Offered later, the
@@ -1143,9 +1151,13 @@ module MGQ_MpBattlesSync
     # Frames between two drawings of the seconds line, one second.
     REDRAW_FRAMES = MGQ_MpUi::FRAMES_PER_SECOND
 
-    # Lines of the box, from the top.
+    # The box's first line: what the game waits for.
     TEXT_LINE = 0
+
+    # The box's second line: the players still waited for.
     NAMES_LINE = 1
+
+    # The box's last line: the seconds waited, or the leave offer.
     TIME_LINE = 2
 
     # An open box.
@@ -1414,8 +1426,7 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # Installs the battle hooks as the game starts running. The game's plugins load after the Patch
-  # folder and define battle methods anew, so the hooks go in once every plugin is in.
+  # Installs the battle hooks as the game starts running, see MGQ_MpBattlesSync::Hooks.
   MGQ_MpHooks.before(SceneManager.singleton_class, :run, "battles_sync") { MGQ_MpBattlesSync::Hooks.install }
 rescue => e
   MGQ_MpBattlesSync.log("SceneManager hook FAILED: #{e.class}: #{e.message}")

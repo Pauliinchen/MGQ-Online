@@ -2,32 +2,34 @@
 #  hotkeys_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a refused hotkey is logged with its key, name and reason, and not while the player types
-#                            - Checked the hotkey that makes the Leader HUD small, and the hotkeys' own group in the Mod Config
+#      Paulinchen  2026-10-12: Checked that a refused hotkey is logged, and not while the player types
+#                            - Checked the Leader HUD size hotkey and the hotkeys' own Mod Config group
 #      Paulinchen  2026-10-11: Checked the hotkey that opens the bug report
 #                            - Checked that a hotkey pressed while a confirm box is open goes to the box
 #      Paulinchen  2026-10-10: Checked that every help says hotkey and keeps its lines short
 #      Paulinchen  2026-10-09: Checked the hotkey that joins a battle nearby
-#      Paulinchen  2026-10-04: Checked the party box size key and the name of Tab
-#                            - Checked the emote wheel's key
+#      Paulinchen  2026-10-04: Checked the party box size hotkey and the name of Tab
+#                            - Checked the emote wheel's hotkey
 #                            - Followed the scripts to their new names, without mp_
-#      Paulinchen  2026-10-03: Checked the keys that accept and decline the first notification
+#      Paulinchen  2026-10-03: Checked the hotkeys that accept and decline the first notification
 #                            - Renamed from keys_test.rb
 #      Paulinchen  2026-10-02: Created
 #
 #----------------------------------------------------------------
 
-# Covers the keys the player binds, core_hotkeys.rbx: the defaults, the keys kept in Player.ini, their
-# names in the texts, and their key bindings in Mod Config Remake.
+# Covers core_hotkeys.rbx, the hotkeys the player binds: the defaults, the hotkeys kept in Player.ini,
+# their names in the texts, and their bindings in Mod Config Remake.
 
 require_relative "support"
 
-# Stand-ins for the game, Mod Config Remake and the mod's base script.
+# Stands in for the Mod Config's options, which end in Return.
 module NWConst; module Config; MOD_CONTENTS = [{ :key => :return }]; end; end
+# Stands in for Mod Config Remake's names of keys.
 module ModConfigRemake; module Keys; def self.name(code); { 0x4B => "K", 0x54 => "T" }.fetch(code, "?"); end; end; end
 $player_ini = {}
 $down = []
 $log = []
+# Stands in for the loader's log, keys held in $down and Player.ini in $player_ini.
 module MGQ_Multiplayer
   module Log; def self.write(message); $log << message; end; end
   module Key; def self.pressed?(code); $down.include?(code); end; end
@@ -50,6 +52,7 @@ check("a key is read by its code", [($down = [0x54]) && keys.pressed?(:chat), ke
 
 # A confirm box of the mod takes every hotkey while it is open.
 check("no confirm box is open before ui.rbx loaded", keys.confirm_open?, false)
+# Stands in for ui.rbx's confirm box, open while $confirm_open is.
 module MGQ_MpUi; module Confirm; def self.open?; $confirm_open; end; end; end
 $confirm_open = true
 $log.clear

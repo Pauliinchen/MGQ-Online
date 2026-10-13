@@ -2,7 +2,7 @@
 //  ModInstallerTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Covered putting files back after a failed write, removing files an older version shipped, and a zip holding a file twice
+//      Paulinchen  2026-10-06: Covered failed writes, files of older versions and zips holding a file twice
 //                            - Covered zips whose files sit in a Patch folder
 //                            - Covered links to a zip of a release and zips written with backslashes
 //                            - Created

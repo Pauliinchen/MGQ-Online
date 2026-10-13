@@ -2,24 +2,24 @@
 #  trade_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that the offer and the confirmation state go out again once a message that could not go out does, quietly after the first try, never while the relay decides, and once only
-#                            - Checked that the offer and the confirmation state go out again once the other player is back, never while the relay decides, and that a message that cannot go out is logged so
-#                            - Checked that a message of a trade the game does not have is answered with a cancel, never a cancel itself
-#                            - Checked that offers too long for the relay cannot be confirmed, and offers just short of it still commit
-#                            - Checked that trades to recover wait for the map's own frame with the player free, in a battle, behind a message and after a reset, and are asked for again once another save was loaded
-#      Paulinchen  2026-10-11: Checked the line above the player's head while offering a trade and waiting for an accepted one to open, each with its seconds left
-#      Paulinchen  2026-10-08: Checked that a trade id that is not valid is turned down with its own notice
-#                            - Checked the invalid reason the player who offered the trade sees, and a reason of another build
-#      Paulinchen  2026-10-07: Checked that a trade the player accepted but cannot open is turned down with a notice
-#                            - Checked that an autosave loaded forgets the slot a trade saves into
-#                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
+#      Paulinchen  2026-10-12: Checked the offer and confirmation going out again once a failed message does
+#                            - Checked the offer and confirmation going out again once the other player is back
+#                            - Checked that a message of an unknown trade is answered with a cancel
+#                            - Checked offers too long for the relay
+#                            - Checked when trades to recover are asked for
+#      Paulinchen  2026-10-11: Checked the head line while offering a trade and waiting for one to open
+#      Paulinchen  2026-10-08: Checked that an invalid trade id is turned down with its own notice
+#                            - Checked the invalid reason the offering player sees
+#      Paulinchen  2026-10-07: Checked that an accepted trade that cannot open is turned down with a notice
+#                            - Checked that a loaded autosave forgets the slot a trade saves into
+#                            - Looked DLL signatures up in the export table of Multiplayer.rb
 #                            - Tested the messages kept for the trade screen
-#      Paulinchen  2026-10-06: Tested confirming again after a cancelled commit, and cancels and a failed commit while the relay decides
-#                            - Tested that the relay hears of a trade only once a save holds it, and that a trade applies once
-#                            - Tested the room checks counting the own offer, and prefixes written by their enchantment
-#                            - Tested a world made before the world list, and asking the relay again after a failed fetch
-#                            - Checked each DLL call's arguments against its Win32API signature
-#                            - Gave the world a folder id apart from its directory id, which the relay knows
+#      Paulinchen  2026-10-06: Tested confirming after a cancelled commit and cancels while the relay decides
+#                            - Tested that the relay hears of a trade only once a save holds it
+#                            - Tested the room checks and enchantment prefixes
+#                            - Tested a world made before the world list and fetching again after a failure
+#                            - Checked each DLL call's arguments against its signature
+#                            - Gave the world a folder id apart from its directory id
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -33,18 +33,29 @@ require_relative "world_support"
 
 # Stand-ins for the game's items and party.
 module RPG
+  # The game's base of items, weapons and armors.
   class BaseItem
+    # The entry's id and name.
     attr_reader :id, :name
+    # Creates an entry.
     def initialize(id, name); @id, @name = id, name; end
+    # Whether each copy is an item of its own.
     def uniq_item?; false; end
+    # Whether it carries enchantments.
     def enchant_item?; false; end
   end
+  # An item of the database, maybe a key item or an enchantment stone.
   class Item < BaseItem
+    # Creates an item.
     def initialize(id, name, key = false, stone = false); super(id, name); @key, @stone = key, stone; end
+    # Whether it is a key item.
     def key_item?; @key; end
+    # Whether it is an enchantment stone.
     def enchant_stone?; @stone; end
   end
+  # A weapon of the database.
   class Weapon < BaseItem; end
+  # An armor of the database.
   class Armor < BaseItem; end
 end
 
@@ -53,10 +64,15 @@ Enchantment = Struct.new(:prefix, :rare_prefix)
 
 # An enchanted sword, which only one game has, with enchantment 5.
 class EnchantedSword < RPG::Weapon
+  # The name prefix its enchantment rolled.
   attr_accessor :prefix
+  # Creates the sword with its rolls.
   def initialize(rolls); super(9, "Sword"); @rolls = rolls; @prefix = ""; @enchants = [5]; end
+  # Each copy is an item of its own.
   def uniq_item?; true; end
+  # It carries enchantments.
   def enchant_item?; true; end
+  # The rolls that tell this copy apart.
   def rolls; @rolls; end
 end
 
@@ -65,51 +81,89 @@ $data_weapons = [nil, RPG::Weapon.new(1, "Club"), RPG::Weapon.new(2, "Spear")]
 $data_armors = [nil, RPG::Armor.new(1, "Cap")]
 $data_classes = [nil, nil, nil, nil, nil, Enchantment.new(["Dull", "Sharp"], ["Legendary"])]
 
+# The game's party: up to 99 of each item, gold up to the game's most.
 class Game_Party
+  # The gold and the copies added as items of their own.
   attr_reader :gold, :added
+  # Creates a party without items or gold.
   def initialize; @counts = Hash.new(0); @gold = 0; @added = []; end
+  # The most gold the party holds.
   def max_gold; 999_999_999; end
+  # How many of an item the party holds.
   def item_number(item); @counts[item]; end
+  # Adds or removes copies of an item, between 0 and 99.
   def gain_item(item, amount, *); @counts[item] = [[@counts[item] + amount, 0].max, 99].min; @counts.delete(item) if @counts[item] == 0; end
+  # Removes copies of an item.
   def lose_item(item, amount, *); gain_item(item, -amount); end
+  # Adds or removes gold, between 0 and the most.
   def gain_gold(amount); @gold = [[@gold + amount, 0].max, max_gold].min; end
+  # Removes gold.
   def lose_gold(amount); gain_gold(-amount); end
+  # Records a copy added as an item of its own.
   def add_item_data(item, number); @added << item; end
+  # The party holds at most two copies of each kind.
   def uniq_max_item_number(item); 2; end
+  # How many copies of an item's kind the party holds.
   def uniq_item_number(item); @counts.keys.count { |held| held.uniq_item? && held.class == item.class }; end
+  # Everything the party holds.
   def held; @counts.keys; end
+  # The items held.
   def items; held.select { |item| item.is_a?(RPG::Item) }; end
+  # The weapons held.
   def weapons; held.select { |item| item.is_a?(RPG::Weapon) }; end
+  # The armors held.
   def armors; held.select { |item| item.is_a?(RPG::Armor) }; end
 end
+# The game's system data.
 class Game_System; end
 
+# The game's data manager: four slots; a save fails while $save_fails, and each save is recorded in
+# $saved.
 module DataManager
+  # The number of save slots.
   def self.savefile_max; 4; end
+  # The file of a slot.
   def self.make_filename(index); "Save/Save#{index + 1}.rvdata2"; end
+  # Saves into a slot as the game does, a failure answered with false.
+  #
+  # @param index [Integer] The slot.
+  # @return [Boolean] Whether it saved.
   def self.save_game(index)
     save_game_without_rescue(index)
   rescue IOError
     false
   end
+  # Saves into a slot, failing while $save_fails.
   def self.save_game_without_rescue(index); raise IOError, "the disk is full" if $save_fails; $saved << index; true; end
+  # Loads any slot.
   def self.load_game_without_rescue(index); true; end
+  # Sets up nothing.
   def self.setup_new_game; end
 end
 
 # The enchanted copies' text, as core_actors.rbx writes them.
 module MGQ_MpActors
+  # Enchanted copies as text.
   module Items
+    # Writes a copy's rolls.
     def self.write(item); "ew9.#{item.rolls}"; end
+    # Reads a copy back, nil for a text that is none.
     def self.read(text); text =~ /\Aew9\.(\d+)\z/ ? EnchantedSword.new($1.to_i) : nil; end
   end
 end
 
 # The DLL's trade functions.
 module MGQ_Multiplayer
+  # The DLL is always there.
   def self.available?; true; end
+  # The game is never outdated.
   def self.outdated?; false; end
+  # The link to the DLL: each call is checked against its signature and recorded in $dll.
   module Link
+    # A DLL function whose calls are checked, recorded in $dll and answered with 1.
+    #
+    # @param name [String] The export.
+    # @return [Proc] The function.
     def self.function(name)
       lambda do |*args|
         check_dll_call(name, args)
@@ -117,13 +171,21 @@ module MGQ_Multiplayer
         1
       end
     end
+    # The relay's answer about a trade from $relay_state, and the trades to recover from $pending_list.
+    #
+    # @param name [String] The export.
+    # @param _size [Integer] The buffer's size.
+    # @return [String] The answer.
     def self.read(name, _size)
       name == "mp_trade_state" ? $relay_state : $pending_list
     end
   end
 end
+# The open world, with its folder id and its directory id.
 module MGQ_MpWorld; World = Struct.new(:id, :directory_id); def self.world; World.new("f1", "w1"); end; end
+# The trade screen.
 class Scene_MpTrade; end
+# The game's scene manager: each scene called is recorded in $called.
 module SceneManager; def self.call(scene); $called << scene; end; end
 
 $dll = []
@@ -153,8 +215,10 @@ end
 #
 # @param frames [Integer] How many.
 def ticks(frames = 1); frames.times { MGQ_MpTrade.tick(true) }; end
-# Writes the trade's doing for the line above the player's head as of now: the lapse was built from
-# the clock a moment before, so the seconds shown are the frames left, rounded up.
+# The trade's doing as the line above the player's head shows it.
+#
+# The lapse was built from the clock a moment before, so the seconds shown are the frames left,
+# rounded up.
 #
 # @return [String, nil] The doing as shown, nil for none.
 def doing_shown
@@ -507,6 +571,7 @@ trade.cancel
 check("and forgotten once the trade ends", trade.note, nil)
 
 # The other player away and back while the trade is open: what may have been lost goes out again.
+
 # Opens a trade the other player accepted.
 #
 # @return [String] The trade's id.
@@ -529,6 +594,7 @@ def away_and_back(state)
   MGQ_MpOverworldSync.tick
   ticks
 end
+# The trade messages sent, as kind, revision, confirmed revisions and payload.
 resent = lambda { trade_sent.map { |_, f| f.values_at("trade", "rev", "mine", "yours", :payload) } }
 $game_party.gain_item(potion, 1)
 tid = opened_trade
@@ -540,6 +606,7 @@ check("the other player back, the last offer and the confirmation go out again",
 trade.toggle_confirm
 away_and_back(friend)
 check("unconfirmed, the confirmation taken back goes out again", resent.call, [["offer", "1", nil, nil, "g0;i1*1"], ["unconfirm", nil, nil, nil, ""]])
+# Sends that fail while $send_fails.
 module MGQ_MpOverworldSync::Link; def self.send_to(target, text); $sent << [target, text]; !$send_fails; end; end
 $send_fails = true
 lines = logged_lines { trade.set_amount(potion, 0) }
@@ -598,7 +665,7 @@ $relay_state = "trade=#{id}\nstate=cancelled\nreason=cancelled"
 trade.cancel
 ticks(MGQ_MpTrade::POLL_FRAMES)
 
-# Messages of a trade the game no longer has.
+# Messages of a trade the game does not have.
 $sent.clear
 $inbox << entry("message", 2, "trade=offer\ntid=#{'c' * 24}\nrev=3\n\ng10")
 MGQ_MpOverworldSync.tick
@@ -638,6 +705,7 @@ trade.cancel
 ticks(MGQ_MpTrade::POLL_FRAMES)
 
 # A world made before the world list.
+# A world without a directory id.
 module MGQ_MpWorld; def self.world; World.new("f1", nil); end; end
 check("a world made before the world list offers no trades",
       [trade.available?, MGQ_MpTrade::Offers.wheel_option.refusal], [false, "This world was made before the world list, so it cannot trade."])

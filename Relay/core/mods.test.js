@@ -2,15 +2,15 @@
 //  mods.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Covered changes made while a link is checked: a removal, a personal mark, options, another link and a full catalog, and an upload listed until the link that replaces it is checked
+//      Paulinchen  2026-10-12: Covered changes made while a link is checked and an upload listed until the link that replaces it is checked
 //                            - Covered a mod name with ':' refused by a link, an upload and a name alone
-//      Paulinchen  2026-10-09: Covered personal mods: marked by admins only, kept through kind changes, listed for games checked or not, and mods known by their name alone
+//      Paulinchen  2026-10-09: Covered personal mods and mods known by their name alone
 //      Paulinchen  2026-10-08: Covered an older copy's options that do not replace a newer version's
 //      Paulinchen  2026-10-07: Covered the options of any version kept until the current version's arrive
-//                            - Uploaded real zips, whose hashes the relay makes itself, and covered a file list that says otherwise and a header that lies about a file's size
-//                            - Expected 404 for an unknown sub-route, and made the test zips through test_zip.js
+//                            - Uploaded real zips and covered a file list that says otherwise and a header that lies about a file's size
+//                            - Expected 404 for an unknown sub-route and made the test zips through test_zip.js
 //      Paulinchen  2026-10-06: Covered escaped keys, too large bodies, unchecked links listed for admins only and zips holding a file twice
-//                            - Covered the options of a mod's current version, which only admins send
+//                            - Covered the options of a mod's current version
 //                            - Covered zips whose files sit in a Patch folder
 //                            - Covered zips of a release, hashed file by file
 //                            - Created

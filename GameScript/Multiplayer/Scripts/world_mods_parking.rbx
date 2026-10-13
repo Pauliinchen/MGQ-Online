@@ -4,28 +4,22 @@
 #  Changelog:
 #      Paulinchen  2026-10-10: Told the player on the title screen how many mods a restore sent to Parked mods/Conflicts
 #                            - Refused saving outside a world while the game runs without the player's other mods
-#                            - Kept the game out of a world that turns off scripts behind a link to another drive, and counted those as on in a world
+#                            - Kept the game out of a world that turns off scripts behind a link to another drive, and counted those as on
 #                            - Kept the parked state read last when the DLL could not read its journal
-#                            - Added the texts that the other mods could not be turned off, kept off or turned back on for a world's downloaded mods
+#                            - Added texts for other mods that could not be turned off or back on for a world's downloaded mods
 #      Paulinchen  2026-10-09: Created
 #
 #----------------------------------------------------------------
 
 # Turning other mods off: a world that turns other mods off is played only with the mods it names,
 # the mods the relay's catalog marks personal, and the scripts every player has. Before the game
-# enters such a world, the scripts of every other mod in the Patch folder are moved out of it
-# ("parked") into the game folder's Parked mods, and the game starts again and enters the world.
-# The mods come back as the player leaves the world for the title screen, which starts the game
-# again, and whenever the game closes in any other way: the DLL's watchdog puts them back after a
-# crash, and the next start puts back what is still parked.
+# enters such a world, the DLL moves ("parks") the scripts of every other mod out of the Patch
+# folder into the game folder's Parked mods, and the game starts again and enters the world. The
+# mods come back as the player leaves the world for the title screen, through the DLL's watchdog
+# after a crash, and at the next start for whatever is still parked.
 #
-# The DLL moves the files and keeps a journal of them; this script decides which to park, and when
-# they come back. Patch.rb reads the folder's file list once as the game starts, so a file moved
-# while the game runs takes effect only with the next start, and nothing is moved while the game
-# loads.
-#
-# world_screen.rbx, which loads later, asks before entering. It must never interrupt the game, so
-# every entry point rescues.
+# Patch.rb reads the folder's file list once as the game starts, so a moved file takes effect only
+# with the next start.
 module MGQ_MpModParking
   extend MGQ_MpLog
 
@@ -177,6 +171,7 @@ module MGQ_MpModParking
   # The hint of the box while it only tells something.
   NOTICE_HINT = "Enter, Esc or Numpad 0: close"
 
+  # Title screens this session started.
   @title_starts = 0
 
   # Deciding which mods to park.

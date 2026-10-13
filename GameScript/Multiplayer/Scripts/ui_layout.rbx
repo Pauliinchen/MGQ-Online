@@ -6,17 +6,17 @@
 #
 #----------------------------------------------------------------
 
-# Where the mod's floating boxes lie and how large they are, which the player changes with the left
-# Alt held: a drag inside a box moves it, a drag on its edge or corner resizes it, a double click
-# puts it back where it starts. Each box keeps its place in Player.ini, never smaller than the least
-# it needs to show all it has.
-#
-# A box registers once with its name and least size, asks rect for where to draw each frame, and
-# offers where it drew while it shows; the tick after Graphics.update reads the mouse against the
-# boxes offered in the frame before and, while Alt is held, outlines them above everything.
-#
-# It must never interrupt the game, so every entry point rescues.
 module MGQ_MpUi
+  # Where the mod's floating boxes lie and how large they are, which the player changes with the
+  # left Alt held: a drag inside a box moves it, a drag on its edge or corner resizes it, a double
+  # click puts it back where it starts. Each box keeps its place in Player.ini, never smaller than
+  # the least it needs to show all it has.
+  #
+  # A box registers once with its name and least size, asks rect for where to draw each frame, and
+  # offers where it drew while it shows; the tick after Graphics.update reads the mouse against the
+  # boxes offered in the frame before and, while Alt is held, outlines them above everything.
+  #
+  # It must never interrupt the game, so every entry point rescues.
   module Layout
     extend MGQ_MpLog
 
@@ -35,18 +35,20 @@ module MGQ_MpUi
     # Pixels inside a box's border on which a drag resizes it rather than moving it.
     GRAB = 8
 
-    # Frames within which a second click counts as a double click, and how far it may lie from the
-    # first.
+    # Frames within which a second click counts as a double click.
     DOUBLE_CLICK_FRAMES = 24
+
+    # Pixels a double click's second click may lie from the first, along either axis.
     DOUBLE_CLICK_REACH = 6
 
     # How a box may be resized: both ways, in width alone, its height following what it shows, or
     # not at all.
     RESIZES = [:both, :width, :none]
 
-    # Colors of the outlines while Alt is held: every box's, and the one under the mouse or being
-    # dragged, filled with a light wash.
+    # Color of every box's outline while Alt is held.
     OUTLINE = Color.new(255, 255, 255, 200)
+
+    # Color of the light wash over the box under the mouse or being dragged.
     WASH = Color.new(255, 255, 255, 36)
 
     # Side of the grip drawn into a resizable box's bottom right corner while Alt is held.
@@ -58,14 +60,20 @@ module MGQ_MpUi
     # Height of the hint's plate.
     HINT_HEIGHT = 22
 
-    # The Mod Config row's key, name and help.
+    # The Mod Config row's key.
     OPTION = :mp_ui_positions
+
+    # The Mod Config row's name.
     OPTION_NAME = "Interface Positions"
+
+    # The Mod Config row's help.
     OPTION_HELP = "Hold the left Alt: drag a box of the mod to move it, its edge to resize it, and double-click one to put it back.\n" \
                   "Pick Default to put every box back where it starts."
 
-    # The row's values: one while any box was moved, and the one that puts every box back.
+    # The row's value while any box was moved.
     MOVED = "Moved"
+
+    # The row's value that puts every box back.
     DEFAULT = "Default"
 
     # A box the player can move: its name for the log and the outline, its least size and how it
@@ -80,9 +88,16 @@ module MGQ_MpUi
     # the mouse (left, top, right, bottom; none to move it) and the place it has now.
     Drag = Struct.new(:id, :start, :origin, :sides, :rect)
 
+    # The registered boxes, by their ids.
     @boxes = {}
+
+    # Where the player left each box read so far, nil for one at its default, by the boxes' ids.
     @stored = {}
+
+    # The boxes offered since the last tick.
     @offers = []
+
+    # The ticks so far, which time a double click.
     @frame = 0
 
     # Makes a box movable.
@@ -137,7 +152,7 @@ module MGQ_MpUi
       MGQ_Multiplayer::Key.down?(ALT_KEY) || !@drag.nil?
     end
 
-    # Tells where a box drew this frame, so a drag can take it and the outline show it.
+    # Offers where a box drew this frame, so a drag can take it and the outline show it.
     #
     # @param id [Symbol] The box.
     # @param x [Integer] Its left on the screen.

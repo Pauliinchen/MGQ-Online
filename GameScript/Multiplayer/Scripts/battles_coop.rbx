@@ -2,104 +2,113 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Joined the battle of the story whose call is about to bring the player over instead of turning it down, dropping the call, since its teller holds a member who missed the invite still until the battle ends
-#                            - Took a joining player's party_member_max only as a number, 0 for anything else, instead of failing the battle's start
-#                            - Picked a defeat scene of the troop for a guest who takes the battle over, even when it kept one of a former battle
-#                            - Read a player another game sent only with numbers for its seat, party_member_max, places and shares and a list for its HP and MP, dropping a field of another kind, logged once, and the player whose seat is no number
-#                            - Dropped an enemy of the host's troop whose id, place or mark is no number, logged once, instead of failing on every such troop
-#                            - Kept every enemy of the host's troop at its place, replacing a place or mark that is no number, and kept the player's own troop for an enemy whose id is no enemy of this game, since the host's stream names enemies by their place
-#      Paulinchen  2026-10-11: Left the party members who said no to starting a battle with the player out of its invites, and took the party members' offers and answers about a battle outside the party
-#                            - Stretched the steps to the next random encounter by half once another player who would fight it stands within NEARBY_TILES, a party member in a Classic world, instead of once per member or by half a draw per player on the map, and invited only the players that near to a Raid World's battle, so players across a large map no longer keep each other from meeting enemies or pull each other into fights
-#                            - Opened the player's command phase while their own Frontline is down but their Backline may swap in, so they can still change the formation
-#                            - Named the battle invite or lead request waiting for the player to be free, which the pages of a teller's story give way to, so a viewer reading them no longer turns the invite down
-#                            - Drew each character's name in the battle's status window in its player's color, another player's character by its own name
-#                            - Told the player in the battle's chat log of the players who joined the running battle, as the host takes them in or its new party names them
-#                            - Showed the notice of a member's battle as long as the player stands still for it, and took it away once they walk on early
-#                            - Told a player who joins a running battle at its next turn how long the wait may last, written as the shared seconds are, with the seconds waited
-#                            - Left a status name the mod cannot draw to the game, logged once, instead of failing the status window
-#                            - Wrote the late join's seconds as the waiting box does, and logged a telling of who joined that fails on its own
-#      Paulinchen  2026-10-10: Stretched the steps to the next random encounter in a Raid World by half a draw per other player on the map, up to a battle's four players
-#                            - Stretched the steps to a party's next random encounter in a Classic world once per member on the map, within a wider margin, so the party meets encounters about as often as one player
-#                            - Invited the players on the map who watch the story told there to a boss battle in a Raid World too
-#                            - Named the raid boss's pools in the invite to a battle that fights them, and invited nobody to one whose pools are all empty already
-#                            - Fought the raid boss's pools in the battle the player yields or follows to, and gave a troop taken from the host the boss's raised max HP at once
-#                            - Gave the player their own enemy rates and stats back as the battle ends, before the game's autosave, instead of only once its scene ended
-#                            - Fought a requester's own encounter with its own enemy rates when the wait for the running battle's roster ended as its host left or broke it off
-#                            - Started a side battle against a raid boss as the player's own, inviting and holding nobody, which others may join by choice
-#                            - Invited not even the host of a waiting invite to a raid boss battle whose pools are all empty already
-#                            - Kept a rival's invite that came twice, instead of turning down the battle the player joins
-#                            - Told the raid pool as a guest takes a battle over, so its reports start from the enemies' HP at that moment
-#                            - Told whether the player is in a battle, also while its party command called the Library or Config
-#                            - Told whether another player fights a battle by its state, also while it waits under the Library or Config with their window in the background, and invited no such player
-#      Paulinchen  2026-10-09: Told the guests the troop as host whenever it changed since they last heard of it, such as enemies another mod added mid-battle or an enemy that transformed or appeared, before the next send of the stream and as a command phase opens
-#                            - Fought a battle joined in a Raid World with its host's enemy rates, the player's own back once it ended
-#                            - Ended a co-op battle only once its scene ended, not when its party command called the Library or Config
-#                            - Noted whether the battle the player's yields to in a Raid World is a boss battle, which then takes no encounter in should the player take it over
+#      Paulinchen  2026-10-12: Joined the battle of the story whose call is about to bring the player over
+#                            - Took a joining player's party_member_max only as a number
+#                            - Picked a defeat scene of the troop for a guest who takes the battle over
+#                            - Read a player another game sent only with fields of the right kind
+#                            - Dropped an enemy of the host's troop whose id, place or mark is no number
+#                            - Kept every enemy of the host's troop at its place
+#      Paulinchen  2026-10-11: Left the party members who said no to starting a battle out of its invites
+#                            - Took the party members' offers and answers about a battle outside the party
+#                            - Stretched the steps to the next random encounter by half once another player stands near
+#                            - Invited only the players near to a Raid World's battle
+#                            - Opened the player's command phase while only their Backline may swap in
+#                            - Named the battle invite or lead request waiting for the player to be free
+#                            - Drew each character's name in the battle's status window in its player's color
+#                            - Told the player in the battle's chat log of the players who joined
+#                            - Showed the notice of a member's battle as long as the player stands still for it
+#                            - Told a player who joins a running battle how long the wait may last
+#                            - Left a status name the mod cannot draw to the game
+#                            - Wrote the late join's seconds as the waiting box does
+#                            - Logged a telling of who joined that fails on its own
+#      Paulinchen  2026-10-10: Stretched the steps to the next random encounter in a Raid World per player on the map
+#                            - Stretched the steps to a party's next random encounter in a Classic world per member on the map
+#                            - Invited the players who watch the story told on the map to a boss battle in a Raid World
+#                            - Named the raid boss's pools in the invite to a battle that fights them
+#                            - Invited nobody to a raid boss battle whose pools are all empty
+#                            - Fought the raid boss's pools in the battle the player yields or follows to
+#                            - Gave a troop taken from the host the boss's raised max HP at once
+#                            - Gave the player their own enemy rates and stats back as the battle ends
+#                            - Fought a requester's own encounter with its own enemy rates when the running battle's host left
+#                            - Started a side battle against a raid boss as the player's own
+#                            - Invited not even the host of a waiting invite to a raid boss battle whose pools are all empty
+#                            - Kept a rival's invite that came twice
+#                            - Told the raid pool as a guest takes a battle over
+#                            - Told whether the player is in a battle also under the Library or Config
+#                            - Told whether another player fights a battle also while they are away
+#      Paulinchen  2026-10-09: Told the guests the troop as host whenever it changed
+#                            - Fought a battle joined in a Raid World with its host's enemy rates
+#                            - Ended a co-op battle only once its scene ended
+#                            - Noted whether the battle the player yields to in a Raid World is a boss battle
 #                            - Ignored the invite of a running battle's host the player asks to take their own encounter in
 #                            - Passed a request to join a battle by choice and its refusal to battles_coop_join.rbx
 #                            - Ignored the late invite of a battle the player stopped waiting to join by choice
-#                            - Invited the players in a Raid World whose game window is in the background, as a Classic world does
-#                            - Laid the host's fallen enemies down only once the troop a guest takes was lettered, so the guest names every enemy as the host does
-#      Paulinchen  2026-10-08: Brought each player's first three characters to a co-op battle in a Raid World, one on the Frontline and two on the Backline, also for a player left alone
-#                            - Brought only the squad to a team duel in a Raid World, never the fourth
-#                            - Invited the nearest free players on the map to a battle in a Raid World, party members first, up to four players, through the map's gate
-#                            - Let the player who starts a battle in a Raid World host it, waiting ten seconds for the others to join, without a level sync
-#                            - Made a player whose random encounter in a Raid World started at the same moment as another player's battle a guest of that battle, an event's battle or else the one who entered the map first hosting, and the guests of the battle that yields follow to it
-#                            - Held only the players invited in a Raid World instead of the whole party, letting those a held encounter or a battle called off then left out walk on unless another battle still holds them
-#                            - Turned down one of two invites waiting in a Raid World, keeping the one whose battle hosts first, and invited the host of an invite waiting as the player's own battle began
-#                            - Told the others in a Raid World while the player trades or is about to teleport, which keeps their invites away
-#                            - Let a random encounter in a Raid World join a battle running on the map, through battles_coop_hotjoin.rbx, and the guests take the enemies the host adds
-#      Paulinchen  2026-10-07: Registered the battle setup and encounter hooks through core_hooks.rbx instead of wraps of its own, and the battle's end once the game runs, where plugins define it anew
-#                            - Named players and characters through battles_sync.rbx and overworld_sync.rbx, and made up a battle's id through coop.rbx, instead of copies of their helpers
-#                            - Logged the co-op messages, the invites, requests and who hosts with their reasons, the roster, rebuilds, swaps, choosing again, the Library counts left out and the battle's result
-#                            - Stopped a guest's characters at once when the guest leaves, instead of letting the computer play them for the rest of the turn
-#                            - Let the host's computer choose nothing for a guest's characters while it waits for the guest's commands
-#                            - Named the party after the player's own characters while a co-op battle runs, as when it runs away or is defeated
-#      Paulinchen  2026-10-06: Forgot the co-op battle, its invites and its requests when a reset interrupts them
-#                            - Rebuilt another player's fallen character fallen, which fought at full HP and came back to life on its owner's game
-#                            - Ended a guest's battle that the host's party left out or never came for, instead of playing it back or waiting on
-#                            - Aimed the skills that reach the Backline too at the co-op party and the player's own Backline
-#                            - Kept the other players' characters out of the Library's battle, defeat and steal counts all saves share
-#                            - Dropped the game's Retry of a co-op battle, whose snapshot held synced stats or an older battle
-#                            - Started the battle of a guest that takes over before the host's party came, and set the counters of one that takes over later
+#                            - Invited the players in a Raid World whose game window is in the background
+#                            - Laid the host's fallen enemies down only once the troop a guest takes was lettered
+#      Paulinchen  2026-10-08: Brought each player's first three characters to a co-op battle in a Raid World
+#                            - Brought only the squad to a team duel in a Raid World
+#                            - Invited the nearest free players on the map to a battle in a Raid World
+#                            - Let the player who starts a battle in a Raid World host it
+#                            - Settled who hosts two battles in a Raid World that started at the same moment
+#                            - Held only the players invited in a Raid World instead of the whole party
+#                            - Turned down one of two invites waiting in a Raid World
+#                            - Invited the host of an invite waiting as the player's own battle began
+#                            - Told the others in a Raid World while the player trades or is about to teleport
+#                            - Let a random encounter in a Raid World join a battle running on the map
+#      Paulinchen  2026-10-07: Registered the battle setup and encounter hooks through core_hooks.rbx
+#                            - Named players and characters through battles_sync.rbx and overworld_sync.rbx
+#                            - Logged the co-op messages, invites, requests, roster and the battle's result
+#                            - Stopped a guest's characters at once when the guest leaves
+#                            - Let the host's computer choose nothing for a guest's characters while it waits for their commands
+#                            - Named the party after the player's own characters while a co-op battle runs
+#      Paulinchen  2026-10-06: Forgot the co-op battle, its invites and its requests on a reset
+#                            - Rebuilt another player's fallen character fallen
+#                            - Ended a guest's battle that the host's party left out or never came for
+#                            - Aimed the skills that reach the Backline at the co-op party and the player's own Backline
+#                            - Kept the other players' characters out of the Library's counts
+#                            - Dropped the game's Retry of a co-op battle
+#                            - Started the battle of a guest that takes over before the host's party came
+#                            - Set the counters of a guest that takes over later
 #                            - Brought no share of the Backline to a team duel
-#                            - Turned down at once the invites and requests to lead the player cannot take, instead of leaving them unanswered
-#                            - Compared a rebuilt character of a team duel with what its owner's game showed without the PvP balance
-#      Paulinchen  2026-10-04: Sent the players back to choose whose command was for a character another player swapped out
-#                            - Synced the characters above the battle's level, which the host sends with the roster
-#                            - Logged where a guest's rebuilt character differs from what the guest's game showed
-#                            - Held every party member on the map while a member's encounter waits, until they join it, turn it down or ten seconds pass
+#                            - Turned down at once the invites and requests to lead the player cannot take
+#                            - Compared a rebuilt character of a team duel without the PvP balance
+#      Paulinchen  2026-10-04: Sent the players back to choose whose target another player swapped out
+#                            - Synced the characters above the battle's level
+#                            - Logged where a guest's rebuilt character differs
+#                            - Held every party member on the map while a member's encounter waits
 #                            - Asked coop_gather.rbx whether the leader's story is about to bring the player over
 #                            - Renamed from mp_battles_coop.rbx
-#      Paulinchen  2026-10-03: Registered what a co-op battle does differently in a live battle as its Mode
-#                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
-#                            - Kept the battle's players as Player records instead of arrays read by position
+#      Paulinchen  2026-10-03: Registered the co-op battle's Mode
+#                            - Read and wrote the game's private fields through MGQ_MpGame
+#                            - Kept the battle's players as Player records
 #                            - Held the player through MGQ_MpHooks.hold_player
 #                            - Called the scripts that load before this one without asking whether they loaded
-#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Sent messages, showed notices and read the world through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
-#                            - Started the battle and each turn for the other players' characters, whose unset hit count crashed the game when hit
-#                            - Showed the player's own leader and followers on the map again once the co-op party is forgotten
-#                            - Let the party's leader host a battle a member started, so the leader's game and mods decide it
-#                            - Turned down an invite that came during a battle of the player's own, and one older than three seconds
-#                            - Held a random encounter up to three seconds for party members on the map who are busy, telling them
-#      Paulinchen  2026-10-02: Started a co-op battle when a player who joined it left the world before the roster went out
+#                            - Started the battle and each turn for the other players' characters
+#                            - Showed the player's own leader and followers on the map again after a co-op battle
+#                            - Let the party's leader host a battle a member started
+#                            - Turned down an invite during the player's own battle or older than three seconds
+#                            - Held a random encounter up to three seconds for busy party members on the map
+#      Paulinchen  2026-10-02: Started a co-op battle when a player who joined it left the world before the roster
 #                            - Followed the map and installed the late hooks through core_hooks.rbx
-#                            - Turned an invite down through MGQ_MpBattlesSync.tell, and took the seat, place and Luka from Game_MpActor
+#                            - Turned an invite down through MGQ_MpBattlesSync.tell
+#                            - Took the seat, place and Luka from Game_MpActor
 #                            - Turned a co-op battle down while the leader's story scene is about to bring the player over
-#      Paulinchen  2026-10-01: Listed the battle's players, so each hears at once when another leaves
-#                            - Rebuilt the host's enemies on a guest whose troop differs, such as through a mod of either game
-#                            - Brought each player's squad, a share of the Frontline and of the Backline, the leader's first
-#                            - Let each player swap their own Backline in, telling every game the party's new order
-#                            - Found the leader of any party among the battle's players, for the sides of a team duel
+#      Paulinchen  2026-10-01: Listed the battle's players
+#                            - Rebuilt the host's enemies on a guest whose troop differs
+#                            - Brought each player's squad, a share of the Frontline and of the Backline
+#                            - Let each player swap their own Backline in
+#                            - Found the leader of any party among the battle's players
 #                            - Let a player of a team duel command the characters of a player who left their side
-#      Paulinchen  2026-09-30: Sent and took the party's messages through coop.rbx, which drops those of another party
-#                            - Registered with overworld_sync.rbx for its messages instead of being asked by overworld.rbx
-#                            - Moved into Patch/Multiplayer/Scripts as battles_coop.rbx, which Multiplayer.rb loads
+#      Paulinchen  2026-09-30: Sent and took the party's messages through coop.rbx
+#                            - Registered with overworld_sync.rbx for its messages
+#                            - Moved into Patch/Multiplayer/Scripts
 #                            - Renamed from mp_coop.rb, with the module MGQ_MpBattlesCoop
-#                            - Let a player who got away leave the battle, the others fighting on, alone with their own full team
+#                            - Let a player who got away leave the battle
 #                            - Showed the co-op party in the game's window per character too
-#                            - Invited party members whose window is in the background, and logged why nobody was invited
+#                            - Invited party members whose window is in the background
+#                            - Logged why nobody was invited
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -273,9 +282,16 @@ module MGQ_MpBattlesCoop
     end
   end
 
+  # The co-op party, nil outside a co-op battle.
   @members = nil
+
+  # The battle's players, as form took them.
   @players = nil
+
+  # The other players' rebuilt characters by their owner's seat and place.
   @allies = {}
+
+  # The player's own enemy rates while the battle fights with the host's, nil otherwise.
   @kept_rates = nil
 
   extend MGQ_MpLog
@@ -769,8 +785,8 @@ module MGQ_MpBattlesCoop
   # ENCOUNTER_MARGIN, while another player who would fight it stands near (see
   # encounter_players). A player with nobody near keeps the game's draw.
   #
-  # Stretching once per player kept a party of four from meeting enemies at all, and counting the
-  # whole map kept players far apart on the field from meeting any.
+  # A single stretch, not one per player, lets a party of four still meet enemies, and counting
+  # only those near lets players far apart on the field meet them too.
   #
   # @param steps [Numeric] The steps the game drew.
   # @return [Numeric] The steps the player takes.
@@ -1226,8 +1242,8 @@ module MGQ_MpBattlesCoop
   end
 
   # Sets the rival's battle up in place of the player's own, as joining an invite does: its enemy
-  # rates (see borrow_rates), its troop, drawn anew, its chance to escape, and whether it allows escaping and losing; no first strike or
-  # surprise.
+  # rates (see borrow_rates), its troop, drawn anew, its chance to escape, and whether it allows
+  # escaping and losing; no first strike or surprise.
   #
   # @param scene [Scene_Battle] The battle.
   # @param message [Hash] The rival's invite.
@@ -1419,8 +1435,10 @@ module MGQ_MpBattlesCoop
     !invite.nil? && invite[:peer].seat == seat && invite[:message]["bid"].to_s == bid.to_s
   end
 
-  # Reports whether an invite or a request to lead waited longer than ACCEPT_FRAMES. It counts by the
-  # clock, since one that arrived outside the map waits for the map, where the frames count.
+  # Reports whether an invite or a request to lead waited longer than ACCEPT_FRAMES.
+  #
+  # It counts by the clock, since one that arrived outside the map waits for the map, where the
+  # frames count.
   #
   # @param entry [Hash] The invite or the request, with :at, when it arrived.
   # @return [Boolean] Whether it did.
@@ -2491,7 +2509,8 @@ module MGQ_MpBattlesCoop
     kills
   end
 
-  # Installs the hooks on methods the game's plugins may define anew. Called once the first scene starts.
+  # Installs the hooks on methods the game's plugins may define anew. Called as the game starts
+  # running.
   def self.install
     return if @installed
 

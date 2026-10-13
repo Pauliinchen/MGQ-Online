@@ -4,7 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-12: Scrolled a box of several lines with the cursor kept in sight
 #                            - Drew a scrollbar beside a box of several lines that holds more than it shows
-#      Paulinchen  2026-10-04: Split a long word into its characters the way Ruby 1.9 can count, which crashed the world screen
+#      Paulinchen  2026-10-04: Split a long word into its characters the way Ruby 1.9 can count
 #                            - Broke a word longer than a line of a box of several lines inside the word
 #                            - Created
 #
@@ -21,10 +21,13 @@ module MGQ_MpUi
     # Frames the cursor stays shown, then hidden, while it blinks.
     BLINK_FRAMES = 30
 
-    # Windows' codes of the keys that move the cursor to the start or the end, and that remove the
-    # character after it. None of them types a character.
+    # Windows' code of the Home key, which moves the cursor to the start.
     HOME_KEY = 0x24
+
+    # Windows' code of the End key, which moves the cursor to the end.
     END_KEY = 0x23
+
+    # Windows' code of the Delete key, which removes the character after the cursor.
     DELETE_KEY = 0x2E
 
     # The text.

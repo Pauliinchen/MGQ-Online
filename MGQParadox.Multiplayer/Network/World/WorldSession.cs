@@ -2,27 +2,27 @@
 //  WorldSession.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Paced the frames, chat texts and pings it sends to at most 50 a second after a burst of 200, below the relay's limit, and logged each spell of pacing and a close for sending too fast
-//                            - Cut a connect still running once the world is left or entered anew, and connected again instead of failing when the connect it cut still took the new connection's place
-//                            - Took a "replaced" close as the cut connect's only while that connect could still take a seat, and stopped for good once the relay turns the game away as too old
-//                            - Told the player to update MGQ Online once a world room turns the game away with 400 and the code "update", and counted a cut connect's seat window from the cut, not from when that connect started
-//      Paulinchen  2026-10-10: Handed the relay's word that a Raid World's boss pool changed to the game script as a boss entry with its key, the share left, the raid max HP and whether it is defeated, and to the boss pools the game script reads
-//      Paulinchen  2026-10-09: Handed the relay's word that a world changed whether it turns other mods off, or its mods, to the game script as a mods_rule entry with both
-//                            - Handed the relay's word that a Raid World's boss pool changed to the game script as a boss entry with its key and hit points
-//                            - Handed the relay's word that a Raid World's difficulty changed to the game script as a difficulty entry with its value
-//      Paulinchen  2026-10-08: Handed the relay's word that a Raid World's story changed to the game script as a story entry with its revision
-//                            - Stopped for good once the relay keeps the game out of a Raid World, which it cannot play, telling to update the mod
-//                            - Logged the traffic counted so far as another world is entered, and as the process exits or a thread throws out
-//                            - Dropped the chat lines past 2 a second after a burst of 10, as the relay does, and logged the relay dropping one
-//      Paulinchen  2026-10-07: Logged the messages sent and received as one line about every minute, through WorldTraffic, instead of a line per message
-//                            - Mirrored the chat lines the game script says to the relay as text frames, and handed the lines the relay says for an admin to the game script as chat entries
-//                            - Logged entering and leaving, each connect with its refusal or close code and reason, the waits before each new try, the seats coming and going, each message sent or received, and the entries a full inbox dropped
+//      Paulinchen  2026-10-12: Paced its sends to at most 50 a second after a burst of 200 and logged pacing and too-fast closes
+//                            - Cut a running connect once the world is left or entered anew, and connected again when the cut connect took the new one's place
+//                            - Took a "replaced" close as the cut connect's only while it could still take a seat, and stopped for good when turned away as too old
+//                            - Told the player to update once a world room answers 400 with the code "update", and counted a cut connect's seat window from the cut
+//      Paulinchen  2026-10-10: Handed a changed boss pool to the game script with its share left, raid max HP and defeat, and to RaidBosses
+//      Paulinchen  2026-10-09: Handed a change of the world's mods or other-mods rule to the game script as a mods_rule entry
+//                            - Handed a changed Raid World boss pool to the game script as a boss entry
+//                            - Handed a changed Raid World difficulty to the game script as a difficulty entry
+//      Paulinchen  2026-10-08: Handed a changed Raid World story to the game script as a story entry
+//                            - Stopped for good once the relay keeps the game out of a Raid World
+//                            - Logged the traffic counted so far on entering another world, on exit and on a thread's failure
+//                            - Dropped chat lines past 2 a second after a burst of 10 and logged the relay dropping one
+//      Paulinchen  2026-10-07: Logged the messages sent and received as one line about every minute
+//                            - Mirrored chat lines to the relay and handed an admin's lines to the game script as chat entries
+//                            - Logged entering, leaving, each connect, retries, seats coming and going, messages and dropped inbox entries
 //                            - Left why every thread catches everything to Threads
-//      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current, both shared with the world's other parts
-//                            - Told a world with as many players as it may, a starting save still on its way, too many tries and an entry from another game apart from a removal or a full world
-//                            - Kept one cipher for every connection to the world, so the others' frames seen before a break are refused after it
+//      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current
+//                            - Told full membership, a pending starting save, too many tries and a replacing entry apart from a removal
+//                            - Kept one cipher for every connection to the world
 //                            - Took the inbox's oldest entry only when it is the one the game script read, and forgot the world once it failed for good
-//                            - Kept the world opened last, whose token seals the offers of a trade
+//                            - Kept the world opened last
 //      Paulinchen  2026-09-29: Pinged the relay every few seconds and told the round trip as the ping
 //                            - Entered as the player the game script set, and stopped for good once the world was deleted or the player removed
 //                            - Created
@@ -459,7 +459,8 @@ internal sealed class WorldSession
     public TimeSpan SilenceTimeout { get; init; } = TimeSpan.FromSeconds(60);
 
     /// <summary>
-    /// How long reaching the relay may take, which also bounds how long after the cut a cut connect may still take a seat.
+    /// How long reaching the relay may take, which also bounds how long after the cut a cut connect
+    /// may still take a seat.
     /// </summary>
     public TimeSpan ConnectTimeout { get; init; } = TimeSpan.FromSeconds(6);
 
@@ -547,7 +548,8 @@ internal sealed class WorldSession
     }
 
     /// <summary>
-    /// Hands out the world entered, while the game is in it, even while its connection breaks and is taken again.
+    /// Hands out the world entered, while the game is in it, even while its connection breaks and is
+    /// taken again.
     /// </summary>
     /// <param name="id">The world's id, its room's.</param>
     /// <returns>The world's code, or <see langword="null"/> when the game is not in that world.</returns>
@@ -647,7 +649,8 @@ internal sealed class WorldSession
     }
 
     /// <summary>
-    /// Takes the oldest inbox entry, if it is still the one <see cref="PeekMessage"/> handed out, since a full inbox drops its oldest entry meanwhile.
+    /// Takes the oldest inbox entry, if it is still the one <see cref="PeekMessage"/> handed out, since a
+    /// full inbox drops its oldest entry meanwhile.
     /// </summary>
     /// <param name="entry">The entry <see cref="PeekMessage"/> handed out.</param>
     public void TakeMessage(string entry)
@@ -871,7 +874,7 @@ internal sealed class WorldSession
     }
 
     /// <summary>
-    /// Follows what the relay says about the seats, and takes a chat line it says for an admin.
+    /// Follows what the relay says about the seats, and hands its other texts to their handlers.
     /// </summary>
     /// <param name="generation">The open this belongs to.</param>
     /// <param name="connection">The connection.</param>
@@ -997,7 +1000,8 @@ internal sealed class WorldSession
     }
 
     /// <summary>
-    /// Hands the relay's word that a Raid World's boss pool changed to the game script and to the boss pools it reads.
+    /// Hands the relay's word that a Raid World's boss pool changed to the game script and to the boss
+    /// pools it reads.
     /// </summary>
     /// <param name="generation">The open this belongs to.</param>
     /// <param name="connection">The connection.</param>

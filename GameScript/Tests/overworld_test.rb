@@ -3,72 +3,72 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked that the players already in a world the player enters come without a notice
-#                            - Checked that the time the player entered their map is set anew once they left the world, loaded a save or started a new game, and kept across a reconnect
-#                            - Checked that nobody is told a state on the title screen or while a world's new game waits there
-#      Paulinchen  2026-10-11: Chose the map chat before sending its line, since the chat starts in the global chat
-#                            - Checked the status line's place in the layout: its default at the bottom left, a place the player left it in with its notices broken to its width, and its least width
-#                            - Left the chat log's resizing and its smaller room in a battle to ui_chat_test.rb, since the layout sizes the log
-#                            - Checked each of the action wheel's boxes in its frame, the picked one lit, and the wheel drawn anew after a preset change
-#                            -Checked the map chat, chosen with /m, its lines tagged and drawn in its color, the global chat untagged in white, and the Whisper tab hidden until a whisper
+#                            - Checked when the time the player entered their map is set anew
+#                            - Checked that nobody is told a state on the title screen
+#      Paulinchen  2026-10-11: Chose the map chat before sending its line
+#                            - Checked the status line's place and width in the layout
+#                            - Left the chat log's resizing to ui_chat_test.rb
+#                            - Checked the action wheel's boxes, the picked one lit and a redraw after a preset change
+#                            - Checked the map chat, its tags and colors, and the hidden Whisper tab
 #                            - Checked that a player outside the party is named in plain white
-#                            - Checked the line above the player's head half the screen wide and cut to it, the action wheel's hint under its boxes, and both fading in and out with their pictures kept
-#                            - Compared the chat log's text against the shared style's text color, and gave the log's font stand-in an outline color
-#                            - Checked the seconds left after a doing in the line above the player's head, a lapse that is no Time, a doing that fails, and that the log leaves the seconds out
+#                            - Checked the line above the player's head, the wheel's hint and their fading
+#                            - Compared the chat log's text with the style's text color and gave the font an outline color
+#                            - Checked the seconds left after a doing in the line above the player's head
 #                            - Checked the frames a party invite stands for still, and none once it stopped
-#                            - Checked that a ghost's name is in its player's color, green once they are a party member, and that a player typing shows the keyboard, not the event's bubble
-#                            - Read a label's colors by text, since the party's size follows the name, and checked that a ping past 999 ms shows as 999+ ms
-#      Paulinchen  2026-10-10: Checked that the relay's push of a Raid World's boss pool goes to its route with the share left, the max HP and whether it is defeated
-#                            - Expected the teleport to the party's leader on the wheel of a member who stands near them, in place of the invite
-#      Paulinchen  2026-10-09: Checked that the relay's push of a Raid World's boss pool goes to its route with the key and kills, marked as the relay's
-#                            - Checked that the relay's push of a Raid World's difficulty goes to its route with the value, marked as the relay's
-#                            - Checked that the relay's push of a world's rule on other mods goes to its route with the value and the mods, marked as the relay's
+#                            - Checked a ghost's name color and the keyboard of a player typing
+#                            - Read a label's colors by text and checked a ping past 999 ms
+#      Paulinchen  2026-10-10: Checked the share left, max HP and defeat in the relay's boss pool push
+#                            - Expected the teleport to the leader on the wheel of a member near them
+#      Paulinchen  2026-10-09: Checked that the relay's push of a Raid World's boss pool goes to its route
+#                            - Checked that the relay's push of a Raid World's difficulty goes to its route
+#                            - Checked that the relay's push of a world's rule on other mods goes to its route
 #                            - Checked that a stranger's ghost is solid in a Raid World and see-through in a Classic world
-#      Paulinchen  2026-10-08: Checked that a follower whose sprite this game lacks shows the outline of Luka's, how the outline is drawn, and that the graphics checked stay few
-#                            - Checked that the relay's push of a Raid World's story goes to its route, marked as the relay's
+#      Paulinchen  2026-10-08: Checked the outline for a follower sprite this game lacks and the graphics kept
+#                            - Checked that the relay's push of a Raid World's story goes to its route
 #                            - Checked which tabs a line marks unread and that the All tab takes them as seen
-#                            - Checked that a ghost's name tag numbers a name two players share as the chat does, and is drawn anew once one of them left
-#                            - Started the status's count of frames anew before checking a new connection's seat, which a status look in the same frame replaced depending on how many frames the checks before took
-#                            - Checked the global, say and party chats, the commands that choose them, the log's tabs, its size and its depth while typing
+#                            - Checked that a ghost's name tag numbers a name two players share
+#                            - Started the status's frame count anew before checking a new connection's seat
+#                            - Checked the global, say and party chats, their commands and the log's tabs
 #                            - Checked that the numpad's Insert closes the chat box with Num Lock off
 #                            - Checked the menu a click on a sender's name opens
-#                            - Checked whispers and their list of names, the help tab, the bubbles' chats and that what Alt types with the numpad is dropped
-#                            - Checked that a log made with the mouse button held and the box open draws without failing, and that a player's message cannot pose as an admin's line
-#                            - Checked that a menu's choice that leaves closes the chat box without failing, by click and by Enter, that a battle's menu offers only the whisper, and the menu's hint
-#                            - Checked the closed log's whispers, the separators a line loses, numbered names of players sharing one, and the say chat by the map its line was said on
+#                            - Checked whispers, the help tab, the bubbles' chats and dropped Alt numpad typing
+#                            - Checked a log drawn with the mouse held and that no player poses as an admin
+#                            - Checked the name menu's leaving choices, its battle choices and its hint
+#                            - Checked the closed log's whispers, separators, numbered names and the say chat's map
 #                            - Checked that a line of a player whose name another shares shows their numbered name
-#                            - Checked the 0 after Numpad 0 closed a menu, the typing kept once the menu's player left, a global line too fast for the relay, the size kept in a battle and a line broken after the name
-#      Paulinchen  2026-10-07: Checked the lines mirrored to the relay, the party chat kept from it, and an admin's line from the relay
+#                            - Checked Numpad 0 after a menu, global lines too fast and lines broken after the name
+#      Paulinchen  2026-10-07: Checked the lines mirrored to the relay and an admin's line from it
 #                            - Checked scrolling the chat log
 #                            - Checked that the numpad's 0 closes the chat box
 #                            - Checked the stand-in for a sprite this game lacks
 #                            - Checked the player's seat kept from the inbox and the status until the world closes
-#                            - Checked that the status line breaks a long notice into rows, its icon before the first
-#      Paulinchen  2026-10-06: Checked that a player who just joined counts for the leader only once admitted, and that a player on a new seat while the old one stands is moved there
-#                            - Checked that the chat box opens while a message shows, and stays shut while an event runs without one
-#                            - Checked that Discord hears of the world code, which its invites carry
+#                            - Checked that the status line breaks a long notice into rows
+#      Paulinchen  2026-10-06: Checked that a joiner counts once admitted and a player on a new seat is moved
+#                            - Checked that the chat box opens while a message shows
+#                            - Checked that Discord hears of the world code
 #                            - Checked that the wheel keeps its pick once the arrows are let go
-#                            - Found the wheel's choices by their place on the ring, and checked how the ring spreads and lays out its choices
-#                            - Steered the action wheel with the arrows held, and checked the middle while none or a diagonal is held
+#                            - Found the wheel's choices by their place on the ring and checked its layout
+#                            - Steered the action wheel with the arrows held
 #      Paulinchen  2026-10-05: Checked that an open chat box takes typing and closes while a message shows
 #      Paulinchen  2026-10-04: Checked that a label goes above the labels already on its tile
 #                            - Checked the party chat and the colors of the senders' names in the chat log
-#                            - Checked that the chat box opens while the player waits for the party's story and stays open once it plays
-#                            - Checked that the chat key does not type its own character into the box it opened
+#                            - Checked that the chat box opens while the player waits for the party's story
+#                            - Checked that the chat hotkey does not type its own character into the box it opened
 #                            - Read the cursor's blink frames from MGQ_MpUi::TextEdit
 #                            - Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that a member's party choice on the wheel teleports to the leader
-#                            - Checked the word wrap where it lives now, in MGQ_MpUi
+#                            - Checked the word wrap in MGQ_MpUi
 #                            - Followed the choices to the scripts that offer them
-#                            - Checked that a party counts only whom its leader admitted, and that a player whose connection dropped is kept for a while
-#                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
-#                            - Checked that an invite naming a player from afar stands longer, and that a decline ends it for them
+#                            - Checked that a party counts only whom its leader admitted and keeps a dropped player
+#                            - Read the hotkeys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
+#                            - Checked that a named invite stands longer and a decline ends it
 #      Paulinchen  2026-10-02: Checked what Discord hears of the open world
 #                            - Checked that the state marker tells states apart from the scripts' messages
 #                            - Checked that a full party turns away one player too many and cannot be joined
 #      Paulinchen  2026-10-01: Checked the chat in battles and the game's own lines in the chat log
 #                            - Checked the globe in the wheel's middle
 #                            - Checked the followers behind a party member's ghost
-#                            - Took the open world's stand-ins from world_support.rb, which the duel and overview tests share
+#                            - Took the open world's stand-ins from world_support.rb
 #                            - Checked the wheel's middle, invites naming a player, and the size and leader of a party
 #                            - Checked that only the party's leader invites and removes members
 #      Paulinchen  2026-09-30: Created
@@ -79,17 +79,21 @@
 # coop.rbx and coop_squad.rbx play it together: states, other players, their ghosts and their
 # followers, the action wheel and parties, chat, pings, and the gate of the party's messages.
 
-# The save calls overworld_sync.rbx follows.
+# Stands in for the game's save loading and new game, which overworld_sync.rbx hooks as it loads.
 module DataManager; def self.load_game_without_rescue(index); true; end; def self.setup_new_game; end; end
 
 require_relative "world_support"
 
-# The game's sprites, of which this game lacks one, and its data files, Luka's sprite in its actors.
+# Stands in for the game's sprites, of which this game lacks "$missing".
 module Cache
   def self.character(name)
     raise Errno::ENOENT, "Graphics/Characters/#{name}" if name == "$missing"
   end
 end
+# Stands in for RGSS's load_data, with Luka's sprite in the actors.
+#
+# @param path [String] The data file.
+# @return [Object] Its data.
 def load_data(path)
   path == "Data/Actors.rvdata2" ? [nil, Struct.new(:character_name, :character_index).new("Luka", 0)] : Object.new
 end
@@ -175,6 +179,7 @@ check("and the tag is drawn anew with the plain name once the other left", writt
 colors = []
 icons_drawn = []
 color_of = lambda { |text| colors.reverse.find { |drawn, _| drawn == text }[1] }
+# The game's system graphics, every one the iconset.
 module Cache; def self.system(_name); :iconset; end; end
 canvas.define_singleton_method(:draw_text) { |*args| written << args[4]; colors << [args[4], font.color] }
 canvas.define_singleton_method(:stretch_blt) { |_dest, _set, rect, *_| icons_drawn << rect.y / MGQ_MpUi::ICON_SIZE * MGQ_MpUi::ICONS_PER_ROW + rect.x / MGQ_MpUi::ICON_SIZE }
@@ -200,6 +205,8 @@ check("at most MOST_GRAPHICS_KEPT graphics are kept, one in use stays", [graphic
       [MGQ_MpOverworld::MOST_GRAPHICS_KEPT, true, false])
 
 # The outline marks the visible pixels of a frame that border a transparent one or the frame's edge.
+
+# A pixel, of which the outline reads only the alpha.
 Pixel = Struct.new(:alpha)
 sheet = Object.new
 sheet.define_singleton_method(:get_pixel) { |x, y| Pixel.new((1..4).include?(x) && (1..3).include?(y) ? 255 : 0) }
@@ -261,7 +268,9 @@ check("walking", MGQ_MpOverworldSync::Me.scene, "map")
 check("every state but walking has an icon", (%w[battle event menu items equip shop casino library sailing flying away] - MGQ_MpOverworld::STATE_ICONS.keys), [])
 
 # The party, through the action wheel.
-# Opens the action wheel, presses buttons in it and lets a frame pass.
+
+# Opens the action wheel, holds the arrows and presses the buttons given for a frame, and lets the
+# world tick.
 #
 # @param buttons [Array<Symbol>] The buttons, such as :DOWN and :C.
 def wheel(*buttons)
@@ -279,7 +288,7 @@ end
 # @param direction [Symbol] Where the choice sits, such as :UP.
 # @return [Array] Its text and whether it can be taken.
 def option(direction); o = MGQ_MpActions.wheel_options[direction]; [o.text, !o.run.nil?]; end
-# The arrows held to point at a direction.
+# Finds the arrows held to point at a direction.
 #
 # @param direction [Symbol] One of MGQ_MpWheel::DIRECTIONS.
 # @return [Array<Symbol>] The arrows.
@@ -363,13 +372,17 @@ check("a doing without a time, with nil or with a frame count by mistake stays t
 check("a lapse in frames lies as many seconds ahead", (MGQ_MpActions.lapse_in(600) - Time.now - 10).abs < 1, true)
 
 # The line above the player's own head: half the screen wide, cut to that, in the style's own
-# color, fading in and out with its picture kept. Pictures measure each character at 9 pixels.
+# color, fading in and out with its picture kept.
+
+# A sprite with the place, picture and visibility the scripts set.
 class Sprite
   attr_accessor :bitmap, :x, :y, :z, :ox, :oy, :opacity, :visible
   def disposed?; false; end
   def dispose; end
 end
+# Stands in for RGSS bitmaps, which measure each character at 9 pixels and note the texts drawn.
 class Bitmap
+  # A bitmap's font.
   Font = Struct.new(:size, :color, :bold, :outline, :out_color)
   attr_reader :texts, :width, :height, :font
   def initialize(width = 1, height = 1); @width, @height = width, height; @texts = []; @font = Font.new; end
@@ -697,11 +710,13 @@ check("also from the map's update while the message stops the map's own", chat.t
 chat.stop_typing
 $scene_change_ok = true
 $game_message.busy = false
+# An event interpreter whose running is set from outside.
 class Interpreter; attr_writer :running; def running?; @running ? true : false; end; end
 $game_map.interpreter.running = true
 $pressed = 0x54
 map_frame
 check("an event without a message keeps the chat box shut", chat.typing?, false)
+# Stands in for coop_gather.rbx, waiting for the party's story while $party_waiting is set.
 module MGQ_MpCoopGather; def self.waiting?; $party_waiting; end; end
 $party_waiting = true
 $pressed = 0x54
@@ -730,12 +745,14 @@ check("without a message the map's own update types, not the map", chat.typed, "
 chat.stop_typing
 $game_message.busy = false
 
+# A bitmap that measures each character at 10 pixels.
 class FakeBitmap; def text_size(text); Struct.new(:width).new(text.size * 10); end; end
 check("wrapping at spaces", MGQ_MpUi.wrap(FakeBitmap.new, "aaa bbb ccc", 70), ["aaa bbb", "ccc"])
 check("wrapping a long word", MGQ_MpUi.wrap(FakeBitmap.new, "abcdefghij", 40), ["abcd", "efgh", "ij"])
 
 # Pings.
 ping = MGQ_MpOverworldSync::Ping
+
 # Has the world connection report a ping, and lets the frames pass until the game looks at it.
 #
 # @param value [String, nil] The milliseconds, nil for no connection.
@@ -761,6 +778,8 @@ status_ping(nil)
 check("no connection, no ping shown", ping.measured, nil)
 
 # Scripts' messages that name a map are not states.
+
+# Stands in for the shared story's events, noting each message taken in $taken_events.
 module MGQ_MpCoopEvents; def self.take(peer, message); ($taken_events ||= []) << [peer && peer.seat, message["pevent"], message["map"]]; end; end
 MGQ_MpOverworldSync.route("pevent") { |peer, message| MGQ_MpCoopEvents.take(peer, message) }
 before = MGQ_MpOverworldSync::Peers.at(2).state.dup
@@ -776,6 +795,7 @@ MGQ_MpOverworldSync.tick
 check("a script's message with a map goes to its script", $taken_events, [[2, "travel", "77"]])
 check("and leaves the sender's state alone", MGQ_MpOverworldSync::Peers.at(2).state, before)
 
+# Stands in for the battle sync, noting each message taken in $taken_battle.
 module MGQ_MpBattlesSync; def self.take(peer, message); ($taken_battle ||= []) << [message["battle"], message[:payload]]; end; end
 MGQ_MpOverworldSync.route("battle") { |peer, message| MGQ_MpBattlesSync.take(peer, message) }
 $inbox << entry("message", 2, "battle=join
@@ -928,6 +948,8 @@ map_frame
 check("as does its Insert with Num Lock off", chat.typing?, false)
 
 # Scrolling the chat log while the box is open.
+
+# A sprite whose update does nothing.
 class Sprite; def update; end; end
 fills = []
 canvas.define_singleton_method(:clear) { parts.clear }
@@ -1415,6 +1437,8 @@ check("and of none once it closed", MGQ_MpOverworldSync.status_fields, {})
 $open = true
 
 # A ghost's label goes above the labels already on its tile.
+
+# A character's sprite, as a label reads it.
 CharacterSprite = Struct.new(:x, :y, :height, :visible, :opacity)
 stacked = Sprite_MpGhostLabel.allocate
 class << stacked; attr_accessor :x, :y, :visible; end
@@ -1436,8 +1460,10 @@ check("a long notice takes as many rows as it needs, each fitting the line", [ro
 check("a notice's icon stands before its first row only", rows.map { |_, icon, _| icon }, [4, nil, nil, nil])
 check("the line keeps its newest rows", [status.rows_of([[long, nil], [long, nil]]).size, status.rows_of([[long, nil], [long, nil]]).last[0]], [4, "what you play together."])
 
-# The status line's place in the layout: its default at the bottom left, a place the player left it
-# in with its notices broken to its width, and its least width; its four rows always.
+# The status line's place in the layout: its default, a place the player left it in and its least
+# width.
+
+# A bitmap that is never disposed.
 class Bitmap; def disposed?; false; end; end
 # The chat's checks hand out their canvas for every new picture; the line gets pictures of its own.
 handed_out = Bitmap.method(:new)

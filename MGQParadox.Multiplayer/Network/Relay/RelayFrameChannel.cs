@@ -3,11 +3,11 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Named the version of this game in the X-MGQ-Version header
-//                            - Told the relay turning the game away as too old apart from a relay out of reach, with the text the relay names
+//                            - Told a relay turning the game away as too old apart from one out of reach
 //      Paulinchen  2026-10-07: Closed the WebSocket through the shared helper
 //      Paulinchen  2026-10-06: Told when the relay ended a host's lone wait
 //                            - Took the failures of the reads a timeout leaves behind
-//      Paulinchen  2026-09-29: Read whole messages through WebSocketMessages, which the world channel shares
+//      Paulinchen  2026-09-29: Read whole messages through WebSocketMessages
 //                            - Measured messages against the frame channel's longest frame
 //                            - Created
 //

@@ -2,8 +2,9 @@
 //  ModParkingTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Covered links to another volume, read-only and changed parked files, conflicts after a recover and an unreadable journal
-//                            - Covered read-only scripts through a park and a restore and the answer of a failed description
+//      Paulinchen  2026-10-13: Used a placeholder hero key
+//      Paulinchen  2026-10-10: Covered other volumes, changed parked files, recover conflicts and unreadable journals
+//                            - Covered read-only scripts and failed descriptions
 //      Paulinchen  2026-10-09: Created
 //
 //----------------------------------------------------------------
@@ -57,7 +58,7 @@ public sealed class ModParkingTests : IDisposable
     {
         var invasions = WriteMod("Patch/Invasions.rb", "# Invasions\r\n");
         WriteMod("Patch/Extra/Other.rb", "# Other\n");
-        WriteMod("Patch/Luka_Replacer/Cache/hero.txt", "Kazuya");
+        WriteMod("Patch/Luka_Replacer/Cache/hero.txt", "sample_hero");
         using var parking = Parking();
 
         Assert.Equal(2, parking.Park(["Patch/Invasions.rb", "Patch\\Extra\\Other.rb"], World));

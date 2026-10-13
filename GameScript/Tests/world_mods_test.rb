@@ -2,31 +2,24 @@
 #  world_mods_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Followed the settings to their own group of the Mod Config, and checked that the dump leaves the hotkeys' group out too
-#                            - Stood in for Ini.load, which a world's folder reads world.ini through, and for the favourites and hidden worlds in Player.ini
-#      Paulinchen  2026-10-11: Stood in for the game's frame, whose update the shared boxes follow the layout after
-#      Paulinchen  2026-10-09: Loaded world_mods_parking.rbx, which the world screen calls, its DLL's stand-in finding no parked mods at the start
-#      Paulinchen  2026-10-08: Covered the marker and settings from before it, the row of Shared Mod Settings for the creator and another player, the creator's
-#                              options sent only on a change and keeping those their game does not know, turning sharing off and on, live changes and
-#                              their notices, values a copy does not offer, and the options dump
-#                            - Covered the settings the relay took last over an older list, a seat checked anew after its player left, settings that
-#                              cannot be sent or get no answer, notices within three lines, the stay named anew right after a load, the details'
-#                              mods, the edit form's texts and an options dump into a folder outside ASCII
-#                            - Removed the checks of the creator's button, which is gone
-#                            - Covered settings applied only for options a world may set, the restart under Wine, settings someone else set on the relay,
-#                              the creator's changes joined to them, the directory's one answer for the world screen and the settings, a Mod Config
-#                              without entries, a refused entry leaving no settings behind and the edit form after the settings the relay took last
-#                            - Let the DLL's stand-in hold a started action as busy and forget it once cleared
-#      Paulinchen  2026-10-07: Covered the options sent from a copy of an older or of no known version while the relay lacks the current version's
-#                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
-#      Paulinchen  2026-10-06: Expected the summary to name mods that are missing or in another version
-#                            - Told whether a small window of the world screen takes input, which an entry after a restart waits for
-#                            - Covered the catalog kept while the list loads, links the relay could not read yet, options with :values,
-#                              the 2000 characters of the settings, long names among the creator's hashes and options sent once a session
+#      Paulinchen  2026-10-12: Followed the settings to their own Mod Config group and checked the dump leaves the hotkeys out
+#                            - Stood in for Ini.load and the favourites and hidden worlds in Player.ini
+#      Paulinchen  2026-10-11: Stood in for the game's frame
+#      Paulinchen  2026-10-09: Loaded world_mods_parking.rbx
+#      Paulinchen  2026-10-08: Covered the marker, the Shared Mod Settings row, the creator's options and the options dump
+#                            - Covered the settings the relay took last, the notices and the edit form's texts
+#                            - Removed the checks of the creator's button
+#                            - Covered settings applied only for options a world may set and the restart under Wine
+#                            - Let the DLL stand-in hold a started action as busy
+#      Paulinchen  2026-10-07: Covered the options sent from a copy of an older or unknown version
+#                            - Looked DLL signatures up in the export table of Multiplayer.rb
+#      Paulinchen  2026-10-06: Expected the summary to name missing mods and mods in another version
+#                            - Told whether a small window of the world screen takes input
+#                            - Covered the catalog while the list loads, options with :values and the settings' length limit
 #                            - Refused a DLL call whose arguments differ from its signature
-#                            - Covered the Mod Config options an admin's game sends for the catalog
-#                            - Covered the creator's button in Mod Config and the creator's unlocked options
-#                            - Covered a load_game that a translation plugin replaced
+#                            - Covered the Mod Config options an admin's game sends
+#                            - Covered the creator's button in Mod Config and the unlocked options
+#                            - Covered a load_game a translation plugin replaced
 #                            - Covered a link to a zip of a release
 #                            - Created
 #
@@ -43,43 +36,77 @@ require "tmpdir"
 require_relative "support"
 
 # Stand-ins for the game.
+
+# The game's scene base: returning to the last scene sets $returned.
 class Scene_Base; def return_scene; $returned = true; end; def update; end; end
+# The game's base of menu scenes.
 class Scene_MenuBase < Scene_Base; end
+# The game's load screen.
 class Scene_Load < Scene_Base; end
+# The game's window base, which draws nothing.
 class Window_Base; def initialize(*); end; end
+# The game's window with a cursor.
 class Window_Selectable < Window_Base; end
+# The game's command window.
 class Window_Command < Window_Selectable; end
+# The game's name box of its text screen.
 class Window_NameEdit < Window_Base; end
+# The game's letter table of its text screen.
 class Window_NameInput < Window_Selectable; end
+# The game's color, which keeps nothing.
 class Color; def initialize(*); end; end
+# The game's sprite, which draws nothing.
 class Sprite; def initialize(*); end; end
+# The game's screen, whose frames pass at once.
 module Graphics; def self.update; end; end
+# The game's rectangle.
 Rect = Struct.new(:x, :y, :width, :height)
+# The game's title screen, which does nothing.
 class Scene_Title; def start; end; def create_command_window; end; def update; end; def terminate; end; def scene_changing?; false; end; end
+# The title screen's commands, which list nothing.
 class Window_TitleCommand; def make_command_list; end; end
+# The game's system sounds: each one played is added to $sounds.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
+# The game's input: the buttons in $buttons are pressed this frame.
 module Input; def self.trigger?(button); ($buttons || []).include?(button); end; end
+# The game's scene manager: records the scene called and the exit, and hands out $scene or a scene
+# that takes any preparation.
 module SceneManager
+  # Records the scene called in $called.
   def self.call(scene); $called = scene; end
+  # Records the game's exit in $exited.
   def self.exit; $exited = true; end
+  # The scene in $scene, or one that takes any preparation.
   def self.scene; $scene || Object.new.tap { |scene| def scene.prepare(*); end }; end
 end
+# The game's Mod Config screen.
 class Scene_Config; end
+# The game's data manager: a load sets $loaded and a new game $new_game.
 module DataManager
+  # Saves nothing.
   def self.save_system; end
+  # Loads a save as the game does, a failure answered with false.
   def self.load_game(index); load_game_without_rescue(index) rescue false; end
+  # Records the load in $loaded.
   def self.load_game_without_rescue(_index); $loaded = true; end
+  # Records the new game in $new_game.
   def self.setup_new_game; $new_game = true; end
 end
+# The game's system data, as far as Mod Config's values.
 GameSystem = Struct.new(:conf)
 $game_system = GameSystem.new({})
 
 # The options mods offer in Mod Config Remake, and its lock.
 module NWConst
+  # Mod Config's options.
   module Config
+    # The options' defaults.
     DEFAULT = { :mod_level_cap => 1, :mod_level_cap_limits => 1 }
+    # The values each option offers.
     DATA = { :mod_level_cap => [1, 0] }
+    # The names of the options' values.
     DATA_TEXT = { :mod_level_cap => { 1 => { :name => "On" }, 0 => { :name => "Off" } } }
+    # The rows mods add: shared, personal, hotkey, global and Return rows, and options with :values.
     MOD_CONTENTS = [
       { :key => :mod_level_cap, :name => "[Level Cap] Level Cap", :sub => true },
       { :key => :mod_level_cap_limits, :name => "     -> Job and Race Limits", :sub => true },
@@ -96,7 +123,9 @@ module NWConst
     ]
   end
 end
+# Mod Config Remake's lock: the options a world sets.
 module ModConfigRemake
+  # The keys of the options a world sets, which the player cannot change.
   class << self; attr_accessor :world_keys; end
 end
 
@@ -104,20 +133,32 @@ end
 # notification box, which keeps its messages in the order posted.
 $told = []
 $notices = []
+# The world room: keeps the routes and state fields, records sends in $told.
 module MGQ_MpOverworldSync
   @routes = {}
   @fields = []
+  # The handlers by field, the state fields' blocks and the handler of a player leaving.
   class << self; attr_reader :routes, :fields, :leave; end
+  # Keeps a field's handler.
   def self.route(field, &handler); @routes[field] = handler; end
+  # Takes no observer.
   def self.on_observe(&_block); end
+  # Keeps the handler of a player leaving.
   def self.on_leave(&block); @leave = block; end
+  # Keeps a block of state fields.
   def self.state_fields(&block); @fields << block; end
+  # Records a send in $told, failing while $tell_fails.
   def self.tell(seat, fields, body = ""); $told << [seat, fields, body] unless $tell_fails; !$tell_fails; end
+  # Names a player for the log.
   def self.who(peer); peer ? peer.state["name"] : "nobody"; end
+  # Another player: their seat and their state.
   module Peers; Peer = Struct.new(:seat, :state); end
 end
+# The notification box: keeps its notices in $notices.
 module MGQ_MpNotices
+  # Posts a notice under its key, in place of the key's earlier one.
   def self.message(key, text, _frames = 180); drop(key); $notices << [key, text]; end
+  # Takes a key's notice down.
   def self.drop(key, _reason = ""); $notices.reject! { |known, _| known == key }; end
 end
 
@@ -148,23 +189,45 @@ $dll = {}
 $file_hashes = {}
 $restart = 1
 $ini = {}
+# The mod's base script: always available, never outdated, with a player named Me whose Player.ini
+# lives in $ini.
 module MGQ_Multiplayer
+  # The message of an update.
   UPDATE_MESSAGE = "Update."
+  # The DLL is always there.
   def self.available?; true; end
+  # The game is never outdated.
   def self.outdated?; false; end
+  # Leaves a text as it is.
   def self.clean(text); text; end
+  # Leaves a path as it is.
   def self.path(name); name; end
+  # The mod's log, kept in $log.
   module Log; def self.write(message); ($log ||= []) << message; end; end
+  # The player Me, whose settings live in $ini.
   module Player
+    # Shares nothing.
     def self.share; end
+    # The player's name.
     def self.name; "Me"; end
+    # A setting of Player.ini.
     def self.setting(key); $ini[key]; end
+    # Stores a setting in Player.ini.
     def self.store(key, value); $ini[key] = value.to_s; end
+    # No setting lies under any prefix.
     def self.keys_under(_prefix); []; end
   end
+  # An ini file reader that reads every file as empty.
   module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; end
+  # The link to the DLL: records each call in $calls and reads its values from $dll.
   module Link
+    # A DLL function: a call is checked against its signature, recorded and answered as the DLL would.
     Function = Struct.new(:name, :signature) do
+      # Calls the function: mp_mod_hash writes a file's hash from $file_hashes, mp_restart_game answers
+      # $restart, and the functions in $refused answer 0.
+      #
+      # @param args [Array] The call's arguments.
+      # @return [Integer] The DLL's answer.
       def call(*args)
         check_dll_call(name, args)
         $calls << [name, signature, args]
@@ -188,10 +251,18 @@ module MGQ_Multiplayer
         end
       end
     end
+    # A DLL function with its signature from the export table of Multiplayer.rb.
     def self.function(name); Function.new(name, dll_signature(name)); end
+    # The DLL's value of a name, from $dll.
     def self.read(name, _size); $dll[name].to_s; end
+    # Opens no world.
     def self.open(_code); end
+    # Closes nothing.
     def self.close; end
+    # Reads a DLL answer: its name=value lines up to a blank line, and the rest as :payload.
+    #
+    # @param text [String] The answer.
+    # @return [Hash] The values by name, and the payload under :payload.
     def self.parse(text)
       head, payload = text.split("\n\n", 2)
       state = { :payload => payload.to_s }
@@ -213,19 +284,29 @@ load_script "world_screen"
 
 # A small window of the world screen: keeps the commands it opened with.
 class FakeChoice
+  # The commands it opened with last, nil while closed.
   attr_reader :choices
+  # Opens with commands.
   def start(choices); @choices = choices; end
+  # Closes.
   def finish; @choices = nil; end
+  # Takes input.
   def activate; end
+  # Takes no input.
   def deactivate; end
+  # Takes the cursor off.
   def unselect; end
+  # Whether it is open and takes input.
   def active; !@choices.nil?; end
+  # The cursor's row, -1 for none.
   def index; -1; end
 end
 
 # The lines at the top of the world screen: keeps what they show.
 class FakeInfo
+  # What they show.
   attr_reader :lines
+  # Shows lines.
   def show(lines); @lines = lines; end
 end
 
@@ -432,10 +513,13 @@ check("the edit form shares a world's settings as they are, the marker first", [
 # Another player's game in a world that shares its creator's settings.
 module MGQ_MpWorld; def self.open?; $world_open; end; end
 row_key = MGQ_MpWorldMods::SHARED_OPTION
+# The row of Shared Mod Settings in Mod Config.
 row = lambda { NWConst::Config::MOD_CONTENTS.find { |entry| entry[:key] == row_key } }
 creator = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "creator", "name" => "Creator" })
 stranger = MGQ_MpOverworldSync::Peers::Peer.new(3, { "id" => "p3", "name" => "Stranger" })
+# Hands the player the settings another player tells live.
 live = lambda { |peer, text| MGQ_MpOverworldSync.routes["world_mods"].call(peer, { "world_mods" => mods.crc_of(text), :payload => text }) }
+# A listed world with Level Cap and Party Sheet, of a creator and with mod settings.
 world = lambda { |creator_id, settings| MGQ_MpWorld::Directory::ListedWorld.new("w1", 4, 0, creator_id, 0, "Creator", "Modded", "none", [], false, false, true, false, false, "", "!Level Cap; Party Sheet", "", "", settings) }
 check("the details name the mods whose options a world shares as this game knows them, and say when it shares none yet",
       [mods.details_text(world.call("creator", "@shared=o:1;mod_party_sheet_theme=y:dark;mod_missing=i:1"), "me"), mods.details_text(world.call("me", "@shared=o:1"), "me"),
@@ -535,6 +619,7 @@ $game_system.conf = { :mod_level_cap => 0 }
 $notices.clear
 $calls.clear
 DataManager.load_game(1)
+# The settings sent to the relay.
 sent = lambda { $calls.select { |call| call[0] == "mp_dir_set_settings" }.map { |call| call[2][1].chomp("\0") } }
 check("loading in their own world tells the creator whose options they share, naming only mods with options to share", shown, "You share your options of Level Cap with every player here.")
 check("and makes their options the world's, keeping in them those their game does not know, unlocked for them",
@@ -674,7 +759,9 @@ $dll["mp_dir_action"] = ""
 # Settings someone else, such as an admin, gave the world on the relay.
 $world_open = true
 $scene = nil
+# Has the directory list the player's world with these settings.
 listing = lambda { |settings| $dll["mp_dir_list"] = "state=ready\n\nworld\tw1\t4\t1\tme\t0\tMe\tModded\tnone\t0\t0\t1\t0\t0\t\t!Level Cap; Party Sheet\t\t\t#{settings}\n" }
+# Lets the time between two checks of the world's settings pass.
 let_time_pass = lambda { (MGQ_MpWorldMods::CHECK_FRAMES + 1).times { mods.tick } }
 listing.call("@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:1")
 mods.enter_world(world.call("me", "@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:1"), "me")

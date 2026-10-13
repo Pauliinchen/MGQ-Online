@@ -2,33 +2,29 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that the title screen's Multiplayer command gets its handler
+#      Paulinchen  2026-10-12: Checked the title screen's Multiplayer command handler
 #                            - Checked when the worlds take the mouse wheel
-#                            - Checked the favourites kept in Player.ini, a world staying as it was while Player.ini cannot be read, and a
-#                              world.ini that cannot be read left as it is
-#      Paulinchen  2026-10-11: Checked the cursor moving onto the world just created or added once the list shows it, Enter sending the hidden world's id,
-#                              a form with two text boxes kept from sending, and the details' Password row saying Known once this PC holds the world code
-#      Paulinchen  2026-10-10: Checked where a Raid World with a shared save starts in the details, by build, and a save's label drawn at its field's width
-#                            - Checked that a Raid World the directory no longer lists comes after the listed worlds
-#      Paulinchen  2026-10-09: Expected Sharing companions left out of a Classic world's form instead of greyed out, the call of mp_dir_create with
-#                              Turn off other mods, and loaded world_mods_parking.rbx, which the world screen calls
-#                            - Expected the longer call of mp_dir_create, which takes a Raid World's difficulty
-#                            - Checked a Raid World's difficulty in the list, the details and world.ini, and what the open world tells of it
-#      Paulinchen  2026-10-08: Checked Raid Worlds: their type and companion sharing in the list, details and world.ini, their place and red, raid? and companion_sharing, the form's switches and their arrows
-#                            - Checked the update offer in place of the update notice, and the world screen opening after the update
+#                            - Checked the favourites in Player.ini and unreadable Player.ini and world.ini files
+#      Paulinchen  2026-10-11: Checked the cursor on a new world, the hidden world's id, a blocked form and the Password row
+#      Paulinchen  2026-10-10: Checked where a Raid World with a shared save starts and a save's label width
+#                            - Checked that unlisted Raid Worlds come after the listed worlds
+#      Paulinchen  2026-10-09: Expected Sharing companions left out of a Classic world's form and loaded world_mods_parking.rbx
+#                            - Expected the longer call of mp_dir_create
+#                            - Checked a Raid World's difficulty in the list, the details and world.ini
+#      Paulinchen  2026-10-08: Checked Raid Worlds in the list, the details, world.ini and the form
+#                            - Checked the update offer in place of the update notice
 #                            - Checked that the update offer keeps the game open under Wine
-#                            - Checked that an outdated game offers the update for a Discord invite and for the entry after a restart for mods
-#      Paulinchen  2026-10-07: Checked that the worlds on this PC and the favourites are read once until one changes
-#                            - Looked each DLL call's signature up in the export table of Multiplayer.rb
-#                            - Checked that a form's switch turns round between its outcomes
-#      Paulinchen  2026-10-06: Checked a world's password typed in place, an invite's failed code giving way to the password,
-#                              a full world kept shut to players with saves of it, and an invite waiting for an open window
+#                            - Checked the update offer of an outdated game for invites and restarts
+#      Paulinchen  2026-10-07: Checked that the local worlds and favourites are read once until one changes
+#                            - Looked DLL signatures up in the export table of Multiplayer.rb
+#                            - Checked that a form's switch turns round
+#      Paulinchen  2026-10-06: Checked typed passwords, failed invite codes, full worlds and waiting invites
 #                            - Refused a DLL call whose arguments differ from its signature
-#                            - Checked a Discord invite into a world, which opens the world screen and enters the world without its password
-#                            - Checked that backing out of a world's new game, which asks something first, leaves the world
-#                            - Loaded world_mods.rbx, which the world screen calls
-#      Paulinchen  2026-10-04: Checked that an outdated game enters no world and is told so in a message box until the player closes it
-#                            - Followed the scripts to their new names, without mp_
+#                            - Checked a Discord invite into a world
+#                            - Checked backing out of a world's new game
+#                            - Loaded world_mods.rbx
+#      Paulinchen  2026-10-04: Checked that an outdated game enters no world and is told so
+#                            - Followed the scripts to their new names
 #                            - Read the details from their panels
 #                            - Expected a hidden world's id alone in the form that adds it
 #      Paulinchen  2026-10-03: Loaded the scripts split off the ones under test, and ui.rbx
@@ -37,34 +33,53 @@
 #
 #----------------------------------------------------------------
 
-# Checks worlds without a password, featured worlds and Raid Worlds (world.rbx): the forms taking an
-# empty password, the directory's flags for them, entering a world without a password without being
-# asked, the featured worlds' and Raid Worlds' place and colour in the list, what the details say,
-# what world.ini keeps of a Raid World and what the scripts ask of it, the form's switches, an
-# outdated game kept out and offered the update, and the world screen opening after it.
+# Checks finding and entering worlds (world.rbx, world_screen.rbx): worlds without a password,
+# featured worlds and Raid Worlds in the list, the details and world.ini, the worlds and favourites
+# kept on this PC, the forms and their switches, the cursor on a world just made or added, Discord
+# invites, a world's new game, and an outdated game kept out and offered the update.
 
 require_relative "support"
 require "tmpdir"
 
-# Stand-ins for the game.
+# Stands in for the game's scenes: returning notes $returned.
 class Scene_Base; def return_scene; $returned = true; end; end
+# Stands in for the game's menu scenes.
 class Scene_MenuBase < Scene_Base; end
+# Stands in for the load screen.
 class Scene_Load < Scene_Base; end
+# Stands in for the game's windows, which draw nothing.
 class Window_Base; def initialize(*); end; end
+# Stands in for a window with a cursor.
 class Window_Selectable < Window_Base; end
+# Stands in for a window of commands.
 class Window_Command < Window_Selectable; end
+# Stands in for the game's name box.
 class Window_NameEdit < Window_Base; end
+# Stands in for the game's letters to pick a name from.
 class Window_NameInput < Window_Selectable; end
+# Stands in for a colour.
 class Color; def initialize(*); end; end
+# Stands in for a sprite, which draws nothing.
 class Sprite; def initialize(*); end; end
+# A rectangle.
 Rect = Struct.new(:x, :y, :width, :height)
+# Stands in for the title screen, whose steps do nothing.
 class Scene_Title; def start; end; def create_command_window; end; def close_command_window; end; def update; end; def terminate; end; end
+# Stands in for the title's commands, which list none.
 class Window_TitleCommand; def make_command_list; end; end
+# Stands in for the sounds: each one played goes into $sounds.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
+
+# Stands in for the scene manager.
 module SceneManager
+  # Records the scene called in $called.
   def self.call(scene); $called = scene; end
+
+  # Gives a scene that takes any preparation.
   def self.scene; Object.new.tap { |scene| def scene.prepare(*); end }; end
 end
+
+# Stands in for saving the system data, which saves nothing.
 module DataManager; def self.save_system; end; end
 
 # Stand-ins for the mod's base script and its DLL.
@@ -72,20 +87,52 @@ $sounds = []
 $calls = []
 $dll = {}
 $outdated = false
+
+# Stands in for the mod's base script: available, and outdated while $outdated.
 module MGQ_Multiplayer
+  # What an outdated game is told.
   UPDATE_MESSAGE = "Update."
+
+  # Answers that the mod is available.
   def self.available?; true; end
+
+  # Answers whether the game is outdated, from $outdated.
   def self.outdated?; $outdated; end
+
+  # Gives the newer version while the game is outdated.
   def self.newer_version; $outdated ? "9.9.9" : nil; end
+
+  # Gives the text as it is.
   def self.clean(text); text; end
+
+  # Gives the path as it is.
   def self.path(name); name; end
+
+  # Stands in for the log, which writes nothing.
   module Log; def self.write(_message); end; end
+
+  # Stands in for Player.ini: its settings are in $player_ini, and it cannot be read while
+  # $player_ini_unreadable.
   module Player
+    # Shares nothing.
     def self.share; end
+
+    # The player's name, Me.
     def self.name; "Me"; end
+
+    # Reads a setting.
     def self.setting(key); ($player_ini ||= {})[key]; end
+
+    # Lists the keys under a prefix, without it.
     def self.keys_under(prefix); ($player_ini ||= {}).keys.select { |key| key.start_with?(prefix) }.map { |key| key[prefix.size..-1] }; end
+
+    # Answers whether Player.ini can be read.
     def self.readable?; !$player_ini_unreadable; end
+
+    # Changes settings, unless Player.ini cannot be read.
+    #
+    # @param changes [Hash{String => String, nil}] The values by key, nil removing a key.
+    # @return [Boolean] Whether they were changed.
     def self.change(changes)
       return false if $player_ini_unreadable
 
@@ -93,19 +140,45 @@ module MGQ_Multiplayer
       true
     end
   end
+
+  # Stands in for the ini files, which read empty.
   module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; end
+
+  # Stands in for holding the buttons: the owner holding them is in $capture, the button pressed in
+  # $pressed.
   module Capture
+    # Holds the buttons for an owner.
     def self.start(owner); $capture = owner; end
+
+    # Gives the buttons back if the owner holds them.
     def self.stop(owner); $capture = nil if $capture == owner; end
+
+    # Answers whether a button is pressed, from $pressed.
     def self.trigger?(button); $pressed == button; end
   end
+
+  # Stands in for the mouse, never clicked.
   module Mouse; def self.clicked?; false; end; end
+
+  # Stands in for the DLL: each call is checked against its signature and noted in $calls, and what
+  # it reads is in $dll.
   module Link
+    # A function of the DLL with its signature.
     Function = Struct.new(:name, :signature) do
+      # Checks the call against the signature, notes it in $calls and answers 1, started.
       def call(*args); check_dll_call(name, args); $calls << [name, signature, args]; 1; end
     end
+
+    # Gives the DLL function of a name, with its signature from Multiplayer.rb.
     def self.function(name); Function.new(name, dll_signature(name)); end
+
+    # Reads an export's text from $dll.
     def self.read(name, _size); $dll[name].to_s; end
+
+    # Splits a DLL answer into its header fields and its payload.
+    #
+    # @param text [String] The answer.
+    # @return [Hash] The fields by name, the payload under :payload.
     def self.parse(text)
       head, payload = text.split("\n\n", 2)
       state = { :payload => payload.to_s }
@@ -157,9 +230,9 @@ class FakeChoice
   def select_world(id); @asked = id; end
 end
 
-# The lines at the top of the world screen: keeps what they show.
+# The lines at the top of the world screen, which show nothing.
 class FakeInfo
-  # Shows lines.
+  # Shows nothing.
   #
   # @param _lines [Array<String, nil>] The lines.
   def show(_lines); end
@@ -257,13 +330,23 @@ check("while the screen waits for it", scene.instance_variable_get(:@busy), "unl
 
 # What typing in place needs.
 module MGQ_Multiplayer
+  # Stands in for the DLL's hook of the game's window, which passes on what the player types.
   module Background; def self.running?; true; end; end
+
+  # Stands in for the keyboard, with no key pressed.
   module Key; def self.pressed?(_code); false; end; def self.triggered?(code); pressed?(code); end; end
+
+  # Stands in for typing through the DLL: whether it types is in $typing, the text typed in $typed.
   module Link
+    # Turns typing on or off.
     def self.typing(on); $typing = on; end
+
+    # Takes the text typed, with how many keys went down.
     def self.take_typed; typed = $typed.to_s; $typed = nil; [typed, typed.size]; end
   end
 end
+
+# Stands in for the game's buttons, none pressed.
 module Input; def self.trigger?(_button); false; end; def self.press?(_button); false; end; end
 
 # The form window of the world screen: shows a form and keeps the field the cursor is on.
@@ -546,10 +629,13 @@ window.cursor_right
 check("other fields move as before", moved, [:left, :right])
 
 # A switch's label takes the field's width, else the window's, which a window of its own may widen.
+
+# A form window of its own, whose switches' names are wider.
 class WideForm < Window_MpWorldForm
   # Width of the switches' names.
   LABEL_WIDTH = 150
 end
+
 # Builds a form window that draws on nothing and keeps the label widths it draws.
 #
 # @param kind [Class] Window_MpWorldForm or a window of its own.
@@ -596,21 +682,44 @@ title.instance_variable_set(:@list, [{ :symbol => :continue }])
 MGQ_MpWorld.add_title_command(title)
 check("and finds the title command enabled", title.instance_variable_get(:@list)[1].values_at(:symbol, :enabled), [:mgq_mp_world, true])
 
-# The update offer, a message box that draws on nothing, over the title's commands.
+# The update offer over the title's commands.
+
+# Stands in for a message box, which draws on nothing and keeps what it shows.
 class Sprite_MpMessageBox
+  # Whether it shows.
   attr_accessor :visible
+  # The texts it shows.
   attr_reader :shown
+
+  # Makes the box.
   def initialize; end
+
+  # Shows texts.
   def show(*args); @shown = args; @visible = true; end
+
+  # Frees nothing.
   def dispose; end
 end
+
+# The title's commands, which keep their handlers.
 class TitleMenu
+  # Whether they take input.
   attr_reader :active
+
+  # Answers that they are not disposed.
   def disposed?; false; end
+
+  # Takes input.
   def activate; @active = true; end
+
+  # Keeps a handler.
   def set_handler(symbol, handler); handlers[symbol] = handler; end
+
+  # The handlers by symbol.
   def handlers; @handlers ||= {}; end
 end
+
+# Stands in for closing the game, noted in $exited.
 module SceneManager; def self.exit; $exited = true; end; end
 title_scene = Scene_Title.new
 title_scene.instance_variable_set(:@command_window, TitleMenu.new)
@@ -640,6 +749,7 @@ $pressed = nil
 check("confirm starts the updater and closes the game", [$calls.map(&:first), $exited], [["mp_update_game"], true])
 $exited = nil
 offer.hide
+# Keeps the DLL's function stand-in as working_function, to bring it back after the updaters that fail.
 module MGQ_Multiplayer; module Link; class << self; alias working_function function; end; end; end
 MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| Struct.new(:name) { def call(*); 0; end }.new(name) }
 MGQ_MpWorld.open_world_screen(title_scene)
@@ -669,15 +779,31 @@ $called = nil
 check("but only once", [MGQ_MpWorld.open_after_update(title_scene), $called, ENV[MGQ_MpWorld::OPEN_AFTER_UPDATE]], [false, nil, nil])
 
 # A world's new game that asks something first, such as a hero, and the player backing out of it.
+
+# The title's commands, which take input or not.
 class TitleCommands
+  # Whether they take input.
   attr_reader :active
+
+  # Answers that they are not disposed.
   def disposed?; false; end
+
+  # Takes input.
   def activate; @active = true; end
+
+  # Takes no input.
   def deactivate; @active = false; end
 end
+
+# A title screen whose New Game asks something first.
 class Scene_Title
+  # Asks something first, which takes the input off the commands.
   def command_new_game; @asked = true; @command_window.deactivate; end
+
+  # Answers whether New Game asked.
   def asked?; @asked; end
+
+  # Answers that the scene stays.
   def scene_changing?; false; end
 end
 asking = Scene_Title.new
@@ -735,6 +861,8 @@ check("once", $calls, [])
 
 # An outdated game offers the update on the title screen where it would open the world screen on
 # its own: for a Discord invite, and to enter a world again after a restart for its mods.
+
+# The title's commands also take no input.
 class TitleMenu; def deactivate; @active = false; end; end
 $outdated = true
 offering = Scene_Title.new
@@ -753,6 +881,7 @@ check("closing it gives the title's commands back", [offer.shown?, offering.inst
 $player_ini = { "rejoin" => "w1" }
 MGQ_Multiplayer::Player.define_singleton_method(:setting) { |key| $player_ini[key] }
 MGQ_Multiplayer::Player.define_singleton_method(:store) { |key, value| $player_ini[key] = value.to_s }
+# The title screen stays.
 class Scene_Title; def scene_changing?; false; end; end
 MGQ_MpWorldMods.on_title_update(offering)
 check("so does an outdated game started again to enter a world, which it then no longer enters on its own",
@@ -802,27 +931,54 @@ $dll["mp_dir_action"] = nil
 
 # A window of the left side of the world screen: keeps its rows, its cursor and whether it takes input.
 class PaneList
+  # The cursor's row, whether it takes input, whether it is picked as a whole, and its pane.
   attr_accessor :index, :active, :boxed, :pane
+  # The rows, each [symbol, ext].
   attr_reader :rows
 
   # Creates the window with its rows, each [symbol, ext], the cursor on the first.
   #
   # @param rows [Array<Array>] The rows.
   def initialize(rows); @rows = rows; @index = 0; @active = true; end
+
+  # The number of rows.
   def item_max; @rows.size; end
+
+  # Puts the cursor on a row.
   def select(index); @index = index; end
+
+  # Takes the cursor off.
   def unselect; @index = -1; end
+
+  # Takes input.
   def activate; @active = true; end
+
+  # Takes no input.
   def deactivate; @active = false; end
+
+  # The window's width.
   def width; 230; end
+
+  # The window's height.
   def height; 100; end
+
+  # The symbol of the cursor's row, nil without a cursor.
   def current_symbol; @index >= 0 && @rows[@index] ? @rows[@index][0] : nil; end
+
+  # The ext of the cursor's row, nil without a cursor.
   def current_ext; @index >= 0 && @rows[@index] ? @rows[@index][1] : nil; end
+
+  # Puts the cursor on the row of a symbol.
   def select_symbol(symbol); @index = @rows.index { |row| row[0] == symbol }; end
+
+  # Shows worlds as its rows, keeping a cursor within them.
   def entries=(entries); @rows = entries.map { |entry| [:world, entry] }; @index = [@index, @rows.size - 1].min if @index >= 0; end
+
+  # Takes a handler, keeping none.
   def set_handler(_symbol, _method); end
 end
 
+# A world the list shows, known by its id.
 Shown = Struct.new(:id)
 worlds = PaneList.new([])
 commands = PaneList.new([[:new_world, nil], [:join_hidden, nil], [:back, nil]])

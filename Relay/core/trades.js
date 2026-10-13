@@ -2,9 +2,9 @@
 //  trades.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Kept the sealed offers beside each trade instead of in it, dropped them once a trade is cancelled, and moved those of older trades out as the trades are tidied
-//                            - Refused a player a new trade with 429 once 100 trades they opened ended cancelled within a day
-//      Paulinchen  2026-10-07: Answered an unknown sub-route with 404, and read ids, hashes and bodies through ids.js and http.js
+//      Paulinchen  2026-10-12: Kept the sealed offers beside each trade and dropped them once a trade is cancelled
+//                            - Limited the trades a player opened that ended cancelled within a day
+//      Paulinchen  2026-10-07: Answered an unknown sub-route with 404 and read ids, hashes and bodies through ids.js and http.js
 //      Paulinchen  2026-10-06: Took the player's key from the X-MGQ-Player header too
 //                            - Created
 //
@@ -308,8 +308,8 @@ export class TradeBook {
   }
 
   /**
-   * Reads the offers a player of a trade sealed, from the record itself for a trade kept before the
-   * offers were kept beside it.
+   * Reads the offers a player of a trade sealed, from the record itself for a trade whose commits
+   * still hold them.
    *
    * @param {object} record The trade.
    * @param {string} player The player's id.
@@ -337,7 +337,7 @@ export class TradeBook {
 
   /**
    * Reads every trade without its offers, cancelling those that stayed pending too long, dropping
-   * those kept long enough, and moving the offers out of a trade kept while they were part of it.
+   * those kept long enough, and moving the offers out of a trade whose commits hold them.
    *
    * @returns {Promise<object[]>} The trades that stay.
    */
@@ -465,7 +465,7 @@ function isCancelledOpenedBy(record, player, since) {
 }
 
 /**
- * Cancels a trade, and takes the offers out of one kept while they were part of it.
+ * Cancels a trade, and takes the offers out of one whose commits hold them.
  *
  * @param {object} record The trade, changed in place.
  * @param {string} reason Why it is cancelled, one of CANCEL_REASON.
@@ -479,7 +479,7 @@ function cancelRecord(record, reason, now) {
 }
 
 /**
- * Takes the sealed offers out of the commits of a trade kept while they were part of it.
+ * Takes the sealed offers out of a trade's commits, where a record of the older shape holds them.
  *
  * @param {object} record The trade, changed in place.
  * @returns {Record<string, string> | null} The offers taken, by player id, null when it held none.

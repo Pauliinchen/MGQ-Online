@@ -2,21 +2,20 @@
 #  Update.ps1
 #
 #  Changelog:
-#      Paulinchen  2026-10-08: Took the game's process from the game that starts the update, waited for it to close and started the game again afterwards, in the Multiplayer menu once updated
-#                            - Held the game's process from the start and waited on it, so a later wait never hangs on another program Windows gave its id
-#                            - Took every path literally, so a game folder with brackets in its name updates and starts again
-#                            - Extracted the release and downloaded it through .NET, which take paths as they are
-#      Paulinchen  2026-10-04: Showed the release notes last and counted the removed files in one line, so they no longer push the notes out of sight
-#      Paulinchen  2026-09-30: Found the game folder two levels up, since the mod lives in Patch\Multiplayer
-#                            - Fetched MGQ-Online-<version>.zip from the repository under its new name, MGQ-Online
+#      Paulinchen  2026-10-08: Took the game's process from the game that starts the update and started the game again afterwards
+#                            - Held the game's process from the start
+#                            - Took every path literally
+#                            - Extracted the release and downloaded it through .NET
+#      Paulinchen  2026-10-04: Showed the release notes last and counted the removed files in one line
+#      Paulinchen  2026-09-30: Found the game folder two levels up
+#                            - Fetched MGQ-Online-<version>.zip from the MGQ-Online repository
 #                            - Created
 #
 #----------------------------------------------------------------
 
 # Updates the mod in the game folder two levels above this one (this script lives in
 # Patch\Multiplayer) to the latest release on GitHub, removing files an earlier version left behind
-# that the new one no longer ships, such as a script a later refactor renamed or merged into
-# another. Update.bat runs it, started by the player or by the game.
+# that the new one no longer ships. Update.bat runs it, started by the player or by the game.
 
 param(
     # The game's process when the game started the update: the update waits for it to close and
@@ -29,6 +28,7 @@ $ErrorActionPreference = 'Stop'
 # Invoke-WebRequest slows to a crawl while it draws its progress bar.
 $ProgressPreference = 'SilentlyContinue'
 
+# GitHub's answer for the latest release, the user agent its API asks for, and the release's zip.
 $LatestReleaseUrl = 'https://api.github.com/repos/Pauliinchen/MGQ-Online/releases/latest'
 $UserAgent        = 'MGQ-Online'
 $ReleaseZip       = 'MGQ-Online-*.zip'
@@ -71,6 +71,7 @@ function Get-StartingGame {
     return $null
 }
 
+# The game that started the update, held from the start, or $null.
 $StartingGame = Get-StartingGame
 
 # Reads the version of the installed DLL.
@@ -97,8 +98,7 @@ function Test-GameRunning {
 
 # Reads Manifest.txt, every file the installed release ships, relative to the game folder.
 #
-# Returns the paths, empty when there is none: an install from before this mod shipped a manifest,
-# or a fresh extract that never ran this updater.
+# Returns the paths, empty when there is no manifest.
 function Get-ShippedFiles {
     if (-not (Test-Path -LiteralPath $Manifest)) {
         return @()
@@ -109,9 +109,9 @@ function Get-ShippedFiles {
 
 # Deletes files the old release shipped that the new one does not.
 #
-# A manifest only ever lists files a release shipped, under Patch\ (or Multiplayer\ next to
-# Game.exe, before the mod moved into Patch\Multiplayer), so this never comes near Player.ini,
-# Favourites.ini, the worlds or the logs, which no release ships.
+# A manifest only lists files a release shipped, under Patch\ or, for an older release, under
+# Multiplayer\ next to Game.exe, so this never comes near Player.ini, Favourites.ini, the worlds or
+# the logs, which no release ships.
 #
 # $Old: the old manifest's paths.
 # $New: the new manifest's paths.

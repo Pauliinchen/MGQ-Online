@@ -2,37 +2,37 @@
 #  trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Sent the offer and the confirmation state again on the relay's beat once a message to the other player could not go out, until they go out
-#                            - Sent the offer and the confirmation state again once the other player is back, and logged a message that could not be sent instead of as sent
-#                            - Answered an offer, confirm or unconfirm of a trade the game no longer has with a cancel, so the other trade screen closes
-#                            - Refused to confirm offers too long for the relay with a message to take some items out, instead of failing to reach the relay
-#                            - Applied and saved the trades the relay lists to recover only once the player is free on the map, instead of in the battle, menu or trade the answer came in
+#      Paulinchen  2026-10-12: Sent the offer and confirmation again on the relay's beat after a failed send
+#                            - Sent the offer and confirmation again once the other player is back
+#                            - Answered a message of a trade the game no longer has with a cancel
+#                            - Refused to confirm offers too long for the relay
+#                            - Recovered trades only once the player is free on the map
 #      Paulinchen  2026-10-11: Drew the trade offer in the color every request and offer shares
-#                            - Named the wait for an accepted trade to open in the line above the player's head, with its seconds left, and gave the offer its seconds left
-#                            - Stopped the player's own trade offer once they accept another player's, so nobody accepts an offer whose player waits for a trade already
-#      Paulinchen  2026-10-08: Told the player only that a trade with an id that is not valid could not open, instead of to finish what they are doing
-#                            - Showed an accepted trade offer again in the notification box once its player turned the accept down
-#                            - Declined a trade with an id that is not valid with the reason invalid, for which the other player sees that the trade could not open
-#      Paulinchen  2026-10-07: Told the player when a trade they accepted could not open, such as from the menu
-#                            - Let a world's latest autosave load again: its name is no slot a trade saves into, which raised inside the game's load
+#                            - Named the wait for an accepted trade in the own line, with seconds left
+#                            - Stopped the player's own trade offer once they accept another player's
+#      Paulinchen  2026-10-08: Told the player only that a trade with an id that is not valid could not open
+#                            - Showed an accepted trade offer again once its player turned the accept down
+#                            - Declined a trade with an id that is not valid with the reason invalid
+#      Paulinchen  2026-10-07: Told the player when a trade they accepted could not open
+#                            - Let a world's latest autosave load again
 #                            - Logged where opening the screen failed and the pictures in memory
 #                            - Kept the trades a save holds through MGQ_MpGame
 #                            - Forgot a new game's trade save slot through a before block
 #                            - Named players in the log through MGQ_MpOverworldSync.who
-#                            - Named the DLL's exports alone, their signatures living in Multiplayer.rb
-#                            - Logged every trade message, offer revision, confirmation, relay answer, item and gold moved, save and recovery, and why one was refused
-#                            - Kept the messages about the trade for the trade screen, which the map's notices do not reach
-#      Paulinchen  2026-10-06: Told the relay a trade is done only once a save holds it, and an unsaved one after the next save in the world
-#                            - Noted a trade as applied before applying it, so a failure partway never applies it twice
-#                            - Bumped the own offer's revision when a commit reopens, so confirming again names a new trade at the relay
-#                            - Ended the trade once the other player cancels it while the relay decides, and told them when the own commit failed
-#                            - Closed the trade, not reopened it, once a cancel pressed while the relay decides went through
+#                            - Named the DLL's exports alone
+#                            - Logged every step of a trade
+#                            - Kept the messages about the trade for the trade screen
+#      Paulinchen  2026-10-06: Told the relay a trade is done only once a save holds it
+#                            - Noted a trade as applied before applying it
+#                            - Bumped the own offer's revision when a commit reopens
+#                            - Ended the trade once the other player cancels it while the relay decides
+#                            - Closed the trade once a cancel pressed while the relay decides went through
 #                            - Asked the relay again for trades to recover after a failed fetch
-#                            - Offered no trades in a world made before the world list, which the relay cannot name
+#                            - Offered no trades in a world made before the world list
 #                            - Let the room checks count what the player gives away in the same trade
-#                            - Wrote an enchanted copy's prefix as its enchantment and list place, so each game shows it in its own language
+#                            - Wrote an enchanted copy's prefix as its enchantment and list place
 #                            - Dropped the unused reason "left"
-#                            - Named the world by its directory id to the relay, which refused every trade named by the folder id
+#                            - Named the world by its directory id to the relay
 #                            - Found a plain item through MGQ_MpGame.item
 #                            - Created
 #
@@ -43,13 +43,9 @@
 # map picked in the World overview. Once the other accepts, both games open the trade screen
 # (ui_trade.rbx), where each player puts together an offer and confirms both offers.
 #
-# Nothing changes hands until the relay committed the trade: both games send it the same offers,
-# and the relay marks it committed in one step, so a game that drops halfway can never keep both
-# sides. Each game then notes the trade in the save, applies it, saves, and tells the relay it is
-# done once the save holds it. A game that missed the commit or the save, by a crash, a lost
-# connection or a save that failed, applies it the next time it enters the world.
-#
-# It must never interrupt the game, so every entry point rescues.
+# Nothing changes hands until the relay committed the trade in one step, so a game that drops
+# halfway can never keep both sides; it must never interrupt the game, so its per-frame work and
+# message handling rescue.
 module MGQ_MpTrade
   # Color of the trade line above a ghost's name and of the trade's notices, the one every request
   # and offer shares.
@@ -177,11 +173,22 @@ module MGQ_MpTrade
     end
   end
 
+  # The player's trade offer to the players nearby or named.
   @invite = MGQ_MpCoop::Invite.new
+
+  # Another player's trade the player accepted, as :id, :name and :frames waited; nil while none.
   @accepted = nil
+
+  # The trade the player takes part in, see session.
   @session = nil
+
+  # Whether the map opens the trade screen on its next update.
   @open_screen = false
+
+  # Frames since the last look at the relay or the last retry of an unsent message.
   @poll = 0
+
+  # The message about the trade and its frames left, see note.
   @note = nil
 
   extend MGQ_MpLog
@@ -708,8 +715,8 @@ module MGQ_MpTrade
     commit(session) if session.stage == :open && session.agreed?
   end
 
-  # Takes back the other player's confirmation, and a commit the relay has not decided, which the
-  # other game never sends now.
+  # Takes back the other player's confirmation, and a commit the relay has not decided, since the
+  # other game no longer stands by it.
   #
   # @param session [Session] The trade.
   def self.take_unconfirm(session)
@@ -1285,9 +1292,8 @@ module MGQ_MpTrade
   module Saving
     # Remembers the slot of a save loaded or written in a world.
     #
-    # An autosave's index is its name, such as "01", and no slot a trade saves into, so loading one
-    # forgets the slot; the first free one takes its place. Adding one to the name raised inside
-    # the game's load, which then failed the whole load of a world's latest autosave.
+    # An autosave's index is its name, such as "01", which is no slot a trade saves into, so loading
+    # one forgets the slot; treating the name as a slot would raise inside the game's load.
     #
     # @param index [Integer, String, nil] The slot, an autosave's name, or nil for a new game.
     def self.slot=(index)
@@ -1695,7 +1701,6 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # After the map's update, a trade that began opens its screen.
   MGQ_MpHooks.after(Scene_Map, :update_scene, "trade") { MGQ_MpTrade.on_map unless scene_changing? }
 
   # The save after a trade goes where the player last saved or loaded in the world. The newest

@@ -2,7 +2,7 @@
 //  Exports.RaidBosses.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Queued a report of what a battle's turn did to a boss's pool, as "seq	delta	max	killed", instead of the share a whole battle dealt
+//      Paulinchen  2026-10-10: Queued a report per battle turn instead of per battle
 //      Paulinchen  2026-10-09: Created
 //
 //----------------------------------------------------------------
@@ -45,7 +45,7 @@ internal static unsafe partial class Exports
     /// <param name="world">The world the game is in, UTF-8 and null-terminated.</param>
     /// <param name="key">The pool's key, UTF-8 and null-terminated.</param>
     /// <param name="battle">The battle's id, letters, digits, _ or -, null-terminated.</param>
-    /// <param name="turn">"seq	delta	max	killed", such as "3	0.0125	5000000	0", null-terminated; see <see cref="RaidBosses.Report"/>.</param>
+    /// <param name="turn"><c>seq\tdelta\tmax\tkilled</c>, such as <c>3\t0.0125\t5000000\t0</c>, null-terminated; see <see cref="RaidBosses.Report"/>.</param>
     /// <returns>1 when queued, 0 without a player, outside that world, with too many reports waiting, for a key, battle or turn that is not as it should be, or when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_raid_boss_report", CallConvs = [typeof(CallConvStdcall)])]
     public static int RaidBossReport(byte* world, byte* key, byte* battle, byte* turn)

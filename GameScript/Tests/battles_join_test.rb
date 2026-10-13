@@ -2,26 +2,25 @@
 #  battles_join_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-11: Checked that a running battle takes an encounter with as many of the players it brings as it has room for, and that an encounter brings no more
+#      Paulinchen  2026-10-11: Checked that a running battle takes an encounter with as many players as fit
 #                            - Checked the prompt in the style's small font and solid outline
-#                            - Stood in for the color every request and offer shares, which the prompt takes
-#                            - Took the depths and the screen from ui.rbx, which battle_support.rb loads now
-#                            - Kept the bitmap stand-in's width, which the waiting box's names line of a late join is cut to
-#      Paulinchen  2026-10-10: Covered the side battle the prompt offers near a raid boss battle that takes the player in no more
-#                            - Checked that a side battle starts as the player's own, inviting and holding nobody, which another player then joins by choice
-#                            - Checked that an encounter bringing along more players than the running battle takes is refused and starts on its own, inviting them
+#                            - Stood in for the color every request and offer shares
+#                            - Took the depths and the screen from ui.rbx
+#                            - Kept the bitmap stand-in's width
+#      Paulinchen  2026-10-10: Covered the side battle the prompt offers near a full raid boss battle
+#                            - Checked that a side battle starts as the player's own
+#                            - Checked that an encounter with more players than a running battle takes starts alone
 #                            - Checked that the prompt stays whole on the screen at the map's edges
-#                            - Checked that the prompt offers a battle, or a side battle next to a raid boss battle, whose players are under the Library or Config with their windows in the background
-#      Paulinchen  2026-10-09: Covered a boss battle whose troop grew mid-battle, which stays one and hands the player every enemy
+#                            - Checked the prompt near a battle whose players are under the Library or Config
+#      Paulinchen  2026-10-09: Covered a boss battle whose troop grew mid-battle
 #                            - Created
 #
 #----------------------------------------------------------------
 
 # Covers joining a battle by choice in a Raid World, battles_coop_join.rbx with
-# battles_coop_hotjoin.rbx, battles_coop.rbx and battles_sync.rbx: the state a host tells, when the
-# prompt shows, the hotkey, the host that takes the player in or refuses them, and the late guest
-# who joins an event's battle and a boss battle without enemies, and the side battle against a raid
-# boss the prompt offers near a battle that takes the player in no more.
+# battles_coop_hotjoin.rbx, battles_coop.rbx and battles_sync.rbx: the state a host tells, the
+# prompt and its hotkey, the host's answer, the late guest, and the side battle the prompt offers
+# near a full raid boss battle.
 
 require_relative "battle_support"
 
@@ -33,14 +32,17 @@ spriteset = Spriteset_Battle.new
 scene.instance_variable_set(:@spriteset, spriteset)
 
 # Stand-ins for what the recorder reads of every battler and of the game's settings.
+# The game's system, whose conf holds the settings.
 class Game_System
   attr_reader :conf
   def initialize; @conf = {}; end
 end
+# A character's TP and states.
 class Game_Actor
   attr_accessor :tp
   def states; []; end
 end
+# An enemy's values and states.
 class Game_Enemy
   attr_accessor :hp, :mp, :tp
   def states; []; end
@@ -48,33 +50,46 @@ class Game_Enemy
   def death_state_id; 1; end
 end
 $data_states = [nil, :death]
+# The party's od_turn and od_user.
 class Game_Party; attr_accessor :od_turn, :od_user; end
+# The troop's turn count.
 class Game_Troop; def turn_count; @turn_count.to_i; end; end
 $game_system = Game_System.new
 BattleManager.instance_variable_set(:@phase, :turn_end)
+# The battle, ending while $ending is set.
 module BattleManager; def self.battle_end?; $ending ? true : false; end; end
 
 # Stand-ins for the world, the screens over the map, the notification box and the hotkeys.
+# The world, a Raid World while $raid is set.
 module MGQ_MpWorld; def self.raid?; $raid; end; end
+# The trading, whose session is $trading.
 module MGQ_MpTrade; def self.session; $trading; end; end
+# The chat box, typed in while $typing is set.
 module MGQ_MpChat; def self.typing?; $typing ? true : false; end; end
+# The line color requests and offers share, and the action wheel, open while $wheel is set.
 module MGQ_MpActions; LINE_COLOR = MGQ_MpUi::Style::OWN; module Wheel; def self.open?; $wheel ? true : false; end; end; end
+# The emotes, never open.
 module MGQ_MpEmotes; def self.open?; false; end; end
+# The notification box, keeping each message's text in $messages.
 module MGQ_MpNotices
   def self.message(_key, text, _frames = 180); ($messages ||= []) << text; end
   def self.drop(_key, _reason = ""); end
 end
+# The map, free while the scene is the map and no event runs.
 module MGQ_MpOverworldSync
   def self.map_free?; SceneManager.scene.is_a?(Scene_Map) && !$game_map.interpreter.running?; end
 end
 $down = []
+# The player's settings from $settings and the hotkeys held in $down.
 module MGQ_Multiplayer
   module Player; def self.setting(key); ($settings || {})[key]; end; end
   module Key; def self.pressed?(code); $down.include?(code); end; end
 end
 
 # Stand-ins for the map's sprites, which the prompt draws with.
+# A bitmap that keeps what is drawn on it.
 class Bitmap
+  # The font a bitmap draws with.
   Font = Struct.new(:size, :outline, :color, :bold, :out_color)
   attr_reader :font, :drawn
   # The width stays, which the waiting box cuts its names line to.
@@ -83,11 +98,13 @@ class Bitmap
   def draw_text(*args); @drawn << args; end
   def dispose; end
 end
+# A sprite, shown and opaque from the start.
 class Sprite
   attr_accessor :bitmap, :ox, :z, :x, :y, :visible, :opacity, :height
   def initialize(_viewport = nil); @visible = true; @opacity = 255; end
   def dispose; end
 end
+# The map's sprites, which do nothing.
 class Spriteset_Map; def update; end; def dispose; end; end
 
 load_script "core_hotkeys"
@@ -120,7 +137,9 @@ def player(seat, state = {})
 end
 
 # Opens a command phase as the game does: battles_coop_hotjoin.rbx's hook, then the steps of
-# battles_sync_live.rbx's, whose hooks need game classes the tests leave out.
+# battles_sync_live.rbx's.
+#
+# battles_sync_live.rbx's own hooks need game classes the tests leave out.
 #
 # @param scene [Scene_Battle] The battle.
 def open_phase(scene)
@@ -522,12 +541,16 @@ check("not where the battle has room for the player alone", [map_sent("pick").ma
 reset
 MGQ_MpOverworldSync::Peers.all.clear
 
-# A side battle near a raid boss battle that takes the player in no more, through
-# battles_raid_pool.rbx and ui_raid_bar.rbx, which stand in here.
+# A side battle near a full raid boss battle, through battles_raid_pool.rbx and ui_raid_bar.rbx,
+# which stand in here.
+# The raid boss pools, troop 71 being Queen Harpy.
 module MGQ_MpRaidPool
+  # Reads the raid boss troop and enemy rates a host's rpb state tells.
   def self.side_of(host); host.state["rpb"].to_s =~ /\A(\d+);(.*)\z/ ? [$1.to_i, $2] : nil; end
   def self.troop_label(troop); troop == 71 ? "Queen Harpy" : "?"; end
+  # Keeps the side battle started in $side_started and starts it while $side_ok is set.
   def self.start_side(troop, rates); $side_started = [troop, rates]; $side_ok; end
+  # Takes the troop in $side_troop for a side battle.
   def self.kind_of(troop); troop.to_i == $side_troop ? :side : nil; end
   def self.won_already?(_troop); false; end
   def self.invite_fields(_troop = nil); {}; end
@@ -557,6 +580,7 @@ boss_host.state["rpb"] = "71;100,100,0"
 boss_host.state["x"] = "6"
 map_frame
 check("nor one too far", join.prompt_text, nil)
+# The raid bar, whose boss of troop 71 stands one step from the player.
 module MGQ_MpRaidBar; def self.distance_to_boss(troop, _x, _y); troop == 71 ? 1 : 9999; end; end
 map_frame
 check("unless the boss's event stands near the player", join.prompt_text, "Press J to fight Queen Harpy alongside")
@@ -587,6 +611,7 @@ coop.take_map(bystander, { "coop" => "pick", "bid" => side_bid, "map" => "5" })
 check("and takes in a player who asks to join it by choice", map_sent("invite").map { |seat, f| [seat, f["bid"], f["hot"]] }, [[9, side_bid, "1"]])
 $side_troop = nil
 reset
+# Takes troop 72 for a side battle.
 def MGQ_MpRaidPool.side_battle?(troop); troop.to_i == 72; end
 $scene_now = Scene_Map.new
 BattleManager.setup(72, false, true)

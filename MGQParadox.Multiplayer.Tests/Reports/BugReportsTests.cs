@@ -52,9 +52,7 @@ public sealed class BugReportsTests : IDisposable
         File.SetLastWriteTimeUtc(log, Started.AddMinutes(3));
     }
 
-    /// <summary>
-    /// Deletes the game folder.
-    /// </summary>
+    /// <inheritdoc />
     public void Dispose() => Directory.Delete(_game, true);
 
     /// <summary>

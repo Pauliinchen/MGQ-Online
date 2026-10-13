@@ -2,7 +2,7 @@
 //  ModHashTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Removed the check of CatalogMod.VersionOf, which is gone
+//      Paulinchen  2026-10-06: Removed the check of CatalogMod.VersionOf
 //                            - Covered zips of a release
 //                            - Created
 //

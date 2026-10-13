@@ -2,16 +2,16 @@
 #  battles_sync_recorder.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-09: Let the battle's mode act right before each send of the stream goes out, so a co-op host tells its guests the enemies added mid-battle first
+#      Paulinchen  2026-10-09: Let the battle's mode act right before each send of the stream
 #      Paulinchen  2026-10-07: Logged the recording's start and end and what each turn streamed
-#      Paulinchen  2026-10-06: Recorded the turns each state has left and the barriers with the battlers' values, without the maximum HP and MP no guest read
-#                            - Kept the battle's end to the recording on file, which no guest plays
-#                            - Let an event recorded in place of what the game does carry values, such as how the battle began
-#                            - Dropped the speaker of the lines a skill or a defeat shows, which the guest's own calls show
+#      Paulinchen  2026-10-06: Recorded state turns and barriers with the battlers' values, without maximum HP and MP
+#                            - Kept the battle's end to the recording on file
+#                            - Let an event recorded in place of what the game does carry values
+#                            - Dropped the speaker of a skill's or a defeat's lines
 #                            - Wrote the recording into the game folder's Logs folder
 #      Paulinchen  2026-10-04: Renamed from mp_battles_sync_recorder.rbx
 #      Paulinchen  2026-10-03: Recorded the characters outside the battle that its mode names
-#                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#                            - Reached the game's private fields and methods through MGQ_MpGame
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -100,8 +100,10 @@ module MGQ_MpBattlesSync
       stop_after(e)
     end
 
-    # Records the values of every battler that changed since the last time. The next send streams
-    # them, every SEND_FRAMES frames, so the guest can tell by the sends waiting how far behind it is.
+    # Records the values of every battler that changed since the last time.
+    #
+    # The next send streams them, every SEND_FRAMES frames, so the guest can tell by the sends
+    # waiting how far behind it is.
     #
     # @param full [Boolean] true to record every battler's, which corrects anything the guest
     #   missed; the host does at every command phase.
@@ -122,6 +124,7 @@ module MGQ_MpBattlesSync
     end
 
     # Records the start of a command phase once, with every battler's values, and sends it at once.
+    #
     # With none of its characters able to act, the host's game skips its own commands and waits for
     # the guest's within the same call, so the guest must hear of the phase before.
     def self.command_phase
@@ -145,8 +148,9 @@ module MGQ_MpBattlesSync
       @command_phase = false
     end
 
-    # Records how long time stands still and for whom, when it changed. It decides who may act,
-    # so the guest needs it to offer only the commands the host will take.
+    # Records how long time stands still and for whom, when it changed.
+    #
+    # It decides who may act, so the guest needs it to offer only the commands the host will take.
     def self.time_stop
       current = [$game_party.od_turn.to_i, $game_party.od_user]
       return if @time_stop == [current[0], current[1].object_id]
@@ -155,11 +159,10 @@ module MGQ_MpBattlesSync
       event("time_stop", *current)
     end
 
-    # Records a call the guest makes itself with its own game's texts: the method and its
-    # arguments, the action results it reads and the seed its random choices come from, such as
-    # the line a character says. What the call does is left out of the recording, since the
-    # guest's call does the same. A call with an argument that cannot travel is recorded as what
-    # it does instead.
+    # Records a call the guest makes itself with its own game's texts, such as the line a character
+    # says: the method and its arguments, the action results it reads and the seed its random
+    # choices come from. What the call does is left out, and a call with an argument that cannot
+    # travel is recorded as what it does instead.
     #
     # @param receiver [String] "log" for the battle log, "scene" for the battle.
     # @param name [String] The method.
@@ -300,7 +303,8 @@ module MGQ_MpBattlesSync
 
     # Lists the battlers of the battle.
     #
-    # @return [Array<Game_Battler>] Every battler of the battle, and the characters outside it the stream names.
+    # @return [Array<Game_Battler>] Every battler of the battle, and the characters outside it the
+    #   stream names.
     def self.battlers
       MGQ_MpBattlesSync.party_side + MGQ_MpBattlesSync.troop_side
     end
@@ -325,8 +329,8 @@ module MGQ_MpBattlesSync
       @events = []
     end
 
-    # Stops recording after an error, which stays in Multiplayer InGame.log, and breaks a live battle off, since
-    # the guest sees nothing but the stream.
+    # Stops recording after an error, which stays in Multiplayer InGame.log, and breaks a live battle
+    # off, since the guest sees nothing but the stream.
     #
     # @param error [Exception] The error.
     def self.stop_after(error)

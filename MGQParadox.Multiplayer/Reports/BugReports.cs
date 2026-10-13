@@ -382,7 +382,7 @@ internal sealed class BugReports
     /// Leaves facts out from the end until the header fits the relay's limit with the page and the screenshot at their longest.
     /// </summary>
     /// <param name="report">The report.</param>
-    /// <returns>The report that fits, <see langword="null"/> when even no facts do not fit.</returns>
+    /// <returns>The report that fits, <see langword="null"/> when it does not fit even without facts.</returns>
     private static BugReport? FitHeader(BugReport report)
     {
         (string, int, bool)[] longest = [(DirectoryClient.ReportPageFile, int.MaxValue, true), (DirectoryClient.ScreenshotFile, int.MaxValue, false)];

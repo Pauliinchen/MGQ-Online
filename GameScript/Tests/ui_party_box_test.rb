@@ -2,68 +2,97 @@
 #  ui_party_box_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that the size hotkey pressed while the player types changes nothing and stays out of the log
-#      Paulinchen  2026-10-12: Stood in for the parts of the world's story, which the overview reads as it loads
-#      Paulinchen  2026-10-11: Called the small box with the party and the others on the map apart
-#                            - Checked the box's place in the layout: its default below a strip at the top, a place the player left it in with the extra width for the names and places, its least width with every column, the small box at the right of its place, and drawing anew after a preset change
+#      Paulinchen  2026-10-12: Checked the size hotkey pressed while the player types
+#                            - Stood in for the parts of the world's story
+#      Paulinchen  2026-10-11: Called the small box with the party and the others apart
+#                            - Checked the box's place in the layout
 #                            - Checked that a stranger is named in plain white
 #                            - Created
 #
 #----------------------------------------------------------------
 
-# Covers the party box and the map box, ui_party_box.rbx: the columns that never meet, the icon
-# before each name, the colors of the player's own line, a party member's and anyone else's, a
-# long name cut to its column, a member whose connection is down, the log of who is listed, and the
-# box's place and width in the layout.
+# Covers the party box and the map box, ui_party_box.rbx: their columns, icons and colors, long
+# names, away members, the small box, the log of who is listed, the size hotkey while the player
+# types, fading on the map, and the box's place and width in the layout.
 
 require_relative "world_support"
 
 # A text drawn on a picture: what, where, how wide, in which color and size, aligned how.
 Text = Struct.new(:text, :x, :width, :color, :size, :align) do
+  # Tells where the text's room ends.
   def right; x + width; end
 end
 
-# Stand-ins for the game's pictures, which record what is drawn, the mouse, the world and the
-# duels, which the overview names.
+# Stands in for the game's picture, recording the texts, fills and icons drawn on it, each
+# character 8 pixels wide.
 class Bitmap
+  # The picture's font.
   Font = Struct.new(:size, :color, :bold, :outline, :out_color)
   attr_reader :texts, :fills, :icons, :font, :width, :height
+  # Makes an empty picture.
   def initialize(width = 1, height = 1); @width = width; @height = height; @texts = []; @fills = []; @icons = []; @font = Font.new; end
+  # Answers whether the picture was disposed.
   def disposed?; @disposed ? true : false; end
+  # Forgets everything drawn.
   def clear; @texts.clear; @fills.clear; @icons.clear; end
+  # Records a fill.
   def fill_rect(x, y, width, height, color); @fills << [x, y, width, height, color]; end
+  # Measures a text at 8 pixels a character and 16 high.
   def text_size(text); Rect.new(0, 0, text.to_s.size * 8, 16); end
+  # Records a text in the font's color and size.
   def draw_text(x, _y, width, _height, text, align = 0); @texts << Text.new(text, x, width, font.color, font.size, align); end
+  # Records an icon by its index on the icon set, with where it lands and how wide.
   def stretch_blt(dest, _set, rect, *_); @icons << [rect.y / MGQ_MpUi::ICON_SIZE * MGQ_MpUi::ICONS_PER_ROW + rect.x / MGQ_MpUi::ICON_SIZE, dest.x, dest.width]; end
+  # Disposes of the picture.
   def dispose; @disposed = true; end
 end
+# Gives the sprite stand-in what the box sets and calls.
 class Sprite
   attr_accessor :bitmap, :x, :y, :z, :visible, :opacity
+  # Stands in for the sprite's update, which does nothing here.
   def update; end
+  # Stands in for disposing of the sprite, which does nothing here.
   def dispose; end
+  # Answers that the sprite is never disposed.
   def disposed?; false; end
 end
+# Stands in for the game's cache, whose every system picture is the icon set.
 module Cache; def self.system(_name); :iconset; end; end
+# Reopens the stand-ins of Multiplayer.rb.
 module MGQ_Multiplayer
+  # Stands in for the mouse, resting at the top left, never clicked.
   module Mouse
+    # Answers the top left.
     def self.position; [0, 0]; end
+    # Answers that the mouse is never clicked.
     def self.clicked?; false; end
   end
 end
+# Stands in for the world, named Test World and a Raid World while $raid is set.
 module MGQ_MpWorld
+  # Answers the world, named Test World.
   def self.world; Struct.new(:name).new("Test World"); end
+  # Answers whether the world is a Raid World, as $raid says.
   def self.raid?; $raid; end
 end
+# Stands in for the world's story, which the overview reads the parts' starts from.
 module MGQ_MpWorldStory
+  # The story progress Part 2 starts at.
   PART_TWO = 19
+  # The story progress Part 3 starts at.
   PART_THREE = 34
 end
+# Stands in for duels, which offer nothing.
 module MGQ_MpBattlesDuel
+  # Answers that no duel is offered with a player.
   def self.peer_option(_peer); nil; end
+  # Answers that no duel is offered on the player's own row.
   def self.own_options; []; end
+  # Answers that no other player challenges the player.
   def self.call_of(_peer); nil; end
 end
 load_script "world_overview"
+# Stands in for the emote wheel, which stays shut.
 module MGQ_MpEmotes; def self.open?; false; end; end
 load_script "ui_party_box"
 
@@ -72,7 +101,7 @@ box_class = Sprite_MpPartyBox
 columns = box_class::COLUMNS
 long_name = "A Very Long Player Name Indeed"
 
-# Two other players of the world: the party's leader, in a battle, and a stranger who types.
+# Two other players join the world: the party's leader, in a battle, and a stranger who types.
 $inbox << entry("seat", 0)
 MGQ_MpOverworldSync.tick
 leader_state = { "id" => "leader", "name" => long_name, "map" => 5, "x" => 1, "y" => 1, "d" => 2, "scene" => "battle", "ping" => 999 }
@@ -82,6 +111,7 @@ MGQ_MpOverworldSync.tick
 leader = MGQ_MpOverworldSync::Peers.at(2)
 stranger = MGQ_MpOverworldSync::Peers.at(3)
 row = MGQ_MpWorldOverview::Row
+# Tells a ping as the overview labels it.
 ping = lambda { |milliseconds| MGQ_MpOverworld.ping_label(milliseconds) }
 own_row = row.new(:me, "Me", "Castle", "Lv 55", "", ping.call(40), nil, true, ["2 / 4", false], nil)
 leader_row = row.new(leader, long_name, "Forest", "Lv 100", "", ping.call(999), MGQ_MpOverworld::STATE_ICONS["battle"], true, ["2 / 4", true], nil)
@@ -89,12 +119,15 @@ stranger_row = row.new(stranger, "Stranger", "", "Lv 20", "", ping.call(80), MGQ
 party = [leader_row, own_row]
 
 box = box_class.new(nil)
+# Finds a text drawn on the box.
 text = lambda { |label| box.bitmap.texts.find { |drawn| drawn.text == label } }
+# Tells every text drawn on the box.
 texts = lambda { box.bitmap.texts.map(&:text) }
+# Finds a name drawn on the full box, cut to its column.
 named = lambda { |name| text.call(MGQ_MpUi.cut(box.bitmap, name, box.name_width(box_class::WIDTH, true))) }
 
-# The columns of the full box: the name, the level and the ping never meet, and both "Lv 100" and
-# "999 ms" fit their columns.
+# In the full box the name, the level and the ping never meet, and both "Lv 100" and "999 ms" fit
+# their columns.
 box.draw(party)
 level = text.call("Lv 100")
 ping_text = text.call("999 ms")
@@ -111,7 +144,7 @@ check("the leader's crown and battle icon stand before the name, the player's ow
       [[MGQ_MpOverworld::CROWN_ICON, MGQ_MpOverworld::STATE_ICONS["battle"]], [columns[:crown], columns[:icon]], true])
 check("the icons fit a line", icons.map(&:last).uniq, [box_class::ICON_SIDE])
 
-# The colors.
+# The colors of the lines, the pings, the titles and the places.
 check("the player's own line is in the own color, the member's green, the level plain",
       [text.call("Me").color.equal?(style::OWN), name.color.equal?(style::MEMBER), level.color.equal?(style::TEXT)], [true, true, true])
 check("a ping keeps its color", [ping_text.color.equal?(MGQ_MpOverworld::PING_COLORS.last[1]), text.call("40 ms").color.equal?(MGQ_MpOverworld::PING_COLORS.first[1])], [true, true])
@@ -133,7 +166,7 @@ check("the places are small headings", text.call("Forest").size == style::TINY_S
 check("a long name is cut to the name column with an ellipsis", [name.text.end_with?(MGQ_MpUi::ELLIPSIS), name.text.size < long_name.size, box.bitmap.text_size(name.text).width <= name.width], [true, true, true])
 check("a short name stays whole", text.call("Me").text, "Me")
 
-# A member whose connection is down.
+# A member whose connection is down is dim, with the away icon.
 leader.away = 60
 box.draw(party)
 away_name = named.call(long_name)
@@ -141,7 +174,7 @@ check("an away member is dim, with the away icon in place of the battle's", [awa
 check("the player's own line is never away", [MGQ_MpPartyBox.away?(own_row), MGQ_MpPartyBox.away?(leader_row)], [false, true])
 leader.away = nil
 
-# The map box of a Raid World: a stranger in plain white.
+# The map box of a Raid World names a stranger in plain white.
 map_rows = [own_row, leader_row, stranger_row]
 box.draw_map(map_rows)
 stranger_name = text.call("Stranger")
@@ -151,7 +184,7 @@ check("a stranger is named in plain white, which the keyboard of their typing pr
       [true, true, true])
 check("the member stays green and the player's own line yellow", [named.call(long_name).color.equal?(style::MEMBER), text.call("Me").color.equal?(style::OWN)], [true, true])
 
-# The small box: no level, the icon still before the name, the ping at the edge.
+# The small box shows no level, the icon still before the name and the ping at the edge.
 box.draw_small([], map_rows)
 small_name = text.call(MGQ_MpUi.cut(box.bitmap, long_name, box.name_width(box_class::SMALL_WIDTH, false)))
 small_ping = text.call("999 ms")
@@ -159,7 +192,7 @@ check("small, the box is narrower and shows no level", [box.instance_variable_ge
 check("the name is cut to what lies before the ping, which ends at the edge", [small_name.nil?, small_name && small_name.right <= small_ping.x, small_ping.right], [false, true, box_class::SMALL_WIDTH - box_class::EDGE])
 check("the icons stand before the names in the small box too", box.bitmap.icons.map(&:first), [MGQ_MpOverworld::CROWN_ICON, MGQ_MpOverworld::STATE_ICONS["battle"], MGQ_MpOverworld::TYPING_ICON])
 
-# The log of who the box lists, with each player's color and whether they are away.
+# The log names who the box lists, with each player's color and whether they are away.
 logged = []
 writer = MGQ_Multiplayer::Log.method(:write)
 MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| logged << line }
@@ -177,7 +210,7 @@ check("the log names each listed player's color and whether they lead or are awa
        "party box: map box lists Me (own), #{long_name} (leader, member), Stranger (#{MGQ_MpUi::PlayerColor.label(stranger)})",
        "party box: party box hidden"])
 
-# The size hotkey while the player types.
+# The size hotkey does nothing while the player types.
 small_before = MGQ_MpPartyBox.small?
 MGQ_MpChat.start_typing
 $mgq_text_input = true
@@ -187,7 +220,8 @@ $mgq_text_input = nil
 MGQ_MpChat.stop_typing
 check("Tab typed into the chat box changes nothing and stays out of the log", [MGQ_MpPartyBox.small?, typed.grep(/ignored/)], [small_before, []])
 
-# The box on the map: drawn anew when a member goes away and comes back.
+# On the map the box fades in, is drawn anew when a member goes away and comes back, and fades out
+# outside a party.
 MGQ_MpWorldOverview.define_singleton_method(:open?) { false }
 MGQ_MpWorldOverview.define_singleton_method(:party_rows) { party }
 box.update
@@ -207,10 +241,13 @@ check("outside a party the box fades out once it reads the party again, its pict
 (style::FADE_FRAMES - 1).times { box.update }
 check("until it is gone", [box.visible, box.opacity], [false, 0])
 
-# Where the box lies: its default, a place the player left it in, its least width and the preset.
+# Where the box lies and how wide: its default, a place the player left it in, its least width,
+# the small size and the presets.
 layout = MGQ_MpUi::Layout
 stored = layout.instance_variable_get(:@stored)
+# Tells where the box offers itself to the layout, nil while it offers nothing.
 offered = lambda { offer = layout.instance_variable_get(:@offers).find { |each| each.id == :party_box }; offer && offer.rect.to_a }
+# Updates the box until it reads the party again.
 read = lambda { box_class::READ_FRAMES.times { box.update } }
 width = box_class::WIDTH
 edge = box_class::EDGE

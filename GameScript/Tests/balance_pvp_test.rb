@@ -10,14 +10,18 @@
 #----------------------------------------------------------------
 
 # Covers battles_balance_pvp.rbx: the skills' formulas for monsters, more HP, an action's damage kept
-# below a share of max HP, a lowest share of a hit every character takes, limited evasion, reflection and element rates, and defense
-# walls that take a share of a hit, all only while a PvP battle runs with the balance.
+# below a share of max HP, a lowest share of a hit every character takes, limited evasion,
+# reflection and element rates, and defense walls that take a share of a hit, all only while a PvP
+# battle runs with the balance.
 
 require_relative "support"
 
 $log = []
+# Stands in for the loader's log, keeping its lines in $log.
 module MGQ_Multiplayer; module Log; def self.write(m); $log << m; end; end; end
+# Stands in for the game's scene manager.
 module SceneManager; def self.run; end; end
+# Stands in for the battle scene, whose use_item is one action.
 class Scene_Battle; def use_item; end; end
 scene = Scene_Battle.new
 
@@ -32,6 +36,8 @@ class Game_BattlerBase
   def mdr; @taken; end
   def certain_damage_rate; @taken; end
 end
+# Stands in for a character with the stats, evasion, reflection, element rate and defense walls a
+# test sets.
 class Game_Battler < Game_BattlerBase
   attr_accessor :evasion, :reflection, :element, :walls
   def initialize(stats, hp = stats[0])
@@ -48,6 +54,7 @@ class Game_Battler < Game_BattlerBase
   def item_eva(_user, _item); @evasion; end
   def item_mrf(_user, _item); @reflection; end
   def item_element_rate(_user, _item); @element; end
+  # Uses up a wall, which takes the whole hit.
   def apply_defense_wall(damage, _item)
     return damage if @walls == 0
 
@@ -67,6 +74,7 @@ class DamageEvalBattler < BasicObject
   def __battler_param(param_id); @battler_param[param_id] ||= @battler.param(param_id); end
 end
 
+# A skill or item, aimed at the opponent or not.
 Item = Struct.new(:opponent) do
   def for_opponent?; opponent; end
 end

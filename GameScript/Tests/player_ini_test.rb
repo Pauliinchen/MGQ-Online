@@ -6,9 +6,9 @@
 #
 #----------------------------------------------------------------
 
-# Covers Player.ini: reading it with a byte order mark, as UTF-16 or with bytes that are no UTF-8,
-# writing it in one step, never writing over one that exists but cannot be read, and moving the
-# favourites and hidden worlds of Favourites.ini and Added.ini into it.
+# Covers Player.ini (Multiplayer.rb's Ini and Player) and the world lists world.rbx keeps in it:
+# reading it in any encoding Notepad saves, writing it in one step, leaving one that cannot be read
+# as it is, and moving Favourites.ini and Added.ini into it.
 
 require_relative "support"
 require "tmpdir"
@@ -18,21 +18,32 @@ world_source = File.read(File.join(SCRIPTS_DIR, "world.rbx"), encoding: "UTF-8")
 
 $log = []
 $new_ids = 0
+# Stands in for Multiplayer.rb, around the Ini and Player modules taken from it.
 module MGQ_Multiplayer
+  # Answers the file name as it is, so files land in the current folder.
   def self.path(name); name; end
+  # Answers the name as it is.
   def self.clean(name, _fallback = nil); name; end
+  # Stands in for the mod's log: records each line in $log.
   module Log; def self.write(message); $log << message; end; end
+  # Stands in for the Discord bridge: the player's name on Discord is $discord_name.
   module Discord; def self.player_name; $discord_name; end; end
+  # Stands in for the DLL link.
   module Link
+    # Counts the call in $new_ids and answers the key "newkey".
     def self.new_id; $new_ids += 1; "newkey"; end
+    # Takes any key and name.
     def self.set_player(_key, _name); true; end
   end
 end
 MGQ_Multiplayer.module_eval(source[/  module Ini\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  module Player\n.*?\n  end\n/m])
 
+# Stands in for world.rbx, around the settings and list modules taken from it.
 module MGQ_MpWorld
+  # Records the line in $log, tagged "world: ".
   def self.log(message); $log << "world: #{message}"; end
+  # Answers the id as it is.
   def self.short(id); id; end
 end
 %w[FAVOURITE_SETTING ADDED_SETTING OLD_LIST_FILES].each do |name|
@@ -45,24 +56,32 @@ end
 player = MGQ_Multiplayer::Player
 ini = MGQ_Multiplayer::Ini
 
-# Starts Player afresh, as a new session does.
+# Starts Player and the old lists afresh, as a new session does, and clears the log.
 fresh = lambda do
   [:@values, :@unreadable_at, :@refused, :@noticed].each { |name| player.instance_variable_set(name, nil) }
   [:@merged, :@tried_at].each { |name| MGQ_MpWorld::OldLists.instance_variable_set(name, nil) }
   $log.clear
   $new_ids = 0
 end
+# Reads a file's bytes.
+#
+# @param path [String] The file.
+# @return [String] Its bytes.
 bytes = lambda { |path| File.open(path, "rb") { |file| file.read } }
+# Counts the log lines that hold a text.
+#
+# @param text [String] The text.
+# @return [Integer] How many lines hold it.
 logged = lambda { |text| $log.count { |line| line.include?(text) } }
 
 Dir.mktmpdir do |root|
   Dir.chdir(root) do
-    # A byte order mark.
+    # A byte order mark is skipped.
     fresh.call
     File.binwrite("Player.ini", "\xEF\xBB\xBFid=abc\r\nname=X\r\n")
     check("a Player.ini with a byte order mark keeps its key and makes no new one", [player.id, player.setting("name"), $new_ids], ["abc", "X", 0])
 
-    # Notepad's other encodings.
+    # Notepad's other encodings read too.
     fresh.call
     File.binwrite("Player.ini", "id=abc\nname=J\xF6rg\n")
     check("one saved as ANSI reads as Latin-1, so the key and the name with an umlaut stay", [player.id, player.setting("name"), $new_ids], ["abc", "Jörg", 0])
@@ -75,7 +94,7 @@ Dir.mktmpdir do |root|
     player.store("k", "v")
     check("and the next write saves it as UTF-8", bytes.call("Player.ini"), "id=abc\nk=v\n")
 
-    # A Player.ini that exists but cannot be read.
+    # A Player.ini that exists but cannot be read is left as it is.
     fresh.call
     File.delete("Player.ini")
     Dir.mkdir("Player.ini")
@@ -93,7 +112,7 @@ Dir.mktmpdir do |root|
     player.instance_variable_set(:@unreadable_at, Time.now - 2)
     check("after it, it is read again and its key holds", [player.id, $new_ids, logged.call("read Player.ini again")], ["abc", 0, 1])
 
-    # Writing.
+    # Writing replaces the file in one step.
     check("a setting kept leaves the key and no file next to it", [player.store("k", "v"), bytes.call("Player.ini"), File.exist?("Player.ini.tmp")],
           [true, "id=abc\nk=v\n", false])
     player.change("z" => "1", "k" => "w", "gone" => nil)
@@ -106,7 +125,7 @@ Dir.mktmpdir do |root|
     File.delete("Player.ini")
     check("a missing Player.ini gets a new key", [player.id, bytes.call("Player.ini"), $new_ids], ["newkey", "id=newkey\n", 1])
 
-    # The favourites and hidden worlds of the files that kept them before.
+    # Favourites.ini and Added.ini move into Player.ini.
     fresh.call
     File.binwrite("Player.ini", "id=abc\nfavourite.w1=1\n")
     File.binwrite("Favourites.ini", "w1=1\nw2=1\n")
@@ -137,7 +156,7 @@ Dir.mktmpdir do |root|
     Dir.rmdir("Player.ini")
     File.delete("Favourites.ini")
 
-    # The lists kept in Player.ini.
+    # The favourites and hidden worlds kept in Player.ini.
     fresh.call
     File.binwrite("Player.ini", "id=abc\n")
     check("a world marked is a favourite, and no longer once unmarked",

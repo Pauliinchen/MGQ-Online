@@ -2,23 +2,20 @@
 #  world_text.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Scrolled a text longer than its box, showing its end and the cursor with a dim "..." before it, instead of drawing it past the window
+#      Paulinchen  2026-10-12: Scrolled a text longer than its box
 #                            - Scrolled the description with the mouse wheel and drew its scrollbar
 #                            - Broke the description over four lines at words in a taller box, showing its last lines
-#                            - Drew the box once per frame and played one sound for what was typed in it, so a pasted text no longer stalls the game
-#      Paulinchen  2026-10-07: Logged the text screen opening, showing its letters for a gamepad, and how it was left, never the text
+#                            - Drew the box once per frame and played one sound for what was typed in it
+#      Paulinchen  2026-10-07: Logged the text screen opening, showing its letters for a gamepad, and how it was left
 #      Paulinchen  2026-10-04: Renamed from mp_world_text.rbx
 #      Paulinchen  2026-10-03: Created
 #
 #----------------------------------------------------------------
 
-# The text screen of the world screen: where the player types into a form's text box with the
-# game's letters on a gamepad, or when the keyboard cannot reach the game. It hands what was typed
-# to MGQ_MpWorld.text_result, which world_screen.rbx takes.
-
-# The text screen, for a form's text boxes once a gamepad is used: the typed text in a box, with its
-# purpose where a character's face would be. The keyboard types into it; the game's own letters
-# appear below once a gamepad is used, or from the start when the keyboard cannot reach the game.
+# The world screen's text screen, for a form's text boxes once a gamepad is used: the typed text
+# in a box, with its purpose where a character's face would be. The keyboard types into it; the
+# game's own letters appear below once a gamepad is used, or from the start when the keyboard
+# cannot reach the game. It hands what was typed to MGQ_MpWorld.text_result.
 class Scene_MpText < Scene_MenuBase
   # Sets what the text is for and how it looks.
   #

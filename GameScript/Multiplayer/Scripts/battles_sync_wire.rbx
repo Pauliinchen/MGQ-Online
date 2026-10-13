@@ -2,9 +2,9 @@
 #  battles_sync_wire.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Read a line no longer than 512 KB and nested at most 8 deep, and gave nil for a line that fails to read instead of raising
-#                            - Read an item of the other game as exactly one skill, item, state, weapon or armor token, and a database id only within its table
-#                            - Took a symbol only as one this game already has, never making one of the other game's text
+#      Paulinchen  2026-10-12: Limited a line's size and nesting and gave nil for an unreadable line
+#                            - Read an item as one database token and an id only within its table
+#                            - Took only symbols this game already has
 #                            - Set only the fields an action result of this game has
 #      Paulinchen  2026-10-04: Renamed from mp_battles_sync_wire.rbx
 #      Paulinchen  2026-10-03: Created
@@ -16,8 +16,10 @@
 
 module MGQ_MpBattlesSync
   # Writes values as one line of tab-separated tokens and reads them back, for the messages
-  # between the two games. Only plain values travel, never code or Ruby's own formats, since
-  # the other game could send anything.
+  # between the two games.
+  #
+  # Only plain values travel, never code or Ruby's own formats, since the other game could send
+  # anything.
   module Wire
     # Characters a text escapes, which would otherwise end a token or a line.
     ESCAPES = { "\\" => "\\\\", "\t" => "\\t", "\n" => "\\n", "\r" => "\\r" }

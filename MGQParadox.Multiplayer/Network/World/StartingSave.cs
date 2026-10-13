@@ -2,7 +2,7 @@
 //  StartingSave.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Sealed the zip through SealedBox, shared with the world's lock and the trades
+//      Paulinchen  2026-10-07: Sealed the zip through SealedBox
 //      Paulinchen  2026-10-06: Named the most bytes the relay keeps of a starting save
 //      Paulinchen  2026-09-30: Created
 //
@@ -147,7 +147,7 @@ internal static partial class StartingSave
     private static byte[] KeyOf(string token) => SealedBox.KeyOf(token, KeyInfo);
 
     /// <summary>
-    /// Letters, digits, dots, dashes and underscores, at most 64.
+    /// Matches 1 to 64 letters, digits, dots, dashes and underscores.
     /// </summary>
     /// <returns>The pattern.</returns>
     [GeneratedRegex("^[A-Za-z0-9._-]{1,64}$")]

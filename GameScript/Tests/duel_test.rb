@@ -2,18 +2,18 @@
 #  duel_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a ready answer whose party_member_max is no number counts it as 0 and that a team duel start whose sides do not read leaves the duel
-#                            - Read whole numbers of the stand-in wire back as numbers and gave it lines that do not read
-#      Paulinchen  2026-10-11: Checked the line above the player's head while challenging, waiting for an accepted duel, getting a team duel's sides ready and ready for one, each with its seconds left
-#      Paulinchen  2026-10-07: Gave the live battle stand-in who, which the duel names players by their seat with
+#      Paulinchen  2026-10-12: Checked an odd party_member_max and a team duel start that does not read
+#                            - Read whole numbers of the stand-in wire back and gave it unreadable lines
+#      Paulinchen  2026-10-11: Checked the line above the player's head through a duel's steps
+#      Paulinchen  2026-10-07: Gave the live battle stand-in who
 #                            - Checked that the log says why a duel's start was refused
-#      Paulinchen  2026-10-06: Checked that a duel whose battle could not start is called off, and that a call-off of a duel that started tells why
+#      Paulinchen  2026-10-06: Checked call-offs of a duel that could not start or that started
 #                            - Checked that a team duel brings no share of the Backline
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that a duel takes the challenger's rule of the Backline
 #                            - Gave the co-op stand-in its Player record
 #                            - Gave the world stand-in tell, notice and the own id and seat
-#                            - Checked that a call to a team duel is taken only from the challenger the player accepted or through their party's leader
+#                            - Checked who may call the player to a team duel
 #                            - Checked that a player who declines a challenge is no longer named by it
 #      Paulinchen  2026-10-02: Gave the live battle stand-in tell
 #      Paulinchen  2026-10-01: Created
@@ -21,20 +21,22 @@
 #----------------------------------------------------------------
 
 # Covers duels, battles_duel.rbx with the action wheel: challenging nearby and from afar,
-# accepting, the start on both sides, and why a duel does not start. The PvP battle itself and the
-# live battle stand in, see battles_coop_test.rb and team_test.rb for those. Covers the gathering of
-# a team duel on the map too.
+# accepting, the start on both sides, why a duel does not start, and a team duel's gathering on the
+# map. The PvP battle and the live battle stand in; battles_coop_test.rb and team_test.rb cover them.
 
 require_relative "world_support"
 
-# Stand-ins for the PvP battles and the live battle.
+# The mod, available and up to date.
 module MGQ_Multiplayer
   def self.available?; true; end
   def self.outdated?; false; end
 end
+# Stands in for the battles, with none running.
 module MGQ_MpBattles; def self.running?; false; end; end
+# Stands in for the PvP battles.
 module MGQ_MpBattlesPvp
   ENABLED = true
+  # The player's team, the game's fingerprint in $game_print and the Backline in $backline_wanted.
   module Team
     def self.game; $game_print; end
     def self.build; "team-me"; end
@@ -42,7 +44,9 @@ module MGQ_MpBattlesPvp
     def self.sent_backline?; $backline_wanted; end
     def self.backline?(text); text.to_s.start_with?("backline"); end
   end
+  # The player's rule of the Backline, kept in $backline_wanted.
   module Backline; def self.wanted?; $backline_wanted; end; end
+  # The PvP battle, noting each start in $started and $backlines; $start_fails makes it fail.
   module Battle
     # Runs from its start until the first look at it, so the next duel finds the player free.
     def self.running?; running = @started; @started = false; running; end
@@ -53,10 +57,10 @@ module MGQ_MpBattlesPvp
     end
   end
 end
+# Stands in for the live battle, its role in $role and the battles joined in $joined.
 module MGQ_MpBattlesSync
-  # Plain values travel as tab-separated text, whole numbers read back as numbers, nested ones as
-  # hex of Marshal, so both can be read. A text starting with "?" stands for a line that does not
-  # read, such as one too long.
+  # Writes plain values as tab-separated text, whole numbers reading back as numbers, and nested
+  # ones as hex of Marshal; a text starting with "?" stands for a line that does not read.
   module Wire
     def self.line(values); values.all? { |v| v.is_a?(String) || v.is_a?(Numeric) } ? values.join("\t") : "M:" + Marshal.dump(values).unpack1("H*"); end
     def self.parse(text)
@@ -67,19 +71,25 @@ module MGQ_MpBattlesSync
   end
   def self.role; $role; end
   def self.join_world(*args); $joined << args; end
+  # Names a seat's player by name and seat, as the live battle does.
   def self.who(seat); peer = MGQ_MpOverworldSync::Peers.at(seat); seat == 0 ? "the player (seat 0)" : (peer ? "#{peer.state['name']} (seat #{seat})" : "seat #{seat}"); end
   def self.tell(seat, kind, battle_id, body = ""); MGQ_MpOverworldSync::Link.send_to(seat, "battle=#{kind}\nbid=#{battle_id}\n\n#{body}"); end
 end
+# The player, in seat 0.
 module MGQ_MpOverworldSync::Me; def self.seat; 0; end; end
+# Stands in for the co-op battles.
 module MGQ_MpBattlesCoop
+  # A player of a battle as the co-op battles record them.
   Player = Struct.new(:seat, :name, :builds, :vitals, :max, :order, :front, :bench) do
     def self.read(fields); fields.is_a?(self) ? fields : new(*fields); end
     def self.read_all(list); Array(list).map { |fields| read(fields) }; end
   end
   def self.team_build; ["builds-me", 8]; end
+  # Arranges the players as read, noting in $arranged whether the Backline was asked for.
   def self.arrange(players, backline = true); $arranged << backline; players.map { |fields| Player.read(fields) }; end
   def self.new_battle_id; rand(36**8).to_s(36); end
 end
+# Stands in for the team battles, noting the sides prepared in $prepared.
 module MGQ_MpBattlesTeam
   def self.prepare(*args); $prepared = args; end
   def self.opponent_name; "Side leader"; end
@@ -94,8 +104,8 @@ $backline_wanted = false
 
 load_script "battles_duel"
 
-# Keeps the duel's log lines for the checks, writing them on as before.
 $duel_log = []
+# The duel under test, its log lines also kept in $duel_log for the checks.
 module MGQ_MpBattlesDuel
   def self.log(message)
     $duel_log << message
@@ -110,10 +120,14 @@ duel = MGQ_MpBattlesDuel
 def duel_sent
   $sent.map { |seat, text| [seat, MGQ_Multiplayer::Link.parse(text)] }.select { |_, fields| fields["duel"] }
 end
-# Lets the map run a frame: the wheel's keys, the chat's, and a duel waiting to start.
+
+# Lets the map run a frame: the wheel's and the chat's input, and a duel waiting to start.
 def frame; map_frame; MGQ_MpBattlesDuel.on_map; end
-# Writes the duel's doing for the line above the player's head as of now: the lapse was built from
-# the clock a moment before, so the seconds shown are the frames left, rounded up.
+
+# Writes the duel's doing as the line above the player's head shows it now.
+#
+# The lapse was set from the clock a moment before, so the seconds shown are the frames left,
+# rounded up.
 #
 # @return [String, nil] The doing as shown, nil for none.
 def doing_shown
@@ -362,6 +376,7 @@ check("a start whose sides do not read leaves the duel, so their side takes the 
       [$sent.map(&:last).grep(/battle=leave/).size, $joined.size - joined, MGQ_MpOverworldSync::Status.lines.last], [1, 0, "The duel with Friend could not start."])
 
 # A duel the challenger already started is called off, never left waiting.
+
 # Lists the seats this game broke a live battle off with.
 #
 # @return [Array<Integer>] The seats.

@@ -3,8 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-08: Checked that a Raid World's battles have no level
-#      Paulinchen  2026-10-07: Checked that the log tells each character's level and stats before and after the sync
-#      Paulinchen  2026-10-06: Checked that the end syncs nothing more by a character's stats instead of the sync's level
+#      Paulinchen  2026-10-07: Checked that the log tells each character's sync
+#      Paulinchen  2026-10-06: Checked that nothing is synced after the end
 #      Paulinchen  2026-10-04: Created
 #
 #----------------------------------------------------------------
@@ -17,17 +17,26 @@ require_relative "support"
 
 $log = []
 $chat = []
+# Stands in for the loader's log, keeping its lines in $log.
 module MGQ_Multiplayer; module Log; def self.write(m); $log << m; end; end; end
+# Stands in for the game's scene manager.
 module SceneManager; def self.run; end; end
+# Stands in for the title screen.
 class Scene_Title; def start; end; end
+# Stands in for the chat, keeping its system lines in $chat.
 module MGQ_MpChat; def self.system(text); $chat << text; end; end
+# Stands in for battles.rbx, the running battle's kind in $kind.
 module MGQ_MpBattles; def self.kind; $kind; end; end
+# Stands in for coop_scope.rbx, a Raid World while $raid is.
 module MGQ_MpCoop; module Scope; def self.raid?; $raid; end; end; end
+# Stands in for the game's battle manager, keeping $victor's max HP at the victory in $victory_mhp.
 module BattleManager; def self.process_victory; $victory_mhp = $victor.mhp; end; end
 
 # The co-op battle, as far as the level sync asks it.
 module MGQ_MpBattlesCoop
+  # The most characters a co-op battle holds.
   MOST_CHARACTERS = 14
+  # A player in the battle: their seat, builds and the places of their characters.
   Player = Struct.new(:seat, :builds, :places) do
     def lines; places; end
   end
@@ -37,6 +46,7 @@ end
 # Builds as personal levels joined by ",".
 module MGQ_MpActors
   module Builds
+    # A character of a build.
     Member = Struct.new(:base_level)
     def self.parse(text, count); text.to_s.split(",").first(count).map { |level| Member.new(level.to_i) }; end
   end
@@ -63,6 +73,7 @@ class Game_Actor
   def hp=(value); @hp = [[value, 0].max, mhp].min; end
   def mp=(value); @mp = [[value, 0].max, mmp].min; end
 end
+# Stands in for another player's rebuilt character.
 class Game_MpActor < Game_Actor; end
 # A character whose HP cannot be set once $brittle is on.
 class Brittle < Game_Actor

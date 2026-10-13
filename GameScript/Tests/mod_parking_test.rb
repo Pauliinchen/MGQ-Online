@@ -2,12 +2,10 @@
 #  mod_parking_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Stood in for Ini.load, which a world's folder reads world.ini through, and for the favourites and hidden worlds in Player.ini
-#      Paulinchen  2026-10-10: Checked that the restart for downloaded mods keeps the game open while mods stay parked, and starts again alone with none parked
-#                            - Checked the new start asked for when the restart keeping mods parked fails, the text for parked mods that could not
-#                              come back on, and the refusal before a download offer for scripts behind a link to another drive
-#                            - Checked scripts behind a link to another drive, the conflicts told on the title screen, the parked state kept when
-#                              the journal cannot be read, saving refused without the other mods, and the mods kept parked when the updater fails
+#      Paulinchen  2026-10-12: Stood in for Ini.load and the favourites and hidden worlds in Player.ini
+#      Paulinchen  2026-10-10: Checked the restart for downloaded mods with and without parked mods
+#                            - Checked failed parked restarts, mods not back on and linked scripts before a download
+#                            - Checked linked scripts, conflicts, an unreadable journal, refused saves and the updater
 #      Paulinchen  2026-10-09: Created
 #
 #----------------------------------------------------------------
@@ -24,29 +22,49 @@ require "tmpdir"
 require_relative "support"
 
 # Stand-ins for the game.
+
+# Stands in for the base of every scene, noting a return in $returned.
 class Scene_Base; def return_scene; $returned = true; end; def update; end; end
+# Stands in for the menu scenes' base.
 class Scene_MenuBase < Scene_Base; end
+# Stands in for the load screen.
 class Scene_Load < Scene_Base; end
+# Stands in for the map's screen, noting its fade-out in $faded.
 class Scene_Map < Scene_Base; def fadeout_all; $faded = true; end; end
+# Stands in for the base of every window.
 class Window_Base; def initialize(*); end; end
+# Stands in for a window with a cursor.
 class Window_Selectable < Window_Base; end
+# Stands in for a window of commands.
 class Window_Command < Window_Selectable; end
+# Stands in for the name entry's name line.
 class Window_NameEdit < Window_Base; end
+# Stands in for the name entry's letters.
 class Window_NameInput < Window_Selectable; end
+# Stands in for a color.
 class Color; def initialize(*); end; end
+# Stands in for a sprite.
 class Sprite; def initialize(*); end; end
+# Stands in for a rectangle.
 Rect = Struct.new(:x, :y, :width, :height)
+# Stands in for the title screen.
 class Scene_Title < Scene_Base; def start; end; def create_command_window; end; def update; end; def terminate; end; def scene_changing?; false; end; end
+# Stands in for the title screen's commands.
 class Window_TitleCommand; def make_command_list; end; end
+# Stands in for the game's sounds, noting each in $sounds.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
+# Stands in for the game's input, the buttons in $buttons triggered.
 module Input; def self.trigger?(button); ($buttons || []).include?(button); end; end
+# Stands in for the scene manager, noting its calls, gotos and exit in $called, $went and $exited.
 module SceneManager
   def self.call(scene); $called = scene; end
   def self.goto(scene); $went = scene; end
   def self.exit; $exited = true; end
   def self.scene; $scene || Object.new.tap { |scene| def scene.prepare(*); end }; end
 end
+# Stands in for the Mod Config screen.
 class Scene_Config; end
+# Stands in for the data manager, noting the saves in $saves.
 module DataManager
   def self.save_system; end
   def self.load_game(_index); true; end
@@ -55,13 +73,17 @@ module DataManager
   def self.save_game(index); ($saves ||= []) << index; true; end
   def self.auto_save_game; ($saves ||= []) << :auto; true; end
 end
+# Stands in for the game's system with its config.
 GameSystem = Struct.new(:conf)
 $game_system = GameSystem.new({})
+# Stands in for the game's config tables, whose mod entries hold only Return.
 module NWConst; module Config; DEFAULT = {}; DATA = {}; DATA_TEXT = {}; MOD_CONTENTS = [{ :key => :return, :name => "Return" }]; end; end
 
 # Stand-ins for the world room and the notification box.
 $notices = []
+# Stands in for the world room, keeping its routes and whether the map is free in $map_free.
 module MGQ_MpOverworldSync
+  # The field the relay tells a world's rule for other mods in.
   MODS_RULE_FIELD = "mods_rule_value"
   @routes = {}
   class << self; attr_reader :routes; end
@@ -70,8 +92,10 @@ module MGQ_MpOverworldSync
   def self.on_leave(&_block); end
   def self.state_fields(&_block); end
   def self.map_free?; $map_free; end
+  # Stands in for the world room's players, each a Peer of seat and state.
   module Peers; Peer = Struct.new(:seat, :state); end
 end
+# Stands in for the notification box, keeping its messages in $notices.
 module MGQ_MpNotices
   def self.message(key, text, _frames = 180); $notices << [key, text]; end
   def self.drop(key, _reason = ""); $notices.reject! { |known, _| known == key }; end
@@ -86,21 +110,28 @@ $parked = []
 $restart = 1
 $restart_parked = 1
 $recover = 0
+# Stands in for the mod's base script, outdated only while $outdated is.
 module MGQ_Multiplayer
+  # The text that tells of an update.
   UPDATE_MESSAGE = "Update."
   def self.available?; true; end
   def self.outdated?; $outdated == true; end
   def self.clean(text); text; end
   def self.path(name); name; end
   def self.newer_version; "9.9.9"; end
+  # Stands in for the log, keeping its lines in $log.
   module Log; def self.write(message); ($log ||= []) << message; end; end
+  # Stands in for the keyboard, no key pressed.
   module Key; def self.triggered?(_code); false; end; def self.pressed?(_code); false; end; end
+  # Stands in for the mouse, never clicked.
   module Mouse; def self.clicked?; false; end; def self.position; nil; end; end
+  # Stands in for the input capture, its owners in $captured and the buttons in $buttons triggered.
   module Capture
     def self.start(owner); ($captured ||= []) << owner; end
     def self.stop(owner); ($captured ||= []).delete(owner); end
     def self.trigger?(button); ($buttons || []).include?(button); end
   end
+  # Stands in for Player.ini, its settings kept in $ini.
   module Player
     def self.share; end
     def self.name; "Me"; end
@@ -108,8 +139,11 @@ module MGQ_Multiplayer
     def self.store(key, value); $ini[key] = value.to_s; end
     def self.keys_under(_prefix); []; end
   end
+  # Stands in for the ini files, all of them empty.
   module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; def self.write(_path, _values); true; end; end
+  # Stands in for the DLL, its texts in $dll and its answers set by the test's globals.
   module Link
+    # A DLL function that checks its arguments against its signature and notes each call in $calls.
     Function = Struct.new(:name, :signature) do
       def call(*args)
         check_dll_call(name, args)
@@ -139,6 +173,7 @@ module MGQ_Multiplayer
       end
     end
     def self.function(name); Function.new(name, dll_signature(name)); end
+    # Reads a DLL text: the scripts, the parked mods' journal built from $parked, or $dll's entry.
     def self.read(name, _size)
       return scripts.b if name == "mp_mods_scripts"
       return $dll[name].to_s unless name == "mp_mods_parked"
@@ -147,8 +182,8 @@ module MGQ_Multiplayer
 
       "world=#{$parked.empty? ? '' : $parked_for}\nfiles=#{$parked.size}\nconflicts=#{$conflicts || 0}\n\n#{$parked.join("\n")}"
     end
-    # Lists the scripts the DLL could park, as mp_mods_scripts does: those behind a link to another
-    # drive, from $elsewhere, first, then those in the Patch folder and the parked ones, but this
+    # Lists the scripts the DLL could park as mp_mods_scripts does: those behind a link to another
+    # drive (from $elsewhere) first, then the Patch folder's and the parked ones, leaving out this
     # mod's own folder and the scripts every player has.
     def self.scripts
       raise "mp_mods_scripts failed" if $scripts_fail
@@ -179,7 +214,7 @@ load_script "world_mods_parking"
 load_script "world_text"
 load_script "world_screen"
 
-# The box on the title screen: keeps what it shows.
+# Stands in for the title screen's box, keeping what it shows in $box.
 class Sprite_MpMessageBox
   def initialize; end
   def show(title, text, hint); $box = [title, text, hint]; end
@@ -217,7 +252,7 @@ def new_scene
   scene
 end
 
-# What the lines at the top of the world screen say, the player's name left out.
+# Reads what the lines at the top of the world screen say, the player's name left out.
 #
 # @param scene [Scene_MpWorlds] The world screen.
 # @return [String] The message.
@@ -225,7 +260,7 @@ def said(scene)
   scene.instance_variable_get(:@info_window).lines[1]
 end
 
-# The commands of the world screen's question.
+# Reads the commands of the world screen's question.
 #
 # @param scene [Scene_MpWorlds] The world screen.
 # @return [Array<Symbol>, nil] The commands' symbols, nil while none is asked.
@@ -242,7 +277,7 @@ def catalog(*lines)
   MGQ_MpWorldMods.forget_installed
 end
 
-# Starts a new session of the game: this script forgets everything but the files.
+# Starts a new session of the game: the parking script forgets everything but the files.
 def new_session
   parking = MGQ_MpModParking
   [:@started, :@hold, :@kept_at_start, :@owned, :@due, :@notice, :@by_hand, :@kick, :@box, :@box_shown, :@scene, :@start_parked, :@recheck, :@last_state].each { |name| parking.instance_variable_set(name, nil) }

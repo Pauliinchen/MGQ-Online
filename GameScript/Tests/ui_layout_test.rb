@@ -2,8 +2,8 @@
 #  ui_layout_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Counted the scrollbar track among the colors every preset names
-#                            - Followed the settings to their own group of the Mod Config
+#      Paulinchen  2026-10-12: Counted the scrollbar track among the preset colors
+#                            - Followed the settings to their own Mod Config group
 #      Paulinchen  2026-10-11: Created
 #
 #----------------------------------------------------------------
@@ -21,50 +21,88 @@ $keys_down = []
 $mouse = nil
 $player_ini = {}
 $frame = 0
+# The mod's base script: the log in $log, the keys held in $keys_down, the mouse at $mouse and
+# Player.ini in $player_ini.
 module MGQ_Multiplayer
+  # The mod's log, kept in $log.
   module Log; def self.write(message); $log << message; end; end
+  # Windows' keys: those in $keys_down are held and triggered.
   module Key
+    # Watches nothing.
     def self.watch(*_codes); end
+    # Whether a key in $keys_down was pressed.
     def self.triggered?(code); $keys_down.include?(code); end
+    # Whether a key in $keys_down is pressed.
     def self.pressed?(code); $keys_down.include?(code); end
+    # Whether a key in $keys_down is held.
     def self.down?(code); $keys_down.include?(code); end
   end
+  # The mouse at $mouse.
   module Mouse; def self.position; $mouse; end; end
+  # The capture, which never triggers a button.
   module Capture; def self.trigger?(_button); false; end; end
+  # Player.ini, kept in $player_ini.
   module Player
+    # A setting of Player.ini.
     def self.setting(key); $player_ini[key]; end
+    # Stores a setting.
     def self.store(key, value); $player_ini[key] = value.to_s; true; end
+    # Forgets a setting.
     def self.forget(key); $player_ini.delete(key); true; end
   end
 end
+# Mod Config Remake, which stores an entry marked :mod_stored.
 module ModConfigRemake; def self.mod_stored?(entry); entry[:mod_stored] ? true : false; end; end
+# Mod Config with its Return row alone.
 module NWConst; module Config; MOD_CONTENTS = [{ :key => :return }]; end; end
+# The game's color.
 Color = Struct.new(:red, :green, :blue, :alpha)
+# The game's rectangle.
 Rect = Struct.new(:x, :y, :width, :height)
+# The game's font.
 Font = Struct.new(:size, :color, :bold, :outline, :out_color)
 # A picture that records its fills and texts.
 class Bitmap
+  # Its size, its font and the fills and texts drawn.
   attr_reader :width, :height, :font, :fills, :texts
+  # Creates an empty picture in a white font of 24.
   def initialize(width, height); @width = width; @height = height; @font = Font.new(24, Color.new(255, 255, 255, 255)); @fills = []; @texts = []; end
+  # The picture's whole rectangle.
   def rect; Rect.new(0, 0, @width, @height); end
+  # Measures a text at half the font's size a character.
   def text_size(text); Rect.new(0, 0, text.to_s.size * @font.size / 2, @font.size); end
+  # Records a text drawn with its place.
   def draw_text(x, y, _width, _height, text, _align = 0); @texts << [x, y, text]; end
+  # Records a fill with its rectangle and color values.
+  #
+  # @param args [Array] A rectangle and a color, or x, y, width, height and a color.
   def fill_rect(*args)
     x, y, w, h, color = args[0].is_a?(Rect) ? [args[0].x, args[0].y, args[0].width, args[0].height, args[1]] : args
     @fills << [x, y, w, h, color.to_a]
   end
+  # Forgets the fills and texts.
   def clear; @fills.clear; @texts.clear; end
+  # Frees the picture.
   def dispose; @disposed = true; end
+  # Whether the picture was freed.
   def disposed?; @disposed ? true : false; end
 end
+# The game's sprite.
 class Sprite
+  # Its picture, place, depth and whether it shows.
   attr_accessor :bitmap, :x, :y, :z, :visible
+  # Creates a visible sprite at the top left.
   def initialize(_viewport = nil); @x = @y = @z = 0; @visible = true; end
+  # Frees the sprite.
   def dispose; @disposed = true; end
+  # Whether the sprite was freed.
   def disposed?; @disposed ? true : false; end
 end
+# The game's screen of 640 by 480 pixels, at frame $frame.
 module Graphics; def self.width; 640; end; def self.height; 480; end; def self.update; end; def self.frame_count; $frame; end; end
+# The game's window base, which draws nothing.
 class Window_Base; def initialize(*); end; end
+# The game's scene base, which does nothing.
 class Scene_Base; def update; end; def start; end; end
 
 load_script "core_hotkeys"
@@ -75,11 +113,18 @@ load_script "ui_layout"
 style = MGQ_MpUi::Style
 theme = MGQ_MpUi::Theme
 layout = MGQ_MpUi::Layout
+# The layout's Alt key.
 ALT = layout::ALT_KEY
+# The layout's mouse button.
 BUTTON = layout::LEFT_BUTTON
 
 # Runs a frame: the tick after Graphics.update, with the mouse at a point, the left Alt and button
 # held or not.
+#
+# @param position [Array(Integer, Integer), nil] The mouse's place.
+# @param alt [Boolean] Whether the left Alt is held.
+# @param held [Boolean] Whether the left button is held.
+# @param offers [Array<Array>] The arguments of each box offered to the layout first.
 def frame(position, alt, held, offers = [])
   offers.each { |offer| MGQ_MpUi::Layout.offer(*offer) }
   $mouse = position

@@ -24,11 +24,13 @@ module MGQ_MpEdgeArrows
   # Pixels between the screen's edge and an arrow's center, room for the triangle's reach.
   MARGIN = 14
 
-  # Pixels from a triangle's base to its tip, and across its base.
+  # Pixels from a triangle's base to its tip.
   LENGTH = 14
+
+  # Pixels across a triangle's base.
   WIDTH = 12
 
-  # Pixels the triangle reaches from its center at most: half its diagonal, see Sprite_MpEdgeArrow.
+  # Pixels the triangle reaches from its center at most, to a corner of its base.
   REACH = Math.sqrt((LENGTH / 2.0) ** 2 + (WIDTH / 2.0) ** 2).ceil
 
   # Degrees an arrow turns by at least before it is drawn anew, so a ghost walking in the distance
@@ -79,7 +81,10 @@ module MGQ_MpEdgeArrows
     end
   end
 
+  # The names of the players whose arrows were logged as shown, by their ids.
   @shown = {}
+
+  # The reason that hid the arrows last frame, nil while they showed.
   @reason = nil
 
   extend MGQ_MpLog
@@ -132,7 +137,7 @@ module MGQ_MpEdgeArrows
     x < 0 || y < 0 || x >= Graphics.width || y >= Graphics.height
   end
 
-  # The rect the arrows' centers stay in: the screen less MARGIN on each side, and less the strip
+  # Tells the rect the arrows' centers stay in: the screen less MARGIN on each side, and less the strip
   # of the mod at the top (see MGQ_MpUi.top_room).
   #
   # @return [Array(Integer, Integer, Integer, Integer)] Left, top, right and bottom.
@@ -332,7 +337,7 @@ module MGQ_MpEdgeArrows
       free.min_by { |candidate| candidate.opacity }
     end
 
-    # The sprites, for the tests.
+    # Hands out the sprites, for the tests.
     #
     # @return [Array<Sprite_MpEdgeArrow>] The sprites.
     def arrows

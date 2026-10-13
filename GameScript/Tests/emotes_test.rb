@@ -2,19 +2,19 @@
 #  emotes_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that the emote hotkey pressed while the player types stays out of the log, and that a refusal is logged under the hotkeys
-#      Paulinchen  2026-10-11: Checked each of the wheel's boxes in its frame, the picked one lit, and the wheel drawn anew after a preset change
-#                            - Checked the wheel's picture: its hint under the ring, the name of the emote pointed at and the fade in and out
-#                            - Checked the hint drawn whole with a rebound key's longer name
-#      Paulinchen  2026-10-06: Checked that the World overview keeps the wheel shut, and that a loaded save with fewer frames ends the cooldown
-#                            - Left loading ui_wheel.rbx to world_support.rb, which loads it already
-#                            - Pointed at emotes with the arrows held, diagonals and none included, and kept the last one once they are let go, a diagonal also when its arrows are let go one after the other
+#      Paulinchen  2026-10-12: Checked the log of the emote hotkey while typing and when refused
+#      Paulinchen  2026-10-11: Checked the wheel's boxes, the picked one lit and a redraw after a preset change
+#                            - Checked the wheel's hint, the name of the emote pointed at and the fades
+#                            - Checked the hint drawn whole with a rebound hotkey's longer name
+#      Paulinchen  2026-10-06: Checked that the World overview keeps the wheel shut and a loaded save ends the cooldown
+#                            - Left loading ui_wheel.rbx to world_support.rb
+#                            - Pointed at emotes with the arrows held, diagonals included
 #      Paulinchen  2026-10-04: Created
 #
 #----------------------------------------------------------------
 
-# Covers ui_emotes.rbx: the emote wheel's key, pointing at an emote with the arrows held, playing an emote on the player and
-# telling the others, and another player's emote on their ghost.
+# Covers ui_emotes.rbx: the emote wheel's hotkey, pointing at an emote with the arrows held, playing
+# an emote on the player and telling the others, and another player's emote on their ghost.
 
 require_relative "world_support"
 
@@ -26,6 +26,7 @@ require_relative "world_support"
     def jump(x, y); @jumps = (@jumps || 0) + 1; end
   end
 end
+# Stands in for the screen's frame count, kept in $frame_count.
 module Graphics; def self.frame_count; $frame_count; end; end
 $frame_count = 0
 
@@ -133,6 +134,7 @@ check("the chat box keeps the wheel shut, the letter typed left out of the log",
 MGQ_MpChat.stop_typing
 
 # Not while the World overview is open, whose hold on the buttons stays.
+# Stands in for the World overview, open while $overview_open is.
 module MGQ_MpWorldOverview; def self.open?; $overview_open; end; end
 $overview_open = true
 MGQ_Multiplayer::Capture.start(:overview)
@@ -151,12 +153,15 @@ MGQ_Multiplayer::Capture.stop(:overview)
 # The wheel's picture: its boxes in the shared style, the picked emote's name below the ring and
 # the hint under it, fading in on open and out on close with the picture kept. Pictures measure
 # each character at 7 pixels.
+# Stands in for a sprite, its picture and place readable.
 class Sprite
   attr_accessor :bitmap, :x, :y, :z, :ox, :oy, :opacity, :visible
   def disposed?; false; end
   def dispose; end
 end
+# Stands in for a picture, keeping its texts and fills.
 class Bitmap
+  # The picture's font.
   Font = Struct.new(:size, :color, :bold, :outline, :out_color)
   attr_reader :texts, :fills, :font
   def initialize(*); @texts = []; @fills = []; @font = Font.new; end
@@ -167,6 +172,7 @@ class Bitmap
   def blt(*); end
   def dispose; end
 end
+# Stands in for the game's cache of system pictures.
 module Cache; def self.system(_name); :balloons; end; end
 style = MGQ_MpUi::Style
 wheel = Sprite_MpEmoteWheel.new(nil)

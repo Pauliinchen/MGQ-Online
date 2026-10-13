@@ -2,9 +2,9 @@
 //  ReleaseDownload.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-07: Logged each request to GitHub with its outcome, and why a download was refused
-//                            - Took the client to download with, so the tests hand in one of their own
-//      Paulinchen  2026-10-06: Took a zip of a release too, up to the size an upload may have
+//      Paulinchen  2026-10-07: Logged each request to GitHub and each refused download
+//                            - Took the client to download with
+//      Paulinchen  2026-10-06: Took a zip of a release too
 //                            - Created
 //
 //----------------------------------------------------------------

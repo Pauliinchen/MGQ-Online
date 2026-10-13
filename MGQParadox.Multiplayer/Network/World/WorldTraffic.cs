@@ -2,7 +2,7 @@
 //  WorldTraffic.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Counted at most 32 kinds of messages per direction and line, the rest as "other", since other games name the kinds
+//      Paulinchen  2026-10-08: Counted at most 32 kinds of messages per direction and line, the rest as "other"
 //      Paulinchen  2026-10-07: Created
 //
 //----------------------------------------------------------------
@@ -20,7 +20,8 @@ namespace MGQParadox.Multiplayer.Network.World;
 /// every minute instead of a line per message.
 /// </summary>
 /// <remarks>
-/// The states alone came several times a second from every other game, which made up most of the log.
+/// The states alone come several times a second from every other game and would make up most of
+/// the log.
 /// </remarks>
 internal sealed class WorldTraffic
 {

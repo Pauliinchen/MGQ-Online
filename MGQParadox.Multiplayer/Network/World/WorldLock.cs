@@ -2,8 +2,8 @@
 //  WorldLock.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-08: Derived the password's key with a PBKDF2 of its own, which runs under Proton too
-//      Paulinchen  2026-10-07: Sealed the token through SealedBox, shared with the trades and the starting save
+//      Paulinchen  2026-10-08: Derived the password's key with a PBKDF2 of its own
+//      Paulinchen  2026-10-07: Sealed the token through SealedBox
 //      Paulinchen  2026-10-06: Hashed new locks' passwords 600 000 times instead of 200 000
 //      Paulinchen  2026-09-29: Created
 //

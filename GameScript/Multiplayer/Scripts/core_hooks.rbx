@@ -3,27 +3,25 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Let around run the original with other arguments
-#      Paulinchen  2026-10-08: Counted the distinct methods each script follows and wraps, and named them in its line of report
-#                            - Kept a wrap of around only once the method was wrapped, so a script registering again wraps a method that was not defined at its first try
-#                            - Counted the methods each script follows and wraps and logged them as one line per script through report, instead of a line per method
-#      Paulinchen  2026-10-07: Gave around the script that registers, so a script loaded again replaces its wrap instead of wrapping the method a second time
-#                            - Logged each hook a script registers, each wrap, and who holds the player whenever that changes
+#      Paulinchen  2026-10-08: Counted and named the distinct methods in report
+#                            - Kept a wrap of around only once the method was wrapped
+#                            - Logged the hooks as one line per script through report
+#      Paulinchen  2026-10-07: Gave around the script that registers
+#                            - Logged each hook, each wrap and who holds the player
 #      Paulinchen  2026-10-06: Kept the map's menu shut through MGQ_MpGame
 #      Paulinchen  2026-10-04: Renamed from mp_hooks.rbx
-#      Paulinchen  2026-10-03: Added around, a wrap that decides when the original runs, and hold_player, which keeps the player standing and the menu shut for every script
+#      Paulinchen  2026-10-03: Added around and hold_player
 #                            - Logged through MGQ_MpLog
-#                            - Kept each method's blocks ready in their order, so a wrapped method looks nothing up and builds nothing when it runs
+#                            - Kept each method's blocks ready in their order
 #      Paulinchen  2026-10-02: Created
 #
 #----------------------------------------------------------------
 
-# The game methods several scripts follow, such as Scene_Map#update_scene, each wrapped once here.
-# A script registers a block to run before or after the method instead of wrapping it itself, so no
-# script depends on how the others wrapped it. A hook that changes what a method does or returns
-# is a wrap of the script's own, made with around. What several scripts change the same way is
-# wrapped once here too: holding the player, see hold_player.
+# Wraps the game methods several scripts follow, such as Scene_Map#update_scene, once each, and
+# runs the blocks the scripts register before or after them.
 #
-# It must never interrupt the game, so every entry point rescues.
+# Scripts register here instead of wrapping a method themselves, so none depends on how the others
+# wrapped it.
 module MGQ_MpHooks
   # The blocks by method, then by when they run, then by the script that registered them.
   @blocks ||= {}
@@ -62,6 +60,7 @@ module MGQ_MpHooks
   # @param owner [Module] The class that has the method, the singleton class for a module's method.
   # @param name [Symbol] The method.
   # @param script [String] Who registers, which a second registration of replaces.
+  # @yield [*args] Runs with the object as self and the method's arguments.
   def self.before(owner, name, script, &block)
     register(owner, name, :before, script, block)
   end
@@ -74,6 +73,7 @@ module MGQ_MpHooks
   # @param owner [Module] The class that has the method, the singleton class for a module's method.
   # @param name [Symbol] The method.
   # @param script [String] Who registers, which a second registration of replaces.
+  # @yield [*args] Runs with the object as self and the method's arguments.
   def self.after(owner, name, script, &block)
     register(owner, name, :after, script, block)
   end
@@ -126,12 +126,12 @@ module MGQ_MpHooks
     @originals[[owner, name]] = original
   end
 
-  # Wraps a game method in a block that decides when the original runs and what the method returns.
+  # Wraps a game method in a block that decides when the original runs and what the method returns,
+  # for a hook that changes what the method does. A script registering again replaces its block
+  # instead of wrapping the method a second time.
   #
-  # Every wrap keeps the method it wraps under a name of its own, since a method can be wrapped
-  # more than once. The block's errors reach the game, as the method's own would. A script that
-  # registers again, as a script loaded again does, replaces its block instead of wrapping the
-  # method a second time. A method not defined yet raises and keeps nothing, so a later try wraps it.
+  # The block's errors reach the game as the method's own would, and a method not defined yet
+  # raises and keeps nothing, so a later try wraps it.
   #
   # @param owner [Module] The class that has the method, the singleton class for a module's method.
   # @param name [Symbol] The method.
@@ -173,9 +173,8 @@ module MGQ_MpHooks
   end
 
   # Writes how many methods each script followed and wrapped since the last report, and which, one
-  # line per script, instead of a line per method, which made up some 170 lines of every session's
-  # log. Called once the scripts loaded, and every frame for the hooks scripts register as the game
-  # runs.
+  # line per script. Called once the scripts loaded, and every frame for the hooks scripts register
+  # as the game runs.
   def self.report
     return if @installed.empty?
 

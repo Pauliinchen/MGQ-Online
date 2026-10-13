@@ -2,9 +2,9 @@
 //  CatalogMod.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-09: Knew whether the catalog marks the mod personal, which a world that turns other mods off never turns off
-//                            - Named the kind of an entry of a name alone, which only marks a mod personal
-//      Paulinchen  2026-10-06: Removed VersionOf, which only the game script needs
+//      Paulinchen  2026-10-09: Knew whether the catalog marks the mod personal
+//                            - Named the kind of an entry of a name alone
+//      Paulinchen  2026-10-06: Removed VersionOf
 //                            - Knew the version whose Mod Config options the relay keeps
 //                            - Told a link to a zip of a release from a link to a script
 //                            - Created

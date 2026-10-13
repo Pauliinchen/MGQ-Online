@@ -2,10 +2,10 @@
 //  RaidBosses.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Kept each boss pool as the share of its raid max HP left, filled up by 3 % of it a minute, and took the pools the world room tells too
-//                            - Queued every turn a battle reports and sent them in order, each again with the same sequence number until the relay answers, instead of one report at a time
-//                            - Kept a pool the world room told while a fetch or report ran instead of the older one its answer carried, so a late answer never lifts a defeat
-//                            - Dropped a report with a log line after about two minutes of tries again, so one the relay never takes no longer holds back the later ones
+//      Paulinchen  2026-10-10: Kept each boss pool as a share of its raid max HP, filled up by 3 % a minute, and took pools the world room tells
+//                            - Queued every reported turn and sent them in order, retrying each with the same sequence number
+//                            - Kept a pool the world room told while a request ran over the older one its answer carried
+//                            - Dropped a report after about two minutes of retries
 //      Paulinchen  2026-10-09: Created
 //
 //----------------------------------------------------------------
@@ -47,7 +47,7 @@ internal sealed class RaidBosses
     private const string Unreachable = "The relay could not be reached. Check your internet connection.";
 
     /// <summary>
-    /// The longest boss key, in characters, as the relay takes it.
+    /// The longest boss key, in characters, which stays within what the relay takes.
     /// </summary>
     private const int MaxKeyLength = 64;
 

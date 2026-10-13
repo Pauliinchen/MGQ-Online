@@ -2,93 +2,93 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Showed the relay's own notices, such as a new release's, red between slashes in every tab instead of as an admin's line
-#                            - Scrolled the open chat log with the mouse wheel, three rows a notch
-#                            - Drew a scrollbar beside the open log's rows in place of its arrows
-#                            - Put every chat tab back to the All tab with the global chat as the world closes, so lines no longer go to a chat the picked tab hides
-#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#      Paulinchen  2026-10-12: Showed the relay's own notices red between slashes in every tab
+#                            - Scrolled the open chat log with the mouse wheel
+#                            - Drew a scrollbar beside the open log's rows
+#                            - Put the chat back to the All tab and the global chat as the world closes
+#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #                            - Read the map's viewports through MGQ_MpGame
-#      Paulinchen  2026-10-11: Showed the dimmed tabs above the closed log only while it shows lines, so a chat's unread mark no longer leaves them on the screen for good
-#                            - Started the chat in the global chat instead of the map chat, also in every world after the first
-#                            - Moved and resized the chat log with Alt and the mouse through MGQ_MpUi::Layout, the map's as Chat and the battle's as Battle chat, each starting where it lay before at the size chat_size keeps
-#                            - Dropped the log's own resizing with Alt and the mouse, which kept its size in chat_size
-#                            - Snapped the log's height to whole rows below its tabs and above the chat box
-#                            - Raised the log's narrowest width to what its tabs and hints need, and its fewest rows to the list of fitting names
-#                            - Drew a hint of the empty chat box in the tiny font while it is wider than its room
-#                            - Offered the log to the layout whenever it shows, also while the chat box is closed
-#                            - Drew the open chat, its tabs and a player's menu in the interface preset's colors and frames, anew once the preset changes
-#                            - Took the left Alt from MGQ_MpUi::Layout and named moving, resizing and putting back the chat in the Alt hint and the help
-#                            - Renamed the say chat to the map chat, chosen with /m or /map instead of /s or /say, its lines still marked say for the games of earlier releases
-#                            - Drew the chats in the colors of World of Warcraft: the global chat plain white without a tag, the map chat in its zone pink, the party chat in its party blue and whispers in its whisper pink
-#                            - Showed the Whisper tab only once the player whispered, got a whisper or chose the whisper chat, until the world closes
+#      Paulinchen  2026-10-11: Showed the dimmed tabs above the closed log only while it shows lines
+#                            - Started the chat in the global chat
+#                            - Moved and resized the chat log through MGQ_MpUi::Layout
+#                            - Dropped the log's own resizing
+#                            - Snapped the log's height to whole rows
+#                            - Raised the log's least width and fewest rows
+#                            - Drew a hint of the empty chat box in the tiny font when too wide
+#                            - Offered the log to the layout whenever it shows
+#                            - Drew the open chat, its tabs and a player's menu in the preset's look
+#                            - Took the left Alt from MGQ_MpUi::Layout and named the layout in the hints
+#                            - Renamed the say chat to the map chat, chosen with /m or /map
+#                            - Drew the chats in the colors of World of Warcraft
+#                            - Showed the Whisper tab only once whispers are in use
 #                            - Named every player outside the party in plain white in the log
-#                            - Drew the log, its tabs, its menu, the bubbles and the hints in the shared style, dropping the log's own colors and font size, and another player's name in their own color
-#                            - Faded a line of the closed log away over its last frames instead of dropping it at once
-#                            - Brought back the last 20 lines sent with Alt and up or down, kept only for the session
-#                            - Answered the last player who whispered with /r, which chooses them for the whisper chat as /w does and is refused as /w is once they left
-#                            - Played the recovery sound once a frame for whispers that arrive while the chat box is closed
-#                            - Drew the tabs dimmed above the closed log while one holds unread lines, the Whisper tab glowing too
-#                            - Buzzed once a frame for a paste longer than the box takes, not once per character
+#                            - Drew the log, its tabs, its menu, the bubbles and the hints in the shared style
+#                            - Faded a line of the closed log away over its last frames
+#                            - Brought back the last 20 lines sent with Alt and up or down
+#                            - Answered the last player who whispered with /r
+#                            - Played the recovery sound for whispers while the chat box is closed
+#                            - Drew the tabs dimmed above the closed log while one holds unread lines
+#                            - Buzzed once a frame for a paste longer than the box takes
 #                            - Named the sent lines, /r and Ctrl+V in the hints and the help
-#      Paulinchen  2026-10-08: Split the chat into the global chat, the say chat that only the players on the same map hear, and the party chat, each kept by /g, /s or /p until another is chosen
-#                            - Showed the log in tabs, all lines or one chat's, picked with the mouse or Alt with left and right
-#                            - Resized the chat log with Alt and the mouse dragged, keeping its size in Player.ini
+#      Paulinchen  2026-10-08: Split the chat into the global, say and party chats
+#                            - Showed the log in tabs
+#                            - Resized the chat log with Alt and the mouse
 #                            - Wrote the chat log smaller
 #                            - Brought the chat log above everything while the player types
-#                            - Closed the chat box with the numpad's 0 through MGQ_MpUi.numpad_cancel?, also with Num Lock off
+#                            - Closed the chat box with the numpad's 0 through MGQ_MpUi.numpad_cancel?
 #                            - Mirrored only the global chat to the relay for the world's admins
-#                            - Added whispers to one player with /w or /whisper and their name, offering the names that fit in a list above the box, and a Whisper tab in pale pink
-#                            - Added a Help tab at the far right that /help opens, which only reads and closes once left, and named it and the resizing in the empty box
+#                            - Added whispers with /w or /whisper and a Whisper tab
+#                            - Added a Help tab that /help opens
 #                            - Drew the bubbles in their chat's color, slightly see-through
-#                            - Lowered the bubbles to just over the name, going one line higher while a line such as an invite shows above it
-#                            - Shortened the empty chat box's hint to scrolling, Alt and /help, and showed the tab and resize controls in its place while Alt is held
-#                            - Let the Global, Party and Say tabs glow yellow at their top right corner while they hold lines the player has not seen, opaque at the corner
-#                            - Picked the tabs and resized with the left Alt alone, dropping what it typed as an Alt code with the numpad, which showed a symbol the font lacks
-#                            - Outlined the tabs and the open chat thinly, the chat in white while Alt is held to resize it, the picked tab open into the chat
-#                            - Filled the picked tab with its chat's color under dark text, which white tabs lacked the contrast for
-#                            - Opened a menu of what to do with another player, such as a party invite, a duel, a trade or a whisper, with a click on their name in the open chat box
-#                            - Trusted only the relay's own mark on an admin's line, so a player's message cannot pose as one
-#                            - Rested the map's chat log just under the topmost viewport, which it covered with the wheels and the World overview
-#                            - Sized the log before following the mouse, which a held button crashed on a log made that frame
-#                            - Found players through MGQ_MpOverworldSync::Peers and moved the three lists by one arrow step
-#                            - Stopped following the keys and the mouse once a menu's choice closed the chat box, which failed on the closed box
+#                            - Lowered the bubbles to just over the name
+#                            - Shortened the empty chat box's hint and showed the Alt controls in it
+#                            - Let the tabs with unread lines glow yellow at their top right corner
+#                            - Picked the tabs and resized with the left Alt alone
+#                            - Outlined the tabs and the open chat thinly
+#                            - Filled the picked tab with its chat's color under dark text
+#                            - Opened a menu of another player with a click on their name
+#                            - Trusted only the relay's own mark on an admin's line
+#                            - Rested the map's chat log just under the topmost viewport
+#                            - Sized the log before following the mouse
+#                            - Found players through MGQ_MpOverworldSync::Peers
+#                            - Stopped following the keys and the mouse once a menu's choice closed the chat box
 #                            - Offered only the whisper in a player's menu during a battle
 #                            - Showed whispers in the closed chat log whatever the tab
-#                            - Numbered a name that several players share in the whisper list and /w, and whispered to the player chosen by their id
-#                            - Named the sender of a line by the same numbered name, in the log and in their menu
-#                            - Sent a line of the say chat once to everyone with the sender's map, on which alone it shows
-#                            - Mirrored a global line to the relay before sending it, turning it down when it comes too fast
+#                            - Numbered a name that several players share and whispered by player id
+#                            - Named the sender of a line by the same numbered name
+#                            - Sent a line of the say chat once to everyone with the sender's map
+#                            - Mirrored a global line to the relay before sending it
 #                            - Left out the 0 that the numpad's 0 types after it closed a player's menu
-#                            - Kept the chat's size while a battle draws the log smaller, and kept a drag within the screen
-#                            - Kept the typing of a frame in which the menu's player left, without its Enter or Escape
-#                            - Colored the sender's name and kept its click spot when the line breaks right after it
+#                            - Kept the chat's size in battles and a drag within the screen
+#                            - Kept the typing of a frame in which the menu's player left
+#                            - Colored the sender's name when the line breaks right after it
 #                            - Left out the line and paragraph separators of players' and admins' lines
 #                            - Built a menu's choices and the fitting names once per frame
 #                            - Said how to close the chat box, the help tab and a player's menu
-#      Paulinchen  2026-10-07: Mirrored every line sent to everyone to the relay for the world's admins, and showed an admin's line from the relay as [Admin] in gold
-#                            - Closed the chat box with the numpad's 0, as the game's windows close
-#                            - Scrolled the chat log while the box is open with up, down, Page Up and Page Down, keeping the rows in place as lines come in
-#                            - Registered the map's, the battle's and its sprites' hooks through core_hooks.rbx instead of wraps of this script
-#                            - Named senders through MGQ_MpOverworldSync.who and took white and the depths from MGQ_MpUi
-#                            - Logged the chat box opening and closing with why, each line sent, refused or received with a count, cut to 80 characters, the game's own lines and the chat forgotten
-#      Paulinchen  2026-10-06: Opened the chat box while the map shows a message, such as the story's dialogue
-#                            - Added the chat's choice to the action wheel's ring by order instead of to its left
-#      Paulinchen  2026-10-05: Took the typing of an open chat box while the map shows a message, which left both stuck
-#      Paulinchen  2026-10-04: Named the party tag by its module inside the log line, as Ruby 1.9 finds it
-#                            - Sent a line typed with /p to the party only, and colored the senders' names: own yellow, the party's green, others white
-#                            - Opened the chat box while the player waits for the party's story, and kept an open box once an event starts
-#                            - Left out the character of the key that opened the chat box, which arrived after it opened
-#                            - Removed BLINK_FRAMES, which MGQ_MpUi::TextEdit holds
+#      Paulinchen  2026-10-07: Mirrored lines to the relay for admins and showed an admin's line as [Admin]
+#                            - Closed the chat box with the numpad's 0
+#                            - Scrolled the chat log while the box is open
+#                            - Registered the hooks through core_hooks.rbx
+#                            - Named senders through MGQ_MpOverworldSync.who and took white and depths from MGQ_MpUi
+#                            - Logged the chat box and every line sent, refused or received
+#      Paulinchen  2026-10-06: Opened the chat box while the map shows a message
+#                            - Added the chat's choice to the action wheel's ring by order
+#      Paulinchen  2026-10-05: Took the typing of an open chat box while the map shows a message
+#      Paulinchen  2026-10-04: Named the party tag by its module inside the log line
+#                            - Sent a line typed with /p to the party only and colored the senders' names
+#                            - Opened the chat box while the player waits for the party's story
+#                            - Left out the character of the key that opened the chat box
+#                            - Removed BLINK_FRAMES
 #                            - Renamed from mp_chat.rbx
-#                            - Drew the chat box through MGQ_MpUi::TextBox, which every text box shares
-#                            - Typed through MGQ_MpUi::TextEdit, which every text box shares
-#      Paulinchen  2026-10-03: Broke lines through MGQ_MpUi.wrap, which the windows share
+#                            - Drew the chat box through MGQ_MpUi::TextBox
+#                            - Typed through MGQ_MpUi::TextEdit
+#      Paulinchen  2026-10-03: Broke lines through MGQ_MpUi.wrap
 #                            - Filled the wheel's chat choice and told the wheel while the chat box is open
 #                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
-#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Sent messages, showed notices and read the world through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
-#                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
-#      Paulinchen  2026-10-02: Opened the chat box with the key the player bound
+#                            - Read the bound keys through MGQ_MpHotkeys
+#      Paulinchen  2026-10-02: Opened the chat box with its bound hotkey
 #                            - Followed the map and its sprites through core_hooks.rbx
 #      Paulinchen  2026-10-01: Let the chat box and the chat log work in battles, above the battle's windows
 #                            - Showed the game's own lines in the chat log, such as a player leaving a battle
@@ -102,7 +102,7 @@
 # player binds another, see core_hotkeys.rbx) or the action wheel of ui_actions.rbx opens the chat
 # box. It builds on overworld_sync.rbx, which knows the other players and their messages.
 #
-# It must never interrupt the game, so every entry point rescues.
+# It must never interrupt the game, so its per-frame work rescues.
 module MGQ_MpChat
   # Characters a chat line may have.
   MAX_LENGTH = 120
@@ -132,8 +132,10 @@ module MGQ_MpChat
   # separators, which would break the line in the log.
   LINE_BREAKERS = /[[:cntrl:]  ]/
 
-  # Windows' codes of Page Up and Page Down, which scroll the chat log a page.
+  # Windows' code of Page Up, which scrolls the chat log a page up.
   PAGE_UP_KEY = 0x21
+
+  # Windows' code of Page Down, which scrolls the chat log a page down.
   PAGE_DOWN_KEY = 0x22
 
   # Rows Page Up and Page Down scroll the chat log by.
@@ -143,13 +145,19 @@ module MGQ_MpChat
   # or down it brings back the lines sent, and with the mouse the layout moves and resizes the log.
   ALT_KEY = MGQ_MpUi::Layout::ALT_KEY
 
-  # Windows' codes of left, right and Tab.
+  # Windows' code of left, which with the left Alt picks the tab before.
   LEFT_KEY = 0x25
+
+  # Windows' code of right, which with the left Alt picks the next tab.
   RIGHT_KEY = 0x27
+
+  # Windows' code of Tab, which takes the picked name of the list of fitting names.
   TAB_KEY = 0x09
 
-  # Windows' codes of up and down, which with the left Alt bring back the lines sent.
+  # Windows' code of up, which with the left Alt brings back the line sent before.
   UP_KEY = 0x26
+
+  # Windows' code of down, which with the left Alt brings back the line sent after.
   DOWN_KEY = 0x28
 
   # Lines sent that Alt with up and down bring back, kept for the session alone.
@@ -226,7 +234,7 @@ module MGQ_MpChat
   # The setting in Player.ini that holds the log's size as width x rows, the size the layout starts
   # it at.
   #
-  # Builds before the layout resized the log by themselves and kept its size here.
+  # Only earlier builds write it; this script only reads it.
   SIZE_SETTING = "chat_size"
 
   # The log's size without SIZE_SETTING: its width and its rows of lines.
@@ -283,27 +291,70 @@ module MGQ_MpChat
     end
   end
 
+  # The log's lines, oldest first, KEPT at most.
   @log = []
+
+  # Each sender's bubble as [text, frames left, chat], by their seat or :me.
   @bubbles = {}
+
+  # The chat box's editor, nil while the box is closed.
   @edit = nil
+
+  # Lines sent in the open world, for the log.
   @sent = 0
+
+  # Lines received in the open world, for the log.
   @received = 0
+
+  # Rows the log is scrolled up, see scroll.
   @scroll = 0
+
+  # The chat a line without a command goes to, see channel.
   @channel = :global
+
+  # The log's picked tab, see tab.
   @tab = :all
+
+  # The chats with lines the player has not seen, true by chat.
   @unread = {}
+
+  # The name the whisper chat goes to, see whisper_to.
   @whisper_to = nil
+
+  # The id of the player the whisper chat goes to, nil before one was chosen.
   @whisper_id = nil
+
+  # The picked place in the list of fitting names, see pick.
   @pick = 0
+
+  # Frames in which what is typed is dropped as an Alt code, see without_alt_code.
   @alt_frames = 0
+
+  # The open menu of another player, see menu.
   @menu = nil
+
+  # Frames counted by tick, which end what suggestions and menu_options keep.
   @frame = 0
+
+  # The lines sent, see history.
   @history = []
+
+  # The sent line a walk through them stands at, nil outside a walk.
   @history_at = nil
+
+  # What the chat box held before a walk through the lines sent began.
   @draft = nil
+
+  # The last player who whispered to the player as [name, id], nil before anyone did.
   @reply_to = nil
+
+  # The frame in which a refused character last buzzed.
   @buzzed = nil
+
+  # The frame in which a whisper last chimed.
   @chimed = nil
+
+  # Whether the Whisper tab shows, see whisper_tab?.
   @whisper_tab = false
 
   # The help tab's lines, which no other tab shows.
@@ -1437,8 +1488,8 @@ class Sprite_MpChatLog < Sprite
   # Room left and right of a tab's name.
   TAB_PAD = 6
 
-  # Narrowest the log gets: the tabs with the help tab need 306 pixels, and the widest hint,
-  # HELP_HINT in the tiny font after the help tab's label, 392.
+  # Narrowest the log gets: wide enough for the tabs with the help tab and for the widest hint,
+  # HELP_HINT in the tiny font after the help tab's label.
   MIN_WIDTH = 400
 
   # Fewest rows of lines the log keeps: as many as the list of fitting names, which lies on the rows
@@ -1483,7 +1534,7 @@ class Sprite_MpChatLog < Sprite
 
   # The yellow a tab with unread lines glows in at its top right corner, red, green and blue, over
   # TAB_BACK. It grows from the tab's opacity to fully opaque toward the corner, since at the tab's
-  # own it barely stood out.
+  # own it barely stands out.
   UNREAD_GLOW = [255, 220, 60]
 
   # How far from the top right corner the glow reaches, in pixels.
@@ -1546,10 +1597,9 @@ class Sprite_MpChatLog < Sprite
 
   # Draws the log and the chat box where the layout places them, if they changed: the rows the log
   # is scrolled to, with a scrollbar at their right while the open log has more rows than it shows,
-  # a line of the closed log fading away over its last frames. Above the
-  # closed log the tabs show dimmed while one holds unread lines and the log shows lines, so its
-  # glow is seen and goes with the last line. While it shows anything, it offers its place to the
-  # layout.
+  # a line of the closed log fading away over its last frames. Above the closed log the tabs show
+  # dimmed while one holds unread lines and the log shows lines, so its glow is seen and goes with
+  # the last line. While it shows anything, it offers its place to the layout.
   def update
     super
     chat = MGQ_MpChat
@@ -2102,7 +2152,6 @@ begin
     end
   end
 
-  # Before the battle's sprites are freed, the chat log.
   MGQ_MpHooks.before(Spriteset_Battle, :dispose, "ui_chat") do
     @mgq_mp_chat_log.dispose if @mgq_mp_chat_log
     @mgq_mp_chat_log = nil

@@ -2,55 +2,52 @@
 #  coop_gather.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Let a player in a Classic world move while the teller fights the story's battle too, which held a member who missed its invite still until it ended
-#                            - Told whether a battle invite comes from the player whose story calls the player over, on the map the call leads to
-#      Paulinchen  2026-10-11: Showed the player's followers again when a call, a follow or a teleport takes them to another map, since the events that show them again on leaving a place such as Hades never ran and Formation stayed shut
-#                            - Told whether a call, a follow or a teleport is ready to bring the player over, and had the pages of the teller's story give way to it
-#                            - Looked for a map from 1000 on in the folder the game keeps it in, through the game's own file name, so a follow or teleport there is no longer dropped as a map this game lacks
-#                            - Named the leader's wait and a member's time left before coming over as doings of the line above the player's head, which writes the seconds, and named the members still missing in the leader's doing, two at most and how many more
-#                            - Counted the frames a moment has left in one place, which within? and a member's doing share
-#      Paulinchen  2026-10-10: Let a Raid World's follow wait a minute for the player to be free instead of six seconds, since the story calls once and a follower kept busy longer, by the teller's pages, a battle or a menu, lost the follow and started their own copy of the story
-#                            - Kept the follow of a teller's story the player took while they are on the way and for CALL_LAPSE_FRAMES after they arrived, which names that teller and takes their pages from the new map meanwhile
-#                            - Let a player in a Raid World move while the teller fights the story's battle, so one who came late may join it
-#                            - Moved the teleport to the party's leader to coop_teleport.rbx, which brings the player over through come_to
-#                            - Let a teleport the player asked for wait a minute for the player to be free, as long as the request stood, instead of six seconds
-#                            - Told the player that a call or teleport to a map this game lacks cannot be taken, besides the log line
-#                            - Followed a Raid World's teller whose story moved on at once only while the player watches it and is not behind, and offered every other player to follow in the notification box while the teller tells there, a minute at most
-#                            - Let a follow the player accepted in the notification box wait a minute for them to be free, and a leader's call that takes over a teleport the player asked for lapse as a call does
-#      Paulinchen  2026-10-09: Read the warp ban's switch from story_state.rbx instead of coop_story.rbx
-#                            - Called the players a Raid World's story takes along in one message instead of one per player
-#                            - Kept whom the story took along for the whole telling, not only its first event, and named the teller whose call the player follows
-#      Paulinchen  2026-10-08: Gathered nobody in a Raid World, where whoever is on the map watches, and took everyone on the map along where the story moves its teller
-#                            - Offered a teleport to the story in a Raid World, to where the story was last told until the relay keeps its endpoint, with that place's warp ban
-#                            - Took the teleport to the story to the endpoint the relay keeps of the world's story, where this game last saw the story told only while the relay keeps none
+#      Paulinchen  2026-10-12: Let a player in a Classic world move while the teller fights the story's battle
+#                            - Told whether a battle invite comes from the player whose story calls
+#      Paulinchen  2026-10-11: Showed the player's followers again after a call, follow or teleport
+#                            - Told whether a call, follow or teleport is ready to bring the player over
+#                            - Looked for maps from 1000 on through the game's own file name
+#                            - Named the leader's wait and a member's time left above the player's head
+#                            - Counted the frames a moment has left in one place
+#      Paulinchen  2026-10-10: Let a Raid World's follow wait a minute for the player to be free
+#                            - Kept the follow the player took while on the way and shortly after arriving
+#                            - Let a player in a Raid World move while the teller fights the story's battle
+#                            - Moved the teleport to the leader to coop_teleport.rbx
+#                            - Let a teleport the player asked for wait a minute for them to be free
+#                            - Told the player that a call or teleport to a missing map cannot be taken
+#                            - Followed a Raid World's teller at once only while watching, and offered others to follow
+#                            - Let an accepted follow wait a minute, and a call over a teleport lapse as a call
+#      Paulinchen  2026-10-09: Read the warp ban's switch from story_state.rbx
+#                            - Called the players a Raid World's story takes along in one message
+#                            - Kept whom the story took along for the whole telling
+#      Paulinchen  2026-10-08: Gathered nobody in a Raid World and took everyone on the map along
+#                            - Offered a teleport to the story in a Raid World
+#                            - Took the teleport to the story to the relay's endpoint of the world's story
 #                            - Kept telling the story to the players a Raid World's story took along until they arrive
 #                            - Took the followers and the teller from MGQ_MpCoop::Scope
-#      Paulinchen  2026-10-07: Dropped a call to a map this game lacks, which ended the game at the transfer
-#                            - Registered the encounter hook through core_hooks.rbx instead of a wrap of its own
-#                            - Gathered, held and called for the leader's story only the members synced with the leader, who follow it
-#                            - Logged every gathering message sent and taken, the hold's end and why, teleports and their reason, calls ignored, waits for a free moment, standing still and encounters kept away
-#      Paulinchen  2026-10-06: Forgot the calls, the question where the leader stands and the hold once the world closes or a save is loaded, and counted a moment before a loaded save's frame count as long past
+#      Paulinchen  2026-10-07: Dropped a call to a map this game lacks
+#                            - Registered the encounter hook through core_hooks.rbx
+#                            - Gathered, held and called only the members synced with the leader
+#                            - Logged gathering messages, the hold, teleports, calls and waits
+#      Paulinchen  2026-10-06: Forgot the calls and the hold once the world closes or a save is loaded
 #                            - Took the party's leader from coop.rbx and whether a PvP battle runs from coop_events.rbx
 #      Paulinchen  2026-10-04: Told coop_castle.rbx where a member brought into the Pocket Castle came from
-#                            - Kept a story's call out of a PvP battle, dropped one a duel's end puts the game back over, and moved a member only on a settled map
-#                            - Took the members near the leader along wherever the story moves the leader, and logged gathering, calls and arrivals
-#                            - Told whether the player only waits for the party's story, which keeps the chat open
+#                            - Kept a story's call out of a PvP battle and moved a member only on a settled map
+#                            - Took the members near the leader along wherever the story moves the leader
+#                            - Told whether the player only waits for the party's story
 #                            - Created
 #
 #----------------------------------------------------------------
 
 # Gathering a party for the leader's story scenes. A story scene the leader starts waits until every
 # member who follows the leader's story (see MGQ_MpCoopStory.follows_leader?) stands near them,
-# thirty seconds at most: members get five seconds to finish what they do, then are brought over
-# once free, and stand still while the scene plays. It starts without those who did not come, who
-# play on; a member who plays their own story is never called. The story scenes themselves are
-# sorted and told by coop_events.rbx, which hands this script its messages. A teleport to another
-# member, see coop_teleport.rbx, brings the player over here too.
-#
-# A Raid World gathers nobody: whoever is on the map watches. A story that moves its teller elsewhere
-# calls everyone on the map along: a player who watches it and is not behind the world's story
-# follows at once, any other is offered to follow in the notification box. Anyone may teleport to
-# the story on their own.
+# HOLD_FRAMES at most: members get GATHER_FRAMES to finish what they do, then are brought over once
+# free, and stand still while the scene plays. It starts without those who did not come, who play
+# on; a member who plays their own story is never called. The story scenes themselves are sorted
+# and told by coop_events.rbx, which hands this script its messages. A teleport to another member,
+# see coop_teleport.rbx, brings the player over here too. A Raid World gathers nobody, since
+# whoever is on the map watches, but a story that moves its teller elsewhere calls everyone on the
+# map along (see take_raid), and anyone may teleport to the story on their own.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopGather
@@ -88,8 +85,11 @@ module MGQ_MpCoopGather
   # What a teleport to the story calls the place it goes to, as a call names its leader.
   STORY_NAME = "the story"
 
+  # The story scene the player holds for the party as leader: its interpreter, start and last call.
   @hold = nil
+  # The call, follow or teleport the player has yet to answer, see pending_call.
   @gather = nil
+  # The offers to follow a Raid World's teller, by the teller's id, see follow_offer.
   @follow_offers = {}
 
   extend MGQ_MpLog
@@ -648,7 +648,7 @@ module MGQ_MpCoopGather
 
   # Reports whether a call, a follow or a teleport is ready to bring the player over once they are
   # free, which the pages of the teller's story give way to (see MGQ_MpCoopEvents.read?): read on
-  # the old map, they kept the player busy while the story went on without them.
+  # the old map, they would keep the player busy while the story went on without them.
   #
   # @return [Boolean] Whether one is.
   def self.due?
@@ -684,8 +684,8 @@ module MGQ_MpCoopGather
     false
   end
 
-  # Tells where the player comes to for the leader's story scene, once its five seconds passed and
-  # the map settled.
+  # Tells where the player comes to for the leader's story scene, once GATHER_FRAMES passed and the
+  # map settled.
   #
   # @return [Array<Integer>, nil] The leader's map, x, y and direction, nil while none or not yet.
   def self.come?
@@ -697,7 +697,7 @@ module MGQ_MpCoopGather
   # the game back, and the screen is not fading.
   #
   # A duel puts its snapshot of the game back as the map starts again, and a transfer started then
-  # left the screen black.
+  # would leave the screen black.
   #
   # @return [Boolean] Whether it did.
   def self.settled?
@@ -814,7 +814,7 @@ module MGQ_MpCoopGather
     $game_switches[MGQ_MpStoryState::WARP_BAN] = banned if defined?(MGQ_MpStoryState) && !banned.nil?
   end
 
-  # Moves the player to the leader once a story scene's five seconds passed, once the player is
+  # Moves the player to the leader once a story scene's GATHER_FRAMES passed, once the player is
   # free: on the map, with no event, message, transfer or battle of their own in the way. Called
   # after the map's update.
   def self.update
@@ -895,7 +895,7 @@ module MGQ_MpCoopGather
     DataManager.respond_to?(:map_file_name) ? DataManager.map_file_name(map_id) : sprintf("Data/Map%03d.rvdata2", map_id)
   end
 
-  # Logs once per call why the player does not come to the leader yet, once its five seconds passed.
+  # Logs once per call why the player does not come to the leader yet, once GATHER_FRAMES passed.
   def self.note_busy
     gather = @gather
     return unless gather && !gather[:busy_logged] && !within?(gather[:since], GATHER_FRAMES)

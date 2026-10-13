@@ -7,8 +7,8 @@
 //----------------------------------------------------------------
 
 // Watching the mod's own releases: once GitHub names a newer release than the last one seen, the
-// relay says so in the chat of every world with players online, under UPDATE_NAME, which games
-// from 0.6.5 on draw as a red notice and older ones as an admin's line.
+// relay says so in the chat of every world with players online, under UPDATE_NAME, which current
+// games show as a notice and older ones as an admin's line.
 
 /**
  * The repository whose releases the relay watches, unless RELEASE_REPO names another.

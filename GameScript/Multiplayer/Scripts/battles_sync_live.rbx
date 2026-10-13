@@ -2,37 +2,37 @@
 #  battles_sync_live.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Took the host's defeat scene only within this game's common events, and its enemy only as an id, else an enemy's here
-#                            - Won the battle at once when its enemies fall while the host waits for the commands, and never started a turn on a battle that ended meanwhile
-#                            - Picked a defeat scene of this battle's enemies for a guest who leaves a story's battle, and left it as an escape when none has one, instead of failing on a missing or former battle's scene
-#                            - Put the host's skip settings back as the battle ends, before the victory autosave
-#                            - Moved a battle message on at once while the message skip is held, the battle results as the game's Skip Battle Results setting says, and let a message that fails to hold move on
-#      Paulinchen  2026-10-11: Named in the waiting box the guests whose commands or ready word the host still waits for, with the seconds waited, the wait for a player worded as the waiting box words it
-#                            - Lost a story's battle without escape for the co-op player who leaves it, while the others fight on, since the abort let the story play on as won
-#                            - Told the guests whom the host still waits for, as that changes and as a command phase opens, so their own waiting boxes name them too
+#      Paulinchen  2026-10-12: Took the host's defeat scene and enemy only when valid here
+#                            - Won the battle when its enemies fall during the wait for commands
+#                            - Picked a defeat scene for a guest who leaves a story's battle
+#                            - Put the host's skip settings back as the battle ends
+#                            - Moved battle messages on while the message skip is held
+#      Paulinchen  2026-10-11: Named the guests the host still waits for in the waiting box
+#                            - Lost a story's battle for the co-op player who leaves it
+#                            - Told the guests whom the host still waits for
 #                            - Told the guests who chooses again after a swap, the host itself included
-#      Paulinchen  2026-10-08: Closed a command phase the battle ended in, and forgot the guests who answered in it, as the battle ends instead of as the next one begins
-#                            - Started the battle of a host who became another battle's guest before it began as that battle's guest
-#      Paulinchen  2026-10-07: Left a command phase an earlier battle ended in out of the log as the next battle begins
-#                            - Let a battle message outside a fiber move on at once instead of failing, as the other waits do
-#                            - Logged the live battle's start, its command phases, the commands sent, escapes, leaving and its end, with the reasons
+#      Paulinchen  2026-10-08: Closed a command phase the battle ended in as the battle ends
+#                            - Started a host who became another battle's guest as that battle's guest
+#      Paulinchen  2026-10-07: Left an earlier battle's command phase out of the log
+#                            - Let a battle message outside a fiber move on at once
+#                            - Logged the live battle's start, command phases, commands, escapes, leaving and end
 #                            - Left out the commands a guest sent before leaving the battle
-#      Paulinchen  2026-10-06: Asked a scene directly whether it changes, since the game makes that public
-#                            - Told the guest how the battle began, which shows its first strike or surprise and keeps a surprised party from choosing
-#                            - Recorded a consumable item a guest's character used, which the guest's own game uses up
-#                            - Settled who fights on at the next command phase too once the computer plays on for the guests who left
+#      Paulinchen  2026-10-06: Asked a scene directly whether it changes
+#                            - Told the guest how the battle began
+#                            - Recorded the consumable items a guest's character used
+#                            - Settled who fights on also once the computer plays for those who left
 #                            - Recorded the speaker the game's message names instead of one of the mod's own
-#                            - Recorded the battle log's waits only as the scene's, which the guest plays
-#                            - Listed the battle log's methods the guest calls itself as texts, which the host's stream is checked against
-#                            - Sent the guest's word that its battle is ready without names, which the host never read
-#      Paulinchen  2026-10-05: Started the newer translation's battle log anew at the guest's battle and turn start, as the host's game does
-#      Paulinchen  2026-10-04: Settled who fights on only as a command phase opens, not each time the game shows the commands again
-#                            - Sent the players back to choose again whose commands lost their target to another player's swap
+#                            - Recorded the battle log's waits only as the scene's
+#                            - Listed the battle log's methods the guest calls itself as texts
+#                            - Sent the guest's ready word without names
+#      Paulinchen  2026-10-05: Started the newer translation's battle log anew at the guest's battle and turn start
+#      Paulinchen  2026-10-04: Settled who fights on only as a command phase opens
+#                            - Sent players whose commands lost their target to a swap back to choose
 #                            - Renamed from mp_battles_sync_live.rbx
-#                            - Gave the guest of a lost co-op battle the defeat scene the host's battle chose, which crashed without one
-#      Paulinchen  2026-10-03: Told the one guest of a PvP battle an order of places that changed, as the guests of a co-op battle
+#                            - Gave the guest of a lost co-op battle the host's defeat scene
+#      Paulinchen  2026-10-03: Told a PvP battle's guest a changed order of places
 #                            - Asked the running battle's mode instead of naming co-op battles and team duels
-#                            - Read and wrote the game's private fields and called its private methods through MGQ_MpGame
+#                            - Reached the game's private fields and methods through MGQ_MpGame
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -62,7 +62,8 @@ module MGQ_MpBattlesSync
     AUDIO_METHODS = [:se_play, :me_play, :bgm_play, :bgs_play, :se_stop, :me_stop, :bgm_stop, :bgs_stop,
                      :me_fade, :bgm_fade, :bgs_fade, :start_over_drive, :end_over_drive]
 
-    # The animation a battler starts on its sprite. The sprite clears it again once taken, which is not recorded.
+    # The animation a battler starts on its sprite. The sprite clears it again once taken, which is
+    # not recorded.
     ANIMATION_SETTERS = [:animation_id=, :animation_mirror=]
 
     # Where the game starts a hit's and a defeat's sprite effect, by writing the battler's field
@@ -109,17 +110,14 @@ module MGQ_MpBattlesSync
       MGQ_MpBattlesSync.log("battle hooks installed: #{installed.empty? ? 'none' : installed.join(', ')}; #{log_calls.size} battle log calls the guest makes itself")
     end
 
-    # The battle log's lines and the popups over them.
+    # Records the battle log's lines and the popups over them.
     def self.battle_log
       LOG_METHODS.each { |name| record_before(Window_BattleLog, name) { |_log, args| ["log.#{name}", *args] } }
       record_before(PopupResults, :push) { |_popups, args| ["popup", *args] }
     end
 
-    # Messages with their face and speaker, such as the lines characters say when they use a skill
-    # or fall, which move on by themselves in a live battle.
-    #
-    # A line names its speaker by name only, which both teams can share, and the battler as the
-    # game's message names it, see Game_Message#speaker.
+    # Records messages with their face and speaker, see Game_Message#speaker, such as the lines
+    # characters say when they use a skill or fall, and moves them on by themselves in a live battle.
     def self.messages
       record_before(Game_Message, :add) do |message, args|
         ["message", message.speaker, message.face_name, message.face_index, message.background, message.position, *args]
@@ -129,7 +127,7 @@ module MGQ_MpBattlesSync
       end
     end
 
-    # Pictures and the battle screen's effects.
+    # Records pictures and the battle screen's effects.
     def self.pictures
       PICTURE_METHODS.each do |name|
         record_before(Game_Picture, name) do |picture, args|
@@ -141,7 +139,7 @@ module MGQ_MpBattlesSync
       end
     end
 
-    # Every call of Audio, including the sounds the battle log plays directly.
+    # Records every call of Audio, including the sounds the battle log plays directly.
     def self.audio
       owner = Audio.singleton_class
       AUDIO_METHODS.select { |name| owner.method_defined?(name) }.each do |name|
@@ -149,7 +147,7 @@ module MGQ_MpBattlesSync
       end
     end
 
-    # Animations, sprite effects and the skill name.
+    # Records animations, sprite effects, the skill name and the items a guest's character uses up.
     def self.battlers
       ANIMATION_SETTERS.each do |name|
         kind = "battler.#{name.to_s.chomp('=')}"
@@ -177,8 +175,8 @@ module MGQ_MpBattlesSync
       end
     end
 
-    # The battle's course as the host records it: turns, actions, animations and waits, with the
-    # values after each action.
+    # Records the battle's course: turns, actions, animations and waits, with the values after each
+    # action.
     def self.course
       MGQ_MpHooks.around(Scene_Battle, :turn_start, "battles_sync_live course") do |_scene, _args, original|
         Recorder.turn_started
@@ -259,7 +257,7 @@ module MGQ_MpBattlesSync
       MGQ_MpHooks.after(BattleManager.singleton_class, :battle_end, "battles_sync_live ending") { |*_args| MGQ_MpBattlesSync.restore_settings }
     end
 
-    # The live battle's flow on both sides: the start both wait for, the host waiting for the
+    # Hooks the live battle's flow on both sides: the start both wait for, the host waiting for the
     # guest's commands, the guest playing the host's stream, forfeits and the end.
     def self.live
       MGQ_MpHooks.around(Scene_Battle, :battle_start, "battles_sync_live live") do |scene, _args, original|
@@ -311,8 +309,8 @@ module MGQ_MpBattlesSync
       end
     end
 
-    # The calls whose lines each game writes in its own language: the host records them as calls,
-    # the guest makes them itself. See Recorder.call.
+    # Hooks the calls whose lines each game writes in its own language: the host records them as
+    # calls, the guest makes them itself, see Recorder.call.
     def self.calls
       @log_calls = Window_BattleLog.instance_methods(false).map(&:to_s).grep(LOG_CALL)
       @log_calls.each do |name|
@@ -465,7 +463,6 @@ module MGQ_MpBattlesSync
           frames += 1
         end
       rescue FiberError
-        # A message window outside a fiber cannot wait, so its message moves on at once.
         MGQ_MpBattlesSync.log_once(:message_fiber, "could not hold a battle message: the message window runs outside a fiber, so it moves on at once")
       end
       Input.update
@@ -475,7 +472,7 @@ module MGQ_MpBattlesSync
       window.pause = false
     end
 
-    # The game's message skip button.
+    # Names the game's message skip button.
     #
     # @return [Symbol] MGQ_MpCoopEvents::SKIP_BUTTON, :X without coop_events.rbx.
     def self.skip_button
@@ -581,8 +578,10 @@ module MGQ_MpBattlesSync
       play_until_commands(scene)
     end
 
-    # Starts the battle log of the newer translation's Log command anew. Its own battle_start and
-    # turn_start clear it, which the guest leaves out, so it would keep every earlier battle's lines.
+    # Starts the battle log of the newer translation's Log command anew.
+    #
+    # Its own battle_start and turn_start clear it, which the guest leaves out, so it would keep
+    # every earlier battle's lines.
     #
     # @param scene [Scene_Battle] The battle.
     def self.clear_translation_log(scene)
@@ -648,8 +647,8 @@ module MGQ_MpBattlesSync
       MGQ_MpBattlesSync.log("the host's battle began #{began}")
     end
 
-    # Takes the defeat scene the host's battle chose, or one of an enemy here when the host's is
-    # unknown to this game, and the host's enemy only as an id, else an enemy's here.
+    # Takes the defeat scene the host's battle chose and its enemy, picking an enemy's scene here
+    # when the host's is unknown to this game and a random enemy here when the host names none.
     #
     # The game picks the scene at the battle's start and with each enemy's action, both of which the
     # guest's battle leaves out, and a defeat without a scene raises.
@@ -830,8 +829,8 @@ module MGQ_MpBattlesSync
     # The host of a co-op battle or a team duel waits for the commands of every guest still in the
     # battle who has not sent theirs this phase, and gives them to their characters as they come. A
     # guest who left is answered without commands, see MGQ_MpBattles::Mode#left. The players whose
-    # commands lost their target to another player's swap choose again. The wait ends as won once
-    # every enemy fell meanwhile, as a Raid World's pools kill them.
+    # commands lost their target to another player's swap choose again. The wait ends as won as in
+    # host_commands.
     #
     # @param scene [Scene_Battle] The battle.
     # @return [Boolean] Whether the turn goes on.
@@ -989,9 +988,10 @@ module MGQ_MpBattlesSync
       BattleManager.process_defeat
     end
 
-    # Reports whether the battle is one a story event started and the player cannot escape. Ended
-    # by an abort, the game counts it as an escape, which such an event has no branch for, so the
-    # story would play on as if the battle was won.
+    # Reports whether the battle is one a story event started and the player cannot escape.
+    #
+    # Ended by an abort, the game counts it as an escape, which such an event has no branch for, so
+    # the story would play on as if the battle was won.
     #
     # @return [Boolean] Whether it is.
     def self.story_battle?

@@ -8,13 +8,13 @@
 #
 #----------------------------------------------------------------
 
-# The interface presets: the colors every box, frame, gauge and window of the mod is drawn in, the
-# player's pick kept in Player.ini and offered as a row of the Mod Config. A preset sets the
-# style's box colors in place (see MGQ_MpUi::Style), and the mod's windows take a window skin
-# painted in them (see Skinned).
-#
-# It must never interrupt the game, so every entry point rescues.
 module MGQ_MpUi
+  # The interface presets: the colors every box, frame, gauge and window of the mod is drawn in, the
+  # player's pick kept in Player.ini and offered as a row of the Mod Config. A preset sets the
+  # style's box colors in place (see MGQ_MpUi::Style), and the mod's windows take a window skin
+  # painted in them (see Skinned).
+  #
+  # It must never interrupt the game, so every entry point rescues.
   module Theme
     extend MGQ_MpLog
 
@@ -26,8 +26,7 @@ module MGQ_MpUi
     Preset = Struct.new(:name, :colors)
 
     # The presets, the first the one until the player picks another: Monarch, the raid boss bar's
-    # maroon with a gold edge in a black rim, and Legacy, the chat's black glass with a grey edge, the
-    # mod's look before the presets.
+    # maroon with a gold edge in a black rim, and Legacy, the chat's black glass with a grey edge.
     PRESETS = [
       Preset.new("Monarch", { :BACK => [36, 10, 14, 235], :PLATE => [36, 10, 14, 200], :PICKED => [120, 36, 52, 235], :FIELD => [20, 6, 8, 255],
                               :HEADING => [240, 204, 130, 255], :EDGE => [200, 164, 96, 230], :TRACK => [84, 50, 38, 240], :RIM => [0, 0, 0, 255],
@@ -43,26 +42,33 @@ module MGQ_MpUi
     # The Mod Config row's key.
     OPTION = :mp_ui_preset
 
-    # The Mod Config row's name and help.
+    # The Mod Config row's name.
     OPTION_NAME = "Interface Look"
+
+    # The Mod Config row's help.
     OPTION_HELP = "The colors of the boxes, frames and windows of the mod: Monarch is the raid boss bar's maroon\n" \
                   "with a gold edge, Legacy the black glass with a grey edge the mod had before."
 
     # Side of a window skin, in pixels.
     SKIN_SIDE = 128
 
-    # Where a window skin keeps its parts: the background stretched over the window, the pattern
-    # tiled over it, the frame and the cursor. The frame's middle holds the scroll arrows, which the
-    # game's own skin lends, as it lends the pause sign and the text colors.
+    # Where a window skin keeps the background stretched over the window, as x, y, width and height.
     SKIN_BACK = [0, 0, 64, 64]
+
+    # Where a window skin keeps the pattern tiled over the background.
     SKIN_PATTERN = [0, 64, 64, 64]
+
+    # Where a window skin keeps the frame's square.
     SKIN_FRAME = [64, 0, 64, 64]
+
+    # Where a window skin keeps the cursor.
     SKIN_CURSOR = [64, 64, 32, 32]
 
     # Pixels of the frame's square along its sides that a window draws its borders from; its middle
     # holds the scroll arrows.
     SKIN_BORDER = 16
 
+    # The preset in use.
     @preset = PRESETS.first
 
     # Counts every change of the preset, which whoever keeps a picture drawn in its colors compares.
@@ -193,6 +199,7 @@ module MGQ_MpUi
       # Makes the window as its class does, then dresses it.
       #
       # @param args [Array] The arguments of the class's initialize.
+      # @param block [Proc, nil] The block of the class's initialize.
       def initialize(*args, &block)
         super(*args, &block)
         @mgq_mp_dressed = Theme.serial

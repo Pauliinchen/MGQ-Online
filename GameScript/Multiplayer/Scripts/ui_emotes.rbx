@@ -2,37 +2,35 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #                            - Read the map's viewport and character sprites through MGQ_MpGame
-#      Paulinchen  2026-10-11: Framed the wheel's boxes in the preset's colors, the picked one lit inside its frame, drawn anew once the preset changes
-#                            - Drew the wheel in the shared style, fading it in and out, with the hint under the ring the wheels share, which names Esc, the numpad's 0 and its hotkey
-#                            - Drew the hint whole through the shared style, so a rebound key's longer name never cuts it
-#      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
+#      Paulinchen  2026-10-11: Framed the wheel's boxes in the preset's colors
+#                            - Drew the wheel in the shared style with a fade and a close hint
+#                            - Drew the hint whole through the shared style
+#      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?
 #      Paulinchen  2026-10-07: Named players through MGQ_MpOverworldSync.who and took the wheel's depth from MGQ_MpUi
-#                            - Logged the emote wheel opening and closing with why, each emote played, sent or refused, and each emote of another player played or ignored with why
-#      Paulinchen  2026-10-06: Kept the wheel shut while the World overview is open, which left the player walking under the overview once the wheel closed
-#                            - Ended the cooldown between two emotes when a loaded save or a new game set the frame count back
-#                            - Kept the emote pointed at last once the arrows are let go, instead of pointing at none, and the diagonal while its arrows are let go one after the other
-#                            - Placed the emotes on the directions MGQ_MpWheel spreads them over, as the action wheel places its choices
-#                            - Pointed at an emote with the arrows held, like a joystick, two for a diagonal, and at none while no arrow is held
+#                            - Logged the emote wheel's actions and refusals
+#      Paulinchen  2026-10-06: Kept the wheel shut while the World overview is open
+#                            - Ended the emote cooldown when the frame count went back
+#                            - Kept the emote pointed at last once the arrows are let go
+#                            - Placed the emotes on the directions MGQ_MpWheel spreads them over
+#                            - Pointed at an emote with the arrows held like a joystick
 #      Paulinchen  2026-10-04: Played an emote's balloon or jump in plain branches
 #                            - Created
 #
 #----------------------------------------------------------------
 
-# The emote wheel on the map: its key (E unless the player binds another, see core_hotkeys.rbx)
+# The emote wheel on the map: its hotkey (E unless the player binds another, see core_hotkeys.rbx)
 # opens a ring of emotes around the player, a jump and the game's balloons, such as a heart or a
-# light bulb. It opens pointing at none; the arrows held point at an emote like a joystick, one for
-# a side and two for a diagonal, which stays pointed at once they are let go; the game's confirm
-# button plays the emote pointed at on the player's character, and every other game showing the player's map plays it on the
-# player's ghost. It builds on ui_wheel.rbx, which reads the arrows, and overworld_sync.rbx, which
-# knows the other players.
+# light bulb. The arrows point at an emote (see ui_wheel.rbx); the game's confirm button plays it
+# on the player's character, and every other game showing the player's map plays it on the
+# player's ghost.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpEmotes
   # An emote of the wheel.
   #
-  # @!attribute name [String] What it is, for the wheel's hint.
+  # @!attribute name [String] What it is, shown below the wheel's ring.
   # @!attribute balloon [Integer, nil] The game's balloon it shows, nil for a jump.
   Emote = Struct.new(:name, :balloon)
 
@@ -46,8 +44,13 @@ module MGQ_MpEmotes
   # Frames between two emotes of the player, so nobody floods the others with them.
   COOLDOWN_FRAMES = 30
 
+  # Whether the wheel is open.
   @open = false
+
+  # The place in EMOTES of the emote pointed at, nil for none.
   @selected = nil
+
+  # The frame count of the player's last emote, nil before the first.
   @last = nil
 
   extend MGQ_MpLog
@@ -62,9 +65,9 @@ module MGQ_MpEmotes
     @open
   end
 
-  # The place in EMOTES of the emote the arrows point at.
+  # Tells the place in EMOTES of the emote pointed at.
   #
-  # @return [Integer, nil] The place, nil while no arrow is held.
+  # @return [Integer, nil] The place, nil until the arrows pointed at one.
   def self.selected
     @selected
   end
@@ -99,8 +102,8 @@ module MGQ_MpEmotes
       !MGQ_MpActions::Wheel.open? && !MGQ_MpChat.typing? && !(defined?(MGQ_MpWorldOverview) && MGQ_MpWorldOverview.open?)
   end
 
-  # Opens, steers or closes the wheel. Called by the map every frame, so a press of the key is seen
-  # once.
+  # Opens, steers or closes the wheel. Called by the map every frame, so a press of the hotkey is
+  # seen once.
   def self.on_map
     key = MGQ_MpHotkeys.pressed?(:emotes)
     unless free?
@@ -134,10 +137,10 @@ module MGQ_MpEmotes
   end
 
   # Points at the emote the arrows held point to, keeping the last one while no arrow is held, plays
-  # it on confirm, and closes on cancel or the wheel's key. Confirm before any emote was pointed at
-  # closes the wheel without one.
+  # it on confirm, and closes on cancel or the wheel's hotkey. Confirm before any emote was pointed
+  # at closes the wheel without one.
   #
-  # @param key [Boolean] Whether the wheel's key went down this frame.
+  # @param key [Boolean] Whether the wheel's hotkey went down this frame.
   def self.update(key)
     capture = MGQ_Multiplayer::Capture
     if key || MGQ_MpUi.cancel?

@@ -2,7 +2,7 @@
 //  Exports.Parking.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Answered a failed description of the parked mods with the error header instead of nothing parked
+//      Paulinchen  2026-10-10: Answered a failed description of the parked mods with the error header
 //      Paulinchen  2026-10-09: Created
 //
 //----------------------------------------------------------------
@@ -84,7 +84,7 @@ internal static unsafe partial class Exports
     /// </summary>
     /// <param name="buffer">Receives them, UTF-8 and null-terminated.</param>
     /// <param name="size">The size of the buffer in bytes.</param>
-    /// <returns>Their length, 0 when there are none, or their length negated when the buffer is too small; when it failed, the length of the single line <see cref="ModParking.ScriptsFailed"/> it wrote instead. Scripts behind a link to another volume come first, as <see cref="ModParking.ScriptElsewhere"/> lines.</returns>
+    /// <returns>Their length, 0 when there are none, or their length negated when the buffer is too small; when it failed, the length of the single line <see cref="ModParking.ScriptsFailed"/> it wrote instead.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_mods_scripts", CallConvs = [typeof(CallConvStdcall)])]
     public static int ModsScripts(byte* buffer, int size)
     {

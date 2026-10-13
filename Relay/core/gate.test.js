@@ -4,7 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-10-12: Tested that the world directory, the mod catalog and the Raid World admin routes ask for X-MGQ-Features
 //                            - Tested the update code on the 400 of a world room and the World Admin tool passing with 0.0.0-dev
-//                            - Tested 400 without a code for a world room, a request without X-MGQ-Version as 0.6.4, the version gate on the world directory's and the mod catalog's routes and only 0.0.0-dev as a development build
+//                            - Tested 400 for a world room, a request without X-MGQ-Version as 0.6.4, the version gate on the directory and mod catalog and only 0.0.0-dev as a development build
 //                            - Created
 //
 //----------------------------------------------------------------

@@ -3,13 +3,13 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Checked that the box at its default lies 4 pixels below the Leader HUD
-#                            - Checked that the accept key pressed while the player types stays out of the log, and that a refusal is logged under the hotkeys
+#                            - Checked the log of the accept hotkey while typing and when refused
 #                            - Checked that the box at its default moves below the Leader HUD
-#      Paulinchen  2026-10-11: Checked the box's place in the layout: its default below a strip at the top, a place the player left it in with its width and rows, its least size with the keys whole, and drawing anew after a preset change
-#                            - Checked the box fading in and out, an answered invite and a message that runs out fading away, the last row saying how many more wait, a long notification cut to its row and the three spaces between what the keys do
-#                            - Checked the keys drawn whole with a rebound key's longer name
-#      Paulinchen  2026-10-08: Checked that an accepted invite shows again after a moment while it still stands, and a declined one stays away
-#                            - Checked that an accepted invite stays away for the whole hold, and shows again at once when the inviter turns the accept down
+#      Paulinchen  2026-10-11: Checked the box's place and size in the layout and a redraw after a preset change
+#                            - Checked the box's fades, the row of more waiting and a long notification cut
+#                            - Checked the hotkeys drawn whole with a rebound hotkey's longer name
+#      Paulinchen  2026-10-08: Checked that an accepted invite shows again while it stands, a declined one not
+#                            - Checked that an accepted invite stays away for the whole hold
 #      Paulinchen  2026-10-07: Checked that an accepted invite stays away while it stands
 #      Paulinchen  2026-10-06: Checked that a message shown outside a world shows there and goes after a moment
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
@@ -19,19 +19,20 @@
 #----------------------------------------------------------------
 
 # Covers the notification box, ui_notices.rbx: the invites it lists from anywhere in the world while
-# they stand, the messages it shows for a moment, the scenes it shows in, its keys, its fades, the
+# they stand, the messages it shows for a moment, the scenes it shows in, its hotkeys, its fades, the
 # row that says how many more wait, and its place and size in the layout. Pictures measure each
 # character at 7 pixels.
 
 require_relative "world_support"
 
-# Stand-ins for the game's pictures, which record the texts drawn whole and those drawn fading,
-# where each text went and the fills, the colors, the World overview and duels.
+# Stands in for the game's color, its parts readable.
 class Color
   attr_reader :red, :green, :blue, :alpha
   def initialize(red = nil, green = nil, blue = nil, alpha = nil); @red, @green, @blue, @alpha = red, green, blue, alpha; end
 end
+# Stands in for a picture, keeping the texts drawn whole and fading, where each went, and the fills.
 class Bitmap
+  # The picture's font.
   Font = Struct.new(:outline, :size, :color, :bold, :out_color)
   attr_reader :texts, :fading, :font, :width, :height, :fills, :places
   def initialize(width = 1, height = 1); @width = width; @height = height; @texts = []; @fading = []; @fills = []; @places = []; @font = Font.new; end
@@ -46,14 +47,18 @@ class Bitmap
   def dispose; @disposed = true; end
   def disposed?; @disposed ? true : false; end
 end
+# Stands in for a sprite.
 class Sprite
   attr_accessor :bitmap, :x, :y, :z, :visible, :opacity
   def update; end
   def disposed?; false; end
   def dispose; end
 end
+# Stands in for the World overview, open while $overview_open is.
 module MGQ_MpWorldOverview; def self.open?; $overview_open; end; end
+# Stands in for battles_duel.rbx, keeping the answer to a challenge in $duel_answer.
 module MGQ_MpBattlesDuel
+  # The color a challenge is listed in.
   CHALLENGE_COLOR = Color.new(255, 128, 128)
   def self.available?; true; end
   def self.challenged_by?(peer); peer.state["challenge"] == "1"; end
@@ -62,6 +67,10 @@ module MGQ_MpBattlesDuel
 
   # The challenges the notification box lists, as battles_duel.rbx offers them.
   module Offers
+    # Lists a player's challenge, which only the map lets the player accept.
+    #
+    # @param peer [Object] The challenging player.
+    # @return [MGQ_MpActions::Notice, nil] The notice, nil without a challenge.
     def self.notice_of(peer)
       duel = MGQ_MpBattlesDuel
       return nil unless duel.challenged_by?(peer)
@@ -73,6 +82,7 @@ module MGQ_MpBattlesDuel
   end
 end
 MGQ_MpActions.offer(MGQ_MpBattlesDuel::Offers)
+# Stands in for the Leader HUD, its room at the top left kept in $leader_hud_room.
 module MGQ_MpLeaderHud; def self.room; $leader_hud_room.to_i; end; end
 
 load_script "ui_notices"
@@ -103,7 +113,7 @@ check("opaque after FADE_FRAMES", box.call.opacity, 255)
 4000.times { notices.tick(true) }
 check("they stay as long as they stand", shown.call.first, "Bea invites you to a party")
 
-# A rebound key with a longer name widens the keys' column instead of cutting the keys.
+# A rebound hotkey with a longer name widens the hotkeys' column instead of cutting them.
 MGQ_MpHotkeys.bind(:accept, 0x20)
 MGQ_MpHotkeys.bind(:decline, 0x0D)
 notices.tick(true)
@@ -113,7 +123,7 @@ $player_ini.delete("key_decline")
 notices.tick(true)
 check("and read the default keys again once they are back", shown.call[1], "Y: Accept   N: Decline")
 
-# Messages show for a moment, below the invites, and take no key.
+# Messages show for a moment, below the invites, and take no hotkey.
 notices.message([:soon, 2], "Bea is in a battle!")
 notices.tick(true)
 check("a message shows below the invites, without a key", shown.call,

@@ -66,10 +66,10 @@ internal static unsafe partial class Exports
     /// </summary>
     /// <param name="title">The issue's title, 1 to 100 characters on one line, UTF-8 and null-terminated.</param>
     /// <param name="text">What happened, 1 to 4000 characters, UTF-8 and null-terminated.</param>
-    /// <param name="facts">The public facts, lines of "label	value" joined by line breaks, UTF-8 and null-terminated.</param>
-    /// <param name="details">The private details for report.md, lines of "label	value" joined by line breaks, UTF-8 and null-terminated.</param>
+    /// <param name="facts">The public facts, lines of <c>label\tvalue</c> joined by line breaks, UTF-8 and null-terminated.</param>
+    /// <param name="details">The private details for <c>report.md</c>, lines of <c>label\tvalue</c> joined by line breaks, UTF-8 and null-terminated.</param>
     /// <param name="flags">Bit 0 attaches the pending screenshot, bit 1 the logs.</param>
-    /// <returns>1 when started, 0 while a report is sent, without a player, for a title or text outside the relay's limits, or when it failed.</returns>
+    /// <returns>1 when started, 0 while a report is sent, without a player or relay, for a title or text outside the relay's limits, or when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_report_send", CallConvs = [typeof(CallConvStdcall)])]
     public static int ReportSend(byte* title, byte* text, byte* facts, byte* details, int flags)
     {

@@ -93,9 +93,7 @@ internal sealed class TempFolder : IDisposable
         return path;
     }
 
-    /// <summary>
-    /// Deletes the folder.
-    /// </summary>
+    /// <inheritdoc />
     public void Dispose()
     {
         try
@@ -104,7 +102,8 @@ internal sealed class TempFolder : IDisposable
         }
         catch (IOException)
         {
-            // A file still open elsewhere keeps the folder; the system's clean-up removes it later.
+            // A file still open elsewhere keeps the folder; a leftover temporary folder must not fail
+            // the test.
         }
     }
 }

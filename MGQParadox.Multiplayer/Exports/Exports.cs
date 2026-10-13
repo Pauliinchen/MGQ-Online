@@ -2,22 +2,22 @@
 //  Exports.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Added mp_dev_build, which tells a development build from a release
-//      Paulinchen  2026-10-09: Took the parked mods' lock as the game starts, and marked their journal while an update runs, so their watchdog never starts a game beside the updater's
-//      Paulinchen  2026-10-08: Logged the Wine version the game runs under, if any
-//                            - Added mp_update_game, which starts the mod's updater, answering 2 under Wine, whose missing PowerShell leaves the updater unable to run
-//      Paulinchen  2026-10-07: Kept every log, which no longer starts over, and logged the version started and whether the game keeps running in the background
+//      Paulinchen  2026-10-10: Added mp_dev_build
+//      Paulinchen  2026-10-09: Took the parked mods' lock as the game starts and marked their journal while an update runs
+//      Paulinchen  2026-10-08: Logged the Wine version the game runs under
+//                            - Added mp_update_game
+//      Paulinchen  2026-10-07: Kept every log and logged the version started and whether the game runs in the background
 //                            - Answered a null buffer with the length needed, and opened Copy and Text to the tests
 //      Paulinchen  2026-09-30: Split the exports into files per area: Pvp, World, Directory and Input
 //                            - Added mp_check_for_update and mp_newer_version
-//                            - Took a starting save in mp_dir_create, and added mp_dir_fetch_start, which fetches it for new players
+//                            - Took a starting save in mp_dir_create and added mp_dir_fetch_start
 //                            - Took whether a world is hidden in mp_dir_create, dropped the seats from mp_dir_unlock, and added mp_copy_text
-//      Paulinchen  2026-09-29: Added mp_set_player, mp_player_id, the mp_dir_* functions of the world directory and the keyboard's mp_typing and mp_take_typed, dropping the world code functions the directory replaces
-//                            - Added mp_new_id, which hands out a random id for the player
-//                            - Added the mp_world_* functions for entering a world and passing messages there
-//                            - Dropped the port from mp_host, since hosting waits at the relay
-//                            - Added mp_status, the state without the friend's team
-//                            - Took an empty message instead of leaving it to block the ones behind it
+//      Paulinchen  2026-09-29: Added mp_set_player, mp_player_id, the mp_dir_* functions, mp_typing and mp_take_typed, and dropped the world code functions
+//                            - Added mp_new_id
+//                            - Added the mp_world_* functions
+//                            - Dropped the port from mp_host
+//                            - Added mp_status
+//                            - Took an empty message instead of leaving it in the queue
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------

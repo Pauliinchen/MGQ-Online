@@ -2,6 +2,7 @@
 #  world_overview.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Removed the unused YOUR_LEVEL
 #      Paulinchen  2026-10-12: Moved the World, Quests and Unlocks pages into world_overview_pages.rbx
 #                            - Renamed the Levels page Unlocks
 #                            - Drew the Players page's scrollbar and moved its pick with the mouse wheel
@@ -9,36 +10,36 @@
 #                            - Kept Amira's side quests out of the objective
 #                            - Narrowed the tabs
 #                            - Showed the catch-up experience on the Levels page
-#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
-#                            - Counted Part 2 from progress 19 and Part 3 from 34, as the world's story and the relay do, instead of from 20 and 40
+#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
+#                            - Counted Part 2 from progress 19 and Part 3 from 34
 #                            - Read the map's viewport through MGQ_MpGame
-#      Paulinchen  2026-10-11: Added the Levels page of a Raid World: the level the catch-up counts and, under a heading per level, what it hands out that the world already unlocked, moving on from a part, companions and Makina, each marked Done or Due
-#                            - Told the others the highest level of the player's formation, Luka included, instead of every companion's, keeping the last one read during a co-op battle
-#                            - Showed a Raid World's objective on the World page under the story, as Amira tells it asked for information, wrapped over as many lines as it needs
-#                            - Listed a Raid World's party for the party box with each member's Frontline level, wherever they are
-#                            - Made the box movable and resizable with the left Alt held as the World overview, starting at the list box's place, never smaller than what shows every column, the tabs, the hint and three lines or the longest menu
-#                            - Gave the extra width to the story, the World page's values and the raid bosses' names, the ping keeping the right edge, and the extra height to more lines, the picked player kept in sight
+#      Paulinchen  2026-10-11: Added the Levels page of a Raid World
+#                            - Told the others the highest level of the player's formation, Luka included
+#                            - Showed a Raid World's objective on the World page under the story
+#                            - Listed a Raid World's party for the party box with each member's Frontline level
+#                            - Made the box movable and resizable with the left Alt held as the World overview
+#                            - Gave a larger box's extra width and height to the longer texts and more lines
 #                            - Read the box's place for the clicks on its lines, tabs and menu and for a click outside it
-#                            - Drew the box and its menu framed in the interface preset's colors, the tabs not shown on the tab color, the world's name in the title color and the raid bosses' gauges in the edge and well colors, drawing anew once the preset changes
+#                            - Drew the box and its menu in the interface preset's colors
 #                            - Kept the menu inside the box when neither below nor above the picked player has room
-#                            - Drew the hint whole through the shared style, smaller where it does not fit
-#                            - Grouped the World page's raid bosses by the story's sections under a heading each, showing only the sections the world's story reached and those holding a boss someone fought
-#                            - Took the box's place, the title's insets and the picked row's from the list box, whose lazy rectangle reads the screen's size once asked
-#                            - Added the World page, turned with Left and Right or a click on its tab, with the page's lines laid out once a frame: the world's name, type, difficulty, players, story and in a Raid World every raid boss with a thin gauge, its share left rounded, Defeated and who last hurt it
-#                            - Marked the Players tab in gold while a player's call waits there and the World page shows, where the notification box hides
-#                            - Showed the world's type and difficulty after its name in the title, joined with a bar, and cut a long name before the party's size
-#                            - Named Left and Right in the hint, shortened the Players page's hint to fit the box, and named the close keys as every screen does
+#                            - Drew the hint whole through the shared style
+#                            - Grouped the World page's raid bosses by the story's sections
+#                            - Took the box's place, the title's insets and the picked row's from the list box
+#                            - Added the World page with the world's name, type, difficulty, players, story and raid bosses
+#                            - Marked the Players tab in gold while a player's call waits there and the World page shows
+#                            - Showed the world's type and difficulty after its name in the title
+#                            - Named Left and Right in the hint, shortened the Players page's hint, and named the close keys
 #                            - Skipped the keys while the confirm box asks over the overview
-#                            - Took the colors, font sizes and column gap from the shared style, the players' colors from MGQ_MpUi::PlayerColor, the ping column and the party's title from MGQ_MpOverworld and the icons from MGQ_MpUi.draw_icon, dropping the colors the party box read here once
-#      Paulinchen  2026-10-08: Listed everyone on the player's map for the map box of a Raid World, the party first, and told the others the Frontline's highest level there
-#                            - Forgot the level and story told the others when the world closes, so the next world tells its own at once
-#                            - Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
-#                            - Took the choices of a player's menu from MGQ_MpActions, which the chat shares
+#                            - Took the colors, font sizes, column gap, players' colors, ping column, party title and icons from the shared UI scripts
+#      Paulinchen  2026-10-08: Listed everyone on the player's map for the map box of a Raid World, and told the others the Frontline's highest level there
+#                            - Forgot the level and story told the others when the world closes
+#                            - Closed with the numpad's 0 through MGQ_MpUi.cancel?
+#                            - Took the choices of a player's menu from MGQ_MpActions
 #                            - Named the numpad's 0 in the hint of how to close
-#      Paulinchen  2026-10-07: Logged once when the game has no variable or switch of a name, reading 0 or off
-#                            - Named players through MGQ_MpOverworldSync.who, cut places through MGQ_MpUi.cut with what measures them, and took icons, white and the depth from MGQ_MpUi
-#                            - Logged the overview opening and closing with why, each menu with its choices, the choice taken or refused, and the level and story told to the others
-#                            - Left the place of a map the game names nowhere empty instead of its untranslated editor name, and headed it Unnamed place in the list
+#      Paulinchen  2026-10-07: Logged once when the game has no variable or switch of a name
+#                            - Named players through MGQ_MpOverworldSync.who, cut places through MGQ_MpUi.cut, and took icons, white and the depth from MGQ_MpUi
+#                            - Logged the overview opening and closing, each menu, the choice taken or refused, and the level and story told to the others
+#                            - Left the place of a map the game names nowhere empty, and headed it Unnamed place in the list
 #      Paulinchen  2026-10-06: Kept the overview shut while the emote wheel is open
 #                            - Left out what a script offers as nothing, and said Nothing to do in an empty menu of another player
 #                            - Took the box's measures, its headings' color and its background from the list box and the action wheel
@@ -51,33 +52,24 @@
 #                            - Called the scripts that load before this one without asking whether they loaded
 #                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
 #                            - Logged through MGQ_MpLog
-#                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
-#      Paulinchen  2026-10-02: Opened and closed the overview with the key the player bound, which its hint names
+#                            - Read the bound hotkeys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
+#      Paulinchen  2026-10-02: Opened and closed the overview with the hotkey the player bound, which its hint names
 #                            - Followed the map and its sprites through core_hooks.rbx
 #                            - Dropped the unused scroll reader and the wrapper around another player's choices
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
 
-# The World overview: a large box over the map, opened with its key (F11 unless the player binds
+# The World overview: a large box over the map, opened with its hotkey (F11 unless the player binds
 # another, see core_hotkeys.rbx) or the action wheel's middle, moved and resized with the left Alt
-# held (see ui_layout.rbx), with pages turned with Left and Right or a click on their tabs.
-# The Players page
-# lists every player of the world online, grouped by where they are, with their formation's highest
-# level, their place in the story and their ping. A player picked with the arrows and confirm, or
-# with the mouse, opens a menu of what the scripts offer, such as party invites, duels and trades;
-# a player's row shows their invite, challenge or offer that reaches the player. The World page,
-# the Quests page and a Raid World's Unlocks page are laid out with a head, a list and a reading
-# pane (see world_overview_pages.rbx). The map keeps running behind it.
-#
-# It also lists the player's party for the party box of ui_party_box.rbx, and in a Raid World
-# everyone on the player's map for the map box that replaces it.
-#
-# It also tells the others where the player is, their formation's highest level and their place in
-# the story, in the state overworld_sync.rbx sends, and in a Raid World their Frontline's highest
-# level, which the map box shows.
-#
-# It must never interrupt the game, so every entry point rescues.
+# held (see ui_layout.rbx), with pages turned with Left and Right or a click on their tabs. The
+# Players page lists every player of the world online, grouped by where they are, with their
+# formation's highest level, their place in the story and their ping; a player picked opens a menu
+# of what the scripts offer, such as party invites, duels and trades. The other pages are laid out
+# in world_overview_pages.rbx. It also lists the player's party for the party box of
+# ui_party_box.rbx and, in a Raid World, everyone on the player's map for the map box, and tells
+# the others where the player is, their levels and their place in the story in the state
+# overworld_sync.rbx sends.
 module MGQ_MpWorldOverview
   # Frames between two readings of the formation's highest level and the place in the story, three
   # seconds, since the state is compared every frame.
@@ -123,28 +115,30 @@ module MGQ_MpWorldOverview
   # The pages only a Raid World shows.
   RAID_PAGES = [:unlocks]
 
-  # The label of the Levels page's first row, the level the catch-up counts.
-  YOUR_LEVEL = "Your level"
-
-  # How the Levels page heads what comes at a level.
+  # How the Unlocks page heads what comes at a level.
   LEVEL_HEADING = "Level %d"
 
-  # How the Levels page heads the formation's catch-up experience, with and without a level it
-  # holds up to.
+  # How the Unlocks page heads the formation's catch-up experience, the level it holds up to filled
+  # in.
   EXP_HEADING = "Catch-up EXP until level %d"
+
+  # How the Unlocks page heads the formation's catch-up experience without a level it holds up to.
   EXP_HEADING_NONE = "Catch-up EXP"
 
-  # What the Levels page says of a formation member's catch-up experience, and while the world's
-  # story has not raised the level cap yet.
+  # What the Unlocks page says of a formation member's catch-up experience.
   EXP_VALUE = "Level %d, %s EXP"
+
+  # What the Unlocks page says while the world's story has not raised the level cap yet.
   NO_CATCH_UP = "Starts once the world's story raises the level cap."
 
-  # What the Levels page says while the world unlocked nothing yet.
+  # What the Unlocks page says while the world unlocked nothing yet.
   NOTHING_UNLOCKED = "Nothing to catch up with yet."
 
-  # What the Levels page says of an unlock the player has, and of one whose level they reached,
-  # which comes at the catch-up's next check.
+  # What the Unlocks page says of an unlock the player has.
   DONE = "Done"
+
+  # What the Unlocks page says of an unlock whose level the player reached, which comes at the
+  # catch-up's next check.
   DUE = "Due"
 
   # What the overview calls each kind of world, by whether it is a Raid World.
@@ -184,12 +178,16 @@ module MGQ_MpWorldOverview
   # Chaos route's step CHAOS_SIDE_STEP, the second from it.
   SIDE_EVENTS = [131, 135]
 
-  # The Chaos route's variable and the step from which Amira tells the second list of SIDE_EVENTS.
+  # The Chaos route's variable.
   CHAOS_ROUTE = 1143
+
+  # The Chaos route's step from which Amira tells the second list of SIDE_EVENTS.
   CHAOS_SIDE_STEP = 21
 
-  # The Pocket Castle's bulletin board, where companions leave their requests: its map and event.
+  # The map of the Pocket Castle's bulletin board, where companions leave their requests.
   BOARD_MAP = 228
+
+  # The event of the Pocket Castle's bulletin board.
   BOARD_EVENT = 37
 
   # The variable Amira's lists and the board set to 1 before each entry they tell, which marks
@@ -202,9 +200,10 @@ module MGQ_MpWorldOverview
   # How opaque that picture is, out of 255.
   BACKDROP_OPACITY = 36
 
-  # The Quests page's list headings with how many quests each holds, and what it says under one
-  # with none.
+  # The Quests page's list headings with how many quests each holds.
   QUEST_HEADINGS = { :side => "Side quests (%d)", :companion => "Companion quests (%d)" }
+
+  # What the Quests page says under a heading without quests.
   NO_QUESTS = "None right now."
 
   # The reading pane's title of each kind of quest.
@@ -219,16 +218,25 @@ module MGQ_MpWorldOverview
   # Words before a period that end no sentence.
   ABBREVIATIONS = %w[Mt Dr Mr Mrs Ms St]
 
-  # The setting in Player.ini that keeps how the Quests page shows Amira and the companions, and
-  # its choices, the first the one until the player picks another.
+  # The setting in Player.ini that keeps how the Quests page shows Amira and the companions.
   PORTRAIT_SETTING = "quest_portraits"
+
+  # The choice that shows them by their map sprite.
   SPRITES = "Sprites"
+
+  # The choice that shows them by their face.
   FACES = "Faces"
+
+  # The setting's choices, the first the one until the player picks another.
   PORTRAITS = [SPRITES, FACES]
 
-  # The Mod Config row of that setting: its key, name and help.
+  # The key of the setting's Mod Config row.
   PORTRAIT_OPTION = :mp_quest_portraits
+
+  # The name of the setting's Mod Config row.
   PORTRAIT_OPTION_NAME = "Quest Portraits"
+
+  # The help of the setting's Mod Config row.
   PORTRAIT_OPTION_HELP = "How the Quests page of the World overview shows Amira and the companions asking for help:\n" \
                          "Sprites by their map sprite, Faces by their face."
 
@@ -238,12 +246,16 @@ module MGQ_MpWorldOverview
   # A quest: its kind (:main, :side or :companion), who tells it, each message as plain text, a
   # side quest's number, and how a companion asking for help looks.
   Quest = Struct.new(:kind, :speaker, :texts, :number, :looks) do
+    # Tells the quest's first sentence.
+    #
     # @return [String] The first sentence of its first message.
     def first
       MGQ_MpWorldOverview.first_sentence(texts.first)
     end
 
-    # @return [String] What the reading pane titles it with, such as "Side quest 2 · Amira".
+    # Tells the quest's title in the reading pane.
+    #
+    # @return [String] Such as "Side quest 2 · Amira".
     def title
       name = MGQ_MpWorldOverview::QUEST_TITLES[kind].to_s % number.to_i
       speaker ? "#{name}#{MGQ_MpWorldOverview::TITLE_JOIN}#{speaker}" : name
@@ -325,11 +337,17 @@ module MGQ_MpWorldOverview
   #   and color, shown in place of their place in the story.
   Row = Struct.new(:player, :name, :place, :level, :story, :ping, :icon, :member, :badge, :call)
 
+  # Whether the overview is open.
   @open = false
+  # The choice picked in the open menu of a player, nil while no menu is open.
   @menu = nil
+  # The player picked on the Players page, see key_of.
   @selected = :me
+  # The Players page's first line in sight.
   @scroll = 0
+  # Frames until the next reading of the player's levels and place in the story.
   @frames = 0
+  # The page shown, see PAGES.
   @page = :players
 
   # The game's globe icon, which stands for the overview in the action wheel's middle.
@@ -838,17 +856,17 @@ module MGQ_MpWorldOverview
 
   # What the overview shows now, on its page.
   #
-  # @return [Hash] :page, :lines, :selected (a line), :scroll, :menu (the choices), :menu_index,
-  #   and on the World page :calls, whether a player's call waits on the Players page.
+  # @return [Hash] On the Players page :page, :lines, :selected (a line), :scroll, :menu (the
+  #   choices) and :menu_index; on the other pages what split_view tells.
   def self.view
     all = rows
     page_view(page_lines(all), all)
   end
 
-  # Lays the page out that is open: the World page's lines, or the Players page's list.
+  # Lays the open page out: the Players page's list, none for the other pages.
   #
   # @param rows [Array<Row>] The players, see rows.
-  # @return [Array<Array>] The lines, see world_lines and lines.
+  # @return [Array<Array>] The lines, see lines.
   def self.page_lines(rows)
     @page = :players unless pages.assoc(@page)
     case @page
@@ -857,7 +875,7 @@ module MGQ_MpWorldOverview
     end
   end
 
-  # What the overview shows on its page: the World page, or the Players page's list.
+  # What the overview shows on its page: the Players page's list, or another page's split_view.
   #
   # @param lines [Array<Array>] The page's lines, see page_lines.
   # @param rows [Array<Row>] The players, see rows.
@@ -1095,37 +1113,56 @@ class Sprite_MpWorldOverview < Sprite
   # Lines of a page the box shows at least.
   MIN_ROWS = 3
 
-  # The most choices a player's menu holds: one for each of the six scripts that offer something
-  # between players, see MGQ_MpActions.offer.
+  # Choices of a player's menu the box's least height makes room for, see MGQ_MpActions.offer.
   MENU_ROWS = 6
 
   # Width of a page's tab; the style's gap lies between two tabs.
   TAB_WIDTH = 76
 
-  # The pages with a head, a list and a pane: the side of the head's box and of the pane's portrait,
-  # the gap under and beside a box, the gap between the list and the pane, the list's share of the
-  # width, the height of a line of text, the lines under the head's title at most, an entry's indent
-  # under its heading, the side of the World page's icon, the room a scrollbar takes, the widths of
-  # a row's gauge and of the pane's, and the least rows of the list.
+  # Side of the head's box on the pages with a head, a list and a pane.
   PORTRAIT = 64
+
+  # Side of the pane's portrait.
   PANE_PORTRAIT = 48
+
+  # Gap under and beside the head's box and beside the pane's portrait.
   SPLIT_GAP = 8
+
+  # Gap between the list and the pane.
   SPLIT_DIVIDE = 16
+
+  # The list's share of the width.
   LIST_SHARE = 0.45
+
+  # Height of a line of text in the head and the pane.
   PANE_LINE = 20
+
+  # Lines under the head's title at most.
   MAIN_LINES = 2
+
+  # An entry's indent under its heading.
   ROW_INDENT = 8
+
+  # Side of the World page's icon.
   HEAD_ICON = 48
+
+  # Room a scrollbar takes at the right of the list and the pane.
   BAR_ROOM = MGQ_MpUi::Style::SCROLLBAR_WIDTH + 4
+
+  # Width of a row's gauge.
   ROW_GAUGE = 40
+
+  # Width of the pane's gauge.
   PANE_GAUGE = 160
+
+  # Least rows of the list.
   SPLIT_ROWS = 3
 
   # The most fitted texts kept at once, see fitted.
   FITTED_MOST = 500
 
-  # Side of the mark at the Players tab's corner while a player's call waits there and the World
-  # page shows.
+  # Side of the mark at the Players tab's corner while a player's call waits there and another page
+  # shows.
   CALL_MARK = 6
 
   # Room between the world's name and the party's size in the title.
@@ -1142,8 +1179,10 @@ class Sprite_MpWorldOverview < Sprite
   # call.
   STORY_WIDTH = 142
 
-  # Height of a raid boss's gauge in the list, and the pixels a gauge's frame takes on each side.
+  # Height of a raid boss's gauge in the list.
   GAUGE_HEIGHT = 6
+
+  # Pixels a gauge's frame takes on each side.
   GAUGE_FRAME = 1
 
   # Width of the menu beside the player picked.
@@ -1372,7 +1411,7 @@ class Sprite_MpWorldOverview < Sprite
   end
 
   # Draws the pages' tabs under the title, the page shown on the picked plate and the others on the
-  # tab plate, and on the World page a gold mark at the Players tab's corner while a player's call
+  # tab plate, and on another page a gold mark at the Players tab's corner while a player's call
   # waits there.
   #
   # @param page [Symbol] The page shown.

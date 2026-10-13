@@ -2,121 +2,108 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Asked before taking a world's starting save, which can run code, offering to start at the beginning instead,
-#                              unless the player created the world
-#                            - Scrolled the worlds, the choices, the list box, the mod picker and a description being typed with the mouse wheel
+#      Paulinchen  2026-10-12: Asked before taking a world's starting save unless the player created the world
+#                            - Scrolled the worlds, the choices, the list box, the mod picker and a description with the mouse wheel
 #                            - Drew the scrollbars of the worlds and the choices through the shared list windows
 #                            - Opened the text screen of the description with its text broken over several lines
-#                            - Said that a world stays as it was when Player.ini, which keeps the favourites now, could not be read
-#      Paulinchen  2026-10-11: Dressed the screen's windows in the interface look and drew the worlds' scrollbar in its edge color
-#                            - Broke a description in the list box anew once the player resized the box, and fitted it to the box's width as it is now
-#                            - Moved the list box's fade on every frame, and measured a description with the shared style's text size and the box's lazy rectangle
-#                            - Named the numpad's 0 in the mod picker's hint, which closes it too, and said how many more mods a row holds as every box does
-#                            - Put the cursor on the world just created or added once the list shows it, inside the worlds box, and said
-#                              to confirm to enter it, and logged the ask
-#                            - Sent the hidden world's id with Enter, as the password form is, and only from a form with one text box
-#                            - Held the form's cursor while the action a form sent runs, so its button cannot send the form a second time
-#                            - Said in the details that a world's password is known once this PC's folder of it holds the world code,
-#                              which entering reads through the same check
-#      Paulinchen  2026-10-10: Took leaving the save screen without a save as no shared save for a development build's Raid World, drew a save's
-#                              label at its field's width, and said in a Raid World's details when its new players start from the creator's save
-#                            - Forgot to enter the world after its data update when the update was refused or could not start
-#                            - Stayed on the world screen with a notice instead of a plain restart for a world's downloaded mods while mods stay parked,
-#                              saying when parked mods could not be turned back on, and asked for a new start when the restart keeping them failed
-#                            - Kept the game out of a world that turns off scripts behind a link to another drive, before offering its downloads too
-#      Paulinchen  2026-10-09: Asked before entering a world that turns other mods off, then turned them off and started the game again to enter it,
-#                              after opening its lock first when this PC never entered it, or kept the game out while the catalog is unknown
-#                            - Asked before putting back parked mods that a world allows, and kept the game out of every world once it moved
-#                              mods itself, until it starts again
-#                            - Turned other mods off too as the game starts again for a world's downloaded mods, naming them in the offer, after
-#                              opening the world's lock first when this PC never entered it
-#                            - Put the turned-off mods back and went to the title screen, which starts the game again, when the start for a world
-#                              ended without entering it, unless the player looked at the mods or chose a world themselves
-#                            - Refused a full world or one still being set up before anything starts the game again for it
-#                            - Asked the creator of a world that turns other mods off to take the game's data once they are off, then entered it
-#                            - Sent Turn off other mods with the new world and, when it changed, with the creator's or an admin's edit, and kept the
-#                              player's own tick of it in the new world's form
-#                            - Said in a world's details whether it turns other mods off, and listed the player's mods it turns off in its mods box,
-#                              one line per mod with its scripts counted
-#                            - Had the parked mods' journal name the world about to be entered when the mods parked for another world are those it
-#                              turns off, and kept the game out while the DLL cannot list the scripts
-#                            - Told the player that another game of this folder has mods turned off when it keeps them from coming back
-#                            - Sent a Raid World's difficulty with the new world and, when it changed, with the creator's or an admin's edit, kept it in world.ini as a world is created or entered, and showed it in the details
-#                            - Sent neither a starting save nor the player's choice with a new Raid World, which starts from the beginning
-#      Paulinchen  2026-10-08: Showed Raid Worlds in red in the list and the details' title, and their type and companion sharing in the details
-#                            - Sent the new world's type and companion sharing, and kept both in world.ini as a world is created or entered
-#                            - Drew and turned the forms' switches in Window_MpWorldForm, which the story's choices share, and turned them in the world screen's forms with confirm and the arrows
-#                            - Sent Shared Mod Settings with a new world, and from the creator's edit form once the other changes were saved
-#                            - Closed the list boxes, the details, the mod picker and the start's choice with the numpad's 0 through MGQ_MpUi, also with Num Lock off, and left the text boxes with it through MGQ_MpUi.numpad_cancel?
-#                            - Backed out of the worlds or the commands with the numpad's 0 also with Num Lock off
+#                            - Said that a world stays as it was when Player.ini could not be read
+#      Paulinchen  2026-10-11: Dressed the screen's windows in the interface look
+#                            - Broke a description in the list box anew once the player resized the box
+#                            - Moved the list box's fade on every frame, and measured a description with the shared style
+#                            - Named Numpad 0 in the mod picker's hint, and counted a row's further mods as every box does
+#                            - Put the cursor on the world just created or added once the list shows it
+#                            - Sent the hidden world's id with Enter
+#                            - Held the form's cursor while the action a form sent runs
+#                            - Said in the details whether a world's password is known
+#      Paulinchen  2026-10-10: Let a development build's Raid World go without a shared save, and named its start in the details
+#                            - Forgot to enter the world after a refused or failed data update
+#                            - Stayed on the world screen with a notice for a world's downloaded mods while mods stay parked
+#                            - Kept the game out of a world that turns off scripts behind a link to another drive
+#      Paulinchen  2026-10-09: Asked before entering a world that turns other mods off, then turned them off and restarted to enter it
+#                            - Asked before putting back parked mods that a world allows
+#                            - Turned other mods off too as the game restarts for a world's downloaded mods
+#                            - Put the turned-off mods back when the start for a world ended without entering it
+#                            - Refused a full world or one still being set up before restarting for it
+#                            - Asked the creator of a world that turns other mods off to take the game's data once they are off
+#                            - Sent Turn off other mods with the new world and the edits
+#                            - Said in a world's details whether it turns other mods off, and listed the player's mods it turns off
+#                            - Had the parked mods' journal name the world about to be entered
+#                            - Told the player that another game of this folder has mods turned off
+#                            - Sent a Raid World's difficulty with the new world and the edits, and showed it in the details
+#                            - Sent neither a starting save nor the player's choice with a new Raid World
+#      Paulinchen  2026-10-08: Showed Raid Worlds in red, and their type and companion sharing in the details
+#                            - Sent the new world's type and companion sharing, and kept both in world.ini
+#                            - Drew and turned the forms' switches in Window_MpWorldForm
+#                            - Sent Shared Mod Settings with a new world and from the creator's edit form
+#                            - Closed the list boxes, the details, the mod picker and the start's choice with Numpad 0
+#                            - Backed out of the worlds or the commands with Numpad 0 also with Num Lock off
 #                            - Said in a world's details whether it shares its creator's mod settings
 #                            - Noted the world entered with its creator and settings in one call
 #                            - Told whether the list was fetched since the screen opened as a world is entered
-#                            - Said when the edit form's Shared Mod Settings apply, and that the other changes were saved when the mod settings were not
-#                            - Noted the world's mod settings only as the world opens, so a refused entry leaves none behind, and forgot them when it fails to open
-#                            - Started the edit form's Shared Mod Settings from the settings the relay took from this game last while the list may be older
-#                            - Claimed each directory action it starts, and gave up its answer as the screen closes during one
-#                            - Told the player to restart the game by hand under Wine or Proton after installing a world's mods, keeping the world to enter
-#      Paulinchen  2026-10-07: Left typing alone without a form, which failed the screen, and logged where the screen failed and the pictures in memory
-#                            - Cut texts through MGQ_MpUi.cut, which ends them in three dots, and took the choice window's depth from MGQ_MpUi
-#                            - Logged the screen's actions with their outcome and reason, the start chosen, the mod and data checks and the forms sent, never passwords or codes
-#                            - Filled the name's form with the name the player chose, empty while the name on Discord stands, so it never turns into a chosen one unasked
-#      Paulinchen  2026-10-06: Typed a world's password in place in a form, on the text screen only for a gamepad or without the keyboard
-#                            - Kept a name typed in place without closing the screen, kept a name from the text screen at once, and closed the screen when the first one was left without a name
+#                            - Said when the edit form's Shared Mod Settings apply
+#                            - Noted the world's mod settings only as the world opens
+#                            - Started the edit form's Shared Mod Settings from the settings the relay took last
+#                            - Claimed each directory action it starts, and gave up its answer as the screen closes
+#                            - Told the player to restart by hand under Wine or Proton after installing a world's mods
+#      Paulinchen  2026-10-07: Left typing alone without a form, and logged where the screen failed
+#                            - Cut texts through MGQ_MpUi.cut, and took the choice window's depth from MGQ_MpUi
+#                            - Logged the screen's actions with their outcome and reason
+#                            - Filled the name's form with the name the player chose
+#      Paulinchen  2026-10-06: Typed a world's password in place in a form
+#                            - Kept a name typed in place without closing the screen, and a name from the text screen at once
 #                            - Fell back to the text screen for a mod's name without the keyboard or with a gamepad
-#                            - Kept the typing hint while a mod's name is typed, and acted on the mod clicked instead of the one picked before
+#                            - Kept the typing hint while a mod's name is typed, and acted on the mod clicked
 #                            - Waited with a Discord invite or an entry after a restart until no window, box or form is open
 #                            - Asked for the password again once a Discord invite's code failed
 #                            - Kept a full world closed to players with saves of it too
 #                            - Put the cursor back on the chosen world after the text or save screen
 #                            - Sent a form's tidied values
-#                            - Typed a 0 with the numpad's 0 in Max Players and World id
+#                            - Typed a 0 with Numpad 0 in Max Players and World id
 #                            - Said that a request could not be started instead of that another one runs
 #                            - Took the colors of a world's mods in the list box and the details from one place
 #                            - Created the list box with the other windows, and closed the screen when it cannot start
-#                            - Read the installed mods anew only as the screen opens, not when the text or save screen returns
+#                            - Read the installed mods anew only as the screen opens
 #                            - Played the OK sound in the mod picker only for a change it took
-#                            - Entered the world of a Discord invite once the list holds it, opened with the invite instead of the password
-#                            - Asked for the player's name in a form typed in place instead of on the text screen
-#                            - Kept a mod added by name when unlisted, and removed it with Delete, which the hint names while it is picked
-#                            - Typed a mod's name in place in the picker, on the keyboard, instead of on the text screen
-#                            - Named a mod in the picker with Enter and its red ! and orange ? buttons under titled columns instead of a menu, and listed or unlisted every mod at once
+#                            - Entered the world of a Discord invite once the list holds it
+#                            - Asked for the player's name in a form typed in place
+#                            - Kept a mod added by name when unlisted, and removed it with Delete
+#                            - Typed a mod's name in place in the picker
+#                            - Named a mod in the picker with Enter and its ! and ? buttons, and listed or unlisted every mod at once
 #                            - Had an admin's game send the Mod Config options of the catalog's mods as the list arrives
-#                            - Picked a world's mods in the mod picker, a list of the installed ones and those added by name, each left out, listed, required or essential
-#                            - Left the mod settings out of creating and changing a world, which its creator now sets in Mod Config, and noted whose world is entered
-#                            - Checked a world's required mods against the relay's catalog and the creator's copies on entry, and offered to download the world's versions and restart
+#                            - Picked a world's mods in the mod picker
+#                            - Left the mod settings out of creating and changing a world, and noted whose world is entered
+#                            - Checked a world's required mods on entry, and offered to download them and restart
 #                            - Entered the world again on its own after a restart for its mods
-#                            - Sent the creator's hashes of required mods outside the catalog and their settings with a world made or changed
+#                            - Sent the creator's mod hashes and settings with a world made or changed
 #                            - Showed the installed and the world's version of each required mod in the details
-#      Paulinchen  2026-10-04: Picked the worlds or the commands as a whole first, then moved into the picked window with confirm and back out with cancel
-#                            - Created the list box before a cancelled name prompt closes the screen, which disposes it
-#                            - Kept a world this PC has saves of from being entered while the list, which tells its mods and game data, has not arrived
-#                            - Broke a description's lines through MGQ_MpUi.wrap, which breaks inside a word longer than a line
+#      Paulinchen  2026-10-04: Picked the worlds or the commands as a whole first, then moved into the picked window
+#                            - Created the list box before a cancelled name prompt closes the screen
+#                            - Kept a world this PC has saves of from being entered while the list has not arrived
+#                            - Broke a description's lines through MGQ_MpUi.wrap
 #                            - Renamed from mp_world_screen.rbx
-#                            - Drew the forms' text boxes through MGQ_MpUi::TextBox, and moved their cursor a line through MGQ_MpUi::TextEdit, which every text box shares
-#                            - Showed a world's description, the mods it needs and whether the player's game data matches its creator's
-#                            - Laid the world's details out like a form, in panels, with the description at the bottom, and gave them more of the screen
+#                            - Drew the forms' text boxes through MGQ_MpUi::TextBox and MGQ_MpUi::TextEdit
+#                            - Showed a world's description, the mods it needs and whether the player's game data matches
+#                            - Laid the world's details out like a form, in panels
 #                            - Laid the forms out in the same panels, with the whole description in a box of several lines
-#                            - Listed every player of a world, and each mod it needs, in a list box, opened from the world's choices,
-#                              from the details with the right arrow and confirm, or with a click on them
+#                            - Listed every player of a world, and each mod it needs, in a list box
 #                            - Showed the description in a smaller font, and whole in the list box
-#                            - Kept the commands in a window of their own below the worlds, which scroll with a scrollbar
-#                            - Left a new world to be entered from the list, as a favourite, instead of entering it at once
-#                            - Took the players and the mods out of a world's choices, which the details open
-#                            - Left a text box being typed into with the numpad's 0, the game's cancel key, as with Escape
-#                            - Typed into the forms' text boxes with a cursor: arrows, Home, End and Delete, through MGQ_MpUi::TextEdit
+#                            - Kept the commands in a window of their own below the worlds
+#                            - Left a new world to be entered from the list, as a favourite
+#                            - Took the players and the mods out of a world's choices
+#                            - Left a text box being typed into with Numpad 0
+#                            - Typed into the forms' text boxes with a cursor
 #                            - Showed required mods in green, or in red while this game lacks their script, and kept such a game out
 #                            - Showed essential mods in green while this game's data matches the world's, in gold otherwise
-#                            - Let a world's creator take their game's data as the world's from the details' Your game row and a button of the edit form
-#                            - Drew the list and the details only when what they show changed, not with every reading of the list
-#                            - Logged frames of the world screen that take long, with what took the time
-#                            - Showed each mod in a box of its own in the details, as many as fit the row, and counted the rest in a last box
+#                            - Let a world's creator take their game's data as the world's
+#                            - Drew the list and the details only when what they show changed
+#                            - Logged frames of the world screen that take long
+#                            - Showed each mod in a box of its own in the details
 #                            - Said create where a text said make
 #                            - Added a hidden world to the list by its id, and offered to take it off again
 #                            - Offered the creator and admins a form that changes a world's Max Players, mods and description
 #                            - Shortened the messages that did not fit the lines at the top
-#                            - Asked whether games whose data differs may enter instead of whether only games like the creator's may
-#                            - Warned a game whose data differs before it enters a world, or kept it out when the creator said so
+#                            - Asked whether games whose data differs may enter
+#                            - Warned a game whose data differs before it enters a world, or kept it out
 #                            - Showed the end of a text too long for its text box
 #      Paulinchen  2026-10-03: Created
 #
@@ -162,9 +149,10 @@ class Scene_MpWorlds < Scene_MenuBase
   # The forms of the chosen world, which no command of the list stands for.
   WORLD_FORMS = [:edit_world, :password]
 
-  # Seconds a frame of the screen may take before the log says what took them, and seconds between
-  # two such lines.
+  # Seconds a frame of the screen may take before the log says what took them.
   SLOW_FRAME = 0.05
+
+  # Seconds between two log lines of slow frames.
   SLOW_FRAME_PAUSE = 2.0
 
   # What the screen says while an action runs, by the action's kind.
@@ -1908,12 +1896,12 @@ class Scene_MpWorlds < Scene_MenuBase
   # Starts the game again once the world's mods are installed, so they load, and enters the world
   # once it is back, turning other mods off first for a world that turns them off, so one restart
   # does both, or keeping those parked for it through the watchdog's restart; says what to do when
-  # the game cannot start itself again. A world this PC never
-  # entered has its lock opened first, as parking_allows? does, so the start after the restart
-  # enters it without its password. While mods stay parked without a restart that keeps them for
-  # the world, the game stays open and the player tries again; when the restart that keeps them
-  # failed, the player starts the game again, since entering again in this session would find the
-  # mods parked for the world and enter it without loading the downloads.
+  # the game cannot start itself again. A world this PC never entered has its lock opened first, as
+  # parking_allows? does. While mods stay parked without a restart that keeps them for the world,
+  # the game stays open, see keep_open_for_mods.
+  #
+  # When the restart that keeps parked mods failed, the player must start the game by hand, since
+  # entering again in this session would find the mods parked and skip loading the downloads.
   def restart_for_mods
     MGQ_MpWorldMods.forget_installed
     plan = @entry.listed ? MGQ_MpModParking.change_for(@entry.listed) : nil
@@ -2654,10 +2642,16 @@ module MGQ_MpWorldPanels
   # Space between two panels.
   GAP = 3
 
-  # Font sizes of the headings, the labels, the values and the description.
+  # Font size of a panel's heading.
   HEADER_SIZE = 13
+
+  # Font size of a label.
   LABEL_SIZE = 15
+
+  # Font size of a value.
   VALUE_SIZE = 18
+
+  # Font size of the description.
   DESCRIPTION_SIZE = 15
 
   # Fill behind a panel.
@@ -2711,14 +2705,16 @@ class Window_MpWorldDetail < Window_Base
   #
   # @!attribute label [String, nil] What it is called, nil for a box across the whole cell.
   # @!attribute text [String] The value.
-  # @!attribute color [Symbol] :normal, :good for what is fine or online, or :warn.
+  # @!attribute color [Symbol] :normal, :good for what is fine or online, :warn, :gold, :raid or :bad, see color_of.
   # @!attribute target [Symbol, nil] What the cell opens, nil for nothing.
   # @!attribute chips [Array<String>, nil] Values shown in a box each instead of the text, nil for the text.
   # @!attribute chip_colors [Hash, nil] The color of chips drawn in another than the cell's, by their text: :good, :bad or :gold.
   Cell = Struct.new(:label, :text, :color, :target, :chips, :chip_colors)
 
-  # Space inside a chip's left and right edge, and between two chips.
+  # Space inside a chip's left and right edge.
   CHIP_PAD = 6
+
+  # Space between two chips.
   CHIP_GAP = 4
 
   # Width of the labels in front of the values.

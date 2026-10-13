@@ -2,11 +2,11 @@
 //  ModParking.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-10: Kept the scripts behind a link to another volume parked never and listed them as elsewhere
-//                            - Cleared the read-only attribute before a parked file is deleted or moved, and set it again where the file ended up
+//      Paulinchen  2026-10-10: Never parked scripts behind a link to another volume and listed them as elsewhere
+//                            - Cleared a parked file's read-only attribute for a move or delete and set it again
 //                            - Sent a parked file whose hash differs from the journal's to the conflicts folder
-//                            - Described the last restore's conflicts also once nothing is parked any more
-//                            - Retried reading the journal for the description and reported a failure as an error header
+//                            - Described the last restore's conflicts once nothing is parked
+//                            - Retried reading the journal for the description and reported a failure
 //      Paulinchen  2026-10-09: Created
 //
 //----------------------------------------------------------------
@@ -212,7 +212,7 @@ internal sealed class ModParking : IDisposable
     public Func<bool> InOptionsDump { get; init; } = () => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(DumpSetting));
 
     /// <summary>
-    /// Reads the local time a restore names its conflicts folder after; tests set another.
+    /// Reads the local time a restore or park names its conflicts folder after; tests set another.
     /// </summary>
     public Func<DateTime> Clock { get; init; } = () => DateTime.Now;
 
@@ -373,7 +373,8 @@ internal sealed class ModParking : IDisposable
 
             try
             {
-                // Written before the first move, so a crash during the moves leaves a journal that names them.
+                // Written before the first move, so a crash during the moves leaves a journal that
+                // names them.
                 Write(journal);
                 string? stamp = null;
 
@@ -775,7 +776,8 @@ internal sealed class ModParking : IDisposable
         try
         {
             Directory.CreateDirectory(OwnFolder);
-            // FileStream opens its handle without inheritance, so a process the game starts never holds the lock on.
+            // FileStream opens its handle without inheritance, so a process the game starts never
+            // holds the lock on.
             _lock = new FileStream(LockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1, FileOptions.DeleteOnClose);
             return true;
         }

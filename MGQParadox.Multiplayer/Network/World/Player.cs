@@ -3,8 +3,8 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-07: Logged who plays once it changes, and why a player was not taken
-//                            - Cleaned the name through PlayerName, shared with the PvP session
-//      Paulinchen  2026-10-06: Read the key and name at once, and said what the DLL says while they are not set
+//                            - Cleaned the name through PlayerName
+//      Paulinchen  2026-10-06: Read the key and name at once and named the text shown while they are not set
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------

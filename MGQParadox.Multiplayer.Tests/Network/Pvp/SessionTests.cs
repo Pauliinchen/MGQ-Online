@@ -2,12 +2,12 @@
 //  SessionTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Covered the relay turning a host or a guest away as too old, with or without its text
+//      Paulinchen  2026-10-12: Covered the relay turning an outdated host or guest away
 //      Paulinchen  2026-10-07: Took the message the session handed out
-//      Paulinchen  2026-10-06: Covered an invite kept past the link's end, hosting that stops when nobody joins, and a team too large to send
+//      Paulinchen  2026-10-06: Covered kept invites, hosting that nobody joins and teams too large to send
 //      Paulinchen  2026-09-29: Covered joining with a world code
-//                            - Met at the test relay in every test, and covered an unreachable or unknown relay and codes of other versions
-//                            - Covered joining through the relay, the direct way winning, and failing at the relay
+//                            - Met at the test relay in every test and covered unknown relays and codes
+//                            - Covered joining through the relay, the direct way winning and relay failures
 //                            - Added a test for a guest with another join code's token
 //                            - Added a test for invites while hosting
 //                            - Added a test for the state without the team

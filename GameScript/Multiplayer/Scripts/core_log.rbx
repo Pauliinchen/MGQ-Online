@@ -2,18 +2,18 @@
 #  core_log.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Made log and log_once return nil, never the byte count of the line written
-#      Paulinchen  2026-10-07: Added failure, which describes an error with the pictures in memory when one could not be made
-#                            - Added short and named, which cut a text and name a database entry with its id for a line of the log
+#      Paulinchen  2026-10-10: Made log and log_once return nil
+#      Paulinchen  2026-10-07: Added failure
+#                            - Added short and named
 #      Paulinchen  2026-10-04: Renamed from mp_log.rbx
 #      Paulinchen  2026-10-03: Created
 #
 #----------------------------------------------------------------
 
-# The scripts' lines in Multiplayer InGame.log. A script's module extends this and names its lines
-# with LOG_TAG, which starts each of them, such as "co-op".
+# Writes the scripts' lines to Multiplayer InGame.log. A script's module extends this and starts
+# each of its lines with its LOG_TAG, such as "co-op".
 #
-# It must never interrupt the game, so writing a line never raises.
+# Writing a line never raises, since the log must never interrupt the game.
 module MGQ_MpLog
   # What was logged once already, by the module and its key.
   @logged = {}
@@ -54,11 +54,12 @@ module MGQ_MpLog
     id.to_s
   end
 
-  # Describes an error for a line of the log, with the pictures in memory after a picture could not
-  # be made, which tells a leak of pictures from one too large.
+  # Describes an error for a line of the log, adding the pictures in memory to an RGSSError.
+  #
+  # The count tells a leak of pictures from a single picture too large to make.
   #
   # @param error [Exception] The error.
-  # @return [String] Its class and message.
+  # @return [String] Its class and message, "?" when it cannot be described.
   def self.failure(error)
     text = "#{error.class}: #{error.message}"
     text << " (#{bitmaps_alive} pictures in memory)" if defined?(RGSSError) && error.is_a?(RGSSError)

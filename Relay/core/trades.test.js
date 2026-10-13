@@ -2,7 +2,7 @@
 //  trades.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Covered the sealed offers kept beside each trade: dropped once cancelled, moved out of older trades, listed and removed with the trade
+//      Paulinchen  2026-10-12: Covered the sealed offers kept beside each trade
 //                            - Covered the limit on trades a player opened that ended cancelled within a day
 //      Paulinchen  2026-10-07: Expected 404 for an unknown sub-route and 413 for a body the platform could not read whole
 //      Paulinchen  2026-10-06: Covered the player's key in the X-MGQ-Player header

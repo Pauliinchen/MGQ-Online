@@ -2,46 +2,42 @@
 #  battles_duel.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Took a ready player's party_member_max only as a number, 0 for anything else, and left a team duel whose sides did not read, instead of failing on them
+#      Paulinchen  2026-10-12: Took a non-numeric party_member_max as 0 and left a team duel whose sides did not read
 #      Paulinchen  2026-10-11: Drew the challenge in the color every request and offer shares
-#                            - Named the wait for an accepted duel's start, the challenger's gathering of a team duel's sides and the called side's readiness in the line above the player's head, each with its seconds left, and gave the challenge its seconds left
-#                            - Stopped the player's own challenge once they accept another player's duel, so nobody accepts a challenge whose player waits for a duel already
-#      Paulinchen  2026-10-07: Named players through overworld_sync.rbx and battles_sync.rbx instead of copies of their helpers
-#                            - Logged every duel message sent and taken, and each challenge, answer, call, side, start and call-off with its reason
-#      Paulinchen  2026-10-06: Called a duel off whose battle could not start, so the other players never wait for it
-#                            - Told a player who already started the duel why it was called off, once, instead of a decline followed by a call-off
+#                            - Named the duel's waits in the line above the player's head with their seconds left
+#                            - Stopped the player's own challenge once they accept another player's duel
+#      Paulinchen  2026-10-07: Named players through overworld_sync.rbx and battles_sync.rbx
+#                            - Logged every duel message and each step of a duel
+#      Paulinchen  2026-10-06: Called a duel off whose battle could not start
+#                            - Told a player who already started the duel once why it was called off
 #                            - Brought no share of the Backline to a team duel
 #                            - Made up a duel's id as a co-op battle's
-#                            - Added the duel's choice to the action wheel's ring by order instead of to its right
+#                            - Added the duel's choice to the action wheel's ring by order
 #      Paulinchen  2026-10-04: Renamed from mp_battles_duel.rbx
-#      Paulinchen  2026-10-03: Started a duel with the Backline when the challenger's duels have it, and said so in the challenge
-#                            - Kept a duel waiting to start as a Pending record, and the sides' players as MGQ_MpBattlesCoop::Player records
-#                            - Offered the duel's choices and challenges to the wheel, the World overview and the notification box through MGQ_MpActions
+#      Paulinchen  2026-10-03: Started a duel with the Backline when the challenger's duels have it
+#                            - Kept a waiting duel and its sides' players as records
+#                            - Offered the duel's choices and challenges through MGQ_MpActions
 #                            - Asked MGQ_MpOverworldSync whether the map is quiet or the player free on it
-#                            - Sent messages, showed notices and read the world, the own id and the own seat through MGQ_MpOverworldSync
+#                            - Sent messages, showed notices and read the world through MGQ_MpOverworldSync
 #                            - Logged through MGQ_MpLog
-#                            - Took a call to a team duel only from the challenger the player accepted or through the leader of the player's party
-#                            - Read the bound keys through MGQ_MpHotkeys, renamed from MGQ_MpKeys
-#                            - Told the challenger that a player declined, whom the challenge then stops naming
-#      Paulinchen  2026-10-02: Named the key the player bound to the action wheel in the challenge line above a ghost
+#                            - Took a team duel's call only from the accepted challenger or the party's leader
+#                            - Read the hotkeys through MGQ_MpHotkeys
+#                            - Told the challenger that a player declined
+#      Paulinchen  2026-10-02: Named the action wheel's hotkey in the challenge line above a ghost
 #                            - Followed the map through core_hooks.rbx
 #                            - Sent the battle's break-off and leaving through MGQ_MpBattlesSync.tell
 #      Paulinchen  2026-10-01: Created
 #
 #----------------------------------------------------------------
 
-# Duels: PvP battles between two players of a world, the same battle as the PvP battle screen's (battles_pvp.rbx)
-# carried over the world's room (battles_sync.rbx). A player challenges like a party invite: the
-# players nearby for fifteen seconds, or one player anywhere picked in the World overview for a
-# minute. The
-# challenged player accepts and sends their team; the challenger answers with theirs, hosts, and
-# both battles start from the map.
-#
-# A duel a party's leader takes part in becomes a team duel (battles_team.rbx): the challenger
-# calls their own party and the player who accepted, who calls their party in turn. Each answers
-# once free on the map, and the duel starts with those ready after ten seconds at the latest.
-#
-# It must never interrupt the game, so every entry point rescues.
+# Duels: PvP battles between two players of a world, the same battle as the PvP battle screen's
+# (battles_pvp.rbx) carried over the world's room (battles_sync.rbx). A player challenges like a
+# party invite: the players nearby for fifteen seconds, or one player anywhere picked in the World
+# overview for a minute. The challenged player accepts and sends their team; the challenger answers
+# with theirs, hosts, and both battles start from the map. A duel a party's leader takes part in
+# becomes a team duel (battles_team.rbx): the challenger calls their own party and the player who
+# accepted, who calls their party in turn; each answers once free on the map, and the duel starts
+# with those ready after ten seconds at the latest.
 module MGQ_MpBattlesDuel
   # Frames an accepted challenge waits for the challenger's answer, six seconds.
   ANSWER_FRAMES = 360
@@ -84,11 +80,22 @@ module MGQ_MpBattlesDuel
     end
   end
 
+  # The challenge this player sends, counting down until it runs out.
   @challenge = MGQ_MpCoop::Invite.new
+
+  # The challenger whose duel this player accepted, nil while none waits for their answer.
   @accepted = nil
+
+  # The duel waiting to start once this player is back on the map, nil when none waits.
   @pending = nil
+
+  # The team duel this game hosts while its players gather, nil when none gathers.
   @gathering = nil
+
+  # The call to a team duel this player answers, nil when none came.
   @called = nil
+
+  # The id of the duel this player's battle started last, nil before the first.
   @started = nil
 
   extend MGQ_MpLog
@@ -188,8 +195,9 @@ module MGQ_MpBattlesDuel
     @accepted = nil
   end
 
-  # The fields the duel adds to the state the player's game tells the others. They are not named
-  # "duel", which marks the messages this script takes.
+  # The fields the duel adds to the state the player's game tells the others.
+  #
+  # They are not named "duel", which marks the messages this script takes.
   #
   # @return [Hash] The fields.
   def self.state_fields
@@ -327,7 +335,6 @@ module MGQ_MpBattlesDuel
   # @param reason [String] A key of REASONS.
   def self.take_decline(peer, reason)
     @accepted = nil if @accepted && @accepted[:seat] == peer.seat
-    # A player who declined the challenge is no longer named by it.
     @challenge.drop(peer.state["id"]) if reason == "no"
     MGQ_MpOverworldSync.notice("#{peer.state['name']} #{REASONS.fetch(reason, 'cannot duel now')}.")
     log("#{MGQ_MpOverworldSync.who(peer)} could not duel: #{REASONS.fetch(reason, 'cannot duel now')} (#{reason})#{', no longer challenged by name' if reason == 'no'}")
@@ -784,8 +791,9 @@ module MGQ_MpBattlesDuel
     end
 
     # Tells another player's challenge for the notification box, while it reaches the player and
-    # duels can run. A duel starts only from the map, so in a menu the challenge stands without the
-    # key that accepts it.
+    # duels can run.
+    #
+    # A duel starts only from the map, so in a menu the challenge stands without its Accept choice.
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
     # @return [MGQ_MpActions::Notice, nil] The challenge, nil for none.
@@ -826,7 +834,6 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # After the map's update, a duel waiting to start starts.
   MGQ_MpHooks.after(Scene_Map, :update_scene, "battles_duel") { MGQ_MpBattlesDuel.on_map unless scene_changing? }
 rescue => e
   MGQ_MpBattlesDuel.log("map hook FAILED: #{e.class}: #{e.message}")

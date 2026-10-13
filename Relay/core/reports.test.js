@@ -2,11 +2,11 @@
 //  reports.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Checked that a busy, rate-limited or keyless report is refused before its body is read and its body drained, that one report is handled at a time and its place given back after every answer, and that a body still arriving at the deadline is refused
-//                            - Checked that text files over the inline limits go to GitHub as blobs before the tree, that no blob is uploaded twice and that a report with a broken text file uploads nothing
-//                            - Moved the test of the Worker sending bug reports to their own object to cloudflare/worker.test.js
-//                            - Checked that the Worker sends bug reports to an object of their own, never to the world directory
-//                            - Checked that a report past its rate limit is refused before it is unpacked, that at most two reports are handled at once, and that a report refused after its turn was taken gives it back
+//      Paulinchen  2026-10-12: Checked busy, rate-limited and keyless reports refused before their body is read, one report at a time and the body deadline
+//                            - Checked large text files uploaded as blobs and a report with a broken text file uploading nothing
+//                            - Moved the test of the Worker's report object to cloudflare/worker.test.js
+//                            - Checked that the Worker sends bug reports to an object of their own
+//                            - Checked the rate limits before unpacking, at most two reports at once and turns given back
 //      Paulinchen  2026-10-11: Created
 //
 //----------------------------------------------------------------

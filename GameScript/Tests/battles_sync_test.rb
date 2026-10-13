@@ -2,15 +2,15 @@
 #  battles_sync_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that the wire reads hostile lines as nil or unknown values without raising or making a symbol, and only fields an action result has
-#                            - Checked that the host's names, a stream line or a mode's message that fail are left out, and that a time stop without a battler ends
-#                            - Checked that a host's cut-in whose name holds a dot plays, one this game lacks erases its place, and that picture and screen calls with arguments this game cannot take are left out
-#                            - Checked that enemies falling while the host waits for one or several guests' commands win the battle once without starting the turn, and that a turn whose battle ended is left out
-#                            - Checked that the host has its skip settings back as the battle ends, before the victory autosave, and that a held message skip passes a battle message at once, the victory results as the game's setting says
-#      Paulinchen  2026-10-11: Checked the waiting box in the layout: kept in Player.ini, its lines drawn anew at a new width and its least width
-#                            - Checked the waiting box: its lines, the names still waited for, the seconds drawn once a second, the leave offer, a battle's ending, a details that fails, the seat names and the playback's path
-#                            - Checked that the host's wait for the commands names who still chooses and tells the guests, and that a guest's box names them while the host's stream stalls
-#                            - Read the windows opened from battle_support.rb instead of keeping them itself
+#      Paulinchen  2026-10-12: Checked that the wire reads hostile lines safely
+#                            - Checked failing names, stream lines and mode messages, and a time stop without a battler
+#                            - Checked the host's cut-ins and picture and screen calls on the guest
+#                            - Checked that enemies falling during the wait for commands win the battle once
+#                            - Checked the host's skip settings at the battle's end and a held message skip
+#      Paulinchen  2026-10-11: Checked the waiting box in the layout
+#                            - Checked the waiting box's lines, leave offer, seat names and the playback's path
+#                            - Checked that the wait for commands names who still chooses, on host and guests
+#                            - Read the opened windows from battle_support.rb
 #      Paulinchen  2026-10-08: Checked that a command phase the battle ended in closes as the live battle finishes
 #      Paulinchen  2026-10-07: Checked the counters a state new to the guest gets
 #                            - Checked a whole turn's way from the host's recorder over the wire to the guest's playback
@@ -31,12 +31,14 @@ scene = Scene_Battle.new
 $scene_now = scene
 $my_seat = 0
 
-# Stand-ins for what the tests below ask of the game.
+# The game's settings, with the skip settings a live battle's host turns off.
 class Game_System
   attr_reader :conf
   def initialize; @conf = { :bt_skip => true, :bt_skip_cutin => 1, :skip_skill_effect => false }; end
 end
+# A state of the database, known by its id alone.
 StateStub = Struct.new(:id)
+# An actor with the values the recorder reads and the playback sets.
 class Game_Actor
   attr_accessor :tp, :state_list, :result
   def actor?; true; end
@@ -44,21 +46,26 @@ class Game_Actor
   def defence_wall; 2; end
   def refresh; end
 end
+# An enemy with the values the recorder reads and the playback sets.
 class Game_Enemy
   attr_accessor :sprite_effect_type, :hp, :mp, :tp
   def actor?; false; end
   def states; []; end
 end
+# The party, noting the ids of the items it uses up in $consumed.
 class Game_Party
   attr_accessor :od_turn, :od_user
   def name; "Party"; end
   def consume_item(item); ($consumed ||= []) << item.id; end
 end
+# A battler's action result, with the damage it took.
 class Game_ActionResult
   attr_accessor :hp_damage
   def initialize(battler = nil); @battler = battler; @hp_damage = 0; end
 end
+# A wrapped database item, as the game's equipment and actions hold one.
 class Game_BaseItem; attr_accessor :object; end
+# The game's message, which has text while $game_message_texts holds any.
 class Game_Message
   attr_accessor :face_name, :face_index, :background, :position
   def has_text?; !($game_message_texts || []).empty?; end
@@ -68,7 +75,9 @@ class BattleLog
   attr_reader :lines
   def display_damage(target); (@lines ||= []) << [target, rand(1000)]; end
 end
+# The troop, whose one enemy name is Slime.
 class Game_Troop; def enemy_names; ["Slime"]; end; end
+# The battle scene, counting the turns started in $turns_started.
 class Scene_Battle
   def battle_start; end
   def turn_start; $turns_started += 1; end
@@ -76,22 +85,26 @@ class Scene_Battle
   def command_escape; end
   def wait_for_message; end
 end
-# The held button, $held, and the message skip's Input.update.
+# The input, holding the button in $held.
 module Input
   def self.press?(button); $held == button; end
   def self.update; end
 end
-# A message window: the plain one, and the newer translation's with its result skip setting.
+# The plain message window.
 class PlainMessageWindow; attr_accessor :pause; end
+# The newer translation's message window, with its result skip setting.
 class SkipMessageWindow < PlainMessageWindow
   attr_accessor :message_skip_mode
   def initialize(mode); @message_skip_mode = mode; end
+  # Tells whether a key passes the message: the skip counts held from Slow on, tapped below.
   def message_pause_input
     Input.trigger?(:B) || Input.trigger?(:C) || (message_skip_mode >= 1 ? Input.press?(:X) : Input.trigger?(:X))
   end
 end
-# A judgement ends the battle once every enemy fell, as the game's victory does.
+# Counts judgements in $judged, each ending the battle once every enemy fell, as the game's victory
+# does.
 module BattleManager; def self.judge_win_loss; $judged = $judged.to_i + 1; $ending = true if $game_troop.all_dead?; true; end; end
+# The game's messages of how a battle begins.
 module Vocab
   Emerge = "%s appears!"
   Preemptive = "%s struck first!"
@@ -237,6 +250,8 @@ check("a turn is", recorder.instance_variable_get(:@events).size, 1)
 recorder.stop
 
 # The host's HP above this game's own maximum, which the game's refresh holds a character below.
+
+# An actor whose refresh holds its HP at its maximum of 100, as the game's does.
 class ClampingActor < Game_Actor
   def mhp; 100; end
   def refresh; @hp = [@hp, mhp].min; end
@@ -302,6 +317,7 @@ sync.finish
 # offer, and the battle's windows held meanwhile.
 waiting = sync::Waiting
 $windows = []
+# A battle window that notes whether it is active.
 class Window_Selectable < Window_Base
   attr_reader :active
   def initialize(*args); super; @active = true; end
@@ -598,6 +614,7 @@ class Game_Screen
   def start_flash(*args); @done << [:flash, *args]; end
   def start_shake(*args); @done << [:shake, *args]; end
 end
+# The troop, whose screen is made on first use.
 class Game_Troop; def screen; @screen ||= Game_Screen.new; end; end
 $log.clear
 playback.play(scene, ["picture.show", 3, "cutin_alice.v2", 0, 10, 20.5, 100, 100, 255, 0])

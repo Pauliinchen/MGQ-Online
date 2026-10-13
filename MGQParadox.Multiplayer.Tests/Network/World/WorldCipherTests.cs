@@ -2,7 +2,7 @@
 //  WorldCipherTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Covered the target seat each frame names, and a new salt per connection that keeps what the others sent
+//      Paulinchen  2026-10-06: Covered the target seat of each frame and a new salt per connection
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------

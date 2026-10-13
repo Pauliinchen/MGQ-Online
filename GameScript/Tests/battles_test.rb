@@ -2,7 +2,7 @@
 #  battles_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-06: Checked that a reset forgets the rules without touching the switches of the save loaded next
+#      Paulinchen  2026-10-06: Checked that a reset forgets the rules and leaves the next save's switches alone
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-10-03: Checked that a PvP battle with the Backline may swap it in
 #                            - Checked the modes of live battles
@@ -15,22 +15,31 @@
 
 require_relative "support"
 
+# Stands in for the loader's log, printing its lines.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
+# Stands in for the game's scene manager.
 module SceneManager; def self.run; end; end
+# Stands in for the title screen.
 class Scene_Title; def start; end; end
+# Stands in for the game's battle manager, which allows giving up.
 module BattleManager; def self.can_giveup?; true; end; end
+# The game's switch that forbids swapping the Backline in.
 module NWConst; module Sw; FORBID_BATTLE_SHIFT_CHANGE = 27; end; end
+# The system database, of which the switches' names are read.
 System = Struct.new(:switches)
 $data_system = System.new(Array.new(100, ""))
 $data_system.switches[86] = "No Seduction"
+# Stands in for the game's switches.
 class Game_Switches; def initialize; @d = {}; end; def [](i); @d[i] || false; end; def []=(i, v); @d[i] = v; end; end
 $game_switches = Game_Switches.new
+# Stands in for coop.rbx's tell and routes.
 module MGQ_MpCoop
   def self.tell(seat, field, value, fields = {})
     MGQ_MpOverworldSync::Link.send_to(seat, MGQ_MpOverworldSync::Me.encode({ field => value, "party" => Party.id }.merge(fields)))
   end
   def self.route(*); end
 end
+# Stands in for the world room's routes and hooks, ignored here.
 module MGQ_MpOverworldSync
   def self.route(*); end
   def self.on_tick(*); end

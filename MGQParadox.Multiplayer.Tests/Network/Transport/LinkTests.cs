@@ -4,10 +4,10 @@
 //  Changelog:
 //      Paulinchen  2026-10-07: Took the message the link handed out
 //      Paulinchen  2026-10-06: Encrypted the links with a salt of each side
-//      Paulinchen  2026-10-04: Let the other side stay silent for two seconds, since a busy build machine delays a ping past 400 ms
-//      Paulinchen  2026-09-29: Encrypted the links with a connection's salt as well as the token
-//                            - Linked the games through the test relay, since the direct connection is gone
-//                            - Built the links from frame channels and ciphers, and covered frames of another join code
+//      Paulinchen  2026-10-04: Let the other side stay silent for two seconds
+//      Paulinchen  2026-09-29: Encrypted the links with a connection's salt
+//                            - Linked the games through the test relay
+//                            - Built the links from frame channels and ciphers and covered other join codes
 //      Paulinchen  2026-09-28: Created
 //
 //----------------------------------------------------------------
@@ -60,9 +60,7 @@ public sealed class LinkTests : IDisposable
     /// </summary>
     private readonly TestRelay _relay = new();
 
-    /// <summary>
-    /// Stops the test's relay.
-    /// </summary>
+    /// <inheritdoc />
     public void Dispose() => _relay.Dispose();
 
     /// <summary>

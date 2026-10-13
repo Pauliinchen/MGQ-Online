@@ -53,41 +53,61 @@ module MGQ_MpWorldOverview
   # A pane line naming something by its icon or how it looks, with a note at the right.
   PaneItem = Struct.new(:icon, :looks, :name, :note, :dim)
 
-  # What the World page says of players online and the story, and in a Classic world of the story.
+  # What the World page says of the players online.
   PLAYERS_LINE = "Players online: %s"
+
+  # What the World page says of a Raid World's story.
   STORY_LINE = "Story: %s"
+
+  # What the World page says of a Classic world's story.
   CLASSIC_STORY = "Each party plays its leader's story."
 
-  # The World page's heading over a section's raid bosses, with how many it holds, and what it says
-  # without any.
+  # The World page's heading over a section's raid bosses, with how many it holds.
   BOSS_SECTION = "%s (%d)"
+
+  # What the World page says of a Raid World without raid bosses to list.
   NO_BOSSES = "No raid bosses yet."
+
+  # What the World page says of raid bosses in a Classic world.
   CLASSIC_BOSSES = "Raid bosses fight in Raid Worlds."
 
-  # How the pane tells a raid boss's tier and what it changes, and who last hurt it.
+  # How the pane tells a raid boss's tier and what it changes.
   TIER_LINE = "Tier %d: enemies have %s."
+
+  # How the pane tells one stat a tier changes and its factor.
   TIER_STAT = "%s x%s"
+
+  # The names of the stats a tier changes.
   TIER_STATS = { :mhp => "HP", :def => "DEF", :mdf => "MDF", :atk => "ATK", :mat => "MAT", :agi => "AGI", :luk => "LUK", :mmp => "MP" }
+
+  # How the pane tells who last hurt a raid boss.
   LAST_HURT = "Last hurt by %s."
+
+  # What the list and the pane say of a defeated raid boss.
   DEFEATED = "Defeated"
 
-  # The Unlocks page's head: its note with the player's level, and a member's level in the grid.
+  # The note of the Unlocks page's head with the player's level.
   YOUR_LEVEL_NOTE = "Your level %d"
+
+  # A member's level in the Unlocks page's grid.
   LEVEL_SHORT = "Lv %d"
 
-  # The Unlocks page's groups of levels: those whose every unlock the player got, folded, and those
-  # still to come.
+  # The Unlocks page's folded group of the levels whose every unlock the player got.
   PASSED = "Passed (%d)"
+
+  # The Unlocks page's group of the levels still to come.
   COMING_UP = "Coming up (%d)"
 
-  # The marks of a folded and an opened group.
+  # The mark of a folded group.
   FOLDED = "▸ "
+
+  # The mark of an opened group.
   UNFOLDED = "▾ "
 
   # What the pane says of a group, by whether it is open.
   FOLD_HINT = { true => "Enter or a click folds this group.", false => "Enter or a click opens this group." }
 
-  # How the pane titles a level, and what it adds once the level passed.
+  # How the pane titles a level once it passed.
   LEVEL_PASSED = "%s, passed"
 
   # What the pane calls moving on from a part.
@@ -890,8 +910,10 @@ end
 
 # The drawing of the pages with a head, a list and a pane.
 class Sprite_MpWorldOverview < Sprite
-  # The most columns the pane sets the things it names in, and the room between two columns.
+  # The most columns the pane sets the things it names in.
   PANE_COLUMNS = 4
+
+  # The room between two of those columns.
   COLUMN_GAP = 16
 
   # Draws a page laid out with a head, a list and a pane.

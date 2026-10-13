@@ -2,47 +2,59 @@
 #  story_state_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Covered unpacking a packed story, which refuses a text longer than any story and one that unpacks too far
+#      Paulinchen  2026-10-12: Covered unpacking a packed story and its refusals
 #      Paulinchen  2026-10-10: Created
 #
 #----------------------------------------------------------------
 
-# Covers story_state.rbx with core_log.rbx: joining a story with the player's own chests, which
-# leaves out the chests the player never opened, the skills and companions it grants, which give
-# nothing for a skip whatever writing the log returns, and unpacking a story another game packed,
-# which refuses a text no story takes.
+# Covers story_state.rbx: mixing a story with the player's own chests, the skills and companions a
+# story grants, and unpacking a story another game packed.
 
 require_relative "support"
 
-# The log, which answers with a byte count as File#write does.
+# Stands in for the mod's log: records each line in $log and answers with a byte count, as
+# File#write does.
 module MGQ_Multiplayer; module Log; def self.write(m); $log << m; 87; end; end; end
 $log = []
+# Stands in for the battle scope: every battle is in a Raid World.
 module MGQ_MpCoop; module Scope; def self.raid?; true; end; end; end
+# Stands in for the shared events: no event is a chest.
 module MGQ_MpCoopEvents; def self.chest_keys; []; end; def self.chest_key?(_key); false; end; end
+# Stands in for RPG::Actor.
 ActorData = Struct.new(:id, :name)
+# Stands in for RPG::Skill.
 SkillData = Struct.new(:id, :name)
 $data_actors = Array.new(100)
 [[1, "Luka"], [16, "Granberia"], [45, "Tamamo"]].each { |id, name| $data_actors[id] = ActorData.new(id, name) }
 $data_skills = Array.new(1000)
 [[930, "Angel Dance"], [937, "Demon Decapitation"]].each { |id, name| $data_skills[id] = SkillData.new(id, name) }
 
-# Luka, whose skills the game keeps in @skills.
+# Stands in for an actor, whose learned skills the game keeps in @skills.
 class Game_Actor
   attr_reader :id
+  # Starts the actor with no skills.
   def initialize(id); @id = id; @skills = []; end
+  # Records a learned skill.
   def learn_skill(id); @skills |= [id]; end
 end
-# The game's actors by id.
+# Stands in for the game's actors by id.
 class Game_Actors
+  # Starts with no actor made.
   def initialize; @data = {}; end
+  # Answers the actor of an id, made on first use, or nil for one $data_actors lacks.
   def [](id); $data_actors[id] ? (@data[id] ||= Game_Actor.new(id)) : nil; end
 end
-# The party: its own companions in @include_actors, the team of up to two in @actors.
+# Stands in for the party: its own companions in @include_actors, the team of up to two in @actors.
 class Game_Party
+  # Starts the party empty.
   def initialize; @include_actors = []; @actors = []; end
+  # Adds a companion to the roster and the team.
   def add_actor(id); add_stand_actor(id); @actors |= [id]; end
+  # Adds a companion to the roster only.
   def add_stand_actor(id); @include_actors |= [id]; end
+  # Answers whether the team holds two.
   def party_member_full?; @actors.size >= 2; end
+  # Answers the team's actors.
   def all_members; @actors.map { |id| $game_actors[id] }; end
 end
 
@@ -54,7 +66,8 @@ $game_party.add_actor(1)
 $game_party.add_actor(16)
 $game_actors[1].learn_skill(937)
 
-# Joining a story keeps the player's own chests, and only those their own story holds.
+# Mixing a story with the player's own takes the chests from the player's story and drops those
+# it lacks.
 chests = (1..5100).map { |event| [100 + event / 100, event, "A"] }
 opened = chests[7]
 shut_by_story = chests[8]
@@ -68,7 +81,7 @@ check("a chest the player opened stays open, also one the story has shut, and th
 check("a chest the player holds shut stays shut, as a key of its own", [mixed[2].key?(kept_shut), mixed[2][kept_shut]], [true, false])
 check("and a chest the player never opened is left out, not written as an empty key", [mixed[2].key?(others), mixed[2].size], [false, 4])
 
-# A skip of the story's grants gives nothing, whatever writing the log returns.
+# A skipped grant answers nil whatever writing the log returns, and a granted one answers its name.
 check("a log line gives nothing back, the first time and every time after", [state.log("a line"), state.log_once(:key, "once"), state.log_once(:key, "once")], [nil, nil, nil])
 check("a skill Luka knows or the game lacks is learned by nobody", [state.learn(937), state.learn(999)], [nil, nil])
 check("a companion in the roster or missing from the game joins nobody", [state.join(16), state.join(99), state.bring(16), state.bring(99)], [nil, nil, nil, nil])
@@ -79,6 +92,10 @@ check("a companion joins the roster, or the party while it has room, under their
 
 # Unpacking a story another game packed reads back what was packed, and refuses a text no story
 # takes before it runs the game out of memory.
+
+# Runs a block and answers the message of the ArgumentError it raises.
+#
+# @return [String, nil] The message, nil when the block raises none.
 refusal = lambda do |&block|
   begin
     block.call

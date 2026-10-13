@@ -76,7 +76,7 @@ module MGQ_MpWorldCatchupExp
     [exp, cexp]
   end
 
-  # Writes a factor as the Levels page shows it.
+  # Writes a factor as the World overview's Unlocks page shows it.
   #
   # @param factor [Float] The factor.
   # @return [String] Such as "x3.5" or "x10".

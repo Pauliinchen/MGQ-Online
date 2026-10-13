@@ -7,44 +7,44 @@
 #                            - Scrolled the list box with the mouse wheel and drew its scrollbar
 #                            - Added the mouse wheel and the scrollbar of the mod's list windows
 #                            - Cut a text to its width with far fewer measures
-#                            - Listed the settings in their own group of the Mod Config, MGQ Online Settings, apart from the hotkeys
-#      Paulinchen  2026-10-11: Let the player move and resize the list box with Alt, and move the message box and the confirm box and change their width, each kept in Player.ini and never smaller than its title, columns, choices and whole hint need
-#                            - Drew the list box, the message box and the confirm box in their frame, anew once the interface look changes
+#                            - Listed the settings in their own Mod Config group, MGQ Online Settings
+#      Paulinchen  2026-10-11: Let the player move and resize the list, message and confirm boxes with Alt
+#                            - Drew the list, message and confirm boxes in their frame
 #                            - Dressed the lines across the top of a screen in the interface look
-#                            - Made the style's box colors the interface preset's, set in place by ui_theme.rbx, and added the edge, rim, title, gauge well and tab colors
-#                            - Added the framed box every flat box draws, its frame alone and the rows of the Mod Config the interface options share
-#                            - Added the depth of the layout's outlines, above everything
-#                            - Turned the font's own outline off while drawing a text in its solid outline, which it doubled to two pixels
-#                            - Kept a copy of the font's color while drawing an outline, since setting the outline's color overwrote it and drew every outlined text black
-#                            - Named every player outside the party in plain white, dropping the eight colors picked by their id
-#                            - Drew the list box and the message box in the shared style, dropping their own colors and font sizes, and faded the list box in and out
-#                            - Placed the list box and the message box by the screen's size, cut a title and an item to its room, and named the numpad's 0 in the list box's hint
-#                            - Drew a hint whole, smaller once it is wider than its room, since a cut would drop the keys it names at its end; the list box, the message box and the wheels share it
-#                            - Added the fading of a text's color for a line about to go, which the notices and the chat log share, and dropped WHITE for the style's text
-#                            - Added the shared style of the mod's flat boxes: its colors, font sizes, padding, column gap, timings, the outlined and plated texts the raid bar drew on its own, and the close hint every screen names its keys in
-#                            - Added the motion of a sprite, a fade in and out with a slide, which the boxes and lines share, and its step towards a target, which the raid bar's slide shares
-#                            - Added the color of a player: yellow for the player, green for a party member, one of eight by their id for anyone else
-#                            - Added the confirm box, a yes or no question over any scene, answered in the tick after the one that read the answer and answered no once another scene starts
-#                            - Named the frames the game draws in a second and how seconds are written, which the own line's seconds and the waiting box share
-#                            - Added the icon drawn at any side, dim when asked, which the labels on the map, the boxes and the wheels share, and the room an icon takes in a row
-#                            - Added the depth of the edge arrows under every line and box, and the bounds helper the arrows and the join prompt share
-#                            - Added the rows a box shows of a longer list and how many more wait, which the notices and the party box share
-#      Paulinchen  2026-10-10: Added the room a strip of the mod takes at the top of the map's screen and whole numbers grouped by commas
-#      Paulinchen  2026-10-08: Added the depth of the chat while the player types, above everything
-#                            - Added the cancel of the mod's screens, which takes the numpad's 0 with Num Lock on and off
-#                            - Took the numpad's 0 frame by frame, so a press a game window cancelled with never cancels again in the next frame
-#                            - Watched the numpad's 0 from the start, so its first press of a session counts
-#      Paulinchen  2026-10-07: Added the iconset rect, the cut with one ellipsis, white and the depths of the mod's sprites and windows, which the screens share
-#                            - Logged every message box shown, with its title and text
+#                            - Made the style's box colors the interface preset's and added more colors
+#                            - Added the framed box, its frame alone and the interface option rows
+#                            - Added the depth of the layout's outlines
+#                            - Turned the font's own outline off while drawing a solid outline
+#                            - Kept a copy of the font's color while drawing an outline
+#                            - Named every player outside the party in plain white
+#                            - Drew the list box and the message box in the shared style
+#                            - Placed the list box and the message box by the screen's size
+#                            - Drew a hint whole, smaller once it is wider than its room
+#                            - Added the fading of a text's color and dropped WHITE
+#                            - Added the shared style of the mod's flat boxes
+#                            - Added the motion of a sprite
+#                            - Added the color of a player
+#                            - Added the confirm box
+#                            - Named the frames per second and how seconds are written
+#                            - Added the icon drawn at any side and the room an icon takes in a row
+#                            - Added the depth of the edge arrows and the bounds helper
+#                            - Added the rows a box shows of a longer list
+#      Paulinchen  2026-10-10: Added the room a strip takes at the top of the map and grouped numbers
+#      Paulinchen  2026-10-08: Added the depth of the chat while the player types
+#                            - Added the cancel of the mod's screens
+#                            - Took the numpad's 0 frame by frame
+#                            - Watched the numpad's 0 from the start
+#      Paulinchen  2026-10-07: Added the iconset rect, the cut, white and the depths of the mod's sprites
+#                            - Logged every message box shown
 #      Paulinchen  2026-10-06: Dropped the wrapped lines the top window kept but never read
-#                            - Let a list box say a hint of its own at the bottom, and named how high it lies
-#                            - Drew an item being typed into as a text box with its cursor, and the picked item opaque
-#                            - Drew buttons at the right end of an item, each a mark outlined in its color or filled with it, the column titles at the heading above, and the one the cursor is on
-#      Paulinchen  2026-10-04: Added the message box, a box in the middle of the screen drawn like the list box
+#                            - Let a list box say a hint of its own and named how high it lies
+#                            - Drew an item being typed into as a text box
+#                            - Drew buttons at the right end of an item
+#      Paulinchen  2026-10-04: Added the message box
 #                            - Renamed from mp_ui.rbx
 #                            - Drew a list box's item in gold when asked
-#                            - Broke the top lines anew only when they changed, and made the list box darker, so the windows behind it show through only a little
-#                            - Added the list box, a large box of headings and items drawn like the World overview
+#                            - Broke the top lines anew only when they changed and darkened the list box
+#                            - Added the list box
 #      Paulinchen  2026-10-03: Created
 #
 #----------------------------------------------------------------
@@ -80,11 +80,8 @@ module MGQ_MpUi
   # Pixels an icon takes in a row with the room after it.
   ICON_STEP = ICON_SIZE + 2
 
-  # The depths of the mod's sprites and windows above the game's, by layer: the arrows at the
-  # screen's edges under everything, the lines at the screen's edges, the labels on the map, the
-  # bubbles and notices over them, the wheels and what lies above a screen's windows, the World
-  # overview, the boxes, the confirm box above every box, the chat while the player types above
-  # them, and the outlines of the boxes being moved or resized above everything.
+  # The depths of the mod's sprites and windows above the game's, by layer, lowest first; :wheels
+  # also holds what lies above a screen's windows.
   Z = { :arrows => 190, :lines => 200, :labels => 250, :bubbles => 260, :wheels => 300, :overview => 400, :boxes => 1000, :confirm => 1050, :typing => 1100, :layout => 1200 }
 
   # The first words of every setting's row in the Mod Config, which list the settings in a group of
@@ -117,8 +114,9 @@ module MGQ_MpUi
     # Thin frame of every flat box, of the chat's tabs and of a gauge.
     EDGE = Color.new(140, 140, 140, 220)
 
-    # A scrollbar's track, a lane a shade lighter than the box under its thumb; as opaque as the box,
-    # since fill_rect replaces the pixels and a see-through track would cut a hole down to the map.
+    # A scrollbar's track, a lane a shade lighter than the box under its thumb; at least as opaque as
+    # the box, since fill_rect replaces the pixels and a see-through track would cut a hole down to
+    # the map.
     TRACK = Color.new(48, 48, 48, 200)
 
     # Line around the edge, see draw_frame; fully see-through for a preset whose frame is the edge
@@ -411,6 +409,7 @@ module MGQ_MpUi
     end
   end
 
+  # The pixels a strip of the mod takes at the top of the map's screen, see top_room.
   @top_room = 0
 
   # Windows' codes of the numpad's 0, the game's cancel key, with Num Lock on and off; the second
@@ -577,8 +576,8 @@ module MGQ_MpUi
 
   # The motion of one sprite: a fade in and out of its opacity over Style::FADE_FRAMES and a slide
   # to its resting place over Style::SLIDE_FRAMES, in even steps. Whoever owns the sprite owns the
-  # motion, calls update once a frame where it updates the sprite, and sets neither visible nor
-  # opacity itself any more.
+  # motion, calls update once a frame where it updates the sprite, and never sets visible or
+  # opacity itself.
   class Motion
     # Full opacity.
     OPAQUE = 255
@@ -720,9 +719,13 @@ module MGQ_MpUi
   # The color a player is named in everywhere: Style::OWN for the player themself, Style::MEMBER
   # for a party member and Style::TEXT for anyone else.
   module PlayerColor
-    # What a player's own color, a party member's and anyone else's are called in the log.
+    # What the player's own color is called in the log.
     OWN_NAME = "own"
+
+    # What a party member's color is called in the log.
     MEMBER_NAME = "member"
+
+    # What anyone else's color is called in the log.
     PLAIN_NAME = "plain"
 
     # Finds a player's id.
@@ -833,8 +836,13 @@ module MGQ_MpUi
     # Why a box was answered no once its tick failed.
     TICK_FAILED_REASON = "the tick failed"
 
+    # Whether a box is open, see open?.
     @open = false
+
+    # The answer kept for the next tick and what gave it, nil until one is given.
     @answer = nil
+
+    # The box's sprite, nil while none shows.
     @sprite = nil
 
     # Opens the box. Refused while one is open, also in the tick after its answer, or while the
@@ -1206,8 +1214,10 @@ class Sprite_MpListBox < Sprite
   # What the hint says unless the list says another.
   HINT = ["Up and down: move", MGQ_MpUi::Style.close_hint("a click outside")].join(MGQ_MpUi::Style::HINT_GAP)
 
-  # The box's place in the layout and its name in the outlines.
+  # The box's place in the layout.
   LAYOUT_ID = :list_box
+
+  # The box's name in the outlines.
   LAYOUT_NAME = "List box"
 
   # Least width of an item's text and of the title's start, so a name stays readable.
@@ -1290,11 +1300,16 @@ class Sprite_MpListBox < Sprite
   #
   # @!attribute title [String] The title at the top left.
   # @!attribute note [String, nil] What the top right says.
-  # @!attribute lines [Array<Array>] [:head, text, titles] for a heading, titles nil or those of the button columns below it; [:item, text, color, right, buttons] for an item: color is :plain, :good, :gold, :bad or :grey, right what its right end says or nil, buttons nil or each button's mark, color (:red or :orange) and whether it is on. An item being typed into adds [editor, text, cursor, cursor shown], its text the box's label.
+  # @!attribute lines [Array<Array>] [:head, text, titles] for a heading, titles nil or those of the
+  #   button columns below it; [:item, text, color, right, buttons] for an item: color is :plain,
+  #   :good, :gold, :bad or :grey, right what its right end says or nil, buttons nil or each
+  #   button's mark, color (:red or :orange) and whether it is on. An item being typed into adds
+  #   [editor, text, cursor, cursor shown], its text the box's label.
   # @!attribute selected [Integer, nil] The line of the item picked, nil without items.
   # @!attribute scroll [Integer] The first line in sight.
   # @!attribute hint [String, nil] What the bottom says, nil for HINT.
-  # @!attribute column [Integer, nil] The button of the picked item the cursor is on, from 1; nil or 0 for the item itself.
+  # @!attribute column [Integer, nil] The button of the picked item the cursor is on, from 1; nil or
+  #   0 for the item itself.
   View = Struct.new(:title, :note, :lines, :selected, :scroll, :hint, :column) do
     # Makes a list with its first item picked.
     #
@@ -1637,8 +1652,10 @@ class Sprite_MpMessageBox < Sprite
   # Height of one line of the text.
   ROW = 24
 
-  # The box's place in the layout and its name in the outlines.
+  # The box's place in the layout.
   LAYOUT_ID = :message_box
+
+  # The box's name in the outlines.
   LAYOUT_NAME = "Message box"
 
   # Least width of the box: the text's room as wide as the list box's least item.
@@ -1647,6 +1664,7 @@ class Sprite_MpMessageBox < Sprite
   # Least height of the box: the title, a line and the hint.
   MIN_HEIGHT = Sprite_MpListBox::TITLE + ROW + Sprite_MpListBox::HINT_HEIGHT + PADDING
 
+  # The boxes made and not freed, see boxes.
   @boxes = []
 
   # Lists the boxes made and not freed, which follow the layout once a frame.
@@ -1656,7 +1674,7 @@ class Sprite_MpMessageBox < Sprite
     @boxes
   end
 
-  # Has every box that shows follow the layout. Called after every scene's update, since whoever
+  # Has every box that shows follow the layout. Called after every Graphics.update, since whoever
   # shows a box only closes it.
   def self.follow_layouts
     @boxes.each { |box| box.follow_layout if box.visible && !box.disposed? }
@@ -1794,8 +1812,10 @@ class Sprite_MpConfirmBox < Sprite
   # Height of a text line and of the choice row.
   ROW = 24
 
-  # The box's place in the layout and its name in the outlines.
+  # The box's place in the layout.
   LAYOUT_ID = :confirm_box
+
+  # The box's name in the outlines.
   LAYOUT_NAME = "Confirm box"
 
   # Least width of the box: the question's room as wide as the list box's least item.
@@ -1804,6 +1824,7 @@ class Sprite_MpConfirmBox < Sprite
   # Least height of the box: a line of the question, the choices and the hint.
   MIN_HEIGHT = 3 * ROW + 3 * MGQ_MpUi::Style::PAD
 
+  # The boxes made and not freed, see boxes.
   @boxes = []
 
   # Lists the boxes made and not freed, which follow the layout once a frame.
@@ -1813,7 +1834,7 @@ class Sprite_MpConfirmBox < Sprite
     @boxes
   end
 
-  # Has every box that shows follow the layout. Called after every scene's update.
+  # Has every box that shows follow the layout. Called after every Graphics.update.
   def self.follow_layouts
     @boxes.each { |box| box.follow_layout if box.visible && !box.disposed? }
   end
@@ -1986,7 +2007,6 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # After every scene's update, the confirm box takes its keys.
   MGQ_MpHooks.after(Scene_Base, :update, "ui") { MGQ_MpUi::Confirm.tick }
 
   # After every frame, the message boxes and the confirm box follow the layout, which the player

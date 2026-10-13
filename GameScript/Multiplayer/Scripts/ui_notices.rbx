@@ -2,24 +2,24 @@
 #  ui_notices.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Put the box at its default 4 pixels below the Leader HUD instead of 12
-#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types, and a press while the box is hidden once instead of twice
-#                            - Moved the box at its default below the Leader HUD while it shows at the top left
-#                            - Told once a session that Player.ini could not be read and settings are not saved, once the box shows
-#      Paulinchen  2026-10-11: Made the box movable and resizable with the left Alt held, as "Notifications": its width gives the notifications room and its height the rows it shows, never below the first invite's keys beside a readable name and two rows
-#                            - Framed the box in the preset's colors, drawn anew once the preset changes
-#                            - Drew the box in the shared style, fading it in and out, a message that runs out and an invite just answered fading away where it stood
-#                            - Said how many more notifications wait in a last row once more than the box's rows do, through MGQ_MpUi.capped, and cut a long one to its row
-#                            - Logged an accept or decline key pressed where the box is hidden, such as on the overview's World page
-#                            - Put three spaces between what the keys do, as the chat's hints do
-#                            - Gave the keys the room a rebound key's longer name needs, cutting the notification before them instead of the keys
-#      Paulinchen  2026-10-10: Moved the box down while a strip of the mod takes the top of the map's screen, such as the raid boss's bar
-#      Paulinchen  2026-10-08: Kept an accepted invite away only for a moment, so one whose accept did nothing, such as in a menu, shows again
-#                            - Kept an accepted invite away until the inviter drops it or turns the accept down, ten seconds at most, which a slow inviter let a second press accept again
-#      Paulinchen  2026-10-07: Kept an accepted invite away while it stands, as a declined one, so a second press no longer accepts it again
+#      Paulinchen  2026-10-12: Put the box at its default 4 pixels below the Leader HUD
+#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
+#                            - Moved the box at its default below the Leader HUD
+#                            - Told once a session that Player.ini could not be read
+#      Paulinchen  2026-10-11: Made the box movable and resizable with the left Alt held
+#                            - Framed the box in the preset's colors
+#                            - Drew the box in the shared style with fades
+#                            - Said how many more notifications wait in a last row and cut a long one to its row
+#                            - Logged an accept or decline hotkey pressed where the box is hidden
+#                            - Put three spaces between what the hotkeys do
+#                            - Gave the hotkeys the room a rebound hotkey's longer name needs
+#      Paulinchen  2026-10-10: Moved the box below a strip of the mod at the top of the screen
+#      Paulinchen  2026-10-08: Kept an accepted invite away only for a moment
+#                            - Kept an accepted invite away until the inviter drops it or turns the accept down
+#      Paulinchen  2026-10-07: Kept an accepted invite away while it stands
 #                            - Took the box's depth from MGQ_MpUi
-#                            - Logged each message posted, dropped or run out, what the box shows whenever it changes, and each invite answered or key ignored with why
-#      Paulinchen  2026-10-06: Showed messages outside a world too, such as a Discord invite taken during a game, dropping only those shown in a world once it closes
+#                            - Logged messages, the box's contents and answered invites
+#      Paulinchen  2026-10-06: Showed messages outside a world too
 #      Paulinchen  2026-10-04: Renamed from mp_notices.rbx
 #      Paulinchen  2026-10-03: Listed the invites the scripts offer through MGQ_MpActions
 #                            - Called the scripts that load before this one without asking whether they loaded
@@ -32,15 +32,14 @@
 # menus. It holds two kinds: invites, the party invites and duel challenges that reach the player
 # in a world from wherever they were sent, which stay as long as they stand; and messages, which
 # other scripts show for a moment, such as a party member meeting enemies, or a Discord invite
-# taken outside a world. The invites come first, and the box's keys (Y and N unless the player
-# binds others, see core_hotkeys.rbx) accept or decline the first one; messages take no key. A
+# taken outside a world. The invites come first, and the box's hotkeys (Y and N unless the player
+# binds others, see core_hotkeys.rbx) accept or decline the first one; messages take none. A
 # message that runs out and an invite just answered fade away; past the box's rows a last row says
 # how many more wait.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpNotices
-  # Rows the box shows at its default height; a taller box shows more. Messages fill what the
-  # invites leave, and the last row says how many more wait once there are more than the rows.
+  # Rows the box shows at its default height; a taller box shows more.
   MAX_ROWS = 5
 
   # Scenes the box stays hidden in, by their class's name: battles, which have their own chat log,
@@ -51,7 +50,7 @@ module MGQ_MpNotices
   # turns the accept down before; after them it shows again if it still stands, since the accept
   # then did nothing.
   #
-  # A slow inviter still shows the invite a while after the accept, so a shorter hold let a second
+  # A slow inviter still shows the invite a while after the accept, so a shorter hold lets a second
   # press accept it again.
   ACCEPT_HOLD_FRAMES = 600
 
@@ -64,9 +63,18 @@ module MGQ_MpNotices
   # The hotkey of each answer to the first invite.
   ANSWER_HOTKEYS = { :take => :accept, :decline => :decline }
 
+  # The messages shown, oldest first, each with its key, text, frames left and whether it was shown
+  # in a world.
   @messages = []
+
+  # The invites answered, by their keys, each with its mark and, for an accepted one, its frames
+  # left.
   @answered = {}
+
+  # The invites just answered, fading away, each with its text, color and frames left.
   @going = []
+
+  # The texts the box showed when last logged.
   @logged = []
 
   extend MGQ_MpLog
@@ -132,7 +140,7 @@ module MGQ_MpNotices
   end
 
   # Counts the messages and the fading invites down, accepts or declines the first invite when its
-  # key went down, and draws the box. Called every frame in every scene.
+  # hotkey went down, and draws the box. Called every frame in every scene.
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
@@ -181,10 +189,9 @@ module MGQ_MpNotices
     !(scene.is_a?(Scene_Map) && MGQ_MpWorldOverview.open?)
   end
 
-  # Accepts or declines the first invite, which the box names with the keys, and lets it fade
+  # Accepts or declines the first invite, which the box names with the hotkeys, and lets it fade
   # away. A declined one stays away while it stands, an accepted one for ACCEPT_HOLD_FRAMES at
-  # most: the inviter's game shows it until it opens what was accepted, in which time a second
-  # accept turned the trade down as busy.
+  # most.
   #
   # @param list [Array<MGQ_MpActions::Notice>] The notifications shown.
   # @param answer [Symbol] :take to accept, :decline to decline.
@@ -204,7 +211,7 @@ module MGQ_MpNotices
     true
   end
 
-  # Reports whether the box's keys may answer now: not while the player types or a screen of the
+  # Reports whether the box's hotkeys may answer now: not while the player types or a screen of the
   # mod holds the buttons.
   #
   # @param list [Array<MGQ_MpActions::Notice>] The notifications shown.
@@ -266,19 +273,21 @@ class Sprite_MpNoticeBox < Sprite
   # Room above the first row and below the last, inside the box's frame.
   SPACING = 2
 
-  # Least width of what the keys do to the first invite, such as "Y: Accept   N: Decline", see
+  # Least width of what the hotkeys do to the first invite, such as "Y: Accept   N: Decline", see
   # keys_width.
   ACTION_WIDTH = 170
 
-  # Least room of the first invite before its keys, about 14 letters of the small font, so the
+  # Least room of the first invite before its hotkeys, about 14 letters of the small font, so the
   # sender's name stays readable.
   MIN_TEXT_WIDTH = 116
 
   # Fewest rows the box has: one notification and the row that says how many more wait.
   MIN_ROWS = 2
 
-  # Least size of the box: the first invite's keys beside a readable notification, and MIN_ROWS.
+  # Least width of the box: the first invite's hotkeys beside a readable notification.
   MIN_WIDTH = ACTION_WIDTH + MIN_TEXT_WIDTH + 2 * EDGE
+
+  # Least height of the box: MIN_ROWS.
   MIN_HEIGHT = ROW * MIN_ROWS + 2 * SPACING
 
   # Tells where the box draws: where the player left it, else at the top left below a strip of the
@@ -357,11 +366,11 @@ class Sprite_MpNoticeBox < Sprite
     @shown = nil
   end
 
-  # Tells what the keys do to the first notification: accept and decline an invite, or only decline
+  # Tells what the hotkeys do to the first notification: accept and decline an invite, or only decline
   # one that cannot be accepted here.
   #
   # @param notice [MGQ_MpActions::Notice] The first notification.
-  # @return [String, nil] The keys and what they do, nil for a message.
+  # @return [String, nil] The hotkeys and what they do, nil for a message.
   def keys_text(notice)
     return nil unless notice.decline
 
@@ -370,11 +379,11 @@ class Sprite_MpNoticeBox < Sprite
   end
 
   # Draws the notifications in a framed box as wide as the picture and as tall as its rows, the
-  # first invite cut before its keys, the others cut to their row, and the last row with how many
+  # first invite cut before its hotkeys, the others cut to their row, and the last row with how many
   # more wait.
   #
   # @param list [Array<MGQ_MpActions::Notice>] The notifications.
-  # @param keys [String, nil] What the keys do to the first one, see keys_text.
+  # @param keys [String, nil] What the hotkeys do to the first one, see keys_text.
   # @param more [Integer] How many more wait, 0 for none.
   def draw(list, keys, more)
     style = MGQ_MpUi::Style
@@ -400,10 +409,11 @@ class Sprite_MpNoticeBox < Sprite
     bitmap.draw_text(EDGE, SPACING + ROW * list.size, box_width - 2 * EDGE, ROW, MGQ_MpUi::MORE_TEXT % more)
   end
 
-  # Tells how wide the keys' column is: ACTION_WIDTH, or what the keys need with the style's
-  # padding before them when a rebound key's longer name needs more, since the keys are never cut.
+  # Tells how wide the hotkeys' column is: ACTION_WIDTH, or what the hotkeys need with the style's
+  # padding before them when a rebound hotkey's longer name needs more, since the hotkeys are never
+  # cut.
   #
-  # @param keys [String] What the keys do, see keys_text.
+  # @param keys [String] What the hotkeys do, see keys_text.
   # @return [Integer] The width.
   def keys_width(keys)
     style = MGQ_MpUi::Style

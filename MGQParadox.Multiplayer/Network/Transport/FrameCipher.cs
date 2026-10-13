@@ -2,8 +2,8 @@
 //  FrameCipher.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-06: Derived the key from a salt of each side, so a guest's replayed first frames fail the check
-//      Paulinchen  2026-09-29: Derived a key of its own for every connection, from the token and a salt the guest picks
+//      Paulinchen  2026-10-06: Derived the key from a salt of each side
+//      Paulinchen  2026-09-29: Derived a key of its own for every connection
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -52,7 +52,7 @@ internal sealed class FrameCipher
     private const int KeySize = 32;
 
     /// <summary>
-    /// Size of an AES-GCM nonce: the direction, three empty bytes and the counter.
+    /// Size of an AES-GCM nonce.
     /// </summary>
     private const int NonceSize = 12;
 
@@ -194,7 +194,8 @@ internal sealed class FrameCipher
     }
 
     /// <summary>
-    /// Makes the nonce of a frame, unique per direction and counter.
+    /// Makes the nonce of a frame, unique per direction and counter: the direction, three empty bytes
+    /// and the counter.
     /// </summary>
     /// <param name="direction">The direction byte.</param>
     /// <param name="counter">The frame's counter.</param>

@@ -2,9 +2,9 @@
 #  raid_scope_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Checked that a Classic world sends several members one message through the party's gate and a lone member one to their seat
-#      Paulinchen  2026-10-09: Checked that a message for everyone on the map or for several players goes out once, and that the gate drops one naming others
-#                            - Checked that a teller whose connection is down still tells, and that the teller who took the player along is kept
+#      Paulinchen  2026-10-12: Checked the messages of a Classic world to several members and to a lone member
+#      Paulinchen  2026-10-09: Checked messages to the whole map or several players going out once
+#                            - Checked tellers whose connection is down and the teller who took the player along
 #      Paulinchen  2026-10-08: Created
 #
 #----------------------------------------------------------------
@@ -14,39 +14,67 @@
 
 require_relative "support"
 
+# The mod's log, printed with the checks.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
 $routes = {}
 $told = []
+# The open world: the other players from $peers, the player's own map entry from $since, and the
+# routes and sends recorded in $routes and $told.
 module MGQ_MpOverworldSync
+  # The other players of the world.
   module Peers
+    # Another player: their seat, their state, their ghost, whether they are in the party and since when
+    # their connection is down.
     Peer = Struct.new(:seat, :state, :ghost, :member, :away)
+    # Every other player.
     def self.all; $peers; end
+    # The other players whose connection stands.
     def self.present; $peers.select { |peer| peer.away.nil? }; end
+    # Whether a player whose connection stands is on the player's map.
     def self.on_this_map?(peer); peer.away.nil? && peer.state["map"].to_i == $game_map.map_id; end
   end
+  # The player: id me, on the map since $since.
   module Me; def self.map_since; $since; end; def self.id; "me"; end; end
+  # The player is always in a world.
   def self.in_world?; true; end
+  # Names a player for the log.
   def self.who(peer); peer == :me ? "the player" : (peer ? peer.state["name"].to_s : "an unknown player"); end
+  # Keeps a field's handler in $routes.
   def self.route(field, &handler); $routes[field] = handler; end
+  # Records a send in $told.
   def self.tell(seat, fields); $told << [seat, fields]; true; end
 end
+# The party: its id from $party and its leader from $leader; sends through its gate go to $told.
 module MGQ_MpCoop
+  # The party's id.
   module Party; def self.id; $party; end; end
+  # The party's leader.
   def self.party_leader; $leader; end
+  # Whether the player is in a party.
   def self.in_party?; !$party.nil?; end
+  # Records a send through the party's gate in $told.
   def self.tell(seat, field, value, fields = {}); $told << [seat, { field => value, "party" => $party }.merge(fields)]; true; end
 end
+# The story's telling: whether the player tells it, from $telling, and follows it, from $following.
 module MGQ_MpCoopEvents
+  # Whether the player tells the story.
   def self.telling?; $telling; end
+  # The story markers as the telling started, nil while not telling.
   def self.told_markers; $telling ? [12, 0, 0, 0] : nil; end
+  # Whether the player follows a telling.
   def self.following?; $following; end
 end
 # How far each story is, and the synced members, as coop_story.rbx tells them.
 module MGQ_MpCoopStory
+  # Reads four comma-separated story markers, nil for anything else.
   def self.read_markers(text); values = text.to_s.split(","); values.size == 4 ? values.map(&:to_i) : nil; end
+  # The player's own story markers.
   def self.own_markers; $own_markers; end
+  # The members synced with the player.
   def self.synced_members; $synced; end
+  # Whether the player follows the leader's story.
   def self.follows_leader?; $following; end
+  # Whether the player leads synced members.
   def self.leading_synced?; !$synced.empty?; end
 end
 
@@ -69,8 +97,10 @@ $peers = [member, stranger, elsewhere, away]
 $leader = member
 
 check("without world.rbx's answer the world is Classic", [scope.raid?, scope.current], [false, scope::Classic])
+# The world script before it can tell the world's type.
 module MGQ_MpWorld; end
 check("as it is while world.rbx cannot tell the type yet", scope.raid?, false)
+# The world script, which tells a Raid World from $raid.
 module MGQ_MpWorld; def self.raid?; $raid; end; end
 $raid = false
 
@@ -177,7 +207,9 @@ check("a teller whose connection is down still tells until their game is forgott
 member.away = nil
 elsewhere.state.merge!("telling" => "1", "map" => "8", "since" => "9000")
 check("of two tellers on the story's maps the one who entered their map first", scope.teller, member)
+# The player whose story took the player along, from $followed.
 module MGQ_MpCoopGather; def self.followed_id; $followed; end; end
+# The player whose pages the player follows, from $heard.
 module MGQ_MpCoopEvents; def self.heard_from; $heard; end; end
 $followed = "e"
 check("but the one whose story takes the player along, though another entered first", [scope.teller, scope.story_from?(elsewhere), scope.story_from?(member)], [elsewhere, true, false])

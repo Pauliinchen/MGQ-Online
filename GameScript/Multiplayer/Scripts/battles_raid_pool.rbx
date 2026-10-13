@@ -3,31 +3,31 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-12: Listed the level caps of the milestones a story beat
-#                            - Left the victory over enemies whose pools empty during a live battle's wait for commands to the wait, which won it a second time as the turn started
-#      Paulinchen  2026-10-11: Told the story bosses newly counted as raid bosses, such as the four spirits and the Part 2 queens' own fights, beaten by what their events set after the fight
-#                            - Made losing a side battle the game's defeat, as losing the boss's own battle is, instead of a return to the map at 1 HP that let the player fight again at once
-#                            - Listed the pools the game knows, which the World overview reads
-#      Paulinchen  2026-10-10: Told the Three Nobles of Black beaten by the castle quest's progress in Part 2 and the treasure gallery's switch in Part 3
-#                            - Added taken_over, which the co-op battles call as a guest takes a battle over, so the damage of a battle that starts then is reported
-#                            - Started a guest's reports from the enemies' HP as it takes the battle over, so the host's reported damage is not reported again, and kept a guest from killing enemies by its own view of the pools
-#                            - Counted a report from no more than the enemy's max HP now, so a lowered max HP reads as no damage
-#                            - Compared the DLL's line of a pool with the last one taken, so small changes in a row count once they add up
-#                            - Gave a side battle's EXP, gold and drops once per boss, kept in the save, and ran none of its troop's battle events, for the players who join it too, whose invite tells it is a side battle
-#                            - Added side_battle?, which the co-op battles ask to leave side battles alone
+#                            - Left a victory during a live battle's wait for commands to the wait
+#      Paulinchen  2026-10-11: Told the newly counted raid bosses beaten by what their events set
+#                            - Made losing a side battle the game's defeat
+#                            - Listed the pools the game knows
+#      Paulinchen  2026-10-10: Told the Three Nobles of Black beaten in Part 2 and Part 3
+#                            - Added taken_over
+#                            - Started a guest's reports from the enemies' HP at its takeover and kept it from killing enemies by its own view
+#                            - Counted a report from no more than the enemy's current max HP
+#                            - Compared the DLL's line of a pool with the last one taken
+#                            - Gave a side battle's rewards once per boss and ran none of its troop's battle events
+#                            - Added side_battle?
 #                            - Fought no pool on the Hades rematch hall's map either
-#                            - Took the pools' HP every five seconds while a battle waits for its players' commands, so its bar shows the other battles' blows meanwhile
-#                            - Reported what a battle dealt as its actions end too, at most every two seconds, so the other games see a long turn's damage
-#                            - Gave a pooled enemy the factors of its boss's tier for its stats instead of 7.5 times its max HP, after the game's difficulty
-#                            - Named the one-time Chaos Domain bosses in the message that a boss is defeated for the whole world
-#                            - Made each raid boss one fight the whole world shares: its enemies have 7.5 times their max HP, report what they lost and take their HP from the relay's pool at each command phase, and die when the pool is empty
-#                            - Kept a pool per enemy of a boss troop of several, so each falls on its own
-#                            - Let a player near a boss battle that takes nobody in fight the same boss in a side battle of their own, which may be lost
+#                            - Took the pools' HP every five seconds while a battle waits for commands
+#                            - Reported what a battle dealt as its actions end too
+#                            - Gave a pooled enemy the stat factors of its boss's tier
+#                            - Named the one-time Chaos Domain bosses in the world's defeat message
+#                            - Made each raid boss one fight the whole world shares
+#                            - Kept a pool per enemy of a boss troop of several
+#                            - Let a player near a full boss battle fight the same boss in a side battle
 #                            - Let a guest of a boss battle report once it takes the battle over
 #                            - Fetched the pools as the player enters the world and each map
-#                            - Dropped the boss that falls back with everything it put back: the story, the party, how the map looked, the items an event gave, the held event and autosave
-#      Paulinchen  2026-10-09: Counted only the boss troop's own enemies in the share of a kill and the boss's name, never enemies added mid-battle
-#                            - Took back the copies of the items a boss event equips at once that its replay leaves in the bag
-#                            - Counted the fights whose events change the party against their pools, putting the party back as the boss falls back
+#                            - Dropped the boss that falls back and everything it put back
+#      Paulinchen  2026-10-09: Counted only the boss troop's own enemies in a kill's share and the boss's name
+#                            - Took back the item copies a boss event's replay leaves in the bag
+#                            - Counted the fights whose events change the party against their pools
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -39,18 +39,16 @@
 # actions end, at most every REPORT_SECONDS, and at each command phase the battle reports what it
 # dealt since the last report; as each command phase opens, and every INPUT_SYNC_SECONDS while it
 # waits for commands, it also takes the pool's HP, so a boss falls only once the world wore its pool
-# down. A battle that empties the pool, or
-# fights on as another empties it, wins as the game's own battles win, and the story goes on through
-# the event that started it, without waiting for the relay.
+# down. A battle that empties the pool, or fights on as another empties it, wins as the game's own
+# battles win, and the story goes on through the event that started it, without waiting for the
+# relay.
 #
 # A battle fights a pool when the player plays the story of a Raid World, the event of the map
 # started it with its battle command, and its troop is the last phase of a boss fight of
 # MGQ_MpRaidBosses whose milestone the story has not beaten; a guest of such a battle fights it with
-# its host (see note_invite) and reports once it takes the battle over. A player near a boss
-# battle that takes nobody in may fight the same pool in a side battle of their own (start_side).
-# Classic worlds are never touched.
-#
-# It must never interrupt the game, so every entry point rescues.
+# its host (see note_invite) and reports once it takes the battle over. A player near a boss battle
+# that takes nobody in may fight the same pool in a side battle of their own (start_side). Classic
+# worlds are never touched.
 module MGQ_MpRaidPool
   # Share of its max HP a pool gains back every minute, also while battles fight it, as the relay
   # counts it.
@@ -246,13 +244,28 @@ module MGQ_MpRaidPool
     ["Chaos", nil] => "s7039",
   }
 
+  # Frames counted by tick.
   @clock = 0
+
+  # The frame the pools were last read from the DLL.
   @read_at = 0
+
+  # The world's pools by their key, as the player's game knows them.
   @pools = {}
+
+  # The last line read of each pool by its key.
   @lines = {}
+
+  # The enemies of the battle that already have their tier's stats.
   @scaled = []
+
+  # The troop of the battle whose enemies were scaled last.
   @scaled_troop = nil
+
+  # The bosses already told defeated for the whole world, by their key.
   @announced = {}
+
+  # The keys of the pools this game reported to most recently, at most MAX_PENDING.
   @pending = []
 
   extend MGQ_MpLog
@@ -370,6 +383,8 @@ module MGQ_MpRaidPool
   end
 
   # Runs the map's interpreter, noting that its commands run, which are the story's.
+  #
+  # @return [Object] What the block returns.
   def self.in_map
     was = @in_map
     @in_map = true
@@ -379,6 +394,8 @@ module MGQ_MpRaidPool
   end
 
   # Runs an event's battle command, noting that the battle set up next is the event's.
+  #
+  # @return [Object] What the block returns.
   def self.at_command
     @at_command = true
     yield
@@ -387,6 +404,8 @@ module MGQ_MpRaidPool
   end
 
   # Runs the game's retry of a lost battle, noting that the battle set up next is a retry.
+  #
+  # @return [Object] What the block returns.
   def self.retrying
     @retrying = true
     yield
@@ -673,7 +692,7 @@ module MGQ_MpRaidPool
 
   # Gives the enemies of a troop built anew in the battle that fights a pool their tier's stats
   # before the host's HP reaches them, which their own max HP would cut. Called by
-  # MGQ_MpBattlesCoop.take_troop.
+  # MGQ_MpBattlesCoop.take_troop and MGQ_MpBattlesHotjoin.take_troop.
   def self.rescale
     fight = @fight
     scale_enemies(fight) if fight
@@ -692,8 +711,8 @@ module MGQ_MpRaidPool
   # Finds one of an enemy's stats: for an enemy of a battle that fights a pool, its own times the
   # factor its boss's tier gives the stat (MGQ_MpRaidBosses.factor).
   #
-  # The factor is applied on every call instead of stored, since the game computes the stat anew each
-  # time, from the difficulty and the enemy's states, so it always comes after the difficulty.
+  # The factor is applied on every call instead of stored, since the game computes the stat anew
+  # each time, from the difficulty and the enemy's states, so it always comes after the difficulty.
   #
   # @param enemy [Game_Enemy] The enemy.
   # @param stat [Symbol] The stat, such as :mhp.
@@ -1060,9 +1079,9 @@ module MGQ_MpRaidPool
   # rates, against the same pools. It runs no event, not even its troop's, and writes no story; its
   # boss gives its rewards only the first time the player wins one (see withhold_rewards?).
   #
-  # Losing it is the game's defeat, as losing the boss's own battle is: one the player could lose
-  # brought them back at 1 HP beside the boss, free to start the next at once while every side
-  # battle's damage stayed in the pools.
+  # Losing it is the game's defeat, as losing the boss's own battle is, since a loss that brought
+  # the player back at 1 HP beside the boss would let them start the next at once while every side
+  # battle's damage stays in the pools.
   #
   # @param troop [Integer] The troop.
   # @param rates [String] The host's enemy rates, see MGQ_MpBattlesCoop.rates_text.
@@ -1357,35 +1376,29 @@ module MGQ_MpRaidPool
   end
 
   # Installs the battle hooks on methods the game's plugins may define anew, as the game starts
-  # running. Installed after battles_sync_live.rbx's, so the command phase's wrap runs first.
+  # running.
+  #
+  # It installs after battles_sync_live.rbx's hooks, so its command phase wrap runs before theirs.
   def self.install
-    # A pooled enemy's max HP, and each other stat a tier changes.
     ([:mhp] + MGQ_MpRaidBosses.tier_stats).each do |stat|
       next log("tiers change #{stat}, which the game's enemies lack") unless Game_Enemy.method_defined?(stat)
 
       MGQ_MpHooks.around(Game_Enemy, stat, "battles_raid_pool") { |enemy, _args, original| MGQ_MpRaidPool.stat(enemy, stat, original.call) }
     end
 
-    # As a command phase opens, the battle reports what it dealt and the enemies take their pools'
-    # HP, before the guests are told it.
     MGQ_MpHooks.around(Scene_Battle, :start_party_command_selection, "battles_raid_pool") do |scene, _args, original|
       MGQ_MpRaidPool.command_phase unless scene.scene_changing?
       original.call
     end
 
-    # As each action ends, the battle reports what it dealt, a few seconds apart.
     MGQ_MpHooks.after(Scene_Battle, :process_action, "battles_raid_pool") { MGQ_MpRaidPool.action_done } if Scene_Battle.method_defined?(:process_action)
 
-    # While the battle waits for commands, its enemies take the pools' HP every few seconds.
     MGQ_MpHooks.after(Scene_Battle, :update_basic, "battles_raid_pool") { MGQ_MpRaidPool.waiting_for_commands } if Scene_Battle.method_defined?(:update_basic)
 
-    # As a turn ends, the enemies whose pool is empty fall.
     MGQ_MpHooks.before(Scene_Battle, :turn_end, "battles_raid_pool") { MGQ_MpRaidPool.turn_ended }
 
-    # As a battle ends, its last blows are reported.
     MGQ_MpHooks.before(BattleManager.singleton_class, :battle_end, "battles_raid_pool") { |result| MGQ_MpRaidPool.battle_ended(result) }
 
-    # A side battle of a boss whose rewards the player got already gives none.
     REWARD_CHECKS.each do |check|
       next log("the game lacks BattleManager.#{check}, so side battles give their rewards each time") unless BattleManager.respond_to?(check)
 
@@ -1394,14 +1407,12 @@ module MGQ_MpRaidPool
       end
     end
 
-    # A side battle runs none of its troop's battle events.
     if Game_Troop.method_defined?(:setup_battle_event)
       MGQ_MpHooks.around(Game_Troop, :setup_battle_event, "battles_raid_pool") do |troop, _args, original|
         MGQ_MpRaidPool.without_pages(troop) { original.call }
       end
     end
 
-    # The game's retry of a lost battle fights the pools again.
     return unless BattleManager.respond_to?(:retry_battle)
 
     MGQ_MpHooks.around(BattleManager.singleton_class, :retry_battle, "battles_raid_pool") do |_manager, _args, original|
@@ -1466,13 +1477,8 @@ end
 # Game hooks shared with other scripts, through core_hooks.rbx.
 
 begin
-  # Installs the battle hooks as the game starts running.
   MGQ_MpHooks.before(SceneManager.singleton_class, :run, "battles_raid_pool") { MGQ_MpRaidPool.install }
-
-  # Before the title screen starts, every battle and pool is forgotten.
   MGQ_MpHooks.before(Scene_Title, :start, "battles_raid_pool") { MGQ_MpRaidPool.forget }
-
-  # After a battle is set up, it fights a pool or not.
   MGQ_MpHooks.after(BattleManager.singleton_class, :setup, "battles_raid_pool") { |troop_id, *_rest| MGQ_MpRaidPool.set_up(troop_id) }
 rescue => e
   MGQ_MpRaidPool.log("hooks FAILED: #{e.class}: #{e.message}")
@@ -1481,10 +1487,7 @@ end
 # Game hooks of this script alone, through core_hooks.rbx.
 
 begin
-  # The map's interpreter runs the story's events, which alone count.
   MGQ_MpHooks.around(Game_Map, :update_interpreter, "battles_raid_pool") { |_map, _args, original| MGQ_MpRaidPool.in_map { original.call } }
-
-  # An event's battle command starts the battles that count.
   MGQ_MpHooks.around(Game_Interpreter, :command_301, "battles_raid_pool") { |_interpreter, _args, original| MGQ_MpRaidPool.at_command { original.call } }
 rescue => e
   MGQ_MpRaidPool.log("battle command hooks FAILED: #{e.class}: #{e.message}")

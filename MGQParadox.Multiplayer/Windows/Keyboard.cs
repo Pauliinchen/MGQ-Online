@@ -3,7 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-07: Logged once when the keyboard's state could not be read
-//      Paulinchen  2026-10-06: Kept a take the game script had no room for, which the next take hands out first
+//      Paulinchen  2026-10-06: Kept a take the game script had no room for
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -20,10 +20,8 @@ namespace MGQParadox.Multiplayer.Windows;
 /// with the keyboard's layout, Shift and AltGr, since RGSS itself only knows buttons.
 /// </summary>
 /// <remarks>
-/// The characters come from the window's WM_CHAR messages, which Windows makes only when the
-/// message loop translates key presses. Until one arrives, the characters are worked out from
-/// the key presses themselves, which works whether RGSS translates or not, but combines no
-/// accents typed as dead keys.
+/// WM_CHAR arrives only when the message loop translates key presses, so until one does, the
+/// characters are worked out from the key presses, which combines no accents typed as dead keys.
 /// </remarks>
 internal static partial class Keyboard
 {

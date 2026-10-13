@@ -2,15 +2,15 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Kept the troops of a common event only when its walk missed none, so a cycle or a common event called twice no longer hides troops for the session
-#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal, not while the player types
+#      Paulinchen  2026-10-12: Kept the troops of a common event only when its walk missed none
+#                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #                            - Read the map's viewports and character sprites through MGQ_MpGame
-#      Paulinchen  2026-10-11: Drew the gauges' edge, empty part and the title in the interface preset's colors, drawing anew once the preset changes
-#                            - Made the strip a box the player moves and resizes in width with Alt, never narrower than a boss of three enemies and its title line need
-#                            - Cropped the battle's strip to its gauges in small mode instead of sliding it up, so it stays where the player put it
-#                            - Made room at the top for the strip and pushed the game's own boss bar down only while the strip lies at the top of the screen
-#                            - Took the font, the outline and the plate from the shared style instead of copies of them, with the style's outline, plate and slide timing, and the slide's step from the motion
-#                            - Named the hotkey that makes the battle's strip small at the right of its title, and kept the title out of its room
+#      Paulinchen  2026-10-11: Drew the gauges' edge, empty part and the title in the interface preset's colors
+#                            - Made the strip a box the player moves and resizes in width with Alt
+#                            - Cropped the battle's strip to its gauges in small mode
+#                            - Made room at the top for the strip and pushed the game's own boss bar down only while the strip lies there
+#                            - Took the font, the outline, the plate and the slide timing from the shared style
+#                            - Named the hotkey that makes the battle's strip small in its title
 #      Paulinchen  2026-10-10: Showed a boss of several enemies with a name and a gauge per enemy, sharing the gauge's width
 #                            - Kept a shortened HP from reading above the max
 #                            - Showed no bars in the Hades rematch hall
@@ -24,8 +24,9 @@
 # above each event that starts a boss battle, or the same strip at the top of the screen while no
 # such event shows, which the notification and party boxes then make room for (see
 # MGQ_MpUi.top_room). The player moves the strip and resizes it in width with Alt (see
-# MGQ_MpUi::Layout), one place for the map's and the battle's. A bar shows while the relay keeps the boss's pool, or the story has not beaten
-# it; the relay's max HP once it told one, else the boss's own at the player's difficulty.
+# MGQ_MpUi::Layout), one place for the map's and the battle's. A bar shows while the relay keeps
+# the boss's pool, or the story has not beaten it; its max HP is the relay's once it told one, else
+# the boss's own at the player's difficulty, scaled by its tier.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpRaidBar
@@ -46,12 +47,14 @@ module MGQ_MpRaidBar
   # Sprite_MpRaidBar::STRIP_LAYOUT.
   STRIP_HEIGHT = 86
 
-  # Height of the battle's strip that shows while it shows its gauges alone, see small?: the strip
-  # is cropped from its top by the rest, its title and the names.
+  # Height of what shows of the battle's strip while it shows its gauges alone, see small? and
+  # Sprite_MpRaidBar#crop.
   SMALL_STRIP_HEIGHT = 36
 
-  # The strip's box in MGQ_MpUi::Layout and its name there.
+  # The strip's box in MGQ_MpUi::Layout.
   STRIP_BOX = :raid_bar
+
+  # The strip's name in MGQ_MpUi::Layout.
   STRIP_BOX_NAME = "Raid boss bar"
 
   # Pixels from the screen's top within which the strip counts as lying at the top, where the boxes
@@ -96,10 +99,19 @@ module MGQ_MpRaidBar
   # @!attribute max [Integer] Its max HP.
   Gauge = Struct.new(:name, :hp, :max)
 
+  # The last look at the map's events: its map id and SCAN_FRAMES step, and the events found.
   @scanned = nil
+
+  # Each event's command list with the troops it starts, by the event, see troops_of.
   @event_troops = {}
+
+  # The troops each common event starts, by its id, see common_troops.
   @common_troops = {}
+
+  # Enemies' own max HP, by the enemy and the difficulty, see raid_max.
   @base_hp = {}
+
+  # Whether the strip shows in battle.
   @battle_shown = false
 
   extend MGQ_MpLog
@@ -172,7 +184,7 @@ module MGQ_MpRaidBar
 
   # Shows the battle's strip with or without the boss's title and the names on the party box's
   # hotkey (Tab unless the player binds another), keeping the choice in Player.ini. Called by the
-  # battle every frame while its strip shows, so a press of the key is seen once.
+  # battle every frame while its strip shows, so a press of the hotkey is seen once.
   def self.on_battle
     return unless defined?(MGQ_MpHotkeys) && MGQ_MpHotkeys.pressed?(:party_box)
     return MGQ_MpHotkeys.log_refusal(:party_box, "the chat box is open") if defined?(MGQ_MpChat) && MGQ_MpChat.typing?
@@ -570,21 +582,29 @@ class Sprite_MpRaidBar < Sprite
   # The gauge's empty part: the preset's well.
   EMPTY = MGQ_MpUi::Style::WELL
 
-  # The filled part: a maroon gradient, lighter at its top, deep at its bottom.
+  # The filled part's color at its top, the lightest of its maroon gradient.
   FILL_TOP = Color.new(156, 32, 50)
+
+  # The filled part's color at its middle.
   FILL_MIDDLE = Color.new(110, 16, 30)
+
+  # The filled part's color at its bottom, the deepest of its maroon gradient.
   FILL_BOTTOM = Color.new(70, 8, 18)
 
-  # The damage trail past the filled part: the HP the enemy had within the last TRAIL_FRAMES, in a
-  # maroon between the filled and the empty part's.
+  # The damage trail's color at its top. The trail past the filled part shows the HP the enemy had
+  # within the last TRAIL_FRAMES, in a maroon between the filled and the empty part's.
   TRAIL_TOP = Color.new(96, 28, 40)
+
+  # The damage trail's color at its bottom.
   TRAIL_BOTTOM = Color.new(50, 12, 18)
 
   # Frames a loss of HP stays in the damage trail, two seconds.
   TRAIL_FRAMES = 120
 
-  # Share of the trail's way down to the HP left it drains each frame, and the least it drains.
+  # Share of the trail's way down to the HP left it drains each frame.
   TRAIL_EASE = 0.12
+
+  # The least share of the max HP the trail drains each frame.
   TRAIL_MIN_STEP = 0.002
 
   # Frames between two drawings while a damage trail drains.

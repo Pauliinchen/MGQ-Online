@@ -2,19 +2,19 @@
 #  ui_trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-12: Kept the bag's and the offers' pictures as tall as the rows they show, since a large bag asked for a picture too large to make
+#      Paulinchen  2026-10-12: Kept the bag's and the offers' pictures as tall as the rows they show
 #                            - Scrolled the offers and the bag with the mouse wheel and drew their scrollbars
-#      Paulinchen  2026-10-11: Dressed the trade screen's windows in the interface look, the game's help window too
-#                            - Asked through the confirm box before cancelling the trade, since both offers are lost
-#                            - Left the commands alone once the trade ended under the box, whose windows are disposed by then
+#      Paulinchen  2026-10-11: Dressed the trade screen's windows in the interface look
+#                            - Asked through the confirm box before cancelling the trade
+#                            - Left the commands alone once the trade ended under the confirm box
 #                            - Took the marks' colors from the shared style
-#      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?, also with Num Lock off
-#      Paulinchen  2026-10-07: Logged where the screen failed and the pictures in memory, since a picture could not be made in the field
+#      Paulinchen  2026-10-08: Closed with the numpad's 0 through MGQ_MpUi.cancel?
+#      Paulinchen  2026-10-07: Logged where the screen failed and the pictures in memory
 #                            - Cut names through MGQ_MpUi.cut and took the window's depth from MGQ_MpUi
 #                            - Logged the trade screen opening and closing, and the gold typed
 #                            - Showed the messages about the trade in the status line for a few seconds
-#                            - Drew an offer's head smaller, as You or the other player's name cut to fit, left of whether its player confirmed
-#      Paulinchen  2026-10-06: Kept the cursor in the offer it switched to, which the same press switched back before
+#                            - Drew an offer's head smaller, cut to fit beside whether its player confirmed
+#      Paulinchen  2026-10-06: Kept the cursor in the offer it switched to
 #                            - Said in the status line while a cancel waits for the relay
 #                            - Read the other player's confirmation through MGQ_MpTrade::Session#their_confirmed?
 #                            - Created
@@ -78,8 +78,8 @@ module MGQ_MpTradeUi
   # Keeps a list window's picture as tall as the rows it shows, plus a hidden row above and below
   # that make the window show its scroll arrows, and draws the rows anew as the list scrolls.
   #
-  # The game's lists hold all their rows in one picture, which for a large bag grew past what the
-  # game could make ("failed to create bitmap" on the trade screen).
+  # The game's lists hold all their rows in one picture, which for a large bag grows past what the
+  # game can make.
   module VisibleRows
     # Returns the first row shown.
     #
@@ -394,7 +394,7 @@ class Window_MpTradeBag < Window_Selectable
     @items.size
   end
 
-  # The item under the cursor.
+  # Tells the item under the cursor.
   #
   # @return [RPG::BaseItem, nil] The item.
   def item
@@ -525,7 +525,7 @@ class Window_MpTradeGold < Window_Base
     refresh
   end
 
-  # The amount shown.
+  # Tells the amount shown.
   #
   # @return [Integer] The amount.
   def amount

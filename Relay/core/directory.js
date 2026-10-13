@@ -2,68 +2,58 @@
 //  directory.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-12: Said a line of the relay's own, the update notice, in the chat of every world with players online
-//                            - Worked out the asking player's id before reading a world, so an edit, a removal, a starting save or a new world no longer writes back an entry another request changed meanwhile
-//                            - Counted a new world against its address only after the featured, full and per-creator refusals too
-//      Paulinchen  2026-10-10: Let a game that names the dev feature give a Raid World a starting save, for testing, and read what a game names in X-MGQ-Features for every public route
-//                            - Told a world room the name of a player of its world too, which a Raid World's boss pool keeps for its defeat
+//      Paulinchen  2026-10-12: Said the relay's update notice in the chat of every world with players online
+//                            - Worked out the asking player's id before reading a world
+//                            - Counted a new world against its address only after every refusal
+//      Paulinchen  2026-10-10: Let a game that names the dev feature give a Raid World a starting save
+//                            - Told a world room the name of a player of its world
 //                            - Told a world room a Raid World's difficulty after an edit only when it changed
-//      Paulinchen  2026-10-09: Kept whether a world turns its players' other mods off, on by default for a Raid World, which its creator or an admin may change and every game in it is told of, with the world's mods
-//                            - Refused a world's mods past 300 characters instead of cutting them, since a cut name would turn off a mod the creator named
-//                            - Told a world room whether a key is an admin's, for the admin routes of a Raid World it answers itself
-//                            - Kept a Raid World's difficulty, which its creator or an admin may change and every game in it is told of
-//                            - Refused a Raid World with a starting save or a player's choice, since it starts from the beginning
+//      Paulinchen  2026-10-09: Kept whether a world turns its players' other mods off
+//                            - Refused a world's mods past 300 characters
+//                            - Told a world room whether a key is an admin's
+//                            - Kept a Raid World's difficulty
+//                            - Refused a Raid World with a starting save or a player's choice
 //                            - Refused a world room's member question for a world whose starting save is still being uploaded
-//      Paulinchen  2026-10-08: Told a world room whether a game is a player of its world, for the routes it answers itself, such as a Raid World's story
-//                            - Kept a world's type, Classic or Raid, and how a Raid World shares companions, both fixed once it is made
+//      Paulinchen  2026-10-08: Told a world room whether a game is a player of its world
+//                            - Kept a world's type and how a Raid World shares companions
 //                            - Kept games that do not name Raid Worlds in X-MGQ-Features out of them
-//                            - Kept the lines of a world's chat one after another, so lines said at once no longer overwrite each other
+//                            - Kept the lines of a world's chat one after another
 //                            - Answered an admin's line for a world deleted meanwhile with 404
-//      Paulinchen  2026-10-07: Kept each world's chat, the lines its games mirror and the lines admins say, which admins read and write
+//      Paulinchen  2026-10-07: Kept each world's chat
 //                            - Took the auth key for a starting save from the X-MGQ-Auth header too
-//                            - Answered a JSON body longer than a route takes with 413, and an unknown sub-route with 404
+//                            - Answered a JSON body too long with 413 and an unknown sub-route with 404
 //                            - Counted a world or a starting save against its address only once it passed every check
 //                            - Kept at most 500 removed players per world
-//                            - Read ids, hashes and texts by the rules of ids.js, and answered through http.js
+//                            - Read ids, hashes and texts through ids.js and answered through http.js
 //      Paulinchen  2026-10-06: Took the player's key from the X-MGQ-Player header too
 //                            - Limited making worlds, uploading starting saves and entering world rooms per address
-//                            - Kept starting saves within a total budget, and deleted worlds whose starting save did not come within 10 minutes
-//                            - Refused mod settings longer than 2000 characters instead of cutting them, and took mod names of up to 100 characters with the hashes
+//                            - Kept starting saves within a total budget and deleted worlds whose starting save did not come in time
+//                            - Refused mod settings longer than 2000 characters and took mod names of up to 100 characters
 //                            - Named why a player may not enter in a code of the refusal
 //                            - Read JSON bodies of up to 32 KB
 //                            - Kept up to 300 characters of the mods a world names
 //                            - Let admins replace a world's mod settings too
-//                            - Kept the hashes of a world's required mods outside the catalog and its mod settings, both from its creator's game
-//      Paulinchen  2026-10-04: Left the mods, the game data and the rule for it out of a world's lock, which the list tells
-//                            - Let a world's creator replace its game data with that of their game as it is now
+//                            - Kept the hashes of a world's required mods outside the catalog and its mod settings
+//      Paulinchen  2026-10-04: Left the mods, the game data and its rule out of a world's lock
+//                            - Let a world's creator replace its game data
 //                            - Listed the hidden worlds a player names by their ids
 //                            - Let a world's creator or an admin change its seats, description and mods
-//                            - Kept a world's description, the mods it needs, its creator's game data and whether only games with the same data may enter
+//                            - Kept a world's description, mods, game data and whether only games with the same data may enter
 //      Paulinchen  2026-10-02: Kept whether a world lets each new player choose where to start
-//                            - Kept whether a world has no password, and let admins make featured worlds beyond the creator limit
-//                            - Listed when each player was last seen in a world, noting it as they leave too
-//      Paulinchen  2026-10-01: Named admins in the refusal of a delete, and checked admin and banned ids as player ids
-//      Paulinchen  2026-09-30: Listed every world for the relay's admins, hidden ones too, and let them delete any
-//                            - Kept a world's starting save, which its creator uploads once and only its players fetch
-//                            - Left hidden worlds out of the list for everyone but their players, and named a world with its lock
+//                            - Kept whether a world has no password and let admins make featured worlds
+//                            - Listed when each player was last seen in a world
+//      Paulinchen  2026-10-01: Named admins in the refusal of a delete and checked admin and banned ids as player ids
+//      Paulinchen  2026-09-30: Listed every world for the relay's admins and let them delete any
+//                            - Kept a world's starting save
+//                            - Left hidden worlds out of the list for everyone but their players and named a world with its lock
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
 
-// The world directory's rules, the same on every server: the list of worlds, public ones for
-// everyone and hidden ones only for their players and the relay's admins, whose own worlds may be
-// featured; who may make, enter, delete or leave out whom; and who was in which world. The relay
-// never learns a world's token or password: it keeps the token locked with the password, and
-// checks entering against a hash of a key only the token's holders can make. A world's starting
-// save reaches it encrypted with a key from the token, so the relay only keeps its bytes.
-//
-// It keeps its worlds through a store the platform layer passes in, and hands back what the layer
-// must do beyond answering, such as closing a removed player's connection or telling a world room
-// what an admin said.
-//
-// It also keeps each world's chat as far as the relay sees it: the games mirror every line of the
-// world's chat as a text frame, which the world room hands in here, and an admin's line, said over
-// HTTP, goes into the log and out to every game in the room.
+// The world directory's rules, the same on every server: who sees, makes, enters, deletes or
+// leaves out which world, and each world's chat as far as the relay sees it. The relay never
+// learns a world's token or password: it keeps the token locked with the password, checks entering
+// against a hash of a key only the token's holders can make, and gets starting saves encrypted.
 
 import { badRequest, notFound, withJson } from "./http.js";
 import { CONTROL_CHARACTERS, ID, cleanText, hexOf, isHash, isId } from "./ids.js";
@@ -83,7 +73,7 @@ export const DIRECTORY_LIMITS = Object.freeze({
   maxMembers: 200,
   maxBans: 500,
   maxListedIds: 50,
-  // Released games lock with 200 000 iterations, newer ones with more.
+  // Games lock with 600 000 iterations, older released ones with 200 000.
   minIterations: 100_000,
   maxIterations: 5_000_000,
   maxLockHex: 512,
@@ -608,7 +598,7 @@ export class Directory {
       return tooMany();
     }
 
-    // Saves kept before their sizes were noted count as nothing.
+    // A save kept without its size counts as nothing.
     const used = (await this.entries()).reduce((total, world) => total + (world.startBytes ?? 0), 0);
 
     if (used + bytes.length > this.limits.maxStartBytesTotal) {
@@ -1053,7 +1043,7 @@ export function modsRuleText(off, mods) {
  * Tells whether a world turns its players' other mods off.
  *
  * @param {object} entry The world's entry.
- * @returns {boolean} Whether it does; a world kept from before the setting does when it is a Raid World.
+ * @returns {boolean} Whether it does; a world kept without the setting does when it is a Raid World.
  */
 function otherModsOffOf(entry) {
   return typeof entry.otherModsOff === "boolean" ? entry.otherModsOff : entry.type === WORLD_TYPE.raid;

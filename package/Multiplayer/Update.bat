@@ -3,7 +3,7 @@ rem ----------------------------------------------------------------
 rem  Update.bat
 rem
 rem  Changelog:
-rem      Paulinchen  2026-10-08: Passed its arguments on to Update.ps1, which the game gives when it starts the update
+rem      Paulinchen  2026-10-08: Passed its arguments on to Update.ps1
 rem      Paulinchen  2026-09-30: Created
 rem
 rem ----------------------------------------------------------------

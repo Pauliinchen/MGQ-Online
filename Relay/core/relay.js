@@ -3,29 +3,26 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Added the rate limit per address for downloading starting saves and mod files
-//      Paulinchen  2026-10-10: Added the dev feature, which development builds name and which lets them give a Raid World a starting save
-//      Paulinchen  2026-10-08: Added the X-MGQ-Features header, in which a game names what it can play, such as Raid Worlds
-//                            - Limited each world room connection to 2 chat lines a second after a burst of 10, answering a dropped line with "slow chat"
+//      Paulinchen  2026-10-10: Added the dev feature
+//      Paulinchen  2026-10-08: Added the X-MGQ-Features header
+//                            - Limited each world room connection to 2 chat lines a second after a burst of 10
 //                            - Told a chat frame whose line is empty apart from a frame that is no chat frame
-//      Paulinchen  2026-10-07: Added the chat text frames: a line a game mirrors for the world's log, and a line an admin says to every game
+//      Paulinchen  2026-10-07: Added the chat text frames
 //                            - Took a world room's auth key from the X-MGQ-Auth header too
 //                            - Read ids, keys and names by the rules of ids.js
-//      Paulinchen  2026-10-06: Closed a peer that waited alone too long whatever its role, not only a host
+//      Paulinchen  2026-10-06: Closed a peer that waited alone too long whatever its role
 //                            - Took a world room's player key from the X-MGQ-Player header too
-//                            - Added the rate limits per address, and the replacing of a player's earlier connection to a world room
-//      Paulinchen  2026-09-29: Took a world room's seats from the directory, and a game's player key, name and auth key from its request
-//                            - Added world rooms, which seat up to 32 games and pass each message to one or all of the others
+//                            - Added the rate limits per address and the replacing of a player's earlier world room connection
+//      Paulinchen  2026-09-29: Took a world room's seats from the directory and a game's player key, name and auth key from its request
+//                            - Added world rooms, which seat up to 32 games
 //                            - Created
 //
 //----------------------------------------------------------------
 
 // The relay's rules, the same on every server: which requests it takes, who may join a room, how
 // fast and how large messages may be, and when a room ends. It keeps no state and touches no
-// socket, so a thin layer per platform (Cloudflare, Node) can store the peers its own way.
-//
-// A room pairs one host with one guest, for a PvP battle. A world room seats several games that
-// play in the same world; each gets a seat number, which the relay puts in front of every message
-// it passes on, since it cannot read who sent what.
+// socket, so a thin layer per platform (Cloudflare, Node) can store the peers its own way. A room
+// pairs a host and a guest for a PvP battle; a world room seats the games of one world.
 
 import { CONTROL_CHARACTERS, cleanText, isHash, isId } from "./ids.js";
 
@@ -439,7 +436,7 @@ export function newWorldPeer(seat, who, now, limits = LIMITS, chatLimits = CHAT_
 /**
  * Checks a chat line a game sent against its chat allowance, which refills over time.
  *
- * @param {{chatAllowance?: number, chatRefilledAt?: number}} peer The game's record; one made before the chat had an allowance starts with a full one.
+ * @param {{chatAllowance?: number, chatRefilledAt?: number}} peer The game's record; one without a chat allowance starts with a full one.
  * @param {number} now The current time in milliseconds.
  * @param {typeof CHAT_LIMITS} [chatLimits] The chat's limits.
  * @returns {{peer: object, allowed: boolean}} The game's new record, and whether the line may be kept.

@@ -72,8 +72,8 @@ module MGQ_MpBattlesPvp
   end
 end
 
-# The PvP battle screen, opened from the map with the World overview's key (MGQ_MpHotkeys) or when the map
-# joins the host of a Discord invite.
+# The PvP battle screen, opened from the map with the World overview's hotkey (MGQ_MpHotkeys) or
+# when the map joins the host of a Discord invite.
 #
 # Named without "Battle", which the Discord mod reads as being in a fight.
 class Scene_PvpLobby < Scene_MenuBase

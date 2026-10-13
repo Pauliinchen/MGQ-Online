@@ -2,32 +2,26 @@
 #  world_save_distribution.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-10: Fetched a Raid World's starting save in a development build, which alone may give a Raid World one
-#      Paulinchen  2026-10-09: Neither asked a new player of a Raid World where to start nor fetched its starting save, since it starts from the beginning
-#      Paulinchen  2026-10-07: Named the DLL's exports alone, their signatures living in Multiplayer.rb
-#                            - Logged the save picked, the files placed, the fetch started, the check of a fetched save and the files thrown away
-#                            - Shortened the save screen's help texts to fit its one line
+#      Paulinchen  2026-10-10: Fetched a Raid World's starting save in a development build
+#      Paulinchen  2026-10-09: Neither asked a new player of a Raid World where to start nor fetched its starting save
+#      Paulinchen  2026-10-07: Named the DLL's exports alone
+#                            - Logged the save picked, the files placed, the fetch, its check and the files thrown away
+#                            - Shortened the save screen's help texts
 #      Paulinchen  2026-10-04: Renamed from mp_save_distribution.rbx
 #      Paulinchen  2026-10-03: Logged through MGQ_MpLog
 #      Paulinchen  2026-10-02: Let a new player of a world whose players choose start from one of their own saves
-#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as world_save_distribution.rbx, which Multiplayer.rb loads
+#      Paulinchen  2026-09-30: Moved into Patch/Multiplayer/Scripts as world_save_distribution.rbx
 #                            - Created
 #
 #----------------------------------------------------------------
 
 # A world's starting save: one of the creator's own saves, with their system save, which new
-# players of the world start from instead of the opening. The creator picks it when making the
-# world, and it can never be changed. The relay keeps it encrypted with a key from the world's
-# token; a new player's game fetches it into the world's folder before entering the world for the
-# first time, where it is the world's first save. Since a save can run code, the world screen
-# fetches it only once the player agreed to take it, unless they created the world.
+# players of the world start from instead of the opening. A new player's game fetches it from the
+# relay into the world's folder before entering the world for the first time, where it is the
+# world's first save. A world made with Player's choice instead asks each new player where to
+# start: at the beginning, from one of their own saves, or from the starting save when it has one.
 #
-# A world made with Player's choice instead asks each new player where to start: at the beginning,
-# from one of their own saves, copied into the world's folder the same way, or from the starting
-# save when it has one.
-#
-# world_screen.rbx, which loads later, calls it. It must never interrupt the game, so every entry
-# point rescues.
+# Since a save can run code, world_screen.rbx asks a new player before fetching it.
 module MGQ_MpSaveDistribution
   # The starting save's name in a world's folder: the world's first save.
   SAVE_NAME = "Save01.rvdata2"

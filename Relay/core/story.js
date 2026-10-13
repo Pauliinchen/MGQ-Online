@@ -3,29 +3,20 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-12: Kept the level caps the world's story unlocked
-//      Paulinchen  2026-10-11: Opened every route again once the world finished all of them, as a starting save that cleared every route names them all as finished
-//                            - Took the locked route's first step from the Great Decision even though its key ranks below the decision once every route was finished
-//                            - Kept the lock of a route finished before until the world returned from it, instead of dropping it with the next write without a route under way
-//      Paulinchen  2026-10-10: Refused taking back the route lock while the world's story is on that route, and a route lock while the story is on another route
+//      Paulinchen  2026-10-11: Opened every route again once the world finished all of them
+//                            - Took the locked route's first step from the Great Decision once every route was finished
+//                            - Kept the lock of a route finished before until the world returned from it
+//      Paulinchen  2026-10-10: Refused taking back the route lock while the story is on that route and a route lock while it is on another
 //      Paulinchen  2026-10-09: Let an admin take back the route locked at the Great Decision
-//                            - Kept only the first end of a part as its checkpoint, so leaving Part 3 again no longer replaces the story before the first Great Decision
+//                            - Kept only the first end of a part as its checkpoint
 //      Paulinchen  2026-10-08: Created
 //
 //----------------------------------------------------------------
 
 // The story of a Raid World, which the whole world plays together: a few counters the relay reads
-// to tell which story is further, and the rest of the story sealed with a key from the world's
-// token, which the relay only keeps. A game that moved the story on writes it here; the furthest
-// story wins, and two games writing at once cannot overwrite each other, since each names the
-// revision it built on. When a write first moves the world out of a part, the story before it stays
-// as that part's checkpoint, for players who are behind.
-//
-// The revision counts every change: a write, a route lock and a grown companions list, so the
-// games are told of each by it. A write only has to build on the last sealed story, so a route
-// lock or a companion between a game's read and its write does not turn the write away.
-//
-// Each world keeps its story apart from the directory, in its own world room's object on Cloudflare,
-// so the directory carries none of the story's traffic.
+// to tell which story is further, and the rest sealed with a key from the world's token, which the
+// relay only keeps. The furthest story wins, and each write names the revision it built on, so two
+// games writing at once cannot overwrite each other.
 
 import { badRequest, notFound, withJson } from "./http.js";
 import { isId } from "./ids.js";

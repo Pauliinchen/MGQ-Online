@@ -13,8 +13,8 @@ using System.Text;
 namespace MGQParadox.Multiplayer.Network.World;
 
 /// <summary>
-/// What a world's lock, a trade's offers and a starting save are sealed as: the nonce, the text
-/// encrypted with AES-GCM, and the tag, under a key the caller made.
+/// Seals a world's lock, a trade's offers, a starting save and a Raid World's story with AES-GCM,
+/// under a key the caller made.
 /// </summary>
 internal static class SealedBox
 {
