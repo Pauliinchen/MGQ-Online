@@ -2,6 +2,8 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Checked a Raid World's squad rules, their changes and Luka leaving the team
+#                            - Checked that Luka is never swapped to the front and Give Up waits for him to lead
 #      Paulinchen  2026-10-12: Stood in for the settings' group of the Mod Config
 #      Paulinchen  2026-10-11: Stood in for the shared style's bad color
 #      Paulinchen  2026-10-10: Checked that a hidden squad member never brings in the cut fourth
@@ -24,7 +26,7 @@
 
 # Covers a party's squads, coop_squad.rbx with coop.rbx: the Frontline and Backline shares, the
 # followers and the leader's choice of them, the formation screens' cut, the cap of four players,
-# and a Raid World's squads, team of four and battles of the player's own.
+# and a Raid World's squads, team and battles of the player's own by its squad rules, and Luka in it.
 
 require_relative "support"
 
@@ -88,6 +90,8 @@ class Game_Party
   def move_stand_actor(id); @all_members = @all_members.reject { |actor| actor.id == id }; cut; end
   def add_actor(id); add_stand_actor(id); @all_members += [$game_actors[id]]; cut; end
   def cut; @all_members = @all_members.first(party_member_max); end
+  def stand_actors; standby; end
+  def move_actor(id); @all_members += [$game_actors[id]] if standby.include?(id); cut; end
   def swap_order(first, second); @all_members[first], @all_members[second] = @all_members[second], @all_members[first]; end
   def temp_actors_use?; @temp; end
   def max_battle_members; 4; end
@@ -153,9 +157,38 @@ module Foo
       def command_name(index); "row #{index}"; end
       def alignment; 0; end
       def draw_text(*); @rows << @color; end
+      # Lists the team as the game does, Luka's row disabled.
+      def make_command_list; @list = @actors.map { |id| { :enabled => !$game_actors[id].luca? } }; end
+      # Sends the character picked to standby as the game does, never Luka.
+      def process_move_member; $moved = select_actor.luca? ? :buzzer : select_actor.id; end
+      attr_reader :actors
+      attr_accessor :index
+      def select_actor; $game_actors[@actors[@index]]; end
+      def cursor_movable?; true; end
+      def call_handler(name); $moved = [name, select_actor.id]; end
+      def select(index); @index = index; end
     end
   end
 end
+# Stands in for the game's buttons, the A button pressed.
+module Input; def self.trigger?(button); button == :A; end; def self.update; end; end
+# Stands in for the game's sounds, keeping the last one in $sound.
+module Sound; def self.play_equip; $sound = :equip; end; def self.play_buzzer; $sound = :buzzer; end; end
+# Stands in for the game's interpreter, whose command of followers swaps Luka to the front as the
+# game's own does when the followers go.
+class Game_Interpreter
+  def command_216
+    luka = $game_party.all_members.index { |actor| actor.luca? } || 0
+    $game_party.swap_order(0, luka)
+  end
+end
+# Stands in for the game's battle manager, which offers Give Up while $give_up holds.
+module BattleManager; def self.can_giveup?; $give_up; end; end
+# Stands in for the raid bosses, troop 900 being one.
+module MGQ_MpRaidBosses; def self.boss?(troop_id); troop_id == 900; end; end
+# Stands in for the game's troop, fighting $troop.
+class Game_Troop; def initialize; @troop_id = 1; end; attr_writer :troop_id; end
+$game_troop = Game_Troop.new
 
 $log = []
 # Stands in for the mod's base script.
@@ -172,8 +205,11 @@ end
 module MGQ_MpOverworldSync
   @fields = []
   @ticks = []
+  SQUAD_FIELD = "squad_value"
   def self.in_world?; $open; end
-  def self.route(*); end
+  # Keeps each route's block by its field.
+  def self.route(field, &block); (@routes ||= {})[field] = block; end
+  def self.routes; @routes; end
   def self.on_tick(&block); @ticks << block; end
   def self.state_fields(&block); @fields << block; end
   def self.on_observe(*); end
@@ -310,8 +346,18 @@ check("nor told to Discord", MGQ_MpCoop.status_fields, {})
 
 # A Raid World: one on the Frontline and two on the Backline for everyone, a team of four.
 
-# Stands in for the world, a Raid World while one is open and $raid holds.
-module MGQ_MpWorld; def self.raid?; $open && $raid; end; end
+# Stands in for the world, a Raid World while one is open and $raid holds, with the squad rules
+# $squad names, the defaults while it names none.
+module MGQ_MpWorld
+  def self.raid?; $open && $raid; end
+  def self.squad; raid? ? $squad || MGQ_MpCoopSquad::DEFAULT_RULES : nil; end
+  def self.squad_of(text)
+    luka, formation, front, raid_front = text.to_s.split(" ").map(&:to_i)
+    raid_front ? { :luka => luka == 1, :formation => formation, :front => front, :raid_front => raid_front } : nil
+  end
+  def self.take_squad(rules); raid? ? ($squad = rules) && true : false; end
+  def self.squad_summary(rules); "Formation #{rules[:formation]}, Frontline #{rules[:front]} | #{rules[:raid_front]}"; end
+end
 $raid = true
 $open = true
 $game_party.all_members = actors.first(7)
@@ -331,7 +377,8 @@ $game_party.temp = false
 check("and so does the team until it is fitted again", $game_party.party_member_max, 10)
 MGQ_MpOverworldSync.tick(true)
 check("which sends a companion who joined meanwhile to standby", [$game_party.actors, $game_party.standby, $game_party.party_member_max], [[1, 2, 3, 4], [5, 6, 7, 8, 9], 4])
-check("Luka stays in the team wherever he stands", squad.past_cap([2, 3, 4, 5, 1, 6]), [5, 6])
+check("Luka stays in the team wherever he stands", squad.past_cap([2, 3, 4, 5, 1, 6], 4), [5, 6])
+check("unless he may leave it", squad.past_cap([2, 3, 4, 5, 1, 6], 4, false), [1, 6])
 check("every player has one and two, in a party of four too", [MGQ_MpCoop.in_party?, squad.own_share], [true, [1, 2]])
 check("the fourth place is cut", actors.first(4).map { |a| squad.place_of(a) }, [:front, :bench, :bench, :cut])
 check("nobody follows", $game_player.followers.map { |f| f.visible? }, [false, false, false])
@@ -402,6 +449,80 @@ check("Luka standing past the fourth moves into the squad's last place", [luka_l
 $game_party = loaded
 MGQ_MpOverworldSync.tick(true)
 
+# A Raid World's squad rules: the team's size, the Frontline in regular fights and in raids, and
+# whether Luka may leave the team.
+check("layouts: the cut place only while one is left, none with the game's own size",
+      [squad.layout(1, 4, false), squad.layout(3, 4, false), squad.layout(4, 4, false), squad.layout(2, 6, false), squad.layout(1, 9, true), squad.layout(4, 9, true)],
+      [[1, 2], [3, 0], [4, 0], [2, 3], [1, 8], [4, 5]])
+whole = Game_Party.new
+whole.all_members = actors.first(10)
+whole.party_member_max = 10
+$game_party = whole
+squad.pushed({ "squad_value" => "0 6 2 1" })
+check("a squad rules push not from the relay is ignored", MGQ_MpWorld.squad, squad::DEFAULT_RULES)
+MGQ_MpOverworldSync.routes["squad_value"].call(nil, { "squad_value" => "0 6 2 1", :relay => true })
+check("the relay's push takes the rules and tells the player", [MGQ_MpWorld.squad, $notice],
+      [{ :luka => false, :formation => 6, :front => 2, :raid_front => 1 }, "The world's team rules changed: Formation 6, Frontline 2 | 1."])
+MGQ_MpOverworldSync.tick(true)
+check("a team of six: two in front, three behind, one cut", [whole.actors, whole.party_member_max, squad.own_share, actors.first(6).map { |a| squad.place_of(a) }],
+      [[1, 2, 3, 4, 5, 6], 6, [2, 3], [:front, :front, :bench, :bench, :bench, :cut]])
+whole.in_battle = true
+check("a regular fight of the player's own takes two in front and three behind", [whole.max_battle_members, whole.battle_members.map(&:id), whole.bench_members.map(&:id)], [2, [1, 2], [3, 4, 5]])
+$game_troop.troop_id = 900
+check("a raid takes the raid's Frontline, the rest of the squad behind", [whole.max_battle_members, whole.battle_members.map(&:id), whole.bench_members.map(&:id)], [1, [1], [2, 3, 4, 5]])
+check("a co-op raid gives each player one in front however many play", (0..2).map { |at| squad.battle_share(at, 3, 6) }, [[1, 4], [1, 4], [1, 4]])
+$game_troop.troop_id = 1
+check("a co-op battle gives the first players two in front while the four places last", (0..2).map { |at| squad.battle_share(at, 3, 6) }, [[2, 3], [1, 4], [1, 4]])
+check("and with four players everyone one, the rest behind", (0..3).map { |at| squad.battle_share(at, 4, 6) }, [[1, 4]] * 4)
+check("a co-op battle's build holds the larger squad of both fights", squad.largest_squad(6), 5)
+whole.in_battle = false
+$squad = { :luka => false, :formation => 4, :front => 4, :raid_front => 4 }
+MGQ_MpOverworldSync.tick(true)
+check("a Frontline as large as the team leaves no cut place", [whole.actors, squad.own_share, actors.first(4).map { |a| squad.place_of(a) }],
+      [[1, 2, 3, 4], [4, 0], [:front, :front, :front, :front]])
+$squad = { :luka => false, :formation => squad::ORIGINAL, :front => 1, :raid_front => 1 }
+MGQ_MpOverworldSync.tick(true)
+whole.party_member_max = 9
+check("the original size keeps the game's party size and cuts nobody", [whole.party_member_max, squad.own_share, squad.place_of(actors[3])], [9, [1, 8], :bench])
+
+# Luka may leave the team.
+$squad = { :luka => true, :formation => 4, :front => 1, :raid_front => 1 }
+free = Game_Party.new
+free.all_members = [2, 3, 4, 5, 6, 1].map { |id| $game_actors[id] }
+free.party_member_max = 8
+$game_party = free
+MGQ_MpOverworldSync.tick(true)
+check("fitting a team where Luka may leave keeps its first places and moves him to standby", [free.actors, free.standby], [[2, 3, 4, 5], [6, 1]])
+edit = Foo::PTEdit::Window_PartyMember.new([1, 2, 3])
+edit.make_command_list
+check("the party edit screen lets Luka's row be picked", MGQ_MpGame.get(edit, :list).map { |row| row[:enabled] }, [true, true, true])
+edit.index = 0
+edit.process_move_member
+check("and sends him to standby", [$moved, $sound], [[:move_member, 1], :equip])
+edit.index = 1
+edit.process_move_member
+check("others as the game does", $moved, 2)
+$squad = { :luka => false, :formation => 4, :front => 1, :raid_front => 1 }
+MGQ_MpOverworldSync.tick(true)
+check("once the rules keep him, Luka comes back into the squad", [free.actors, free.standby], [[2, 3, 1, 4], [5, 6]])
+edit.make_command_list
+check("and his row is the game's again", MGQ_MpGame.get(edit, :list).map { |row| row[:enabled] }, [false, true, true])
+edit.index = 0
+edit.process_move_member
+check("so he stays in the team", $moved, :buzzer)
+
+# The game never swaps Luka to the front in a Raid World.
+Game_Interpreter.new.command_216
+check("the command of followers leaves the order", free.actors, [2, 3, 1, 4])
+$give_up = true
+check("Give Up waits for Luka to lead", BattleManager.can_giveup?, false)
+free.swap_order(0, 2)
+check("and is the game's once he does", [free.actors, BattleManager.can_giveup?], [[1, 3, 2, 4], true])
+free.swap_order(0, 2)
+$squad = nil
+$game_party = loaded
+MGQ_MpOverworldSync.tick(true)
+
 $open = false
 MGQ_MpOverworldSync.tick(false)
 check("leaving the world lifts the cap", [loaded.party_member_max, squad.own_share], [8, nil])
@@ -411,4 +532,13 @@ check("a Classic world has no cap and no squad alone", [loaded.party_member_max,
 check("and its duels keep the game's Frontline", squad.pvp_front, 4)
 loaded.in_battle = true
 check("nor narrows its battles", [loaded.max_battle_members, loaded.battle_members.size], [4, 4])
+loaded.in_battle = false
+Game_Interpreter.new.command_216
+check("and its command of followers swaps Luka to the front as the game does", loaded.actors.first, 1)
+$game_party = Game_Party.new
+$game_party.all_members = [2, 1].map { |id| $game_actors[id] }
+$game_party.party_member_max = 8
+Game_Interpreter.new.command_216
+check("wherever he stood", $game_party.actors, [1, 2])
+check("and Give Up is the game's", BattleManager.can_giveup?, true)
 check("nothing failed", $log.grep(/fail/i), [])

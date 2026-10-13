@@ -2,6 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Checked that the relay's push of a Raid World's squad rules goes to its route
 #      Paulinchen  2026-10-12: Checked that the players already in a world the player enters come without a notice
 #                            - Checked when the time the player entered their map is set anew
 #                            - Checked that nobody is told a state on the title screen
@@ -644,6 +645,10 @@ MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::DIFFICULTY_FIELD) { |peer, messag
 $inbox << { "kind" => "difficulty", "value" => "-2" }
 MGQ_MpOverworldSync.tick
 check("the relay's push of a Raid World's difficulty goes to its route with the value, marked as the relay's", $pushes.last, [nil, "-2", true])
+MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::SQUAD_FIELD) { |peer, message| $pushes << [peer, message[MGQ_MpOverworldSync::SQUAD_FIELD], message[:relay]] }
+$inbox << { "kind" => "squad", "value" => "1 0 2 1" }
+MGQ_MpOverworldSync.tick
+check("the relay's push of a Raid World's squad rules goes to its route with their text, marked as the relay's", $pushes.last, [nil, "1 0 2 1", true])
 MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::MODS_RULE_FIELD) { |peer, message| $pushes << [peer, message[MGQ_MpOverworldSync::MODS_RULE_FIELD], message["mods"], message[:relay]] }
 $inbox << { "kind" => "mods_rule", "value" => "1", "mods" => "!Level Cap; Party Sheet" }
 $inbox << { "kind" => "mods_rule", "value" => "0" }

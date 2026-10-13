@@ -2,6 +2,11 @@
 #  coop_squad.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Sized a Raid World's team and squads by the world's squad rules
+#                            - Let a Raid World's Luka leave the team when its rules allow it
+#                            - Kept the event command of followers from swapping Luka to the front
+#                              in a Raid World
+#                            - Offered Give Up in a Raid World only while Luka leads the team
 #      Paulinchen  2026-10-12: Listed the option among the settings of the Mod Config
 #      Paulinchen  2026-10-11: Drew the line past a squad in the shared style's bad color
 #      Paulinchen  2026-10-10: Took a Raid World's squad from the team's first three places
@@ -30,25 +35,23 @@
 # screens show the squad's Frontline and Backline as the game shows its own, and the cut characters
 # monochrome under a line. On the map only each player's share of the Frontline follows them, or
 # nobody, as the leader chose in the Mod Config. A battle a player fights alone keeps their own
-# full team, so nothing here changes the game's party itself, except in a Raid World: there every
-# player keeps a squad of one on the Frontline and two on the Backline, in a party or not and in
-# every battle, the team holds at most four (the companions past them wait on standby), and nobody
-# follows on the map.
+# full team, so nothing here changes the game's party itself, except in a Raid World: there the
+# world's squad rules (see rules) size every player's team and squad, in a party or not and in
+# every battle, the companions past the team wait on standby, Luka stays in the team unless the
+# rules let him go, the game never swaps him to the front on its own, and nobody follows on the
+# map.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopSquad
   # Places of the Frontline, the game's battle members.
   FRONTLINE = 4
 
-  # Every player's squad in a Raid World, whatever the number of players: the Frontline's and the
-  # Backline's places.
-  RAID_SHARE = [1, 2]
+  # The Formation size of a Raid World's rules that keeps the game's own team size.
+  ORIGINAL = 0
 
-  # The characters of every player's squad in a Raid World, its Frontline and Backline together.
-  RAID_SQUAD = RAID_SHARE[0] + RAID_SHARE[1]
-
-  # The team's size in a Raid World, its party_member_max: the squad and one cut place.
-  RAID_PARTY_MAX = 4
+  # The squad rules of a Raid World that names none: Luka stays, a team of four, and one character
+  # on the Frontline in regular fights and in raids, which leaves two on the Backline and one cut.
+  DEFAULT_RULES = { :luka => false, :formation => 4, :front => 1, :raid_front => 1 }
 
   # The option of followers in a party, its key in $game_system.conf.
   FOLLOWERS = :mp_party_followers
@@ -93,6 +96,13 @@ module MGQ_MpCoopSquad
   # The party fitted to a Raid World, which party_member_max caps, nil while no cap holds.
   @capped = nil
 
+  # The squad rules the party was fitted to, see fit_team.
+  @capped_rules = nil
+
+  # Whether the game's swaps of the party's order are held back, while the event command of
+  # followers runs in a Raid World.
+  @holding_order = false
+
   extend MGQ_MpLog
 
   # What starts this script's lines in Multiplayer InGame.log.
@@ -120,22 +130,29 @@ module MGQ_MpCoopSquad
     [split(FRONTLINE, count)[position].to_i, split(max - FRONTLINE, count)[position].to_i]
   end
 
-  # Tells a player's squad in a co-op battle: RAID_SHARE in a Raid World, else as share splits it.
+  # Tells a player's squad in a co-op battle: in a Raid World their squad for the fight (see
+  # raid_share), with as much of its Frontline as the battle's places split between the players
+  # leave them, but always their first character, and the rest of the squad on the Backline; else
+  # as share splits it.
   #
   # @param position [Integer] The player's place among the players, the leader first.
   # @param count [Integer] The players.
   # @param max [Integer] The player's party_member_max, Frontline and Backline together.
   # @return [Array<Integer>] The Frontline's and the Backline's share.
   def self.battle_share(position, count, max)
-    raid? ? RAID_SHARE.dup : share(position, count, max)
+    return share(position, count, max) unless raid?
+
+    front, bench = raid_share(max)
+    fighting = [front, [split(FRONTLINE, count)[position].to_i, 1].max].min
+    [fighting, front + bench - fighting]
   end
 
-  # Tells the places of the Frontline in a PvP battle between two players: RAID_SHARE's in a Raid
+  # Tells the places of the Frontline in a PvP battle between two players: the squad's in a Raid
   # World, else FRONTLINE.
   #
   # @return [Integer] The places.
   def self.pvp_front
-    raid? ? RAID_SHARE[0] : FRONTLINE
+    raid? ? raid_share[0] : FRONTLINE
   end
 
   # Lists the player's characters a PvP battle takes in a Raid World: their squad, or only its
@@ -144,14 +161,92 @@ module MGQ_MpCoopSquad
   # @param backline [Boolean] Whether the battle takes the Backline.
   # @return [Array<Game_Actor>] The characters, the Frontline first.
   def self.raid_team(backline = true)
-    own_order.first(backline ? RAID_SQUAD : RAID_SHARE[0])
+    front, bench = raid_share
+    own_order.first(backline ? front + bench : front)
   end
 
-  # Reports whether a Raid World is open, where every player keeps RAID_SHARE.
+  # Reports whether a Raid World is open, where the world's squad rules size every player's team.
   #
   # @return [Boolean] Whether one is.
   def self.raid?
     MGQ_MpCoop::Scope.raid?
+  end
+
+  # Reads the open Raid World's squad rules.
+  #
+  # @return [Hash] :luka (whether Luka may leave the team), :formation (the team's size, ORIGINAL
+  #   for the game's own), :front and :raid_front (the Frontline's places in regular fights and in
+  #   raids); DEFAULT_RULES when the world names none.
+  def self.rules
+    world = defined?(MGQ_MpWorld) && MGQ_MpWorld.respond_to?(:squad) ? MGQ_MpWorld.squad : nil
+    world || DEFAULT_RULES
+  end
+
+  # Reports whether Luka may leave the team: in a Raid World whose rules allow it.
+  #
+  # @return [Boolean] Whether he may.
+  def self.luka_free?
+    raid? && rules[:luka] ? true : false
+  end
+
+  # Tells the team's size a Raid World holds.
+  #
+  # @return [Integer, nil] The size, nil for the game's own.
+  def self.team_cap
+    formation = rules[:formation].to_i
+    formation == ORIGINAL ? nil : formation
+  end
+
+  # Reports whether the battle running is a raid, a fight with one of the raid bosses.
+  #
+  # @return [Boolean] Whether it is.
+  def self.raid_fight?
+    return false unless $game_party && $game_party.in_battle && $game_troop && defined?(MGQ_MpRaidBosses)
+
+    MGQ_MpRaidBosses.boss?(MGQ_MpGame.get($game_troop, :troop_id))
+  end
+
+  # Splits a team into its Frontline, its Backline and the cut place: the Frontline as large as it
+  # may be, the Backline what is left but the last place, which is cut while a place is left over;
+  # with the game's own size nothing is cut.
+  #
+  # @param front [Integer] The Frontline's places the rules give.
+  # @param size [Integer] The team's size.
+  # @param original [Boolean] Whether the team keeps the game's own size.
+  # @return [Array<Integer>] The Frontline's and the Backline's places.
+  def self.layout(front, size, original)
+    front = [[front, size].min, 1].max
+    [front, original ? size - front : [size - front - 1, 0].max]
+  end
+
+  # Tells the player's squad in a Raid World for a fight: the Frontline the world's rules give for
+  # it and the Backline the team leaves.
+  #
+  # @param max [Integer] The player's party_member_max.
+  # @param raid [Boolean] Whether the fight is a raid.
+  # @return [Array<Integer>] The Frontline's and the Backline's places.
+  def self.raid_share(max = $game_party.party_member_max, raid = raid_fight?)
+    current = rules
+    original = current[:formation].to_i == ORIGINAL
+    size = original ? max : [max, current[:formation].to_i].min
+    layout((raid ? current[:raid_front] : current[:front]).to_i, size, original)
+  end
+
+  # Tells how many characters a player's squad in a Raid World holds at most, in a regular fight or
+  # in a raid, which a co-op battle's host may hold either.
+  #
+  # @param max [Integer] The player's party_member_max.
+  # @return [Integer] The characters.
+  def self.largest_squad(max)
+    [false, true].map { |raid| raid_share(max, raid).inject(:+) }.max
+  end
+
+  # Reports whether Luka leads the player's team, its first character.
+  #
+  # @return [Boolean] Whether he does.
+  def self.luka_leads?
+    first = $game_party.all_members.first
+    first && first.luca? ? true : false
   end
 
   # Reports whether the player's characters split into a squad and the cut ones: in a party, and
@@ -170,12 +265,13 @@ module MGQ_MpCoopSquad
     players.sort_by { |id, leads| [leads ? 0 : 1, id.to_s] }.map { |id, _| id.to_s }
   end
 
-  # Tells the player's squad: RAID_SHARE in a Raid World, else their share in their party.
+  # Tells the player's squad: in a Raid World as its rules size it (see raid_share), else their
+  # share in their party.
   #
   # @return [Array<Integer>, nil] The Frontline's and the Backline's share, nil outside a party in
   #   a Classic world.
   def self.own_share
-    return RAID_SHARE.dup if raid?
+    return raid_share if raid?
     return nil unless MGQ_MpCoop.in_party?
 
     party = MGQ_MpCoop::Party
@@ -187,16 +283,17 @@ module MGQ_MpCoopSquad
   end
 
   # Lists the player's characters in the order their squad takes them; in a Raid World only those
-  # in the team's first RAID_SQUAD places, as in_squad keeps them.
+  # in the squad's places of the team, as in_squad keeps them.
   #
-  # A hidden squad member would otherwise move the cut fourth into the squad of duels and co-op
+  # A hidden squad member would otherwise move the cut place into the squad of duels and co-op
   # battles.
   #
+  # @param size [Integer, nil] The squad's places in a Raid World, nil for the squad of the fight.
   # @return [Array<Game_Actor>] The characters that exist, the Frontline first.
-  def self.own_order
+  def self.own_order(size = nil)
     members = $game_party.all_members
     existing = members.select(&:exist?)
-    raid? ? existing & members.first(RAID_SQUAD) : existing
+    raid? ? existing & members.first(size || raid_share.inject(:+)) : existing
   end
 
   # Tells where a character stands in the player's squad.
@@ -327,13 +424,14 @@ module MGQ_MpCoopSquad
   end
 
   # Fits the team to a Raid World, and shows the followers anew once the party, the player's share,
-  # the leader's choice or the world's type changed. Called every frame in every scene.
+  # the leader's choice, the world's type or its squad rules changed. Called every frame in every
+  # scene.
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
     raid = in_world && raid?
     fit_team(raid)
-    shown = in_world ? [own_share, mode, raid] : nil
+    shown = in_world ? [own_share, mode, raid, raid ? rules : nil] : nil
     return if shown == @shown
 
     @shown = shown
@@ -341,13 +439,15 @@ module MGQ_MpCoopSquad
     $game_player.refresh if $game_player
   end
 
-  # Moves the companions past RAID_PARTY_MAX to standby once the player's team is in a Raid World,
-  # before the cap holds for it (see party_member_max), and lifts the cap outside one. A new game
-  # and a loaded save bring a team of their own, which is fitted anew.
+  # Fits the player's team to a Raid World's rules once it is in one or the rules changed: brings
+  # Luka back from standby unless he may leave, moves the companions past the team's size to
+  # standby before the cap holds for it (see party_member_max), and swaps Luka into the squad unless
+  # he may leave. Lifts the cap outside a Raid World. A new game and a loaded save bring a team of
+  # their own, which is fitted anew.
   #
-  # The game cuts its party list down to party_member_max whenever it changes, so the cap holds
-  # only for a team fitted first; the team is fitted anew after a story's temporary party, since
-  # companions may have joined meanwhile.
+  # The game cuts its party list down to party_member_max whenever it changes, so the cap is lifted
+  # while the team is fitted and holds only for a team fitted first; the team is fitted anew after a
+  # story's temporary party, since companions may have joined meanwhile.
   #
   # @param raid [Boolean] Whether a Raid World is open.
   def self.fit_team(raid)
@@ -356,16 +456,23 @@ module MGQ_MpCoopSquad
     party = $game_party
     return if party.nil?
     return lift_cap("while a story's temporary party plays") if party.temp_actors_use?
-    return if party.equal?(@capped) || party.in_battle
 
-    moved = past_cap(party.actors.to_a)
+    current = rules
+    return if (party.equal?(@capped) && current == @capped_rules) || party.in_battle
+
+    @capped = nil
+    luka_back(party) unless current[:luka]
+    cap = team_cap
+    moved = cap ? past_cap(party.actors.to_a, cap, !current[:luka]) : []
     moved.each do |id|
       party.add_stand_actor(id)
       party.move_stand_actor(id)
     end
-    luka_into_squad(party)
+    luka_into_squad(party) unless current[:luka]
     @capped = party
-    log("a Raid World holds a team of #{RAID_PARTY_MAX}#{moved.empty? ? '' : "; to standby: #{moved.map { |id| actor_name(id) }.join(', ')}"}")
+    @capped_rules = current
+    log("a Raid World holds a team of #{cap || 'the game\'s own size'}, Luka #{current[:luka] ? 'may leave it' : 'stays'}" \
+        "#{moved.empty? ? '' : "; to standby: #{moved.map { |id| actor_name(id) }.join(', ')}"}")
   rescue => e
     log("fitting the team failed: #{e.class}: #{e.message}")
   end
@@ -378,27 +485,41 @@ module MGQ_MpCoopSquad
     @capped = nil
   end
 
-  # Picks the companions a team of RAID_PARTY_MAX leaves out: those past its first places, Luka
-  # always kept.
+  # Picks the companions a team of a size leaves out: those past its first places, Luka kept when
+  # he stays.
   #
   # @param ids [Array<Integer>] The team's character ids in order.
+  # @param size [Integer] The team's size.
+  # @param keep_luka [Boolean] Whether Luka stays in the team.
   # @return [Array<Integer>] The ids left out, in order.
-  def self.past_cap(ids)
-    kept = ids.select { |id| luka?(id) }.first(RAID_PARTY_MAX)
-    ids.each { |id| kept << id if kept.size < RAID_PARTY_MAX && !kept.include?(id) }
+  def self.past_cap(ids, size, keep_luka = true)
+    kept = keep_luka ? ids.select { |id| luka?(id) }.first(size) : []
+    ids.each { |id| kept << id if kept.size < size && !kept.include?(id) }
     ids - kept
   end
 
+  # Brings Luka back from standby into the team, which he left while a Raid World's rules let him.
+  #
+  # @param party [Game_Party] The team fitted.
+  def self.luka_back(party)
+    id = party.stand_actors.to_a.find { |stand_id| luka?(stand_id) }
+    return unless id
+
+    party.move_actor(id)
+    log("brought Luka back into the team: the world's rules keep him in it")
+  end
+
   # Swaps Luka into the squad's last place when he stands past it, which fitting a team leaves him
-  # in when he stood past RAID_PARTY_MAX.
+  # in when he stood past the squad.
   #
   # @param party [Game_Party] The team fitted.
   def self.luka_into_squad(party)
     place = party.actors.to_a.index { |id| luka?(id) }
-    return unless place && place >= RAID_SQUAD
+    size = raid_share(party.party_member_max, false).inject(:+)
+    return unless place && place >= size
 
-    party.swap_order(place, RAID_SQUAD - 1)
-    log("moved Luka into the squad's place #{RAID_SQUAD}, from place #{place + 1}")
+    party.swap_order(place, size - 1)
+    log("moved Luka into the squad's place #{size}, from place #{place + 1}")
   end
 
   # Reports whether a character is Luka, whom the game never sends to standby.
@@ -428,11 +549,13 @@ module MGQ_MpCoopSquad
   #
   # @param party [Game_Party] The party asked.
   # @param max [Integer] The game's party_member_max.
-  # @return [Integer] RAID_PARTY_MAX or less in a Raid World, else the game's.
+  # @return [Integer] The team's size of the Raid World's rules or less in a Raid World, else the
+  #   game's.
   def self.party_member_max(party, max)
     return max if @capped.nil? || !@capped.equal?(party) || party.temp_actors_use?
 
-    raid? ? [max, RAID_PARTY_MAX].min : max
+    cap = raid? ? team_cap : nil
+    cap ? [max, cap].min : max
   end
 
   # Reports whether a battle fights with the player's own squad of a Raid World: a battle of their
@@ -449,13 +572,13 @@ module MGQ_MpCoopSquad
   end
 
   # Keeps the members that stand in the squad's places of a Raid World battle, so a hidden squad
-  # member never lets the fourth in.
+  # member never lets the cut place in.
   #
   # @param party [Game_Party] The party.
   # @param members [Array<Game_Actor>] The game's battle members or Backline.
-  # @return [Array<Game_Actor>] Those among the team's first RAID_SQUAD places, in order.
+  # @return [Array<Game_Actor>] Those among the team's first places the squad holds, in order.
   def self.in_squad(party, members)
-    members & party.all_members.first(RAID_SQUAD)
+    members & party.all_members.first(raid_share(party.party_member_max).inject(:+))
   end
 
   # Writes every player's squad in the party, for the log, as the player's game splits the places
@@ -464,7 +587,12 @@ module MGQ_MpCoopSquad
   # @return [String] Each player's Frontline and Backline share, the leader first, the one share of
   #   everyone in a Raid World, or that the player keeps the full team outside a party.
   def self.shares_line
-    return "(front/back of #{RAID_PARTY_MAX} places): #{RAID_SHARE.join('/')} for every player in a Raid World, the rest cut" if raid?
+    if raid?
+      current = rules
+      max = $game_party.party_member_max
+      return "(front/back of #{max} places): #{raid_share(max, false).join('/')} in regular fights, #{raid_share(max, true).join('/')} in raids " \
+             "for every player in a Raid World, the rest cut; Luka #{current[:luka] ? 'may leave the team' : 'stays'}"
+    end
     return "none: the player keeps the full team outside a party" unless MGQ_MpCoop.in_party?
 
     leader = MGQ_MpCoop.party_leader
@@ -509,6 +637,99 @@ module MGQ_MpCoopSquad
     install_party_edit
     install_party_cap
     install_raid_battle
+    install_luka
+  end
+
+  # Takes the relay's word that the open Raid World's creator or an admin changed its squad rules,
+  # which the next tick fits the team to.
+  #
+  # @param message [Hash] The push: MGQ_MpOverworldSync::SQUAD_FIELD with the rules' text, marked
+  #   :relay by overworld_sync.rbx.
+  def self.pushed(message)
+    return log("ignored a squad rules push not from the relay") unless message[:relay]
+
+    text = message[MGQ_MpOverworldSync::SQUAD_FIELD]
+    taken = MGQ_MpWorld.squad_of(text)
+    return log("ignored the relay's squad rules #{text.inspect}") if taken.nil?
+    return if taken == MGQ_MpWorld.squad
+    return log("ignored the relay's squad rules outside a Raid World") unless MGQ_MpWorld.take_squad(taken)
+
+    log("the relay tells the world's squad rules are #{text} now")
+    MGQ_MpOverworldSync.notice("The world's team rules changed: #{MGQ_MpWorld.squad_summary(taken)}.")
+  rescue => e
+    log("taking the relay's squad rules failed: #{e.class}: #{e.message}")
+  end
+
+  # Enables the rows of Luka in the party edit screen, which the game disables, while he may leave
+  # the team.
+  #
+  # @param window [Foo::PTEdit::Window_PartyMember] The screen's list of the team.
+  def self.free_luka_rows(window)
+    list = MGQ_MpGame.get(window, :list)
+    Array(window.actors).each_with_index { |id, index| list[index][:enabled] = true if id && luka?(id) && list[index] }
+  end
+
+  # Sends Luka to standby in the party edit screen, as the game sends any other character, while he
+  # may leave the team: on the button, while another character stays in it.
+  #
+  # @param window [Foo::PTEdit::Window_PartyMember] The screen's list of the team.
+  def self.move_luka(window)
+    return unless MGQ_MpGame.call(window, :cursor_movable?)
+    return unless Input.trigger?(:A)
+
+    Input.update
+    if window.actors.size > 1
+      Sound.play_equip
+      MGQ_MpGame.call(window, :call_handler, :move_member)
+      window.select(0)
+    else
+      Sound.play_buzzer
+    end
+  end
+
+  # Reports whether the game's swaps of the party's order are held back, see install_luka.
+  #
+  # @return [Boolean] Whether they are.
+  def self.holding_order?
+    @holding_order
+  end
+
+  # Runs the event command of followers without its swap of Luka to the team's first place in a
+  # Raid World, where each player picks who leads.
+  #
+  # @param original [Proc] Runs the command as the game does.
+  # @return [Object] What the command returns.
+  def self.followers_command(original)
+    return original.call unless raid? && $game_party && !$game_party.temp_actors_use?
+
+    @holding_order = true
+    original.call
+  ensure
+    @holding_order = false
+  end
+
+  # Lets Luka leave the team in the party edit screen while a Raid World's rules allow it, and keeps
+  # the game from swapping him to the team's first place in a Raid World: the event command of
+  # followers, which story and defeat scenes run, swaps him there, and so does Give Up, which a Raid
+  # World offers only while he leads already.
+  def self.install_luka
+    MGQ_MpHooks.around(Game_Interpreter, :command_216, "coop_squad") { |_interpreter, _args, original| MGQ_MpCoopSquad.followers_command(original) }
+    MGQ_MpHooks.around(Game_Party, :swap_order, "coop_squad") { |_party, _args, original| MGQ_MpCoopSquad.holding_order? ? nil : original.call }
+    MGQ_MpHooks.around(BattleManager.singleton_class, :can_giveup?, "coop_squad") do |_manager, _args, original|
+      MGQ_MpCoopSquad.raid? && !MGQ_MpCoopSquad.luka_leads? ? false : original.call
+    end
+    return unless defined?(Foo::PTEdit::Window_PartyMember)
+
+    MGQ_MpHooks.around(Foo::PTEdit::Window_PartyMember, :make_command_list, "coop_squad") do |window, _args, original|
+      original.call
+      MGQ_MpCoopSquad.free_luka_rows(window) if MGQ_MpCoopSquad.luka_free?
+    end
+    MGQ_MpHooks.around(Foo::PTEdit::Window_PartyMember, :process_move_member, "coop_squad") do |window, _args, original|
+      actor = MGQ_MpCoopSquad.luka_free? ? window.select_actor : nil
+      actor && actor.luca? ? MGQ_MpCoopSquad.move_luka(window) : original.call
+    end
+  rescue => e
+    log("Luka hooks FAILED: #{e.class}: #{e.message}")
   end
 
   # Caps the party's size in a Raid World, see party_member_max.
@@ -519,15 +740,15 @@ module MGQ_MpCoopSquad
   end
 
   # Fights a battle of the player's own or a duel in a Raid World with their squad, see
-  # raid_battle?: one character on the Frontline and two on the Backline, the fourth out of the
-  # battle even for the skills that reach the Backline too.
+  # raid_battle?: the Frontline and the Backline the world's rules give for the fight, the cut place
+  # out of the battle even for the skills that reach the Backline too.
   #
   # The game's Backline window and swap count the Backline's places from max_battle_members, so the
   # Frontline is narrowed there. The game skips hidden members when it counts, so both lists are
   # also kept to the squad's places.
   def self.install_raid_battle
     MGQ_MpHooks.around(Game_Party, :max_battle_members, "coop_squad") do |party, _args, original|
-      MGQ_MpCoopSquad.raid_battle?(party) ? MGQ_MpCoopSquad::RAID_SHARE[0] : original.call
+      MGQ_MpCoopSquad.raid_battle?(party) ? MGQ_MpCoopSquad.raid_share(party.party_member_max)[0] : original.call
     end
     [:battle_members, :bench_members].each do |name|
       MGQ_MpHooks.around(Game_Party, name, "coop_squad") do |party, _args, original|
@@ -695,6 +916,7 @@ end
 begin
   MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpCoopSquad.tick(in_world) }
   MGQ_MpOverworldSync.state_fields { MGQ_MpCoopSquad.state_fields }
+  MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::SQUAD_FIELD) { |_peer, message| MGQ_MpCoopSquad.pushed(message) }
 rescue => e
   MGQ_MpCoopSquad.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end

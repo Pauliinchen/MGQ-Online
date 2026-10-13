@@ -2,6 +2,7 @@
 #  start_choice_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Expected the longer call of mp_dir_create and the rows of the squad rules' button
 #      Paulinchen  2026-10-12: Expected the warning before a new player takes the creator's starting save
 #                            - Stood in for Ini.load and the favourites in Player.ini
 #      Paulinchen  2026-10-11: Expected the created world's name with the confirm hint and the cursor on it
@@ -216,7 +217,7 @@ form = MGQ_MpWorld::Form.create
 choose = form.fields.find { |field| field.key == :choose }
 check("the form has a Player's choice checkbox beside Shared save", [choose.kind, choose.row, choose.side, choose.label, choose.group], [:check, 3, :right, "Player's choice", "World"])
 check("Players choose starts unticked", form[:choose], false)
-check("the button comes last", form.fields.last.row, 9)
+check("the button comes last", form.fields.last.row, 10)
 check("a form with Players choose ticked alone can be sent", (form[:name] = "W"; form[:password] = "p"; form[:choose] = true; form.problem), nil)
 
 # The directory.
@@ -224,7 +225,7 @@ $dll["mp_dir_list"] = "state=ready\n\nworld\tw1\t4\t0\tc\t0\tC\tFree\tnone\t0\t1
 _, _, listed, = MGQ_MpWorld::Directory.list
 check("the list reads which worlds let their players choose", listed.map { |world| world.choose }, [true, false, false])
 MGQ_MpWorld::Directory.create("W", "p", 4, false, true, "")
-check("create hands Players choose to the DLL", $calls.last[0..1] + [$calls.last[2][4]], ["mp_dir_create", "pplllpppplppppll", 1])
+check("create hands Players choose to the DLL", $calls.last[0..1] + [$calls.last[2][4]], ["mp_dir_create", "pplllpppplppppllp", 1])
 
 # What the details say.
 detail = Window_MpWorldDetail.allocate

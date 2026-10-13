@@ -2,6 +2,7 @@
 #  battles_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Brought a Raid World player's squad by the world's squad rules
 #      Paulinchen  2026-10-12: Joined the battle of the story whose call is about to bring the player over
 #                            - Took a joining player's party_member_max only as a number
 #                            - Picked a defeat scene of the troop for a guest who takes the battle over
@@ -129,8 +130,8 @@
 # player who starts it hosts it; of a random encounter and another player's battle started at the
 # same moment, an event's battle or else the player who entered the map first hosts, and the other
 # joins as a guest with the players who joined them (see rival? and follows?). Every player's
-# squad is one on the Frontline and two on the Backline, however many play and when left alone
-# too, and no level sync runs. A random encounter on a map where a battle already runs joins that
+# squad follows the world's squad rules, their first character always on the Frontline however
+# many play, and no level sync runs. A random encounter on a map where a battle already runs joins that
 # battle instead (see battles_coop_hotjoin.rbx), and a player near a running battle may join it by
 # choice (see battles_coop_join.rbx).
 #
@@ -149,7 +150,8 @@ module MGQ_MpBattlesCoop
   # players to join after it sent the invite.
   ROSTER_FRAMES = JOIN_FRAMES + ROSTER_MARGIN_FRAMES
 
-  # Players of a battle in a Raid World at most, the host included: one each on the Frontline.
+  # Players of a battle in a Raid World at most, the host included: as many as the Frontline has
+  # places, each player's first character on it.
   RAID_PLAYERS = 4
 
   # What another player in a Raid World does, by their state's scene, while they may be invited:
@@ -1842,17 +1844,25 @@ module MGQ_MpBattlesCoop
   # Both sides.
 
   # Writes the player's characters for a co-op battle: as many as their squad holds with the fewest
-  # players, the first three in a Raid World, which the battle's places then count. Starts the
-  # battle's party anew.
+  # players, in a Raid World its larger squad of a regular fight and a raid, which the battle's
+  # places then count. Starts the battle's party anew.
   #
   # @return [Array] The builds, see MGQ_MpActors::Builds, each character's HP and MP, and the
   #   player's party_member_max, which decides their share of the Backline.
   def self.own_build
     max = $game_party.party_member_max
-    front, bench = MGQ_MpCoopSquad.battle_share(0, FEWEST_PLAYERS, max)
-    @own_squad = MGQ_MpCoopSquad.own_order.first(front + bench)
+    squad = MGQ_MpCoopSquad
+    if squad.raid?
+      size = squad.largest_squad(max)
+      @own_squad = squad.own_order(size)
+      limit = "a squad of #{size}"
+    else
+      front, bench = squad.battle_share(0, FEWEST_PLAYERS, max)
+      @own_squad = squad.own_order.first(front + bench)
+      limit = "#{front} + #{bench}"
+    end
     @allies = {}
-    log("brings #{@own_squad.size} characters (up to #{front} + #{bench} of party_member_max #{max}): #{squad_text}")
+    log("brings #{@own_squad.size} characters (up to #{limit} of party_member_max #{max}): #{squad_text}")
     [MGQ_MpActors::Builds.write(@own_squad), @own_squad.map { |actor| [actor.hp, actor.mp] }, max]
   end
 
@@ -1880,8 +1890,8 @@ module MGQ_MpBattlesCoop
   # Orders the battle's players as their party does, the leader first, and tells each player's
   # share of the Frontline and of the Backline in the battle, and the order of their places. A
   # co-op battle in a Raid World puts its host first, whose game calls this, and gives every player
-  # one and two (see MGQ_MpCoopSquad.battle_share); a team duel's shares are split as in a Classic
-  # world.
+  # their squad by the world's rules, with the Frontline's places split between them (see
+  # MGQ_MpCoopSquad.battle_share); a team duel's shares are split as in a Classic world.
   #
   # @param players [Array<Player, Array>] The players, or their fields: at least each one's seat,
   #   name, builds, HP and MP and party_member_max.
@@ -2168,7 +2178,7 @@ module MGQ_MpBattlesCoop
   end
 
   # As host, fights on alone with the player's own full team, as in a battle of their own: in a Raid
-  # World one character on the Frontline and two on the Backline.
+  # World their squad by the world's squad rules.
   #
   # @param scene [Scene_Battle] The battle.
   def self.go_solo(scene)

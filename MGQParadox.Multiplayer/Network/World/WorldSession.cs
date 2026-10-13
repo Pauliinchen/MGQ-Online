@@ -2,6 +2,7 @@
 //  WorldSession.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-13: Handed changed Raid World squad settings to the game script as a squad entry
 //      Paulinchen  2026-10-12: Paced its sends to at most 50 a second after a burst of 200 and logged pacing and too-fast closes
 //                            - Cut a running connect once the world is left or entered anew, and connected again when the cut connect took the new one's place
 //                            - Took a "replaced" close as the cut connect's only while it could still take a seat, and stopped for good when turned away as too old
@@ -155,7 +156,14 @@ internal sealed class WorldSession
     public const string DifficultyKind = "difficulty";
 
     /// <summary>
-    /// The difficulty now, in a <see cref="DifficultyKind"/> entry; 1 or 0 for whether the world
+    /// The kind of an inbox entry that tells a Raid World's creator or an admin changed its squad
+    /// settings, and the word that starts the relay's text frame saying so, as Relay/README.md names it.
+    /// </summary>
+    public const string SquadKind = RaidSquad.Name;
+
+    /// <summary>
+    /// The difficulty now, in a <see cref="DifficultyKind"/> entry; the squad settings now as text,
+    /// see <see cref="RaidSquad"/>, in a <see cref="SquadKind"/> entry; 1 or 0 for whether the world
     /// turns other mods off, in a <see cref="ModsRuleKind"/> entry.
     /// </summary>
     public const string ValueHeader = "value";
@@ -878,7 +886,7 @@ internal sealed class WorldSession
     /// </summary>
     /// <param name="generation">The open this belongs to.</param>
     /// <param name="connection">The connection.</param>
-    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c>, <c>pong</c>, <c>slow chat</c>, <c>story 12</c>, <c>boss 0.25 5000000 0 Queen Harpy</c>, <c>difficulty 2</c>, <c>mods_rule 1</c>, a tab and the mods text, or <c>chat Global</c>, a tab and the line.</param>
+    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c>, <c>pong</c>, <c>slow chat</c>, <c>story 12</c>, <c>boss 0.25 5000000 0 Queen Harpy</c>, <c>difficulty 2</c>, <c>squad 1 6 2 1</c>, <c>mods_rule 1</c>, a tab and the mods text, or <c>chat Global</c>, a tab and the line.</param>
     private void TakeText(int generation, Connection connection, string text)
     {
         if (text == RelayWorldChannel.Pong)
@@ -914,6 +922,12 @@ internal sealed class WorldSession
         if (text.StartsWith($"{DifficultyKind} ", StringComparison.Ordinal))
         {
             TakeDifficulty(generation, connection, text[(DifficultyKind.Length + 1)..]);
+            return;
+        }
+
+        if (text.StartsWith($"{SquadKind} ", StringComparison.Ordinal))
+        {
+            TakeSquad(generation, connection, text[(SquadKind.Length + 1)..]);
             return;
         }
 
@@ -1070,6 +1084,33 @@ internal sealed class WorldSession
         }
 
         Log.Write($"world difficulty changed at the relay, now {difficulty.ToString(CultureInfo.InvariantCulture)}");
+    }
+
+    /// <summary>
+    /// Hands the relay's word that a Raid World's squad settings changed to the game script.
+    /// </summary>
+    /// <param name="generation">The open this belongs to.</param>
+    /// <param name="connection">The connection.</param>
+    /// <param name="value">The squad settings now, as the relay wrote them.</param>
+    private void TakeSquad(int generation, Connection connection, string value)
+    {
+        if (RaidSquad.Normalize(value) is not { } squad)
+        {
+            Log.Write("world room squad text ignored, its value holds no squad settings");
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (generation != _generation || connection != _connection)
+            {
+                return;
+            }
+
+            Enqueue(new Message([new(Message.Kind, SquadKind), new(ValueHeader, squad)]).Encode());
+        }
+
+        Log.Write($"world squad settings changed at the relay, now {squad}");
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 #  world_open_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Checked a Raid World's squad rules in the list, the details, world.ini and the open world
 #      Paulinchen  2026-10-12: Checked the title screen's Multiplayer command handler
 #                            - Checked when the worlds take the mouse wheel
 #                            - Checked the favourites in Player.ini and unreadable Player.ini and world.ini files
@@ -474,14 +475,16 @@ check("a code without them tells none", MGQ_MpWorld::World.new("abcdef012345", {
 # Raid Worlds: the type and companion sharing the list reads, their place and colour, the details,
 # world.ini, what every script asks of the open world, and the new world's form.
 $dll["mp_dir_list"] = "state=ready\n\n" \
-  "world\tr1\t4\t0\tc\t0\tC\tRaid Night\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\traid\tstory\t1\n" \
-  "world\tr2\t4\t0\tc\t0\tGlobal\tRaid Gold\tnone\t0\t0\t1\t1\t0\t\t\t\t\t\traid\tall\t\n" \
-  "world\tw1\t4\t0\tc\t0\tC\tPlain\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t3\n" \
+  "world\tr1\t4\t0\tc\t0\tC\tRaid Night\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\traid\tstory\t1\t\t1 6 2 1\n" \
+  "world\tr2\t4\t0\tc\t0\tGlobal\tRaid Gold\tnone\t0\t0\t1\t1\t0\t\t\t\t\t\traid\tall\t\t\t\n" \
+  "world\tw1\t4\t0\tc\t0\tC\tPlain\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t3\t\t0 4 1 1\n" \
   "world\tw3\t4\t0\tc\t0\tC\tOld\tnone\t0\t0\n"
 _, _, typed, = MGQ_MpWorld::Directory.list
 check("the list reads each world's type and companion sharing, Classic sharing none without them",
       typed.map { |world| [world.type, world.share, world.raid?] }, [["raid", "story", true], ["raid", "all", true], ["classic", "off", false], ["classic", "off", false]])
 check("and a Raid World's difficulty, none for one without it and for every Classic world", typed.map { |world| world.difficulty }, [1, nil, nil, nil])
+check("and a Raid World's squad rules, none for one without them and for every Classic world", typed.map { |world| world.squad },
+      [{ :luka => true, :formation => 6, :front => 2, :raid_front => 1 }, nil, nil, nil])
 raid_entries = MGQ_MpWorld.entries(typed, true)
 check("Raid Worlds come above every other world, favourites and featured ones too", raid_entries.map { |entry| entry.name }, ["Raid Gold", "Raid Night", "Old", "Plain"])
 raid_local = MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "name" => "Kept", "type" => "raid", "share" => "story")
@@ -519,7 +522,10 @@ check("a Raid World's players start at the beginning, on the difficulty it sets"
 check("or each on their own in one that sets none", cell_of(detail.panels(raid_entries[0], "me"), "Difficulty").text, "Per player")
 check("and a Classic world names no difficulty", cell_of(detail.panels(raid_entries[3], "me"), "Difficulty"), nil)
 plain_panels = detail.panels(raid_entries[3], "me")
-check("but a Classic world's World panel keeps its three rows, with no type row", [plain_panels[0].rows.size, cell_of(plain_panels, "Type"), raid_panels[0].rows.size], [3, nil, 4])
+check("but a Classic world's World panel keeps its three rows, with no type row", [plain_panels[0].rows.size, cell_of(plain_panels, "Type"), raid_panels[0].rows.size], [3, nil, 6])
+check("a Raid World's details tell its squad rules", ["Luka", "Formation", "Frontline"].map { |label| cell_of(raid_panels, label).text }, ["Replaceable", "6", "2 | 1  (regular | raids)"])
+check("the defaults for one that names none", ["Luka", "Formation", "Frontline"].map { |label| cell_of(detail.panels(raid_entries[0], "me"), label).text }, ["Fixed", "4", "1 | 1  (regular | raids)"])
+check("and a Classic world's none", ["Luka", "Formation", "Frontline"].map { |label| cell_of(plain_panels, label) }, [nil, nil, nil])
 saved_raid = typed[0].dup
 saved_raid.start = "ready"
 MGQ_MpWorld.instance_variable_set(:@dev_build, true)
@@ -536,16 +542,19 @@ MGQ_MpWorld::Link.define_singleton_method(:id_of) { |code| code[/\A[0-9a-f]{12}/
 Dir.mktmpdir do |root|
   Dir.chdir(root) do
     FileUtils.mkdir_p(File.join("Patch", "Multiplayer"))
-    MGQ_MpWorld::World.found("0123456789ab;token;relay;4", "Raid Night", "r1", "raid", "story", -1)
+    MGQ_MpWorld::World.found("0123456789ab;token;relay;4", "Raid Night", "r1", "raid", "story", -1, { :luka => true, :formation => 0, :front => 3, :raid_front => 4 })
     kept = ini["Patch/Multiplayer/Worlds/0123456789ab/world.ini"]
-    check("world.ini keeps a Raid World's type, companion sharing and difficulty", [kept["type"], kept["share"], kept["difficulty"]], ["raid", "story", -1])
+    check("world.ini keeps a Raid World's type, companion sharing, difficulty and squad rules", [kept["type"], kept["share"], kept["difficulty"], kept["squad"]], ["raid", "story", -1, "1 0 3 4"])
     read_back = MGQ_MpWorld::World.read("0123456789ab")
-    check("which read back tell a Raid World", [read_back.raid?, read_back.companion_sharing, read_back.difficulty], [true, :story, -1])
+    check("which read back tell a Raid World", [read_back.raid?, read_back.companion_sharing, read_back.difficulty, read_back.squad],
+          [true, :story, -1, { :luka => true, :formation => 0, :front => 3, :raid_front => 4 }])
     MGQ_MpWorld::World.found("0123456789ab;token;relay;4", "Raid Night", "r1")
-    check("and stay when the world is found again without them", [MGQ_MpWorld::World.read("0123456789ab").raid?, MGQ_MpWorld::World.read("0123456789ab").difficulty], [true, -1])
-    read_back.describe("Raid Night", "r1", nil, nil, nil, 3)
+    check("and stay when the world is found again without them", [MGQ_MpWorld::World.read("0123456789ab").raid?, MGQ_MpWorld::World.read("0123456789ab").difficulty,
+                                                                 MGQ_MpWorld::World.read("0123456789ab").squad[:formation]], [true, -1, 0])
+    read_back.describe("Raid Night", "r1", nil, nil, nil, 3, { :luka => false, :formation => 7, :front => 1, :raid_front => 2 })
     read_back.write
-    check("a difficulty the list tells on entry replaces the one kept", MGQ_MpWorld::World.read("0123456789ab").difficulty, 3)
+    check("a difficulty and squad rules the list tells on entry replace the ones kept", [MGQ_MpWorld::World.read("0123456789ab").difficulty, ini["Patch/Multiplayer/Worlds/0123456789ab/world.ini"]["squad"]],
+          [3, "0 7 1 2"])
     MGQ_MpWorld::World.found("fedcba987654;token;relay;4", "Plain", "w1", "classic", "off")
     check("a Classic world is kept as one", [MGQ_MpWorld::World.read("fedcba987654").raid?, MGQ_MpWorld::World.read("fedcba987654").companion_sharing], [false, :off])
   end
@@ -574,6 +583,33 @@ check("the difficulties carry the game's own names", [MGQ_MpWorld.difficulty_nam
       ["VERY EASY", "NORMAL", "PARADOX", nil])
 MGQ_MpWorld.instance_variable_set(:@world, nil)
 
+# A Raid World's squad rules: read and written as text, and what every script asks of the open world.
+check("squad rules read from their text", [MGQ_MpWorld.squad_of("0 4 1 1"), MGQ_MpWorld.squad_of("1 0 4 3"), MGQ_MpWorld.squad_of(" 1  8 2 2 ")],
+      [{ :luka => false, :formation => 4, :front => 1, :raid_front => 1 }, { :luka => true, :formation => 0, :front => 4, :raid_front => 3 },
+       { :luka => true, :formation => 8, :front => 2, :raid_front => 2 }])
+check("and written back the same", ["0 4 1 1", "1 0 4 3", "1 8 2 2"].map { |text| MGQ_MpWorld.squad_text(MGQ_MpWorld.squad_of(text)) }, ["0 4 1 1", "1 0 4 3", "1 8 2 2"])
+check("an empty text or a value out of its range is none",
+      [nil, "", "0 4 1", "0 4 1 1 1", "2 4 1 1", "0 3 1 1", "0 9 1 1", "0 4 0 1", "0 4 1 5", "0 4 -1 1", "a 4 1 1", "0 4.0 1 1"].map { |text| MGQ_MpWorld.squad_of(text) },
+      [nil] * 12)
+check("Formation sizes are named for texts", [MGQ_MpWorld.formation_name(0), MGQ_MpWorld.formation_name(4), MGQ_MpWorld.formation_name(8)], ["Original", "4", "8"])
+check("outside a world there are no squad rules", MGQ_MpWorld.squad, nil)
+MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "type" => "classic", "squad" => "1 6 2 2"))
+check("nor in a Classic world, whatever its world.ini says, which takes none", [MGQ_MpWorld.squad, MGQ_MpWorld.take_squad(MGQ_MpWorld::DEFAULT_SQUAD)], [nil, false])
+MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "type" => "raid"))
+check("a Raid World that names none plays with the defaults", MGQ_MpWorld.squad, { :luka => false, :formation => 4, :front => 1, :raid_front => 1 })
+MGQ_MpWorld.squad[:formation] = 8
+check("which no caller changes", MGQ_MpWorld::DEFAULT_SQUAD[:formation], 4)
+MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "type" => "raid", "squad" => "1 6 2 3"))
+check("a Raid World tells its squad rules", MGQ_MpWorld.squad, { :luka => true, :formation => 6, :front => 2, :raid_front => 3 })
+check("and takes new ones the relay tells, keeping them in world.ini",
+      [MGQ_MpWorld.take_squad(MGQ_MpWorld.squad_of("0 0 4 1")), MGQ_MpWorld.squad, ini["Patch/Multiplayer/Worlds/abcdef012345/world.ini"]["squad"]],
+      [true, { :luka => false, :formation => 0, :front => 4, :raid_front => 1 }, "0 0 4 1"])
+check("but none out of range, nor nothing", [MGQ_MpWorld.take_squad({ :luka => false, :formation => 3, :front => 1, :raid_front => 1 }), MGQ_MpWorld.take_squad(nil), MGQ_MpWorld.squad[:formation]],
+      [false, false, 0])
+MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "type" => "raid", "squad" => "lots"))
+check("a world.ini's squad rules this game cannot read are the defaults", MGQ_MpWorld.squad, MGQ_MpWorld::DEFAULT_SQUAD)
+MGQ_MpWorld.instance_variable_set(:@world, nil)
+
 # The new world's form.
 raid_form = MGQ_MpWorld::Form.create
 type_field = raid_form.fields.find { |field| field.key == :type }
@@ -585,7 +621,7 @@ raid_form[:share] = 1
 check("a Raid World brings it back", [raid_form.fields.include?(share_field), raid_form.type, raid_form.share], [true, "raid", "story"])
 check("whose hints fit the lines at the top", [type_field.hint.size <= 100, share_field.hint.size <= 100], [true, true])
 MGQ_MpWorld::Directory.create("Raid Night", "", 4, false, false, "", :type => "raid", :share => "story")
-check("create hands the type and the sharing to the DLL", [$calls.last[1], $calls.last[2][12..13]], ["pplllpppplppppll", ["raid\0", "story\0"]])
+check("create hands the type and the sharing to the DLL", [$calls.last[1], $calls.last[2][12..13]], ["pplllpppplppppllp", ["raid\0", "story\0"]])
 MGQ_MpWorld::Directory.create("Plain", "", 4, false, false, "", :share => "all")
 check("a Classic world shares nothing", $calls.last[2][12..13], ["classic\0", "off\0"])
 

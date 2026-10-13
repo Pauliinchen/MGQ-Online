@@ -2,6 +2,8 @@
 #  world_screen.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Sent a Raid World's squad rules with the new world and the edits, and showed them in the details
+#                            - Opened a Raid World's squad rules in a form of their own and went back from it
 #      Paulinchen  2026-10-12: Asked before taking a world's starting save unless the player created the world
 #                            - Scrolled the worlds, the choices, the list box, the mod picker and a description with the mouse wheel
 #                            - Drew the scrollbars of the worlds and the choices through the shared list windows
@@ -542,7 +544,7 @@ class Scene_MpWorlds < Scene_MenuBase
     elsif @entry.password_known?
       listed = @entry.listed
       log_screen("entering #{entry_text} from its folder #{@entry.local.id}#{listed ? '' : ' (deleted from the list, saves kept)'}")
-      @entry.local.describe(listed.name, listed.id, listed.seats, listed.type, listed.share, listed.difficulty) if listed
+      @entry.local.describe(listed.name, listed.id, listed.seats, listed.type, listed.share, listed.difficulty, listed.squad) if listed
       enter(@entry.local, listed && listed.start, listed && listed.choose)
     elsif @entry.open?
       log_screen("opening #{entry_text}, which has no password")
@@ -1151,7 +1153,8 @@ class Scene_MpWorlds < Scene_MenuBase
     end
 
     log_screen("left the form #{@form_symbol}") if @form_symbol
-    WORLD_FORMS.each { |symbol| @forms.delete(symbol) }
+    (WORLD_FORMS + [:limits]).each { |symbol| @forms.delete(symbol) }
+    @limits_from = nil
     @form_symbol = nil
     @hinted = nil
     @form_window.unselect
@@ -1163,9 +1166,43 @@ class Scene_MpWorlds < Scene_MenuBase
   # Leaves the form the player backed out of; backing out of the password of the world the game
   # started again for ends that entry.
   def on_form_cancel
+    return close_limits if @form_symbol == :limits
+
     password = @form_symbol == :password
     leave_form
     give_up_parking(nil) if password && @rejoin_entering && MGQ_MpModParking.holding?
+  end
+
+  # Opens the form of a Raid World's squad rules from the form the player fills in, which keeps
+  # whatever the rules' form changes.
+  def open_limits
+    @limits_from = [@form_symbol, @field_index]
+    @forms[:limits] = form.limits
+    log_screen("opened the formation limits of the form #{@form_symbol}")
+    show_form(:limits, 0)
+  end
+
+  # Goes back from the form of a Raid World's squad rules to the form it was opened from, at its
+  # button, keeping the rules picked.
+  def close_limits
+    symbol, index = @limits_from
+    @limits_from = nil
+    log_screen("closed the formation limits: #{MGQ_MpWorld.squad_summary(form.squad)}")
+    @forms.delete(:limits)
+    show_form(symbol, index || 0)
+  end
+
+  # Puts another form in the form window, with the cursor on one of its fields.
+  #
+  # @param symbol [Symbol] The form's key in @forms.
+  # @param index [Integer] The field.
+  def show_form(symbol, index)
+    @form_symbol = symbol
+    @field_index = index
+    @hinted = nil
+    @form_window.form = form
+    @form_window.select(index)
+    @form_window.activate
   end
 
   # Puts the cursor back on the form after another screen, at the field it left from.
@@ -1196,7 +1233,12 @@ class Scene_MpWorlds < Scene_MenuBase
       log_screen("opening the save screen for the new world's starting save")
       MGQ_MpSaveDistribution.choose(:world)
     when :button
-      field.key == :data ? update_data : send_form
+      case field.key
+      when :data then update_data
+      when :limits then open_limits
+      when :done then close_limits
+      else send_form
+      end
     when :mods
       open_mod_pick
     else
@@ -1681,10 +1723,10 @@ class Scene_MpWorlds < Scene_MenuBase
     @resume_form = true
   end
 
-  # Changes the chosen world as the form says, a Raid World's difficulty and Turn off other mods with
-  # it only when the form changed them, since the relay tells every player in it of either; its
-  # creator's game sends the hashes of its required mods outside the catalog too, and then its mod
-  # settings when Shared Mod Settings changed.
+  # Changes the chosen world as the form says, a Raid World's difficulty and squad rules and Turn off
+  # other mods with it only when the form changed them, since the relay tells every player in it of
+  # each; its creator's game sends the hashes of its required mods outside the catalog too, and then
+  # its mod settings when Shared Mod Settings changed.
   def edit_world
     values = form
     own = @entry.listed.creator_id == @me
@@ -1693,16 +1735,21 @@ class Scene_MpWorlds < Scene_MenuBase
     @edited_settings = own && values[:shared] != MGQ_MpWorldMods.shared?(settings) ? (values[:shared] ? MGQ_MpWorldMods.with_marker(settings) : "") : nil
     difficulty = @entry.listed.raid? ? values.difficulty : nil
     @edited_difficulty = difficulty && difficulty != @entry.listed.difficulty ? difficulty : nil
+    squad = @entry.listed.raid? ? values.squad : nil
+    @edited_squad = squad && squad != (@entry.listed.squad || MGQ_MpWorld::DEFAULT_SQUAD) ? squad : nil
     @edited_other_mods = values.other_mods_off? == (@entry.listed.other_mods_off ? true : false) ? nil : values.other_mods_off?
-    start_action("edit") { MGQ_MpWorld::Directory.edit(@entry.id, values[:seats].to_i, values[:description], values[:mods], hashes, @edited_difficulty, @edited_other_mods) }
+    start_action("edit") do
+      MGQ_MpWorld::Directory.edit(@entry.id, values[:seats].to_i, values[:description], values[:mods], hashes, @edited_difficulty, @edited_other_mods, @edited_squad)
+    end
   end
 
-  # Tells the creator or the admin that a Raid World's players play on its new difficulty, those
-  # in it now at once, and what turning other mods off or on does for its players.
+  # Tells the creator or the admin that a Raid World's players play on its new difficulty and with
+  # its new squad rules, and what turning other mods off or on does for its players.
   #
-  # @return [String] The sentences after the one that the world was changed, empty when neither changed.
+  # @return [String] The sentences after the one that the world was changed, empty when none changed.
   def difficulty_text
     text = @edited_difficulty ? " Its players play on #{MGQ_MpWorld.difficulty_name(@edited_difficulty)} now." : ""
+    text += " Its squads: #{MGQ_MpWorld.squad_summary(@edited_squad)}." if @edited_squad
     return text if @edited_other_mods.nil?
 
     text + (@edited_other_mods ? " Players in it with other mods enter again without them." : " Its players keep their mods from their next entry.")
@@ -1760,11 +1807,11 @@ class Scene_MpWorlds < Scene_MenuBase
     files = values.from_save? ? MGQ_MpSaveDistribution.files_of(values[:save]) : []
     raid = values.type == MGQ_MpWorld::RAID
     @creating = values[:name]
-    @creating_kind = [values.type, values.share, raid ? values.difficulty : nil]
+    @creating_kind = [values.type, values.share, raid ? values.difficulty : nil, raid ? values.squad : nil]
     @start_files = files
     about = { :description => values[:description], :mods => values[:mods], :data => MGQ_MpWorld::GameData.fingerprint, :strict => !values[:mismatch],
               :mod_hashes => MGQ_MpWorldMods.creator_hashes(values[:mods]), :settings => values[:shared] ? MGQ_MpWorldMods::MARKER : "",
-              :type => values.type, :share => values.share, :difficulty => values.difficulty, :other_mods_off => values.other_mods_off? }
+              :type => values.type, :share => values.share, :difficulty => values.difficulty, :squad => values.squad, :other_mods_off => values.other_mods_off? }
     start_action("create") { MGQ_MpWorld::Directory.create(values[:name], values[:password], values[:seats].to_i, values[:hidden], values.choose?, MGQ_MpSaveDistribution.text_of(files), about) }
   end
 
@@ -1969,7 +2016,7 @@ class Scene_MpWorlds < Scene_MenuBase
       return false
     end
 
-    world = MGQ_MpWorld::World.found(action["code"], @entry.name, action["world"], @entry.listed.type, @entry.listed.share, @entry.listed.difficulty)
+    world = MGQ_MpWorld::World.found(action["code"], @entry.name, action["world"], @entry.listed.type, @entry.listed.share, @entry.listed.difficulty, @entry.listed.squad)
 
     unless world
       say("The world's folder could not be created.")
@@ -2776,7 +2823,7 @@ class Window_MpWorldDetail < Window_Base
   end
 
   # Tells who made a world, how full it is, how it is entered, where its new players start, and for a
-  # Raid World its type, how it shares companions and its difficulty.
+  # Raid World its type, how it shares companions, its difficulty and its squad rules.
   #
   # A Classic world gets no type row, since every row takes a line from the description below.
   #
@@ -2791,6 +2838,7 @@ class Window_MpWorldDetail < Window_Base
     ]
     rows << type_row(listed) if listed.raid?
     rows << (listed.raid? ? start_row(listed) : [Cell.new("Start", start_text(listed), :normal)])
+    rows.concat(squad_rows(listed)) if listed.raid?
     Panel.new("World", listed.featured ? "featured: one of the relay's own" : nil, rows)
   end
 
@@ -2987,6 +3035,17 @@ class Window_MpWorldDetail < Window_Base
   # @return [Array<Cell>] The row's two cells.
   def start_row(listed)
     [Cell.new("Start", raid_start_text(listed), :normal), Cell.new("Difficulty", MGQ_MpWorld.difficulty_name(listed.difficulty) || "Per player", :normal)]
+  end
+
+  # Tells a Raid World's squad rules: whether Luka may leave a team, the Formation size, and the
+  # Frontline in regular fights and in raids.
+  #
+  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The Raid World in the directory.
+  # @return [Array<Array<Cell>>] The two rows.
+  def squad_rows(listed)
+    squad = listed.squad || MGQ_MpWorld::DEFAULT_SQUAD
+    [[Cell.new("Luka", squad[:luka] ? "Replaceable" : "Fixed", :normal), Cell.new("Formation", MGQ_MpWorld.formation_name(squad[:formation]), :normal)],
+     [Cell.new("Frontline", "#{squad[:front]} | #{squad[:raid_front]}  (regular | raids)", :normal)]]
   end
 
   # Tells where a Raid World's new players start: at the beginning, or from the creator's save,

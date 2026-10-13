@@ -2,6 +2,7 @@
 #  mod_parking_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Expected the row of a Raid World's squad rules' button and the squad rules after the other mods in the DLL calls
 #      Paulinchen  2026-10-12: Stood in for Ini.load and the favourites and hidden worlds in Player.ini
 #      Paulinchen  2026-10-10: Checked the restart for downloaded mods with and without parked mods
 #                            - Checked failed parked restarts, mods not back on and linked scripts before a download
@@ -375,7 +376,7 @@ Dir.mktmpdir do |folder|
     other = form.fields.find { |field| field.key == :other_mods_off }
     type = form.fields.find { |field| field.key == :type }
     check("the new world's form has Turn off other mods below Shared Mod Settings, unticked for a Classic world",
-          [other.kind, other.label, other.group, other.row, form[:other_mods_off]], [:check, "Turn off other mods", "Game data", 7, false])
+          [other.kind, other.label, other.group, other.row, form[:other_mods_off]], [:check, "Turn off other mods", "Game data", 8, false])
     check("whose hint fits the lines at the top and tells that personal mods stay", [other.hint.size <= 100, other.hint.include?("Personal mods stay on")], [true, true])
     form.turn(type, 1)
     check("a Raid World ticks it", form.other_mods_off?, true)
@@ -383,18 +384,18 @@ Dir.mktmpdir do |folder|
     form.turn(type, 1)
     form.turn(type, 1)
     check("once the player unticked it, the type no longer changes it", form.other_mods_off?, false)
-    check("the form keeps to the screen: the Raid-only and Classic-only rows share one, as do the Save and the Difficulty",
-          [form.fields.map { |field| field.row }.uniq.size, (form.turn(type, 1); form.fields.map { |field| field.row }.uniq.size)], [10, 10])
+    check("the form keeps to the screen: the Raid-only and Classic-only rows share one, and a development build's Raid World adds the row of its squad rules' button",
+          [form.fields.map { |field| field.row }.uniq.size, (form.turn(type, 1); form.fields.map { |field| field.row }.uniq.size)], [11, 10])
     MGQ_MpWorld::Directory.create("W", "", 4, false, false, "", :type => "raid")
-    check("create sends a Raid World with other mods off unless told otherwise", $calls.last[1].last, 1)
+    check("create sends a Raid World with other mods off unless told otherwise", $calls.last[1][-2], 1)
     MGQ_MpWorld::Directory.create("W", "", 4, false, false, "")
-    check("and a Classic world with them allowed", $calls.last[1].last, 0)
+    check("and a Classic world with them allowed", $calls.last[1][-2], 0)
     MGQ_MpWorld::Directory.create("W", "", 4, false, false, "", :type => "raid", :other_mods_off => false)
-    check("or as the form says", $calls.last[1].last, 0)
+    check("or as the form says", $calls.last[1][-2], 0)
     MGQ_MpWorld::Directory.edit("w1", 4, "", "", nil, nil, true)
-    check("an edit sends it with its flag when it changed", $calls.last[1][-2..-1], [1, 1])
+    check("an edit sends it with its flag when it changed", $calls.last[1][-3..-2], [1, 1])
     MGQ_MpWorld::Directory.edit("w1", 4, "", "")
-    check("and leaves it otherwise", $calls.last[1][-2..-1], [0, 0])
+    check("and leaves it otherwise", $calls.last[1][-3..-2], [0, 0])
     edit = MGQ_MpWorld::Form.edit(strict)
     check("the edit form has it for an admin too, ticked as the world is", [edit.fields.map { |field| field.key }, edit[:other_mods_off]], [[:seats, :mods, :other_mods_off, :description, :confirm], true])
 

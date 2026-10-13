@@ -2,6 +2,7 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Named mp_dir_create and mp_dir_edit with a Raid World's squad rules
 #      Paulinchen  2026-10-12: Loaded world_affection.rbx after world_catchup_exp.rbx
 #                            - Loaded world_overview_pages.rbx after world_overview.rbx
 #                            - Read the mouse wheel's notches once a frame through mp_mouse_wheel
@@ -814,10 +815,10 @@ module MGQ_Multiplayer
       'mp_dir_refresh' => 'v',
       'mp_dir_find' => 'p',
       'mp_dir_list' => READ_ARGUMENTS,
-      'mp_dir_create' => 'pplllpppplppppll',
+      'mp_dir_create' => 'pplllpppplppppllp',
       'mp_dir_unlock' => 'pp',
       'mp_dir_unlock_code' => 'p',
-      'mp_dir_edit' => 'plppplllll',
+      'mp_dir_edit' => 'plppplllllp',
       'mp_dir_set_settings' => 'pp',
       'mp_dir_set_data' => 'pp',
       'mp_dir_delete' => 'p',

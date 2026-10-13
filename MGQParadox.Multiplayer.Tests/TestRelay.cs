@@ -2,6 +2,7 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-13: Kept a Raid World's squad settings
 //      Paulinchen  2026-10-12: Kept the level caps of story writes
 //                            - Kept the address and the X-MGQ-Version header of every request
 //                            - Turned outdated games away with 426 once a test says so
@@ -1192,6 +1193,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             Type = body["type"]?.GetValue<string>() ?? WorldType.Classic,
             Share = body["share"]?.GetValue<string>() ?? CompanionSharing.Off,
             Difficulty = body["type"]?.GetValue<string>() == WorldType.Raid ? body["difficulty"]?.GetValue<int>() : null,
+            Squad = body["type"]?.GetValue<string>() == WorldType.Raid ? body["squad"]?.DeepClone() : null,
             OtherModsOff = body["otherModsOff"]?.GetValue<bool>() ?? body["type"]?.GetValue<string>() == WorldType.Raid,
         };
 
@@ -1231,8 +1233,8 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
 
     /// <summary>
     /// Changes a world's seats, description, mods, whether it turns other mods off and a Raid World's
-    /// difficulty, and tells its room when the mods or whether it turns other mods off changed. Called
-    /// with the gate held.
+    /// difficulty and squad settings, and tells its room when the mods or whether it turns other mods
+    /// off changed. Called with the gate held.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <param name="world">The world's entry.</param>
@@ -1269,6 +1271,16 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             }
 
             world.Difficulty = body["difficulty"]!.GetValue<int>();
+        }
+
+        if (body["squad"] != null)
+        {
+            if (world.Type != WorldType.Raid)
+            {
+                return (400, Error("only a Raid World sets squad settings"));
+            }
+
+            world.Squad = body["squad"]!.DeepClone();
         }
 
         if (rule != (world.OtherModsOff, world.Mods))
@@ -1382,6 +1394,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             ["type"] = world.Type,
             ["share"] = world.Share,
             ["difficulty"] = world.Difficulty,
+            ["squad"] = world.Squad?.DeepClone(),
             ["otherModsOff"] = ListsOtherModsOff ? world.OtherModsOff : null,
             ["online"] = online.Count,
             ["created"] = 0,
@@ -1919,6 +1932,11 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         /// The difficulty a Raid World sets for every player, <see langword="null"/> for none.
         /// </summary>
         public int? Difficulty { get; set; }
+
+        /// <summary>
+        /// A Raid World's squad settings as the relay's JSON object, <see langword="null"/> for none.
+        /// </summary>
+        public JsonNode? Squad { get; set; }
 
         /// <summary>
         /// Whether it turns off every mod of its players it does not name.

@@ -2,6 +2,7 @@
 //  ExportsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-13: Expected the squad settings at the end of mp_dir_create and mp_dir_edit
 //      Paulinchen  2026-10-12: Covered the mp_mouse_wheel export
 //      Paulinchen  2026-10-11: Covered the bug report exports
 //      Paulinchen  2026-10-10: Covered the mp_dev_build export
@@ -106,8 +107,8 @@ public sealed unsafe class ExportsTests
         Assert.Equal("pl", exported["mp_mods_scripts"]);
         Assert.Equal("pl", exported["mp_mods_restart_parked"]);
         Assert.Equal("p", exported["mp_mods_recover"]);
-        Assert.Equal("pplllpppplppppll", exported["mp_dir_create"]);
-        Assert.Equal("plppplllll", exported["mp_dir_edit"]);
+        Assert.Equal("pplllpppplppppllp", exported["mp_dir_create"]);
+        Assert.Equal("plppplllllp", exported["mp_dir_edit"]);
         Assert.Equal(string.Empty, exported["mp_dev_build"]);
     }
 

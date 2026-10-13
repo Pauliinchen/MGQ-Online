@@ -2,6 +2,7 @@
 //  Exports.Directory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-13: Took a Raid World's squad settings in mp_dir_create and mp_dir_edit
 //      Paulinchen  2026-10-09: Took whether a world turns other mods off in mp_dir_create and mp_dir_edit
 //                            - Took a Raid World's difficulty in mp_dir_create and mp_dir_edit
 //      Paulinchen  2026-10-08: Took the world's type and how a Raid World shares companions in mp_dir_create
@@ -129,9 +130,10 @@ internal static unsafe partial class Exports
     /// <param name="share">How a Raid World shares companions, "off", "story" or "all", UTF-8 and null-terminated; empty for off.</param>
     /// <param name="difficulty">The difficulty a Raid World sets for every player, the game's own value from -2 (VERY EASY) to 4 (PARADOX); left out for a Classic world.</param>
     /// <param name="otherModsOff">1 to turn off every mod of its players the world does not name, 0 to leave their mods on; any other value leaves it to the relay, which turns them off in a Raid World only.</param>
-    /// <returns>1 when started, 0 while another action runs, for seats or a Raid World's difficulty out of range or when it failed.</returns>
+    /// <param name="squad">A Raid World's squad settings as text, see <see cref="RaidSquad"/>, UTF-8 and null-terminated; empty for a Classic world or to play with the defaults.</param>
+    /// <returns>1 when started, 0 while another action runs, for seats, a Raid World's difficulty or its squad settings out of range or when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_dir_create", CallConvs = [typeof(CallConvStdcall)])]
-    public static int DirectoryCreate(byte* name, byte* password, int seats, int hidden, int choose, byte* start, byte* description, byte* mods, byte* data, int strict, byte* modHashes, byte* settings, byte* type, byte* share, int difficulty, int otherModsOff)
+    public static int DirectoryCreate(byte* name, byte* password, int seats, int hidden, int choose, byte* start, byte* description, byte* mods, byte* data, int strict, byte* modHashes, byte* settings, byte* type, byte* share, int difficulty, int otherModsOff, byte* squad)
     {
         try
         {
@@ -139,13 +141,14 @@ internal static unsafe partial class Exports
             var worldType = Text(type) is { Length: > 0 } named ? named : WorldType.Classic;
             var sharing = Text(share) is { Length: > 0 } shared ? shared : CompanionSharing.Off;
             var raid = worldType == WorldType.Raid;
+            string? squadText = null;
 
-            if (seats is < WorldCode.MinSeats or > WorldCode.MaxSeats || (raid && !WorldDifficulty.IsValid(difficulty)))
+            if (seats is < WorldCode.MinSeats or > WorldCode.MaxSeats || (raid && (!WorldDifficulty.IsValid(difficulty) || !TrySquadOf(Text(squad), out squadText))))
             {
                 return 0;
             }
 
-            return WorldDirectory.Current.Create(Text(name), Text(password), seats, hidden == 1, choose == 1, StartFiles(Text(start)), about, worldType, sharing, raid ? difficulty : null, FlagOf(otherModsOff)) ? 1 : 0;
+            return WorldDirectory.Current.Create(Text(name), Text(password), seats, hidden == 1, choose == 1, StartFiles(Text(start)), about, worldType, sharing, raid ? difficulty : null, FlagOf(otherModsOff), squadText) ? 1 : 0;
         }
         catch (Exception ex)
         {
@@ -219,8 +222,8 @@ internal static unsafe partial class Exports
 
     /// <summary>
     /// Changes a world's seats, description, mods, whether it turns other mods off and a Raid World's
-    /// difficulty, which only its creator or one of the relay's admins may, and for its creator its
-    /// mod hashes. Returns at once.
+    /// difficulty and squad settings, which only its creator or one of the relay's admins may, and for
+    /// its creator its mod hashes. Returns at once.
     /// </summary>
     /// <param name="id">The world, UTF-8 and null-terminated.</param>
     /// <param name="seats">How many games it seats at once, 2 to 32.</param>
@@ -232,21 +235,22 @@ internal static unsafe partial class Exports
     /// <param name="setDifficulty">1 when the difficulty goes along, 0 to leave it out.</param>
     /// <param name="otherModsOff">1 when the world now turns off every mod of its players it does not name, 0 when it leaves their mods on.</param>
     /// <param name="setOtherModsOff">1 when the player changed whether the world turns other mods off, which then goes along; 0 to leave it out.</param>
-    /// <returns>1 when started, 0 while another action runs, for seats or a difficulty out of range, for neither 0 nor 1 whether other mods are off, or when it failed.</returns>
+    /// <param name="squad">A Raid World's new squad settings as text, see <see cref="RaidSquad"/>, UTF-8 and null-terminated; empty to leave them.</param>
+    /// <returns>1 when started, 0 while another action runs, for seats, a difficulty or squad settings out of range, for neither 0 nor 1 whether other mods are off, or when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_dir_edit", CallConvs = [typeof(CallConvStdcall)])]
-    public static int DirectoryEdit(byte* id, int seats, byte* description, byte* mods, byte* modHashes, int own, int difficulty, int setDifficulty, int otherModsOff, int setOtherModsOff)
+    public static int DirectoryEdit(byte* id, int seats, byte* description, byte* mods, byte* modHashes, int own, int difficulty, int setDifficulty, int otherModsOff, int setOtherModsOff, byte* squad)
     {
         try
         {
             var hashes = own == 1 ? Text(modHashes) : null;
             var setOff = setOtherModsOff == 1;
 
-            if (seats is < WorldCode.MinSeats or > WorldCode.MaxSeats || (setDifficulty == 1 && !WorldDifficulty.IsValid(difficulty)) || (setOff && FlagOf(otherModsOff) == null))
+            if (seats is < WorldCode.MinSeats or > WorldCode.MaxSeats || (setDifficulty == 1 && !WorldDifficulty.IsValid(difficulty)) || (setOff && FlagOf(otherModsOff) == null) || !TrySquadOf(Text(squad), out var squadText))
             {
                 return 0;
             }
 
-            return WorldDirectory.Current.Edit(Text(id), seats, Text(description), Text(mods), hashes, setDifficulty == 1 ? difficulty : null, setOff ? otherModsOff == 1 : null) ? 1 : 0;
+            return WorldDirectory.Current.Edit(Text(id), seats, Text(description), Text(mods), hashes, setDifficulty == 1 ? difficulty : null, setOff ? otherModsOff == 1 : null, squadText) ? 1 : 0;
         }
         catch (Exception ex)
         {
@@ -385,6 +389,18 @@ internal static unsafe partial class Exports
         0 => false,
         _ => null,
     };
+
+    /// <summary>
+    /// Reads a Raid World's squad settings as the game script hands them over.
+    /// </summary>
+    /// <param name="text">The settings as text, see <see cref="RaidSquad"/>; empty for none.</param>
+    /// <param name="squad">The settings as the relay takes them, <see langword="null"/> for none.</param>
+    /// <returns>Whether the text is empty or holds valid settings.</returns>
+    private static bool TrySquadOf(string text, out string? squad)
+    {
+        squad = text.Length > 0 ? RaidSquad.Normalize(text) : null;
+        return text.Length == 0 || squad != null;
+    }
 
     /// <summary>
     /// Reads the files of a starting save as the game script lists them.

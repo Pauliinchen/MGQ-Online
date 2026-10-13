@@ -2,6 +2,8 @@
 #  raid_difficulty_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Checked a Raid World's squad rules in the forms and the calls of mp_dir_create and mp_dir_edit
+#                            - Checked the button of the squad rules and their form of its own
 #      Paulinchen  2026-10-12: Stood in for Ini.load
 #      Paulinchen  2026-10-10: Checked the Raid World starting save of releases and development builds
 #      Paulinchen  2026-10-09: Expected the new Raid World form rows and the longer calls of mp_dir_create and mp_dir_edit
@@ -9,7 +11,8 @@
 #
 #----------------------------------------------------------------
 
-# Covers a Raid World's difficulty and start: the Difficulty of the new world's and the edit form,
+# Covers a Raid World's difficulty, squad rules and start: the Difficulty and the squad rules of the
+# new world's and the edit form,
 # what goes to the DLL, and no starting save or choice on entering except a development build's
 # shared save (world.rbx, world_save_distribution.rbx); the world's difficulty on load, new game and
 # the relay's push, set over the game's own choice and the Reaper's change, while the Labyrinth of
@@ -204,9 +207,9 @@ form[:choose] = true
 check("a Classic world takes a starting save and the player's choice", [form.enabled?(save), form.from_save?, form.choose?], [true, true, true])
 form[:type] = 1
 picked = field_of(form, :difficulty)
-check("a Raid World hides the starting point, Sharing companions on its row, and has the Difficulty across the Save's row instead",
+check("a Raid World hides the starting point, Sharing companions on its row, and has the Difficulty on the Save's row instead",
       [starting.map { |field| form.fields.include?(field) }, field_of(form, :share).row, field_of(form, :save), picked.row, picked.side, form.enabled?(picked), form.fields.size],
-      [[false, false], 3, nil, 4, nil, true, 13])
+      [[false, false], 3, nil, 4, :left, true, 14])
 check("which offers the game's difficulties and starts on NORMAL", [picked.kind, picked.choices, form.difficulty],
       [:switch, ["VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"], 0])
 check("whose hint fits the lines at the top, as the starting point's do", ([picked] + starting).map { |field| field.hint.size <= 100 }, [true, true, true])
@@ -220,14 +223,14 @@ check("back on Classic the Save takes its place again", [field_of(form, :difficu
 MGQ_MpWorld::Directory.create("Raid Night", "", 4, false, true, "Save01.rvdata2=Save/Save01.rvdata2", :type => "raid", :share => "story", :difficulty => 3)
 args = $calls.last[2]
 check("a Raid World goes without a starting save and the player's choice, with its difficulty", [$calls.last[1], args[4], args[5], args[12], args[14]],
-      ["pplllpppplppppll", 0, "\0", "raid\0", 3])
+      ["pplllpppplppppllp", 0, "\0", "raid\0", 3])
 MGQ_MpWorld::Directory.create("Raid Plain", "", 4, false, false, "", :type => "raid")
 check("on NORMAL unless told otherwise", $calls.last[2][14], 0)
 MGQ_MpWorld::Directory.create("Plain", "", 4, false, true, "Save01.rvdata2=Save/Save01.rvdata2", :difficulty => 3)
 check("a Classic world keeps both, and its difficulty is left at NORMAL, which the relay drops", [$calls.last[2][4], $calls.last[2][5], $calls.last[2][14]],
       [1, "Save01.rvdata2=Save/Save01.rvdata2\0", 0])
 MGQ_MpWorld::Directory.edit("r1", 6, "", "", nil, -2)
-check("an edit hands a Raid World's difficulty to the DLL", [$calls.last[1], $calls.last[2][6..7]], ["plppplllll", [-2, 1]])
+check("an edit hands a Raid World's difficulty to the DLL", [$calls.last[1], $calls.last[2][6..7]], ["plppplllllp", [-2, 1]])
 MGQ_MpWorld::Directory.edit("w1", 6, "", "")
 check("and none for a Classic world", $calls.last[2][6..7], [0, 0])
 
@@ -236,7 +239,7 @@ listed = MGQ_MpWorld::Directory::ListedWorld.new("r1", 4, 0, "me", 0, "Me", "Rai
 edit = MGQ_MpWorld::Form.edit(listed, true)
 check("a Raid World's edit form has the Difficulty switch below Max Players, on its difficulty",
       [edit.fields.map { |field| field.key }, field_of(edit, :seats).side, field_of(edit, :difficulty).side, field_of(edit, :difficulty).choices.size, edit.difficulty],
-      [[:seats, :difficulty, :mods, :data, :shared, :other_mods_off, :description, :confirm], nil, nil, 7, 2])
+      [[:seats, :difficulty, :limits, :mods, :data, :shared, :other_mods_off, :description, :confirm], nil, :left, 7, 2])
 listed.difficulty = nil
 unset = MGQ_MpWorld::Form.edit(listed, false)
 check("on Per player for a Raid World that sets none yet, its first outcome", [field_of(unset, :difficulty).choices.first, unset[:difficulty], unset.difficulty], ["Per player", 0, nil])
@@ -244,6 +247,53 @@ unset.turn(field_of(unset, :difficulty), 1)
 check("turned on, it picks one of the game's", unset.difficulty, -2)
 listed.type = "classic"
 check("and a Classic world's has none", MGQ_MpWorld::Form.edit(listed, true).fields.map { |field| field.key }.include?(:difficulty), false)
+
+# The squad rules of a Raid World in the new world's form, what goes to the DLL, and the edit form.
+squad_form = MGQ_MpWorld::Form.create
+squad_keys = [:luka, :formation, :front, :raid_front]
+check("a Classic world's form has no squad rules nor their button", (squad_keys + [:limits]).map { |key| field_of(squad_form, key) }, [nil, nil, nil, nil, nil])
+squad_form[:type] = 1
+limits = field_of(squad_form, :limits)
+check("a Raid World's form has the button of its formation limits beside the Difficulty, and not the rules themselves",
+      [[limits.kind, limits.label, limits.row, limits.side, limits.group], squad_keys.map { |key| field_of(squad_form, key) }],
+      [[:button, "Set formation limits", 4, :right, "World"], [nil, nil, nil, nil]])
+limits_form = squad_form.limits
+check("which opens the same form each time", squad_form.limits.equal?(limits_form), true)
+squad_fields = squad_keys.map { |key| field_of(limits_form, key) }
+check("a form of Luka Replaceable beside the Formation Size, then the Frontline beside the Raid Frontline, then Done",
+      limits_form.fields.map { |field| [field.kind, field.label, field.row, field.side] },
+      [[:check, "Luka Replaceable", 0, :left], [:switch, "Formation Size", 0, :right], [:switch, "Frontline", 1, :left], [:switch, "Raid Frontline", 1, :right], [:button, "Done", 2, nil]])
+check("whose title says what it sets", limits_form.title, "Formation limits")
+check("the switches offer Original and 4 to 8, and 1 to 4", squad_fields[1..3].map { |field| field.choices },
+      [["Original", "4", "5", "6", "7", "8"], ["1", "2", "3", "4"], ["1", "2", "3", "4"]])
+check("which start on the defaults: Luka fixed, a team of four, one in front", squad_form.squad, { :luka => false, :formation => 4, :front => 1, :raid_front => 1 })
+check("whose hints fit the lines at the top", (squad_fields + [limits, field_of(limits_form, :done)]).map { |field| field.hint.size <= 100 }, [true] * 6)
+limits_form.tick(:luka)
+limits_form.turn(squad_fields[1], -1)
+limits_form.turn(squad_fields[2], 1)
+limits_form.turn(squad_fields[3], -1)
+check("ticked and turned there, the world's form picks Luka replaceable, the Original size, two in front and four in raids", squad_form.squad,
+      { :luka => true, :formation => 0, :front => 2, :raid_front => 4 })
+MGQ_MpWorld::Directory.create("Raid Night", "", 4, false, false, "", :type => "raid", :squad => squad_form.squad)
+check("create hands a Raid World's squad rules to the DLL last, as their text", [$calls.last[1], $calls.last[2].last], ["pplllpppplppppllp", "1 0 2 4\0"])
+MGQ_MpWorld::Directory.create("Raid Plain", "", 4, false, false, "", :type => "raid")
+check("the defaults unless told otherwise", $calls.last[2].last, "0 4 1 1\0")
+MGQ_MpWorld::Directory.create("Plain", "", 4, false, false, "", :squad => squad_form.squad)
+check("and none for a Classic world", $calls.last[2].last, "\0")
+MGQ_MpWorld::Directory.edit("r1", 6, "", "", nil, nil, nil, { :luka => false, :formation => 6, :front => 3, :raid_front => 2 })
+check("an edit hands changed squad rules to the DLL last", [$calls.last[1], $calls.last[2].last], ["plppplllllp", "0 6 3 2\0"])
+MGQ_MpWorld::Directory.edit("r1", 6, "", "", nil, 1)
+check("and an empty text to leave them", $calls.last[2].last, "\0")
+squad_listed = MGQ_MpWorld::Directory::ListedWorld.new("r1", 4, 0, "me", 0, "Me", "Raid Night", "none", [], false, false, false, false, false, "", "", "", "", "", "raid", "story", 2)
+squad_listed.squad = { :luka => true, :formation => 8, :front => 4, :raid_front => 3 }
+squad_edit = MGQ_MpWorld::Form.edit(squad_listed, false)
+check("a Raid World's edit form has the button of its formation limits beside the Difficulty, on the rules the world sets",
+      [[field_of(squad_edit, :limits).row, field_of(squad_edit, :limits).side], squad_edit.limits.squad, squad_edit.squad],
+      [[1, :right], { :luka => true, :formation => 8, :front => 4, :raid_front => 3 }, { :luka => true, :formation => 8, :front => 4, :raid_front => 3 }])
+squad_listed.squad = nil
+check("the defaults for one that names none", MGQ_MpWorld::Form.edit(squad_listed, true).squad, MGQ_MpWorld::DEFAULT_SQUAD)
+squad_listed.type = "classic"
+check("and a Classic world's edit form has no button", field_of(MGQ_MpWorld::Form.edit(squad_listed, true), :limits), nil)
 
 # Entering: a Raid World never asks where to start nor fetches a starting save.
 raid_world = MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "type" => "raid", "difficulty" => "1")
@@ -260,9 +310,12 @@ dev_form[:name] = "Raid Test"
 dev_form[:type] = 1
 dev_save = field_of(dev_form, :save)
 dev_difficulty = field_of(dev_form, :difficulty)
-check("a development build's Raid World has an optional Save beside the Difficulty, the form as high as before",
-      [[dev_save.kind, dev_save.row, dev_save.side, dev_save.optional, dev_save.label_width], [dev_difficulty.row, dev_difficulty.side], dev_form.fields.size, dev_form.fields.last.row],
-      [[:save, 4, :left, true, MGQ_MpWorld::Form::RAID_SAVE_LABEL_WIDTH], [4, :right], 14, 9])
+dev_limits = field_of(dev_form, :limits)
+check("a development build's Raid World has an optional Save beside the Difficulty, and the button of its formation limits on a row of its own",
+      [[dev_save.kind, dev_save.row, dev_save.side, dev_save.optional, dev_save.label_width], [dev_difficulty.row, dev_difficulty.side], [dev_limits.row, dev_limits.side],
+       dev_form.fields.size, dev_form.fields.last.row],
+      [[:save, 4, :left, true, MGQ_MpWorld::Form::RAID_SAVE_LABEL_WIDTH], [4, :right], [5, nil], 15, 10])
+check("which takes its row off the description", field_of(dev_form, :description).lines, MGQ_MpWorld::DEV_RAID_DESCRIPTION_LINES)
 check("without a save it starts from the beginning and can be sent", [dev_form.from_save?, dev_form.choose?, dev_form.problem, dev_save.hint.size <= 100], [false, false, nil, true])
 dev_form[:save] = 2
 dev_form[:choose] = true

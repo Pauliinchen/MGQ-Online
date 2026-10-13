@@ -2,6 +2,7 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-13: Covered the relay's word of a Raid World's new squad settings
 //      Paulinchen  2026-10-12: Covered paced message bursts and closing a connection that sends too fast
 //                            - Covered entering a world again while the first connect still waits
 //                            - Covered a late "replaced" close and the relay turning an outdated game away
@@ -570,6 +571,31 @@ public sealed class WorldSessionTests
         relay.Tell(room, $"{WorldSession.DifficultyKind} -2");
         var told = NextEntry(session);
         Assert.Equal((WorldSession.DifficultyKind, "-2"), (told[Message.Kind], told[WorldSession.ValueHeader]));
+
+        session.Close();
+    }
+
+    /// <summary>
+    /// Asserts that the relay's word of a world's new squad settings reaches the game script as a
+    /// squad entry, and that a value that holds no squad settings is ignored.
+    /// </summary>
+    [Fact]
+    public void Squad_ReachesTheGame()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var session = NewSession(relay.Address);
+
+        session.Open(code);
+        AwaitState(session, "open");
+        Drain(session);
+
+        var room = Relays.WorldRoomOf(WorldCode.Parse(code)!.Token);
+        relay.Tell(room, $"{WorldSession.SquadKind} 1 9 2 1");
+        relay.Tell(room, $"{WorldSession.SquadKind} 1 6 2");
+        relay.Tell(room, $"{WorldSession.SquadKind} 1 6 2 1");
+        var told = NextEntry(session);
+        Assert.Equal((WorldSession.SquadKind, "1 6 2 1"), (told[Message.Kind], told[WorldSession.ValueHeader]));
 
         session.Close();
     }

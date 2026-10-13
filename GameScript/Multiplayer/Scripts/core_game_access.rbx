@@ -2,6 +2,7 @@
 #  core_game_access.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Named a window's cursor check and handler call
 #      Paulinchen  2026-10-12: Named an event's page that applies now
 #                            - Named the map's viewports and character sprites
 #                            - Named the map scene's map name and medal windows
@@ -162,7 +163,7 @@ module MGQ_MpGame
   # The game's private methods the mod calls.
   METHODS = [
     :auto_state_with_switch, :make_unique_names, :refresh_status, :update_for_wait, :wait_for_message,
-    :battle_show_skip?, :close_command_window, :find_proper_page,
+    :battle_show_skip?, :close_command_window, :find_proper_page, :cursor_movable?, :call_handler,
   ]
 
   # Reads a private field of one of the game's objects, logging once when the game has no such

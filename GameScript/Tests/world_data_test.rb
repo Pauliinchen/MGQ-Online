@@ -2,6 +2,8 @@
 #  world_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Checked a Raid World's squad rules in the forms, their fit, the calls and the edit's message
+#                            - Checked opening the form of the squad rules and going back from it
 #      Paulinchen  2026-10-12: Checked the description broken over several lines on the text screen
 #                            - Checked the list box and a typed description scrolled with the mouse wheel
 #                            - Stood in for Ini.load
@@ -308,12 +310,13 @@ check("the mods and the mismatch checkbox share the Game data panel", [:mods, :m
 check("the world type and the starting point share the World panel", form.fields.select { |field| field.group == "World" }.map { |field| field.label },
       ["Name", "Password", "Max Players", "Hidden", "World type", "Shared save", "Player's choice", "Save"])
 form[:type] = 1
-check("a Raid World has Sharing companions in place of the starting point and the Difficulty in place of the Save", form.fields.select { |field| field.group == "World" }.map { |field| field.label },
-      ["Name", "Password", "Max Players", "Hidden", "World type", "Sharing companions", "Difficulty"])
+check("a Raid World has Sharing companions in place of the starting point, the Difficulty in place of the Save, and the button of its squad rules", form.fields.select { |field| field.group == "World" }.map { |field| field.label },
+      ["Name", "Password", "Max Players", "Hidden", "World type", "Sharing companions", "Difficulty", "Set formation limits"])
+check("and its description on four lines", form.fields.find { |field| field.key == :description }.lines, 4)
 release_rows = form.fields.map { |field| field.row }.max
 MGQ_MpWorld.instance_variable_set(:@dev_build, true)
 check("a development build's Raid World has its Save beside the Difficulty, on the Save's row, so the form keeps its height",
-      [form.fields.select { |field| field.group == "World" }.last(2).map { |field| [field.label, field.row, field.side] }, form.fields.map { |field| field.row }.max],
+      [form.fields.select { |field| [:save, :difficulty].include?(field.key) }.map { |field| [field.label, field.row, field.side] }, form.fields.map { |field| field.row }.max],
       [[["Save", 4, :left], ["Difficulty", 4, :right]], release_rows])
 MGQ_MpWorld.instance_variable_set(:@dev_build, false)
 form[:type] = 0
@@ -381,13 +384,14 @@ check("a Classic world shares no companions whatever the greyed-out switch shows
 strict_form[:type] = 1
 scene.create_world
 check("a Raid World goes with how it shares companions", $calls.last[2][12..13], ["raid\0", "all\0"])
-check("which the screen keeps for the world's folder with its difficulty", scene.instance_variable_get(:@creating_kind), ["raid", "all", 0])
+check("which the screen keeps for the world's folder with its difficulty and squad rules", scene.instance_variable_get(:@creating_kind), ["raid", "all", 0, MGQ_MpWorld::DEFAULT_SQUAD])
+check("and sends with the squad rules", $calls.last[2].last, "0 4 1 1\0")
 strict_form[:type] = 0
 strict_form[:share] = 0
 
 # The directory.
 MGQ_MpWorld::Directory.create("W", "p", 4, false, false, "", :description => "A slow run.", :mods => "Some Mod", :data => modded, :strict => true)
-check("create hands the description, the mods, the game data and the rule to the DLL", [$calls.last[1], $calls.last[2][6..9]], ["pplllpppplppppll", ["A slow run.\0", "Some Mod\0", "#{modded}\0", 1]])
+check("create hands the description, the mods, the game data and the rule to the DLL", [$calls.last[1], $calls.last[2][6..9]], ["pplllpppplppppllp", ["A slow run.\0", "Some Mod\0", "#{modded}\0", 1]])
 MGQ_MpWorld::Directory.create("W", "p", 4, false, false, "")
 check("or nothing", $calls.last[2][6..9], ["\0", "\0", "\0", 0])
 $dll["mp_dir_list"] = "state=ready\n\n" \
@@ -567,6 +571,21 @@ check("the button comes below the last panel, across the window", [key.call(:con
 check("no two fields overlap", rects.combination(2).none? { |a, b| a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height }, true)
 join_rects = window.places(MGQ_MpWorld::Form.join.fields) { |*| }
 check("the join form places its fields the same way", join_rects.map { |rect| rect.y }, join_rects.map { |rect| rect.y }.sort.uniq)
+fitting = lambda do |fields|
+  placed = window.places(fields) { |*| }
+  [placed.compact.size == fields.size, placed.map { |rect| rect.y + rect.height }.max <= 360,
+   placed.combination(2).none? { |a, b| a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height }]
+end
+raid_form = MGQ_MpWorld::Form.create
+raid_form[:type] = 1
+fit_listed = listed[1].dup
+fit_listed.type = MGQ_MpWorld::RAID
+check("a Raid World's forms fit their window with the squad rules' button, the new one and the creator's edit form, and so does the rules' form",
+      [fitting.call(raid_form.fields), fitting.call(MGQ_MpWorld::Form.edit(fit_listed, true).fields), fitting.call(raid_form.limits.fields)],
+      [[true, true, true], [true, true, true], [true, true, true]])
+MGQ_MpWorld.instance_variable_set(:@dev_build, true)
+check("as does a development build's new Raid World with its Save", fitting.call(raid_form.fields), [true, true, true])
+MGQ_MpWorld.instance_variable_set(:@dev_build, false)
 
 # The editor every text box shares.
 $held = []
@@ -758,7 +777,7 @@ scene.form[:mods] = ""
 $calls.clear
 scene.send_form
 check("sending it hands the changes to the DLL, a Classic world without a difficulty", [$calls.last[0], $calls.last[1], $calls.last[2], scene.instance_variable_get(:@busy)],
-      ["mp_dir_edit", "plppplllll", ["w2\0", 8, "A slow run through part one of the story with friends.\0", "\0", "\0", 0, 0, 0, 0, 0], "edit"])
+      ["mp_dir_edit", "plppplllllp", ["w2\0", 8, "A slow run through part one of the story with friends.\0", "\0", "\0", 0, 0, 0, 0, 0, "\0"], "edit"])
 $dll["mp_dir_action"] = "state=done\nkind=edit\n\n"
 scene.follow_action
 check("once changed, the form closes and the screen says so", [scene.form, said(scene)], [nil, "Loose was changed."])
@@ -796,6 +815,35 @@ scene.form.turn(scene.form.fields.find { |field| field.key == :difficulty }, 1)
 scene.send_form
 check("until the creator picks one", $calls.last[2][6..7], [-2, 1])
 scene.follow_action
+scene.on_edit_world
+scene.send_form
+sent = $calls.last[2].last
+scene.follow_action
+check("a Raid World that names no squad rules keeps them unsent while the form shows the defaults", [sent, said(scene)], ["\0", "Loose was changed."])
+scene.on_edit_world
+scene.instance_variable_set(:@field_index, 2)
+scene.open_limits
+check("the button of the formation limits opens their form in place of the world's", [scene.form.title, scene.instance_variable_get(:@form_symbol), form_window.instance_variable_get(:@index)],
+      ["Formation limits", :limits, 0])
+scene.form.turn(scene.form.fields.find { |field| field.key == :formation }, 2)
+scene.form.turn(scene.form.fields.find { |field| field.key == :raid_front }, 1)
+scene.on_form_cancel
+check("cancel goes back to the world's form at the button, keeping what was picked", [scene.form.title, scene.instance_variable_get(:@form_symbol), form_window.instance_variable_get(:@index), scene.form.squad],
+      ["Edit Loose", :edit_world, 2, { :luka => false, :formation => 6, :front => 1, :raid_front => 2 }])
+scene.open_limits
+scene.close_limits
+check("as Done does", [scene.instance_variable_get(:@form_symbol), scene.form.squad[:formation]], [:edit_world, 6])
+scene.send_form
+check("changed, they go along as their text", $calls.last[2].last, "0 6 1 2\0")
+scene.follow_action
+check("and the screen says the new rules", said(scene), "Loose was changed. Its squads: Formation 6, Frontline 1 | 2, Luka fixed.")
+raid_listed.squad = { :luka => false, :formation => 6, :front => 1, :raid_front => 2 }
+scene.on_edit_world
+scene.send_form
+sent = $calls.last[2].last
+scene.follow_action
+check("but not when they stayed", [sent, said(scene)], ["\0", "Loose was changed."])
+raid_listed.squad = nil
 
 # The seats a world's code tells follow the directory.
 world = MGQ_MpWorld::World.new("abcdef012345", "code" => "mgqmp2;abcdefghjkmnpqrs;r1;4")

@@ -2,6 +2,7 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-13: Tested that every game of a Raid World hears its new squad settings
 //      Paulinchen  2026-10-12: Tested that a newer release of the mod reaches every game of a world with players online
 //                            - Sent X-MGQ-Features on the world directory and mod catalog requests and tested refusals without it
 //                            - Tested the update code on the 400 of a refused world room and the World Admin tool passing with 0.0.0-dev
@@ -1107,6 +1108,33 @@ test("every game of a Raid World hears its new difficulty once its creator chang
 
   await gameFetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: CREATOR }, body: JSON.stringify({ seats: 6 }) });
   assert.deepEqual(heard.filter((text) => text.startsWith("difficulty")), ["difficulty 3"], "an edit without a difficulty tells none");
+  watcher.socket.close();
+});
+
+test("every game of a Raid World hears its new squad settings once its creator changes them over HTTP", async () => {
+  const room = roomId(137);
+  // Its own creator, since CREATOR already made as many worlds as a player may.
+  const creator = playerKey(96);
+  const created = await gameFetch(directoryBase, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: creator },
+    body: JSON.stringify({ id: room, name: "Raid Squad", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, type: "raid", squad: { luka: false, formation: 4, front: 1, raidFront: 1 } }),
+  });
+  assert.equal(created.status, 201);
+  assert.deepEqual((await listed(room)).squad, { luka: false, formation: 4, front: 1, raidFront: 1 });
+  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(97), [FEATURES_HEADER]: "raid" });
+  assert.equal(await watcher.first, "seat 0");
+  const heard = [];
+  watcher.socket.on("message", (data) => heard.push(data.toString()));
+
+  const edit = await gameFetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: creator }, body: JSON.stringify({ squad: { luka: true, formation: 6, front: 2, raidFront: 1 } }) });
+  assert.equal(edit.status, 200);
+  assert.deepEqual(await edit.json(), { edited: room }, "the answer names no squad settings");
+  await until(async () => heard.includes("squad 1 6 2 1"));
+  assert.deepEqual((await listed(room)).squad, { luka: true, formation: 6, front: 2, raidFront: 1 });
+
+  await gameFetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: creator }, body: JSON.stringify({ seats: 6, squad: { luka: true, formation: 6, front: 2, raidFront: 1 } }) });
+  assert.deepEqual(heard.filter((text) => text.startsWith("squad")), ["squad 1 6 2 1"], "an edit with the same squad settings tells none");
   watcher.socket.close();
 });
 

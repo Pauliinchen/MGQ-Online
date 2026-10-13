@@ -2,6 +2,7 @@
 //  directory.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-13: Covered a Raid World's squad settings
 //      Paulinchen  2026-10-12: Covered the relay's own line in the chat of worlds with players online
 //                            - Covered requests on one world made at once
 //                            - Covered refusals of a new world costing its address no rate turn
@@ -43,7 +44,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DIRECTORY_LIMITS, Directory, MODS_RULE_TEXT, RELAY_PLAYER, cleanName, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, sha256Hex } from "./directory.js";
+import { DIRECTORY_LIMITS, Directory, MODS_RULE_TEXT, RELAY_PLAYER, SQUAD_DEFAULTS, cleanName, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, sha256Hex, squadText } from "./directory.js";
 import { FEATURE, RateLimiter, parseFeatures } from "./relay.js";
 
 /**
@@ -754,6 +755,44 @@ test("a Raid World keeps its difficulty, which its creator or an admin changes a
   for (const bad of [5, -3, 0.5, "0"]) {
     assert.equal((await directory.create(await newWorld({ id: "3".repeat(32), type: "raid", difficulty: bad }))).status, 400, `new world with difficulty ${bad}`);
   }
+});
+
+test("a Raid World keeps its squad settings, which its creator or an admin changes and a Classic world never has", async () => {
+  const { directory } = newDirectory(DIRECTORY_LIMITS, [await playerIdOf(ADMIN)]);
+  await directory.create(await newWorld({ type: "raid", squad: { luka: true, formation: 6, front: 2, raidFront: 1, extra: 1 } }));
+  await directory.create(await newWorld({ id: "1".repeat(32), type: "classic", squad: { luka: true, formation: 6, front: 2, raidFront: 1 } }));
+  await directory.create(await newWorld({ id: "2".repeat(32), type: "raid" }));
+
+  const squadOf = async () => Object.fromEntries((await directory.list()).body.worlds.map((world) => [world.id, world.squad]));
+  assert.deepEqual(await squadOf(), { [WORLD]: { luka: true, formation: 6, front: 2, raidFront: 1 }, ["1".repeat(32)]: undefined, ["2".repeat(32)]: undefined }, "only a Raid World made with them keeps them, without other fields");
+
+  const edited = await directory.edit(WORLD, CREATOR, { squad: { luka: false, formation: 0, front: 4, raidFront: 3 } });
+  assert.deepEqual([edited.status, edited.squad], [200, { luka: false, formation: 0, front: 4, raidFront: 3 }], "the answer names the squad settings the world room tells");
+  assert.equal(squadText(edited.squad), "squad 0 0 4 3");
+  assert.deepEqual((await directory.edit(WORLD, ADMIN, { squad: { luka: true, formation: 8, front: 1, raidFront: 4 } })).squad, { luka: true, formation: 8, front: 1, raidFront: 4 });
+  assert.equal((await directory.edit(WORLD, OTHER, { squad: SQUAD_DEFAULTS })).status, 403);
+  assert.deepEqual((await squadOf())[WORLD], { luka: true, formation: 8, front: 1, raidFront: 4 });
+  const same = await directory.edit(WORLD, CREATOR, { squad: { luka: true, formation: 8, front: 1, raidFront: 4 }, seats: 6 });
+  assert.deepEqual([same.status, same.squad], [200, undefined], "the squad settings the world has already tell nothing");
+
+  const defaults = await directory.edit("2".repeat(32), CREATOR, { squad: { ...SQUAD_DEFAULTS } });
+  assert.deepEqual([defaults.status, defaults.squad], [200, undefined], "a world made without them counts as having the defaults");
+  assert.deepEqual((await squadOf())["2".repeat(32)], SQUAD_DEFAULTS);
+  assert.deepEqual((await directory.edit("2".repeat(32), CREATOR, { squad: { ...SQUAD_DEFAULTS, front: 2 } })).squad, { ...SQUAD_DEFAULTS, front: 2 });
+
+  const bads = [
+    null, "0 4 1 1", [], { formation: 4, front: 1, raidFront: 1 }, { ...SQUAD_DEFAULTS, luka: 1 },
+    { ...SQUAD_DEFAULTS, formation: 3 }, { ...SQUAD_DEFAULTS, formation: 9 }, { ...SQUAD_DEFAULTS, formation: 4.5 },
+    { ...SQUAD_DEFAULTS, front: 0 }, { ...SQUAD_DEFAULTS, front: 5 }, { ...SQUAD_DEFAULTS, raidFront: 0 }, { ...SQUAD_DEFAULTS, raidFront: "1" },
+  ];
+
+  for (const bad of bads) {
+    assert.equal((await directory.edit(WORLD, CREATOR, { squad: bad })).status, 400, `squad ${JSON.stringify(bad)}`);
+    assert.equal((await directory.create(await newWorld({ id: "3".repeat(32), type: "raid", squad: bad }))).status, 400, `new world with squad ${JSON.stringify(bad)}`);
+  }
+
+  assert.equal((await directory.edit("1".repeat(32), CREATOR, { squad: SQUAD_DEFAULTS })).status, 400, "only a Raid World sets squad settings");
+  assert.equal((await directory.edit("1".repeat(32), CREATOR, { seats: 6 })).squad, undefined, "an edit without them tells none");
 });
 
 test("a Raid World starts from the beginning: no starting save and no player's choice", async () => {

@@ -2,6 +2,7 @@
 //  worker.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-13: Told every game of a Raid World its new squad settings
 //      Paulinchen  2026-10-12: Watched the mod's own releases and told every world with players online of a new one
 //                            - Turned away games older than 0.6.0 or below the MIN_VERSION variable with 426
 //                            - Turned a game too old for a world room away with 400 and passed on the gate's code of a PvP room
@@ -54,7 +55,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { DownloadGate, drainLimited, piecesStream, readLimited } from "../core/bodies.js";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
-import { DIRECTORY_LIMITS, Directory as WorldDirectory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, sha256Hex } from "../core/directory.js";
+import { DIRECTORY_LIMITS, Directory as WorldDirectory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, sha256Hex, squadText } from "../core/directory.js";
 import { DRAIN_LIMITS, VERSION_HEADER, updateRefusal } from "../core/gate.js";
 import { badRequest, notFound, routeIs } from "../core/http.js";
 import { isHash, isId } from "../core/ids.js";
@@ -648,6 +649,10 @@ export class Directory extends DurableObject {
       await internal(worldOf(this.env, answer.id), "difficulty", { difficulty: answer.difficulty });
     }
 
+    if (answer.squad) {
+      await internal(worldOf(this.env, answer.id), "squad", { squad: answer.squad });
+    }
+
     if (answer.modsRule) {
       await internal(worldOf(this.env, answer.id), "mods-rule", answer.modsRule);
     }
@@ -725,7 +730,7 @@ export class Directory extends DurableObject {
    *
    * @param {Request} request The request.
    * @param {URL} url The request's address.
-   * @returns {Promise<{status: number, body: object, bytes?: ReadableStream<Uint8Array>, close?: boolean, kick?: string, say?: object, difficulty?: number, modsRule?: object, id?: string}>} The directory's answer, see handleDirectoryRequest.
+   * @returns {Promise<{status: number, body: object, bytes?: ReadableStream<Uint8Array>, close?: boolean, kick?: string, say?: object, difficulty?: number, squad?: object, modsRule?: object, id?: string}>} The directory's answer, see handleDirectoryRequest.
    */
   answerDirectory(request, url) {
     const client = { player: request.headers.get(PLAYER_HEADER), auth: request.headers.get(AUTH_HEADER), address: request.headers.get(ADDRESS_HEADER), features: parseFeatures(request.headers.get(FEATURES_HEADER)) };
@@ -1020,6 +1025,12 @@ export class World extends DurableObject {
     if (url.pathname === "/internal/difficulty") {
       const { difficulty } = await request.json();
       this.tell(difficultyText(difficulty));
+      return json(200, {});
+    }
+
+    if (url.pathname === "/internal/squad") {
+      const { squad } = await request.json();
+      this.tell(squadText(squad));
       return json(200, {});
     }
 
