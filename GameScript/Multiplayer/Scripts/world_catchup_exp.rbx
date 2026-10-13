@@ -2,6 +2,7 @@
 #  world_catchup_exp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Grew the experience of no story companion on a visit nor of a story's temporary party
 #      Paulinchen  2026-10-12: Created
 #
 #----------------------------------------------------------------
@@ -50,12 +51,13 @@ module MGQ_MpWorldCatchupExp
     [1.0 + (MAX_FACTOR - 1.0) * (target - level) / fade, MAX_FACTOR].min
   end
 
-  # Works out the factor a character's experience grows by now.
+  # Works out the factor a character's experience grows by now: none for one the catch-up does not
+  # count (see MGQ_MpWorldCatchup.counts?).
   #
   # @param actor [Game_Actor] The character.
   # @return [Float] The factor.
   def self.factor(actor)
-    factor_for(actor.base_level, target)
+    MGQ_MpWorldCatchup.counts?(actor) ? factor_for(actor.base_level, target) : 1.0
   end
 
   # Grows the experience a character gains from a battle by its factor.

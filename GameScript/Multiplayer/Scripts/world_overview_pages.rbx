@@ -2,6 +2,7 @@
 #  world_overview_pages.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Left a story's temporary party and companions on a visit out of the Unlocks page's grid
 #      Paulinchen  2026-10-12: Created
 #
 #----------------------------------------------------------------
@@ -201,7 +202,7 @@ module MGQ_MpWorldOverview
     target = MGQ_MpWorldCatchupExp.target
     level = MGQ_MpWorldCatchup.counted_level
     hero = $game_actors ? $game_actors[LUKA] : nil
-    grid = target ? $game_party.battle_members.map { |actor| exp_cells(actor, target) } : nil
+    grid = target ? $game_party.battle_members.select { |actor| MGQ_MpWorldCatchup.counts?(actor) }.map { |actor| exp_cells(actor, target) } : nil
     head = Head.new(hero ? looks(hero) : nil, nil, target ? EXP_HEADING % target : EXP_HEADING_NONE, level ? YOUR_LEVEL_NOTE % level : nil,
                     target ? [] : [NO_CATCH_UP], grid, nil)
     levels = MGQ_MpWorldCatchup.unlocks.group_by { |unlock| unlock.level }.sort.map do |at, unlocks|

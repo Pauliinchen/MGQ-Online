@@ -2,6 +2,7 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Checked that the Unlocks grid leaves out characters the catch-up does not count
 #      Paulinchen  2026-10-12: Checked the World, Quests and Unlocks pages with a head, a list and a pane
 #                            - Checked the Quests page and the catch-up experience on the Levels page
 #                            - Checked the log of a refused overview hotkey
@@ -103,6 +104,8 @@ module MGQ_MpWorldCatchup
   def self.unlocks; $unlocks; end
   # Answers the level in $counted_level.
   def self.counted_level; $counted_level; end
+  # Counts every character but those named in $uncounted.
+  def self.counts?(actor); !Array($uncounted).include?(actor.name); end
 end
 $unlocks = []
 $counted_level = nil
@@ -618,6 +621,12 @@ overview.turn_to(:unlocks, "the test")
 overview.on_map
 check("once the world's story raised the level cap, the head lists each formation member's level and catch-up experience up to the level it holds",
       [overview.view[:model].head.title, overview.view[:model].head.grid], ["Catch-up EXP until level 40", [["Luka", "Lv 30", "x4"], ["Lv20", "Lv 20", "x7"]]])
+$uncounted = ["Lv20"]
+overview.turn_to(:world, "the test")
+overview.turn_to(:unlocks, "the test")
+overview.on_map
+check("a character the catch-up does not count, such as a story's temporary party or a companion on a visit, is left out", overview.view[:model].head.grid, [["Luka", "Lv 30", "x4"]])
+$uncounted = nil
 $game_party.all_members = members
 $world_story = $world_story.reject { |key, _| key == "caps" }
 $raid = false

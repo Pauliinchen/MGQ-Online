@@ -2,6 +2,7 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Checked that a join the story takes back in the same step counts nowhere in the catch-up
 #      Paulinchen  2026-10-12: Checked that story and quest classes and races reach the roster
 #                            - Checked that story and quest skills reach the roster's companions
 #                            - Stood in for a companion's name
@@ -407,6 +408,8 @@ catchup = MGQ_MpWorldCatchup
 DATA = MGQ_MpWorldCatchupData
 # The generated joins, kept before the tests replace them.
 REAL_JOINS = DATA::JOINS
+# The generated removals, kept before the tests replace them.
+REAL_REMOVALS = DATA::REMOVALS
 # The generated settings, kept before the tests replace them.
 REAL_SETTINGS = DATA::SETTINGS
 
@@ -418,7 +421,7 @@ def tables(tables = {})
     DATA.send(:remove_const, name)
     DATA.const_set(name, tables[name] || [])
   end
-  MGQ_MpWorldCatchup.instance_variable_set(:@joins_by_actor, nil)
+  [:@joins_by_actor, :@story_joins, :@taking_back, :@visits].each { |name| MGQ_MpWorldCatchup.instance_variable_set(name, nil) }
   MGQ_MpWorldStory.instance_variable_set(:@world_chests, nil)
 end
 
@@ -1392,6 +1395,34 @@ frames(40)
 check("a world past the player's part lists moving on from it at its gate",
       catchup.unlocks.select { |unlock| unlock.kind == :story }.map { |unlock| [unlock.level, unlock.name, unlock.got, unlock.due] }, [[25, "Part 1", false, false]])
 $sharing = :off
+
+# A join the story takes back in the same step only brings its companion along for a visit, in the
+# generated tables as in rows of the tests' own.
+tables(:JOINS => REAL_JOINS, :REMOVALS => REAL_REMOVALS)
+visit = lambda { |actor, site| catchup.temporary?(REAL_JOINS.find { |row| row.actor == actor && row.site == site }) }
+check("Alma Elma's Part 2 visits are temporary, her Part 1 join and her return in Part 2 last",
+      [visit.call(19, "map:483:86:1"), visit.call(19, "map:735:18:1"), visit.call(19, "map:111:21:3"), visit.call(19, "map:291:23:1")], [true, true, false, false])
+check("as are a guest of one event and the Chaos route's final lineup, while Granberia's last Chaos join lasts",
+      [visit.call(523, "map:1063:77:1"), visit.call(713, "map:1752:37:1"), visit.call(16, "ce:9106")], [true, true, false])
+check("Ilias and Alice last wherever they join", [visit.call(26, "map:6:31:2"), visit.call(29, "map:1752:37:1"), visit.call(5, "map:6:30:2")], [false, false, false])
+tables(:JOINS => [join.new(77, 77, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], 7, :start, 1, true),
+                  join.new(16, 16, "map:6:40:1", "1", 7, nil, [[:v, 1001, 7], [:v, 1050, 1]], 8, :start, 5, true)],
+       :REMOVALS => [removal.new(16, 16, "map:6:41:1", "1", 7, nil, [[:v, 1001, 7], [:v, 1050, 2]], true, 3)])
+new_game({ 1001 => 9, 1050 => 1 }, [], 10)
+$game_party.add_actor(16)
+$game_actors[16].level = 50
+frames(1)
+relay({ "rev" => 33, "wrev" => 33, "p" => 9, "part" => "1" }, packed({ 1001 => 9, 1050 => 1 }))
+frames(40)
+check("a companion on a visit is not listed, nor counted toward the player's level",
+      [catchup.unlocks.map { |unlock| [unlock.kind, unlock.name] }, catchup.counted_level], [[[:companion, "Slime"]], 10])
+check("nor counted in the catch-up", [catchup.counts?($game_actors[16]), catchup.counts?($game_actors[1])], [false, true])
+$game_party.remove_actor(16)
+new_game({ 1001 => 9, 1050 => 1 }, [], 10)
+frames(1)
+relay({ "rev" => 34, "wrev" => 34, "p" => 9, "part" => "1" }, packed({ 1001 => 9, 1050 => 2 }))
+frames(40)
+check("and a player the world's story carried past the visit does not get the companion", roster.include?(16), false)
 
 # Classic worlds have no catch-up.
 $raid = false

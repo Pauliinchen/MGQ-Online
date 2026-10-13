@@ -2,6 +2,7 @@
 #  catchup_exp_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Checked that a character the catch-up does not count gains no more
 #      Paulinchen  2026-10-12: Created
 #
 #----------------------------------------------------------------
@@ -41,6 +42,9 @@ class Game_Actor
   end
 end
 
+# Stands in for the catch-up, which counts every character but those named in $uncounted.
+module MGQ_MpWorldCatchup; def self.counts?(actor); !Array($uncounted).include?(actor.name); end; end
+
 load_script("world_catchup_exp")
 exp = MGQ_MpWorldCatchupExp
 
@@ -68,6 +72,11 @@ MGQ_MpWorldStory.world = { "caps" => [10, 15] }
 low.gain_exp(100, 40)
 high.gain_exp(100, 40)
 check("a battle's base, job and race experience grow for a character below the target, not for one above it", [low.gained, high.gained], [[[580, 232]], [[100, 40]]])
+guest = Game_Actor.new("Guest", 6)
+$uncounted = ["Guest"]
+guest.gain_exp(100, 40)
+check("nor for one the catch-up does not count, such as a story's temporary party or a companion on a visit", guest.gained, [[100, 40]])
+$uncounted = nil
 
 MGQ_MpWorldStory.active = false
 low.gain_exp(100, 40)

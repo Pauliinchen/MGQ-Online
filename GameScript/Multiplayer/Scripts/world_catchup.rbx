@@ -2,6 +2,8 @@
 #  world_catchup.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Left the joins the story takes back in the same step out of the catch-up
+#                            - Counted no companion on such a visit, nor a story's temporary party, toward the player's level
 #      Paulinchen  2026-10-12: Gave every player's characters the classes and races the story and its quests give
 #                            - Taught every player's companions the skills the story and its quests teach them
 #                            - Brought a shared companion whose talk the player's story only walked past
@@ -121,6 +123,10 @@ module MGQ_MpWorldCatchup
 
   # Luka, who never joins nor leaves.
   HERO = 1
+
+  # The companions none of whose joins is temporary, however the story takes them away again (see
+  # temporary?): Alice, and Ilias with her later selves, who travel with Luka.
+  LASTING_COMPANIONS = [5, 26, 29, 30]
 
   # The variable that counts the playthroughs, at 0 on the first, which alone loses companions for
   # good.
@@ -681,7 +687,7 @@ module MGQ_MpWorldCatchup
   end
 
   # What the rows ask of the player's roster: its companions, and the highest base level among
-  # them with that character's own highest level. Kept for one look at the rows, see looking, as
+  # them, those on a visit aside (see visiting?), with that character's own highest level. Kept for one look at the rows, see looking, as
   # it copies the roster.
   #
   # @return [Hash] :ids (each companion's main persona to true), :best and :cap (nil without one).
@@ -690,7 +696,8 @@ module MGQ_MpWorldCatchup
 
     ids = {}
     MGQ_MpStoryState.roster_ids.each { |id| ids[id] = true }
-    best = MGQ_MpStoryState.roster.max_by { |actor| actor.base_level }
+    story = story_now
+    best = MGQ_MpStoryState.roster.reject { |actor| visiting?(MGQ_MpStoryState.main_id(actor.id), story) }.max_by { |actor| actor.base_level }
     view = { :ids => ids, :best => best && best.base_level, :cap => best && best.max_level(:base) }
     @looking ? @roster_view = view : view
   end
@@ -1124,7 +1131,7 @@ module MGQ_MpWorldCatchup
   # @param done [Hash] The rows done.
   def self.missing_companions(story, told, done)
     passes = lambda { |row| passed_any?(row, story, told) }
-    DATA::JOINS.each do |row|
+    story_joins.each do |row|
       key = key_of("j", row)
       next unless done[key] == true && row.part && carries?(row) && !in_roster?(row.actor) && passes.call(row)
       next if DATA::REMOVALS.any? { |removal| removal.actor == row.actor && after?(removal, row) && passes.call(removal) }
@@ -1567,7 +1574,7 @@ module MGQ_MpWorldCatchup
     gates = {}
     if told
       last = {}
-      DATA::JOINS.each do |row|
+      story_joins.each do |row|
         next unless row.part && carries?(row) && passed?(row, told, story)
 
         gates[row.actor] = [gates[row.actor], row.gate].compact.min
@@ -1780,7 +1787,7 @@ module MGQ_MpWorldCatchup
       (removed[row.actor] ||= []) << row
     end
     fresh = []
-    DATA::JOINS.each do |row|
+    story_joins.each do |row|
       key = key_of("j", row)
       state = done[key]
       if state.nil?
@@ -1850,7 +1857,7 @@ module MGQ_MpWorldCatchup
   #
   # @param done [Hash] The rows done.
   def self.bring_waiting(done)
-    DATA::JOINS.each do |row|
+    story_joins.each do |row|
       key = key_of("j", row)
       state = done[key]
       next if state.nil? || state == true
@@ -1937,14 +1944,77 @@ module MGQ_MpWorldCatchup
     false
   end
 
+  # Lists the story's joins the catch-up goes by: those that last, see temporary?.
+  #
+  # @return [Array<MGQ_MpWorldCatchupData::Join>] The joins, in the story's order.
+  def self.story_joins
+    @story_joins ||= DATA::JOINS.reject { |row| temporary?(row) }
+  end
+
+  # Reports whether a join only brings its companion along for a visit: a removal of the story takes
+  # them away again in the same step (see takes_back?), unless they are one of LASTING_COMPANIONS.
+  # The catch-up neither lists nor gives such a companion, and they count toward no level.
+  #
+  # @param row [MGQ_MpWorldCatchupData::Join] The join.
+  # @return [Boolean] Whether it does.
+  def self.temporary?(row)
+    !taking_back(row).empty?
+  end
+
+  # Lists the removals that take a join's companion away again, see takes_back?.
+  #
+  # @param row [MGQ_MpWorldCatchupData::Join] The join.
+  # @return [Array<MGQ_MpWorldCatchupData::Removal>] The removals; none for one of LASTING_COMPANIONS.
+  def self.taking_back(row)
+    @taking_back ||= {}.compare_by_identity
+    @taking_back[row] ||= LASTING_COMPANIONS.include?(row.actor) ? [] : DATA::REMOVALS.select { |removal| takes_back?(removal, row) }
+  end
+
+  # Reports whether a removal takes a join's companion away again in the same step of the story:
+  # later in the same event, or in an event whose marks lie further, on the same side.
+  #
+  # @param removal [MGQ_MpWorldCatchupData::Removal] The removal.
+  # @param row [MGQ_MpWorldCatchupData::Join] The join.
+  # @return [Boolean] Whether it does.
+  def self.takes_back?(removal, row)
+    return false unless removal.actor == row.actor && removal.part == row.part && removal.step == row.step
+    return false if removal.side && row.side && removal.side != row.side
+
+    removal.site == row.site ? removal.index.to_i > row.index.to_i : marks_beyond?(removal, row)
+  end
+
+  # Reports whether a companion is in the player's roster on a visit only: their own story passed a
+  # temporary join of theirs (see temporary?) and none of the removals that take them away again yet.
+  #
+  # @param id [Integer] The companion's main persona.
+  # @param story [Array] The player's story.
+  # @return [Boolean] Whether they are.
+  def self.visiting?(id, story)
+    @visits ||= DATA::JOINS.select { |row| row.part && temporary?(row) }.group_by { |row| row.actor }
+    Array(@visits[id]).any? { |row| passed?(row, story) && taking_back(row).none? { |removal| passed?(removal, story) } }
+  end
+
+  # Reports whether a character counts in the catch-up, toward the player's level and in the
+  # catch-up experience: one of their own roster, not a story's temporary party, and not on a visit
+  # (see visiting?).
+  #
+  # @param actor [Game_Actor] The character.
+  # @return [Boolean] Whether they do.
+  def self.counts?(actor)
+    main = MGQ_MpStoryState.main_id(actor.id)
+    MGQ_MpStoryState.roster_ids.include?(main) && !visiting?(main, story_now)
+  rescue
+    true
+  end
+
   # Lists the story's joins of a companion.
   #
   # @param actor [Integer] The companion's main persona.
-  # @return [Array<MGQ_MpWorldCatchupData::Join>] The joins, in the story's order.
+  # @return [Array<MGQ_MpWorldCatchupData::Join>] The joins that last, in the story's order.
   def self.joins_of(actor)
     unless @joins_by_actor
       @joins_by_actor = {}
-      DATA::JOINS.each { |row| (@joins_by_actor[row.actor] ||= []) << row if row.part }
+      story_joins.each { |row| (@joins_by_actor[row.actor] ||= []) << row if row.part }
     end
     @joins_by_actor[actor] || []
   end
@@ -1958,9 +2028,11 @@ module MGQ_MpWorldCatchup
   end
 
   # Notes the companions new in the player's roster, which the world's shared list takes once
-  # sharing is on: the story's companions, every one with battle recruits shared too.
+  # sharing is on: the story's companions, every one with battle recruits shared too. A companion
+  # on a visit (see visiting?) is noted only once they stay.
   def self.note_roster
-    ids = MGQ_MpStoryState.roster_ids
+    story = story_now
+    ids = MGQ_MpStoryState.roster_ids.reject { |id| visiting?(id, story) }
     fresh = ids - (@known_roster || [])
     @known_roster = ids
     sharing = MGQ_MpWorld.companion_sharing
