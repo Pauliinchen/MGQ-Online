@@ -334,6 +334,18 @@ MGQ_MpBattlesServed.instance_variable_set(:@server, nil)
 MGQ_MpBattlesSync.finish
 MGQ_MpBattlesCoop.ended
 
+# The world's mods the starter runs, and its options of them, go with the setup.
+module MGQ_MpWorldMods
+  def self.served_mods; [["teamboostfix", "upload", "1.0", [["Team_Boost_Fix.rb", "a" * 64], ["bad", "x"]]], ["broken", 5], ["ownmod", "", "", []]]; end
+  def self.served_settings; "mod_rate=i:2"; end
+end
+BattleManager.setup(40, true, false)
+setup = MGQ_MpBattlesServed.read_setup(MGQ_MpBattlesServed.setup_text([MGQ_MpBattlesCoop::Player.new(0, "Me", "1,2,3", [], 8)], nil))
+check("the setup names the world's mods the starter runs, with their files' hashes, and its options of them",
+      [setup[:mods], setup[:settings]], [[["teamboostfix", "upload", "1.0", { "Team_Boost_Fix.rb" => "a" * 64 }], ["ownmod", "", "", {}]], "mod_rate=i:2"])
+MGQ_MpBattlesSync.finish
+MGQ_MpBattlesCoop.ended
+
 # A setup of another format or without a troop.
 check("a setup of another format or without a troop is not read",
       [MGQ_MpBattlesServed.read_setup(MGQ_MpBattlesSync::Wire.line([2, "", "", 40])), MGQ_MpBattlesServed.read_setup(MGQ_MpBattlesSync::Wire.line([1, "", "", "40"])), MGQ_MpBattlesServed.read_setup("")],

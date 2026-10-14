@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-15: Wrapped the game's methods with alias_method instead of prepended modules
 #                            - Took slashes in the game's Windows paths outside Windows
 #                            - Discarded the folders the game or a mod makes
+#                            - Loaded only MGQ Online and Mod Config Remake of the Patch folder for MGQ Online's battles
 #      Paulinchen  2026-10-14: Created
 #
 #----------------------------------------------------------------
@@ -29,6 +30,17 @@ module Boot
   # The scripts left out: the exit handling hooks Windows' window and the last one starts the
   # title screen, which a server never shows.
   SKIPPED_SCRIPTS = ["▼ メイン【WF-RGSS】Exit-EX 終了処理", "×Main"].freeze
+
+  # The folder of the game's mods, which Patch.rb loads.
+  PATCH_DIR = "Patch"
+
+  # What Patch.rb looks for in PATCH_DIR: every script, sorted.
+  PATCH_SCRIPTS = "#{PATCH_DIR}/**/*.rb".freeze
+
+  # The mods a server of MGQ Online's battles loads as it starts, MGQ Online itself and Mod Config
+  # Remake, which it ships with; every other mod comes with the world of each battle (see
+  # ServedMods), so a mod of the server's own never changes another world's battles.
+  SERVED_BOOT_MODS = %r{\A#{PATCH_DIR}/(Multiplayer|Patch|\d*_?ModConfigRemake)\.rb\z}i
 
   # The saves' writers the server turns off: it never writes the game's saves, which belong to
   # the players.
@@ -76,6 +88,16 @@ module Boot
       owner.send(:private, name) if was_private
       @originals[[owner, name, tag]] = original
     end
+
+    # Names the method a wrapper keeps the original under, which reaches past that wrapper.
+    #
+    # @param owner [Module] The class, the singleton class for a module's method.
+    # @param name [Symbol] The method.
+    # @param tag [Symbol] The wrapper.
+    # @return [Symbol, nil] The original's name, nil while that wrapper does not wrap it.
+    def self.original(owner, name, tag)
+      @originals[[owner, name, tag]]
+    end
   end
 
   class << self
@@ -94,7 +116,10 @@ module Boot
       # From the first script on: the mods write their logs as they load.
       discard_writes
       take_slashes if SLASHES_ONLY
+      keep_boot_mods(log) if served_game? && ENV["BATTLE_ALL_MODS"] != "1"
+      @booting = true
       load_scripts(log)
+      @booting = false
       log.puts(format("scripts: %.1f s, %d failed", clock - started, @failures.size))
       SAVE_WRITERS.each { |name| Wrap.around(DataManager.singleton_class, name, :no_saves) { true } }
       database_started = clock
@@ -119,7 +144,36 @@ module Boot
       end
     end
 
+    # Tells whether the game folder holds MGQ Online, which makes the server one of its battles.
+    #
+    # @return [Boolean] Whether it does.
+    def served_game?
+      File.exist?(File.join(GAME_DIR, PATCH_DIR, "Multiplayer.rb"))
+    end
+
+    # Tells whether the game's scripts still load, as the server starts.
+    #
+    # @return [Boolean] Whether they do.
+    def booting?
+      @booting ? true : false
+    end
+
     private
+
+    # Leaves every mod but SERVED_BOOT_MODS out of the scripts Patch.rb loads as the server starts,
+    # each one logged; BATTLE_ALL_MODS=1 loads them all, as for comparisons with the game.
+    #
+    # @param log [IO] Where the mods left out are named.
+    def keep_boot_mods(log)
+      Wrap.around(Dir.singleton_class, :glob, :boot_mods) do |_dir, original, args, block|
+        found = original.call(*args, &block)
+        next found unless Boot.booting? && args[0] == PATCH_SCRIPTS && found.is_a?(Array)
+
+        kept, left = found.partition { |path| path.match?(SERVED_BOOT_MODS) }
+        log.puts("left out of the start: #{left.join(', ')} (each world's battles bring their own mods)") unless left.empty?
+        kept
+      end
+    end
 
     # Discards whatever the game or a mod writes, such as the temporary picture a large bitmap is
     # made from, errors.txt and the mods' logs, and makes no folder: a sandboxed battle may write

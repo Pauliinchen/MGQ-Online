@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-15: Named the first scripted guest the battle's starter
+#                            - Let a third player join late through the starter with HOTJOIN=1
+#                            - Loaded the game folder's mods as a world's with MODS
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -96,8 +98,11 @@ guests = Thread.new do
   end
 end
 
+# With MODS, scripts of the game folder's Patch folder separated by commas, the battle loads them
+# as a world's mods, as the server does once it got them.
+mods = ENV["MODS"].to_s.split(",").map { |name| [name, { name => File.binread(File.join(Boot::PATCH_DIR, name)) }] }
 started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-outcome = ServedBattle.run(bridge, battle_id, setup)
+outcome = ServedBattle.run(bridge, battle_id, setup, mods)
 guests.join(2)
 seconds = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
 puts "result #{outcome[:result]}, turns #{outcome[:turns]}, frames #{outcome[:frames]}, #{format('%.1f', seconds)} s"

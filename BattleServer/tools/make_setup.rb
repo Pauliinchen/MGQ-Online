@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-15: Fought a raid boss's pools with RAID_POOL=1
 #                            - Named the first seat the battle's starter
+#                            - Named a world's mod with MOD_FILE
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -29,6 +30,13 @@ DataManager.create_game_objects
 SaveFile.extract(SaveFile.read(save)[1])
 BattleManager.setup(troop, true, true)
 MGQ_MpRaidPool.start(troop, MGQ_MpRaidPool.own_count(troop), :event, false) if ENV["RAID_POOL"] == "1"
+# With MOD_FILE the starter runs that script as a mod of the world, which relay_e2e.mjs uploads
+# to the catalog as version 1.0.
+if (mod_file = ENV["MOD_FILE"])
+  name = File.basename(mod_file)
+  mod = [name.downcase.sub(/\.rb\z/, "").delete(" _-"), "upload", "1.0", [[name, ServedMods.hash_of(name, File.binread(mod_file))]]]
+  MGQ_MpWorldMods.define_singleton_method(:served_mods) { [mod] }
+end
 build = MGQ_MpBattlesCoop.own_build
 players = seats.each_with_index.map do |seat, index|
   MGQ_MpBattlesCoop::Player.new(seat, "Player #{index + 1}", build[0], build[1], build[2], [0, 1, 2, 3], 4 / seats.size, 0)

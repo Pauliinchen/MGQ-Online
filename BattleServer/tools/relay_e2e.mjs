@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-15: Made a Raid World with WORLD_TYPE=raid and printed its boss pools
+//                            - Uploaded a mod to the catalog with MOD_FILE
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -10,11 +11,14 @@
 // Plays a served co-op battle through a running relay and its battle server, as two games would:
 // makes a world, seats two players in its room, starts the battle with a setup make_setup.rb wrote
 // and answers the server as guests do, with ready and attacks whenever it waits for them. With
-// WORLD_TYPE=raid the world is a Raid World, whose boss pools it prints at the end.
+// WORLD_TYPE=raid the world is a Raid World, whose boss pools it prints at the end. With MOD_FILE
+// it uploads that script to the catalog first, as the relay's admin.
 //   node relay_e2e.mjs <relay address, such as http://127.0.0.1:8080> <make_setup.rb's JSON file>
 
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { basename } from "node:path";
+import { crc32 } from "node:zlib";
 
 const [relay, setupFile] = process.argv.slice(2);
 const { setup, ready, commands } = JSON.parse(readFileSync(setupFile, "utf8"));
@@ -47,6 +51,39 @@ async function open(address, headers) {
   return { socket, closed, next: () => (inbox.length > 0 ? Promise.resolve(inbox.shift()) : new Promise((resolve) => waiting.push(resolve))) };
 }
 
+/**
+ * Writes a zip of one file, stored unpacked.
+ *
+ * @param {string} name The file's name in the zip.
+ * @param {Buffer} bytes The file.
+ * @returns {Buffer} The zip.
+ */
+function storedZip(name, bytes) {
+  const crc = crc32(bytes);
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(20, 4);
+  local.writeUInt32LE(crc, 14);
+  local.writeUInt32LE(bytes.length, 18);
+  local.writeUInt32LE(bytes.length, 22);
+  local.writeUInt16LE(name.length, 26);
+  const central = Buffer.alloc(46);
+  central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt16LE(20, 4);
+  central.writeUInt16LE(20, 6);
+  central.writeUInt32LE(crc, 16);
+  central.writeUInt32LE(bytes.length, 20);
+  central.writeUInt32LE(bytes.length, 24);
+  central.writeUInt16LE(name.length, 28);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(1, 8);
+  end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(46 + name.length, 12);
+  end.writeUInt32LE(30 + name.length + bytes.length, 16);
+  return Buffer.concat([local, Buffer.from(name), bytes, central, Buffer.from(name), end]);
+}
+
 const made = await fetch(`${relay}/v1/worlds`, {
   method: "POST",
   headers: game,
@@ -55,6 +92,20 @@ const made = await fetch(`${relay}/v1/worlds`, {
                          ...(process.env.WORLD_TYPE ? { type: process.env.WORLD_TYPE } : {}) }),
 });
 console.log(`world: ${made.status}`);
+
+// With MOD_FILE, the first player, the relay's admin, uploads that script as a mod of the catalog,
+// which the battle server then downloads for the battle.
+if (process.env.MOD_FILE) {
+  const name = basename(process.env.MOD_FILE);
+  const bytes = readFileSync(process.env.MOD_FILE);
+  const hash = createHash("sha256").update(bytes.filter((byte) => byte !== 13)).digest("hex");
+  const body = Buffer.concat([Buffer.from(`${name}\t${hash}\n\n`), storedZip(name, bytes)]);
+  const label = name.replace(/\.rb$/i, "");
+  const uploaded = await fetch(`${relay}/v1/mods/${encodeURIComponent(label)}/upload?name=${encodeURIComponent(label)}&version=1.0&player=${keyOf(1)}`, {
+    method: "POST", headers: { ...game, "X-MGQ-Player": keyOf(1) }, body,
+  });
+  console.log(`mod upload: ${uploaded.status} ${(await uploaded.text()).slice(0, 120)}`);
+}
 
 const players = [];
 for (const number of [1, 2]) {

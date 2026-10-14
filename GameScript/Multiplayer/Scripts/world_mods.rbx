@@ -2,6 +2,7 @@
 #  world_mods.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Listed the world's mods and their options this game runs for the battle server
 #      Paulinchen  2026-10-13: Left the mod's single player group out of the options dump
 #      Paulinchen  2026-10-12: Listed the Shared Mod Settings row among the mod's settings and left the mod's groups out of the options dump
 #      Paulinchen  2026-10-09: Read the catalog's personal mods
@@ -937,6 +938,46 @@ module MGQ_MpWorldMods
     File.open(temporary, "wb") { |file| file.write(lines.map { |line| line.dup.force_encoding("ASCII-8BIT") }.join("\n") + "\n") }
     File.delete(path) if File.exist?(path)
     File.rename(temporary, path)
+  end
+
+  # Lists the mods of the open world the player's game runs, which the battle server runs too for a
+  # battle it hosts: each mod the world names and the player installed, but those the catalog marks
+  # personal, with its kind, version and files' hashes as the catalog has them. A copy the server
+  # cannot get, outside the catalog or of another version than its current one, comes without a
+  # kind. Called by MGQ_MpBattlesServed.setup_text.
+  #
+  # @return [Array<Array>] Each mod's key, kind, version and [path, hash] pairs.
+  def self.served_mods
+    return [] unless @world
+
+    mods = catalog
+    personal = personal_keys || []
+    MGQ_MpWorld.mods_of(@world[:mods]).map do |name|
+      key = MGQ_MpWorld.mod_key(name)
+      next if personal.include?(key) || !MGQ_MpWorld.installed_mod?(name)
+
+      mod = mod_named(name, mods)
+      next [key, "", "", []] unless mod
+
+      row = ZIP_KINDS.include?(mod.kind) ? zip_row(name, mod) : link_row(name, mod)
+      row ? [key, "", row.yours.to_s, []] : [mod.key, mod.kind, mod.version, mod.files.to_a]
+    end.compact
+  rescue => e
+    log("listing the world's mods for the battle server failed: #{e.class}: #{e.message}")
+    []
+  end
+
+  # Writes the player's options of the world's mods, which the battle server takes for a battle
+  # it hosts. Called by MGQ_MpBattlesServed.setup_text.
+  #
+  # @return [String] "key=type:value" pairs separated by semicolons.
+  def self.served_settings
+    return "" unless @world
+
+    option_pairs(MGQ_MpWorld.mods_of(@world[:mods]).map { |name| MGQ_MpWorld.mod_key(name) }).map { |_, pair| pair }.join(";")
+  rescue => e
+    log("writing the world's mod settings for the battle server failed: #{e.class}: #{e.message}")
+    ""
   end
 
   # Settings.

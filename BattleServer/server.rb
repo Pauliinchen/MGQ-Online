@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-15: Refused battles by request while it hosts MGQ Online's battles
 #                            - Hosted the co-op battles the relay hands over
 #                            - Kept up to 1 MB of a child's output
+#                            - Got a co-op battle's mods before its child's sandbox
 #      Paulinchen  2026-10-14: Created
 #
 #----------------------------------------------------------------
@@ -16,6 +17,7 @@ require_relative "lib/session"
 require_relative "lib/sandbox"
 require_relative "lib/served"
 require_relative "lib/relay_bridge"
+require_relative "lib/mods"
 
 # The battle server: it loads the game once and then plays battles for its clients over TCP, one
 # JSON object per line each way. Requests:
@@ -116,6 +118,10 @@ module BattleServer
           $stdout.reopen(child_output)
           $stderr.reopen(child_output)
           Process.setrlimit(:CPU, CHILD_CPU_SECONDS)
+          # A co-op battle's mods come before the sandbox, which reaches neither the network nor
+          # the cache.
+          first = client.gets(MAX_REQUEST)
+          mods = mods_for(first)
           begin
             Sandbox.enter(Boot::GAME_DIR) if Sandbox.available?
           rescue StandardError => e
@@ -123,7 +129,7 @@ module BattleServer
             client.puts(JSON.generate(ok: false, error: "the battle could not be sandboxed: #{e.message}"))
             Process.exit!(1)
           end
-          serve(client)
+          serve(client, first, mods)
           # The game's scripts never get to run exit handlers meant for Game.exe.
           Process.exit!(0)
         end
@@ -157,13 +163,17 @@ module BattleServer
     # Answers one client's requests until it goes away, giving its battle up then.
     #
     # @param client [TCPSocket] The client.
-    def serve(client)
+    # @param first [String, nil] The client's first request when it was read already.
+    # @param mods [Array, ServedMods::Unavailable, nil] The mods of a co-op battle in the first
+    #   request, see mods_for; nil to get them as the battle starts.
+    def serve(client, first = nil, mods = nil)
       session = nil
-      while (line = client.gets(MAX_REQUEST))
+      while (line = first || client.gets(MAX_REQUEST))
+        first = nil
         reply = begin
           request = JSON.parse(line)
           # A co-op battle takes the relay's connection over to its end.
-          return host(client, request) if request["op"] == "serve"
+          return host(client, request, mods) if request["op"] == "serve"
 
           reply, session = handle(request, session)
           reply
@@ -185,7 +195,9 @@ module BattleServer
     #
     # @param client [TCPSocket] The relay's connection.
     # @param request [Hash] The serve.
-    def host(client, request)
+    # @param mods [Array, ServedMods::Unavailable, nil] The battle's mods as the child got them
+    #   before its sandbox, see mods_for; nil to get them now.
+    def host(client, request, mods = nil)
       bridge = RelayBridge.new(client)
       refused = lambda do |code, error|
         bridge.tell(op: "refused", code: code, error: error)
@@ -200,11 +212,14 @@ module BattleServer
       return refused.call("setup", "the battle id is no id") unless battle_id.match?(/\A[0-9a-z]{1,32}\z/)
 
       setup = request["setup"].to_s.unpack1("m").force_encoding("UTF-8")
-      ServedBattle.check(setup)
+      wanted = Array(ServedBattle.check(setup)[:mods])
+      mods ||= fetch_mods(wanted)
+      raise ServedBattle::Refused.new("mods", mods.message) if mods.is_a?(ServedMods::Unavailable)
+
       @battles += 1
       started = clock
       bridge.tell(op: "serving")
-      outcome = ServedBattle.run(bridge, battle_id, setup)
+      outcome = ServedBattle.run(bridge, battle_id, setup, mods)
       $stderr.puts(format("battle %s: %s after %d turns, %.0f s", battle_id, outcome[:result], outcome[:turns], clock - started))
       bridge.tell(op: "end", result: outcome[:result].to_s, turns: outcome[:turns])
     rescue ServedBattle::Refused => e
@@ -215,6 +230,38 @@ module BattleServer
     ensure
       free_slot if slotted
       client.close unless client.closed?
+    end
+
+    # Gets the mods of a co-op battle a child is handed before it enters its sandbox: from the
+    # cache, else downloaded from the relay BATTLE_RELAY_URL names.
+    #
+    # @param line [String, nil] The child's first request.
+    # @return [Array, ServedMods::Unavailable, nil] The mods, see ServedMods.fetch; why they could
+    #   not be had; nil for a request that is no co-op battle's or a setup the server cannot read.
+    def mods_for(line)
+      request = line && JSON.parse(line)
+      return nil unless @served && request.is_a?(Hash) && request["op"] == "serve"
+
+      setup = MGQ_MpBattlesServed.read_setup(request["setup"].to_s.unpack1("m").force_encoding("UTF-8"))
+      setup && fetch_mods(setup[:mods])
+    rescue JSON::ParserError
+      nil
+    end
+
+    # Gets a battle's mods. Where one process hosts every battle (thread mode), mods stay loaded,
+    # so it hosts only battles of the mods it loaded first.
+    #
+    # @param wanted [Array<Array>] The mods the starter runs, see MGQ_MpBattlesServed.mods_of.
+    # @return [Array, ServedMods::Unavailable] The mods, see ServedMods.fetch, or why not.
+    def fetch_mods(wanted)
+      unless forking?
+        @thread_mods ||= wanted
+        return ServedMods::Unavailable.new("this server hosts one battle at a time and keeps the mods of its first; restart it for others") unless @thread_mods == wanted
+      end
+      ServedMods.fetch(wanted, ENV["BATTLE_RELAY_URL"])
+    rescue ServedMods::Unavailable => e
+      $stderr.puts("the battle's mods cannot be had: #{e.message}")
+      e
     end
 
     # The time in seconds.

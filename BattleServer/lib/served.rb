@@ -4,12 +4,14 @@
 #  Changelog:
 #      Paulinchen  2026-10-15: Read the boss pools the relay told and forgot the last battle's boss fight
 #                            - Hosted a Raid World's battle as one, took players in late and told the starter the battle's state
+#                            - Loaded the world's mods for the battle and gave it the starter's options of them
 #                            - Created
 #
 #----------------------------------------------------------------
 
 require_relative "battle"
 require_relative "online"
+require_relative "mods"
 
 # Hosts one co-op battle MGQ Online handed to the battle server: the game's own battle scene with
 # MGQ Online's live host, which streams it to the players over the battle channel and takes their
@@ -131,16 +133,19 @@ module ServedBattle
     # @param bridge [Online::Bridge, #send_to] The battle channel's other end.
     # @param battle_id [String] The battle's id.
     # @param setup_text [String] What the starter sent, see MGQ_MpBattlesServed.setup_text.
+    # @param mods [Array] The world's mods the starter runs, see ServedMods.fetch.
     # @return [Hash] :result (:victory, :defeat, :escape, :abort or the scene the battle left for),
     #   :turns and :frames.
     # @raise [Refused] For a setup the server cannot read.
-    def run(bridge, battle_id, setup_text)
+    def run(bridge, battle_id, setup_text, mods = [])
       setup = check(setup_text)
       Online.connect(bridge)
+      ServedMods.load(mods) unless mods.empty?
       @raid = setup[:raid]
       @squad = setup[:squad]
       BOSS_SCRIPTS.each { |name| Object.const_get(name).forget if Object.const_defined?(name) }
       DataManager.create_game_objects
+      apply_settings(setup[:settings])
       MGQ_MpBattlesServed.host(battle_id, setup)
       # The map saves its music before a battle, and the battle's end plays it again.
       BattleManager.save_bgm_and_bgs
@@ -188,6 +193,16 @@ module ServedBattle
       return unless (Graphics.frame_count % MGQ_MpBattlesServed::FRONT_STATE_FRAMES).zero? && MGQ_MpBattlesServed.server?
 
       MGQ_MpBattlesServed.tell_front_state
+    end
+
+    # Gives the battle's game the starter's options of the world's mods, as a world's shared
+    # settings are given (see MGQ_MpWorldMods.apply_values).
+    #
+    # @param text [String] The options, "key=type:value" pairs separated by semicolons.
+    def apply_settings(text)
+      return if text.to_s.empty? || !defined?(MGQ_MpWorldMods)
+
+      MGQ_MpWorldMods.apply_values(MGQ_MpWorldMods.settings_from(text))
     end
 
     # Takes the boss pools the relay told every POOL_FRAMES frames while the battle fights a Raid

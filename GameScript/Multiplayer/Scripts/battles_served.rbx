@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-15: Handed the battle server how the battle's boss fights, by pools or by tier
 #                            - Stood in for the battle server in the world's room as its starter, for players who join late
+#                            - Named the world's mods the starter runs and its options of them in the setup
 #                            - Sent a guest's messages to the server alone and passed a player's leave on to the others
 #                            - Created
 #
@@ -510,8 +511,8 @@ module MGQ_MpBattlesServed
   # its game data are, the troop, how it ends, the map, the enemies' rates, the enemies as the
   # starter set them up, the arranged players and the level, the switches and variables the
   # troop's events read, how its boss fights (a Raid World's pools or a tier), the starter's seat,
-  # the battle's front in the world's room, and a Raid World's squad rules for the players who join
-  # late.
+  # the battle's front in the world's room, a Raid World's squad rules for the players who join
+  # late, and the world's mods the starter runs with their options, which the server runs too.
   #
   # @param players [Array<MGQ_MpBattlesCoop::Player>] The arranged players.
   # @param level [Integer, nil] The battle's level.
@@ -529,7 +530,9 @@ module MGQ_MpBattlesServed
                                   players.map(&:to_a), level.to_i, switches, variables, MGQ_MpBattlesCoop.raid? ? 1 : 0,
                                   defined?(MGQ_MpRaidPool) ? MGQ_MpRaidPool.served_fields : nil,
                                   defined?(MGQ_MpRaidTiers) && MGQ_MpRaidTiers.fight ? 1 : 0, MGQ_MpOverworldSync::Me.seat,
-                                  (MGQ_MpWorld.squad || {}).map { |key, value| [key.to_s, value] }])
+                                  (MGQ_MpWorld.squad || {}).map { |key, value| [key.to_s, value] },
+                                  defined?(MGQ_MpWorldMods) ? MGQ_MpWorldMods.served_mods : [],
+                                  defined?(MGQ_MpWorldMods) ? MGQ_MpWorldMods.served_settings : ""])
   end
 
   # Finds what this game's MGQ Online scripts are, once per session: a checksum of every script in
@@ -556,10 +559,10 @@ module MGQ_MpBattlesServed
   # @param text [String] The setup.
   # @return [Hash, nil] :scripts and :data (the starter's fingerprints), :troop, :escape, :lose,
   #   :map, :rates, :enemies, :players, :level, :switches, :variables, :raid, :pool (see
-  #   MGQ_MpRaidPool.served_fields), :tiers, :starter and :squad (see MGQ_MpWorld.squad); nil for
-  #   a setup of another format.
+  #   MGQ_MpRaidPool.served_fields), :tiers, :starter, :squad (see MGQ_MpWorld.squad), :mods (see
+  #   mods_of) and :settings; nil for a setup of another format.
   def self.read_setup(text)
-    format, scripts, data, troop, escape, lose, map, rates, enemies, players, level, switches, variables, raid, pool, tiers, starter, squad = MGQ_MpBattlesSync::Wire.parse(text.to_s)
+    format, scripts, data, troop, escape, lose, map, rates, enemies, players, level, switches, variables, raid, pool, tiers, starter, squad, mods, settings = MGQ_MpBattlesSync::Wire.parse(text.to_s)
     return nil unless format == FORMAT && troop.is_a?(Integer)
 
     { :scripts => scripts.to_s, :data => data.to_s,
@@ -569,7 +572,22 @@ module MGQ_MpBattlesServed
       :switches => Array(switches).select { |id| id.is_a?(Integer) && id > 0 },
       :variables => Array(variables).select { |pair| pair.is_a?(Array) && pair.size == 2 && pair.all? { |value| value.is_a?(Integer) } },
       :raid => raid == 1, :pool => pool.is_a?(Array) ? pool : nil, :tiers => tiers == 1, :starter => starter.is_a?(Integer) ? starter : nil,
-      :squad => squad_of(squad) }
+      :squad => squad_of(squad), :mods => mods_of(mods), :settings => settings.to_s }
+  end
+
+  # Reads the world's mods a setup names, see MGQ_MpWorldMods.served_mods.
+  #
+  # @param list [Object] The mods, as setup_text writes them.
+  # @return [Array<Array>] Each mod's key, kind (empty for one the server cannot get), version and
+  #   files' hashes by path; those of another shape left out.
+  def self.mods_of(list)
+    Array(list).map do |key, kind, version, files|
+      next unless key.is_a?(String) && !key.empty? && kind.is_a?(String) && version.is_a?(String) && files.is_a?(Array)
+
+      hashes = {}
+      files.each { |path, hash| hashes[path] = hash if path.is_a?(String) && hash.is_a?(String) && hash =~ /\A[0-9a-f]{64}\z/ }
+      [key, kind, version, hashes]
+    end.compact
   end
 
   # Reads a Raid World's squad rules a setup carries, those of MGQ_MpWorld::DEFAULT_SQUAD's keys

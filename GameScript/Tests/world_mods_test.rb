@@ -2,6 +2,7 @@
 #  world_mods_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Checked the world's mods and options this game hands the battle server
 #      Paulinchen  2026-10-13: Kept the title screen from writing GameData.ini
 #      Paulinchen  2026-10-12: Followed the settings to their own Mod Config group and checked the dump leaves the hotkeys out
 #                            - Stood in for Ini.load and the favourites and hidden worlds in Player.ini
@@ -961,4 +962,21 @@ Dir.mktmpdir do |folder|
           "mod_party_sheet_size\tSize\ti\t2\t2\t2\t4\t4")
   end
 end
+# The world's mods the player's game runs, which the battle server runs too for a battle it hosts.
+Dir.mktmpdir do |folder|
+  FileUtils.mkdir_p(File.join(folder, "Patch"))
+  %w(Level_Cap.rb Party_Sheet.rb Own_Mod.rb Old_Mod.rb).each { |name| File.write(File.join(folder, "Patch", name), "") }
+  Dir.chdir(folder) do
+    catalog("mod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb", "mod\tpartysheet\tParty Sheet\tlink\t1.3.6\tParty_Sheet.rb\tqq", "personal\tpartysheet\tParty Sheet",
+            "mod\toldmod\tOld Mod\tlink\t2\tOld_Mod.rb\tnew")
+    $file_hashes = { "Patch/Level_Cap.rb" => "bb", "Patch/Party_Sheet.rb" => "qq", "Patch/Old_Mod.rb" => "old" }
+    mods.enter_world(MGQ_MpWorld::Directory::ListedWorld.new("w1", 4, 0, "creator", 0, "Creator", "Modded", "none", [], false, false, true, false, false, "",
+                                                             "!Level Cap; Party Sheet; Own Mod; Old Mod; Missing Mod", "", "", ""), "me")
+    check("the battle server gets the world's mods the player runs: the catalog's with their files, never a personal one or one not installed, and without a kind those it cannot get",
+          mods.served_mods, [["levelcap", "link", "1.4.0", [["Level_Cap.rb", "bb"]]], ["ownmod", "", "", []], ["oldmod", "", "unknown", []]])
+    check("and the player's options of them", mods.served_settings.split(";").map { |pair| pair.split("=")[0] }.include?("mod_level_cap"), true)
+    mods.forget_world
+  end
+end
+check("outside a world it gets none", [mods.served_mods, mods.served_settings], [[], ""])
 check("nothing failed but the broken dumps", ($log || []).grep(/FAILED|failed/).reject { |line| line.include?("broken entry") || line.include?("is not loaded") || line.include?("Too many requests") }, [])
