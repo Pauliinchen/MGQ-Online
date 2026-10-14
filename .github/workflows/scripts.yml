@@ -1,5 +1,5 @@
-# Runs the scripts' tests (GameScript/Tests) on every push and pull request, so they never drift
-# from the scripts. Windows, since Multiplayer.rb builds its paths with backslashes as the game needs.
+# Runs the scripts' tests (GameScript/Tests) and the battle server's (BattleServer/Tests) on every push
+# and pull request, so they never drift from the code; the battle server's that need the game skip. Windows, since Multiplayer.rb builds its paths with backslashes as the game needs.
 name: Scripts
 
 on:
@@ -18,3 +18,6 @@ jobs:
 
       - name: Test the scripts
         run: ruby GameScript/Tests/run.rb
+
+      - name: Test the battle server
+        run: ruby BattleServer/Tests/run.rb

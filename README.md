@@ -82,6 +82,7 @@ Rebind them in *Mod Config → MGQ Online Hotkeys*; the mod's other options are 
 - World types: [Classic Worlds](docs/CLASSIC_WORLDS.md), where each party plays its leader's story, and [Raid Worlds](docs/RAID_WORLDS.md), with the world's story, catching up and every raid boss.
 - [Developer notes](docs/DEVELOPER.md): building, testing and how the mod works inside.
 - [Relay](Relay/README.md): the server the games meet at, and its protocol.
+- [Battle server](BattleServer/README.md): the game's own battles played on the server, without Game.exe.
 
 ## Disclaimer
 
