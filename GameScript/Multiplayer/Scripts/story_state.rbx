@@ -2,6 +2,7 @@
 #  story_state.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-14: Kept the self switches of a choice's line each Raid World player's own
 #      Paulinchen  2026-10-12: Gave characters the classes and races the story and its quests give
 #                            - Taught companions the skills the story and its quests teach them
 #                            - Kept the small and large medals handed in (55, 59) each player's own
@@ -172,7 +173,7 @@ module MGQ_MpStoryState
     [personal[0].size, switches.size].max.times { |id| switches[id] = personal[0][id] if personal_switch?(id, story[1]) }
     [personal[1].size, variables.size].max.times { |id| variables[id] = personal[1][id] if personal_variable?(id) }
     self_switches = story[2].dup
-    chests.each do |key|
+    (chests | (story[2].keys | personal[2].keys).select { |key| choice_self_switch?(key) }).each do |key|
       if personal[2].key?(key)
         self_switches[key] = personal[2][key]
       else
@@ -247,12 +248,21 @@ module MGQ_MpStoryState
   end
 
   # Reports whether a self switch is the player's own: a chest's on the map, through
-  # coop_events.rbx.
+  # coop_events.rbx, or one of a choice's lines, through coop_choices.rbx.
   #
   # @param key [Array] The self switch: map, event and letter.
   # @return [Boolean] Whether it is.
   def self.personal_self_switch?(key)
-    $game_map ? MGQ_MpCoopEvents.chest_key?(key) : false
+    ($game_map && MGQ_MpCoopEvents.chest_key?(key)) || choice_self_switch?(key) ? true : false
+  end
+
+  # Reports whether a self switch is the player's own as one of a choice's lines, see
+  # MGQ_MpCoopChoices.personal_self_switch?.
+  #
+  # @param key [Array] The self switch: map, event and letter.
+  # @return [Boolean] Whether it is.
+  def self.choice_self_switch?(key)
+    defined?(MGQ_MpCoopChoices) && MGQ_MpCoopChoices.personal_self_switch?(key) ? true : false
   end
 
   # Lists the self switches of the chests on the map, through coop_events.rbx.

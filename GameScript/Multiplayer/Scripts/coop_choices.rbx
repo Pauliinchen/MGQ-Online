@@ -2,6 +2,8 @@
 #  coop_choices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-14: Added the Navy or the Pirates as each player's own choice, with its ship and its line's self switches
+#                            - Asked a save past a choice a later build added once the world's first story came
 #      Paulinchen  2026-10-11: Dropped Amira's choice in Iliasburg
 #      Paulinchen  2026-10-10: Forgot the waiting choices and route once the world closes
 #      Paulinchen  2026-10-09: Read the story and the roster and brought companions through story_state.rbx
@@ -45,6 +47,15 @@ module MGQ_MpCoopChoices
       { :label => "Defeat Lucia", :switches => { 2097 => true, 7016 => true, 2094 => true, 2096 => false, 7017 => false, 2095 => false, 2137 => true, 2138 => false },
         :variables => { 1029 => 6 }, :joins => [163], :note => "Lily joins." },
     ]),
+    Branch.new(:navy, "Navy or Pirates", 22, "Navy Headquarters: whether Luka helps the Navy catch the Fishy Pirates or sails with them. Either side gives him a ship.", [
+      { :label => "Cooperate with the Navy", :switches => { 2148 => true, 2149 => false, 2168 => true, 2169 => false, 7001 => true, 7068 => true },
+        :variables => { 1050 => 9, 1051 => 0, 1053 => 0 }, :least => { 56 => 2 }, :joins => [203, 204], :ship => [2, 334, 240],
+        :note => "Bonnie and Ashel are caught. Tatsuko and Stacy join, and the Navy's ship is yours." },
+      { :label => "Aid the Fishy Pirates", :switches => { 2149 => true, 2148 => false, 2168 => true, 2169 => true, 7001 => false, 7068 => true, 2150 => true },
+        :variables => { 1050 => 6, 1051 => 5, 1053 => 0 }, :least => { 56 => 2 }, :joins => [201, 202], :ship => [2, 21, 211],
+        :self_switches => [[709, 6, "A"], [709, 15, "A"], [376, 53, "A"], [376, 53, "B"]],
+        :note => "Ashel and Bonnie join, and the MS Fish and the Dark Saber are yours." },
+    ]),
     Branch.new(:plansect, "Plansect", 24, "Plansect: whose side Luka takes, the plants' Priestess or the insects' Queen Bee.", [
       { :label => "Side with the Priestess", :switches => { 7003 => true, 2154 => false, 7002 => false }, :variables => { 1061 => 1, 1056 => 6 },
         :joins => [241], :note => "The Queen Bee is defeated. The Priestess joins." },
@@ -83,9 +94,23 @@ module MGQ_MpCoopChoices
   SUCCUBUS_SWITCHES = [2210, 2211, 2212, 2213, 7007, 7008]
 
   # The companions the choices bring, which come only with the member's own outcome, never as the
-  # leader holds them: Lily, Lucia, Natasha, the mayor, the Sphinx, the Priestess, Miria and the
-  # Spider Princess.
-  CHOICE_COMPANIONS = [163, 167, 288, 287, 153, 241, 245, 334]
+  # leader holds them: Lily, Lucia, Natasha, the mayor, the Sphinx, the Priestess, Miria, the
+  # Spider Princess, Ashel, Bonnie, Tatsuko and Stacy.
+  CHOICE_COMPANIONS = [163, 167, 288, 287, 153, 241, 245, 334, 201, 202, 203, 204]
+
+  # The choices a later build added, which saves from earlier builds are past without having made
+  # them, see missed.
+  LATER_BRANCHES = [:navy]
+
+  # The switches each side of the Navy or the Pirates turns on as the player takes it in their own
+  # play, Navy Headquarters' answer: once one is on, only that side's outcome is offered.
+  NAVY_SIDES = [2148, 2149]
+
+  # The maps of the Navy's and the Pirates' lines (the Great Pirate's Cave, the MS Fish raid, the
+  # pirates' cave and the raided headquarters), whose self switches are each Raid World player's
+  # own, since each plays their own side; and the self switches of the MS Fish's Ashel.
+  NAVY_MAPS = [231, 232, 233, 667, 680, 685, 696, 701, 703, 708, 709]
+  NAVY_SELF_SWITCHES = [[376, 53, "A"], [376, 53, "B"]]
 
   # The main story's progress the Great Decision sets.
   GREAT_DECISION = 40
@@ -157,6 +182,7 @@ module MGQ_MpCoopChoices
     case key
     when :side then switches[4] || switches[5] ? true : false
     when :magistea then switches[2096] || switches[2097] ? true : false
+    when :navy then variables[1050].to_i >= 9 || variables[1051].to_i >= 5
     when :plansect then variables[1061].to_i >= 1
     when :succubus then SUCCUBUS_SWITCHES.first(4).any? { |id| switches[id] }
     when :spider then switches[2280] || switches[2281] ? true : false
@@ -203,9 +229,31 @@ module MGQ_MpCoopChoices
   def self.labels(key)
     outcomes = branch(key).outcomes
     return decision_routes.map { |index| outcomes[index][:label] } if key == :decision && raid?
+    return navy_sides.map { |index| outcomes[index][:label] } if key == :navy
 
     outcomes = outcomes.first(2) if key == :decision && !both_endings?
     outcomes.map { |outcome| outcome[:label] }
+  end
+
+  # Lists the outcomes of the Navy or the Pirates the player may still take: only the side their own
+  # play took at Navy Headquarters (NAVY_SIDES), whose companions joined them already, else both.
+  #
+  # @return [Array<Integer>] The outcomes, by their place in the choice's outcomes.
+  def self.navy_sides
+    switches = MGQ_MpStoryState.data_of($game_switches)
+    taken = NAVY_SIDES.index { |id| switches[id] }
+    taken ? [taken] : [0, 1]
+  rescue
+    [0, 1]
+  end
+
+  # Finds the outcome an answer picks, given as its place among the labels offered.
+  #
+  # @param key [Symbol] The choice.
+  # @param index [Integer] The answer.
+  # @return [Integer] The outcome's place in the choice's outcomes.
+  def self.outcome_index(key, index)
+    key == :navy ? navy_sides[index] || index : index
   end
 
   # Reports whether Lily is with the player once Magistea Village is decided, by the screen's answer,
@@ -271,7 +319,7 @@ module MGQ_MpCoopChoices
 
       lucia ? "The mayor joins, as Lucia is with you." : "Nobody joins: the mayor joins only while Lucia is with you."
     when :decision then raid? ? raid_decision_note(decision_routes[index] || index) : decision_note(index, leader_route, leader_name)
-    else branch(key).outcomes[index][:note].to_s
+    else branch(key).outcomes[outcome_index(key, index)][:note].to_s
     end
   end
 
@@ -355,6 +403,18 @@ module MGQ_MpCoopChoices
     false
   end
 
+  # Reports whether a self switch is each Raid World player's own as one of the Navy's or the
+  # Pirates' lines (NAVY_MAPS, NAVY_SELF_SWITCHES), whose events each player plays for their own
+  # side: one pirate's treasure taken must not empty the next pirate's chest.
+  #
+  # @param key [Array] The self switch: map, event and letter.
+  # @return [Boolean] Whether it is.
+  def self.personal_self_switch?(key)
+    raid? && (NAVY_MAPS.include?(key[0]) || NAVY_SELF_SWITCHES.include?(key)) ? true : false
+  rescue
+    false
+  end
+
   # Lists the switches and variables of every choice's outcomes, each player's own in a Raid World.
   #
   # @return [Array<Hash>] The switches and the variables, by id.
@@ -384,16 +444,19 @@ module MGQ_MpCoopChoices
     MGQ_MpCoopStoryRewards::FINAL[kind].include?(id) ? "only the leader's route gives it, and the player starts another" : nil
   end
 
-  # Gives the player a choice's outcome in the story they play: its switches and variables, also in
-  # their own story kept aside, and the companions it brings.
+  # Gives the player a choice's outcome in the story they play: its switches and variables, the
+  # values it raises (:least) and the self switches it turns on, also in their own story kept aside,
+  # the companions it brings and the ship it puts on the field. In a Raid World the catch-up then
+  # follows the outcome as a story carrying the player past it, so its items and return point come.
   #
   # @param key [Symbol] The choice.
-  # @param index [Integer] The outcome.
+  # @param index [Integer] The answer, its place among the labels offered.
   # @param answers [Hash{Symbol => Integer}] Every answer given, Magistea Village's among them.
   def self.apply(key, index, answers = {})
     return MGQ_MpCoopStory.choose_side(index == 0 ? :alice : :ilias) if key == :side
 
-    outcome = key == :succubus ? succubus_outcome(index, answers) : branch(key).outcomes[index]
+    outcome = key == :succubus ? succubus_outcome(index, answers) : branch(key).outcomes[outcome_index(key, index)]
+    before = MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state)
     switches = MGQ_MpStoryState.data_of($game_switches)
     variables = MGQ_MpStoryState.data_of($game_variables)
     own = MGQ_MpCoopStory.own_story_aside
@@ -408,12 +471,38 @@ module MGQ_MpCoopChoices
       variables[id] = value
       own[1][id] = value if own
     end
+    (outcome[:least] || {}).each do |id, value|
+      next if variables[id].to_i >= value
+
+      written << "v#{id} #{variables[id].to_i} -> #{value}"
+      variables[id] = value
+      own[1][id] = value if own
+    end
+    (outcome[:self_switches] || []).each do |self_key|
+      written << "ss#{self_key.join('.')} on"
+      $game_self_switches[self_key] = true
+      own[2][self_key] = true if own
+    end
     $game_map.need_refresh = true if $game_map
     log("#{branch(key).title}: the player's own outcome \"#{labels(key)[index]}\": #{written.join(', ')}")
     (outcome[:joins] || []).each do |id|
       name = MGQ_MpStoryState.bring(id)
       MGQ_MpOverworldSync.notice("#{name} joined you.") if name
     end
+    place_ship(outcome[:ship]) if outcome[:ship]
+    MGQ_MpWorldCatchup.carried(before) if raid? && defined?(MGQ_MpWorldCatchup)
+  end
+
+  # Puts the ship an outcome gives where the game's own event of that side leaves it, unless the
+  # player rides it.
+  #
+  # @param place [Array<Integer>] The map, x and y.
+  def self.place_ship(place)
+    ship = $game_map.vehicle(:ship)
+    return unless ship && !$game_player.vehicle.equal?(ship)
+
+    ship.set_location(*place)
+    log("put the ship on map #{place[0]} (#{place[1]},#{place[2]}), where the player's side leaves it")
   end
 
   # The fields the choices add to the state the player's game tells the others: the members the
@@ -678,6 +767,27 @@ module MGQ_MpCoopChoices
 
     @prompts.concat(keys)
     log("the #{raid? ? 'world' : 'leader'}'s story passed #{keys.join(', ')} (1001 #{from} -> #{to}), whose own outcome the player picks once free")
+  end
+
+  # Asks the player the choices a later build added (LATER_BRANCHES) that a Raid World's story is
+  # past while their own save never made them, since no story moves them past those again. Called
+  # with the first world's story laid over theirs after entering, a load or a new game.
+  #
+  # @param progress [Integer] The main story's progress of the story laid over theirs.
+  def self.missed(progress)
+    return unless raid?
+
+    switches = MGQ_MpStoryState.data_of($game_switches)
+    variables = MGQ_MpStoryState.data_of($game_variables)
+    keys = LATER_BRANCHES.select do |key|
+      progress >= branch(key).point && !made?(key, switches, variables, MGQ_MpStoryState.roster_ids) && !@prompts.include?(key)
+    end
+    return if keys.empty?
+
+    @prompts.concat(keys)
+    log("the player's save is past #{keys.join(', ')} without its own outcome, which the player picks once free")
+  rescue => e
+    log("looking for the choices the save missed failed: #{e.class}: #{e.message}")
   end
 
   # Asks the player at the Great Decision once a Raid World's story carried them past it: the screen

@@ -2,6 +2,7 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-14: Expected the Navy or the Pirates among the choices
 #      Paulinchen  2026-10-12: Checked that a story event left to the teller fades in a dark screen once per arrival
 #                            - Checked that a member stands free while the leader fights the story's battle
 #                            - Checked that a leader's page that fails to hold waits for the member
@@ -2023,9 +2024,9 @@ choices = MGQ_MpCoopChoices
   245 => "Miria", 334 => "Spider Princess" }.each { |id, name| $data_actors[id] = Actor.new(name) }
 
 check("a catch-up from the start to the Great Decision asks every choice, in story order",
-      choices.passed(5, 40, [], [], []), [:side, :magistea, :plansect, :succubus, :spider, :sphinx, :decision])
+      choices.passed(5, 40, [], [], []), [:side, :magistea, :navy, :plansect, :succubus, :spider, :sphinx, :decision])
 check("one from 20 to 32 asks those between, and not one the player made",
-      choices.passed(20, 32, Array.new(3000).tap { |s| s[2096] = true }, [], []), [:plansect, :succubus, :spider, :sphinx])
+      choices.passed(20, 32, Array.new(3000).tap { |s| s[2096] = true }, [], []), [:navy, :plansect, :succubus, :spider, :sphinx])
 check("Amira in Iliasburg is no choice: both her outcomes end with her joining, so the story brings her",
       [choices.passed(5, 40, [], [], []).include?(:amira), choices.skip_reason(:actors, 540)], [false, nil])
 check("the Great Decision is not asked before the leader is past it", choices.passed(30, 39, [], [], []).include?(:decision), false)
@@ -2126,7 +2127,7 @@ $scenes = []
 choices.accept(leader)
 screen = choices.take_screen
 check("accepting shows the choices the catch-up carries them past",
-      [$scenes, screen[:keys], screen[:buttons]], [[Scene_MpStoryChoices], [:plansect, :succubus, :spider, :sphinx, :decision], ["Bring me there", "Cancel"]])
+      [$scenes, screen[:keys], screen[:buttons]], [[Scene_MpStoryChoices], [:navy, :plansect, :succubus, :spider, :sphinx, :decision], ["Bring me there", "Cancel"]])
 leader.state["ssoffer"] = ""
 check("which closes once the leader takes the offer back", choices.valid_offer?(leader), "Leader took the offer back.")
 $leader = nil

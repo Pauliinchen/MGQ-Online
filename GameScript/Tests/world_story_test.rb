@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-14: Checked that one-way story variables never go below the world's values
+#                            - Checked the Navy or the Pirates as each player's own choice
 #      Paulinchen  2026-10-12: Checked the companions' affection coming and going with the stories
 #      Paulinchen  2026-10-11: Asked no Amira choice of a player carried past Iliasburg
 #                            - Dropped the check of the opening's random encounters
@@ -871,7 +872,7 @@ $game_switches[7039] = $game_switches[7096] = $game_switches[7097] = false
 # The world's story carrying the player past the Great Decision asks the route the world took.
 choices.forget("next check")
 $calls.clear
-new_story({ 1001 => 39 }, [5])
+new_story({ 1001 => 39, 1050 => 9 }, [5])
 story.loaded(:load)
 frames(1)
 relay({ "rev" => 30, "wrev" => 30, "p" => 39, "part" => "3", "fetch" => "done" }, packed({ 1001 => 39 }))
@@ -994,7 +995,7 @@ check("a loaded save fetches the world's story", calls_of("mp_raid_story_fetch")
 
 # The world finishing the player's route and starting the next before the player took its story.
 choices.forget("next check")
-new_story({ 1001 => 40, 1141 => 30 })
+new_story({ 1001 => 40, 1141 => 30, 1050 => 9 })
 story.loaded(:load)
 frames(1)
 relay({ "rev" => 60, "wrev" => 60, "p" => 40, "r1141" => 30, "part" => "ad", "route" => "ad", "fetch" => "done" }, packed({ 1001 => 40, 1141 => 30 }))
@@ -1237,3 +1238,33 @@ frames(5)
 check("a write the affection asked for carries the player's", calls_of("mp_raid_story_post").map { |args| lists_of(args[3])["a"] }, ["56:60"])
 MGQ_MpWorld.world = nil
 frames(1)
+
+# The Navy or the Pirates: each Raid World player's own side, with its ship, its companions and the
+# self switches of its line.
+# Stands in for a vehicle, keeping where it was put.
+class FakeVehicle; attr_reader :place; def set_location(*place); @place = place; end; end
+$vehicles = { :ship => FakeVehicle.new }
+class Game_Map; def vehicle(type); $vehicles[type]; end; end
+class Game_Player; def vehicle; nil; end; end
+choices.forget("navy")
+new_story({ 1001 => 24, 1050 => 8, 56 => 0 }, [2148])
+check("a save past the Navy's ending without its outcome is asked once, the side its own play took alone",
+      [(choices.missed(24); choices.instance_variable_get(:@prompts)), choices.labels(:navy)], [[:navy], ["Cooperate with the Navy"]])
+choices.apply(:navy, 0)
+check("whose outcome finishes the Navy's line, gives two party places and puts the ship where the line leaves it",
+      [$game_variables[1050], $game_variables[1051], $game_switches[7001], $game_variables[56], $vehicles[:ship].place], [9, 0, true, 2, [2, 334, 240]])
+choices.forget("pirates")
+new_story({ 1001 => 24, 56 => 4 }, [2149])
+check("a player who took the Pirates is offered the Pirates alone", choices.labels(:navy), ["Aid the Fishy Pirates"])
+choices.apply(:navy, 0)
+check("and their outcome takes the treasure and Ashel's events for them, keeping their party places",
+      [$game_variables[1051], $game_switches[2148], $game_self_switches[[709, 6, "A"]], $game_self_switches[[376, 53, "B"]], $game_variables[56], $vehicles[:ship].place],
+      [5, false, true, true, 4, [2, 21, 211]])
+choices.forget("both")
+new_story({ 1001 => 24, 1050 => 9 })
+check("a save that finished a line is asked nothing", [(choices.missed(24); choices.instance_variable_get(:@prompts)), choices.labels(:navy).size], [[], 2])
+check("the lines' self switches are each Raid World player's own, other events' are not",
+      [MGQ_MpStoryState.personal_self_switch?([709, 6, "A"]), MGQ_MpStoryState.personal_self_switch?([376, 53, "A"]), MGQ_MpStoryState.personal_self_switch?([376, 52, "A"])],
+      [true, true, false])
+check("so a story laid over the player's keeps theirs", MGQ_MpStoryState.mix([[], [], { [709, 6, "A"] => true }], [[], [], {}], [])[2].key?([709, 6, "A"]), false)
+check("and the lines' values are each player's own", [1050, 1051].map { |id| MGQ_MpStoryState.personal_variable?(id) } + [MGQ_MpStoryState.personal_switch?(2148)], [true, true, true])

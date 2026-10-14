@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-14: Kept the one-way story variables from going below the world's values
 #                            - Kept the raises of one-way variables through a step the relay refused as behind
+#                            - Asked the later builds' choices behind the world's first story that the player's save never made
 #      Paulinchen  2026-10-12: Sent and read the companions' affection with the world's story
 #                            - Sent and read the level caps the world's story unlocked
 #      Paulinchen  2026-10-11: Left the random encounters to world_catchup.rbx
@@ -819,7 +820,7 @@ module MGQ_MpWorldStory
       @greeted = true
       MGQ_MpOverworldSync.notice("You play the world's story.")
     end
-    followed(own, after)
+    followed(own, after, first)
     @returned_route = nil
     route_taken if after_take == :route_taken
   end
@@ -960,13 +961,17 @@ module MGQ_MpWorldStory
   end
 
   # Follows what the world's story brought: the choices it carried the player past and the Great
-  # Decision's route, both when one story carries them past earlier choices onto a route.
+  # Decision's route, both when one story carries them past earlier choices onto a route. The first
+  # story after entering, a load or a new game also asks the choices a later build added that the
+  # player's save is past without having made them, see MGQ_MpCoopChoices.missed.
   #
   # @param before [Hash] The player's counters before.
   # @param after [Hash] The counters of the story laid over theirs.
-  def self.followed(before, after)
+  # @param first [Boolean] Whether it is the first story since entering, a load or a new game.
+  def self.followed(before, after, first = false)
     return unless defined?(MGQ_MpCoopChoices)
 
+    MGQ_MpCoopChoices.missed(after["p"]) if first
     MGQ_MpCoopChoices.story_passed(before["p"], after["p"]) if after["p"] > before["p"]
     route = route_index(after)
     MGQ_MpCoopChoices.raid_decision(route) if route && route_index(before) != route && after["p"] >= GREAT_DECISION
