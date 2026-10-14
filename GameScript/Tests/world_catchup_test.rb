@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-14: Checked that a return point left at Adramelech moves on with the story
+#                            - Checked that a visit's own event brings its companion along before the gate
 #      Paulinchen  2026-10-13: Checked that a Makina comes and shows only once a player of the world got or held it
 #                            - Checked that a join the story takes back in the same step counts nowhere in the catch-up
 #      Paulinchen  2026-10-12: Checked that story and quest classes and races reach the roster
@@ -338,7 +339,7 @@ end
 # Stands in for the interpreter: it runs nothing and runs while busy is set.
 class Game_Interpreter
   attr_reader :list, :index
-  attr_accessor :busy
+  attr_accessor :busy, :event_id
   # Takes a list and records it in $setups.
   def setup(list, event_id = 0); @list = list; @index = 0; ($setups ||= []) << list; end
   # Answers whether busy is set.
@@ -736,6 +737,29 @@ check("a companion without a join waiting joins as the game does", roster.includ
 $game_actors[1].level = 60
 frames(40)
 check("at the gate the held companion joins at the join's level", [roster.include?(45), $game_actors[45].base_level], [true, 60])
+
+# An event that brings a companion along on a visit only, and insists on them, as the Arena's final
+# adds Alma Elma again until she is in the party: the catch-up never holds that join back.
+visit = join.new(45, 45, "map:483:86:1", "2", 24, nil, [[:v, 1001, 24]], 60, :kept, 238, true)
+lasting = join.new(45, 45, "map:291:23:1", "2", 24, nil, [[:v, 1001, 24]], 60, :kept, 62, true)
+tables(:JOINS => [lasting, visit], :REMOVALS => [removal.new(45, 45, "map:483:86:1", "2", 24, nil, [[:v, 1001, 24]], true, 262)])
+new_game({ 1001 => 24 }, [], 40)
+frames(1)
+relay({ "rev" => 9, "wrev" => 9, "p" => 24, "part" => "2" }, packed({ 1001 => 24 }))
+frames(40)
+$telling = true
+$game_map.map_id = 483
+$game_map.interpreter.event_id = 86
+$messages.clear
+$game_party.add_actor(45)
+check("a visit's own event brings the companion along though a lasting join waits for its gate", [roster.include?(45), $messages], [true, []])
+$game_party.remove_actor(45)
+$game_map.interpreter.event_id = 12
+$game_party.add_actor(45)
+check("while another event of the player's still waits for the gate", [roster.include?(45), $messages.last], [false, "Tamamo joins you once you reach level 60."])
+$telling = false
+$game_map.interpreter.event_id = 0
+$game_map.map_id = 3
 
 # The world's shared companions join as far as the world shares them.
 tables(:JOINS => [join.new(16, 16, "map:70:1:1", "ad", 10, nil, [[:v, 1141, 10]], 50, :start)])

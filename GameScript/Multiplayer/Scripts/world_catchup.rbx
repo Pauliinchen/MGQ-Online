@@ -2,6 +2,7 @@
 #  world_catchup.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-14: Let a visit's own event bring its companion along before the level gate
 #      Paulinchen  2026-10-13: Left the joins the story takes back in the same step out of the catch-up
 #                            - Counted no companion on such a visit, nor a story's temporary party, toward the player's level
 #                            - Listed and gave a Makina only once a player of the world got or held it
@@ -1952,7 +1953,7 @@ module MGQ_MpWorldCatchup
     return false unless defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.telling?
 
     main = MGQ_MpStoryState.main_id(actor_id)
-    return false if in_roster?(main)
+    return false if in_roster?(main) || visit_running?(main)
 
     part = own_part
     done = ledger["done"]
@@ -1969,6 +1970,21 @@ module MGQ_MpWorldCatchup
   rescue => e
     log("holding back a companion failed: #{e.class}: #{e.message}")
     false
+  end
+
+  # Reports whether the map event running brings a companion along on a visit only (see temporary?),
+  # which the catch-up never holds back: such an event may insist on them, as the Arena's final
+  # (map 483, event 86) adds Alma Elma again until she is in the party.
+  #
+  # @param main [Integer] The companion's main persona.
+  # @return [Boolean] Whether it does.
+  def self.visit_running?(main)
+    interpreter = $game_map && $game_map.interpreter
+    event_id = interpreter ? interpreter.event_id.to_i : 0
+    return false if event_id <= 0
+
+    prefix = "map:#{$game_map.map_id}:#{event_id}:"
+    DATA::JOINS.any? { |row| row.actor == main && row.site.start_with?(prefix) && temporary?(row) }
   end
 
   # Lists the story's joins the catch-up goes by: those that last, see temporary?.
