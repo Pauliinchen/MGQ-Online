@@ -2,7 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-13: Tested that every game of a Raid World hears its new squad settings
+//      Paulinchen  2026-10-13: Tested that every game of a Classic world hears whether it fights raid bosses
+//                            - Tested that every game of a Raid World hears its new squad settings
 //      Paulinchen  2026-10-12: Tested that a newer release of the mod reaches every game of a world with players online
 //                            - Sent X-MGQ-Features on the world directory and mod catalog requests and tested refusals without it
 //                            - Tested the update code on the 400 of a refused world room and the World Admin tool passing with 0.0.0-dev
@@ -1135,6 +1136,36 @@ test("every game of a Raid World hears its new squad settings once its creator c
 
   await gameFetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: creator }, body: JSON.stringify({ seats: 6, squad: { luka: true, formation: 6, front: 2, raidFront: 1 } }) });
   assert.deepEqual(heard.filter((text) => text.startsWith("squad")), ["squad 1 6 2 1"], "an edit with the same squad settings tells none");
+  watcher.socket.close();
+});
+
+test("every game of a Classic world hears whether it fights raid bosses once its creator changes it over HTTP", async () => {
+  const room = roomId(138);
+  // Its own creator, since CREATOR already made as many worlds as a player may.
+  const creator = playerKey(98);
+  const created = await gameFetch(directoryBase, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: creator },
+    body: JSON.stringify({ id: room, name: "Raid Bosses", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) } }),
+  });
+  assert.equal(created.status, 201);
+  assert.equal((await listed(room)).raidBosses, false);
+  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher&auth=${AUTH}`, { ...GAME, [PLAYER_HEADER]: playerKey(99) });
+  assert.equal(await watcher.first, "seat 0");
+  const heard = [];
+  watcher.socket.on("message", (data) => heard.push(data.toString()));
+  const edit = (body) => gameFetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: creator }, body: JSON.stringify(body) });
+
+  const on = await edit({ raidBosses: true });
+  assert.equal(on.status, 200);
+  assert.deepEqual(await on.json(), { edited: room }, "the answer names no raid bosses");
+  await until(async () => heard.includes("raid_bosses 1"));
+  assert.equal((await listed(room)).raidBosses, true);
+
+  await edit({ seats: 6, raidBosses: true });
+  await edit({ raidBosses: false });
+  await until(async () => heard.includes("raid_bosses 0"));
+  assert.deepEqual(heard.filter((text) => text.startsWith("raid_bosses")), ["raid_bosses 1", "raid_bosses 0"], "an edit with the same value tells none");
   watcher.socket.close();
 });
 

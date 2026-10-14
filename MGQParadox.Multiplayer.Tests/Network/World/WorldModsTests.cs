@@ -2,7 +2,8 @@
 //  WorldModsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-13: Expected the empty squad settings of a Classic world at the end of its line
+//      Paulinchen  2026-10-13: Expected the raid bosses setting of a Classic world at the end of its line
+//                            - Expected the empty squad settings of a Classic world at the end of its line
 //      Paulinchen  2026-10-09: Covered the mods the catalog marks personal
 //                            - Expected whether a Classic world turns other mods off at the end of its line
 //                            - Expected the empty difficulty of a Classic world at the end of its line
@@ -235,13 +236,13 @@ public sealed class WorldModsTests
         var hashes = $"Some Mod={new string('a', 64)}";
 
         var made = Act(creator, directory => directory.Create("Modded", "secret", 4, false, false, [], new WorldAbout(string.Empty, "!Some Mod", string.Empty, false, hashes, "key=i:1")));
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith($"\t{hashes}\tkey=i:1\tclassic\toff\t\t0\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith($"\t{hashes}\tkey=i:1\tclassic\toff\t\t0\t\t0"));
 
         Assert.Equal("done", Act(adminDirectory, directory => directory.Edit(made["world"], 6, "Edited.", "!Some Mod"))["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t6\t") && line.EndsWith($"\t{hashes}\tkey=i:1\tclassic\toff\t\t0\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t6\t") && line.EndsWith($"\t{hashes}\tkey=i:1\tclassic\toff\t\t0\t\t0"));
 
         Assert.Equal("done", Act(creator, directory => directory.Edit(made["world"], 6, "Edited.", "!Some Mod", string.Empty))["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\t\tkey=i:1\tclassic\toff\t\t0\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\t\tkey=i:1\tclassic\toff\t\t0\t\t0"));
     }
 
     /// <summary>
@@ -258,10 +259,10 @@ public sealed class WorldModsTests
 
         var made = Act(creator, directory => directory.Create("Modded", "secret", 4, false, false, [], new WorldAbout(string.Empty, "!Some Mod", string.Empty, false, string.Empty, string.Empty)));
         Assert.Equal("done", Act(creator, directory => directory.SetSettings(made["world"], "key=i:1"))["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tkey=i:1\tclassic\toff\t\t0\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tkey=i:1\tclassic\toff\t\t0\t\t0"));
 
         Assert.Equal("done", Act(adminDirectory, directory => directory.SetSettings(made["world"], "key=i:2"))["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tkey=i:2\tclassic\toff\t\t0\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tkey=i:2\tclassic\toff\t\t0\t\t0"));
         Assert.Equal("failed", Act(guest, directory => directory.SetSettings(made["world"], "key=i:3"))["state"]);
     }
 

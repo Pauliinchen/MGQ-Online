@@ -2,7 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-13: Brought a Raid World player's squad by the world's squad rules
+#      Paulinchen  2026-10-13: Told the guests of a Classic world's battle whether its boss fights at its tier
+#                            - Brought a Raid World player's squad by the world's squad rules
 #      Paulinchen  2026-10-12: Joined the battle of the story whose call is about to bring the player over
 #                            - Took a joining player's party_member_max only as a number
 #                            - Picked a defeat scene of the troop for a guest who takes the battle over
@@ -507,6 +508,7 @@ module MGQ_MpBattlesCoop
       fields["rates"] = rates_text
       fields.update(MGQ_MpRaidPool.invite_fields(troop_id)) if defined?(MGQ_MpRaidPool)
     end
+    fields.update(MGQ_MpRaidTiers.invite_fields(troop_id)) if !raid? && defined?(MGQ_MpRaidTiers)
     raid? ? tell_map(seats, "invite", fields) : tell(-1, "invite", fields)
     log("invited #{seats.size} #{raid? ? 'player' : 'member'}(s) to battle #{battle_id} against troop #{troop_id} on map #{$game_map.map_id}: #{seats.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
   rescue => e
@@ -608,8 +610,9 @@ module MGQ_MpBattlesCoop
     MGQ_MpBattlesSync.battle_started
     MGQ_MpBattles.begin(:coop)
     freeze_party
-    tell(leader.seat, "lead", "bid" => battle_id, "troop" => troop_id, "escape" => can_escape ? 1 : 0, "lose" => can_lose ? 1 : 0,
-                              "map" => $game_map.map_id)
+    fields = { "bid" => battle_id, "troop" => troop_id, "escape" => can_escape ? 1 : 0, "lose" => can_lose ? 1 : 0, "map" => $game_map.map_id }
+    fields.update(MGQ_MpRaidTiers.invite_fields(troop_id)) if defined?(MGQ_MpRaidTiers)
+    tell(leader.seat, "lead", fields)
     log("asked the leader #{MGQ_MpOverworldSync.who(leader)} to lead battle #{battle_id} against troop #{troop_id} on map #{$game_map.map_id}, waiting up to #{LEADER_FRAMES / 60} s")
   end
 
@@ -1537,6 +1540,7 @@ module MGQ_MpBattlesCoop
   # @param message [Hash] The member's request.
   def self.lead(peer, message)
     @leading = [peer.seat, message["bid"].to_s]
+    MGQ_MpRaidTiers.note_invite(message) if defined?(MGQ_MpRaidTiers)
     BattleManager.setup(message["troop"].to_i, message["escape"] == "1", message["lose"] == "1")
     return refuse_lead(peer, message, "the battle did not become a co-op battle the player hosts (#{MGQ_MpBattlesSync.role.inspect})") unless MGQ_MpBattlesSync.role == :host
 
@@ -1574,6 +1578,7 @@ module MGQ_MpBattlesCoop
     $game_message.clear
     @joining = true
     MGQ_MpBattlesHotjoin.note_invite(message)
+    MGQ_MpRaidTiers.note_invite(message) if defined?(MGQ_MpRaidTiers)
     borrow_rates(message)
     BattleManager.setup(message["troop"].to_i, message["escape"] == "1", message["lose"] == "1")
     MGQ_MpBattlesSync.join_world(:guest, message["bid"].to_s, [peer.seat], peer.state["name"].to_s)
@@ -1824,6 +1829,7 @@ module MGQ_MpBattlesCoop
     end
     MGQ_MpGame.set($game_troop, :enemies, rebuilt)
     MGQ_MpRaidPool.rescale if defined?(MGQ_MpRaidPool)
+    MGQ_MpRaidTiers.rescale if defined?(MGQ_MpRaidTiers)
     # The game counts each name's enemies for their letters, so the count starts over as in setup.
     MGQ_MpGame.set($game_troop, :names_count, {})
     MGQ_MpGame.call($game_troop, :make_unique_names)

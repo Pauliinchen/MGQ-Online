@@ -2,7 +2,8 @@
 #  mod_parking_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-13: Expected the row of a Raid World's squad rules' button and the squad rules after the other mods in the DLL calls
+#      Paulinchen  2026-10-13: Expected the raid bosses of a Classic world in its edit form and after the squad rules in the DLL calls
+#                            - Expected the row of a Raid World's squad rules' button and the squad rules after the other mods in the DLL calls
 #      Paulinchen  2026-10-12: Stood in for Ini.load and the favourites and hidden worlds in Player.ini
 #      Paulinchen  2026-10-10: Checked the restart for downloaded mods with and without parked mods
 #                            - Checked failed parked restarts, mods not back on and linked scripts before a download
@@ -387,17 +388,17 @@ Dir.mktmpdir do |folder|
     check("the form keeps to the screen: the Raid-only and Classic-only rows share one, and a development build's Raid World adds the row of its squad rules' button",
           [form.fields.map { |field| field.row }.uniq.size, (form.turn(type, 1); form.fields.map { |field| field.row }.uniq.size)], [11, 10])
     MGQ_MpWorld::Directory.create("W", "", 4, false, false, "", :type => "raid")
-    check("create sends a Raid World with other mods off unless told otherwise", $calls.last[1][-2], 1)
+    check("create sends a Raid World with other mods off unless told otherwise", $calls.last[1][-3], 1)
     MGQ_MpWorld::Directory.create("W", "", 4, false, false, "")
-    check("and a Classic world with them allowed", $calls.last[1][-2], 0)
+    check("and a Classic world with them allowed", $calls.last[1][-3], 0)
     MGQ_MpWorld::Directory.create("W", "", 4, false, false, "", :type => "raid", :other_mods_off => false)
-    check("or as the form says", $calls.last[1][-2], 0)
+    check("or as the form says", $calls.last[1][-3], 0)
     MGQ_MpWorld::Directory.edit("w1", 4, "", "", nil, nil, true)
-    check("an edit sends it with its flag when it changed", $calls.last[1][-3..-2], [1, 1])
+    check("an edit sends it with its flag when it changed", $calls.last[1][-4..-3], [1, 1])
     MGQ_MpWorld::Directory.edit("w1", 4, "", "")
-    check("and leaves it otherwise", $calls.last[1][-3..-2], [0, 0])
+    check("and leaves it otherwise", $calls.last[1][-4..-3], [0, 0])
     edit = MGQ_MpWorld::Form.edit(strict)
-    check("the edit form has it for an admin too, ticked as the world is", [edit.fields.map { |field| field.key }, edit[:other_mods_off]], [[:seats, :mods, :other_mods_off, :description, :confirm], true])
+    check("the edit form has it for an admin too, ticked as the world is", [edit.fields.map { |field| field.key }, edit[:other_mods_off]], [[:seats, :raid_bosses, :mods, :other_mods_off, :description, :confirm], true])
 
     detail = Window_MpWorldDetail.allocate
     rows = lambda { |world| detail.data_panel(MGQ_MpWorld::Entry.new("w1", "Strict", world, nil, false, false), "me").rows.map { |cells| cells.map { |cell| cell.text } } }

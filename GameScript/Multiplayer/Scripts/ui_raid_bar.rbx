@@ -2,6 +2,7 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Showed the bars of the raid bosses in Classic worlds and single player, each turned on and off in the Mod Config
 #      Paulinchen  2026-10-12: Kept the troops of a common event only when its walk missed none
 #                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #                            - Read the map's viewports and character sprites through MGQ_MpGame
@@ -27,6 +28,11 @@
 # MGQ_MpUi::Layout), one place for the map's and the battle's. A bar shows while the relay keeps
 # the boss's pool, or the story has not beaten it; its max HP is the relay's once it told one, else
 # the boss's own at the player's difficulty, scaled by its tier.
+#
+# The raid bosses of a Classic world or of single player (see battles_raid_tiers.rbx) show the same
+# bars: in battle each enemy's own HP, on the map the boss's full HP, since nothing keeps it between
+# battles. The player turns either bar off for them in the Mod Config (MGQ Online SP); a Raid World
+# always shows both.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpRaidBar
@@ -86,6 +92,25 @@ module MGQ_MpRaidBar
   # Steps to a boss's event when the map shows none.
   FAR = 9999
 
+  # The settings in Player.ini that turn off the raid bosses' bars outside Raid Worlds with 0, on
+  # the map and in battle.
+  SHOWN_SETTINGS = { :map => "raid_bar_map", :battle => "raid_bar_battle" }
+
+  # The keys of the Mod Config rows that turn the bars outside Raid Worlds on and off, which
+  # ui_single_player.rbx adds.
+  OPTIONS = { :map => :mp_sp_raid_bar_map, :battle => :mp_sp_raid_bar_battle }
+
+  # The names of the Mod Config rows that turn the bars outside Raid Worlds on and off.
+  OPTION_NAMES = { :map => "Raid Bar on Map", :battle => "Raid Bar in Battle" }
+
+  # The help of the Mod Config rows that turn the bars outside Raid Worlds on and off.
+  OPTION_HELPS = {
+    :map => "Shows a raid boss's HP bar above it on the map, or at the top while it stands out of sight.\n" \
+            "Outside Raid Worlds only: single player and Classic worlds with raid bosses.",
+    :battle => "Shows a raid boss's HP bar at the top of the battle; the Party Box hotkey shows its gauges alone.\n" \
+               "Outside Raid Worlds only: single player and Classic worlds with raid bosses.",
+  }
+
   # A bar's content.
   #
   # @!attribute title [String, nil] What shows above the names, see MGQ_MpRaidBosses.title.
@@ -114,18 +139,44 @@ module MGQ_MpRaidBar
   # Whether the strip shows in battle.
   @battle_shown = false
 
+  # Whether each bar outside Raid Worlds shows, by :map and :battle, as Player.ini keeps it.
+  @shown = {}
+
   extend MGQ_MpLog
 
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "raid bar"
 
-  # Finds the bar of the battle running when it fights a boss's pools: a gauge per own enemy with
-  # its HP as the battle has it, against its pool's max HP once the relay told it.
+  # Reports whether the player wants a bar of the raid bosses outside Raid Worlds, as Player.ini
+  # keeps it, on until they turn it off.
+  #
+  # @param where [Symbol] :map or :battle.
+  # @return [Boolean] Whether it shows.
+  def self.shown?(where)
+    @shown[where] = MGQ_Multiplayer::Player.setting(SHOWN_SETTINGS[where]).to_s != "0" unless @shown.key?(where)
+    @shown[where]
+  end
+
+  # Shows or hides a bar of the raid bosses outside Raid Worlds and keeps the choice in Player.ini.
+  #
+  # @param where [Symbol] :map or :battle.
+  # @param shown [Boolean] Whether it shows.
+  def self.show_bar(where, shown)
+    @shown[where] = shown ? true : false
+    MGQ_Multiplayer::Player.store(SHOWN_SETTINGS[where], @shown[where] ? 1 : 0)
+    log("the raid boss bar #{where == :map ? 'on the map' : 'in battle'} is #{@shown[where] ? 'on' : 'off'} outside Raid Worlds")
+  rescue => e
+    log("keeping whether the raid boss bar shows FAILED: #{e.class}: #{e.message}")
+  end
+
+  # Finds the bar of the battle running when it fights a boss's pools, or its boss fights at its
+  # tier outside a Raid World (see tier_battle_bar): a gauge per own enemy with its HP as the battle
+  # has it, against its pool's max HP once the relay told it.
   #
   # @return [Bar, nil] The bar, nil for none.
   def self.battle_bar
     fight = MGQ_MpRaidPool.fight
-    return nil unless fight
+    return tier_battle_bar unless fight
 
     gauges = fight.members.map do |member|
       enemy = $game_troop.members[member.index]
@@ -139,6 +190,30 @@ module MGQ_MpRaidBar
       Gauge.new(enemy.name.to_s, MGQ_MpRaidPool.hp_of(enemy.dead? ? 0.0 : enemy.hp.to_f / local, shown), shown)
     end.compact
     gauges.empty? ? nil : Bar.new(MGQ_MpRaidBosses.title(fight.troop), gauges)
+  end
+
+  # Finds the bar of the battle running when its boss fights at its tier outside a Raid World, while
+  # the player shows that bar: a gauge per own enemy with its HP as the battle has it.
+  #
+  # @return [Bar, nil] The bar, nil for none.
+  def self.tier_battle_bar
+    fight = defined?(MGQ_MpRaidTiers) ? MGQ_MpRaidTiers.fight : nil
+    return nil unless fight && shown?(:battle)
+
+    gauges = MGQ_MpRaidPool.own_enemies(fight.own).map do |enemy|
+      next nil unless enemy && enemy.mhp.to_i > 0
+
+      Gauge.new(enemy.name.to_s, enemy.dead? ? 0 : enemy.hp.to_i, enemy.mhp.to_i)
+    end.compact
+    gauges.empty? ? nil : Bar.new(MGQ_MpRaidBosses.title(fight.troop), gauges)
+  end
+
+  # Reports whether the map shows the bars of the raid bosses outside a Raid World: they fight at
+  # their tier and the player shows their map bar.
+  #
+  # @return [Boolean] Whether it does.
+  def self.tier_map?
+    defined?(MGQ_MpRaidTiers) && MGQ_MpRaidTiers.active? && shown?(:map) ? true : false
   end
 
   # Reports whether the game's own top message shows in battle, which draws its text straight over
@@ -220,7 +295,7 @@ module MGQ_MpRaidBar
   #
   # @return [Array<Array>] Each event with its troop.
   def self.boss_events
-    return [] unless $game_map && MGQ_MpRaidPool.active?
+    return [] unless $game_map && (MGQ_MpRaidPool.active? || tier_map?)
 
     stamp = [$game_map.map_id, Graphics.frame_count / SCAN_FRAMES]
     return @scanned[1] if @scanned && @scanned[0] == stamp
@@ -296,12 +371,14 @@ module MGQ_MpRaidBar
 
   # Reports whether a troop's battle shows a bar: the last phase of a raid boss with pools whose
   # relay keeps a pool of it, or whose milestone the story has not beaten, outside the Hades
-  # rematches, which fight no pool.
+  # rematches, which fight no pool; outside a Raid World as MGQ_MpRaidTiers.shown_troop? says.
   #
   # @param troop [Integer] The troop.
   # @return [Boolean] Whether it does.
   def self.shown_troop?(troop)
     pool = MGQ_MpRaidPool
+    return MGQ_MpRaidTiers.shown_troop?(troop) unless pool.active?
+
     return false unless MGQ_MpRaidBosses.last_phase?(troop) && !pool::UNPOOLED[troop] && !pool.hades?
 
     keys = pool.troop_keys(troop)
@@ -311,12 +388,15 @@ module MGQ_MpRaidBar
   end
 
   # Finds a troop's bar on the map: a gauge per pool of the troop with its HP now, the HP the pool
-  # gained back since included, the enemy's own max HP for a pool the relay told nothing of.
+  # gained back since included, the enemy's own max HP for a pool the relay told nothing of; outside
+  # a Raid World a full gauge per enemy, see tier_map_bar.
   #
   # @param troop [Integer] The troop.
   # @return [Bar] The bar.
   def self.map_bar(troop)
     pool = MGQ_MpRaidPool
+    return tier_map_bar(troop) unless pool.active?
+
     enemies = troop_enemies(troop)
     names = map_names(enemies)
     now = Time.now
@@ -330,6 +410,21 @@ module MGQ_MpRaidBar
         hp = known ? pool.hp_of(pool.left_now(known, now), max) : max
       end
       Gauge.new(names[index].to_s, hp, max)
+    end
+    Bar.new(MGQ_MpRaidBosses.title(troop), gauges)
+  end
+
+  # Finds a troop's bar on the map outside a Raid World: a full gauge per enemy the troop's setup
+  # makes, at its max HP in battle, since every battle fights the boss anew.
+  #
+  # @param troop [Integer] The troop.
+  # @return [Bar] The bar.
+  def self.tier_map_bar(troop)
+    enemies = troop_enemies(troop)
+    names = map_names(enemies)
+    gauges = enemies.each_with_index.map do |enemy_id, index|
+      max = raid_max(enemy_id, troop)
+      Gauge.new(names[index].to_s, max, max)
     end
     Bar.new(MGQ_MpRaidBosses.title(troop), gauges)
   end

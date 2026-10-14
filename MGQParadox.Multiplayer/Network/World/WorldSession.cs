@@ -2,7 +2,8 @@
 //  WorldSession.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-13: Handed changed Raid World squad settings to the game script as a squad entry
+//      Paulinchen  2026-10-13: Handed a changed Classic world raid bosses setting to the game script as a raid_bosses entry
+//                            - Handed changed Raid World squad settings to the game script as a squad entry
 //      Paulinchen  2026-10-12: Paced its sends to at most 50 a second after a burst of 200 and logged pacing and too-fast closes
 //                            - Cut a running connect once the world is left or entered anew, and connected again when the cut connect took the new one's place
 //                            - Took a "replaced" close as the cut connect's only while it could still take a seat, and stopped for good when turned away as too old
@@ -162,8 +163,16 @@ internal sealed class WorldSession
     public const string SquadKind = RaidSquad.Name;
 
     /// <summary>
+    /// The kind of an inbox entry that tells a Classic world's creator or an admin changed whether its
+    /// players meet raid bosses, and the word that starts the relay's text frame saying so, as
+    /// Relay/README.md names it.
+    /// </summary>
+    public const string RaidBossesKind = "raid_bosses";
+
+    /// <summary>
     /// The difficulty now, in a <see cref="DifficultyKind"/> entry; the squad settings now as text,
-    /// see <see cref="RaidSquad"/>, in a <see cref="SquadKind"/> entry; 1 or 0 for whether the world
+    /// see <see cref="RaidSquad"/>, in a <see cref="SquadKind"/> entry; 1 or 0 for whether the world's
+    /// players meet raid bosses, in a <see cref="RaidBossesKind"/> entry; 1 or 0 for whether the world
     /// turns other mods off, in a <see cref="ModsRuleKind"/> entry.
     /// </summary>
     public const string ValueHeader = "value";
@@ -886,7 +895,7 @@ internal sealed class WorldSession
     /// </summary>
     /// <param name="generation">The open this belongs to.</param>
     /// <param name="connection">The connection.</param>
-    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c>, <c>pong</c>, <c>slow chat</c>, <c>story 12</c>, <c>boss 0.25 5000000 0 Queen Harpy</c>, <c>difficulty 2</c>, <c>squad 1 6 2 1</c>, <c>mods_rule 1</c>, a tab and the mods text, or <c>chat Global</c>, a tab and the line.</param>
+    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c>, <c>pong</c>, <c>slow chat</c>, <c>story 12</c>, <c>boss 0.25 5000000 0 Queen Harpy</c>, <c>difficulty 2</c>, <c>squad 1 6 2 1</c>, <c>raid_bosses 1</c>, <c>mods_rule 1</c>, a tab and the mods text, or <c>chat Global</c>, a tab and the line.</param>
     private void TakeText(int generation, Connection connection, string text)
     {
         if (text == RelayWorldChannel.Pong)
@@ -928,6 +937,12 @@ internal sealed class WorldSession
         if (text.StartsWith($"{SquadKind} ", StringComparison.Ordinal))
         {
             TakeSquad(generation, connection, text[(SquadKind.Length + 1)..]);
+            return;
+        }
+
+        if (text.StartsWith($"{RaidBossesKind} ", StringComparison.Ordinal))
+        {
+            TakeRaidBosses(generation, connection, text[(RaidBossesKind.Length + 1)..]);
             return;
         }
 
@@ -1111,6 +1126,34 @@ internal sealed class WorldSession
         }
 
         Log.Write($"world squad settings changed at the relay, now {squad}");
+    }
+
+    /// <summary>
+    /// Hands the relay's word that a Classic world changed whether its players meet raid bosses to the
+    /// game script.
+    /// </summary>
+    /// <param name="generation">The open this belongs to.</param>
+    /// <param name="connection">The connection.</param>
+    /// <param name="value">1 or 0 for whether they do now, as the relay wrote it.</param>
+    private void TakeRaidBosses(int generation, Connection connection, string value)
+    {
+        if (value is not ("1" or "0"))
+        {
+            Log.Write("world room raid bosses text ignored, its value is neither 1 nor 0");
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (generation != _generation || connection != _connection)
+            {
+                return;
+            }
+
+            Enqueue(new Message([new(Message.Kind, RaidBossesKind), new(ValueHeader, value)]).Encode());
+        }
+
+        Log.Write($"world raid bosses changed at the relay, now {(value == "1" ? "on" : "off")}");
     }
 
     /// <summary>

@@ -2,7 +2,8 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-13: Made and changed a Raid World with its squad settings, and read them from the list
+//      Paulinchen  2026-10-13: Made and changed a Classic world with its raid bosses, and read them from the list
+//                            - Made and changed a Raid World with its squad settings, and read them from the list
 //      Paulinchen  2026-10-12: Named the version of this game in the X-MGQ-Version header of every request
 //      Paulinchen  2026-10-10: Named the dev feature in the X-MGQ-Features header of a development build
 //      Paulinchen  2026-10-09: Made, changed and listed worlds with whether they turn other mods off
@@ -208,7 +209,8 @@ internal sealed partial class DirectoryClient
                 Text(world, "share") is { Length: > 0 } share ? share : CompanionSharing.Off,
                 world.TryGetProperty("difficulty", out var difficulty) && difficulty.ValueKind == JsonValueKind.Number && difficulty.TryGetInt32(out var level) && WorldDifficulty.IsValid(level) ? level : null,
                 world.TryGetProperty("otherModsOff", out var otherModsOff) && otherModsOff.ValueKind is JsonValueKind.True or JsonValueKind.False ? otherModsOff.GetBoolean() : type == WorldType.Raid,
-                world.TryGetProperty(RaidSquad.Name, out var squad) ? RaidSquad.TextOf(squad) : string.Empty));
+                world.TryGetProperty(RaidSquad.Name, out var squad) ? RaidSquad.TextOf(squad) : string.Empty,
+                Flag(world, "raidBosses")));
         }
 
         return new WorldListing(worlds, Flag(document.RootElement, "admin"));
@@ -248,8 +250,9 @@ internal sealed partial class DirectoryClient
     /// <param name="difficulty">The difficulty a Raid World sets for every player, see <see cref="WorldDifficulty"/>; <see langword="null"/> for none.</param>
     /// <param name="otherModsOff">Whether the world turns off every mod of its players it does not name; <see langword="null"/> to leave it to the relay, which goes by the type.</param>
     /// <param name="squad">A Raid World's squad settings as text, see <see cref="RaidSquad"/>; <see langword="null"/> to play with the defaults.</param>
+    /// <param name="raidBosses">Whether a Classic world's players meet raid bosses; <see langword="null"/> to leave it to the relay.</param>
     /// <exception cref="DirectoryException">The directory could not be reached or refused the world.</exception>
-    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock, bool start, bool hidden, bool choose, bool open, WorldAbout about, string type = WorldType.Classic, string share = CompanionSharing.Off, int? difficulty = null, bool? otherModsOff = null, string? squad = null)
+    public void Create(string id, string name, int seats, string playerKey, string playerName, string authHash, WorldLock worldLock, bool start, bool hidden, bool choose, bool open, WorldAbout about, string type = WorldType.Classic, string share = CompanionSharing.Off, int? difficulty = null, bool? otherModsOff = null, string? squad = null, bool? raidBosses = null)
     {
         var body = Json(writer =>
         {
@@ -295,6 +298,11 @@ internal sealed partial class DirectoryClient
             if (squad != null)
             {
                 RaidSquad.Write(writer, squad);
+            }
+
+            if (raidBosses is { } bosses)
+            {
+                writer.WriteBoolean("raidBosses", bosses);
             }
         });
 
@@ -345,7 +353,7 @@ internal sealed partial class DirectoryClient
     }
 
     /// <summary>
-    /// Changes a world's seats, description, mods, whether it turns other mods off and a Raid World's difficulty and squad settings, and for its creator the hashes of its required mods outside the catalog.
+    /// Changes a world's seats, description, mods, whether it turns other mods off, a Raid World's difficulty and squad settings and a Classic world's raid bosses setting, and for its creator the hashes of its required mods outside the catalog.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <param name="playerKey">The creator's or an admin's key.</param>
@@ -356,8 +364,9 @@ internal sealed partial class DirectoryClient
     /// <param name="difficulty">A Raid World's new difficulty, see <see cref="WorldDifficulty"/>; <see langword="null"/> to leave it.</param>
     /// <param name="otherModsOff">Whether the world now turns off every mod of its players it does not name; <see langword="null"/> to leave it.</param>
     /// <param name="squad">A Raid World's new squad settings as text, see <see cref="RaidSquad"/>; <see langword="null"/> to leave them.</param>
+    /// <param name="raidBosses">Whether a Classic world's players now meet raid bosses; <see langword="null"/> to leave it.</param>
     /// <exception cref="DirectoryException">The directory could not be reached or refused.</exception>
-    public void Edit(string id, string playerKey, int seats, string description, string mods, string? modHashes = null, int? difficulty = null, bool? otherModsOff = null, string? squad = null)
+    public void Edit(string id, string playerKey, int seats, string description, string mods, string? modHashes = null, int? difficulty = null, bool? otherModsOff = null, string? squad = null, bool? raidBosses = null)
     {
         var body = Json(writer =>
         {
@@ -384,6 +393,11 @@ internal sealed partial class DirectoryClient
             if (squad != null)
             {
                 RaidSquad.Write(writer, squad);
+            }
+
+            if (raidBosses is { } bosses)
+            {
+                writer.WriteBoolean("raidBosses", bosses);
             }
         });
 
@@ -958,7 +972,8 @@ internal sealed record WorldListing(IReadOnlyList<ListedWorld> Worlds, bool Admi
 /// <param name="Difficulty">The difficulty a Raid World sets for every player, see <see cref="WorldDifficulty"/>; <see langword="null"/> for a world that sets none.</param>
 /// <param name="OtherModsOff">Whether the world turns off every mod of its players it does not name and the catalog does not mark personal.</param>
 /// <param name="Squad">A Raid World's squad settings as text, see <see cref="RaidSquad"/>; empty for a world that keeps none.</param>
-internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, bool Choose, bool Open, bool Featured, WorldAbout About, IReadOnlyList<ListedMember> Members, string Type, string Share, int? Difficulty = null, bool OtherModsOff = false, string Squad = "");
+/// <param name="RaidBosses">Whether a Classic world's players meet raid bosses.</param>
+internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, bool Choose, bool Open, bool Featured, WorldAbout About, IReadOnlyList<ListedMember> Members, string Type, string Share, int? Difficulty = null, bool OtherModsOff = false, string Squad = "", bool RaidBosses = false);
 
 /// <summary>
 /// A world's types, as the relay names them, fixed once the world is made.

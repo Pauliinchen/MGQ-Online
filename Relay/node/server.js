@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-13: Told every game of a Raid World its new squad settings
+//      Paulinchen  2026-10-13: Told every game of a Classic world whether it fights raid bosses
+//                            - Told every game of a Raid World its new squad settings
 //      Paulinchen  2026-10-12: Watched the mod's own releases and told every world with players online of a new one
 //                            - Turned away games older than 0.6.0 or below the MIN_VERSION environment variable with 426
 //                            - Turned a game too old for a world room away with 400 and passed on the gate's code of a PvP room
@@ -48,7 +49,7 @@ import http from "node:http";
 import { pathToFileURL } from "node:url";
 import { WebSocketServer } from "ws";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
-import { Directory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, squadText } from "../core/directory.js";
+import { Directory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, raidBossesText, squadText } from "../core/directory.js";
 import { DEFAULT_MIN_VERSION, DRAIN_LIMITS, VERSION_HEADER, updateRefusal } from "../core/gate.js";
 import { routeIs } from "../core/http.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
@@ -628,6 +629,10 @@ export function createRelay({
 
     if (answer.squad) {
       tellWorld(answer.id, squadText(answer.squad));
+    }
+
+    if (answer.raidBosses !== undefined) {
+      tellWorld(answer.id, raidBossesText(answer.raidBosses));
     }
 
     if (answer.modsRule) {

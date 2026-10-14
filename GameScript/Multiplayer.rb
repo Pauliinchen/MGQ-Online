@@ -2,7 +2,10 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-13: Named mp_dir_create and mp_dir_edit with a Raid World's squad rules
+#      Paulinchen  2026-10-13: Loaded ui_single_player.rbx after ui_leader_hud.rbx
+#                            - Loaded battles_raid_tiers.rbx after battles_raid_pool.rbx
+#                            - Named mp_dir_create and mp_dir_edit with a Classic world's raid bosses
+#                            - Named mp_dir_create and mp_dir_edit with a Raid World's squad rules
 #      Paulinchen  2026-10-12: Loaded world_affection.rbx after world_catchup_exp.rbx
 #                            - Loaded world_overview_pages.rbx after world_overview.rbx
 #                            - Read the mouse wheel's notches once a frame through mp_mouse_wheel
@@ -136,11 +139,11 @@ module MGQ_Multiplayer
     core_log core_hooks core_game_access core_hotkeys ui ui_theme ui_layout ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
     coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs coop_story_rewards story_state coop_story coop_castle
     world world_mods world_mods_parking world_catchup_data world_story world_catchup world_catchup_exp world_affection world_opening world_difficulty world_save_distribution world_text world_screen world_save_export coop_choices
-    battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_coop_level_sync
+    battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_raid_tiers battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team
     trade ui_trade
-    world_overview world_overview_pages ui_party_box ui_edge_arrows ui_raid_bar ui_leader_hud ui_notices ui_bug_report
+    world_overview world_overview_pages ui_party_box ui_edge_arrows ui_raid_bar ui_leader_hud ui_single_player ui_notices ui_bug_report
   ]
 
   # Extension of the scripts, which the mod loader skips, since only this script may load them.
@@ -815,10 +818,10 @@ module MGQ_Multiplayer
       'mp_dir_refresh' => 'v',
       'mp_dir_find' => 'p',
       'mp_dir_list' => READ_ARGUMENTS,
-      'mp_dir_create' => 'pplllpppplppppllp',
+      'mp_dir_create' => 'pplllpppplppppllpl',
       'mp_dir_unlock' => 'pp',
       'mp_dir_unlock_code' => 'p',
-      'mp_dir_edit' => 'plppplllllp',
+      'mp_dir_edit' => 'plppplllllpl',
       'mp_dir_set_settings' => 'pp',
       'mp_dir_set_data' => 'pp',
       'mp_dir_delete' => 'p',

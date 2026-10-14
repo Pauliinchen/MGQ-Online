@@ -2,7 +2,8 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-13: Covered the relay's word of a Raid World's new squad settings
+//      Paulinchen  2026-10-13: Covered the relay's word of a Classic world's new raid bosses setting
+//                            - Covered the relay's word of a Raid World's new squad settings
 //      Paulinchen  2026-10-12: Covered paced message bursts and closing a connection that sends too fast
 //                            - Covered entering a world again while the first connect still waits
 //                            - Covered a late "replaced" close and the relay turning an outdated game away
@@ -596,6 +597,37 @@ public sealed class WorldSessionTests
         relay.Tell(room, $"{WorldSession.SquadKind} 1 6 2 1");
         var told = NextEntry(session);
         Assert.Equal((WorldSession.SquadKind, "1 6 2 1"), (told[Message.Kind], told[WorldSession.ValueHeader]));
+
+        session.Close();
+    }
+
+    /// <summary>
+    /// Asserts that the relay's word of whether a Classic world's players now meet raid bosses, sent as
+    /// its creator's edit changes it, reaches the game script as a raid_bosses entry, and that a value
+    /// other than 1 or 0 is ignored.
+    /// </summary>
+    [Fact]
+    public void RaidBosses_ReachTheGame()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var session = NewSession(relay.Address);
+
+        session.Open(code);
+        AwaitState(session, "open");
+        Drain(session);
+
+        var room = Relays.WorldRoomOf(WorldCode.Parse(code)!.Token);
+        relay.Tell(room, $"{WorldSession.RaidBossesKind} 2");
+        relay.Tell(room, $"{WorldSession.RaidBossesKind} on");
+        relay.Tell(room, $"{WorldSession.RaidBossesKind} 1 ");
+        Assert.Equal("done", WorldDirectoryTests.Act(Creator(relay), directory => directory.Edit(room, 4, string.Empty, string.Empty, null, null, null, null, true))["state"]);
+        var told = NextEntry(session);
+        Assert.Equal((WorldSession.RaidBossesKind, "1"), (told[Message.Kind], told[WorldSession.ValueHeader]));
+
+        relay.Tell(room, $"{WorldSession.RaidBossesKind} 0");
+        told = NextEntry(session);
+        Assert.Equal((WorldSession.RaidBossesKind, "0"), (told[Message.Kind], told[WorldSession.ValueHeader]));
 
         session.Close();
     }

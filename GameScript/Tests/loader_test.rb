@@ -2,6 +2,8 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Checked that ui_single_player.rbx loads after the scripts whose rows it adds
+#                            - Checked that battles_raid_tiers.rbx loads after the scripts it builds on and before ui_raid_bar.rbx
 #      Paulinchen  2026-10-12: Stood in for Ini.load
 #                            - Checked the mouse wheel's notches, read once a frame
 #      Paulinchen  2026-10-11: Checked that a log past MAX_BYTES keeps its newest lines
@@ -59,6 +61,11 @@ check("the story's state model loads before the story scripts that build on it",
       %w[coop_story coop_castle world_story world_catchup coop_choices].all? { |name| scripts.index("story_state") < scripts.index(name) }, true)
 check("the battle scripts keep the order their late hooks rely on",
       %w[battles battles_coop battles_sync].map { |name| scripts.index(name) }.each_cons(2).all? { |a, b| a < b }, true)
+check("the raid tiers load after the Mod Config rows, the push routes, the boss table and the pools whose rules they share, and before the bars that draw them",
+      [%w[ui overworld_sync battles_raid_bosses battles_raid_pool].all? { |name| scripts.index(name) < scripts.index("battles_raid_tiers") }, scripts.index("battles_raid_tiers") < scripts.index("ui_raid_bar")],
+      [true, true])
+check("the single player rows load after the Mod Config rows, the world's sync and the scripts whose settings they show",
+      %w[ui overworld_sync battles_raid_tiers ui_raid_bar ui_leader_hud].all? { |name| scripts.index(name) < scripts.index("ui_single_player") }, true)
 
 # The DLL's export table: each export once, and every call of the scripts names one of them.
 table_names = source[/    EXPORTS = \{.*?\n    \}\n/m].scan(/^      '(mp_[a-z_]+)' =>/).flatten

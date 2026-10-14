@@ -2,7 +2,8 @@
 //  directory.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-13: Covered a Raid World's squad settings
+//      Paulinchen  2026-10-13: Covered whether a Classic world fights raid bosses
+//                            - Covered a Raid World's squad settings
 //      Paulinchen  2026-10-12: Covered the relay's own line in the chat of worlds with players online
 //                            - Covered requests on one world made at once
 //                            - Covered refusals of a new world costing its address no rate turn
@@ -44,7 +45,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DIRECTORY_LIMITS, Directory, MODS_RULE_TEXT, RELAY_PLAYER, SQUAD_DEFAULTS, cleanName, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, sha256Hex, squadText } from "./directory.js";
+import { DIRECTORY_LIMITS, Directory, MODS_RULE_TEXT, RAID_BOSSES_TEXT, RELAY_PLAYER, SQUAD_DEFAULTS, cleanName, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, raidBossesText, sha256Hex, squadText } from "./directory.js";
 import { FEATURE, RateLimiter, parseFeatures } from "./relay.js";
 
 /**
@@ -77,7 +78,7 @@ const WORLD = "0123456789abcdef0123456789abcdef";
  *
  * @param {object} [limits] The limits.
  * @param {string[]} [admins] The admins' player ids.
- * @returns {{directory: Directory, time: {now: number}}} The directory and its clock.
+ * @returns {{directory: Directory, store: object, time: {now: number}}} The directory, its store and its clock.
  */
 function newDirectory(limits = DIRECTORY_LIMITS, admins = []) {
   const entries = new Map();
@@ -99,7 +100,7 @@ function newDirectory(limits = DIRECTORY_LIMITS, admins = []) {
     getChat: async (id) => (chats.has(id) ? structuredClone(chats.get(id)) : undefined),
   };
 
-  return { directory: new Directory(store, { clock: () => time.now, limits, admins }), time, starts, chats };
+  return { directory: new Directory(store, { clock: () => time.now, limits, admins }), store, time, starts, chats };
 }
 
 /**
@@ -793,6 +794,44 @@ test("a Raid World keeps its squad settings, which its creator or an admin chang
 
   assert.equal((await directory.edit("1".repeat(32), CREATOR, { squad: SQUAD_DEFAULTS })).status, 400, "only a Raid World sets squad settings");
   assert.equal((await directory.edit("1".repeat(32), CREATOR, { seats: 6 })).squad, undefined, "an edit without them tells none");
+});
+
+test("a Classic world keeps whether it fights raid bosses, which its creator or an admin changes and a Raid World never has", async () => {
+  const { directory, store } = newDirectory(DIRECTORY_LIMITS, [await playerIdOf(ADMIN)]);
+  await directory.create(await newWorld({ raidBosses: true }));
+  await directory.create(await newWorld({ id: "1".repeat(32), raidBosses: false }));
+  await directory.create(await newWorld({ id: "2".repeat(32) }));
+  await directory.create(await newWorld({ id: "3".repeat(32), type: "raid", raidBosses: true }));
+
+  const raidBossesOf = async () => Object.fromEntries((await directory.list()).body.worlds.map((world) => [world.id, world.raidBosses]));
+  assert.deepEqual(await raidBossesOf(), { [WORLD]: true, ["1".repeat(32)]: false, ["2".repeat(32)]: false, ["3".repeat(32)]: undefined }, "every Classic world is listed with it, a Raid World never");
+  assert.deepEqual([(await store.get("1".repeat(32))).raidBosses, (await store.get("3".repeat(32))).raidBosses], [undefined, undefined], "only a Classic world made with true keeps it");
+
+  const off = await directory.edit(WORLD, CREATOR, { raidBosses: false });
+  assert.deepEqual([off.status, off.raidBosses], [200, false], "the answer names the value the world room tells, false too");
+  assert.equal(raidBossesText(off.raidBosses), `${RAID_BOSSES_TEXT} 0`);
+  assert.equal((await raidBossesOf())[WORLD], false);
+  const on = await directory.edit(WORLD, ADMIN, { raidBosses: true });
+  assert.deepEqual([on.status, on.raidBosses], [200, true]);
+  assert.equal(raidBossesText(on.raidBosses), "raid_bosses 1");
+  assert.equal((await directory.edit(WORLD, OTHER, { raidBosses: false })).status, 403);
+  assert.equal((await raidBossesOf())[WORLD], true);
+  const same = await directory.edit(WORLD, CREATOR, { raidBosses: true, seats: 6 });
+  assert.deepEqual([same.status, same.raidBosses], [200, undefined], "the value the world has already tells nothing");
+
+  const missing = await directory.edit("2".repeat(32), CREATOR, { raidBosses: false });
+  assert.deepEqual([missing.status, missing.raidBosses], [200, undefined], "a world made without it counts as false");
+  assert.equal((await directory.edit("2".repeat(32), CREATOR, { raidBosses: true })).raidBosses, true);
+  assert.equal((await directory.edit("2".repeat(32), CREATOR, { seats: 6 })).raidBosses, undefined, "an edit without it tells none");
+
+  for (const bad of [1, 0, "yes", null, {}, []]) {
+    assert.equal((await directory.edit(WORLD, CREATOR, { raidBosses: bad })).status, 400, `raidBosses ${JSON.stringify(bad)}`);
+    assert.equal((await directory.create(await newWorld({ id: "4".repeat(32), raidBosses: bad }))).status, 400, `new world with raidBosses ${JSON.stringify(bad)}`);
+  }
+
+  const raid = await directory.edit("3".repeat(32), CREATOR, { raidBosses: true });
+  assert.deepEqual([raid.status, raid.body.error], [400, "only a Classic world sets raid bosses"]);
+  assert.equal((await raidBossesOf())["3".repeat(32)], undefined);
 });
 
 test("a Raid World starts from the beginning: no starting save and no player's choice", async () => {

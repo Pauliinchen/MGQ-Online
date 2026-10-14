@@ -2,6 +2,7 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Checked the bars of the raid bosses outside Raid Worlds and turning them off
 #      Paulinchen  2026-10-12: Checked that common events calling each other keep every troop
 #                            - Checked Tab pressed while the chat box is open
 #      Paulinchen  2026-10-11: Covered the strip as a box of the layout
@@ -22,7 +23,8 @@
 # the game's top message, the game's own boss bar it pushes down, and on the map the bosses' events
 # found through their pages and common events, the bar above each that shows, the strip at the top
 # while none shows, and the room it takes from the boxes there; the strip where the player puts it
-# with Alt and the interface presets' colors.
+# with Alt and the interface presets' colors; with battles_raid_tiers.rbx the bars of the raid
+# bosses outside Raid Worlds, which the player turns off in the Mod Config.
 
 require_relative "support"
 
@@ -118,10 +120,14 @@ end
 
 # Stand-ins for the world, the game's battles and the map.
 
-# The world room: keeps the routes in $routes.
+# The world room: keeps the routes in $routes, in a world while $in_world.
 module MGQ_MpOverworldSync
   # The state field naming the boss a player fights.
   BOSS_FIELD = "boss_key"
+  # The field of the relay's push of a Classic world's raid bosses.
+  RAID_BOSSES_FIELD = "raid_bosses_value"
+  # Whether the player is in a world: $in_world.
+  def self.in_world?; $in_world; end
   # Keeps a field's handler in $routes.
   def self.route(field, &block); $routes[field] = block; end
   # Takes no tick.
@@ -129,6 +135,8 @@ module MGQ_MpOverworldSync
   # Takes no state fields.
   def self.state_fields(&_block); end
 end
+# The open world, a Classic world with raid bosses while $raid_bosses.
+module MGQ_MpWorld; def self.raid_bosses?; $raid_bosses; end; end
 # The scope, a Raid World while $raid.
 module MGQ_MpCoop; module Scope; def self.raid?; $raid; end; end; end
 # The world's story of world w1, active in a Raid World.
@@ -274,6 +282,7 @@ load_script "ui_theme"
 load_script "ui_layout"
 load_script "battles_raid_bosses"
 load_script "battles_raid_pool"
+load_script "battles_raid_tiers"
 # The real tiers, checked on their own; the battles below count on 7.5 times the max HP in every
 # tier.
 REAL_TIERS = MGQ_MpRaidBosses::TIERS.dup
@@ -687,3 +696,59 @@ check("each gauge's trail drains on its own", shown.call, [1.0, 0.6])
 $frame += 1
 trail.show(nobles.call(500, 600))
 check("a hit on one gauge leaves the other's trail alone", [shown.call, trail.bitmap.gauges], [[1.0, 0.6], [[120, 117], [2, 118], [2, 118], [243, 141], [243, 141]]])
+
+# The raid bosses outside Raid Worlds: a battle's bar by its enemies' own HP, the map's full, each
+# turned off by its Mod Config row; a Raid World's bars go by the pools whatever those rows say.
+tiers = MGQ_MpRaidTiers
+reset
+$raid = false
+tiers.choose(true)
+tiers.note_invite("troop" => "71", "tiers" => "1")
+BattleManager.setup(71)
+$game_troop.members[0].hp = 4500
+check("outside a Raid World a battle whose boss fights at its tier has a bar of its enemies' own HP",
+      [pool.fight, flat(bar.battle_bar)], [nil, ["Tier 9 Raid Boss", [["Queen Harpy", 4500, 6000]]]])
+bar.show_bar(:battle, false)
+check("none once the player turned the battle's bar off, kept in Player.ini", [bar.battle_bar, $settings["raid_bar_battle"]], [nil, "0"])
+bar.show_bar(:battle, true)
+BattleManager.setup(126)
+check("nor in a battle no event, retry or invite started", bar.battle_bar, nil)
+$game_map.events = { 1 => Game_Event.new([battle(71)], "$Harpy", 0, false, 255, 10, 10) }
+check("on the map the boss's events show, with a bar of its full HP at its tier, nothing keeping it between battles",
+      [bar.tier_map?, bar.boss_events.map { |_event, troop| troop }, bar.shown_troop?(71), flat(bar.map_bar(71))],
+      [true, [71], true, ["Tier 9 Raid Boss", [["Queen Harpy", 6000, 6000]]]])
+$game_variables[1011] = 4
+$frame += MGQ_MpRaidBar::SCAN_FRAMES
+check("a boss the story beat shows none", [bar.shown_troop?(71), bar.boss_events], [false, []])
+$game_variables[1011] = 0
+bar.show_bar(:map, false)
+$frame += MGQ_MpRaidBar::SCAN_FRAMES
+check("nor any once the player turned the map's bar off, kept in Player.ini", [bar.tier_map?, bar.boss_events, $settings["raid_bar_map"]], [false, [], "0"])
+bar.show_bar(:map, true)
+tiers.choose(false)
+$frame += MGQ_MpRaidBar::SCAN_FRAMES
+check("nor while the raid bosses are off", [bar.tier_map?, bar.boss_events], [false, []])
+$in_world = true
+$raid_bosses = true
+$frame += MGQ_MpRaidBar::SCAN_FRAMES
+check("a Classic world with raid bosses shows them whatever single player says", [bar.tier_map?, bar.boss_events.size], [true, 1])
+$raid_bosses = false
+check("one without them does not", bar.tier_map?, false)
+reset
+$raid = true
+$raid_bosses = true
+bar.show_bar(:battle, false)
+bar.show_bar(:map, false)
+pool.note_invite("troop" => "71", "pool" => "1")
+BattleManager.setup(71)
+$game_troop.members[0].hp = 4500
+push("Queen Harpy", "0.5", "6000")
+check("a Raid World's battle bar goes by its pool, the rows outside Raid Worlds off", flat(bar.battle_bar), ["Tier 9 Raid Boss", [["Queen Harpy", 4500, 6000]]])
+$game_map.events = { 1 => Game_Event.new([battle(71)], "$Harpy", 0, false, 255, 10, 10) }
+check("and its map's bars too, with the HP the relay told, which no tier bar knows",
+      [bar.tier_map?, bar.boss_events.map { |_event, troop| troop }, bar.shown_troop?(71), flat(bar.map_bar(71))],
+      [false, [71], true, ["Tier 9 Raid Boss", [["Queen Harpy", 3000, 6000]]]])
+bar.show_bar(:battle, true)
+bar.show_bar(:map, true)
+$in_world = false
+$raid_bosses = false

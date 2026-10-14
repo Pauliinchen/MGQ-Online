@@ -2,7 +2,8 @@
 //  directory.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-13: Kept a Raid World's squad settings and told a world room after an edit that changed them
+//      Paulinchen  2026-10-13: Kept a Classic world's raid bosses and told a world room after an edit that changed them
+//                            - Kept a Raid World's squad settings and told a world room after an edit that changed them
 //      Paulinchen  2026-10-12: Said the relay's update notice in the chat of every world with players online
 //                            - Worked out the asking player's id before reading a world
 //                            - Counted a new world against its address only after every refusal
@@ -158,6 +159,12 @@ export const SQUAD_DEFAULTS = Object.freeze({ luka: false, formation: 4, front: 
 export const SQUAD_TEXT = "squad";
 
 /**
+ * The word that starts the text frame telling every game of a Classic world whether it fights raid
+ * bosses now.
+ */
+export const RAID_BOSSES_TEXT = "raid_bosses";
+
+/**
  * The word that starts the text frame telling every game of a world whether it turns other mods
  * off now, and which mods it names.
  */
@@ -287,7 +294,7 @@ export class Directory {
   /**
    * Makes a world.
    *
-   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, whether each new player chooses where to start, whether it has no password, whether it is featured, its description, the mods it needs, the creator's game data, whether only games with the same data may enter, the hashes of its required mods outside the catalog, its mod settings, its type, how a Raid World shares companions, its difficulty, its squad settings and whether it turns other mods off.
+   * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, whether each new player chooses where to start, whether it has no password, whether it is featured, its description, the mods it needs, the creator's game data, whether only games with the same data may enter, the hashes of its required mods outside the catalog, its mod settings, its type, how a Raid World shares companions, its difficulty, its squad settings, whether a Classic world fights raid bosses and whether it turns other mods off.
    * @param {string | null} [address] The asking game's address, whose worlds a rate limit counts; null for none.
    * @param {string[]} [features] What the game names in FEATURES_HEADER; a development build's FEATURE.dev lets it give a Raid World a starting save.
    * @returns {Promise<{status: number, body: object}>} The world's id, or why it was refused.
@@ -356,6 +363,7 @@ export class Directory {
       share: raid ? (request.share ?? SHARING.off) : SHARING.off,
       ...(raid && request.difficulty !== undefined ? { difficulty: request.difficulty } : {}),
       ...(raid && request.squad !== undefined ? { squad: cleanSquad(request.squad) } : {}),
+      ...(!raid && request.raidBosses === true ? { raidBosses: true } : {}),
       otherModsOff: request.otherModsOff ?? raid,
       created: now,
       active: now,
@@ -388,13 +396,14 @@ export class Directory {
   /**
    * Changes what of a world may change after it was made, if the creator or an admin asks: its
    * seats, its description, the mods it needs, its mod settings, a Raid World's difficulty and
-   * squad settings and whether it turns other mods off. Games already in the world stay when the seats become fewer.
+   * squad settings, whether a Classic world fights raid bosses and whether it turns other mods off.
+   * Games already in the world stay when the seats become fewer.
    * Its game data and its mods' hashes only the creator replaces, whose game they come from.
    *
    * @param {string} id The world.
    * @param {unknown} key The asking player's key.
-   * @param {any} changes Whichever of `seats`, `description`, `mods`, `data`, `modHashes`, `settings`, `difficulty`, `squad` and `otherModsOff` change.
-   * @returns {Promise<{status: number, body: object, difficulty?: number, squad?: {luka: boolean, formation: number, front: number, raidFront: number}, modsRule?: {off: boolean, mods: string}}>} The answer, the difficulty and the squad settings every game in the world room must be told when they changed, and whether the world turns other mods off with its mods, which every game must be told when either changed.
+   * @param {any} changes Whichever of `seats`, `description`, `mods`, `data`, `modHashes`, `settings`, `difficulty`, `squad`, `raidBosses` and `otherModsOff` change.
+   * @returns {Promise<{status: number, body: object, difficulty?: number, squad?: {luka: boolean, formation: number, front: number, raidFront: number}, raidBosses?: boolean, modsRule?: {off: boolean, mods: string}}>} The answer, the difficulty, the squad settings and whether it fights raid bosses, which every game in the world room must be told when they changed, and whether the world turns other mods off with its mods, which every game must be told when either changed.
    */
   async edit(id, key, changes) {
     const { entry, player, refusal } = await this.asCreatorOrAdmin(id, key);
@@ -403,7 +412,7 @@ export class Directory {
       return refusal;
     }
 
-    const { seats, description, mods, data, modHashes, settings, difficulty, squad, otherModsOff } = changes ?? {};
+    const { seats, description, mods, data, modHashes, settings, difficulty, squad, raidBosses, otherModsOff } = changes ?? {};
 
     if (data !== undefined && (typeof data !== "string" || !GAME_DATA.test(data))) {
       return badRequest("the game data must be 1 to 160 lowercase letters, digits, colons and dots");
@@ -453,10 +462,19 @@ export class Directory {
       return badRequest(SQUAD_REFUSAL);
     }
 
+    if (raidBosses !== undefined && typeof raidBosses !== "boolean") {
+      return badRequest("raidBosses must be true or false");
+    }
+
+    if (raidBosses !== undefined && entry.type === WORLD_TYPE.raid) {
+      return badRequest("only a Classic world sets raid bosses");
+    }
+
     const rule = { off: otherModsOffOf(entry), mods: entry.mods ?? "" };
     const difficultyChanged = difficulty !== undefined && difficulty !== entry.difficulty;
     const newSquad = squad !== undefined ? cleanSquad(squad) : undefined;
     const squadChanged = newSquad !== undefined && !sameSquad(newSquad, entry.squad ?? SQUAD_DEFAULTS);
+    const raidBossesChanged = raidBosses !== undefined && raidBosses !== (entry.raidBosses === true);
 
     if (seats !== undefined) entry.seats = seats;
     if (description !== undefined) entry.description = cleanText(description, this.limits.maxDescriptionLength);
@@ -466,13 +484,14 @@ export class Directory {
     if (settings !== undefined) entry.settings = cleanSettings(settings);
     if (difficulty !== undefined) entry.difficulty = difficulty;
     if (newSquad !== undefined) entry.squad = newSquad;
+    if (raidBosses !== undefined) entry.raidBosses = raidBosses;
     if (otherModsOff !== undefined) entry.otherModsOff = otherModsOff;
 
     const modsRule = { off: otherModsOffOf(entry), mods: entry.mods ?? "" };
     const ruleChanged = modsRule.off !== rule.off || modsRule.mods !== rule.mods;
 
     await this.store.put(entry);
-    return { status: 200, body: { edited: entry.id }, ...(difficultyChanged ? { difficulty } : {}), ...(squadChanged ? { squad: newSquad } : {}), ...(ruleChanged ? { modsRule } : {}) };
+    return { status: 200, body: { edited: entry.id }, ...(difficultyChanged ? { difficulty } : {}), ...(squadChanged ? { squad: newSquad } : {}), ...(raidBossesChanged ? { raidBosses } : {}), ...(ruleChanged ? { modsRule } : {}) };
   }
 
   /**
@@ -1002,6 +1021,7 @@ export class Directory {
     if (request.share !== undefined && !Object.values(SHARING).includes(request.share)) return `the companion sharing must be ${Object.values(SHARING).join(", ")}`;
     if (request.difficulty !== undefined && !difficultyOk(request.difficulty)) return `the difficulty must be a whole number from ${DIFFICULTY.min} to ${DIFFICULTY.max}`;
     if (request.squad !== undefined && !squadOk(request.squad)) return SQUAD_REFUSAL;
+    if (request.raidBosses !== undefined && typeof request.raidBosses !== "boolean") return "raidBosses must be true or false";
     if (request.otherModsOff !== undefined && typeof request.otherModsOff !== "boolean") return "otherModsOff must be true or false";
     return null;
   }
@@ -1120,6 +1140,16 @@ export function squadText(squad) {
 }
 
 /**
+ * Writes the text frame that tells every game of a Classic world whether it fights raid bosses now.
+ *
+ * @param {boolean} on Whether it fights raid bosses.
+ * @returns {string} The frame.
+ */
+export function raidBossesText(on) {
+  return `${RAID_BOSSES_TEXT} ${on ? 1 : 0}`;
+}
+
+/**
  * Writes the text frame that tells every game of a world whether it turns other mods off now, and
  * which mods it names.
  *
@@ -1171,7 +1201,7 @@ function cleanSettings(text) {
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {(limit: number) => Promise<Uint8Array | null>} readBytes Reads the request's body as bytes, null when it is longer than the limit.
  * @param {{player?: string | null, auth?: string | null, address?: string | null, features?: string[]}} [client] The PLAYER_HEADER and AUTH_HEADER of the request, which win over the key and auth key in its body or address, the address it came from and what it names in FEATURES_HEADER, see parseFeatures.
- * @returns {Promise<{status: number, body: object, bytes?: Uint8Array | ReadableStream<Uint8Array>, close?: boolean, kick?: string, difficulty?: number, squad?: object, modsRule?: {off: boolean, mods: string}, id?: string}>} The answer, sent as the bytes when there are any, and what the platform layer must do beyond it for the world with that id.
+ * @returns {Promise<{status: number, body: object, bytes?: Uint8Array | ReadableStream<Uint8Array>, close?: boolean, kick?: string, difficulty?: number, squad?: object, raidBosses?: boolean, modsRule?: {off: boolean, mods: string}, id?: string}>} The answer, sent as the bytes when there are any, and what the platform layer must do beyond it for the world with that id.
  */
 export async function handleDirectoryRequest(directory, method, url, readBody, readBytes, client = {}) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
@@ -1259,6 +1289,7 @@ export function publicView(entry) {
     share: entry.type === WORLD_TYPE.raid ? (entry.share ?? SHARING.off) : SHARING.off,
     ...(entry.type === WORLD_TYPE.raid && difficultyOk(entry.difficulty) ? { difficulty: entry.difficulty } : {}),
     ...(entry.type === WORLD_TYPE.raid && squadOk(entry.squad) ? { squad: cleanSquad(entry.squad) } : {}),
+    ...(entry.type !== WORLD_TYPE.raid ? { raidBosses: entry.raidBosses === true } : {}),
     otherModsOff: otherModsOffOf(entry),
     online: entry.online.length,
     created: entry.created,

@@ -2,7 +2,8 @@
 //  TestRelay.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-13: Kept a Raid World's squad settings
+//      Paulinchen  2026-10-13: Kept a Classic world's raid bosses setting and told its room when an edit changed it
+//                            - Kept a Raid World's squad settings
 //      Paulinchen  2026-10-12: Kept the level caps of story writes
 //                            - Kept the address and the X-MGQ-Version header of every request
 //                            - Turned outdated games away with 426 once a test says so
@@ -1162,9 +1163,9 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             return (409, Error("a world with this id exists"));
         }
 
-        if (TooManyMods(body) || NoFlag(body, "otherModsOff"))
+        if (TooManyMods(body) || NoFlag(body, "otherModsOff") || NoFlag(body, "raidBosses"))
         {
-            return (400, Error("the mods text is too long, or otherModsOff is no boolean"));
+            return (400, Error("the mods text is too long, or otherModsOff or raidBosses is no boolean"));
         }
 
         var creator = PlayerIdOf(body["player"]!.GetValue<string>());
@@ -1194,6 +1195,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             Share = body["share"]?.GetValue<string>() ?? CompanionSharing.Off,
             Difficulty = body["type"]?.GetValue<string>() == WorldType.Raid ? body["difficulty"]?.GetValue<int>() : null,
             Squad = body["type"]?.GetValue<string>() == WorldType.Raid ? body["squad"]?.DeepClone() : null,
+            RaidBosses = body["type"]?.GetValue<string>() != WorldType.Raid && body["raidBosses"]?.GetValue<bool>() == true,
             OtherModsOff = body["otherModsOff"]?.GetValue<bool>() ?? body["type"]?.GetValue<string>() == WorldType.Raid,
         };
 
@@ -1232,15 +1234,16 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         body[name] is { } value && value.GetValueKind() is not (System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False);
 
     /// <summary>
-    /// Changes a world's seats, description, mods, whether it turns other mods off and a Raid World's
-    /// difficulty and squad settings, and tells its room when the mods or whether it turns other mods
-    /// off changed. Called with the gate held.
+    /// Changes a world's seats, description, mods, whether it turns other mods off, a Raid World's
+    /// difficulty and squad settings and a Classic world's raid bosses setting, and tells its room when
+    /// the mods, whether it turns other mods off or the raid bosses setting changed. Called with the
+    /// gate held.
     /// </summary>
     /// <param name="id">The world.</param>
     /// <param name="world">The world's entry.</param>
     /// <param name="body">The changes.</param>
     /// <param name="player">The asking player's id.</param>
-    /// <param name="toTell">Receives the text frame its room is told, sent once the gate is let go.</param>
+    /// <param name="toTell">Receives the text frames its room is told, sent once the gate is let go.</param>
     /// <returns>The answer.</returns>
     private static (int, JsonNode) Edit(string id, DirectoryWorld world, JsonNode body, string player, List<(string Room, string Text)> toTell)
     {
@@ -1249,9 +1252,14 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             return (403, Error("only the world's creator may replace its game data and mod hashes"));
         }
 
-        if (TooManyMods(body) || NoFlag(body, "otherModsOff"))
+        if (TooManyMods(body) || NoFlag(body, "otherModsOff") || NoFlag(body, "raidBosses"))
         {
-            return (400, Error("the mods text is too long, or otherModsOff is no boolean"));
+            return (400, Error("the mods text is too long, or otherModsOff or raidBosses is no boolean"));
+        }
+
+        if (body["raidBosses"] != null && world.Type != WorldType.Classic)
+        {
+            return (400, Error("only a Classic world sets raid bosses"));
         }
 
         var rule = (world.OtherModsOff, world.Mods);
@@ -1281,6 +1289,12 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             }
 
             world.Squad = body["squad"]!.DeepClone();
+        }
+
+        if (body["raidBosses"]?.GetValue<bool>() is { } raidBosses && raidBosses != world.RaidBosses)
+        {
+            world.RaidBosses = raidBosses;
+            toTell.Add((id, $"raid_bosses {(raidBosses ? 1 : 0)}"));
         }
 
         if (rule != (world.OtherModsOff, world.Mods))
@@ -1395,6 +1409,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             ["share"] = world.Share,
             ["difficulty"] = world.Difficulty,
             ["squad"] = world.Squad?.DeepClone(),
+            ["raidBosses"] = world.Type == WorldType.Classic ? world.RaidBosses : null,
             ["otherModsOff"] = ListsOtherModsOff ? world.OtherModsOff : null,
             ["online"] = online.Count,
             ["created"] = 0,
@@ -1937,6 +1952,11 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         /// A Raid World's squad settings as the relay's JSON object, <see langword="null"/> for none.
         /// </summary>
         public JsonNode? Squad { get; set; }
+
+        /// <summary>
+        /// Whether a Classic world's players meet raid bosses.
+        /// </summary>
+        public bool RaidBosses { get; set; }
 
         /// <summary>
         /// Whether it turns off every mod of its players it does not name.

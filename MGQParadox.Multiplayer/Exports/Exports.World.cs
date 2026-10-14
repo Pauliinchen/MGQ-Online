@@ -233,7 +233,7 @@ internal static unsafe partial class Exports
     /// <summary>
     /// Hands out the oldest entry of the world's inbox and takes it, unless the buffer is too small for it.
     /// </summary>
-    /// <param name="buffer">Receives the entry, UTF-8 and null-terminated: a <c>kind</c> header (seat, in, out, message, chat, story, boss, difficulty, squad or mods_rule) and the headers of that kind, then a message's or the chat line's text.</param>
+    /// <param name="buffer">Receives the entry, UTF-8 and null-terminated: a <c>kind</c> header (seat, in, out, message, chat, story, boss, difficulty, squad, raid_bosses or mods_rule) and the headers of that kind, then a message's or the chat line's text.</param>
     /// <param name="size">The size of the buffer in bytes.</param>
     /// <returns>The entry's length, or its length negated when the buffer is too small, 0 while none waits.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_world_receive", CallConvs = [typeof(CallConvStdcall)])]

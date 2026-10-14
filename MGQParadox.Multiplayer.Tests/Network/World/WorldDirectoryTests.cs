@@ -2,7 +2,8 @@
 //  WorldDirectoryTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-13: Covered a Raid World's squad settings and expected them at the end of its line
+//      Paulinchen  2026-10-13: Covered a Classic world's raid bosses setting and expected it at the end of its line
+//                            - Covered a Raid World's squad settings and expected them at the end of its line
 //      Paulinchen  2026-10-12: Covered a 429 without a code for a create and for a ban
 //      Paulinchen  2026-10-10: Covered a Raid World with a starting save made by a development build
 //      Paulinchen  2026-10-09: Covered whether a world turns other mods off
@@ -72,7 +73,7 @@ public sealed class WorldDirectoryTests
 
         var lines = List(creator);
         var creatorId = WorldKeys.PlayerIdOf(CreatorKey);
-        Assert.Contains($"world\t{made["world"]}\t4\t0\t{creatorId}\t0\tCreator\tIliasburg Crew\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t", lines);
+        Assert.Contains($"world\t{made["world"]}\t4\t0\t{creatorId}\t0\tCreator\tIliasburg Crew\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t\t0", lines);
         Assert.Contains($"member\t{creatorId}\t0\tCreator", lines);
     }
 
@@ -88,7 +89,7 @@ public sealed class WorldDirectoryTests
 
         var made = Act(creator, directory => directory.Create("Raid Night", "secret", 8, false, false, [], null, WorldType.Raid, CompanionSharing.Story));
         Assert.Equal("done", made["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t8\t") && line.EndsWith("\traid\tstory\t\t1\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t8\t") && line.EndsWith("\traid\tstory\t\t1\t\t0"));
         Assert.Equal("raid,dev", relay.LastFeatures);
     }
 
@@ -109,7 +110,7 @@ public sealed class WorldDirectoryTests
         Assert.True(UpdateCheck.DevelopmentBuild);
         var made = Act(creator, directory => directory.Create("Raid Night", "secret", 8, false, false, [("Save01.rvdata2", save), ("SystemSave.rvdata2", system)], null, WorldType.Raid, CompanionSharing.Off, 0));
         Assert.Equal("done", made["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.Contains("\tready\t") && line.EndsWith("\traid\toff\t0\t1\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.Contains("\tready\t") && line.EndsWith("\traid\toff\t0\t1\t\t0"));
 
         var opened = Act(guest, directory => directory.Unlock(made["world"], "secret"));
         var target = Path.Combine(folder.Path, "World", "Save");
@@ -140,10 +141,10 @@ public sealed class WorldDirectoryTests
 
         var made = Act(creator, directory => directory.Create("Raid Night", "secret", 8, false, false, [], null, WorldType.Raid, CompanionSharing.Off, -2));
         Assert.Equal("done", made["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\traid\toff\t-2\t1\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\traid\toff\t-2\t1\t\t0"));
 
         Assert.Equal("done", Act(creator, directory => directory.Edit(made["world"], 8, string.Empty, string.Empty, null, 3))["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\traid\toff\t3\t1\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\traid\toff\t3\t1\t\t0"));
     }
 
     /// <summary>
@@ -158,13 +159,43 @@ public sealed class WorldDirectoryTests
 
         var made = Act(creator, directory => directory.Create("Raid Squad", "secret", 8, false, false, [], null, WorldType.Raid, CompanionSharing.Off, 0, null, "1 6 2 1"));
         Assert.Equal("done", made["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\traid\toff\t0\t1\t1 6 2 1"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\traid\toff\t0\t1\t1 6 2 1\t0"));
 
         Assert.Equal("done", Act(creator, directory => directory.Edit(made["world"], 8, string.Empty, string.Empty, null, null, null, "0 0 4 3"))["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\traid\toff\t0\t1\t0 0 4 3"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\traid\toff\t0\t1\t0 0 4 3\t0"));
 
         var plain = Act(creator, directory => directory.Create("Raid Plain", "secret", 8, false, false, [], null, WorldType.Raid, CompanionSharing.Off, 0))["world"];
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{plain}\t") && line.EndsWith("\traid\toff\t0\t1\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{plain}\t") && line.EndsWith("\traid\toff\t0\t1\t\t0"));
+    }
+
+    /// <summary>
+    /// Asserts that a Classic world is made with its raid bosses setting, listed at the end of its
+    /// line, that its creator's edit changes it while an edit that leaves it out keeps it, and that a
+    /// world made without it and a Raid World list it off.
+    /// </summary>
+    [Fact]
+    public void ClassicWorld_KeepsAndChangesItsRaidBosses()
+    {
+        using var relay = new TestRelay();
+        var creator = NewDirectory(relay, CreatorKey, "Creator");
+
+        var made = Act(creator, directory => directory.Create("Boss Hunt", "secret", 4, false, false, [], null, WorldType.Classic, CompanionSharing.Off, null, null, null, true));
+        Assert.Equal("done", made["state"]);
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tclassic\toff\t\t0\t\t1"));
+
+        Assert.Equal("done", Act(creator, directory => directory.Edit(made["world"], 4, "Edited.", string.Empty))["state"]);
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tEdited.\t\t\tclassic\toff\t\t0\t\t1"));
+
+        Assert.Equal("done", Act(creator, directory => directory.Edit(made["world"], 4, "Edited.", string.Empty, null, null, null, null, false))["state"]);
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tclassic\toff\t\t0\t\t0"));
+
+        var plain = Act(creator, directory => directory.Create("Plain Fields", "secret", 4, false, false, []))["world"];
+        var raid = Act(creator, directory => directory.Create("Raid", "secret", 8, false, false, [], null, WorldType.Raid, CompanionSharing.Off, 0))["world"];
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{plain}\t") && line.EndsWith("\tclassic\toff\t\t0\t\t0"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{raid}\t") && line.EndsWith("\traid\toff\t0\t1\t\t0"));
+
+        Assert.Equal("done", Act(creator, directory => directory.Edit(plain, 4, string.Empty, string.Empty, null, null, null, null, true))["state"]);
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{plain}\t") && line.EndsWith("\tclassic\toff\t\t0\t\t1"));
     }
 
     /// <summary>
@@ -253,18 +284,18 @@ public sealed class WorldDirectoryTests
         var classic = Act(creator, directory => directory.Create("Classic", "secret", 4, false, false, []))["world"];
         var raid = Act(creator, directory => directory.Create("Raid", "secret", 8, false, false, [], null, WorldType.Raid, CompanionSharing.Off, 0))["world"];
         var strict = Act(creator, directory => directory.Create("Strict", "secret", 4, false, false, [], null, WorldType.Classic, CompanionSharing.Off, null, true))["world"];
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{classic}\t") && line.EndsWith("\tclassic\toff\t\t0\t"));
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{raid}\t") && line.EndsWith("\traid\toff\t0\t1\t"));
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{strict}\t") && line.EndsWith("\tclassic\toff\t\t1\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{classic}\t") && line.EndsWith("\tclassic\toff\t\t0\t\t0"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{raid}\t") && line.EndsWith("\traid\toff\t0\t1\t\t0"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{strict}\t") && line.EndsWith("\tclassic\toff\t\t1\t\t0"));
 
         Assert.Equal("done", Act(creator, directory => directory.Edit(raid, 8, string.Empty, string.Empty, null, null, false))["state"]);
         Assert.Equal("done", Act(creator, directory => directory.Edit(strict, 4, "Edited.", string.Empty))["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{raid}\t") && line.EndsWith("\traid\toff\t0\t0\t"));
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{strict}\t") && line.EndsWith("\tclassic\toff\t\t1\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{raid}\t") && line.EndsWith("\traid\toff\t0\t0\t\t0"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{strict}\t") && line.EndsWith("\tclassic\toff\t\t1\t\t0"));
 
         relay.ListsOtherModsOff = false;
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{raid}\t") && line.EndsWith("\traid\toff\t0\t1\t"));
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{strict}\t") && line.EndsWith("\tclassic\toff\t\t0\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{raid}\t") && line.EndsWith("\traid\toff\t0\t1\t\t0"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{strict}\t") && line.EndsWith("\tclassic\toff\t\t0\t\t0"));
     }
 
     /// <summary>
@@ -330,7 +361,7 @@ public sealed class WorldDirectoryTests
         var guest = NewDirectory(relay, PlayerKey(2), "Guest");
 
         var made = Act(creator, directory => directory.Create("Secret Base", "secret", 6, true, false, []));
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tnone\t1\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tnone\t1\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t\t0"));
         Assert.Empty(List(guest));
 
         var opened = Act(guest, directory => directory.Unlock(made["world"], "secret"));
@@ -351,7 +382,7 @@ public sealed class WorldDirectoryTests
         var guest = NewDirectory(relay, PlayerKey(2), "Guest");
 
         var made = Act(creator, directory => directory.Create("Free Start", "secret", 4, true, true, []));
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tnone\t1\t1\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tnone\t1\t1\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t\t0"));
 
         var opened = Act(guest, directory => directory.Unlock(made["world"], "secret"));
         Assert.Equal("1", opened["choose"]);
@@ -368,7 +399,7 @@ public sealed class WorldDirectoryTests
         var guest = NewDirectory(relay, PlayerKey(2), "Guest");
 
         var made = Act(creator, directory => directory.Create("Modded Run", "secret", 4, false, false, [], new WorldAbout("A slow\trun.", "Some Mod 1.2", "1:0a1b2c3d.ffffffff", true)));
-        Assert.Contains(List(guest), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tnone\t0\t0\t0\t0\t1\t1:0a1b2c3d.ffffffff\tSome Mod 1.2\tA slow run.\t\t\tclassic\toff\t\t0\t"));
+        Assert.Contains(List(guest), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tnone\t0\t0\t0\t0\t1\t1:0a1b2c3d.ffffffff\tSome Mod 1.2\tA slow run.\t\t\tclassic\toff\t\t0\t\t0"));
     }
 
     /// <summary>
@@ -385,7 +416,7 @@ public sealed class WorldDirectoryTests
 
         Assert.Equal("failed", Act(admin, directory => directory.SetData(made["world"], "1:ffffffff"))["state"]);
         Assert.Equal("done", Act(creator, directory => directory.SetData(made["world"], "1:ffffffff"))["state"]);
-        Assert.Contains(List(admin), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\t1\t1:ffffffff\tSome Mod\t\t\t\tclassic\toff\t\t0\t"));
+        Assert.Contains(List(admin), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\t1\t1:ffffffff\tSome Mod\t\t\t\tclassic\toff\t\t0\t\t0"));
     }
 
     /// <summary>
@@ -427,10 +458,10 @@ public sealed class WorldDirectoryTests
 
         Assert.Contains("creator", Act(guest, directory => directory.Edit(made["world"], 8, "New text.", "New Mod"))["error"]);
         Assert.Equal("done", Act(creator, directory => directory.Edit(made["world"], 8, "New text.", "New Mod"))["state"]);
-        Assert.Contains(List(guest), line => line.StartsWith($"world\t{made["world"]}\t8\t") && line.EndsWith("\t1\t1:0a1b2c3d\tNew Mod\tNew text.\t\t\tclassic\toff\t\t0\t"));
+        Assert.Contains(List(guest), line => line.StartsWith($"world\t{made["world"]}\t8\t") && line.EndsWith("\t1\t1:0a1b2c3d\tNew Mod\tNew text.\t\t\tclassic\toff\t\t0\t\t0"));
 
         Assert.Equal("done", Act(admin, directory => directory.Edit(made["world"], 6, string.Empty, string.Empty))["state"]);
-        Assert.Contains(List(guest), line => line.StartsWith($"world\t{made["world"]}\t6\t") && line.EndsWith("\t1\t1:0a1b2c3d\t\t\t\t\tclassic\toff\t\t0\t"));
+        Assert.Contains(List(guest), line => line.StartsWith($"world\t{made["world"]}\t6\t") && line.EndsWith("\t1\t1:0a1b2c3d\t\t\t\t\tclassic\toff\t\t0\t\t0"));
     }
 
     /// <summary>
@@ -444,7 +475,7 @@ public sealed class WorldDirectoryTests
         var guest = NewDirectory(relay, PlayerKey(2), "Guest");
 
         var made = Act(creator, directory => directory.Create("Open Fields", string.Empty, 4, false, false, []));
-        Assert.Contains(List(guest), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tnone\t0\t0\t1\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t"));
+        Assert.Contains(List(guest), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tnone\t0\t0\t1\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t\t0"));
 
         var opened = Act(guest, directory => directory.Unlock(made["world"], string.Empty));
         Assert.Equal(made["code"], opened["code"]);
@@ -555,7 +586,7 @@ public sealed class WorldDirectoryTests
 
         var made = Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4, false, false, [("Save01.rvdata2", save), ("SystemSave.rvdata2", system)]));
         Assert.Equal("done", made["state"]);
-        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tready\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t"));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tready\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t\t0"));
 
         var opened = Act(guest, directory => directory.Unlock(made["world"], "secret"));
         var target = Path.Combine(folder.Path, "World", "Save");
@@ -612,7 +643,7 @@ public sealed class WorldDirectoryTests
         var creator = NewDirectory(relay, CreatorKey, "Creator");
         var made = Act(creator, directory => directory.Create("World", "secret", 4, false, false, []));
 
-        Assert.Contains(List(creator), line => line.EndsWith("\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t"));
+        Assert.Contains(List(creator), line => line.EndsWith("\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t\t0"));
         Assert.Equal("failed", Act(creator, directory => directory.FetchStart(made["code"], folder.Path))["state"]);
     }
 

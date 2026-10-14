@@ -2,7 +2,8 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-13: Sent a Raid World's squad rules with the new world and the edits, and showed them in the details
+#      Paulinchen  2026-10-13: Sent a Classic world's raid bosses with the new world and the edits, and showed them in the details
+#                            - Sent a Raid World's squad rules with the new world and the edits, and showed them in the details
 #                            - Opened a Raid World's squad rules in a form of their own and went back from it
 #      Paulinchen  2026-10-12: Asked before taking a world's starting save unless the player created the world
 #                            - Scrolled the worlds, the choices, the list box, the mod picker and a description with the mouse wheel
@@ -544,7 +545,7 @@ class Scene_MpWorlds < Scene_MenuBase
     elsif @entry.password_known?
       listed = @entry.listed
       log_screen("entering #{entry_text} from its folder #{@entry.local.id}#{listed ? '' : ' (deleted from the list, saves kept)'}")
-      @entry.local.describe(listed.name, listed.id, listed.seats, listed.type, listed.share, listed.difficulty, listed.squad) if listed
+      @entry.local.describe(listed.name, listed.id, listed.seats, listed.type, listed.share, listed.difficulty, listed.squad, listed.raid_bosses) if listed
       enter(@entry.local, listed && listed.start, listed && listed.choose)
     elsif @entry.open?
       log_screen("opening #{entry_text}, which has no password")
@@ -1723,10 +1724,10 @@ class Scene_MpWorlds < Scene_MenuBase
     @resume_form = true
   end
 
-  # Changes the chosen world as the form says, a Raid World's difficulty and squad rules and Turn off
-  # other mods with it only when the form changed them, since the relay tells every player in it of
-  # each; its creator's game sends the hashes of its required mods outside the catalog too, and then
-  # its mod settings when Shared Mod Settings changed.
+  # Changes the chosen world as the form says, a Raid World's difficulty and squad rules, a Classic
+  # world's raid bosses and Turn off other mods with it only when the form changed them, since the
+  # relay tells every player in it of each; its creator's game sends the hashes of its required mods
+  # outside the catalog too, and then its mod settings when Shared Mod Settings changed.
   def edit_world
     values = form
     own = @entry.listed.creator_id == @me
@@ -1737,19 +1738,22 @@ class Scene_MpWorlds < Scene_MenuBase
     @edited_difficulty = difficulty && difficulty != @entry.listed.difficulty ? difficulty : nil
     squad = @entry.listed.raid? ? values.squad : nil
     @edited_squad = squad && squad != (@entry.listed.squad || MGQ_MpWorld::DEFAULT_SQUAD) ? squad : nil
+    @edited_raid_bosses = @entry.listed.raid? || values.raid_bosses? == (@entry.listed.raid_bosses ? true : false) ? nil : values.raid_bosses?
     @edited_other_mods = values.other_mods_off? == (@entry.listed.other_mods_off ? true : false) ? nil : values.other_mods_off?
     start_action("edit") do
-      MGQ_MpWorld::Directory.edit(@entry.id, values[:seats].to_i, values[:description], values[:mods], hashes, @edited_difficulty, @edited_other_mods, @edited_squad)
+      MGQ_MpWorld::Directory.edit(@entry.id, values[:seats].to_i, values[:description], values[:mods], hashes, @edited_difficulty, @edited_other_mods, @edited_squad, @edited_raid_bosses)
     end
   end
 
   # Tells the creator or the admin that a Raid World's players play on its new difficulty and with
-  # its new squad rules, and what turning other mods off or on does for its players.
+  # its new squad rules, whether a Classic world's story bosses fight as raid bosses now, and what
+  # turning other mods off or on does for its players.
   #
   # @return [String] The sentences after the one that the world was changed, empty when none changed.
   def difficulty_text
     text = @edited_difficulty ? " Its players play on #{MGQ_MpWorld.difficulty_name(@edited_difficulty)} now." : ""
     text += " Its squads: #{MGQ_MpWorld.squad_summary(@edited_squad)}." if @edited_squad
+    text += @edited_raid_bosses ? " Its story bosses fight as raid bosses now." : " Its story bosses fight as usual now." unless @edited_raid_bosses.nil?
     return text if @edited_other_mods.nil?
 
     text + (@edited_other_mods ? " Players in it with other mods enter again without them." : " Its players keep their mods from their next entry.")
@@ -1807,11 +1811,12 @@ class Scene_MpWorlds < Scene_MenuBase
     files = values.from_save? ? MGQ_MpSaveDistribution.files_of(values[:save]) : []
     raid = values.type == MGQ_MpWorld::RAID
     @creating = values[:name]
-    @creating_kind = [values.type, values.share, raid ? values.difficulty : nil, raid ? values.squad : nil]
+    @creating_kind = [values.type, values.share, raid ? values.difficulty : nil, raid ? values.squad : nil, values.raid_bosses?]
     @start_files = files
     about = { :description => values[:description], :mods => values[:mods], :data => MGQ_MpWorld::GameData.fingerprint, :strict => !values[:mismatch],
               :mod_hashes => MGQ_MpWorldMods.creator_hashes(values[:mods]), :settings => values[:shared] ? MGQ_MpWorldMods::MARKER : "",
-              :type => values.type, :share => values.share, :difficulty => values.difficulty, :squad => values.squad, :other_mods_off => values.other_mods_off? }
+              :type => values.type, :share => values.share, :difficulty => values.difficulty, :squad => values.squad, :raid_bosses => values.raid_bosses?,
+              :other_mods_off => values.other_mods_off? }
     start_action("create") { MGQ_MpWorld::Directory.create(values[:name], values[:password], values[:seats].to_i, values[:hidden], values.choose?, MGQ_MpSaveDistribution.text_of(files), about) }
   end
 
@@ -2016,7 +2021,8 @@ class Scene_MpWorlds < Scene_MenuBase
       return false
     end
 
-    world = MGQ_MpWorld::World.found(action["code"], @entry.name, action["world"], @entry.listed.type, @entry.listed.share, @entry.listed.difficulty, @entry.listed.squad)
+    world = MGQ_MpWorld::World.found(action["code"], @entry.name, action["world"], @entry.listed.type, @entry.listed.share, @entry.listed.difficulty, @entry.listed.squad,
+                                     @entry.listed.raid_bosses)
 
     unless world
       say("The world's folder could not be created.")
@@ -2822,10 +2828,12 @@ class Window_MpWorldDetail < Window_Base
     [world_panel(entry, me), data_panel(entry, me), players_panel(listed, me)]
   end
 
-  # Tells who made a world, how full it is, how it is entered, where its new players start, and for a
-  # Raid World its type, how it shares companions, its difficulty and its squad rules.
+  # Tells who made a world, how full it is, how it is entered, where its new players start, for a
+  # Raid World its type, how it shares companions, its difficulty and its squad rules, and for a
+  # Classic world whose story bosses fight as raid bosses that they do.
   #
-  # A Classic world gets no type row, since every row takes a line from the description below.
+  # A Classic world gets no type row and a raid bosses row only while they are on, since every row
+  # takes a line from the description below.
   #
   # @param entry [MGQ_MpWorld::Entry] The world, which the directory lists.
   # @param me [String] The player's id.
@@ -2839,6 +2847,7 @@ class Window_MpWorldDetail < Window_Base
     rows << type_row(listed) if listed.raid?
     rows << (listed.raid? ? start_row(listed) : [Cell.new("Start", start_text(listed), :normal)])
     rows.concat(squad_rows(listed)) if listed.raid?
+    rows << [Cell.new("Raid Bosses", "On: story bosses of their tier", :normal)] if !listed.raid? && listed.raid_bosses
     Panel.new("World", listed.featured ? "featured: one of the relay's own" : nil, rows)
   end
 

@@ -2,6 +2,7 @@
 #  ui.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Added the single player settings' Mod Config group, MGQ Online SP
 #      Paulinchen  2026-10-12: Gave the tabs not picked the edge's color, darkened
 #                            - Added the scrollbar every scrolling box draws and its track color
 #                            - Scrolled the list box with the mouse wheel and drew its scrollbar
@@ -87,6 +88,10 @@ module MGQ_MpUi
   # The first words of every setting's row in the Mod Config, which list the settings in a group of
   # their own, apart from the hotkeys (see MGQ_MpHotkeys::GROUP).
   OPTION_PREFIX = "[MGQ Online Settings] "
+
+  # The first words of every row in the Mod Config that applies only outside a world, which list
+  # the single player settings in a group of their own.
+  SP_PREFIX = "[MGQ Online SP] "
 
   # What every flat box of the mod draws with: one background in one frame, one plate behind a line
   # on a busy picture, one picked row, one set of text colors, one set of font sizes, one padding,
@@ -443,16 +448,17 @@ module MGQ_MpUi
   # older menu would store it in the save, so it gets none.
   #
   # @param key [Symbol] The row's key.
-  # @param name [String] Its name after OPTION_PREFIX.
+  # @param name [String] Its name after the group's prefix.
   # @param help [String] Its help.
   # @param values [Proc] Lists its values, as texts the menu shows.
   # @param read [Proc] Reads its value.
   # @param write [Proc] Takes the value picked.
+  # @param prefix [String] The group's prefix, OPTION_PREFIX or SP_PREFIX.
   # @return [Boolean] Whether the row was added.
-  def self.add_option(key, name, help, values, read, write)
+  def self.add_option(key, name, help, values, read, write, prefix = OPTION_PREFIX)
     return false unless defined?(ModConfigRemake) && ModConfigRemake.respond_to?(:mod_stored?)
 
-    NWConst::Config::MOD_CONTENTS.insert(-2, :key => key, :name => OPTION_PREFIX + name, :sub => true, :help => help, :values => values,
+    NWConst::Config::MOD_CONTENTS.insert(-2, :key => key, :name => prefix + name, :sub => true, :help => help, :values => values,
                                              :mod_stored => true, :value => read, :on_change => write, :personal => true)
     true
   end

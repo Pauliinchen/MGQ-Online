@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-13: Wrote the game data's fingerprint to GameData.ini at each start for the World Admin tool
+#                            - Added a Classic world's raid bosses to the forms, the list and world.ini
 #                            - Added a Raid World's squad rules to the forms, the list and world.ini
 #                            - Set a Raid World's squad rules in a form of their own behind a button
 #      Paulinchen  2026-10-12: Read the title screen's commands through MGQ_MpGame
@@ -406,6 +407,27 @@ module MGQ_MpWorld
   #   regular fights before the one in raids.
   def self.squad_summary(squad)
     "Formation #{formation_name(squad[:formation])}, Frontline #{squad[:front]} | #{squad[:raid_front]}, Luka #{squad[:luka] ? 'replaceable' : 'fixed'}"
+  end
+
+  # Tells whether the open world is a Classic world whose story bosses fight as raid bosses of their
+  # tier, see battles_raid_tiers.rbx.
+  #
+  # @return [Boolean] Whether it is; false while no world is open and in a Raid World.
+  def self.raid_bosses?
+    open? && !raid? && @world.raid_bosses ? true : false
+  end
+
+  # Takes whether the open Classic world fights raid bosses, as the relay tells every game in it
+  # after its creator or an admin changed it, and keeps it in world.ini.
+  #
+  # @param on [Boolean] Whether it does.
+  # @return [Boolean] Whether the open world is a Classic world that took it.
+  def self.take_raid_bosses(on)
+    return false unless open? && !raid?
+
+    @world.raid_bosses = on ? true : false
+    @world.write
+    true
   end
 
   # What the text screen handed back: what the text was for, and the text, nil when the player left it.
@@ -1068,8 +1090,9 @@ module MGQ_MpWorld
     # @!attribute difficulty [Integer, nil] The difficulty a Raid World sets for every player, one of DIFFICULTIES; nil when it sets none.
     # @!attribute other_mods_off [Boolean] Whether it turns off every mod it does not name, see MGQ_MpModParking.
     # @!attribute squad [Hash, nil] The squad rules a Raid World sets for every player's team, see MGQ_MpWorld.squad; nil when it names none.
+    # @!attribute raid_bosses [Boolean] Whether a Classic world's story bosses fight as raid bosses, see MGQ_MpWorld.raid_bosses?.
     ListedWorld = Struct.new(:id, :seats, :online, :creator_id, :active, :creator_name, :name, :start, :members, :hidden, :choose, :open, :featured, :strict, :data, :mods, :description, :mod_hashes, :settings,
-                             :type, :share, :difficulty, :other_mods_off, :squad) do
+                             :type, :share, :difficulty, :other_mods_off, :squad, :raid_bosses) do
       # Tells whether the world is a Raid World.
       #
       # @return [Boolean] Whether it is.
@@ -1126,7 +1149,8 @@ module MGQ_MpWorld
         when "world"
           worlds.push(ListedWorld.new(fields[1], fields[2].to_i, fields[3].to_i, fields[4], fields[5].to_i, fields[6].to_s, fields[7].to_s, fields[8] || "none", [], fields[9] == "1", fields[10] == "1", fields[11] == "1", fields[12] == "1", fields[13] == "1", fields[14].to_s, fields[15].to_s, fields[16].to_s, fields[17].to_s, fields[18].to_s,
                                      fields[19].to_s.empty? ? CLASSIC : fields[19], fields[20].to_s.empty? ? SHARING[0] : fields[20], fields[19] == RAID ? MGQ_MpWorld.difficulty_of(fields[21]) : nil,
-                                     fields[22].to_s.empty? ? fields[19] == RAID : fields[22] == "1", fields[19] == RAID ? MGQ_MpWorld.squad_of(fields[23]) : nil))
+                                     fields[22].to_s.empty? ? fields[19] == RAID : fields[22] == "1", fields[19] == RAID ? MGQ_MpWorld.squad_of(fields[23]) : nil,
+                                     fields[19] != RAID && fields[24] == "1"))
         when "member"
           worlds.last.members.push(Member.new(fields[1], fields[2] == "1", fields[3].to_s)) if worlds.last
         end
@@ -1164,7 +1188,7 @@ module MGQ_MpWorld
     # @param start [String] The starting save's files, see MGQ_MpSaveDistribution.text_of; empty for none.
     # @param about [Hash] Whichever of :description, :mods, :data (the creator's game data), :strict (true when only games with the same data may enter), :mod_hashes, :settings,
     #   :type (one of TYPES, CLASSIC when left out), :share (one of SHARING, "off" when left out), :difficulty (one of DIFFICULTIES, NORMAL when left out),
-    #   :squad (the squad rules, see MGQ_MpWorld.squad, DEFAULT_SQUAD when left out) and
+    #   :squad (the squad rules, see MGQ_MpWorld.squad, DEFAULT_SQUAD when left out), :raid_bosses (whether a Classic world fights raid bosses, false when left out) and
     #   :other_mods_off (whether it turns off every mod it does not name, by its type when left out) apply;
     #   a Raid World starts from the beginning, so it takes no player's choice, and a starting save only in a development build.
     # @return [Boolean] Whether the action started.
@@ -1175,15 +1199,16 @@ module MGQ_MpWorld
       share = raid ? about[:share] || SHARING[0] : SHARING[0]
       difficulty = raid ? about[:difficulty] || DEFAULT_DIFFICULTY : DEFAULT_DIFFICULTY
       squad = raid ? MGQ_MpWorld.squad_text(about[:squad] || DEFAULT_SQUAD) : ""
+      raid_bosses = !raid && about[:raid_bosses] ? true : false
       other_mods_off = about[:other_mods_off].nil? ? raid : about[:other_mods_off]
       choose = false if raid
       start = "" if raid && !MGQ_MpWorld.dev_build?
       sent = MGQ_Multiplayer::Link.function('mp_dir_create').call(name + "\0", password + "\0", seats, hidden ? 1 : 0, choose ? 1 : 0, start + "\0",
                                                                                   about[:description].to_s + "\0", about[:mods].to_s + "\0", about[:data].to_s + "\0", about[:strict] ? 1 : 0,
                                                                                   about[:mod_hashes].to_s + "\0", about[:settings].to_s + "\0", type + "\0", share + "\0", difficulty,
-                                                                                  other_mods_off ? 1 : 0, squad + "\0") == 1
+                                                                                  other_mods_off ? 1 : 0, squad + "\0", raid ? -1 : (raid_bosses ? 1 : 0)) == 1
       files = start.empty? ? "no starting save" : "a starting save of #{start.split("\n").size} file(s)"
-      started(sent, "create #{name}: #{raid ? "raid, sharing #{share}, difficulty #{MGQ_MpWorld.difficulty_name(difficulty)}, squad \"#{squad}\"" : 'classic'}, " \
+      started(sent, "create #{name}: #{raid ? "raid, sharing #{share}, difficulty #{MGQ_MpWorld.difficulty_name(difficulty)}, squad \"#{squad}\"" : "classic#{raid_bosses ? ', raid bosses' : ''}"}, " \
                     "#{other_mods_off ? 'other mods off' : 'other mods allowed'}, " \
                     "#{seats} seats, #{password.empty? ? 'no password' : 'a password'}, #{hidden ? 'hidden' : 'public'}, " \
                     "#{choose ? "player's choice" : 'no choice'}, #{files}, mods \"#{about[:mods]}\", #{about[:strict] ? 'strict' : 'mismatch allowed'}, " \
@@ -1212,9 +1237,9 @@ module MGQ_MpWorld
       started(MGQ_Multiplayer::Link.function('mp_dir_unlock_code').call(code + "\0") == 1, "unlock a world with an invite")
     end
 
-    # Changes a world's seats, description, mods, a Raid World's difficulty and squad rules and
-    # whether it turns other mods off, which its creator or an admin may, and for its creator the
-    # hashes of its required mods outside the catalog.
+    # Changes a world's seats, description, mods, a Raid World's difficulty and squad rules, a
+    # Classic world's raid bosses and whether it turns other mods off, which its creator or an admin
+    # may, and for its creator the hashes of its required mods outside the catalog.
     #
     # @param id [String] The world.
     # @param seats [Integer] How many players it seats at once.
@@ -1224,15 +1249,17 @@ module MGQ_MpWorld
     # @param difficulty [Integer, nil] A Raid World's difficulty, one of DIFFICULTIES; nil to leave it, as for every Classic world.
     # @param other_mods_off [Boolean, nil] Whether it turns off every mod it does not name; nil to leave it.
     # @param squad [Hash, nil] A Raid World's squad rules, see MGQ_MpWorld.squad; nil to leave them, as for every Classic world.
+    # @param raid_bosses [Boolean, nil] Whether a Classic world fights raid bosses; nil to leave it, as for every Raid World.
     # @return [Boolean] Whether the action started.
-    def self.edit(id, seats, description, mods, mod_hashes = nil, difficulty = nil, other_mods_off = nil, squad = nil)
+    def self.edit(id, seats, description, mods, mod_hashes = nil, difficulty = nil, other_mods_off = nil, squad = nil, raid_bosses = nil)
       MGQ_Multiplayer::Player.share
       squad_text = squad ? MGQ_MpWorld.squad_text(squad) : ""
       sent = MGQ_Multiplayer::Link.function('mp_dir_edit').call(id + "\0", seats, description + "\0", mods + "\0", mod_hashes.to_s + "\0", mod_hashes ? 1 : 0,
-                                                                                difficulty.to_i, difficulty ? 1 : 0, other_mods_off ? 1 : 0, other_mods_off.nil? ? 0 : 1, squad_text + "\0") == 1
+                                                                                difficulty.to_i, difficulty ? 1 : 0, other_mods_off ? 1 : 0, other_mods_off.nil? ? 0 : 1, squad_text + "\0",
+                                                                                raid_bosses.nil? ? -1 : (raid_bosses ? 1 : 0)) == 1
       started(sent, "edit world #{MGQ_MpWorld.short(id)}: #{seats} seats, mods \"#{mods}\", description of #{description.size} chars, creator hashes #{mod_hashes ? "\"#{mod_hashes}\"" : 'kept'}" \
                     "#{difficulty ? ", difficulty #{MGQ_MpWorld.difficulty_name(difficulty)}" : ''}#{squad ? ", squad \"#{squad_text}\"" : ''}" \
-                    "#{other_mods_off.nil? ? '' : ", other mods #{other_mods_off ? 'off' : 'allowed'}"}")
+                    "#{raid_bosses.nil? ? '' : ", raid bosses #{raid_bosses ? 'on' : 'off'}"}#{other_mods_off.nil? ? '' : ", other mods #{other_mods_off ? 'off' : 'allowed'}"}")
     end
 
     # Replaces a world's mod settings, which its creator or an admin may.
@@ -1593,7 +1620,8 @@ module MGQ_MpWorld
 
   # A world on this PC: its folder in Patch/Multiplayer/Worlds, named by a hash of its code, with
   # world.ini (name, world code, directory id, type, how a Raid World shares companions, its
-  # difficulty and squad rules, when it was made and last played) and the world's Save folder.
+  # difficulty and squad rules, whether a Classic world fights raid bosses, when it was made and
+  # last played) and the world's Save folder.
   class World
     # The file inside the world's folder that describes it.
     FILE = "world.ini"
@@ -1653,9 +1681,10 @@ module MGQ_MpWorld
     # @param share [String, nil] How a Raid World shares companions, one of SHARING; nil to keep what world.ini says.
     # @param difficulty [Integer, nil] A Raid World's difficulty, one of DIFFICULTIES; nil to keep what world.ini says.
     # @param squad [Hash, nil] A Raid World's squad rules, see MGQ_MpWorld.squad; nil to keep what world.ini says.
+    # @param raid_bosses [Boolean, nil] Whether a Classic world fights raid bosses; nil to keep what world.ini says.
     # @return [World, nil] The world, nil when the text is no world code, the folder could not be
     #   made or its world.ini exists but could not be read, which is then left as it is.
-    def self.found(code, name, directory_id, type = nil, share = nil, difficulty = nil, squad = nil)
+    def self.found(code, name, directory_id, type = nil, share = nil, difficulty = nil, squad = nil, raid_bosses = nil)
       id = Link.id_of(code)
       unless id
         MGQ_MpWorld.log("no folder for world #{MGQ_MpWorld.short(directory_id)}: the relay's answer holds no world code")
@@ -1671,7 +1700,7 @@ module MGQ_MpWorld
 
       known = of(id, values)
       world = known || new(id, "code" => code, "created" => Time.now.to_i)
-      world.describe(name, directory_id, nil, type, share, difficulty, squad)
+      world.describe(name, directory_id, nil, type, share, difficulty, squad, raid_bosses)
       written = world.write
       MGQ_MpWorld.log("#{known ? 'found' : 'made'} folder #{id} of world #{MGQ_MpWorld.short(directory_id)} (#{world.name})#{written ? '' : ', but world.ini could not be written'}")
       written ? world : nil
@@ -1716,6 +1745,9 @@ module MGQ_MpWorld
     # world.ini names none.
     attr_accessor :squad
 
+    # Whether a Classic world's story bosses fight as raid bosses, see MGQ_MpWorld.raid_bosses?.
+    attr_accessor :raid_bosses
+
     # Creates a world from what its world.ini says.
     #
     # @param id [String] The folder's id.
@@ -1731,9 +1763,10 @@ module MGQ_MpWorld
       @share = values["share"]
       @difficulty = MGQ_MpWorld.difficulty_of(values["difficulty"])
       @squad = MGQ_MpWorld.squad_of(values["squad"])
+      @raid_bosses = values["raid_bosses"].to_s == "1"
     end
 
-    # Takes the world's name, directory id, seats, type, companion sharing, difficulty and squad rules, as the directory says them.
+    # Takes the world's name, directory id, seats, type, companion sharing, difficulty, squad rules and raid bosses, as the directory says them.
     #
     # @param name [String] The world's name.
     # @param directory_id [String] The world's id in the directory.
@@ -1742,13 +1775,15 @@ module MGQ_MpWorld
     # @param share [String, nil] How a Raid World shares companions, one of SHARING; nil to keep what world.ini says.
     # @param difficulty [Integer, nil] A Raid World's difficulty, one of DIFFICULTIES; nil to keep what world.ini says.
     # @param squad [Hash, nil] A Raid World's squad rules, see MGQ_MpWorld.squad; nil to keep what world.ini says.
-    def describe(name, directory_id, seats = nil, type = nil, share = nil, difficulty = nil, squad = nil)
+    # @param raid_bosses [Boolean, nil] Whether a Classic world fights raid bosses; nil to keep what world.ini says.
+    def describe(name, directory_id, seats = nil, type = nil, share = nil, difficulty = nil, squad = nil, raid_bosses = nil)
       @name = MGQ_Multiplayer.clean(name)
       @directory_id = directory_id
       @type = type if type
       @share = share if share
       @difficulty = difficulty if difficulty
       @squad = squad if squad
+      @raid_bosses = raid_bosses ? true : false unless raid_bosses.nil?
       parts = @code.to_s.split(";")
       @code = (parts[0...-1] + [seats.to_s]).join(";") if seats && parts.size > 3 && parts.last =~ /\A\d+\z/
     end
@@ -1804,6 +1839,7 @@ module MGQ_MpWorld
       values["share"] = @share if @share
       values["difficulty"] = @difficulty if @difficulty
       values["squad"] = MGQ_MpWorld.squad_text(@squad) if @squad
+      values["raid_bosses"] = 1 if @raid_bosses
       values["played"] = @played_at.to_i if @played_at
       World.forget
       MGQ_Multiplayer::Ini.write("#{folder}/#{FILE}", values)
@@ -1998,6 +2034,12 @@ module MGQ_MpWorld
     # What the lines at the top say on Sharing companions.
     SHARING_HINT = "Raid only: companions everyone gets on reaching their level. Fixed once created."
 
+    # What the lines at the top say on Raid Bosses.
+    RAID_BOSSES_HINT = "Classic only: story bosses fight as raid bosses of their tier, far stronger. Changeable later."
+
+    # What the lines at the top say on Raid Bosses in the edit form.
+    EDIT_RAID_BOSSES_HINT = "Story bosses fight as raid bosses of their tier, far stronger, from each player's next boss fight."
+
     # What the lines at the top say on the difficulty.
     DIFFICULTY_HINT = "Every player of the world plays on it. You can change it later in the edit form."
 
@@ -2011,7 +2053,7 @@ module MGQ_MpWorld
     # Width of the world type's label, narrower than a text box's, so the switch fits half a row.
     TYPE_LABEL_WIDTH = 70
 
-    # Width of a Raid World's Save label, narrower than a text box's, so the save's name fits half a row.
+    # Width of a Save label that shares its row, narrower than a text box's, so the save's name fits half a row.
     RAID_SAVE_LABEL_WIDTH = 40
 
     # Width of the squad rules' switch labels, narrower than a text box's, so Original fits half a row.
@@ -2179,8 +2221,10 @@ module MGQ_MpWorld
                   :shows => lambda { |form| form.type == CLASSIC }),
         Field.new(:choose, :check, "Player's choice", 3, "Classic only: new players pick their start, the opening or a save. Fixed once created.", :side => :right, :group => "World",
                   :shows => lambda { |form| form.type == CLASSIC }),
-        Field.new(:save, :save, "Save", 4, "The save every new player starts from.", :group => "World",
+        # A Classic world shares the row between its Save and Raid Bosses, so the form keeps to one page.
+        Field.new(:save, :save, "Save", 4, "The save every new player starts from.", :side => :left, :group => "World", :label_width => RAID_SAVE_LABEL_WIDTH,
                   :needs => lambda { |form| form.from_save? }, :shows => lambda { |form| form.type == CLASSIC }),
+        Field.new(:raid_bosses, :check, "Raid Bosses", 4, RAID_BOSSES_HINT, :side => :right, :group => "World", :shows => lambda { |form| form.type == CLASSIC }),
         Field.new(:difficulty, :switch, "Difficulty", 4, DIFFICULTY_HINT, :side => :left, :group => "World", :choices => DIFFICULTY_NAMES,
                   :label_width => TYPE_LABEL_WIDTH, :shows => lambda { |form| form.type == RAID && !form.raid_save? }),
         limits_field(4, :right, lambda { |form| form.type == RAID && !form.raid_save? }),
@@ -2202,7 +2246,7 @@ module MGQ_MpWorld
         Field.new(:confirm, :button, "Create the world", 10, "Creates the world. You enter it from the list."),
       ]
       new("Create a new world", fields, { :name => "", :password => "", :seats => DEFAULT_SEATS.to_s, :hidden => false, :type => 0, :share => 0, :from_save => false, :save => nil, :choose => false, :description => "", :mods => "",
-                                          :mismatch => false, :shared => false, :difficulty => DIFFICULTIES.index(DEFAULT_DIFFICULTY), :other_mods_off => false }.merge(squad_values(DEFAULT_SQUAD)))
+                                          :mismatch => false, :shared => false, :difficulty => DIFFICULTIES.index(DEFAULT_DIFFICULTY), :other_mods_off => false, :raid_bosses => false }.merge(squad_values(DEFAULT_SQUAD)))
     end
 
     # The button of a Raid World's form that opens the form of its squad rules, see limits.
@@ -2261,10 +2305,12 @@ module MGQ_MpWorld
       if listed.type == RAID
         fields.insert(1, Field.new(:difficulty, :switch, "Difficulty", 1, EDIT_DIFFICULTY_HINT, :side => :left, :group => "World", :choices => choices, :label_width => TYPE_LABEL_WIDTH),
                       limits_field(1, :right))
+      else
+        fields.insert(1, Field.new(:raid_bosses, :check, "Raid Bosses", 1, EDIT_RAID_BOSSES_HINT, :group => "World"))
       end
       new("Edit #{listed.name}", fields, { :seats => listed.seats.to_s, :mods => listed.mods.to_s, :description => listed.description.to_s, :shared => MGQ_MpWorldMods.shared?(listed.settings),
                                            :difficulty => choices.index(MGQ_MpWorld.difficulty_name(listed.difficulty) || PER_PLAYER),
-                                           :other_mods_off => listed.other_mods_off ? true : false }.merge(squad_values(listed.squad || DEFAULT_SQUAD)))
+                                           :other_mods_off => listed.other_mods_off ? true : false, :raid_bosses => listed.raid_bosses ? true : false }.merge(squad_values(listed.squad || DEFAULT_SQUAD)))
     end
 
     # The form of the name the others see.
@@ -2416,6 +2462,13 @@ module MGQ_MpWorld
     # @return [Boolean] Whether it does.
     def raid_save?
       type == RAID && MGQ_MpWorld.dev_build?
+    end
+
+    # Tells whether the form has a Classic world's story bosses fight as raid bosses.
+    #
+    # @return [Boolean] Whether it does; false for a Raid World.
+    def raid_bosses?
+      type == CLASSIC && @values[:raid_bosses] == true
     end
 
     # Tells whether the new world's form lets each new player choose where to start, which only a

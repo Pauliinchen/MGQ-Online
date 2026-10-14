@@ -2,7 +2,8 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-13: Handed the relay's squad push to the script registered for it
+#      Paulinchen  2026-10-13: Handed the relay's raid bosses push to the script registered for it
+#                            - Handed the relay's squad push to the script registered for it
 #      Paulinchen  2026-10-12: Announced only the players who join after the player
 #                            - Set the time the player entered their map anew after leaving the world or loading
 #                            - Told nobody a state while the player is on the title screen or a new game waits
@@ -94,6 +95,11 @@ module MGQ_MpOverworldSync
   # The field of the relay's push that a Raid World's creator or an admin changed its squad rules,
   # with the squad text, see MGQ_MpWorld.squad_of, which coop_squad.rbx registers its route for.
   SQUAD_FIELD = "squad_value"
+
+  # The field of the relay's push that a Classic world's creator or an admin changed whether its
+  # story bosses fight as raid bosses, with "1" or "0", which battles_raid_tiers.rbx registers its
+  # route for.
+  RAID_BOSSES_FIELD = "raid_bosses_value"
 
   # The field of the relay's push that a world's creator or an admin changed whether it turns other
   # mods off, or its mods, with "1" or "0" and the mods under "mods", which world_mods_parking.rbx
@@ -345,10 +351,10 @@ module MGQ_MpOverworldSync
     # Hands out the oldest inbox entry.
     #
     # @return [Hash, nil] "kind" ("seat", "in", "out", "message", "chat", "story", "boss",
-    #   "difficulty", "squad" or "mods_rule"), "seat", "others", "name" for a chat entry, "rev" for a
-    #   story entry, "key", "left", "max", "defeated" and "by" for a boss entry, "value" for a
-    #   difficulty, squad or mods rule entry, "mods" for a mods rule entry that names any, and the message's or the
-    #   chat line's text under :payload; nil while none waits.
+    #   "difficulty", "squad", "raid_bosses" or "mods_rule"), "seat", "others", "name" for a chat
+    #   entry, "rev" for a story entry, "key", "left", "max", "defeated" and "by" for a boss entry,
+    #   "value" for a difficulty, squad, raid bosses or mods rule entry, "mods" for a mods rule entry
+    #   that names any, and the message's or the chat line's text under :payload; nil while none waits.
     def self.next_entry
       text = MGQ_Multiplayer::Link.read('mp_world_receive', ENTRY_SIZE)
       text.empty? ? nil : MGQ_Multiplayer::Link.parse(text)
@@ -794,6 +800,9 @@ module MGQ_MpOverworldSync
       when "squad"
         MGQ_MpOverworldSync.log("the relay tells the world's squad rules are \"#{entry['value']}\" now")
         MGQ_MpOverworldSync.hand_over(nil, { SQUAD_FIELD => entry["value"].to_s, :relay => true })
+      when "raid_bosses"
+        MGQ_MpOverworldSync.log("the relay tells the world's raid bosses are #{entry['value'] == '1' ? 'on' : 'off'} now")
+        MGQ_MpOverworldSync.hand_over(nil, { RAID_BOSSES_FIELD => entry["value"].to_s, :relay => true })
       when "mods_rule"
         mods = entry["mods"].to_s
         MGQ_MpOverworldSync.log("the relay tells the world #{entry['value'] == '1' ? 'turns other mods off' : 'allows other mods'} now, with mods \"#{mods}\"")

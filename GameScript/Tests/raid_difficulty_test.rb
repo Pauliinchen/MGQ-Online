@@ -2,7 +2,8 @@
 #  raid_difficulty_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-13: Checked a Raid World's squad rules in the forms and the calls of mp_dir_create and mp_dir_edit
+#      Paulinchen  2026-10-13: Checked a Classic world's raid bosses in the forms and the calls of mp_dir_create and mp_dir_edit
+#                            - Checked a Raid World's squad rules in the forms and the calls of mp_dir_create and mp_dir_edit
 #                            - Checked the button of the squad rules and their form of its own
 #      Paulinchen  2026-10-12: Stood in for Ini.load
 #      Paulinchen  2026-10-10: Checked the Raid World starting save of releases and development builds
@@ -200,13 +201,21 @@ form = MGQ_MpWorld::Form.create
 form[:name] = "Raid Night"
 starting = [:from_save, :choose].map { |key| field_of(form, key) }
 save = field_of(form, :save)
-check("a Classic world offers its starting point and its Save across the row, without the difficulty",
-      [starting.map { |field| form.enabled?(field) }, save.row, save.side, field_of(form, :difficulty)], [[true, true], 4, nil, nil])
+check("a Classic world offers its starting point and its Save on the left of its row, without the difficulty",
+      [starting.map { |field| form.enabled?(field) }, save.row, save.side, field_of(form, :difficulty)], [[true, true], 4, :left, nil])
+raid_bosses = field_of(form, :raid_bosses)
+check("and Raid Bosses beside the Save, unticked, with a narrower Save label so both fit",
+      [raid_bosses.kind, raid_bosses.label, raid_bosses.row, raid_bosses.side, raid_bosses.group, form[:raid_bosses], form.raid_bosses?, save.label_width],
+      [:check, "Raid Bosses", 4, :right, "World", false, false, MGQ_MpWorld::Form::RAID_SAVE_LABEL_WIDTH])
+check("whose hint fits the lines at the top", raid_bosses.hint.size <= 100, true)
+form[:raid_bosses] = true
+check("ticked, the form has raid bosses", form.raid_bosses?, true)
 form[:from_save] = true
 form[:choose] = true
 check("a Classic world takes a starting save and the player's choice", [form.enabled?(save), form.from_save?, form.choose?], [true, true, true])
 form[:type] = 1
 picked = field_of(form, :difficulty)
+check("a Raid World's form has no Raid Bosses, and none even with the box ticked before", [field_of(form, :raid_bosses), form.raid_bosses?], [nil, false])
 check("a Raid World hides the starting point, Sharing companions on its row, and has the Difficulty on the Save's row instead",
       [starting.map { |field| form.fields.include?(field) }, field_of(form, :share).row, field_of(form, :save), picked.row, picked.side, form.enabled?(picked), form.fields.size],
       [[false, false], 3, nil, 4, :left, true, 14])
@@ -217,20 +226,21 @@ check("and starts from the beginning even with the boxes ticked before", [form.f
 form.turn(picked, 1)
 check("its switch turns to the next difficulty", [form.difficulty, MGQ_MpWorld.difficulty_name(form.difficulty)], [1, "HARD"])
 form[:type] = 0
-check("back on Classic the Save takes its place again", [field_of(form, :difficulty), field_of(form, :save).equal?(save), form.fields.size], [nil, true, 14])
+check("back on Classic the Save and Raid Bosses take their place again", [field_of(form, :difficulty), field_of(form, :save).equal?(save), field_of(form, :raid_bosses).equal?(raid_bosses), form.fields.size],
+      [nil, true, true, 15])
 
 # What goes to the DLL carries a Raid World's difficulty.
 MGQ_MpWorld::Directory.create("Raid Night", "", 4, false, true, "Save01.rvdata2=Save/Save01.rvdata2", :type => "raid", :share => "story", :difficulty => 3)
 args = $calls.last[2]
 check("a Raid World goes without a starting save and the player's choice, with its difficulty", [$calls.last[1], args[4], args[5], args[12], args[14]],
-      ["pplllpppplppppllp", 0, "\0", "raid\0", 3])
+      ["pplllpppplppppllpl", 0, "\0", "raid\0", 3])
 MGQ_MpWorld::Directory.create("Raid Plain", "", 4, false, false, "", :type => "raid")
 check("on NORMAL unless told otherwise", $calls.last[2][14], 0)
 MGQ_MpWorld::Directory.create("Plain", "", 4, false, true, "Save01.rvdata2=Save/Save01.rvdata2", :difficulty => 3)
 check("a Classic world keeps both, and its difficulty is left at NORMAL, which the relay drops", [$calls.last[2][4], $calls.last[2][5], $calls.last[2][14]],
       [1, "Save01.rvdata2=Save/Save01.rvdata2\0", 0])
 MGQ_MpWorld::Directory.edit("r1", 6, "", "", nil, -2)
-check("an edit hands a Raid World's difficulty to the DLL", [$calls.last[1], $calls.last[2][6..7]], ["plppplllllp", [-2, 1]])
+check("an edit hands a Raid World's difficulty to the DLL", [$calls.last[1], $calls.last[2][6..7]], ["plppplllllpl", [-2, 1]])
 MGQ_MpWorld::Directory.edit("w1", 6, "", "")
 check("and none for a Classic world", $calls.last[2][6..7], [0, 0])
 
@@ -275,15 +285,15 @@ limits_form.turn(squad_fields[3], -1)
 check("ticked and turned there, the world's form picks Luka replaceable, the Original size, two in front and four in raids", squad_form.squad,
       { :luka => true, :formation => 0, :front => 2, :raid_front => 4 })
 MGQ_MpWorld::Directory.create("Raid Night", "", 4, false, false, "", :type => "raid", :squad => squad_form.squad)
-check("create hands a Raid World's squad rules to the DLL last, as their text", [$calls.last[1], $calls.last[2].last], ["pplllpppplppppllp", "1 0 2 4\0"])
+check("create hands a Raid World's squad rules to the DLL before the raid bosses, as their text", [$calls.last[1], $calls.last[2][-2]], ["pplllpppplppppllpl", "1 0 2 4\0"])
 MGQ_MpWorld::Directory.create("Raid Plain", "", 4, false, false, "", :type => "raid")
-check("the defaults unless told otherwise", $calls.last[2].last, "0 4 1 1\0")
+check("the defaults unless told otherwise", $calls.last[2][-2], "0 4 1 1\0")
 MGQ_MpWorld::Directory.create("Plain", "", 4, false, false, "", :squad => squad_form.squad)
-check("and none for a Classic world", $calls.last[2].last, "\0")
+check("and none for a Classic world", $calls.last[2][-2], "\0")
 MGQ_MpWorld::Directory.edit("r1", 6, "", "", nil, nil, nil, { :luka => false, :formation => 6, :front => 3, :raid_front => 2 })
-check("an edit hands changed squad rules to the DLL last", [$calls.last[1], $calls.last[2].last], ["plppplllllp", "0 6 3 2\0"])
+check("an edit hands changed squad rules to the DLL before the raid bosses", [$calls.last[1], $calls.last[2][-2]], ["plppplllllpl", "0 6 3 2\0"])
 MGQ_MpWorld::Directory.edit("r1", 6, "", "", nil, 1)
-check("and an empty text to leave them", $calls.last[2].last, "\0")
+check("and an empty text to leave them", $calls.last[2][-2], "\0")
 squad_listed = MGQ_MpWorld::Directory::ListedWorld.new("r1", 4, 0, "me", 0, "Me", "Raid Night", "none", [], false, false, false, false, false, "", "", "", "", "", "raid", "story", 2)
 squad_listed.squad = { :luka => true, :formation => 8, :front => 4, :raid_front => 3 }
 squad_edit = MGQ_MpWorld::Form.edit(squad_listed, false)
@@ -294,6 +304,32 @@ squad_listed.squad = nil
 check("the defaults for one that names none", MGQ_MpWorld::Form.edit(squad_listed, true).squad, MGQ_MpWorld::DEFAULT_SQUAD)
 squad_listed.type = "classic"
 check("and a Classic world's edit form has no button", field_of(MGQ_MpWorld::Form.edit(squad_listed, true), :limits), nil)
+
+# A Classic world's raid bosses go to the DLL last: 1 or 0, and -1 for a Raid World or an edit
+# that leaves them.
+MGQ_MpWorld::Directory.create("Plain", "", 4, false, false, "", :raid_bosses => true)
+check("create hands a Classic world's raid bosses to the DLL last, 1 when on", [$calls.last[1], $calls.last[2].last], ["pplllpppplppppllpl", 1])
+MGQ_MpWorld::Directory.create("Plain", "", 4, false, false, "")
+check("0 unless told otherwise", $calls.last[2].last, 0)
+MGQ_MpWorld::Directory.create("Raid Night", "", 4, false, false, "", :type => "raid", :raid_bosses => true)
+check("and -1 for a Raid World, even when told otherwise", $calls.last[2].last, -1)
+MGQ_MpWorld::Directory.edit("w1", 6, "", "", nil, nil, nil, nil, true)
+check("an edit hands raid bosses turned on to the DLL last as 1", [$calls.last[1], $calls.last[2].last], ["plppplllllpl", 1])
+MGQ_MpWorld::Directory.edit("w1", 6, "", "", nil, nil, nil, nil, false)
+check("turned off as 0", $calls.last[2].last, 0)
+MGQ_MpWorld::Directory.edit("w1", 6, "", "")
+check("and -1 to leave them", $calls.last[2].last, -1)
+bosses_listed = MGQ_MpWorld::Directory::ListedWorld.new("w1", 4, 0, "me", 0, "Me", "Plain", "none", [], false, false, false, false, false, "", "", "", "", "", "classic", "off", nil)
+bosses_listed.raid_bosses = true
+bosses_edit = MGQ_MpWorld::Form.edit(bosses_listed, false)
+bosses_field = field_of(bosses_edit, :raid_bosses)
+check("a Classic world's edit form has Raid Bosses below Max Players, ticked as the world is",
+      [bosses_edit.fields.index(bosses_field), bosses_field.kind, bosses_field.row, bosses_field.group, bosses_edit[:raid_bosses], bosses_edit.raid_bosses?],
+      [1, :check, 1, "World", true, true])
+check("whose hint fits the lines at the top", bosses_field.hint.size <= 100, true)
+bosses_listed.raid_bosses = false
+check("unticked for a world without them", MGQ_MpWorld::Form.edit(bosses_listed, false).raid_bosses?, false)
+check("and a Raid World's edit form has none", field_of(MGQ_MpWorld::Form.edit(squad_listed.tap { |world| world.type = "raid" }, true), :raid_bosses), nil)
 
 # Entering: a Raid World never asks where to start nor fetches a starting save.
 raid_world = MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "type" => "raid", "difficulty" => "1")

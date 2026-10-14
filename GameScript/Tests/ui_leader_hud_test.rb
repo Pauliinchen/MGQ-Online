@@ -2,6 +2,8 @@
 #  ui_leader_hud_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Expected the single player row from ui_single_player.rbx, not from the HUD
+#                            - Checked the HUD outside a world by its single player setting
 #      Paulinchen  2026-10-12: Checked the Small HUD at the screen edges and a refused size hotkey while typing
 #                            - Created
 #
@@ -172,6 +174,10 @@ check("the box is movable as Leader HUD, never resized, at least as large as the
 check("its rows in the Mod Config: on and off, then the size, both kept by the mod",
       NWConst::Config::MOD_CONTENTS.select { |row| row[:mod_stored] }.map { |row| [row[:key], row[:values].call] }.last(2),
       [[:mp_leader_hud, ["On", "Off"]], [:mp_leader_hud_size, ["Large", "Small"]]])
+check("both in the Settings, the single player row left to ui_single_player.rbx",
+      [NWConst::Config::MOD_CONTENTS.select { |row| row[:mod_stored] }.last(2).map { |row| row[:name] },
+       NWConst::Config::MOD_CONTENTS.any? { |row| row[:key] == hud::SP_SHOWN_OPTION }],
+      [[MGQ_MpUi::OPTION_PREFIX + hud::SHOWN_OPTION_NAME, MGQ_MpUi::OPTION_PREFIX + hud::SIZE_OPTION_NAME], false])
 
 # The Large size shows the face, the name, the level, both bars with their numbers and the levels'
 # progress.
@@ -270,6 +276,28 @@ $leader = nil
 box.update
 check("a party without a leader shows nothing", box.instance_variable_get(:@motion).shown?, false)
 $leader = leader
+
+# Outside a world the single player row decides, inside a world the Settings row.
+in_world = MGQ_MpOverworldSync.method(:in_world?)
+hud.show(false)
+MGQ_MpOverworldSync.define_singleton_method(:in_world?) { false }
+box.update
+check("outside a world the single player row follows the Settings row until the player sets it",
+      [hud.on?, box.instance_variable_get(:@motion).shown?], [false, false])
+hud.show_sp(true)
+box.update
+check("set, the single player row decides whatever the Settings row says",
+      [hud.on?, box.instance_variable_get(:@motion).shown?, $player_ini["sp_leader_hud"]], [true, true, "1"])
+hud.show_sp(false)
+box.update
+check("turned off there it hides, kept in Player.ini apart from the Settings row",
+      [hud.on?, box.instance_variable_get(:@motion).shown?, $player_ini["sp_leader_hud"]], [false, false, "0"])
+check("so the size hotkey changes nothing there", hud.busy_reason, "the HUD is off")
+hud.show(true)
+MGQ_MpOverworldSync.define_singleton_method(:in_world?, in_world)
+box.update
+check("inside a world the Settings row decides, whatever the single player row says", [hud.on?, box.instance_variable_get(:@motion).shown?], [true, true])
+hud.show_sp(true)
 
 # Its place under a strip at the top and where the player left it, as high as the Legacy preset's
 # frame leaves it.

@@ -2,6 +2,7 @@
 #  world_mods.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Left the mod's single player group out of the options dump
 #      Paulinchen  2026-10-12: Listed the Shared Mod Settings row among the mod's settings and left the mod's groups out of the options dump
 #      Paulinchen  2026-10-09: Read the catalog's personal mods
 #                            - Took the open world's mods from the relay
@@ -880,16 +881,16 @@ module MGQ_MpWorldMods
     path
   end
 
-  # Tells whether a group of Mod Config is one of the mod's own two, its settings and its hotkeys,
-  # which the options dump leaves out.
+  # Tells whether a group of Mod Config is one of the mod's own, its settings, its single player
+  # settings and its hotkeys, which the options dump leaves out.
   #
   # @param name [String] The group's name.
   # @return [Boolean] Whether it is.
   def self.online_group?(name)
-    [MGQ_MpUi::OPTION_PREFIX, MGQ_MpHotkeys::GROUP].any? { |prefix| MGQ_MpWorld.mod_key(prefix[/\[(.+)\]/, 1]) == MGQ_MpWorld.mod_key(name) }
+    [MGQ_MpUi::OPTION_PREFIX, MGQ_MpUi::SP_PREFIX, MGQ_MpHotkeys::GROUP].any? { |prefix| MGQ_MpWorld.mod_key(prefix[/\[(.+)\]/, 1]) == MGQ_MpWorld.mod_key(name) }
   end
 
-  # Writes the dump's lines of every mod's group but Monster Girl Quest! Online's own two: a "mod" line,
+  # Writes the dump's lines of every mod's group but Monster Girl Quest! Online's own: a "mod" line,
   # then an "opt" line per option a world may set and a "skip" line with why per other option.
   #
   # A game without Mod Config raises, so the tool never takes its empty groups for mods without

@@ -2,7 +2,8 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-13: Checked a Raid World's squad rules in the list, the details, world.ini and the open world
+#      Paulinchen  2026-10-13: Checked a Classic world's raid bosses in the list, the details, world.ini and the open world
+#                            - Checked a Raid World's squad rules in the list, the details, world.ini and the open world
 #      Paulinchen  2026-10-12: Checked the title screen's Multiplayer command handler
 #                            - Checked when the worlds take the mouse wheel
 #                            - Checked the favourites in Player.ini and unreadable Player.ini and world.ini files
@@ -610,6 +611,46 @@ MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("abcdef012345"
 check("a world.ini's squad rules this game cannot read are the defaults", MGQ_MpWorld.squad, MGQ_MpWorld::DEFAULT_SQUAD)
 MGQ_MpWorld.instance_variable_set(:@world, nil)
 
+# A Classic world's raid bosses: the list, the details, world.ini and what every script asks of the
+# open world.
+$dll["mp_dir_list"] = "state=ready\n\n" \
+  "world\tw1\t4\t0\tc\t0\tC\tPlain\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t\t\t1\n" \
+  "world\tw2\t4\t0\tc\t0\tC\tCalm\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t\t\t0\n" \
+  "world\tr1\t4\t0\tc\t0\tC\tRaid Night\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\traid\tstory\t1\t\t1 6 2 1\t1\n" \
+  "world\tw3\t4\t0\tc\t0\tC\tOld\tnone\t0\t0\n"
+_, _, bossed, = MGQ_MpWorld::Directory.list
+check("the list reads a Classic world's raid bosses, never a Raid World's, none for a world without them", bossed.map { |world| world.raid_bosses }, [true, false, false, false])
+bossed_panels = detail.panels(MGQ_MpWorld::Entry.new("w1", "Plain", bossed[0], nil, false, false), "me")
+check("the details of a Classic world with them add a row that says so", [cell_of(bossed_panels, "Raid Bosses").text, bossed_panels[0].rows.size], ["On: story bosses of their tier", 4])
+check("but none for one without them nor for a Raid World", [bossed[1], bossed[2]].map { |world| cell_of(detail.panels(MGQ_MpWorld::Entry.new(world.id, world.name, world, nil, false, false), "me"), "Raid Bosses") },
+      [nil, nil])
+MGQ_MpWorld::Link.define_singleton_method(:id_of) { |code| code[/\A[0-9a-f]{12}/] }
+Dir.mktmpdir do |root|
+  Dir.chdir(root) do
+    FileUtils.mkdir_p(File.join("Patch", "Multiplayer"))
+    path = "Patch/Multiplayer/Worlds/0123456789ab/world.ini"
+    MGQ_MpWorld::World.found("0123456789ab;token;relay;4", "Plain", "w1", "classic", "off", nil, nil, true)
+    check("world.ini keeps a Classic world's raid bosses", [ini[path]["raid_bosses"], MGQ_MpWorld::World.read("0123456789ab").raid_bosses], [1, true])
+    MGQ_MpWorld::World.found("0123456789ab;token;relay;4", "Plain", "w1")
+    check("which stay when the world is found again without them", MGQ_MpWorld::World.read("0123456789ab").raid_bosses, true)
+    read_back = MGQ_MpWorld::World.read("0123456789ab")
+    read_back.describe("Plain", "w1", nil, nil, nil, nil, nil, false)
+    read_back.write
+    check("and go once the list tells they are off", [ini[path].key?("raid_bosses"), MGQ_MpWorld::World.read("0123456789ab").raid_bosses], [false, false])
+  end
+end
+MGQ_MpWorld::Link.define_singleton_method(:id_of, dll_id_of)
+MGQ_MpWorld::World.forget
+check("outside a world there are no raid bosses, nor any to take", [MGQ_MpWorld.raid_bosses?, MGQ_MpWorld.take_raid_bosses(true)], [false, false])
+MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "type" => "classic", "raid_bosses" => "1"))
+check("a Classic world tells its raid bosses", MGQ_MpWorld.raid_bosses?, true)
+check("and takes them off as the relay tells, keeping that in world.ini",
+      [MGQ_MpWorld.take_raid_bosses(false), MGQ_MpWorld.raid_bosses?, ini["Patch/Multiplayer/Worlds/abcdef012345/world.ini"].key?("raid_bosses")], [true, false, false])
+check("and on again", [MGQ_MpWorld.take_raid_bosses(true), MGQ_MpWorld.raid_bosses?, ini["Patch/Multiplayer/Worlds/abcdef012345/world.ini"]["raid_bosses"]], [true, true, 1])
+MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "type" => "raid", "raid_bosses" => "1"))
+check("a Raid World has none, whatever its world.ini says, and takes none", [MGQ_MpWorld.raid_bosses?, MGQ_MpWorld.take_raid_bosses(true)], [false, false])
+MGQ_MpWorld.instance_variable_set(:@world, nil)
+
 # The new world's form.
 raid_form = MGQ_MpWorld::Form.create
 type_field = raid_form.fields.find { |field| field.key == :type }
@@ -621,7 +662,7 @@ raid_form[:share] = 1
 check("a Raid World brings it back", [raid_form.fields.include?(share_field), raid_form.type, raid_form.share], [true, "raid", "story"])
 check("whose hints fit the lines at the top", [type_field.hint.size <= 100, share_field.hint.size <= 100], [true, true])
 MGQ_MpWorld::Directory.create("Raid Night", "", 4, false, false, "", :type => "raid", :share => "story")
-check("create hands the type and the sharing to the DLL", [$calls.last[1], $calls.last[2][12..13]], ["pplllpppplppppllp", ["raid\0", "story\0"]])
+check("create hands the type and the sharing to the DLL", [$calls.last[1], $calls.last[2][12..13]], ["pplllpppplppppllpl", ["raid\0", "story\0"]])
 MGQ_MpWorld::Directory.create("Plain", "", 4, false, false, "", :share => "all")
 check("a Classic world shares nothing", $calls.last[2][12..13], ["classic\0", "off\0"])
 

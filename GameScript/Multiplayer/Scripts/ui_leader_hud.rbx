@@ -2,6 +2,7 @@
 #  ui_leader_hud.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Turned the HUD on and off in single player by a row of its own in MGQ Online SP
 #      Paulinchen  2026-10-12: Let other boxes draw a face or a map sprite as the HUD does
 #                            - Held the Small HUD to its own least size at the edges of the screen
 #                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
@@ -19,8 +20,11 @@
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpLeaderHud
-  # The setting in Player.ini that turns the HUD off with 0.
+  # The setting in Player.ini that turns the HUD off with 0 inside a world.
   SHOWN_SETTING = "leader_hud"
+
+  # The setting in Player.ini that turns the HUD off with 0 outside a world.
+  SP_SHOWN_SETTING = "sp_leader_hud"
 
   # The setting in Player.ini that keeps the HUD's size, LARGE or SMALL.
   SIZE_SETTING = "leader_hud_size"
@@ -47,8 +51,16 @@ module MGQ_MpLeaderHud
   SHOWN_OPTION_NAME = "Leader HUD"
 
   # The help of the Mod Config row that turns the HUD on and off.
-  SHOWN_OPTION_HELP = "Shows the Formation Leader at the top left of the map with their HP, MP and how far they are\n" \
-                      "to their next base, job and race level. Hold the left Alt and drag it to move it."
+  SHOWN_OPTION_HELP = "Inside worlds, shows the Formation Leader at the top left of the map with their HP, MP and how\n" \
+                      "far they are to their next levels; MGQ Online SP decides outside. Alt and drag moves it."
+
+  # The key of the Mod Config row that turns the HUD on and off outside a world, which
+  # ui_single_player.rbx adds.
+  SP_SHOWN_OPTION = :mp_sp_leader_hud
+
+  # The help of the Mod Config row that turns the HUD on and off outside a world.
+  SP_SHOWN_OPTION_HELP = "Shows the Formation Leader at the top left of the map in single player, outside a world.\n" \
+                         "Inside a world, MGQ Online Settings decides."
 
   # The key of the Mod Config row that picks the HUD's size.
   SIZE_OPTION = :mp_leader_hud_size
@@ -75,12 +87,29 @@ module MGQ_MpLeaderHud
   # Where the game put each of TOP_LEFT_WINDOWS, by the window.
   @tops = {}
 
-  # Reports whether the player wants the HUD, as Player.ini keeps it, on until they turn it off.
+  # Reports whether the player wants the HUD inside a world, as Player.ini keeps it, on until they
+  # turn it off.
   #
   # @return [Boolean] Whether it shows.
   def self.shown?
     @shown = MGQ_Multiplayer::Player.setting(SHOWN_SETTING).to_s != "0" if @shown.nil?
     @shown
+  end
+
+  # Reports whether the player wants the HUD outside a world, as Player.ini keeps it: as inside a
+  # world until they set it, so a HUD turned off before the setting existed stays off.
+  #
+  # @return [Boolean] Whether it shows.
+  def self.sp_shown?
+    @sp_shown = (MGQ_Multiplayer::Player.setting(SP_SHOWN_SETTING) || MGQ_Multiplayer::Player.setting(SHOWN_SETTING)).to_s != "0" if @sp_shown.nil?
+    @sp_shown
+  end
+
+  # Reports whether the HUD shows now: inside a world as shown? says, else as sp_shown? says.
+  #
+  # @return [Boolean] Whether it does.
+  def self.on?
+    MGQ_MpOverworldSync.in_world? ? shown? : sp_shown?
   end
 
   # Tells the size the player picked, as Player.ini keeps it.
@@ -99,6 +128,17 @@ module MGQ_MpLeaderHud
     log("the Leader HUD is #{@shown ? 'on' : 'off'}")
   rescue => e
     log("keeping whether the Leader HUD shows FAILED: #{e.class}: #{e.message}")
+  end
+
+  # Turns the HUD on or off outside a world and keeps the choice in Player.ini.
+  #
+  # @param shown [Boolean] Whether it shows.
+  def self.show_sp(shown)
+    @sp_shown = shown ? true : false
+    MGQ_Multiplayer::Player.store(SP_SHOWN_SETTING, @sp_shown ? 1 : 0)
+    log("the Leader HUD is #{@sp_shown ? 'on' : 'off'} in single player")
+  rescue => e
+    log("keeping whether the Leader HUD shows in single player FAILED: #{e.class}: #{e.message}")
   end
 
   # Picks the HUD's size and keeps it in Player.ini.
@@ -131,7 +171,7 @@ module MGQ_MpLeaderHud
   #
   # @return [String, nil] The first reason that holds, nil when the hotkey may change the size.
   def self.busy_reason
-    return "the HUD is off" unless shown?
+    return "the HUD is off" unless on?
     return "the chat box is open" if MGQ_MpChat.typing?
     return "the action wheel is open" if MGQ_MpActions::Wheel.open?
     return "the emote wheel is open" if MGQ_MpEmotes.open?
@@ -336,7 +376,7 @@ class Sprite_MpLeaderHud < Sprite
     layout = Sprite_MpLeaderHud.layout(MGQ_MpLeaderHud.size)
     rect = layout_rect(layout)
     leader = $game_party && $game_party.leader
-    if leader && MGQ_MpLeaderHud.shown? && !MGQ_MpLeaderHud.top_message?
+    if leader && MGQ_MpLeaderHud.on? && !MGQ_MpLeaderHud.top_message?
       refresh(leader, layout)
       @motion.show
     else
