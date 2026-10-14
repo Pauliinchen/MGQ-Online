@@ -2,6 +2,8 @@
 #  world_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-14: Kept the one-way story variables from going below the world's values
+#                            - Kept the raises of one-way variables through a step the relay refused as behind
 #      Paulinchen  2026-10-12: Sent and read the companions' affection with the world's story
 #                            - Sent and read the level caps the world's story unlocked
 #      Paulinchen  2026-10-11: Left the random encounters to world_catchup.rbx
@@ -176,6 +178,10 @@ module MGQ_MpWorldStory
 
   # Codes of a refused write or route whose own step the game drops: its progress is not the world's.
   DROP_CODES = %w(behind route finished closed)
+
+  # Code of a write the relay refused as behind the world's story, whose raises of the one-way
+  # variables stay, see keep_own.
+  BEHIND_REFUSAL = "behind"
 
   # Code of a write the relay refused as another route was locked first.
   ROUTE_REFUSAL = "route"
@@ -535,7 +541,7 @@ module MGQ_MpWorldStory
       code = state["post_code"].to_s
       log("the relay refused the story written on revision #{post[:base]} (#{code}): taking the world's at revision #{state['wrev']}" \
           "#{DROP_CODES.include?(code) ? ', dropping the own step' : ', keeping the own changes it lacks'}")
-      offer(state, text, DROP_CODES.include?(code), "refused write (#{code})", true)
+      offer(state, text, DROP_CODES.include?(code), "refused write (#{code})", true, code == BEHIND_REFUSAL)
       # The world locked another route after the player's Great Decision offered theirs.
       @after_take = :route_taken if code == ROUTE_REFUSAL
     else
@@ -574,12 +580,14 @@ module MGQ_MpWorldStory
   # @param drop [Boolean] Whether the player's own progress since the last story goes.
   # @param reason [String] Why, for the log.
   # @param force [Boolean] Whether it is taken however old.
-  def self.offer(state, text, drop, reason, force = false)
+  # @param behind [Boolean] Whether the relay refused the player's step as behind, see keep_own.
+  def self.offer(state, text, drop, reason, force = false, behind = false)
     wrev = state["wrev"].to_i
     return unless force || @seen_wrev.nil? || wrev > @seen_wrev
 
+    behind ||= @pending && @pending[:behind]
     drop ||= @pending && @pending[:drop]
-    @pending = { :state => state, :text => text, :drop => drop, :reason => reason }
+    @pending = { :state => state, :text => text, :drop => drop, :behind => behind, :reason => reason }
   end
 
   # Lays the world's story that waits over the player's, or keeps the player's own, see the module.
@@ -782,7 +790,7 @@ module MGQ_MpWorldStory
     applied = MGQ_MpStoryState.mix(told, local, chest_list)
     keep_unsent(applied, told, local)
     base = MGQ_MpStoryState.deep_copy(applied)
-    kept, dropped = keep_own(applied, told, local, @base || @entry_story, pending[:drop])
+    kept, dropped = keep_own(applied, told, local, @base || @entry_story, pending[:drop], !pending[:drop] || pending[:behind])
     opened = keep_open_chests(applied, local)
     kept.concat(opened.map { |key| [2, key] })
     MGQ_MpStoryState.set_raw(*applied)
@@ -843,7 +851,10 @@ module MGQ_MpWorldStory
   end
 
   # Keeps what the player changed since the story they built on, where the world's story did not
-  # change it: the rest of the step they were writing, unless the relay refused that step.
+  # change it: the rest of the step they were writing, unless the relay refused that step. A one-way
+  # variable (see one_way?) never goes below the world's value, and its raise stays wherever raises
+  # do, even where the world changed it too or the relay refused the step as behind, since the
+  # world's story never got that far there.
   #
   # @param applied [Array] The story laid over the player's, which takes them.
   # @param told [Array] The world's story.
@@ -851,17 +862,20 @@ module MGQ_MpWorldStory
   # @param base [Array, nil] The story they built on: the world's last taken or written, else the
   #   one they brought into the world, see entry_story.
   # @param drop [Boolean] Whether the player's step goes, see DROP_CODES.
+  # @param raises [Boolean] Whether the raises of one-way variables stay.
   # @return [Array<Array>] The kept and the dropped changes, each as [kind, key].
-  def self.keep_own(applied, told, local, base, drop)
+  def self.keep_own(applied, told, local, base, drop, raises = !drop)
     return [[], []] unless base
 
     kept = []
     dropped = []
+    returning = returning?(local, told)
     3.times do |kind|
       theirs = {}
       changes(kind, base[kind], told[kind]).each { |key| theirs[key] = true }
       changes(kind, base[kind], local[kind]).each do |key|
-        if theirs[key] || drop
+        way = kind == 1 && one_way?(key) && !(returning && return_cleared?(key)) ? local[1][key].to_i <=> told[1][key].to_i : nil
+        if way == -1 || ((theirs[key] || drop) && !(raises && way == 1))
           dropped << [kind, key]
         else
           applied[kind][key] = local[kind][key]
@@ -870,6 +884,79 @@ module MGQ_MpWorldStory
       end
     end
     [kept, dropped]
+  end
+
+  # Reports whether a story variable only ever goes up in the world's story (see
+  # MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES), as a boss beaten or a quest's step: a player's own
+  # save that replays an old scene, or a game over that returns them to an earlier point, never
+  # takes it back for the world.
+  #
+  # @param id [Integer] The variable.
+  # @return [Boolean] Whether it does.
+  def self.one_way?(id)
+    @one_way ||= defined?(MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES) ? Hash[MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES.map { |key| [key, true] }] : {}
+    @one_way[id] && !MGQ_MpStoryState.personal_variable?(id) ? true : false
+  end
+
+  # Lists the one-way variables a story holds below the world's story it built on, those the
+  # player's own return to the Great Decision clears aside (see returning?).
+  #
+  # @param story [Array] The story: switches and variables.
+  # @param floor [Array] The world's story it built on.
+  # @return [Array<Integer>] The variables.
+  def self.rewound(story, floor)
+    returning = returning?(story, floor)
+    ids = defined?(MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES) ? MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES : []
+    ids.select do |id|
+      one_way?(id) && story[1][id].to_i < floor[1][id].to_i && !(returning && return_cleared?(id))
+    end
+  end
+
+  # Reports whether a story left a route the world's story was on, as the game's return to the
+  # Great Decision does, which clears the route's variables on purpose.
+  #
+  # @param story [Array] The story: switches and variables.
+  # @param floor [Array] The world's story it built on.
+  # @return [Boolean] Whether it did.
+  def self.returning?(story, floor)
+    ROUTE_VARIABLES.all? { |id| story[1][id].to_i == 0 } && ROUTE_VARIABLES.any? { |id| floor[1][id].to_i > 0 }
+  end
+
+  # Reports whether the return to the Great Decision clears a variable, see
+  # MGQ_MpWorldCatchupData::RETURN_CLEARED.
+  #
+  # @param id [Integer] The variable.
+  # @return [Boolean] Whether it does.
+  def self.return_cleared?(id)
+    ranges = defined?(MGQ_MpWorldCatchupData::RETURN_CLEARED) ? MGQ_MpWorldCatchupData::RETURN_CLEARED : []
+    ranges.any? { |range| range.include?(id) }
+  end
+
+  # Puts the one-way variables a story lowered below the world's story it built on back to the
+  # world's values, see rewound.
+  #
+  # @param story [Array] The story: switches and variables, changed in place.
+  # @param floor [Array] The world's story it built on.
+  # @return [Array<Array>] Each variable held, with the value it had.
+  def self.hold_one_way(story, floor)
+    rewound(story, floor).map do |id|
+      lowered = story[1][id].to_i
+      story[1][id] = floor[1][id]
+      [id, lowered]
+    end
+  end
+
+  # Puts the one-way variables the player's story lowered back to the world's values, once no
+  # event of theirs runs, which may still read the lowered value.
+  def self.restore_one_way
+    return unless @mode == :world && @base && !$game_map.interpreter.running?
+
+    held = hold_one_way([nil, MGQ_MpStoryState.data_of($game_variables)], @base)
+    return if held.empty?
+
+    $game_map.need_refresh = true
+    log("put #{held.map { |id, lowered| "v#{id} back from #{lowered} to #{@base[1][id]}" }.join(', ')}: the world's story only goes up there, " \
+        "as when an old scene or a game over set it back")
   end
 
   # Follows what the world's story brought: the choices it carried the player past and the Great
@@ -1051,9 +1138,12 @@ module MGQ_MpWorldStory
     @scanned = @clock
     return unless @mode == :world && @base && !@busy[:post]
 
+    restore_one_way
     local = MGQ_MpStoryState.raw_state
+    # A one-way variable an event still holds below the world's value is no change to write.
+    lowered = rewound(local, @base)
     found = []
-    3.times { |kind| changes(kind, @base[kind], local[kind]).each { |key| found << [kind, key, local[kind][key]] } }
+    3.times { |kind| changes(kind, @base[kind], local[kind]).each { |key| found << [kind, key, local[kind][key]] unless kind == 1 && lowered.include?(key) } }
     if found.empty?
       @marker_at = nil unless end_moved?
       @change_at = @first_change_at = @change_signature = nil
@@ -1104,6 +1194,8 @@ module MGQ_MpWorldStory
     return lock(route) if route
 
     story = MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state)
+    held = @base ? hold_one_way(story, @base) : []
+    log("writing #{held.map { |id, lowered| "v#{id} as #{story[1][id]}, not #{lowered}" }.join(', ')}: the world's story only goes up there") unless held.empty?
     counters = counters_text(local_counters(story), true) + caps_text(story)
     text = story_text(story)
     @force_post = false

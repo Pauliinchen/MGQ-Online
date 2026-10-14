@@ -2,6 +2,7 @@
 #  catchup_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-14: Checked the one-way variables
 #      Paulinchen  2026-10-12: Checked the skills Rami's quest teaches her and that no forgotten skill is a lesson
 #                            - Checked that the chests of Amira's side quest job items are world chests
 #                            - Checked the vehicle rows and where Galda comes first
@@ -119,6 +120,10 @@ skills = DATA::REWARDS.select { |row| row.kind == :skill }
 check("the rewards hold every story skill once at least", skills.map(&:id).uniq.size, 43)
 camps = skills.select { |row| row.site =~ /\Amap:(406|523|604|711|736|741):7:/ }
 check("the six camps' skills have explicit marks", [camps.map { |row| row.site[/\Amap:\d+/] }.uniq.size, camps.all? { |row| !row.marks.empty? }], [6, true])
+check("the one-way variables hold the areas' events, a quest's steps and counters, but no progress counter, return point or variable an event lowers",
+      [[1003, 1032, 1043, 1050, 1202, 1323].all? { |id| DATA::ONE_WAY_VARIABLES.include?(id) },
+       [1001, 1002, 1099, 1140, 1141, 1353].any? { |id| DATA::ONE_WAY_VARIABLES.include?(id) }], [true, false])
+check("the route return clears the routes' and the Chaos route's story variables", DATA::RETURN_CLEARED, [1144..1200, 1301..1500])
 check("such as the first camp's Angel Dance for Ilias's side",
       camps.find { |row| row.id == 930 }.values_at(4, 6, 7), ["1", :ilias, [[:v, 1001, 8], [:s, 2023]]])
 

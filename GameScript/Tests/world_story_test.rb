@@ -2,6 +2,7 @@
 #  world_story_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-14: Checked that one-way story variables never go below the world's values
 #      Paulinchen  2026-10-12: Checked the companions' affection coming and going with the stories
 #      Paulinchen  2026-10-11: Asked no Amira choice of a player carried past Iliasburg
 #                            - Dropped the check of the opening's random encounters
@@ -358,8 +359,9 @@ module DataManager
   def self.setup_new_game; end
 end
 
-# The story switches that only stay on while a scene runs, as world_catchup_data.rbx lists them.
-module MGQ_MpWorldCatchupData; SCENE_SWITCHES = [2029]; end
+# The story switches that only stay on while a scene runs, the story variables that only go up and
+# those the route return clears, as world_catchup_data.rbx lists them.
+module MGQ_MpWorldCatchupData; SCENE_SWITCHES = [2029]; ONE_WAY_VARIABLES = [1032, 1144]; RETURN_CLEARED = [1144..1200]; end
 load_script "story_state"
 load_script "coop_story"
 load_script "coop_choices"
@@ -501,6 +503,42 @@ frames(16)
 check("a write behind the world's takes the world's progress", [$game_variables[1001], story.instance_variable_get(:@wrev)], [15, 6])
 frames(400)
 check("and writes nothing more", calls_of("mp_raid_story_post").size, 1)
+
+# One-way variables: what sets one below the world's story, such as a game over's return to an
+# earlier point, never takes the world's back, and a raise stays through a step refused as behind.
+# Lays a world's and a player's story beside the one built on for keep_own.
+#
+# @param base [Hash] The variables built on.
+# @param told [Hash] The world's.
+# @param local [Hash] The player's.
+# @return [Array<Array>] The stories: built on, world's, player's, and the one laid over.
+def one_way_stories(base, told, local)
+  stories = [base, told, local].map { |variables| v = []; variables.each { |id, value| v[id] = value }; [[], v, {}] }
+  stories + [MGQ_MpStoryState.deep_copy(stories[1])]
+end
+built, told, local, applied = one_way_stories({ 1032 => 7 }, { 1032 => 7 }, { 1032 => 3 })
+check("a one-way variable set below the world's value goes", [story.keep_own(applied, told, local, built, false).map(&:size), applied[1][1032]], [[0, 1], 7])
+built, told, local, applied = one_way_stories({ 1032 => 5 }, { 1032 => 6 }, { 1032 => 7 })
+check("its raise past the world's stays where the world changed it too", [story.keep_own(applied, told, local, built, false).map(&:size), applied[1][1032]], [[1, 0], 7])
+built, told, local, applied = one_way_stories({ 1032 => 5, 1001 => 21 }, { 1032 => 5, 1001 => 24 }, { 1032 => 7, 1001 => 22 })
+check("and through a step the relay refused as behind, without the step's progress",
+      [story.keep_own(applied, told, local, built, true, true).map(&:size), applied[1][1032], applied[1][1001]], [[1, 1], 7, 24])
+built, told, local, applied = one_way_stories({ 1032 => 5 }, { 1032 => 5 }, { 1032 => 7 })
+check("but not through a step refused for another route", [story.keep_own(applied, told, local, built, true, false).map(&:size), applied[1][1032]], [[0, 1], 5])
+built, told, local, applied = one_way_stories({ 1141 => 30, 1144 => 4 }, { 1141 => 30, 1144 => 4 }, { 1141 => 0, 1144 => 0 })
+check("the player's own return to the Great Decision clears a route's one-way variables", [story.keep_own(applied, told, local, built, false).map(&:size), applied[1][1144]], [[2, 0], 0])
+held = one_way_stories({}, {}, { 1032 => 3 })[2]
+check("a write holds a lowered one-way variable at the world's value", [story.hold_one_way(held, one_way_stories({}, { 1032 => 7 }, {})[1]), held[1][1032]], [[[1032, 3]], 7])
+$calls.clear
+$game_variables[1032] = 7
+story.instance_variable_get(:@base)[1][1032] = 7
+$game_map.interpreter.busy = true
+$game_variables[1032] = 3
+frames(400)
+check("a one-way variable an event sets back stays while the event runs", $game_variables[1032], 3)
+$game_map.interpreter.busy = false
+frames(400)
+check("and goes back to the world's value after it, without a write", [$game_variables[1032], calls_of("mp_raid_story_post")], [7, []])
 
 # The relay's push and the poll.
 $calls.clear
