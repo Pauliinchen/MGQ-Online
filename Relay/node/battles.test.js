@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-15: Covered the battle server's boss reports and the pool changes it hears of
+//                            - Covered the players the battle server takes in late
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -412,4 +413,25 @@ test("a Classic world's battle server reports no boss pool", async () => {
   assert.deepEqual(await nextLine(server), { op: "boss", key: "Alma Elma", answer: true });
   server.send({ op: "end", result: "victory" });
   player.connection.socket.close();
+});
+
+test("a player the battle server takes in late comes onto the battle's channel, as whoever sits on the seat it names", async () => {
+  serverAnswers = "serving";
+  const world = worldId(9);
+  await makeWorld(world);
+  const first = await sit(world, 1);
+  const late = await sit(world, 2);
+  assert.equal((await startBattle(httpBase, world, 1, { battle: "g8", seats: [first.seat], setup: SETUP })).status, 201);
+  const server = served.at(-1);
+  await nextLine(server);
+  await assert.rejects(channel(world, "g8", 2));
+
+  server.send({ op: "admit", seats: [late.seat, 20] });
+  await until(() => relay.battles.get(world, "g8").players.size === 2);
+  const lateChannel = await channel(world, "g8", 2);
+  assert.equal(await lateChannel.next(), `seat ${late.seat}`);
+  assert.deepEqual(await nextLine(server), { op: "in", seat: late.seat });
+  server.send({ op: "end", result: "victory" });
+  first.connection.socket.close();
+  late.connection.socket.close();
 });

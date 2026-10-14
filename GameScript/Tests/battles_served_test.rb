@@ -2,7 +2,11 @@
 #  battles_served_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Created
+#      Paulinchen  2026-10-15: Checked the starter as the front of its served battle and players who join it late
+#                            - Checked that the last player of the server's battle fights on there and a battle every player left ends
+#                            - Checked the world's mods and the starter's options of them in the setup
+#                            - Checked that a guest sends to the server alone and hears of a player who leaves
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -36,6 +40,7 @@ end
 module MGQ_MpWorld
   World = Struct.new(:directory_id)
   def self.world; World.new("world-1"); end
+  def self.squad; nil; end
   module GameData; def self.fingerprint; "1:data"; end; end
 end
 # The game's switches and variables as the game keeps them, in lists.
@@ -187,6 +192,145 @@ $dll_opens = false
 MGQ_MpBattlesServed.follow(MGQ_MpBattlesSync::Wire.line([MGQ_MpBattlesSync.battle_id]))
 check("a channel the DLL does not open ends the battle for the guest", [MGQ_MpBattlesServed.channel, MGQ_MpBattlesServed.closed?], [:closed, true])
 $dll_opens = true
+MGQ_MpBattlesSync.finish
+MGQ_MpBattlesCoop.ended
+
+# The starter as the served battle's front: requests to join go to the server, its answers to the world.
+$dll_state = "state=served"
+_answer, bid = gather_with_friend(scene, friend, join)
+$dll_entries << "kind=seat\nseat=0\n\n"
+MGQ_MpBattlesServed.drain
+joiner = MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "id-joiner", "name" => "Joiner", "map" => "5", "scene" => "map", "x" => "3" }, nil, false)
+MGQ_MpOverworldSync::Peers.all.push(joiner)
+$dll_calls.clear
+MGQ_MpBattlesCoop.take(joiner, { "coop" => "hot", "bid" => bid, "troop" => "5", "enemies" => "31:320:300:0", "seats" => "2", "map" => "5" })
+sent = $dll_calls.find { |name, _| name == "mp_battle_send" }
+fields = fields_of(sent[1][1])
+seat, states, request = MGQ_MpBattlesSync::Wire.parse(fields[:payload])
+check("the starter passes a request to join its served battle on to the server", [sent[1][0], fields["battle"], fields["bid"], seat], [250, "front_in", bid, 4])
+check("with the id and name of its player and of those it brings along", states,
+      [[4, [["id", "id-joiner"], ["name", "Joiner"]]], [2, [["id", "id-friend"], ["name", "Friend"]]]])
+check("and the request's fields", MGQ_MpBattlesServed.hash_of(request).values_at("coop", "troop", "seats"), ["hot", "5", "2"])
+$dll_calls.clear
+MGQ_MpBattlesCoop.take(joiner, { "coop" => "hot", "bid" => "other", "troop" => "5" })
+MGQ_MpBattlesCoop.take(joiner, { "coop" => "decline", "bid" => bid })
+check("a request for another battle, and another kind of message, stay the starter's own", $dll_calls.map(&:first).include?("mp_battle_send"), false)
+
+$sent.clear
+text = "map_coop=hot_ok\nbid=#{bid}\nmmap=5\n\n"
+$dll_entries << "kind=message\nseat=250\n\nbattle=front_out\nbid=#{bid}\n\n" + MGQ_MpBattlesSync::Wire.line([4, text])
+$dll_entries << "kind=message\nseat=250\n\nbattle=front_out\nbid=#{bid}\n\n" + MGQ_MpBattlesSync::Wire.line([4, "chat=hello\n\n"])
+$dll_entries << "kind=message\nseat=2\n\nbattle=front_out\nbid=#{bid}\n\n" + MGQ_MpBattlesSync::Wire.line([4, text])
+MGQ_MpBattlesServed.drain
+check("the server's co-op message goes to the world's room through the starter, nothing else and nobody else's", $sent, [[4, text]])
+
+$dll_entries << "kind=message\nseat=250\n\nbattle=front_state\nbid=#{bid}\n\n" + MGQ_MpBattlesSync::Wire.line([[["rbn", "2"], ["other", "x"]]])
+MGQ_MpBattlesServed.drain
+check("the starter tells the served battle as its own, with the server's count of its players",
+      [MGQ_MpBattlesServed.front_fields(%w(rb rbh)), MGQ_MpBattlesServed.front_fields(%w(rbn))], [{ "rb" => bid, "rbh" => "0" }, { "rbn" => "2" }])
+$dll_calls.clear
+MGQ_MpBattlesServed.peer_left(joiner)
+left = fields_of($dll_calls.find { |name, _| name == "mp_battle_send" }[1][1])
+check("and tells the server a player left the world", [left["battle"], MGQ_MpBattlesSync::Wire.parse(left[:payload])], ["front_left", [4]])
+MGQ_MpBattlesSync.finish
+MGQ_MpBattlesCoop.ended
+check("a battle that finished has no front", [MGQ_MpBattlesServed.front_fields(%w(rbn)), MGQ_MpBattlesServed.fronts?({ "coop" => "hot", "bid" => bid })], [nil, false])
+
+# The battle server takes what its front passes on as the world's room would hand it over.
+module MGQ_MpOverworldSync
+  module Peers
+    def self.take(seat, state); @all.reject! { |peer| peer.seat == seat }; @all << Peer.new(seat, state, nil, false); end
+    def self.remove(seat, _reason = nil); @all.reject! { |peer| peer.seat == seat }; end
+  end
+end
+BattleManager.setup(40, true, false)
+bid = MGQ_MpBattlesSync.battle_id
+MGQ_MpBattlesServed.instance_variable_set(:@server, true)
+MGQ_MpBattlesServed.instance_variable_set(:@setup, { :starter => 0, :players => [] })
+MGQ_MpBattlesServed.instance_variable_set(:@channel, :open)
+taken = []
+coop_take = MGQ_MpBattlesCoop.method(:take)
+MGQ_MpBattlesCoop.define_singleton_method(:take) { |peer, message| taken << [peer.seat, peer.state["name"], message["coop"], message["troop"]] }
+request = MGQ_MpBattlesSync::Wire.line([7, [[7, [["id", "id-late"], ["name", "Late"]]]], [["coop", "hot"], ["bid", bid], ["troop", "5"]]])
+$dll_entries << "kind=message\nseat=0\n\nbattle=front_in\nbid=#{bid}\n\n#{request}"
+$dll_entries << "kind=message\nseat=3\n\nbattle=front_in\nbid=#{bid}\n\n#{request}"
+MGQ_MpBattlesServed.drain
+check("the server takes a request its starter passed on, its player known by the state passed with it, and one from anyone else not",
+      [taken, MGQ_MpOverworldSync::Peers.at(7) && MGQ_MpOverworldSync::Peers.at(7).state], [[[7, "Late", "hot", "5"]], { "id" => "id-late", "name" => "Late" }])
+$dll_entries << "kind=message\nseat=0\n\nbattle=front_left\nbid=#{bid}\n\n" + MGQ_MpBattlesSync::Wire.line([7])
+MGQ_MpBattlesServed.drain
+check("and forgets a player who left the world, as the starter tells", MGQ_MpOverworldSync::Peers.at(7), nil)
+MGQ_MpBattlesCoop.define_singleton_method(:take, coop_take)
+$dll_calls.clear
+check("the server's message to the world's room goes to its starter", MGQ_MpBattlesServed.front_out(4, "map_coop=hot_no\n\n"), true)
+out = $dll_calls.find { |name, _| name == "mp_battle_send" }[1]
+check("over the battle channel", [out[0], fields_of(out[1])["battle"], MGQ_MpBattlesSync::Wire.parse(fields_of(out[1])[:payload])], [0, "front_out", [4, "map_coop=hot_no\n\n"]])
+MGQ_MpBattlesServed.instance_variable_set(:@server, nil)
+MGQ_MpBattlesServed.instance_variable_set(:@setup, nil)
+MGQ_MpBattlesServed.instance_variable_set(:@channel, nil)
+MGQ_MpBattlesSync.finish
+MGQ_MpBattlesCoop.ended
+
+# A player the server takes in late comes onto its channel, by its invite or its answer.
+$dll_calls.clear
+MGQ_MpBattlesCoop.accept(friend, { "coop" => "invite", "bid" => "late1", "troop" => "40", "escape" => "1", "lose" => "0", "seats" => "0", "map" => "5", "hot" => "1", "served" => "1" })
+check("an invite of a served battle makes the player the server's guest",
+      [MGQ_MpBattlesSync.role, MGQ_MpBattlesSync.served?, $dll_calls.find { |name, _| name == "mp_battle_open" }], [:guest, true, ["mp_battle_open", ["world-1", "late1"]]])
+MGQ_MpBattlesSync.finish
+MGQ_MpBattlesCoop.ended
+MGQ_MpBattlesSync.join_world(:guest, "late2", [0], "Friend")
+asking = { :seat => 0, :bid => "late2", :troop => 5, :escape => true, :lose => false, :seats => [] }
+MGQ_MpBattlesHotjoin.instance_variable_set(:@asking, asking)
+MGQ_MpBattlesHotjoin.take_answer(MGQ_MpOverworldSync::Peers::Peer.new(0, { "name" => "Front" }, nil, false), { "bid" => "late2", "escape" => "1", "lose" => "0", "rates" => "", "served" => "1" }, :accepted)
+$dll_calls.clear
+MGQ_MpBattlesHotjoin.join_late(asking)
+check("and so does a served battle's answer to the player's encounter", [MGQ_MpBattlesSync.served?, $dll_calls.find { |name, _| name == "mp_battle_open" }], [true, ["mp_battle_open", ["world-1", "late2"]]])
+MGQ_MpBattlesHotjoin.instance_variable_set(:@asking, nil)
+MGQ_MpBattlesSync.finish
+MGQ_MpBattlesCoop.ended
+
+# A guest of the server sends to the server alone, also once the roster names the other players,
+# and hears through it of one who leaves.
+$dll_state = "state=served"
+_answer, bid = gather_with_friend(scene, friend, join)
+$dll_entries << "kind=seat\nseat=0\n\n"
+MGQ_MpBattlesServed.drain
+MGQ_MpBattlesCoop.instance_variable_set(:@players, [MGQ_MpBattlesCoop::Player.new(0, "Me", "", [], 8), MGQ_MpBattlesCoop::Player.new(2, "Friend", "", [], 8)])
+$dll_calls.clear
+MGQ_MpBattlesSync::Channel.post("commands", "x")
+check("a guest's message goes to the server's seat alone, never to another player's", $dll_calls.map { |name, args| [name, args[0]] }, [["mp_battle_send", 250]])
+$notices = []
+$dll_entries << "kind=message\nseat=250\n\nbattle=departed\nbid=#{bid}\n\n" + MGQ_MpBattlesSync::Wire.line([2])
+MGQ_MpBattlesServed.drain
+check("the server's word that a player left shows as their own leave would", $notices.grep(/Friend left the battle/).size, 1)
+MGQ_MpBattlesSync.finish
+MGQ_MpBattlesCoop.ended
+BattleManager.setup(40, true, false)
+bid = MGQ_MpBattlesSync.battle_id
+MGQ_MpBattlesServed.instance_variable_set(:@server, true)
+MGQ_MpBattlesSync.serve_over_channel(:host, bid, [1, 2], "the players")
+$dll_calls.clear
+MGQ_MpBattlesSync.take_served(1, { "battle" => "leave", "bid" => bid, :payload => "" })
+departed = $dll_calls.select { |name, _| name == "mp_battle_send" }.map { |_, args| [args[0], fields_of(args[1])["battle"], MGQ_MpBattlesSync::Wire.parse(fields_of(args[1])[:payload])] }
+check("the server tells the battle's other players of one who leaves", departed, [[2, "departed", [1]]])
+formed = []
+form = MGQ_MpBattlesCoop.method(:form)
+MGQ_MpBattlesCoop.define_singleton_method(:form) { |_scene, players| formed << players.map(&:seat) }
+abort = BattleManager.method(:process_abort)
+aborted = []
+BattleManager.define_singleton_method(:process_abort) { aborted << true }
+MGQ_MpBattlesCoop.instance_variable_set(:@players, [MGQ_MpBattlesCoop::Player.new(1, "Me", "1", [], 8), MGQ_MpBattlesCoop::Player.new(2, "Friend", "2", [], 8)])
+MGQ_MpBattlesCoop.instance_variable_set(:@members, [])
+MGQ_MpBattlesSync.guest_left(1)
+MGQ_MpBattlesCoop.settle(scene)
+check("the last player in the server's battle fights on there, which no player of its own takes over",
+      [formed, aborted, MGQ_MpBattlesSync.role, $log.grep(/goes on alone/)], [[[2]], [], :host, []])
+MGQ_MpBattlesSync.guest_left(2)
+MGQ_MpBattlesCoop.settle(scene)
+check("a battle every player left ends", [formed.size, aborted], [1, [true]])
+MGQ_MpBattlesCoop.define_singleton_method(:form, form)
+BattleManager.define_singleton_method(:process_abort, abort)
+MGQ_MpBattlesServed.instance_variable_set(:@server, nil)
 MGQ_MpBattlesSync.finish
 MGQ_MpBattlesCoop.ended
 

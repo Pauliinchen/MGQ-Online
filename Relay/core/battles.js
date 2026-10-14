@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-15: Read the battle server's boss reports and wrote the pools' lines for it
+//                            - Added the players the battle server takes in late
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -215,6 +216,30 @@ export class BattleTable {
   }
 
   /**
+   * Adds a player the battle server takes in late, who may come onto the channel from then on;
+   * a player of the battle already keeps their seat.
+   *
+   * @param {string} world The world.
+   * @param {string} battle The battle's id.
+   * @param {string} player The player's id.
+   * @param {number} seat Their world seat now.
+   * @returns {boolean} Whether they are a player of the battle now, false for a battle that runs no more or is full.
+   */
+  add(world, battle, player, seat) {
+    const entry = this.get(world, battle);
+
+    if (!entry || (!entry.players.has(player) && entry.players.size >= this.limits.maxPlayers)) {
+      return false;
+    }
+
+    if (!entry.players.has(player)) {
+      entry.players.set(player, seat);
+    }
+
+    return true;
+  }
+
+  /**
    * Forgets a battle.
    *
    * @param {string} world The world.
@@ -359,10 +384,10 @@ export function bossLine(key, pool, answer) {
 
 /**
  * Reads a line the battle server sent: serving, refused, a message for a player or every player,
- * a report of a Raid World's boss pool, or the battle's end.
+ * a report of a Raid World's boss pool, players it takes in late, or the battle's end.
  *
  * @param {string} line The line.
- * @returns {{op: "serving"} | {op: "refused", code: string, error: string} | {op: "send", seat: number, payload: Uint8Array} | {op: "boss_report", key: string, report: {battle: string, seq: number, delta: number, max: number, killed: boolean}} | {op: "end", result: string} | null} What it says, null for a line it cannot read.
+ * @returns {{op: "serving"} | {op: "refused", code: string, error: string} | {op: "send", seat: number, payload: Uint8Array} | {op: "boss_report", key: string, report: {battle: string, seq: number, delta: number, max: number, killed: boolean}} | {op: "admit", seats: number[]} | {op: "end", result: string} | null} What it says, null for a line it cannot read.
  */
 export function readServerLine(line) {
   let fields;
@@ -386,6 +411,10 @@ export function readServerLine(line) {
       // The boss pools check the report's fields as they check a game's.
       return typeof fields.key === "string" && typeof fields.battle === "string"
         ? { op: "boss_report", key: fields.key, report: { battle: fields.battle, seq: fields.seq, delta: fields.delta, max: fields.max, killed: fields.killed } }
+        : null;
+    case "admit":
+      return Array.isArray(fields.seats) && fields.seats.length <= WORLD_SEATS.max && fields.seats.every((seat) => Number.isInteger(seat) && seat >= 0 && seat < WORLD_SEATS.max)
+        ? { op: "admit", seats: fields.seats }
         : null;
     case "end":
       return { op: "end", result: String(fields.result ?? "ended") };

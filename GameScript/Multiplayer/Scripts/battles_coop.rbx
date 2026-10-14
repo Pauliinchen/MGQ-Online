@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-15: Handed a gathered battle to the battle server and followed one there as guest
+#                            - Passed requests to join a served battle on to the battle server and joined one late on its channel
+#                            - Kept a served battle on the server for its last player and ended one every player left
 #                            - Stood the player's own characters up with 1 HP after a battle won while all of them fell
 #                            - Stood them up as well when a save loads in a world with all of them fallen
 #      Paulinchen  2026-10-13: Told the guests of a Classic world's battle whether its boss fights at its tier
@@ -1348,6 +1350,9 @@ module MGQ_MpBattlesCoop
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
+    # The starter of a served battle passes requests to join it on to the battle server.
+    return MGQ_MpBattlesServed.forward(peer, message) if defined?(MGQ_MpBattlesServed) && MGQ_MpBattlesServed.fronts?(message)
+
     log("took #{message['coop']} from #{MGQ_MpOverworldSync.who(peer)}: #{fields_text(message.reject { |key, _| key == 'coop' })}")
     case message["coop"]
     when "invite" then take_invite(peer, message)
@@ -1608,6 +1613,7 @@ module MGQ_MpBattlesCoop
     borrow_rates(message)
     BattleManager.setup(message["troop"].to_i, message["escape"] == "1", message["lose"] == "1")
     MGQ_MpBattlesSync.join_world(:guest, message["bid"].to_s, [peer.seat], peer.state["name"].to_s)
+    MGQ_MpBattlesServed.become_guest(message["bid"].to_s) if message["served"].to_s == "1" && defined?(MGQ_MpBattlesServed)
     MGQ_MpBattlesSync.battle_started
     MGQ_MpBattles.begin(:coop)
     @awaited = { :peer => peer, :message => message }
@@ -2173,8 +2179,9 @@ module MGQ_MpBattlesCoop
   # As host, takes the players who left out of the party, before a command phase: the others fight
   # on, each bringing as many as the smaller party lets them, told to the guests between two of the
   # host's sends. Alone, the host fights on with their own full team, as in a battle of their own,
-  # which in a Raid World is their squad (see MGQ_MpCoopSquad.raid_battle?). Called when a command
-  # phase starts.
+  # which in a Raid World is their squad (see MGQ_MpCoopSquad.raid_battle?). On the battle server,
+  # which has no characters of its own, the last player fights on there, and a battle every player
+  # left ends. Called when a command phase starts.
   #
   # @param scene [Scene_Battle] The battle.
   def self.settle(scene)
@@ -2184,7 +2191,9 @@ module MGQ_MpBattlesCoop
     return if staying.size == @players.size
 
     log("#{(@players - staying).map { |player| "#{player.name} (seat #{player.seat})" }.join(', ')} left battle #{MGQ_MpBattlesSync.battle_id}, their characters leave the party")
-    return go_solo(scene) if staying.size == 1
+    served = defined?(MGQ_MpBattlesServed) && MGQ_MpBattlesServed.server?
+    return abandon if served && staying.empty?
+    return go_solo(scene) if !served && staying.size == 1
 
     form(scene, arrange(staying))
     post_party
@@ -2230,6 +2239,12 @@ module MGQ_MpBattlesCoop
   def self.go_solo(scene)
     log("everyone else left battle #{MGQ_MpBattlesSync.battle_id}, it goes on alone")
     stand_alone(scene)
+  end
+
+  # As the battle server, ends a battle every player left, which nobody plays on.
+  def self.abandon
+    log("every player left battle #{MGQ_MpBattlesSync.battle_id}, the server ends it")
+    BattleManager.process_abort
   end
 
   # As guest, fights on alone once the host got away or is gone: the player's own full team takes

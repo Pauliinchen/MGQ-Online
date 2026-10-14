@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-15: Fought a raid boss's pools with RAID_POOL=1
+#                            - Named the first seat the battle's starter
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -32,6 +33,8 @@ build = MGQ_MpBattlesCoop.own_build
 players = seats.each_with_index.map do |seat, index|
   MGQ_MpBattlesCoop::Player.new(seat, "Player #{index + 1}", build[0], build[1], build[2], [0, 1, 2, 3], 4 / seats.size, 0)
 end
+# The first seat started the battle, which makes it the battle's front.
+MGQ_MpOverworldSync::Me.take_seat(seats.first)
 message = ->(kind, body = "") { MGQ_MpOverworldSync::Me.encode({ "battle" => kind, "bid" => battle_id }) + body }
 attacks = Array.new(16) { [["skill", 1, -1]] }
 puts JSON.generate(setup: [MGQ_MpBattlesServed.setup_text(players, nil)].pack("m0"), ready: message.("ready"),

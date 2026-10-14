@@ -2,6 +2,7 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Joined a battle the battle server hosts late through its starter and its channel
 #      Paulinchen  2026-10-12: Took a joining player's party_member_max only as a number
 #                            - Dropped an enemy of the host's changed troop whose id, place or mark is no number
 #                            - Kept every enemy of the host's changed troop at its place
@@ -113,6 +114,9 @@ module MGQ_MpBattlesHotjoin
   # @return [Hash] The fields, none in a Classic world.
   def self.state_fields
     return {} unless raid?
+
+    front = defined?(MGQ_MpBattlesServed) && MGQ_MpBattlesServed.front_fields(%w(rb rbh))
+    return front if front
 
     bid, host = running_battle
     { "rb" => bid.to_s, "rbh" => host.to_s }
@@ -414,6 +418,7 @@ module MGQ_MpBattlesHotjoin
     MGQ_MpGame.set(BattleManager, :can_lose, asking[:host_lose] ? true : false)
     MGQ_MpGame.set(BattleManager, :preemptive, false)
     MGQ_MpGame.set(BattleManager, :surprise, false)
+    MGQ_MpBattlesServed.become_guest(asking[:bid].to_s) if asking[:served] && defined?(MGQ_MpBattlesServed)
     log("joins #{MGQ_MpBattlesSync.player}'s battle #{asking[:bid]} at its next command phase, the encounter's enemies with the player")
     release_companions(:seats => Array(asking[:seats]) - asking[:taken]) if asking[:taken]
   end
@@ -433,6 +438,7 @@ module MGQ_MpBattlesHotjoin
     asking[:host_escape] = message["escape"] == "1"
     asking[:host_lose] = message["lose"] == "1"
     asking[:host_rates] = message["rates"]
+    asking[:served] = message["served"].to_s == "1"
     asking[:taken] = message["seats"].to_s.split(",").map(&:to_i) if message.key?("seats")
     asking[:answer] = answer
     log("#{who(peer)} answered for battle #{message['bid']}: #{answer}")
@@ -869,7 +875,8 @@ module MGQ_MpBattlesHotjoin
     sync.expect(seats)
     coop = MGQ_MpBattlesCoop
     fields = invite_fields(seats - [peer.seat])
-    coop.tell_map([peer.seat], "hot_ok", "bid" => bid, "escape" => fields["escape"], "lose" => fields["lose"], "rates" => fields["rates"], "seats" => seats.join(","))
+    coop.tell_map([peer.seat], "hot_ok", "bid" => bid, "escape" => fields["escape"], "lose" => fields["lose"], "rates" => fields["rates"], "seats" => seats.join(","),
+                                         "served" => fields["served"])
     coop.tell_map(seats - [peer.seat], "invite", fields) unless fields["seats"].empty?
     log("takes #{who(peer)}'s encounter into battle #{bid} at the next command phase: #{placed.size} enemies at x " \
         "#{placed.map { |entry| entry[1] }.join(', ')}, players #{seats.map { |seat| sync.who(seat) }.join(', ')}")
@@ -902,6 +909,8 @@ module MGQ_MpBattlesHotjoin
                "lose" => MGQ_MpGame.get(BattleManager, :can_lose) ? 1 : 0, "seats" => seats.join(","), "map" => $game_map.map_id, "hot" => 1,
                "rates" => MGQ_MpBattlesCoop.rates_text }
     fields["boss"] = 1 if boss_battle?
+    # The battle server's players come onto its battle channel.
+    fields["served"] = 1 if defined?(MGQ_MpBattlesServed) && MGQ_MpBattlesServed.server?
     fields.update(MGQ_MpRaidPool.invite_fields) if defined?(MGQ_MpRaidPool)
     fields
   end

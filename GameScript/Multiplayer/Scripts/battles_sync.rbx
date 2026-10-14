@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-15: Carried a battle the battle server hosts over its battle channel
+#                            - Sent a served battle's messages to single players over its battle channel too
+#                            - Told every player of a served battle of one who leaves it
 #      Paulinchen  2026-10-12: Told a player joining or leaving the battle in the battle's popup instead of the chat
 #                            - Told a player leaving the battle only when they are one of its players
 #                            - Kept the computer's actions for unreadable commands and checked a command's ids and target
@@ -221,7 +223,10 @@ module MGQ_MpBattlesSync
     kind = message["battle"].to_s
     return log_once([:served_dropped, kind[0, 40], @battle_id], "ignored #{kind[0, 40]} from the battle channel: no served battle runs") unless served?
     return log_once([:served_dropped, kind[0, 40], @battle_id], "ignored #{kind[0, 40]} from the battle channel: it is for another battle") unless message["bid"] == @battle_id
+    return MGQ_MpBattlesServed.take_departure(message[:payload]) if kind == MGQ_MpBattlesServed::DEPARTED && seat == MGQ_MpBattlesServed::SERVER_SEAT
 
+    # Every player of the battle hears of one who leaves, through the server.
+    MGQ_MpBattlesServed.pass_departure(seat) if kind == "leave" && host?
     Channel.receive(seat, kind, message[:payload].to_s)
   end
 
@@ -579,7 +584,8 @@ module MGQ_MpBattlesSync
     $game_troop.members + mode.other_reserve
   end
 
-  # Sends a message of a battle over the world's room.
+  # Sends a message of a battle over the world's room, or over the battle channel for the battle
+  # the server hosts: from its players to the server, from the server to the players.
   #
   # @param seat [Integer] The game's seat, -1 for everyone.
   # @param kind [String] What it is.
@@ -587,6 +593,10 @@ module MGQ_MpBattlesSync
   # @param body [String] The rest.
   # @return [Boolean] Whether it went out.
   def self.tell(seat, kind, battle_id, body = "")
+    if served? && battle_id.to_s == @battle_id.to_s
+      return !MGQ_MpBattlesServed.post([host? ? seat : MGQ_MpBattlesServed::SERVER_SEAT], kind, body).empty?
+    end
+
     MGQ_MpOverworldSync.tell(seat, { "battle" => kind, "bid" => battle_id }, body)
   end
 

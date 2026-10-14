@@ -4,6 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-10-15: Started co-op battles on the battle server and carried their channels
 //                            - Counted the battle server's boss reports and told it every change of its world's pools
+//                            - Let the players the battle server takes in late onto its battle's channel
 //      Paulinchen  2026-10-14: Left what a game names in X-MGQ-Features out of its directory requests
 //      Paulinchen  2026-10-13: Told every game of a Classic world whether it fights raid bosses
 //                            - Told every game of a Raid World its new squad settings
@@ -837,6 +838,8 @@ export function createRelay({
             }
           } else if (line?.op === "send") {
             deliverBattle(world, battle, line.seat, line.payload);
+          } else if (line?.op === "admit") {
+            admitLate(world, battle, line.seats);
           } else if (line?.op === "boss_report") {
             reportServedBoss(world, battle, line).catch((error) => log.error(errorLine(new Date(), `boss report of battle ${battle}`, error)));
           } else if (line?.op === "end") {
@@ -988,6 +991,24 @@ export function createRelay({
     }
 
     link.server.end(`${JSON.stringify({ op: "close" })}\n`);
+  }
+
+  /**
+   * Lets the players the battle server takes into a battle late onto its channel: whoever sits on
+   * those seats of the world room now.
+   *
+   * @param {string} world The world.
+   * @param {string} battle The battle's id.
+   * @param {number[]} seats Their world seats.
+   */
+  function admitLate(world, battle, seats) {
+    const seated = new Map((worlds.get(world) ?? []).map((peer) => [peer.record.seat, peer.record.player]));
+
+    for (const seat of seats) {
+      if (seated.has(seat) && !battles.add(world, battle, seated.get(seat), seat)) {
+        log.info(`${new Date().toISOString()} battle ${battle} of world ${world} took nobody more in: it is full or over`);
+      }
+    }
   }
 
   /**

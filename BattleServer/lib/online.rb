@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-15: Stood in for the boss pool exports
+#                            - Sent the world room's messages through the battle's starter
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -63,6 +64,8 @@ module Online
       when "mp_battle_receive" then reader { @bridge && @bridge.next_entry }
       when "mp_battle_state" then reader { @bridge && !@bridge.closed? ? "state=open" : "state=closed" }
       when "mp_battle_close" then -> { @bridge&.close; 1 }
+      # The server sits in no world room: the battle's starter passes its messages on there.
+      when "mp_world_send" then ->(seat, text) { MGQ_MpBattlesServed.front_out(seat, text.chomp("\0")) ? 1 : 0 }
       # The starter's setup brings the pools, and the relay tells the server of each change.
       when "mp_raid_bosses_fetch" then ->(_world) { 1 }
       when "mp_raid_boss_report" then ->(_world, key, battle, text) { @bridge && @bridge.report(key.chomp("\0"), battle.chomp("\0"), text.chomp("\0")) ? 1 : 0 }
@@ -213,13 +216,26 @@ module Online
     # The boss pools the server learned, which a test tells as the relay would.
     attr_reader :bosses
 
+    # The world seats the server let onto the channel late, oldest first.
+    attr_reader :admitted
+
     # Starts an empty bridge.
     def initialize
       @entries = Queue.new
       @sent = Queue.new
       @reports = Queue.new
       @bosses = BossPools.new
+      @admitted = []
       @closed = false
+    end
+
+    # Lets players the battle takes in late onto the channel.
+    #
+    # @param seats [Array<Integer>] Their world seats.
+    # @return [Boolean] Whether the channel is open.
+    def admit(seats)
+      @admitted.concat(seats)
+      !@closed
     end
 
     # Takes a boss report of the server.

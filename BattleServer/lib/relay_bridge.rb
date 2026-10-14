@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-15: Reported boss pools to the relay and kept what it told of them
+#                            - Let the players a battle takes in late onto its channel
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -20,7 +21,7 @@ require_relative "online"
 #   server to relay: {"op":"send","seat":3,"text":"<base64>"} (seat -1 for every player),
 #                    {"op":"serving"}, {"op":"refused","code":"setup","error":"..."},
 #                    {"op":"boss_report","key":"...","battle":"...","seq":1,"delta":0.01,"max":90000,"killed":false},
-#                    {"op":"end","result":"victory","turns":4}
+#                    {"op":"admit","seats":[4,5]}, {"op":"end","result":"victory","turns":4}
 class RelayBridge
   # Bytes a line from the relay may take, a player's largest message in base64 with room to spare.
   MAX_LINE = 1024 * 1024
@@ -38,6 +39,17 @@ class RelayBridge
     @closed = false
     @bosses = Online::BossPools.new
     @reader = Thread.new { read }
+  end
+
+  # Lets players the battle takes in late onto the channel: the relay admits whoever sits on those
+  # seats of the world room now.
+  #
+  # @param seats [Array<Integer>] Their world seats.
+  # @return [Boolean] Whether it went out.
+  def admit(seats)
+    return false if @closed || seats.empty?
+
+    tell(op: "admit", seats: seats)
   end
 
   # Reports what the battle did to a Raid World's boss pool; the relay answers with the pool.

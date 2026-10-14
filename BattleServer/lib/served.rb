@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-15: Read the boss pools the relay told and forgot the last battle's boss fight
+#                            - Hosted a Raid World's battle as one, took players in late and told the starter the battle's state
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -84,10 +85,34 @@ module ServedBattle
       wrap.around(Graphics.singleton_class, :update, :served) do |_graphics, original, args, _block|
         original.call(*args)
         ServedBattle.read_pools
+        ServedBattle.tell_front
         ServedBattle.pace
+      end
+      # The server sits in no world, so the battle's world type comes with its setup.
+      wrap.around(MGQ_MpWorld.singleton_class, :raid?, :served) do |_world, original, args, _block|
+        ServedBattle.raid.nil? ? original.call(*args) : ServedBattle.raid
+      end
+      wrap.around(MGQ_MpWorld.singleton_class, :squad, :served) do |_world, original, args, _block|
+        next original.call(*args) if ServedBattle.raid.nil?
+
+        ServedBattle.raid ? (ServedBattle.squad || MGQ_MpWorld::DEFAULT_SQUAD).dup : nil
+      end
+      # Outside a world the tick forgets every player and the seat, which the server holds for the
+      # players its starter passed on and the battle channel.
+      wrap.around(MGQ_MpOverworldSync.singleton_class, :tick, :served) { nil }
+      # The players the battle takes in late may come onto its channel from then on.
+      wrap.around(MGQ_MpBattlesSync.singleton_class, :expect, :served) do |_sync, original, args, _block|
+        original.call(*args)
+        Online.bridge&.admit(Array(args[0]))
       end
       @paced = true
     end
+
+    # Whether the battle hosted now is a Raid World's, as its setup says; nil between battles.
+    attr_reader :raid
+
+    # The squad rules of the Raid World whose battle is hosted now, as its setup says; nil for none.
+    attr_reader :squad
 
     # Confirms the first choice of a choice window at once, as nobody chooses on the server.
     #
@@ -112,6 +137,8 @@ module ServedBattle
     def run(bridge, battle_id, setup_text)
       setup = check(setup_text)
       Online.connect(bridge)
+      @raid = setup[:raid]
+      @squad = setup[:squad]
       BOSS_SCRIPTS.each { |name| Object.const_get(name).forget if Object.const_defined?(name) }
       DataManager.create_game_objects
       MGQ_MpBattlesServed.host(battle_id, setup)
@@ -129,6 +156,8 @@ module ServedBattle
       result = HeadlessBattle.instance_variable_get(:@result) || (scene ? scene.class.name.to_sym : :ended)
       { result: result, turns: $game_troop.turn_count, frames: Graphics.frame_count }
     ensure
+      @raid = nil
+      @squad = nil
       bridge&.close
     end
 
@@ -148,8 +177,17 @@ module ServedBattle
 
       seats = setup[:players].map(&:seat)
       raise Refused.new("setup", "players on seats #{seats.inspect}, not distinct world seats") unless seats.uniq.size == seats.size && seats.all? { |seat| seat.is_a?(Integer) && (0..WORLD_SEATS).cover?(seat) }
+      raise Refused.new("setup", "the starter on seat #{setup[:starter].inspect} is none of the players") unless seats.include?(setup[:starter])
 
       setup
+    end
+
+    # Tells the starter the server's state for the world's players every
+    # MGQ_MpBattlesServed::FRONT_STATE_FRAMES frames, see MGQ_MpBattlesServed.tell_front_state.
+    def tell_front
+      return unless (Graphics.frame_count % MGQ_MpBattlesServed::FRONT_STATE_FRAMES).zero? && MGQ_MpBattlesServed.server?
+
+      MGQ_MpBattlesServed.tell_front_state
     end
 
     # Takes the boss pools the relay told every POOL_FRAMES frames while the battle fights a Raid

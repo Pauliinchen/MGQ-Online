@@ -2,6 +2,7 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Told whether a served battle takes players in by the battle server's state
 #      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #                            - Read the map's viewport and character sprites through MGQ_MpGame
 #      Paulinchen  2026-10-11: Asked the party members near along to a battle the player asks to join
@@ -64,6 +65,9 @@ module MGQ_MpBattlesJoin
   # @return [Hash] The field, none in a Classic world.
   def self.state_fields
     return {} unless raid?
+
+    front = defined?(MGQ_MpBattlesServed) && MGQ_MpBattlesServed.front_fields(%w(rbn))
+    return front if front
 
     { "rbn" => closed_reason ? 0 : players_in }
   rescue => e

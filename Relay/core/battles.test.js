@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-15: Covered the battle server's boss reports and pool lines
+//                            - Covered the players the battle server takes in late
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -136,6 +137,8 @@ test("the lines to the battle server and back carry the battle, presence and mes
   assert.deepEqual(readServerLine('{"op":"boss_report","key":"Sara","battle":"rp1","seq":2,"delta":0.5,"max":900,"killed":true}'),
                    { op: "boss_report", key: "Sara", report: { battle: "rp1", seq: 2, delta: 0.5, max: 900, killed: true } });
   assert.equal(readServerLine('{"op":"boss_report","key":5,"battle":"rp1"}'), null);
+  assert.deepEqual(readServerLine('{"op":"admit","seats":[3,4]}'), { op: "admit", seats: [3, 4] });
+  assert.equal(readServerLine('{"op":"admit","seats":[32]}'), null);
 });
 
 test("the battle server hears how a boss pool stands, or that its report was refused", () => {
