@@ -2,7 +2,8 @@
 //  battles.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-15: Created
+//      Paulinchen  2026-10-15: Read the battle server's boss reports and wrote the pools' lines for it
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -344,11 +345,24 @@ export function messageLine(seat, payload) {
 }
 
 /**
+ * The line that tells the battle server how a Raid World's boss pool stands: the answer to its
+ * own report, or a change another battle or an admin made.
+ *
+ * @param {string} key The pool's key.
+ * @param {{left: number, max: number, defeated: boolean, by?: string} | null} pool The pool, null for a report the relay refused.
+ * @param {boolean} answer Whether it answers the server's report.
+ * @returns {string} The line.
+ */
+export function bossLine(key, pool, answer) {
+  return JSON.stringify(pool ? { op: "boss", key, left: pool.left, max: pool.max, defeated: pool.defeated, by: pool.by ?? "", answer } : { op: "boss", key, answer });
+}
+
+/**
  * Reads a line the battle server sent: serving, refused, a message for a player or every player,
- * or the battle's end.
+ * a report of a Raid World's boss pool, or the battle's end.
  *
  * @param {string} line The line.
- * @returns {{op: "serving"} | {op: "refused", code: string, error: string} | {op: "send", seat: number, payload: Uint8Array} | {op: "end", result: string} | null} What it says, null for a line it cannot read.
+ * @returns {{op: "serving"} | {op: "refused", code: string, error: string} | {op: "send", seat: number, payload: Uint8Array} | {op: "boss_report", key: string, report: {battle: string, seq: number, delta: number, max: number, killed: boolean}} | {op: "end", result: string} | null} What it says, null for a line it cannot read.
  */
 export function readServerLine(line) {
   let fields;
@@ -367,6 +381,11 @@ export function readServerLine(line) {
     case "send":
       return Number.isInteger(fields.seat) && typeof fields.text === "string"
         ? { op: "send", seat: fields.seat, payload: Uint8Array.from(Buffer.from(fields.text, "base64")) }
+        : null;
+    case "boss_report":
+      // The boss pools check the report's fields as they check a game's.
+      return typeof fields.key === "string" && typeof fields.battle === "string"
+        ? { op: "boss_report", key: fields.key, report: { battle: fields.battle, seq: fields.seq, delta: fields.delta, max: fields.max, killed: fields.killed } }
         : null;
     case "end":
       return { op: "end", result: String(fields.result ?? "ended") };

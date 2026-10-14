@@ -2,14 +2,15 @@
 //  battles.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-15: Created
+//      Paulinchen  2026-10-15: Covered the battle server's boss reports and pool lines
+//                            - Created
 //
 //----------------------------------------------------------------
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  BATTLE_END, BATTLE_LIMITS, BATTLE_REFUSAL, BattleTable, SERVER_SEAT, battleClosedText, battleRouteOf, battleSeatText, messageLine,
+  BATTLE_END, BATTLE_LIMITS, BATTLE_REFUSAL, BattleTable, SERVER_SEAT, battleClosedText, battleRouteOf, battleSeatText, bossLine, messageLine,
   playerMessage, presenceLine, readOpen, readServerLine, serveLine, serverFrame,
 } from "./battles.js";
 import { CLOSE } from "./relay.js";
@@ -132,4 +133,13 @@ test("the lines to the battle server and back carry the battle, presence and mes
   assert.deepEqual(readServerLine('{"op":"end","result":"victory"}'), { op: "end", result: "victory" });
   assert.equal(readServerLine('{"op":"send","seat":"x","text":"aGk="}'), null);
   assert.equal(readServerLine("not json"), null);
+  assert.deepEqual(readServerLine('{"op":"boss_report","key":"Sara","battle":"rp1","seq":2,"delta":0.5,"max":900,"killed":true}'),
+                   { op: "boss_report", key: "Sara", report: { battle: "rp1", seq: 2, delta: 0.5, max: 900, killed: true } });
+  assert.equal(readServerLine('{"op":"boss_report","key":5,"battle":"rp1"}'), null);
+});
+
+test("the battle server hears how a boss pool stands, or that its report was refused", () => {
+  assert.deepEqual(JSON.parse(bossLine("Sara", { left: 0.5, max: 900, defeated: false, by: null }, true)),
+                   { op: "boss", key: "Sara", left: 0.5, max: 900, defeated: false, by: "", answer: true });
+  assert.deepEqual(JSON.parse(bossLine("Sara", null, true)), { op: "boss", key: "Sara", answer: true });
 });

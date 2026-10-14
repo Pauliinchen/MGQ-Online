@@ -2,13 +2,15 @@
 //  relay_e2e.mjs
 //
 //  Changelog:
-//      Paulinchen  2026-10-15: Created
+//      Paulinchen  2026-10-15: Made a Raid World with WORLD_TYPE=raid and printed its boss pools
+//                            - Created
 //
 //----------------------------------------------------------------
 
 // Plays a served co-op battle through a running relay and its battle server, as two games would:
 // makes a world, seats two players in its room, starts the battle with a setup make_setup.rb wrote
-// and answers the server as guests do, with ready and attacks whenever it waits for them.
+// and answers the server as guests do, with ready and attacks whenever it waits for them. With
+// WORLD_TYPE=raid the world is a Raid World, whose boss pools it prints at the end.
 //   node relay_e2e.mjs <relay address, such as http://127.0.0.1:8080> <make_setup.rb's JSON file>
 
 import { readFileSync } from "node:fs";
@@ -49,7 +51,8 @@ const made = await fetch(`${relay}/v1/worlds`, {
   method: "POST",
   headers: game,
   body: JSON.stringify({ id: world, name: "Battle e2e", seats: 8, player: keyOf(1), playerName: "Player 1",
-                         authHash: createHash("sha256").update(auth).digest("hex"), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) } }),
+                         authHash: createHash("sha256").update(auth).digest("hex"), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) },
+                         ...(process.env.WORLD_TYPE ? { type: process.env.WORLD_TYPE } : {}) }),
 });
 console.log(`world: ${made.status}`);
 
@@ -99,6 +102,11 @@ await Promise.all(channels.map(async ({ player, channel }) => {
   }
 }));
 console.log(`the server sent: ${Object.entries(counts).map(([kind, count]) => `${kind} x${count}`).join(", ")}`);
+
+if (process.env.WORLD_TYPE === "raid") {
+  const pools = await fetch(`${relay}/v1/worlds/${world}/bosses`, { headers: { ...game, "X-MGQ-Player": keyOf(1), "X-MGQ-Auth": auth } });
+  console.log(`boss pools: ${pools.status} ${await pools.text()}`);
+}
 for (const player of players) {
   player.room.socket.close();
 }

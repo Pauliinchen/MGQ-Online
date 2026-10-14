@@ -2,7 +2,8 @@
 #  battles_served.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Created
+#      Paulinchen  2026-10-15: Handed the battle server how the battle's boss fights, by pools or by tier
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -264,8 +265,8 @@ module MGQ_MpBattlesServed
 
   # Writes what the server needs to host a battle the starter gathered: what its MGQ Online and
   # its game data are, the troop, how it ends, the map, the enemies' rates, the enemies as the
-  # starter set them up, the arranged players and the level, and the switches and variables the
-  # troop's events read.
+  # starter set them up, the arranged players and the level, the switches and variables the
+  # troop's events read, and how its boss fights: a Raid World's pools or a tier.
   #
   # @param players [Array<MGQ_MpBattlesCoop::Player>] The arranged players.
   # @param level [Integer, nil] The battle's level.
@@ -280,7 +281,9 @@ module MGQ_MpBattlesServed
     MGQ_MpBattlesSync::Wire.line([FORMAT, scripts_fingerprint, MGQ_MpWorld::GameData.fingerprint, $game_troop.troop.id,
                                   MGQ_MpGame.get(BattleManager, :can_escape) ? 1 : 0, MGQ_MpGame.get(BattleManager, :can_lose) ? 1 : 0,
                                   $game_map.map_id, MGQ_MpBattlesCoop.rates_text, MGQ_MpBattlesCoop.troop_entries,
-                                  players.map(&:to_a), level.to_i, switches, variables, MGQ_MpBattlesCoop.raid? ? 1 : 0])
+                                  players.map(&:to_a), level.to_i, switches, variables, MGQ_MpBattlesCoop.raid? ? 1 : 0,
+                                  defined?(MGQ_MpRaidPool) ? MGQ_MpRaidPool.served_fields : nil,
+                                  defined?(MGQ_MpRaidTiers) && MGQ_MpRaidTiers.fight ? 1 : 0])
   end
 
   # Finds what this game's MGQ Online scripts are, once per session: a checksum of every script in
@@ -306,10 +309,10 @@ module MGQ_MpBattlesServed
   #
   # @param text [String] The setup.
   # @return [Hash, nil] :scripts and :data (the starter's fingerprints), :troop, :escape, :lose,
-  #   :map, :rates, :enemies, :players, :level, :switches, :variables and :raid; nil for a setup of
-  #   another format.
+  #   :map, :rates, :enemies, :players, :level, :switches, :variables, :raid, :pool (see
+  #   MGQ_MpRaidPool.served_fields) and :tiers; nil for a setup of another format.
   def self.read_setup(text)
-    format, scripts, data, troop, escape, lose, map, rates, enemies, players, level, switches, variables, raid = MGQ_MpBattlesSync::Wire.parse(text.to_s)
+    format, scripts, data, troop, escape, lose, map, rates, enemies, players, level, switches, variables, raid, pool, tiers = MGQ_MpBattlesSync::Wire.parse(text.to_s)
     return nil unless format == FORMAT && troop.is_a?(Integer)
 
     { :scripts => scripts.to_s, :data => data.to_s,
@@ -318,12 +321,12 @@ module MGQ_MpBattlesServed
       :level => level.is_a?(Integer) && level > 0 ? level : nil,
       :switches => Array(switches).select { |id| id.is_a?(Integer) && id > 0 },
       :variables => Array(variables).select { |pair| pair.is_a?(Array) && pair.size == 2 && pair.all? { |value| value.is_a?(Integer) } },
-      :raid => raid == 1 }
+      :raid => raid == 1, :pool => pool.is_a?(Array) ? pool : nil, :tiers => tiers == 1 }
   end
 
   # As the battle server, takes a battle to host: the game's state as the starter's for the troop's
-  # events, the troop, the live battle as host of the players over the battle channel. Called by
-  # the battle server before it starts the battle scene.
+  # events, the troop with its boss as the starter fights it, the live battle as host of the
+  # players over the battle channel. Called by the battle server before it starts the battle scene.
   #
   # @param battle_id [String] The battle's id.
   # @param setup [Hash] The setup, see read_setup.
@@ -335,7 +338,9 @@ module MGQ_MpBattlesServed
     setup[:variables].each { |id, value| $game_variables[id] = value }
     $game_map.setup(setup[:map]) if setup[:map] > 0
     MGQ_MpBattlesCoop.borrow_rates({ "rates" => setup[:rates] })
+    MGQ_MpRaidTiers.note_invite({ "troop" => setup[:troop], MGQ_MpRaidTiers::INVITE_FIELD => "1" }) if setup[:tiers] && defined?(MGQ_MpRaidTiers)
     BattleManager.setup(setup[:troop], setup[:escape], setup[:lose])
+    MGQ_MpRaidPool.serve_fight(setup[:troop], setup[:pool]) if setup[:pool] && defined?(MGQ_MpRaidPool)
     seats = setup[:players].map(&:seat)
     MGQ_MpBattlesSync.serve_over_channel(:host, battle_id, seats, "the players")
     MGQ_MpBattlesSync.battle_started

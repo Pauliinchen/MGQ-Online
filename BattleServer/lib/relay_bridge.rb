@@ -2,24 +2,31 @@
 #  relay_bridge.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Created
+#      Paulinchen  2026-10-15: Reported boss pools to the relay and kept what it told of them
+#                            - Created
 #
 #----------------------------------------------------------------
 
 require "json"
+require_relative "online"
 
 # The battle channel's other end over the relay's connection to the battle server: one JSON object
 # per line each way. The relay sends who comes and goes and the players' messages, the server sends
 # its messages to them; the texts travel in base64.
 #
 #   relay to server: {"op":"in","seat":3}, {"op":"out","seat":3},
-#                    {"op":"message","seat":3,"text":"<base64>"}, {"op":"close"}
+#                    {"op":"message","seat":3,"text":"<base64>"}, {"op":"close"},
+#                    {"op":"boss","key":"...","left":0.5,"max":90000,"defeated":false,"by":"","answer":true}
 #   server to relay: {"op":"send","seat":3,"text":"<base64>"} (seat -1 for every player),
 #                    {"op":"serving"}, {"op":"refused","code":"setup","error":"..."},
+#                    {"op":"boss_report","key":"...","battle":"...","seq":1,"delta":0.01,"max":90000,"killed":false},
 #                    {"op":"end","result":"victory","turns":4}
 class RelayBridge
   # Bytes a line from the relay may take, a player's largest message in base64 with room to spare.
   MAX_LINE = 1024 * 1024
+
+  # The boss pools the server learned from the relay, see Online::BossPools.
+  attr_reader :bosses
 
   # Starts the bridge on the relay's connection, reading it on a thread of its own.
   #
@@ -29,7 +36,22 @@ class RelayBridge
     @entries = Queue.new
     @lock = Mutex.new
     @closed = false
+    @bosses = Online::BossPools.new
     @reader = Thread.new { read }
+  end
+
+  # Reports what the battle did to a Raid World's boss pool; the relay answers with the pool.
+  #
+  # @param key [String] The pool's key.
+  # @param battle [String] The battle's id the report counts under.
+  # @param text [String] The report, see Online::BossPools.report_of.
+  # @return [Boolean] Whether it went out.
+  def report(key, battle, text)
+    report = Online::BossPools.report_of(text)
+    return false unless report && tell(op: "boss_report", key: key, battle: battle, **report)
+
+    @bosses.sent
+    true
   end
 
   # Takes the next entry, as the DLL writes it, see Online::Bridge#push.
@@ -89,6 +111,7 @@ class RelayBridge
       case fields["op"]
       when "in", "out" then @entries << "kind=#{fields['op']}\nseat=#{seat}\n\n"
       when "message" then @entries << "kind=message\nseat=#{seat}\n\n" + fields["text"].to_s.unpack1("m").force_encoding("UTF-8")
+      when "boss" then @bosses.take(fields)
       when "close" then break
       end
     end

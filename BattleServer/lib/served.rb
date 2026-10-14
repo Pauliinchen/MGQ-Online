@@ -2,7 +2,8 @@
 #  served.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Created
+#      Paulinchen  2026-10-15: Read the boss pools the relay told and forgot the last battle's boss fight
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -20,6 +21,13 @@ module ServedBattle
 
   # The highest seat of a world's room, which seats 32 games.
   WORLD_SEATS = 31
+
+  # Frames between two reads of the boss pools the relay told, as the game reads the DLL's.
+  POOL_FRAMES = 10
+
+  # MGQ Online's scripts that keep a battle's boss fight from one battle to the next, which a
+  # battle on a server that hosts one after another must forget first.
+  BOSS_SCRIPTS = %i[MGQ_MpRaidPool MGQ_MpRaidTiers].freeze
 
   # Raised for a battle the server cannot host, such as a setup of another format.
   class Refused < StandardError
@@ -75,6 +83,7 @@ module ServedBattle
       end
       wrap.around(Graphics.singleton_class, :update, :served) do |_graphics, original, args, _block|
         original.call(*args)
+        ServedBattle.read_pools
         ServedBattle.pace
       end
       @paced = true
@@ -103,6 +112,7 @@ module ServedBattle
     def run(bridge, battle_id, setup_text)
       setup = check(setup_text)
       Online.connect(bridge)
+      BOSS_SCRIPTS.each { |name| Object.const_get(name).forget if Object.const_defined?(name) }
       DataManager.create_game_objects
       MGQ_MpBattlesServed.host(battle_id, setup)
       # The map saves its music before a battle, and the battle's end plays it again.
@@ -140,6 +150,15 @@ module ServedBattle
       raise Refused.new("setup", "players on seats #{seats.inspect}, not distinct world seats") unless seats.uniq.size == seats.size && seats.all? { |seat| seat.is_a?(Integer) && (0..WORLD_SEATS).cover?(seat) }
 
       setup
+    end
+
+    # Takes the boss pools the relay told every POOL_FRAMES frames while the battle fights a Raid
+    # World's pools, as the game takes the DLL's: what the server's reports did and other battles'
+    # blows.
+    def read_pools
+      return unless (Graphics.frame_count % POOL_FRAMES).zero? && defined?(MGQ_MpRaidPool) && MGQ_MpRaidPool.fight
+
+      MGQ_MpRaidPool.read_state
     end
 
     # Waits out the rest of a frame's time while a battle is hosted.

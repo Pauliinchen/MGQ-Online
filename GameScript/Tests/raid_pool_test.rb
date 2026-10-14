@@ -2,6 +2,7 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Checked the pools a starter hands the battle server and the server fights
 #      Paulinchen  2026-10-12: Checked the level caps of the milestones a story beat
 #                            - Checked a pool emptied while a live battle's host waits for commands
 #      Paulinchen  2026-10-11: Checked a boss outside the Level Cap milestones and the Vampire Castle's Carmilla and Elizabeth
@@ -1035,3 +1036,28 @@ pools["Other"] = :nothing
 check("as a copy, so a reader changes nothing", pool.pools.keys, ["Queen Harpy"])
 check("the share left now, a troop's label and a pool's boss key stay readable from outside",
       [pool.left_now(pools["Queen Harpy"]), pool.troop_label(71), pool.boss_key("Metatronne and Sandalphone#1")], [0.4, "Queen Harpy", "Metatronne and Sandalphone"])
+
+# The battle server: the starter hands it the battle's fight and pools, and it fights them as host.
+reset
+push("Queen Harpy", "0.5", "6000")
+start([[:battle, 71], [:mark, :after]])
+fields = pool.served_fields
+check("the starter hands the battle server how many enemies fight, whether it is a side battle, and the pools as it knows them",
+      [fields[0], fields[1], fields[2].map { |key, left, max, defeated, by| [key, left.to_f, max, defeated, by] }], [1, 0, [["Queen Harpy", 0.5, 6000, 0, ""]]])
+BattleManager.battle_end(1)
+check("a battle that fights no pool hands it nothing", pool.served_fields, nil)
+reset
+BattleManager.setup(71)
+check("on the server, a battle no event started fights no pool by itself", pool.fight, nil)
+pool.serve_fight(71, fields)
+check("the server fights the starter's pools as host, its enemy at the pool's HP",
+      [pool.fight.key, pool.fight.guest, enemy.mhp, enemy.hp], ["Queen Harpy", false, 6000, 3000])
+$scene.start_party_command_selection
+enemy.hp = 2400
+next_turn
+check("and reports what the battle dealt", reports.map { |key, _battle, text| [key, text] }, [["Queen Harpy", "1\t0.1000000000\t6000\t0"]])
+BattleManager.battle_end(1)
+reset
+BattleManager.setup(71)
+pool.serve_fight(71, ["1", 0, []])
+check("a count that is no number fights no pool", pool.fight, nil)

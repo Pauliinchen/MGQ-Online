@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-15: Started co-op battles on the battle server and carried their channels
+//                            - Counted the battle server's boss reports and told it every change of its world's pools
 //      Paulinchen  2026-10-14: Left what a game names in X-MGQ-Features out of its directory requests
 //      Paulinchen  2026-10-13: Told every game of a Classic world whether it fights raid bosses
 //                            - Told every game of a Raid World its new squad settings
@@ -52,7 +53,7 @@ import net from "node:net";
 import { pathToFileURL } from "node:url";
 import { WebSocketServer } from "ws";
 import {
-  BATTLE_END, BATTLE_LIMITS, BATTLE_REFUSAL, BattleTable, EVERY_PLAYER, SERVER_SEAT, battleClosedText, battleRouteOf, battleSeatText, messageLine,
+  BATTLE_END, BATTLE_LIMITS, BATTLE_REFUSAL, BattleTable, EVERY_PLAYER, SERVER_SEAT, battleClosedText, battleRouteOf, battleSeatText, bossLine, messageLine,
   playerMessage, presenceLine, readOpen, readServerLine, serveLine, serverFrame,
 } from "../core/battles.js";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
@@ -782,7 +783,10 @@ export function createRelay({
       }
 
       battles.open(route.id, open.battle, players, access.player);
-      battleLinks.set(`${route.id}/${open.battle}`, { world: route.id, battle: open.battle, server: served.socket, players: new Map() });
+      battleLinks.set(`${route.id}/${open.battle}`, {
+        world: route.id, battle: open.battle, server: served.socket, players: new Map(),
+        starter: access.player, starterName: access.name ?? null, raid: access.type === WORLD_TYPE.raid,
+      });
       log.info(`${new Date().toISOString()} battle ${open.battle} of world ${route.id} on the battle server for ${players.size} players`);
       return { status: 201, body: { battle: open.battle, seat: SERVER_SEAT } };
     });
@@ -833,6 +837,8 @@ export function createRelay({
             }
           } else if (line?.op === "send") {
             deliverBattle(world, battle, line.seat, line.payload);
+          } else if (line?.op === "boss_report") {
+            reportServedBoss(world, battle, line).catch((error) => log.error(errorLine(new Date(), `boss report of battle ${battle}`, error)));
           } else if (line?.op === "end") {
             log.info(`${new Date().toISOString()} battle ${battle} of world ${world} ended: ${line.result}`);
             endBattle(world, battle, BATTLE_END.ended);
@@ -985,6 +991,55 @@ export function createRelay({
   }
 
   /**
+   * Counts the battle server's report against a Raid World's boss pool, as the battle's starter
+   * reports it, answers the server with the pool, and tells every game and every server battle of
+   * the world once it changed.
+   *
+   * @param {string} world The world.
+   * @param {string} battle The battle's id.
+   * @param {{key: string, report: object}} line The report, see readServerLine.
+   * @returns {Promise<void>} Completes once answered.
+   */
+  async function reportServedBoss(world, battle, line) {
+    const link = battleLinks.get(`${world}/${battle}`);
+
+    if (!link) {
+      return;
+    }
+
+    if (!link.raid) {
+      link.server.write(`${bossLine(line.key, null, true)}\n`);
+      return;
+    }
+
+    const answer = await bossesOf(world).report(link.starter, line.key, line.report, link.starterName);
+    await tidyDeleted(world);
+    link.server.write(`${bossLine(line.key, answer.status === 200 ? answer.body.boss : null, true)}\n`);
+
+    if (answer.boss) {
+      tellBosses(world, answer.boss, link);
+    }
+  }
+
+  /**
+   * Tells every game of a world, and the battle server of each of its server battles, that a boss
+   * pool changed.
+   *
+   * @param {string} world The world.
+   * @param {{key: string, left: number, max: number, defeated: boolean}} boss The pool.
+   * @param {object | null} [reporter] The server battle whose report changed it, which its answer told already.
+   */
+  function tellBosses(world, boss, reporter = null) {
+    tellWorld(world, bossText(boss.key, boss.left, boss.max, boss.defeated));
+
+    for (const link of battleLinks.values()) {
+      if (link.world === world && link.raid && link !== reporter) {
+        link.server.write(`${bossLine(boss.key, boss, false)}\n`);
+      }
+    }
+  }
+
+  /**
    * Ends the battles no player came onto and those that lasted too long.
    */
   function sweepBattles() {
@@ -1045,7 +1100,7 @@ export function createRelay({
     await tidyDeleted(route.id);
 
     if (answer.boss) {
-      tellWorld(route.id, bossText(answer.boss.key, answer.boss.left, answer.boss.max, answer.boss.defeated));
+      tellBosses(route.id, answer.boss);
     }
 
     return answer;
@@ -1070,7 +1125,7 @@ export function createRelay({
     }
 
     if (answer.boss) {
-      tellWorld(route.id, bossText(answer.boss.key, answer.boss.left, answer.boss.max, answer.boss.defeated));
+      tellBosses(route.id, answer.boss);
     }
 
     return answer;

@@ -2,6 +2,8 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Handed the battle server the pools of a battle it hosts and fought them there
+#                            - Told the boss battle a served battle's starter fights for side battles
 #      Paulinchen  2026-10-12: Listed the level caps of the milestones a story beat
 #                            - Left a victory during a live battle's wait for commands to the wait
 #      Paulinchen  2026-10-11: Told the newly counted raid bosses beaten by what their events set
@@ -1036,17 +1038,61 @@ module MGQ_MpRaidPool
     @invited = own =~ /\A[1-9]\d?\z/ ? [message["troop"].to_i, own.to_i, message["side"].to_s == "1"] : nil
   end
 
+  # Writes what the battle server needs to fight the battle's pools as the player's game would: how
+  # many enemies the troop's setup made, whether it is a side battle, and each of its pools as the
+  # player's game knows them. Called by MGQ_MpBattlesServed.setup_text.
+  #
+  # @return [Array, nil] The count, 1 or 0 for a side battle, and each pool's key, share left now
+  #   (as text), max, 1 or 0 for defeated and who emptied it; nil for a battle that fights no pool.
+  def self.served_fields
+    fight = @fight
+    return nil unless fight
+
+    now = Time.now
+    pools = fight.members.map(&:key).select { |key| @pools[key] }.map do |key|
+      pool = @pools[key]
+      [key, format("%.10f", left_now(pool, now)), pool.max.to_i, pool.defeated ? 1 : 0, pool.by.to_s]
+    end
+    [fight.own, fight.side ? 1 : 0, pools]
+  rescue => e
+    log("writing the pools for the battle server failed: #{e.class}: #{e.message}")
+    nil
+  end
+
+  # As the battle server, fights the pools of a battle the starter handed over, as its host: the
+  # pools as the starter's game knew them, then the battle's own enemies with their tier's stats
+  # and the pools' HP. Called by MGQ_MpBattlesServed.host after BattleManager.setup.
+  #
+  # @param troop [Integer] The troop.
+  # @param fields [Array] The starter's fields, see served_fields.
+  def self.serve_fight(troop, fields)
+    own, side, pools = Array(fields)
+    return log("troop #{troop} fights no pool on the server: the starter's count #{own.inspect} is none") unless own.is_a?(Integer) && own > 0 && own < 100
+
+    now = Time.now
+    Array(pools).each do |key, left, max, defeated, by|
+      next unless key.is_a?(String) && !key.empty? && key.size <= MAX_KEY_LENGTH + 4
+
+      @pools[key] = Pool.new(share_of(left.to_s, defeated == 1), integer(max) || 0, defeated == 1, by.to_s.empty? ? nil : by.to_s, now)
+    end
+    start(troop, own, :served, side == 1)
+  rescue => e
+    @fight = nil
+    log("fighting the starter's pools failed: #{e.class}: #{e.message}")
+  end
+
   # The field this script adds to the state the player's game tells the others: in a Raid World
-  # STATE_FIELD, the troop and the enemy rates of the boss battle the player fights as its host or
-  # alone while its pools are not all empty, such as "71;100,100,0", which a side battle fights, else
-  # empty.
+  # STATE_FIELD, the troop and the enemy rates of the boss battle the player fights as its host, as
+  # the starter of one the battle server hosts, or alone while its pools are not all empty, such as
+  # "71;100,100,0", which a side battle fights, else empty.
   #
   # @return [Hash] The field, none in a Classic world.
   def self.state_fields
     return {} unless MGQ_MpCoop::Scope.raid?
 
     fight = @fight
-    open = fight && reporter? && SceneManager.scene.is_a?(Scene_Battle) && !defeated?(fight.troop)
+    starter = defined?(MGQ_MpBattlesServed) && MGQ_MpBattlesServed.starter?
+    open = fight && (reporter? || starter) && SceneManager.scene.is_a?(Scene_Battle) && !defeated?(fight.troop)
     { STATE_FIELD => open ? "#{fight.troop};#{MGQ_MpBattlesCoop.rates_text}" : "" }
   rescue => e
     log_once(:state_fields, "telling the boss battle failed: #{e.class}: #{e.message}")

@@ -2,7 +2,8 @@
 //  battles.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-15: Created
+//      Paulinchen  2026-10-15: Covered the battle server's boss reports and the pool changes it hears of
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -141,14 +142,15 @@ function playerKey(number) {
  * Makes a world in the relay's directory.
  *
  * @param {string} world The world's id.
+ * @param {object} [fields] More of the world, such as its type.
  */
-async function makeWorld(world) {
+async function makeWorld(world, fields = {}) {
   const response = await fetch(httpBase, {
     method: "POST",
     headers: GAME,
     body: JSON.stringify({
       id: world, name: `World ${world.slice(-3)}`, seats: 8, player: CREATOR, playerName: "Creator", authHash: await sha256Hex(AUTH),
-      lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) },
+      lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, ...fields,
     }),
   });
   assert.equal(response.status, 201);
@@ -225,6 +227,23 @@ function channel(world, battle, player) {
  */
 function nextLine(connection) {
   return connection.lines.length > 0 ? Promise.resolve(connection.lines.shift()) : new Promise((resolve) => connection.waiting.push(resolve));
+}
+
+/**
+ * Takes text frames from a connection until one starts as asked.
+ *
+ * @param {object} connection The connection, see open.
+ * @param {string} start How the frame starts.
+ * @returns {Promise<string>} The frame.
+ */
+async function nextText(connection, start) {
+  for (;;) {
+    const frame = await connection.next();
+
+    if (typeof frame === "string" && frame.startsWith(start)) {
+      return frame;
+    }
+  }
 }
 
 /**
@@ -350,5 +369,47 @@ test("a battle no player came onto ends, and the battle server hears of it", asy
   relay.sweepBattles();
   assert.deepEqual(await nextLine(server), { op: "close" });
   assert.equal(relay.battles.get(world, "d5"), null);
+  player.connection.socket.close();
+});
+
+test("the battle server reports a Raid World's boss pool as the starter, and hears of every change to its world's pools", async () => {
+  serverAnswers = "serving";
+  const world = worldId(7);
+  await makeWorld(world, { type: "raid" });
+  const first = await sit(world, 1);
+  const second = await sit(world, 2);
+  assert.equal((await startBattle(httpBase, world, 1, { battle: "e6", seats: [first.seat, second.seat], setup: SETUP })).status, 201);
+  const server = served.at(-1);
+  await nextLine(server);
+
+  server.send({ op: "boss_report", key: "Alma Elma", battle: "rp1", seq: 1, delta: 0.25, max: 90000, killed: false });
+  assert.deepEqual(await nextLine(server), { op: "boss", key: "Alma Elma", left: 0.75, max: 90000, defeated: false, by: "", answer: true });
+  assert.equal(await nextText(first.connection, "boss "), "boss 0.75 90000 0 Alma Elma");
+
+  const response = await fetch(`${httpBase}/${world}/bosses/Alma%20Elma/report`, {
+    method: "POST", headers: { ...GAME, [PLAYER_HEADER]: playerKey(2), [AUTH_HEADER]: AUTH },
+    body: JSON.stringify({ battle: "rp2", seq: 1, delta: 0.75, max: 90000, killed: true }),
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await nextLine(server), { op: "boss", key: "Alma Elma", left: 0, max: 90000, defeated: true, by: "", answer: false });
+
+  server.send({ op: "boss_report", key: "", battle: "rp1", seq: 2, delta: 0.1, max: 90000, killed: false });
+  assert.deepEqual(await nextLine(server), { op: "boss", key: "", answer: true });
+  server.send({ op: "end", result: "victory" });
+  first.connection.socket.close();
+  second.connection.socket.close();
+});
+
+test("a Classic world's battle server reports no boss pool", async () => {
+  serverAnswers = "serving";
+  const world = worldId(8);
+  await makeWorld(world);
+  const player = await sit(world, 1);
+  assert.equal((await startBattle(httpBase, world, 1, { battle: "f7", seats: [player.seat], setup: SETUP })).status, 201);
+  const server = served.at(-1);
+  await nextLine(server);
+  server.send({ op: "boss_report", key: "Alma Elma", battle: "rp1", seq: 1, delta: 0.25, max: 90000, killed: false });
+  assert.deepEqual(await nextLine(server), { op: "boss", key: "Alma Elma", answer: true });
+  server.send({ op: "end", result: "victory" });
   player.connection.socket.close();
 });
