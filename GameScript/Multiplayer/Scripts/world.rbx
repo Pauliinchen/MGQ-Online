@@ -2,7 +2,8 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-13: Added a Raid World's squad rules to the forms, the list and world.ini
+#      Paulinchen  2026-10-13: Wrote the game data's fingerprint to GameData.ini at each start for the World Admin tool
+#                            - Added a Raid World's squad rules to the forms, the list and world.ini
 #                            - Set a Raid World's squad rules in a form of their own behind a button
 #      Paulinchen  2026-10-12: Read the title screen's commands through MGQ_MpGame
 #                            - Kept the favourites and the added hidden worlds in Player.ini, moving the old files into it
@@ -940,7 +941,12 @@ module MGQ_MpWorld
     # Most parts a text names before it counts the rest.
     NAMED_PARTS = 4
 
-    # Writes the fingerprint of this game's data, once per session.
+    # The file in the mod folder the fingerprint is written to at each start, from which the World
+    # Admin tool reads an installation's game data: its "fingerprint" and when it was "written", in
+    # seconds since 1970.
+    FILE = "#{MGQ_Multiplayer::MOD_DIR}\\GameData.ini"
+
+    # Finds the fingerprint of this game's data, once per session.
     #
     # It reads whether an entry has a name, never the name itself, so a translated game matches
     # the untranslated one as long as both name the same entries.
@@ -955,6 +961,20 @@ module MGQ_MpWorld
     rescue => e
       MGQ_MpWorld.log_once(:fingerprint, "reading the game data failed: #{e.class}: #{e.message}")
       ""
+    end
+
+    # Writes the fingerprint to FILE, once per session, as the title screen first opens, after the
+    # mods changed the game's data.
+    def self.write_file
+      return if @written
+
+      @written = true
+      text = fingerprint
+      return if text.empty?
+
+      MGQ_Multiplayer::Ini.write(FILE, "fingerprint" => text, "written" => Time.now.to_i)
+    rescue => e
+      MGQ_MpWorld.log("writing #{FILE} failed: #{e.class}: #{e.message}")
     end
 
     # Lists the ids that exist of each part.
@@ -2640,6 +2660,9 @@ end
 begin
   # Before the title screen starts, a world the game came back from closes.
   MGQ_MpHooks.before(Scene_Title, :start, "world") { MGQ_MpWorld.on_title_start }
+
+  # As the title screen first opens, the game data for the World Admin tool.
+  MGQ_MpHooks.after(Scene_Title, :start, "world") { MGQ_MpWorld::GameData.write_file }
 
   # After the title screen's update, a new game starts in a world the world screen opened, and the
   # update offer takes the buttons.

@@ -2,7 +2,8 @@
 #  world_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-13: Checked a Raid World's squad rules in the forms, their fit, the calls and the edit's message
+#      Paulinchen  2026-10-13: Checked GameData.ini, written once per session as the title screen opens
+#                            - Checked a Raid World's squad rules in the forms, their fit, the calls and the edit's message
 #                            - Checked opening the form of the squad rules and going back from it
 #      Paulinchen  2026-10-12: Checked the description broken over several lines on the text screen
 #                            - Checked the list box and a typed description scrolled with the mouse wheel
@@ -298,6 +299,38 @@ check("or past as many as asked", MGQ_MpWorld::GameData.text(%w[actors classes s
 check("many parts are counted past the first four", MGQ_MpWorld::GameData.text(%w[actors classes skills items weapons armors]), "actors, classes, skills, items and 2 more")
 check("few are all named", MGQ_MpWorld::GameData.text(%w[skills maps]), "skills, maps")
 modded = MGQ_MpWorld::GameData.fingerprint
+
+# GameData.ini, which the title screen writes once per session for the World Admin tool.
+written = []
+MGQ_Multiplayer::Ini.define_singleton_method(:write) { |path, values| written << [path, values]; true }
+first = Time.now.to_i
+Scene_Title.new.start
+check("the title screen writes the fingerprint and when to GameData.ini in the mod folder",
+      [written.map { |path, values| [path, values.keys, values["fingerprint"]] }, written.map { |_path, values| values["written"].between?(first, Time.now.to_i) }],
+      [[[MGQ_Multiplayer::MOD_DIR + "\\GameData.ini", ["fingerprint", "written"], modded]], [true]])
+Scene_Title.new.start
+check("once per session", written.size, 1)
+MGQ_MpWorld::GameData.instance_variable_set(:@written, nil)
+MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
+readable_maps = $data_mapinfos
+$data_mapinfos = nil
+lines = logged_lines { MGQ_MpWorld::GameData.write_file }
+check("a game whose data cannot be read writes nothing and logs why",
+      [written.size, lines.any? { |line| line.include?("reading the game data failed") }], [1, true])
+$data_mapinfos = readable_maps
+MGQ_MpWorld::GameData.instance_variable_set(:@written, nil)
+MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
+MGQ_Multiplayer::Ini.define_singleton_method(:write) { |_path, _values| raise IOError, "disk full" }
+raised = nil
+begin
+  lines = logged_lines { MGQ_MpWorld::GameData.write_file }
+rescue => e
+  raised = e
+end
+check("a write that fails raises nothing and only logs, naming the file and the error",
+      [raised, lines.any? { |line| line.include?("writing #{MGQ_MpWorld::GameData::FILE} failed: IOError: disk full") }], [nil, true])
+MGQ_Multiplayer::Ini.singleton_class.send(:remove_method, :write)
+MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
 
 # The form, as a release shows it.
 MGQ_MpWorld.instance_variable_set(:@dev_build, false)

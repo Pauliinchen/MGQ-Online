@@ -2,6 +2,7 @@
 #  world_mods_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Kept the title screen from writing GameData.ini
 #      Paulinchen  2026-10-12: Followed the settings to their own Mod Config group and checked the dump leaves the hotkeys out
 #                            - Stood in for Ini.load and the favourites and hidden worlds in Player.ini
 #      Paulinchen  2026-10-11: Stood in for the game's frame
@@ -281,6 +282,8 @@ load_script "world_mods"
 load_script "world_mods_parking"
 load_script "world_text"
 load_script "world_screen"
+# GameData.ini, which the title screen writes, is world_data_test.rb's; this game has no database to read.
+MGQ_MpWorld::GameData.instance_variable_set(:@written, true)
 
 # A small window of the world screen: keeps the commands it opened with.
 class FakeChoice

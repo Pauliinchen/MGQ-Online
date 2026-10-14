@@ -2,6 +2,7 @@
 #  support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-13: Named the mod folder as Multiplayer.rb does
 #      Paulinchen  2026-10-12: Collected the log lines a block writes
 #      Paulinchen  2026-10-08: Stood in for watching keys
 #      Paulinchen  2026-10-07: Read each DLL export's signature from the table in Multiplayer.rb
@@ -28,6 +29,9 @@ SCRIPTS_DIR = File.expand_path("../Multiplayer/Scripts", __dir__)
 # The keys Multiplayer.rb reads from Windows, which ui.rbx watches as it loads; a test that reads keys
 # stands in for the rest.
 module MGQ_Multiplayer; module Key; def self.watch(*_codes); end; end; end
+
+# The mod folder as Multiplayer.rb names it, which the scripts build their files' paths on.
+module MGQ_Multiplayer; MOD_DIR = "Patch\\Multiplayer"; end
 
 # Counts a test file's checks and reports them once the file ends.
 module Checks
