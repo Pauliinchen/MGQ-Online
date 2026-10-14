@@ -2,6 +2,7 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-14: Checked that a return point left at Adramelech moves on with the story
 #      Paulinchen  2026-10-13: Checked that a Makina comes and shows only once a player of the world got or held it
 #                            - Checked that a join the story takes back in the same step counts nowhere in the catch-up
 #      Paulinchen  2026-10-12: Checked that story and quest classes and races reach the roster
@@ -995,6 +996,8 @@ told_on_route[1001] = 40
 told_on_route[1141] = 70
 check("a world's story on another route sets none of its return points",
       settled.call({ 1001 => 40, 1142 => 1, 1002 => 112 }, [7096], [[], told_on_route, {}]), 112)
+check("a return point left at Adramelech moves on to Part 2's once the story is past him",
+      [settled.call({ 1001 => 19, 1032 => 7, 1002 => 19 }, []), settled.call({ 1001 => 17, 1032 => 7, 1002 => 19 }, [])], [2, 19])
 
 # A player behind keeps the return point of their own part.
 new_game({ 1001 => 7, 1002 => 2 }, [], 12)
