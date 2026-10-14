@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-14: Left what a game names in X-MGQ-Features out of its directory requests
 //      Paulinchen  2026-10-13: Told every game of a Classic world whether it fights raid bosses
 //                            - Told every game of a Raid World its new squad settings
 //      Paulinchen  2026-10-12: Watched the mod's own releases and told every world with players online of a new one
@@ -603,7 +604,7 @@ export function createRelay({
       return;
     }
 
-    const client = { player: headerOf(request, PLAYER_HEADER), auth: headerOf(request, AUTH_HEADER), address: addressOf(request), features: parseFeatures(headerOf(request, FEATURES_HEADER)) };
+    const client = { player: headerOf(request, PLAYER_HEADER), auth: headerOf(request, AUTH_HEADER), address: addressOf(request) };
     const answer = trading
       ? await handleTradeRequest(trades, request.method, url, () => readText(request), client.player)
       : catalog

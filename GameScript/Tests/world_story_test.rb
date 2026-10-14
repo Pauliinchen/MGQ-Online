@@ -1135,7 +1135,7 @@ MGQ_MpWorld.world = nil
 frames(1)
 check("closing the world forgets its story", [story.mode, story.world, story.endpoint], [nil, nil, nil])
 
-# A Raid World started from a shared save, as a development build makes one: its first game brings
+# A Raid World started from a shared save: its first game brings
 # the save's story, in Part 2, which the relay's empty story never takes back to the beginning.
 $calls.clear
 $notices.clear

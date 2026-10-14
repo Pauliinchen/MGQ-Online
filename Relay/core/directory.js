@@ -2,6 +2,7 @@
 //  directory.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-14: Let every game give a Raid World a starting save
 //      Paulinchen  2026-10-13: Kept a Classic world's raid bosses and told a world room after an edit that changed them
 //                            - Kept a Raid World's squad settings and told a world room after an edit that changed them
 //      Paulinchen  2026-10-12: Said the relay's update notice in the chat of every world with players online
@@ -296,18 +297,17 @@ export class Directory {
    *
    * @param {object} request The world: id, name, seats, the creator's player key and name, the hash of the auth key, the lock, whether a starting save follows, whether it is hidden from the list, whether each new player chooses where to start, whether it has no password, whether it is featured, its description, the mods it needs, the creator's game data, whether only games with the same data may enter, the hashes of its required mods outside the catalog, its mod settings, its type, how a Raid World shares companions, its difficulty, its squad settings, whether a Classic world fights raid bosses and whether it turns other mods off.
    * @param {string | null} [address] The asking game's address, whose worlds a rate limit counts; null for none.
-   * @param {string[]} [features] What the game names in FEATURES_HEADER; a development build's FEATURE.dev lets it give a Raid World a starting save.
    * @returns {Promise<{status: number, body: object}>} The world's id, or why it was refused.
    */
-  async create(request, address = null, features = []) {
+  async create(request, address = null) {
     const refusal = this.checkNewWorld(request);
 
     if (refusal) {
       return badRequest(refusal);
     }
 
-    if (request.type === WORLD_TYPE.raid && (request.choose === true || (request.start === true && !features.includes(FEATURE.dev)))) {
-      return { status: 400, body: { error: "a Raid World starts from the beginning: it takes no player's choice, and a starting save only from a development build", code: REFUSAL.raidStart } };
+    if (request.type === WORLD_TYPE.raid && request.choose === true) {
+      return { status: 400, body: { error: "a Raid World takes no player's choice: every new player starts from the beginning or from its starting save", code: REFUSAL.raidStart } };
     }
 
     // Worked out before the worlds are read, since the digest lets another create in on Node.
@@ -620,18 +620,13 @@ export class Directory {
    * @param {unknown} key The asking player's key.
    * @param {Uint8Array | null} bytes The starting save, encrypted by the creator's game; null when it was too large to read.
    * @param {string | null} [address] The asking game's address, whose uploads a rate limit counts; null for none.
-   * @param {string[]} [features] What the game names in FEATURES_HEADER; a development build's FEATURE.dev lets it upload a Raid World's starting save.
    * @returns {Promise<{status: number, body: object}>} The answer.
    */
-  async putStart(id, key, bytes, address = null, features = []) {
+  async putStart(id, key, bytes, address = null) {
     const { entry, refusal } = await this.asCreator(id, key);
 
     if (refusal) {
       return refusal;
-    }
-
-    if (entry.type === WORLD_TYPE.raid && !features.includes(FEATURE.dev)) {
-      return { status: 400, body: { error: "a Raid World starts from the beginning: it takes a starting save only from a development build", code: REFUSAL.raidStart } };
     }
 
     if (entry.start !== START.pending) {
@@ -1200,14 +1195,13 @@ function cleanSettings(text) {
  * @param {URL} url The request's address.
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {(limit: number) => Promise<Uint8Array | null>} readBytes Reads the request's body as bytes, null when it is longer than the limit.
- * @param {{player?: string | null, auth?: string | null, address?: string | null, features?: string[]}} [client] The PLAYER_HEADER and AUTH_HEADER of the request, which win over the key and auth key in its body or address, the address it came from and what it names in FEATURES_HEADER, see parseFeatures.
+ * @param {{player?: string | null, auth?: string | null, address?: string | null}} [client] The PLAYER_HEADER and AUTH_HEADER of the request, which win over the key and auth key in its body or address, and the address it came from.
  * @returns {Promise<{status: number, body: object, bytes?: Uint8Array | ReadableStream<Uint8Array>, close?: boolean, kick?: string, difficulty?: number, squad?: object, raidBosses?: boolean, modsRule?: {off: boolean, mods: string}, id?: string}>} The answer, sent as the bytes when there are any, and what the platform layer must do beyond it for the world with that id.
  */
 export async function handleDirectoryRequest(directory, method, url, readBody, readBytes, client = {}) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);
   const header = client.player || null;
   const address = client.address ?? null;
-  const features = Array.isArray(client.features) ? client.features : [];
   const fromQuery = () => header ?? url.searchParams.get("player");
   const fromBody = (body) => header ?? body?.player;
   const authOf = () => client.auth || url.searchParams.get("auth");
@@ -1222,7 +1216,7 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   }
 
   if (parts.length === 2 && method === "POST") {
-    return json((body) => directory.create(body && typeof body === "object" && header ? { ...body, player: header } : body, address, features));
+    return json((body) => directory.create(body && typeof body === "object" && header ? { ...body, player: header } : body, address));
   }
 
   if (parts.length === 4 && parts[3] === "lock" && method === "GET") {
@@ -1242,7 +1236,7 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   }
 
   if (parts.length === 4 && parts[3] === "start" && method === "POST") {
-    return directory.putStart(parts[2], fromQuery(), await readBytes(directory.limits.maxStartBytes), address, features);
+    return directory.putStart(parts[2], fromQuery(), await readBytes(directory.limits.maxStartBytes), address);
   }
 
   if (parts.length === 4 && parts[3] === "start" && method === "GET") {

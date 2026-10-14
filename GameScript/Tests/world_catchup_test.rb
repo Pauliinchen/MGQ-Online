@@ -1225,7 +1225,7 @@ relay({ "rev" => 43, "wrev" => 43, "p" => 25, "part" => "2" }, packed({ 1001 => 
 frames(40)
 check("also for a player behind without a checkpoint", [story.mode, $game_variables[1001], $game_self_switches[[40, 4, "A"]]], [:world, 25, true])
 
-# A Raid World started from a shared save, as a development build makes one: what the save's own
+# A Raid World started from a shared save: what the save's own
 # story played is the player's, so its rows give nothing, take no companion and hold nothing back,
 # whether the world's story starts from the save or is laid over it.
 tables(:REWARDS => [reward.new(:i, 600, 2, "map:36:17:1", "1", 6, nil, [[:v, 1001, 6]])],

@@ -134,11 +134,8 @@ internal static unsafe partial class Exports
     }
 
     /// <summary>
-    /// Tells whether this DLL is a development build, which may give a Raid World a starting save.
+    /// Tells whether this DLL is a development build, which a bug report names.
     /// </summary>
-    /// <remarks>
-    /// Only for testing: a release must never offer it, see the Raid World's starting save in docs/DEVELOPER.md.
-    /// </remarks>
     /// <returns>1 for a development build, 0 for a release.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_dev_build", CallConvs = [typeof(CallConvStdcall)])]
     public static int DevBuild()

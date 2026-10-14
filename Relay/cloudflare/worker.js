@@ -2,6 +2,7 @@
 //  worker.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-14: Left what a game names in X-MGQ-Features out of its directory requests
 //      Paulinchen  2026-10-13: Told every game of a Classic world whether it fights raid bosses
 //                            - Told every game of a Raid World its new squad settings
 //      Paulinchen  2026-10-12: Watched the mod's own releases and told every world with players online of a new one
@@ -738,7 +739,7 @@ export class Directory extends DurableObject {
    * @returns {Promise<{status: number, body: object, bytes?: ReadableStream<Uint8Array>, close?: boolean, kick?: string, say?: object, difficulty?: number, squad?: object, raidBosses?: boolean, modsRule?: object, id?: string}>} The directory's answer, see handleDirectoryRequest.
    */
   answerDirectory(request, url) {
-    const client = { player: request.headers.get(PLAYER_HEADER), auth: request.headers.get(AUTH_HEADER), address: request.headers.get(ADDRESS_HEADER), features: parseFeatures(request.headers.get(FEATURES_HEADER)) };
+    const client = { player: request.headers.get(PLAYER_HEADER), auth: request.headers.get(AUTH_HEADER), address: request.headers.get(ADDRESS_HEADER) };
     return handleDirectoryRequest(this.directory, request.method, url, () => readText(request), (limit) => readBytes(request, limit), client);
   }
 }

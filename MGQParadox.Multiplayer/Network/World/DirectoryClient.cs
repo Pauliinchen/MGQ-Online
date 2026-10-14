@@ -2,6 +2,7 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-14: Dropped the dev feature, as every game may give a Raid World a starting save
 //      Paulinchen  2026-10-13: Made and changed a Classic world with its raid bosses, and read them from the list
 //                            - Made and changed a Raid World with its squad settings, and read them from the list
 //      Paulinchen  2026-10-12: Named the version of this game in the X-MGQ-Version header of every request
@@ -84,17 +85,9 @@ internal sealed partial class DirectoryClient
     public const string VersionHeader = "X-MGQ-Version";
 
     /// <summary>
-    /// The feature a development build names besides Raid Worlds, which the relay lets give a Raid World a starting save.
-    /// </summary>
-    /// <remarks>
-    /// Only for testing; it goes before a release, see the Raid World's starting save in docs/DEVELOPER.md.
-    /// </remarks>
-    public const string DevFeature = "dev";
-
-    /// <summary>
     /// What this game names in <see cref="FeaturesHeader"/>, separated by commas.
     /// </summary>
-    public static string Features { get; } = FeaturesOf(UpdateCheck.DevelopmentBuild);
+    public const string Features = WorldType.Raid;
 
     /// <summary>
     /// How many outcomes last logged are kept; once full they are forgotten, which only has a repeated request log once more.
@@ -768,13 +761,6 @@ internal sealed partial class DirectoryClient
             throw new DirectoryException(response.StatusCode, "The relay's answer is no JSON.");
         }
     }
-
-    /// <summary>
-    /// Tells what a game names in <see cref="FeaturesHeader"/>.
-    /// </summary>
-    /// <param name="developmentBuild">Whether the game runs a development build.</param>
-    /// <returns>Raid Worlds, and <see cref="DevFeature"/> for a development build.</returns>
-    internal static string FeaturesOf(bool developmentBuild) => developmentBuild ? $"{WorldType.Raid},{DevFeature}" : WorldType.Raid;
 
     /// <summary>
     /// Sends a request and logs how it went.

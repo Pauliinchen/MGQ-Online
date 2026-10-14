@@ -2,6 +2,7 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-14: Gave a Raid World a shared save in every build, ticked as for a Classic world
 #      Paulinchen  2026-10-13: Wrote the game data's fingerprint to GameData.ini at each start for the World Admin tool
 #                            - Added a Classic world's raid bosses to the forms, the list and world.ini
 #                            - Added a Raid World's squad rules to the forms, the list and world.ini
@@ -168,9 +169,9 @@ module MGQ_MpWorld
   # Lines of the description the create form shows at once.
   DESCRIPTION_LINES = 4
 
-  # Lines of the description the create form shows at once for a development build's Raid World,
-  # whose shared save takes the row the button of the squad rules shares otherwise.
-  DEV_RAID_DESCRIPTION_LINES = 2
+  # Lines of the description the create form shows at once for a Raid World, whose shared save takes
+  # a row of its own.
+  RAID_DESCRIPTION_LINES = 2
 
   # A world's id, which joins a hidden world.
   WORLD_ID = /\A[0-9a-f]{32}\z/
@@ -276,10 +277,7 @@ module MGQ_MpWorld
     @world
   end
 
-  # Tells whether the DLL is a development build, which alone may give a Raid World a shared save.
-  #
-  # TODO: only for testing; it goes before a release with the Raid World's starting save, see
-  # docs/DEVELOPER.md.
+  # Tells whether the DLL is a development build, which a bug report names.
   #
   # @return [Boolean] Whether it is; false when the DLL cannot tell.
   def self.dev_build?
@@ -1190,7 +1188,7 @@ module MGQ_MpWorld
     #   :type (one of TYPES, CLASSIC when left out), :share (one of SHARING, "off" when left out), :difficulty (one of DIFFICULTIES, NORMAL when left out),
     #   :squad (the squad rules, see MGQ_MpWorld.squad, DEFAULT_SQUAD when left out), :raid_bosses (whether a Classic world fights raid bosses, false when left out) and
     #   :other_mods_off (whether it turns off every mod it does not name, by its type when left out) apply;
-    #   a Raid World starts from the beginning, so it takes no player's choice, and a starting save only in a development build.
+    #   a Raid World takes no player's choice, but may take a starting save.
     # @return [Boolean] Whether the action started.
     def self.create(name, password, seats, hidden, choose, start, about = {})
       MGQ_Multiplayer::Player.share
@@ -1202,7 +1200,6 @@ module MGQ_MpWorld
       raid_bosses = !raid && about[:raid_bosses] ? true : false
       other_mods_off = about[:other_mods_off].nil? ? raid : about[:other_mods_off]
       choose = false if raid
-      start = "" if raid && !MGQ_MpWorld.dev_build?
       sent = MGQ_Multiplayer::Link.function('mp_dir_create').call(name + "\0", password + "\0", seats, hidden ? 1 : 0, choose ? 1 : 0, start + "\0",
                                                                                   about[:description].to_s + "\0", about[:mods].to_s + "\0", about[:data].to_s + "\0", about[:strict] ? 1 : 0,
                                                                                   about[:mod_hashes].to_s + "\0", about[:settings].to_s + "\0", type + "\0", share + "\0", difficulty,
@@ -2086,8 +2083,8 @@ module MGQ_MpWorld
     # The outcomes of the Frontline's switches, one per FRONTS.
     FRONT_NAMES = FRONTS.map { |value| value.to_s }
 
-    # What the lines at the top say on a Raid World's Save, which only a development build offers.
-    RAID_SAVE_HINT = "Dev build only: new players start from this save. Leave the save screen without one for none."
+    # What the lines at the top say on a Raid World's Shared save.
+    RAID_SAVE_HINT = "New players start from one of your saves, the world's story from its point. Fixed once created."
 
     # A field of a form: a text box (:text, :password, :number or :id), a box of several lines (:area), a checkbox (:check), a save
     # to choose (:save), the mods picked in the mod picker (:mods), a switch between several outcomes (:switch) or a button
@@ -2225,24 +2222,24 @@ module MGQ_MpWorld
         Field.new(:save, :save, "Save", 4, "The save every new player starts from.", :side => :left, :group => "World", :label_width => RAID_SAVE_LABEL_WIDTH,
                   :needs => lambda { |form| form.from_save? }, :shows => lambda { |form| form.type == CLASSIC }),
         Field.new(:raid_bosses, :check, "Raid Bosses", 4, RAID_BOSSES_HINT, :side => :right, :group => "World", :shows => lambda { |form| form.type == CLASSIC }),
-        Field.new(:difficulty, :switch, "Difficulty", 4, DIFFICULTY_HINT, :side => :left, :group => "World", :choices => DIFFICULTY_NAMES,
-                  :label_width => TYPE_LABEL_WIDTH, :shows => lambda { |form| form.type == RAID && !form.raid_save? }),
-        limits_field(4, :right, lambda { |form| form.type == RAID && !form.raid_save? }),
-        # A development build's Raid World shares the row between its Save and the Difficulty, so its squad rules take a row of their own.
-        Field.new(:save, :save, "Save", 4, RAID_SAVE_HINT, :side => :left, :group => "World", :optional => true, :label_width => RAID_SAVE_LABEL_WIDTH,
-                  :shows => lambda { |form| form.raid_save? }),
+        # A Raid World's Shared save shares its row with the Difficulty and its Save with the button of
+        # its squad rules, whose row comes off the description, so the form keeps to one page.
+        Field.new(:from_save, :check, "Shared save", 4, RAID_SAVE_HINT, :side => :left, :group => "World",
+                  :shows => lambda { |form| form.type == RAID }),
         Field.new(:difficulty, :switch, "Difficulty", 4, DIFFICULTY_HINT, :side => :right, :group => "World", :choices => DIFFICULTY_NAMES,
-                  :label_width => TYPE_LABEL_WIDTH, :shows => lambda { |form| form.raid_save? }),
-        limits_field(5, nil, lambda { |form| form.raid_save? }),
+                  :label_width => TYPE_LABEL_WIDTH, :shows => lambda { |form| form.type == RAID }),
+        Field.new(:save, :save, "Save", 5, "The save every new player starts from.", :side => :left, :group => "World", :label_width => RAID_SAVE_LABEL_WIDTH,
+                  :needs => lambda { |form| form.from_save? }, :shows => lambda { |form| form.type == RAID }),
+        limits_field(5, :right, lambda { |form| form.type == RAID }),
         Field.new(:mods, :mods, "Mods", 6, "The mods of the world: listed, required to enter or essential. Enter picks them.", :group => "Game data"),
         Field.new(:mismatch, :check, "Allow data mismatch", 7, "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.", :side => :left, :group => "Game data"),
         Field.new(:shared, :check, "Shared Mod Settings", 7, SHARED_HINT, :side => :right, :group => "Game data"),
         Field.new(:other_mods_off, :check, "Turn off other mods", 8, OTHER_MODS_HINT, :group => "Game data"),
-        # The row of a development build's Raid World's squad rules comes off its description, so the form keeps to one page.
+        # The row of a Raid World's Save comes off its description, so the form keeps to one page.
         Field.new(:description, :area, "What the world is about", 9, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description",
-                  :shows => lambda { |form| !form.raid_save? }),
-        Field.new(:description, :area, "What the world is about", 9, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DEV_RAID_DESCRIPTION_LINES,
-                  :group => "Description", :shows => lambda { |form| form.raid_save? }),
+                  :shows => lambda { |form| form.type != RAID }),
+        Field.new(:description, :area, "What the world is about", 9, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => RAID_DESCRIPTION_LINES,
+                  :group => "Description", :shows => lambda { |form| form.type == RAID }),
         Field.new(:confirm, :button, "Create the world", 10, "Creates the world. You enter it from the list."),
       ]
       new("Create a new world", fields, { :name => "", :password => "", :seats => DEFAULT_SEATS.to_s, :hidden => false, :type => 0, :share => 0, :from_save => false, :save => nil, :choose => false, :description => "", :mods => "",
@@ -2446,22 +2443,12 @@ module MGQ_MpWorld
         :front => FRONTS[@values[:front].to_i] || DEFAULT_SQUAD[:front], :raid_front => FRONTS[@values[:raid_front].to_i] || DEFAULT_SQUAD[:raid_front] }
     end
 
-    # Tells whether the new world's form has new players start from one of the creator's saves: a
-    # Classic world's with Shared save ticked, or a development build's Raid World's with a save chosen.
+    # Tells whether the new world's form has new players start from one of the creator's saves, with
+    # Shared save ticked.
     #
     # @return [Boolean] Whether it does.
     def from_save?
-      return !@values[:save].nil? if raid_save?
-
-      type == CLASSIC && @values[:from_save] == true
-    end
-
-    # Tells whether the new world's form offers a Raid World's shared save, which only a development
-    # build does, for testing.
-    #
-    # @return [Boolean] Whether it does.
-    def raid_save?
-      type == RAID && MGQ_MpWorld.dev_build?
+      @values[:from_save] == true
     end
 
     # Tells whether the form has a Classic world's story bosses fight as raid bosses.

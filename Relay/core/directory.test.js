@@ -2,6 +2,7 @@
 //  directory.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-14: Covered a Raid World's starting save from every game
 //      Paulinchen  2026-10-13: Covered whether a Classic world fights raid bosses
 //                            - Covered a Raid World's squad settings
 //      Paulinchen  2026-10-12: Covered the relay's own line in the chat of worlds with players online
@@ -834,54 +835,34 @@ test("a Classic world keeps whether it fights raid bosses, which its creator or 
   assert.equal((await raidBossesOf())["3".repeat(32)], undefined);
 });
 
-test("a Raid World starts from the beginning: no starting save and no player's choice", async () => {
+test("a Raid World takes a starting save, never a player's choice", async () => {
   const { directory } = newDirectory();
 
-  for (const changes of [{ start: true }, { choose: true }]) {
-    const refused = await directory.create(await newWorld({ type: "raid", ...changes }));
-    assert.deepEqual([refused.status, refused.body.code], [400, "raid_start"]);
-  }
+  const choice = await directory.create(await newWorld({ type: "raid", start: true, choose: true }));
+  assert.deepEqual([choice.status, choice.body.code], [400, "raid_start"], "a player's choice is refused");
 
-  assert.equal((await directory.create(await newWorld({ type: "raid", start: false, choose: false }))).status, 201);
-  const upload = await directory.putStart(WORLD, CREATOR, Uint8Array.of(1));
-  assert.deepEqual([upload.status, upload.body.code], [400, "raid_start"]);
+  assert.equal((await directory.create(await newWorld({ type: "raid", start: true }))).status, 201);
+  assert.equal((await directory.lock(WORLD)).body.start, "pending");
+  assert.deepEqual(await directory.putStart(WORLD, CREATOR, Uint8Array.of(1, 2, 3)), { status: 200, body: { bytes: 3 } });
+  const listed = (await directory.list(CREATOR)).body.worlds.find((world) => world.id === WORLD);
+  assert.deepEqual([listed.type, listed.start], ["raid", "ready"]);
+  assert.equal((await directory.getStart(WORLD, CREATOR, AUTH)).bytes.length, 3);
+
+  assert.equal((await directory.create(await newWorld({ id: "2".repeat(32), type: "raid", start: false }))).status, 201, "or starts from the beginning");
+  const none = await directory.putStart("2".repeat(32), CREATOR, Uint8Array.of(1));
+  assert.equal(none.status, 409, "and then takes no starting save");
 
   assert.equal((await directory.create(await newWorld({ id: "1".repeat(32), start: true, choose: true }))).status, 201, "a Classic world keeps both as before");
 });
 
-test("a game that names the dev feature gives a Raid World a starting save, never a player's choice", async () => {
-  const { directory } = newDirectory();
-  const dev = ["raid", "dev"];
-
-  const choice = await directory.create(await newWorld({ type: "raid", start: true, choose: true }), null, dev);
-  assert.deepEqual([choice.status, choice.body.code], [400, "raid_start"], "a player's choice stays refused");
-
-  assert.equal((await directory.create(await newWorld({ type: "raid", start: true }), null, dev)).status, 201);
-  assert.equal((await directory.lock(WORLD)).body.start, "pending");
-
-  const released = await directory.putStart(WORLD, CREATOR, Uint8Array.of(1), null, ["raid"]);
-  assert.deepEqual([released.status, released.body.code], [400, "raid_start"], "a released game uploads none");
-
-  assert.deepEqual(await directory.putStart(WORLD, CREATOR, Uint8Array.of(1, 2, 3), null, dev), { status: 200, body: { bytes: 3 } });
-  const listed = (await directory.list(CREATOR)).body.worlds.find((world) => world.id === WORLD);
-  assert.deepEqual([listed.type, listed.start], ["raid", "ready"]);
-  assert.equal((await directory.getStart(WORLD, CREATOR, AUTH)).bytes.length, 3);
-});
-
-test("handleDirectoryRequest hands what a game names in X-MGQ-Features to making a world and uploading its starting save", async () => {
+test("handleDirectoryRequest makes a Raid World with a starting save and takes its upload", async () => {
   const { directory } = newDirectory();
   const url = (path) => new URL(`https://relay.example${path}`);
   const body = (value) => async () => JSON.stringify(value);
   const bytes = async () => Uint8Array.of(7, 7);
-  const world = await newWorld({ type: "raid", start: true });
 
-  const released = await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), body(world), bytes, { features: ["raid"] });
-  assert.deepEqual([released.status, released.body.code], [400, "raid_start"]);
-
-  assert.equal((await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), body(world), bytes, { features: ["raid", "dev"] })).status, 201);
-  const refused = await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/start`), body(null), bytes, { player: CREATOR, features: ["raid"] });
-  assert.deepEqual([refused.status, refused.body.code], [400, "raid_start"]);
-  assert.equal((await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/start`), body(null), bytes, { player: CREATOR, features: ["raid", "dev"] })).status, 200);
+  assert.equal((await handleDirectoryRequest(directory, "POST", url("/v1/worlds"), body(await newWorld({ type: "raid", start: true })), bytes)).status, 201);
+  assert.equal((await handleDirectoryRequest(directory, "POST", url(`/v1/worlds/${WORLD}/start`), body(null), bytes, { player: CREATOR })).status, 200);
 });
 
 test("a world's mods past the limit are refused, never cut, when it is made or edited", async () => {

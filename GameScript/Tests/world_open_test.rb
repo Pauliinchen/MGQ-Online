@@ -2,6 +2,7 @@
 #  world_open_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-14: Expected a Raid World's starting save in its details and its Save in every build
 #      Paulinchen  2026-10-13: Checked a Classic world's raid bosses in the list, the details, world.ini and the open world
 #                            - Checked a Raid World's squad rules in the list, the details, world.ini and the open world
 #      Paulinchen  2026-10-12: Checked the title screen's Multiplayer command handler
@@ -529,14 +530,12 @@ check("the defaults for one that names none", ["Luka", "Formation", "Frontline"]
 check("and a Classic world's none", ["Luka", "Formation", "Frontline"].map { |label| cell_of(plain_panels, label) }, [nil, nil, nil])
 saved_raid = typed[0].dup
 saved_raid.start = "ready"
-MGQ_MpWorld.instance_variable_set(:@dev_build, true)
-check("a development build's Raid World with a shared save starts from the creator's save", cell_of(detail.panels(MGQ_MpWorld::Entry.new("r1", "Raid Night", saved_raid, nil, false, false), "me"), "Start").text,
+check("a Raid World with a shared save starts from the creator's save", cell_of(detail.panels(MGQ_MpWorld::Entry.new("r1", "Raid Night", saved_raid, nil, false, false), "me"), "Start").text,
       "The creator's save")
 saved_raid.start = "pending"
 check("or tells that its creator is still setting it up", detail.raid_start_text(saved_raid), "Its creator is still setting it up")
-MGQ_MpWorld.instance_variable_set(:@dev_build, false)
-saved_raid.start = "ready"
-check("while a release starts it at the beginning, as it never fetches a Raid World's save", detail.raid_start_text(saved_raid), "The beginning")
+saved_raid.start = "none"
+check("and one without starts at the beginning", detail.raid_start_text(saved_raid), "The beginning")
 
 # world.ini keeps the type and the sharing for a world entered while the directory listed it.
 MGQ_MpWorld::Link.define_singleton_method(:id_of) { |code| code[/\A[0-9a-f]{12}/] }
@@ -742,13 +741,11 @@ wide_window, wide_drawn = drawing_form(WideForm, MGQ_MpWorld::Form.new("Ways", [
 wide_window.draw_switch(Rect.new(0, 0, 380, 37), noted, true)
 check("a window of its own draws its names wider, and a switch's line below it", wide_drawn, [[150, "Way"], [380 - 150 - 8, "< Right >"], [376, "Picked 1"]])
 check("which makes its row higher than a switch without one", [wide_window.height_of(noted), wide_window.height_of(type_field)], [21 + 16, 21])
-MGQ_MpWorld.instance_variable_set(:@dev_build, true)
-dev_form = MGQ_MpWorld::Form.create
-dev_form[:type] = 1
-save_window, save_drawn = drawing_form(Window_MpWorldForm, dev_form)
-save_window.draw_box(Rect.new(0, 0, 188, 21), dev_form.fields.find { |field| field.key == :save }, true)
-check("a development build's Raid World draws its Save's label narrower, and the beginning while no save is chosen", save_drawn, [[40, "Save"], [188 - 40 - 8, "The beginning"]])
-MGQ_MpWorld.instance_variable_set(:@dev_build, false)
+saved_form = MGQ_MpWorld::Form.create
+saved_form[:type] = 1
+save_window, save_drawn = drawing_form(Window_MpWorldForm, saved_form)
+save_window.draw_box(Rect.new(0, 0, 188, 21), saved_form.fields.find { |field| field.key == :save }, true)
+check("a Raid World draws its Save's label narrower, asking for a save while none is chosen", save_drawn, [[40, "Save"], [188 - 40 - 8, "Choose one of your saves"]])
 
 # An outdated game.
 $outdated = true

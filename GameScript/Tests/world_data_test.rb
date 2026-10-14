@@ -2,6 +2,7 @@
 #  world_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-14: Expected a Raid World's Shared save and Save in the new world's form
 #      Paulinchen  2026-10-13: Checked GameData.ini, written once per session as the title screen opens
 #                            - Checked a Classic world's raid bosses in the forms, the calls and the edit's message
 #                            - Checked a Raid World's squad rules in the forms, their fit, the calls and the edit's message
@@ -333,8 +334,7 @@ check("a write that fails raises nothing and only logs, naming the file and the 
 MGQ_Multiplayer::Ini.singleton_class.send(:remove_method, :write)
 MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
 
-# The form, as a release shows it.
-MGQ_MpWorld.instance_variable_set(:@dev_build, false)
+# The form.
 form = MGQ_MpWorld::Form.create
 form[:name] = "Modded Run"
 check("a new world needs no description, no mods, and keeps differing games out until told otherwise", [form.problem, form[:description], form[:mods], form[:mismatch]], [nil, "", "", false])
@@ -344,15 +344,11 @@ check("the mods and the mismatch checkbox share the Game data panel", [:mods, :m
 check("the world type and the starting point share the World panel", form.fields.select { |field| field.group == "World" }.map { |field| field.label },
       ["Name", "Password", "Max Players", "Hidden", "World type", "Shared save", "Player's choice", "Save", "Raid Bosses"])
 form[:type] = 1
-check("a Raid World has Sharing companions in place of the starting point, the Difficulty in place of the Save, and the button of its squad rules", form.fields.select { |field| field.group == "World" }.map { |field| field.label },
-      ["Name", "Password", "Max Players", "Hidden", "World type", "Sharing companions", "Difficulty", "Set formation limits"])
-check("and its description on four lines", form.fields.find { |field| field.key == :description }.lines, 4)
-release_rows = form.fields.map { |field| field.row }.max
-MGQ_MpWorld.instance_variable_set(:@dev_build, true)
-check("a development build's Raid World has its Save beside the Difficulty, on the Save's row, so the form keeps its height",
-      [form.fields.select { |field| [:save, :difficulty].include?(field.key) }.map { |field| [field.label, field.row, field.side] }, form.fields.map { |field| field.row }.max],
-      [[["Save", 4, :left], ["Difficulty", 4, :right]], release_rows])
-MGQ_MpWorld.instance_variable_set(:@dev_build, false)
+check("a Raid World has Sharing companions in place of Player's choice, Shared save beside the Difficulty, and its Save beside the button of its squad rules",
+      form.fields.select { |field| field.group == "World" }.map { |field| field.label },
+      ["Name", "Password", "Max Players", "Hidden", "World type", "Sharing companions", "Shared save", "Difficulty", "Save", "Set formation limits"])
+check("its Save's row comes off its description, so the form keeps its height",
+      [form.fields.find { |field| field.key == :description }.lines, form.fields.map { |field| field.row }.max], [MGQ_MpWorld::RAID_DESCRIPTION_LINES, 10])
 form[:type] = 0
 check("a description is tidied", form.check(description, "  A slow run.  "), ["A slow run.", nil])
 check("and may be empty", form.check(description, "  "), ["", nil])
@@ -621,12 +617,9 @@ raid_form = MGQ_MpWorld::Form.create
 raid_form[:type] = 1
 fit_listed = listed[1].dup
 fit_listed.type = MGQ_MpWorld::RAID
-check("a Raid World's forms fit their window with the squad rules' button, the new one and the creator's edit form, and so does the rules' form",
+check("a Raid World's forms fit their window with the squad rules' button and its Save, the new one and the creator's edit form, and so does the rules' form",
       [fitting.call(raid_form.fields), fitting.call(MGQ_MpWorld::Form.edit(fit_listed, true).fields), fitting.call(raid_form.limits.fields)],
       [[true, true, true], [true, true, true], [true, true, true]])
-MGQ_MpWorld.instance_variable_set(:@dev_build, true)
-check("as does a development build's new Raid World with its Save", fitting.call(raid_form.fields), [true, true, true])
-MGQ_MpWorld.instance_variable_set(:@dev_build, false)
 
 # The editor every text box shares.
 $held = []

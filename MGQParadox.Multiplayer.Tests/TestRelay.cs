@@ -2,6 +2,7 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-14: Took a Raid World's starting save from every game
 //      Paulinchen  2026-10-13: Kept a Classic world's raid bosses setting and told its room when an edit changed it
 //                            - Kept a Raid World's squad settings
 //      Paulinchen  2026-10-12: Kept the level caps of story writes
@@ -1032,11 +1033,11 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             answer = parts switch
             {
                 ["v1", "worlds"] when method == "GET" => (200, List(PlayerKeyOf(context), query["ids"])),
-                ["v1", "worlds"] when method == "POST" => Create(body!, DevGame(context)),
+                ["v1", "worlds"] when method == "POST" => Create(body!),
                 ["v1", "worlds", var id, "lock"] when _directory.TryGetValue(id, out var world) => (200, LockOf(world)),
                 ["v1", "worlds", var id, "delete"] when CreatorOrAdminOf(id, body?["player"]?.GetValue<string>()) is { } world => Delete(id, toClose, out closeCode),
                 ["v1", "worlds", var id, "ban"] when CreatorOf(id, body?["player"]?.GetValue<string>()) is { } world => Ban(id, world, body!["target"]!.GetValue<string>(), toClose, out closeCode),
-                ["v1", "worlds", var id, "start"] when method == "POST" && CreatorOf(id, PlayerKeyOf(context)) is { } world => PutStart(world, upload, DevGame(context)),
+                ["v1", "worlds", var id, "start"] when method == "POST" && CreatorOf(id, PlayerKeyOf(context)) is { } world => PutStart(world, upload),
                 ["v1", "worlds", var id, "start"] when method == "GET" && _directory.TryGetValue(id, out var world) => GetStart(world, PlayerKeyOf(context), AuthKeyOf(context), out download),
                 ["v1", "worlds", var id, "edit"] when CreatorOrAdminOf(id, body?["player"]?.GetValue<string>()) is { } world => Edit(id, world, body!, PlayerIdOf(body!["player"]!.GetValue<string>()), toTell),
                 ["v1", "worlds", var id, "edit"] when _directory.ContainsKey(id) => (403, Error("only the world's creator or an admin may do this")),
@@ -1098,15 +1099,9 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     /// </summary>
     /// <param name="world">The world's entry.</param>
     /// <param name="bytes">The starting save.</param>
-    /// <param name="dev">Whether the game names the dev feature, which alone may give a Raid World a starting save.</param>
     /// <returns>The answer.</returns>
-    private static (int, JsonNode) PutStart(DirectoryWorld world, byte[] bytes, bool dev)
+    private static (int, JsonNode) PutStart(DirectoryWorld world, byte[] bytes)
     {
-        if (world.Type == WorldType.Raid && !dev)
-        {
-            return (400, RaidStartRefusal());
-        }
-
         if (world.Start != "pending")
         {
             return (409, Error("the world takes no starting save"));
@@ -1147,13 +1142,12 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     /// Makes a world in the directory. Called with the gate held.
     /// </summary>
     /// <param name="body">The new world.</param>
-    /// <param name="dev">Whether the game names the dev feature, which alone may give a Raid World a starting save.</param>
     /// <returns>The answer.</returns>
-    private (int, JsonNode) Create(JsonNode body, bool dev)
+    private (int, JsonNode) Create(JsonNode body)
     {
         var id = body["id"]!.GetValue<string>();
 
-        if (body["type"]?.GetValue<string>() == WorldType.Raid && (body["choose"]?.GetValue<bool>() == true || (body["start"]?.GetValue<bool>() == true && !dev)))
+        if (body["type"]?.GetValue<string>() == WorldType.Raid && body["choose"]?.GetValue<bool>() == true)
         {
             return (400, RaidStartRefusal());
         }
@@ -1203,19 +1197,11 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     }
 
     /// <summary>
-    /// Writes the refusal of a Raid World's starting save or player's choice, as the relay names it.
+    /// Writes the refusal of a Raid World's player's choice, as the relay names it.
     /// </summary>
     /// <returns>The answer's body.</returns>
     private static JsonObject RaidStartRefusal() =>
-        new() { ["error"] = "a Raid World starts from the beginning: it takes no player's choice, and a starting save only from a development build", ["code"] = "raid_start" };
-
-    /// <summary>
-    /// Tells whether a request names the dev feature in its X-MGQ-Features header, as development builds do.
-    /// </summary>
-    /// <param name="context">The request.</param>
-    /// <returns>Whether it does.</returns>
-    private static bool DevGame(HttpListenerContext context) =>
-        context.Request.Headers[DirectoryClient.FeaturesHeader]?.Split(',').Contains(DirectoryClient.DevFeature) == true;
+        new() { ["error"] = "a Raid World takes no player's choice: every new player starts from the beginning or from its starting save", ["code"] = "raid_start" };
 
     /// <summary>
     /// Tells whether a request's mods text is longer than the relay keeps, which it refuses instead of cutting.

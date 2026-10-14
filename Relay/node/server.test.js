@@ -2,6 +2,7 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-14: Tested a Raid World's starting save from every game over HTTP
 //      Paulinchen  2026-10-13: Tested that every game of a Classic world hears whether it fights raid bosses
 //                            - Tested that every game of a Raid World hears its new squad settings
 //      Paulinchen  2026-10-12: Tested that a newer release of the mod reaches every game of a world with players online
@@ -934,17 +935,13 @@ test("the auth key may come in the X-MGQ-Auth header, for the world rooms and th
   game.socket.close();
 });
 
-test("only a game that names the dev feature in X-MGQ-Features makes a Raid World with a starting save and uploads it", async () => {
+test("a game makes a Raid World with a starting save over HTTP and uploads it", async () => {
   const room = roomId(135);
   const creator = playerKey(95);
-  const world = JSON.stringify({ id: room, name: "Dev Raid", seats: 4, player: creator, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, start: true, type: "raid" });
+  const world = JSON.stringify({ id: room, name: "Saved Raid", seats: 4, player: creator, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, start: true, type: "raid" });
 
-  assert.equal((await gameFetch(directoryBase, { method: "POST", headers: { [FEATURES_HEADER]: "raid" }, body: world })).status, 400);
-  assert.equal((await gameFetch(directoryBase, { method: "POST", headers: { [FEATURES_HEADER]: "raid, dev" }, body: world })).status, 201);
-
-  const upload = (features) => gameFetch(`${directoryBase}/${room}/start`, { method: "POST", headers: { [PLAYER_HEADER]: creator, [FEATURES_HEADER]: features }, body: Uint8Array.of(9) });
-  assert.equal((await upload("raid")).status, 400);
-  assert.equal((await upload("RAID,DEV")).status, 200);
+  assert.equal((await gameFetch(directoryBase, { method: "POST", body: world })).status, 201);
+  assert.equal((await gameFetch(`${directoryBase}/${room}/start`, { method: "POST", headers: { [PLAYER_HEADER]: creator }, body: Uint8Array.of(9) })).status, 200);
 });
 
 test("a game without X-MGQ-Features, or naming a version below the lowest, is turned away, while PvP rooms need no features", async () => {

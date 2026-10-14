@@ -2,6 +2,7 @@
 //  relay.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-14: Dropped the dev feature
 //      Paulinchen  2026-10-12: Added the rate limit per address for downloading starting saves and mod files
 //      Paulinchen  2026-10-10: Added the dev feature
 //      Paulinchen  2026-10-08: Added the X-MGQ-Features header
@@ -158,12 +159,9 @@ export const AUTH_HEADER = "X-MGQ-Auth";
 export const FEATURES_HEADER = "X-MGQ-Features";
 
 /**
- * What a game names in FEATURES_HEADER: Raid Worlds, and dev for a development build, which alone
- * may give a Raid World a starting save, for testing.
- *
- * TODO: the dev feature goes before a release, see the Raid World's starting save in docs/DEVELOPER.md.
+ * What a game names in FEATURES_HEADER: Raid Worlds.
  */
-export const FEATURE = Object.freeze({ raid: "raid", dev: "dev" });
+export const FEATURE = Object.freeze({ raid: "raid" });
 
 /**
  * The response header that names why the relay turned a game away from a world room, since a

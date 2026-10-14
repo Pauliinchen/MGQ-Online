@@ -2,6 +2,7 @@
 #  raid_difficulty_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-14: Checked a Raid World's Shared save in every build
 #      Paulinchen  2026-10-13: Checked a Classic world's raid bosses in the forms and the calls of mp_dir_create and mp_dir_edit
 #                            - Checked a Raid World's squad rules in the forms and the calls of mp_dir_create and mp_dir_edit
 #                            - Checked the button of the squad rules and their form of its own
@@ -12,10 +13,9 @@
 #
 #----------------------------------------------------------------
 
-# Covers a Raid World's difficulty, squad rules and start: the Difficulty and the squad rules of the
-# new world's and the edit form,
-# what goes to the DLL, and no starting save or choice on entering except a development build's
-# shared save (world.rbx, world_save_distribution.rbx); the world's difficulty on load, new game and
+# Covers a Raid World's difficulty, squad rules and start: the Difficulty, the squad rules and the
+# Shared save of the new world's and the edit form, what goes to the DLL, and its starting save but
+# never a choice on entering (world.rbx, world_save_distribution.rbx); the world's difficulty on load, new game and
 # the relay's push, set over the game's own choice and the Reaper's change, while the Labyrinth of
 # Chaos, the Colosseum and the special bosses keep their own values (world_difficulty.rbx); and these
 # values each Raid World player's own in the story (story_state.rbx).
@@ -216,13 +216,17 @@ check("a Classic world takes a starting save and the player's choice", [form.ena
 form[:type] = 1
 picked = field_of(form, :difficulty)
 check("a Raid World's form has no Raid Bosses, and none even with the box ticked before", [field_of(form, :raid_bosses), form.raid_bosses?], [nil, false])
-check("a Raid World hides the starting point, Sharing companions on its row, and has the Difficulty on the Save's row instead",
-      [starting.map { |field| form.fields.include?(field) }, field_of(form, :share).row, field_of(form, :save), picked.row, picked.side, form.enabled?(picked), form.fields.size],
-      [[false, false], 3, nil, 4, :left, true, 14])
+raid_from_save = field_of(form, :from_save)
+raid_save = field_of(form, :save)
+check("a Raid World has no Player's choice, Sharing companions on its row, its own Shared save beside the Difficulty, and its Save below",
+      [starting.map { |field| form.fields.include?(field) }, field_of(form, :share).row, [raid_from_save.kind, raid_from_save.row, raid_from_save.side],
+       [picked.row, picked.side, form.enabled?(picked)], [raid_save.row, raid_save.side, raid_save.label_width], form.fields.size],
+      [[false, false], 3, [:check, 4, :left], [4, :right, true], [5, :left, MGQ_MpWorld::Form::RAID_SAVE_LABEL_WIDTH], 16])
 check("which offers the game's difficulties and starts on NORMAL", [picked.kind, picked.choices, form.difficulty],
       [:switch, ["VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"], 0])
-check("whose hint fits the lines at the top, as the starting point's do", ([picked] + starting).map { |field| field.hint.size <= 100 }, [true, true, true])
-check("and starts from the beginning even with the boxes ticked before", [form.from_save?, form.choose?, form.problem], [false, false, nil])
+check("whose hints fit the lines at the top, as the starting point's do", ([picked, raid_from_save] + starting).map { |field| field.hint.size <= 100 }, [true, true, true, true])
+check("Shared save ticked before stays ticked, the player's choice does not, and the form asks for the save", [form.from_save?, form.choose?, form.problem],
+      [true, false, [8, "Choose the save its players start from."]])
 form.turn(picked, 1)
 check("its switch turns to the next difficulty", [form.difficulty, MGQ_MpWorld.difficulty_name(form.difficulty)], [1, "HARD"])
 form[:type] = 0
@@ -232,8 +236,8 @@ check("back on Classic the Save and Raid Bosses take their place again", [field_
 # What goes to the DLL carries a Raid World's difficulty.
 MGQ_MpWorld::Directory.create("Raid Night", "", 4, false, true, "Save01.rvdata2=Save/Save01.rvdata2", :type => "raid", :share => "story", :difficulty => 3)
 args = $calls.last[2]
-check("a Raid World goes without a starting save and the player's choice, with its difficulty", [$calls.last[1], args[4], args[5], args[12], args[14]],
-      ["pplllpppplppppllpl", 0, "\0", "raid\0", 3])
+check("a Raid World goes with its starting save but without the player's choice, with its difficulty", [$calls.last[1], args[4], args[5], args[12], args[14]],
+      ["pplllpppplppppllpl", 0, "Save01.rvdata2=Save/Save01.rvdata2\0", "raid\0", 3])
 MGQ_MpWorld::Directory.create("Raid Plain", "", 4, false, false, "", :type => "raid")
 check("on NORMAL unless told otherwise", $calls.last[2][14], 0)
 MGQ_MpWorld::Directory.create("Plain", "", 4, false, true, "Save01.rvdata2=Save/Save01.rvdata2", :difficulty => 3)
@@ -264,9 +268,9 @@ squad_keys = [:luka, :formation, :front, :raid_front]
 check("a Classic world's form has no squad rules nor their button", (squad_keys + [:limits]).map { |key| field_of(squad_form, key) }, [nil, nil, nil, nil, nil])
 squad_form[:type] = 1
 limits = field_of(squad_form, :limits)
-check("a Raid World's form has the button of its formation limits beside the Difficulty, and not the rules themselves",
+check("a Raid World's form has the button of its formation limits beside the Save, and not the rules themselves",
       [[limits.kind, limits.label, limits.row, limits.side, limits.group], squad_keys.map { |key| field_of(squad_form, key) }],
-      [[:button, "Set formation limits", 4, :right, "World"], [nil, nil, nil, nil]])
+      [[:button, "Set formation limits", 5, :right, "World"], [nil, nil, nil, nil]])
 limits_form = squad_form.limits
 check("which opens the same form each time", squad_form.limits.equal?(limits_form), true)
 squad_fields = squad_keys.map { |key| field_of(limits_form, key) }
@@ -331,36 +335,26 @@ bosses_listed.raid_bosses = false
 check("unticked for a world without them", MGQ_MpWorld::Form.edit(bosses_listed, false).raid_bosses?, false)
 check("and a Raid World's edit form has none", field_of(MGQ_MpWorld::Form.edit(squad_listed.tap { |world| world.type = "raid" }, true), :raid_bosses), nil)
 
-# Entering: a Raid World never asks where to start nor fetches a starting save.
+# Entering: a Raid World never asks where to start, but fetches its starting save.
 raid_world = MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "type" => "raid", "difficulty" => "1")
 plain_world = MGQ_MpWorld::World.new("fedcba987654", "code" => "y", "type" => "classic")
 [raid_world, plain_world].each { |world| world.define_singleton_method(:latest_save) { nil } }
-check("a new player of a Raid World starts a new game, even if it was made with a choice or a save",
-      [MGQ_MpSaveDistribution.ask_start?(raid_world, true), MGQ_MpSaveDistribution.fetch?(raid_world, "ready")], [false, false])
+check("a new player of a Raid World fetches its starting save, never asked where to start, even if it was made with a choice",
+      [MGQ_MpSaveDistribution.ask_start?(raid_world, true), MGQ_MpSaveDistribution.fetch?(raid_world, "ready"), MGQ_MpSaveDistribution.fetch?(raid_world, "none")], [false, true, false])
 check("while a Classic world asks and fetches as before", [MGQ_MpSaveDistribution.ask_start?(plain_world, true), MGQ_MpSaveDistribution.fetch?(plain_world, "ready")], [true, true])
 
-# A development build gives a Raid World a shared save, for testing, but never the player's choice.
-MGQ_MpWorld.instance_variable_set(:@dev_build, true)
-dev_form = MGQ_MpWorld::Form.create
-dev_form[:name] = "Raid Test"
-dev_form[:type] = 1
-dev_save = field_of(dev_form, :save)
-dev_difficulty = field_of(dev_form, :difficulty)
-dev_limits = field_of(dev_form, :limits)
-check("a development build's Raid World has an optional Save beside the Difficulty, and the button of its formation limits on a row of its own",
-      [[dev_save.kind, dev_save.row, dev_save.side, dev_save.optional, dev_save.label_width], [dev_difficulty.row, dev_difficulty.side], [dev_limits.row, dev_limits.side],
-       dev_form.fields.size, dev_form.fields.last.row],
-      [[:save, 4, :left, true, MGQ_MpWorld::Form::RAID_SAVE_LABEL_WIDTH], [4, :right], [5, nil], 15, 10])
-check("which takes its row off the description", field_of(dev_form, :description).lines, MGQ_MpWorld::DEV_RAID_DESCRIPTION_LINES)
-check("without a save it starts from the beginning and can be sent", [dev_form.from_save?, dev_form.choose?, dev_form.problem, dev_save.hint.size <= 100], [false, false, nil, true])
-dev_form[:save] = 2
-dev_form[:choose] = true
-check("with one, its new players start from it, never with the player's choice", [dev_form.from_save?, dev_form.choose?, dev_form.problem], [true, false, nil])
-MGQ_MpWorld::Directory.create("Raid Test", "", 4, false, true, "Save01.rvdata2=Save/Save03.rvdata2", :type => "raid", :difficulty => 1)
-check("which goes to the DLL as a Classic world's starting save, without the choice", [$calls.last[2][4], $calls.last[2][5], $calls.last[2][12]],
-      [0, "Save01.rvdata2=Save/Save03.rvdata2\0", "raid\0"])
-check("and a new player fetches it, never asked where to start",
-      [MGQ_MpSaveDistribution.fetch?(raid_world, "ready"), MGQ_MpSaveDistribution.fetch?(raid_world, "none"), MGQ_MpSaveDistribution.ask_start?(raid_world, true)], [true, false, false])
+# A Raid World's Shared save, as a Classic world's, but never with the player's choice.
+saved_form = MGQ_MpWorld::Form.create
+saved_form[:name] = "Raid Test"
+saved_form[:type] = 1
+saved_save = field_of(saved_form, :save)
+check("a new Raid World starts from the beginning, its Save greyed out until Shared save is ticked, its description a row shorter",
+      [saved_form.from_save?, saved_form.problem, saved_form.enabled?(saved_save), field_of(saved_form, :description).lines, saved_form.fields.last.row],
+      [false, nil, false, MGQ_MpWorld::RAID_DESCRIPTION_LINES, 10])
+saved_form[:from_save] = true
+saved_form[:save] = 2
+saved_form[:choose] = true
+check("ticked with a save, its new players start from it, never with the player's choice", [saved_form.from_save?, saved_form.choose?, saved_form.problem], [true, false, nil])
 MGQ_MpWorld.instance_variable_set(:@dev_build, nil)
 $calls.clear
 check("the DLL tells a development build once", [MGQ_MpWorld.dev_build?, MGQ_MpWorld.dev_build?, $calls.map { |call| call[0] }], [true, true, ["mp_dev_build"]])

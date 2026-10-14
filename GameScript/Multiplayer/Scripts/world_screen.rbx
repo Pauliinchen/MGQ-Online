@@ -2,6 +2,7 @@
 #  world_screen.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-14: Named a Raid World's starting save in its details in every build
 #      Paulinchen  2026-10-13: Sent a Classic world's raid bosses with the new world and the edits, and showed them in the details
 #                            - Sent a Raid World's squad rules with the new world and the edits, and showed them in the details
 #                            - Opened a Raid World's squad rules in a form of their own and went back from it
@@ -1785,8 +1786,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
     if purpose == :world
       log_screen(index ? "picked #{MGQ_MpWorld.save_name(index)} as the new world's starting save" : "left the save screen without a starting save")
-      # A Raid World's Save has no checkbox, so leaving without a save is how it goes back to none.
-      @forms[:new_world][:save] = index if index || @forms[:new_world].raid_save?
+      @forms[:new_world][:save] = index if index
     elsif index
       log_screen("picked own #{MGQ_MpWorld.save_name(index)} to start #{@starting.name} from")
       @own_start = index
@@ -3057,15 +3057,14 @@ class Window_MpWorldDetail < Window_Base
      [Cell.new("Frontline", "#{squad[:front]} | #{squad[:raid_front]}  (regular | raids)", :normal)]]
   end
 
-  # Tells where a Raid World's new players start: at the beginning, or from the creator's save,
-  # which only a development build gives a Raid World and fetches.
+  # Tells where a Raid World's new players start: at the beginning, or from the creator's save.
   #
   # @param listed [MGQ_MpWorld::Directory::ListedWorld] The Raid World in the directory.
   # @return [String] The text.
   def raid_start_text(listed)
     return start_text(listed) if listed.start == "pending"
 
-    listed.start == "ready" && MGQ_MpWorld.dev_build? ? "The creator's save" : "The beginning"
+    listed.start == "ready" ? "The creator's save" : "The beginning"
   end
 
   # Tells where a world's new players start.

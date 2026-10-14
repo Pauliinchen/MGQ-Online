@@ -2,6 +2,7 @@
 #  mod_parking_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-14: Expected a Raid World's row of its Save in every build
 #      Paulinchen  2026-10-13: Expected the raid bosses of a Classic world in its edit form and after the squad rules in the DLL calls
 #                            - Expected the row of a Raid World's squad rules' button and the squad rules after the other mods in the DLL calls
 #      Paulinchen  2026-10-12: Stood in for Ini.load and the favourites and hidden worlds in Player.ini
@@ -385,7 +386,7 @@ Dir.mktmpdir do |folder|
     form.turn(type, 1)
     form.turn(type, 1)
     check("once the player unticked it, the type no longer changes it", form.other_mods_off?, false)
-    check("the form keeps to the screen: the Raid-only and Classic-only rows share one, and a development build's Raid World adds the row of its squad rules' button",
+    check("the form keeps to the screen: the Raid-only and Classic-only rows share one, and a Raid World adds the row of its Save beside its squad rules' button",
           [form.fields.map { |field| field.row }.uniq.size, (form.turn(type, 1); form.fields.map { |field| field.row }.uniq.size)], [11, 10])
     MGQ_MpWorld::Directory.create("W", "", 4, false, false, "", :type => "raid")
     check("create sends a Raid World with other mods off unless told otherwise", $calls.last[1][-3], 1)
