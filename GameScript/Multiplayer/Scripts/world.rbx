@@ -2,7 +2,8 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Passed a new world's options to the DLL in one number
+#      Paulinchen  2026-10-15: Handed keywords on through the wrapped File and Dir methods
+#                            - Passed a new world's options to the DLL in one number
 #      Paulinchen  2026-10-14: Gave a Raid World a shared save in every build, ticked as for a Classic world
 #      Paulinchen  2026-10-13: Wrote the game data's fingerprint to GameData.ini at each start for the World Admin tool
 #                            - Added a Classic world's raid bosses to the forms, the list and world.ini
@@ -1975,6 +1976,9 @@ module MGQ_MpWorld
         owner.singleton_class.send(:define_method, name) do |*args, &block|
           send(original, *MGQ_MpWorld::Files.mapped(args), &block)
         end
+        # Ruby 1.9 has no keywords; from 2.7 on, a call such as File.read(path, encoding: ...)
+        # would hand its keywords on as a hash in place of a length without this.
+        owner.singleton_class.send(:ruby2_keywords, name) if owner.singleton_class.respond_to?(:ruby2_keywords, true)
       end
     end
   end

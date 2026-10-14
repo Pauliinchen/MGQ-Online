@@ -2,6 +2,7 @@
 #  battles_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Carried a battle the battle server hosts over its battle channel
 #      Paulinchen  2026-10-12: Told a player joining or leaving the battle in the battle's popup instead of the chat
 #                            - Told a player leaving the battle only when they are one of its players
 #                            - Kept the computer's actions for unreadable commands and checked a command's ids and target
@@ -182,9 +183,46 @@ module MGQ_MpBattlesSync
     @solo = false
     @broken = false
     @battle_running = false
+    @served = false
     Channel.reset
     kind = mode == :pvp ? (team ? 'team duel' : 'duel') : 'co-op battle'
     log("#{kind} #{battle_id} as #{role}, with #{seats.empty? ? 'nobody yet' : seats.map { |seat| who(seat) }.join(', ')}")
+  end
+
+  # Makes the live battle a co-op battle the battle server hosts, whose messages go over the battle
+  # channel (see battles_served.rbx): the server hosts it, every player plays it back as a guest.
+  # A battle already running keeps its turn and whether its scene started.
+  #
+  # @param role [Symbol] :host on the battle server, else :guest.
+  # @param battle_id [String] The battle's id.
+  # @param seats [Array<Integer>] The other seats: the players' for the server, the server's for a guest.
+  # @param player [String] Who the waits name.
+  def self.serve_over_channel(role, battle_id, seats, player)
+    running = @battle_running
+    join_world(role, battle_id, seats, player)
+    @battle_running = running
+    @served = true
+    log("battle #{battle_id} goes over the battle channel, as #{role}")
+  end
+
+  # Reports whether the live battle is one the battle server hosts, see serve_over_channel.
+  #
+  # @return [Boolean] Whether it is.
+  def self.served?
+    @served && @role ? true : false
+  end
+
+  # Takes a message of a battle the server hosts from the battle channel. Called by
+  # battles_served.rbx.
+  #
+  # @param seat [Integer] The sender's seat on the battle channel: their world seat, or the server's.
+  # @param message [Hash] The message: "battle" its kind, "bid" the battle's id, and the body.
+  def self.take_served(seat, message)
+    kind = message["battle"].to_s
+    return log_once([:served_dropped, kind[0, 40], @battle_id], "ignored #{kind[0, 40]} from the battle channel: no served battle runs") unless served?
+    return log_once([:served_dropped, kind[0, 40], @battle_id], "ignored #{kind[0, 40]} from the battle channel: it is for another battle") unless message["bid"] == @battle_id
+
+    Channel.receive(seat, kind, message[:payload].to_s)
   end
 
   # Names a player of the world by their seat for Multiplayer InGame.log.
@@ -428,6 +466,8 @@ module MGQ_MpBattlesSync
     @broken = false
     @battle_running = false
     @transport = nil
+    MGQ_MpBattlesServed.close if @served && defined?(MGQ_MpBattlesServed)
+    @served = false
     # The world's room stays open after a co-op battle; only a PvP battle's link ends with it.
     MGQ_Multiplayer::Link.cancel unless world
   rescue => e
@@ -611,6 +651,12 @@ module MGQ_MpBattlesSync
         return sent
       end
 
+      if MGQ_MpBattlesSync.served?
+        reached = MGQ_MpBattlesServed.post(MGQ_MpBattlesSync.player_seats, kind, body)
+        noted_post(kind, body, reached.empty? ? nil : "over the battle channel to #{reached.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
+        return !reached.empty?
+      end
+
       reached = MGQ_MpBattlesSync.player_seats.select do |seat|
         MGQ_MpBattlesSync.tell(seat, kind, MGQ_MpBattlesSync.battle_id, body)
       end
@@ -713,6 +759,7 @@ module MGQ_MpBattlesSync
     #
     # @return [Boolean] Whether the other side is gone: every guest for the host, the host for a guest.
     def self.world_gone?
+      return served_gone? if MGQ_MpBattlesSync.served?
       return true unless MGQ_MpOverworldSync.in_world?
 
       MGQ_MpBattlesSync.guests_in.each do |seat|
@@ -720,6 +767,21 @@ module MGQ_MpBattlesSync
       end
       return true if MGQ_MpBattlesSync.host? && MGQ_MpBattlesSync.mode.other_side_gone?
 
+      MGQ_MpBattlesSync.guests_in.empty?
+    end
+
+    # Looks at who of a battle the server hosts is still on its battle channel: the server notes
+    # each player who left it or said they leave, a guest counts the battle as gone once the
+    # channel closed.
+    #
+    # @return [Boolean] Whether the other side is gone.
+    def self.served_gone?
+      return true if MGQ_MpBattlesServed.closed?
+      return false unless MGQ_MpBattlesSync.host?
+
+      MGQ_MpBattlesSync.guests_in.each do |seat|
+        MGQ_MpBattlesSync.guest_left(seat) if MGQ_MpBattlesServed.out?(seat) || take_from("leave", seat)
+      end
       MGQ_MpBattlesSync.guests_in.empty?
     end
 
@@ -750,6 +812,7 @@ module MGQ_MpBattlesSync
     # receive.
     def self.poll
       @messages ||= []
+      MGQ_MpBattlesServed.drain if MGQ_MpBattlesSync.served?
       return if MGQ_MpBattlesSync.world?
 
       while (text = MGQ_Multiplayer::Link.next_message)

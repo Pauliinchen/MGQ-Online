@@ -2,6 +2,7 @@
 //  RelayWorldChannel.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Connected to the channel of a battle the battle server hosts
 //      Paulinchen  2026-10-12: Gave up connecting at once when told to stop
 //                            - Read why the relay turned the game away through Relays
 //                            - Named the version of this game in the X-MGQ-Version header
@@ -28,7 +29,7 @@ namespace MGQParadox.Multiplayer.Network.Relay;
 
 /// <summary>
 /// A game's connection to its world room at a relay, which seats it among the other games of the
-/// world and passes frames to one or all of them.
+/// world and passes frames to one or all of them, or to the channel of one of the world's battles.
 /// </summary>
 /// <remarks>
 /// Only one thread may send and one receive at a time.
@@ -99,7 +100,42 @@ internal sealed class RelayWorldChannel : IDisposable
     /// <returns>The channel, or <see langword="null"/> when the relay refused the game.</returns>
     /// <exception cref="WebSocketException">The relay could not be reached.</exception>
     /// <exception cref="OperationCanceledException">Connecting took too long, or was stopped.</exception>
-    public static RelayWorldChannel? Connect(Uri relay, string room, string playerKey, string playerName, string authKey, TimeSpan timeout, CancellationToken stop, out HttpStatusCode? refusal, out string? refusalCode)
+    public static RelayWorldChannel? Connect(Uri relay, string room, string playerKey, string playerName, string authKey, TimeSpan timeout, CancellationToken stop, out HttpStatusCode? refusal, out string? refusalCode) =>
+        Connect(new Uri(relay, $"/v1/world/{room}?name={Uri.EscapeDataString(playerName)}"), playerKey, authKey, timeout, stop, out refusal, out refusalCode);
+
+    /// <summary>
+    /// Connects to the channel of a battle the relay's battle server hosts, which seats the game
+    /// on its world seat beside the server's.
+    /// </summary>
+    /// <param name="relay">The relay's address.</param>
+    /// <param name="room">The world room, see <see cref="Relays.WorldRoomOf"/>.</param>
+    /// <param name="battle">The battle's id.</param>
+    /// <param name="playerKey">The player's key, which the relay turns into the player's id.</param>
+    /// <param name="authKey">The key that proves the game holds the world's token, see <see cref="WorldKeys.AuthKeyOf"/>.</param>
+    /// <param name="timeout">How long connecting may take.</param>
+    /// <param name="stop">Gives up connecting at once, as when the battle was left meanwhile.</param>
+    /// <param name="refusal">The HTTP status the relay refused the game with, such as 404 once the battle ended.</param>
+    /// <param name="refusalCode">The code the relay named why with; <see langword="null"/> for none.</param>
+    /// <returns>The channel, or <see langword="null"/> when the relay refused the game.</returns>
+    /// <exception cref="WebSocketException">The relay could not be reached.</exception>
+    /// <exception cref="OperationCanceledException">Connecting took too long, or was stopped.</exception>
+    public static RelayWorldChannel? ConnectBattle(Uri relay, string room, string battle, string playerKey, string authKey, TimeSpan timeout, CancellationToken stop, out HttpStatusCode? refusal, out string? refusalCode) =>
+        Connect(new Uri(relay, $"/v1/worlds/{room}/battles/{Uri.EscapeDataString(battle)}"), playerKey, authKey, timeout, stop, out refusal, out refusalCode);
+
+    /// <summary>
+    /// Connects to a route of a world at the relay.
+    /// </summary>
+    /// <param name="address">The route's address.</param>
+    /// <param name="playerKey">The player's key.</param>
+    /// <param name="authKey">The world's auth key.</param>
+    /// <param name="timeout">How long connecting may take.</param>
+    /// <param name="stop">Gives up connecting at once.</param>
+    /// <param name="refusal">The HTTP status the relay refused the game with.</param>
+    /// <param name="refusalCode">The code the relay named why with; <see langword="null"/> for none.</param>
+    /// <returns>The channel, or <see langword="null"/> when the relay refused the game.</returns>
+    /// <exception cref="WebSocketException">The relay could not be reached.</exception>
+    /// <exception cref="OperationCanceledException">Connecting took too long, or was stopped.</exception>
+    private static RelayWorldChannel? Connect(Uri address, string playerKey, string authKey, TimeSpan timeout, CancellationToken stop, out HttpStatusCode? refusal, out string? refusalCode)
     {
         var socket = new ClientWebSocket();
         socket.Options.CollectHttpResponseDetails = true;
@@ -107,7 +143,6 @@ internal sealed class RelayWorldChannel : IDisposable
         socket.Options.SetRequestHeader(DirectoryClient.AuthHeader, authKey);
         socket.Options.SetRequestHeader(DirectoryClient.FeaturesHeader, DirectoryClient.Features);
         socket.Options.SetRequestHeader(DirectoryClient.VersionHeader, UpdateCheck.ModVersion);
-        var address = new Uri(relay, $"/v1/world/{room}?name={Uri.EscapeDataString(playerName)}");
         refusal = null;
         refusalCode = null;
 

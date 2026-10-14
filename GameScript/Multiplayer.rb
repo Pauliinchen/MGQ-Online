@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Named mp_dir_create with a world's options in one number
+#      Paulinchen  2026-10-15: Loaded battles_served.rbx after battles_sync_live.rbx and named the mp_battle_* exports
+#                            - Named mp_dir_create with a world's options in one number
 #      Paulinchen  2026-10-13: Loaded ui_single_player.rbx after ui_leader_hud.rbx
 #                            - Loaded battles_raid_tiers.rbx after battles_raid_pool.rbx
 #                            - Named mp_dir_create and mp_dir_edit with a Classic world's raid bosses
@@ -141,7 +142,7 @@ module MGQ_Multiplayer
     coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs coop_story_rewards story_state coop_story coop_castle
     world world_mods world_mods_parking world_catchup_data world_story world_catchup world_catchup_exp world_affection world_opening world_difficulty world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_raid_tiers battles_coop_level_sync
-    battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live
+    battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live battles_served
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team
     trade ui_trade
     world_overview world_overview_pages ui_party_box ui_edge_arrows ui_raid_bar ui_leader_hud ui_single_player ui_notices ui_bug_report
@@ -877,6 +878,14 @@ module MGQ_Multiplayer
       'mp_raid_bosses_fetch' => 'p',
       'mp_raid_boss_report' => 'pppp',
       'mp_raid_boss_state' => READ_ARGUMENTS,
+
+      # A co-op battle the battle server hosts, and its battle channel.
+      'mp_battle_serve' => 'pppp',
+      'mp_battle_open' => 'pp',
+      'mp_battle_send' => 'lp',
+      'mp_battle_receive' => READ_ARGUMENTS,
+      'mp_battle_state' => READ_ARGUMENTS,
+      'mp_battle_close' => 'v',
 
       # Bug reports.
       'mp_report_snap' => 'pll',

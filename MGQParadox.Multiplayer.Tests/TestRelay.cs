@@ -2,6 +2,7 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Passed battle routes on to the battle stand-in and cut its players on stopping
 //      Paulinchen  2026-10-14: Took a Raid World's starting save from every game
 //      Paulinchen  2026-10-13: Kept a Classic world's raid bosses setting and told its room when an edit changed it
 //                            - Kept a Raid World's squad settings
@@ -78,7 +79,7 @@ namespace MGQParadox.Multiplayer.Tests;
 /// who comes and goes, and pass messages on with the sender's seat in front. A peer that sends
 /// more messages than the relay keeps is closed with 4003, as there.
 /// </summary>
-internal sealed class TestRelay : IDisposable
+internal sealed partial class TestRelay : IDisposable
 {
     /// <summary>
     /// The close code the relay ends the other side with when one leaves.
@@ -404,7 +405,8 @@ internal sealed class TestRelay : IDisposable
 
         lock (_gate)
         {
-            connected = _rooms.Values.SelectMany(room => room.Values).Concat(_worlds.Values.SelectMany(seats => seats.Values)).OfType<Peer>().ToArray();
+            connected = _rooms.Values.SelectMany(room => room.Values).Concat(_worlds.Values.SelectMany(seats => seats.Values))
+                .Concat(_battles.Values.SelectMany(battle => battle.Peers.Values)).OfType<Peer>().ToArray();
         }
 
         // Aborting may end a connection on this thread at once, which removes its seat from the lists.
@@ -460,6 +462,12 @@ internal sealed class TestRelay : IDisposable
         var parts = context.Request.Url!.AbsolutePath.Trim('/').Split('/');
         LastFeatures = context.Request.Headers[DirectoryClient.FeaturesHeader] ?? LastFeatures;
         Versions.Enqueue((context.Request.Url!.AbsolutePath, context.Request.Headers[DirectoryClient.VersionHeader]));
+
+        if (parts is ["v1", "worlds", _, "battles", ..])
+        {
+            await ServeBattleAsync(context, parts);
+            return;
+        }
 
         if (!context.Request.IsWebSocketRequest && parts is ["v1", "worlds", _, "story", ..])
         {

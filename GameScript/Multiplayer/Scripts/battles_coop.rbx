@@ -2,7 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Stood the player's own characters up with 1 HP after a battle won while all of them fell
+#      Paulinchen  2026-10-15: Handed a gathered battle to the battle server and followed one there as guest
+#                            - Stood the player's own characters up with 1 HP after a battle won while all of them fell
 #                            - Stood them up as well when a save loads in a world with all of them fallen
 #      Paulinchen  2026-10-13: Told the guests of a Classic world's battle whether its boss fights at its tier
 #                            - Brought a Raid World player's squad by the world's squad rules
@@ -986,8 +987,10 @@ module MGQ_MpBattlesCoop
   #
   # @param scene [Scene_Battle] The battle.
   # @return [Symbol, nil] An ending of battles_sync's Channel.ending, :guest once the player became
-  #   a rival's guest, nil once the battle may start.
+  #   a rival's guest or the battle went to the battle server, nil once the battle may start.
   def self.gather(scene)
+    return MGQ_MpBattlesServed.host_gather(scene) if defined?(MGQ_MpBattlesServed) && MGQ_MpBattlesServed.server?
+
     channel = MGQ_MpBattlesSync::Channel
     invited = MGQ_MpBattlesSync.seats
     joined = {}
@@ -1032,14 +1035,27 @@ module MGQ_MpBattlesCoop
     end
     players = arrange(players)
     level = MGQ_MpCoopLevelSync.level_for(players)
+    # The battle server hosts the battle where the relay has one; the player then plays it back.
+    return :guest if defined?(MGQ_MpBattlesServed) && MGQ_MpBattlesServed.serve(scene, players, level)
+
+    start_battle(scene, players, level)
+    nil
+  end
+
+  # As host, starts a gathered battle: sends everyone the party and the battle's level, and builds
+  # the party. Called by gather, and on the battle server once the players came.
+  #
+  # @param scene [Scene_Battle] The battle.
+  # @param players [Array<Player>] The players, as arrange gives them.
+  # @param level [Integer, nil] The battle's level, see MGQ_MpCoopLevelSync.level_for.
+  def self.start_battle(scene, players, level)
     roster = MGQ_MpBattlesSync::Wire.line([troop_entries, players.map(&:to_a), level.to_i])
-    channel.post("roster", roster)
+    MGQ_MpBattlesSync::Channel.post("roster", roster)
     note_troop
     log("sent the roster of battle #{MGQ_MpBattlesSync.battle_id} (#{roster.size} bytes): #{$game_troop.members.size} enemies, #{players.size} players, level #{level.inspect}")
     MGQ_MpCoopLevelSync.begin(level)
     form(scene, players)
     log("battle #{MGQ_MpBattlesSync.battle_id} with #{players.size} players")
-    nil
   end
 
   # Ends a battle the player leads for a member before it began, since that member did not join:
@@ -1078,6 +1094,14 @@ module MGQ_MpBattlesCoop
   # @return [Integer] The frames.
   def self.roster_frames
     join_frames + ROSTER_MARGIN_FRAMES
+  end
+
+  # Tells the frames a player waits for the battle server's party: longer than the server waits for
+  # the players to come onto the battle channel.
+  #
+  # @return [Integer] The frames.
+  def self.served_roster_frames
+    MGQ_MpBattlesServed::ARRIVE_FRAMES + ROSTER_MARGIN_FRAMES
   end
 
   # Reports whether an invite comes from a rival in a Raid World: another player on the player's map
@@ -1651,11 +1675,18 @@ module MGQ_MpBattlesCoop
   # @return [Symbol, nil] An ending of battles_sync's Channel.ending, nil once the battle may start.
   def self.join(scene)
     hotjoin = MGQ_MpBattlesHotjoin
-    # The host's party says how many of them fight and how many wait on the Backline.
-    build = own_build
-    MGQ_MpBattlesSync::Channel.post("join", MGQ_MpBattlesSync::Wire.line(build))
+    served = defined?(MGQ_MpBattlesServed)
     limit = hotjoin.late? ? hotjoin::ROSTER_FRAMES : roster_frames
-    log("sent join for battle #{MGQ_MpBattlesSync.battle_id} with #{Array(build[1]).size} characters, party_member_max #{build[2]}, waiting up to #{limit / 60} s for the roster")
+    if served && MGQ_MpBattlesServed.starter?
+      # The starter's characters went to the battle server with the battle.
+      limit = served_roster_frames
+      log("waits up to #{limit / 60} s for the server's roster of battle #{MGQ_MpBattlesSync.battle_id}")
+    else
+      # The host's party says how many of them fight and how many wait on the Backline.
+      build = own_build
+      MGQ_MpBattlesSync::Channel.post("join", MGQ_MpBattlesSync::Wire.line(build))
+      log("sent join for battle #{MGQ_MpBattlesSync.battle_id} with #{Array(build[1]).size} characters, party_member_max #{build[2]}, waiting up to #{limit / 60} s for the roster")
+    end
     frames = 0
     text = hotjoin.late? ? "Joining #{MGQ_MpBattlesSync.player}'s battle at its next turn..." : "Joining #{MGQ_MpBattlesSync.player}'s battle..."
     # A late join may last a whole turn, which the box's names line tells, since the text line
@@ -1666,6 +1697,13 @@ module MGQ_MpBattlesCoop
       next :called_off if hotjoin.called_off?
       next :moved if @moved
 
+      # The host handed the battle to the battle server, whose roster comes over the battle channel.
+      serve = served && !MGQ_MpBattlesSync.served? ? MGQ_MpBattlesSync::Channel.take("serve") : nil
+      if serve
+        MGQ_MpBattlesServed.follow(serve)
+        frames = 0
+        limit = served_roster_frames
+      end
       MGQ_MpBattlesSync::Channel.take("roster") || (frames >= limit ? :late : nil)
     end
     return hotjoin.fight_own("the host called it off") if roster == :called_off
