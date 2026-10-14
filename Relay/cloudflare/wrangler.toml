@@ -2,6 +2,7 @@
 #  wrangler.toml
 #
 #  Changelog:
+#      Paulinchen  2026-10-14: Served only games from 0.6.6 on, which never set a Raid World's story back
 #      Paulinchen  2026-10-12: Checked the mod's own releases every five minutes
 #                            - Added the lowest game version the relay serves
 #                            - Added the bug reports' Durable Object
@@ -36,7 +37,7 @@ REPORT_FILES_REPO = "Pauliinchen/MGQ-Online-Bug-Reports"
 REPORT_FILES_BRANCH = "main"
 # The lowest version a game may name in X-MGQ-Version; a game naming none counts as 0.6.4, only
 # 0.0.0-dev always passes, and games before 0.6.0 are turned away whatever it says.
-MIN_VERSION = "0.6.0"
+MIN_VERSION = "0.6.6"
 
 # One Durable Object per room and per world room, one for the world directory and one for the bug
 # reports, SQLite backed, the only kind the free plan offers. The report object stores nothing.
