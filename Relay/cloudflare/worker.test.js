@@ -2,6 +2,7 @@
 //  worker.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Tested that every battle on the battle server is refused
 //      Paulinchen  2026-10-12: Tested the schedules and the release notice to world rooms with players online
 //                            - Tested that the world directory, the mod catalog and the Raid World admin routes refuse a request without X-MGQ-Features
 //                            - Tested the update code on the 400 of a refused world room and the World Admin tool passing with 0.0.0-dev
@@ -649,6 +650,17 @@ test("the Worker refuses a story write whose Content-Length is too long before r
   assert.equal((await worker.fetch(chunked("x".repeat(STORY_LIMITS.maxBodyLength + 1)), env)).status, 413, "a body without the header is read to tell");
   assert.equal((await worker.fetch(chunked("{}"), env)).status, 200);
   assert.deepEqual(forwarded, ["{}"], "a body short enough is forwarded whole");
+});
+
+test("the Worker refuses every battle on the battle server, which it has none of, and reaches no object for it", async () => {
+  const reached = [];
+  const env = { DIRECTORY: namespace(() => ({ fetch: async () => (reached.push("directory"), new Response("{}")) })) };
+  const world = "ab".repeat(16);
+  const start = await worker.fetch(new Request(`https://relay.test/v1/worlds/${world}/battles`, { method: "POST", headers: { [FEATURES_HEADER]: "raid" }, body: "{}" }), env);
+  assert.deepEqual([start.status, (await start.json()).code], [503, "no_server"]);
+  const channel = await worker.fetch(new Request(`https://relay.test/v1/worlds/${world}/battles/k3x9`, { headers: { [FEATURES_HEADER]: "raid", Upgrade: "websocket" } }), env);
+  assert.equal(channel.status, 503);
+  assert.deepEqual(reached, []);
 });
 
 test("the Worker sends bug reports to an object of their own, never to the world directory", async () => {

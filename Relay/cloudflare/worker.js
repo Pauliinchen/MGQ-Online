@@ -2,6 +2,7 @@
 //  worker.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Refused every battle on the battle server, which Cloudflare runs none of
 //      Paulinchen  2026-10-14: Left what a game names in X-MGQ-Features out of its directory requests
 //      Paulinchen  2026-10-13: Told every game of a Classic world whether it fights raid bosses
 //                            - Told every game of a Raid World its new squad settings
@@ -55,6 +56,7 @@
 // rooms talk to each other under /internal, which the Worker never passes on from outside.
 
 import { DurableObject } from "cloudflare:workers";
+import { BATTLE_LIMITS, BATTLE_REFUSAL, battleRouteOf } from "../core/battles.js";
 import { DownloadGate, drainLimited, piecesStream, readLimited } from "../core/bodies.js";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
 import { DIRECTORY_LIMITS, Directory as WorldDirectory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, raidBossesText, sha256Hex, squadText } from "../core/directory.js";
@@ -162,6 +164,12 @@ export default {
 
     if (outdated) {
       return refuseOutdated(request, outdated);
+    }
+
+    // Cloudflare runs no battle server, so the game that starts a battle hosts it.
+    if (battleRouteOf(url)) {
+      await drainLimited(request.body, BATTLE_LIMITS.maxBodyLength, AbortSignal.timeout(DRAIN_LIMITS.readMs));
+      return json(503, { error: "this relay has no battle server", code: BATTLE_REFUSAL.noServer });
     }
 
     const world = storyRouteOf(url) ?? bossRouteOf(url) ?? raidAdminRouteOf(url);

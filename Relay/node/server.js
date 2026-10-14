@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Started co-op battles on the battle server and carried their channels
 //      Paulinchen  2026-10-14: Left what a game names in X-MGQ-Features out of its directory requests
 //      Paulinchen  2026-10-13: Told every game of a Classic world whether it fights raid bosses
 //                            - Told every game of a Raid World its new squad settings
@@ -47,12 +48,17 @@
 // line per request to stdout and every error it catches to stderr.
 
 import http from "node:http";
+import net from "node:net";
 import { pathToFileURL } from "node:url";
 import { WebSocketServer } from "ws";
+import {
+  BATTLE_END, BATTLE_LIMITS, BATTLE_REFUSAL, BattleTable, EVERY_PLAYER, SERVER_SEAT, battleClosedText, battleRouteOf, battleSeatText, messageLine,
+  playerMessage, presenceLine, readOpen, readServerLine, serveLine, serverFrame,
+} from "../core/battles.js";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
 import { Directory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, raidBossesText, squadText } from "../core/directory.js";
 import { DEFAULT_MIN_VERSION, DRAIN_LIMITS, VERSION_HEADER, updateRefusal } from "../core/gate.js";
-import { routeIs } from "../core/http.js";
+import { routeIs, withJson } from "../core/http.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
 import { RELEASE_REPO, ReleaseWatch, UPDATE_NAME, updateLine } from "../core/releases.js";
@@ -83,6 +89,16 @@ const CHECK_RELEASE_EVERY_MS = 5 * 60 * 1000;
  * How often the server sweeps out worlds whose starting save never came and trades kept long enough.
  */
 const SWEEP_EVERY_MS = 10 * 60 * 1000;
+
+/**
+ * How often the server ends the battles no player came onto and those that lasted too long.
+ */
+const BATTLE_SWEEP_EVERY_MS = 5 * 1000;
+
+/**
+ * The environment variable naming the battle server as host:port; without it the relay has none.
+ */
+const BATTLE_SERVER_VARIABLE = "BATTLE_SERVER";
 
 /**
  * Longest request body the directory and the mod catalog read as text, in bytes: the longest JSON
@@ -458,7 +474,7 @@ export function createRelay({
   limits = LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, directory = new Directory(memoryStore(), { clock }),
   mods = new ModCatalog(memoryModStore(), { clock }), trades = new TradeBook(memoryTradeStore(), (id) => directory.store.get(id), { clock }), stories = memoryStoryStores(),
   storyLimits = STORY_LIMITS, bosses = memoryBossStores(), bossLimits = BOSS_LIMITS, log = consoleLog, reports = new ReportDesk(reportSettingsOf({}), { clock, log: stamped(log) }),
-  minVersion = DEFAULT_MIN_VERSION, releases = null,
+  minVersion = DEFAULT_MIN_VERSION, releases = null, battleServer = null, battleLimits = BATTLE_LIMITS,
 } = {}) {
   /** @type {Map<string, WorldStory>} */
   const worldStories = new Map();
@@ -468,6 +484,9 @@ export function createRelay({
   const rooms = new Map();
   /** @type {Map<string, {socket: import("ws").WebSocket, record: object}[]>} */
   const worlds = new Map();
+  const battles = new BattleTable({ clock, limits: battleLimits });
+  /** @type {Map<string, {world: string, battle: string, server: net.Socket, players: Map<number, {socket: import("ws").WebSocket, record: object}>}>} */
+  const battleLinks = new Map();
   // Larger messages than the core allows reach it and get its close code; far larger ones never
   // reach memory at all.
   const sockets = new WebSocketServer({ noServer: true, maxPayload: limits.maxMessageBytes * 2 });
@@ -506,6 +525,23 @@ export function createRelay({
 
     if (outdated) {
       turnAway(outdated.status, outdated.reason, outdated.code);
+      return;
+    }
+
+    const battleRoute = battleRouteOf(new URL(request.url, "http://relay"));
+
+    if (battleRoute?.battle) {
+      admitToBattle(battleRoute, headerOf(request, PLAYER_HEADER), headerOf(request, AUTH_HEADER)).then((admission) => {
+        if (admission.status) {
+          turnAway(admission.status, admission.body.error, admission.body.code);
+          return;
+        }
+
+        accept((webSocket) => joinBattle(admission.link, admission.seat, webSocket));
+      }, (error) => {
+        log.error(errorLine(new Date(), `admit ${path}`, error));
+        turnAway(500, "the directory failed");
+      });
       return;
     }
 
@@ -569,6 +605,15 @@ export function createRelay({
 
     if (outdated) {
       await refuseOutdated(request, response, outdated);
+      return;
+    }
+
+    const battleRoute = battleRouteOf(url);
+
+    if (battleRoute) {
+      const answer = await answerBattle(request, battleRoute);
+      response.writeHead(answer.status, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(answer.body));
       return;
     }
 
@@ -670,6 +715,282 @@ export function createRelay({
     await drain(request, DRAIN_LIMITS.maxBytes, AbortSignal.timeout(DRAIN_LIMITS.readMs));
     response.writeHead(refusal.status, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ error: refusal.reason }));
+  }
+
+  /**
+   * Starts a co-op battle on the battle server, for a player of the world whose players named are
+   * all in its world room: answers 201 once the server took it, else why not, so the starter
+   * hosts it itself.
+   *
+   * @param {http.IncomingMessage} request The request.
+   * @param {{id: string, battle: string | null}} route The world and the battle, see battleRouteOf.
+   * @returns {Promise<{status: number, body: object}>} The answer.
+   */
+  async function answerBattle(request, route) {
+    if (route.battle !== null) {
+      return { status: 426, body: { error: "a battle's channel needs its WebSocket" } };
+    }
+
+    if (request.method !== "POST") {
+      return { status: 405, body: { error: "a battle starts with POST" } };
+    }
+
+    if (!battleServer) {
+      await drain(request, battleLimits.maxBodyLength, AbortSignal.timeout(DRAIN_LIMITS.readMs));
+      return { status: 503, body: { error: "this relay has no battle server", code: BATTLE_REFUSAL.noServer } };
+    }
+
+    const access = await directory.member(route.id, headerOf(request, PLAYER_HEADER), headerOf(request, AUTH_HEADER));
+
+    if (access.status !== 200) {
+      return access;
+    }
+
+    return withJson(() => readText(request, battleLimits.maxBodyLength), battleLimits.maxBodyLength, async (body) => {
+      const open = readOpen(body, battleLimits);
+
+      if (open.status) {
+        return open;
+      }
+
+      // The players named must sit in the world room now: only they come onto the channel.
+      const seated = new Map((worlds.get(route.id) ?? []).map((peer) => [peer.record.seat, peer.record.player]));
+      const players = new Map();
+
+      for (const seat of open.seats) {
+        if (!seated.has(seat)) {
+          return { status: 409, body: { error: `nobody sits on seat ${seat} of the world room`, code: BATTLE_REFUSAL.seats } };
+        }
+
+        players.set(seated.get(seat), seat);
+      }
+
+      if (!players.has(access.player)) {
+        return { status: 403, body: { error: "only a player of the battle starts it" } };
+      }
+
+      const refusal = battles.refusalOf(route.id, open.battle, access.player);
+
+      if (refusal) {
+        return refusal;
+      }
+
+      const served = await serveBattle(route.id, open.battle, open.setup);
+
+      if (served.refusal) {
+        return { status: 503, body: { error: served.refusal.error, code: served.refusal.code } };
+      }
+
+      battles.open(route.id, open.battle, players, access.player);
+      battleLinks.set(`${route.id}/${open.battle}`, { world: route.id, battle: open.battle, server: served.socket, players: new Map() });
+      log.info(`${new Date().toISOString()} battle ${open.battle} of world ${route.id} on the battle server for ${players.size} players`);
+      return { status: 201, body: { battle: open.battle, seat: SERVER_SEAT } };
+    });
+  }
+
+  /**
+   * Hands a battle to the battle server over a connection of its own and waits for it to take the
+   * battle; the connection then carries the battle's messages until it ends.
+   *
+   * @param {string} world The world.
+   * @param {string} battle The battle's id.
+   * @param {string} setup The setup in base64.
+   * @returns {Promise<{socket: net.Socket, refusal: null} | {refusal: {code: string, error: string}}>} The connection, or why not.
+   */
+  function serveBattle(world, battle, setup) {
+    return new Promise((resolve) => {
+      const socket = net.connect(battleServer.port, battleServer.host);
+      let pending = "";
+      let answered = false;
+      const answer = (result) => {
+        if (!answered) {
+          answered = true;
+          clearTimeout(deadline);
+          resolve(result);
+        }
+      };
+      const deadline = setTimeout(() => {
+        socket.destroy();
+        answer({ refusal: { code: BATTLE_REFUSAL.timeout, error: "the battle server did not answer in time" } });
+      }, battleLimits.serveWaitMs);
+
+      socket.setNoDelay(true);
+      socket.on("connect", () => socket.write(`${serveLine(battle, setup)}\n`));
+      socket.on("data", (data) => {
+        pending += data.toString("utf8");
+        let end;
+
+        while ((end = pending.indexOf("\n")) >= 0) {
+          const line = readServerLine(pending.slice(0, end));
+          pending = pending.slice(end + 1);
+
+          if (!answered) {
+            if (line?.op === "serving") {
+              answer({ socket, refusal: null });
+            } else {
+              socket.destroy();
+              answer({ refusal: line?.op === "refused" ? { code: line.code, error: line.error } : { code: BATTLE_REFUSAL.busy, error: "the battle server did not take the battle" } });
+            }
+          } else if (line?.op === "send") {
+            deliverBattle(world, battle, line.seat, line.payload);
+          } else if (line?.op === "end") {
+            log.info(`${new Date().toISOString()} battle ${battle} of world ${world} ended: ${line.result}`);
+            endBattle(world, battle, BATTLE_END.ended);
+          }
+        }
+      });
+      socket.on("error", (error) => {
+        if (!answered) {
+          answer({ refusal: { code: BATTLE_REFUSAL.busy, error: `the battle server is out of reach: ${error.code ?? error.message}` } });
+        }
+      });
+      socket.on("close", () => {
+        answer({ refusal: { code: BATTLE_REFUSAL.busy, error: "the battle server closed the connection" } });
+        endBattle(world, battle, BATTLE_END.server);
+      });
+    });
+  }
+
+  /**
+   * Decides whether a player may come onto a battle's channel: a player of the world and of the
+   * battle.
+   *
+   * @param {{id: string, battle: string}} route The world and the battle.
+   * @param {string | null} player The player's key.
+   * @param {string | null} auth The world's auth key.
+   * @returns {Promise<{link: object, seat: number} | {status: number, body: object}>} The battle and the player's seat, or why not.
+   */
+  async function admitToBattle(route, player, auth) {
+    const access = await directory.member(route.id, player, auth);
+
+    if (access.status !== 200) {
+      return access;
+    }
+
+    const admission = battles.admit(route.id, route.battle, access.player);
+    const link = battleLinks.get(`${route.id}/${route.battle}`);
+
+    if (admission.status) {
+      return admission;
+    }
+
+    return link ? { link, seat: admission.seat } : { status: 404, body: { error: "no such battle runs in the world" } };
+  }
+
+  /**
+   * Takes a player onto a battle's channel: tells them their seat and the server they came, and
+   * passes their messages to the server; their earlier connection gives way.
+   *
+   * @param {{world: string, battle: string, server: net.Socket, players: Map<number, object>}} link The battle.
+   * @param {number} seat The player's world seat.
+   * @param {import("ws").WebSocket} socket Their connection.
+   */
+  function joinBattle(link, seat, socket) {
+    link.players.get(seat)?.socket.close(CLOSE.removed, "replaced");
+    const player = { socket, record: newPeer("player", clock(), limits) };
+    link.players.set(seat, player);
+    socket.send(battleSeatText(seat));
+    link.server.write(`${presenceLine("in", seat)}\n`);
+
+    socket.on("message", (data, isBinary) => {
+      if (link.players.get(seat) !== player) {
+        return;
+      }
+
+      const { peer: record, refusal: tooMuch } = takeMessage(player.record, data.length, clock(), limits);
+      player.record = record;
+
+      if (tooMuch) {
+        socket.close(tooMuch.code, tooMuch.reason);
+        return;
+      }
+
+      if (!isBinary) {
+        if (data.toString() === PING) {
+          socket.send(PONG);
+        } else {
+          socket.close(CLOSE.badRequest, "only binary messages are passed on");
+        }
+        return;
+      }
+
+      const message = playerMessage(data);
+
+      if (message.refusal) {
+        socket.close(message.refusal.code, message.refusal.reason);
+        return;
+      }
+
+      link.server.write(`${messageLine(seat, message.payload)}\n`);
+    });
+
+    socket.on("close", () => {
+      if (link.players.get(seat) === player) {
+        link.players.delete(seat);
+        link.server.write(`${presenceLine("out", seat)}\n`);
+      }
+    });
+    socket.on("error", () => socket.terminate());
+  }
+
+  /**
+   * Passes the battle server's message to a player of its battle, or to every player.
+   *
+   * @param {string} world The world.
+   * @param {string} battle The battle's id.
+   * @param {number} seat The player's world seat, EVERY_PLAYER for everyone.
+   * @param {Uint8Array} payload The message.
+   */
+  function deliverBattle(world, battle, seat, payload) {
+    const link = battleLinks.get(`${world}/${battle}`);
+
+    if (!link) {
+      return;
+    }
+
+    const frame = serverFrame(payload);
+
+    for (const [playerSeat, player] of link.players) {
+      if (seat === EVERY_PLAYER || playerSeat === seat) {
+        player.socket.send(frame, { binary: true });
+      }
+    }
+  }
+
+  /**
+   * Ends a battle: tells its players why and closes their channels and the battle server's
+   * connection; once, however often it is asked.
+   *
+   * @param {string} world The world.
+   * @param {string} battle The battle's id.
+   * @param {string} end Why, one of BATTLE_END.
+   */
+  function endBattle(world, battle, end) {
+    const key = `${world}/${battle}`;
+    const link = battleLinks.get(key);
+    battles.close(world, battle);
+
+    if (!link) {
+      return;
+    }
+
+    battleLinks.delete(key);
+
+    for (const player of link.players.values()) {
+      player.socket.send(battleClosedText(end));
+      player.socket.close(CLOSE.normal, end);
+    }
+
+    link.server.end(`${JSON.stringify({ op: "close" })}\n`);
+  }
+
+  /**
+   * Ends the battles no player came onto and those that lasted too long.
+   */
+  function sweepBattles() {
+    for (const { world, battle, end } of battles.overdue(clock())) {
+      endBattle(world, battle, end);
+    }
   }
 
   /**
@@ -833,6 +1154,12 @@ export function createRelay({
     for (const peer of [...(worlds.get(roomId) ?? [])]) {
       if (!player || peer.record.player === player) {
         unseat(roomId, peer, code, reason);
+      }
+    }
+
+    if (code === CLOSE.worldDeleted) {
+      for (const link of [...battleLinks.values()].filter((each) => each.world === roomId)) {
+        endBattle(link.world, link.battle, BATTLE_END.deleted);
       }
     }
   }
@@ -1141,6 +1468,8 @@ export function createRelay({
   timer.unref();
   const sweepTimer = setInterval(sweep, sweepEveryMs);
   sweepTimer.unref();
+  const battleTimer = setInterval(sweepBattles, BATTLE_SWEEP_EVERY_MS);
+  battleTimer.unref();
   const modTimer = setInterval(() => mods.checkAll().catch((error) => log.error(errorLine(new Date(), "check of the mod catalog", error))), CHECK_MODS_EVERY_MS);
   modTimer.unref();
   const releaseTimer = releases ? setInterval(() => checkRelease().catch((error) => log.error(errorLine(new Date(), "check of the mod's releases", error))), CHECK_RELEASE_EVERY_MS) : null;
@@ -1156,6 +1485,11 @@ export function createRelay({
     clearInterval(sweepTimer);
     clearInterval(modTimer);
     clearInterval(releaseTimer);
+    clearInterval(battleTimer);
+
+    for (const link of [...battleLinks.values()]) {
+      endBattle(link.world, link.battle, BATTLE_END.server);
+    }
 
     for (const socket of sockets.clients) {
       socket.terminate();
@@ -1164,7 +1498,18 @@ export function createRelay({
     return new Promise((resolve) => server.close(() => resolve()));
   }
 
-  return { server, directory, mods, trades, storyOf, bossesOf, check, sweep, checkRelease, stop };
+  return { server, directory, mods, trades, storyOf, bossesOf, battles, check, sweep, sweepBattles, checkRelease, stop };
+}
+
+/**
+ * Reads where the battle server listens, as BATTLE_SERVER names it.
+ *
+ * @param {string | undefined} text host:port, such as 127.0.0.1:8095.
+ * @returns {{host: string, port: number} | null} Where it listens, null without one.
+ */
+export function battleServerOf(text) {
+  const match = /^\s*([^\s:]+):(\d{1,5})\s*$/.exec(text ?? "");
+  return match ? { host: match[1], port: Number(match[2]) } : null;
 }
 
 /**
@@ -1194,9 +1539,10 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const trades = new TradeBook(stores.trades, (id) => directory.store.get(id));
   const reports = new ReportDesk(reportSettingsOf(process.env), { log: stamped(consoleLog) });
   const releases = new ReleaseWatch(stores.releases, { repo: process.env.RELEASE_REPO || RELEASE_REPO });
-  const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports, minVersion: process.env.MIN_VERSION, releases });
+  const battleServer = battleServerOf(process.env[BATTLE_SERVER_VARIABLE]);
+  const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports, minVersion: process.env.MIN_VERSION, releases, battleServer });
 
-  relay.server.listen(port, host, () => console.log(`${new Date().toISOString()} relay listening on ${host}:${port}, ${database ? `database ${database}` : "everything in memory"}`));
+  relay.server.listen(port, host, () => console.log(`${new Date().toISOString()} relay listening on ${host}:${port}, ${database ? `database ${database}` : "everything in memory"}, ${battleServer ? `battle server ${battleServer.host}:${battleServer.port}` : "no battle server"}`));
 
   for (const signal of ["SIGINT", "SIGTERM"]) {
     process.on(signal, async () => {
