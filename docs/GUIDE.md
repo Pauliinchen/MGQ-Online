@@ -4,6 +4,7 @@ Everything Monster Girl Quest! Online does, for players. To install the mod, see
 
 - [Hotkeys](#hotkeys)
 - [Interface](#interface)
+- [Single player](#single-player)
 - [Worlds](#worlds)
 - [On the map](#on-the-map)
 - [Parties](#parties)
@@ -53,7 +54,7 @@ The raid boss bar's red HP stays red in both.
 
 **Leader HUD.** On the map, the top left shows your Formation Leader: their name and level, their HP and MP, and three thin bars with how far they are to their next base, job and race level. It shows in single player too.
 
-- *Mod Config → MGQ Online Settings → Leader HUD* turns it **On** (the default) or **Off**.
+- *Mod Config → MGQ Online Settings → Leader HUD* turns it **On** (the default) or **Off** inside worlds; *MGQ Online SP → Leader HUD* does the same in single player.
 - *Leader HUD Size* picks **Large** (the default), with their face and the numbers inside the HP and MP bars, or **Small**, with their map sprite and the bars alone. **H** switches between them on the map.
 - Hold the left **Alt** and drag it to move it, like the other boxes.
 - It hides while a message shows at the top of the screen. The map's name, a medal just won and the notification box move below it while it sits at the top left.
@@ -64,6 +65,18 @@ The boxes you can move: the chat (on the map and in battles, each its own place)
 - While **Alt** is held, the mouse only moves and resizes; clicks don't reach the boxes.
 - *Mod Config → MGQ Online Settings → Interface Positions* says *Moved* while any box is moved; pick *Default* to put every box back.
 - The look and the places are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save and every world, and a world that sets its mods' options never changes them.
+
+## Single player
+
+Outside a world, the world features (chat, players, parties, trading) stay hidden, and what follows needs no connection. *Mod Config → MGQ Online SP* holds it:
+
+- **Leader HUD:** the [Leader HUD](#interface) in single player, **On** or **Off**; until you set it, it follows *MGQ Online Settings → Leader HUD*.
+- **Raid Bar on Map** and **Raid Bar in Battle:** the raid bosses' HP bars above the boss on the map and across the top of the battle, each **On** (the default) or **Off**. They count in single player and in Classic Worlds with raid bosses; a Raid World always shows both.
+- **Raid Bosses:** **On** lets the story bosses fight as raid bosses of their tier, far stronger, exactly as in a [Classic World with raid bosses](CLASSIC_WORLDS.md#raid-bosses). **Off** (the default) keeps them as the game has them.
+
+They are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save.
+
+**Restart.** After you change one of them while playing outside a world, the map asks whether to start the game again so they apply cleanly, as soon as nothing runs there and the game would let you save. *Restart* saves your game apart from your save slots (`Patch\Multiplayer\Resume.rvdata2`), starts the game again and goes on right where you were; nothing is lost and no slot is touched. *Later* keeps playing; the settings apply anyway. Under Wine or Proton the game closes and you start it again yourself; it still goes on where you were. Should that game ever fail to load, it is kept as `Patch\Multiplayer\Resume <date>.rvdata2` and a message names it.
 
 ## Worlds
 
@@ -122,6 +135,7 @@ Confirm on a world and pick *Enter the world*.
 | Sharing companions | Raid World only: whether the companions one player has come to the others, see [Creating a Raid World](RAID_WORLDS.md#creating-a-raid-world). Fixed once created. |
 | Shared save | Classic World only: every new player starts from one of your saves instead of the opening. Choose the save after ticking it. |
 | Player's choice | Classic World only: each new player chooses where to start when they first enter, see [Starting out](CLASSIC_WORLDS.md#starting-out). |
+| Raid Bosses | Classic World only: the story bosses fight as raid bosses of their tier, far stronger, without shared HP, see [Raid bosses](CLASSIC_WORLDS.md#raid-bosses). |
 | Difficulty | Raid World only: the difficulty every player plays on, see [Creating a Raid World](RAID_WORLDS.md#creating-a-raid-world). |
 | Mods | The mods of the world, picked from a list of yours. See [Mods of a world](#mods-of-a-world). |
 | Allow data mismatch | Unticked at first: a game whose data differs from yours can't enter. Ticked, it is warned and may enter anyway. See [Game data](#game-data). |
@@ -129,7 +143,7 @@ Confirm on a world and pick *Enter the world*.
 | Turn off other mods | While a player is in the world, their mods the world doesn't name are off. Ticked at first for a Raid World, unticked for a Classic one, until you tick or untick it yourself. See [Turning off other mods](#turning-off-other-mods). |
 | Description | What the world is about, up to 1000 characters. |
 
-The creator can change Max Players, Mods, *Shared Mod Settings*, *Turn off other mods*, the Description and a Raid World's Difficulty later with *Edit the world*. Everything else is fixed once the world exists.
+The creator can change Max Players, Mods, *Shared Mod Settings*, *Turn off other mods*, the Description, a Raid World's Difficulty and a Classic World's *Raid Bosses* later with *Edit the world*. Everything else is fixed once the world exists.
 
 ### Managing worlds
 

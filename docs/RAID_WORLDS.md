@@ -122,6 +122,7 @@ Each story boss is one fight the whole world shares, and so are the six one-time
 - **Side battles:** when a boss battle near you, a side battle included, is full or won't take you in, the prompt below your character says "Press J to fight \<boss> alongside". Press **J** to fight the same boss in a battle of your own, so every player can fight a boss at the same time. It starts at once, invites and holds nobody, and other players near it can join it with **J**. It shares the same HP, plays no story scene and none of the boss's battle events, and losing it is a defeat like losing the boss's own battle. You can't start one against a boss your own story has beaten already, or against a defeated one.
 - **Side battle rewards:** the first side battle you win against a boss gives its EXP, gold and drops; later side battles against the same boss give none. The boss's own story battle still gives them. This holds for players who join a side battle too.
 - **Hades rematches** fight the bosses as the game has them, never their raid HP, and the rematch hall shows no boss bars.
+- **Elsewhere:** a Classic World can have raid bosses too, and so can single player, each battle against the boss's full raid HP with nothing shared; see [Raid bosses](CLASSIC_WORLDS.md#raid-bosses).
 
 ### Tiers
 

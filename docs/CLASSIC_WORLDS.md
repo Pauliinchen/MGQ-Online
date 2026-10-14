@@ -10,6 +10,7 @@ What every world shares, such as the world screen, the chat, parties, co-op batt
 - [Story scenes](#story-scenes)
 - [Chests](#chests)
 - [Co-op battles](#co-op-battles)
+- [Raid bosses](#raid-bosses)
 
 ## Starting out
 
@@ -77,3 +78,13 @@ The rules every co-op battle follows are under [Co-op battles](GUIDE.md#co-op-ba
 - **The leader's game runs the battle**, with the leader's difficulty and mods, whoever met the enemies: "Asking \<leader> to lead the battle..." shows meanwhile. When the leader isn't on that map, is busy or doesn't answer within 6 seconds, the game where the battle started runs it. Everyone fights that game's enemies, even when a mod there changes them, such as one that doubles them.
 - **Only your party joins:** the party members playing on the same map join the battle; other players walk on.
 - **Level Sync:** when the leader fights in the battle, its level is the highest level among the leader's characters in it. Characters above it fight with the stats of that level, and their equipment loses half as much as the level takes; the chat log tells you when yours are synced. Levels, EXP, skills, jobs and races stay your own, and your full stats come back after the battle with the same share of HP and MP. Characters at or below the level fight as they are.
+
+## Raid bosses
+
+With *Raid Bosses* ticked in the create or edit form, the world's story bosses fight as the raid bosses of a Raid World, with their tier's raid HP and defense (see [Tiers](RAID_WORLDS.md#tiers)) on top of the difficulty. Unlike in a Raid World, nothing is shared:
+
+- **Every battle fights the boss anew,** at its full raid HP. Nothing keeps its HP between battles, and it never heals over time.
+- **The same bosses count** as in a Raid World: the last fight of each story boss your story hasn't beaten yet, and the six Chaos' Phantoms of the Chaos Domain. Earlier phases of a fight, Hades rematches, the Colosseum and the two Great Decision fights stay as the game has them.
+- **In a co-op battle** the game that runs it decides, and everyone in the battle fights the same raised boss.
+- **HP bars:** in battle the boss's bar across the top of the screen shows its HP, as in a Raid World; on the map its bar shows its full raid HP above it. *Mod Config → MGQ Online SP* turns either bar off for you (see [Single player](GUIDE.md#single-player)).
+- **Changing it:** the creator or an admin can tick or untick it later; everyone in the world reads that the story bosses changed, and it counts from their next boss fight.
