@@ -88,9 +88,9 @@ A world's fields, as `POST /v1/worlds` takes them and `GET /v1/worlds` lists the
 | `creator` | | yes | The creator's `id` and `name`. |
 | `authHash` | yes | | SHA-256 of the auth key, hexadecimal. |
 | `lock` | yes | | `salt`, `iterations`, `box`: the token encrypted with a key from the password. |
-| `start` | `true` | `none`, `pending`, `ready` | Whether a starting save follows, and how far it is. A Raid World starts from the beginning: `true` is refused with 400 and `code` `raid_start`, and so is an upload, unless the request's `X-MGQ-Features` names `dev`, as development builds do, for testing only (to be removed before a release, see docs/DEVELOPER.md). |
+| `start` | `true` | `none`, `pending`, `ready` | Whether a starting save follows, and how far it is, for a Classic world and a Raid World alike. |
 | `hidden` | optional | yes | Left out of the list for everyone but its players. |
-| `choose` | optional | yes | Each new player chooses where to start: the beginning, one of their own saves, or the starting save. Refused for a Raid World like `start`. |
+| `choose` | optional | yes | Each new player chooses where to start: the beginning, one of their own saves, or the starting save. Refused for a Raid World with 400 and `code` `raid_start`. |
 | `open` | optional | yes | The password is empty, so the games enter without asking for it. |
 | `featured` | admins only | yes | Shown as one of the relay's own worlds. |
 | `description` | optional | yes | Kept up to 1000 characters. |

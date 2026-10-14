@@ -133,7 +133,7 @@ Confirm on a world and pick *Enter the world*.
 | Hidden | Leaves the world out of the list. Only its players see it, and whoever adds it by its id. |
 | World type | *Classic* or *Raid*, see [World types](#world-types). Fixed once created. |
 | Sharing companions | Raid World only: whether the companions one player has come to the others, see [Creating a Raid World](RAID_WORLDS.md#creating-a-raid-world). Fixed once created. |
-| Shared save | Classic World only: every new player starts from one of your saves instead of the opening. Choose the save after ticking it. |
+| Shared save | Every new player starts from one of your saves instead of the opening; in a Raid World the world's story starts there too. Choose the save after ticking it. |
 | Player's choice | Classic World only: each new player chooses where to start when they first enter, see [Starting out](CLASSIC_WORLDS.md#starting-out). |
 | Raid Bosses | Classic World only: the story bosses fight as raid bosses of their tier, far stronger, without shared HP, see [Raid bosses](CLASSIC_WORLDS.md#raid-bosses). |
 | Difficulty | Raid World only: the difficulty every player plays on, see [Creating a Raid World](RAID_WORLDS.md#creating-a-raid-world). |

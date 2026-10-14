@@ -49,7 +49,7 @@ Members close to the leader in the story play the leader's story. Its events, do
 
 ## Your own choices
 
-The story's choices are yours, whatever the leader chose: Alice or Ilias, Lily or Lucia in Magistea Village, the Priestess or the Queen Bee at Plansect, Natasha or the mayor in Succubus Village, the Spider Princess or the Queen Ants, the Sphinx, and the Great Decision. The companions they bring join you only by your own answer.
+The story's choices are yours, whatever the leader chose: Alice or Ilias, Lily or Lucia in Magistea Village, the Navy or the Pirates, the Priestess or the Queen Bee at Plansect, Natasha or the mayor in Succubus Village, the Spider Princess or the Queen Ants, the Sphinx, and the Great Decision. The companions they bring join you only by your own answer.
 
 - **Sync story:** a leader can bring a member who is behind up to their own point in the story: *Sync story* in the member's menu of the World overview. The member accepts or declines in the notification box ("\<leader> offers to bring your story up to theirs").
 - Accepting opens one screen with every choice the jump carries you past, in story order, each with what your answer brings ("Lucia joins.", "Nobody joins: Natasha joins only while Lily is with you."). Left/Right, Enter or a click change an answer; *Bring me there* takes them all, *Cancel* leaves your story as it is.
