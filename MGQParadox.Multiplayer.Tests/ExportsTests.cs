@@ -2,6 +2,7 @@
 //  ExportsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number and no export past 16 arguments
 //      Paulinchen  2026-10-13: Expected the raid bosses setting at the end of mp_dir_create and mp_dir_edit
 //                            - Expected the squad settings at the end of mp_dir_create and mp_dir_edit
 //      Paulinchen  2026-10-12: Covered the mp_mouse_wheel export
@@ -92,7 +93,8 @@ public sealed unsafe class ExportsTests
     /// <summary>
     /// Asserts that the parked mods' functions, the world exports that take whether a world turns
     /// other mods off and mp_dev_build are exported under the names the game script calls, each
-    /// taking what GameScript/Multiplayer.rb names for it.
+    /// taking what GameScript/Multiplayer.rb names for it, and that no export takes more than the 16
+    /// arguments the game's Win32API loads.
     /// </summary>
     [Fact]
     public void ParkingExports_AreRegistered()
@@ -108,9 +110,10 @@ public sealed unsafe class ExportsTests
         Assert.Equal("pl", exported["mp_mods_scripts"]);
         Assert.Equal("pl", exported["mp_mods_restart_parked"]);
         Assert.Equal("p", exported["mp_mods_recover"]);
-        Assert.Equal("pplllpppplppppllpl", exported["mp_dir_create"]);
+        Assert.Equal("ppllppppppppllpl", exported["mp_dir_create"]);
         Assert.Equal("plppplllllpl", exported["mp_dir_edit"]);
         Assert.Equal(string.Empty, exported["mp_dev_build"]);
+        Assert.Empty(exported.Where(export => export.Value.Length > 16).Select(export => export.Key));
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 #  world_open_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number
 #      Paulinchen  2026-10-14: Expected a Raid World's starting save in its details and its Save in every build
 #      Paulinchen  2026-10-13: Checked a Classic world's raid bosses in the list, the details, world.ini and the open world
 #                            - Checked a Raid World's squad rules in the list, the details, world.ini and the open world
@@ -661,9 +662,9 @@ raid_form[:share] = 1
 check("a Raid World brings it back", [raid_form.fields.include?(share_field), raid_form.type, raid_form.share], [true, "raid", "story"])
 check("whose hints fit the lines at the top", [type_field.hint.size <= 100, share_field.hint.size <= 100], [true, true])
 MGQ_MpWorld::Directory.create("Raid Night", "", 4, false, false, "", :type => "raid", :share => "story")
-check("create hands the type and the sharing to the DLL", [$calls.last[1], $calls.last[2][12..13]], ["pplllpppplppppllpl", ["raid\0", "story\0"]])
+check("create hands the type and the sharing to the DLL", [$calls.last[1], $calls.last[2][10..11]], ["ppllppppppppllpl", ["raid\0", "story\0"]])
 MGQ_MpWorld::Directory.create("Plain", "", 4, false, false, "", :share => "all")
-check("a Classic world shares nothing", $calls.last[2][12..13], ["classic\0", "off\0"])
+check("a Classic world shares nothing", $calls.last[2][10..11], ["classic\0", "off\0"])
 
 # Turning the form's switches on the world screen.
 scene = form_scene

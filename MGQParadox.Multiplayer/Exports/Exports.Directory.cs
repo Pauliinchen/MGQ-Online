@@ -2,6 +2,7 @@
 //  Exports.Directory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Took the options of mp_dir_create in one number
 //      Paulinchen  2026-10-13: Took a Classic world's raid bosses setting in mp_dir_create and mp_dir_edit
 //                            - Took a Raid World's squad settings in mp_dir_create and mp_dir_edit
 //      Paulinchen  2026-10-09: Took whether a world turns other mods off in mp_dir_create and mp_dir_edit
@@ -33,6 +34,22 @@ namespace MGQParadox.Multiplayer;
 /// </summary>
 internal static unsafe partial class Exports
 {
+    /// <summary>
+    /// The option of <c>mp_dir_create</c> that leaves the world out of the list for everyone but its players.
+    /// </summary>
+    /// <remarks>The options share one argument, as the game's Win32API takes at most 16.</remarks>
+    private const int HiddenOption = 1;
+
+    /// <summary>
+    /// The option of <c>mp_dir_create</c> that lets each new player choose where to start.
+    /// </summary>
+    private const int ChooseOption = 2;
+
+    /// <summary>
+    /// The option of <c>mp_dir_create</c> that lets only games with the same data enter.
+    /// </summary>
+    private const int StrictOption = 4;
+
     /// <summary>
     /// Fetches the world list again. Returns at once, the directory is asked on a thread of its own.
     /// </summary>
@@ -118,13 +135,11 @@ internal static unsafe partial class Exports
     /// <param name="name">The world's name, UTF-8 and null-terminated.</param>
     /// <param name="password">The password others enter it with, UTF-8 and null-terminated; empty for none.</param>
     /// <param name="seats">How many games it seats at once, 2 to 32.</param>
-    /// <param name="hidden">1 to leave the world out of the list for everyone but its players, 0 to list it for everyone.</param>
-    /// <param name="choose">1 to let each new player choose where to start, 0 to start everyone alike.</param>
+    /// <param name="options">The world's options, any of <see cref="HiddenOption"/>, <see cref="ChooseOption"/> and <see cref="StrictOption"/> added up.</param>
     /// <param name="start">The starting save's files, UTF-8 and null-terminated: one line each, the name new players get it under, <c>=</c>, and where it is read from, relative to the game's folder; empty for none.</param>
     /// <param name="description">What the world is about, UTF-8 and null-terminated; empty for nothing.</param>
     /// <param name="mods">The mods it needs, UTF-8 and null-terminated; empty for none.</param>
     /// <param name="data">What tells the creator's game data from another's, UTF-8 and null-terminated; empty when unknown.</param>
-    /// <param name="strict">1 when only games with the same data may enter, 0 when every game may.</param>
     /// <param name="modHashes">The creator's hashes of required mods outside the mod catalog, <c>name=hash</c> pairs separated by semicolons, UTF-8 and null-terminated; empty for none.</param>
     /// <param name="settings">The creator's settings of the mods the world names, <c>key=type:value</c> pairs separated by semicolons, UTF-8 and null-terminated; empty for none.</param>
     /// <param name="type">The world's type, "classic" or "raid", UTF-8 and null-terminated; empty for Classic.</param>
@@ -135,11 +150,11 @@ internal static unsafe partial class Exports
     /// <param name="raidBosses">1 to let a Classic world's players meet raid bosses, 0 to leave them out; any other value leaves it to the relay. Left out for a Raid World.</param>
     /// <returns>1 when started, 0 while another action runs, for seats, a Raid World's difficulty or its squad settings out of range or when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_dir_create", CallConvs = [typeof(CallConvStdcall)])]
-    public static int DirectoryCreate(byte* name, byte* password, int seats, int hidden, int choose, byte* start, byte* description, byte* mods, byte* data, int strict, byte* modHashes, byte* settings, byte* type, byte* share, int difficulty, int otherModsOff, byte* squad, int raidBosses)
+    public static int DirectoryCreate(byte* name, byte* password, int seats, int options, byte* start, byte* description, byte* mods, byte* data, byte* modHashes, byte* settings, byte* type, byte* share, int difficulty, int otherModsOff, byte* squad, int raidBosses)
     {
         try
         {
-            var about = new WorldAbout(Text(description), Text(mods), Text(data), strict == 1, Text(modHashes), Text(settings));
+            var about = new WorldAbout(Text(description), Text(mods), Text(data), (options & StrictOption) != 0, Text(modHashes), Text(settings));
             var worldType = Text(type) is { Length: > 0 } named ? named : WorldType.Classic;
             var sharing = Text(share) is { Length: > 0 } shared ? shared : CompanionSharing.Off;
             var raid = worldType == WorldType.Raid;
@@ -150,7 +165,7 @@ internal static unsafe partial class Exports
                 return 0;
             }
 
-            return WorldDirectory.Current.Create(Text(name), Text(password), seats, hidden == 1, choose == 1, StartFiles(Text(start)), about, worldType, sharing, raid ? difficulty : null, FlagOf(otherModsOff), squadText, raid ? null : FlagOf(raidBosses)) ? 1 : 0;
+            return WorldDirectory.Current.Create(Text(name), Text(password), seats, (options & HiddenOption) != 0, (options & ChooseOption) != 0, StartFiles(Text(start)), about, worldType, sharing, raid ? difficulty : null, FlagOf(otherModsOff), squadText, raid ? null : FlagOf(raidBosses)) ? 1 : 0;
         }
         catch (Exception ex)
         {

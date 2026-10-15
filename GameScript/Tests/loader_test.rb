@@ -2,6 +2,7 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Checked that every export takes at most 16 arguments
 #      Paulinchen  2026-10-13: Checked that ui_single_player.rbx loads after the scripts whose rows it adds
 #                            - Checked that battles_raid_tiers.rbx loads after the scripts it builds on and before ui_raid_bar.rbx
 #      Paulinchen  2026-10-12: Stood in for Ini.load
@@ -74,6 +75,8 @@ calls = (Dir[File.join(SCRIPTS_DIR, "*.rbx")] + [File.expand_path("../Multiplaye
   File.read(file, encoding: "UTF-8").scan(/(function|read)\('(mp_[a-z_]+)'/)
 end.uniq
 check("every export the scripts call is in the table", calls.map { |_way, name| name }.uniq - table_names, [])
+# The game's Win32API refuses an export of more arguments, so the export could not be called at all.
+check("every export takes at most 16 arguments", DLL_EXPORTS.select { |_name, arguments| arguments.size > 16 }.keys, [])
 check("every export read into a buffer takes the buffer and its size",
       calls.select { |way, name| way == "read" && DLL_EXPORTS[name] != "pl" }.map { |_way, name| name }, [])
 exported = Dir[File.expand_path("../../MGQParadox.Multiplayer/Exports/*.cs", __dir__)].flat_map do |file|

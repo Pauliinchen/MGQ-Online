@@ -2,6 +2,7 @@
 #  world_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number
 #      Paulinchen  2026-10-14: Expected a Raid World's Shared save and Save in the new world's form
 #      Paulinchen  2026-10-13: Checked GameData.ini, written once per session as the title screen opens
 #                            - Checked a Classic world's raid bosses in the forms, the calls and the edit's message
@@ -390,7 +391,7 @@ scene.create_world
 check("a world that keeps differing games out is not made while the creator's game data cannot be read", [$calls, said(scene) =~ /could not be read/ ? true : false], [[], true])
 strict_form[:mismatch] = true
 scene.create_world
-check("a world for every game is", [$calls.last[0], $calls.last[2][9]], ["mp_dir_create", 0])
+check("a world for every game is", [$calls.last[0], ($calls.last[2][3] & MGQ_MpWorld::Directory::STRICT_OPTION) > 0], ["mp_dir_create", false])
 $data_mapinfos = known_maps
 MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
 scene = new_scene
@@ -398,22 +399,22 @@ strict_form = scene.instance_variable_get(:@forms)[:new_world]
 strict_form[:name] = "W"
 strict_form[:mismatch] = false
 scene.create_world
-check("with the data read, an unticked Allow data mismatch makes a world for the same data only", [$calls.last[2][8], $calls.last[2][9]], ["#{modded}\0", 1])
-check("an unticked Shared Mod Settings leaves every player their own", $calls.last[2][11], "\0")
+check("with the data read, an unticked Allow data mismatch makes a world for the same data only", [$calls.last[2][7], ($calls.last[2][3] & MGQ_MpWorld::Directory::STRICT_OPTION) > 0], ["#{modded}\0", true])
+check("an unticked Shared Mod Settings leaves every player their own", $calls.last[2][9], "\0")
 shared_field = strict_form.fields.find { |field| field.key == :shared }
 check("Shared Mod Settings sits beside Allow data mismatch, unticked, and says what it does to players",
       [shared_field.kind, shared_field.label, shared_field.group, shared_field.side, strict_form.fields.find { |field| field.key == :mismatch }.side, MGQ_MpWorld::Form.create[:shared], shared_field.hint],
       [:check, "Shared Mod Settings", "Game data", :right, :left, false, "Ticked: every player plays with your mod options here. Unticked: each keeps their own."])
 strict_form[:shared] = true
 scene.create_world
-check("ticked, the new world shares the creator's mod settings, which their game reads once they play in it", $calls.last[2][11], "@shared=o:1\0")
-check("a new world is Classic, sharing no companions, unless the form says otherwise", $calls.last[2][12..13], ["classic\0", "off\0"])
+check("ticked, the new world shares the creator's mod settings, which their game reads once they play in it", $calls.last[2][9], "@shared=o:1\0")
+check("a new world is Classic, sharing no companions, unless the form says otherwise", $calls.last[2][10..11], ["classic\0", "off\0"])
 strict_form[:share] = 2
 scene.create_world
-check("a Classic world shares no companions whatever the greyed-out switch shows", $calls.last[2][12..13], ["classic\0", "off\0"])
+check("a Classic world shares no companions whatever the greyed-out switch shows", $calls.last[2][10..11], ["classic\0", "off\0"])
 strict_form[:type] = 1
 scene.create_world
-check("a Raid World goes with how it shares companions", $calls.last[2][12..13], ["raid\0", "all\0"])
+check("a Raid World goes with how it shares companions", $calls.last[2][10..11], ["raid\0", "all\0"])
 check("which the screen keeps for the world's folder with its difficulty and squad rules", scene.instance_variable_get(:@creating_kind), ["raid", "all", 0, MGQ_MpWorld::DEFAULT_SQUAD, false])
 check("and sends with the squad rules", $calls.last[2][-2], "0 4 1 1\0")
 strict_form[:type] = 0
@@ -428,9 +429,9 @@ check("unticked it sends 0", $calls.last[2].last, 0)
 
 # The directory.
 MGQ_MpWorld::Directory.create("W", "p", 4, false, false, "", :description => "A slow run.", :mods => "Some Mod", :data => modded, :strict => true)
-check("create hands the description, the mods, the game data and the rule to the DLL", [$calls.last[1], $calls.last[2][6..9]], ["pplllpppplppppllpl", ["A slow run.\0", "Some Mod\0", "#{modded}\0", 1]])
+check("create hands the description, the mods, the game data and the rule to the DLL", [$calls.last[1], $calls.last[2][5..7] + [($calls.last[2][3] & MGQ_MpWorld::Directory::STRICT_OPTION) > 0]], ["ppllppppppppllpl", ["A slow run.\0", "Some Mod\0", "#{modded}\0", true]])
 MGQ_MpWorld::Directory.create("W", "p", 4, false, false, "")
-check("or nothing", $calls.last[2][6..9], ["\0", "\0", "\0", 0])
+check("or nothing", $calls.last[2][5..7] + [($calls.last[2][3] & MGQ_MpWorld::Directory::STRICT_OPTION) > 0], ["\0", "\0", "\0", false])
 $dll["mp_dir_list"] = "state=ready\n\n" \
   "world\tw1\t4\t0\tc\t0\tC\tStrict\tnone\t0\t0\t1\t0\t1\t#{plain}\tNo mods\tUnmodded only.\n" \
   "world\tw2\t4\t0\tc\t0\tC\tLoose\tnone\t0\t0\t1\t0\t0\t#{plain}\tSome Mod\tA slow run through part one of the story with friends.\n" \

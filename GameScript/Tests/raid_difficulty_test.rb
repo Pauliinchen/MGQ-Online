@@ -2,6 +2,7 @@
 #  raid_difficulty_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number
 #      Paulinchen  2026-10-14: Checked a Raid World's Shared save in every build
 #      Paulinchen  2026-10-13: Checked a Classic world's raid bosses in the forms and the calls of mp_dir_create and mp_dir_edit
 #                            - Checked a Raid World's squad rules in the forms and the calls of mp_dir_create and mp_dir_edit
@@ -236,13 +237,13 @@ check("back on Classic the Save and Raid Bosses take their place again", [field_
 # What goes to the DLL carries a Raid World's difficulty.
 MGQ_MpWorld::Directory.create("Raid Night", "", 4, false, true, "Save01.rvdata2=Save/Save01.rvdata2", :type => "raid", :share => "story", :difficulty => 3)
 args = $calls.last[2]
-check("a Raid World goes with its starting save but without the player's choice, with its difficulty", [$calls.last[1], args[4], args[5], args[12], args[14]],
-      ["pplllpppplppppllpl", 0, "Save01.rvdata2=Save/Save01.rvdata2\0", "raid\0", 3])
+check("a Raid World goes with its starting save but without the player's choice, with its difficulty", [$calls.last[1], (args[3] & MGQ_MpWorld::Directory::CHOOSE_OPTION) > 0, args[4], args[10], args[12]],
+      ["ppllppppppppllpl", false, "Save01.rvdata2=Save/Save01.rvdata2\0", "raid\0", 3])
 MGQ_MpWorld::Directory.create("Raid Plain", "", 4, false, false, "", :type => "raid")
-check("on NORMAL unless told otherwise", $calls.last[2][14], 0)
+check("on NORMAL unless told otherwise", $calls.last[2][12], 0)
 MGQ_MpWorld::Directory.create("Plain", "", 4, false, true, "Save01.rvdata2=Save/Save01.rvdata2", :difficulty => 3)
-check("a Classic world keeps both, and its difficulty is left at NORMAL, which the relay drops", [$calls.last[2][4], $calls.last[2][5], $calls.last[2][14]],
-      [1, "Save01.rvdata2=Save/Save01.rvdata2\0", 0])
+check("a Classic world keeps both, and its difficulty is left at NORMAL, which the relay drops", [($calls.last[2][3] & MGQ_MpWorld::Directory::CHOOSE_OPTION) > 0, $calls.last[2][4], $calls.last[2][12]],
+      [true, "Save01.rvdata2=Save/Save01.rvdata2\0", 0])
 MGQ_MpWorld::Directory.edit("r1", 6, "", "", nil, -2)
 check("an edit hands a Raid World's difficulty to the DLL", [$calls.last[1], $calls.last[2][6..7]], ["plppplllllpl", [-2, 1]])
 MGQ_MpWorld::Directory.edit("w1", 6, "", "")
@@ -289,7 +290,7 @@ limits_form.turn(squad_fields[3], -1)
 check("ticked and turned there, the world's form picks Luka replaceable, the Original size, two in front and four in raids", squad_form.squad,
       { :luka => true, :formation => 0, :front => 2, :raid_front => 4 })
 MGQ_MpWorld::Directory.create("Raid Night", "", 4, false, false, "", :type => "raid", :squad => squad_form.squad)
-check("create hands a Raid World's squad rules to the DLL before the raid bosses, as their text", [$calls.last[1], $calls.last[2][-2]], ["pplllpppplppppllpl", "1 0 2 4\0"])
+check("create hands a Raid World's squad rules to the DLL before the raid bosses, as their text", [$calls.last[1], $calls.last[2][-2]], ["ppllppppppppllpl", "1 0 2 4\0"])
 MGQ_MpWorld::Directory.create("Raid Plain", "", 4, false, false, "", :type => "raid")
 check("the defaults unless told otherwise", $calls.last[2][-2], "0 4 1 1\0")
 MGQ_MpWorld::Directory.create("Plain", "", 4, false, false, "", :squad => squad_form.squad)
@@ -312,7 +313,7 @@ check("and a Classic world's edit form has no button", field_of(MGQ_MpWorld::For
 # A Classic world's raid bosses go to the DLL last: 1 or 0, and -1 for a Raid World or an edit
 # that leaves them.
 MGQ_MpWorld::Directory.create("Plain", "", 4, false, false, "", :raid_bosses => true)
-check("create hands a Classic world's raid bosses to the DLL last, 1 when on", [$calls.last[1], $calls.last[2].last], ["pplllpppplppppllpl", 1])
+check("create hands a Classic world's raid bosses to the DLL last, 1 when on", [$calls.last[1], $calls.last[2].last], ["ppllppppppppllpl", 1])
 MGQ_MpWorld::Directory.create("Plain", "", 4, false, false, "")
 check("0 unless told otherwise", $calls.last[2].last, 0)
 MGQ_MpWorld::Directory.create("Raid Night", "", 4, false, false, "", :type => "raid", :raid_bosses => true)

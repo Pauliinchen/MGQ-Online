@@ -2,6 +2,7 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Named mp_dir_create with a world's options in one number
 #      Paulinchen  2026-10-13: Loaded ui_single_player.rbx after ui_leader_hud.rbx
 #                            - Loaded battles_raid_tiers.rbx after battles_raid_pool.rbx
 #                            - Named mp_dir_create and mp_dir_edit with a Classic world's raid bosses
@@ -818,7 +819,7 @@ module MGQ_Multiplayer
       'mp_dir_refresh' => 'v',
       'mp_dir_find' => 'p',
       'mp_dir_list' => READ_ARGUMENTS,
-      'mp_dir_create' => 'pplllpppplppppllpl',
+      'mp_dir_create' => 'ppllppppppppllpl',
       'mp_dir_unlock' => 'pp',
       'mp_dir_unlock_code' => 'p',
       'mp_dir_edit' => 'plppplllllpl',

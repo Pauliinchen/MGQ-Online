@@ -2,6 +2,7 @@
 #  start_choice_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number
 #      Paulinchen  2026-10-13: Expected the longer call of mp_dir_create, with the raid bosses, and the rows of the squad rules' button
 #      Paulinchen  2026-10-12: Expected the warning before a new player takes the creator's starting save
 #                            - Stood in for Ini.load and the favourites in Player.ini
@@ -225,7 +226,7 @@ $dll["mp_dir_list"] = "state=ready\n\nworld\tw1\t4\t0\tc\t0\tC\tFree\tnone\t0\t1
 _, _, listed, = MGQ_MpWorld::Directory.list
 check("the list reads which worlds let their players choose", listed.map { |world| world.choose }, [true, false, false])
 MGQ_MpWorld::Directory.create("W", "p", 4, false, true, "")
-check("create hands Players choose to the DLL", $calls.last[0..1] + [$calls.last[2][4]], ["mp_dir_create", "pplllpppplppppllpl", 1])
+check("create hands Players choose to the DLL", $calls.last[0..1] + [($calls.last[2][3] & MGQ_MpWorld::Directory::CHOOSE_OPTION) > 0], ["mp_dir_create", "ppllppppppppllpl", true])
 
 # What the details say.
 detail = Window_MpWorldDetail.allocate

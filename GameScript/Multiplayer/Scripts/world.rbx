@@ -2,6 +2,7 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Passed a new world's options to the DLL in one number
 #      Paulinchen  2026-10-14: Gave a Raid World a shared save in every build, ticked as for a Classic world
 #      Paulinchen  2026-10-13: Wrote the game data's fingerprint to GameData.ini at each start for the World Admin tool
 #                            - Added a Classic world's raid bosses to the forms, the list and world.ini
@@ -1109,6 +1110,12 @@ module MGQ_MpWorld
     # Bytes the DLL may write the list into at first. A larger list asks for a larger buffer.
     LIST_SIZE = 65_536
 
+    # The bits of mp_dir_create's options: the world is hidden, new players choose where to start,
+    # only games with the same data may enter.
+    HIDDEN_OPTION = 1
+    CHOOSE_OPTION = 2
+    STRICT_OPTION = 4
+
     # Fetches the list again, with the hidden worlds the player added to it.
     def self.refresh
       MGQ_Multiplayer::Link.function('mp_dir_watch').call(Added.all.join(",") + "\0")
@@ -1200,8 +1207,9 @@ module MGQ_MpWorld
       raid_bosses = !raid && about[:raid_bosses] ? true : false
       other_mods_off = about[:other_mods_off].nil? ? raid : about[:other_mods_off]
       choose = false if raid
-      sent = MGQ_Multiplayer::Link.function('mp_dir_create').call(name + "\0", password + "\0", seats, hidden ? 1 : 0, choose ? 1 : 0, start + "\0",
-                                                                                  about[:description].to_s + "\0", about[:mods].to_s + "\0", about[:data].to_s + "\0", about[:strict] ? 1 : 0,
+      options = (hidden ? HIDDEN_OPTION : 0) | (choose ? CHOOSE_OPTION : 0) | (about[:strict] ? STRICT_OPTION : 0)
+      sent = MGQ_Multiplayer::Link.function('mp_dir_create').call(name + "\0", password + "\0", seats, options, start + "\0",
+                                                                                  about[:description].to_s + "\0", about[:mods].to_s + "\0", about[:data].to_s + "\0",
                                                                                   about[:mod_hashes].to_s + "\0", about[:settings].to_s + "\0", type + "\0", share + "\0", difficulty,
                                                                                   other_mods_off ? 1 : 0, squad + "\0", raid ? -1 : (raid_bosses ? 1 : 0)) == 1
       files = start.empty? ? "no starting save" : "a starting save of #{start.split("\n").size} file(s)"
