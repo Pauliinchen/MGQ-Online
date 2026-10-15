@@ -5,6 +5,7 @@
 //      Paulinchen  2026-10-15: Kept a Raid World's story key by key, the first writer of a key keeping it, and pushed what each write changed
 //                            - Moved a sealed story to keys with the first write of a game that opened it
 //                            - Refused sealed writes to a keyed story with the code update
+//                            - Told a keyed write whether other writes changed keys since its base
 //                            - Refused a route under way before the Great Decision and repaired a story written with one
 //      Paulinchen  2026-10-12: Kept the level caps the world's story unlocked
 //      Paulinchen  2026-10-11: Opened every route again once the world finished all of them
@@ -613,7 +614,7 @@ export class WorldStory {
    *
    * @param {string} player The writing player's id.
    * @param {any} request The write: `base`, the revision it built on; `counters`, see readCounters; and `set`, the lists of the keys it changed, see readLists.
-   * @returns {Promise<{status: number, body: object, push?: object}>} The new state with `accepted` and `kept`, the lists of the keys the world kept with their values, and the change to tell every game, see storyPushText; or 409 with the state as it stands, its story and a code; or why the write is wrong.
+   * @returns {Promise<{status: number, body: object, push?: object}>} The new state with `accepted`, `kept` (the lists of the keys the world kept, with their values) and `moved` (whether other writes changed keys since the base), and the change to tell every game, see storyPushText; or 409 with the state as it stands, its story and a code; or why the write is wrong.
    */
   async writeKeys(player, request) {
     if (!Number.isInteger(request.base) || request.base < 0) {
@@ -689,7 +690,8 @@ export class WorldStory {
       Object.assign(next, { blob: "", lists: stored, log, logBase });
       await this.store.put(next, checkpoint);
       const push = { rev: next.rev, prev: story?.rev ?? 0, delta: listsOf(applied), state: stateOf(next, false) };
-      return { status: 200, body: { ...stateOf(next, false), accepted: true, kept: listsOf(kept) }, push };
+      // Whether other writes changed keys since the base, which the writing game lacks then.
+      return { status: 200, body: { ...stateOf(next, false), accepted: true, kept: listsOf(kept), moved: changed.size > 0 }, push };
     });
   }
 

@@ -567,6 +567,7 @@ test("a keyed story starts with its first write, takes each key a write changes,
   const first = await wrote(story, ALICE, 0, { s: "5", v: "1001:n10,30:n1" }, { p: 10 });
   assert.equal(first.body.rev, 1);
   assert.deepEqual(first.body.kept, { s: "", sf: "", v: "", ss: "", ssf: "" });
+  assert.equal(first.body.moved, false);
   assert.deepEqual(first.push.delta, { s: "5", sf: "", v: "1001:n10,30:n1", ss: "", ssf: "" });
   assert.deepEqual([first.push.rev, first.push.prev, first.push.state.p], [1, 0, 10]);
 
@@ -586,6 +587,7 @@ test("of two writes on the same revision, the first keeps the keys both changed,
   await wrote(story, ALICE, 1, { v: "50:n2" }, { p: 10 });
   const late = await wrote(story, BOB, 1, { v: "50:n3,60:n4" }, { p: 10 });
   assert.deepEqual(late.body.kept, { s: "", sf: "", v: "50:n2", ss: "", ssf: "" }, "the world's value of the key it kept");
+  assert.equal(late.body.moved, true, "another write changed keys since its base");
   assert.equal(late.push.delta.v, "60:n4");
   assert.equal((await story.get()).body.keys.v, "1001:n10,50:n2,60:n4");
   const rebuilt = await wrote(story, BOB, 3, { v: "50:n3" }, { p: 10 });
