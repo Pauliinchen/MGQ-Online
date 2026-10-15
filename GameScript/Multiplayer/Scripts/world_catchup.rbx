@@ -2,6 +2,7 @@
 #  world_catchup.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Held a lasting join on another page of a visit's event back until the level gate
 #      Paulinchen  2026-10-14: Let a visit's own event bring its companion along before the level gate
 #      Paulinchen  2026-10-13: Left the joins the story takes back in the same step out of the catch-up
 #                            - Counted no companion on such a visit, nor a story's temporary party, toward the player's level
@@ -1972,19 +1973,34 @@ module MGQ_MpWorldCatchup
     false
   end
 
-  # Reports whether the map event running brings a companion along on a visit only (see temporary?),
-  # which the catch-up never holds back: such an event may insist on them, as the Arena's final
-  # (map 483, event 86) adds Alma Elma again until she is in the party.
+  # Reports whether the map event page running brings a companion along on a visit only (see
+  # temporary?), which the catch-up never holds back: such an event may insist on them, as the
+  # Arena's final (map 483, event 86) adds Alma Elma again until she is in the party.
+  #
+  # Only the running page counts: Red Mountain's Queen Bee (map 134, event 34) brings Miria along on
+  # page 2 and recruits her for good on page 4.
   #
   # @param main [Integer] The companion's main persona.
   # @return [Boolean] Whether it does.
   def self.visit_running?(main)
+    site = running_page_site
+    site ? DATA::JOINS.any? { |row| row.actor == main && row.site == site && temporary?(row) } : false
+  end
+
+  # Names the map event page the map's interpreter runs as the catch-up data's sites do.
+  #
+  # The page is found by its list, which the interpreter keeps while the event's shown page changes.
+  #
+  # @return [String, nil] The site, such as "map:134:34:4", nil while no map event runs.
+  def self.running_page_site
     interpreter = $game_map && $game_map.interpreter
     event_id = interpreter ? interpreter.event_id.to_i : 0
-    return false if event_id <= 0
+    event = event_id > 0 ? $game_map.events[event_id] : nil
+    return nil unless event
 
-    prefix = "map:#{$game_map.map_id}:#{event_id}:"
-    DATA::JOINS.any? { |row| row.actor == main && row.site.start_with?(prefix) && temporary?(row) }
+    list = MGQ_MpGame.get(interpreter, :list)
+    page = event.mgq_mp_pages.index { |candidate| candidate.list.equal?(list) }
+    page ? "map:#{$game_map.map_id}:#{event_id}:#{page + 1}" : nil
   end
 
   # Lists the story's joins the catch-up goes by: those that last, see temporary?.

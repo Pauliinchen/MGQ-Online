@@ -2,6 +2,7 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Checked that a lasting join on another page of a visit's event waits for the gate
 #      Paulinchen  2026-10-14: Checked that a return point left at Adramelech moves on with the story
 #                            - Checked that a visit's own event brings its companion along before the gate
 #      Paulinchen  2026-10-13: Checked that a Makina comes and shows only once a player of the world got or held it
@@ -747,18 +748,29 @@ new_game({ 1001 => 24 }, [], 40)
 frames(1)
 relay({ "rev" => 9, "wrev" => 9, "p" => 24, "part" => "2" }, packed({ 1001 => 24 }))
 frames(40)
+# Stands in for a map event and its pages.
+paged_event = Struct.new(:mgq_mp_pages)
+event_page = Struct.new(:list)
+visit_pages = [event_page.new([RPG::EventCommand.new(129, 0, [45])]), event_page.new([RPG::EventCommand.new(129, 0, [45])])]
+$game_map.events[86] = paged_event.new(visit_pages)
 $telling = true
 $game_map.map_id = 483
+$game_map.interpreter.setup(visit_pages[0].list, 86)
 $game_map.interpreter.event_id = 86
 $messages.clear
 $game_party.add_actor(45)
 check("a visit's own event brings the companion along though a lasting join waits for its gate", [roster.include?(45), $messages], [true, []])
 $game_party.remove_actor(45)
+$game_map.interpreter.setup(visit_pages[1].list, 86)
+$game_party.add_actor(45)
+check("while another page of that event still waits for the gate", [roster.include?(45), $messages.last], [false, "Tamamo joins you once you reach level 60."])
+$game_map.interpreter.setup(visit_pages[0].list, 12)
 $game_map.interpreter.event_id = 12
 $game_party.add_actor(45)
-check("while another event of the player's still waits for the gate", [roster.include?(45), $messages.last], [false, "Tamamo joins you once you reach level 60."])
+check("as does another event of the player's", [roster.include?(45), $messages.last], [false, "Tamamo joins you once you reach level 60."])
 $telling = false
 $game_map.interpreter.event_id = 0
+$game_map.events.delete(86)
 $game_map.map_id = 3
 
 # The world's shared companions join as far as the world shares them.
