@@ -2,6 +2,7 @@
 #  battles_sync_playback.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Noted the enemies a co-op host defeats as fallen, for the player's own recruit
 #      Paulinchen  2026-10-12: Left out failing mode messages and unreadable stream lines
 #                            - Checked the host's picture and screen calls and erased a picture this game lacks
 #                            - Ended a host's time stop whose character is no battler here
@@ -463,6 +464,17 @@ module MGQ_MpBattlesSync
       collapse = [:collapse, :boss_collapse, :instant_collapse].include?(effect)
       silhouette = collapse && !MGQ_MpBattlesSync.same_side? && $game_troop.members.include?(battler)
       battler.sprite_effect_type = silhouette ? :whiten : effect
+      note_fallen(battler) if collapse && !silhouette
+    end
+
+    # Notes an enemy whose collapse the host started as fallen, as the game notes the enemies that
+    # fell in a battle of its own: the player's own victory offers a recruit from them.
+    #
+    # @param battler [Game_Battler] The guest's battler.
+    def self.note_fallen(battler)
+      return unless $game_troop.members.include?(battler) && $game_troop.respond_to?(:dead_enemies) && $game_troop.dead_enemies
+
+      $game_troop.dead_enemies.push(battler)
     end
 
     # Finds the battle log of a battle scene.

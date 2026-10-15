@@ -2,7 +2,8 @@
 #  served.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Read the boss pools the relay told and forgot the last battle's boss fight
+#      Paulinchen  2026-10-15: Left recruiting to the players' games
+#                            - Read the boss pools the relay told and forgot the last battle's boss fight
 #                            - Hosted a Raid World's battle as one, took players in late and told the starter the battle's state
 #                            - Loaded the world's mods for the battle and gave it the starter's options of them
 #                            - Created
@@ -79,6 +80,11 @@ module ServedBattle
         next manager.instance_variable_set(:@escape_ratio, 0.0) if $game_party.all_members.empty?
 
         original.call(*args)
+      end
+      # Each player's game offers its own recruit after the battle; one the server rolled would join
+      # its party, which nobody keeps.
+      if BattleManager.respond_to?(:process_follow, true)
+        wrap.around(BattleManager.singleton_class, :process_follow, :served) { nil }
       end
       wrap.around(BattleManager.singleton_class, :battle_end, :served) do |_manager, original, args, _block|
         HeadlessBattle.take_result(args[0])

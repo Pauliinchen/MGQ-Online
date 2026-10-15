@@ -2,6 +2,7 @@
 #  battles_sync_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Checked that a co-op enemy the host defeats counts as fallen on the guest for its recruit
 #      Paulinchen  2026-10-12: Checked that the wire reads hostile lines safely
 #                            - Checked failing names, stream lines and mode messages, and a time stop without a battler
 #                            - Checked the host's cut-ins and picture and screen calls on the guest
@@ -187,14 +188,18 @@ check("a command phase the battle ended in closes as the battle finishes, its an
       [sync::Live.instance_variable_get(:@phase_open), sync::Live.instance_variable_get(:@answered), $log.grep(/command phase of turn \d+ closed: the battle ended in it/).size], [false, [], 1])
 
 # A defeat's sprite effect.
+class Game_Troop; attr_accessor :dead_enemies; end
+$game_troop.dead_enemies = []
 monster = $game_troop.members[0]
 sync.join_world(:guest, "s4", [0], "Host")
 playback.sprite_effect(monster, :collapse)
 check("a co-op monster the host's battle defeats falls on the guest too", monster.sprite_effect_type, :collapse)
+check("and counts as fallen there, so the player's own victory offers her as a recruit", $game_troop.dead_enemies, [monster])
 sync.finish
 sync.join_world(:guest, "s5", [0], "Host", :pvp)
 playback.sprite_effect(monster, :collapse)
 check("a PvP opponent stays as a silhouette", monster.sprite_effect_type, :whiten)
+check("and no player of the other side is offered as a recruit", $game_troop.dead_enemies, [monster])
 sync.finish
 
 # Items the host's battle used up of the guest's bag.
