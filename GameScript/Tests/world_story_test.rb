@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-15: Checked that the Pocket Castle's tour is each Raid World player's own
+#                            - Checked that the refusal of recruits is each Raid World player's own and goes once Lime joined
 #                            - Checked that no route under way before the Great Decision is read, written or kept
 #                            - Checked that the steps before a boss battle stay out of the world's story
 #                            - Checked that no write goes out while a novel scene runs
@@ -1021,12 +1022,27 @@ check("and the side, after the Great Decision too", [MGQ_MpStoryState.personal_s
 check("and a switch that only stays on while a scene runs, but no other story switch", [MGQ_MpStoryState.personal_switch?(2029), MGQ_MpStoryState.personal_switch?(2030)], [true, false])
 check("and the Pocket Castle's tour on the first visit, so one player's tour is no story told to everyone",
       [2013, 2015].map { |id| MGQ_MpStoryState.personal_switch?(id) }, [true, true])
+check("and the refusal of every recruit, which one player's collab would hand everyone", MGQ_MpStoryState.personal_switch?(3), true)
+recruits = $game_party
+$game_party = Object.new
+def $game_party.follow?(id); $lime && id == 53; end
+def $game_party.temp_actors_use?; $own_party; end
+lifted = [[false, false], [true, true], [true, false]].map do |lime, own_party|
+  $lime = lime
+  $own_party = own_party
+  $game_switches[3] = true
+  [MGQ_MpWorldStory.lift_ally_rejection, $game_switches[3]]
+end
+check("the refusal the world handed over goes once the player recruited Lime, unless a scenario with a party of its own runs",
+      lifted, [[false, true], [false, true], [true, false]])
+$game_party = recruits
 check("as the story sync, whose story is the world's", MGQ_MpCoopChoices::Offers.peer_option(MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "f" })), nil)
 contents = { :switches => $game_switches }
 check("a save holds the story as it is", MGQ_MpCoopStory.save_contents(contents).equal?(contents) && contents[:switches].equal?($game_switches), true)
 $raid = false
 check("a Classic world keeps them the leader's while the player plays their own story",
-      [choices.personal?(:s, 7016), MGQ_MpStoryState.personal_switch?(4), MGQ_MpStoryState.personal_switch?(2029), MGQ_MpStoryState.personal_switch?(2013)], [false, false, false, false])
+      [choices.personal?(:s, 7016), MGQ_MpStoryState.personal_switch?(4), MGQ_MpStoryState.personal_switch?(2029), MGQ_MpStoryState.personal_switch?(2013),
+       MGQ_MpStoryState.personal_switch?(3)], [false, false, false, false, false])
 $raid = true
 
 # A choice the world's story carries the player past asks their own outcome, their side included.

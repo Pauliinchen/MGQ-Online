@@ -2,7 +2,8 @@
 #  world_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Read and wrote no route under way before the Great Decision
+#      Paulinchen  2026-10-15: Turned off the refusal of recruits the world's story had handed over
+#                            - Read and wrote no route under way before the Great Decision
 #                            - Kept the steps before a boss battle that its defeat sets back out of the world's story
 #                            - Held the story's writes while a novel scene runs
 #                            - Kept the Queen's Cup's tournament steps out of the world's story
@@ -187,6 +188,13 @@ module MGQ_MpWorldStory
 
   # The map whose transfer goes on to the map in TRANSFER_MAP.
   TRANSFER_RELAY_MAP = 544
+
+  # The game's switch that refuses every recruit ("Ally Rejection"), on from the new game until Lime
+  # joins and while the Pocket Castle's collab scenario runs, each player's own in a Raid World.
+  ALLY_REJECTION = 3
+
+  # Lime, the first recruit, whose joining turns ALLY_REJECTION off.
+  FIRST_RECRUIT = 53
 
   # Where a return to the Great Decision takes the player: the map, x and y.
   DECISION_PLACE = [407, 25, 25]
@@ -977,6 +985,19 @@ module MGQ_MpWorldStory
     end
   end
 
+  # Turns off the refusal of every recruit that the world's story handed over before it was each
+  # player's own: once the player recruited Lime, only a scenario with a party of its own, such as
+  # the Pocket Castle's collab, keeps it on.
+  #
+  # @return [Boolean] Whether it turned it off.
+  def self.lift_ally_rejection
+    return false unless $game_switches[ALLY_REJECTION] && $game_party.respond_to?(:follow?) && $game_party.follow?(FIRST_RECRUIT)
+    return false if $game_party.respond_to?(:temp_actors_use?) && $game_party.temp_actors_use?
+
+    $game_switches[ALLY_REJECTION] = false
+    true
+  end
+
   # Puts the one-way variables the player's story lowered back to the world's values, and the steps
   # the world never shares that the player is not on to the values it shares (see share_steps)
   # and a route under way before the Great Decision to none (see hold_routes), once no event of
@@ -988,9 +1009,11 @@ module MGQ_MpWorldStory
     settled = share_steps([nil, variables], own_steps([nil, variables]))
     routes = hold_routes([nil, variables])
     held = hold_one_way([nil, variables], @base)
-    return if held.empty? && settled.empty? && routes.empty?
+    lifted = lift_ally_rejection
+    return if held.empty? && settled.empty? && routes.empty? && !lifted
 
     $game_map.need_refresh = true
+    log("turned Ally Rejection (switch #{ALLY_REJECTION}) off: the player recruited Lime and plays with their own party, so the world's story had handed it over") if lifted
     log("put #{steps_text(settled)}: steps the world never shares, which the player is not on") unless settled.empty?
     log("put #{routes_text(routes)}: a route under way before the Great Decision") unless routes.empty?
     return if held.empty?

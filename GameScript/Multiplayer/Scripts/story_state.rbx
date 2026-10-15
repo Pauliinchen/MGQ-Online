@@ -2,7 +2,8 @@
 #  story_state.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Kept the Pocket Castle's tour each Raid World player's own
+#      Paulinchen  2026-10-15: Kept the refusal of recruits each Raid World player's own
+#                            - Kept the Pocket Castle's tour each Raid World player's own
 #      Paulinchen  2026-10-14: Kept the self switches of a choice's line each Raid World player's own
 #      Paulinchen  2026-10-12: Gave characters the classes and races the story and its quests give
 #                            - Taught companions the skills the story and its quests teach them
@@ -54,11 +55,13 @@ module MGQ_MpStoryState
 
   # Switches that are each Raid World player's own, as the game sets them for the fights with values
   # of their own: a special boss's NORMAL (23), the Colosseum and its match under way (28, 87), the
-  # Labyrinth of Chaos (41) and the final battles' fixed NORMAL (507), and the Pocket Castle's tour on
-  # each player's first visit (2013, 2015). Laid over another player's game, one player's Labyrinth
-  # or Colosseum would put everyone on its values, and one player's castle tour would be told to
-  # everyone as the story, taking them along into the castle.
-  RAID_PERSONAL_SWITCHES = [23, 28, 41, 87, 507, 2013, 2015]
+  # Labyrinth of Chaos (41) and the final battles' fixed NORMAL (507), the Pocket Castle's tour on
+  # each player's first visit (2013, 2015), and the refusal of every recruit (3), on until Lime joins
+  # and during the castle's collab scenario. Laid over another player's game, one player's Labyrinth
+  # or Colosseum would put everyone on its values, one player's castle tour would be told to
+  # everyone as the story, taking them along into the castle, and one player's collab would keep
+  # everyone from recruiting.
+  RAID_PERSONAL_SWITCHES = [3, 23, 28, 41, 87, 507, 2013, 2015]
 
   # First switch that tells whether a companion awakened, one per companion.
   AWAKENING_SWITCHES = 6000
