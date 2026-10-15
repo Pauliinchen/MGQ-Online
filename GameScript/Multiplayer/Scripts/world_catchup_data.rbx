@@ -4634,6 +4634,14 @@ module MGQ_MpWorldCatchupData
     1399, 1400, 1405
   ]
 
+  # The steps a story event sets before a battle it cannot lose and its defeat events set back
+  # so the boss can be fought again, by variable: each step and the value its defeat sets. A Raid
+  # World never shares such a step, as a player who loses never goes past it.
+  DEFEAT_RETURNS = {
+    1062 => { 4 => 3 },
+    1339 => { 2 => 1 }
+  }
+
   # The story variables the route return (common event 154) clears, which a
   # Raid World's return to the Great Decision lowers on purpose.
   RETURN_CLEARED = [1144..1200, 1301..1500]

@@ -2,7 +2,8 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Checked that no write goes out while a novel scene runs
+#      Paulinchen  2026-10-15: Checked that the steps before a boss battle stay out of the world's story
+#                            - Checked that no write goes out while a novel scene runs
 #                            - Checked that the Queen's Cup's tournament steps stay out of the world's story
 #      Paulinchen  2026-10-14: Checked that one-way story variables never go below the world's values
 #                            - Checked the Navy or the Pirates as each player's own choice
@@ -364,7 +365,7 @@ end
 
 # The story switches that only stay on while a scene runs, the story variables that only go up and
 # those the route return clears, as world_catchup_data.rbx lists them.
-module MGQ_MpWorldCatchupData; SCENE_SWITCHES = [2029]; ONE_WAY_VARIABLES = [1032, 1052, 1144]; RETURN_CLEARED = [1144..1200]; end
+module MGQ_MpWorldCatchupData; SCENE_SWITCHES = [2029]; ONE_WAY_VARIABLES = [1032, 1052, 1144]; DEFEAT_RETURNS = { 1062 => { 4 => 3 } }; RETURN_CLEARED = [1144..1200]; end
 load_script "story_state"
 load_script "coop_story"
 load_script "coop_choices"
@@ -613,6 +614,18 @@ SceneManager.scene = Scene_Map.new
 frames(1000)
 check("and once it ended, its change goes out", calls_of("mp_raid_story_post").map { |args| MGQ_MpStoryState.decode_full(lists_of(args[3]))[1][1062] }, [3])
 relay("rev" => 8, "wrev" => 8, "p" => 15, "post" => "accepted", "post_rev" => 8)
+frames(16)
+
+# A step a story event sets before a boss battle, which its defeat sets back, as an older build
+# wrote Gnosis's to the world: read and settled as the defeat's value.
+told = one_way_stories({}, { 1062 => 4 }, {})[1]
+check("a world's step before a boss battle reads as its defeat's value", [story.share_steps(told), told[1][1062]], [[[1062, 4]], 3])
+$calls.clear
+$game_variables[1062] = 4
+frames(700)
+check("and one the player's story holds once no event runs settles there, without a write", [$game_variables[1062], calls_of("mp_raid_story_post")], [3, []])
+# The minute's poll that came due meanwhile.
+relay("rev" => 8, "wrev" => 8, "p" => 15, "fetch" => "done")
 frames(16)
 
 # The relay's push and the poll.
