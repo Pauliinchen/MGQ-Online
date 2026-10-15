@@ -2,6 +2,7 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Checked that the Pocket Castle's tour is travel in a Raid World and story in a Classic world
 #      Paulinchen  2026-10-14: Expected the Navy or the Pirates among the choices
 #      Paulinchen  2026-10-12: Checked that a story event left to the teller fades in a dark screen once per arrival
 #                            - Checked that a member stands free while the leader fights the story's battle
@@ -442,6 +443,8 @@ check("a transfer is travel", kind([c(250, nil), c(201, 0, 5, 1, 1, 2, 0)]), :tr
 check("a forced transfer is travel", kind([c(355, "forced_transfer(1,2,3)")]), :travel)
 pocket_castle = [c(101, "", 0, 0, 2), c(122, 21, 21, 0, 3, 7, 0, 0), c(122, 22, 22, 0, 3, 5, -1, 0), c(122, 23, 23, 0, 3, 5, -1, 1), c(201, 0, 126, 15, 14, 2, 1)]
 check("the Pocket Castle item, which notes where it was used, is travel and no story scene", [kind(pocket_castle), MGQ_MpCoopEvents.scene?(pocket_castle)], [:travel, false])
+castle_tour = [c(201, 0, 228, 24, 36, 0, 0), c(101, "", 0, 0, 2), c(401, "Wow, it's huge!"), c(121, 2013, 2013, 1), c(121, 2015, 2015, 0)]
+check("the Pocket Castle's tour on the first visit stays the leader's story in a Classic world", kind(castle_tour), :story)
 check("items and the event's own switch make a chest", kind([c(126, 1, 0, 0, 1), c(123, "A", 0)]), :chest)
 check("with a found-it message too", kind([c(101, "", 0, 0, 2), c(126, 1, 0, 0, 1), c(123, "A", 0)]), :chest)
 check("and with a chest flag turned on, as the first Makina's (2045)", kind([c(126, 700, 0, 0, 1), c(123, "A", 0), c(121, 2045, 2045, 0)]), :chest)
@@ -2177,6 +2180,7 @@ module MGQ_MpOverworldSync
   end
 end
 $raid = true
+check("in a Raid World it is each player's own travel, never a story told to everyone and taking them into the castle", kind(castle_tour), :travel)
 $party = "p1"
 $leader = leader
 $members = [leader]

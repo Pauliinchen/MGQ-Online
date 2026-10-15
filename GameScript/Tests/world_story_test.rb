@@ -2,7 +2,8 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Checked that no route under way before the Great Decision is read, written or kept
+#      Paulinchen  2026-10-15: Checked that the Pocket Castle's tour is each Raid World player's own
+#                            - Checked that no route under way before the Great Decision is read, written or kept
 #                            - Checked that the steps before a boss battle stay out of the world's story
 #                            - Checked that no write goes out while a novel scene runs
 #                            - Checked that the Queen's Cup's tournament steps stay out of the world's story
@@ -1018,11 +1019,14 @@ check("every choice's outcome is the player's own in a Raid World",
 $game_variables[1141] = 5
 check("and the side, after the Great Decision too", [MGQ_MpStoryState.personal_switch?(4), MGQ_MpStoryState.personal_switch?(5)], [true, true])
 check("and a switch that only stays on while a scene runs, but no other story switch", [MGQ_MpStoryState.personal_switch?(2029), MGQ_MpStoryState.personal_switch?(2030)], [true, false])
+check("and the Pocket Castle's tour on the first visit, so one player's tour is no story told to everyone",
+      [2013, 2015].map { |id| MGQ_MpStoryState.personal_switch?(id) }, [true, true])
 check("as the story sync, whose story is the world's", MGQ_MpCoopChoices::Offers.peer_option(MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "f" })), nil)
 contents = { :switches => $game_switches }
 check("a save holds the story as it is", MGQ_MpCoopStory.save_contents(contents).equal?(contents) && contents[:switches].equal?($game_switches), true)
 $raid = false
-check("a Classic world keeps them the leader's while the player plays their own story", [choices.personal?(:s, 7016), MGQ_MpStoryState.personal_switch?(4), MGQ_MpStoryState.personal_switch?(2029)], [false, false, false])
+check("a Classic world keeps them the leader's while the player plays their own story",
+      [choices.personal?(:s, 7016), MGQ_MpStoryState.personal_switch?(4), MGQ_MpStoryState.personal_switch?(2029), MGQ_MpStoryState.personal_switch?(2013)], [false, false, false, false])
 $raid = true
 
 # A choice the world's story carries the player past asks their own outcome, their side included.
