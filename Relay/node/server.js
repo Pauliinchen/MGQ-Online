@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-15: Started co-op battles on the battle server and carried their channels
+//      Paulinchen  2026-10-15: Handed its admins everything it keeps for another relay to take over
+//                            - Started co-op battles on the battle server and carried their channels
 //                            - Pushed what a write changed of a keyed Raid World story and turned games without keyed stories away from such a world
 //                            - Counted the battle server's boss reports and told it every change of its world's pools
 //                            - Let the players the battle server takes in late onto its battle's channel
@@ -62,6 +63,7 @@ import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } fr
 import { Directory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, raidBossesText, squadText } from "../core/directory.js";
 import { DEFAULT_MIN_VERSION, DRAIN_LIMITS, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, updateRefusal } from "../core/gate.js";
 import { routeIs, withJson } from "../core/http.js";
+import { adminCheck, exportWorldData, handleMigrationRequest, migrationRouteOf } from "../core/migration.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
 import { RELEASE_REPO, ReleaseWatch, UPDATE_NAME, updateLine } from "../core/releases.js";
@@ -624,6 +626,16 @@ export function createRelay({
       const answer = await answerBattle(request, battleRoute);
       response.writeHead(answer.status, { "Content-Type": "application/json" });
       response.end(JSON.stringify(answer.body));
+      return;
+    }
+
+    const migration = migrationRouteOf(url);
+
+    if (migration) {
+      const stores = { directory: directory.store, mods: mods.store, trades: trades.store };
+      const answer = await handleMigrationRequest(stores, (id) => exportWorldData(stories(id), bosses(id)), request.method, migration.rest, headerOf(request, PLAYER_HEADER), adminCheck(directory.admins));
+      response.writeHead(answer.status, { "Content-Type": answer.bytes ? "application/octet-stream" : "application/json" });
+      response.end(answer.bytes ?? JSON.stringify(answer.body));
       return;
     }
 

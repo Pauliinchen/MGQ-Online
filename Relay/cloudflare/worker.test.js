@@ -2,7 +2,8 @@
 //  worker.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-15: Tested that every battle on the battle server is refused
+//      Paulinchen  2026-10-15: Tested the migration routes through the directory and a world room
+//                            - Tested that every battle on the battle server is refused
 //      Paulinchen  2026-10-12: Tested the schedules and the release notice to world rooms with players online
 //                            - Tested that the world directory, the mod catalog and the Raid World admin routes refuse a request without X-MGQ-Features
 //                            - Tested the update code on the 400 of a refused world room and the World Admin tool passing with 0.0.0-dev
@@ -949,4 +950,29 @@ test("the directory keeps a trade's sealed offers beside it, out of the list of 
   const cancelled = await directory.fetch(new Request(`https://relay.test/v1/trades/${trade}/cancel`, { method: "POST", headers: { [PLAYER_HEADER]: bob }, body: "{}" }));
   assert.deepEqual(await cancelled.json(), { state: "cancelled", reason: "cancelled" });
   assert.deepEqual([...(await state.storage.list({ prefix: "trade-sealed:" })).keys()], []);
+});
+
+test("the directory hands its admins every world with its starting save in pieces and what its world room keeps, through the Worker, and refuses anyone else", async () => {
+  const admin = playerKey(1);
+  const state = objectState();
+  const worldState = objectState();
+  const world = new World(worldState, {});
+  const directory = new Directory(state, { ADMINS: await playerIdOf(admin), WORLDS: namespace(() => world) });
+  const start = new Uint8Array(300 * 1024).map((_, index) => index % 251);
+  await state.storage.put(`world:${WORLD}`, { id: WORLD, name: "Raid", members: {}, bans: [] });
+  await directory.directory.store.putStart(WORLD, start);
+  await directory.directory.store.putChat(WORLD, [{ text: "hello" }]);
+  await worldState.storage.put({ story: { rev: 3, part: "2" }, "checkpoint:1": { part: "1", rev: 2 }, "boss:adramelech": { key: "adramelech", hp: 0.88 } });
+  const env = { DIRECTORY: namespace(() => directory) };
+  const get = (path, key = admin) => worker.fetch(new Request(`https://relay.test/v1/migration${path}`, { headers: { [PLAYER_HEADER]: key } }), env);
+
+  assert.deepEqual(await (await get("")).json(), { format: 1, worlds: [WORLD], mods: [], trades: [] });
+  assert.deepEqual(await (await get(`/worlds/${WORLD}`)).json(), {
+    entry: { id: WORLD, name: "Raid", members: {}, bans: [] }, chat: [{ text: "hello" }],
+    story: { rev: 3, part: "2" }, checkpoints: [{ part: "1", rev: 2 }], pools: [{ key: "adramelech", hp: 0.88 }],
+  });
+  assert.deepEqual(new Uint8Array(await (await get(`/worlds/${WORLD}/start`)).arrayBuffer()), start);
+  assert.equal((await get(`/worlds/${"e5".repeat(16)}`)).status, 404);
+  assert.equal((await get("", playerKey(2))).status, 403, "a player who is no admin");
+  assert.equal((await get("", null)).status, 403, "a request without a player key");
 });

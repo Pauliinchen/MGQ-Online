@@ -2,7 +2,8 @@
 //  worker.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-15: Refused every battle on the battle server, which Cloudflare runs none of
+//      Paulinchen  2026-10-15: Handed its admins everything it keeps for another relay to take over
+//                            - Refused every battle on the battle server, which Cloudflare runs none of
 //                            - Pushed what a write changed of a keyed Raid World story and turned games without keyed stories away from such a world
 //      Paulinchen  2026-10-14: Left what a game names in X-MGQ-Features out of its directory requests
 //      Paulinchen  2026-10-13: Told every game of a Classic world whether it fights raid bosses
@@ -64,6 +65,7 @@ import { DIRECTORY_LIMITS, Directory as WorldDirectory, WORLD_TYPE, difficultyTe
 import { DRAIN_LIMITS, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, updateRefusal } from "../core/gate.js";
 import { badRequest, notFound, routeIs } from "../core/http.js";
 import { isHash, isId } from "../core/ids.js";
+import { MIGRATION_ROUTE, adminCheck, exportWorldData, handleMigrationRequest, migrationRouteOf } from "../core/migration.js";
 import { MOD_LIMITS, ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
 import { RELEASE_REPO, ReleaseWatch, UPDATE_NAME, updateLine } from "../core/releases.js";
@@ -187,7 +189,7 @@ export default {
       return reportsOf(env).fetch(request);
     }
 
-    if (["worlds", "mods", "trades"].some((route) => routeIs(url, route))) {
+    if (["worlds", "mods", "trades", MIGRATION_ROUTE].some((route) => routeIs(url, route))) {
       return directoryOf(env).fetch(request);
     }
 
@@ -603,6 +605,14 @@ export class Directory extends DurableObject {
 
     if (url.pathname === "/internal/check-release") {
       return json(200, await this.checkRelease());
+    }
+
+    const migration = migrationRouteOf(url);
+
+    if (migration) {
+      const stores = { directory: this.directory.store, mods: this.mods.store, trades: this.trades.store };
+      const worldData = (id) => internal(worldOf(this.env, id), "export");
+      return respond(await handleMigrationRequest(stores, worldData, request.method, migration.rest, request.headers.get(PLAYER_HEADER), adminCheck(this.directory.admins)));
     }
 
     if (isDownload(request.method, url)) {
@@ -1059,6 +1069,10 @@ export class World extends DurableObject {
       const { off, mods } = await request.json();
       this.tell(modsRuleText(off === true, typeof mods === "string" ? mods : ""));
       return json(200, {});
+    }
+
+    if (url.pathname === "/internal/export") {
+      return json(200, await exportWorldData(this.storyOf().store, this.bossesOf().store));
     }
 
     const story = storyRouteOf(url);
