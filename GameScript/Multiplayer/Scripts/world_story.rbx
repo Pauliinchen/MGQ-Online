@@ -2,6 +2,7 @@
 #  world_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Kept the Queen's Cup's tournament steps out of the world's story
 #      Paulinchen  2026-10-14: Kept the one-way story variables from going below the world's values
 #                            - Kept the raises of one-way variables through a step the relay refused as behind
 #                            - Asked the later builds' choices behind the world's first story that the player's save never made
@@ -160,6 +161,23 @@ module MGQ_MpWorldStory
 
   # The variable where a game over returns the player.
   GAME_OVER_RETURN = 1002
+
+  # The Queen's Cup's progress at Grand Noah, whose steps from the sign-up to the final (CUP_STEPS)
+  # hold only where the tournament plays (CUP_PLACES): the world's story keeps them as CUP_OPEN, so
+  # no other player is stuck with a step only the closed waiting room's events go on from.
+  CUP_VARIABLE = 1052
+
+  # The Queen's Cup's steps while the tournament runs: signed up, past the quarterfinal and past the
+  # semifinal.
+  CUP_STEPS = 3..5
+
+  # The Queen's Cup's progress before the sign-up, at which the Colosseum's official signs players up.
+  CUP_OPEN = 2
+
+  # Where the Queen's Cup plays, by map, with the x its part of the map starts at: the Colosseum's
+  # waiting room east of its lobby, the Arena, and Hades, whose game over after a lost match returns
+  # the player to the waiting room.
+  CUP_PLACES = { 484 => 30, 483 => 0, 154 => 0 }
 
   # The variable a transfer to TRANSFER_RELAY_MAP goes on from, as the game's own returns use it.
   TRANSFER_MAP = 57
@@ -788,12 +806,15 @@ module MGQ_MpWorldStory
   def self.take_world(world, local, own, text, pending, after_take = nil)
     first = @mode != :world
     told = MGQ_MpStoryState.decode_full(MGQ_MpStoryState.unpack(text))
+    step = share_cup(told)
+    log("read the world's Queen's Cup step #{step} as its open sign-up, which an older build wrote") if step
     applied = MGQ_MpStoryState.mix(told, local, chest_list)
     keep_unsent(applied, told, local)
     base = MGQ_MpStoryState.deep_copy(applied)
     kept, dropped = keep_own(applied, told, local, @base || @entry_story, pending[:drop], !pending[:drop] || pending[:behind])
     opened = keep_open_chests(applied, local)
     kept.concat(opened.map { |key| [2, key] })
+    keep_cup(applied, local)
     MGQ_MpStoryState.set_raw(*applied)
     end_left_scenes
     if defined?(MGQ_MpWorldCatchup)
@@ -900,7 +921,8 @@ module MGQ_MpWorldStory
   end
 
   # Lists the one-way variables a story holds below the world's story it built on, those the
-  # player's own return to the Great Decision clears aside (see returning?).
+  # player's own return to the Great Decision clears aside (see returning?) and the Queen's Cup step
+  # of a player in its tournament (see cup_kept?).
   #
   # @param story [Array] The story: switches and variables.
   # @param floor [Array] The world's story it built on.
@@ -909,7 +931,7 @@ module MGQ_MpWorldStory
     returning = returning?(story, floor)
     ids = defined?(MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES) ? MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES : []
     ids.select do |id|
-      one_way?(id) && story[1][id].to_i < floor[1][id].to_i && !(returning && return_cleared?(id))
+      one_way?(id) && story[1][id].to_i < floor[1][id].to_i && !(returning && return_cleared?(id)) && !(id == CUP_VARIABLE && cup_kept?(story))
     end
   end
 
@@ -958,6 +980,60 @@ module MGQ_MpWorldStory
     $game_map.need_refresh = true
     log("put #{held.map { |id, lowered| "v#{id} back from #{lowered} to #{@base[1][id]}" }.join(', ')}: the world's story only goes up there, " \
         "as when an old scene or a game over set it back")
+  end
+
+  # Reads a story value as the world's story shares it: a step of the Queen's Cup's tournament as
+  # its sign-up still open, see CUP_VARIABLE.
+  #
+  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
+  # @param key [Integer, Array] Its id or key.
+  # @param value [Object] Its value.
+  # @return [Object] The value shared.
+  def self.shared_value(kind, key, value)
+    kind == 1 && key == CUP_VARIABLE && CUP_STEPS.include?(value.to_i) ? CUP_OPEN : value
+  end
+
+  # Puts a step of the Queen's Cup's tournament in a story back to its sign-up still open, as the
+  # world's story shares it.
+  #
+  # @param story [Array] The story: switches and variables, changed in place.
+  # @return [Integer, nil] The step it held, nil for none.
+  def self.share_cup(story)
+    step = story[1][CUP_VARIABLE]
+    return nil if shared_value(1, CUP_VARIABLE, step) == step
+
+    story[1][CUP_VARIABLE] = CUP_OPEN
+    step
+  end
+
+  # Reports whether the player stands where the Queen's Cup plays, see CUP_PLACES.
+  #
+  # @return [Boolean] Whether they do.
+  def self.in_cup?
+    start = CUP_PLACES[$game_map.map_id]
+    start && $game_player && $game_player.x >= start ? true : false
+  end
+
+  # Reports whether a story's step of the Queen's Cup's tournament is the player's own to keep: they
+  # play the tournament where it plays.
+  #
+  # @param story [Array] The story: switches and variables.
+  # @return [Boolean] Whether it is.
+  def self.cup_kept?(story)
+    CUP_STEPS.include?(story[1][CUP_VARIABLE].to_i) && in_cup?
+  end
+
+  # Lays the Queen's Cup's progress over the player's: their own tournament step while they play
+  # it, else the world's, which never holds such a step (see CUP_VARIABLE).
+  #
+  # @param applied [Array] The story laid over the player's, which takes it.
+  # @param local [Array] The player's.
+  def self.keep_cup(applied, local)
+    if cup_kept?(local)
+      applied[1][CUP_VARIABLE] = local[1][CUP_VARIABLE]
+    elsif (step = share_cup(applied))
+      log("put the Queen's Cup's step #{step} back to its open sign-up: the player is outside the tournament, which only its waiting room goes on from")
+    end
   end
 
   # Follows what the world's story brought: the choices it carried the player past and the Great
@@ -1119,7 +1195,9 @@ module MGQ_MpWorldStory
     end
     return unless @mode == :world && @base
 
-    moved = PROGRESS_VARIABLES.any? { |id| !same?(1, @base[1][id], variables[id]) } || PROGRESS_SWITCHES.any? { |id| !same?(0, @base[0][id], switches[id]) }
+    cup = cup_kept?([switches, variables])
+    moved = PROGRESS_VARIABLES.any? { |id| !(cup && id == CUP_VARIABLE) && !same?(1, @base[1][id], shared_value(1, id, variables[id])) } ||
+            PROGRESS_SWITCHES.any? { |id| !same?(0, @base[0][id], switches[id]) }
     return unless moved && @marker_at.nil?
 
     @marker_at = @clock
@@ -1147,6 +1225,8 @@ module MGQ_MpWorldStory
     local = MGQ_MpStoryState.raw_state
     # A one-way variable an event still holds below the world's value is no change to write.
     lowered = rewound(local, @base)
+    # Nor is the player's own step of the Queen's Cup's tournament, which the world never takes.
+    lowered << CUP_VARIABLE if cup_kept?(local)
     found = []
     3.times { |kind| changes(kind, @base[kind], local[kind]).each { |key| found << [kind, key, local[kind][key]] unless kind == 1 && lowered.include?(key) } }
     if found.empty?
@@ -1199,6 +1279,8 @@ module MGQ_MpWorldStory
     return lock(route) if route
 
     story = MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state)
+    # Shared first, so the step's open sign-up never takes the world's story below a later step.
+    share_cup(story)
     held = @base ? hold_one_way(story, @base) : []
     log("writing #{held.map { |id, lowered| "v#{id} as #{story[1][id]}, not #{lowered}" }.join(', ')}: the world's story only goes up there") unless held.empty?
     counters = counters_text(local_counters(story), true) + caps_text(story)
@@ -1388,7 +1470,8 @@ module MGQ_MpWorldStory
     one <=> other
   end
 
-  # Lists what differs between two stories, leaving out what is the player's own.
+  # Lists what differs between two stories as the world shares them (see shared_value), leaving out
+  # what is the player's own.
   #
   # @param kind [Integer] 0 for switches, 1 for variables, 2 for self switches.
   # @param before [Array, Hash] The one story's.
@@ -1396,7 +1479,7 @@ module MGQ_MpWorldStory
   # @return [Array] The keys that differ.
   def self.changes(kind, before, after)
     keys = kind == 2 ? before.keys | after.keys : (0...[before.size, after.size].max).to_a
-    keys.reject { |key| same?(kind, before[key], after[key]) || personal?(kind, key) }
+    keys.reject { |key| same?(kind, shared_value(kind, key, before[key]), shared_value(kind, key, after[key])) || personal?(kind, key) }
   end
 
   # Compares two values of a story, a switch or self switch never set as off and a variable never

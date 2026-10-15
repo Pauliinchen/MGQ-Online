@@ -2,6 +2,7 @@
 #  world_story_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Checked that the Queen's Cup's tournament steps stay out of the world's story
 #      Paulinchen  2026-10-14: Checked that one-way story variables never go below the world's values
 #                            - Checked the Navy or the Pirates as each player's own choice
 #      Paulinchen  2026-10-12: Checked the companions' affection coming and going with the stories
@@ -362,7 +363,7 @@ end
 
 # The story switches that only stay on while a scene runs, the story variables that only go up and
 # those the route return clears, as world_catchup_data.rbx lists them.
-module MGQ_MpWorldCatchupData; SCENE_SWITCHES = [2029]; ONE_WAY_VARIABLES = [1032, 1144]; RETURN_CLEARED = [1144..1200]; end
+module MGQ_MpWorldCatchupData; SCENE_SWITCHES = [2029]; ONE_WAY_VARIABLES = [1032, 1052, 1144]; RETURN_CLEARED = [1144..1200]; end
 load_script "story_state"
 load_script "coop_story"
 load_script "coop_choices"
@@ -540,6 +541,60 @@ check("a one-way variable an event sets back stays while the event runs", $game_
 $game_map.interpreter.busy = false
 frames(400)
 check("and goes back to the world's value after it, without a write", [$game_variables[1032], calls_of("mp_raid_story_post")], [7, []])
+
+# The Queen's Cup: its tournament steps hold only in its waiting room and the Arena, never in the
+# world's story, which an older build wrote them to.
+# Reads the Queen's Cup's progress a write took.
+#
+# @param args [Array] The write's arguments.
+# @return [Integer, nil] The progress.
+def cup_of(args); MGQ_MpStoryState.decode_full(lists_of(args[3]))[1][1052]; end
+$game_variables[1052] = 2
+frames(400)
+relay("rev" => 7, "wrev" => 7, "p" => 15, "post" => "accepted", "post_rev" => 7)
+frames(16)
+$calls.clear
+$game_map.map_id = 484
+$game_player.instance_variable_set(:@x, 45)
+$game_variables[1052] = 3
+frames(400)
+check("signing up for the Queen's Cup in its waiting room writes nothing", calls_of("mp_raid_story_post"), [])
+$game_switches[305] = true
+frames(1000)
+check("another change goes out with the sign-up still open", calls_of("mp_raid_story_post").map { |args| cup_of(args) }, [2])
+cup_world = packed({ 1001 => 15, 152 => 9, 1052 => 3 }, [300, 301, 302, 303])
+relay({ "rev" => 8, "wrev" => 8, "p" => 15, "post" => "conflict", "post_code" => "rev" }, cup_world)
+frames(16)
+check("a world's tournament step leaves a player in the tournament their own", $game_variables[1052], 3)
+frames(400)
+check("whose write goes out again with the sign-up open", calls_of("mp_raid_story_post").map { |args| cup_of(args) }, [2, 2])
+relay("rev" => 8, "wrev" => 8, "p" => 15, "post" => "accepted", "post_rev" => 8)
+frames(16)
+$calls.clear
+$game_map.map_id = 3
+$game_player.instance_variable_set(:@x, 1)
+$game_switches[306] = true
+frames(1000)
+relay({ "rev" => 8, "wrev" => 8, "p" => 15, "post" => "conflict", "post_code" => "rev" }, cup_world)
+frames(16)
+check("a player outside the tournament reads the world's tournament step as the open sign-up", $game_variables[1052], 2)
+frames(400)
+relay("rev" => 8, "wrev" => 8, "p" => 15, "post" => "accepted", "post_rev" => 8)
+frames(16)
+$calls.clear
+$game_map.map_id = 483
+$game_variables[1052] = 4
+story.instance_variable_get(:@base)[1][1052] = 6
+frames(400)
+check("a later step of the world's leaves the player's tournament step alone in the Arena", [$game_variables[1052], calls_of("mp_raid_story_post")], [4, []])
+$game_map.map_id = 3
+frames(400)
+check("and lays the world's over it once the player is outside", [$game_variables[1052], calls_of("mp_raid_story_post")], [6, []])
+# The minute's polls that came due meanwhile.
+relay("rev" => 8, "wrev" => 8, "p" => 15, "fetch" => "done")
+frames(16)
+relay("rev" => 8, "wrev" => 8, "p" => 15, "fetch" => "done")
+frames(16)
 
 # The relay's push and the poll.
 $calls.clear
