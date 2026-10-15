@@ -2,7 +2,8 @@
 #  world_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Kept the Queen's Cup's tournament steps out of the world's story
+#      Paulinchen  2026-10-15: Held the story's writes while a novel scene runs
+#                            - Kept the Queen's Cup's tournament steps out of the world's story
 #      Paulinchen  2026-10-14: Kept the one-way story variables from going below the world's values
 #                            - Kept the raises of one-way variables through a step the relay refused as behind
 #                            - Asked the later builds' choices behind the world's first story that the player's save never made
@@ -1247,18 +1248,27 @@ module MGQ_MpWorldStory
   # Reports whether a write is due: the player's story moved on, another change rested for
   # DEBOUNCE_FRAMES or waited LONGEST_WAIT_FRAMES, or a write must go again. While the player tells
   # the story, the moment between its events on another map included, only the route lock goes,
-  # since others would take the scene's state half done.
+  # since others would take the scene's state half done. Nothing goes while a novel scene runs.
   #
   # @return [Boolean] Whether it is.
   def self.post_due?
     return false unless @mode == :world && @pending.nil? && !@busy[:post] && !@busy[:lock] && @clock >= @retry_at
-    return false if MGQ_MpCoopEvents.pvp_running?
+    return false if MGQ_MpCoopEvents.pvp_running? || novel_running?
 
     settled = @marker_at && @clock - @marker_at >= SETTLE_FRAMES
     return (settled || @force_post) && lock_route ? true : false if MGQ_MpCoopEvents.telling_or_moved?
     return true if @force_post || settled
 
     @change_at && (@clock - @change_at >= DEBOUNCE_FRAMES || @clock - @first_change_at >= LONGEST_WAIT_FRAMES) ? true : false
+  end
+
+  # Reports whether a novel scene runs, such as the defeat scene after a lost story battle, which
+  # ends the story event's telling while it still sets back what the event set before the battle,
+  # as Gnosis's defeat at Esta sets v1062 back from 4 to 3 so she can be fought again.
+  #
+  # @return [Boolean] Whether one does.
+  def self.novel_running?
+    defined?(Scene_Novel) && SceneManager.scene.is_a?(Scene_Novel) ? true : false
   end
 
   # Finds the route the player's story took at the Great Decision that the world has not taken yet

@@ -2,7 +2,8 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Checked that the Queen's Cup's tournament steps stay out of the world's story
+#      Paulinchen  2026-10-15: Checked that no write goes out while a novel scene runs
+#                            - Checked that the Queen's Cup's tournament steps stay out of the world's story
 #      Paulinchen  2026-10-14: Checked that one-way story variables never go below the world's values
 #                            - Checked the Navy or the Pirates as each player's own choice
 #      Paulinchen  2026-10-12: Checked the companions' affection coming and going with the stories
@@ -594,6 +595,24 @@ check("and lays the world's over it once the player is outside", [$game_variable
 relay("rev" => 8, "wrev" => 8, "p" => 15, "fetch" => "done")
 frames(16)
 relay("rev" => 8, "wrev" => 8, "p" => 15, "fetch" => "done")
+frames(16)
+
+# A lost story battle's defeat scene sets back what the boss's event set before the battle, as
+# Gnosis's at Esta does: nothing of it goes out meanwhile.
+# Stands in for the game's novel scene, which plays a defeat scene.
+class Scene_Novel; end
+$calls.clear
+$game_variables[1062] = 4
+SceneManager.scene = Scene_Novel.new
+frames(1000)
+check("a novel scene holds the boss event's changes back", calls_of("mp_raid_story_post"), [])
+$game_variables[1062] = 3
+frames(1000)
+check("whose defeat scene sets one back", calls_of("mp_raid_story_post"), [])
+SceneManager.scene = Scene_Map.new
+frames(1000)
+check("and once it ended, its change goes out", calls_of("mp_raid_story_post").map { |args| MGQ_MpStoryState.decode_full(lists_of(args[3]))[1][1062] }, [3])
+relay("rev" => 8, "wrev" => 8, "p" => 15, "post" => "accepted", "post_rev" => 8)
 frames(16)
 
 # The relay's push and the poll.
