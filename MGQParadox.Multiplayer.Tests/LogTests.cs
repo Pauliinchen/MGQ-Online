@@ -2,6 +2,7 @@
 //  LogTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Checked the log named after the day the game started on
 //      Paulinchen  2026-10-11: Checked cutting a log down to its newest lines
 //      Paulinchen  2026-10-07: Created
 //
@@ -14,17 +15,17 @@ using System.Text;
 namespace MGQParadox.Multiplayer.Tests;
 
 /// <summary>
-/// Covers the DLL's log: the file each game session writes, the lines repeated, and the writer thread that keeps callers off the disk.
+/// Covers the DLL's log: the file of each day, the lines repeated, and the writer thread that keeps callers off the disk.
 /// </summary>
 public sealed class LogTests
 {
     /// <summary>
-    /// Asserts that a session's log is named after the game's start, as the game script's log of the same session is.
+    /// Asserts that the log is named after the day the game started on, as the game script's log of the same day is.
     /// </summary>
     [Fact]
-    public void FileNameOf_NamesTheLogAfterTheGameStart()
+    public void FileNameOf_NamesTheLogAfterTheDayTheGameStartedOn()
     {
-        Assert.Equal(@"Logs\Multiplayer 2026-10-07 08-05-09.log", Log.FileNameOf(new DateTime(2026, 10, 7, 8, 5, 9)));
+        Assert.Equal(@"Logs\Multiplayer 2026-10-07.log", Log.FileNameOf(new DateTime(2026, 10, 7, 8, 5, 9)));
     }
 
     /// <summary>

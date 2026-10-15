@@ -2,6 +2,7 @@
 //  ReportFilesTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Checked that only the newest log of each type goes along
 //      Paulinchen  2026-10-11: Checked that mods.txt skips a vanished file
 //                            - Created
 //
@@ -85,7 +86,7 @@ public sealed class ReportFilesTests : IDisposable
 
     /// <summary>
     /// Asserts that with the screenshot and the logs the report carries report.md, the PNG as it is,
-    /// the session's *.log and *.txt logs, errors.txt and mods.txt, every text gzipped and linked
+    /// the session's *.log and *.txt logs, the newest of each type, errors.txt and mods.txt, every text gzipped and linked
     /// from report.md with its size, while older, nested and other files stay out.
     /// </summary>
     [Fact]
@@ -246,6 +247,27 @@ public sealed class ReportFilesTests : IDisposable
         Assert.Equal(["report.md", "screenshot.png", "Logs/3.log", "Logs/4.log", "Logs/5.log", "mods.txt"], files.Select(file => file.Name));
         Assert.Contains("- Logs/2.log - left out, a report carries at most 6 files\n", page);
         Assert.Contains("- Logs/1.log - left out, a report carries at most 6 files\n", page);
+    }
+
+    /// <summary>
+    /// Asserts that of the logs of one type, which differ only by the day or session start in their names, only the newest goes along.
+    /// </summary>
+    [Fact]
+    public void Build_TakesTheNewestLogOfEachType()
+    {
+        Write(@"Logs\Multiplayer InGame 2026-10-11 12-00-10.log", "first session\r\n", Since.AddMinutes(1));
+        Write(@"Logs\Multiplayer InGame 2026-10-11 12-00-40.log", "second session\r\n", Since.AddMinutes(2));
+        Write(@"Logs\Multiplayer InGame 2026-10-11.log", "day\r\n", Since.AddMinutes(3));
+        Write(@"Logs\Multiplayer 2026-10-11.log", "connection\r\n", Since.AddMinutes(1));
+        Write(@"Logs\Multiplayer 2026-10-10.log", "yesterday\r\n", Since.AddSeconds(30));
+        Write(@"Logs\Multiplayer Parking.log", "parking\r\n", Since.AddMinutes(1));
+
+        var files = ReportFiles.Build(Page, null, _game, Since);
+
+        Assert.Equal(
+            ["report.md", "Logs/Multiplayer 2026-10-11.log", "Logs/Multiplayer InGame 2026-10-11.log", "Logs/Multiplayer Parking.log", "mods.txt"],
+            files.Select(file => file.Name));
+        Assert.Equal("Multiplayer InGame.log", ReportFiles.LogType(@"C:\Games\MGQ\Logs\Multiplayer InGame 2026-10-15 20-38-51.log"));
     }
 
     /// <summary>

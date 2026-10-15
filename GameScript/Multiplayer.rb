@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-15: Loaded battles_served.rbx after battles_sync_live.rbx and named the mp_battle_* exports
 #                            - Named mp_dir_create with a world's options in one number
+#                            - Wrote one log per day and deleted the logs of earlier days
 #      Paulinchen  2026-10-13: Loaded ui_single_player.rbx after ui_leader_hud.rbx
 #                            - Loaded battles_raid_tiers.rbx after battles_raid_pool.rbx
 #                            - Named mp_dir_create and mp_dir_edit with a Classic world's raid bosses
@@ -174,7 +175,7 @@ module MGQ_Multiplayer
   def self.start
     return if @started
     @started = true
-    Log.write("Monster Girl Quest! Online starting on Ruby #{RUBY_VERSION}, session log #{Log.file_name}")
+    Log.write("Monster Girl Quest! Online starting on Ruby #{RUBY_VERSION}, day log #{Log.file_name}")
     Log.prune
     unless available?
       Log.write(ENABLED ? "not started: #{path(DLL)} is missing" : "not started: the mod is turned off")
@@ -274,36 +275,26 @@ module MGQ_Multiplayer
     fallback
   end
 
-  # The scripts' log in the game folder's Logs folder, one file per game session, such as
-  # Logs/Multiplayer InGame 2026-10-07 18-30-05.log, named after the time the game started, as the
-  # DLL names its Multiplayer.log of the same session. Past MAX_BYTES it keeps its newest lines.
+  # The scripts' log in the game folder's Logs folder, one file per day, such as
+  # Logs/Multiplayer InGame 2026-10-07.log, named after the day the game started on, as the DLL
+  # names its Multiplayer log of the same day. Past MAX_BYTES it keeps its newest lines.
   module Log
-    # The start of the log's file name, which the session's start and ".log" follow.
+    # The start of the log's file name, which the day the game started on and ".log" follow.
     NAME = "Multiplayer InGame"
 
-    # How the session's start shows in the file name.
-    STAMP = "%Y-%m-%d %H-%M-%S"
+    # How the day the game started on shows in the file name.
+    STAMP = "%Y-%m-%d"
 
     # How often a line repeats before the log says so while it still repeats, so a flood shows even
     # when the game closes first.
     REPEAT_REPORTS = [10, 100, 1000, 10_000]
 
-    # Game sessions whose logs the Logs folder keeps, this one among them; the older ones go as a
-    # session starts.
-    KEPT_SESSIONS = 5
+    # A log of this mod, the scripts', the DLL's or an options dump's, named after a day, after a
+    # session's start as older builds named them, or without a stamp as the oldest did.
+    OWN_LOG = /\AMultiplayer(?: InGame)?(?: \d{4}-\d{2}-\d{2}(?: \d{2}-\d{2}-\d{2})?)?(?: options dump)?\.log\z/
 
-    # A session's log of this mod, the scripts', the DLL's or an options dump's, and the session's
-    # start in its name.
-    SESSION_LOG = /\AMultiplayer(?: InGame)? (\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2})(?: options dump)?\.log\z/
-
-    # The scripts' log of a game session the player played, which alone counts the sessions kept.
-    PLAYED_LOG = /\AMultiplayer InGame (\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2})\.log\z/
-
-    # Seconds the DLL may name its log of a session before the scripts' log of it.
-    #
-    # Each names its log after the game's start as Windows tells it, but when Windows cannot tell,
-    # as under Wine, after its own start, which differs by the moments between them.
-    SESSION_SLACK = 60
+    # A log of this mod named after a day, and that day in its name.
+    DAY_LOG = /\AMultiplayer(?: InGame)? (\d{4}-\d{2}-\d{2})(?: options dump)?\.log\z/
 
     # What ends the name of the scripts' log of a game the World Admin tool started for the options
     # dump, which quits at once and so is no session the player played.
@@ -313,7 +304,7 @@ module MGQ_Multiplayer
     # world_mods.rbx's MGQ_MpWorldMods::DUMP_SETTING names it.
     DUMP_SETTING = "MGQMP_OPTIONS_DUMP"
 
-    # Bytes a session's log may reach before its oldest lines are cut.
+    # Bytes a day's log may reach before its oldest lines are cut.
     MAX_BYTES = 4 * 1024 * 1024
 
     # Bytes of its newest lines a log keeps when it is cut, so it is cut again only after as many
@@ -389,20 +380,16 @@ module MGQ_Multiplayer
       @size = File.size(path)
     end
 
-    # Deletes the logs of every session older than the newest KEPT_SESSIONS the player played, the
-    # scripts', the DLL's and those of options dumps, since each game start writes a pair and nothing
-    # else ever removes them. A game started for the options dump deletes nothing.
+    # Deletes every log of this mod but those of the day the game started on, the scripts', the
+    # DLL's and those of options dumps, since nothing else ever removes them. A game started for the
+    # options dump deletes nothing.
     def self.prune
       return if dump_run? || !File.directory?(LOG_DIR)
 
-      logs = Dir.entries(LOG_DIR).select { |name| name =~ SESSION_LOG }
-      played = (logs.map { |name| name[PLAYED_LOG, 1] }.compact | [session_stamp]).sort.reverse
-      return if played.size <= KEPT_SESSIONS
-
-      oldest_kept = time_of(played[KEPT_SESSIONS - 1]) - SESSION_SLACK
-      gone = logs.select { |name| time_of(name[SESSION_LOG, 1]) < oldest_kept }
+      today = session_stamp
+      gone = Dir.entries(LOG_DIR).select { |name| name =~ OWN_LOG && name[DAY_LOG, 1] != today }
       deleted = gone.count { |name| (File.delete("#{LOG_DIR}\\#{name}") rescue 0) == 1 }
-      write("deleted #{deleted} log(s) of sessions older than the last #{KEPT_SESSIONS}") if deleted > 0
+      write("deleted #{deleted} log(s) of earlier days") if deleted > 0
       write("could not delete #{gone.size - deleted} old log(s)") if deleted < gone.size
     rescue => e
       write("deleting old logs failed: #{e.class}: #{e.message}")
@@ -418,25 +405,18 @@ module MGQ_Multiplayer
       false
     end
 
-    # Reads the time a log's name shows.
+    # Names the log after the day the game started on, read once, so a session that goes past
+    # midnight stays in one log.
     #
-    # @param stamp [String] Such as "2026-10-07 18-30-05".
-    # @return [Time] The time, in local time.
-    def self.time_of(stamp)
-      Time.local(*stamp.scan(/\d+/).map { |part| part.to_i })
-    end
-
-    # Names this session's log after the game's start, read once.
-    #
-    # @return [String] The file name, such as "Multiplayer InGame 2026-10-07 18-30-05.log", with
+    # @return [String] The file name, such as "Multiplayer InGame 2026-10-07.log", with
     #   DUMP_SUFFIX before ".log" for a game started for the options dump.
     def self.file_name
       @file_name ||= "#{NAME} #{session_stamp}#{dump_run? ? DUMP_SUFFIX : ''}.log"
     end
 
-    # Writes when the game started, in local time, as the log's name shows it.
+    # Writes the day the game started on, in local time, as the log's name shows it.
     #
-    # @return [String] The time, such as "2026-10-07 18-30-05".
+    # @return [String] The day, such as "2026-10-07".
     def self.session_stamp
       (process_start || @loaded).strftime(STAMP)
     end

@@ -2,6 +2,7 @@
 //  ModFolderTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Checked the name of a day's log
 //      Paulinchen  2026-10-07: Checked the name of a session's log
 //      Paulinchen  2026-10-06: Checked that the DLL's log lands in the Logs folder
 //      Paulinchen  2026-10-01: Created
@@ -38,7 +39,7 @@ public sealed class ModFolderTests
     [Fact]
     public void GamePathOf_Log_IsInTheLogsFolder()
     {
-        Assert.Equal(@"C:\Games\MGQ\Logs\Multiplayer 2026-10-07 18-30-05.log", ModFolder.GamePathOf(Log.FileNameOf(new System.DateTime(2026, 10, 7, 18, 30, 5)), ModFolderPath));
+        Assert.Equal(@"C:\Games\MGQ\Logs\Multiplayer 2026-10-07.log", ModFolder.GamePathOf(Log.FileNameOf(new System.DateTime(2026, 10, 7, 18, 30, 5)), ModFolderPath));
     }
 
     /// <summary>

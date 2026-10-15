@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-15: Checked that every export takes at most 16 arguments
+#                            - Checked the log of each day and that starting a game deletes those of earlier days
 #      Paulinchen  2026-10-13: Checked that ui_single_player.rbx loads after the scripts whose rows it adds
 #                            - Checked that battles_raid_tiers.rbx loads after the scripts it builds on and before ui_raid_bar.rbx
 #      Paulinchen  2026-10-12: Stood in for Ini.load
@@ -115,8 +116,8 @@ check("a script that does not parse is logged by name", log.any? { |line| line.s
 check("a missing script is logged by name", log.any? { |line| line.start_with?("missing.rbx did not load: Errno::ENOENT") }, true)
 check("the log counts the scripts loaded and names those that did not", log.last, "loaded 2 of 4 scripts, not broken, missing")
 
-# The in-game log: a file per session, named after the game's start, without a line limit, cut to
-# its newest lines past MAX_BYTES, and a line repeated is counted.
+# The in-game log: a file per day, named after the day the game started on, without a line limit,
+# cut to its newest lines past MAX_BYTES, and a line repeated is counted.
 module MGQ_Multiplayer; end
 MGQ_Multiplayer.const_set(:LOG_DIR, "Logs")
 MGQ_Multiplayer.module_eval(source[/  def self\.log_path\(name\)\n.*?\n  end\n/m])
@@ -126,8 +127,8 @@ Dir.mktmpdir do |game|
     3.times { MGQ_Multiplayer::Log.write("same") }
     MGQ_Multiplayer::Log.write("other")
     files = Dir[File.join("Logs", "*")].map { |file| File.basename(file) }
-    check("the session's log is named after its start, the load standing in while Windows cannot tell it",
-          files, ["Multiplayer InGame #{MGQ_Multiplayer::Log.instance_variable_get(:@loaded).strftime('%Y-%m-%d %H-%M-%S')}.log"])
+    check("the log is named after the day the game started on, the load standing in while Windows cannot tell it",
+          files, ["Multiplayer InGame #{MGQ_Multiplayer::Log.instance_variable_get(:@loaded).strftime('%Y-%m-%d')}.log"])
     path = File.join("Logs", files.first.to_s)
     lines = File.read(path).lines.map { |line| line.split("  ", 2)[1].to_s.chomp }
     check("a line repeated is written once, with how often it repeated before the next one", lines, ["same", "(the line above repeated 2 times in all)", "other"])
@@ -146,30 +147,23 @@ Dir.mktmpdir do |game|
           [lines.first.split("  ", 2)[1].chomp, lines[1] =~ /\A2026-10-11 20:00:00 \+0200  old line \d+\n\z/ ? true : false,
            lines.last.split("  ", 2)[1].chomp, File.size(path) <= MGQ_Multiplayer::Log::KEPT_BYTES + 200],
           [MGQ_Multiplayer::Log::CUT_LINE, true, "newest", true])
-    older = (1..6).map { |day| "2026-01-0#{day} 10-00-00" }
-    older.each { |stamp| ["Multiplayer", "Multiplayer InGame"].each { |name| File.write(File.join("Logs", "#{name} #{stamp}.log"), "x") } }
-    ["Multiplayer.log", "DiscordPresence 2026-01-01 10-00-00.log"].each { |name| File.write(File.join("Logs", name), "x") }
-    MGQ_Multiplayer::Log.prune
-    left = Dir[File.join("Logs", "*")].map { |file| File.basename(file) }.sort
-    check("starting a session deletes both logs of every session but the last five, this one among them, and leaves other files",
-          left, (["DiscordPresence 2026-01-01 10-00-00.log", "Multiplayer.log", files.first] +
-                 older.last(4).map { |stamp| ["Multiplayer #{stamp}.log", "Multiplayer InGame #{stamp}.log"] }.flatten).sort)
   end
 end
 
-# The sessions kept are counted by the scripts' logs: a DLL's log named a moment before its
-# session's stays with it, a game started for the options dump counts no session and deletes
-# nothing, and only the logs actually deleted are counted.
+# Starting a game deletes every log of this mod but the day's: those of earlier days, the session
+# logs older builds wrote and the unstamped ones of the oldest, while a game started for the options
+# dump deletes nothing and only the logs actually deleted are counted.
 Dir.mktmpdir do |game|
   Dir.chdir(game) do
     Dir.mkdir("Logs")
     logs = lambda { Dir.entries("Logs").reject { |name| name.start_with?(".") }.sort }
-    (1..6).each { |day| File.write(File.join("Logs", "Multiplayer InGame 2026-01-0#{day} 10-00-00.log"), "x") }
-    others = ["Multiplayer 2026-01-03 09-59-40.log", "Multiplayer 2026-01-02 10-00-20.log", "Multiplayer InGame 2026-01-05 12-00-00 options dump.log",
-              "Multiplayer 2026-01-05 12-00-00.log", "Multiplayer InGame 2026-01-01 12-00-00 options dump.log"]
-    others.each { |name| File.write(File.join("Logs", name), "x") }
+    today = MGQ_Multiplayer::Log.session_stamp
+    kept = ["Multiplayer #{today}.log", "Multiplayer InGame #{today} options dump.log", "Multiplayer Parking.log", "DiscordPresence 2026-01-01.log"]
+    gone = ["Multiplayer 2026-01-01.log", "Multiplayer InGame 2026-01-01.log", "Multiplayer InGame 2026-01-01 options dump.log",
+            "Multiplayer #{today} 10-00-00.log", "Multiplayer InGame 2026-01-05 12-00-00 options dump.log", "Multiplayer.log", "Multiplayer InGame.log"]
+    (kept + gone).each { |name| File.write(File.join("Logs", name), "x") }
     # A folder cannot be deleted as a file is.
-    Dir.mkdir(File.join("Logs", "Multiplayer InGame 2026-01-01 11-00-00.log"))
+    Dir.mkdir(File.join("Logs", "Multiplayer InGame 2026-01-02.log"))
     before = logs.call
     ENV["MGQMP_OPTIONS_DUMP"] = "options.txt"
     MGQ_Multiplayer::Log.prune
@@ -178,11 +172,9 @@ Dir.mktmpdir do |game|
     MGQ_Multiplayer::Log.write("pruning")
     MGQ_Multiplayer::Log.prune
     own = MGQ_Multiplayer::Log.file_name
-    check("the others keep the last five sessions played, a DLL's log named a moment before its session's, and the dumps' logs since",
-          logs.call, (["Multiplayer 2026-01-03 09-59-40.log", "Multiplayer InGame 2026-01-05 12-00-00 options dump.log", "Multiplayer 2026-01-05 12-00-00.log",
-                       "Multiplayer InGame 2026-01-01 11-00-00.log", own] + (3..6).map { |day| "Multiplayer InGame 2026-01-0#{day} 10-00-00.log" }).sort)
+    check("the day's logs and other mods' logs stay", logs.call, (kept + ["Multiplayer InGame 2026-01-02.log", own]).sort)
     lines = File.read(File.join("Logs", own)).lines.map { |line| line.split("  ", 2)[1].to_s.chomp }
-    check("the log counts the logs deleted and those that could not be", lines.last(2), ["deleted 4 log(s) of sessions older than the last 5", "could not delete 1 old log(s)"])
+    check("the log counts the logs deleted and those that could not be", lines.last(2), ["deleted #{gone.size} log(s) of earlier days", "could not delete 1 old log(s)"])
   end
 end
 
@@ -207,7 +199,7 @@ module MGQ_Multiplayer
     def self.api(_library, name, _arguments, _result); Function.new(name); end
   end
 end
-check("the session's start comes from the game's process", MGQ_Multiplayer::Log.session_stamp, "2026-10-07 18-30-05")
+check("the log's day comes from the game's process", MGQ_Multiplayer::Log.session_stamp, "2026-10-07")
 # The rest of this file writes no log.
 MGQ_Multiplayer::Log.define_singleton_method(:write) { |_message| }
 

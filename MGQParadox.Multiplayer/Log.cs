@@ -2,6 +2,7 @@
 //  Log.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Wrote one log per day
 //      Paulinchen  2026-10-11: Cut the session's log to its newest 2 MB once it passes 4 MB
 //      Paulinchen  2026-10-07: Wrote the file on a thread of the log's own and flushed the queue on exit
 //                            - Wrote each game session into a log of its own and counted repeated lines
@@ -22,9 +23,9 @@ using System.Threading;
 namespace MGQParadox.Multiplayer;
 
 /// <summary>
-/// The DLL's log in the game folder's Logs folder, one file per game session, named after the
-/// moment the game started, as the game script's log of the same session is. Lines are queued and
-/// written by a thread of the log's own, so no caller waits for the disk.
+/// The DLL's log in the game folder's Logs folder, one file per day, named after the day the game
+/// started on, as the game script's log of the same day is. Lines are queued and written by a
+/// thread of the log's own, so no caller waits for the disk.
 /// </summary>
 /// <remarks>
 /// Never throws, since a failing log must not take down the code writing it, least of all the game.
@@ -37,7 +38,7 @@ internal static class Log
     private const int ShortIdLength = 12;
 
     /// <summary>
-    /// Bytes a session's log may reach before its oldest lines are cut.
+    /// Bytes a day's log may reach before its oldest lines are cut.
     /// </summary>
     internal const long MaxBytes = 4 * 1024 * 1024;
 
@@ -57,7 +58,7 @@ internal static class Log
     private static readonly TimeSpan FlushTimeout = TimeSpan.FromSeconds(5);
 
     /// <summary>
-    /// The log's path relative to the game's folder, named after the game's start.
+    /// The log's path relative to the game's folder, named after the day the game started on.
     /// </summary>
     private static readonly string FileName = FileNameOf(GameStart());
 
@@ -92,12 +93,12 @@ internal static class Log
     internal static string FilePath => ModFolder.GamePathOf(FileName);
 
     /// <summary>
-    /// Names the log of a game session.
+    /// Names the log of the day a game started on.
     /// </summary>
     /// <param name="start">When the game started, in local time.</param>
-    /// <returns>The path relative to the game's folder, such as <c>Logs\Multiplayer 2026-10-07 18-30-05.log</c>.</returns>
+    /// <returns>The path relative to the game's folder, such as <c>Logs\Multiplayer 2026-10-07.log</c>.</returns>
     public static string FileNameOf(DateTime start) =>
-        $@"Logs\Multiplayer {start.ToString("yyyy-MM-dd HH-mm-ss", CultureInfo.InvariantCulture)}.log";
+        $@"Logs\Multiplayer {start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}.log";
 
     /// <summary>
     /// Shortens a long id, such as a world's, a player's or a trade's, to what tells it apart in the log.
@@ -219,9 +220,16 @@ internal static class Log
         if (text.Length > 0)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-            File.AppendAllText(FilePath, text.ToString(), Encoding.UTF8);
+            long length;
 
-            if (new FileInfo(FilePath).Length > MaxBytes)
+            // Another game started the same day appends to the same file.
+            using (var file = new FileStream(FilePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete))
+            {
+                file.Write(Encoding.UTF8.GetBytes(text.ToString()));
+                length = file.Length;
+            }
+
+            if (length > MaxBytes)
             {
                 CutToNewest(FilePath, KeptBytes);
             }
@@ -254,7 +262,7 @@ internal static class Log
     }
 
     /// <summary>
-    /// Reads when the game started, which names the log.
+    /// Reads when the game started, whose day names the log.
     /// </summary>
     /// <returns>The game process's start in local time, or now when Windows does not tell it.</returns>
     private static DateTime GameStart()

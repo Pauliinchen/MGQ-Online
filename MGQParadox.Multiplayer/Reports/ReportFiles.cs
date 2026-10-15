@@ -2,6 +2,7 @@
 //  ReportFiles.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Sent only the newest log of each type
 //      Paulinchen  2026-10-11: Left a file out of mods.txt that is gone by the time it is read
 //                            - Created
 //
@@ -14,13 +15,14 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using MGQParadox.Multiplayer.Network.World;
 
 namespace MGQParadox.Multiplayer.Reports;
 
 /// <summary>
 /// Puts a bug report's files together as the relay commits them, each readable on its own:
-/// <c>report.md</c> as their index, the screenshot, and on request the session's logs,
+/// <c>report.md</c> as their index, the screenshot, and on request the newest log of each type,
 /// <c>errors.txt</c> and <c>mods.txt</c>, a list of the Patch folder. Text files go gzipped.
 /// </summary>
 internal static class ReportFiles
@@ -64,6 +66,11 @@ internal static class ReportFiles
     /// Writes the time stamps of <c>mods.txt</c>.
     /// </summary>
     private const string TimeFormat = "yyyy-MM-dd HH:mm:ss";
+
+    /// <summary>
+    /// The day, or a session's start, a log's name is stamped with.
+    /// </summary>
+    private static readonly Regex LogStamp = new(@" \d{4}-\d{2}-\d{2}(?: \d{2}-\d{2}-\d{2})?", RegexOptions.CultureInvariant);
 
     /// <summary>
     /// Puts the files together, cutting the largest logs from their start and leaving the oldest
@@ -365,18 +372,26 @@ internal static class ReportFiles
     private static string Cell(string value) => value.Replace("\r", " ").Replace("\n", " ").Replace("|", "\\|");
 
     /// <summary>
-    /// Lists the logs of a folder written at or after a moment, the newest first.
+    /// Lists the newest log of each type in a folder written at or after a moment, the newest first.
     /// </summary>
     /// <param name="folder">The folder; its subfolders are left out.</param>
     /// <param name="since">The moment, in UTC.</param>
-    /// <returns>The paths of its <c>*.log</c> and <c>*.txt</c> files, none when the folder is missing.</returns>
+    /// <returns>The paths of its <c>*.log</c> and <c>*.txt</c> files, one per <see cref="LogType"/>, none when the folder is missing.</returns>
     private static List<string> RecentLogs(string folder, DateTime since) =>
         Directory.Exists(folder)
             ? Directory.EnumerateFiles(folder)
                 .Where(file => Path.GetExtension(file).ToLowerInvariant() is ".log" or ".txt" && File.GetLastWriteTimeUtc(file) >= since)
                 .OrderByDescending(File.GetLastWriteTimeUtc)
+                .DistinctBy(LogType, StringComparer.OrdinalIgnoreCase)
                 .ToList()
             : [];
+
+    /// <summary>
+    /// Tells a log's type: its file name without the day or session start it is stamped with.
+    /// </summary>
+    /// <param name="path">The log's path.</param>
+    /// <returns>Its type, such as <c>Multiplayer InGame.log</c> for <c>Multiplayer InGame 2026-10-15.log</c>.</returns>
+    internal static string LogType(string path) => LogStamp.Replace(Path.GetFileName(path), "");
 
     /// <summary>
     /// Reads the end of a file into the parts, while another program may write or delete it; a file that cannot be read is left out.
