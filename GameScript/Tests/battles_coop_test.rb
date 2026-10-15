@@ -2,6 +2,7 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Checked that a player whose characters all fell in a won battle stands up
 #      Paulinchen  2026-10-12: Read who joined the battle from its popup instead of the chat
 #                            - Checked invites while the leader's story calls the player over
 #                            - Checked that a leave from a player outside the battle tells nothing
@@ -949,6 +950,23 @@ scene.count_up_defeat(members[0], enemy)
 check("a defeat by another player's character counts nothing", $counted, [])
 scene.count_up_defeat(enemy, members[2])
 check("one between the player's own and an enemy counts", $counted, [[enemy.id, :defeat], [1, :down]])
+
+# A player whose own characters all fell while the co-op party won stands up as after a defeat,
+# else the victory's autosave keeps them fallen and the map sends the player to the game over.
+class Game_Actor; def dead?; @hp == 0; end; end
+$game_party.own.each { |actor| actor.hp = 0 }
+members[0].hp = 0
+BattleManager.battle_end(0)
+check("a player whose own characters all fell in a won battle has them stand up with 1 HP", [$game_party.own.map(&:hp).uniq, members[0].hp], [[1], 0])
+$game_party.own.each { |actor| actor.hp = 0 }
+$game_party.own[4].hp = 40
+BattleManager.battle_end(0)
+check("one with a character still standing keeps the fallen down", $game_party.own.map(&:hp), [0, 0, 0, 0, 40])
+$game_party.own.each { |actor| actor.hp = 0 }
+BattleManager.battle_end(2)
+check("and a lost battle leaves standing up to the game's defeat", $game_party.own.map(&:hp).uniq, [0])
+$game_party.own.each { |actor| actor.hp = 100 }
+members[0].hp = 100
 
 # The end drops the game's Retry, whose snapshot holds synced stats or an older battle.
 BattleManager.instance_variable_set(:@retry_data, "the start of the battle")

@@ -2,6 +2,7 @@
 #  battles_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Stood the player's own characters up with 1 HP after a battle won while all of them fell
 #      Paulinchen  2026-10-13: Told the guests of a Classic world's battle whether its boss fights at its tier
 #                            - Brought a Raid World player's squad by the world's squad rules
 #      Paulinchen  2026-10-12: Joined the battle of the story whose call is about to bring the player over
@@ -2620,6 +2621,23 @@ module MGQ_MpBattlesCoop
   rescue
   end
 
+  # Stands the player's own fallen characters up with 1 HP when the co-op party won or left the
+  # battle while all of them fell, as the game's defeat does. Called as BattleManager.battle_end ends.
+  #
+  # Without it the victory's autosave keeps a party without anyone standing, and the map's game over
+  # check then sends the player to the plain Game Over screen on every load.
+  #
+  # @param result [Integer] The game's result: 0 won, 1 escaped, 2 lost.
+  def self.stand_up(result)
+    own = $game_party.all_members
+    return if result == 2 || own.empty? || !own.all?(&:dead?)
+
+    own.each { |actor| actor.hp = 1 }
+    log("the player's own characters all fell in a battle the co-op party #{RESULTS.fetch(result, result.inspect)}: they stand up with 1 HP")
+  rescue => e
+    log("standing the player's fallen characters up failed: #{e.class}: #{e.message}")
+  end
+
   # Logs a Library count left to the other players' games, see install_counts.
   #
   # @param what [String] The count, such as "defeat".
@@ -2630,14 +2648,17 @@ module MGQ_MpBattlesCoop
   end
 
   # Keeps the other players' characters out of the Library all saves share, which counts each
-  # character's battles, defeats and steals by its id: those belong to their owners' games.
+  # character's battles, defeats and steals by its id: those belong to their owners' games. The
+  # battle's end also stands the player's own fallen characters up, see stand_up.
   def self.install_counts
     if BattleManager.respond_to?(:battle_end)
       MGQ_MpHooks.around(BattleManager.singleton_class, :battle_end, "battles_coop") do |_manager, args, original|
         next original.call unless MGQ_MpBattlesCoop.active?
 
         MGQ_MpBattlesCoop.note_end(args[0])
-        MGQ_MpBattlesCoop.own_only { original.call }
+        ended = MGQ_MpBattlesCoop.own_only { original.call }
+        MGQ_MpBattlesCoop.stand_up(args[0])
+        ended
       end
     end
     if Scene_Battle.method_defined?(:count_up_defeat)
