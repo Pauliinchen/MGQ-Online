@@ -2,6 +2,7 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Showed no bars over the Colosseum receptionist
 #      Paulinchen  2026-10-13: Showed the bars of the raid bosses in Classic worlds and single player, each turned on and off in the Mod Config
 #      Paulinchen  2026-10-12: Kept the troops of a common event only when its walk missed none
 #                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
@@ -88,6 +89,10 @@ module MGQ_MpRaidBar
 
   # The event command that calls a common event.
   CALL_CODE = 117
+
+  # The event command that turns switches on or off, and its value that turns them on.
+  SWITCH_CODE = 121
+  SWITCH_ON = 0
 
   # Steps to a boss's event when the map shows none.
   FAR = 9999
@@ -363,10 +368,23 @@ module MGQ_MpRaidBar
     outer = seen.delete(:cut)
     seen[id] = true
     common = $data_common_events[id]
-    troops = common && common.list ? troops_in(common.list, seen) : []
+    troops = common && common.list && !colosseum?(common.list) ? troops_in(common.list, seen) : []
     @common_troops[id] = troops if root || !seen[:cut]
     seen[:cut] = true if outer
     troops
+  end
+
+  # Reports whether a list of event commands starts a Colosseum battle, whose fights reuse the
+  # bosses' troops but are no raids.
+  #
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @return [Boolean] Whether the list turns the Colosseum switch on.
+  def self.colosseum?(list)
+    switch = MGQ_MpRaidPool::COLOSSEUM_SWITCH
+    list.any? do |command|
+      params = command.parameters
+      command.code == SWITCH_CODE && params[2] == SWITCH_ON && switch.between?(params[0].to_i, params[1].to_i)
+    end
   end
 
   # Reports whether a troop's battle shows a bar: the last phase of a raid boss with pools whose

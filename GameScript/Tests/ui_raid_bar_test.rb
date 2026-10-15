@@ -551,6 +551,9 @@ $data_common_events[52] = CommonEvent.new([Command.new(117, [53]), battle(521)])
 $data_common_events[53] = CommonEvent.new([Command.new(117, [50]), battle(531)])
 check("two common events calling one that calls back: the first finds every troop", bar.troops_in(calls.call(50), {}).sort, [501, 511, 521, 531])
 check("and the second, cut short in that walk, is not kept short", bar.troops_in(calls.call(52), {}).sort, [501, 511, 521, 531])
+$data_common_events[60] = CommonEvent.new([Command.new(121, [86, 87, 0]), Command.new(117, [61])])
+$data_common_events[61] = CommonEvent.new([battle(812)])
+check("a Colosseum common event shows no bars, though its fights reuse the bosses troops", [bar.troops_in(calls.call(60), {}), bar.troops_in(calls.call(61), {})], [[], [812]])
 check("the steps to a boss's event", [bar.distance_to_boss(71, 12, 13), bar.distance_to_boss(2016, 0, 0)], [3, MGQ_MpRaidBar::FAR])
 $game_map.map_id = MGQ_MpRaidPool::HADES_MAP
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
