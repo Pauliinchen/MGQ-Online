@@ -2,6 +2,7 @@
 #  coop_events.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-15: Faded the screen in once it stayed dark with nothing running that could fade it in
 #      Paulinchen  2026-10-12: Faded the screen in once per arrival on a map whose self-running story another game runs
 #                            - Let a leader's page that fails to hold wait as the game's own pages do
 #                            - Told the viewers at most one page every ten frames while the teller skips
@@ -150,6 +151,13 @@ module MGQ_MpCoopEvents
   # Frames the screen takes to fade in for a player who came in the middle of another player's
   # story, half a second, as the game's own fade.
   LATE_FADEIN_FRAMES = 30
+
+  # Frames the screen may stay dark while nothing runs that could fade it in, five seconds.
+  DARK_SCREEN_FRAMES = 300
+
+  # The trigger of an event that runs alongside the map, and the command that fades the screen in.
+  PARALLEL_TRIGGER = 4
+  FADEIN_CODE = 222
 
   # Frames after a Raid World's telling starts in which another player who started telling on the
   # same map at the same moment, and entered it first, stops it, three seconds of the state's lag.
@@ -1042,6 +1050,47 @@ module MGQ_MpCoopEvents
     log("fading the screen in for a story under way failed: #{e.class}: #{e.message}")
   end
 
+  # Fades the screen in once it stayed dark for DARK_SCREEN_FRAMES while nothing could fade it in.
+  #
+  # A story event whose fade-in another game's story already ran, as an arrival after a game over
+  # returned the player to an earlier point, leaves the screen black for good.
+  def self.lift_dark_screen
+    return @dark_frames = 0 unless stuck_dark?
+
+    @dark_frames = @dark_frames.to_i + 1
+    return if @dark_frames < DARK_SCREEN_FRAMES
+
+    @dark_frames = 0
+    $game_map.screen.start_fadein(LATE_FADEIN_FRAMES)
+    log("faded the screen in on map #{$game_map.map_id}: it stayed dark for #{DARK_SCREEN_FRAMES} frames with no event running that could fade it in")
+  rescue => e
+    log_once(:dark_screen, "fading in a screen left dark failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether the screen is dark in a world while the player stands free on the map: no
+  # event runs or starts, no message shows, no transfer waits, no other player's scene plays here
+  # and no opening's setup runs.
+  #
+  # @return [Boolean] Whether it is.
+  def self.stuck_dark?
+    return false unless MGQ_MpOverworldSync.in_world? && SceneManager.scene_is?(Scene_Map) && $game_map.screen.brightness == 0
+    return false if $game_map.interpreter.running? || $game_message.busy? || $game_player.transfer?
+    return false if $game_map.events.values.any? { |event| event.starting }
+    return false if MGQ_MpCoopScene.watching? || (defined?(MGQ_MpWorldOpening) && MGQ_MpWorldOpening.running?)
+
+    !parallel_fade_in?
+  end
+
+  # Reports whether an event running alongside the map, of the map or a common one, fades the
+  # screen in itself, as the game's dark transitions do.
+  #
+  # @return [Boolean] Whether one does.
+  def self.parallel_fade_in?
+    lists = $game_map.events.values.select { |event| event.trigger == PARALLEL_TRIGGER }.map(&:list)
+    lists += $game_map.parallel_common_events.select { |common| $game_switches[common.switch_id] }.map(&:list)
+    lists.any? { |list| list && list.any? { |command| command.code == FADEIN_CODE } }
+  end
+
   # Reports whether the player's story is behind a Raid World's, which keeps their story events from
   # starting, see MGQ_MpWorldCatchup.holds_story?.
   #
@@ -1598,6 +1647,7 @@ module MGQ_MpCoopEvents
     show_heard
     take_held_chests
     tell_chest_news
+    lift_dark_screen
   rescue => e
     log("updating the party's events failed: #{e.class}: #{e.message}")
   end

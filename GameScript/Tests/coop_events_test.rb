@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Checked that the Pocket Castle's tour is travel in a Raid World and story in a Classic world
+#      Paulinchen  2026-10-15: Checked that a screen left dark with nothing running fades in
+#                            - Checked that the Pocket Castle's tour is travel in a Raid World and story in a Classic world
 #      Paulinchen  2026-10-14: Expected the Navy or the Pirates among the choices
 #      Paulinchen  2026-10-12: Checked that a story event left to the teller fades in a dark screen once per arrival
 #                            - Checked that a member stands free while the leader fights the story's battle
@@ -290,7 +291,7 @@ class Scene_Battle; end
 # The menu scene.
 class Scene_Menu; end
 # Stands in for the game's scene manager, its scene alone.
-module SceneManager; class << self; attr_accessor :scene; end; end
+module SceneManager; class << self; attr_accessor :scene; end; def self.scene_is?(klass); scene.is_a?(klass); end; end
 class Game_Interpreter
   def wait_for_message; end
 end
@@ -2526,3 +2527,27 @@ $raid = false
 $party = nil
 $leader = nil
 $members = []
+
+# A screen left dark with nothing running that could fade it in.
+module MGQ_MpCoopScene; def self.watching?; $watching; end; end
+class Game_Map; def parallel_common_events; []; end; end
+SceneManager.scene = Scene_Map.new
+$game_map.events = { 30 => Game_Event.new(30, [RPG::Page.new([c(201, 0, 2, 5, 5, 2), c(0)])], 3) }
+$game_map.interpreter = Game_Interpreter.new
+$game_message.clear
+$game_message.busy = false
+$game_player = Game_Player.new
+$game_map.screen = LateScreen.new
+$watching = true
+MGQ_MpCoopEvents::DARK_SCREEN_FRAMES.times { MGQ_MpCoopEvents.update }
+check("a dark screen stays while another player's scene plays here", $game_map.screen.fadein, nil)
+$watching = false
+$game_map.events[31] = Game_Event.new(31, [RPG::Page.new([c(230, 60), c(222), c(0)])], 4)
+MGQ_MpCoopEvents::DARK_SCREEN_FRAMES.times { MGQ_MpCoopEvents.update }
+check("and while an event running alongside the map fades it in itself", $game_map.screen.fadein, nil)
+$game_map.events.delete(31)
+(MGQ_MpCoopEvents::DARK_SCREEN_FRAMES - 1).times { MGQ_MpCoopEvents.update }
+check("nothing else running, it stays dark a while", $game_map.screen.fadein, nil)
+MGQ_MpCoopEvents.update
+check("then fades in, as an arrival whose fade-in another game ran leaves it dark for good",
+      [$game_map.screen.fadein, $log.grep(/faded the screen in on map \d+: it stayed dark for 300 frames/).size], [MGQ_MpCoopEvents::LATE_FADEIN_FRAMES, 1])
