@@ -2,6 +2,7 @@
 //  WorldDirectoryTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Expected the keyed Raid World stories among the features
 //      Paulinchen  2026-10-14: Covered a Raid World with a starting save from every build
 //      Paulinchen  2026-10-13: Covered a Classic world's raid bosses setting and expected it at the end of its line
 //                            - Covered a Raid World's squad settings and expected them at the end of its line
@@ -91,7 +92,7 @@ public sealed class WorldDirectoryTests
         var made = Act(creator, directory => directory.Create("Raid Night", "secret", 8, false, false, [], null, WorldType.Raid, CompanionSharing.Story));
         Assert.Equal("done", made["state"]);
         Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t8\t") && line.EndsWith("\traid\tstory\t\t1\t\t0"));
-        Assert.Equal("raid", relay.LastFeatures);
+        Assert.Equal("raid,keys", relay.LastFeatures);
     }
 
     /// <summary>

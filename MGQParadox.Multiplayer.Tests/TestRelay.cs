@@ -3,6 +3,8 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-15: Passed battle routes on to the battle stand-in and cut its players on stopping
+//                            - Kept a Raid World's story key by key, as the relay does, and told the room each change
+//                            - Kept the companions' affection among a keyed story's keys
 //      Paulinchen  2026-10-14: Took a Raid World's starting save from every game
 //      Paulinchen  2026-10-13: Kept a Classic world's raid bosses setting and told its room when an edit changed it
 //                            - Kept a Raid World's squad settings
@@ -679,6 +681,8 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         var key = PlayerKeyOf(context);
         (int Status, JsonNode Body) answer;
         long? push = null;
+        string? pushText = null;
+        var known = long.TryParse(context.Request.QueryString["known"], NumberStyles.None, CultureInfo.InvariantCulture, out var held) ? held : (long?)null;
 
         lock (_gate)
         {
@@ -704,7 +708,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
                 var before = story.Rev;
                 answer = parts[4..] switch
                 {
-                    [] when method == "GET" => (200, story.State(true)),
+                    [] when method == "GET" => (200, story.Get(known)),
                     [] when method == "POST" => story.Write(body!),
                     ["checkpoint", var part] when method == "GET" => story.Checkpoint(part),
                     ["route"] when method == "POST" => story.Lock(body!["route"]!.GetValue<string>()),
@@ -715,6 +719,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
                 if (story.Rev != before)
                 {
                     push = story.Rev;
+                    pushText = story.PushText;
                     StoryWrites += story.WRev == story.Rev ? 1 : 0;
                 }
             }
@@ -728,7 +733,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
 
         if (push is { } rev)
         {
-            Tell(id, $"story {rev}");
+            Tell(id, pushText ?? $"story {rev}");
         }
     }
 
@@ -2192,6 +2197,27 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         private string _blob = string.Empty;
 
         /// <summary>
+        /// The story key by key, as the relay keeps a keyed story; <see langword="null"/> while it is sealed or nobody wrote it.
+        /// </summary>
+        private Dictionary<string, string>? _keys;
+
+        /// <summary>
+        /// The keys each write of the keyed story changed, by revision.
+        /// </summary>
+        private readonly List<(long Rev, HashSet<string> Keys)> _log = [];
+
+        /// <summary>
+        /// The revision from which on the log tells every write.
+        /// </summary>
+        private long _logBase;
+
+        /// <summary>
+        /// The text frame that tells the room the story's last change, <see langword="null"/> for the
+        /// revision alone, as for a sealed story.
+        /// </summary>
+        public string? PushText { get; private set; }
+
+        /// <summary>
         /// The revision, which every change counts up.
         /// </summary>
         public long Rev { get; private set; }
@@ -2226,11 +2252,33 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
                 ["checkpoints"] = new JsonArray(_checkpoints.Keys.Select(part => (JsonNode)part).ToArray()),
             };
 
-            if (withBlob)
+            if (withBlob && _keys is { } keys)
+            {
+                state["keyed"] = true;
+                state["keys"] = ListsOf(keys);
+            }
+            else if (withBlob)
             {
                 state["blob"] = _blob;
             }
 
+            return state;
+        }
+
+        /// <summary>
+        /// Hands out the story, without the keyed story's lists for a game that holds its revision.
+        /// </summary>
+        /// <param name="known">The revision the game holds, <see langword="null"/> for none.</param>
+        /// <returns>The state.</returns>
+        public JsonObject Get(long? known)
+        {
+            if (_keys is null || known != Rev)
+            {
+                return State(true);
+            }
+
+            var state = State(false);
+            state["same"] = true;
             return state;
         }
 
@@ -2241,8 +2289,20 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         /// <returns>The answer.</returns>
         public (int, JsonNode) Write(JsonNode body)
         {
+            PushText = null;
+
+            if (body["set"] is JsonObject set)
+            {
+                return WriteKeys(body, set);
+            }
+
             var baseRev = body["base"]!.GetValue<long>();
             var counters = body["counters"]!.AsObject();
+
+            if (_keys is not null)
+            {
+                return Refuse("the world keeps its story key by key", "update");
+            }
 
             if (baseRev < WRev || baseRev > Rev)
             {
@@ -2296,6 +2356,180 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         }
 
         /// <summary>
+        /// Takes a write of the keys a game changed: each key unless a write after its base changed
+        /// it, which the first writer keeps. A sealed story or none starts keyed with a write on its
+        /// own revision.
+        /// </summary>
+        /// <param name="body">The write.</param>
+        /// <param name="set">The keys it changed, as lists.</param>
+        /// <returns>The answer.</returns>
+        private (int, JsonNode) WriteKeys(JsonNode body, JsonObject set)
+        {
+            var baseRev = body["base"]!.GetValue<long>();
+            var counters = body["counters"]!.AsObject();
+
+            if (baseRev < (_keys is null ? Rev : _logBase) || baseRev > Rev)
+            {
+                return Refuse("the story moved on", "rev");
+            }
+
+            if (Compare(KeyOf(counters), KeyOf(_counters)) < 0)
+            {
+                return Refuse("the write is behind the world's story", "behind");
+            }
+
+            var keys = new Dictionary<string, string>(_keys ?? [], StringComparer.Ordinal);
+            var changed = _keys is null ? [] : _log.Where(entry => entry.Rev > baseRev).SelectMany(entry => entry.Keys).ToHashSet();
+            var applied = new Dictionary<string, string>(StringComparer.Ordinal);
+            var kept = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            foreach (var (key, value) in KeysOf(set))
+            {
+                if (keys.TryGetValue(key, out var own) && own == value)
+                {
+                    continue;
+                }
+
+                if (changed.Contains(key))
+                {
+                    kept[key] = keys[key];
+                    continue;
+                }
+
+                keys[key] = value;
+                applied[key] = value;
+            }
+
+            if ((_keys is not null || _blob.Length > 0) && PartOf(counters) != PartOf(_counters))
+            {
+                var checkpoint = State(true);
+                checkpoint["rev"] = WRev;
+                _checkpoints[PartOf(_counters)] = checkpoint;
+            }
+
+            foreach (var cleared in counters["clear"]?.AsArray().Select(node => node!.GetValue<string>()) ?? [])
+            {
+                if (!_done.Contains(cleared))
+                {
+                    _done.Add(cleared);
+                }
+            }
+
+            var route = RouteOf(counters);
+            _route = route != "none" ? route : _done.Contains(_route) ? "none" : _route;
+
+            if (counters.ContainsKey("end"))
+            {
+                _end = counters["end"]?.DeepClone();
+            }
+
+            _caps.UnionWith(counters["caps"]?.AsArray().Select(node => node!.GetValue<int>()) ?? []);
+            _counters = new JsonObject { ["p"] = counters["p"]!.GetValue<int>(), ["r1141"] = counters["r1141"]!.GetValue<int>(), ["r1142"] = counters["r1142"]!.GetValue<int>(), ["r1143"] = counters["r1143"]!.GetValue<int>(), ["clear"] = (counters["clear"] ?? new JsonArray()).DeepClone() };
+            var before = Rev;
+            WRev = ++Rev;
+
+            if (_keys is null)
+            {
+                _logBase = Rev;
+            }
+            else
+            {
+                _log.Add((Rev, applied.Keys.ToHashSet()));
+            }
+
+            _keys = keys;
+            _blob = string.Empty;
+            Push(before, applied);
+            var answer = State(false);
+            answer["accepted"] = true;
+            answer["kept"] = ListsOf(kept);
+            answer["moved"] = changed.Count > 0;
+            return (200, answer);
+        }
+
+        /// <summary>
+        /// Notes the text frame of a keyed story's change for the room.
+        /// </summary>
+        /// <param name="before">The revision the change followed.</param>
+        /// <param name="delta">The keys it changed.</param>
+        private void Push(long before, Dictionary<string, string> delta)
+        {
+            PushText = _keys is null ? null : "storyd " + new JsonObject { ["rev"] = Rev, ["prev"] = before, ["delta"] = ListsOf(delta), ["state"] = State(false) }.ToJsonString();
+        }
+
+        /// <summary>
+        /// Reads lists into keys, as the relay does.
+        /// </summary>
+        /// <param name="lists">The lists.</param>
+        /// <returns>The keys and their values.</returns>
+        private static IEnumerable<(string Key, string Value)> KeysOf(JsonObject lists)
+        {
+            IEnumerable<string> Items(string name) => lists[name]?.GetValue<string>() is { Length: > 0 } list ? list.Split(',') : [];
+
+            foreach (var item in Items("s"))
+            {
+                yield return ($"s{item}", "1");
+            }
+
+            foreach (var item in Items("sf"))
+            {
+                yield return ($"s{item}", "0");
+            }
+
+            foreach (var item in Items("v"))
+            {
+                yield return ($"v{item[..item.IndexOf(':')]}", item[(item.IndexOf(':') + 1)..]);
+            }
+
+            foreach (var item in Items("ss"))
+            {
+                yield return ($"ss{item}", "1");
+            }
+
+            foreach (var item in Items("ssf"))
+            {
+                yield return ($"ss{item}", "0");
+            }
+
+            foreach (var item in Items("a"))
+            {
+                yield return ($"a{item[..item.IndexOf(':')]}", item[(item.IndexOf(':') + 1)..]);
+            }
+        }
+
+        /// <summary>
+        /// Writes keys as lists, as the relay does.
+        /// </summary>
+        /// <param name="keys">The keys and their values.</param>
+        /// <returns>The lists.</returns>
+        private static JsonObject ListsOf(Dictionary<string, string> keys)
+        {
+            var lists = new Dictionary<string, List<string>> { ["s"] = [], ["sf"] = [], ["v"] = [], ["ss"] = [], ["ssf"] = [], ["a"] = [] };
+
+            foreach (var (key, value) in keys)
+            {
+                if (key.StartsWith("ss", StringComparison.Ordinal))
+                {
+                    lists[value == "1" ? "ss" : "ssf"].Add(key[2..]);
+                }
+                else if (key.StartsWith('s'))
+                {
+                    lists[value == "1" ? "s" : "sf"].Add(key[1..]);
+                }
+                else if (key.StartsWith('a'))
+                {
+                    lists["a"].Add($"{key[1..]}:{value}");
+                }
+                else
+                {
+                    lists["v"].Add($"{key[1..]}:{value}");
+                }
+            }
+
+            return new JsonObject(lists.Select(list => new KeyValuePair<string, JsonNode?>(list.Key, string.Join(',', list.Value))));
+        }
+
+        /// <summary>
         /// Hands out a part's checkpoint.
         /// </summary>
         /// <param name="part">The part.</param>
@@ -2340,7 +2574,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             }
 
             _route = route;
-            Rev++;
+            Push(Rev++, []);
             return (200, State(true));
         }
 
@@ -2356,7 +2590,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
 
             if (_comps.Count != before)
             {
-                Rev++;
+                Push(Rev++, []);
             }
 
             return (200, State(true));

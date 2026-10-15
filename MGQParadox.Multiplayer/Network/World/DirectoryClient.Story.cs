@@ -2,6 +2,7 @@
 //  DirectoryClient.Story.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Wrote and read a Raid World's story key by key, and fetched it without its keys while this game holds them
 //      Paulinchen  2026-10-12: Carried the level caps of the world's story
 //      Paulinchen  2026-10-09: Logged story fetches only when their outcome changes and let boss requests name their client
 //      Paulinchen  2026-10-08: Created
@@ -30,12 +31,43 @@ internal sealed partial class DirectoryClient
     /// <param name="world">The world.</param>
     /// <param name="playerKey">The player's key.</param>
     /// <param name="authKey">The auth key made from the world's token.</param>
-    /// <returns>The story with its sealed text.</returns>
+    /// <param name="known">The revision of the keyed story this game holds, which the relay then answers without its lists while it is the story's; <see langword="null"/> for none.</param>
+    /// <returns>The story with its lists or its sealed text.</returns>
     /// <exception cref="DirectoryException">The relay could not be reached, the world is no Raid World, or the player may not read it.</exception>
-    public StoryState GetStory(string world, string playerKey, string authKey)
+    public StoryState GetStory(string world, string playerKey, string authKey, long? known = null)
     {
-        using var document = SendStory(HttpMethod.Get, StoryAddress(world, string.Empty), $"raid story {Log.Short(world)}", null, playerKey, authKey, null, out _, repeatKey: $"raid story {world}");
+        var query = known is { } rev ? string.Create(CultureInfo.InvariantCulture, $"?known={rev}") : string.Empty;
+        using var document = SendStory(HttpMethod.Get, StoryAddress(world, query), $"raid story {Log.Short(world)}", null, playerKey, authKey, null, out _, repeatKey: $"raid story {world}");
         return StoryState.Read(document.RootElement);
+    }
+
+    /// <summary>
+    /// Writes the keys a game changed of a Raid World's story kept key by key; the relay takes each
+    /// key unless a write after the revision this one built on changed it.
+    /// </summary>
+    /// <param name="world">The world.</param>
+    /// <param name="playerKey">The player's key.</param>
+    /// <param name="authKey">The auth key made from the world's token.</param>
+    /// <param name="baseRev">The revision the change was built on.</param>
+    /// <param name="counters">The counters the relay reads.</param>
+    /// <param name="changes">The keys changed.</param>
+    /// <returns>Whether the relay took it, with the state as it now stands and the keys it kept, see <see cref="StoryState.Kept"/>; a refused write comes with the world's lists and the code that names why.</returns>
+    /// <exception cref="DirectoryException">The relay could not be reached or refused for another reason.</exception>
+    public StoryAnswer PostStoryKeys(string world, string playerKey, string authKey, long baseRev, StoryCounters counters, StoryLists changes)
+    {
+        var body = Json(writer =>
+        {
+            writer.WriteNumber("base", baseRev);
+            writer.WriteStartObject("counters");
+            counters.Write(writer);
+            writer.WriteEndObject();
+            writer.WriteStartObject("set");
+            changes.WriteLists(writer);
+            writer.WriteEndObject();
+        });
+
+        using var document = SendStory(HttpMethod.Post, StoryAddress(world, string.Empty), $"raid story keys {Log.Short(world)} on rev {baseRev}, {changes.Count} key(s)", body, playerKey, authKey, HttpStatusCode.Conflict, out var status);
+        return new StoryAnswer(status != HttpStatusCode.Conflict, StoryState.Read(document.RootElement));
     }
 
     /// <summary>
@@ -218,9 +250,14 @@ internal sealed record StoryEnd(int Map, int X, int Y)
 /// <param name="Comps">The companions the world shares, by actor id.</param>
 /// <param name="Caps">The level caps the world's story unlocked, lowest first.</param>
 /// <param name="Checkpoints">The parts the world keeps a checkpoint of.</param>
-/// <param name="Blob">The sealed story, empty before the first write.</param>
+/// <param name="Blob">The sealed story, empty before the first write and for a keyed story.</param>
 /// <param name="Code">The code a refusal named why with, empty otherwise.</param>
-internal sealed record StoryState(long Rev, long WRev, int P, int R1141, int R1142, int R1143, IReadOnlyList<string> Clear, string Part, string Route, IReadOnlyList<string> Done, StoryEnd? End, IReadOnlyList<int> Comps, IReadOnlyList<int> Caps, IReadOnlyList<string> Checkpoints, string Blob, string Code)
+/// <param name="Keys">The story key by key, <see langword="null"/> for a sealed story or an answer without it.</param>
+/// <param name="Same">Whether the relay left the keys out, since the asking game holds this revision.</param>
+/// <param name="Kept">The keys of a write the world kept its own values of, with those values; <see langword="null"/> but for a keyed write.</param>
+/// <param name="Moved">Whether other writes changed keys since the revision a keyed write built on.</param>
+internal sealed record StoryState(long Rev, long WRev, int P, int R1141, int R1142, int R1143, IReadOnlyList<string> Clear, string Part, string Route, IReadOnlyList<string> Done, StoryEnd? End, IReadOnlyList<int> Comps, IReadOnlyList<int> Caps, IReadOnlyList<string> Checkpoints, string Blob, string Code,
+                                  StoryLists? Keys = null, bool Same = false, StoryLists? Kept = null, bool Moved = false)
 {
     /// <summary>
     /// The code of a 404 for a part the world keeps no checkpoint of.
@@ -248,7 +285,11 @@ internal sealed record StoryState(long Rev, long WRev, int P, int R1141, int R11
         Numbers(element, "caps"),
         Texts(element, "checkpoints"),
         Text(element, "blob"),
-        Text(element, "code"));
+        Text(element, "code"),
+        element.TryGetProperty("keys", out var keys) && keys.ValueKind == JsonValueKind.Object ? StoryLists.FromJson(keys) : null,
+        element.TryGetProperty("same", out var same) && same.ValueKind == JsonValueKind.True,
+        element.TryGetProperty("kept", out var kept) && kept.ValueKind == JsonValueKind.Object ? StoryLists.FromJson(kept) : null,
+        element.TryGetProperty("moved", out var moved) && moved.ValueKind == JsonValueKind.True);
 
     /// <summary>
     /// Reads a whole number of the answer.

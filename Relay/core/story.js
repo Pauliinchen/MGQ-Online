@@ -6,6 +6,7 @@
 //                            - Moved a sealed story to keys with the first write of a game that opened it
 //                            - Refused sealed writes to a keyed story with the code update
 //                            - Told a keyed write whether other writes changed keys since its base
+//                            - Kept the companions' affection key by key in a keyed story
 //                            - Refused a route under way before the Great Decision and repaired a story written with one
 //      Paulinchen  2026-10-12: Kept the level caps the world's story unlocked
 //      Paulinchen  2026-10-11: Opened every route again once the world finished all of them
@@ -76,10 +77,16 @@ export const STORY_FEATURE = "keys";
 export const STORY_DELTA = "storyd";
 
 /**
- * The lists a keyed story travels in: the switches on and off, the variables with their values, and
- * the self switches on and off, as the games write a story (story_state.rbx `story_lists`).
+ * The lists a keyed story travels in: the switches on and off, the variables with their values, the
+ * self switches on and off, as the games write a story (story_state.rbx `story_lists`), and the
+ * companions' affection (world_affection.rbx).
  */
-export const LISTS = Object.freeze(["s", "sf", "v", "ss", "ssf"]);
+export const LISTS = Object.freeze(["s", "sf", "v", "ss", "ssf", "a"]);
+
+/**
+ * A companion's affection as the games write it: a whole number above 0.
+ */
+const AFFECTION = /^[1-9]\d{0,8}$/;
 
 /**
  * A variable's value as the games write it: a whole number, a decimal, a text in base64, true or
@@ -357,7 +364,7 @@ const CLEAR_SWITCHES = Object.freeze({ ad: 7096, mr: 7097, chaos: 7039 });
 
 /**
  * Reads a keyed story's lists into its keys: `s<id>` and `ss<map>.<event>.<letter>` to "1" or "0",
- * `v<id>` to the variable's value as written.
+ * `v<id>` to the variable's value as written, `a<id>` to the companion's affection.
  *
  * @param {unknown} lists The lists, see LISTS, each a text of entries separated by commas.
  * @param {typeof STORY_LIMITS} [limits] The limits.
@@ -411,6 +418,17 @@ export function readLists(lists, limits = STORY_LIMITS) {
     }
   }
 
+  for (const item of items("a")) {
+    const split = item.indexOf(":");
+    const value = item.slice(split + 1);
+
+    if (split < 1 || !id(item.slice(0, split)) || !AFFECTION.test(value)) {
+      return { error: `a lists companion ids of 1 to ${limits.maxId} with their affection: ${item.slice(0, 40)}` };
+    }
+
+    keys.set(`a${Number(item.slice(0, split))}`, value);
+  }
+
   return { keys };
 }
 
@@ -418,16 +436,18 @@ export function readLists(lists, limits = STORY_LIMITS) {
  * Writes keys as a keyed story's lists, each list in the keys' order, see readLists.
  *
  * @param {Iterable<[string, string]>} keys The keys and their values.
- * @returns {{s: string, sf: string, v: string, ss: string, ssf: string}} The lists.
+ * @returns {{s: string, sf: string, v: string, ss: string, ssf: string, a: string}} The lists.
  */
 export function listsOf(keys) {
-  const lists = { s: [], sf: [], v: [], ss: [], ssf: [] };
+  const lists = { s: [], sf: [], v: [], ss: [], ssf: [], a: [] };
 
   for (const [key, value] of keys) {
     if (key.startsWith("ss")) {
       lists[value === "1" ? "ss" : "ssf"].push(key.slice(2));
     } else if (key.startsWith("s")) {
       lists[value === "1" ? "s" : "sf"].push(key.slice(1));
+    } else if (key.startsWith("a")) {
+      lists.a.push(`${key.slice(1)}:${value}`);
     } else {
       lists.v.push(`${key.slice(1)}:${value}`);
     }

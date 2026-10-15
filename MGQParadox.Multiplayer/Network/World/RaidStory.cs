@@ -2,6 +2,8 @@
 //  RaidStory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Kept a Raid World's story key by key, wrote only the keys this game changed and laid the relay's pushes over it
+//                            - Moved a sealed story this game opened to keys
 //      Paulinchen  2026-10-12: Passed the level caps of the world's story to the game script
 //                            - Told a write found already accepted on a retry with the revision of that write
 //      Paulinchen  2026-10-09: Logged a fetch of the world's story only when its outcome changes
@@ -16,6 +18,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
@@ -70,6 +73,23 @@ internal sealed class RaidStory
     private string _knownText = string.Empty;
 
     /// <summary>
+    /// The newest story the relay told key by key, <see langword="null"/> while it told a sealed
+    /// story or none.
+    /// </summary>
+    private StoryLists? _knownLists;
+
+    /// <summary>
+    /// Whether a push of the relay laid a change over <see cref="_knownLists"/> since the last
+    /// fetch, which the next fetch then answers without asking the relay.
+    /// </summary>
+    private bool _pushed;
+
+    /// <summary>
+    /// Whether <see cref="_knownText"/> must be packed anew from <see cref="_knownLists"/>, as after a push.
+    /// </summary>
+    private bool _textStale;
+
+    /// <summary>
     /// The last checkpoint fetched, with its text; <see langword="null"/> before the first or when the world had none.
     /// </summary>
     private (StoryState State, string Text)? _checkpoint;
@@ -114,11 +134,27 @@ internal sealed class RaidStory
     /// </summary>
     /// <param name="world">The world the game is in.</param>
     /// <returns><see langword="false"/> while a fetch runs, without a player, or outside that world.</returns>
+    /// <remarks>
+    /// A story the relay pushed since the last fetch answers it at once; a fetch while this game holds
+    /// the keyed story asks the relay only whether it moved on. A sealed story this game opens moves
+    /// to keys, see <see cref="MoveToKeys"/>.
+    /// </remarks>
     public bool Fetch(string world) => Run(Kind.Fetch, world, "fetching the world's story", (client, me) =>
     {
-        var state = client.GetStory(world, me.Key, me.Auth);
-        var text = Take(world, state, me.Token);
-        return new Outcome(Kind.Done, Rev: state.Rev, Detail: $"rev {state.Rev}, part {state.Part}, {text.Length} characters");
+        if (Pushed(world) is { } pushed)
+        {
+            return new Outcome(Kind.Done, Rev: pushed.Rev, Detail: $"rev {pushed.Rev}, part {pushed.Part}, as the relay pushed it");
+        }
+
+        var state = client.GetStory(world, me.Key, me.Auth, Held(world)?.Rev);
+        var text = Take(world, state, me);
+
+        if (state.Keys is null && !state.Same && text.Length > 0)
+        {
+            MoveToKeys(world, state, text, client, me);
+        }
+
+        return new Outcome(Kind.Done, Rev: state.Rev, Detail: $"rev {state.Rev}, part {state.Part}, {(state.Same ? "as this game holds it" : $"{text.Length} characters")}");
     }, repeats: true);
 
     /// <summary>
@@ -140,15 +176,20 @@ internal sealed class RaidStory
 
         return Run(Kind.Post, world, $"writing the world's story on rev {baseRev}", (client, me) =>
         {
+            if (Held(world) is { } held)
+            {
+                return PostKeys(world, baseRev, parsed, story, held, client, me);
+            }
+
             var answer = client.PostStory(world, me.Key, me.Auth, baseRev, parsed, StorySeal.Seal(me.Token, story));
 
             if (answer.Taken)
             {
-                Keep(world, answer.State, story);
+                Keep(world, answer.State, story, null);
                 return new Outcome(Kind.Accepted, Rev: answer.State.Rev, Detail: $"accepted as rev {answer.State.Rev}, part {answer.State.Part}");
             }
 
-            var text = Take(world, answer.State, me.Token);
+            var text = Take(world, answer.State, me);
 
             // A write that arrived while its answer was lost comes back as the world's story on a
             // retry, and is the write's own.
@@ -178,7 +219,7 @@ internal sealed class RaidStory
         return Run(Kind.Checkpoint, world, $"fetching the checkpoint of part {part}", (client, me) =>
         {
             var state = client.GetCheckpoint(world, me.Key, me.Auth, part);
-            var text = state is { Blob.Length: > 0 } ? StorySeal.Open(me.Token, state.Blob) : string.Empty;
+            var text = state is { Keys: { } keys } ? keys.ToPacked() : state is { Blob.Length: > 0 } ? StorySeal.Open(me.Token, state.Blob) : string.Empty;
 
             lock (_gate)
             {
@@ -207,7 +248,7 @@ internal sealed class RaidStory
         return Run(Kind.Route, world, $"locking the route {route}", (client, me) =>
         {
             var answer = client.LockRoute(world, me.Key, me.Auth, route);
-            Take(world, answer.State, me.Token);
+            Take(world, answer.State, me);
             return answer.Taken
                 ? new Outcome(Kind.Locked, Rev: answer.State.Rev, Detail: $"locked {route}")
                 : new Outcome(Kind.Taken, Rev: answer.State.Rev, Code: answer.State.Code, Detail: $"refused ({answer.State.Code}), the world's route is {answer.State.Route}");
@@ -235,7 +276,7 @@ internal sealed class RaidStory
         return Run(Kind.Companions, world, $"adding {parsed.Count} shared companion(s)", (client, me) =>
         {
             var state = client.AddCompanions(world, me.Key, me.Auth, parsed);
-            Take(world, state, me.Token);
+            Take(world, state, me);
             return new Outcome(Kind.Done, Rev: state.Rev, Detail: $"{state.Comps.Count} shared");
         });
     }
@@ -268,7 +309,7 @@ internal sealed class RaidStory
                 }
             }
 
-            return headers.Count == 0 ? string.Empty : new Message(headers, withText ? _knownText : string.Empty).Encode();
+            return headers.Count == 0 ? string.Empty : new Message(headers, withText ? KnownText() : string.Empty).Encode();
         }
     }
 
@@ -327,6 +368,9 @@ internal sealed class RaidStory
                 _world = world;
                 _known = null;
                 _knownText = string.Empty;
+                _knownLists = null;
+                _pushed = false;
+                _textStale = false;
             }
 
             _outcomes[kind] = new Outcome(Kind.Busy);
@@ -416,30 +460,228 @@ internal sealed class RaidStory
     }
 
     /// <summary>
-    /// Unseals a story the relay told and keeps it as the newest, unless a newer one came meanwhile.
+    /// Takes the relay's word that a write changed the world's story kept key by key, as its push
+    /// tells: laid over the story this game holds when that is the one the write followed. Called by
+    /// <see cref="WorldSession"/> as the push arrives.
+    /// </summary>
+    /// <param name="world">The world, its room's id.</param>
+    /// <param name="json">The push: <c>rev</c>, <c>prev</c> (the revision it followed), <c>delta</c> (the keys it changed, as lists) and <c>state</c> (the story's state after it).</param>
+    /// <returns>Whether it was laid over the story held; the game script then fetches the story at once from what this game holds.</returns>
+    public bool TakePush(string world, string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+
+            if (!root.TryGetProperty("rev", out var rev) || !rev.TryGetInt64(out var after) || !root.TryGetProperty("prev", out var prev) || !prev.TryGetInt64(out var before)
+                || !root.TryGetProperty("delta", out var delta) || !root.TryGetProperty("state", out var state) || state.ValueKind != JsonValueKind.Object)
+            {
+                Log.Write("a story push was ignored: it is not as it should be");
+                return false;
+            }
+
+            lock (_gate)
+            {
+                if (_world != world || _knownLists is null || _known is null || _known.Rev != before)
+                {
+                    return false;
+                }
+
+                _knownLists = _knownLists.With(StoryLists.FromJson(delta));
+                _known = StoryState.Read(state) with { Blob = string.Empty, Code = string.Empty, Keys = null, Kept = null };
+                _textStale = true;
+                _pushed = true;
+                return _known.Rev == after;
+            }
+        }
+        catch (JsonException ex)
+        {
+            Log.Write($"a story push was ignored: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Hands out the story a push laid over the one this game holds since the last fetch, which
+    /// answers the fetch the push makes the game script ask for.
+    /// </summary>
+    /// <param name="world">The world.</param>
+    /// <returns>The story, <see langword="null"/> when no push came since the last fetch.</returns>
+    private StoryState? Pushed(string world)
+    {
+        lock (_gate)
+        {
+            if (!_pushed || _world != world || _known is null)
+            {
+                return null;
+            }
+
+            _pushed = false;
+            return _known;
+        }
+    }
+
+    /// <summary>
+    /// Tells the keyed story this game holds of a world, which a write changes key by key: the one
+    /// the relay told, or no keys for a world nobody wrote a story for.
+    /// </summary>
+    /// <param name="world">The world.</param>
+    /// <returns>The keys and their revision; <see langword="null"/> for a sealed story, which is written whole.</returns>
+    private (StoryLists Lists, long Rev)? Held(string world)
+    {
+        lock (_gate)
+        {
+            if (_world != world)
+            {
+                return null;
+            }
+
+            if (_knownLists is { } lists && _known is { } known)
+            {
+                return (lists, known.Rev);
+            }
+
+            return _known is null || _known.WRev == 0 ? (StoryLists.Empty, _known?.Rev ?? 0) : null;
+        }
+    }
+
+    /// <summary>
+    /// Writes what this game's story changed of the keyed story it holds: the keys whose values
+    /// differ from the world's. The relay takes each unless another write changed it since the
+    /// write's base; then, and when other writes changed keys since that base, the game script
+    /// hears of it as a conflict and takes the world's story, which holds the keys it took.
+    /// </summary>
+    /// <param name="world">The world.</param>
+    /// <param name="baseRev">The revision the game script built on.</param>
+    /// <param name="counters">The counters.</param>
+    /// <param name="story">The story as the game script packed it.</param>
+    /// <param name="held">The keyed story this game holds and its revision.</param>
+    /// <param name="client">The relay's client.</param>
+    /// <param name="me">Who asks.</param>
+    /// <returns>How the write went.</returns>
+    /// <exception cref="InvalidDataException">The game script's text is no packed story.</exception>
+    private Outcome PostKeys(string world, long baseRev, StoryCounters counters, string story, (StoryLists Lists, long Rev) held, DirectoryClient client, Asker me)
+    {
+        var mine = StoryLists.FromPacked(story);
+        var changes = held.Lists.ChangesIn(mine);
+        var answer = client.PostStoryKeys(world, me.Key, me.Auth, baseRev, counters, changes);
+
+        if (!answer.Taken)
+        {
+            Take(world, answer.State, me);
+
+            // A write that arrived while its answer was lost comes back on a retry as the world's
+            // story, which holds the write's keys.
+            if (answer.State.Code == "rev" && answer.State.Keys is { } keys && keys.ChangesIn(mine).Count == 0)
+            {
+                return new Outcome(Kind.Accepted, Rev: answer.State.WRev, Detail: $"found already accepted, the world's story is rev {answer.State.WRev}");
+            }
+
+            return new Outcome(Kind.Conflict, Rev: answer.State.Rev, Code: answer.State.Code, Detail: $"refused ({answer.State.Code}), the world's story is rev {answer.State.Rev}");
+        }
+
+        var kept = answer.State.Kept ?? StoryLists.Empty;
+
+        if (answer.State.Rev == held.Rev + 1)
+        {
+            var after = held.Lists.With(changes.Without(kept.Keys.Keys));
+            Keep(world, answer.State, after.ToPacked(), after);
+        }
+        else
+        {
+            // Other writes came between the story this game held and its own.
+            Take(world, client.GetStory(world, me.Key, me.Auth), me);
+        }
+
+        if (kept.Count == 0 && !answer.State.Moved)
+        {
+            return new Outcome(Kind.Accepted, Rev: answer.State.Rev, Detail: $"accepted as rev {answer.State.Rev}, {changes.Count} key(s), part {answer.State.Part}");
+        }
+
+        return new Outcome(Kind.Conflict, Rev: answer.State.Rev, Code: "rev", Detail: $"accepted as rev {answer.State.Rev} beside other writes since rev {baseRev}, the world keeping {kept.Count} key(s) of its own");
+    }
+
+    /// <summary>
+    /// Moves a world's sealed story to keys: this game opened it, so it writes it key by key on the
+    /// sealed story's revision, after which the relay keeps it so and turns away games that seal it.
+    /// A refusal, as when another write came first, leaves it to the next fetch.
+    /// </summary>
+    /// <param name="world">The world.</param>
+    /// <param name="state">The sealed story's state.</param>
+    /// <param name="text">The story, unsealed.</param>
+    /// <param name="client">The relay's client.</param>
+    /// <param name="me">Who asks.</param>
+    private void MoveToKeys(string world, StoryState state, string text, DirectoryClient client, Asker me)
+    {
+        try
+        {
+            var lists = StoryLists.FromPacked(text);
+            var counters = new StoryCounters(state.P, state.R1141, state.R1142, state.R1143, state.Clear, null, true, state.Caps);
+            var answer = client.PostStoryKeys(world, me.Key, me.Auth, state.Rev, counters, lists);
+
+            if (answer.Taken)
+            {
+                Keep(world, answer.State, text, lists);
+            }
+
+            Log.Write(answer.Taken
+                ? $"moved the story of {Log.Short(world)} to keys as rev {answer.State.Rev}, {lists.Count} key(s)"
+                : $"the story of {Log.Short(world)} stays sealed for now: the relay refused ({answer.State.Code})");
+        }
+        catch (Exception ex) when (ex is DirectoryException or InvalidDataException)
+        {
+            Log.Write($"the story of {Log.Short(world)} stays sealed for now: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Takes a story the relay told and keeps it as the newest, unless a newer one came meanwhile:
+    /// a keyed story packed for the game script, a sealed one unsealed, and the headers alone of an
+    /// answer that left out the keys this game holds.
     /// </summary>
     /// <remarks>
-    /// A story that does not open with the world's token is kept without its text, so the game
+    /// A sealed story that does not open with the world's token is kept without its text, so the game
     /// script still learns its revision and can write its own story over it.
     /// </remarks>
     /// <param name="world">The world.</param>
     /// <param name="state">The story.</param>
-    /// <param name="token">The world's token.</param>
+    /// <param name="me">Who asks, with the world's token.</param>
     /// <returns>The story's text, empty when it does not open.</returns>
-    private string Take(string world, StoryState state, string token)
+    private string Take(string world, StoryState state, Asker me)
     {
+        if (state.Same)
+        {
+            lock (_gate)
+            {
+                if (_world == world && _knownLists is not null && _known is { } known && known.Rev <= state.Rev)
+                {
+                    _known = state with { Code = string.Empty, Same = false };
+                }
+
+                return KnownText();
+            }
+        }
+
+        if (state.Keys is { } keys)
+        {
+            var packed = keys.ToPacked();
+            Keep(world, state, packed, keys);
+            return packed;
+        }
+
         var text = string.Empty;
 
         try
         {
-            text = state.Blob.Length > 0 ? StorySeal.Open(token, state.Blob) : string.Empty;
+            text = state.Blob.Length > 0 ? StorySeal.Open(me.Token, state.Blob) : string.Empty;
         }
         catch (InvalidDataException ex)
         {
             Log.Write($"world story of {Log.Short(world)} at rev {state.WRev} kept without its text: {ex.Message}");
         }
 
-        Keep(world, state, text);
+        Keep(world, state, text, null);
         return text;
     }
 
@@ -450,7 +692,8 @@ internal sealed class RaidStory
     /// <param name="world">The world.</param>
     /// <param name="state">The story.</param>
     /// <param name="text">Its text.</param>
-    private void Keep(string world, StoryState state, string text)
+    /// <param name="lists">The story key by key, <see langword="null"/> for a sealed story.</param>
+    private void Keep(string world, StoryState state, string text, StoryLists? lists)
     {
         lock (_gate)
         {
@@ -459,9 +702,27 @@ internal sealed class RaidStory
                 return;
             }
 
-            _known = state with { Blob = string.Empty, Code = string.Empty };
+            _known = state with { Blob = string.Empty, Code = string.Empty, Keys = null, Kept = null };
             _knownText = text;
+            _knownLists = lists;
+            _textStale = false;
+            _pushed = false;
         }
+    }
+
+    /// <summary>
+    /// Hands out the text of the newest story, packed anew after a push. Called with the gate held.
+    /// </summary>
+    /// <returns>The text.</returns>
+    private string KnownText()
+    {
+        if (_textStale && _knownLists is { } lists)
+        {
+            _knownText = lists.ToPacked();
+            _textStale = false;
+        }
+
+        return _knownText;
     }
 
     /// <summary>

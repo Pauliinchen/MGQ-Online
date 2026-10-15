@@ -2,7 +2,8 @@
 //  story.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-15: Covered a route under way before the Great Decision
+//      Paulinchen  2026-10-15: Covered the companions' affection in a keyed story's lists
+//                            - Covered a route under way before the Great Decision
 //      Paulinchen  2026-10-12: Covered the level caps of story writes
 //                            - Moved the test of the Worker refusing a story write too long to cloudflare/worker.test.js
 //      Paulinchen  2026-10-11: Covered a world that finished every route choosing and playing a route again
@@ -548,13 +549,14 @@ async function wrote(story, player, base, set, values = {}) {
 }
 
 test("a keyed story's lists are read into keys and written back, and wrong ones are refused", () => {
-  const read = readLists({ s: "5,12", sf: "7", v: "1001:n40,20:sQUI=,21:T", ss: "12.3.A", ssf: "12.3.B" });
-  assert.deepEqual([...read.keys], [["s5", "1"], ["s12", "1"], ["s7", "0"], ["v1001", "n40"], ["v20", "sQUI="], ["v21", "T"], ["ss12.3.A", "1"], ["ss12.3.B", "0"]]);
-  assert.deepEqual(listsOf(read.keys), { s: "5,12", sf: "7", v: "1001:n40,20:sQUI=,21:T", ss: "12.3.A", ssf: "12.3.B" });
+  const read = readLists({ s: "5,12", sf: "7", v: "1001:n40,20:sQUI=,21:T", ss: "12.3.A", ssf: "12.3.B", a: "5:2173,16:1303" });
+  assert.deepEqual([...read.keys], [["s5", "1"], ["s12", "1"], ["s7", "0"], ["v1001", "n40"], ["v20", "sQUI="], ["v21", "T"], ["ss12.3.A", "1"], ["ss12.3.B", "0"], ["a5", "2173"], ["a16", "1303"]]);
+  assert.deepEqual(listsOf(read.keys), { s: "5,12", sf: "7", v: "1001:n40,20:sQUI=,21:T", ss: "12.3.A", ssf: "12.3.B", a: "5:2173,16:1303" });
   assert.deepEqual(readLists({}).keys, new Map());
   assert.match(readLists({ s: "0" }).error, /switch ids/);
   assert.match(readLists({ v: "5:x" }).error, /variable ids/);
   assert.match(readLists({ ss: "12.3" }).error, /self switches/);
+  assert.match(readLists({ a: "5:0" }).error, /affection/);
   assert.match(readLists({ s: 5 }).error, /texts/);
   assert.match(readLists(null).error, /JSON object/);
   assert.match(readLists({ s: "1,".repeat(STORY_LIMITS.maxListsLength) }).error, /at most/);
@@ -566,16 +568,16 @@ test("a keyed story starts with its first write, takes each key a write changes,
   const { story } = makeStory();
   const first = await wrote(story, ALICE, 0, { s: "5", v: "1001:n10,30:n1" }, { p: 10 });
   assert.equal(first.body.rev, 1);
-  assert.deepEqual(first.body.kept, { s: "", sf: "", v: "", ss: "", ssf: "" });
+  assert.deepEqual(first.body.kept, { s: "", sf: "", v: "", ss: "", ssf: "", a: "" });
   assert.equal(first.body.moved, false);
-  assert.deepEqual(first.push.delta, { s: "5", sf: "", v: "1001:n10,30:n1", ss: "", ssf: "" });
+  assert.deepEqual(first.push.delta, { s: "5", sf: "", v: "1001:n10,30:n1", ss: "", ssf: "", a: "" });
   assert.deepEqual([first.push.rev, first.push.prev, first.push.state.p], [1, 0, 10]);
 
   const second = await wrote(story, ALICE, 1, { s: "5", sf: "6", v: "30:n2" }, { p: 10 });
-  assert.deepEqual(second.push.delta, { s: "", sf: "6", v: "30:n2", ss: "", ssf: "" }, "a key the write leaves as it is changes nothing");
+  assert.deepEqual(second.push.delta, { s: "", sf: "6", v: "30:n2", ss: "", ssf: "", a: "" }, "a key the write leaves as it is changes nothing");
 
   const fetched = (await story.get()).body;
-  assert.deepEqual([fetched.rev, fetched.keyed, fetched.keys, fetched.blob], [2, true, { s: "5", sf: "6", v: "1001:n10,30:n2", ss: "", ssf: "" }, undefined]);
+  assert.deepEqual([fetched.rev, fetched.keyed, fetched.keys, fetched.blob], [2, true, { s: "5", sf: "6", v: "1001:n10,30:n2", ss: "", ssf: "", a: "" }, undefined]);
   assert.equal((await story.get(2)).body.same, true, "the known revision comes back without its lists");
   assert.equal((await story.get(2)).body.keys, undefined);
   assert.equal((await story.get(1)).body.keys.v, "1001:n10,30:n2");
@@ -586,7 +588,7 @@ test("of two writes on the same revision, the first keeps the keys both changed,
   await wrote(story, ALICE, 0, { v: "1001:n10,50:n1,60:n1" }, { p: 10 });
   await wrote(story, ALICE, 1, { v: "50:n2" }, { p: 10 });
   const late = await wrote(story, BOB, 1, { v: "50:n3,60:n4" }, { p: 10 });
-  assert.deepEqual(late.body.kept, { s: "", sf: "", v: "50:n2", ss: "", ssf: "" }, "the world's value of the key it kept");
+  assert.deepEqual(late.body.kept, { s: "", sf: "", v: "50:n2", ss: "", ssf: "", a: "" }, "the world's value of the key it kept");
   assert.equal(late.body.moved, true, "another write changed keys since its base");
   assert.equal(late.push.delta.v, "60:n4");
   assert.equal((await story.get()).body.keys.v, "1001:n10,50:n2,60:n4");

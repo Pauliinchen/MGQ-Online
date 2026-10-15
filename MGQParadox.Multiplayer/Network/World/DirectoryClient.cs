@@ -2,6 +2,7 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Named the Raid World stories kept key by key in the X-MGQ-Features header
 //      Paulinchen  2026-10-14: Dropped the dev feature, as every game may give a Raid World a starting save
 //      Paulinchen  2026-10-13: Made and changed a Classic world with its raid bosses, and read them from the list
 //                            - Made and changed a Raid World with its squad settings, and read them from the list
@@ -85,9 +86,15 @@ internal sealed partial class DirectoryClient
     public const string VersionHeader = "X-MGQ-Version";
 
     /// <summary>
+    /// What this game keeps a Raid World's story as, which it names in <see cref="FeaturesHeader"/>:
+    /// key by key, see <see cref="StoryLists"/>.
+    /// </summary>
+    public const string KeyedStories = "keys";
+
+    /// <summary>
     /// What this game names in <see cref="FeaturesHeader"/>, separated by commas.
     /// </summary>
-    public const string Features = WorldType.Raid;
+    public const string Features = WorldType.Raid + "," + KeyedStories;
 
     /// <summary>
     /// How many outcomes last logged are kept; once full they are forgotten, which only has a repeated request log once more.

@@ -2,6 +2,7 @@
 //  RaidStoryTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Covered keyed stories: changed keys alone, the first writer, pushes laid over the story held the move from a sealed story and the affection
 //      Paulinchen  2026-10-12: Covered the level caps of story writes
 //                            - Covered a write sent again after a route lock
 //      Paulinchen  2026-10-08: Created
@@ -9,7 +10,9 @@
 //----------------------------------------------------------------
 
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -29,9 +32,9 @@ namespace MGQParadox.Multiplayer.Tests.Network.World;
 public sealed class RaidStoryTests
 {
     /// <summary>
-    /// A story as the game script packs it, with text outside ASCII.
+    /// A story as the game script packs it, with a text outside ASCII among its variables.
     /// </summary>
-    private const string Story = "eJzLSM3JyVcozy/KSQEAGgQEXQ==アリス";
+    private static readonly string Story = Packed("s=5", "sf=6", "v=1001:n18,20:s44Ki44Oq44K5", "ss=12.3.A", "ssf=12.3.B", "a=5:2173");
 
     /// <summary>
     /// How long a test waits for the relay.
@@ -78,7 +81,8 @@ public sealed class RaidStoryTests
 
         Assert.True(creator.Post(IdOf(code), 0, "p=18;r1141=0;r1142=0;r1143=0;end=2,148,243", Story));
         var posted = Await(creator, "post", "accepted");
-        Assert.Equal(("1", "1", "18", "2,148,243", Story), (posted["rev"], posted["post_rev"], posted["p"], posted["end"], posted.Team));
+        Assert.Equal(("1", "1", "18", "2,148,243"), (posted["rev"], posted["post_rev"], posted["p"], posted["end"]));
+        Assert.Equal(KeysOf(Story), KeysOf(posted.Team));
 
         var heard = AwaitEntry(session, "story");
         Assert.Equal("1", heard["rev"]);
@@ -86,7 +90,8 @@ public sealed class RaidStoryTests
 
         Assert.True(other.Fetch(IdOf(code)));
         var fetched = Await(other, "fetch", "done");
-        Assert.Equal(("1", Story), (fetched["rev"], fetched.Team));
+        Assert.Equal("1", fetched["rev"]);
+        Assert.Equal(KeysOf(Story), KeysOf(fetched.Team));
         Assert.Equal(1, relay.StoryWrites);
     }
 
@@ -139,9 +144,10 @@ public sealed class RaidStoryTests
         Assert.True(creator.Post(IdOf(code), 0, "p=5;r1141=0;r1142=0;r1143=0", Story));
         Await(creator, "post", "accepted");
 
-        Assert.True(other.Post(IdOf(code), 0, "p=6;r1141=0;r1142=0;r1143=0", "mine"));
+        Assert.True(other.Post(IdOf(code), 0, "p=6;r1141=0;r1142=0;r1143=0", Packed("v=1001:n6")));
         var refused = Await(other, "post", "conflict");
-        Assert.Equal(("rev", "1", "5", Story), (refused["post_code"], refused["rev"], refused["p"], refused.Team));
+        Assert.Equal(("rev", "1", "5"), (refused["post_code"], refused["rev"], refused["p"]));
+        Assert.Equal(KeysOf(Story), KeysOf(refused.Team));
     }
 
     /// <summary>
@@ -179,14 +185,16 @@ public sealed class RaidStoryTests
         var id = IdOf(code);
 
         Assert.Equal(string.Empty, story.DescribeCheckpoint());
-        Assert.True(story.Post(id, 0, "p=18;r1141=0;r1142=0;r1143=0", "before the ending"));
+        var before = Packed("v=1001:n18,30:n1");
+        Assert.True(story.Post(id, 0, "p=18;r1141=0;r1142=0;r1143=0", before));
         Await(story, "post", "accepted");
         Assert.True(story.Post(id, 1, "p=19;r1141=0;r1142=0;r1143=0", Story));
         Assert.Equal(("2", "1"), (Await(story, "post", "accepted")["part"], Await(story, "post", "accepted")["checkpoints"]));
 
         Assert.True(story.FetchCheckpoint(id, "1"));
         var checkpoint = AwaitCheckpoint(story, "done");
-        Assert.Equal(("1", "18", "before the ending"), (checkpoint["part"], checkpoint["p"], checkpoint.Team));
+        Assert.Equal(("1", "18"), (checkpoint["part"], checkpoint["p"]));
+        Assert.Equal(KeysOf(before), KeysOf(checkpoint.Team));
 
         Assert.True(story.FetchCheckpoint(id, "2"));
         Assert.Equal("2", AwaitCheckpoint(story, "none")["part"]);
@@ -244,6 +252,117 @@ public sealed class RaidStoryTests
         Assert.NotEqual(IdOf(first), Message.Decode(story.Describe())["world"]);
         var fetched = Await(story, "fetch", "done");
         Assert.Equal((IdOf(second), "0", "0", string.Empty), (fetched["world"], fetched["rev"], fetched["p"], fetched.Team));
+    }
+
+    /// <summary>
+    /// Asserts that a write sends only the keys it changed, and that of two writes on the same
+    /// revision the first keeps the key both changed, which the second hears of as a conflict that
+    /// hands it the world's story with its own other key in it.
+    /// </summary>
+    [Fact]
+    public void Post_SameKeyAsAnother_TheFirstKeepsIt()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, WorldType.Raid);
+        var creator = NewStory(relay, CreatorKey, code);
+        var other = NewStory(relay, OtherKey, code);
+        var id = IdOf(code);
+        const string Counters = "p=18;r1141=0;r1142=0;r1143=0";
+
+        Assert.True(creator.Post(id, 0, Counters, Packed("v=1001:n18,50:n1,60:n1")));
+        Await(creator, "post", "accepted");
+        Assert.True(other.Fetch(id));
+        Await(other, "fetch", "done");
+
+        Assert.True(creator.Post(id, 1, Counters, Packed("v=1001:n18,50:n2,60:n1")));
+        Assert.Equal("2", Await(creator, "post", "accepted")["post_rev"]);
+        Assert.True(other.Post(id, 1, Counters, Packed("v=1001:n18,50:n3,60:n4")));
+        var merged = Await(other, "post", "conflict");
+
+        Assert.Equal(("rev", "3"), (merged["post_code"], merged["rev"]));
+        Assert.Equal(new Dictionary<string, string> { ["v1001"] = "n18", ["v50"] = "n2", ["v60"] = "n4" }, KeysOf(merged.Team));
+    }
+
+    /// <summary>
+    /// Asserts that the relay's push of what a write changed lays the change over the story another
+    /// game holds, whose next fetch then answers at once.
+    /// </summary>
+    [Fact]
+    public void TakePush_ChangeOfTheStoryHeld_IsLaidOverIt()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, WorldType.Raid);
+        var other = NewStory(relay, OtherKey, code);
+        var session = new WorldSession { RelayAddress = _ => relay.Address, Playing = () => (OtherKey, "Other"), Story = other };
+        session.Open(code.ToText());
+        WaitUntil(() => Message.Decode(session.Describe())["state"] == "open", "the world open");
+        var creator = NewStory(relay, CreatorKey, code);
+        var id = IdOf(code);
+
+        Assert.True(creator.Post(id, 0, "p=18;r1141=0;r1142=0;r1143=0", Packed("v=1001:n18,50:n1")));
+        Await(creator, "post", "accepted");
+        Assert.True(other.Fetch(id));
+        Await(other, "fetch", "done");
+        AwaitEntry(session, "story");
+
+        Assert.True(creator.Post(id, 1, "p=19;r1141=0;r1142=0;r1143=0", Packed("s=7", "v=1001:n19,50:n1")));
+        Await(creator, "post", "accepted");
+        Assert.Equal("2", AwaitEntry(session, "story")["rev"]);
+        var pushed = Message.Decode(other.Describe());
+        session.Close();
+
+        Assert.Equal(("2", "19", "2"), (pushed["rev"], pushed["p"], pushed["part"]));
+        Assert.Equal(new Dictionary<string, string> { ["s7"] = "1", ["v1001"] = "n19", ["v50"] = "n1" }, KeysOf(pushed.Team));
+        Assert.True(other.Fetch(id));
+        Assert.Equal("2", Await(other, "fetch", "done")["rev"]);
+        Assert.False(other.TakePush(id, "{\"rev\": 9}"));
+        Assert.False(other.TakePush(id, "not json"));
+    }
+
+    /// <summary>
+    /// Asserts that a sealed story this game opens moves to keys, which the relay keeps from then on,
+    /// turning away a sealed write.
+    /// </summary>
+    [Fact]
+    public void Fetch_SealedStory_MovesItToKeys()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, WorldType.Raid);
+        var story = NewStory(relay, CreatorKey, code);
+        var other = NewStory(relay, OtherKey, code);
+        var id = IdOf(code);
+        var client = new DirectoryClient(relay.Address);
+        var counters = StoryCounters.Parse("p=18;r1141=0;r1142=0;r1143=0")!;
+        Assert.True(client.PostStory(id, CreatorKey, WorldKeys.AuthKeyOf(code.Token), 0, counters, StorySeal.Seal(code.Token, Story)).Taken);
+
+        Assert.True(story.Fetch(id));
+        var fetched = Await(story, "fetch", "done");
+        Assert.Equal(KeysOf(Story), KeysOf(fetched.Team));
+        WaitUntil(() => Message.Decode(story.Describe(withText: false))["rev"] == "2", "the story moved to keys");
+
+        Assert.True(other.Fetch(id));
+        Assert.Equal(KeysOf(Story), KeysOf(Await(other, "fetch", "done").Team));
+        var sealedWrite = client.PostStory(id, CreatorKey, WorldKeys.AuthKeyOf(code.Token), 2, counters, StorySeal.Seal(code.Token, Story));
+        Assert.Equal((false, "update"), (sealedWrite.Taken, sealedWrite.State.Code));
+    }
+
+    /// <summary>
+    /// Asserts that a story's lists round-trip through the game script's packed text and the
+    /// relay's lists, and that a change lists only what differs.
+    /// </summary>
+    [Fact]
+    public void StoryLists_PackedAndChanged()
+    {
+        var story = StoryLists.FromPacked(Story);
+        Assert.Equal(KeysOf(Story), KeysOf(story.ToPacked()));
+        Assert.Equal(7, story.Count);
+
+        var changed = story.ChangesIn(StoryLists.FromPacked(Packed("s=5,8", "v=1001:n19")));
+        Assert.Equal(new Dictionary<string, string> { ["s8"] = "1", ["v1001"] = "n19" }, changed.Keys.ToDictionary(pair => pair.Key, pair => pair.Value));
+        Assert.Equal("n19", story.With(changed).Keys["v1001"]);
+        Assert.False(story.With(changed).Without(["s8"]).Keys.ContainsKey("s8"));
+        Assert.True(story.SameAs(StoryLists.FromPacked(story.ToPacked())));
+        Assert.Throws<InvalidDataException>(() => StoryLists.FromPacked("not base64!"));
     }
 
     /// <summary>
@@ -400,6 +519,32 @@ public sealed class RaidStoryTests
         var made = Act(NewDirectory(relay, CreatorKey, "Creator"), directory => directory.Create("Raid", "secret", 4, false, false, [], null, type));
         return WorldCode.Parse(made["code"])!;
     }
+
+    /// <summary>
+    /// Packs lists as the game script does: each on a line of its own, deflated, in base64.
+    /// </summary>
+    /// <param name="lines">The lists, each "name=entries".</param>
+    /// <returns>The packed story.</returns>
+    private static string Packed(params string[] lines)
+    {
+        using var output = new MemoryStream();
+
+        using (var deflater = new ZLibStream(output, CompressionLevel.Optimal, leaveOpen: true))
+        {
+            var bytes = Encoding.UTF8.GetBytes(string.Join('\n', lines));
+            deflater.Write(bytes, 0, bytes.Length);
+        }
+
+        return Convert.ToBase64String(output.ToArray());
+    }
+
+    /// <summary>
+    /// Reads the keys of a packed story.
+    /// </summary>
+    /// <param name="packed">The story.</param>
+    /// <returns>Its keys and their values.</returns>
+    private static Dictionary<string, string> KeysOf(string packed) =>
+        StoryLists.FromPacked(packed).Keys.ToDictionary(pair => pair.Key, pair => pair.Value);
 
     /// <summary>
     /// Tells a world's id.

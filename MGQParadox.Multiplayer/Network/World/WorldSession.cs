@@ -2,6 +2,7 @@
 //  WorldSession.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Laid the relay's push of what a write changed of a keyed Raid World story over the story held
 //      Paulinchen  2026-10-13: Handed a changed Classic world raid bosses setting to the game script as a raid_bosses entry
 //                            - Handed changed Raid World squad settings to the game script as a squad entry
 //      Paulinchen  2026-10-12: Paced its sends to at most 50 a second after a burst of 200 and logged pacing and too-fast closes
@@ -39,6 +40,7 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
@@ -123,6 +125,12 @@ internal sealed class WorldSession
     /// The story's revision now, in a <see cref="StoryKind"/> entry.
     /// </summary>
     public const string RevHeader = "rev";
+
+    /// <summary>
+    /// The word that starts the relay's text frame of what a write changed of a Raid World's story
+    /// kept key by key, see <see cref="RaidStory.TakePush"/>.
+    /// </summary>
+    public const string StoryDeltaText = "storyd";
 
     /// <summary>
     /// The kind of an inbox entry that tells a Raid World's boss pool changed at the relay, and the
@@ -464,6 +472,11 @@ internal sealed class WorldSession
     /// The boss pools that take the pools the world room tells; tests hand out their own.
     /// </summary>
     public RaidBosses Bosses { get; init; } = RaidBosses.Current;
+
+    /// <summary>
+    /// The Raid World story that takes the changes the world room pushes; tests hand out their own.
+    /// </summary>
+    public RaidStory Story { get; init; } = RaidStory.Current;
 
     /// <summary>
     /// How often the connection pings the relay, which times the round trip and keeps it open.
@@ -922,6 +935,12 @@ internal sealed class WorldSession
             return;
         }
 
+        if (text.StartsWith($"{StoryDeltaText} ", StringComparison.Ordinal))
+        {
+            TakeStoryDelta(generation, connection, text[(StoryDeltaText.Length + 1)..]);
+            return;
+        }
+
         if (text.StartsWith($"{BossKind} ", StringComparison.Ordinal))
         {
             TakeBoss(generation, connection, text[(BossKind.Length + 1)..]);
@@ -1026,6 +1045,61 @@ internal sealed class WorldSession
         }
 
         Log.Write($"world story changed at the relay, rev {number}");
+    }
+
+    /// <summary>
+    /// Lays what a write changed of a Raid World's story kept key by key over the story this game
+    /// holds, and tells the game script the story changed, as a <see cref="StoryKind"/> entry, which
+    /// it then fetches from what this game holds.
+    /// </summary>
+    /// <param name="generation">The open this belongs to.</param>
+    /// <param name="connection">The connection it came over.</param>
+    /// <param name="json">The push, see <see cref="RaidStory.TakePush"/>.</param>
+    private void TakeStoryDelta(int generation, Connection connection, string json)
+    {
+        long rev;
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            rev = document.RootElement.TryGetProperty("rev", out var value) && value.TryGetInt64(out var number) ? number : -1;
+        }
+        catch (JsonException)
+        {
+            rev = -1;
+        }
+
+        if (rev < 0)
+        {
+            Log.Write("world room story change ignored, it names no revision");
+            return;
+        }
+
+        string world;
+
+        lock (_gate)
+        {
+            if (generation != _generation || connection != _connection || _world is not { } open)
+            {
+                return;
+            }
+
+            world = Relays.WorldRoomOf(open.Token);
+        }
+
+        var laid = Story.TakePush(world, json);
+
+        lock (_gate)
+        {
+            if (generation != _generation || connection != _connection)
+            {
+                return;
+            }
+
+            Enqueue(new Message([new(Message.Kind, StoryKind), new(RevHeader, rev.ToString(CultureInfo.InvariantCulture))]).Encode());
+        }
+
+        Log.Write($"world story changed at the relay, rev {rev}{(laid ? ", laid over the story held" : ", to fetch")}");
     }
 
     /// <summary>
