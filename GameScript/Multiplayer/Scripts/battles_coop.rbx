@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-15: Stood the player's own characters up with 1 HP after a battle won while all of them fell
+#                            - Stood them up as well when a save loads in a world with all of them fallen
 #      Paulinchen  2026-10-13: Told the guests of a Classic world's battle whether its boss fights at its tier
 #                            - Brought a Raid World player's squad by the world's squad rules
 #      Paulinchen  2026-10-12: Joined the battle of the story whose call is about to bring the player over
@@ -2539,6 +2540,9 @@ module MGQ_MpBattlesCoop
     install_counts
     install_end
     install_encounters
+    return unless defined?(DataManager) && DataManager.respond_to?(:extract_save_contents)
+
+    MGQ_MpHooks.after(DataManager.singleton_class, :extract_save_contents, "battles_coop") { |_contents| MGQ_MpBattlesCoop.stand_up_loaded }
   end
 
   # Stretches the steps to the next random encounter for a party once the game drew them.
@@ -2629,11 +2633,24 @@ module MGQ_MpBattlesCoop
   #
   # @param result [Integer] The game's result: 0 won, 1 escaped, 2 lost.
   def self.stand_up(result)
+    stand_up_all("in a battle the co-op party #{RESULTS.fetch(result, result.inspect)}") unless result == 2
+  end
+
+  # Stands the player's own characters up with 1 HP when a save loads in a world with all of them
+  # fallen, as the autosave of a co-op battle won before stand_up existed kept them.
+  def self.stand_up_loaded
+    stand_up_all("in the save loaded") if MGQ_MpOverworldSync.in_world?
+  end
+
+  # Stands the player's own characters up with 1 HP when all of them fell.
+  #
+  # @param where [String] Where they fell, for the log.
+  def self.stand_up_all(where)
     own = $game_party.all_members
-    return if result == 2 || own.empty? || !own.all?(&:dead?)
+    return if own.empty? || !own.all?(&:dead?)
 
     own.each { |actor| actor.hp = 1 }
-    log("the player's own characters all fell in a battle the co-op party #{RESULTS.fetch(result, result.inspect)}: they stand up with 1 HP")
+    log("the player's own characters all fell #{where}: they stand up with 1 HP")
   rescue => e
     log("standing the player's fallen characters up failed: #{e.class}: #{e.message}")
   end

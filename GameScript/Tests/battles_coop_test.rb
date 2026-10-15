@@ -2,7 +2,7 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Checked that a player whose characters all fell in a won battle stands up
+#      Paulinchen  2026-10-15: Checked that a player whose characters all fell in a won battle or a loaded save stands up
 #      Paulinchen  2026-10-12: Read who joined the battle from its popup instead of the chat
 #                            - Checked invites while the leader's story calls the player over
 #                            - Checked that a leave from a player outside the battle tells nothing
@@ -965,6 +965,8 @@ check("one with a character still standing keeps the fallen down", $game_party.o
 $game_party.own.each { |actor| actor.hp = 0 }
 BattleManager.battle_end(2)
 check("and a lost battle leaves standing up to the game's defeat", $game_party.own.map(&:hp).uniq, [0])
+MGQ_MpBattlesCoop.stand_up_loaded
+check("a save loaded in a world with all of them fallen stands them up too", $game_party.own.map(&:hp).uniq, [1])
 $game_party.own.each { |actor| actor.hp = 100 }
 members[0].hp = 100
 
