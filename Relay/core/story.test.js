@@ -16,7 +16,10 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PART, ROUTE, STORY_LIMITS, WorldStory, compareKeys, handleStoryRequest, mergeCaps, partOf, readCounters, storyKey, storyRouteOf, storyText } from "./story.js";
+import {
+  PART, ROUTE, STORY_LIMITS, WorldStory, compareKeys, countersOf, handleStoryRequest, listsOf, mergeCaps, partOf, readCounters, readLists, sealedGameRefusal, sealedGameRefused, storyKey,
+  storyPushText, storyRouteOf, storyText,
+} from "./story.js";
 
 /**
  * A player's id.
@@ -525,4 +528,117 @@ test("the routes are read from the address, and the router answers each", async 
   assert.equal((await handleStoryRequest(story, "POST", [], async () => null, ALICE)).status, 413);
   assert.equal((await handleStoryRequest(story, "POST", [], async () => "x".repeat(STORY_LIMITS.maxBodyLength + 1), ALICE)).status, 413);
   assert.equal(ROUTE.none, "none");
+});
+
+/**
+ * Writes a keyed story and expects it accepted.
+ *
+ * @param {WorldStory} story The story.
+ * @param {string} player The writing player.
+ * @param {number} base The revision the write builds on.
+ * @param {object} set The lists of the keys it changes.
+ * @param {object} [values] The counters that differ from 0.
+ * @returns {Promise<{body: object, push: object}>} The answer's body and push.
+ */
+async function wrote(story, player, base, set, values = {}) {
+  const answer = await story.write(player, { base, counters: counters(values), set });
+  assert.equal(answer.status, 200, JSON.stringify(answer.body));
+  assert.equal(answer.body.accepted, true);
+  return { body: answer.body, push: answer.push };
+}
+
+test("a keyed story's lists are read into keys and written back, and wrong ones are refused", () => {
+  const read = readLists({ s: "5,12", sf: "7", v: "1001:n40,20:sQUI=,21:T", ss: "12.3.A", ssf: "12.3.B" });
+  assert.deepEqual([...read.keys], [["s5", "1"], ["s12", "1"], ["s7", "0"], ["v1001", "n40"], ["v20", "sQUI="], ["v21", "T"], ["ss12.3.A", "1"], ["ss12.3.B", "0"]]);
+  assert.deepEqual(listsOf(read.keys), { s: "5,12", sf: "7", v: "1001:n40,20:sQUI=,21:T", ss: "12.3.A", ssf: "12.3.B" });
+  assert.deepEqual(readLists({}).keys, new Map());
+  assert.match(readLists({ s: "0" }).error, /switch ids/);
+  assert.match(readLists({ v: "5:x" }).error, /variable ids/);
+  assert.match(readLists({ ss: "12.3" }).error, /self switches/);
+  assert.match(readLists({ s: 5 }).error, /texts/);
+  assert.match(readLists(null).error, /JSON object/);
+  assert.match(readLists({ s: "1,".repeat(STORY_LIMITS.maxListsLength) }).error, /at most/);
+  assert.deepEqual(countersOf(readLists({ v: "1001:n40,1142:n3", s: "7097" }).keys, counters({ p: 1, r1141: 2 })),
+                   { p: 40, r1141: 2, r1142: 3, r1143: 0, clear: ["mr"] }, "a counter the keys lack keeps the write's");
+});
+
+test("a keyed story starts with its first write, takes each key a write changes, and pushes only those", async () => {
+  const { story } = makeStory();
+  const first = await wrote(story, ALICE, 0, { s: "5", v: "1001:n10,30:n1" }, { p: 10 });
+  assert.equal(first.body.rev, 1);
+  assert.deepEqual(first.body.kept, { s: "", sf: "", v: "", ss: "", ssf: "" });
+  assert.deepEqual(first.push.delta, { s: "5", sf: "", v: "1001:n10,30:n1", ss: "", ssf: "" });
+  assert.deepEqual([first.push.rev, first.push.prev, first.push.state.p], [1, 0, 10]);
+
+  const second = await wrote(story, ALICE, 1, { s: "5", sf: "6", v: "30:n2" }, { p: 10 });
+  assert.deepEqual(second.push.delta, { s: "", sf: "6", v: "30:n2", ss: "", ssf: "" }, "a key the write leaves as it is changes nothing");
+
+  const fetched = (await story.get()).body;
+  assert.deepEqual([fetched.rev, fetched.keyed, fetched.keys, fetched.blob], [2, true, { s: "5", sf: "6", v: "1001:n10,30:n2", ss: "", ssf: "" }, undefined]);
+  assert.equal((await story.get(2)).body.same, true, "the known revision comes back without its lists");
+  assert.equal((await story.get(2)).body.keys, undefined);
+  assert.equal((await story.get(1)).body.keys.v, "1001:n10,30:n2");
+});
+
+test("of two writes on the same revision, the first keeps the keys both changed, the second the rest", async () => {
+  const { story } = makeStory();
+  await wrote(story, ALICE, 0, { v: "1001:n10,50:n1,60:n1" }, { p: 10 });
+  await wrote(story, ALICE, 1, { v: "50:n2" }, { p: 10 });
+  const late = await wrote(story, BOB, 1, { v: "50:n3,60:n4" }, { p: 10 });
+  assert.deepEqual(late.body.kept, { s: "", sf: "", v: "50:n2", ss: "", ssf: "" }, "the world's value of the key it kept");
+  assert.equal(late.push.delta.v, "60:n4");
+  assert.equal((await story.get()).body.keys.v, "1001:n10,50:n2,60:n4");
+  const rebuilt = await wrote(story, BOB, 3, { v: "50:n3" }, { p: 10 });
+  assert.equal(rebuilt.push.delta.v, "50:n3", "once the game built on the world's value it may change it");
+});
+
+test("a keyed write on a revision older than the writes the story remembers, or behind it, gets 409 with the world's lists", async () => {
+  const { story } = makeStory({ ...STORY_LIMITS, logWrites: 2 });
+  await wrote(story, ALICE, 0, { v: "1001:n10" }, { p: 10 });
+  await wrote(story, ALICE, 1, { v: "40:n1" }, { p: 10 });
+  await wrote(story, ALICE, 2, { v: "40:n2" }, { p: 10 });
+  await wrote(story, ALICE, 3, { v: "40:n3" }, { p: 10 });
+  const old = await story.write(BOB, { base: 1, counters: counters({ p: 10 }), set: { v: "41:n1" } });
+  assert.deepEqual([old.status, old.body.code, old.body.keys.v], [409, "rev", "1001:n10,40:n3"]);
+  assert.equal((await story.write(BOB, { base: 9, counters: counters({ p: 10 }), set: {} })).body.code, "rev", "a revision the relay never had");
+  const behind = await story.write(BOB, { base: 4, counters: counters({ p: 9 }), set: { v: "1001:n9" } });
+  assert.deepEqual([behind.status, behind.body.code], [409, "behind"]);
+  assert.equal((await story.write(BOB, { base: 4, counters: counters({ p: 10 }), set: { v: "x" } })).status, 400);
+});
+
+test("a sealed story moves to keys with a write on its own revision, after which sealed writes are refused", async () => {
+  const { story } = makeStory();
+  await accepted(story, 0, { p: 5 });
+  await accepted(story, 1, { p: 6 }, OTHER_BLOB);
+  assert.equal((await story.write(ALICE, { base: 1, counters: counters({ p: 6 }), set: { v: "1001:n6" } })).body.code, "rev", "only on the sealed story's revision");
+  assert.equal(await story.keyed(), false);
+  const moved = await wrote(story, ALICE, 2, { v: "1001:n6,70:n1" }, { p: 6 });
+  assert.equal(moved.push.delta.v, "1001:n6,70:n1");
+  const fetched = (await story.get()).body;
+  assert.deepEqual([fetched.keyed, fetched.blob, fetched.keys.v, await story.keyed()], [true, undefined, "1001:n6,70:n1", true]);
+  const sealed = await story.write(BOB, { base: 3, counters: counters({ p: 7 }), blob: BLOB });
+  assert.deepEqual([sealed.status, sealed.body.code], [409, "update"]);
+  assert.equal(await sealedGameRefused(story, ["raid"]), true);
+  assert.equal(await sealedGameRefused(story, ["raid", "keys"]), false);
+  assert.equal(sealedGameRefusal().body.code, "update");
+});
+
+test("a keyed story's part checkpoint holds its lists, and a route lock pushes the state alone", async () => {
+  const { story } = makeStory();
+  await wrote(story, ALICE, 0, { v: "1001:n18,80:n1" }, { p: 18 });
+  await wrote(story, ALICE, 1, { v: "1001:n19" }, { p: 19 });
+  const checkpoint = (await story.checkpoint("1")).body;
+  assert.deepEqual([checkpoint.keyed, checkpoint.keys.v, checkpoint.part], [true, "1001:n18,80:n1", "1"]);
+
+  await wrote(story, ALICE, 2, { v: "1001:n40" }, { p: 40 });
+  const locked = await story.lockRoute("ad");
+  assert.deepEqual([locked.push.rev, locked.push.prev, locked.push.delta.v, locked.push.state.route], [4, 3, "", "ad"]);
+  assert.equal(typeof (await makeStory().story.lockRoute("ad")).push, "number", "a story nobody wrote is no keyed one");
+});
+
+test("a write's push names what it changed while it fits a frame, else the revision alone", () => {
+  assert.equal(storyPushText(7), "story 7");
+  const push = { rev: 8, prev: 7, delta: { s: "5", sf: "", v: "", ss: "", ssf: "" }, state: { rev: 8 } };
+  assert.equal(storyPushText(push), `storyd ${JSON.stringify(push)}`);
+  assert.equal(storyPushText({ ...push, delta: { ...push.delta, s: "1,".repeat(STORY_LIMITS.maxDeltaLength) } }), "story 8");
 });

@@ -2,6 +2,7 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Covered a keyed Raid World story's pushes and the games sent to update
 //      Paulinchen  2026-10-14: Tested a Raid World's starting save from every game over HTTP
 //      Paulinchen  2026-10-13: Tested that every game of a Classic world hears whether it fights raid bosses
 //                            - Tested that every game of a Raid World hears its new squad settings
@@ -779,6 +780,38 @@ test("a Raid World's players write its story over HTTP, every game in the room h
   assert.equal((await gameFetch(`${directoryBase}/${room}/delete`, { method: "POST", body: JSON.stringify({ player: CREATOR }) })).status, 200);
   assert.equal((await story("")).status, 404);
   assert.equal((await relay.storyOf(room).get()).body.rev, 0, "the deleted world's story is gone");
+});
+
+test("a keyed Raid World's games hear what each write changed, and games that keep the story sealed are sent to update", async () => {
+  const room = roomId(190);
+  const created = await gameFetch(directoryBase, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: playerKey(65) },
+    body: JSON.stringify({ id: room, name: "Raid Keys", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, type: "raid" }),
+  });
+  assert.equal(created.status, 201);
+  const keys = { [FEATURES_HEADER]: "raid,keys" };
+  const watcher = await openWithHeaders(`${worldBase}${room}?name=Watcher&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(61), ...keys });
+  assert.equal(await watcher.first, "seat 0");
+  const heard = [];
+  watcher.socket.on("message", (data) => heard.push(data.toString()));
+  const story = (path, init = {}, features = keys) => gameFetch(`${directoryBase}/${room}/story${path}`, { ...init, headers: { ...GAME, ...features, [PLAYER_HEADER]: playerKey(62), [AUTH_HEADER]: AUTH } });
+  const counters = { p: 18, r1141: 0, r1142: 0, r1143: 0, clear: [] };
+
+  const written = await story("", { method: "POST", body: JSON.stringify({ base: 0, counters, set: { s: "5", v: "1001:n18" } }) });
+  assert.equal(written.status, 200);
+  await until(async () => heard.some((text) => text.startsWith("storyd ")));
+  const push = JSON.parse(heard.find((text) => text.startsWith("storyd ")).slice(7));
+  assert.deepEqual([push.rev, push.prev, push.delta.s, push.delta.v, push.state.p], [1, 0, "5", "1001:n18", 18]);
+  assert.deepEqual(await (await story("?known=1")).json().then((body) => [body.same, body.keys]), [true, undefined]);
+  assert.equal(await (await story("")).json().then((body) => body.keys.v), "1001:n18");
+
+  assert.equal((await story("", {}, { [FEATURES_HEADER]: "raid" })).status, 426, "a game that keeps the story sealed reads none of it");
+  assert.deepEqual(await openWithHeaders(`${worldBase}${room}?name=Old&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(63), [FEATURES_HEADER]: "raid" }), { status: 400, refusal: "update" });
+  const newer = await openWithHeaders(`${worldBase}${room}?name=New&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(64), ...keys });
+  assert.equal(await newer.first, "seat 1 0");
+  watcher.socket.close();
+  newer.socket.close();
 });
 
 test("a story write whose body comes after the world was deleted leaves no story behind", async () => {

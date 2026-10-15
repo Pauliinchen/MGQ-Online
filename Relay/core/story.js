@@ -2,7 +2,10 @@
 //  story.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-15: Refused a route under way before the Great Decision and repaired a story written with one
+//      Paulinchen  2026-10-15: Kept a Raid World's story key by key, the first writer of a key keeping it, and pushed what each write changed
+//                            - Moved a sealed story to keys with the first write of a game that opened it
+//                            - Refused sealed writes to a keyed story with the code update
+//                            - Refused a route under way before the Great Decision and repaired a story written with one
 //      Paulinchen  2026-10-12: Kept the level caps the world's story unlocked
 //      Paulinchen  2026-10-11: Opened every route again once the world finished all of them
 //                            - Took the locked route's first step from the Great Decision once every route was finished
@@ -15,9 +18,11 @@
 //----------------------------------------------------------------
 
 // The story of a Raid World, which the whole world plays together: a few counters the relay reads
-// to tell which story is further, and the rest sealed with a key from the world's token, which the
-// relay only keeps. The furthest story wins, and each write names the revision it built on, so two
-// games writing at once cannot overwrite each other.
+// to tell which story is further, and the story itself key by key, each switch, variable and self
+// switch, so the relay pushes what a write changed to every game at once. The furthest story wins,
+// and each write names the revision it built on: of two games writing the same key at once, the
+// first keeps it. Released games keep the story sealed with a key from the world's token, which the
+// relay only keeps until a game that keeps keys opened it and wrote it as keys.
 
 import { badRequest, notFound, withJson } from "./http.js";
 import { isId } from "./ids.js";
@@ -29,8 +34,9 @@ import { RateLimiter, VERSION } from "./relay.js";
 export const STORY_LIMITS = Object.freeze({
   // The sealed story in base64: 200 KB of story, sealed, fits.
   maxBlobLength: 280_000,
-  // A write's whole JSON body, the sealed story and the counters.
-  maxBodyLength: 300_000,
+  // A write's whole JSON body: the sealed story or the lists of a keyed story's first write, and
+  // the counters.
+  maxBodyLength: 1_900_000,
   // The JSON body of a route lock or a companions list.
   maxSmallBodyLength: 32 * 1024,
   maxCompanions: 2000,
@@ -44,7 +50,46 @@ export const STORY_LIMITS = Object.freeze({
   // Story writes per player: a burst, then one more every few seconds, so a game stuck in a loop
   // cannot spend the free plan's daily writes.
   writes: Object.freeze({ burst: 20, refillMs: 3 * 1000 }),
+  // A keyed story's lists: all of them together, a late story's thousands of switches, variables
+  // and self switches with room to spare, and the longest value a variable may hold.
+  maxListsLength: 1_800_000,
+  maxValueLength: 4096,
+  maxId: 99_999,
+  // The keys of the writes a keyed story remembers, which tell what changed since an older base.
+  logKeys: 20_000,
+  logWrites: 200,
+  // The longest push of a write's changed keys; a longer one tells the revision alone.
+  maxDeltaLength: 60_000,
 });
+
+/**
+ * What a game names in X-MGQ-Features once it keeps a Raid World's story key by key. A world whose
+ * story is keyed turns away games that do not.
+ */
+export const STORY_FEATURE = "keys";
+
+/**
+ * The word the text frame starts with that hands every game of a world what a write changed, as
+ * `storyd <JSON>`.
+ */
+export const STORY_DELTA = "storyd";
+
+/**
+ * The lists a keyed story travels in: the switches on and off, the variables with their values, and
+ * the self switches on and off, as the games write a story (story_state.rbx `story_lists`).
+ */
+export const LISTS = Object.freeze(["s", "sf", "v", "ss", "ssf"]);
+
+/**
+ * A variable's value as the games write it: a whole number, a decimal, a text in base64, true or
+ * false (story_state.rbx `encode_value`).
+ */
+const VALUE = /^(n-?\d+|f-?\d+(\.\d+)?(e[-+]?\d+)?|s[A-Za-z0-9+/=]*|T|F)$/;
+
+/**
+ * A self switch's key: its map, its event and its letter.
+ */
+const SELF_KEY = /^(\d{1,5})\.(\d{1,6})\.([A-Za-z0-9_]{1,8})$/;
 
 /**
  * The routes after the Great Decision, by the names the relay and the games use.
@@ -93,6 +138,7 @@ export const STORY_REFUSAL = Object.freeze({
   none: "none",
   rate: "rate",
   started: "started",
+  update: "update",
 });
 
 /**
@@ -304,6 +350,149 @@ function readEnd(end, limits) {
 const FIRST_COUNTERS = Object.freeze({ p: 0, r1141: 0, r1142: 0, r1143: 0, clear: Object.freeze([]) });
 
 /**
+ * The switch each route's finish turns on: 7096 Angelic Dominion, 7097 Monster Realm, 7039 Chaos.
+ */
+const CLEAR_SWITCHES = Object.freeze({ ad: 7096, mr: 7097, chaos: 7039 });
+
+/**
+ * Reads a keyed story's lists into its keys: `s<id>` and `ss<map>.<event>.<letter>` to "1" or "0",
+ * `v<id>` to the variable's value as written.
+ *
+ * @param {unknown} lists The lists, see LISTS, each a text of entries separated by commas.
+ * @param {typeof STORY_LIMITS} [limits] The limits.
+ * @returns {{keys: Map<string, string>} | {error: string}} The keys, or why the lists are wrong.
+ */
+export function readLists(lists, limits = STORY_LIMITS) {
+  if (!lists || typeof lists !== "object" || Array.isArray(lists)) {
+    return { error: "the story's lists must be a JSON object" };
+  }
+
+  if (LISTS.some((name) => lists[name] !== undefined && typeof lists[name] !== "string")) {
+    return { error: `the lists ${LISTS.join(", ")} must be texts` };
+  }
+
+  if (LISTS.reduce((length, name) => length + (lists[name]?.length ?? 0), 0) > limits.maxListsLength) {
+    return { error: `the lists may take at most ${limits.maxListsLength} characters in all` };
+  }
+
+  const keys = new Map();
+  const items = (name) => (lists[name] ? lists[name].split(",") : []);
+  const id = (text) => /^\d{1,6}$/.test(text) && Number(text) >= 1 && Number(text) <= limits.maxId;
+
+  for (const [name, value] of [["s", "1"], ["sf", "0"]]) {
+    for (const item of items(name)) {
+      if (!id(item)) {
+        return { error: `${name} lists switch ids of 1 to ${limits.maxId}: ${item.slice(0, 40)}` };
+      }
+
+      keys.set(`s${Number(item)}`, value);
+    }
+  }
+
+  for (const item of items("v")) {
+    const split = item.indexOf(":");
+    const value = item.slice(split + 1);
+
+    if (split < 1 || !id(item.slice(0, split)) || value.length > limits.maxValueLength || !VALUE.test(value)) {
+      return { error: `v lists variable ids of 1 to ${limits.maxId} with their values: ${item.slice(0, 40)}` };
+    }
+
+    keys.set(`v${Number(item.slice(0, split))}`, value);
+  }
+
+  for (const [name, value] of [["ss", "1"], ["ssf", "0"]]) {
+    for (const item of items(name)) {
+      if (!SELF_KEY.test(item)) {
+        return { error: `${name} lists self switches as map.event.letter: ${item.slice(0, 40)}` };
+      }
+
+      keys.set(`ss${item}`, value);
+    }
+  }
+
+  return { keys };
+}
+
+/**
+ * Writes keys as a keyed story's lists, each list in the keys' order, see readLists.
+ *
+ * @param {Iterable<[string, string]>} keys The keys and their values.
+ * @returns {{s: string, sf: string, v: string, ss: string, ssf: string}} The lists.
+ */
+export function listsOf(keys) {
+  const lists = { s: [], sf: [], v: [], ss: [], ssf: [] };
+
+  for (const [key, value] of keys) {
+    if (key.startsWith("ss")) {
+      lists[value === "1" ? "ss" : "ssf"].push(key.slice(2));
+    } else if (key.startsWith("s")) {
+      lists[value === "1" ? "s" : "sf"].push(key.slice(1));
+    } else {
+      lists.v.push(`${key.slice(1)}:${value}`);
+    }
+  }
+
+  return Object.fromEntries(LISTS.map((name) => [name, lists[name].join(",")]));
+}
+
+/**
+ * Reads a keyed story's counters from its keys: variable 1001, the route variables and the routes'
+ * clear switches; a counter the keys lack keeps the write's.
+ *
+ * @param {Map<string, string>} keys The story's keys.
+ * @param {{p: number, r1141: number, r1142: number, r1143: number, clear: string[]}} fallback The write's counters.
+ * @returns {{p: number, r1141: number, r1142: number, r1143: number, clear: string[]}} The counters.
+ */
+export function countersOf(keys, fallback) {
+  const whole = (name, kept) => {
+    const value = keys.get(`v${name}`);
+    return value && /^n\d+$/.test(value) ? Number(value.slice(1)) : kept;
+  };
+  const clear = Object.keys(CLEAR_SWITCHES).filter((route) => {
+    const value = keys.get(`s${CLEAR_SWITCHES[route]}`);
+    return value === undefined ? fallback.clear.includes(route) : value === "1";
+  });
+  return { p: whole(1001, fallback.p), r1141: whole(1141, fallback.r1141), r1142: whole(1142, fallback.r1142), r1143: whole(1143, fallback.r1143), clear };
+}
+
+/**
+ * Lists the keys the writes after a revision changed, as a keyed story's log of writes holds them.
+ *
+ * @param {{rev: number, keys: string[]}[]} log The log, oldest first.
+ * @param {number} base The revision.
+ * @returns {Set<string>} The keys.
+ */
+function changedSince(log, base) {
+  const keys = new Set();
+
+  for (const entry of log) {
+    if (entry.rev > base) {
+      entry.keys.forEach((key) => keys.add(key));
+    }
+  }
+
+  return keys;
+}
+
+/**
+ * Writes the text frame that tells every game of a world its story changed: what a write changed
+ * with the state after it (`storyd <JSON>`, see STORY_DELTA), or the revision alone, which the games
+ * fetch (`story <rev>`), for a sealed story or a change too long for a frame.
+ *
+ * @param {number | {rev: number, prev: number, delta: object, state: object}} push The revision, or the change.
+ * @param {typeof STORY_LIMITS} [limits] The limits.
+ * @returns {string} The frame.
+ */
+export function storyPushText(push, limits = STORY_LIMITS) {
+  if (typeof push === "number") {
+    return storyText(push);
+  }
+
+  const text = `${STORY_DELTA} ${JSON.stringify(push)}`;
+  return text.length <= limits.maxDeltaLength ? text : storyText(push.rev);
+}
+
+/**
  * @typedef {object} StoryStore Where one world's story is kept: the story with its counters, and one checkpoint per part.
  * @property {() => Promise<object | undefined>} get Reads the story, undefined before the first write.
  * @property {(story: object, checkpoint: object | null) => Promise<void>} put Writes the story, and a checkpoint with it, in one step where the platform allows.
@@ -332,10 +521,15 @@ export class WorldStory {
   /**
    * Hands out the story as it stands.
    *
-   * @returns {Promise<{status: number, body: object}>} The story's state with its sealed story, see stateOf.
+   * @param {number | null} [known] The revision the asking game knows, which a keyed story at that
+   *   revision answers without its lists.
+   * @returns {Promise<{status: number, body: object}>} The story's state with its story, see stateOf; with `same` and without the story for the known revision.
    */
-  async get() {
-    return this.exclusive(async () => ({ status: 200, body: stateOf(await this.store.get(), true) }));
+  async get(known = null) {
+    return this.exclusive(async () => {
+      const story = await this.store.get();
+      return story?.lists && known === story.rev ? { status: 200, body: { ...stateOf(story, false), same: true } } : { status: 200, body: stateOf(story, true) };
+    });
   }
 
   /**
@@ -361,11 +555,15 @@ export class WorldStory {
    *
    * @param {string} player The writing player's id.
    * @param {any} request The write: `base`, the revision it built on, any from the last write's on (0 before the first); `counters`, see readCounters; and `blob`, the sealed story in base64.
-   * @returns {Promise<{status: number, body: object, push?: number}>} The new state with `accepted`, and the revision to tell every game; or 409 with the state as it stands, its sealed story and a code; or why the write is wrong.
+   * @returns {Promise<{status: number, body: object, push?: number}>} The new state with `accepted`, and the revision to tell every game; or 409 with the state as it stands, its sealed story and a code, `update` for a keyed story; or why the write is wrong.
    */
   async write(player, request) {
     if (!request || typeof request !== "object") {
       return badRequest("the write must be a JSON object");
+    }
+
+    if (request.set !== undefined) {
+      return this.writeKeys(player, request);
     }
 
     if (!Number.isInteger(request.base) || request.base < 0) {
@@ -388,55 +586,175 @@ export class WorldStory {
 
     return this.exclusive(async () => {
       const story = await this.store.get();
+
+      // A keyed story is no sealed story the game could build on: its game must update.
+      if (story?.lists) {
+        return { status: 409, body: { ...stateOf(story, false), error: "the world keeps its story key by key, which this game does not", code: STORY_REFUSAL.update } };
+      }
+
       const refusal = this.refusalOf(story, request.base, read.counters);
 
       if (refusal) {
         return { status: 409, body: { ...stateOf(story, true), error: refusal.error, code: refusal.code } };
       }
 
-      const now = this.clock();
-      const route = activeRoute(read.counters);
-      // A story an older game wrote with a route under way before the Great Decision: the level caps
-      // it named and the checkpoint of the part it seemed to leave go with it.
-      const repaired = story && outOfOrder(story.counters);
-      const done = [...(story?.done ?? [])];
-
-      for (const cleared of read.counters.clear) {
-        if (!done.includes(cleared)) {
-          done.push(cleared);
-        }
-      }
-
-      const locked = lockOf(story);
-      // Once every route was finished the locked one is finished from the start, so the lock ends
-      // only with the return from it, not with the first write that has no route under way.
-      const returned = done.includes(locked) && (!(story?.done ?? []).includes(locked) || activeRoute(inOrder(story?.counters ?? FIRST_COUNTERS)) === locked);
-      const part = partOf(read.counters);
-      // Only a part's first end is its checkpoint: the world leaves Part 3 once for every route,
-      // and a later end would hand a player behind a story that already finished a route.
-      const checkpoint = story?.blob && !repaired && story.part !== part && !story.checkpoints.includes(story.part) ? checkpointOf(story) : null;
-      const checkpoints = checkpoint ? [...story.checkpoints, story.part] : (story?.checkpoints ?? []).filter((kept) => !(repaired && kept === part));
-
-      const rev = (story?.rev ?? 0) + 1;
-      const next = {
-        rev,
-        wrev: rev,
-        counters: read.counters,
-        part,
-        route: route !== ROUTE.none ? route : returned ? ROUTE.none : locked,
-        done,
-        end: read.end === undefined ? (story?.end ?? null) : read.end,
-        comps: story?.comps ?? [],
-        caps: mergeCaps(repaired ? [] : (story?.caps ?? []), read.caps).slice(-this.limits.maxCaps),
-        checkpoints,
-        blob: request.blob,
-        at: now,
-        by: player,
-      };
-
+      const { next, checkpoint } = this.advance(story, read, player);
+      next.blob = request.blob;
       await this.store.put(next, checkpoint);
       return { status: 200, body: { ...stateOf(next, false), accepted: true }, push: next.rev };
     });
+  }
+
+  /**
+   * Takes a game's write of a keyed story, the keys it changed in the lists `set`: each one goes in
+   * unless a write after the revision it built on changed it, which the first writer keeps. A write
+   * on a sealed story the game opened moves the world to keys, the sealed story's revision its base;
+   * a story nobody wrote yet starts keyed.
+   *
+   * @param {string} player The writing player's id.
+   * @param {any} request The write: `base`, the revision it built on; `counters`, see readCounters; and `set`, the lists of the keys it changed, see readLists.
+   * @returns {Promise<{status: number, body: object, push?: object}>} The new state with `accepted` and `kept`, the lists of the keys the world kept with their values, and the change to tell every game, see storyPushText; or 409 with the state as it stands, its story and a code; or why the write is wrong.
+   */
+  async writeKeys(player, request) {
+    if (!Number.isInteger(request.base) || request.base < 0) {
+      return badRequest("base must be the revision the write built on, 0 before the first");
+    }
+
+    const lists = readLists(request.set, this.limits);
+
+    if (lists.error) {
+      return badRequest(lists.error);
+    }
+
+    const read = readCounters(request.counters, this.limits);
+
+    if (read.error) {
+      return badRequest(read.error);
+    }
+
+    if (!this.writes.take(player)) {
+      return { status: 429, body: { error: "the story is written too often, try again later", code: STORY_REFUSAL.rate } };
+    }
+
+    return this.exclusive(async () => {
+      const story = await this.store.get();
+      const keyed = Boolean(story?.lists);
+      // The log tells what changed after a base only from where it starts: before it, and on a
+      // sealed story but its own revision, the game must take the story as it stands first.
+      const oldest = keyed ? story.logBase : (story?.rev ?? 0);
+
+      if (request.base < oldest || request.base > (story?.rev ?? 0)) {
+        return { status: 409, body: { ...stateOf(story, true), error: "the story moved on since the revision the write built on", code: STORY_REFUSAL.rev } };
+      }
+
+      const refusal = this.refusalOf(story, request.base, read.counters, false);
+
+      if (refusal) {
+        return { status: 409, body: { ...stateOf(story, true), error: refusal.error, code: refusal.code } };
+      }
+
+      const keys = keyed ? readLists(story.lists, { ...this.limits, maxListsLength: Infinity }).keys : new Map();
+      const changed = keyed ? changedSince(story.log, request.base) : new Set();
+      const applied = new Map();
+      const kept = new Map();
+
+      for (const [key, value] of lists.keys) {
+        if (keys.get(key) === value) {
+          continue;
+        }
+
+        if (changed.has(key)) {
+          kept.set(key, keys.get(key));
+          continue;
+        }
+
+        keys.set(key, value);
+        applied.set(key, value);
+      }
+
+      const stored = listsOf(keys);
+
+      if (LISTS.reduce((length, name) => length + stored[name].length, 0) > this.limits.maxListsLength) {
+        return { status: 413, body: { error: `the story's lists may take at most ${this.limits.maxListsLength} characters in all` } };
+      }
+
+      const { next, checkpoint } = this.advance(story, { ...read, counters: countersOf(keys, read.counters) }, player);
+      const log = keyed ? [...story.log, { rev: next.rev, keys: [...applied.keys()] }] : [];
+      let logBase = keyed ? story.logBase : next.rev;
+
+      while (log.length > this.limits.logWrites || log.reduce((count, entry) => count + entry.keys.length, 0) > this.limits.logKeys) {
+        logBase = log.shift().rev;
+      }
+
+      Object.assign(next, { blob: "", lists: stored, log, logBase });
+      await this.store.put(next, checkpoint);
+      const push = { rev: next.rev, prev: story?.rev ?? 0, delta: listsOf(applied), state: stateOf(next, false) };
+      return { status: 200, body: { ...stateOf(next, false), accepted: true, kept: listsOf(kept) }, push };
+    });
+  }
+
+  /**
+   * Makes the story a write leaves: its counters, the routes it finished, the route lock, the part,
+   * the endpoint, the level caps, and the checkpoint of the part it first left. Called inside
+   * exclusive.
+   *
+   * @param {object | undefined} story The story as it stands.
+   * @param {{counters: object, end: object | null | undefined, caps: number[]}} read The write's counters, endpoint and caps, see readCounters.
+   * @param {string} player The writing player's id.
+   * @returns {{next: object, checkpoint: object | null}} The story without its sealed story or lists, and the checkpoint to keep, null for none.
+   */
+  advance(story, read, player) {
+    const route = activeRoute(read.counters);
+    // A story an older game wrote with a route under way before the Great Decision: the level caps
+    // it named and the checkpoint of the part it seemed to leave go with it.
+    const repaired = story && outOfOrder(story.counters);
+    const done = [...(story?.done ?? [])];
+
+    for (const cleared of read.counters.clear) {
+      if (!done.includes(cleared)) {
+        done.push(cleared);
+      }
+    }
+
+    const locked = lockOf(story);
+    // Once every route was finished the locked one is finished from the start, so the lock ends
+    // only with the return from it, not with the first write that has no route under way.
+    const returned = done.includes(locked) && (!(story?.done ?? []).includes(locked) || activeRoute(inOrder(story?.counters ?? FIRST_COUNTERS)) === locked);
+    const part = partOf(read.counters);
+    // Only a part's first end is its checkpoint: the world leaves Part 3 once for every route,
+    // and a later end would hand a player behind a story that already finished a route.
+    const written = story?.lists || story?.blob;
+    const checkpoint = written && !repaired && story.part !== part && !story.checkpoints.includes(story.part) ? checkpointOf(story) : null;
+    const checkpoints = checkpoint ? [...story.checkpoints, story.part] : (story?.checkpoints ?? []).filter((kept) => !(repaired && kept === part));
+
+    const rev = (story?.rev ?? 0) + 1;
+    const next = {
+      rev,
+      wrev: rev,
+      counters: read.counters,
+      part,
+      route: route !== ROUTE.none ? route : returned ? ROUTE.none : locked,
+      done,
+      end: read.end === undefined ? (story?.end ?? null) : read.end,
+      comps: story?.comps ?? [],
+      caps: mergeCaps(repaired ? [] : (story?.caps ?? []), read.caps).slice(-this.limits.maxCaps),
+      checkpoints,
+      at: this.clock(),
+      by: player,
+    };
+    return { next, checkpoint };
+  }
+
+  /**
+   * Tells every game what a change of the story that left its keys as they were made of it: the
+   * state alone for a keyed story, the revision for a sealed one.
+   *
+   * @param {object | undefined} story The story before.
+   * @param {object} next The story after.
+   * @returns {number | object} The push, see storyPushText.
+   */
+  pushOf(story, next) {
+    return next.lists ? { rev: next.rev, prev: story?.rev ?? 0, delta: listsOf([]), state: stateOf(next, false) } : next.rev;
   }
 
   /**
@@ -445,11 +763,12 @@ export class WorldStory {
    * @param {object | undefined} story The story as it stands.
    * @param {number} base The revision the write built on.
    * @param {object} counters The write's counters.
+   * @param {boolean} [sealed] Whether the write replaces a sealed story, which only a revision from its last write on may.
    * @returns {{error: string, code: string} | null} Why not, or null when it may.
    */
-  refusalOf(story, base, counters) {
+  refusalOf(story, base, counters, sealed = true) {
     // Any revision from the last write on saw the sealed story as it stands.
-    if (base < (story?.wrev ?? 0) || base > (story?.rev ?? 0)) {
+    if (sealed && (base < (story?.wrev ?? 0) || base > (story?.rev ?? 0))) {
       return { error: "the story moved on since the revision the write built on", code: STORY_REFUSAL.rev };
     }
 
@@ -495,7 +814,7 @@ export class WorldStory {
    * may be chosen again.
    *
    * @param {any} route The route, one of ROUTE but none.
-   * @returns {Promise<{status: number, body: object, push?: number}>} The state with `locked` (the same route again answers the same), and the revision to tell every game when it changed; or 409 with the state and code `route` when another route is locked or the world's story is on another route, `finished` for a route the world finished while another is not, `closed` for Chaos before both other routes are finished.
+   * @returns {Promise<{status: number, body: object, push?: number | object}>} The state with `locked` (the same route again answers the same), and the change to tell every game when it changed, see storyPushText; or 409 with the state and code `route` when another route is locked or the world's story is on another route, `finished` for a route the world finished while another is not, `closed` for Chaos before both other routes are finished.
    */
   async lockRoute(route) {
     if (!Object.keys(ROUTE_COUNTERS).includes(route)) {
@@ -528,7 +847,7 @@ export class WorldStory {
 
       const next = { ...(story ?? this.first()), route, rev: (story?.rev ?? 0) + 1 };
       await this.store.put(next, null);
-      return { status: 200, body: { ...stateOf(next, true), locked: route }, push: next.rev };
+      return { status: 200, body: { ...stateOf(next, true), locked: route }, push: this.pushOf(story, next) };
     });
   }
 
@@ -537,7 +856,7 @@ export class WorldStory {
    * chooses sets it again. Refused while the world's story is on the locked route, since another
    * route locked then would turn away every write of both routes.
    *
-   * @returns {Promise<{status: number, body: object, push?: number}>} The state with `cleared` (whether a route was locked), and the revision to tell every game when it changed; or 409 with the state and code `started` while the world's story is on the locked route.
+   * @returns {Promise<{status: number, body: object, push?: number | object}>} The state with `cleared` (whether a route was locked), and the change to tell every game when it changed, see storyPushText; or 409 with the state and code `started` while the world's story is on the locked route.
    */
   async clearRoute() {
     return this.exclusive(async () => {
@@ -554,7 +873,7 @@ export class WorldStory {
 
       const next = { ...story, route: ROUTE.none, rev: story.rev + 1 };
       await this.store.put(next, null);
-      return { status: 200, body: { ...stateOf(next, false), cleared: true }, push: next.rev };
+      return { status: 200, body: { ...stateOf(next, false), cleared: true }, push: this.pushOf(story, next) };
     });
   }
 
@@ -562,7 +881,7 @@ export class WorldStory {
    * Adds companions to the world's shared list, which only grows.
    *
    * @param {any} ids The companions' actor ids.
-   * @returns {Promise<{status: number, body: object, push?: number}>} The state, and the revision to tell every game when the list grew; or why the ids are wrong.
+   * @returns {Promise<{status: number, body: object, push?: number | object}>} The state, and the change to tell every game when the list grew, see storyPushText; or why the ids are wrong.
    */
   async addCompanions(ids) {
     const actor = (id) => Number.isInteger(id) && id >= 1 && id <= this.limits.maxActorId;
@@ -590,8 +909,17 @@ export class WorldStory {
 
       const next = { ...(story ?? this.first()), comps: [...comps].sort((a, b) => a - b), rev: (story?.rev ?? 0) + 1 };
       await this.store.put(next, null);
-      return { status: 200, body: stateOf(next, true), push: next.rev };
+      return { status: 200, body: stateOf(next, true), push: this.pushOf(story, next) };
     });
+  }
+
+  /**
+   * Tells whether the story is kept key by key, which games that keep it sealed can no longer play.
+   *
+   * @returns {Promise<boolean>} Whether it is.
+   */
+  async keyed() {
+    return this.exclusive(async () => Boolean((await this.store.get())?.lists));
   }
 
   /**
@@ -627,21 +955,22 @@ export class WorldStory {
 }
 
 /**
- * Makes a part's checkpoint of the story as it stands, without the lists that only the current
- * story keeps.
+ * Makes a part's checkpoint of the story as it stands: its sealed story or its lists, without the
+ * log of writes that only the current story keeps.
  *
  * @param {object} story The story as kept.
  * @returns {object} The checkpoint.
  */
 function checkpointOf(story) {
-  return { rev: story.wrev, wrev: story.wrev, counters: story.counters, part: story.part, route: story.route, done: story.done, end: story.end, blob: story.blob, at: story.at, by: story.by };
+  const kept = { rev: story.wrev, wrev: story.wrev, counters: story.counters, part: story.part, route: story.route, done: story.done, end: story.end, at: story.at, by: story.by };
+  return story.lists ? { ...kept, blob: "", lists: story.lists } : { ...kept, blob: story.blob };
 }
 
 /**
  * Makes the state a game reads of the story.
  *
  * @param {object | undefined} story The story as kept, undefined before the first write.
- * @param {boolean} withBlob Whether to add the sealed story.
+ * @param {boolean} withBlob Whether to add the story: a keyed story's lists under `keys` with `keyed`, else the sealed story under `blob`.
  * @returns {object} `rev` (every change counts it up), `wrev` (the revision of the last write, whose sealed story this is), `p`, `r1141`, `r1142`, `r1143`, `clear`, `part`, `route`, `done`, `end`, `comps`, `caps` (the level caps the story unlocked, lowest first), `checkpoints` and `at`, and `blob` when asked for (empty before the first write).
  */
 export function stateOf(story, withBlob) {
@@ -664,7 +993,11 @@ export function stateOf(story, withBlob) {
     at: story?.at ?? 0,
   };
 
-  return withBlob ? { ...state, blob: story?.blob ?? "" } : state;
+  if (!withBlob) {
+    return state;
+  }
+
+  return story?.lists ? { ...state, keyed: true, keys: story.lists } : { ...state, blob: story?.blob ?? "" };
 }
 
 /**
@@ -687,11 +1020,12 @@ export function storyRouteOf(url) {
  * @param {string[]} rest The address's parts after `story`, see storyRouteOf.
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {string} player The asking player's id.
- * @returns {Promise<{status: number, body: object, push?: number}>} The answer, and the revision to tell every game of the world when the story changed.
+ * @param {number | null} [known] The revision a GET names in `known`, see WorldStory.get.
+ * @returns {Promise<{status: number, body: object, push?: number | object}>} The answer, and the change to tell every game of the world when the story changed, see storyPushText.
  */
-export async function handleStoryRequest(story, method, rest, readBody, player) {
+export async function handleStoryRequest(story, method, rest, readBody, player, known = null) {
   if (rest.length === 0 && method === "GET") {
-    return story.get();
+    return story.get(known);
   }
 
   if (rest.length === 0 && method === "POST") {
@@ -720,4 +1054,25 @@ export async function handleStoryRequest(story, method, rest, readBody, player) 
  */
 export function noRaidWorld() {
   return { status: 404, body: { error: "the world is no Raid World, which alone keeps a story here", code: STORY_REFUSAL.classic } };
+}
+
+/**
+ * Tells whether a game that keeps a Raid World's story sealed must be turned away from a world,
+ * since the world's story is keyed: it names no STORY_FEATURE.
+ *
+ * @param {WorldStory} story The world's story.
+ * @param {string[]} features What the game names in FEATURES_HEADER.
+ * @returns {Promise<boolean>} Whether it must.
+ */
+export async function sealedGameRefused(story, features) {
+  return !features.includes(STORY_FEATURE) && (await story.keyed());
+}
+
+/**
+ * The answer for a game that keeps a Raid World's story sealed, at a world whose story is keyed.
+ *
+ * @returns {{status: number, body: object}} The answer.
+ */
+export function sealedGameRefusal() {
+  return { status: 426, body: { error: "the world keeps its story key by key, which this game does not", code: STORY_REFUSAL.update } };
 }

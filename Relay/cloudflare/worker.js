@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-15: Refused every battle on the battle server, which Cloudflare runs none of
+//                            - Pushed what a write changed of a keyed Raid World story and turned games without keyed stories away from such a world
 //      Paulinchen  2026-10-14: Left what a game names in X-MGQ-Features out of its directory requests
 //      Paulinchen  2026-10-13: Told every game of a Classic world whether it fights raid bosses
 //                            - Told every game of a Raid World its new squad settings
@@ -60,14 +61,14 @@ import { BATTLE_LIMITS, BATTLE_REFUSAL, battleRouteOf } from "../core/battles.js
 import { DownloadGate, drainLimited, piecesStream, readLimited } from "../core/bodies.js";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
 import { DIRECTORY_LIMITS, Directory as WorldDirectory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, raidBossesText, sha256Hex, squadText } from "../core/directory.js";
-import { DRAIN_LIMITS, VERSION_HEADER, updateRefusal } from "../core/gate.js";
+import { DRAIN_LIMITS, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, updateRefusal } from "../core/gate.js";
 import { badRequest, notFound, routeIs } from "../core/http.js";
 import { isHash, isId } from "../core/ids.js";
 import { MOD_LIMITS, ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
 import { RELEASE_REPO, ReleaseWatch, UPDATE_NAME, updateLine } from "../core/releases.js";
 import { ReportDesk, handleReportRequest, reportSettingsOf } from "../core/reports.js";
-import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, storyRouteOf, storyText } from "../core/story.js";
+import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, sealedGameRefusal, sealedGameRefused, storyPushText, storyRouteOf } from "../core/story.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
   AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, OUT, PAIRED, PING, PLAYER_HEADER, PONG, RATE_LIMITS, REFUSAL_HEADER, RateLimiter, admit, chatLineOf, chatText,
@@ -1087,6 +1088,11 @@ export class World extends DurableObject {
       return new Response(answer.body.error, { status: answer.status, headers: answer.body.code ? { [REFUSAL_HEADER]: answer.body.code } : {} });
     }
 
+    // A game that keeps a Raid World's story sealed would spoil the keyed story of this world.
+    if (await sealedGameRefused(this.storyOf(), features)) {
+      return new Response(UPDATE_NEEDED, { status: WORLD_ROOM_UPDATE_STATUS, headers: { [REFUSAL_HEADER]: WORLD_ROOM_UPDATE_CODE } });
+    }
+
     if (!this.world) {
       this.world = route.roomId;
       await this.ctx.storage.put("world", route.roomId);
@@ -1284,11 +1290,17 @@ export class World extends DurableObject {
       return json(noRaidWorld().status, noRaidWorld().body);
     }
 
-    const answer = await handleStoryRequest(this.storyOf(), request.method, route.rest, () => readText(request, STORY_LIMITS.maxBodyLength), access.player);
+    if (await sealedGameRefused(this.storyOf(), parseFeatures(request.headers.get(FEATURES_HEADER)))) {
+      return json(sealedGameRefusal().status, sealedGameRefusal().body);
+    }
+
+    const known = new URL(request.url).searchParams.get("known");
+    const answer = await handleStoryRequest(this.storyOf(), request.method, route.rest, () => readText(request, STORY_LIMITS.maxBodyLength), access.player,
+      known !== null && /^\d+$/.test(known) ? Number(known) : null);
     await this.tidyDeleted();
 
     if (answer.push) {
-      this.tell(storyText(answer.push));
+      this.tell(storyPushText(answer.push));
     }
 
     return json(answer.status, answer.body);
@@ -1338,7 +1350,7 @@ export class World extends DurableObject {
     const answer = await handleRaidAdminRequest(world, request.method, url, route.rest, () => readText(request), request.headers.get(PLAYER_HEADER), adminOf);
 
     if (answer.push) {
-      this.tell(storyText(answer.push));
+      this.tell(storyPushText(answer.push));
     }
 
     if (answer.boss) {

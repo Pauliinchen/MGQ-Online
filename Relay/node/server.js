@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-15: Started co-op battles on the battle server and carried their channels
+//                            - Pushed what a write changed of a keyed Raid World story and turned games without keyed stories away from such a world
 //                            - Counted the battle server's boss reports and told it every change of its world's pools
 //                            - Let the players the battle server takes in late onto its battle's channel
 //      Paulinchen  2026-10-14: Left what a game names in X-MGQ-Features out of its directory requests
@@ -59,13 +60,13 @@ import {
 } from "../core/battles.js";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
 import { Directory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, raidBossesText, squadText } from "../core/directory.js";
-import { DEFAULT_MIN_VERSION, DRAIN_LIMITS, VERSION_HEADER, updateRefusal } from "../core/gate.js";
+import { DEFAULT_MIN_VERSION, DRAIN_LIMITS, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, updateRefusal } from "../core/gate.js";
 import { routeIs, withJson } from "../core/http.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
 import { RELEASE_REPO, ReleaseWatch, UPDATE_NAME, updateLine } from "../core/releases.js";
 import { ReportDesk, handleReportRequest, reportSettingsOf } from "../core/reports.js";
-import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, storyRouteOf, storyText } from "../core/story.js";
+import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, sealedGameRefusal, sealedGameRefused, storyPushText, storyRouteOf } from "../core/story.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
   AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, LIMITS, OUT, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, admit, chatLineOf, chatText, newPeer, newWorldPeer,
@@ -571,9 +572,16 @@ export function createRelay({
       return;
     }
 
-    directory.admit(route.roomId, route.player, route.auth, address, parseFeatures(headerOf(request, FEATURES_HEADER))).then((answer) => {
+    const features = parseFeatures(headerOf(request, FEATURES_HEADER));
+    directory.admit(route.roomId, route.player, route.auth, address, features).then(async (answer) => {
       if (answer.status !== 200) {
         turnAway(answer.status, answer.body.error, answer.body.code);
+        return;
+      }
+
+      // A game that keeps a Raid World's story sealed would spoil the keyed story of this world.
+      if (await sealedGameRefused(storyOf(route.roomId), features)) {
+        turnAway(WORLD_ROOM_UPDATE_STATUS, UPDATE_NEEDED, WORLD_ROOM_UPDATE_CODE);
         return;
       }
 
@@ -1088,11 +1096,17 @@ export function createRelay({
       return noRaidWorld();
     }
 
-    const answer = await handleStoryRequest(storyOf(route.id), request.method, route.rest, () => readText(request, storyLimits.maxBodyLength), access.player);
+    if (await sealedGameRefused(storyOf(route.id), parseFeatures(headerOf(request, FEATURES_HEADER)))) {
+      return sealedGameRefusal();
+    }
+
+    const known = new URL(request.url, "http://relay").searchParams.get("known");
+    const answer = await handleStoryRequest(storyOf(route.id), request.method, route.rest, () => readText(request, storyLimits.maxBodyLength), access.player,
+      known !== null && /^\d+$/.test(known) ? Number(known) : null);
     await tidyDeleted(route.id);
 
     if (answer.push) {
-      tellWorld(route.id, storyText(answer.push));
+      tellWorld(route.id, storyPushText(answer.push, storyLimits));
     }
 
     return answer;
@@ -1142,7 +1156,7 @@ export function createRelay({
     const answer = await handleRaidAdminRequest(world, request.method, url, route.rest, () => readText(request), headerOf(request, PLAYER_HEADER), (key) => directory.raidAdmin(route.id, key));
 
     if (answer.push) {
-      tellWorld(route.id, storyText(answer.push));
+      tellWorld(route.id, storyPushText(answer.push, storyLimits));
     }
 
     if (answer.boss) {
