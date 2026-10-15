@@ -2,6 +2,7 @@
 //  story.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Refused a route under way before the Great Decision and repaired a story written with one
 //      Paulinchen  2026-10-12: Kept the level caps the world's story unlocked
 //      Paulinchen  2026-10-11: Opened every route again once the world finished all of them
 //                            - Took the locked route's first step from the Great Decision once every route was finished
@@ -69,6 +70,11 @@ export const PART = Object.freeze({ one: "1", two: "2", three: "3", ad: "ad", mr
 export const PART_ENDS = Object.freeze({ one: 19, two: 34 });
 
 /**
+ * The value of variable 1001 the Great Decision sets, which every event that takes a route sets too.
+ */
+export const GREAT_DECISION = 40;
+
+/**
  * The word the text frame starts with that tells every game of a world its story changed, as
  * `story <rev>`.
  */
@@ -112,6 +118,40 @@ export function storyText(rev) {
  */
 export function activeRoute(counters) {
   return Object.keys(ROUTE_COUNTERS).find((route) => counters[ROUTE_COUNTERS[route]] > 0) ?? ROUTE.none;
+}
+
+/**
+ * Reports whether counters name a route under way before the Great Decision, which no game tells:
+ * every event that takes a route moves variable 1001 to the decision too.
+ *
+ * @param {{p: number, r1141: number, r1142: number, r1143: number}} counters The counters.
+ * @returns {boolean} Whether they do.
+ */
+export function outOfOrder(counters) {
+  return activeRoute(counters) !== ROUTE.none && counters.p < GREAT_DECISION;
+}
+
+/**
+ * Reads counters as the story they can be: a route under way before the Great Decision, which an
+ * older game wrote, as none, so a write without it goes on from there.
+ *
+ * @param {{p: number, r1141: number, r1142: number, r1143: number, clear: string[]}} counters The counters.
+ * @returns {{p: number, r1141: number, r1142: number, r1143: number, clear: string[]}} The counters, the same object when in order.
+ */
+export function inOrder(counters) {
+  return outOfOrder(counters) ? { ...counters, r1141: 0, r1142: 0, r1143: 0 } : counters;
+}
+
+/**
+ * Reports whether a story's route lock came with a route under way before the Great Decision, see
+ * outOfOrder, and goes with it.
+ *
+ * @param {object | undefined} story The story as kept.
+ * @returns {string} The route locked, ROUTE.none when none is or the lock goes.
+ */
+function lockOf(story) {
+  const locked = story?.route ?? ROUTE.none;
+  return story && outOfOrder(story.counters) && locked === activeRoute(story.counters) ? ROUTE.none : locked;
 }
 
 /**
@@ -310,7 +350,8 @@ export class WorldStory {
       return badRequest(`the part must be one of ${Object.values(PART).join(", ")}`);
     }
 
-    const checkpoint = await this.exclusive(() => this.store.getCheckpoint(part));
+    // A checkpoint a repair dropped (see write) stays stored until the part ends again.
+    const checkpoint = await this.exclusive(async () => (((await this.store.get())?.checkpoints ?? []).includes(part) ? this.store.getCheckpoint(part) : undefined));
     return checkpoint ? { status: 200, body: { ...stateOf(checkpoint, true), part } } : { status: 404, body: { error: "the world has no checkpoint of this part", code: STORY_REFUSAL.none } };
   }
 
@@ -355,6 +396,9 @@ export class WorldStory {
 
       const now = this.clock();
       const route = activeRoute(read.counters);
+      // A story an older game wrote with a route under way before the Great Decision: the level caps
+      // it named and the checkpoint of the part it seemed to leave go with it.
+      const repaired = story && outOfOrder(story.counters);
       const done = [...(story?.done ?? [])];
 
       for (const cleared of read.counters.clear) {
@@ -363,15 +407,15 @@ export class WorldStory {
         }
       }
 
-      const locked = story?.route ?? ROUTE.none;
+      const locked = lockOf(story);
       // Once every route was finished the locked one is finished from the start, so the lock ends
       // only with the return from it, not with the first write that has no route under way.
-      const returned = done.includes(locked) && (!(story?.done ?? []).includes(locked) || activeRoute(story?.counters ?? FIRST_COUNTERS) === locked);
+      const returned = done.includes(locked) && (!(story?.done ?? []).includes(locked) || activeRoute(inOrder(story?.counters ?? FIRST_COUNTERS)) === locked);
       const part = partOf(read.counters);
       // Only a part's first end is its checkpoint: the world leaves Part 3 once for every route,
       // and a later end would hand a player behind a story that already finished a route.
-      const checkpoint = story?.blob && story.part !== part && !story.checkpoints.includes(story.part) ? checkpointOf(story) : null;
-      const checkpoints = checkpoint ? [...story.checkpoints, story.part] : [...(story?.checkpoints ?? [])];
+      const checkpoint = story?.blob && !repaired && story.part !== part && !story.checkpoints.includes(story.part) ? checkpointOf(story) : null;
+      const checkpoints = checkpoint ? [...story.checkpoints, story.part] : (story?.checkpoints ?? []).filter((kept) => !(repaired && kept === part));
 
       const rev = (story?.rev ?? 0) + 1;
       const next = {
@@ -383,7 +427,7 @@ export class WorldStory {
         done,
         end: read.end === undefined ? (story?.end ?? null) : read.end,
         comps: story?.comps ?? [],
-        caps: mergeCaps(story?.caps ?? [], read.caps).slice(-this.limits.maxCaps),
+        caps: mergeCaps(repaired ? [] : (story?.caps ?? []), read.caps).slice(-this.limits.maxCaps),
         checkpoints,
         blob: request.blob,
         at: now,
@@ -409,15 +453,20 @@ export class WorldStory {
       return { error: "the story moved on since the revision the write built on", code: STORY_REFUSAL.rev };
     }
 
+    if (outOfOrder(counters)) {
+      return { error: "a route cannot be under way before the Great Decision", code: STORY_REFUSAL.behind };
+    }
+
     const route = activeRoute(counters);
-    const locked = story?.route ?? ROUTE.none;
+    const kept = story && inOrder(story.counters);
+    const locked = lockOf(story);
     const done = story?.done ?? [];
     // The locked route's first step from the Great Decision is taken whatever its key: once every
     // route was finished, a route under way no longer counts as returned from, so it ranks below
     // the decision.
-    const firstStep = story && locked !== ROUTE.none && route === locked && activeRoute(story.counters) === ROUTE.none;
+    const firstStep = story && locked !== ROUTE.none && route === locked && activeRoute(kept) === ROUTE.none;
 
-    if (story && !firstStep && compareKeys(storyKey(counters), storyKey(story.counters)) < 0) {
+    if (story && !firstStep && compareKeys(storyKey(counters), storyKey(kept)) < 0) {
       return { error: "the write is behind the world's story", code: STORY_REFUSAL.behind };
     }
 
@@ -429,7 +478,7 @@ export class WorldStory {
     // another story would throw the route's progress away or finish routes the world never played.
     // Until the world's own story is on the locked route, a story with no route under way goes on
     // too, since the player who locked it writes its first step only once their scene ended.
-    const started = activeRoute(story.counters) === locked;
+    const started = activeRoute(kept) === locked;
     const onLocked = route === locked || (route === ROUTE.none && (counters.clear.includes(locked) || !started));
     const unplayed = counters.clear.some((cleared) => cleared !== locked && !done.includes(cleared));
 

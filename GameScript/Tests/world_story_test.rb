@@ -2,7 +2,8 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Checked that the steps before a boss battle stay out of the world's story
+#      Paulinchen  2026-10-15: Checked that no route under way before the Great Decision is read, written or kept
+#                            - Checked that the steps before a boss battle stay out of the world's story
 #                            - Checked that no write goes out while a novel scene runs
 #                            - Checked that the Queen's Cup's tournament steps stay out of the world's story
 #      Paulinchen  2026-10-14: Checked that one-way story variables never go below the world's values
@@ -625,6 +626,21 @@ $game_variables[1062] = 4
 frames(700)
 check("and one the player's story holds once no event runs settles there, without a write", [$game_variables[1062], calls_of("mp_raid_story_post")], [3, []])
 # The minute's poll that came due meanwhile.
+relay("rev" => 8, "wrev" => 8, "p" => 15, "fetch" => "done")
+frames(16)
+
+# A route under way before the Great Decision, which no event of the game tells: never read,
+# written or kept.
+early = one_way_stories({}, { 1001 => 24, 1141 => 1 }, {})[1]
+check("a story on a route before the Great Decision holds no route", [story.hold_routes(early), early[1][1141]], [[[1141, 1]], 0])
+check("one at the decision keeps it", story.hold_routes(one_way_stories({}, { 1001 => 40, 1141 => 1 }, {})[1]), [])
+read = story.counters_of("rev" => "9", "wrev" => "9", "p" => "24", "r1141" => "1", "r1142" => "0", "r1143" => "0", "part" => "ad", "route" => "ad")
+check("the world's counters on such a route read as Part 2 with no route, to be written again",
+      [read["r1141"], read["part"], read["route"], read["out_of_order"]], [0, "2", "none", "ad"])
+$calls.clear
+$game_variables[1141] = 1
+frames(700)
+check("and the player's own route settles back once no event runs, without a write", [$game_variables[1141], calls_of("mp_raid_story_post")], [0, []])
 relay("rev" => 8, "wrev" => 8, "p" => 15, "fetch" => "done")
 frames(16)
 

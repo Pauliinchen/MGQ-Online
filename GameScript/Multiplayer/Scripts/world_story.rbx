@@ -2,7 +2,8 @@
 #  world_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-15: Kept the steps before a boss battle that its defeat sets back out of the world's story
+#      Paulinchen  2026-10-15: Read and wrote no route under way before the Great Decision
+#                            - Kept the steps before a boss battle that its defeat sets back out of the world's story
 #                            - Held the story's writes while a novel scene runs
 #                            - Kept the Queen's Cup's tournament steps out of the world's story
 #      Paulinchen  2026-10-14: Kept the one-way story variables from going below the world's values
@@ -809,6 +810,8 @@ module MGQ_MpWorldStory
     first = @mode != :world
     told = MGQ_MpStoryState.decode_full(MGQ_MpStoryState.unpack(text))
     steps = share_steps(told)
+    routes = hold_routes(told)
+    log("read the world's #{routes_text(routes)}: a route under way before the Great Decision") unless routes.empty?
     log("read the world's #{steps_text(steps)}: steps the world never shares, which an older build wrote") unless steps.empty?
     applied = MGQ_MpStoryState.mix(told, local, chest_list)
     keep_unsent(applied, told, local)
@@ -817,6 +820,8 @@ module MGQ_MpWorldStory
     opened = keep_open_chests(applied, local)
     kept.concat(opened.map { |key| [2, key] })
     keep_steps(applied, local)
+    routes = hold_routes(applied)
+    log("put #{routes_text(routes)}: a route under way before the Great Decision") unless routes.empty?
     MGQ_MpStoryState.set_raw(*applied)
     end_left_scenes
     if defined?(MGQ_MpWorldCatchup)
@@ -828,8 +833,9 @@ module MGQ_MpWorldStory
     @end_local = nil if pending[:drop]
     @wrev = world["wrev"]
     @mode = :world
-    # What waited to be written is what the player kept now, if anything.
-    @force_post = false
+    # What waited to be written is what the player kept now, if anything, or the world's counters
+    # the relay must hear again, see counters_of.
+    @force_post = world["out_of_order"] ? true : false
     @marker_at = @change_at = @first_change_at = @change_signature = nil
     unless kept.empty?
       @watch = true
@@ -972,18 +978,21 @@ module MGQ_MpWorldStory
   end
 
   # Puts the one-way variables the player's story lowered back to the world's values, and the steps
-  # the world never shares that the player is not on to the values it shares (see share_steps),
-  # once no event of theirs runs, which may still read the lowered value or the step.
+  # the world never shares that the player is not on to the values it shares (see share_steps)
+  # and a route under way before the Great Decision to none (see hold_routes), once no event of
+  # theirs runs, which may still read the lowered value or the step.
   def self.restore_one_way
     return unless @mode == :world && @base && !$game_map.interpreter.running?
 
     variables = MGQ_MpStoryState.data_of($game_variables)
     settled = share_steps([nil, variables], own_steps([nil, variables]))
+    routes = hold_routes([nil, variables])
     held = hold_one_way([nil, variables], @base)
-    return if held.empty? && settled.empty?
+    return if held.empty? && settled.empty? && routes.empty?
 
     $game_map.need_refresh = true
     log("put #{steps_text(settled)}: steps the world never shares, which the player is not on") unless settled.empty?
+    log("put #{routes_text(routes)}: a route under way before the Great Decision") unless routes.empty?
     return if held.empty?
 
     log("put #{held.map { |id, lowered| "v#{id} back from #{lowered} to #{@base[1][id]}" }.join(', ')}: the world's story only goes up there, " \
@@ -1046,6 +1055,30 @@ module MGQ_MpWorldStory
   # @return [String] Such as "v1062 from 4 to 3".
   def self.steps_text(steps)
     steps.map { |id, step| "v#{id} from #{step} to #{shared_value(1, id, step)}" }.join(", ")
+  end
+
+  # Puts the route variables of a story whose main progress is before the Great Decision back to 0:
+  # every event that takes a route moves the main story to the decision too, so a route under way
+  # before it is no story the game tells, and the relay would rank and checkpoint it as a route.
+  #
+  # @param story [Array] The story: switches and variables, changed in place.
+  # @return [Array<Array>] Each route variable put back, with the value it held.
+  def self.hold_routes(story)
+    return [] if story[1][MAIN_PROGRESS].to_i >= GREAT_DECISION
+
+    ROUTE_VARIABLES.select { |id| story[1][id].to_i > 0 }.map do |id|
+      step = story[1][id]
+      story[1][id] = 0
+      [id, step]
+    end
+  end
+
+  # Names the route variables hold_routes put back for the log.
+  #
+  # @param held [Array<Array>] Each route variable put back, with the value it held.
+  # @return [String] Such as "v1141 from 1 to 0".
+  def self.routes_text(held)
+    held.map { |id, step| "v#{id} from #{step} to 0" }.join(", ")
   end
 
   # Reports whether the player stands where the Queen's Cup plays, see CUP_PLACES.
@@ -1322,6 +1355,8 @@ module MGQ_MpWorldStory
     story = MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state)
     # Shared first, so a shared step never takes the world's story below a later value.
     share_steps(story)
+    routes = hold_routes(story)
+    log("writing #{routes_text(routes)}: a route under way before the Great Decision") unless routes.empty?
     held = @base ? hold_one_way(story, @base) : []
     log("writing #{held.map { |id, lowered| "v#{id} as #{story[1][id]}, not #{lowered}" }.join(', ')}: the world's story only goes up there") unless held.empty?
     counters = counters_text(local_counters(story), true) + caps_text(story)
@@ -1454,7 +1489,8 @@ module MGQ_MpWorldStory
   # @param state [Hash] The state's headers.
   # @return [Hash] As local_counters, with "rev", "wrev", "route", "done", "end", "part",
   #   "checkpoints" (the parts the relay keeps a checkpoint of), "comps" (the shared companions'
-  #   actor ids) and "caps" (the level caps the world's story unlocked, lowest first).
+  #   actor ids), "caps" (the level caps the world's story unlocked, lowest first) and
+  #   "out_of_order" (a route under way before the Great Decision, read as none).
   def self.counters_of(state)
     counters = { "rev" => state["rev"].to_i, "wrev" => state["wrev"].to_i, "p" => state["p"].to_i }
     ROUTE_VARIABLES.each { |id| counters["r#{id}"] = state["r#{id}"].to_i }
@@ -1466,6 +1502,16 @@ module MGQ_MpWorldStory
     counters["checkpoints"] = state["checkpoints"].to_s.split(",")
     counters["comps"] = state["comps"].to_s.split(",").map { |id| id.to_i }
     counters["caps"] = state["caps"].to_s.split(",").map { |cap| cap.to_i }
+    route = route_index(counters)
+    return counters unless route && counters["p"] < GREAT_DECISION
+
+    # A route under way before the Great Decision, which an older build wrote: read as none, and
+    # written again as such, which the relay takes in its place.
+    ROUTE_VARIABLES.each { |id| counters["r#{id}"] = 0 }
+    counters["part"] = part_of(counters)
+    counters["route"] = "none" if counters["route"] == ROUTES[route]
+    counters["out_of_order"] = ROUTES[route]
+    log_once([:out_of_order, counters["wrev"]], "the world's story names the #{ROUTE_NAMES[route]} route before the Great Decision: read as none")
     counters
   end
 

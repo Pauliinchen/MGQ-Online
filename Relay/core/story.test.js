@@ -2,6 +2,7 @@
 //  story.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Covered a route under way before the Great Decision
 //      Paulinchen  2026-10-12: Covered the level caps of story writes
 //                            - Moved the test of the Worker refusing a story write too long to cloudflare/worker.test.js
 //      Paulinchen  2026-10-11: Covered a world that finished every route choosing and playing a route again
@@ -375,6 +376,36 @@ test("leaving Part 3 again for the next route keeps the checkpoint of its first 
   assert.equal(checkpoint.body.blob, first);
   assert.equal(checkpoint.body.p, 39);
   assert.deepEqual(checkpoint.body.clear, [], "the checkpoint is the story before any route");
+});
+
+test("a route under way before the Great Decision is refused as behind", async () => {
+  const { story } = makeStory();
+  await accepted(story, 0, { p: 24 });
+  const early = await story.write(BOB, { base: 1, counters: counters({ p: 24, r1141: 1 }), blob: BLOB });
+  assert.equal(early.status, 409);
+  assert.equal(early.body.code, "behind");
+  assert.equal(early.body.r1141, 0);
+});
+
+test("a story an older relay took with a route before the Great Decision is repaired by the next write", async () => {
+  const { story, kept } = makeStory();
+  await accepted(story, 0, { p: 24 });
+  kept.story = { ...kept.story, counters: counters({ p: 24, r1141: 1 }), part: "ad", route: "ad", caps: [25, 65], checkpoints: ["1", "2"] };
+  kept.checkpoints.set("2", { rev: 1, wrev: 1, counters: counters({ p: 24 }), part: "2", route: "none", done: [], end: null, blob: BLOB, at: 1000, by: ALICE });
+
+  const repaired = await accepted(story, 1, { p: 24, caps: [25] }, OTHER_BLOB);
+  assert.equal(repaired.part, "2");
+  assert.equal(repaired.r1141, 0);
+  assert.equal(repaired.route, "none", "the route lock taken with it goes");
+  assert.deepEqual(repaired.caps, [25], "and the level caps it named");
+  assert.deepEqual(repaired.checkpoints, ["1"], "and the checkpoint of the part it seemed to leave");
+  assert.equal(kept.checkpoints.size, 1, "the repaired story itself is no checkpoint");
+  assert.equal((await story.checkpoint("2")).status, 404);
+
+  await accepted(story, 2, { p: 34 });
+  const left = await story.checkpoint("2");
+  assert.equal(left.status, 200, "Part 2's real end is its checkpoint");
+  assert.equal(left.body.blob, OTHER_BLOB);
 });
 
 test("shared companions only grow, and the same ids again write nothing", async () => {
