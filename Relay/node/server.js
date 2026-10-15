@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-15: Handed its admins everything it keeps for another relay to take over
+//      Paulinchen  2026-10-15: Marked every player offline as it starts
+//                            - Handed its admins everything it keeps for another relay to take over
 //                            - Started co-op battles on the battle server and carried their channels
 //                            - Pushed what a write changed of a keyed Raid World story and turned games without keyed stories away from such a world
 //                            - Counted the battle server's boss reports and told it every change of its world's pools
@@ -316,6 +317,27 @@ export function memoryBossStores() {
       }
     },
   });
+}
+
+/**
+ * Marks every player of every world offline, as the relay does when it starts: the world rooms
+ * live in memory, so whoever the database still lists, from before a restart or from the relay a
+ * copy came from, is in none of them.
+ *
+ * @param {Directory} directory The world directory.
+ * @returns {Promise<number>} How many worlds had players online.
+ */
+export async function clearPresence(directory) {
+  let worlds = 0;
+
+  for (const entry of await directory.store.all()) {
+    if (entry.online?.length > 0) {
+      await directory.presence(entry.id, []);
+      worlds++;
+    }
+  }
+
+  return worlds;
 }
 
 /**
@@ -1637,6 +1659,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const admins = parseAdmins(process.env.ADMINS);
   const stores = await openStores(database);
   const directory = new Directory(stores.directory, { admins });
+  const offline = await clearPresence(directory);
   const mods = new ModCatalog(stores.mods, { admins });
   const trades = new TradeBook(stores.trades, (id) => directory.store.get(id));
   const reports = new ReportDesk(reportSettingsOf(process.env), { log: stamped(consoleLog) });
@@ -1644,7 +1667,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const battleServer = battleServerOf(process.env[BATTLE_SERVER_VARIABLE]);
   const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports, minVersion: process.env.MIN_VERSION, releases, battleServer });
 
-  relay.server.listen(port, host, () => console.log(`${new Date().toISOString()} relay listening on ${host}:${port}, ${database ? `database ${database}` : "everything in memory"}, ${battleServer ? `battle server ${battleServer.host}:${battleServer.port}` : "no battle server"}`));
+  relay.server.listen(port, host, () => console.log(`${new Date().toISOString()} relay listening on ${host}:${port}, ${database ? `database ${database}` : "everything in memory"}, ${battleServer ? `battle server ${battleServer.host}:${battleServer.port}` : "no battle server"}, ${offline} world(s) with players online marked empty`));
 
   for (const signal of ["SIGINT", "SIGTERM"]) {
     process.on(signal, async () => {

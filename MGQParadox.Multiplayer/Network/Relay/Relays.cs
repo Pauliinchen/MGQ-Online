@@ -2,6 +2,7 @@
 //  Relays.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Moved r1 to the relay on our own server
 //      Paulinchen  2026-10-12: Named the text for a game too old for the relay and read its refusal reason for both kinds of room
 //      Paulinchen  2026-10-06: Pointed every relay at the address in MGQMP_RELAY when it is set
 //                            - Wrote hexadecimal in lowercase at once
@@ -23,8 +24,9 @@ namespace MGQParadox.Multiplayer.Network.Relay;
 /// The relays the games meet at, which pass their frames on, by the id a join code names them with.
 /// </summary>
 /// <remarks>
-/// The guest always takes the relay the host's join code names, so a relay stays in this list for as
-/// long as older versions may host on it. Moving to another relay is a new id, never a new address.
+/// A join code or world code names its relay by id, so an id keeps meaning one relay for every
+/// version that may still play; r1 moved to its new address only once the old one turned every
+/// version before away.
 /// </remarks>
 internal static class Relays
 {
@@ -63,8 +65,8 @@ internal static class Relays
     /// </summary>
     private static readonly Dictionary<string, Uri> Addresses = new(StringComparer.Ordinal)
     {
-        // Cloudflare Workers, see Relay/cloudflare in the repository.
-        ["r1"] = new Uri("wss://relay.mgqmp.workers.dev"),
+        // Our own server, see Relay/node in the repository; Cloudflare Workers until 0.6.6.1.
+        ["r1"] = new Uri("wss://relay.mgqonline.org"),
     };
 
     /// <summary>

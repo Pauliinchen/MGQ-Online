@@ -2,6 +2,7 @@
 //  RelaysTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-15: Expected r1 at the relay on our own server
 //      Paulinchen  2026-10-06: Created
 //
 //----------------------------------------------------------------
@@ -22,7 +23,7 @@ public sealed class RelaysTests
     [Fact]
     public void AddressOf_WithoutReplacement_GivesTheRelaysOwn()
     {
-        Assert.Equal(new Uri("wss://relay.mgqmp.workers.dev"), Relays.AddressOf(Relays.Current, null));
+        Assert.Equal(new Uri("wss://relay.mgqonline.org"), Relays.AddressOf(Relays.Current, null));
         Assert.Null(Relays.AddressOf("r9", null));
     }
 
@@ -34,7 +35,7 @@ public sealed class RelaysTests
     {
         Assert.Equal(new Uri("ws://127.0.0.1:8080"), Relays.AddressOf(Relays.Current, "ws://127.0.0.1:8080"));
         Assert.Null(Relays.AddressOf("r9", "ws://127.0.0.1:8080"));
-        Assert.Equal(new Uri("wss://relay.mgqmp.workers.dev"), Relays.AddressOf(Relays.Current, "http://127.0.0.1:8080"));
-        Assert.Equal(new Uri("wss://relay.mgqmp.workers.dev"), Relays.AddressOf(Relays.Current, "not an address"));
+        Assert.Equal(new Uri("wss://relay.mgqonline.org"), Relays.AddressOf(Relays.Current, "http://127.0.0.1:8080"));
+        Assert.Equal(new Uri("wss://relay.mgqonline.org"), Relays.AddressOf(Relays.Current, "not an address"));
     }
 }

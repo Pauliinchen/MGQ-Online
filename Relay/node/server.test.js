@@ -2,7 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-15: Covered a keyed Raid World story's pushes and the games sent to update
+//      Paulinchen  2026-10-15: Tested that a relay that starts marks every player offline
+//                            - Covered a keyed Raid World story's pushes and the games sent to update
 //      Paulinchen  2026-10-14: Tested a Raid World's starting save from every game over HTTP
 //      Paulinchen  2026-10-13: Tested that every game of a Classic world hears whether it fights raid bosses
 //                            - Tested that every game of a Raid World hears its new squad settings
@@ -55,7 +56,7 @@ import { REPORT_LIMITS, ReportDesk } from "../core/reports.js";
 import { STORY_LIMITS } from "../core/story.js";
 import { TRADE_LIMITS } from "../core/trades.js";
 import { makeUpload, makeZip } from "../core/test_zip.js";
-import { addressOf, createRelay, errorLine, memoryModStore, memoryReleaseStore, memoryStore, requestLine } from "./server.js";
+import { addressOf, clearPresence, createRelay, errorLine, memoryModStore, memoryReleaseStore, memoryStore, requestLine } from "./server.js";
 
 /**
  * The auth key the tests' games make from their worlds' tokens.
@@ -1421,4 +1422,15 @@ test("a bug report sent while the relay handles another is answered busy over HT
     open();
     await reportRelay.stop();
   }
+});
+
+test("a relay that starts marks every player offline, since nobody is in its world rooms yet", async () => {
+  const store = memoryStore();
+  const directory = new Directory(store, { clock: () => now });
+  await store.put({ id: "a1".repeat(16), name: "Busy", members: { p1: { name: "One", seen: 0 }, p2: { name: "Two", seen: 0 } }, bans: [], online: ["p1", "p2"] });
+  await store.put({ id: "b2".repeat(16), name: "Quiet", members: {}, bans: [], online: [] });
+  assert.equal(await clearPresence(directory), 1);
+  const busy = await store.get("a1".repeat(16));
+  assert.deepEqual([busy.online, busy.members.p1.seen, busy.members.p2.seen], [[], now, now], "who was online is noted as last seen now");
+  assert.deepEqual((await store.get("b2".repeat(16))).online, []);
 });
