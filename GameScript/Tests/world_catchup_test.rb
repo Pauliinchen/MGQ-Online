@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-17: Checked a key item one event gives and takes back
 #                            - Checked job items of one-time gifts
 #                            - Checked the rewards repair
+#                            - Checked found job items by the story
 #      Paulinchen  2026-10-15: Checked that a lasting join on another page of a visit's event waits for the gate
 #      Paulinchen  2026-10-14: Checked that a return point left at Adramelech moves on with the story
 #                            - Checked that a visit's own event brings its companion along before the gate
@@ -428,7 +429,7 @@ def tables(tables = {})
     DATA.send(:remove_const, name)
     DATA.const_set(name, tables[name] || [])
   end
-  [:@joins_by_actor, :@story_joins, :@taking_back, :@visits, :@makina_ids, :@unlock_items, :@unlock_rows].each { |name| MGQ_MpWorldCatchup.instance_variable_set(name, nil) }
+  [:@joins_by_actor, :@story_joins, :@taking_back, :@visits, :@makina_ids, :@unlock_items, :@unlock_rows, :@story_sources].each { |name| MGQ_MpWorldCatchup.instance_variable_set(name, nil) }
   MGQ_MpWorldStory.instance_variable_set(:@world_chests, nil)
 end
 
@@ -1393,6 +1394,22 @@ frames(1)
 relay({ "rev" => 32, "wrev" => 32, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
 frames(40)
 check("one the player held before, as from an earlier version, is noted for the world on entering", $game_self_switches[[0, 616, "F"]], true)
+
+# A job item another player found comes once a story reached where the story gives it, and one the
+# story gives nowhere once a player holds it.
+$data_items[617] = RPG::Item.new(617, "Battle Permit", "[Job] Allows access to a job.")
+tables(:REWARDS => [reward.new(:i, 616, 1, "map:30:2:1", "1", 12, nil, [[:v, 1001, 12]], true)])
+new_game({ 1001 => 9 }, [], 10)
+frames(1)
+relay({ "rev" => 35, "wrev" => 35, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }, [], { [0, 616, "F"] => true, [0, 617, "F"] => true }))
+frames(40)
+check("a found job item waits for a story to reach where the story gives it, one it gives nowhere comes",
+      [$game_party.items[616], $game_party.items[617]], [0, 1])
+story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "36", :relay => true)
+frames(1)
+relay({ "rev" => 36, "wrev" => 36, "p" => 12, "part" => "1" }, packed({ 1001 => 12 }, [], { [0, 616, "F"] => true, [0, 617, "F"] => true }))
+frames(40)
+check("and comes once the world's story is there", $game_party.items[616], 1)
 
 # A job item an event gives once behind its own self switch comes by the world's story, though the
 # rows' ledger noted it done.
