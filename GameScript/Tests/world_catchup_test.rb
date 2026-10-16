@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-17: Checked a key item one event gives and takes back
 #                            - Checked job items of one-time gifts
+#                            - Checked the rewards repair
 #      Paulinchen  2026-10-15: Checked that a lasting join on another page of a visit's event waits for the gate
 #      Paulinchen  2026-10-14: Checked that a return point left at Adramelech moves on with the story
 #                            - Checked that a visit's own event brings its companion along before the gate
@@ -1409,6 +1410,27 @@ frames(1)
 relay({ "rev" => 38, "wrev" => 38, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }, [2311], { [551, 17, "B"] => true }))
 frames(40)
 check("and comes once the world's story ran it, its row noted done", $game_party.items[622], 1)
+
+# Notes of an earlier version give once what a map event's row noted done but never gave.
+tables(:REWARDS => [reward.new(:i, 600, 2, "map:36:17:1", "1", 6, nil, [[:v, 1001, 6]], true),
+                    reward.new(:i, 541, 1, "ce:287", "1", 6, nil, [[:v, 1001, 6]], true),
+                    reward.new(:w, 4112, 1, "map:1583:17:1", "1", 6, nil, [[:v, 1001, 6]], true)])
+new_game({ 1001 => 9 }, [], 10)
+frames(1)
+relay({ "rev" => 39, "wrev" => 39, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
+frames(40)
+notes = catchup.ledger
+notes.delete("rewards_repaired")
+notes["done"]["g:map:36:17:1:i600"] = notes["done"]["g:ce:287:i541"] = notes["done"]["g:map:1583:17:1:w4112"] = true
+$data_weapons[4112] = RPG::Item.new(4112, "Fallen Sword Angel Halo")
+catchup.instance_variable_set(:@audit_due, true)
+frames(40)
+check("notes of an earlier version give a map event's reward the player lacks once, a common event's and one the story trades away not",
+      [$game_party.items[600], $game_party.items[541], $game_party.items[4112], notes["rewards_repaired"]], [2, 0, 0, true])
+$game_party.items[600] = 0
+catchup.instance_variable_set(:@audit_due, true)
+frames(40)
+check("and never again", $game_party.items[600], 0)
 
 # The skills the story and its quests teach companions reach every player's companions.
 lesson = DATA::Lesson

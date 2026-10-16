@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-17: Ordered the key items one event gives and takes back by their rows, which no longer fails the catch-up
 #                            - Kept the catch-up's other checks running when one fails
 #                            - Gave job and race items of one-time gifts by the story's place
+#                            - Gave once the rewards notes of an earlier version noted done without giving them
 #      Paulinchen  2026-10-15: Held a lasting join on another page of a visit's event back until the level gate
 #      Paulinchen  2026-10-14: Let a visit's own event bring its companion along before the level gate
 #      Paulinchen  2026-10-13: Left the joins the story takes back in the same step out of the catch-up
@@ -402,14 +403,15 @@ module MGQ_MpWorldCatchup
   # ("held"), the part whose checkpoint the player got ("checkpoint"), the side they chose before
   # the Great Decision ("side"), the gate of a move on a cap of another mod opened until its story
   # is laid over theirs ("capped"), and the rewards that move carried them past, waiting for their
-  # gate ("waits", a row's key to its gate). Notes of another world start anew.
+  # gate ("waits", a row's key to its gate), and whether repair_rewards ran ("rewards_repaired",
+  # true from the start for notes it never needs to repair). Notes of another world start anew.
   #
   # @return [Hash] The notes.
   def self.ledger
     notes = $game_system.instance_variable_get(LEDGER)
     id = MGQ_MpWorldStory.world_id
     unless notes.is_a?(Hash) && notes["world"] == id && notes["done"].is_a?(Hash)
-      notes = { "world" => id, "done" => {}, "held" => {}, "checkpoint" => nil, "side" => nil, "capped" => nil, "waits" => {} }
+      notes = { "world" => id, "done" => {}, "held" => {}, "checkpoint" => nil, "side" => nil, "capped" => nil, "waits" => {}, "rewards_repaired" => true }
       $game_system.instance_variable_set(LEDGER, notes)
     end
     notes["held"] ||= {}
@@ -1051,6 +1053,7 @@ module MGQ_MpWorldCatchup
     gifts = guarded(:skills) { missing_skills(story, world) } || []
     gifts.concat(guarded(:key_items) { restock_key_items(story, told) } || [])
     gifts.concat(guarded(:unlock_items) { restock_unlock_items(story, told) } || [])
+    gifts.concat(guarded(:repair) { repair_rewards(story) } || [])
     guarded(:companions) { missing_companions(story, told, done) }
     guarded(:companion_values) { companion_values }
     guarded(:settle) { settle(story, world) }
@@ -1448,6 +1451,47 @@ module MGQ_MpWorldCatchup
   def self.own_switch_mark?(row)
     kind, map, event = row.site.to_s.split(":")
     kind == "map" && row.marks.any? { |mark| mark[0] == :ss && mark[1] == map.to_i && mark[2] == event.to_i }
+  end
+
+  # The rewards the story trades away again, which repair_rewards never gives: the Fallen Sword
+  # Angel Halo, which map 1075 event 35 takes for the weapon it gives.
+  TRADED_REWARDS = [[:w, 4112]]
+
+  # Gives once per save every item of a map event's reward row the player's story is past and the
+  # rows' ledger noted done that the player holds none of, items unlocking a job or a race and
+  # TRADED_REWARDS aside.
+  #
+  # Before 0.6.7.2 the catch-up failed between noting the rewards a story carried the player past
+  # and giving them, so the ledger kept them noted done.
+  #
+  # @param story [Array] The player's story.
+  # @return [Array<String>] What was given, as shown.
+  def self.repair_rewards(story)
+    notes = ledger
+    return [] if notes["rewards_repaired"]
+
+    notes["rewards_repaired"] = true
+    DATA::REWARDS.map do |row|
+      key = key_of("g", row)
+      next unless row.kind != :skill && notes["done"][key] && !notes["waits"].key?(key) && carries?(row)
+      next if TRADED_REWARDS.include?([row.kind, row.id])
+      next unless row.site.to_s.start_with?("map:") && passed?(row, story)
+
+      item = MGQ_MpGame.item(reward_kind(row), row.id)
+      next if item.nil? || unlock_item?(item) || held?(item)
+
+      give(reward_kind(row), row.id, row.amount, "#{key}:repaired")
+    end
+  end
+
+  # Reports whether the party holds an item, in the bag or worn.
+  #
+  # @param item [RPG::BaseItem] The item.
+  # @return [Boolean] Whether it does.
+  def self.held?(item)
+    return true if $game_party.item_number(item) > 0
+
+    $game_party.all_members.any? { |actor| actor.respond_to?(:equips) && actor.equips.include?(item) }
   end
 
   # Reports whether a story took a key item after a row gave it: a row of a later part, a later row
