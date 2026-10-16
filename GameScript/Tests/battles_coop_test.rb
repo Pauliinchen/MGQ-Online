@@ -2,6 +2,7 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Checked that a guest's start sets the party's battle counters
 #      Paulinchen  2026-10-15: Checked that a player whose characters all fell in a won battle or a loaded save stands up
 #      Paulinchen  2026-10-12: Read who joined the battle from its popup instead of the chat
 #                            - Checked invites while the leader's story calls the player over
@@ -1015,6 +1016,12 @@ check("one whose host left later goes on with the counters the start sets",
 check("and a defeat scene of its enemies instead of a former battle's",
       [[6031, 6032].include?($game_temp.lose_event_id), $game_temp.lose_event_enemy_id == $game_temp.lose_event_id - 6000], [true, true])
 $data_common_events = known_events
+
+# A guest's start sets the counters the game's start sets, the EXP rate among them.
+$game_party.all_members.each { |actor| actor.instance_variable_set(:@counters_set, nil) }
+MGQ_MpBattlesSync::Live.ready_counters
+check("a guest's start sets the counters of every character of the party",
+      [$game_party.all_members.size > 1, $game_party.all_members.all?(&:counters_set)], [true, true])
 
 # A guest the host's party leaves out, since it joined after the host stopped waiting.
 $my_seat = 7
