@@ -2,6 +2,7 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-17: Told a world's new game the seats that left or came during its handshake
 //      Paulinchen  2026-10-15: Passed battle routes on to the battle stand-in and cut its players on stopping
 //                            - Kept a Raid World's story key by key, as the relay does, and told the room each change
 //                            - Kept the companions' affection among a keyed story's keys
@@ -1487,7 +1488,6 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
 
             // Held while the handshake runs, so no other game takes the seat meanwhile.
             seats[seat] = null;
-            others = seats.Keys.Where(taken => taken != seat).ToArray();
             replaced = seats.Values.OfType<Peer>().Where(other => other.PlayerId == playerId).ToArray();
             world.Members[playerId] = query["name"] ?? "?";
         }
@@ -1518,10 +1518,30 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
 
         lock (_gate)
         {
-            _worlds[roomId][seat] = peer;
+            others = SeatsBesides(roomId, seat);
         }
 
         await peer.SendAsync(Encoding.UTF8.GetBytes(string.Join(' ', new[] { "seat", seat.ToString() }.Concat(others.Select(other => other.ToString())))), WebSocketMessageType.Text);
+
+        // A game that left or came while the seat was told sent its word to the seated games alone,
+        // so the new game hears it here.
+        int[] now;
+
+        lock (_gate)
+        {
+            _worlds[roomId][seat] = peer;
+            now = SeatsBesides(roomId, seat);
+        }
+
+        foreach (var gone in others.Except(now))
+        {
+            await peer.SendAsync(Encoding.UTF8.GetBytes($"out {gone}"), WebSocketMessageType.Text);
+        }
+
+        foreach (var came in now.Except(others))
+        {
+            await peer.SendAsync(Encoding.UTF8.GetBytes($"in {came}"), WebSocketMessageType.Text);
+        }
 
         foreach (var other in WorldPeers(roomId, seat))
         {
@@ -1581,6 +1601,15 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             }
         }
     }
+
+    /// <summary>
+    /// Lists the taken seats of a world room besides one. Called with the gate held.
+    /// </summary>
+    /// <param name="roomId">The world room.</param>
+    /// <param name="seat">The seat left out.</param>
+    /// <returns>The other seats.</returns>
+    private int[] SeatsBesides(string roomId, int seat) =>
+        _worlds.TryGetValue(roomId, out var seats) ? seats.Keys.Where(taken => taken != seat).ToArray() : [];
 
     /// <summary>
     /// Frees a seat of a world room, and forgets the room once it is empty. Called with the gate held.
