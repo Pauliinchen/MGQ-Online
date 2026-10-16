@@ -2,6 +2,8 @@
 #  world_catchup.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Ordered the key items one event gives and takes back by their rows, which no longer fails the catch-up
+#                            - Kept the catch-up's other checks running when one fails
 #      Paulinchen  2026-10-15: Held a lasting join on another page of a visit's event back until the level gate
 #      Paulinchen  2026-10-14: Let a visit's own event bring its companion along before the level gate
 #      Paulinchen  2026-10-13: Left the joins the story takes back in the same step out of the catch-up
@@ -333,21 +335,33 @@ module MGQ_MpWorldCatchup
       if @audit_due
         audit(story_now)
       elsif @vehicles_due
-        check_vehicles(story_now, played_world_story)
+        guarded(:vehicles) { check_vehicles(story_now, played_world_story) }
       end
-      give_waiting_rewards
+      guarded(:waiting_rewards) { give_waiting_rewards }
       review(story_now, false)
-      check_growth
-      move_on if MGQ_MpWorldStory.mode == :behind && !@want && !@joins_world && gate_reached?
-      note_roster
-      check_orbs
-      check_makina
-      check_found_items
-      check_counts
+      guarded(:growth) { check_growth }
+      guarded(:move_on) { move_on if MGQ_MpWorldStory.mode == :behind && !@want && !@joins_world && gate_reached? }
+      guarded(:roster) { note_roster }
+      guarded(:orbs) { check_orbs }
+      guarded(:makina) { check_makina }
+      guarded(:found_items) { check_found_items }
+      guarded(:counts) { check_counts }
     end
     send_shared
   rescue => e
     log_once(:tick, "following the catch-up failed: #{e.class}: #{e.message}")
+  end
+
+  # Runs one check of the catch-up and logs it failing once, so a failing check leaves the ones
+  # after it running.
+  #
+  # @param name [Symbol] The check, for the log.
+  # @return [Object, nil] What the check returned, nil when it failed.
+  def self.guarded(name)
+    yield
+  rescue => e
+    log_once([:check, name], "the #{name} check failed: #{e.class}: #{e.message}")
+    nil
   end
 
   # Forgets the world's catch-up once the world closed or is no Raid World.
@@ -1033,14 +1047,14 @@ module MGQ_MpWorldCatchup
     told = @world_told
     world = played_world_story
     done = ledger["done"]
-    gifts = missing_skills(story, world)
-    gifts.concat(restock_key_items(story, told))
-    missing_companions(story, told, done)
-    companion_values
-    settle(story, world)
-    lift_warp_ban
-    check_vehicles(story, world)
-    note_held_items
+    gifts = guarded(:skills) { missing_skills(story, world) } || []
+    gifts.concat(guarded(:key_items) { restock_key_items(story, told) } || [])
+    guarded(:companions) { missing_companions(story, told, done) }
+    guarded(:companion_values) { companion_values }
+    guarded(:settle) { settle(story, world) }
+    guarded(:warp_ban) { lift_warp_ban }
+    guarded(:vehicles) { check_vehicles(story, world) }
+    guarded(:held_items) { note_held_items }
     log("looked at everything the story owes the player once")
     tell_gifts(gifts.compact)
   end
@@ -1328,9 +1342,9 @@ module MGQ_MpWorldCatchup
         gifts << give(reward_kind(row), row.id, row.amount, key)
       end
     end
-    gifts.concat(world_items(story, carried, done))
-    companions(story, carried, done)
-    settle(story, played_world_story) if carried
+    gifts.concat(guarded(:world_items) { world_items(story, carried, done) } || [])
+    guarded(:companions) { companions(story, carried, done) }
+    guarded(:settle) { settle(story, played_world_story) } if carried
     tell_gifts(gifts.compact)
   end
 
@@ -1395,9 +1409,10 @@ module MGQ_MpWorldCatchup
     end
   end
 
-  # Reports whether a story took a key item after a row gave it: a later row of the same part, one
-  # of the same step whose marks lie further (see marks_beyond?), or a row of a later part, that
-  # takes it.
+  # Reports whether a story took a key item after a row gave it: a row of a later part, a later row
+  # of the same part, one of the same step whose marks lie further (see marks_beyond?), or one of the
+  # same event and marks listed after it, that takes it. The routes share a rank, so a row of another
+  # route never counts as later.
   #
   # @param row [MGQ_MpWorldCatchupData::KeyItem] The row that gives it.
   # @param told [Array] The story.
@@ -1407,11 +1422,31 @@ module MGQ_MpWorldCatchup
     DATA::KEY_ITEMS.any? do |other|
       next false unless other.item == row.item && other.amount < 0 && other.part && row.part
       later = if other.part != row.part then RANKS[other.part] > RANKS[row.part]
-              elsif place_of(other) == place_of(row) && other.site != row.site then marks_beyond?(other, row)
-              else after?(other, row)
+              elsif other.step.to_i != row.step.to_i then other.step.to_i > row.step.to_i
+              elsif other.site == row.site && same_marks?(other, row) then listed_after?(other, row)
+              else marks_beyond?(other, row)
               end
       later && passed?(other, told, story)
     end
+  end
+
+  # Reports whether two rows hold the same marks, in any order.
+  #
+  # @param row [Struct] The one.
+  # @param other [Struct] The other.
+  # @return [Boolean] Whether they do.
+  def self.same_marks?(row, other)
+    row.marks.sort_by(&:inspect) == other.marks.sort_by(&:inspect)
+  end
+
+  # Reports whether a key item row comes after another in KEY_ITEMS, which lists the rows that give
+  # before those that take at one place.
+  #
+  # @param row [MGQ_MpWorldCatchupData::KeyItem] The one.
+  # @param other [MGQ_MpWorldCatchupData::KeyItem] The other.
+  # @return [Boolean] Whether it does.
+  def self.listed_after?(row, other)
+    DATA::KEY_ITEMS.index { |listed| listed.equal?(row) } > DATA::KEY_ITEMS.index { |listed| listed.equal?(other) }
   end
 
   # Reports whether a row's marks lie further than another's of the same step: each of the other's
@@ -1422,7 +1457,7 @@ module MGQ_MpWorldCatchup
   # @param other [Struct] The other.
   # @return [Boolean] Whether they do.
   def self.marks_beyond?(row, other)
-    return false if row.marks.sort_by(&:inspect) == other.marks.sort_by(&:inspect)
+    return false if same_marks?(row, other)
 
     other.marks.all? do |mark|
       row.marks.any? { |own| own == mark || (own[0] == :v && mark[0] == :v && own[1] == mark[1] && own[2] >= mark[2]) }

@@ -2,6 +2,7 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Checked a key item one event gives and takes back
 #      Paulinchen  2026-10-15: Checked that a lasting join on another page of a visit's event waits for the gate
 #      Paulinchen  2026-10-14: Checked that a return point left at Adramelech moves on with the story
 #                            - Checked that a visit's own event brings its companion along before the gate
@@ -961,6 +962,24 @@ frames(1)
 relay({ "rev" => 24, "wrev" => 24, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }, [5001]))
 frames(40)
 check("and gets it again once it is gone, its row long done", $game_party.items[501], 1)
+
+# An event that gives a key item and takes it back in the same run owes nothing, and the other key
+# items still come.
+tables(:KEY_ITEMS => [key_item.new(556, 1, "map:124:49:1", "1", 7, nil, [[:v, 1001, 7], [:v, 1084, 2]], true),
+                      key_item.new(505, 1, "map:29:35:2", "1", 7, nil, [[:v, 1001, 7]], true),
+                      key_item.new(556, -1, "map:124:49:1", "1", 7, nil, [[:v, 1001, 7], [:v, 1084, 2]], true)])
+new_game({ 1001 => 6 }, [], 40)
+frames(1)
+relay({ "rev" => 25, "wrev" => 25, "p" => 9, "part" => "1" }, packed({ 1001 => 9, 1084 => 2 }))
+frames(40)
+check("a key item one event gives and takes back stays away, and the others come",
+      [$game_party.items[556], $game_party.items[505], $logs.grep(/failed/)], [0, 1, []])
+doll = key_item.new(592, 1, "map:1197:62:1", "chaos", 21, nil, [[:v, 1143, 21]], true)
+tables(:KEY_ITEMS => [doll, key_item.new(592, -1, "ce:480", "mr", 34, nil, [[:v, 1142, 34]], true)])
+route_story = [[], [], {}]
+route_story[1][1142] = 34
+check("a row of another route at a later step never takes back what a route gave",
+      [catchup.passed?(DATA::KEY_ITEMS[1], route_story), catchup.taken_since?(doll, route_story, route_story)], [true, false])
 
 # The catch-up looks at everything on entering and on a level up: the player's own values the
 # story sets, the warp ban, the story's skills and its companions.
