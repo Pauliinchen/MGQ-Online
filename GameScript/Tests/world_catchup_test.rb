@@ -6,6 +6,7 @@
 #                            - Checked job items of one-time gifts
 #                            - Checked the rewards repair
 #                            - Checked found job items by the story
+#                            - Checked the question of a side for a player without one
 #      Paulinchen  2026-10-15: Checked that a lasting join on another page of a visit's event waits for the gate
 #      Paulinchen  2026-10-14: Checked that a return point left at Adramelech moves on with the story
 #                            - Checked that a visit's own event brings its companion along before the gate
@@ -169,7 +170,20 @@ module MGQ_MpCoopEvents
   def self.chest_key?(_key); false; end
   # Runs the block.
   def self.granting; yield; end
+  # Answers that no teller's scene plays.
+  def self.mirroring?; false; end
 end
+# Stands in for the message window: keeps the text, the choices and what a choice calls.
+class Game_Message
+  attr_accessor :texts, :choices, :choice_cancel_type, :choice_proc
+  # Starts empty.
+  def initialize; @texts = []; @choices = []; end
+  # Keeps a line.
+  def add(text); @texts << text; end
+  # Answers whether a message shows.
+  def busy?; !@texts.empty?; end
+end
+$game_message = Game_Message.new
 # Stands in for the gathering: joining the story does nothing.
 module MGQ_MpCoopGather; def self.join_story; end; end
 # Stands in for the story's reward tables, two chests and one chest flag in all.
@@ -965,6 +979,29 @@ frames(1)
 relay({ "rev" => 24, "wrev" => 24, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }, [5001]))
 frames(40)
 check("and gets it again once it is gone, its row long done", $game_party.items[501], 1)
+
+# A player whose story went past the choice of a side without one is asked once, and their side's
+# key items come.
+tables(:KEY_ITEMS => [key_item.new(501, 1, "map:2:5:1", "1", 7, :alice, [[:v, 1001, 7], [:s, 5001]], true),
+                      key_item.new(501, 1, "map:2:5:2", "1", 7, :ilias, [[:v, 1001, 7], [:s, 5001]], true)])
+new_game({ 1001 => 9 }, [5001], 40)
+$game_message = Game_Message.new
+frames(1)
+relay({ "rev" => 26, "wrev" => 26, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }, [5001]))
+frames(40)
+check("a player without a side is asked whom they take along, and gets no side's key item yet",
+      [$game_message.choices, $game_message.choice_cancel_type, $game_party.items[501]], [["Alice", "Ilias"], 0, 0])
+frames(40)
+check("and asked only once while the question is open", $game_message.choices, ["Alice", "Ilias"])
+$game_message = Game_Message.new
+frames(40)
+check("and again once something cleared the question", $game_message.choices, ["Alice", "Ilias"])
+choose = $game_message.choice_proc
+$game_message = Game_Message.new
+choose.call(0)
+frames(40)
+check("taking Alice keeps the side, brings her along and gives the side's key item",
+      [$game_switches[4], $game_switches[5], roster.include?(5), $game_party.items[501], $game_message.choices], [true, false, true, 1, []])
 
 # An event that gives a key item and takes it back in the same run owes nothing, and the other key
 # items still come.

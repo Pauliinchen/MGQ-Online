@@ -7,6 +7,7 @@
 #                            - Gave job and race items of one-time gifts by the story's place
 #                            - Gave once the rewards notes of an earlier version noted done without giving them
 #                            - Gave found job and race items once a story reached where the story gives them
+#                            - Asked a player whose story went past the choice of a side without one whom they take along
 #      Paulinchen  2026-10-15: Held a lasting join on another page of a visit's event back until the level gate
 #      Paulinchen  2026-10-14: Let a visit's own event bring its companion along before the level gate
 #      Paulinchen  2026-10-13: Left the joins the story takes back in the same step out of the catch-up
@@ -235,6 +236,7 @@ module MGQ_MpWorldCatchup
     @share_at = 0
     @orbs_due = false
     @orbs_played = false
+    @asking_side = false
     @audit_due = true
     @riding_early = false
     @vehicles_due = false
@@ -342,6 +344,7 @@ module MGQ_MpWorldCatchup
       end
       guarded(:waiting_rewards) { give_waiting_rewards }
       review(story_now, false)
+      guarded(:side) { ask_side }
       guarded(:growth) { check_growth }
       guarded(:move_on) { move_on if MGQ_MpWorldStory.mode == :behind && !@want && !@joins_world && gate_reached? }
       guarded(:roster) { note_roster }
@@ -920,6 +923,55 @@ module MGQ_MpWorldCatchup
     return unless side && SIDED_PARTS.include?(story_part(story))
 
     ledger["side"] = @noted_side = side.to_s
+  end
+
+  # The main story's step the choice of a side in Iliasville leaves (map 6, events 30 and 31).
+  SIDE_STEP = 7
+
+  # The companion each side brings along.
+  SIDE_COMPANIONS = { :alice => 5, :ilias => 26 }
+
+  # Asks the player whom they take along once they are free, when their story went past the choice
+  # of a side before the Great Decision without one, until they chose.
+  #
+  # A teller's scene ends the player's own choice before it sets the side when both play it at once,
+  # and the side switches are each player's own in a Raid World, so the teller's choice is no help.
+  def self.ask_side
+    # A battle's invite clears the message window, and the question with it.
+    @asking_side = false if @asking_side && !$game_message.busy?
+    return if @asking_side || !lost_side? || !MGQ_MpOverworldSync.map_free? || MGQ_MpCoopEvents.mirroring? || $game_message.busy?
+
+    @asking_side = true
+    log("asking the player whom they take along: their story went past the choice of a side without one")
+    $game_message.add("Your story went past the choice of whom you take along. Whom do you take along on your journey?")
+    $game_message.choices.push("Alice", "Ilias")
+    $game_message.choice_cancel_type = 0
+    $game_message.choice_proc = Proc.new { |index| take_side(index == 0 ? :alice : :ilias) }
+  end
+
+  # Reports whether the player's story went past the choice of a side without one, before the Great
+  # Decision.
+  #
+  # @return [Boolean] Whether it did.
+  def self.lost_side?
+    story = story_now
+    MGQ_MpStoryState.side_of(story[0]).nil? && SIDED_PARTS.include?(part_of(story)) &&
+      story[1][MGQ_MpWorldStory::MAIN_PROGRESS].to_i.between?(SIDE_STEP, MGQ_MpWorldStory::BEFORE_DECISION)
+  end
+
+  # Keeps the side the player chose and brings its companion along, as the choice in Iliasville
+  # does; the next look gives what the side's rows owe, as the Pocket Castle.
+  #
+  # @param side [Symbol] :alice or :ilias.
+  def self.take_side(side)
+    @asking_side = false
+    MGQ_MpStoryState::SIDE_SWITCHES.each { |id| $game_switches[id] = id == (side == :alice ? MGQ_MpStoryState::ALICE_CHOSEN : MGQ_MpStoryState::ILIAS_CHOSEN) }
+    name = side == :alice ? "Alice" : "Ilias"
+    log("the player took #{name} along")
+    bring_in(SIDE_COMPANIONS[side], nil, "you took #{name} along")
+    @audit_due = true
+  rescue => e
+    log("taking a side failed: #{e.class}: #{e.message}")
   end
 
   # The part a story is in, kept for the look at the rows under way, see review.
