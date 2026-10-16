@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-17: Ordered the key items one event gives and takes back by their rows, which no longer fails the catch-up
 #                            - Kept the catch-up's other checks running when one fails
+#                            - Gave job and race items of one-time gifts by the story's place
 #      Paulinchen  2026-10-15: Held a lasting join on another page of a visit's event back until the level gate
 #      Paulinchen  2026-10-14: Let a visit's own event bring its companion along before the level gate
 #      Paulinchen  2026-10-13: Left the joins the story takes back in the same step out of the catch-up
@@ -1049,6 +1050,7 @@ module MGQ_MpWorldCatchup
     done = ledger["done"]
     gifts = guarded(:skills) { missing_skills(story, world) } || []
     gifts.concat(guarded(:key_items) { restock_key_items(story, told) } || [])
+    gifts.concat(guarded(:unlock_items) { restock_unlock_items(story, told) } || [])
     guarded(:companions) { missing_companions(story, told, done) }
     guarded(:companion_values) { companion_values }
     guarded(:settle) { settle(story, world) }
@@ -1383,6 +1385,7 @@ module MGQ_MpWorldCatchup
       open_chest(row.key) unless mine
     end
     gifts.concat(restock_key_items(story, told))
+    gifts.concat(restock_unlock_items(story, told))
   end
 
   # Hands out every key item the story owes the player by now and they hold fewer of: one a key
@@ -1407,6 +1410,44 @@ module MGQ_MpWorldCatchup
       missing = item ? amount - $game_party.item_number(item) : 0
       missing > 0 ? give("i", id, missing, "k:owed:#{id}") : nil
     end
+  end
+
+  # Hands out every item unlocking a job or a race a reward row gives whose own self switch tells
+  # that the player's story or the world's ran its event, and that the player lacks. Like
+  # restock_key_items it goes by the story's place alone, so a gift the rows' ledger noted done
+  # without giving it, as the King of Remina's, still comes.
+  #
+  # @param story [Array] The player's story.
+  # @param told [Array, nil] The world's story, nil before it came.
+  # @return [Array<String>] What was given, as shown.
+  def self.restock_unlock_items(story, told)
+    unlock_rows.map do |row|
+      next unless passed_any?(row, story, told)
+
+      item = MGQ_MpGame.item("i", row.id)
+      item && $game_party.item_number(item) == 0 ? give("i", row.id, 1, "#{key_of('g', row)}:owed") : nil
+    end
+  end
+
+  # The reward rows restock_unlock_items looks at: items unlocking a job or a race, given by an
+  # event whose own self switch is among the row's marks.
+  #
+  # @return [Array<MGQ_MpWorldCatchupData::Reward>] The rows.
+  def self.unlock_rows
+    return [] unless $data_items
+
+    @unlock_rows ||= DATA::REWARDS.select do |row|
+      row.kind == :i && carries?(row) && own_switch_mark?(row) && unlock_item?(MGQ_MpGame.item("i", row.id))
+    end
+  end
+
+  # Reports whether a row's marks hold a self switch of its own map event.
+  #
+  # @param row [Struct] The row.
+  # @return [Boolean] Whether they do.
+  def self.own_switch_mark?(row)
+    kind, map, event = row.site.to_s.split(":")
+    kind == "map" && row.marks.any? { |mark| mark[0] == :ss && mark[1] == map.to_i && mark[2] == event.to_i }
   end
 
   # Reports whether a story took a key item after a row gave it: a row of a later part, a later row

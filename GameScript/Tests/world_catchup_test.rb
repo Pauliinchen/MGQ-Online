@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-17: Checked a key item one event gives and takes back
+#                            - Checked job items of one-time gifts
 #      Paulinchen  2026-10-15: Checked that a lasting join on another page of a visit's event waits for the gate
 #      Paulinchen  2026-10-14: Checked that a return point left at Adramelech moves on with the story
 #                            - Checked that a visit's own event brings its companion along before the gate
@@ -426,7 +427,7 @@ def tables(tables = {})
     DATA.send(:remove_const, name)
     DATA.const_set(name, tables[name] || [])
   end
-  [:@joins_by_actor, :@story_joins, :@taking_back, :@visits, :@makina_ids, :@unlock_items].each { |name| MGQ_MpWorldCatchup.instance_variable_set(name, nil) }
+  [:@joins_by_actor, :@story_joins, :@taking_back, :@visits, :@makina_ids, :@unlock_items, :@unlock_rows].each { |name| MGQ_MpWorldCatchup.instance_variable_set(name, nil) }
   MGQ_MpWorldStory.instance_variable_set(:@world_chests, nil)
 end
 
@@ -1391,6 +1392,23 @@ frames(1)
 relay({ "rev" => 32, "wrev" => 32, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
 frames(40)
 check("one the player held before, as from an earlier version, is noted for the world on entering", $game_self_switches[[0, 616, "F"]], true)
+
+# A job item an event gives once behind its own self switch comes by the world's story, though the
+# rows' ledger noted it done.
+$data_items[622] = RPG::Item.new(622, "Soul of the Warrior God", "[Job] Allows access to advanced Warrior jobs.")
+king = reward.new(:i, 622, 1, "map:551:17:1", "1", 9, nil, [[:v, 1001, 9], [:s, 2311], [:ss, 551, 17, "B"]], true)
+tables(:REWARDS => [king])
+new_game({ 1001 => 9 }, [2311], 10)
+frames(1)
+relay({ "rev" => 37, "wrev" => 37, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }, [2311]))
+frames(40)
+catchup.ledger["done"][catchup.key_of("g", king)] = true
+check("a gift behind its event's self switch stays away while no story ran the event", $game_party.items[622], 0)
+story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "38", :relay => true)
+frames(1)
+relay({ "rev" => 38, "wrev" => 38, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }, [2311], { [551, 17, "B"] => true }))
+frames(40)
+check("and comes once the world's story ran it, its row noted done", $game_party.items[622], 1)
 
 # The skills the story and its quests teach companions reach every player's companions.
 lesson = DATA::Lesson
