@@ -2,6 +2,7 @@
 #  battles_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Started another player's character in battle at the HP it came with
 #      Paulinchen  2026-10-15: Handed a gathered battle to the battle server and followed one there as guest
 #                            - Passed requests to join a served battle on to the battle server and joined one late on its channel
 #                            - Kept a served battle on the server for its last player and ended one every player left
@@ -2120,7 +2121,8 @@ module MGQ_MpBattlesCoop
   # fallen one fallen.
   #
   # The game starts a battle only for the characters of its own party, which leaves the counters of
-  # a rebuilt one unset.
+  # a rebuilt one unset; its start goes after the vitals, as the states of a trait for low HP come
+  # only at the start and at a turn's end.
   #
   # @param member [MGQ_MpActors::Builds::Member] The character's build.
   # @param name [String] Its owner's name.
@@ -2130,10 +2132,10 @@ module MGQ_MpBattlesCoop
   # @return [Game_MpAlly] The character.
   def self.new_ally(member, name, seat, place, vitals)
     ally = Game_MpAlly.new(member, name, seat, place)
-    ally.on_battle_start
     hp, mp = Array(vitals)
     ally.hp = hp if hp.is_a?(Integer) && hp >= 0
     ally.mp = mp if mp.is_a?(Integer)
+    ally.on_battle_start
     log_rebuild(ally, member, place, vitals)
     check(ally)
     ally

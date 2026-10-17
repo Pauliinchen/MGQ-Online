@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-17: Checked that a guest's start sets the party's battle counters
+#                            - Checked that a rebuilt character starts the battle at the HP sent
 #      Paulinchen  2026-10-15: Checked that a player whose characters all fell in a won battle or a loaded save stands up
 #      Paulinchen  2026-10-12: Read who joined the battle from its popup instead of the chat
 #                            - Checked invites while the leader's story calls the player over
@@ -913,6 +914,13 @@ MGQ_MpBattlesSync.finish
 fallen = MGQ_MpBattlesCoop.new_ally(MGQ_MpActors::Builds::Member.new(12), "Mate", 2, 0, [0, 3])
 whole = MGQ_MpBattlesCoop.new_ally(MGQ_MpActors::Builds::Member.new(13), "Mate", 2, 1, nil)
 check("another player's fallen character is rebuilt fallen", [fallen.hp, fallen.mp, whole.hp], [0, 3, 100])
+
+# Another player's character starts the battle at the HP it came with, which the game's states of a
+# trait for low HP go by.
+class Game_MpActor; attr_reader :started_at; def on_battle_start; @started_at = [hp, mp]; end; end
+pinched = MGQ_MpBattlesCoop.new_ally(MGQ_MpActors::Builds::Member.new(14), "Mate", 2, 2, [3, 1])
+check("another player's character starts the battle at the HP and MP sent", pinched.started_at, [3, 1])
+class Game_MpActor; def on_battle_start; end; end
 
 # Forms a guest's co-op battle with the host at seat 0 and the player's four characters at seat 2,
 # two of them on the Backline.
