@@ -2,7 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-17: Checked a key item one event gives and takes back
+#      Paulinchen  2026-10-17: Checked that the Unlocks page lists no companion the story took away
+#                            - Checked a key item one event gives and takes back
 #                            - Checked job items of one-time gifts
 #                            - Checked the rewards repair
 #                            - Checked found job items by the story
@@ -1227,6 +1228,7 @@ frames(1)
 relay({ "rev" => 23, "wrev" => 23, "p" => 16, "part" => "1", "comps" => "16" }, packed({ 1001 => 16 }))
 frames(40)
 check("a shared companion whose join the player's story passed is not brought back", roster.include?(16), false)
+check("nor listed as due on the Unlocks page", catchup.unlocks.any? { |unlock| unlock.id == 16 }, false)
 
 # A shared companion joins a second playthrough's player whose story took them away on the first.
 tables(:REMOVALS => [removal.new(16, 16, "map:50:1:1", "1", 14, nil, [[:v, 1001, 14]], true, 5)],
@@ -1237,6 +1239,7 @@ tables(:REMOVALS => [removal.new(16, 16, "map:50:1:1", "1", 14, nil, [[:v, 1001,
   relay({ "rev" => 20, "wrev" => 20, "p" => 16, "part" => "1", "comps" => "16" }, packed({ 1001 => 16, 912 => playthrough }))
   frames(40)
   check("a shared companion #{joins ? 'joins' : 'never joins'} a player whose story passed their removal on playthrough #{playthrough}", roster.include?(16), joins)
+  check("and the Unlocks page #{joins ? 'lists' : 'never lists'} them on playthrough #{playthrough}", catchup.unlocks.any? { |unlock| unlock.id == 16 }, joins)
 end
 $sharing = :off
 
@@ -1585,6 +1588,24 @@ frames(1)
 relay({ "rev" => 34, "wrev" => 34, "p" => 9, "part" => "1" }, packed({ 1001 => 9, 1050 => 2 }))
 frames(40)
 check("and a player the world's story carried past the visit does not get the companion", roster.include?(16), false)
+
+# A companion a later removal of the story took away until a later join, as Lazarus for most of
+# Part 2, waits for that join, on the Unlocks page as in the catch-up.
+tables(:JOINS => [join.new(77, 77, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], 7, :start, 1, true),
+                  join.new(16, 16, "map:9:1:1", "1", 7, nil, [[:v, 1001, 7]], 8, :start, 1, true),
+                  join.new(16, 16, "map:9:3:1", "1", 12, nil, [[:v, 1001, 12]], 8, :start, 1, true)],
+       :REMOVALS => [removal.new(16, 16, "map:9:2:1", "1", 8, nil, [[:v, 1001, 8]], false, 1)])
+new_game({ 1001 => 9 }, [], 10)
+frames(1)
+relay({ "rev" => 35, "wrev" => 35, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
+frames(40)
+check("a companion a removal took away until a later join is neither brought nor listed before it",
+      [roster.include?(16), catchup.unlocks.any? { |unlock| unlock.id == 16 }], [false, false])
+new_game({ 1001 => 9 }, [], 10)
+frames(1)
+relay({ "rev" => 36, "wrev" => 36, "p" => 12, "part" => "1" }, packed({ 1001 => 12 }))
+frames(40)
+check("and both once the world got past the later join", [roster.include?(16), catchup.unlocks.any? { |unlock| unlock.id == 16 }], [true, true])
 
 # Classic worlds have no catch-up.
 $raid = false

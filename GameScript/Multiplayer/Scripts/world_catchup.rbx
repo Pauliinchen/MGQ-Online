@@ -2,7 +2,8 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-17: Ordered the key items one event gives and takes back by their rows, which no longer fails the catch-up
+#      Paulinchen  2026-10-17: Listed no companion on the Unlocks page whom a removal of the story took away
+#                            - Ordered the key items one event gives and takes back by their rows, which no longer fails the catch-up
 #                            - Kept the catch-up's other checks running when one fails
 #                            - Gave job and race items of one-time gifts by the story's place
 #                            - Gave once the rewards notes of an earlier version noted done without giving them
@@ -1209,12 +1210,23 @@ module MGQ_MpWorldCatchup
     story_joins.each do |row|
       key = key_of("j", row)
       next unless done[key] == true && row.part && carries?(row) && !in_roster?(row.actor) && passes.call(row)
-      next if DATA::REMOVALS.any? { |removal| removal.actor == row.actor && after?(removal, row) && passes.call(removal) }
+      next if taken_away_since?(row, story, told)
 
       done[key] = "c"
       log("#{actor_label(row.persona)} of #{row.site} is missing from the roster: joins at level #{row.gate}")
     end
     bring_waiting(done)
+  end
+
+  # Reports whether a removal of the story after a join, which the player's story or the world's
+  # got past, took the companion away again, for good or until a later join.
+  #
+  # @param row [MGQ_MpWorldCatchupData::Join] The join.
+  # @param story [Array] The player's story.
+  # @param told [Array, nil] The world's story, nil before it came.
+  # @return [Boolean] Whether one did.
+  def self.taken_away_since?(row, story, told)
+    DATA::REMOVALS.any? { |removal| removal.actor == row.actor && after?(removal, row) && passed_any?(removal, story, told) }
   end
 
   # Raises the story values of the companions in the player's roster to what their joins stand for
@@ -1740,8 +1752,8 @@ module MGQ_MpWorldCatchup
   end
 
   # Lists the companions the catch-up brings at their gate: those of the joins the world's story
-  # got past, at their earliest gate, unless it took them away for good since, and those the world
-  # shares (see share_in).
+  # got past, at their earliest gate, unless a removal took them away since (see
+  # missing_companions), and those the world shares that share_in still brings.
   #
   # @param story [Array] The player's story.
   # @param told [Array, nil] The world's story, nil before it came.
@@ -1749,21 +1761,20 @@ module MGQ_MpWorldCatchup
   def self.companion_unlocks(story, told)
     gates = {}
     if told
-      last = {}
       story_joins.each do |row|
-        next unless row.part && carries?(row) && passed?(row, told, story)
+        next unless row.part && carries?(row) && passed?(row, told, story) && !taken_away_since?(row, story, told)
 
         gates[row.actor] = [gates[row.actor], row.gate].compact.min
-        last[row.actor] = row if last[row.actor].nil? || after?(row, last[row.actor])
-      end
-      DATA::REMOVALS.each do |row|
-        gates.delete(row.actor) if row.first && last[row.actor] && after?(row, last[row.actor]) && passed?(row, told, story)
       end
     end
     sharing = MGQ_MpWorld.companion_sharing
     world = MGQ_MpWorldStory.world
     if sharing != :off && world
+      done = ledger["done"]
+      lost = taken_for_good(done)
       world["comps"].to_a.each do |id|
+        next if !in_roster?(id) && (done["s:#{id}"] == SHARE_SETTLED || lost[id] || joined?(id, done))
+
         first = joins_of(id).first
         gate = first ? first.gate : (sharing == :all ? start_level(id) : nil)
         gates[id] = [gates[id], gate].compact.min if gate && id != HERO
