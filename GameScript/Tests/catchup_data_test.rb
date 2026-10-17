@@ -2,6 +2,7 @@
 #  catchup_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Checked where Remina's Card Key comes from
 #      Paulinchen  2026-10-14: Checked hide and seek's gifts by the count of Amiras, Adramelech's return point and the one-way variables
 #      Paulinchen  2026-10-12: Checked the skills Rami's quest teaches her and that no forgotten skill is a lesson
 #                            - Checked that the chests of Amira's side quest job items are world chests
@@ -115,6 +116,9 @@ check("the Chaos forge's ores turn on the flags it asks for",
       DATA::CHESTS.select { |chest| !chest.flags.empty? }.map { |chest| [chest.items, chest.flags] }.sort, [[[945], [7102]], [[946], [7103]], [[947], [7104]]])
 check("every key item has an amount and marks", DATA::KEY_ITEMS.all? { |row| row.item.is_a?(Integer) && row.amount != 0 && marks_shaped?(row.marks) }, true)
 check("Marcellus' Letter comes with the main story's step 11", DATA::KEY_ITEMS.find { |row| row.item == 510 }.values_at(2, 3, 4), ["map:311:7:1", "1", 11])
+check("Remina's Card Key comes with Part 2's step 33 on either side, which a defeat by Sonya takes back",
+      DATA::KEY_ITEMS.select { |row| row.item == 557 }.map { |row| row.values_at(2, 3, 4, 5) },
+      [["map:730:19:1", "2", 33, :ilias], ["map:730:19:1", "2", 33, :alice]])
 
 skills = DATA::REWARDS.select { |row| row.kind == :skill }
 check("the rewards hold every story skill once at least", skills.map(&:id).uniq.size, 43)
