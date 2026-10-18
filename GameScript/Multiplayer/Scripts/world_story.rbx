@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-18: Shared the Sonya scene's step as its start while none of its fights is frozen or over
+#                            - Ended the collab scenario the world's story cleared and gave back its stored items
+#                            - Turned the collab scenario's start off in Raid Worlds
 #      Paulinchen  2026-10-17: Held the story's takes, comparisons and writes while a lost raid boss battle's defeat runs
 #                            - Sent and read the frozen raid boss fights with the world's story
 #                            - Shared the keys a frozen raid boss fight holds at their values from before its event
@@ -206,6 +208,21 @@ module MGQ_MpWorldStory
   # The game's switch that refuses every recruit ("Ally Rejection"), on from the new game until Lime
   # joins and while the Pocket Castle's collab scenario runs, each player's own in a Raid World.
   ALLY_REJECTION = 3
+
+  # The collab scenario's chapters (Collab:C1 to C12), all 0 before it starts.
+  COLLAB_VARIABLES = 1201..1212
+
+  # The maps the collab scenario plays on, as the game's own collab reset lists them.
+  COLLAB_MAPS = [845..936, 949, 953]
+
+  # The switches the collab's start turns on: Ally Rejection, Warp OFF and Hide Important Things.
+  COLLAB_SWITCHES = [ALLY_REJECTION, 100, 504]
+
+  # The Pocket Castle's event that starts the collab scenario: the map and the event.
+  COLLAB_START = [228, 52]
+
+  # Where a cleared collab returns the player: the Pocket Castle below its start, facing down.
+  COLLAB_RETURN = [228, 24, 27, 2]
 
   # Lime, the first recruit, whose joining turns ALLY_REJECTION off.
   FIRST_RECRUIT = 53
@@ -1034,6 +1051,35 @@ module MGQ_MpWorldStory
     true
   end
 
+  # Refuses the Pocket Castle's event that starts the collab scenario in a Raid World, telling the
+  # player why: one player's collab would put the whole world into it.
+  #
+  # @param event [Game_Event] The event that starts.
+  # @return [Boolean] Whether it refused it.
+  def self.collab_refused?(event)
+    return false unless active? && $game_map.map_id == COLLAB_START[0] && event.id == COLLAB_START[1] && $game_variables[COLLAB_VARIABLES.first].to_i == 0
+
+    MGQ_MpOverworldSync.notice("The collab scenario is turned off in Raid Worlds.")
+    true
+  end
+
+  # Ends the Pocket Castle's collab scenario for a player still on its maps once the world's story
+  # cleared its progress, as its own exit does: the collab party goes, the items and equipment its
+  # start stored come back, its switches go off and the player returns to the castle.
+  #
+  # @return [Boolean] Whether it ended it.
+  def self.leave_cleared_collab
+    return false unless COLLAB_MAPS.any? { |maps| maps === $game_map.map_id }
+    return false unless COLLAB_VARIABLES.all? { |id| $game_variables[id].to_i == 0 }
+
+    interpreter = $game_map.interpreter
+    interpreter.release_temp_actors if $game_party.respond_to?(:temp_actors_use?) && $game_party.temp_actors_use?
+    interpreter.take_all_item
+    COLLAB_SWITCHES.each { |id| $game_switches[id] = false }
+    $game_player.reserve_transfer(*COLLAB_RETURN)
+    true
+  end
+
   # Puts the one-way variables the player's story lowered back to the world's values, and the steps
   # the world never shares that the player is not on to the values it shares (see share_steps)
   # and a route under way before the Great Decision to none (see hold_routes), and the keys a frozen
@@ -1049,6 +1095,7 @@ module MGQ_MpWorldStory
     routes = hold_routes([nil, variables])
     held = hold_one_way([nil, variables], @base)
     lifted = lift_ally_rejection
+    log("left the collab scenario the world's story cleared: gave back the stored items and equipment and returned to the Pocket Castle") if leave_cleared_collab
     return if held.empty? && settled.empty? && frozen.empty? && routes.empty? && !lifted
 
     $game_map.need_refresh = true
@@ -2123,6 +2170,8 @@ end
 begin
   # After the map's update, the world's story.
   MGQ_MpHooks.after(Game_Map, :update, "world_story") { MGQ_MpWorldStory.tick }
+  # The collab scenario's start, which a Raid World turns off.
+  MGQ_MpHooks.around(Game_Event, :start, "world_story") { |event, _args, original| original.call unless MGQ_MpWorldStory.collab_refused?(event) } if defined?(Game_Event)
 
   # Before an event command runs, the Great Decision's choice and the Reaper's reset menu follow the world.
   MGQ_MpHooks.before(Game_Interpreter, :execute_command, "world_story") { MGQ_MpWorldStory.before_command(self) }
