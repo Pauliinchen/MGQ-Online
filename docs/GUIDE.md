@@ -27,7 +27,7 @@ Everything Monster Girl Quest! Online does, for players. To install the mod, see
 | **Y** / **N** | Accepts / declines the first invite in the notification box, and answers a question box (see [Notifications](#notifications)). |
 | **Tab** | Makes the party box small or full. In a raid boss battle, shrinks the boss's HP bar to the bars alone, without its title and the names, or back. |
 | **H** | Makes the Leader HUD at the top left small or large (see [Interface](#interface)). |
-| **J** | Joins the battle of a player next to you in a Raid World, or fights a raid boss alongside a full boss battle, while the prompt below your character shows. |
+| **J** | Joins the battle of a player next to you in a Raid World, fights a raid boss alongside a full boss battle, or fights a raid boss again where it beat you, while the prompt below your character shows. |
 | **F3** | Opens the bug report, with a screenshot taken at the press. Works anywhere but the title and game over screens: in a menu it opens at once, in a battle after the battle, and on a busy map once you're free. |
 
 This guide names the default hotkeys. To bind others, open *Mod Config → MGQ Online Hotkeys*, confirm the hotkey's row (*Action Wheel*, *Chat*, *World Overview*, *Accept Notification*, *Decline Notification*, *Emote Wheel*, *Party Box Size*, *Leader HUD Size*, *Join Battle* or *Report a Bug*) and press the new key; **Esc** keeps the old one.
@@ -384,7 +384,7 @@ When a battle starts for a party member, whether a random encounter, a wandering
 
 Trade items and gold with another player on your map. Nothing changes hands until you both confirm the same offers.
 
-- **Offer** a trade to the players next to you with *Trade* at the bottom right of the action wheel, or to one player on your map through the World overview. "Wants to trade (B)" shows above your head on their screen for 15 seconds, or 60 when you picked them in the overview; "Offering a trade (15 s) . . ." above your own head counts them down.
+- **Offer** a trade to the players next to you with *Trade* at the right of the action wheel, or to one player on your map through the World overview. "Wants to trade (B)" shows above your head on their screen for 15 seconds, or 60 when you picked them in the overview; "Offering a trade (15 s) . . ." above your own head counts them down.
 - **Accept** in the wheel next to them, in the World overview, or with **Y** in the notification box; accepting takes back an offer of your own. "Waiting for \<name>'s trade (6 s) . . ." shows above your head until their game opens it. The trade screen opens for both of you.
 - **Put your offer together:** pick *Items*, *Weapons*, *Armor* or *Stones* for your bag. **Right** and **Left** offer one more or one fewer, **R** and **L** ten, and confirm offers all or none. *Gold* sets the gold digit by digit: **Left** and **Right** pick a digit, **Up** and **Down** change it. The other player's offer shows on the right as they change it. *Offers* moves into the offers to look through a long one: **Up** and **Down** scroll, **Left** and **Right** switch between yours and theirs, cancel goes back.
 - **What can be traded:** everything in your bag but key items, also enchanted and socketed equipment, which arrives with all its enchantments and stones. Equipped items and items in the storehouse aren't offered; unequip or take them out first. A trade holds a few hundred enchanted copies at most; past that, confirming says "The offers hold too many items for one trade. Take some out."

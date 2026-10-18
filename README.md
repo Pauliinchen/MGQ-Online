@@ -14,7 +14,7 @@ Play Monster Girl Quest! Paradox RPG together with friends over the internet, wi
 </p>
 
 - **Worlds:** up to 32 players on the same maps, with emotes and an overview of everyone online and of your quests under way: the main quest, Amira's side quests and your companions' requests. A world is *Classic*, where each party plays its own story, or a *Raid World*.
-- **Raid Worlds:** the whole world plays one story together, party or not. Everyone on a map watches its scenes, battles pull in the nearest players, and each story boss is one fight the whole world wears down. A player behind catches up as they level, with up to ten times the experience.
+- **Raid Worlds:** the whole world plays one story together, party or not. Everyone on a map watches its scenes, battles pull in the nearest players, and each story boss is one fight the whole world wears down, which waits where it beat you. A player behind catches up as they level, with up to ten times the experience.
 - **Raid bosses everywhere:** a Classic world, or single player through *Mod Config → MGQ Online SP*, can make the story bosses raid bosses of their tier, with their HP bars and without any connection in single player.
 - **Chat:** global, map, party and whisper chats in tabs, a glow on tabs with unread lines, and speech bubbles over the players on your map.
 - **Turn off other mods:** a world can be played with its own mods and nothing else. Entering it restarts the game with your other mods parked, and they come back when you leave the world or the game closes.
@@ -71,7 +71,7 @@ For a PvP battle without a world, press **F11** on the map and host; your friend
 | **Y** / **N** | Accept / decline the first invite at the top left, or answer a question box |
 | **Tab** | Make the party box small or full; in a raid boss battle, shrink the boss's HP bar to the bars alone or back |
 | **H** | Make the Leader HUD at the top left small or large |
-| **J** | Join the battle of a player next to you in a Raid World, or fight a raid boss alongside a full boss battle |
+| **J** | Join the battle of a player next to you in a Raid World, fight a raid boss alongside a full boss battle, or fight a raid boss again where it beat you |
 | **F3** | Report a bug, with a screenshot and your logs, anywhere but the title and game over screens |
 
 Rebind them in *Mod Config → MGQ Online Hotkeys*; the mod's other options are in *MGQ Online Settings*.
