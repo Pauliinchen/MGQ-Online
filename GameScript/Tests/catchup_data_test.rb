@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-17: Checked where Remina's Card Key comes from
+#                            - Checked that the story first comes to a map before the part ending its lists set a value before
 #      Paulinchen  2026-10-14: Checked hide and seek's gifts by the count of Amiras, Adramelech's return point and the one-way variables
 #      Paulinchen  2026-10-12: Checked the skills Rami's quest teaches her and that no forgotten skill is a lesson
 #                            - Checked that the chests of Amira's side quest job items are world chests
@@ -119,6 +120,8 @@ check("Marcellus' Letter comes with the main story's step 11", DATA::KEY_ITEMS.f
 check("Remina's Card Key comes with Part 2's step 33 on either side, which a defeat by Sonya takes back",
       DATA::KEY_ITEMS.select { |row| row.item == 557 }.map { |row| row.values_at(2, 3, 4, 5) },
       [["map:730:19:1", "2", 33, :ilias], ["map:730:19:1", "2", 33, :alice]])
+check("and item 501, which an event of map 748 gives on either side, has a row for each side",
+      [:alice, :ilias].map { |side| DATA::KEY_ITEMS.count { |row| row.item == 501 && row.site == "map:748:3:1" && row.side == side } }, [1, 1])
 
 skills = DATA::REWARDS.select { |row| row.kind == :skill }
 check("the rewards hold every story skill once at least", skills.map(&:id).uniq.size, 43)
@@ -175,6 +178,23 @@ check("a story variable named after a temple is no scratch, unlike a temporary o
       [tool.story_variable?(1022), tool.story_variable?(1068), tool.story_variable?(1075), tool.story_variable?(908)], [true, true, true, false])
 check("so the Silver Orb, given once the temple's event ran, comes to every player of the world",
       DATA::KEY_ITEMS.find { |row| row.item == 542 }.values_at(2, 6, 7), ["map:149:107:1", [[:v, 1001, 30], [:v, 1068, 3]], true])
+
+# A map of the White Rabbit chain, which sets v1075 below Part 2's ending, and a town whose list sets it past.
+command = lambda do |code, params|
+  Object.new.tap do |each|
+    each.instance_variable_set(:@code, code)
+    each.instance_variable_set(:@indent, 0)
+    each.instance_variable_set(:@parameters, params)
+  end
+end
+ruins = RaidData::Site.new("map:9138:1:1", [command.call(122, [1075, 1075, 0, 0, 9]), command.call(0, [])], nil, 9138, 1, nil, 1)
+town = RaidData::Site.new("map:9021:1:1", [command.call(122, [1075, 1075, 0, 0, 20]), command.call(0, [])], nil, 9021, 1, nil, 1)
+tool.instance_variable_set(:@paths, {})
+tool.instance_variable_set(:@one_way, [1075])
+tool.instance_variable_set(:@sites_by_map, { 9138 => [ruins], 9021 => [town] })
+tool.instance_variable_set(:@map_steps, { 9138 => [["3", 34]], 9021 => [["2", 25]] })
+check("where the story first comes to a map in any part is never past the part ending a story value its lists set comes before, and within a part stays",
+      [tool.map_first(9138, nil, 2), tool.map_first(9138, "3", 2), tool.map_first(9021, nil, 2)], [["2", 33], ["3", 34], ["2", 25]])
 
 check("the chests of the job items Amira's side quests ask for are the world's, as those of key items",
       [[[57, 31, "A"], 616], [[588, 9, "A"], 606], [[348, 4, "A"], 614]].map { |key, item| DATA::CHESTS.any? { |row| row.key == key && row.items.include?(item) } }, [true] * 3)
