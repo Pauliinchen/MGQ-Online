@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-18: Checked the Sonya scene's step in the world's story
+#                            - Checked that a story lists no switch or variable 0
 #      Paulinchen  2026-10-17: Checked that the story waits while a lost raid boss battle's defeat runs
 #                            - Checked the keys a frozen raid boss fight holds in the world's story
 #                            - Checked that the write after a frozen raid boss fight ended ends it for the world
@@ -641,6 +642,9 @@ stuck = one_way_stories({}, { 1001 => 33, 1075 => 16 }, {})[1]
 check("a world stuck in the Sonya scene reads as the scene's start", [story.share_steps(stuck), stuck[1][1075], story.reopened?([[1075, 16]])], [[[1075, 16]], 14, true])
 past = one_way_stories({}, { 1001 => 34, 1075 => 16 }, {})[1]
 check("but 16 stays once the main story is past the scene", [story.share_steps(past), past[1][1075]], [[], 16])
+# Switch and variable 0, which a save can hold though no game uses them, and the relay refuses.
+zero = MGQ_MpStoryState.story_lists([[true, true], [5, 7], {}], true)
+check("a story lists no switch or variable 0", [zero["s"], zero["v"]], ["1", "1:n7"])
 
 # A route under way before the Great Decision, which no event of the game tells: never read,
 # written or kept.

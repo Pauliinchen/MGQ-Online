@@ -2,6 +2,7 @@
 #  story_state.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-18: Kept switch and variable 0 out of the world's story
 #      Paulinchen  2026-10-15: Kept the refusal of recruits each Raid World player's own
 #                            - Kept the Pocket Castle's tour each Raid World player's own
 #      Paulinchen  2026-10-14: Kept the self switches of a choice's line each Raid World player's own
@@ -50,8 +51,8 @@ module MGQ_MpStoryState
   # events turn on around a story boss battle, 73 "Chaos Enemy Pause", 97 "Hades Rematch", which
   # every battle page clears and the Chaos cave's events set), configuration mirrored in switches
   # (95, 445-447, 502), the warp and escape bans of the place they stand in, and the switches that
-  # tell whether a companion is in the party (1001-2000).
-  PERSONAL_SWITCHES = [22, 73, ESCAPE_BAN, 95, 97, WARP_BAN, 445, 446, 447, 502, 1001..2000]
+  # tell whether a companion is in the party (1001-2000), and 0, which no switch is.
+  PERSONAL_SWITCHES = [0, 22, 73, ESCAPE_BAN, 95, 97, WARP_BAN, 445, 446, 447, 502, 1001..2000]
 
   # Switches that are each Raid World player's own, as the game sets them for the fights with values
   # of their own: a special boss's NORMAL (23), the Colosseum and its match under way (28, 87), the
@@ -79,8 +80,8 @@ module MGQ_MpStoryState
   # map a transfer goes on to (57), where a game over returns them (1002), the counts of their
   # enchanted weapons and armors (200-201), the variant of an event the game picks right before it
   # calls it ("Event Selection", 129, which a trader's talk sets as a story value would) and
-  # monsters' friendliness (2000-2999).
-  PERSONAL_VARIABLES = [9, 21..23, 46..48, 55..57, 59, 129, 150, 200..201, 1002, 2000...3000]
+  # monsters' friendliness (2000-2999), and 0, which no variable is.
+  PERSONAL_VARIABLES = [0, 9, 21..23, 46..48, 55..57, 59, 129, 150, 200..201, 1002, 2000...3000]
 
   # Variables that are each Raid World player's own, beside PERSONAL_VARIABLES: the enemies' rates
   # the difficulty sets (41-45, 49), the Ruler Ruler's own rates (92-99), the Labyrinth of Chaos's
