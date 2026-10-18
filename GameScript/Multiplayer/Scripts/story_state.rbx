@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-18: Kept switch and variable 0 out of the world's story
+#                            - Kept the collab's key item switch each Raid World player's own
 #      Paulinchen  2026-10-15: Kept the refusal of recruits each Raid World player's own
 #                            - Kept the Pocket Castle's tour each Raid World player's own
 #      Paulinchen  2026-10-14: Kept the self switches of a choice's line each Raid World player's own
@@ -61,8 +62,9 @@ module MGQ_MpStoryState
   # and during the castle's collab scenario. Laid over another player's game, one player's Labyrinth
   # or Colosseum would put everyone on its values, one player's castle tour would be told to
   # everyone as the story, taking them along into the castle, and one player's collab would keep
-  # everyone from recruiting.
-  RAID_PERSONAL_SWITCHES = [3, 23, 28, 41, 87, 507, 2013, 2015]
+  # everyone from recruiting. The collab's start also hides the key items (504), which would hide
+  # everyone's the same way.
+  RAID_PERSONAL_SWITCHES = [3, 23, 28, 41, 87, 504, 507, 2013, 2015]
 
   # First switch that tells whether a companion awakened, one per companion.
   AWAKENING_SWITCHES = 6000

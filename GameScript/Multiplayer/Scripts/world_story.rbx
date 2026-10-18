@@ -212,6 +212,13 @@ module MGQ_MpWorldStory
   # The collab scenario's chapters (Collab:C1 to C12), all 0 before it starts.
   COLLAB_VARIABLES = 1201..1212
 
+  # The first chapter's step once the White Rabbit arrived in the Pocket Castle, whose arrival plays
+  # on its own while the chapter is below it.
+  COLLAB_ARRIVED = 1
+
+  # The first chapter's step from which the White Rabbit no longer offers the collab's start.
+  COLLAB_STARTED = 3
+
   # The maps the collab scenario plays on, as the game's own collab reset lists them.
   COLLAB_MAPS = [845..936, 949, 953]
 
@@ -1057,7 +1064,7 @@ module MGQ_MpWorldStory
   # @param event [Game_Event] The event that starts.
   # @return [Boolean] Whether it refused it.
   def self.collab_refused?(event)
-    return false unless active? && $game_map.map_id == COLLAB_START[0] && event.id == COLLAB_START[1] && $game_variables[COLLAB_VARIABLES.first].to_i == 0
+    return false unless active? && $game_map.map_id == COLLAB_START[0] && event.id == COLLAB_START[1] && $game_variables[COLLAB_VARIABLES.first].to_i < COLLAB_STARTED
 
     MGQ_MpOverworldSync.notice("The collab scenario is turned off in Raid Worlds.")
     true
@@ -1070,7 +1077,7 @@ module MGQ_MpWorldStory
   # @return [Boolean] Whether it ended it.
   def self.leave_cleared_collab
     return false unless COLLAB_MAPS.any? { |maps| maps === $game_map.map_id }
-    return false unless COLLAB_VARIABLES.all? { |id| $game_variables[id].to_i == 0 }
+    return false unless COLLAB_VARIABLES.all? { |id| $game_variables[id].to_i <= (id == COLLAB_VARIABLES.first ? COLLAB_ARRIVED : 0) }
 
     interpreter = $game_map.interpreter
     interpreter.release_temp_actors if $game_party.respond_to?(:temp_actors_use?) && $game_party.temp_actors_use?
