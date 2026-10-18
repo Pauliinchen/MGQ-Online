@@ -2,6 +2,7 @@
 #  trade_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Checked the trade's place on the wheel next to the teleport to the story
 #      Paulinchen  2026-10-12: Checked the offer and confirmation going out again once a failed message does
 #                            - Checked the offer and confirmation going out again once the other player is back
 #                            - Checked that a message of an unknown trade is answered with a cancel
@@ -233,7 +234,7 @@ peer = MGQ_MpOverworldSync::Peers.at(2)
 DataManager.load_game_without_rescue(2)
 
 # The wheel and offering a trade.
-check("the wheel's ring holds the trade after the duel's place, here the right", MGQ_MpActions.wheel_places, [:UP, :RIGHT, :DOWN, :LEFT])
+check("the wheel's ring holds the trade after the duel's place, here the right", MGQ_MpActions.wheel_places, [:UP, :RIGHT, :DOWN_RIGHT, :DOWN_LEFT, :LEFT])
 check("someone near: trade offered", [MGQ_MpActions.wheel_options[:RIGHT].text, !MGQ_MpActions.wheel_options[:RIGHT].run.nil?], ["Trade", true])
 MGQ_MpActions.wheel_options[:RIGHT].run.call
 check("an offer is told, never as a field named trade, which marks trade messages",

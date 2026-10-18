@@ -2,6 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Checked the teleport to the story on the action wheel
 #      Paulinchen  2026-10-13: Checked that the relay's push of a Raid World's squad rules goes to its route
 #      Paulinchen  2026-10-12: Checked that the players already in a world the player enters come without a notice
 #                            - Checked when the time the player entered their map is set anew
@@ -297,14 +298,16 @@ def arrows(direction)
   row, column = MGQ_MpWheel::STEPS.key(direction)
   [row < 0 ? :UP : nil, row > 0 ? :DOWN : nil, column < 0 ? :LEFT : nil, column > 0 ? :RIGHT : nil].compact
 end
-# The ring's choices here, in their order: the party's invite, leaving the party and the chat.
-PARTY, LEAVE, CHAT = MGQ_MpActions.wheel_places
+# The ring's choices here, in their order: the party's invite, leaving the party, the teleport to
+# the story and the chat.
+PARTY, LEAVE, STORY, CHAT = MGQ_MpActions.wheel_places
 $game_player.x, $game_player.y = 20, 20
 $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 40, "y" => 40)))
 MGQ_MpOverworldSync.tick
-check("three choices spread over the ring", [PARTY, LEAVE, CHAT], [:UP, :DOWN_RIGHT, :DOWN_LEFT])
+check("four choices spread over the ring", [PARTY, LEAVE, STORY, CHAT], [:UP, :RIGHT, :DOWN, :LEFT])
 check("nobody near: invite greyed", option(PARTY), ["Invite to a party", false])
-check("chat offered, and a direction without a choice has none", [option(CHAT), MGQ_MpActions.wheel_options.key?(:RIGHT)], [["Chat (T)", true], false])
+check("a Classic world has no story to teleport to", option(STORY), ["Teleport to the story", false])
+check("chat offered, and a direction without a choice has none", [option(CHAT), MGQ_MpActions.wheel_options.key?(:DOWN_RIGHT)], [["Chat (T)", true], false])
 $pressed = true
 map_frame
 check("B opens the wheel and holds the buttons", [MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [true, true])

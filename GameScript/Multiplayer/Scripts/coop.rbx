@@ -2,6 +2,7 @@
 #  coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Offered the teleport to the story on the action wheel
 #      Paulinchen  2026-10-11: Told the frames an invite has left
 #                            - Counted the invite's seconds down above the player's head
 #                            - Asked before the World overview leaves the party or removes a member
@@ -871,6 +872,13 @@ module MGQ_MpCoop
       MGQ_MpActions::Option.new("Teleport to the story", known ? lambda { MGQ_MpCoopGather.join_story } : nil, "Nobody has told the story yet.", nil, true)
     end
 
+    # The wheel's choice that teleports the player to the story, as the World overview's does.
+    #
+    # @return [MGQ_MpActions::Option] The choice, closed in a Classic world.
+    def self.wheel_story_option
+      story_option || MGQ_MpActions::Option.new("Teleport to the story", nil, "Only a Raid World has a story to teleport to.")
+    end
+
     # The wheel's choice that leaves the party, or stops an invite nobody took.
     #
     # @return [MGQ_MpActions::Option] The choice.
@@ -1027,6 +1035,7 @@ begin
   MGQ_MpActions.offer(MGQ_MpCoop::Offers)
   MGQ_MpActions.wheel_choice(10) { MGQ_MpCoop::Offers.wheel_option }
   MGQ_MpActions.wheel_choice(40) { MGQ_MpCoop::Offers.wheel_leave_option }
+  MGQ_MpActions.wheel_choice(45) { MGQ_MpCoop::Offers.wheel_story_option }
   MGQ_MpActions.own_doing_from { MGQ_MpCoop::Offers.own_doing }
 rescue => e
   MGQ_MpCoop.log("actions FAILED: #{e.class}: #{e.message}")
