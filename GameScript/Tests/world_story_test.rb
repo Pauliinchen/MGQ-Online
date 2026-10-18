@@ -2,6 +2,7 @@
 #  world_story_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-18: Checked the Sonya scene's step in the world's story
 #      Paulinchen  2026-10-17: Checked that the story waits while a lost raid boss battle's defeat runs
 #                            - Checked the keys a frozen raid boss fight holds in the world's story
 #                            - Checked that the write after a frozen raid boss fight ended ends it for the world
@@ -633,6 +634,13 @@ check("and one the player's story holds once no event runs settles there, withou
 # The minute's poll that came due meanwhile.
 relay("rev" => 8, "wrev" => 8, "p" => 15, "fetch" => "done")
 frames(16)
+
+# The Sonya scene's step in the world's story, which hides Ilias and the scene: read as its start
+# at Part 2's step 33, kept once the main story is past it.
+stuck = one_way_stories({}, { 1001 => 33, 1075 => 16 }, {})[1]
+check("a world stuck in the Sonya scene reads as the scene's start", [story.share_steps(stuck), stuck[1][1075], story.reopened?([[1075, 16]])], [[[1075, 16]], 14, true])
+past = one_way_stories({}, { 1001 => 34, 1075 => 16 }, {})[1]
+check("but 16 stays once the main story is past the scene", [story.share_steps(past), past[1][1075]], [[], 16])
 
 # A route under way before the Great Decision, which no event of the game tells: never read,
 # written or kept.

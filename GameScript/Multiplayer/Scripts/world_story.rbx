@@ -2,6 +2,7 @@
 #  world_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-18: Shared the Sonya scene's step as its start while none of its fights is frozen or over
 #      Paulinchen  2026-10-17: Held the story's takes, comparisons and writes while a lost raid boss battle's defeat runs
 #                            - Sent and read the frozen raid boss fights with the world's story
 #                            - Shared the keys a frozen raid boss fight holds at their values from before its event
@@ -186,6 +187,15 @@ module MGQ_MpWorldStory
   # waiting room east of its lobby, the Arena, and Hades, whose game over after a lost match returns
   # the player to the waiting room.
   CUP_PLACES = { 484 => 30, 483 => 0, 154 => 0 }
+
+  # A story event that sets a step before raid boss battles of its own and keeps it as its last
+  # value once they are won: the variable, the steps it sets, the step its page starts at again,
+  # the main story's step it plays in and the troops it fights.
+  BattleScene = Struct.new(:variable, :steps, :start, :main_step, :troops)
+
+  # The battle scenes: Part 2's return to the Ilias Temple Ruins (map 138, event 13), which sets
+  # v1075 to 15 and 16 before Sonya Mazda and Sonya Mainyu, whose defeats set it back to 12.
+  BATTLE_SCENES = [BattleScene.new(1075, [15, 16], 14, 33, [868, 869])]
 
   # The variable a transfer to TRANSFER_RELAY_MAP goes on from, as the game's own returns use it.
   TRANSFER_MAP = 57
@@ -828,6 +838,7 @@ module MGQ_MpWorldStory
     # The frozen fights' end rule reads the world's story before its held keys are put.
     MGQ_MpWorldFreeze.world_told(told) if defined?(MGQ_MpWorldFreeze)
     steps = share_steps(told)
+    reopened = reopened?(steps)
     frozen = hold_freezes(told)
     routes = hold_routes(told)
     log("read the world's #{routes_text(routes)}: a route under way before the Great Decision") unless routes.empty?
@@ -856,8 +867,9 @@ module MGQ_MpWorldStory
     @wrev = world["wrev"]
     @mode = :world
     # What waited to be written is what the player kept now, if anything, the world's counters the
-    # relay must hear again (see counters_of), or frozen fights the world's story lacks.
-    @force_post = world["out_of_order"] || frozen_unshared? ? true : false
+    # relay must hear again (see counters_of), frozen fights the world's story lacks, or a battle
+    # scene's step the world's story holds (see open_scene).
+    @force_post = world["out_of_order"] || frozen_unshared? || reopened ? true : false
     @marker_at = @change_at = @first_change_at = @change_signature = nil
     unless kept.empty?
       @watch = true
@@ -1052,18 +1064,23 @@ module MGQ_MpWorldStory
 
   # Reads a story value as the world's story shares it: a key a frozen raid boss fight holds as its
   # held value (see world_freeze.rbx), a step of the Queen's Cup's tournament as its sign-up still
-  # open (see CUP_VARIABLE), and a step a story event sets before a battle it cannot lose as the
-  # value its defeat sets (see MGQ_MpWorldCatchupData::DEFEAT_RETURNS).
+  # open (see CUP_VARIABLE), a battle scene's step as the step its event starts at (see
+  # open_scene), and a step a story event sets before a battle it cannot lose as the value its
+  # defeat sets (see MGQ_MpWorldCatchupData::DEFEAT_RETURNS).
   #
   # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
   # @param key [Integer, Array] Its id or key.
   # @param value [Object] Its value.
+  # @param main [Integer, nil] The main story's step of the story it is in, nil for the player's.
   # @return [Object] The value shared.
-  def self.shared_value(kind, key, value)
+  def self.shared_value(kind, key, value, main = nil)
     held = defined?(MGQ_MpWorldFreeze) ? MGQ_MpWorldFreeze.held_value(kind, key) : nil
     return held[1] if held
     return value unless kind == 1
     return CUP_OPEN if key == CUP_VARIABLE && CUP_STEPS.include?(value.to_i)
+
+    scene = open_scene(key, value, main)
+    return scene.start if scene
 
     returns = defeat_returns[key]
     returns && returns.key?(value) ? returns[value] : value
@@ -1083,14 +1100,57 @@ module MGQ_MpWorldStory
   # @param own [Array<Integer>] The variables left as they are, see own_steps.
   # @return [Array<Array>] Each variable put, with the step it held.
   def self.share_steps(story, own = [])
-    ([CUP_VARIABLE] + defeat_returns.keys - own).map do |id|
+    main = story[1][MAIN_PROGRESS]
+    ([CUP_VARIABLE] + BATTLE_SCENES.map(&:variable) + defeat_returns.keys - own).map do |id|
       step = story[1][id]
-      shared = shared_value(1, id, step)
+      shared = shared_value(1, id, step, main)
       next if shared == step
 
       story[1][id] = shared
       [id, step]
     end.compact
+  end
+
+  # Finds the battle scene (see BATTLE_SCENES) whose step a variable holds while no fight of the
+  # scene is frozen or over for the world.
+  #
+  # A teller cut off in the scene, or a defeat no freeze kept, leaves such a step in the world's
+  # story, whose pages hide the event and those before it, as Ilias in the Ilias Temple Ruins.
+  #
+  # @param key [Integer] The variable.
+  # @param value [Object] Its value.
+  # @param main [Integer, nil] The main story's step of the story it is in, nil for the player's.
+  # @return [BattleScene, nil] The scene, nil for a value no scene holds open.
+  def self.open_scene(key, value, main = nil)
+    scene = BATTLE_SCENES.find { |each| each.variable == key && each.steps.include?(value.to_i) }
+    return nil unless scene
+
+    main ||= MGQ_MpStoryState.data_of($game_variables)[MAIN_PROGRESS]
+    return nil unless main.to_i == scene.main_step
+
+    scene.troops.any? { |troop| fight_known?(troop) } ? nil : scene
+  rescue => e
+    log_once(:open_scene, "looking for a battle scene's step failed: #{e.class}: #{e.message}")
+    nil
+  end
+
+  # Reports whether share_steps put a battle scene's step of the world's story, which hides the
+  # scene's event from everyone until a write takes it back.
+  #
+  # @param steps [Array<Array>] Each variable share_steps put, with the step it held.
+  # @return [Boolean] Whether it did.
+  def self.reopened?(steps)
+    steps.any? { |id, _| BATTLE_SCENES.any? { |scene| scene.variable == id } }
+  end
+
+  # Reports whether the world knows a fight against a troop as frozen or over (world_freeze.rbx).
+  #
+  # @param troop [Integer] The troop.
+  # @return [Boolean] Whether it does.
+  def self.fight_known?(troop)
+    return false unless defined?(MGQ_MpWorldFreeze)
+
+    MGQ_MpWorldFreeze.entry(troop) || MGQ_MpWorldFreeze.final?(troop) ? true : false
   end
 
   # Puts the keys a frozen raid boss fight holds (see world_freeze.rbx) to their held values in a
