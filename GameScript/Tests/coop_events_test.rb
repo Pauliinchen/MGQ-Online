@@ -2,6 +2,7 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Checked that a resumed raid boss fight's event starts as story
 #      Paulinchen  2026-10-15: Checked that a screen left dark with nothing running fades in
 #                            - Checked that the Pocket Castle's tour is travel in a Raid World and story in a Classic world
 #      Paulinchen  2026-10-14: Expected the Navy or the Pirates among the choices
@@ -2551,3 +2552,18 @@ check("nothing else running, it stays dark a while", $game_map.screen.fadein, ni
 MGQ_MpCoopEvents.update
 check("then fades in, as an arrival whose fade-in another game ran leaves it dark for good",
       [$game_map.screen.fadein, $log.grep(/faded the screen in on map \d+: it stayed dark for 300 frames/).size], [MGQ_MpCoopEvents::LATE_FADEIN_FRAMES, 1])
+
+# A frozen raid boss fight's resume runs its page as story, whatever it is sorted as otherwise.
+talk_only = RPG::Page.new([c(101, "", 0, 0, 2), c(0)])
+$game_map.events[12] = Game_Event.new(12, [talk_only])
+sharing = MGQ_MpCoop::Scope.method(:sharing?)
+MGQ_MpCoop::Scope.define_singleton_method(:sharing?) { true }
+$game_map.interpreter = Game_Interpreter.new
+$log.clear
+$game_map.interpreter.setup(talk_only.list, 12)
+MGQ_MpCoopEvents.as_story { $game_map.interpreter.setup(talk_only.list, 12) }
+$game_map.interpreter.setup(talk_only.list, 12)
+MGQ_MpCoop::Scope.define_singleton_method(:sharing?, sharing)
+check("a talk's page set up as story starts as story, said so, and only inside the block",
+      $log.grep(/event 12 \(page 1\) on map \d+ starts as/).map { |line| line[/starts as (\w+)(: resumed as story)?/] },
+      ["starts as talk", "starts as story: resumed as story", "starts as talk"])

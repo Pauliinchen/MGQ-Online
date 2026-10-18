@@ -2,6 +2,9 @@
 #  world_story_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Checked that the story waits while a lost raid boss battle's defeat runs
+#                            - Checked the keys a frozen raid boss fight holds in the world's story
+#                            - Checked that the write after a frozen raid boss fight ended ends it for the world
 #      Paulinchen  2026-10-15: Checked that the Pocket Castle's tour is each Raid World player's own
 #                            - Checked that the refusal of recruits is each Raid World player's own and goes once Lime joined
 #                            - Checked that no route under way before the Great Decision is read, written or kept
@@ -33,11 +36,11 @@
 #
 #----------------------------------------------------------------
 
-# Covers world_story.rbx with story_state.rbx, coop_story.rbx, coop_choices.rbx and
-# world_affection.rbx: a Raid World's story fetched, laid over the player's own values or kept
+# Covers world_story.rbx with story_state.rbx, coop_story.rbx, coop_choices.rbx, world_affection.rbx
+# and world_freeze.rbx: a Raid World's story fetched, laid over the player's own values or kept
 # apart, written back with its counters, refused writes and routes, the relay's push and the poll,
 # the Great Decision's choice and the world's return to it, the choices each player keeps their
-# own, and the companions' affection.
+# own, the companions' affection, and the frozen raid boss fights.
 
 require_relative "support"
 
@@ -1391,3 +1394,139 @@ check("the lines' self switches are each Raid World player's own, other events' 
       [true, true, false])
 check("so a story laid over the player's keeps theirs", MGQ_MpStoryState.mix([[], [], { [709, 6, "A"] => true }], [[], [], {}], [])[2].key?([709, 6, "A"]), false)
 check("and the lines' values are each player's own", [1050, 1051].map { |id| MGQ_MpStoryState.personal_variable?(id) } + [MGQ_MpStoryState.personal_switch?(2148)], [true, true, true])
+
+# A frozen raid boss fight (world_freeze.rbx): nothing is taken, compared or written while a lost
+# raid boss battle's defeat runs, and the keys the fight holds are shared at their values from
+# before the fight's event, until its pools are defeated or its marker is met.
+# Stands in for the freeze engine: a lost raid boss battle's defeat runs while $holding.
+module MGQ_MpRaidFreeze; def self.holding_writes?; $holding ? true : false; end; end
+# Stands in for the raid pools: the pool keys from $keys, the pools from $pools and Sonya Mazda's marker.
+module MGQ_MpRaidPool
+  # A pool as the relay told it.
+  Pool = Struct.new(:left, :max, :defeated)
+  # The marker that tells Sonya Mazda beaten.
+  BEATEN = { ["Sonya Mazda", 55] => "s7009" }
+  # Lists a troop's pool keys.
+  def self.troop_keys(troop); $keys[troop] || []; end
+  # Finds a pool the relay told.
+  def self.pool(key); $pools[key]; end
+  # Reports whether the player's story beat a milestone.
+  def self.beaten?(boss); test = BEATEN[[boss.milestone, boss.cap]]; test ? met?(test) : false; end
+  # Reports whether the game's switches, or a story's, meet a switch marker.
+  def self.met?(test, story = nil); switches = story ? story[0] : $game_switches; test =~ /\As(\d+)\z/ && switches[$1.to_i] ? true : false; end
+  # Lists the level caps a story beat, none.
+  def self.beaten_caps(_story); []; end
+end
+$keys = { 868 => ["Sonya Mazda"] }
+$pools = {}
+# Stands in for the title scene, whose start world_freeze.rbx hooks.
+class Scene_Title; def start; end; end
+load_script "battles_raid_bosses"
+load_script "world_freeze"
+freeze = MGQ_MpWorldFreeze
+# Packs a world's story with a frozen fights' list.
+#
+# @param list [String] The list.
+# @param story [Array] The arguments of packed.
+# @return [String] The packed story.
+def packed_frozen(list, *story)
+  MGQ_MpStoryState.pack(MGQ_MpStoryState.unpack(packed(*story)).merge("f" => list))
+end
+# Sonya Mazda's frozen fight as battles_raid_freeze.rbx notes it.
+sonya = { "troop" => 868, "site" => "map:138:13:1", "outer" => "map:138:13:1", "scene" => false,
+          "tableau" => [138, [[13, 32, 8, 2, 1, "$Sonya", 0, 0, 255, 0, 1, 1, 1]], [13]], "spot" => [138, 30, 10, 8],
+          "held" => [[1, 1075, 14], [0, 2307, true], [2, [138, 13, "A"], false]] }
+# Reads the story a write took.
+#
+# @param args [Array] The write's arguments.
+# @return [Array] The switches, variables and self switches.
+def written_of(args); MGQ_MpStoryState.decode_full(lists_of(args[3])); end
+
+$holding = false
+$calls.clear
+new_story({ 1001 => 33, 1075 => 14 }, [2307])
+MGQ_MpWorld.world = MGQ_MpWorld::World.new("w3")
+SceneManager.scene = Scene_Map.new
+frames(1)
+relay({ "world" => "w3", "rev" => 1, "wrev" => 1, "p" => 33, "part" => "2", "fetch" => "done" }, packed({ 1001 => 33, 1075 => 14 }, [2307]))
+frames(16)
+check("a world's story without the frozen fights' list, as an earlier version writes it, is read", [story.mode, freeze.entries], [:world, []])
+$game_variables[1075] = 16
+$game_switches[2307] = false
+$game_self_switches[[138, 13, "A"]] = true
+$holding = true
+frames(1000)
+check("while a lost raid boss battle's defeat runs, nothing of the fight's event goes out", calls_of("mp_raid_story_post"), [])
+story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "2", :relay => true)
+frames(1)
+relay({ "world" => "w3", "rev" => 2, "wrev" => 2, "p" => 33, "part" => "2", "fetch" => "done" }, packed({ 1001 => 33, 1075 => 16, 1076 => 5 }, [], { [138, 13, "A"] => true }))
+frames(16)
+check("nor is a world's story taken meanwhile", [story.instance_variable_get(:@pending).nil?, $game_variables[1076]], [false, 0])
+$game_variables[1075] = 14
+$game_switches[2307] = true
+$game_self_switches[[138, 13, "A"]] = false
+freeze.note(sonya)
+$holding = false
+frames(16)
+check("once the undo ran, the world's story is taken with the held switch, variable and self switch at their held values",
+      [$game_variables[1075], $game_switches[2307], $game_self_switches[[138, 13, "A"]], $game_variables[1076]], [14, true, false, 5])
+post = calls_of("mp_raid_story_post").last
+written = post ? written_of(post) : [[], [], {}]
+check("and the player's write carries the frozen fight with them",
+      [post && freeze.decode(lists_of(post[3])["f"]).map { |entry| entry["troop"] }, written[1][1075], written[0][2307], written[2][[138, 13, "A"]]], [[868], 14, true, false])
+relay("world" => "w3", "rev" => 3, "wrev" => 3, "p" => 33, "part" => "2", "post" => "accepted", "post_rev" => 3)
+frames(16)
+
+# A held key the player's game changes is still shared at its held value, and put back once no
+# event runs and no defeat runs.
+$calls.clear
+$game_map.interpreter.busy = true
+$game_variables[1075] = 16
+$game_switches[2307] = false
+story.request_post
+frames(5)
+post = calls_of("mp_raid_story_post").last
+check("a write while the fight's event runs shares the held values", post && [written_of(post)[1][1075], written_of(post)[0][2307]], [14, true])
+relay("world" => "w3", "rev" => 4, "wrev" => 4, "p" => 33, "part" => "2", "post" => "accepted", "post_rev" => 4)
+frames(16)
+frames(700)
+check("the player's own values stay while the event runs", [$game_variables[1075], $game_switches[2307]], [16, false])
+$game_map.interpreter.busy = false
+$holding = true
+frames(700)
+check("and while a lost raid boss battle's defeat runs", [$game_variables[1075], $game_switches[2307]], [16, false])
+$holding = false
+frames(700)
+check("then go back to the held values, without a write", [$game_variables[1075], $game_switches[2307], calls_of("mp_raid_story_post").size], [14, true, 1])
+
+# The freeze ends once the boss's pools are defeated, or once the world's story meets its marker.
+$calls.clear
+$pools["Sonya Mazda"] = MGQ_MpRaidPool::Pool.new(0.0, 100, true)
+story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "5", :relay => true)
+frames(1)
+relay({ "world" => "w3", "rev" => 5, "wrev" => 5, "p" => 33, "part" => "2", "fetch" => "done" }, packed_frozen(freeze.encode([sonya]), { 1001 => 33, 1075 => 16, 1076 => 5 }, [2307]))
+frames(16)
+check("a world's story taken after the boss's pools were defeated ends the freeze and is laid over as told", [freeze.entries, $game_variables[1075]], [[], 16])
+post = calls_of("mp_raid_story_post").last
+check("and the player's next write ends the fight the world's story still carries for every game", post && lists_of(post[3])["f"], "868|0")
+relay("world" => "w3", "rev" => 6, "wrev" => 6, "p" => 33, "part" => "2", "post" => "accepted", "post_rev" => 6)
+frames(16)
+$pools.clear
+$game_variables[1075] = 14
+freeze.note(sonya)
+story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "7", :relay => true)
+frames(1)
+relay({ "world" => "w3", "rev" => 7, "wrev" => 7, "p" => 33, "part" => "2", "fetch" => "done" }, packed({ 1001 => 33, 1075 => 17, 1076 => 5 }, [2307, 7009]))
+frames(16)
+check("as does one that meets the boss's marker", [freeze.entries, $game_variables[1075], $game_switches[7009]], [[], 17, true])
+
+# A player behind, as a late joiner, takes the frozen fights of the world's story too.
+$calls.clear
+new_story({ 1001 => 10 })
+MGQ_MpWorld.world = MGQ_MpWorld::World.new("w4")
+frames(1)
+relay({ "world" => "w4", "rev" => 1, "wrev" => 1, "p" => 33, "part" => "2", "fetch" => "done" }, packed_frozen(freeze.encode([sonya]), { 1001 => 33, 1075 => 14 }, [2307]))
+frames(16)
+check("a player behind the world's story takes its frozen fights", [story.mode, freeze.entries.map { |entry| entry["troop"] }, freeze.held_value(1, 1075)], [:behind, [868], [true, 14]])
+MGQ_MpWorld.world = nil
+frames(1)

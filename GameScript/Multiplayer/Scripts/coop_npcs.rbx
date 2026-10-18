@@ -2,6 +2,7 @@
 #  coop_npcs.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Left the events to the player's own game while a frozen raid boss fight resumes
 #      Paulinchen  2026-10-12: Sent a newcomer the whole map again until it went out
 #      Paulinchen  2026-10-11: Started anew on every map and moved no event before the whole map came
 #      Paulinchen  2026-10-08: Shared the map through MGQ_MpCoop::Scope
@@ -72,11 +73,20 @@ module MGQ_MpCoopNpcs
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "co-op npcs"
 
-  # Reports whether another player's game moves this map's events.
+  # Reports whether another player's game moves this map's events: never while the player resumes
+  # a frozen raid boss fight, whose scene put the events where they stood at its battle (see
+  # battles_raid_freeze.rbx).
   #
   # @return [Boolean] Whether it does.
   def self.following?
-    @role == :follower
+    @role == :follower && !resuming?
+  end
+
+  # Reports whether the player resumes a frozen raid boss fight, see MGQ_MpRaidFreeze.resuming?.
+  #
+  # @return [Boolean] Whether they do.
+  def self.resuming?
+    defined?(MGQ_MpRaidFreeze) && MGQ_MpRaidFreeze.resuming? ? true : false
   end
 
   # Lists the others the player shares the map with whose connection stands, see
@@ -288,8 +298,11 @@ module MGQ_MpCoopNpcs
     event && index >= 0 ? event.mgq_mp_pages[index] : nil
   end
 
-  # Walks every event toward where the Map Owner's stands.
+  # Walks every event toward where the Map Owner's stands, unless the player resumes a frozen raid
+  # boss fight.
   def self.follow
+    return log_once([:resuming, $game_map.map_id], "left the events of map #{$game_map.map_id} where they are: the player resumes a frozen raid boss fight") if resuming?
+
     @targets.each { |id, state| walk($game_map.events[id], id, state) }
   end
 

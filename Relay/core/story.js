@@ -2,6 +2,8 @@
 //  story.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-17: Kept the frozen raid boss fights key by key in a keyed story, one per troop
+//                            - Kept the end of a frozen fight for good
 //      Paulinchen  2026-10-15: Kept a Raid World's story key by key, the first writer of a key keeping it, and pushed what each write changed
 //                            - Moved a sealed story to keys with the first write of a game that opened it
 //                            - Refused sealed writes to a keyed story with the code update
@@ -56,6 +58,8 @@ export const STORY_LIMITS = Object.freeze({
   // and self switches with room to spare, and the longest value a variable may hold.
   maxListsLength: 1_800_000,
   maxValueLength: 4096,
+  // The longest frozen raid boss fight: its stand-ins and the keys it holds.
+  maxFreezeLength: 65_536,
   maxId: 99_999,
   // The keys of the writes a keyed story remembers, which tell what changed since an older base.
   logKeys: 20_000,
@@ -78,15 +82,32 @@ export const STORY_DELTA = "storyd";
 
 /**
  * The lists a keyed story travels in: the switches on and off, the variables with their values, the
- * self switches on and off, as the games write a story (story_state.rbx `story_lists`), and the
- * companions' affection (world_affection.rbx).
+ * self switches on and off, as the games write a story (story_state.rbx `story_lists`), the
+ * companions' affection (world_affection.rbx) and the frozen raid boss fights (world_freeze.rbx).
  */
-export const LISTS = Object.freeze(["s", "sf", "v", "ss", "ssf", "a"]);
+export const LISTS = Object.freeze(["s", "sf", "v", "ss", "ssf", "a", "f"]);
+
+/**
+ * The list of the frozen raid boss fights, whose entries hold commas and so are separated by
+ * semicolons, each its troop and its fight split by the first bar.
+ */
+const FREEZES = "f";
 
 /**
  * A companion's affection as the games write it: a whole number above 0.
  */
 const AFFECTION = /^[1-9]\d{0,8}$/;
+
+/**
+ * A frozen raid boss fight as the games write it: its fields with every free text escaped, or "0"
+ * once it ended, which replaces the fight for every game.
+ */
+const FREEZE = /^(0|[A-Za-z0-9_$!%:,.|~-]+)$/;
+
+/**
+ * What a frozen raid boss fight's key holds once the fight ended, for good.
+ */
+const FREEZE_ENDED = "0";
 
 /**
  * A variable's value as the games write it: a whole number, a decimal, a text in base64, true or
@@ -364,9 +385,10 @@ const CLEAR_SWITCHES = Object.freeze({ ad: 7096, mr: 7097, chaos: 7039 });
 
 /**
  * Reads a keyed story's lists into its keys: `s<id>` and `ss<map>.<event>.<letter>` to "1" or "0",
- * `v<id>` to the variable's value as written, `a<id>` to the companion's affection.
+ * `v<id>` to the variable's value as written, `a<id>` to the companion's affection, `f<troop>` to the
+ * frozen raid boss fight as written.
  *
- * @param {unknown} lists The lists, see LISTS, each a text of entries separated by commas.
+ * @param {unknown} lists The lists, see LISTS, each a text of entries separated by commas, the frozen fights' by semicolons.
  * @param {typeof STORY_LIMITS} [limits] The limits.
  * @returns {{keys: Map<string, string>} | {error: string}} The keys, or why the lists are wrong.
  */
@@ -384,7 +406,7 @@ export function readLists(lists, limits = STORY_LIMITS) {
   }
 
   const keys = new Map();
-  const items = (name) => (lists[name] ? lists[name].split(",") : []);
+  const items = (name) => (lists[name] ? lists[name].split(name === FREEZES ? ";" : ",") : []);
   const id = (text) => /^\d{1,6}$/.test(text) && Number(text) >= 1 && Number(text) <= limits.maxId;
 
   for (const [name, value] of [["s", "1"], ["sf", "0"]]) {
@@ -429,6 +451,17 @@ export function readLists(lists, limits = STORY_LIMITS) {
     keys.set(`a${Number(item.slice(0, split))}`, value);
   }
 
+  for (const item of items(FREEZES)) {
+    const split = item.indexOf("|");
+    const value = item.slice(split + 1);
+
+    if (split < 1 || !id(item.slice(0, split)) || value.length > limits.maxFreezeLength || !FREEZE.test(value)) {
+      return { error: `f lists troop ids of 1 to ${limits.maxId} with their frozen fight of up to ${limits.maxFreezeLength} characters: ${item.slice(0, 40)}` };
+    }
+
+    keys.set(`f${Number(item.slice(0, split))}`, value);
+  }
+
   return { keys };
 }
 
@@ -436,10 +469,10 @@ export function readLists(lists, limits = STORY_LIMITS) {
  * Writes keys as a keyed story's lists, each list in the keys' order, see readLists.
  *
  * @param {Iterable<[string, string]>} keys The keys and their values.
- * @returns {{s: string, sf: string, v: string, ss: string, ssf: string, a: string}} The lists.
+ * @returns {{s: string, sf: string, v: string, ss: string, ssf: string, a: string, f: string}} The lists.
  */
 export function listsOf(keys) {
-  const lists = { s: [], sf: [], v: [], ss: [], ssf: [], a: [] };
+  const lists = { s: [], sf: [], v: [], ss: [], ssf: [], a: [], f: [] };
 
   for (const [key, value] of keys) {
     if (key.startsWith("ss")) {
@@ -448,12 +481,14 @@ export function listsOf(keys) {
       lists[value === "1" ? "s" : "sf"].push(key.slice(1));
     } else if (key.startsWith("a")) {
       lists.a.push(`${key.slice(1)}:${value}`);
+    } else if (key.startsWith(FREEZES)) {
+      lists.f.push(`${key.slice(1)}|${value}`);
     } else {
       lists.v.push(`${key.slice(1)}:${value}`);
     }
   }
 
-  return Object.fromEntries(LISTS.map((name) => [name, lists[name].join(",")]));
+  return Object.fromEntries(LISTS.map((name) => [name, lists[name].join(name === FREEZES ? ";" : ",")]));
 }
 
 /**
@@ -628,7 +663,8 @@ export class WorldStory {
 
   /**
    * Takes a game's write of a keyed story, the keys it changed in the lists `set`: each one goes in
-   * unless a write after the revision it built on changed it, which the first writer keeps. A write
+   * unless a write after the revision it built on changed it, which the first writer keeps; the end
+   * of a frozen raid boss fight always goes in and is never replaced. A write
    * on a sealed story the game opened moves the world to keys, the sealed story's revision its base;
    * a story nobody wrote yet starts keyed.
    *
@@ -684,7 +720,11 @@ export class WorldStory {
           continue;
         }
 
-        if (changed.has(key)) {
+        const freeze = key.startsWith(FREEZES);
+
+        // The end of a frozen fight is final: no write brings the fight back, and an end goes in
+        // over a fight another write froze since the base.
+        if ((freeze && keys.get(key) === FREEZE_ENDED) || (changed.has(key) && !(freeze && value === FREEZE_ENDED))) {
           kept.set(key, keys.get(key));
           continue;
         }

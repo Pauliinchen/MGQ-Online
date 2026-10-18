@@ -2,6 +2,7 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Checked in_map?, retrying? and set_up_kind, and the rewards of a resumed frozen fight
 #      Paulinchen  2026-10-15: Checked the pools a starter hands the battle server and the server fights
 #      Paulinchen  2026-10-12: Checked the level caps of the milestones a story beat
 #                            - Checked a pool emptied while a live battle's host waits for commands
@@ -725,7 +726,7 @@ BattleManager.instance_variable_set(:@phase, nil)
 reset
 pool.note_invite("troop" => "71")
 BattleManager.setup(71)
-check("an invite without pools brings none", pool.fight, nil)
+check("an invite without pools brings none", [pool.fight, pool.set_up_kind], [nil, nil])
 
 # The game's retry of a lost battle fights the pool again, with the pool's HP.
 reset
@@ -736,7 +737,9 @@ $game_map.interpreter.clear
 BattleManager.battle_end(2)
 check("a lost battle reports what it dealt", reports.last[2], "1\t0.5000000000\t6000\t0")
 BattleManager.retry_battle
-check("the retry fights the pool as a battle of its own", [pool.fight && pool.fight.battle != first, enemy.mhp], [true, 6000])
+check("the retry fights the pool as a battle of its own", [pool.fight && pool.fight.battle != first, enemy.mhp, pool.set_up_kind], [true, 6000, :event])
+check("the game's retry runs inside retrying only", [pool.retrying?, pool.retrying { pool.retrying? }, pool.retrying?], [false, true, false])
+check("the map's interpreter runs its commands inside in_map only", [pool.in_map?, pool.in_map { pool.in_map? }, pool.in_map?], [false, true, false])
 check("with the HP the pool has left", enemy.hp, 3000)
 
 # The invite and the player's state name the battle that fights a pool.
@@ -989,7 +992,7 @@ reset
 $side_at_setup = []
 pool.start_side(71, "100,100,0")
 check("a side battle is one while it is set up and while it runs, of its troop alone",
-      [$side_at_setup, pool.side_battle?(71), pool.side_battle?("71"), pool.side_battle?(609)], [[true], true, true, false])
+      [$side_at_setup, pool.side_battle?(71), pool.side_battle?("71"), pool.side_battle?(609), pool.set_up_kind], [[true], true, true, false, :side])
 $game_troop.setup_battle_event
 $game_troop.setup_battle_event(:victory)
 check("it runs none of its troop's pages", $pages_run, [])
@@ -1008,7 +1011,14 @@ BattleManager.retry_battle
 check("nor does its retry, which is a side battle too", [pool.side_battle?(71), BattleManager.enable_get_exp?], [true, false])
 BattleManager.battle_end(1)
 start([[:battle, 71], [:mark, :after]])
-check("the boss's event battle still gives them", BattleManager.enable_get_exp?, true)
+check("the boss's event battle still gives them", [BattleManager.enable_get_exp?, pool.set_up_kind], [true, :event])
+# Stands in for battles_raid_freeze.rbx, resuming the frozen fight of troop $resuming.
+module MGQ_MpRaidFreeze; def self.resuming?(troop = nil); !$resuming.nil? && (troop.nil? || troop.to_i == $resuming); end; end
+$resuming = 71
+check("but not the resume of its frozen fight, whose side battle gave them", [BattleManager.enable_get_exp?, BattleManager.enable_get_drop?], [false, false])
+$resuming = 609
+check("while another boss's fight resumes it still does", BattleManager.enable_get_exp?, true)
+$resuming = nil
 BattleManager.battle_end(1)
 $game_system.instance_variable_set(:@mgq_mp_raid_rewards, { "world" => "w2", "keys" => { "Queen Harpy" => true } })
 pool.start_side(71, "100,100,0")

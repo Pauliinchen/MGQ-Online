@@ -2,6 +2,7 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Showed the bars above the bosses' stand-ins of frozen fights
 #      Paulinchen  2026-10-15: Showed no bars over the Colosseum receptionist
 #      Paulinchen  2026-10-13: Showed the bars of the raid bosses in Classic worlds and single player, each turned on and off in the Mod Config
 #      Paulinchen  2026-10-12: Kept the troops of a common event only when its walk missed none
@@ -23,7 +24,8 @@
 # The HP bars of a Raid World's bosses (see battles_raid_pool.rbx): in a battle that fights a boss's
 # pools, a strip across the top of the screen with the boss's title and, for each of its enemies, its
 # name over a gauge with its HP and how much is left inside (Sprite_MpRaidBar); on the map, a bar
-# above each event that starts a boss battle, or the same strip at the top of the screen while no
+# above each event that starts a boss battle and each boss's stand-in of a frozen fight (see
+# ui_raid_freeze.rbx), or the same strip at the top of the screen while no
 # such event shows, which the notification and party boxes then make room for (see
 # MGQ_MpUi.top_room). The player moves the strip and resizes it in width with Alt (see
 # MGQ_MpUi::Layout), one place for the map's and the battle's. A bar shows while the relay keeps
@@ -296,12 +298,30 @@ module MGQ_MpRaidBar
   # The map.
 
   # Lists the events of the map whose page starts a raid boss's battle that shows a bar (see
-  # shown_troop?), looking anew every SCAN_FRAMES and on another map.
+  # shown_troop?), looking anew every SCAN_FRAMES and on another map, and the stand-ins of the
+  # bosses of frozen fights (see ui_raid_freeze.rbx).
   #
-  # @return [Array<Array>] Each event with its troop.
+  # @return [Array<Array>] Each event or stand-in with its troop.
   def self.boss_events
     return [] unless $game_map && (MGQ_MpRaidPool.active? || tier_map?)
 
+    scanned_events + freeze_targets
+  end
+
+  # Lists the stand-ins of the bosses of the map's frozen fights whose battles show a bar.
+  #
+  # @return [Array<Array>] Each stand-in with its troop.
+  def self.freeze_targets
+    return [] unless defined?(MGQ_MpRaidFreezeUi)
+
+    MGQ_MpRaidFreezeUi.bar_targets.select { |_standin, troop| shown_troop?(troop) }
+  end
+
+  # Lists the events of the map whose page starts a raid boss's battle that shows a bar, see
+  # boss_events.
+  #
+  # @return [Array<Array>] Each event with its troop.
+  def self.scanned_events
     stamp = [$game_map.map_id, Graphics.frame_count / SCAN_FRAMES]
     return @scanned[1] if @scanned && @scanned[0] == stamp
 
@@ -1145,10 +1165,11 @@ begin
     MGQ_MpRaidBar.battle_shown = false
   end
 
-  # After the map's sprites, the bosses' bars.
+  # After the map's sprites, the bosses' bars, also above the stand-ins of frozen fights.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_raid_bar") do
     @mgq_mp_raid_bars ||= MGQ_MpRaidBar::MapBars.new(MGQ_MpGame.get(self, :viewport1), MGQ_MpGame.get(self, :viewport3))
-    @mgq_mp_raid_bars.update(MGQ_MpGame.get(self, :character_sprites))
+    standins = defined?(MGQ_MpRaidFreezeUi) ? MGQ_MpRaidFreezeUi.sprites_of(self) : []
+    @mgq_mp_raid_bars.update(MGQ_MpGame.get(self, :character_sprites) + standins)
   end
 
   MGQ_MpHooks.before(Spriteset_Map, :dispose, "ui_raid_bar") do

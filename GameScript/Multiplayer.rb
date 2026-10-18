@@ -2,6 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Loaded battles_raid_freeze_data.rbx, battles_raid_freeze.rbx and world_freeze.rbx after battles_raid_pool.rbx
+#                            - Loaded ui_raid_freeze.rbx after ui_raid_bar.rbx
 #      Paulinchen  2026-10-15: Loaded battles_served.rbx after battles_sync_live.rbx and named the mp_battle_* exports
 #                            - Named mp_dir_create with a world's options in one number
 #                            - Wrote one log per day and deleted the logs of earlier days
@@ -142,11 +144,11 @@ module MGQ_Multiplayer
     core_log core_hooks core_game_access core_hotkeys ui ui_theme ui_layout ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
     coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs coop_story_rewards story_state coop_story coop_castle
     world world_mods world_mods_parking world_catchup_data world_story world_catchup world_catchup_exp world_affection world_opening world_difficulty world_save_distribution world_text world_screen world_save_export coop_choices
-    battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_raid_tiers battles_coop_level_sync
+    battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_raid_freeze_data battles_raid_freeze world_freeze battles_raid_tiers battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live battles_served
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team
     trade ui_trade
-    world_overview world_overview_pages ui_party_box ui_edge_arrows ui_raid_bar ui_leader_hud ui_single_player ui_notices ui_bug_report
+    world_overview world_overview_pages ui_party_box ui_edge_arrows ui_raid_bar ui_raid_freeze ui_leader_hud ui_single_player ui_notices ui_bug_report
   ]
 
   # Extension of the scripts, which the mod loader skips, since only this script may load them.

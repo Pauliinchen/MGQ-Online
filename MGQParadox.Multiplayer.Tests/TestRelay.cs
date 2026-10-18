@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-17: Told a world's new game the seats that left or came during its handshake
+//                            - Kept the frozen raid boss fights among a keyed story's keys
 //      Paulinchen  2026-10-15: Passed battle routes on to the battle stand-in and cut its players on stopping
 //                            - Kept a Raid World's story key by key, as the relay does, and told the room each change
 //                            - Kept the companions' affection among a keyed story's keys
@@ -2493,7 +2494,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         /// <returns>The keys and their values.</returns>
         private static IEnumerable<(string Key, string Value)> KeysOf(JsonObject lists)
         {
-            IEnumerable<string> Items(string name) => lists[name]?.GetValue<string>() is { Length: > 0 } list ? list.Split(',') : [];
+            IEnumerable<string> Items(string name) => lists[name]?.GetValue<string>() is { Length: > 0 } list ? list.Split(name == "f" ? ';' : ',') : [];
 
             foreach (var item in Items("s"))
             {
@@ -2524,6 +2525,11 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             {
                 yield return ($"a{item[..item.IndexOf(':')]}", item[(item.IndexOf(':') + 1)..]);
             }
+
+            foreach (var item in Items("f"))
+            {
+                yield return ($"f{item[..item.IndexOf('|')]}", item[(item.IndexOf('|') + 1)..]);
+            }
         }
 
         /// <summary>
@@ -2533,7 +2539,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         /// <returns>The lists.</returns>
         private static JsonObject ListsOf(Dictionary<string, string> keys)
         {
-            var lists = new Dictionary<string, List<string>> { ["s"] = [], ["sf"] = [], ["v"] = [], ["ss"] = [], ["ssf"] = [], ["a"] = [] };
+            var lists = new Dictionary<string, List<string>> { ["s"] = [], ["sf"] = [], ["v"] = [], ["ss"] = [], ["ssf"] = [], ["a"] = [], ["f"] = [] };
 
             foreach (var (key, value) in keys)
             {
@@ -2549,13 +2555,17 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
                 {
                     lists["a"].Add($"{key[1..]}:{value}");
                 }
+                else if (key.StartsWith('f'))
+                {
+                    lists["f"].Add($"{key[1..]}|{value}");
+                }
                 else
                 {
                     lists["v"].Add($"{key[1..]}:{value}");
                 }
             }
 
-            return new JsonObject(lists.Select(list => new KeyValuePair<string, JsonNode?>(list.Key, string.Join(',', list.Value))));
+            return new JsonObject(lists.Select(list => new KeyValuePair<string, JsonNode?>(list.Key, string.Join(list.Key == "f" ? ';' : ',', list.Value))));
         }
 
         /// <summary>

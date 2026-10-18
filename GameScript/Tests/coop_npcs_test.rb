@@ -2,6 +2,7 @@
 #  coop_npcs_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Checked that a player resuming a frozen raid boss fight follows no Map Owner
 #      Paulinchen  2026-10-12: Checked that a whole map that failed to reach a newcomer is sent again
 #      Paulinchen  2026-10-11: Checked that a follower on another map forgets the last map's events
 #      Paulinchen  2026-10-09: Checked that the Map Owner sends the events to everyone on the map in one message
@@ -156,3 +157,18 @@ check("a player who came onto the map again gets it anew at once", wholes.call, 
 $peers.delete(newcomer)
 $raid = false
 check("in a Classic world again only the party shares the map", MGQ_MpCoopNpcs.peers_here, [connected])
+
+# A player who resumes a frozen raid boss fight moves the map's events in their own game meanwhile,
+# whose scene put them where they stood at the battle.
+# Stands in for battles_raid_freeze.rbx, resuming while $resuming is.
+module MGQ_MpRaidFreeze; def self.resuming?(_troop = nil); $resuming; end; end
+MGQ_MpCoopNpcs.instance_variable_set(:@role, :follower)
+MGQ_MpCoopNpcs.instance_variable_set(:@targets, { 1 => [9, 9, 2, 0] })
+$resuming = true
+$npc_log.clear
+check("a follower who resumes a frozen fight follows nobody", MGQ_MpCoopNpcs.following?, false)
+MGQ_MpCoopNpcs.follow
+check("and walks no event toward the Map Owner's places, saying so once", [$game_map.events[1].mgq_mp_npc_state, $npc_log.grep(/left the events of map 5 where they are: the player resumes/).size],
+      [[2, 3, 2, 0], 1])
+$resuming = false
+check("once the resume ended, the follower follows again", MGQ_MpCoopNpcs.following?, true)

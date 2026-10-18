@@ -2,6 +2,7 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Checked the bars above the bosses' stand-ins of frozen fights
 #      Paulinchen  2026-10-13: Checked the bars of the raid bosses outside Raid Worlds and turning them off
 #      Paulinchen  2026-10-12: Checked that common events calling each other keep every troop
 #                            - Checked Tab pressed while the chat box is open
@@ -24,7 +25,8 @@
 # found through their pages and common events, the bar above each that shows, the strip at the top
 # while none shows, and the room it takes from the boxes there; the strip where the player puts it
 # with Alt and the interface presets' colors; with battles_raid_tiers.rbx the bars of the raid
-# bosses outside Raid Worlds, which the player turns off in the Mod Config.
+# bosses outside Raid Worlds, which the player turns off in the Mod Config; and the bars above the
+# bosses' stand-ins of frozen fights.
 
 require_relative "support"
 
@@ -755,3 +757,33 @@ bar.show_bar(:battle, true)
 bar.show_bar(:map, true)
 $in_world = false
 $raid_bosses = false
+
+# The bosses' stand-ins of frozen fights, through ui_raid_freeze.rbx, which stands in here.
+# A boss's stand-in: its looks and where it stands.
+StandIn = Struct.new(:character_name, :tile_id, :transparent, :opacity, :x, :y)
+# The frozen fights: each boss's stand-in with its troop in $freeze_targets, their sprites in
+# $freeze_sprites.
+module MGQ_MpRaidFreezeUi
+  # The bosses' stand-ins with their troops.
+  def self.bar_targets; $freeze_targets; end
+  # The stand-ins' sprites of a spriteset.
+  def self.sprites_of(_spriteset); $freeze_sprites; end
+end
+reset
+$raid = true
+frozen_boss = StandIn.new("$Harpy", 0, false, 255, 20, 20)
+$freeze_targets = [[frozen_boss, 71], [StandIn.new("$Slime", 0, false, 255, 1, 1), 50]]
+$freeze_sprites = [CharacterSprite.new(frozen_boss, 240, 320, 48, true, 255)]
+check("a frozen fight's boss stand-in counts as the boss's event, one whose troop shows no bar left out",
+      bar.boss_events.map { |event, troop| [event.equal?(frozen_boss), troop] }, [[true, 71]])
+check("the steps to the boss count its stand-in", bar.distance_to_boss(71, 22, 21), 2)
+spriteset = Spriteset_Map.new([])
+spriteset.update
+overhead = spriteset.instance_variable_get(:@mgq_mp_raid_bars).instance_variable_get(:@overhead)
+check("the bar stands above the stand-in's sprite", [overhead.size, overhead[frozen_boss] && [overhead[frozen_boss].x, overhead[frozen_boss].y]], [1, [240, 320 - 48 - 52 - 4]])
+$freeze_targets = []
+$freeze_sprites = []
+$frame += MGQ_MpRaidBar::SCAN_FRAMES
+spriteset.update
+check("and goes with it", [bar.boss_events, overhead.size], [[], 0])
+spriteset.dispose

@@ -2,6 +2,7 @@
 //  StoryLists.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-17: Kept the frozen raid boss fights as keys, one per troop
 //      Paulinchen  2026-10-15: Kept the companions' affection as keys
 //                            - Created
 //
@@ -20,17 +21,24 @@ namespace MGQParadox.Multiplayer.Network.World;
 /// <summary>
 /// A Raid World's story key by key, as the relay keeps it: each switch (<c>s5</c>) and self switch
 /// (<c>ss12.3.A</c>) on ("1") or off ("0"), each variable (<c>v1001</c>) with its value as the game
-/// script writes it ("n40"), each companion's affection (<c>a5</c>) as a number. It travels as six
-/// lists, the switches on and off, the variables, the self switches on and off, and the affection;
-/// the game script hands its story over packed, the lists deflated and in base64 (story_state.rbx
-/// <c>pack</c>).
+/// script writes it ("n40"), each companion's affection (<c>a5</c>) as a number, each frozen raid
+/// boss fight (<c>f1234</c>, by its troop) as world_freeze.rbx writes it, "0" once it ended. It
+/// travels as seven lists, the switches on and off, the variables, the self switches on and off, the
+/// affection and the frozen fights; the game script hands its story over packed, the lists deflated
+/// and in base64 (story_state.rbx <c>pack</c>).
 /// </summary>
 internal sealed class StoryLists
 {
     /// <summary>
     /// The lists' names, in the order the game script writes them.
     /// </summary>
-    public static readonly string[] Names = ["s", "sf", "v", "ss", "ssf", "a"];
+    public static readonly string[] Names = ["s", "sf", "v", "ss", "ssf", "a", "f"];
+
+    /// <summary>
+    /// The list of the frozen fights, whose entries hold commas and so are separated by semicolons,
+    /// each its troop and its value split by the first bar (<c>1234|map:...</c>).
+    /// </summary>
+    public const string Freezes = "f";
 
     /// <summary>
     /// Most bytes a packed story unpacks to, as the game script reads one at most.
@@ -67,14 +75,14 @@ internal sealed class StoryLists
     public IReadOnlyDictionary<string, string> Keys => _keys;
 
     /// <summary>
-    /// Reads the lists, each a text of entries separated by commas.
+    /// Reads the lists, each a text of entries separated by commas, the frozen fights' by semicolons.
     /// </summary>
     /// <param name="lists">The lists by name, a missing one empty.</param>
     /// <returns>The story.</returns>
     public static StoryLists FromLists(IReadOnlyDictionary<string, string> lists)
     {
         var keys = new Dictionary<string, string>(StringComparer.Ordinal);
-        string[] Items(string name) => lists.TryGetValue(name, out var list) && list.Length > 0 ? list.Split(',') : [];
+        string[] Items(string name) => lists.TryGetValue(name, out var list) && list.Length > 0 ? list.Split(name == Freezes ? ';' : ',') : [];
 
         foreach (var item in Items("s"))
         {
@@ -113,6 +121,16 @@ internal sealed class StoryLists
             if (colon > 0)
             {
                 keys[$"a{item[..colon]}"] = item[(colon + 1)..];
+            }
+        }
+
+        foreach (var item in Items(Freezes))
+        {
+            var bar = item.IndexOf('|', StringComparison.Ordinal);
+
+            if (bar > 0)
+            {
+                keys[$"f{item[..bar]}"] = item[(bar + 1)..];
             }
         }
 
@@ -285,7 +303,7 @@ internal sealed class StoryLists
     public bool SameAs(StoryLists other) => _keys.Count == other._keys.Count && ChangesIn(other).Count == 0;
 
     /// <summary>
-    /// Sorts keys into the six lists.
+    /// Sorts keys into the seven lists.
     /// </summary>
     /// <param name="keys">The keys and their values.</param>
     /// <returns>Each list by name, in the order of <see cref="Names"/>.</returns>
@@ -311,8 +329,12 @@ internal sealed class StoryLists
             {
                 lists["a"].Add($"{key[1..]}:{value}");
             }
+            else if (key.StartsWith('f'))
+            {
+                lists[Freezes].Add($"{key[1..]}|{value}");
+            }
         }
 
-        return Names.Select(name => new KeyValuePair<string, string>(name, string.Join(',', lists[name])));
+        return Names.Select(name => new KeyValuePair<string, string>(name, string.Join(name == Freezes ? ';' : ',', lists[name])));
     }
 }

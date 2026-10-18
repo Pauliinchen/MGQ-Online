@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-17: Checked that the Unlocks page lists no companion the story took away
+#                            - Checked that the catch-up waits while a lost raid boss battle's defeat runs
+#                            - Checked that a player on Ilias's side gets the Remina Key Card back
 #                            - Checked a key item one event gives and takes back
 #                            - Checked job items of one-time gifts
 #                            - Checked the rewards repair
@@ -282,7 +284,7 @@ $data_actors = Array.new(1000)
 end
 $data_items = Array.new(730)
 [[501, "Purple Orb"], [502, "Pass"], [503, "Key"], [504, "Medal"], [505, "Key to Hades"], [537, "Red Orb"], [538, "Blue Orb"], [540, "Yellow Orb"],
- [541, "Green Orb"], [542, "Silver Orb"], [600, "Herb"], [700, "Auto Crossbow"], [701, "Bio Blaster"]].each { |id, name| $data_items[id] = RPG::Item.new(id, name) }
+ [541, "Green Orb"], [542, "Silver Orb"], [557, "Remina Key Card"], [600, "Herb"], [700, "Auto Crossbow"], [701, "Bio Blaster"]].each { |id, name| $data_items[id] = RPG::Item.new(id, name) }
 $data_items[616] = RPG::Item.new(616, "Chef's License", "[Job] Allows access to the Cook job.")
 $data_weapons = Array.new(10)
 $data_armors = Array.new(10)
@@ -435,6 +437,8 @@ REAL_JOINS = DATA::JOINS
 REAL_REMOVALS = DATA::REMOVALS
 # The generated settings, kept before the tests replace them.
 REAL_SETTINGS = DATA::SETTINGS
+# The generated key items, kept before the tests replace them.
+REAL_KEY_ITEMS = DATA::KEY_ITEMS
 
 # Puts tables of rows in place of the generated ones.
 #
@@ -1003,6 +1007,16 @@ choose.call(0)
 frames(40)
 check("taking Alice keeps the side, brings her along and gives the side's key item",
       [$game_switches[4], $game_switches[5], roster.include?(5), $game_party.items[501], $game_message.choices], [true, false, true, 1, []])
+
+# A player on Ilias's side who lost the Remina Key Card to Sonya's defeat and loaded a save without
+# it gets it back from the generated rows, as one on Alice's side does.
+tables(:KEY_ITEMS => REAL_KEY_ITEMS.select { |row| row.item == 557 })
+new_game({ 1001 => 33, 1075 => 12, 1076 => 6 }, [5], 40)
+frames(1)
+relay({ "rev" => 27, "wrev" => 27, "p" => 33, "part" => "2" }, packed({ 1001 => 33, 1075 => 13, 1076 => 6 }, [5, 2308]))
+frames(40)
+check("a player on Ilias's side whose world got the Remina Key Card gets it back after losing it",
+      [DATA::KEY_ITEMS.map(&:side).sort, $game_party.items[557]], [[:alice, :ilias], 1])
 
 # An event that gives a key item and takes it back in the same run owes nothing, and the other key
 # items still come.
@@ -1606,6 +1620,21 @@ frames(1)
 relay({ "rev" => 36, "wrev" => 36, "p" => 12, "part" => "1" }, packed({ 1001 => 12 }))
 frames(40)
 check("and both once the world got past the later join", [roster.include?(16), catchup.unlocks.any? { |unlock| unlock.id == 16 }], [true, true])
+
+# A lost raid boss battle's defeat takes items its undo gives back, so the catch-up waits meanwhile.
+# Stands in for the freeze engine: a lost raid boss battle's defeat runs while $holding.
+module MGQ_MpRaidFreeze; def self.holding_writes?; $holding ? true : false; end; end
+tables
+new_game({ 1001 => 7 }, [], 12)
+frames(1)
+relay({ "rev" => 40, "wrev" => 40, "p" => 25, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 25 }))
+16.times { MGQ_MpWorldStory.tick }
+$holding = true
+40.times { MGQ_MpWorldCatchup.tick }
+check("a player behind fetches no checkpoint while a lost raid boss battle's defeat runs", [story.mode, calls_of("mp_raid_checkpoint_fetch")], [:behind, []])
+$holding = false
+frames(1)
+check("and does once it ended", calls_of("mp_raid_checkpoint_fetch"), [["w1\0", "1\0"]])
 
 # Classic worlds have no catch-up.
 $raid = false

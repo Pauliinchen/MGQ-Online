@@ -2,6 +2,7 @@
 #  core_game_access.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Named what a frozen raid boss fight keeps and puts back
 #      Paulinchen  2026-10-13: Named a window's cursor check and handler call
 #      Paulinchen  2026-10-12: Named an event's page that applies now
 #                            - Named the map's viewports and character sprites
@@ -154,11 +155,42 @@ module MGQ_MpGame
     # $game_switches, $game_variables and $game_self_switches: their entries, written past the game's
     # setters, which refresh the map and act on some switches by themselves.
     :data => :@data,
+
+    # A frozen raid boss fight (battles_raid_freeze.rbx): the fights $game_system keeps, a field of
+    # the mod's own; an interpreter's branches, indent and common event; how an event, the player
+    # or a follower shows and moves; where the player's transfer goes and their vehicle; the party's
+    # temporary members and split parties; and the map's tileset and parallax.
+    :raid_freeze => :@mgq_mp_raid_freeze,
+    :branch => :@branch,
+    :indent => :@indent,
+    :common_event_id => :@common_event_id,
+    :erased => :@erased,
+    :pattern => :@pattern,
+    :original_pattern => :@original_pattern,
+    :tile_id => :@tile_id,
+    :opacity => :@opacity,
+    :blend_type => :@blend_type,
+    :through => :@through,
+    :priority_type => :@priority_type,
+    :direction_fix => :@direction_fix,
+    :walk_anime => :@walk_anime,
+    :step_anime => :@step_anime,
+    :move_speed => :@move_speed,
+    :new_map_id => :@new_map_id,
+    :vehicle_type => :@vehicle_type,
+    :temp_actors => :@temp_actors,
+    :multi_party_flag => :@multi_party_flag,
+    :multi_party => :@multi_party,
+    :tileset_id => :@tileset_id,
+    :parallax_loop_x => :@parallax_loop_x,
+    :parallax_loop_y => :@parallax_loop_y,
+    :parallax_sx => :@parallax_sx,
+    :parallax_sy => :@parallax_sy,
   }
 
   # The fields the game sets only once it needs them, so one that is missing is no reason to log:
   # a battle has no acting battler before its first action, which a guest's playback reads first.
-  LAZY = [:stones, :enchants, :retry_data, :system_save_count, :subject, :trades]
+  LAZY = [:stones, :enchants, :retry_data, :system_save_count, :subject, :trades, :raid_freeze, :common_event_id, :multi_party, :multi_party_flag]
 
   # The game's private methods the mod calls.
   METHODS = [

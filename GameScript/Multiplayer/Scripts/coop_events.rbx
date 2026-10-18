@@ -2,6 +2,7 @@
 #  coop_events.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Sorted a resumed raid boss fight's event as story
 #      Paulinchen  2026-10-15: Faded the screen in once it stayed dark with nothing running that could fade it in
 #      Paulinchen  2026-10-12: Faded the screen in once per arrival on a map whose self-running story another game runs
 #                            - Let a leader's page that fails to hold wait as the game's own pages do
@@ -601,6 +602,19 @@ module MGQ_MpCoopEvents
     command ? [$game_map.map_id, event.id, command.parameters[0]] : nil
   end
 
+  # Runs a block that sets up an event whose page counts as story, whatever page the event shows: a
+  # frozen raid boss fight's resume runs the page of its battle while the event may show a later one
+  # (see battles_raid_freeze.rbx).
+  #
+  # @return [Object] What the block returns.
+  def self.as_story
+    was = @as_story
+    @as_story = true
+    yield
+  ensure
+    @as_story = was
+  end
+
   # Notices the map's main event starting: keeps track of a chest's items, and as leader brings the
   # party together for a story scene.
   #
@@ -614,6 +628,7 @@ module MGQ_MpCoopEvents
     @tie_hold = nil
     event = event_id > 0 ? $game_map.events[event_id] : nil
     sorted = own?(event ? nil : list) ? :own : (event ? kind(event) : kind_of(list || []))
+    sorted = :story if @as_story
     # A page of the leader's story that a scene change cut short must not hold the player's own; the
     # game's transfer process after a battle or a transfer shows nothing and leaves it.
     unless sorted == :own
@@ -767,6 +782,7 @@ module MGQ_MpCoopEvents
     what = event ? "event #{event.id} (page #{event.mgq_mp_page + 1}) on map #{$game_map.map_id}" : "a common event on map #{$game_map.map_id}"
     notes = []
     notes << "runs only in the player's own game: #{library_replay? ? "the Library's replay of a scene" : "the game's transfer process"}" if sorted == :own
+    notes << "resumed as story" if @as_story
     notes << "the leader tells the party this story" if @telling
     notes << "the player plays their own story, not synced with the leader or leading no member who follows it" unless following? || leading_story?
     notes << "held until the party gathers" if hold

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-17: Listed no companion on the Unlocks page whom a removal of the story took away
+#                            - Held the catch-up while a lost raid boss battle's defeat runs
 #                            - Ordered the key items one event gives and takes back by their rows, which no longer fails the catch-up
 #                            - Kept the catch-up's other checks running when one fails
 #                            - Gave job and race items of one-time gifts by the story's place
@@ -300,6 +301,22 @@ module MGQ_MpWorldCatchup
     @joins_world ? true : false
   end
 
+  # Reports whether a lost raid boss battle's defeat runs, which takes items its undo gives back (see
+  # battles_raid_freeze.rbx): a restock meanwhile would give them twice. Logs once as a hold starts
+  # and as it ends.
+  #
+  # @return [Boolean] Whether one runs.
+  def self.holding?
+    holding = defined?(MGQ_MpRaidFreeze) && MGQ_MpRaidFreeze.holding_writes? ? true : false
+    if holding != (@holding ? true : false)
+      log(holding ? "a lost raid boss battle's defeat runs: the catch-up waits until its undo ran" : "the lost raid boss battle's defeat ended: the catch-up goes on")
+    end
+    @holding = holding
+  rescue => e
+    log_once(:holding, "looking whether a lost raid boss battle holds the catch-up failed: #{e.class}: #{e.message}")
+    false
+  end
+
   # Tells the player why their story event did not start.
   #
   # @return [String] The notice.
@@ -319,10 +336,12 @@ module MGQ_MpWorldCatchup
   # Follows the catch-up for one frame: the relay's answers, the checkpoint and the orbs' event that
   # wait, then every CHECK_FRAMES while the player is free the rewards waiting for their gate, the
   # story's rows, the level gate, the shared companions, the orbs and the Makina, and the vehicles
-  # after a story laid over the player's. Called after the map's update.
+  # after a story laid over the player's. Called after the map's update. Nothing goes on while a
+  # lost raid boss battle's defeat runs (see holding?).
   def self.tick
     @clock += 1
     return close unless active?
+    return if holding?
 
     note_world
     read_requests if (@fetching || @adding) && @clock - @state_read >= STATE_FRAMES

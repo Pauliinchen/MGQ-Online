@@ -2,6 +2,8 @@
 //  story.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-17: Covered the frozen raid boss fights in a keyed story's lists and the end of one
+//                            - Covered the end of a frozen fight staying final
 //      Paulinchen  2026-10-15: Covered the companions' affection in a keyed story's lists
 //                            - Covered a route under way before the Great Decision
 //      Paulinchen  2026-10-12: Covered the level caps of story writes
@@ -41,6 +43,11 @@ const BLOB = "c2VhbGVk";
  * Another sealed story.
  */
 const OTHER_BLOB = "b3RoZXI=";
+
+/**
+ * A frozen raid boss fight of troop 1234 as the games write it, with commas, colons and bars inside.
+ */
+const FROZEN = "1234|map:138:32:1|map:138:32:1|1|138|9:4:5:2:0:%24boss:3:0:0:0:0:1:0,10:6:7:8:0:Lamia:1:0:0:0:0:0:1|12.13|138.10.12.2|s31~T,v1075~n14";
 
 /**
  * Makes counters, 0 and no finished route unless given.
@@ -549,14 +556,21 @@ async function wrote(story, player, base, set, values = {}) {
 }
 
 test("a keyed story's lists are read into keys and written back, and wrong ones are refused", () => {
-  const read = readLists({ s: "5,12", sf: "7", v: "1001:n40,20:sQUI=,21:T", ss: "12.3.A", ssf: "12.3.B", a: "5:2173,16:1303" });
-  assert.deepEqual([...read.keys], [["s5", "1"], ["s12", "1"], ["s7", "0"], ["v1001", "n40"], ["v20", "sQUI="], ["v21", "T"], ["ss12.3.A", "1"], ["ss12.3.B", "0"], ["a5", "2173"], ["a16", "1303"]]);
-  assert.deepEqual(listsOf(read.keys), { s: "5,12", sf: "7", v: "1001:n40,20:sQUI=,21:T", ss: "12.3.A", ssf: "12.3.B", a: "5:2173,16:1303" });
+  const read = readLists({ s: "5,12", sf: "7", v: "1001:n40,20:sQUI=,21:T", ss: "12.3.A", ssf: "12.3.B", a: "5:2173,16:1303", f: `${FROZEN};77|0` });
+  assert.deepEqual([...read.keys], [["s5", "1"], ["s12", "1"], ["s7", "0"], ["v1001", "n40"], ["v20", "sQUI="], ["v21", "T"], ["ss12.3.A", "1"], ["ss12.3.B", "0"], ["a5", "2173"], ["a16", "1303"],
+                                    ["f1234", FROZEN.slice(5)], ["f77", "0"]]);
+  assert.deepEqual(listsOf(read.keys), { s: "5,12", sf: "7", v: "1001:n40,20:sQUI=,21:T", ss: "12.3.A", ssf: "12.3.B", a: "5:2173,16:1303", f: `${FROZEN};77|0` });
   assert.deepEqual(readLists({}).keys, new Map());
   assert.match(readLists({ s: "0" }).error, /switch ids/);
   assert.match(readLists({ v: "5:x" }).error, /variable ids/);
   assert.match(readLists({ ss: "12.3" }).error, /self switches/);
   assert.match(readLists({ a: "5:0" }).error, /affection/);
+  assert.match(readLists({ f: "1234" }).error, /frozen fight/, "a frozen fight without its troop's bar");
+  assert.match(readLists({ f: "0|map:1:2:3" }).error, /frozen fight/);
+  assert.match(readLists({ f: "1234|map;1" }).error, /frozen fight/, "a semicolon splits the fight");
+  assert.match(readLists({ f: "1234|map:1:2:3=x" }).error, /frozen fight/);
+  assert.match(readLists({ f: `1234|${"1".repeat(STORY_LIMITS.maxFreezeLength + 1)}` }).error, /frozen fight/);
+  assert.deepEqual([...readLists({ v: "5:n1" }).keys], [["v5", "n1"]], "a write of a released game has no frozen fights");
   assert.match(readLists({ s: 5 }).error, /texts/);
   assert.match(readLists(null).error, /JSON object/);
   assert.match(readLists({ s: "1,".repeat(STORY_LIMITS.maxListsLength) }).error, /at most/);
@@ -568,16 +582,16 @@ test("a keyed story starts with its first write, takes each key a write changes,
   const { story } = makeStory();
   const first = await wrote(story, ALICE, 0, { s: "5", v: "1001:n10,30:n1" }, { p: 10 });
   assert.equal(first.body.rev, 1);
-  assert.deepEqual(first.body.kept, { s: "", sf: "", v: "", ss: "", ssf: "", a: "" });
+  assert.deepEqual(first.body.kept, { s: "", sf: "", v: "", ss: "", ssf: "", a: "", f: "" });
   assert.equal(first.body.moved, false);
-  assert.deepEqual(first.push.delta, { s: "5", sf: "", v: "1001:n10,30:n1", ss: "", ssf: "", a: "" });
+  assert.deepEqual(first.push.delta, { s: "5", sf: "", v: "1001:n10,30:n1", ss: "", ssf: "", a: "", f: "" });
   assert.deepEqual([first.push.rev, first.push.prev, first.push.state.p], [1, 0, 10]);
 
   const second = await wrote(story, ALICE, 1, { s: "5", sf: "6", v: "30:n2" }, { p: 10 });
-  assert.deepEqual(second.push.delta, { s: "", sf: "6", v: "30:n2", ss: "", ssf: "", a: "" }, "a key the write leaves as it is changes nothing");
+  assert.deepEqual(second.push.delta, { s: "", sf: "6", v: "30:n2", ss: "", ssf: "", a: "", f: "" }, "a key the write leaves as it is changes nothing");
 
   const fetched = (await story.get()).body;
-  assert.deepEqual([fetched.rev, fetched.keyed, fetched.keys, fetched.blob], [2, true, { s: "5", sf: "6", v: "1001:n10,30:n2", ss: "", ssf: "", a: "" }, undefined]);
+  assert.deepEqual([fetched.rev, fetched.keyed, fetched.keys, fetched.blob], [2, true, { s: "5", sf: "6", v: "1001:n10,30:n2", ss: "", ssf: "", a: "", f: "" }, undefined]);
   assert.equal((await story.get(2)).body.same, true, "the known revision comes back without its lists");
   assert.equal((await story.get(2)).body.keys, undefined);
   assert.equal((await story.get(1)).body.keys.v, "1001:n10,30:n2");
@@ -588,12 +602,43 @@ test("of two writes on the same revision, the first keeps the keys both changed,
   await wrote(story, ALICE, 0, { v: "1001:n10,50:n1,60:n1" }, { p: 10 });
   await wrote(story, ALICE, 1, { v: "50:n2" }, { p: 10 });
   const late = await wrote(story, BOB, 1, { v: "50:n3,60:n4" }, { p: 10 });
-  assert.deepEqual(late.body.kept, { s: "", sf: "", v: "50:n2", ss: "", ssf: "", a: "" }, "the world's value of the key it kept");
+  assert.deepEqual(late.body.kept, { s: "", sf: "", v: "50:n2", ss: "", ssf: "", a: "", f: "" }, "the world's value of the key it kept");
   assert.equal(late.body.moved, true, "another write changed keys since its base");
   assert.equal(late.push.delta.v, "60:n4");
   assert.equal((await story.get()).body.keys.v, "1001:n10,50:n2,60:n4");
   const rebuilt = await wrote(story, BOB, 3, { v: "50:n3" }, { p: 10 });
   assert.equal(rebuilt.push.delta.v, "50:n3", "once the game built on the world's value it may change it");
+});
+
+test("a frozen raid boss fight is one key of its troop, which the write that ends it replaces for every game", async () => {
+  const { story } = makeStory();
+  const first = await wrote(story, ALICE, 0, { v: "1001:n18", f: `${FROZEN};88|map:5:6:7|map:5:6:7|0|5|1:2:3:4:0:x:0:0:0:0:0:1:0||5.1.1.2|` }, { p: 18 });
+  assert.equal(first.push.delta.f, `${FROZEN};88|map:5:6:7|map:5:6:7|0|5|1:2:3:4:0:x:0:0:0:0:0:1:0||5.1.1.2|`);
+
+  const grown = await wrote(story, BOB, 1, { f: `${FROZEN},x138.4.A~T` }, { p: 18 });
+  assert.equal(grown.push.delta.f, `${FROZEN},x138.4.A~T`, "a fight that holds more keys replaces the troop's key alone");
+
+  const ended = await wrote(story, BOB, 2, { f: "1234|0" }, { p: 18 });
+  assert.equal(ended.push.delta.f, "1234|0", "every game hears of the end, also one that only reads");
+  const fetched = (await story.get()).body;
+  assert.equal(fetched.keys.f, "1234|0;88|map:5:6:7|map:5:6:7|0|5|1:2:3:4:0:x:0:0:0:0:0:1:0||5.1.1.2|");
+  assert.equal(fetched.keys.v, "1001:n18");
+
+  const late = await wrote(story, ALICE, 2, { f: `${FROZEN},s40~F` }, { p: 18 });
+  assert.equal(late.body.kept.f, "1234|0", "a write that built on the fight before its end keeps the end");
+
+  const fresh = await wrote(story, ALICE, 4, { f: FROZEN }, { p: 18 });
+  assert.deepEqual([fresh.body.kept.f, fresh.push.delta.f], ["1234|0", ""], "the end is final: a fresh freeze on the current revision never replaces it");
+  assert.equal((await story.get()).body.keys.f.split(";")[0], "1234|0");
+});
+
+test("the end of a frozen raid boss fight goes in over a freeze another write brought since its base", async () => {
+  const { story } = makeStory();
+  await wrote(story, ALICE, 0, { v: "1001:n18" }, { p: 18 });
+  await wrote(story, ALICE, 1, { f: FROZEN }, { p: 18 });
+  const ended = await wrote(story, BOB, 1, { f: "1234|0" }, { p: 18 });
+  assert.deepEqual([ended.body.kept.f, ended.push.delta.f], ["", "1234|0"], "the end beats the first writer");
+  assert.equal((await story.get()).body.keys.f, "1234|0");
 });
 
 test("a keyed write on a revision older than the writes the story remembers, or behind it, gets 409 with the world's lists", async () => {

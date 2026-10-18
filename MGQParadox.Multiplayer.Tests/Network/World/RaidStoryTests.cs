@@ -2,6 +2,7 @@
 //  RaidStoryTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-17: Covered the frozen raid boss fights of keyed stories and the end of one
 //      Paulinchen  2026-10-15: Covered keyed stories: changed keys alone, the first writer, pushes laid over the story held the move from a sealed story and the affection
 //      Paulinchen  2026-10-12: Covered the level caps of story writes
 //                            - Covered a write sent again after a route lock
@@ -32,9 +33,15 @@ namespace MGQParadox.Multiplayer.Tests.Network.World;
 public sealed class RaidStoryTests
 {
     /// <summary>
-    /// A story as the game script packs it, with a text outside ASCII among its variables.
+    /// A story as the game script packs it, with a text outside ASCII among its variables, a frozen
+    /// raid boss fight and one that ended.
     /// </summary>
-    private static readonly string Story = Packed("s=5", "sf=6", "v=1001:n18,20:s44Ki44Oq44K5", "ss=12.3.A", "ssf=12.3.B", "a=5:2173");
+    private static readonly string Story = Packed("s=5", "sf=6", "v=1001:n18,20:s44Ki44Oq44K5", "ss=12.3.A", "ssf=12.3.B", "a=5:2173", $"f={Frozen};77|0");
+
+    /// <summary>
+    /// A frozen raid boss fight as world_freeze.rbx writes it, with commas, colons and bars inside.
+    /// </summary>
+    private const string Frozen = "1234|map:138:32:1|map:138:32:1|1|138|9:4:5:2:0:%24boss:3:0:0:0:0:1:0,10:6:7:8:0:Lamia:1:0:0:0:0:0:1|12.13|138.10.12.2|s31~T,v1075~n14";
 
     /// <summary>
     /// How long a test waits for the relay.
@@ -284,6 +291,40 @@ public sealed class RaidStoryTests
     }
 
     /// <summary>
+    /// Asserts that a frozen raid boss fight one game ended replaces the fight in the world's story,
+    /// which a game that only reads gets through the push as well as through a fetch.
+    /// </summary>
+    [Fact]
+    public void Post_FrozenFightEnded_ReachesEveryReader()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, WorldType.Raid);
+        var reader = NewStory(relay, OtherKey, code);
+        var session = new WorldSession { RelayAddress = _ => relay.Address, Playing = () => (OtherKey, "Other"), Story = reader };
+        session.Open(code.ToText());
+        WaitUntil(() => Message.Decode(session.Describe())["state"] == "open", "the world open");
+        var creator = NewStory(relay, CreatorKey, code);
+        var id = IdOf(code);
+        const string Counters = "p=18;r1141=0;r1142=0;r1143=0";
+
+        Assert.True(creator.Post(id, 0, Counters, Packed("v=1001:n18", $"f={Frozen}")));
+        Await(creator, "post", "accepted");
+        Assert.True(reader.Fetch(id));
+        Assert.Equal(Frozen[5..], KeysOf(Await(reader, "fetch", "done").Team)["f1234"]);
+        AwaitEntry(session, "story");
+
+        Assert.True(creator.Post(id, 1, Counters, Packed("v=1001:n18", "f=1234|0")));
+        Assert.Equal("2", Await(creator, "post", "accepted")["post_rev"]);
+        Assert.Equal("2", AwaitEntry(session, "story")["rev"]);
+        var pushed = Message.Decode(reader.Describe());
+        session.Close();
+
+        Assert.Equal("0", KeysOf(pushed.Team)["f1234"]);
+        Assert.True(reader.Fetch(id));
+        Assert.Equal(new Dictionary<string, string> { ["v1001"] = "n18", ["f1234"] = "0" }, KeysOf(Await(reader, "fetch", "done").Team));
+    }
+
+    /// <summary>
     /// Asserts that the relay's push of what a write changed lays the change over the story another
     /// game holds, whose next fetch then answers at once.
     /// </summary>
@@ -355,7 +396,9 @@ public sealed class RaidStoryTests
     {
         var story = StoryLists.FromPacked(Story);
         Assert.Equal(KeysOf(Story), KeysOf(story.ToPacked()));
-        Assert.Equal(7, story.Count);
+        Assert.Equal(9, story.Count);
+        Assert.Equal(Frozen[5..], story.Keys["f1234"]);
+        Assert.Equal("0", story.Keys["f77"]);
 
         var changed = story.ChangesIn(StoryLists.FromPacked(Packed("s=5,8", "v=1001:n19")));
         Assert.Equal(new Dictionary<string, string> { ["s8"] = "1", ["v1001"] = "n19" }, changed.Keys.ToDictionary(pair => pair.Key, pair => pair.Value));

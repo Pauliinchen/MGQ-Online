@@ -2,6 +2,10 @@
 #  world_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Held the story's takes, comparisons and writes while a lost raid boss battle's defeat runs
+#                            - Sent and read the frozen raid boss fights with the world's story
+#                            - Shared the keys a frozen raid boss fight holds at their values from before its event
+#                            - Put the keys a frozen raid boss fight holds back in the player's story, the world's and the writes
 #      Paulinchen  2026-10-15: Turned off the refusal of recruits the world's story had handed over
 #                            - Read and wrote no route under way before the Great Decision
 #                            - Kept the steps before a boss battle that its defeat sets back out of the world's story
@@ -623,8 +627,11 @@ module MGQ_MpWorldStory
   # Lays the world's story that waits over the player's, or keeps the player's own, see the module.
   # A step the relay refused (pending[:drop]) is never written again as it was. A new game's opening
   # that the world's story is past runs its setup first (world_opening.rbx); the story it set up is
-  # the one the player's own changes count from.
+  # the one the player's own changes count from. Nothing is taken while a lost raid boss battle's
+  # defeat runs (see holding?).
   def self.take_pending
+    return if holding?
+
     opening = defined?(MGQ_MpWorldOpening) ? MGQ_MpWorldOpening.before_take(counters_of(@pending[:state])) : nil
     return if opening == :wait
 
@@ -635,6 +642,7 @@ module MGQ_MpWorldStory
     world = counters_of(state)
     # Raised before the player's story is read, so laying the world's over it keeps the raise.
     MGQ_MpWorldAffection.take(pending[:text].to_s) if defined?(MGQ_MpWorldAffection) && !pending[:text].to_s.empty?
+    MGQ_MpWorldFreeze.take(pending[:text].to_s) if defined?(MGQ_MpWorldFreeze) && !pending[:text].to_s.empty?
     local = MGQ_MpStoryState.raw_state
     own = local_counters(local)
     return if wait_for_return(own, world)
@@ -755,7 +763,7 @@ module MGQ_MpWorldStory
     @entry_story = nil
     log_once([:behind, part_of(own), world["wrev"]], "the player's story (part #{part_of(own)}, #{counters_text(own)}) is in an earlier part than the world's (part #{part_of(world)}, #{counters_text(world)}): the player is behind")
     catch_up = defined?(MGQ_MpWorldCatchup)
-    MGQ_MpWorldCatchup.behind(world, own, MGQ_MpStoryState.decode_full(MGQ_MpStoryState.unpack(text))) if catch_up
+    MGQ_MpWorldCatchup.behind(world, own, frozen_told(text)) if catch_up
     return if @behind_told
 
     @behind_told = true
@@ -817,10 +825,14 @@ module MGQ_MpWorldStory
   def self.take_world(world, local, own, text, pending, after_take = nil)
     first = @mode != :world
     told = MGQ_MpStoryState.decode_full(MGQ_MpStoryState.unpack(text))
+    # The frozen fights' end rule reads the world's story before its held keys are put.
+    MGQ_MpWorldFreeze.world_told(told) if defined?(MGQ_MpWorldFreeze)
     steps = share_steps(told)
+    frozen = hold_freezes(told)
     routes = hold_routes(told)
     log("read the world's #{routes_text(routes)}: a route under way before the Great Decision") unless routes.empty?
     log("read the world's #{steps_text(steps)}: steps the world never shares, which an older build wrote") unless steps.empty?
+    log("read the world's #{freezes_text(frozen)}: keys a frozen raid boss fight holds") unless frozen.empty?
     applied = MGQ_MpStoryState.mix(told, local, chest_list)
     keep_unsent(applied, told, local)
     base = MGQ_MpStoryState.deep_copy(applied)
@@ -828,6 +840,8 @@ module MGQ_MpWorldStory
     opened = keep_open_chests(applied, local)
     kept.concat(opened.map { |key| [2, key] })
     keep_steps(applied, local)
+    frozen = hold_freezes(applied)
+    log("put #{freezes_text(frozen)}: keys a frozen raid boss fight holds") unless frozen.empty?
     routes = hold_routes(applied)
     log("put #{routes_text(routes)}: a route under way before the Great Decision") unless routes.empty?
     MGQ_MpStoryState.set_raw(*applied)
@@ -841,9 +855,9 @@ module MGQ_MpWorldStory
     @end_local = nil if pending[:drop]
     @wrev = world["wrev"]
     @mode = :world
-    # What waited to be written is what the player kept now, if anything, or the world's counters
-    # the relay must hear again, see counters_of.
-    @force_post = world["out_of_order"] ? true : false
+    # What waited to be written is what the player kept now, if anything, the world's counters the
+    # relay must hear again (see counters_of), or frozen fights the world's story lacks.
+    @force_post = world["out_of_order"] || frozen_unshared? ? true : false
     @marker_at = @change_at = @first_change_at = @change_signature = nil
     unless kept.empty?
       @watch = true
@@ -937,8 +951,9 @@ module MGQ_MpWorldStory
   end
 
   # Lists the one-way variables a story holds below the world's story it built on, those the
-  # player's own return to the Great Decision clears aside (see returning?) and the Queen's Cup step
-  # of a player in its tournament (see own_steps).
+  # player's own return to the Great Decision clears aside (see returning?), the Queen's Cup step
+  # of a player in its tournament (see own_steps) and those a frozen raid boss fight holds (see
+  # hold_freezes).
   #
   # @param story [Array] The story: switches and variables.
   # @param floor [Array] The world's story it built on.
@@ -947,8 +962,17 @@ module MGQ_MpWorldStory
     returning = returning?(story, floor)
     ids = defined?(MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES) ? MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES : []
     ids.select do |id|
-      one_way?(id) && story[1][id].to_i < floor[1][id].to_i && !(returning && return_cleared?(id)) && !own_steps(story).include?(id)
+      one_way?(id) && story[1][id].to_i < floor[1][id].to_i && !(returning && return_cleared?(id)) && !own_steps(story).include?(id) && !frozen?(1, id)
     end
+  end
+
+  # Reports whether a frozen raid boss fight holds a key, see world_freeze.rbx.
+  #
+  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
+  # @param key [Integer, Array] Its id or key.
+  # @return [Boolean] Whether one does.
+  def self.frozen?(kind, key)
+    defined?(MGQ_MpWorldFreeze) && MGQ_MpWorldFreeze.held_value(kind, key) ? true : false
   end
 
   # Reports whether a story left a route the world's story was on, as the game's return to the
@@ -1000,21 +1024,25 @@ module MGQ_MpWorldStory
 
   # Puts the one-way variables the player's story lowered back to the world's values, and the steps
   # the world never shares that the player is not on to the values it shares (see share_steps)
-  # and a route under way before the Great Decision to none (see hold_routes), once no event of
-  # theirs runs, which may still read the lowered value or the step.
+  # and a route under way before the Great Decision to none (see hold_routes), and the keys a frozen
+  # raid boss fight holds to their held values (see hold_freezes), once no event of theirs runs,
+  # which may still read the lowered value or the step, and no lost raid boss battle's defeat runs.
   def self.restore_one_way
     return unless @mode == :world && @base && !$game_map.interpreter.running?
+    return if holding?
 
     variables = MGQ_MpStoryState.data_of($game_variables)
     settled = share_steps([nil, variables], own_steps([nil, variables]))
+    frozen = hold_freezes([MGQ_MpStoryState.data_of($game_switches), variables, MGQ_MpStoryState.data_of($game_self_switches)])
     routes = hold_routes([nil, variables])
     held = hold_one_way([nil, variables], @base)
     lifted = lift_ally_rejection
-    return if held.empty? && settled.empty? && routes.empty? && !lifted
+    return if held.empty? && settled.empty? && frozen.empty? && routes.empty? && !lifted
 
     $game_map.need_refresh = true
     log("turned Ally Rejection (switch #{ALLY_REJECTION}) off: the player recruited Lime and plays with their own party, so the world's story had handed it over") if lifted
     log("put #{steps_text(settled)}: steps the world never shares, which the player is not on") unless settled.empty?
+    log("put #{freezes_text(frozen)}: keys a frozen raid boss fight holds") unless frozen.empty?
     log("put #{routes_text(routes)}: a route under way before the Great Decision") unless routes.empty?
     return if held.empty?
 
@@ -1022,15 +1050,18 @@ module MGQ_MpWorldStory
         "as when an old scene or a game over set it back")
   end
 
-  # Reads a story value as the world's story shares it: a step of the Queen's Cup's tournament as
-  # its sign-up still open (see CUP_VARIABLE), and a step a story event sets before a battle it
-  # cannot lose as the value its defeat sets (see MGQ_MpWorldCatchupData::DEFEAT_RETURNS).
+  # Reads a story value as the world's story shares it: a key a frozen raid boss fight holds as its
+  # held value (see world_freeze.rbx), a step of the Queen's Cup's tournament as its sign-up still
+  # open (see CUP_VARIABLE), and a step a story event sets before a battle it cannot lose as the
+  # value its defeat sets (see MGQ_MpWorldCatchupData::DEFEAT_RETURNS).
   #
   # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
   # @param key [Integer, Array] Its id or key.
   # @param value [Object] Its value.
   # @return [Object] The value shared.
   def self.shared_value(kind, key, value)
+    held = defined?(MGQ_MpWorldFreeze) ? MGQ_MpWorldFreeze.held_value(kind, key) : nil
+    return held[1] if held
     return value unless kind == 1
     return CUP_OPEN if key == CUP_VARIABLE && CUP_STEPS.include?(value.to_i)
 
@@ -1060,6 +1091,76 @@ module MGQ_MpWorldStory
       story[1][id] = shared
       [id, step]
     end.compact
+  end
+
+  # Puts the keys a frozen raid boss fight holds (see world_freeze.rbx) to their held values in a
+  # story, for each kind the story has.
+  #
+  # @param story [Array] The story: switches, variables and self switches, nil for a kind it lacks;
+  #   changed in place.
+  # @return [Array<Array>] Each key put, as kind, key and the value it had.
+  def self.hold_freezes(story)
+    return [] unless defined?(MGQ_MpWorldFreeze)
+
+    MGQ_MpWorldFreeze.held.map do |kind, key, value|
+      values = story[kind]
+      next unless values
+
+      was = values[key]
+      next if same?(kind, was, value)
+
+      values[key] = value
+      [kind, key, was]
+    end.compact
+  end
+
+  # Names the keys hold_freezes put for the log.
+  #
+  # @param frozen [Array<Array>] Each key put, as kind, key and the value it had.
+  # @return [String] Such as "v1075 from 16 to 14", at most ten.
+  def self.freezes_text(frozen)
+    names = frozen.first(10).map do |kind, key, was|
+      held = defined?(MGQ_MpWorldFreeze) ? MGQ_MpWorldFreeze.held_value(kind, key) : nil
+      "#{label(kind, key)} from #{was.inspect} to #{held ? held[1].inspect : '?'}"
+    end
+    names.join(", ") + (frozen.size > 10 ? ", ..." : "")
+  end
+
+  # Reports whether the player knows frozen raid boss fights the world's story lacks, which their
+  # next write carries, see MGQ_MpWorldFreeze.unshared?.
+  #
+  # @return [Boolean] Whether they do.
+  def self.frozen_unshared?
+    defined?(MGQ_MpWorldFreeze) && MGQ_MpWorldFreeze.unshared? ? true : false
+  end
+
+  # Reads the world's story a player behind gets, its frozen raid boss fights' keys held, so the
+  # catch-up gives nothing past a frozen fight.
+  #
+  # @param text [String] The world's story, packed.
+  # @return [Array] The switches, variables and self switches.
+  def self.frozen_told(text)
+    told = MGQ_MpStoryState.decode_full(MGQ_MpStoryState.unpack(text))
+    MGQ_MpWorldFreeze.world_told(told) if defined?(MGQ_MpWorldFreeze)
+    frozen = hold_freezes(told)
+    log("read the world's #{freezes_text(frozen)}: keys a frozen raid boss fight holds") unless frozen.empty?
+    told
+  end
+
+  # Reports whether the world's story waits while a lost raid boss battle's defeat runs, which sets
+  # back what the battle's undo puts again (see battles_raid_freeze.rbx): no take, comparison or
+  # write meanwhile. Logs once as a hold starts and as it ends.
+  #
+  # @return [Boolean] Whether it waits.
+  def self.holding?
+    holding = defined?(MGQ_MpRaidFreeze) && MGQ_MpRaidFreeze.holding_writes? ? true : false
+    if holding != (@holding ? true : false)
+      log(holding ? "a lost raid boss battle's defeat runs: the world's story waits until its undo ran" : "the lost raid boss battle's defeat ended: the world's story goes on")
+    end
+    @holding = holding
+  rescue => e
+    log_once(:holding, "looking whether a lost raid boss battle holds the story failed: #{e.class}: #{e.message}")
+    false
   end
 
   # Lists the variables whose step the world never shares that are the player's own to keep: the
@@ -1304,10 +1405,12 @@ module MGQ_MpWorldStory
     @clock - @scanned >= IDLE_SCAN_FRAMES && !$game_map.interpreter.running?
   end
 
-  # Compares the whole story with the one the player built on, for the changes a write takes.
+  # Compares the whole story with the one the player built on, for the changes a write takes; not
+  # while a lost raid boss battle's defeat runs (see holding?).
   def self.scan
     @scanned = @clock
     return unless @mode == :world && @base && !@busy[:post]
+    return if holding?
 
     restore_one_way
     local = MGQ_MpStoryState.raw_state
@@ -1335,12 +1438,13 @@ module MGQ_MpWorldStory
   # Reports whether a write is due: the player's story moved on, another change rested for
   # DEBOUNCE_FRAMES or waited LONGEST_WAIT_FRAMES, or a write must go again. While the player tells
   # the story, the moment between its events on another map included, only the route lock goes,
-  # since others would take the scene's state half done. Nothing goes while a novel scene runs.
+  # since others would take the scene's state half done. Nothing goes while a novel scene or a lost
+  # raid boss battle's defeat runs.
   #
   # @return [Boolean] Whether it is.
   def self.post_due?
     return false unless @mode == :world && @pending.nil? && !@busy[:post] && !@busy[:lock] && @clock >= @retry_at
-    return false if MGQ_MpCoopEvents.pvp_running? || novel_running?
+    return false if MGQ_MpCoopEvents.pvp_running? || novel_running? || holding?
 
     settled = @marker_at && @clock - @marker_at >= SETTLE_FRAMES
     return (settled || @force_post) && lock_route ? true : false if MGQ_MpCoopEvents.telling_or_moved?
@@ -1378,6 +1482,8 @@ module MGQ_MpWorldStory
     story = MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state)
     # Shared first, so a shared step never takes the world's story below a later value.
     share_steps(story)
+    frozen = hold_freezes(story)
+    log("writing #{freezes_text(frozen)}: keys a frozen raid boss fight holds") unless frozen.empty?
     routes = hold_routes(story)
     log("writing #{routes_text(routes)}: a route under way before the Great Decision") unless routes.empty?
     held = @base ? hold_one_way(story, @base) : []
@@ -1424,11 +1530,11 @@ module MGQ_MpWorldStory
   # @return [String, nil] The packed text, nil when it is too large even without what the story turned off.
   def self.story_text(story)
     shared = [story[0], story[1], story[2].reject { |key, _| chest?(key) }]
-    text = MGQ_MpStoryState.pack(with_affection(MGQ_MpStoryState.story_lists(shared, true)))
+    text = MGQ_MpStoryState.pack(with_freezes(with_affection(MGQ_MpStoryState.story_lists(shared, true))))
     return text if text.size <= MGQ_MpStoryState::MAX_FULL_BYTES
 
     log_once(:story_size, "the story took #{text.size} characters, so it leaves out what the story turned off")
-    text = MGQ_MpStoryState.pack(with_affection(MGQ_MpStoryState.story_lists(shared, false)))
+    text = MGQ_MpStoryState.pack(with_freezes(with_affection(MGQ_MpStoryState.story_lists(shared, false))))
     return text if text.size <= MGQ_MpStoryState::MAX_FULL_BYTES
 
     log_once(:story_too_large, "the story took #{text.size} characters even without what it turned off, more than the relay keeps: not written")
@@ -1441,6 +1547,14 @@ module MGQ_MpWorldStory
   # @return [Hash{String => String}] The lists.
   def self.with_affection(lists)
     defined?(MGQ_MpWorldAffection) ? MGQ_MpWorldAffection.add(lists) : lists
+  end
+
+  # Adds the frozen raid boss fights to a story's lists, see world_freeze.rbx.
+  #
+  # @param lists [Hash{String => String}] The lists.
+  # @return [Hash{String => String}] The lists.
+  def self.with_freezes(lists)
+    defined?(MGQ_MpWorldFreeze) ? MGQ_MpWorldFreeze.add(lists) : lists
   end
 
   # Asks for a write of the player's story soon, for a value its text carries beside the story,

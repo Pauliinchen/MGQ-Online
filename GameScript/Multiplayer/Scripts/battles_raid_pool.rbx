@@ -2,6 +2,8 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Withheld the rewards of a resumed fight whose side battle gave them
+#                            - Added in_map?, retrying? and set_up_kind
 #      Paulinchen  2026-10-15: Handed the battle server the pools of a battle it hosts and fought them there
 #                            - Told the boss battle a served battle's starter fights for side battles
 #      Paulinchen  2026-10-12: Listed the level caps of the milestones a story beat
@@ -318,6 +320,7 @@ module MGQ_MpRaidPool
     @side = nil
     @at_command = false
     @retrying = false
+    @set_up_kind = nil
     @fetched = nil
     @tried = nil
     @tried_at = 0
@@ -395,6 +398,27 @@ module MGQ_MpRaidPool
     @in_map = was
   end
 
+  # Reports whether the map's interpreter runs its commands now, see in_map.
+  #
+  # @return [Boolean] Whether it does.
+  def self.in_map?
+    @in_map ? true : false
+  end
+
+  # Reports whether the game's retry of a lost battle runs, see retrying.
+  #
+  # @return [Boolean] Whether it does.
+  def self.retrying?
+    @retrying ? true : false
+  end
+
+  # Tells how the battle set up last fights a pool, as set_up decided.
+  #
+  # @return [Symbol, nil] See kind_of; nil for a battle that fights none.
+  def self.set_up_kind
+    @set_up_kind
+  end
+
   # Runs an event's battle command, noting that the battle set up next is the event's.
   #
   # @return [Object] What the block returns.
@@ -445,6 +469,7 @@ module MGQ_MpRaidPool
   #
   # @param troop_id [Integer] The battle's troop.
   def self.set_up(troop_id)
+    @set_up_kind = nil
     return retried if @retrying
 
     kind = kind_of(troop_id)
@@ -463,6 +488,7 @@ module MGQ_MpRaidPool
 
     own = kind == :guest ? invited[1] : own_count(troop_id)
     start(troop_id.to_i, own, kind, kind == :side || (kind == :guest && invited[2]) ? true : false)
+    @set_up_kind = @fight ? kind : nil
   rescue => e
     @fight = nil
     log("deciding on troop #{troop_id} failed: #{e.class}: #{e.message}")
@@ -495,6 +521,7 @@ module MGQ_MpRaidPool
 
     members = lost.members.map { |member| Member.new(member.key, member.index, nil, false) }
     @fight = Fight.new(lost.key, lost.name, lost.troop, new_battle_id, lost.own, members, 0, lost.side, !reporter?)
+    @set_up_kind = lost.side ? :side : :event
     take_on(@fight)
     log("the retry of the battle against #{@fight.name} fights its pools as battle #{@fight.battle}")
   end
@@ -1195,15 +1222,18 @@ module MGQ_MpRaidPool
   end
 
   # Reports whether the battle running is a side battle whose boss gave the player its rewards
-  # already, so it gives no EXP, gold or drops. Called as the game asks whether a won battle gives
-  # them.
+  # already, or the resume of a frozen fight against such a boss (see battles_raid_freeze.rbx), so
+  # it gives no EXP, gold or drops. Called as the game asks whether a won battle gives them.
   #
   # @return [Boolean] Whether it is.
   def self.withhold_rewards?
     fight = @fight
-    return false unless fight && fight.side && rewards[fight.key]
+    return false unless fight && rewards[fight.key]
 
-    log_once([:withheld, fight.battle], "side battle #{fight.battle} gives no rewards: the player got those of #{fight.key} already")
+    resumed = !fight.side && defined?(MGQ_MpRaidFreeze) && MGQ_MpRaidFreeze.resuming?(fight.troop)
+    return false unless fight.side || resumed
+
+    log_once([:withheld, fight.battle], "#{resumed ? 'the resumed battle' : 'side battle'} #{fight.battle} gives no rewards: the player got those of #{fight.key} already")
     true
   rescue => e
     log_once(:withhold_rewards, "deciding on the side battle's rewards failed: #{e.class}: #{e.message}")

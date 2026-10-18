@@ -2,6 +2,7 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Offered the frozen fight of a raid boss near the player
 #      Paulinchen  2026-10-15: Told whether a served battle takes players in by the battle server's state
 #      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #                            - Read the map's viewport and character sprites through MGQ_MpGame
@@ -24,6 +25,8 @@
 # refuses, which the player reads in the notification box (take_refusal). Near a raid boss battle
 # that takes the player in no more, such as a full one, the prompt offers a side battle against the
 # same boss instead (side_target), which the player fights as their own (MGQ_MpRaidPool.start_side).
+# Near none of these, a raid boss's frozen fight near the player is offered (freeze_target), which
+# the press resumes (MGQ_MpRaidFreezeUi.join).
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpBattlesJoin
@@ -215,22 +218,37 @@ module MGQ_MpBattlesJoin
     settle
     @target = nil
     @side = nil
+    @freeze = nil
     return unless reads_hotkey?
 
     pressed = MGQ_MpHotkeys.pressed?(:join_battle)
     @target = changing ? nil : target
     @side = changing || @target ? nil : side_target
+    @freeze = changing || @target || @side ? nil : freeze_target
     return unless pressed && !changing
 
     found = @target
     return request(*found) if found
     return fight_alongside(*@side) if @side
+    return MGQ_MpRaidFreezeUi.join(@freeze[0]) if @freeze
 
     MGQ_MpHotkeys.log_refusal(:join_battle, busy_reason || 'nobody near the player fights a battle that takes players in')
   rescue => e
     @target = nil
     @side = nil
+    @freeze = nil
     log("joining a battle by choice failed: #{e.class}: #{e.message}")
+  end
+
+  # Finds the frozen fight of a raid boss near the player that the prompt offers to resume, while
+  # no battle near takes the player in or offers a side battle and the player is free (see
+  # busy_reason): the one whose boss's stand-in stands within JOIN_DISTANCE, see ui_raid_freeze.rbx.
+  #
+  # @return [Array, nil] The troop and the boss's name, nil for none.
+  def self.freeze_target
+    return nil if busy_reason || !defined?(MGQ_MpRaidFreezeUi)
+
+    MGQ_MpRaidFreezeUi.join_target($game_player.x, $game_player.y, JOIN_DISTANCE)
   end
 
   # Reports whether the Join Battle hotkey is read: only in a Raid World, and only while no other
@@ -253,13 +271,14 @@ module MGQ_MpBattlesJoin
   #
   # The map stops finding its battle while a message shows, so the prompt hides then too.
   #
-  # @return [String, nil] The prompt, nil while no battle near the player takes them in and none
-  #   offers a side battle.
+  # @return [String, nil] The prompt, nil while no battle near the player takes them in, none
+  #   offers a side battle and no frozen fight waits near them.
   def self.prompt_text
     return nil unless MGQ_MpOverworldSync.map_free?
     return "Press #{MGQ_MpHotkeys.label(:join_battle)} to join battle" if @target
+    return "Press #{MGQ_MpHotkeys.label(:join_battle)} to fight #{@side[2]} alongside" if @side
 
-    @side ? "Press #{MGQ_MpHotkeys.label(:join_battle)} to fight #{@side[2]} alongside" : nil
+    @freeze ? "Press #{MGQ_MpHotkeys.label(:join_battle)} to fight #{@freeze[1]}" : nil
   end
 
   # Finds the raid boss battle near the player that the prompt offers a side battle against, while
@@ -416,6 +435,7 @@ module MGQ_MpBattlesJoin
     @gave_up = nil
     @target = nil
     @side = nil
+    @freeze = nil
   end
 end
 

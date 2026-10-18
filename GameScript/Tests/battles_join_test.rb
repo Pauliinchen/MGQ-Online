@@ -2,6 +2,7 @@
 #  battles_join_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-17: Covered the frozen fight the prompt offers near its boss's stand-in
 #      Paulinchen  2026-10-11: Checked that a running battle takes an encounter with as many players as fit
 #                            - Checked the prompt in the style's small font and solid outline
 #                            - Stood in for the color every request and offer shares
@@ -20,7 +21,7 @@
 # Covers joining a battle by choice in a Raid World, battles_coop_join.rbx with
 # battles_coop_hotjoin.rbx, battles_coop.rbx and battles_sync.rbx: the state a host tells, the
 # prompt and its hotkey, the host's answer, the late guest, and the side battle the prompt offers
-# near a full raid boss battle.
+# near a full raid boss battle, and the frozen fight it offers near its boss's stand-in.
 
 require_relative "battle_support"
 
@@ -616,6 +617,51 @@ def MGQ_MpRaidPool.side_battle?(troop); troop.to_i == 72; end
 $scene_now = Scene_Map.new
 BattleManager.setup(72, false, true)
 check("battles_raid_pool.rbx's word that a battle is a side battle comes first", [map_sent("invite"), sync.role], [[], nil])
+reset
+
+# A raid boss's frozen fight near the player, through ui_raid_freeze.rbx, which stands in here.
+# The frozen fights: Sonya Mazda's, whose boss's stand-in stands $freeze_steps from the player, each
+# fight the hotkey resumes noted in $freeze_joined.
+module MGQ_MpRaidFreezeUi
+  # Sonya Mazda's frozen fight while her stand-in stands within the reach.
+  def self.join_target(_x, _y, reach); $freeze_steps && $freeze_steps <= reach ? [868, "Sonya Mazda"] : nil; end
+  # Notes the fight resumed.
+  def self.join(troop); ($freeze_joined ||= []) << troop; true; end
+end
+$freeze_joined = []
+$freeze_steps = 2
+$scene_now = Scene_Map.new
+MGQ_MpOverworldSync::Peers.all.replace([])
+map_frame
+check("near a frozen fight's boss the prompt offers to fight it", join.prompt_text, "Press J to fight Sonya Mazda")
+$down = [0x4A]
+map_frame
+$down = []
+check("the hotkey resumes it", $freeze_joined, [868])
+$freeze_steps = join::JOIN_DISTANCE + 1
+map_frame
+check("not from further than #{join::JOIN_DISTANCE} steps", join.prompt_text, nil)
+$freeze_steps = 2
+MGQ_MpOverworldSync::Peers.all.replace([player(5, { "scene" => "battle", "rb" => "b5", "rbh" => "5", "rbn" => "1", "x" => "1" })])
+map_frame
+check("a battle near that takes the player in comes first", join.prompt_text, "Press J to join battle")
+MGQ_MpOverworldSync::Peers.all.replace([player(5, { "scene" => "battle", "rb" => "b6", "rbh" => "5", "rbn" => "4", "rpb" => "71;100,100,0", "x" => "1" })])
+map_frame
+check("so does a side battle near", join.prompt_text, "Press J to fight Queen Harpy alongside")
+MGQ_MpOverworldSync::Peers.all.replace([])
+$game_map.interpreter.busy = true
+map_frame
+check("a busy player gets no prompt", [join.freeze_target, join.prompt_text], [nil, nil])
+$game_map.interpreter.busy = false
+$typing = true
+$down = [0x4A]
+map_frame
+$down = []
+$typing = false
+check("nor does the hotkey resume the fight while the chat box is open", $freeze_joined, [868])
+join.drop
+check("a reset forgets the frozen fight offered", join.instance_variable_get(:@freeze), nil)
+$freeze_steps = nil
 reset
 
 check("no hook of joining by choice failed", $log.grep(/join battle.*FAILED/), [])
