@@ -2,6 +2,7 @@
 //  story.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-18: Let an admin pin keys of a keyed story off and refused writes that change pinned keys
 //      Paulinchen  2026-10-17: Kept the frozen raid boss fights key by key in a keyed story, one per troop
 //                            - Kept the end of a frozen fight for good
 //      Paulinchen  2026-10-15: Kept a Raid World's story key by key, the first writer of a key keeping it, and pushed what each write changed
@@ -119,6 +120,27 @@ const VALUE = /^(n-?\d+|f-?\d+(\.\d+)?(e[-+]?\d+)?|s[A-Za-z0-9+/=]*|T|F)$/;
  * A self switch's key: its map, its event and its letter.
  */
 const SELF_KEY = /^(\d{1,5})\.(\d{1,6})\.([A-Za-z0-9_]{1,8})$/;
+
+/**
+ * The value of a switch or self switch that is off and of a variable at 0, by the key's first letter.
+ */
+const OFF_VALUE = Object.freeze({ s: "0", v: "n0" });
+
+/**
+ * Reports whether an admin's rules pin a key: "s" and "v" rules name switch and variable ids, "ss"
+ * rules the maps of self switches, each one id or a range such as "v1201-1218".
+ *
+ * @param {string[] | undefined} rules The rules.
+ * @param {string} key The key, such as "v1201" or "ss858.139.A".
+ * @returns {boolean} Whether a rule names it.
+ */
+export function pinnedKey(rules, key) {
+  const [, kind, id] = /^(ss|s|v)(\d+)/.exec(key) ?? [];
+  return Boolean(kind) && (rules ?? []).some((rule) => {
+    const [, ruleKind, from, to] = /^(ss|s|v)(\d+)(?:-(\d+))?$/.exec(rule) ?? [];
+    return ruleKind === kind && Number(id) >= Number(from) && Number(id) <= Number(to ?? from);
+  });
+}
 
 /**
  * The routes after the Great Decision, by the names the relay and the games use.
@@ -711,6 +733,11 @@ export class WorldStory {
       }
 
       const keys = keyed ? readLists(story.lists, { ...this.limits, maxListsLength: Infinity }).keys : new Map();
+
+      if ([...lists.keys].some(([key, value]) => pinnedKey(story?.pins, key) && (keys.get(key) ?? OFF_VALUE[key[0]]) !== value)) {
+        return { status: 409, body: { ...stateOf(story, true), error: "an admin keeps some of these keys as the world's story holds them", code: STORY_REFUSAL.closed } };
+      }
+
       const changed = keyed ? changedSince(story.log, request.base) : new Set();
       const applied = new Map();
       const kept = new Map();
@@ -803,8 +830,49 @@ export class WorldStory {
       checkpoints,
       at: this.clock(),
       by: player,
+      ...(story?.pins ? { pins: story.pins } : {}),
     };
     return { next, checkpoint };
+  }
+
+  /**
+   * Turns every key of a keyed story that the rules name off as a new revision, which every game
+   * takes, and keeps the rules, so no later write changes those keys, see pinnedKey.
+   *
+   * @param {string[]} rules The rules, such as "v1201-1218", "s2901-2962" or "ss845-936".
+   * @param {string} admin Who pins them.
+   * @returns {Promise<{status: number, body: object, push?: object}>} The new state and the change to tell every game; or 409 for a story that is not keyed.
+   */
+  async pin(rules, admin) {
+    return this.exclusive(async () => {
+      const story = await this.store.get();
+
+      if (!story?.lists) {
+        return { status: 409, body: { error: "only a keyed story pins keys", code: STORY_REFUSAL.none } };
+      }
+
+      const keys = readLists(story.lists, { ...this.limits, maxListsLength: Infinity }).keys;
+      const applied = new Map();
+
+      for (const [key, value] of keys) {
+        if (pinnedKey(rules, key) && value !== OFF_VALUE[key[0]]) {
+          keys.set(key, OFF_VALUE[key[0]]);
+          applied.set(key, OFF_VALUE[key[0]]);
+        }
+      }
+
+      const { next } = this.advance(story, { counters: story.counters, end: undefined, caps: [] }, admin);
+      const log = [...story.log, { rev: next.rev, keys: [...applied.keys()] }];
+      let logBase = story.logBase;
+
+      while (log.length > this.limits.logWrites || log.reduce((count, entry) => count + entry.keys.length, 0) > this.limits.logKeys) {
+        logBase = log.shift().rev;
+      }
+
+      Object.assign(next, { blob: "", lists: listsOf(keys), log, logBase, pins: rules });
+      await this.store.put(next, null);
+      return { status: 200, body: stateOf(next, false), push: { rev: next.rev, prev: story.rev, delta: listsOf(applied), state: stateOf(next, false) } };
+    });
   }
 
   /**
