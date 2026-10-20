@@ -2,6 +2,7 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-20: Checked that a max HP lowered under the boss's HP heals no pool
 #      Paulinchen  2026-10-17: Checked in_map?, retrying? and set_up_kind, and the rewards of a resumed frozen fight
 #      Paulinchen  2026-10-15: Checked the pools a starter hands the battle server and the server fights
 #      Paulinchen  2026-10-12: Checked the level caps of the milestones a story beat
@@ -968,6 +969,17 @@ check("and what it loses afterwards counts against the new max", reports.map { |
 $data_enemies[1].params[0] = 800
 next_turn
 check("a max HP back up reports nothing, and the boss takes the pool's share of it", [reports.size, enemy.hp], [1, 3000])
+
+# A max HP the game lowers without taking the HP down, as the higher difficulties' boss rate the
+# battle's start sets, heals no pool.
+reset
+push("Queen Harpy", "0.75")
+start([[:battle, 71], [:mark, :after]])
+$scene.start_party_command_selection
+$data_enemies[1].params[0] = 400
+next_turn
+check("a boss whose max HP halves under its HP reports nothing, and takes the pool's share of the new max", [reports, enemy.hp], [[], 2250])
+$data_enemies[1].params[0] = 800
 
 # Small changes of the DLL's line in a row count once they add up beyond LINE_TOLERANCE.
 reset

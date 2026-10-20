@@ -2,6 +2,7 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-20: Counted a boss HP above its max as the max, so a lowered max heals no pool
 #      Paulinchen  2026-10-17: Withheld the rewards of a resumed fight whose side battle gave them
 #                            - Added in_map?, retrying? and set_up_kind
 #      Paulinchen  2026-10-15: Handed the battle server the pools of a battle it hosts and fought them there
@@ -965,7 +966,10 @@ module MGQ_MpRaidPool
       dead = enemy.dead? ? true : false
       # A base above the max HP now is a max the game lowered since, which took the HP down with it.
       base = [member.base || max, max].min
-      delta = [[(base - enemy.hp).to_f / max, -1.0].max, 1.0].min
+      # An HP above the max is a max the game lowered without taking the HP down, as the higher
+      # difficulties' boss rate the battle's start sets, which the game's next change of the HP cuts.
+      hp = [enemy.hp, max].min
+      delta = [[(base - hp).to_f / max, -1.0].max, 1.0].min
       next if !dead && delta.abs < MIN_DELTA
 
       seq = fight.seq + 1
@@ -977,7 +981,7 @@ module MGQ_MpRaidPool
       end
 
       fight.seq = seq
-      member.base = enemy.hp
+      member.base = hp
       member.killed = dead
       member.held = false
       @pending << member.key
