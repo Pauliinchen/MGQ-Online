@@ -2,6 +2,7 @@
 #  battles_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-20: Sent the skills a guest chains after an action and chained them on the host
 #      Paulinchen  2026-10-15: Carried a battle the battle server hosts over its battle channel
 #                            - Sent a served battle's messages to single players over its battle channel too
 #                            - Told every player of a served battle of one who leaves it
@@ -842,6 +843,9 @@ module MGQ_MpBattlesSync
     # fail the host's own turn, which reads it as a place.
     MAX_TARGET_INDEX = 255
 
+    # Most skills chained after one action, far more than any skill type's chain of the game allows.
+    MAX_CHAIN = 16
+
     # Writes the guest's commands: for every party member, its actions, an empty list when it has
     # none, such as after a failed escape, and nil for the other players' characters in a co-op
     # battle; then the order of the guest's places, which a swap with their Backline changed.
@@ -852,13 +856,33 @@ module MGQ_MpBattlesSync
         # Others' characters send nothing, but those this player took over from a player who left.
         next nil if actor.is_a?(Game_MpActor) && !actor.inputable?
 
-        actor.actions.select(&:item).map do |action|
-          [action.item.is_a?(RPG::Item) ? "item" : "skill", action.item.id, action.target_index]
-        end
+        actor.actions.select(&:item).map { |action| chained_command(action) }
       end
       order = MGQ_MpBattlesSync.mode.own_order
       @built = "#{summary($game_party.battle_members, commands)}#{order ? "; order #{order.join(', ')}" : ''}"
       order ? Wire.line([commands, order]) : Wire.line([commands])
+    end
+
+    # Writes an action as a command, followed by the skills chained after it when it has any.
+    #
+    # @param action [Game_Action] The action.
+    # @return [Array] "skill" or "item", the id and the target's index, then the chain's commands.
+    def self.chained_command(action)
+      chain = []
+      link = action.respond_to?(:chain_action) ? action.chain_action : nil
+      while link && link.item && chain.size < MAX_CHAIN
+        chain << plain_command(link)
+        link = link.chain_action
+      end
+      chain.empty? ? plain_command(action) : plain_command(action) + [chain]
+    end
+
+    # Writes an action as a command, without its chain.
+    #
+    # @param action [Game_Action] The action.
+    # @return [Array] "skill" or "item", the id and the target's index.
+    def self.plain_command(action)
+      [action.item.is_a?(RPG::Item) ? "item" : "skill", action.item.id, action.target_index]
     end
 
     # Sums up the commands build wrote last, for Multiplayer InGame.log.
@@ -886,13 +910,14 @@ module MGQ_MpBattlesSync
 
     # Writes a command for Multiplayer InGame.log.
     #
-    # @param command [Array] "skill" or "item", the id and the target's index.
-    # @return [String] Its kind, id and name, and the target's index.
+    # @param command [Array] "skill" or "item", the id and the target's index, then its chain's commands.
+    # @return [String] Its kind, id and name, and the target's index, then each chained command after ">".
     def self.command_text(command)
-      kind, id, target = command
+      kind, id, target, chain = command
       item = { "skill" => $data_skills, "item" => $data_items }.fetch(kind, [])[id.to_i] if id.is_a?(Integer)
       name = item.respond_to?(:name) ? " #{item.name}" : ""
-      "#{kind} #{id}#{name} at #{target.inspect}"
+      text = "#{kind} #{id}#{name} at #{target.inspect}"
+      chain.is_a?(Array) ? ([text] + chain.map { |link| command_text(link) }).join(" > ") : text
     rescue
       command.inspect
     end
@@ -943,7 +968,7 @@ module MGQ_MpBattlesSync
       end
 
       count = action_count(battler)
-      actions = list.first(count).map { |command| action(battler, command) }.compact
+      actions = list.first(count).map { |command| chained_action(battler, command) }.compact
       MGQ_MpGame.set(battler, :actions, actions) unless actions.empty?
       taken = list.first(count)
       given = actions.empty? ? "none it may give, the computer's actions kept" : taken.map { |command| command_text(command) }.join(", ")
@@ -974,13 +999,43 @@ module MGQ_MpBattlesSync
       battler.mp_seat == seat || (!heir.nil? && heir == seat)
     end
 
-    # Turns a friend's command into an action.
+    # Turns a friend's command into an action with the skills chained after it. The chain ends at its
+    # first command that is no skill or the character may not give, and the game's own check cuts
+    # what the character's skill types do not chain.
+    #
+    # @param battler [Game_Battler] The character.
+    # @param command [Array] "skill" or "item", the id and the target's index, then its chain's commands.
+    # @return [Game_Action, nil] The action, nil for a command it cannot read or the character may not
+    #   give.
+    def self.chained_action(battler, command)
+      first = action(battler, command)
+      chain = command[3] if first
+      return first unless chain.is_a?(Array) && first.respond_to?(:chain_action=)
+
+      last = first
+      chain.first(MAX_CHAIN).each do |link|
+        # The game's check reads a chained action's skill type, which an item lacks.
+        break unless link.is_a?(Array) && link[0] == "skill"
+
+        child = action(battler, link, :chain_action)
+        break unless child
+
+        last.chain_action = child
+        last = child
+      end
+      first.check_chain_action if first.respond_to?(:check_chain_action)
+      first
+    end
+
+    # Turns a friend's command into an action, without its chain.
     #
     # @param battler [Game_Battler] The character.
     # @param command [Array] "skill" or "item", the id and the target's index.
+    # @param symbol [Symbol] The action's kind: :count for one of the character's actions,
+    #   :chain_action for a skill chained after one.
     # @return [Game_Action, nil] The action, nil for a command it cannot read or the character may not
     #   give.
-    def self.action(battler, command)
+    def self.action(battler, command, symbol = :count)
       kind, id, target = command
       return nil unless command.is_a?(Array) && id.is_a?(Integer) && target.is_a?(Integer) && target.between?(-1, MAX_TARGET_INDEX)
 
@@ -990,7 +1045,7 @@ module MGQ_MpBattlesSync
       return refuse(battler, item) unless allowed?(battler, item)
 
       action = Game_Action.new(battler)
-      action.set_symbol(:count) if action.respond_to?(:set_symbol)
+      action.set_symbol(symbol) if action.respond_to?(:set_symbol)
       item.is_a?(RPG::Item) ? action.set_item(id) : action.set_skill(id)
       action.target_index = target
       action

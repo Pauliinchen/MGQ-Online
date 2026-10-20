@@ -2,6 +2,7 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-20: Checked the skills a guest chains after an action
 #      Paulinchen  2026-10-17: Checked that a guest's start sets the party's battle counters
 #                            - Checked that a rebuilt character starts the battle at the HP sent
 #      Paulinchen  2026-10-15: Checked that a player whose characters all fell in a won battle or a loaded save stands up
@@ -248,6 +249,28 @@ check("a skill id or a target too large for the game keeps the actions there, lo
 $log.clear
 MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[nil, nil, [["skill", 3, 256]], [["skill", 3, -2]]]]), 2)
 check("as does a target outside the battle's places", [party[2].actions.map(&:item), party[3].actions.map(&:item)], [[[:skill, 5]], [[:item, 3]]])
+
+# Skills chained after a guest's action.
+#
+# @param action [Game_Action] The action.
+# @return [Array<Array>] The item, target and kind of each chained skill.
+def chain_of(action)
+  links = []
+  links << [(action = action.chain_action).item, action.target_index, action.symbol] while action.chain_action
+  links
+end
+MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[nil, nil, [["skill", 5, 0, [["skill", 6, 0], ["skill", 7, 1]]]], nil]]), 2)
+check("a guest's chained skills follow their action", chain_of(party[2].actions[0]), [[[:skill, 6], 0, :chain_action], [[:skill, 7], 1, :chain_action]])
+MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[nil, nil, [["skill", 5, 0, [["skill", 6, 0], ["skill", KNOWN_SKILLS, 0], ["skill", 7, 0]]]], nil]]), 2)
+check("up to the first the character may not give", chain_of(party[2].actions[0]).map(&:first), [[:skill, 6]])
+MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[nil, nil, [["skill", 5, 0, [["skill", 6, 0], ["item", 3, 0], ["skill", 7, 0]]]], nil]]), 2)
+check("or the first that is no skill", chain_of(party[2].actions[0]).map(&:first), [[:skill, 6]])
+$unchained = [7]
+MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[nil, nil, [["skill", 5, 0, [["skill", 6, 0], ["skill", 7, 0], ["skill", 8, 0]]]], nil]]), 2)
+$unchained = nil
+check("and the game's check cuts what the character's skill types do not chain", chain_of(party[2].actions[0]).map(&:first), [[:skill, 6]])
+MGQ_MpBattlesSync::Commands.apply(MGQ_MpBattlesSync::Wire.line([[nil, nil, [["skill", 5, 0]], nil]]), 2)
+check("an action sent without a chain has none", party[2].actions[0].chain_action, nil)
 wire_parse = MGQ_MpBattlesSync::Wire.method(:parse)
 MGQ_MpBattlesSync::Wire.define_singleton_method(:parse) { |*| raise "broken" }
 $log.clear
@@ -310,6 +333,11 @@ check("the guest's commands are only for its own, none named for the others'", M
 guest_party[2].actions = [Game_Action.new(guest_party[2]).tap { |a| a.set_skill(5); a.target_index = 0; a.item = RPG::Skill.new; def (a.item).id; 5; end }]
 check("which it sends by the party's places", MGQ_MpBattlesSync::Wire.parse(MGQ_MpBattlesSync::Commands.build)[0][2], [["skill", 5, 0]])
 check("with the order of its own places", MGQ_MpBattlesSync::Wire.parse(MGQ_MpBattlesSync::Commands.build)[1], [0, 1, 2])
+chained = Game_Action.new(guest_party[2]).tap { |a| a.item = $data_skills[6]; a.target_index = 1 }
+guest_party[2].actions[0].chain_action = chained
+chained.chain_action = Game_Action.new(guest_party[2])
+check("and the skills it chained after an action, up to the first link without a skill",
+      MGQ_MpBattlesSync::Wire.parse(MGQ_MpBattlesSync::Commands.build)[0][2], [["skill", 5, 0, [["skill", 6, 1]]]])
 check("its Backline is its own share", $game_party.bench_members.map(&:name), ["Actor3"])
 check("a guest tries to escape as in any battle", MGQ_MpBattlesSync::Live.escape_leaves?, false)
 MGQ_MpBattlesCoop.ended

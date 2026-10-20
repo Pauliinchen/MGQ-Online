@@ -2,6 +2,7 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-20: Stood in for skills chained after an action
 #      Paulinchen  2026-10-12: Stood in for the battle log's popup
 #                            - Stood in for a troop whose enemies all fell and for a battle that ended
 #                            - Stood in for the leader's call and dropping it
@@ -138,12 +139,21 @@ class Game_ActionResult; end
 class Game_BaseItem; end
 # Stands in for the base of characters and enemies.
 class Game_Battler; end
-# Stands in for a character's action, its item kept as [kind, id].
+# Stands in for a character's action, its item kept as [kind, id], and the skill chained after it.
 class Game_Action
-  attr_accessor :item, :target_index
+  attr_accessor :item, :target_index, :chain_action
+  attr_reader :symbol
   def initialize(battler); @battler = battler; end
+  def set_symbol(symbol); @symbol = symbol; self; end
   def set_skill(id); @item = [:skill, id]; end
   def set_item(id); @item = [:item, id]; end
+  # Cuts the chain before its first skill in $unchained, as the game cuts what the character's
+  # skill types do not chain.
+  def check_chain_action
+    link = self
+    link = link.chain_action while link.chain_action && !Array($unchained).include?(link.chain_action.item[1])
+    link.chain_action = nil
+  end
 end
 # Stands in for a character with 100 HP, 10 MP and the skills below KNOWN_SKILLS.
 class Game_Actor < Game_Battler
