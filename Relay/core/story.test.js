@@ -2,6 +2,7 @@
 //  story.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-21: Covered the pins an older relay kept as rules
 //      Paulinchen  2026-10-17: Covered the frozen raid boss fights in a keyed story's lists and the end of one
 //                            - Covered the end of a frozen fight staying final
 //      Paulinchen  2026-10-15: Covered the companions' affection in a keyed story's lists
@@ -655,12 +656,11 @@ test("a keyed write on a revision older than the writes the story remembers, or 
   assert.equal((await story.write(BOB, { base: 4, counters: counters({ p: 10 }), set: { v: "x" } })).status, 400);
 });
 
-test("an admin's pin turns the keys it names off as a revision every game takes, and refuses writes that change them", async () => {
-  const { story } = makeStory();
-  await wrote(story, ALICE, 0, { s: "2902,40", v: "1001:n37,1201:n7,1219:n2", ss: "858.139.A,12.3.A" }, { p: 37 });
-  const pinned = await story.pin(["s2901-2962", "v1201-1218", "ss845-936"], BOB);
-  assert.deepEqual(pinned.push.delta, { s: "", sf: "2902", v: "1201:n0", ss: "", ssf: "858.139.A", a: "", f: "" });
-  assert.deepEqual([pinned.body.rev, pinned.body.wrev], [2, 2]);
+test("the rules an older relay pinned keys off with keep those keys off", async () => {
+  const { story, kept } = makeStory();
+  await wrote(story, ALICE, 0, { s: "40", sf: "2902", v: "1001:n37,1201:n0,1219:n2", ssf: "858.139.A", ss: "12.3.A" }, { p: 37 });
+  await wrote(story, ALICE, 1, { s: "41" }, { p: 37 });
+  kept.story.pins = ["s2901-2962", "v1201-1218", "ss845-936"];
   const refused = await story.write(ALICE, { base: 2, counters: counters({ p: 37 }), set: { v: "1201:n8" } });
   assert.deepEqual([refused.status, refused.body.code], [409, "closed"]);
   assert.equal((await story.write(ALICE, { base: 2, counters: counters({ p: 37 }), set: { s: "2950" } })).body.code, "closed", "a pinned key the story never held");

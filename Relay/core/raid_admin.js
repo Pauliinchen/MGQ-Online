@@ -5,6 +5,7 @@
 //      Paulinchen  2026-10-21: Let an admin defeat every pool of a troop at once
 //                            - Handed out a keyed story's keys only when the request asks for them
 //                            - Let an admin set a keyed story's switches, variables and self switches by id
+//                            - Let an admin pin a keyed story's keys at values, take pins off and see them
 //      Paulinchen  2026-10-10: Showed each boss pool's share of HP left and the pools' regeneration per minute
 //      Paulinchen  2026-10-09: Created
 //
@@ -19,7 +20,7 @@ import { WORLD_TYPE } from "./directory.js";
 import { badRequest, notFound, withJson } from "./http.js";
 import { isId } from "./ids.js";
 import { VERSION } from "./relay.js";
-import { STORY_LIMITS, noRaidWorld } from "./story.js";
+import { STORY_LIMITS, noRaidWorld, pinsView } from "./story.js";
 
 /**
  * The longest JSON body an admin's request may have.
@@ -65,8 +66,9 @@ export async function handleRaidAdminRequest(world, method, url, rest, readBody,
       // A late story's keys run to a megabyte, which only a view of the keys needs.
       const { blob: _sealed, keyed, keys, ...counters } = (await world.story.get()).body;
       const story = url.searchParams.get("keys") === "1" ? { ...counters, keyed: keyed === true, ...(keys ? { keys } : {}) } : counters;
+      const pins = pinsView(await world.story.kept());
       const { bosses, regenPerMinute } = (await world.bosses.list(true)).body;
-      return { status: 200, body: { story, bosses, regenPerMinute } };
+      return { status: 200, body: { story, pins, bosses, regenPerMinute } };
     });
   }
 
@@ -80,11 +82,27 @@ export async function handleRaidAdminRequest(world, method, url, rest, readBody,
     return post(() => world.bosses.reset(rest[1]));
   }
 
+  const keyed = (work) => withJson(readBody, STORY_LIMITS.maxAdminBodyLength, (body) => asAdmin(header || body?.player, (access) => work(access, body)));
+
   if (rest.length === 1 && rest[0] === "keys" && method === "POST") {
-    return withJson(readBody, STORY_LIMITS.maxAdminBodyLength, (body) => asAdmin(header || body?.player, async (access) => {
+    return keyed(async (access, body) => {
       const answer = await world.story.setKeys(body, access.player);
       return answer.status === 200 ? { ...answer, audit: `admin ${access.player} set keys of rev ${answer.body.rev}: ${JSON.stringify(answer.body.set)}` } : answer;
-    }));
+    });
+  }
+
+  if (rest.length === 1 && rest[0] === "pins" && method === "POST") {
+    return keyed(async (access, body) => {
+      const answer = await world.story.pinKeys(body, access.player);
+      return answer.status === 200 ? { ...answer, audit: `admin ${access.player} pinned ${JSON.stringify(body.keys)}, rev ${answer.body.rev}` } : answer;
+    });
+  }
+
+  if (rest.length === 2 && rest[0] === "pins" && rest[1] === "clear" && method === "POST") {
+    return keyed(async (access, body) => {
+      const answer = await world.story.clearPins(body);
+      return answer.status === 200 ? { ...answer, audit: `admin ${access.player} took the pins off ${JSON.stringify(answer.body.cleared)}` } : answer;
+    });
   }
 
   if (rest.length === 2 && rest[0] === "route" && rest[1] === "clear" && method === "POST") {

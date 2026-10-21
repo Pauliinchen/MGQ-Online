@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-21: Let an admin set switches, variables and self switches of a keyed story by id as a revision every game takes
+//                            - Let an admin pin keys of a keyed story at any value and take pins off again, reading the pins kept before as pins at off
 //      Paulinchen  2026-10-18: Let an admin pin keys of a keyed story off and refused writes that change pinned keys
 //      Paulinchen  2026-10-17: Kept the frozen raid boss fights key by key in a keyed story, one per troop
 //                            - Kept the end of a frozen fight for good
@@ -71,6 +72,7 @@ export const STORY_LIMITS = Object.freeze({
   // The keys an admin sets at once, and the JSON body that names them.
   maxAdminKeys: 2000,
   maxAdminBodyLength: 128 * 1024,
+  maxPins: 5000,
 });
 
 /**
@@ -255,8 +257,76 @@ function keyNameOf(kind, id, limits) {
 }
 
 /**
- * Reports whether an admin's rules pin a key: "s" and "v" rules name switch and variable ids, "ss"
- * rules the maps of self switches, each one id or a range such as "v1201-1218".
+ * Reads a key as the story names it, such as "s12", "v1201" or "ss858.139.A".
+ *
+ * @param {unknown} text The key.
+ * @param {typeof STORY_LIMITS} limits The limits.
+ * @returns {string | null} The key as a keyed story keeps it (ids without leading zeros), or null when it is no switch, variable or self switch.
+ */
+function keyOfName(text, limits) {
+  const [, kind, id] = typeof text === "string" ? /^(ss|s|v)(.+)$/.exec(text) ?? [] : [];
+  return kind ? keyNameOf(kind, id, limits) : null;
+}
+
+/**
+ * Reads the keys an admin pins with their values: each key as the story names it to its value, see
+ * keyValueOf.
+ *
+ * @param {any} named The keys and values.
+ * @param {typeof STORY_LIMITS} [limits] The limits.
+ * @returns {{keys: Map<string, string>} | {error: string}} The keys with their values as kept, or why they are wrong.
+ */
+export function readPins(named, limits = STORY_LIMITS) {
+  if (!named || typeof named !== "object" || Array.isArray(named)) {
+    return { error: "keys must be an object of keys such as s12, v1201 or ss858.139.A and their values" };
+  }
+
+  const keys = new Map();
+
+  for (const [name, value] of Object.entries(named)) {
+    const key = keyOfName(name, limits);
+    const kept = key === null ? null : keyValueOf(key.startsWith("ss") ? "ss" : key[0], value, limits);
+
+    if (kept === null) {
+      return { error: `a pin names a switch or self switch with true or false, or a variable with a number, a text, true or false: ${name.slice(0, 40)}` };
+    }
+
+    keys.set(key, kept);
+  }
+
+  if (keys.size === 0 || keys.size > limits.maxAdminKeys) {
+    return { error: `keys must name 1 to ${limits.maxAdminKeys} keys` };
+  }
+
+  return { keys };
+}
+
+/**
+ * Tells the value an admin pinned a key of a keyed story at: its pin with a value, or off for a key
+ * the rules an older relay kept name, see pinnedKey.
+ *
+ * @param {object | undefined} story The story as kept.
+ * @param {string} key The key.
+ * @returns {string | undefined} The pinned value as kept, undefined for a key no pin holds.
+ */
+export function pinOf(story, key) {
+  return story?.pinned?.[key] ?? (pinnedKey(story?.pins, key) ? OFF_VALUE[key[0]] : undefined);
+}
+
+/**
+ * Makes the pins of a story as an admin reads them.
+ *
+ * @param {object | undefined} story The story as kept.
+ * @returns {{keys: object, rules: string[]}} `keys`, each pinned key to its value as an admin names it (see keyValueView), and `rules`, the ranges an older relay pinned at off.
+ */
+export function pinsView(story) {
+  return { keys: Object.fromEntries(Object.entries(story?.pinned ?? {}).map(([key, value]) => [key, keyValueView(key, value)])), rules: [...(story?.pins ?? [])] };
+}
+
+/**
+ * Reports whether an admin's rules, which an older relay kept and pinned at off, pin a key: "s"
+ * and "v" rules name switch and variable ids, "ss" rules the maps of self switches, each one id or
+ * a range such as "v1201-1218".
  *
  * @param {string[] | undefined} rules The rules.
  * @param {string} key The key, such as "v1201" or "ss858.139.A".
@@ -863,7 +933,7 @@ export class WorldStory {
 
       const keys = keyed ? readLists(story.lists, { ...this.limits, maxListsLength: Infinity }).keys : new Map();
 
-      if ([...lists.keys].some(([key, value]) => pinnedKey(story?.pins, key) && (keys.get(key) ?? OFF_VALUE[key[0]]) !== value)) {
+      if ([...lists.keys].some(([key, value]) => pinOf(story, key) !== undefined && (keys.get(key) ?? OFF_VALUE[key[0]]) !== value)) {
         return { status: 409, body: { ...stateOf(story, true), error: "an admin keeps some of these keys as the world's story holds them", code: STORY_REFUSAL.closed } };
       }
 
@@ -960,6 +1030,7 @@ export class WorldStory {
       at: this.clock(),
       by: player,
       ...(story?.pins ? { pins: story.pins } : {}),
+      ...(story?.pinned ? { pinned: story.pinned } : {}),
     };
     return { next, checkpoint };
   }
@@ -986,7 +1057,7 @@ export class WorldStory {
         return { status: 409, body: { error: "only a keyed story has keys an admin sets", code: STORY_REFUSAL.none } };
       }
 
-      const pinned = [...read.keys].filter(([key, value]) => pinnedKey(story.pins, key) && value !== OFF_VALUE[key[0]]).map(([key]) => key);
+      const pinned = [...read.keys].filter(([key, value]) => pinOf(story, key) !== undefined && value !== pinOf(story, key)).map(([key]) => key);
 
       if (pinned.length > 0) {
         return { status: 409, body: { error: "an admin pinned these keys at other values", code: STORY_REFUSAL.pinned, keys: pinned } };
@@ -1029,14 +1100,21 @@ export class WorldStory {
   }
 
   /**
-   * Turns every key of a keyed story that the rules name off as a new revision, which every game
-   * takes, and keeps the rules, so no later write changes those keys, see pinnedKey.
+   * Pins keys of a keyed story at values, as an admin asks: sets them, as a new revision every game
+   * takes when one changes, and keeps them so against every later write, see pinOf. A key pinned
+   * again takes its new value.
    *
-   * @param {string[]} rules The rules, such as "v1201-1218", "s2901-2962" or "ss845-936".
-   * @param {string} admin Who pins them.
-   * @returns {Promise<{status: number, body: object, push?: object}>} The new state and the change to tell every game; or 409 for a story that is not keyed.
+   * @param {any} request `keys`, each key as the story names it ("s12", "v1201", "ss858.139.A") to its value, see readPins.
+   * @param {string} admin The admin's player id.
+   * @returns {Promise<{status: number, body: object, push?: object}>} The state with `set` (the lists of the keys that changed) and `pins`, see pinsView, and the change to tell every game when a key changed; or 409 with code `none` for a story that is not keyed; or why the request is wrong.
    */
-  async pin(rules, admin) {
+  async pinKeys(request, admin) {
+    const read = readPins(request?.keys, this.limits);
+
+    if (read.error) {
+      return badRequest(read.error);
+    }
+
     return this.exclusive(async () => {
       const story = await this.store.get();
 
@@ -1044,27 +1122,65 @@ export class WorldStory {
         return { status: 409, body: { error: "only a keyed story pins keys", code: STORY_REFUSAL.none } };
       }
 
-      const keys = readLists(story.lists, { ...this.limits, maxListsLength: Infinity }).keys;
-      const applied = new Map();
+      const pinned = { ...(story.pinned ?? {}), ...Object.fromEntries(read.keys) };
 
-      for (const [key, value] of keys) {
-        if (pinnedKey(rules, key) && value !== OFF_VALUE[key[0]]) {
-          keys.set(key, OFF_VALUE[key[0]]);
-          applied.set(key, OFF_VALUE[key[0]]);
+      if (Object.keys(pinned).length > this.limits.maxPins) {
+        return { status: 413, body: { error: `a story keeps at most ${this.limits.maxPins} pinned keys` } };
+      }
+
+      const keys = readLists(story.lists, { ...this.limits, maxListsLength: Infinity }).keys;
+      const applied = new Map([...read.keys].filter(([key, value]) => keys.get(key) !== value));
+
+      for (const [key, value] of applied) {
+        keys.set(key, value);
+      }
+
+      const changed = applied.size > 0 ? this.adminRevision({ ...story, pinned }, keys, applied, admin) : { next: { ...story, pinned }, checkpoint: null };
+      await this.store.put(changed.next, changed.checkpoint);
+      return { status: 200, body: { ...stateOf(changed.next, false), set: listsOf(applied), pins: pinsView(changed.next) }, ...(changed.push ? { push: changed.push } : {}) };
+    });
+  }
+
+  /**
+   * Takes pins off, as an admin asks, so writes change those keys again; the keys keep their
+   * values until a write changes them.
+   *
+   * @param {any} request `keys`, the keys as the story names them, or rules an older relay kept (such as "v1201-1218"), each as kept.
+   * @returns {Promise<{status: number, body: object}>} `cleared` (the keys and rules taken off) and `pins`, see pinsView; or 409 with code `none` for a story that is not keyed; or why the request is wrong.
+   */
+  async clearPins(request) {
+    const named = request?.keys;
+
+    if (!Array.isArray(named) || named.length === 0 || named.length > this.limits.maxAdminKeys || !named.every((key) => typeof key === "string")) {
+      return badRequest(`keys must list 1 to ${this.limits.maxAdminKeys} pinned keys`);
+    }
+
+    return this.exclusive(async () => {
+      const story = await this.store.get();
+
+      if (!story?.lists) {
+        return { status: 409, body: { error: "only a keyed story pins keys", code: STORY_REFUSAL.none } };
+      }
+
+      const pinned = { ...(story.pinned ?? {}) };
+      const rules = [...(story.pins ?? [])];
+      const cleared = [];
+
+      for (const text of named) {
+        const key = keyOfName(text, this.limits) ?? text;
+
+        if (key in pinned) {
+          delete pinned[key];
+          cleared.push(key);
+        } else if (rules.includes(text)) {
+          rules.splice(rules.indexOf(text), 1);
+          cleared.push(text);
         }
       }
 
-      const { next } = this.advance(story, { counters: story.counters, end: undefined, caps: [] }, admin);
-      const log = [...story.log, { rev: next.rev, keys: [...applied.keys()] }];
-      let logBase = story.logBase;
-
-      while (log.length > this.limits.logWrites || log.reduce((count, entry) => count + entry.keys.length, 0) > this.limits.logKeys) {
-        logBase = log.shift().rev;
-      }
-
-      Object.assign(next, { blob: "", lists: listsOf(keys), log, logBase, pins: rules });
+      const next = { ...story, pinned, pins: rules };
       await this.store.put(next, null);
-      return { status: 200, body: stateOf(next, false), push: { rev: next.rev, prev: story.rev, delta: listsOf(applied), state: stateOf(next, false) } };
+      return { status: 200, body: { cleared, pins: pinsView(next) } };
     });
   }
 
@@ -1234,6 +1350,15 @@ export class WorldStory {
       await this.store.put(next, null);
       return { status: 200, body: stateOf(next, true), push: this.pushOf(story, next) };
     });
+  }
+
+  /**
+   * Reads the story as kept, for what only admins see of it, such as its pins.
+   *
+   * @returns {Promise<object | undefined>} The story, undefined before the first write.
+   */
+  async kept() {
+    return this.exclusive(() => this.store.get());
   }
 
   /**

@@ -102,3 +102,32 @@ test("an admin sets switches, variables and self switches by id as a revision ev
   assert.equal((await ask("POST", "/keys", {})).status, 400, "a request that names no key");
   assert.equal((await ask("POST", "/keys", { s: { 5: true } }, "other")).status, 403);
 });
+
+test("an admin pins keys at values, which sets them for every game and keeps them against writes, and takes pins off again", async () => {
+  const { world, kept, ask } = makeWorld();
+  await world.story.write(ALICE, { base: 0, counters: counters({ p: 10 }), set: { s: "12", v: "1001:n10,1201:n2" } });
+  kept.story.pins = ["v1300-1310"];
+
+  const pinned = await ask("POST", "/pins", { keys: { s12: true, v1201: 5, "ss858.139.A": false, v1202: "Lime" } });
+  assert.equal(pinned.status, 200, JSON.stringify(pinned.body));
+  assert.deepEqual(pinned.push.delta, { s: "", sf: "", v: "1201:n5,1202:sTGltZQ==", ss: "", ssf: "858.139.A", a: "", f: "" }, "a key pinned at the value it holds is no change");
+  assert.deepEqual(pinned.body.pins, { keys: { s12: true, v1201: 5, "ss858.139.A": false, v1202: "Lime" }, rules: ["v1300-1310"] });
+  assert.equal(pinned.body.wrev, 2);
+
+  const view = await ask("GET", "");
+  assert.deepEqual(view.body.pins, pinned.body.pins, "the admin view shows the pins");
+  assert.equal((await world.story.write(ALICE, { base: 2, counters: counters({ p: 10 }), set: { v: "1201:n6" } })).status, 409);
+  assert.deepEqual(await ask("POST", "/keys", { v: { 1201: 6 } }).then((answer) => [answer.status, answer.body.code, answer.body.keys]), [409, "pinned", ["v1201"]]);
+
+  const again = await ask("POST", "/pins", { keys: { v1201: 5 } });
+  assert.deepEqual([again.body.rev, again.push], [2, undefined], "pinning a key at the value it holds makes no revision");
+
+  const cleared = await ask("POST", "/pins/clear", { keys: ["v01201", "v1300-1310", "s99"] });
+  assert.deepEqual(cleared.body, { cleared: ["v1201", "v1300-1310"], pins: { keys: { s12: true, "ss858.139.A": false, v1202: "Lime" }, rules: [] } });
+  assert.equal((await world.story.write(ALICE, { base: 2, counters: counters({ p: 10 }), set: { v: "1201:n6,1305:n1" } })).status, 200, "the keys taken off are written again");
+
+  assert.equal((await ask("POST", "/pins", { keys: { s12: 1 } })).status, 400);
+  assert.equal((await ask("POST", "/pins", { keys: { x12: true } })).status, 400);
+  assert.equal((await ask("POST", "/pins/clear", { keys: "s12" })).status, 400);
+  assert.equal((await ask("POST", "/pins", { keys: { s12: true } }, "other")).status, 403);
+});
