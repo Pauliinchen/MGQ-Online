@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Answered the Raid designs' entity, push, history and designer routes and kept the designs beside the worlds
+//      Paulinchen  2026-10-21: Opened the designer socket and served the newest designer release
+//                            - Answered the Raid designs' entity, push, history and designer routes and kept the designs beside the worlds
 //      Paulinchen  2026-10-15: Marked every player offline as it starts
 //                            - Handed its admins everything it keeps for another relay to take over
 //                            - Started co-op battles on the battle server and carried their channels
@@ -53,6 +54,7 @@
 // database, and follows the core's rules, so it behaves like the Cloudflare relay. It writes one
 // line per request to stdout and every error it catches to stderr.
 
+import { createReadStream } from "node:fs";
 import http from "node:http";
 import net from "node:net";
 import { pathToFileURL } from "node:url";
@@ -63,7 +65,8 @@ import {
 } from "../core/battles.js";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
 import { memoryDesignStore } from "../core/design_store_memory.js";
-import { DesignBook, designRouteOf, handleDesignRequest } from "../core/designs.js";
+import { DESIGNER_RELEASE_LIMITS, DesignerReleases, byteRangeOf, designerReleaseSettingsOf } from "../core/designer_releases.js";
+import { DESIGN_CLOSE, DESIGN_SOCKET, DesignBook, admitDesigner, designRouteOf, handleDesignRequest, pushedFrame, releaseFrame } from "../core/designs.js";
 import { Directory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, raidBossesText, squadText } from "../core/directory.js";
 import {
   DEFAULT_MIN_VERSION, DESIGN_FORMAT_HEADER, DESIGNER_HEADER, DESIGNER_VERSION_HEADER, DRAIN_LIMITS, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE,
@@ -506,17 +509,29 @@ function headerOf(request, name) {
 }
 
 /**
+ * Reads the headers the design routes and the designer socket take.
+ *
+ * @param {http.IncomingMessage} request The request.
+ * @returns {{designer: string | null, player: string | null, version: string | null, format: string | null}} Its DESIGNER_HEADER, PLAYER_HEADER, DESIGNER_VERSION_HEADER and DESIGN_FORMAT_HEADER.
+ */
+function designerClientOf(request) {
+  return {
+    designer: headerOf(request, DESIGNER_HEADER), player: headerOf(request, PLAYER_HEADER), version: headerOf(request, DESIGNER_VERSION_HEADER), format: headerOf(request, DESIGN_FORMAT_HEADER),
+  };
+}
+
+/**
  * Creates a relay server, not yet listening.
  *
- * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk, minVersion?: string, releases?: ReleaseWatch | null, designs?: DesignBook}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log, the bug report desk, off unless given, the lowest game version served, DEFAULT_MIN_VERSION unless given, which tests change, the watch of the mod's releases, off unless given, and the Raid designs, in memory unless given.
- * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, designs: DesignBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, check: () => void, sweep: () => Promise<void>, checkRelease: () => Promise<{version: string | null, worlds: number}>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, the Raid designs, a world's story, a world's boss pools, a look at the deadlines, a sweep of what is kept too long, a check of the mod's releases, and a way to stop everything.
+ * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk, minVersion?: string, releases?: ReleaseWatch | null, designs?: DesignBook, designerReleaseEveryMs?: number}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log, the bug report desk, off unless given, the lowest game version served, DEFAULT_MIN_VERSION unless given, which tests change, the watch of the mod's releases, off unless given, the Raid designs, in memory unless given, and how often the designer releases are checked when the designs serve them.
+ * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, designs: DesignBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, check: () => void, sweep: () => Promise<void>, checkRelease: () => Promise<{version: string | null, worlds: number}>, checkDesignerRelease: () => Promise<string | null>, pingDesigners: () => void, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, the Raid designs, a world's story, a world's boss pools, a look at the deadlines, a sweep of what is kept too long, a check of the mod's releases, a check of the designer releases, a ping of the designer sockets, and a way to stop everything.
  */
 export function createRelay({
   limits = LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, directory = new Directory(memoryStore(), { clock }),
   mods = new ModCatalog(memoryModStore(), { clock }), trades = new TradeBook(memoryTradeStore(), (id) => directory.store.get(id), { clock }), stories = memoryStoryStores(),
   storyLimits = STORY_LIMITS, bosses = memoryBossStores(), bossLimits = BOSS_LIMITS, log = consoleLog, reports = new ReportDesk(reportSettingsOf({}), { clock, log: stamped(log) }),
   minVersion = DEFAULT_MIN_VERSION, releases = null, battleServer = null, battleLimits = BATTLE_LIMITS,
-  designs = new DesignBook(memoryDesignStore(), { clock, relayAdmins: directory.admins }),
+  designs = new DesignBook(memoryDesignStore(), { clock, relayAdmins: directory.admins }), designerReleaseEveryMs = DESIGNER_RELEASE_LIMITS.checkEveryMs,
 } = {}) {
   /** @type {Map<string, WorldStory>} */
   const worldStories = new Map();
@@ -532,6 +547,9 @@ export function createRelay({
   // Larger messages than the core allows reach it and get its close code; far larger ones never
   // reach memory at all.
   const sockets = new WebSocketServer({ noServer: true, maxPayload: limits.maxMessageBytes * 2 });
+  const designerSockets = new WebSocketServer({ noServer: true, maxPayload: DESIGN_SOCKET.maxFrameBytes });
+  // The designer sockets that answered the last ping.
+  const awakeDesigners = new WeakSet();
   const server = http.createServer((request, response) => {
     const started = performance.now();
     const path = pathOf(request);
@@ -559,7 +577,7 @@ export function createRelay({
       refuse(socket, status, reason, code);
       logged(status);
     };
-    const accept = (seat) => sockets.handleUpgrade(request, socket, head, (webSocket) => {
+    const accept = (seat, socketServer = sockets) => socketServer.handleUpgrade(request, socket, head, (webSocket) => {
       logged(101);
       seat(webSocket);
     });
@@ -567,6 +585,24 @@ export function createRelay({
 
     if (outdated) {
       turnAway(outdated.status, outdated.reason, outdated.code);
+      return;
+    }
+
+    const designRoute = designRouteOf(new URL(request.url, "http://relay"));
+
+    if (designRoute) {
+      admitDesigner(designs, designRoute.rest, designerClientOf(request)).then((admission) => {
+        if (admission.status) {
+          turnAway(admission.status, admission.reason);
+          return;
+        }
+
+        // A close code reaches the designer only on an open socket.
+        accept((webSocket) => (admission.close ? webSocket.close(admission.close.code, admission.close.reason) : seatDesigner(admission, webSocket)), designerSockets);
+      }, (error) => {
+        log.error(errorLine(new Date(), `admit ${path}`, error));
+        turnAway(500, "the designs failed");
+      });
       return;
     }
 
@@ -659,6 +695,20 @@ export function createRelay({
 
     if (designRouteOf(url)) {
       const answer = await answerDesigns(request, url);
+
+      if (answer.pushed) {
+        designs.presence.broadcast(pushedFrame(answer.pushed));
+      }
+
+      if (answer.removed) {
+        designs.presence.disconnect(answer.removed, DESIGN_CLOSE.notDesigner);
+      }
+
+      if (answer.file) {
+        await sendReleaseFile(request, response, answer.file);
+        return;
+      }
+
       response.writeHead(answer.status, { "Content-Type": "application/json" });
       response.end(JSON.stringify(answer.body));
       return;
@@ -793,10 +843,97 @@ export function createRelay({
    * @returns {Promise<{status: number, body: object}>} The answer.
    */
   function answerDesigns(request, url) {
-    const client = {
-      designer: headerOf(request, DESIGNER_HEADER), player: headerOf(request, PLAYER_HEADER), version: headerOf(request, DESIGNER_VERSION_HEADER), format: headerOf(request, DESIGN_FORMAT_HEADER),
-    };
-    return handleDesignRequest(designs, request.method, url, client, (limit) => readText(request, limit), (limit) => drain(request, limit, AbortSignal.timeout(DRAIN_LIMITS.readMs)));
+    return handleDesignRequest(designs, request.method, url, designerClientOf(request), (limit) => readText(request, limit), (limit) => drain(request, limit, AbortSignal.timeout(DRAIN_LIMITS.readMs)));
+  }
+
+  /**
+   * Sends the newest designer release's exe, or the part of it a Range header asks for.
+   *
+   * @param {http.IncomingMessage} request The request.
+   * @param {http.ServerResponse} response The response.
+   * @param {{path: string, name: string, size: number, sha256: string}} file The exe.
+   * @returns {Promise<void>} Completes once sent.
+   */
+  async function sendReleaseFile(request, response, file) {
+    const range = byteRangeOf(headerOf(request, "Range"), file.size);
+    const common = { "Accept-Ranges": "bytes", ETag: `"${file.sha256}"`, "Cache-Control": "private, no-store" };
+
+    if (!range) {
+      response.writeHead(416, { ...common, "Content-Range": `bytes */${file.size}` });
+      response.end();
+      return;
+    }
+
+    response.writeHead(range.partial ? 206 : 200, {
+      ...common,
+      "Content-Type": "application/octet-stream",
+      "Content-Length": range.end - range.start + 1,
+      "Content-Disposition": `attachment; filename="${file.name}"`,
+      ...(range.partial ? { "Content-Range": `bytes ${range.start}-${range.end}/${file.size}` } : {}),
+    });
+
+    const stream = createReadStream(file.path, { start: range.start, end: range.end });
+    stream.pipe(response);
+    await new Promise((resolve) => {
+      stream.on("error", (error) => {
+        log.error(errorLine(new Date(), "send of the designer release", error));
+        response.destroy();
+        resolve();
+      });
+      response.on("close", () => {
+        stream.destroy();
+        resolve();
+      });
+    });
+  }
+
+  /**
+   * Seats a designer on the designer socket: greets it, takes what it edits and keeps it awake.
+   *
+   * @param {{designer: {id: string, name: string, admin: boolean}, seq: number}} admission The designer and the newest push's seq, see admitDesigner.
+   * @param {import("ws").WebSocket} socket The designer's socket.
+   */
+  function seatDesigner(admission, socket) {
+    awakeDesigners.add(socket);
+    designs.presence.join(admission.designer, admission.seq, socket);
+    socket.on("pong", () => awakeDesigners.add(socket));
+    socket.on("message", (data, binary) => {
+      if (!binary) {
+        designs.presence.editing(socket, data.toString("utf8"));
+      }
+    });
+    socket.on("close", () => designs.presence.leave(socket));
+    socket.on("error", () => socket.terminate());
+  }
+
+  /**
+   * Pings every designer socket and closes those that did not answer the last ping.
+   */
+  function pingDesigners() {
+    for (const socket of designerSockets.clients) {
+      if (!awakeDesigners.has(socket)) {
+        socket.terminate();
+        continue;
+      }
+
+      awakeDesigners.delete(socket);
+      socket.ping();
+    }
+  }
+
+  /**
+   * Reads the newest designer release and tells the designers online of a new one.
+   *
+   * @returns {Promise<string | null>} The version newly served, null when nothing changed or without designer releases.
+   */
+  async function checkDesignerRelease() {
+    const version = designs.releases ? await designs.releases.check() : null;
+
+    if (version) {
+      designs.presence.broadcast(releaseFrame(version));
+    }
+
+    return version;
   }
 
   /**
@@ -1636,6 +1773,14 @@ export function createRelay({
   modTimer.unref();
   const releaseTimer = releases ? setInterval(() => checkRelease().catch((error) => log.error(errorLine(new Date(), "check of the mod's releases", error))), CHECK_RELEASE_EVERY_MS) : null;
   releaseTimer?.unref();
+  const designerPingTimer = setInterval(pingDesigners, DESIGN_SOCKET.pingEveryMs);
+  designerPingTimer.unref();
+  const presenceTimer = setInterval(() => designs.presence.expire(), DESIGN_SOCKET.expireEveryMs);
+  presenceTimer.unref();
+  const designerReleaseTimer = designs.releases
+    ? setInterval(() => checkDesignerRelease().catch((error) => log.error(errorLine(new Date(), "check of the designer releases", error))), designerReleaseEveryMs)
+    : null;
+  designerReleaseTimer?.unref();
 
   /**
    * Closes every connection and the server.
@@ -1648,19 +1793,22 @@ export function createRelay({
     clearInterval(modTimer);
     clearInterval(releaseTimer);
     clearInterval(battleTimer);
+    clearInterval(designerPingTimer);
+    clearInterval(presenceTimer);
+    clearInterval(designerReleaseTimer);
 
     for (const link of [...battleLinks.values()]) {
       endBattle(link.world, link.battle, BATTLE_END.server);
     }
 
-    for (const socket of sockets.clients) {
+    for (const socket of [...sockets.clients, ...designerSockets.clients]) {
       socket.terminate();
     }
 
     return new Promise((resolve) => server.close(() => resolve()));
   }
 
-  return { server, directory, mods, trades, designs, storyOf, bossesOf, battles, check, sweep, sweepBattles, checkRelease, stop };
+  return { server, directory, mods, trades, designs, storyOf, bossesOf, battles, check, sweep, sweepBattles, checkRelease, checkDesignerRelease, pingDesigners, stop };
 }
 
 /**
@@ -1672,6 +1820,30 @@ export function createRelay({
 export function battleServerOf(text) {
   const match = /^\s*([^\s:]+):(\d{1,5})\s*$/.exec(text ?? "");
   return match ? { host: match[1], port: Number(match[2]) } : null;
+}
+
+/**
+ * Opens the designer releases the environment sets up and takes up the release kept from before;
+ * a key that is no key leaves them off, so the relay still starts.
+ *
+ * @param {Record<string, string | undefined>} env The environment, see designerReleaseSettingsOf.
+ * @returns {Promise<DesignerReleases | null>} The releases, null while off.
+ */
+export async function openDesignerReleases(env) {
+  const settings = designerReleaseSettingsOf(env);
+
+  if (!settings) {
+    return null;
+  }
+
+  try {
+    const releases = new DesignerReleases(settings, { log: stamped(consoleLog) });
+    await releases.load();
+    return releases;
+  } catch (error) {
+    consoleLog.error(errorLine(new Date(), "designer releases", error));
+    return null;
+  }
 }
 
 /**
@@ -1703,9 +1875,13 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const reports = new ReportDesk(reportSettingsOf(process.env), { log: stamped(consoleLog) });
   const releases = new ReleaseWatch(stores.releases, { repo: process.env.RELEASE_REPO || RELEASE_REPO });
   const battleServer = battleServerOf(process.env[BATTLE_SERVER_VARIABLE]);
-  const designs = new DesignBook(stores.designs, { minVersion: process.env.DESIGNER_MIN_VERSION, allowDev: process.env.DESIGNER_ALLOW_DEV === "1", relayAdmins: directory.admins });
+  const designerReleases = await openDesignerReleases(process.env);
+  const designs = new DesignBook(stores.designs, {
+    minVersion: process.env.DESIGNER_MIN_VERSION, allowDev: process.env.DESIGNER_ALLOW_DEV === "1", relayAdmins: directory.admins, releases: designerReleases,
+  });
   await designs.seedAdmins(parseAdmins(process.env.DESIGNER_ADMINS));
   const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports, minVersion: process.env.MIN_VERSION, releases, battleServer, designs });
+  relay.checkDesignerRelease().catch((error) => consoleLog.error(errorLine(new Date(), "check of the designer releases", error)));
 
   relay.server.listen(port, host, () => console.log(`${new Date().toISOString()} relay listening on ${host}:${port}, ${database ? `database ${database}` : "everything in memory"}, ${battleServer ? `battle server ${battleServer.host}:${battleServer.port}` : "no battle server"}, ${offline} world(s) with players online marked empty`));
 

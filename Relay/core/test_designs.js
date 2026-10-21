@@ -2,14 +2,18 @@
 //  test_designs.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Created
+//      Paulinchen  2026-10-21: Replayed the release exchanges over a release the relay serves
+//                            - Created
 //
 //----------------------------------------------------------------
 
 // What the design tests share: the contract's fixtures, canonical JSON to compare answers by, and
 // the state each fixture's exchanges start from, so every design store replays them alike.
 
+import { generateKeyPairSync } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { DesignerReleases } from "./designer_releases.js";
 import { playerIdOf } from "./directory.js";
 import { DESIGN_FORMAT_HEADER, DESIGNER_HEADER, DESIGNER_VERSION_HEADER } from "./gate.js";
 import { DesignBook, handleDesignRequest } from "./designs.js";
@@ -169,11 +173,13 @@ export async function seedEntities(store, entities) {
  * Makes a design book over a store as the fixtures' relay runs it, with designers A and B listed.
  *
  * @param {import("./designs.js").DesignStore} store The store.
- * @param {{presence?: {of: (id: string) => {online: boolean, editing: string | null}}}} [options] Who is online.
+ * @param {{presence?: {of: (id: string) => {online: boolean, editing: string | null}}, releases?: () => object}} [options] Who is online; makes the designer release served, none unless given.
  * @returns {Promise<DesignBook>} The book.
  */
-export async function fixtureBook(store, { presence } = {}) {
-  const book = new DesignBook(store, { clock: () => NOW * 1000, minVersion: MIN_VERSION, relayAdmins: new Set([await playerIdOf(RELAY_ADMIN_KEY)]), ...(presence ? { presence } : {}) });
+export async function fixtureBook(store, { presence, releases } = {}) {
+  const book = new DesignBook(store, {
+    clock: () => NOW * 1000, minVersion: MIN_VERSION, relayAdmins: new Set([await playerIdOf(RELAY_ADMIN_KEY)]), ...(presence ? { presence } : {}), ...(releases ? { releases: releases() } : {}),
+  });
 
   for (const designer of [DESIGNERS.A, DESIGNERS.B]) {
     await store.putDesigner({ id: designer.id, name: designer.name, admin: designer.admin, addedBy: "test", at: NOW });
@@ -196,12 +202,26 @@ export function entity(id, rev, body, { designer = DESIGNERS.A, at = NOW, schema
 }
 
 /**
- * The exchanges that belong to later relay packages, which R1's relay answers otherwise: the builds
- * (R3) and the release proxy (R2). The socket and the manifest hold no exchanges.
+ * Makes the designer releases as serving the release of release.json, whose signature is a
+ * placeholder and so is restored rather than checked.
+ *
+ * @returns {DesignerReleases} The releases.
+ */
+export function fixtureReleases() {
+  const publicKey = generateKeyPairSync("ec", { namedCurve: "P-256" }).publicKey.export({ type: "spki", format: "pem" });
+  const releases = new DesignerReleases({ repo: "owner/designer", token: "token", publicKey, dataDir: tmpdir() });
+  const answer = fixture("release.json").exchanges[0].response.body;
+  const manifest = JSON.parse(Buffer.from(answer.manifest, "base64").toString("utf8"));
+  releases.restore({ version: answer.version, notes: answer.notes, manifest: answer.manifest, signature: answer.signature, sha256: answer.sha256, size: answer.size, name: manifest.files[0].name });
+  return releases;
+}
+
+/**
+ * The exchanges that belong to later relay packages, which this relay answers otherwise: the
+ * builds (R3). The socket and the manifest hold no exchanges.
  */
 export const DEFERRED = Object.freeze({
   "refusals.json": Object.freeze(["build on an old seq", "compiler missing"]),
-  "release.json": Object.freeze(["the newest release", "an outdated designer may still update"]),
 });
 
 /**
@@ -261,6 +281,11 @@ export const SCENARIOS = Object.freeze([
     request: {
       "body too big": (request) => ({ ...request, body: { ...request.body, changes: [{ ...request.body.changes[0], body: { ...request.body.changes[0].body, description: "x".repeat(300 * 1024) } }] } }),
     },
+  },
+  {
+    file: "release.json",
+    setup: async () => {},
+    releases: fixtureReleases,
   },
 ]);
 

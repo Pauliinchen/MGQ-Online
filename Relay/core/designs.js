@@ -2,19 +2,21 @@
 //  designs.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Created
+//      Paulinchen  2026-10-21: Kept the designers' presence and their sockets and served the newest designer release
+//                            - Created
 //
 //----------------------------------------------------------------
 
 // The Raid designs several designers edit together, on the Node relay only: entities with their
-// revisions and history, all-or-nothing pushes on a base revision, pulls since a revision, and the
-// designers the relay serves. The relay never reads an entity's body; the contract is
+// revisions and history, all-or-nothing pushes on a base revision, pulls since a revision, the
+// designers the relay serves, who of them is online and what they edit, and the newest designer
+// release. The relay never reads an entity's body; the contract is
 // MGQ-Online-Raid-Designer/docs/SERVER_FORMAT.md, its fixtures are in fixtures/designs.
 
 import { playerIdOf, sha256Hex } from "./directory.js";
 import { DEFAULT_DESIGNER_MIN_VERSION, DESIGN_ROUTE, designerRefusal, designerRuleOf, parseVersion } from "./gate.js";
 import { notFound, routeIs } from "./http.js";
-import { cleanText, isId } from "./ids.js";
+import { CONTROL_CHARACTERS, cleanText, isId } from "./ids.js";
 import { RateLimiter } from "./relay.js";
 
 /**
@@ -80,6 +82,34 @@ export const DESIGN_LIMITS = Object.freeze({
  */
 export const DESIGN_RATE_LIMITS = Object.freeze({
   push: Object.freeze({ burst: 30, refillMs: 2 * 1000 }),
+  // Three downloads of the designer's exe an hour.
+  releaseFile: Object.freeze({ burst: 3, refillMs: 20 * 60 * 1000 }),
+});
+
+/**
+ * The designer socket's limits and timings.
+ */
+export const DESIGN_SOCKET = Object.freeze({
+  // The part of the address after `designs`.
+  route: "socket",
+  // How long a designer's presence lasts unless it is told again.
+  presenceTtlMs: 60 * 1000,
+  // The fewest milliseconds between two presence frames of one designer.
+  editingEveryMs: 1000,
+  pingEveryMs: 30 * 1000,
+  // How often presences past their TTL are looked for.
+  expireEveryMs: 10 * 1000,
+  // The largest frame a designer sends, in bytes; a larger one closes its socket.
+  maxFrameBytes: 4 * 1024,
+  maxPathLength: 200,
+});
+
+/**
+ * The close codes of the designer socket.
+ */
+export const DESIGN_CLOSE = Object.freeze({
+  notDesigner: Object.freeze({ code: 4403, reason: "not a designer" }),
+  update: Object.freeze({ code: 4426, reason: "update" }),
 });
 
 /**
@@ -93,9 +123,9 @@ export const SEEDED_BY = "DESIGNER_ADMINS";
 const CONFLICT_MESSAGE = "Someone changed these since your base.";
 
 /**
- * The presence of designers without the designer socket: nobody is online.
+ * The ready state of an open WebSocket, the same in Node's ws and in browsers.
  */
-const NO_PRESENCE = Object.freeze({ of: () => ({ online: false, editing: null }) });
+const OPEN = 1;
 
 /**
  * Turns a designer key into the designer id everyone sees, which does not give the key away and
@@ -215,6 +245,294 @@ function wholeParameter(query, name, fallback) {
 }
 
 /**
+ * The frame that greets a designer on its socket.
+ *
+ * @param {number} seq The newest push's seq.
+ * @param {{id: string, name: string, admin: boolean}} you The designer.
+ * @param {{id: string, name: string, entity: string | null, path: string | null}[]} presence The other designers online and what they edit.
+ * @returns {object} The frame.
+ */
+export function helloFrame(seq, you, presence) {
+  return { op: "hello", seq, you: { id: you.id, name: you.name, admin: you.admin }, presence };
+}
+
+/**
+ * The frame that tells the designers of a push.
+ *
+ * @param {{seq: number, by: string, name: string, ids: string[]}} pushed The push's seq, its designer's id and name and the ids it changed.
+ * @returns {object} The frame.
+ */
+export function pushedFrame(pushed) {
+  return { op: "pushed", seq: pushed.seq, by: pushed.by, name: pushed.name, ids: pushed.ids };
+}
+
+/**
+ * The frame that tells the designers what one of them edits.
+ *
+ * @param {{id: string, name: string, entity: string | null, path: string | null}} presence The designer and what it edits, nulls for nothing.
+ * @param {number} at When, in unix seconds.
+ * @returns {object} The frame.
+ */
+export function presenceFrame(presence, at) {
+  return { op: "presence", id: presence.id, name: presence.name, entity: presence.entity, path: presence.path, at };
+}
+
+/**
+ * The frame that tells the designers one of them closed its last socket.
+ *
+ * @param {string} id The designer's id.
+ * @returns {object} The frame.
+ */
+export function leftFrame(id) {
+  return { op: "left", id };
+}
+
+/**
+ * The frame that tells the designers a build changed its status.
+ *
+ * @param {{id: number, seq: number, status: string}} build The build.
+ * @returns {object} The frame.
+ */
+export function buildFrame(build) {
+  return { op: "build", build: { id: build.id, seq: build.seq, status: build.status } };
+}
+
+/**
+ * The frame that tells the designers which build is live.
+ *
+ * @param {{buildId: number, marshalSha: string, runtimeSha: string, by: string, name: string}} live The live build, its blobs' SHA-256 and who published it.
+ * @returns {object} The frame.
+ */
+export function liveFrame(live) {
+  return { op: "live", buildId: live.buildId, marshalSha: live.marshalSha, runtimeSha: live.runtimeSha, by: live.by, name: live.name };
+}
+
+/**
+ * The frame that tells the designers of a new designer release.
+ *
+ * @param {string} version The release's version.
+ * @returns {object} The frame.
+ */
+export function releaseFrame(version) {
+  return { op: "release", version };
+}
+
+/**
+ * Reads what a designer says it edits, from a frame of its socket.
+ *
+ * @param {string} text The frame, `{"op": "editing", "entity", "path"}`.
+ * @param {number} maxPathLength The longest path taken.
+ * @returns {{entity: string | null, path: string | null} | null} The entity and the path in its body, nulls for nothing and a path only beside an entity; null for any other frame.
+ */
+export function readEditing(text, maxPathLength = DESIGN_SOCKET.maxPathLength) {
+  let frame;
+
+  try {
+    frame = JSON.parse(text);
+  } catch {
+    return null;
+  }
+
+  if (!isObject(frame) || frame.op !== "editing") {
+    return null;
+  }
+
+  const entity = frame.entity ?? null;
+  const path = frame.path ?? null;
+  const goodEntity = entity === null || (typeof entity === "string" && ENTITY_ID.test(entity));
+  const goodPath = path === null || (typeof path === "string" && path.length > 0 && path.length <= maxPathLength && !new RegExp(CONTROL_CHARACTERS.source).test(path));
+  return goodEntity && goodPath ? { entity, path: entity === null ? null : path } : null;
+}
+
+/**
+ * The designers online on the designer socket: their sockets, what each edits, and the frames they
+ * are told. A designer may hold several sockets; it is online while one is open.
+ */
+export class DesignPresence {
+  /**
+   * Creates the presence, with nobody online.
+   *
+   * @param {{clock?: () => number, schedule?: (work: () => void, ms: number) => void, limits?: typeof DESIGN_SOCKET}} [options] The clock and the timer, which tests change; the socket's limits.
+   */
+  constructor({ clock = Date.now, schedule = (work, ms) => setTimeout(work, ms), limits = DESIGN_SOCKET } = {}) {
+    this.clock = clock;
+    this.schedule = schedule;
+    this.limits = limits;
+    /** @type {Map<string, {id: string, name: string, admin: boolean, sockets: Set<any>, entity: string | null, path: string | null, at: number, toldAt: number, pending: boolean}>} */
+    this.designers = new Map();
+    /** @type {Map<any, string>} */
+    this.sockets = new Map();
+  }
+
+  /**
+   * Tells whether a designer is online and what it edits, for the list of designers.
+   *
+   * @param {string} id The designer's id.
+   * @returns {{online: boolean, editing: string | null}} Whether it is, and the entity it edits, null for none.
+   */
+  of(id) {
+    const designer = this.designers.get(id);
+    return { online: Boolean(designer), editing: designer?.entity ?? null };
+  }
+
+  /**
+   * Lists the designers online and what they edit, but one.
+   *
+   * @param {string} except The designer left out.
+   * @returns {{id: string, name: string, entity: string | null, path: string | null}[]} Them, by id.
+   */
+  list(except) {
+    return [...this.designers.values()].filter((designer) => designer.id !== except).sort((left, right) => (left.id < right.id ? -1 : 1))
+      .map((designer) => ({ id: designer.id, name: designer.name, entity: designer.entity, path: designer.path }));
+  }
+
+  /**
+   * Takes a designer's socket in and greets it; the other designers hear of a designer that was not
+   * online yet.
+   *
+   * @param {{id: string, name: string, admin: boolean}} designer The designer.
+   * @param {number} seq The newest push's seq.
+   * @param {{readyState: number, send: (text: string) => void, close: (code: number, reason: string) => void}} socket Its socket.
+   */
+  join(designer, seq, socket) {
+    const earlier = this.designers.get(designer.id);
+    const entry = earlier ?? { id: designer.id, name: designer.name, admin: designer.admin, sockets: new Set(), entity: null, path: null, at: this.clock(), toldAt: 0, pending: false };
+    entry.sockets.add(socket);
+    this.designers.set(designer.id, entry);
+    this.sockets.set(socket, designer.id);
+    send(socket, helloFrame(seq, designer, this.list(designer.id)));
+
+    if (!earlier) {
+      this.tell(entry);
+    }
+  }
+
+  /**
+   * Notes what a designer says it edits and tells the others, at most once per editingEveryMs;
+   * a frame sent sooner is told once that time is up.
+   *
+   * @param {any} socket The designer's socket.
+   * @param {string} text The frame.
+   */
+  editing(socket, text) {
+    const entry = this.designers.get(this.sockets.get(socket));
+    const read = entry ? readEditing(text, this.limits.maxPathLength) : null;
+
+    if (!read) {
+      return;
+    }
+
+    entry.entity = read.entity;
+    entry.path = read.path;
+    entry.at = this.clock();
+    const wait = entry.toldAt + this.limits.editingEveryMs - entry.at;
+
+    if (wait <= 0) {
+      this.tell(entry);
+      return;
+    }
+
+    if (!entry.pending) {
+      entry.pending = true;
+      this.schedule(() => {
+        entry.pending = false;
+
+        // A designer that left in the meantime is told no more.
+        if (this.designers.get(entry.id) === entry) {
+          this.tell(entry);
+        }
+      }, wait);
+    }
+  }
+
+  /**
+   * Lets a socket go; once a designer's last socket is gone, the others hear it left.
+   *
+   * @param {any} socket The socket.
+   */
+  leave(socket) {
+    const id = this.sockets.get(socket);
+    const entry = this.designers.get(id);
+    this.sockets.delete(socket);
+
+    if (!entry) {
+      return;
+    }
+
+    entry.sockets.delete(socket);
+
+    if (entry.sockets.size === 0) {
+      this.designers.delete(id);
+      this.broadcast(leftFrame(id));
+    }
+  }
+
+  /**
+   * Forgets what designers edit once they have not told it again within the TTL, and tells the
+   * others they edit nothing.
+   */
+  expire() {
+    const now = this.clock();
+
+    for (const entry of this.designers.values()) {
+      if (entry.entity !== null && now - entry.at >= this.limits.presenceTtlMs) {
+        entry.entity = null;
+        entry.path = null;
+        this.tell(entry);
+      }
+    }
+  }
+
+  /**
+   * Closes every socket of a designer, such as one no longer listed.
+   *
+   * @param {string} id The designer's id.
+   * @param {{code: number, reason: string}} close The close code and reason.
+   */
+  disconnect(id, close) {
+    for (const socket of [...(this.designers.get(id)?.sockets ?? [])]) {
+      socket.close(close.code, close.reason);
+    }
+  }
+
+  /**
+   * Tells every designer online a frame, but those a designer id names.
+   *
+   * @param {object} frame The frame.
+   * @param {string | null} [except] The designer left out, none unless given.
+   */
+  broadcast(frame, except = null) {
+    for (const [socket, id] of this.sockets) {
+      if (id !== except) {
+        send(socket, frame);
+      }
+    }
+  }
+
+  /**
+   * Tells the other designers what a designer edits now.
+   *
+   * @param {{id: string, name: string, entity: string | null, path: string | null, toldAt: number}} entry The designer.
+   */
+  tell(entry) {
+    entry.toldAt = this.clock();
+    this.broadcast(presenceFrame(entry, Math.floor(entry.toldAt / 1000)), entry.id);
+  }
+}
+
+/**
+ * Sends a frame on a socket that is still open.
+ *
+ * @param {{readyState: number, send: (text: string) => void}} socket The socket.
+ * @param {object} frame The frame.
+ */
+function send(socket, frame) {
+  if (socket.readyState === OPEN) {
+    socket.send(JSON.stringify(frame));
+  }
+}
+
+/**
  * The Raid design several designers share, over a store: the entities, their history, the pushes
  * and the designers. Writes run one at a time.
  */
@@ -223,9 +541,9 @@ export class DesignBook {
    * Creates the book.
    *
    * @param {DesignStore} store Where the design is kept.
-   * @param {{clock?: () => number, minVersion?: string, allowDev?: boolean, relayAdmins?: Set<string>, presence?: {of: (id: string) => {online: boolean, editing: string | null}}, limits?: typeof DESIGN_LIMITS, rateLimits?: typeof DESIGN_RATE_LIMITS}} [options] The clock, which tests change; the lowest designer version served, as DESIGNER_MIN_VERSION names it; whether a development build writes as any designer, as DESIGNER_ALLOW_DEV=1 sets it; the relay admins' player ids; who is online and what they edit; the limits; the rate limits.
+   * @param {{clock?: () => number, minVersion?: string, allowDev?: boolean, relayAdmins?: Set<string>, presence?: DesignPresence, releases?: {answer: (minimum: string) => {status: number, body: object}, file: () => {path: string, name: string, size: number, sha256: string} | null} | null, limits?: typeof DESIGN_LIMITS, rateLimits?: Partial<typeof DESIGN_RATE_LIMITS>}} [options] The clock, which tests change; the lowest designer version served, as DESIGNER_MIN_VERSION names it; whether a development build writes as any designer, as DESIGNER_ALLOW_DEV=1 sets it; the relay admins' player ids; who is online and what they edit, a DesignPresence of its own unless given; the newest designer release, see core/designer_releases.js, none unless given; the limits; the rate limits, DESIGN_RATE_LIMITS' for those not given.
    */
-  constructor(store, { clock = Date.now, minVersion, allowDev = false, relayAdmins = new Set(), presence = NO_PRESENCE, limits = DESIGN_LIMITS, rateLimits = DESIGN_RATE_LIMITS } = {}) {
+  constructor(store, { clock = Date.now, minVersion, allowDev = false, relayAdmins = new Set(), presence = new DesignPresence({ clock }), releases = null, limits = DESIGN_LIMITS, rateLimits = DESIGN_RATE_LIMITS } = {}) {
     const version = parseVersion(minVersion);
     this.store = store;
     this.clock = clock;
@@ -233,8 +551,10 @@ export class DesignBook {
     this.allowDev = allowDev;
     this.relayAdmins = relayAdmins;
     this.presence = presence;
+    this.releases = releases;
     this.limits = limits;
-    this.pushes = new RateLimiter(rateLimits.push, clock);
+    this.pushes = new RateLimiter(rateLimits.push ?? DESIGN_RATE_LIMITS.push, clock);
+    this.releaseFiles = new RateLimiter(rateLimits.releaseFile ?? DESIGN_RATE_LIMITS.releaseFile, clock);
     this.queue = Promise.resolve();
   }
 
@@ -639,7 +959,7 @@ export class DesignBook {
    * Removes a designer: `DELETE designers/<id>`.
    *
    * @param {string} id The designer id.
-   * @returns {Promise<{status: number, body: object}>} An empty answer, also for a designer the relay did not list.
+   * @returns {Promise<{status: number, body: object, removed?: string}>} An empty answer, also for a designer the relay did not list, with the id whose sockets to close.
    */
   async removeDesigner(id) {
     if (!isId(id)) {
@@ -648,8 +968,33 @@ export class DesignBook {
 
     return this.exclusive(async () => {
       await this.store.removeDesigner(id);
-      return { status: 200, body: {} };
+      return { status: 200, body: {}, removed: id };
     });
+  }
+
+  /**
+   * Names the newest designer release: `GET release`.
+   *
+   * @returns {{status: number, body: object}} The release with the lowest designer version served, or `404 none` while the relay holds none.
+   */
+  release() {
+    return this.releases ? this.releases.answer(this.minVersion) : { status: 404, body: { code: "none" } };
+  }
+
+  /**
+   * Hands out the newest designer release's exe, a few times an hour per designer: `GET release/file`.
+   *
+   * @param {{id: string}} designer The designer.
+   * @returns {{status: number, body: object, file?: {path: string, name: string, size: number, sha256: string}}} The file to send; or `429 rate`, or `404 none` while the relay holds no release.
+   */
+  releaseFile(designer) {
+    const file = this.releases?.file() ?? null;
+
+    if (!file) {
+      return { status: 404, body: { code: "none" } };
+    }
+
+    return this.releaseFiles.take(designer.id) ? { status: 200, body: {}, file } : { status: 429, body: { code: "rate" } };
   }
 
   /**
@@ -689,8 +1034,9 @@ async function readDesignJson(readBody, limit) {
 
 /**
  * Answers a request to the design routes, after the designer gate: `GET/PUT me`, `GET entities`,
- * `GET entities/<id>/history`, `POST push`, `GET designers` and `PUT/DELETE designers/<id>`.
- * A relay admin's player key passes on the designer list's routes only.
+ * `GET entities/<id>/history`, `POST push`, `GET designers`, `PUT/DELETE designers/<id>`,
+ * `GET release` and `GET release/file`. A relay admin's player key passes on the designer list's
+ * routes only.
  *
  * @param {DesignBook} book The design.
  * @param {string} method The HTTP method.
@@ -698,7 +1044,7 @@ async function readDesignJson(readBody, limit) {
  * @param {{designer: string | null, player: string | null, version: string | null, format: string | null}} client The request's DESIGNER_HEADER, PLAYER_HEADER, DESIGNER_VERSION_HEADER and DESIGN_FORMAT_HEADER.
  * @param {(limit: number) => Promise<string | null>} readBody Reads the request's body as text up to a limit in bytes, null when it is longer.
  * @param {(limit: number) => Promise<void>} drain Reads the request's body to its end and drops it, for a refusal answered before the body was read.
- * @returns {Promise<{status: number, body: object, pushed?: {seq: number, by: string, name: string, ids: string[]}}>} The answer, with what a push changed.
+ * @returns {Promise<{status: number, body: object, pushed?: {seq: number, by: string, name: string, ids: string[]}, removed?: string, file?: {path: string, name: string, size: number, sha256: string}}>} The answer, with what a push changed, the designer removed, or the release file to send in place of the body.
  */
 export async function handleDesignRequest(book, method, url, client, readBody, drain) {
   const rest = designRouteOf(url)?.rest ?? [];
@@ -758,6 +1104,36 @@ export async function handleDesignRequest(book, method, url, client, readBody, d
     return book.removeDesigner(id);
   }
 
+  if (route === "release" && method === "GET" && (bare || (rest.length === 2 && id === "file"))) {
+    await drain(limit);
+    return bare ? book.release() : book.releaseFile(designer);
+  }
+
   await drain(limit);
   return notFound("route");
+}
+
+/**
+ * Admits a designer to the designer socket, `GET socket` with an upgrade, under the same gate as
+ * the read routes.
+ *
+ * @param {DesignBook} book The design.
+ * @param {string[]} rest The address's parts after `designs`.
+ * @param {{designer: string | null, version: string | null, format: string | null}} client The request's DESIGNER_HEADER, DESIGNER_VERSION_HEADER and DESIGN_FORMAT_HEADER.
+ * @returns {Promise<{designer: {id: string, name: string, admin: boolean}, seq: number} | {close: {code: number, reason: string}} | {status: number, reason: string}>} The designer and the newest push's seq to greet it with; the close code to open and close the socket with; or the status to refuse the upgrade with for any other path.
+ */
+export async function admitDesigner(book, rest, client) {
+  if (rest.length !== 1 || rest[0] !== DESIGN_SOCKET.route) {
+    return { status: 404, reason: "there is no such route" };
+  }
+
+  const designer = await book.designerOf(client.designer);
+  const refusal = designerRefusal(designerRuleOf("GET", rest), designer, client, await book.gateSettings());
+
+  if (refusal) {
+    return { close: refusal.status === 403 ? DESIGN_CLOSE.notDesigner : DESIGN_CLOSE.update };
+  }
+
+  await book.store.seen(designer.id, book.now());
+  return { designer: { id: designer.id, name: designer.name, admin: designer.admin }, seq: (await book.state()).seq };
 }
