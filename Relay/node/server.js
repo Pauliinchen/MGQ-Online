@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-21: Answered the admins' stats of what the relay carries, the battle server's ping included
 //      Paulinchen  2026-10-15: Marked every player offline as it starts
 //                            - Handed its admins everything it keeps for another relay to take over
 //                            - Started co-op battles on the battle server and carried their channels
@@ -56,6 +57,7 @@ import http from "node:http";
 import net from "node:net";
 import { pathToFileURL } from "node:url";
 import { WebSocketServer } from "ws";
+import { adminRouteOf, handleAdminRequest } from "../core/admin.js";
 import {
   BATTLE_END, BATTLE_LIMITS, BATTLE_REFUSAL, BattleTable, EVERY_PLAYER, SERVER_SEAT, battleClosedText, battleRouteOf, battleSeatText, bossLine, messageLine,
   playerMessage, presenceLine, readOpen, readServerLine, serveLine, serverFrame,
@@ -105,6 +107,21 @@ const BATTLE_SWEEP_EVERY_MS = 5 * 1000;
  * The environment variable naming the battle server as host:port; without it the relay has none.
  */
 const BATTLE_SERVER_VARIABLE = "BATTLE_SERVER";
+
+/**
+ * How long the admins' stats wait for the battle server's answer to a ping.
+ */
+const BATTLE_PING_WAIT_MS = 2000;
+
+/**
+ * The longest version the admins' stats keep of a world room's game, so no game fills them with text.
+ */
+const MAX_VERSION_LENGTH = 40;
+
+/**
+ * What the admins' stats count a world room's game under when it named no version.
+ */
+const NO_VERSION = "unknown";
 
 /**
  * Longest request body the directory and the mod catalog read as text, in bytes: the longest JSON
@@ -503,6 +520,7 @@ export function createRelay({
   storyLimits = STORY_LIMITS, bosses = memoryBossStores(), bossLimits = BOSS_LIMITS, log = consoleLog, reports = new ReportDesk(reportSettingsOf({}), { clock, log: stamped(log) }),
   minVersion = DEFAULT_MIN_VERSION, releases = null, battleServer = null, battleLimits = BATTLE_LIMITS,
 } = {}) {
+  const started = clock();
   /** @type {Map<string, WorldStory>} */
   const worldStories = new Map();
   /** @type {Map<string, WorldBosses>} */
@@ -618,7 +636,7 @@ export function createRelay({
         return;
       }
 
-      accept((webSocket) => sit(route, answer, webSocket));
+      accept((webSocket) => sit(route, answer, webSocket, headerOf(request, VERSION_HEADER)?.slice(0, MAX_VERSION_LENGTH) ?? null));
     }, (error) => {
       log.error(errorLine(new Date(), `admit ${path}`, error));
       turnAway(500, "the directory failed");
@@ -646,6 +664,15 @@ export function createRelay({
 
     if (battleRoute) {
       const answer = await answerBattle(request, battleRoute);
+      response.writeHead(answer.status, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(answer.body));
+      return;
+    }
+
+    const admin = adminRouteOf(url);
+
+    if (admin) {
+      const answer = await handleAdminRequest({ stats }, request.method, url, admin.rest, headerOf(request, PLAYER_HEADER), adminCheck(directory.admins));
       response.writeHead(answer.status, { "Content-Type": "application/json" });
       response.end(JSON.stringify(answer.body));
       return;
@@ -1325,8 +1352,9 @@ export function createRelay({
    * @param {{roomId: string, name: string}} route The world room and the player's name.
    * @param {{seats: number, player: string}} admission The world's seats and the player's id, from the directory.
    * @param {import("ws").WebSocket} socket The game's WebSocket.
+   * @param {string | null} version The version the game named in VERSION_HEADER, null for none.
    */
-  function sit(route, admission, socket) {
+  function sit(route, admission, socket, version) {
     const earlier = worlds.get(route.roomId) ?? [];
 
     for (const { index, code, reason } of replacedBy(earlier.map((other) => other.record), admission.player).reverse()) {
@@ -1342,7 +1370,7 @@ export function createRelay({
       return;
     }
 
-    const peer = { socket, record: newWorldPeer(seat, { player: admission.player, name: route.name }, clock(), limits) };
+    const peer = { socket, record: newWorldPeer(seat, { player: admission.player, name: route.name }, clock(), limits), version };
     worlds.set(route.roomId, peers);
     socket.send(seatText(seat, peers.map((other) => other.record.seat)));
 
@@ -1588,6 +1616,78 @@ export function createRelay({
     }
   }
 
+  /**
+   * Gathers what the relay carries now, for its admins: the world rooms open with their players,
+   * the PvP rooms, the battles, the game versions in the world rooms, the process and the battle
+   * server's answer to a ping.
+   *
+   * @returns {Promise<object>} The stats, see the README's admin routes.
+   */
+  async function stats() {
+    const now = clock();
+    const versions = {};
+    const worldRooms = [];
+    let worldPlayers = 0;
+
+    for (const [id, peers] of [...worlds]) {
+      const entry = await directory.store.get(id);
+      worldRooms.push({ id, name: entry?.name ?? null, type: entry?.type ?? WORLD_TYPE.classic, seats: entry?.seats ?? null, players: peers.length });
+      worldPlayers += peers.length;
+
+      for (const peer of peers) {
+        versions[peer.version ?? NO_VERSION] = (versions[peer.version ?? NO_VERSION] ?? 0) + 1;
+      }
+    }
+
+    const roomPlayers = [...rooms.values()].reduce((count, peers) => count + peers.length, 0);
+    const memory = process.memoryUsage();
+    return {
+      startedAt: new Date(started).toISOString(),
+      uptimeSeconds: Math.floor((now - started) / 1000),
+      memory: { rss: memory.rss, heapTotal: memory.heapTotal, heapUsed: memory.heapUsed, external: memory.external },
+      worlds: worldRooms,
+      rooms: rooms.size,
+      players: { worlds: worldPlayers, rooms: roomPlayers, total: worldPlayers + roomPlayers },
+      versions,
+      battles: { tracked: battles.battles.size, served: battleLinks.size },
+      battleServer: battleServer ? await pingBattleServer() : null,
+    };
+  }
+
+  /**
+   * Asks the battle server how it is, over a connection of its own.
+   *
+   * @returns {Promise<object | null>} The server's answer as it sent it, such as `boot_seconds`, `battles`, `busy` and `mode`; null when it is out of reach or did not answer in time.
+   */
+  function pingBattleServer() {
+    return new Promise((resolve) => {
+      const socket = net.connect(battleServer.port, battleServer.host);
+      let pending = "";
+      let answered = false;
+      const answer = (reply) => {
+        if (!answered) {
+          answered = true;
+          clearTimeout(deadline);
+          socket.destroy();
+          resolve(reply);
+        }
+      };
+      const deadline = setTimeout(() => answer(null), BATTLE_PING_WAIT_MS);
+
+      socket.on("connect", () => socket.write(`${JSON.stringify({ op: "ping" })}\n`));
+      socket.on("data", (data) => {
+        pending += data.toString("utf8");
+        const end = pending.indexOf("\n");
+
+        if (end >= 0) {
+          answer(pingReplyOf(pending.slice(0, end)));
+        }
+      });
+      socket.on("error", () => answer(null));
+      socket.on("close", () => answer(null));
+    });
+  }
+
   const timer = setInterval(check, checkEveryMs);
   timer.unref();
   const sweepTimer = setInterval(sweep, sweepEveryMs);
@@ -1634,6 +1734,21 @@ export function createRelay({
 export function battleServerOf(text) {
   const match = /^\s*([^\s:]+):(\d{1,5})\s*$/.exec(text ?? "");
   return match ? { host: match[1], port: Number(match[2]) } : null;
+}
+
+/**
+ * Reads the battle server's answer to a ping.
+ *
+ * @param {string} line The line it sent.
+ * @returns {object | null} The answer as sent, null when it is no JSON object.
+ */
+function pingReplyOf(line) {
+  try {
+    const reply = JSON.parse(line);
+    return reply !== null && typeof reply === "object" && !Array.isArray(reply) ? reply : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

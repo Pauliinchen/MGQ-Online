@@ -2,6 +2,7 @@
 //  battles.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-21: Covered the battle server's ping in the admins' stats
 //      Paulinchen  2026-10-15: Covered the battle server's boss reports and the pool changes it hears of
 //                            - Covered the players the battle server takes in late
 //                            - Created
@@ -15,7 +16,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";
 import { BATTLE_LIMITS, SERVER_SEAT } from "../core/battles.js";
-import { Directory, sha256Hex } from "../core/directory.js";
+import { Directory, playerIdOf, sha256Hex } from "../core/directory.js";
 import { AUTH_HEADER, CLOSE, FEATURES_HEADER, PLAYER_HEADER } from "../core/relay.js";
 import { battleServerOf, createRelay, memoryStore } from "./server.js";
 
@@ -28,6 +29,16 @@ const AUTH = "ab".repeat(32);
  * The world creator's key.
  */
 const CREATOR = "c0".repeat(16);
+
+/**
+ * An admin's player key.
+ */
+const ADMIN = "ad".repeat(16);
+
+/**
+ * What the stand-in battle server answers a ping with.
+ */
+const PING_REPLY = Object.freeze({ ok: true, boot_seconds: 1.5, battles: 0, busy: false, mode: "stand-in", pid: 42 });
 
 /**
  * What every game names in X-MGQ-Features.
@@ -89,6 +100,10 @@ before(async () => {
         const line = JSON.parse(pending.slice(0, end));
         pending = pending.slice(end + 1);
 
+        if (line.op === "ping") {
+          connection.send(PING_REPLY);
+        }
+
         if (line.op === "serve" && serverAnswers !== "silent") {
           connection.send(serverAnswers === "serving" ? { op: "serving" } : { op: "refused", code: "data", error: "the game data differs" });
         }
@@ -102,7 +117,7 @@ before(async () => {
     socket.on("error", () => {});
   });
   await new Promise((resolve) => battleServer.listen(0, "127.0.0.1", resolve));
-  const directory = new Directory(memoryStore(), { clock: () => now, rates: TEST_RATES });
+  const directory = new Directory(memoryStore(), { clock: () => now, rates: TEST_RATES, admins: [await playerIdOf(ADMIN)] });
   relay = createRelay({ clock: () => now, checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, directory, log: { info: () => {}, error: () => {} },
                         battleServer: { host: "127.0.0.1", port: battleServer.address().port }, battleLimits: TEST_BATTLE_LIMITS });
   bare = createRelay({ checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, log: { info: () => {}, error: () => {} } });
@@ -434,4 +449,19 @@ test("a player the battle server takes in late comes onto the battle's channel, 
   server.send({ op: "end", result: "victory" });
   first.connection.socket.close();
   late.connection.socket.close();
+});
+
+test("the admins' stats hold the battle server's answer to a ping, and null for a server out of reach", async () => {
+  const stats = async (address) => (await fetch(`${address.replace("/worlds", "")}/admin/stats`, { headers: { [PLAYER_HEADER]: ADMIN } })).json();
+  assert.deepEqual((await stats(httpBase)).battleServer, PING_REPLY);
+
+  const closed = net.createServer();
+  await new Promise((resolve) => closed.listen(0, "127.0.0.1", resolve));
+  const port = closed.address().port;
+  await new Promise((resolve) => closed.close(resolve));
+  const directory = new Directory(memoryStore(), { admins: [await playerIdOf(ADMIN)] });
+  const unreachable = createRelay({ checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, directory, log: { info: () => {}, error: () => {} }, battleServer: { host: "127.0.0.1", port } });
+  await new Promise((resolve) => unreachable.server.listen(0, "127.0.0.1", resolve));
+  assert.equal((await stats(`http://127.0.0.1:${unreachable.server.address().port}/v1/worlds`)).battleServer, null);
+  await unreachable.stop();
 });

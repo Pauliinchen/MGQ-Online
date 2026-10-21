@@ -18,6 +18,7 @@ core/story.test.js     tests of the story
 core/bosses.js         a Raid World's boss pools: the share of the raid HP left, the battles' reports, regeneration, the defeat
 core/bosses.test.js    tests of the boss pools and the admin routes
 core/raid_admin.js     what admins see and set right in a Raid World: counters, pools, the route lock
+core/admin.js          the relay's own admin routes: the stats of what it carries
 core/migration.js      everything a relay keeps, handed to its admins for another relay to take over
 core/mods.js           the mod catalog's rules, over a store the platform passes in
 core/mods.test.js      tests of the mod catalog
@@ -114,6 +115,14 @@ A world's fields, as `POST /v1/worlds` takes them and `GET /v1/worlds` lists the
 A player's key never appears in the list: everyone sees the player's id, the first 32 characters of the SHA-256 of `mgqmp player <key>`. Names are at most 32 characters, on one line.
 
 **Admins** look after the directory: they see every world, hidden ones too, may delete any, and make the featured worlds. They cannot open a world's lock or enter it without its password. The relay reads their player ids from the setting `ADMINS`, separated by commas or spaces; without it there are none. On Cloudflare it is a secret, kept out of the repository: `npx wrangler secret put ADMINS --config cloudflare/wrangler.toml` sets it and deploys it at once. The Node server reads it from the environment variable of the same name. An admin's id is made from the key in their game's `Patch\Multiplayer\Player.ini`, as above.
+
+### Relay admin
+
+The relay's own routes for its admins (the `ADMINS` setting), such as the website's dashboard. Each takes an admin's key in `X-MGQ-Player`, or as `player` in the address; 403 for everyone else. They need no `X-MGQ-Features`.
+
+| Request | What it does |
+|---|---|
+| `GET /v1/admin/stats` | Hands out what the relay carries now: `startedAt` (ISO time), `uptimeSeconds`, `memory` (`rss`, `heapTotal`, `heapUsed`, `external`, in bytes), `worlds` (each world room open: `id`, `name`, `type`, `seats`, `players`), `rooms` (PvP rooms open), `players` (`worlds`, `rooms` and `total` connections), `versions` (the world rooms' games by the version they named in `X-MGQ-Version`, `unknown` for none, such as `{"0.6.7.7": 3}`), `battles` (`tracked`, the server battles the relay keeps, and `served`, those with a connection to the battle server) and `battleServer`, the battle server's answer to `{"op":"ping"}` as it sent it (`ok`, `boot_seconds`, `battles`, `busy`, `mode`, `pid`; in fork mode `battles` and `busy` are the child's own), null without a battle server or when it does not answer within 2 seconds. Only the Node relay answers it; Cloudflare's answers what it answers for any other address. |
 
 ### Mod catalog
 

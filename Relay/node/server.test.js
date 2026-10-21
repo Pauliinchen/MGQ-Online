@@ -2,6 +2,7 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-21: Tested the admins' stats of the world rooms, PvP rooms, players and game versions
 //      Paulinchen  2026-10-15: Tested that a relay that starts marks every player offline
 //                            - Covered a keyed Raid World story's pushes and the games sent to update
 //      Paulinchen  2026-10-14: Tested a Raid World's starting save from every game over HTTP
@@ -84,9 +85,10 @@ const TEST_LIMITS = { ...LIMITS, maxMessageBytes: 1024 };
 const TEST_RATES = Object.fromEntries(["joins", "creates", "starts"].map((kind) => [kind, { burst: 10_000, refillMs: 1 }]));
 
 /**
- * The directory limits the tests use: small starting saves, so a body over the limit is quick to send.
+ * The directory limits the tests use: small starting saves, so a body over the limit is quick to
+ * send, and room for every test's world of the one creator.
  */
-const TEST_DIRECTORY_LIMITS = { ...DIRECTORY_LIMITS, maxStartBytes: 400_000 };
+const TEST_DIRECTORY_LIMITS = { ...DIRECTORY_LIMITS, maxStartBytes: 400_000, maxWorldsPerCreator: 100 };
 
 /**
  * What the relay under test logged: request lines and error lines.
@@ -1243,6 +1245,29 @@ test("the creator or an admin edits a world over HTTP", async () => {
   const world = await listed(room);
   assert.deepEqual([world.seats, world.description, world.mods, world.data], [8, "A worldof two lines", "!Level Cap", "1:abc"]);
   assert.equal((await gameFetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: CREATOR }, body: "x".repeat(300_000) })).status, 413, "a text body over the cap is too large");
+});
+
+test("the admins' stats count the world rooms with their players, the PvP rooms and the game versions in the world rooms", async () => {
+  const room = roomId(200);
+  await makeWorld(room, 4);
+  const released = await open(`${worldBase}${room}?player=${playerKey(91)}&name=Released&auth=${AUTH}`, { ...GAME, [VERSION_HEADER]: "0.6.7.7" });
+  const unnamed = await sit(room, 92);
+  const host = await connect(roomId(201), "host");
+  await until(async () => (await listed(room)).online === 2);
+  const stats = async (headers) => fetch(`${directoryBase.replace("/worlds", "")}/admin/stats`, { headers });
+
+  const answer = await stats({ [PLAYER_HEADER]: ADMIN });
+  assert.equal(answer.status, 200);
+  const body = await answer.json();
+  assert.deepEqual(body.worlds.find((world) => world.id === room), { id: room, name: `World ${room.slice(-3)}`, type: "classic", seats: 4, players: 2 });
+  assert.deepEqual([body.versions["0.6.7.7"], body.versions.unknown], [1, 1]);
+  assert.ok(body.rooms >= 1 && body.players.total === body.players.worlds + body.players.rooms);
+  assert.deepEqual([body.battles, body.battleServer, typeof body.memory.rss, body.startedAt], [{ tracked: 0, served: 0 }, null, "number", new Date(1_000_000).toISOString()]);
+  assert.equal((await stats({ [PLAYER_HEADER]: CREATOR })).status, 403, "only admins read them");
+
+  for (const each of [released, unnamed, host]) {
+    each.socket.close();
+  }
 });
 
 /**
