@@ -9,8 +9,8 @@
 namespace MGQOnline.Arena.Model;
 
 /// <summary>
-/// A damage formula of the safe grammar.
+/// A damage formula of the safe grammar, as its printed text and its tree.
 /// </summary>
-/// <remarks>Partial so the parsed tree joins it from the formula records, which another package owns.</remarks>
 /// <param name="Text">The formula re-printed as canonical Ruby; only this text reaches a compiled file.</param>
-public sealed partial record FormulaSpec(string Text);
+/// <param name="Ast">The formula's tree, which the C# engine computes.</param>
+public sealed record FormulaSpec(string Text, FormulaNode Ast);

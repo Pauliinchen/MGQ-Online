@@ -2,12 +2,16 @@
 //  Samples.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Created
+//      Paulinchen  2026-10-21: Kept the parsed tree in every sample formula
+//                            - Added a formula with a node of every kind
+//                            - Created
 //
 //----------------------------------------------------------------
 
+using System;
 using System.Collections.Generic;
 using MGQOnline.Arena.Events;
+using MGQOnline.Arena.Formulas;
 using MGQOnline.Arena.Model;
 
 namespace MGQOnline.Arena.Tests.Model;
@@ -46,6 +50,11 @@ internal static class Samples
     /// Gets a formula.
     /// </summary>
     public static FormulaSpec Formula { get; } = FormulaOf("[a.atk * 4 - b.def * 2, 0].max");
+
+    /// <summary>
+    /// Gets a formula whose tree holds a node of every kind.
+    /// </summary>
+    public static FormulaSpec EveryNodeFormula { get; } = FormulaOf("-[a.atk, clamp(b.luk, 0, 5)].max * 2.50 + (a.mat % 3).to_f.abs");
 
     /// <summary>
     /// Gets a rule of every trigger, condition and effect kind spread over a few rules.
@@ -259,7 +268,7 @@ internal static class Samples
         BlastId,
         0,
         "Blast",
-        new CustomSkillFields("A blast.", 64, 1, 2, 1, 0, 100, 1, 0, 1, 10, 0, "%1 casts Blast!", "", 0, 0, 41, new CustomDamageSpec(1, 3, FormulaOf("a.atk * 2 - b.def / 2"), 20, false, FormulaOf("a.mat * 2"))),
+        new CustomSkillFields("A blast.", 64, 1, 2, 1, 0, 100, 1, 0, 1, 10, 0, "%1 casts Blast!", "", 0, 0, 41, new CustomDamageSpec(1, 3, FormulaOf("a.atk * 2 - b.def / 2"), 20, false, EveryNodeFormula)),
         [new SkillEffectEntry(21, 4, 0.5, 0)],
         "<使用対象 2>",
         SupportSkill,
@@ -350,11 +359,41 @@ internal static class Samples
     public static IReadOnlyList<object> All { get; } = BuildAll();
 
     /// <summary>
-    /// Makes a formula of the safe grammar.
+    /// Reads a formula of the safe grammar and keeps its tree with its printed text.
     /// </summary>
-    /// <param name="text">The formula in canonical Ruby.</param>
+    /// <param name="text">The formula.</param>
     /// <returns>The formula.</returns>
-    private static FormulaSpec FormulaOf(string text) => new(text);
+    /// <exception cref="ArgumentException">The formula is outside the grammar.</exception>
+    private static FormulaSpec FormulaOf(string text)
+    {
+        FormulaParse parse = FormulaParser.Parse(text);
+        return parse.IsValid
+            ? new FormulaSpec(RubyPrinter.Print(parse.Root), parse.Root)
+            : throw new ArgumentException($"The sample formula is refused with {parse.ErrorCode}.", nameof(text));
+    }
+
+    /// <summary>
+    /// Adds a formula tree's nodes, the root first.
+    /// </summary>
+    /// <param name="all">The values to add to.</param>
+    /// <param name="node">The tree's root.</param>
+    private static void AddNodes(List<object> all, FormulaNode node)
+    {
+        all.Add(node);
+        FormulaNode[] children = node switch
+        {
+            FormulaNegate negate => [negate.Operand],
+            FormulaBinary binary => [binary.Left, binary.Right],
+            FormulaMethod method => [method.Target],
+            FormulaExtreme extreme => [.. extreme.Items],
+            FormulaClamp clamp => [clamp.Value, clamp.Low, clamp.High],
+            _ => [],
+        };
+        foreach (FormulaNode child in children)
+        {
+            AddNodes(all, child);
+        }
+    }
 
     /// <summary>
     /// Makes a rule whose trigger alone matters.
@@ -384,7 +423,7 @@ internal static class Samples
             AreaSkill.Presentation, AreaSkill.Presentation.CellAnimation!, AreaSkill.Presentation.CellFlash!, AreaSkill.Presentation.Animation,
             AreaSkill.Debris!, AreaSkill.Debris!.Look!, AreaSkill.Marks!, AreaSkill.Marks!.Leaves[0], AreaSkill.Payload, AreaSkill.Payload.TargetEffects[0],
             AreaSkill.Payload.Restorations[0], AreaSkill.Payload.Recoveries[0], AreaSkill.Payload.Hit, SupportSkill.Support!, AreaSkill.Facts, AreaSkill.Facts.Filter,
-            Stigmata, Blast, new GridCell(3, 4), new GridSize(16, 10), new ColorRgba(1, 2, 3, 4), new TileRef("Sheet", 7), new PowerSize(100, 3),
+            EveryNodeFormula, Stigmata, Blast, new GridCell(3, 4), new GridSize(16, 10), new ColorRgba(1, 2, 3, 4), new TileRef("Sheet", 7), new PowerSize(100, 3),
         ];
         foreach (RuleSpec rule in Rules)
         {
@@ -410,6 +449,7 @@ internal static class Samples
             all.Add(reaction.Gives);
         }
 
+        AddNodes(all, EveryNodeFormula.Ast);
         all.AddRange(Events);
         return all;
     }

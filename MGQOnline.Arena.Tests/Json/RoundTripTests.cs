@@ -2,7 +2,8 @@
 //  RoundTripTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Created
+//      Paulinchen  2026-10-21: Gave the formula refusals a tree and refused a formula without one
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -136,14 +137,14 @@ public sealed class RoundTripTests
     /// </summary>
     [Fact]
     public void UnknownMembersAreRefused() =>
-        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize("""{"text":"1","extra":2}""", ArenaJsonContext.Default.FormulaSpec));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize("""{"ast":{"type":"number","text":"1"},"text":"1","extra":2}""", ArenaJsonContext.Default.FormulaSpec));
 
     /// <summary>
     /// An explicit null for a member that is never null is refused.
     /// </summary>
     [Fact]
     public void NullForANonNullableMemberIsRefused() =>
-        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize("""{"text":null}""", ArenaJsonContext.Default.FormulaSpec));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize("""{"ast":{"type":"number","text":"1"},"text":null}""", ArenaJsonContext.Default.FormulaSpec));
 
     /// <summary>
     /// A missing member that is never null is refused.
@@ -152,6 +153,7 @@ public sealed class RoundTripTests
     public void MissingNonNullableMembersAreRefused()
     {
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize("{}", ArenaJsonContext.Default.FormulaSpec));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize("""{"text":"1"}""", ArenaJsonContext.Default.FormulaSpec));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize("""{"pool":"hp"}""", ArenaJsonContext.Default.RestorationSpec));
     }
 
