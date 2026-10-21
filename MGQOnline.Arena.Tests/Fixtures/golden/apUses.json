@@ -1,0 +1,747 @@
+{
+  "fixture": "apUses",
+  "capturedFrom": "RaidDesigner.Core at 8f13dcf (W0.2), captured by RaidDesigner.Tests/GoldenCapture",
+  "about": "Cases by kind: expected (ActionPoints.ExpectedUses over a long battle, or sampled when too many states), playTurn (ActionPoints.PlayTurn with System.Random(seed): parity for the rules only, not the picks) and boss (ActionPoints.OfEnemy for each scenario of the inputs: budget, expected uses per action and of the normal attack on leftover points).",
+  "inputs": {
+    "game": "RaidDesigner.Tests/GoldenCapture/MiniGame.cs, boss Mini (tier 3, enemy 1)",
+    "tierDefaults": {
+      "0": 8,
+      "1": 7,
+      "2": 7,
+      "3": 6,
+      "4": 6,
+      "5": 5,
+      "6": 5,
+      "7": 4,
+      "8": 4,
+      "9": 3
+    },
+    "noTierDefault": 3,
+    "useWeightFactor": 0.5,
+    "exactStates": 150000,
+    "exactCooldownStates": 256,
+    "samples": 40000,
+    "scenarios": {
+      "game": {
+        "design": {
+          "format": 1
+        },
+        "turnActions": [
+          {
+            "weight": 5.0,
+            "cost": 1,
+            "skill": 10,
+            "recharge": 0
+          },
+          {
+            "weight": 3.0,
+            "cost": 1,
+            "skill": 11,
+            "recharge": 0
+          }
+        ],
+        "pools": ["Normal","Normal"],
+        "attack": {
+          "skill": 1,
+          "cost": 1
+        },
+        "crowdControl": [
+          {
+            "state": 4,
+            "hardCc": false,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 1,
+            "maxTurns": 1,
+            "timing": "None"
+          },
+          {
+            "state": 10,
+            "hardCc": false,
+            "redirects": true,
+            "disables": 1,
+            "minTurns": 2,
+            "maxTurns": 3,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 11,
+            "hardCc": true,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 3,
+            "maxTurns": 4,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 17,
+            "hardCc": true,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 3,
+            "maxTurns": 4,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 20,
+            "hardCc": false,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 1,
+            "maxTurns": 1,
+            "timing": "None"
+          }
+        ],
+        "unstoppable": []
+      },
+      "costs": {
+        "design": {
+          "format": 1,
+          "tiers": {
+            "3": {
+              "ap": 5
+            }
+          },
+          "bosses": {
+            "Mini": {
+              "skills": {
+                "12": {
+                  "apCost": 2
+                },
+                "20": {
+                  "apCost": 3
+                }
+              },
+              "actions": {
+                "1": [
+                  {
+                    "skillId": 10,
+                    "rating": 5,
+                    "param1": 0,
+                    "param2": 0
+                  },
+                  {
+                    "skillId": 11,
+                    "rating": 3,
+                    "param1": 0,
+                    "param2": 0
+                  },
+                  {
+                    "skillId": 12,
+                    "rating": 4,
+                    "param1": 0,
+                    "param2": 0
+                  },
+                  {
+                    "skillId": 20,
+                    "rating": 2,
+                    "param1": 0,
+                    "param2": 0
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "turnActions": [
+          {
+            "weight": 5.0,
+            "cost": 1,
+            "skill": 10,
+            "recharge": 0
+          },
+          {
+            "weight": 3.0,
+            "cost": 1,
+            "skill": 11,
+            "recharge": 0
+          },
+          {
+            "weight": 4.0,
+            "cost": 2,
+            "skill": 12,
+            "recharge": 0
+          },
+          {
+            "weight": 2.0,
+            "cost": 3,
+            "skill": 20,
+            "recharge": 3
+          }
+        ],
+        "pools": ["Normal","Normal","Normal","Normal"],
+        "attack": {
+          "skill": 1,
+          "cost": 1
+        },
+        "crowdControl": [
+          {
+            "state": 4,
+            "hardCc": false,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 1,
+            "maxTurns": 1,
+            "timing": "None"
+          },
+          {
+            "state": 10,
+            "hardCc": false,
+            "redirects": true,
+            "disables": 1,
+            "minTurns": 2,
+            "maxTurns": 3,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 11,
+            "hardCc": true,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 3,
+            "maxTurns": 4,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 17,
+            "hardCc": true,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 3,
+            "maxTurns": 4,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 20,
+            "hardCc": false,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 1,
+            "maxTurns": 1,
+            "timing": "None"
+          }
+        ],
+        "unstoppable": []
+      },
+      "turnStart": {
+        "design": {
+          "format": 1,
+          "bosses": {
+            "Mini": {
+              "traits": [
+                {
+                  "kind": "turnStartSkill",
+                  "values": [2,11,100]
+                },
+                {
+                  "kind": "turnStartSkill",
+                  "values": [1,13,50]
+                },
+                {
+                  "kind": "turnStartSkill",
+                  "values": [1,21,50]
+                }
+              ]
+            }
+          }
+        },
+        "turnActions": [
+          {
+            "weight": 5.0,
+            "cost": 1,
+            "skill": 10,
+            "recharge": 0
+          },
+          {
+            "weight": 3.0,
+            "cost": 1,
+            "skill": 11,
+            "recharge": 0
+          }
+        ],
+        "pools": ["Normal","Normal"],
+        "attack": {
+          "skill": 1,
+          "cost": 1
+        },
+        "crowdControl": [
+          {
+            "state": 4,
+            "hardCc": false,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 1,
+            "maxTurns": 1,
+            "timing": "None"
+          },
+          {
+            "state": 10,
+            "hardCc": false,
+            "redirects": true,
+            "disables": 1,
+            "minTurns": 2,
+            "maxTurns": 3,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 11,
+            "hardCc": true,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 3,
+            "maxTurns": 4,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 17,
+            "hardCc": true,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 3,
+            "maxTurns": 4,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 20,
+            "hardCc": false,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 1,
+            "maxTurns": 1,
+            "timing": "None"
+          }
+        ],
+        "unstoppable": []
+      },
+      "grapple": {
+        "design": {
+          "format": 1,
+          "bosses": {
+            "Mini": {
+              "actions": {
+                "1": [
+                  {
+                    "skillId": 10,
+                    "rating": 5,
+                    "param1": 0,
+                    "param2": 0
+                  },
+                  {
+                    "skillId": 30,
+                    "rating": 5,
+                    "param1": 0,
+                    "param2": 0
+                  },
+                  {
+                    "skillId": 31,
+                    "rating": 5,
+                    "param1": 0,
+                    "param2": 0
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "turnActions": [
+          {
+            "weight": 5.0,
+            "cost": 1,
+            "skill": 10,
+            "recharge": 0
+          },
+          {
+            "weight": 0.0,
+            "cost": 1,
+            "skill": 30,
+            "recharge": 0
+          },
+          {
+            "weight": 0.0,
+            "cost": 1,
+            "skill": 31,
+            "recharge": 0
+          }
+        ],
+        "pools": ["Normal","Bind","EternalBind"],
+        "attack": {
+          "skill": 1,
+          "cost": 1
+        },
+        "crowdControl": [
+          {
+            "state": 4,
+            "hardCc": false,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 1,
+            "maxTurns": 1,
+            "timing": "None"
+          },
+          {
+            "state": 10,
+            "hardCc": false,
+            "redirects": true,
+            "disables": 1,
+            "minTurns": 2,
+            "maxTurns": 3,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 11,
+            "hardCc": true,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 3,
+            "maxTurns": 4,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 17,
+            "hardCc": true,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 3,
+            "maxTurns": 4,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 20,
+            "hardCc": false,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 1,
+            "maxTurns": 1,
+            "timing": "None"
+          }
+        ],
+        "unstoppable": []
+      },
+      "counterAndLastStand": {
+        "design": {
+          "format": 1,
+          "bosses": {
+            "Mini": {
+              "traits": [
+                {
+                  "kind": "delayedCounter",
+                  "values": [0,0,1,1,100,0,13,1,0,0]
+                },
+                {
+                  "kind": "lastStand",
+                  "values": [50,3],
+                  "phase": {
+                    "startSkill": 15
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "turnActions": [
+          {
+            "weight": 5.0,
+            "cost": 1,
+            "skill": 10,
+            "recharge": 0
+          },
+          {
+            "weight": 3.0,
+            "cost": 1,
+            "skill": 11,
+            "recharge": 0
+          }
+        ],
+        "pools": ["Normal","Normal"],
+        "attack": {
+          "skill": 1,
+          "cost": 1
+        },
+        "crowdControl": [
+          {
+            "state": 4,
+            "hardCc": false,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 1,
+            "maxTurns": 1,
+            "timing": "None"
+          },
+          {
+            "state": 10,
+            "hardCc": false,
+            "redirects": true,
+            "disables": 1,
+            "minTurns": 2,
+            "maxTurns": 3,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 11,
+            "hardCc": true,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 3,
+            "maxTurns": 4,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 17,
+            "hardCc": true,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 3,
+            "maxTurns": 4,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 20,
+            "hardCc": false,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 1,
+            "maxTurns": 1,
+            "timing": "None"
+          }
+        ],
+        "unstoppable": []
+      },
+      "unstoppable": {
+        "design": {
+          "format": 1,
+          "states": {
+            "17": {
+              "disables": 2
+            }
+          },
+          "unstoppable": {
+            "skills": {
+              "10": true
+            }
+          }
+        },
+        "turnActions": [
+          {
+            "weight": 5.0,
+            "cost": 1,
+            "skill": 10,
+            "recharge": 0
+          },
+          {
+            "weight": 3.0,
+            "cost": 1,
+            "skill": 11,
+            "recharge": 0
+          }
+        ],
+        "pools": ["Normal","Normal"],
+        "attack": {
+          "skill": 1,
+          "cost": 1
+        },
+        "crowdControl": [
+          {
+            "state": 4,
+            "hardCc": false,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 1,
+            "maxTurns": 1,
+            "timing": "None"
+          },
+          {
+            "state": 10,
+            "hardCc": false,
+            "redirects": true,
+            "disables": 1,
+            "minTurns": 2,
+            "maxTurns": 3,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 11,
+            "hardCc": true,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 3,
+            "maxTurns": 4,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 17,
+            "hardCc": true,
+            "redirects": false,
+            "disables": 2,
+            "minTurns": 3,
+            "maxTurns": 4,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 20,
+            "hardCc": false,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 1,
+            "maxTurns": 1,
+            "timing": "None"
+          }
+        ],
+        "unstoppable": [10]
+      },
+      "ignoresTimeStop": {
+        "design": {
+          "format": 1,
+          "bosses": {
+            "Mini": {
+              "traits": [
+                {
+                  "kind": "ignoresTimeStop",
+                  "values": []
+                }
+              ]
+            }
+          }
+        },
+        "turnActions": [
+          {
+            "weight": 5.0,
+            "cost": 1,
+            "skill": 10,
+            "recharge": 0
+          },
+          {
+            "weight": 3.0,
+            "cost": 1,
+            "skill": 11,
+            "recharge": 0
+          }
+        ],
+        "pools": ["Normal","Normal"],
+        "attack": {
+          "skill": 1,
+          "cost": 1
+        },
+        "crowdControl": [
+          {
+            "state": 4,
+            "hardCc": false,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 1,
+            "maxTurns": 1,
+            "timing": "None"
+          },
+          {
+            "state": 10,
+            "hardCc": false,
+            "redirects": true,
+            "disables": 1,
+            "minTurns": 2,
+            "maxTurns": 3,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 11,
+            "hardCc": true,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 3,
+            "maxTurns": 4,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 17,
+            "hardCc": true,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 3,
+            "maxTurns": 4,
+            "timing": "ActionEnd"
+          },
+          {
+            "state": 20,
+            "hardCc": false,
+            "redirects": false,
+            "disables": 1,
+            "minTurns": 1,
+            "maxTurns": 1,
+            "timing": "None"
+          }
+        ],
+        "unstoppable": []
+      }
+    }
+  },
+  "cases": [
+    {"kind":"expected","name":"one action","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0}],"ap":3,"attackCost":null,"uses":[3.0],"attackUses":0.0},
+    {"kind":"expected","name":"even pair","actions":[{"weight":1.0,"cost":1,"skill":1,"recharge":0},{"weight":1.0,"cost":1,"skill":2,"recharge":0}],"ap":2,"attackCost":null,"uses":[1.0,0.9999999999999999],"attackUses":0.0},
+    {"kind":"expected","name":"even pair one point","actions":[{"weight":1.0,"cost":1,"skill":1,"recharge":0},{"weight":1.0,"cost":1,"skill":2,"recharge":0}],"ap":1,"attackCost":null,"uses":[0.5,0.5],"attackUses":0.0},
+    {"kind":"expected","name":"weighted pair","actions":[{"weight":2.0,"cost":1,"skill":1,"recharge":0},{"weight":1.0,"cost":1,"skill":2,"recharge":0}],"ap":2,"attackCost":null,"uses":[1.2666666666666666,0.7333333333333333],"attackUses":0.0},
+    {"kind":"expected","name":"dear pair","actions":[{"weight":1.0,"cost":2,"skill":1,"recharge":0},{"weight":1.0,"cost":1,"skill":2,"recharge":0}],"ap":2,"attackCost":null,"uses":[0.5,1.0],"attackUses":0.0},
+    {"kind":"expected","name":"too dear","actions":[{"weight":9.0,"cost":3,"skill":1,"recharge":0},{"weight":1.0,"cost":1,"skill":2,"recharge":0}],"ap":2,"attackCost":null,"uses":[0.0,2.0],"attackUses":0.0},
+    {"kind":"expected","name":"zero weight","actions":[{"weight":0.0,"cost":1,"skill":1,"recharge":0},{"weight":1.0,"cost":1,"skill":2,"recharge":0}],"ap":2,"attackCost":null,"uses":[0.0,2.0],"attackUses":0.0},
+    {"kind":"expected","name":"one skill twice","actions":[{"weight":1.0,"cost":1,"skill":7,"recharge":0},{"weight":1.0,"cost":1,"skill":7,"recharge":0},{"weight":2.0,"cost":1,"skill":8,"recharge":0}],"ap":2,"attackCost":null,"uses":[0.5,0.5,0.9999999999999999],"attackUses":0.0},
+    {"kind":"expected","name":"recharge rests","actions":[{"weight":1.0,"cost":1,"skill":1,"recharge":2},{"weight":1.0,"cost":1,"skill":2,"recharge":0}],"ap":1,"attackCost":null,"uses":[0.3333333333333357,0.6666666666666643],"attackUses":0.0},
+    {"kind":"expected","name":"recharge once a turn","actions":[{"weight":10.0,"cost":1,"skill":1,"recharge":1},{"weight":1.0,"cost":1,"skill":2,"recharge":0}],"ap":3,"attackCost":null,"uses":[0.9998944145285609,2.000105585471439],"attackUses":0.0},
+    {"kind":"expected","name":"cooling with attack 1","actions":[{"weight":5.0,"cost":1,"skill":1,"recharge":3},{"weight":1.0,"cost":2,"skill":2,"recharge":0}],"ap":3,"attackCost":1,"uses":[0.3333333333333144,1.0],"attackUses":0.6666666666666856},
+    {"kind":"expected","name":"cooling with attack 2","actions":[{"weight":5.0,"cost":1,"skill":1,"recharge":3},{"weight":1.0,"cost":2,"skill":2,"recharge":0}],"ap":3,"attackCost":2,"uses":[0.3333333333333144,1.0],"attackUses":0.0},
+    {"kind":"expected","name":"cooling without attack","actions":[{"weight":5.0,"cost":1,"skill":1,"recharge":3},{"weight":1.0,"cost":2,"skill":2,"recharge":0}],"ap":3,"attackCost":null,"uses":[0.3333333333333144,1.0],"attackUses":0.0},
+    {"kind":"expected","name":"dear with attack","actions":[{"weight":1.0,"cost":2,"skill":1,"recharge":0}],"ap":3,"attackCost":1,"uses":[1.0],"attackUses":1.0},
+    {"kind":"expected","name":"dear without leftover attack","actions":[{"weight":1.0,"cost":3,"skill":1,"recharge":0}],"ap":2,"attackCost":1,"uses":[0.0],"attackUses":2.0},
+    {"kind":"expected","name":"attack only","actions":[],"ap":3,"attackCost":2,"uses":[],"attackUses":1.0},
+    {"kind":"expected","name":"costs to the cap","actions":[{"weight":3.0,"cost":1,"skill":1,"recharge":0},{"weight":2.0,"cost":2,"skill":2,"recharge":0},{"weight":1.0,"cost":5,"skill":3,"recharge":0}],"ap":20,"attackCost":1,"uses":[4.220316732268446,3.16436641507767,1.8901900875152429],"attackUses":0.0},
+    {"kind":"expected","name":"sampled","actions":[{"weight":1.0,"cost":2,"skill":101,"recharge":0},{"weight":2.0,"cost":3,"skill":102,"recharge":0},{"weight":3.0,"cost":1,"skill":103,"recharge":0},{"weight":4.0,"cost":2,"skill":104,"recharge":2},{"weight":5.0,"cost":3,"skill":105,"recharge":0},{"weight":6.0,"cost":1,"skill":106,"recharge":0},{"weight":7.0,"cost":2,"skill":107,"recharge":0},{"weight":8.0,"cost":3,"skill":108,"recharge":2},{"weight":9.0,"cost":1,"skill":109,"recharge":0},{"weight":10.0,"cost":2,"skill":110,"recharge":0}],"ap":20,"attackCost":1,"uses":[0.334875,0.5744,1.0085,0.43085,1.194975,1.6078,1.5825,0.477825,2.04365,1.951],"attackUses":0.0},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":1,"seed":1,"resting":[],"attackCost":null,"picks":[0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":1,"seed":1,"resting":[12],"attackCost":1,"picks":[0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":1,"seed":1,"resting":[10,11],"attackCost":2,"picks":[2]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":1,"seed":2,"resting":[],"attackCost":null,"picks":[2]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":1,"seed":2,"resting":[12],"attackCost":1,"picks":[0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":1,"seed":2,"resting":[10,11],"attackCost":2,"picks":[2]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":1,"seed":3,"resting":[],"attackCost":null,"picks":[0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":1,"seed":3,"resting":[12],"attackCost":1,"picks":[0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":1,"seed":3,"resting":[10,11],"attackCost":2,"picks":[2]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":1,"seed":4,"resting":[],"attackCost":null,"picks":[2]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":1,"seed":4,"resting":[12],"attackCost":1,"picks":[0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":1,"seed":4,"resting":[10,11],"attackCost":2,"picks":[2]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":1,"seed":5,"resting":[],"attackCost":null,"picks":[0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":1,"seed":5,"resting":[12],"attackCost":1,"picks":[0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":1,"seed":5,"resting":[10,11],"attackCost":2,"picks":[2]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":4,"seed":1,"resting":[],"attackCost":null,"picks":[0,0,1]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":4,"seed":1,"resting":[12],"attackCost":1,"picks":[0,0,1]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":4,"seed":1,"resting":[10,11],"attackCost":2,"picks":[2,3]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":4,"seed":2,"resting":[],"attackCost":null,"picks":[2,0,0,0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":4,"seed":2,"resting":[12],"attackCost":1,"picks":[1,0,0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":4,"seed":2,"resting":[10,11],"attackCost":2,"picks":[3,2]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":4,"seed":3,"resting":[],"attackCost":null,"picks":[0,2,1]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":4,"seed":3,"resting":[12],"attackCost":1,"picks":[0,1,0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":4,"seed":3,"resting":[10,11],"attackCost":2,"picks":[2,3]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":4,"seed":4,"resting":[],"attackCost":null,"picks":[2,3]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":4,"seed":4,"resting":[12],"attackCost":1,"picks":[1,1]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":4,"seed":4,"resting":[10,11],"attackCost":2,"picks":[3,2]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":4,"seed":5,"resting":[],"attackCost":null,"picks":[0,0,1]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":4,"seed":5,"resting":[12],"attackCost":1,"picks":[0,0,0,0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":4,"seed":5,"resting":[10,11],"attackCost":2,"picks":[2,3]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":7,"seed":1,"resting":[],"attackCost":null,"picks":[0,0,1,2,1]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":7,"seed":1,"resting":[12],"attackCost":1,"picks":[0,0,1,3]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":7,"seed":1,"resting":[10,11],"attackCost":2,"picks":[2,3,3]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":7,"seed":2,"resting":[],"attackCost":null,"picks":[2,0,0,3,0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":7,"seed":2,"resting":[12],"attackCost":1,"picks":[1,0,0,3]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":7,"seed":2,"resting":[10,11],"attackCost":2,"picks":[3,2,3]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":7,"seed":3,"resting":[],"attackCost":null,"picks":[0,2,3,0,0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":7,"seed":3,"resting":[12],"attackCost":1,"picks":[0,1,3,0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":7,"seed":3,"resting":[10,11],"attackCost":2,"picks":[2,3,3]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":7,"seed":4,"resting":[],"attackCost":null,"picks":[2,3,0,0,0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":7,"seed":4,"resting":[12],"attackCost":1,"picks":[1,3,0,0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":7,"seed":4,"resting":[10,11],"attackCost":2,"picks":[3,3,2]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":7,"seed":5,"resting":[],"attackCost":null,"picks":[0,0,1,2,1]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":7,"seed":5,"resting":[12],"attackCost":1,"picks":[0,0,1,1,0]},
+    {"kind":"playTurn","actions":[{"weight":5.0,"cost":1,"skill":10,"recharge":0},{"weight":3.0,"cost":2,"skill":11,"recharge":0},{"weight":2.0,"cost":1,"skill":12,"recharge":3},{"weight":1.0,"cost":3,"skill":13,"recharge":0}],"ap":7,"seed":5,"resting":[10,11],"attackCost":2,"picks":[2,3,3]},
+    {"kind":"boss","scenario":"game","budget":{"base":6,"baseSource":"Game","extras":[],"minus":[],"perTurn":6},"uses":[{"skill":10,"custom":null,"pool":"Normal","cost":1,"recharge":0,"uses":3.3262332155377425,"offCycle":false},{"skill":11,"custom":null,"pool":"Normal","cost":1,"recharge":0,"uses":2.6737667844622575,"offCycle":false}],"attack":{"skill":1,"cost":1,"uses":0.0,"offCycle":false}},
+    {"kind":"boss","scenario":"costs","budget":{"base":5,"baseSource":"Design","extras":[],"minus":[],"perTurn":5},"uses":[{"skill":10,"custom":null,"pool":"Normal","cost":1,"recharge":0,"uses":1.4519555660641812,"offCycle":false},{"skill":11,"custom":null,"pool":"Normal","cost":1,"recharge":0,"uses":1.023299321177374,"offCycle":false},{"skill":12,"custom":null,"pool":"Normal","cost":2,"recharge":0,"uses":0.9576475353502446,"offCycle":false},{"skill":20,"custom":null,"pool":"Normal","cost":3,"recharge":3,"uses":0.20315001401931895,"offCycle":false}],"attack":{"skill":1,"cost":1,"uses":0.0,"offCycle":false}},
+    {"kind":"boss","scenario":"turnStart","budget":{"base":6,"baseSource":"Game","extras":[],"minus":[],"perTurn":6},"uses":[{"skill":10,"custom":null,"pool":"Normal","cost":1,"recharge":0,"uses":3.3262332155377425,"offCycle":false},{"skill":11,"custom":null,"pool":"Normal","cost":1,"recharge":0,"uses":2.6737667844622575,"offCycle":false}],"attack":{"skill":1,"cost":1,"uses":0.0,"offCycle":false}},
+    {"kind":"boss","scenario":"grapple","budget":{"base":6,"baseSource":"Game","extras":[],"minus":[],"perTurn":6},"uses":[{"skill":10,"custom":null,"pool":"Normal","cost":1,"recharge":0,"uses":6.0,"offCycle":false},{"skill":30,"custom":null,"pool":"Bind","cost":1,"recharge":0,"uses":0.0,"offCycle":false},{"skill":31,"custom":null,"pool":"EternalBind","cost":1,"recharge":0,"uses":0.0,"offCycle":false}],"attack":{"skill":1,"cost":1,"uses":0.0,"offCycle":false}},
+    {"kind":"boss","scenario":"counterAndLastStand","budget":{"base":6,"baseSource":"Game","extras":[],"minus":[],"perTurn":6},"uses":[{"skill":10,"custom":null,"pool":"Normal","cost":1,"recharge":0,"uses":3.3262332155377425,"offCycle":false},{"skill":11,"custom":null,"pool":"Normal","cost":1,"recharge":0,"uses":2.6737667844622575,"offCycle":false}],"attack":{"skill":1,"cost":1,"uses":0.0,"offCycle":false}},
+    {"kind":"boss","scenario":"unstoppable","budget":{"base":6,"baseSource":"Game","extras":[],"minus":[],"perTurn":6},"uses":[{"skill":10,"custom":null,"pool":"Normal","cost":1,"recharge":0,"uses":3.3262332155377425,"offCycle":false},{"skill":11,"custom":null,"pool":"Normal","cost":1,"recharge":0,"uses":2.6737667844622575,"offCycle":false}],"attack":{"skill":1,"cost":1,"uses":0.0,"offCycle":false}},
+    {"kind":"boss","scenario":"ignoresTimeStop","budget":{"base":6,"baseSource":"Game","extras":[],"minus":[],"perTurn":6},"uses":[{"skill":10,"custom":null,"pool":"Normal","cost":1,"recharge":0,"uses":3.3262332155377425,"offCycle":false},{"skill":11,"custom":null,"pool":"Normal","cost":1,"recharge":0,"uses":2.6737667844622575,"offCycle":false}],"attack":{"skill":1,"cost":1,"uses":0.0,"offCycle":false}}
+  ]
+}
