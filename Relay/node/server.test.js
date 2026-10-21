@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-21: Tested that every game of a keyed Raid World hears the keys an admin set and that the relay logs them
+//                            - Tested that every game hears a write without its pinned keys, then their pinned values
 //                            - Tested that every game of a Raid World hears each pool an admin defeated
 //                            - Tested the admins' stats of the world rooms, PvP rooms, players and game versions
 //      Paulinchen  2026-10-15: Tested that a relay that starts marks every player offline
@@ -821,6 +822,14 @@ test("a keyed Raid World's games hear what each write changed, and games that ke
   await until(async () => heard.some((text) => text.startsWith("storyd ") && JSON.parse(text.slice(7)).delta.sf === "5"));
   const admin = await playerIdOf(ADMIN);
   assert.ok(logged.info.some((line) => line.includes(`world ${room}: admin ${admin} set keys of rev 2`)), "the relay logs what an admin set");
+
+  const pinned = await gameFetch(`${directoryBase}/${room}/raid/pins`, { method: "POST", headers: { [PLAYER_HEADER]: ADMIN }, body: JSON.stringify({ keys: { s5: false } }) });
+  assert.deepEqual(await pinned.json().then((body) => body.pins.keys), { s5: false });
+  const pinnedWrite = await story("", { method: "POST", body: JSON.stringify({ base: 2, counters, set: { s: "5,6" } }) });
+  assert.deepEqual(await pinnedWrite.json().then((body) => [body.rev, body.accepted]), [3, true]);
+  await until(async () => heard.some((text) => text.startsWith("storyd ") && JSON.parse(text.slice(7)).rev === 4));
+  const pushes = heard.filter((text) => text.startsWith("storyd ")).map((text) => JSON.parse(text.slice(7))).slice(-2);
+  assert.deepEqual(pushes.map((push) => [push.rev, push.prev, push.delta.s, push.delta.sf]), [[3, 2, "6", ""], [4, 3, "", "5"]], "every game hears the write without the pinned key, then the pinned value");
   watcher.socket.close();
   newer.socket.close();
 });

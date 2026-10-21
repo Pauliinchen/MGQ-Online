@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-21: Told every game of a Raid World each pool an admin defeated
+//                            - Told every game of a Raid World the pinned values a story write left out
 //      Paulinchen  2026-10-15: Handed its admins everything it keeps for another relay to take over
 //                            - Refused every battle on the battle server, which Cloudflare runs none of
 //                            - Pushed what a write changed of a keyed Raid World story and turned games without keyed stories away from such a world
@@ -1314,8 +1315,8 @@ export class World extends DurableObject {
       known !== null && /^\d+$/.test(known) ? Number(known) : null);
     await this.tidyDeleted();
 
-    if (answer.push) {
-      this.tell(storyPushText(answer.push));
+    for (const push of [answer.push, answer.restore].filter(Boolean)) {
+      this.tell(storyPushText(push));
     }
 
     return json(answer.status, answer.body);

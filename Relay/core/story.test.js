@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-21: Covered the pins an older relay kept as rules
+//                            - Covered a write that changes pinned keys keeping its other keys
 //      Paulinchen  2026-10-17: Covered the frozen raid boss fights in a keyed story's lists and the end of one
 //                            - Covered the end of a frozen fight staying final
 //      Paulinchen  2026-10-15: Covered the companions' affection in a keyed story's lists
@@ -547,13 +548,13 @@ test("the routes are read from the address, and the router answers each", async 
  * @param {number} base The revision the write builds on.
  * @param {object} set The lists of the keys it changes.
  * @param {object} [values] The counters that differ from 0.
- * @returns {Promise<{body: object, push: object}>} The answer's body and push.
+ * @returns {Promise<{body: object, push: object, restore?: object}>} The answer's body, push and the push of pinned values after it.
  */
 async function wrote(story, player, base, set, values = {}) {
   const answer = await story.write(player, { base, counters: counters(values), set });
   assert.equal(answer.status, 200, JSON.stringify(answer.body));
   assert.equal(answer.body.accepted, true);
-  return { body: answer.body, push: answer.push };
+  return { body: answer.body, push: answer.push, restore: answer.restore };
 }
 
 test("a keyed story's lists are read into keys and written back, and wrong ones are refused", () => {
@@ -656,17 +657,30 @@ test("a keyed write on a revision older than the writes the story remembers, or 
   assert.equal((await story.write(BOB, { base: 4, counters: counters({ p: 10 }), set: { v: "x" } })).status, 400);
 });
 
+test("a write that changes pinned keys goes in without them, as a clean write, and a revision after it tells every game the pinned values", async () => {
+  const { story, kept } = makeStory();
+  await wrote(story, ALICE, 0, { s: "40", v: "1001:n37,1201:n0,1219:n2" }, { p: 37 });
+  kept.story.pinned = { v1201: "n0", s2950: "0" };
+
+  const write = await wrote(story, BOB, 1, { s: "2950", v: "1201:n8,1219:n3" }, { p: 37 });
+  assert.deepEqual([write.body.rev, write.body.kept, write.body.moved], [2, { s: "", sf: "", v: "", ss: "", ssf: "", a: "", f: "" }, false], "released games take an answer without kept keys as their write taken whole");
+  assert.deepEqual([write.push.rev, write.push.delta.v, write.push.delta.s], [2, "1219:n3", ""], "the player's other keys go in");
+  assert.deepEqual([write.restore.rev, write.restore.prev, write.restore.state.wrev, write.restore.delta.v, write.restore.delta.sf], [3, 2, 3, "1201:n0", "2950"]);
+  assert.deepEqual((await story.get()).body.keys.v, "1001:n37,1201:n0,1219:n3");
+
+  const next = await wrote(story, ALICE, 2, { v: "1219:n4" }, { p: 37 });
+  assert.deepEqual([next.body.rev, next.body.moved, next.restore], [4, false, undefined], "the restoring revision moves no key a later write built on");
+  const same = await wrote(story, ALICE, 4, { v: "1201:n0" }, { p: 37 });
+  assert.equal(same.restore, undefined, "a pinned key written at its value needs no restoring");
+});
+
 test("the rules an older relay pinned keys off with keep those keys off", async () => {
   const { story, kept } = makeStory();
-  await wrote(story, ALICE, 0, { s: "40", sf: "2902", v: "1001:n37,1201:n0,1219:n2", ssf: "858.139.A", ss: "12.3.A" }, { p: 37 });
-  await wrote(story, ALICE, 1, { s: "41" }, { p: 37 });
+  await wrote(story, ALICE, 0, { s: "40", sf: "2902", v: "1001:n37,1201:n0,1219:n2" }, { p: 37 });
   kept.story.pins = ["s2901-2962", "v1201-1218", "ss845-936"];
-  const refused = await story.write(ALICE, { base: 2, counters: counters({ p: 37 }), set: { v: "1201:n8" } });
-  assert.deepEqual([refused.status, refused.body.code], [409, "closed"]);
-  assert.equal((await story.write(ALICE, { base: 2, counters: counters({ p: 37 }), set: { s: "2950" } })).body.code, "closed", "a pinned key the story never held");
-  const free = await wrote(story, ALICE, 2, { v: "1201:n0,1219:n3" }, { p: 37 });
-  assert.equal(free.push.delta.v, "1219:n3", "a pinned key written as it stands and other keys go in");
-  assert.equal((await story.write(ALICE, { base: 3, counters: counters({ p: 37 }), set: { ss: "860.1.A" } })).body.code, "closed", "the pins outlive later writes");
+  const write = await wrote(story, ALICE, 1, { v: "1201:n8,1219:n3", ss: "860.1.A", s: "2950" }, { p: 37 });
+  assert.deepEqual([write.push.delta.v, write.push.delta.ss, write.restore.delta.v, write.restore.delta.sf, write.restore.delta.ssf], ["1219:n3", "", "1201:n0", "2950", "860.1.A"]);
+  assert.equal((await story.get()).body.keys.v, "1001:n37,1201:n0,1219:n3");
 });
 
 test("a sealed story moves to keys with a write on its own revision, after which sealed writes are refused", async () => {

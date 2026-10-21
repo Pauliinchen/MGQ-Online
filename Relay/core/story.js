@@ -4,6 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-10-21: Let an admin set switches, variables and self switches of a keyed story by id as a revision every game takes
 //                            - Let an admin pin keys of a keyed story at any value and take pins off again, reading the pins kept before as pins at off
+//                            - Took a write that changes pinned keys without them and told every game the pinned values in a revision of its own
 //      Paulinchen  2026-10-18: Let an admin pin keys of a keyed story off and refused writes that change pinned keys
 //      Paulinchen  2026-10-17: Kept the frozen raid boss fights key by key in a keyed story, one per troop
 //                            - Kept the end of a frozen fight for good
@@ -885,13 +886,13 @@ export class WorldStory {
   /**
    * Takes a game's write of a keyed story, the keys it changed in the lists `set`: each one goes in
    * unless a write after the revision it built on changed it, which the first writer keeps; the end
-   * of a frozen raid boss fight always goes in and is never replaced. A write
-   * on a sealed story the game opened moves the world to keys, the sealed story's revision its base;
-   * a story nobody wrote yet starts keyed.
+   * of a frozen raid boss fight always goes in and is never replaced. Keys an admin pinned stay
+   * out of the write, see pinOf. A write on a sealed story the game opened moves the world to keys,
+   * the sealed story's revision its base; a story nobody wrote yet starts keyed.
    *
    * @param {string} player The writing player's id.
    * @param {any} request The write: `base`, the revision it built on; `counters`, see readCounters; and `set`, the lists of the keys it changed, see readLists.
-   * @returns {Promise<{status: number, body: object, push?: object}>} The new state with `accepted`, `kept` (the lists of the keys the world kept, with their values) and `moved` (whether other writes changed keys since the base), and the change to tell every game, see storyPushText; or 409 with the state as it stands, its story and a code; or why the write is wrong.
+   * @returns {Promise<{status: number, body: object, push?: object, restore?: object}>} The new state with `accepted`, `kept` (the lists of the keys the world kept, with their values) and `moved` (whether other writes changed keys since the base), the change to tell every game, see storyPushText, and when the write changed pinned keys, the revision after it that tells every game their pinned values; or 409 with the state as it stands, its story and a code; or why the write is wrong.
    */
   async writeKeys(player, request) {
     if (!Number.isInteger(request.base) || request.base < 0) {
@@ -933,8 +934,18 @@ export class WorldStory {
 
       const keys = keyed ? readLists(story.lists, { ...this.limits, maxListsLength: Infinity }).keys : new Map();
 
-      if ([...lists.keys].some(([key, value]) => pinOf(story, key) !== undefined && (keys.get(key) ?? OFF_VALUE[key[0]]) !== value)) {
-        return { status: 409, body: { ...stateOf(story, true), error: "an admin keeps some of these keys as the world's story holds them", code: STORY_REFUSAL.closed } };
+      // Refusing a write that changes pinned keys would make released games drop the player's
+      // whole step, so the pinned keys alone stay out.
+      const pinned = new Map();
+
+      for (const [key, value] of [...lists.keys]) {
+        if (pinOf(story, key) !== undefined) {
+          lists.keys.delete(key);
+
+          if ((keys.get(key) ?? OFF_VALUE[key[0]]) !== value) {
+            pinned.set(key, keys.get(key) ?? OFF_VALUE[key[0]]);
+          }
+        }
       }
 
       const changed = keyed ? changedSince(story.log, request.base) : new Set();
@@ -966,7 +977,12 @@ export class WorldStory {
       }
 
       const { next, checkpoint } = this.advance(story, { ...read, counters: countersOf(keys, read.counters) }, player);
-      const log = keyed ? [...story.log, { rev: next.rev, keys: [...applied.keys()] }] : [];
+      // The writing game takes the keys a write's answer leaves out of `kept` as written, so the
+      // pinned values reach it in a revision after its own, which it lays over its story as
+      // another player's change; the revision changes no key a write could have built on, so its
+      // entry in the log names none.
+      const restored = pinned.size > 0 ? { ...next, rev: next.rev + 1, wrev: next.rev + 1, at: this.clock() } : null;
+      const log = keyed ? [...story.log, { rev: next.rev, keys: [...applied.keys()] }, ...(restored ? [{ rev: restored.rev, keys: [] }] : [])] : [];
       let logBase = keyed ? story.logBase : next.rev;
 
       while (log.length > this.limits.logWrites || log.reduce((count, entry) => count + entry.keys.length, 0) > this.limits.logKeys) {
@@ -974,10 +990,12 @@ export class WorldStory {
       }
 
       Object.assign(next, { blob: "", lists: stored, log, logBase });
-      await this.store.put(next, checkpoint);
+      const final = restored ? Object.assign(restored, { blob: "", lists: stored, log, logBase }) : next;
+      await this.store.put(final, checkpoint);
       const push = { rev: next.rev, prev: story?.rev ?? 0, delta: listsOf(applied), state: stateOf(next, false) };
+      const restore = restored ? { restore: { rev: restored.rev, prev: next.rev, delta: listsOf(pinned), state: stateOf(restored, false) } } : {};
       // Whether other writes changed keys since the base, which the writing game lacks then.
-      return { status: 200, body: { ...stateOf(next, false), accepted: true, kept: listsOf(kept), moved: changed.size > 0 }, push };
+      return { status: 200, body: { ...stateOf(next, false), accepted: true, kept: listsOf(kept), moved: changed.size > 0 }, push, ...restore };
     });
   }
 
@@ -1469,7 +1487,7 @@ export function storyRouteOf(url) {
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {string} player The asking player's id.
  * @param {number | null} [known] The revision a GET names in `known`, see WorldStory.get.
- * @returns {Promise<{status: number, body: object, push?: number | object}>} The answer, and the change to tell every game of the world when the story changed, see storyPushText.
+ * @returns {Promise<{status: number, body: object, push?: number | object, restore?: object}>} The answer, the change to tell every game of the world when the story changed, see storyPushText, and the revision of pinned values to tell after it, see writeKeys.
  */
 export async function handleStoryRequest(story, method, rest, readBody, player, known = null) {
   if (rest.length === 0 && method === "GET") {

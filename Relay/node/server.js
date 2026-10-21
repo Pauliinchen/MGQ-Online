@@ -5,6 +5,7 @@
 //      Paulinchen  2026-10-21: Answered the admins' stats of what the relay carries, the battle server's ping included
 //                            - Told every game and server battle of a Raid World each pool an admin defeated
 //                            - Logged every change an admin made to a Raid World's story keys
+//                            - Told every game of a Raid World the pinned values a story write left out
 //      Paulinchen  2026-10-15: Marked every player offline as it starts
 //                            - Handed its admins everything it keeps for another relay to take over
 //                            - Started co-op battles on the battle server and carried their channels
@@ -1168,8 +1169,8 @@ export function createRelay({
       known !== null && /^\d+$/.test(known) ? Number(known) : null);
     await tidyDeleted(route.id);
 
-    if (answer.push) {
-      tellWorld(route.id, storyPushText(answer.push, storyLimits));
+    for (const push of [answer.push, answer.restore].filter(Boolean)) {
+      tellWorld(route.id, storyPushText(push, storyLimits));
     }
 
     return answer;
