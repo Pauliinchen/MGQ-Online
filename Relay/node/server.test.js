@@ -2,7 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Tested that every game of a keyed Raid World hears the keys an admin set and that the relay logs them
+//      Paulinchen  2026-10-21: Tested that an admin's announcement reaches every game of a world with players online
+//                            - Tested that every game of a keyed Raid World hears the keys an admin set and that the relay logs them
 //                            - Tested that every game hears a write without its pinned keys, then their pinned values
 //                            - Tested that every game of a Raid World hears each pool an admin defeated
 //                            - Tested the admins' stats of the world rooms, PvP rooms, players and game versions
@@ -522,6 +523,22 @@ test("a newer release of the mod reaches every game of a world with players onli
   assert.equal((await gameFetch(`${directoryBase}/${roomId(136)}/delete`, { method: "POST", body: JSON.stringify({ player: CREATOR }) })).status, 200);
   await first.closed;
   await second.closed;
+});
+
+test("an admin's announcement reaches every game of a world with players online as the relay's own line", async () => {
+  await makeWorld(roomId(202), 4);
+  const game = await sit(roomId(202), 93);
+  await game.next();
+  const announce = (headers, body) => fetch(`${directoryBase.replace("/worlds", "")}/admin/announce`, { method: "POST", headers, body: JSON.stringify(body) });
+
+  assert.equal((await announce({ [PLAYER_HEADER]: CREATOR }, { text: "Hello" })).status, 403);
+  assert.equal((await announce({ [PLAYER_HEADER]: ADMIN }, { text: " " })).status, 400);
+  assert.equal((await announce({ [PLAYER_HEADER]: ADMIN }, { text: "x".repeat(121) })).status, 400, "a line is as long as the games show at most");
+  const said = await announce({ [PLAYER_HEADER]: ADMIN }, { text: "The relay restarts in five minutes." });
+  assert.equal(said.status, 200);
+  assert.ok((await said.json()).worlds >= 1);
+  assert.equal(await game.next(), "chat MGQ Online	The relay restarts in five minutes.");
+  game.socket.close();
 });
 
 test("a game's chat lines past the chat's rate limit are dropped and answered, and an empty one is ignored", async () => {

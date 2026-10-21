@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Answered the admins' stats of what the relay carries, the battle server's ping included
+//      Paulinchen  2026-10-21: Said an admin's line in every world with players online as the relay's own
+//                            - Answered the admins' stats of what the relay carries, the battle server's ping included
 //                            - Told every game and server battle of a Raid World each pool an admin defeated
 //                            - Logged every change an admin made to a Raid World's story keys
 //                            - Told every game of a Raid World the pinned values a story write left out
@@ -675,7 +676,7 @@ export function createRelay({
     const admin = adminRouteOf(url);
 
     if (admin) {
-      const answer = await handleAdminRequest({ stats }, request.method, url, admin.rest, headerOf(request, PLAYER_HEADER), adminCheck(directory.admins));
+      const answer = await handleAdminRequest({ stats, announce }, request.method, url, admin.rest, () => readText(request), headerOf(request, PLAYER_HEADER), adminCheck(directory.admins));
       response.writeHead(answer.status, { "Content-Type": "application/json" });
       response.end(JSON.stringify(answer.body));
       return;
@@ -1594,18 +1595,25 @@ export function createRelay({
    */
   async function checkRelease() {
     const version = releases ? await releases.check() : null;
+    return version ? { version, worlds: await announce(updateLine(version)) } : { version: null, worlds: 0 };
+  }
 
-    if (!version) {
-      return { version: null, worlds: 0 };
+  /**
+   * Says a line of the relay's own in the chat of every world with players online and tells their
+   * games, under UPDATE_NAME, which games from 0.6.5 on show as a notice.
+   *
+   * @param {string} text The line.
+   * @returns {Promise<number>} In how many worlds it was said.
+   */
+  async function announce(text) {
+    const said = await directory.announce(UPDATE_NAME, text);
+
+    for (const { id, name, text: line } of said) {
+      tellWorld(id, chatText(name, line));
     }
 
-    const said = await directory.announce(UPDATE_NAME, updateLine(version));
-
-    for (const { id, name, text } of said) {
-      tellWorld(id, chatText(name, text));
-    }
-
-    return { version, worlds: said.length };
+    log.info(`${new Date().toISOString()} said in ${said.length} world(s): ${text}`);
+    return said.length;
   }
 
   /**
