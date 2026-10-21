@@ -4,6 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-10-21: Answered the admins' stats of what the relay carries, the battle server's ping included
 //                            - Told every game and server battle of a Raid World each pool an admin defeated
+//                            - Logged every change an admin made to a Raid World's story keys
 //      Paulinchen  2026-10-15: Marked every player offline as it starts
 //                            - Handed its admins everything it keeps for another relay to take over
 //                            - Started co-op battles on the battle server and carried their channels
@@ -1216,6 +1217,10 @@ export function createRelay({
     // Made only once the directory found an admin, so requests for any id keep nothing in memory.
     const world = { get story() { return storyOf(route.id); }, get bosses() { return bossesOf(route.id); } };
     const answer = await handleRaidAdminRequest(world, request.method, url, route.rest, () => readText(request), headerOf(request, PLAYER_HEADER), (key) => directory.raidAdmin(route.id, key));
+
+    if (answer.audit) {
+      log.info(`${new Date().toISOString()} world ${route.id}: ${answer.audit}`);
+    }
 
     if (answer.push) {
       tellWorld(route.id, storyPushText(answer.push, storyLimits));

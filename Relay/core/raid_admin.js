@@ -4,6 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-10-21: Let an admin defeat every pool of a troop at once
 //                            - Handed out a keyed story's keys only when the request asks for them
+//                            - Let an admin set a keyed story's switches, variables and self switches by id
 //      Paulinchen  2026-10-10: Showed each boss pool's share of HP left and the pools' regeneration per minute
 //      Paulinchen  2026-10-09: Created
 //
@@ -18,7 +19,7 @@ import { WORLD_TYPE } from "./directory.js";
 import { badRequest, notFound, withJson } from "./http.js";
 import { isId } from "./ids.js";
 import { VERSION } from "./relay.js";
-import { noRaidWorld } from "./story.js";
+import { STORY_LIMITS, noRaidWorld } from "./story.js";
 
 /**
  * The longest JSON body an admin's request may have.
@@ -46,7 +47,7 @@ export function raidAdminRouteOf(url) {
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {string | null} header The key the PLAYER_HEADER names, which wins over the address and the body.
  * @param {(key: unknown) => Promise<{status: number, body: object, type?: string, player?: string}>} adminOf Asks the directory whether a key is an admin's, and the world's type and the admin's player id.
- * @returns {Promise<{status: number, body: object, push?: number, boss?: import("./bosses.js").BossPush, bosses?: import("./bosses.js").BossPush[]}>} The answer, the story's revision to tell every game when it changed, and the pool or pools to tell every game when they changed.
+ * @returns {Promise<{status: number, body: object, push?: number | object, boss?: import("./bosses.js").BossPush, bosses?: import("./bosses.js").BossPush[], audit?: string}>} The answer, the story's change to tell every game when it changed, the pool or pools to tell every game when they changed, and what an admin changed of the story's keys, for the log.
  */
 export async function handleRaidAdminRequest(world, method, url, rest, readBody, header, adminOf) {
   const asAdmin = async (key, work) => {
@@ -77,6 +78,13 @@ export async function handleRaidAdminRequest(world, method, url, rest, readBody,
 
   if (rest.length === 3 && rest[0] === "bosses" && rest[2] === "reset" && method === "POST") {
     return post(() => world.bosses.reset(rest[1]));
+  }
+
+  if (rest.length === 1 && rest[0] === "keys" && method === "POST") {
+    return withJson(readBody, STORY_LIMITS.maxAdminBodyLength, (body) => asAdmin(header || body?.player, async (access) => {
+      const answer = await world.story.setKeys(body, access.player);
+      return answer.status === 200 ? { ...answer, audit: `admin ${access.player} set keys of rev ${answer.body.rev}: ${JSON.stringify(answer.body.set)}` } : answer;
+    }));
   }
 
   if (rest.length === 2 && rest[0] === "route" && rest[1] === "clear" && method === "POST") {

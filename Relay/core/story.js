@@ -2,6 +2,7 @@
 //  story.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-21: Let an admin set switches, variables and self switches of a keyed story by id as a revision every game takes
 //      Paulinchen  2026-10-18: Let an admin pin keys of a keyed story off and refused writes that change pinned keys
 //      Paulinchen  2026-10-17: Kept the frozen raid boss fights key by key in a keyed story, one per troop
 //                            - Kept the end of a frozen fight for good
@@ -67,6 +68,9 @@ export const STORY_LIMITS = Object.freeze({
   logWrites: 200,
   // The longest push of a write's changed keys; a longer one tells the revision alone.
   maxDeltaLength: 60_000,
+  // The keys an admin sets at once, and the JSON body that names them.
+  maxAdminKeys: 2000,
+  maxAdminBodyLength: 128 * 1024,
 });
 
 /**
@@ -125,6 +129,130 @@ const SELF_KEY = /^(\d{1,5})\.(\d{1,6})\.([A-Za-z0-9_]{1,8})$/;
  * The value of a switch or self switch that is off and of a variable at 0, by the key's first letter.
  */
 const OFF_VALUE = Object.freeze({ s: "0", v: "n0" });
+
+/**
+ * The kinds of keys an admin sets by id: switches and variables by their ids, self switches as
+ * map.event.letter.
+ */
+export const ADMIN_KINDS = Object.freeze(["s", "v", "ss"]);
+
+/**
+ * Writes a value an admin names as a key of a keyed story holds it: a switch or self switch as "1"
+ * or "0", a variable as the games write it (story_state.rbx `encode_value`).
+ *
+ * @param {string} kind The key's kind, one of ADMIN_KINDS.
+ * @param {unknown} value The value: true or false for a switch or self switch; a number, a text, true or false for a variable.
+ * @param {typeof STORY_LIMITS} [limits] The limits.
+ * @returns {string | null} The value as kept, or null when it is none of these.
+ */
+export function keyValueOf(kind, value, limits = STORY_LIMITS) {
+  if (kind !== "v") {
+    return typeof value === "boolean" ? (value ? "1" : "0") : null;
+  }
+
+  const written = typeof value === "boolean" ? (value ? "T" : "F")
+    : Number.isSafeInteger(value) ? `n${value}`
+      : typeof value === "number" && Number.isFinite(value) ? `f${value}`
+        : typeof value === "string" ? `s${base64Of(value)}`
+          : null;
+  return written !== null && written.length <= limits.maxValueLength && VALUE.test(written) ? written : null;
+}
+
+/**
+ * Reads a value of a keyed story as an admin names it, see keyValueOf.
+ *
+ * @param {string} key The key, such as "v1201".
+ * @param {string} value The value as kept.
+ * @returns {boolean | number | string} The value.
+ */
+export function keyValueView(key, value) {
+  if (!key.startsWith("v")) {
+    return value === "1";
+  }
+
+  switch (value[0]) {
+    case "n":
+    case "f":
+      return Number(value.slice(1));
+    case "s":
+      return textOf(value.slice(1));
+    default:
+      return value === "T";
+  }
+}
+
+/**
+ * Encodes a text's UTF-8 bytes as base64, as the games write a text variable.
+ *
+ * @param {string} text The text.
+ * @returns {string} The base64.
+ */
+function base64Of(text) {
+  return btoa(Array.from(new TextEncoder().encode(text), (byte) => String.fromCharCode(byte)).join(""));
+}
+
+/**
+ * Decodes base64 of UTF-8 bytes into a text.
+ *
+ * @param {string} base64 The base64.
+ * @returns {string} The text.
+ */
+function textOf(base64) {
+  return new TextDecoder().decode(Uint8Array.from(atob(base64), (character) => character.charCodeAt(0)));
+}
+
+/**
+ * Reads the keys an admin sets by id: `s` (switch ids to true or false), `v` (variable ids to their
+ * values) and `ss` ("map.event.letter" to true or false).
+ *
+ * @param {any} request The request.
+ * @param {typeof STORY_LIMITS} [limits] The limits.
+ * @returns {{keys: Map<string, string>} | {error: string}} The keys as a keyed story names them with their values as kept, or why the request is wrong.
+ */
+export function readAdminKeys(request, limits = STORY_LIMITS) {
+  const plain = (value) => value === undefined || (value !== null && typeof value === "object" && !Array.isArray(value));
+
+  if (!request || typeof request !== "object" || !ADMIN_KINDS.every((kind) => plain(request[kind]))) {
+    return { error: `the request must be a JSON object of ${ADMIN_KINDS.join(", ")}, each an object of keys and values` };
+  }
+
+  const keys = new Map();
+
+  for (const kind of ADMIN_KINDS) {
+    for (const [id, value] of Object.entries(request[kind] ?? {})) {
+      const key = keyNameOf(kind, id, limits);
+      const kept = keyValueOf(kind, value, limits);
+
+      if (key === null || kept === null) {
+        return { error: `${kind} names ${kind === "ss" ? "self switches as map.event.letter to true or false" : kind === "s" ? `switch ids of 1 to ${limits.maxId} to true or false` : `variable ids of 1 to ${limits.maxId} to numbers, texts, true or false`}: ${String(id).slice(0, 40)}` };
+      }
+
+      keys.set(key, kept);
+    }
+  }
+
+  if (keys.size === 0 || keys.size > limits.maxAdminKeys) {
+    return { error: `the request must name 1 to ${limits.maxAdminKeys} keys` };
+  }
+
+  return { keys };
+}
+
+/**
+ * Names a key of a keyed story by its kind and id, as readLists names it.
+ *
+ * @param {string} kind The key's kind, one of ADMIN_KINDS.
+ * @param {string} id The switch's or variable's id, or the self switch's map.event.letter.
+ * @param {typeof STORY_LIMITS} limits The limits.
+ * @returns {string | null} The key, such as "s12" or "ss858.139.A", or null when the id is none.
+ */
+function keyNameOf(kind, id, limits) {
+  if (kind === "ss") {
+    return SELF_KEY.test(id) ? `ss${id}` : null;
+  }
+
+  return /^\d{1,6}$/.test(id) && Number(id) >= 1 && Number(id) <= limits.maxId ? `${kind}${Number(id)}` : null;
+}
 
 /**
  * Reports whether an admin's rules pin a key: "s" and "v" rules name switch and variable ids, "ss"
@@ -190,6 +318,7 @@ export const STORY_REFUSAL = Object.freeze({
   rate: "rate",
   started: "started",
   update: "update",
+  pinned: "pinned",
 });
 
 /**
@@ -833,6 +962,70 @@ export class WorldStory {
       ...(story?.pins ? { pins: story.pins } : {}),
     };
     return { next, checkpoint };
+  }
+
+  /**
+   * Sets keys of a keyed story as an admin asks, as a new revision every game takes: its counters
+   * follow the keys as a game's write's do.
+   *
+   * @param {any} request The keys, see readAdminKeys.
+   * @param {string} admin The admin's player id, whom the revision names as its writer.
+   * @returns {Promise<{status: number, body: object, push?: object}>} The new state with `set` (the lists of the keys that changed), and the change to tell every game; or 409 with code `none` for a story that is not keyed, `pinned` with `keys` for keys pinned at other values; or why the request is wrong.
+   */
+  async setKeys(request, admin) {
+    const read = readAdminKeys(request, this.limits);
+
+    if (read.error) {
+      return badRequest(read.error);
+    }
+
+    return this.exclusive(async () => {
+      const story = await this.store.get();
+
+      if (!story?.lists) {
+        return { status: 409, body: { error: "only a keyed story has keys an admin sets", code: STORY_REFUSAL.none } };
+      }
+
+      const pinned = [...read.keys].filter(([key, value]) => pinnedKey(story.pins, key) && value !== OFF_VALUE[key[0]]).map(([key]) => key);
+
+      if (pinned.length > 0) {
+        return { status: 409, body: { error: "an admin pinned these keys at other values", code: STORY_REFUSAL.pinned, keys: pinned } };
+      }
+
+      const keys = readLists(story.lists, { ...this.limits, maxListsLength: Infinity }).keys;
+      const applied = new Map([...read.keys].filter(([key, value]) => keys.get(key) !== value));
+
+      for (const [key, value] of applied) {
+        keys.set(key, value);
+      }
+
+      const { next, checkpoint, push } = this.adminRevision(story, keys, applied, admin);
+      await this.store.put(next, checkpoint);
+      return { status: 200, body: { ...stateOf(next, false), set: listsOf(applied) }, push };
+    });
+  }
+
+  /**
+   * Makes the revision an admin's change of a keyed story's keys leaves, which every game takes as
+   * it takes a write: its counters follow the keys. Called inside exclusive.
+   *
+   * @param {object} story The story as it stands.
+   * @param {Map<string, string>} keys Every key of the story after the change.
+   * @param {Map<string, string>} applied The keys the change set, which the log and the push name.
+   * @param {string} admin The admin's player id.
+   * @returns {{next: object, checkpoint: object | null, push: object}} The story to keep, the checkpoint of a part it left, and the change to tell every game.
+   */
+  adminRevision(story, keys, applied, admin) {
+    const { next, checkpoint } = this.advance(story, { counters: countersOf(keys, story.counters), end: undefined, caps: [] }, admin);
+    const log = [...story.log, { rev: next.rev, keys: [...applied.keys()] }];
+    let logBase = story.logBase;
+
+    while (log.length > this.limits.logWrites || log.reduce((count, entry) => count + entry.keys.length, 0) > this.limits.logKeys) {
+      logBase = log.shift().rev;
+    }
+
+    Object.assign(next, { blob: "", lists: listsOf(keys), log, logBase });
+    return { next, checkpoint, push: { rev: next.rev, prev: story.rev, delta: listsOf(applied), state: stateOf(next, false) } };
   }
 
   /**

@@ -2,7 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Tested that every game of a Raid World hears each pool an admin defeated
+//      Paulinchen  2026-10-21: Tested that every game of a keyed Raid World hears the keys an admin set and that the relay logs them
+//                            - Tested that every game of a Raid World hears each pool an admin defeated
 //                            - Tested the admins' stats of the world rooms, PvP rooms, players and game versions
 //      Paulinchen  2026-10-15: Tested that a relay that starts marks every player offline
 //                            - Covered a keyed Raid World story's pushes and the games sent to update
@@ -814,6 +815,12 @@ test("a keyed Raid World's games hear what each write changed, and games that ke
   assert.deepEqual(await openWithHeaders(`${worldBase}${room}?name=Old&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(63), [FEATURES_HEADER]: "raid" }), { status: 400, refusal: "update" });
   const newer = await openWithHeaders(`${worldBase}${room}?name=New&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(64), ...keys });
   assert.equal(await newer.first, "seat 1 0");
+
+  const set = await gameFetch(`${directoryBase}/${room}/raid/keys`, { method: "POST", headers: { [PLAYER_HEADER]: ADMIN }, body: JSON.stringify({ s: { 5: false } }) });
+  assert.equal(set.status, 200);
+  await until(async () => heard.some((text) => text.startsWith("storyd ") && JSON.parse(text.slice(7)).delta.sf === "5"));
+  const admin = await playerIdOf(ADMIN);
+  assert.ok(logged.info.some((line) => line.includes(`world ${room}: admin ${admin} set keys of rev 2`)), "the relay logs what an admin set");
   watcher.socket.close();
   newer.socket.close();
 });
