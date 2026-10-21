@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-21: Let an admin defeat every pool of a troop at once
+//                            - Handed out a keyed story's keys only when the request asks for them
 //      Paulinchen  2026-10-10: Showed each boss pool's share of HP left and the pools' regeneration per minute
 //      Paulinchen  2026-10-09: Created
 //
@@ -60,7 +61,9 @@ export async function handleRaidAdminRequest(world, method, url, rest, readBody,
 
   if (rest.length === 0 && method === "GET") {
     return asAdmin(header || url.searchParams.get("player"), async () => {
-      const { blob: _sealed, ...story } = (await world.story.get()).body;
+      // A late story's keys run to a megabyte, which only a view of the keys needs.
+      const { blob: _sealed, keyed, keys, ...counters } = (await world.story.get()).body;
+      const story = url.searchParams.get("keys") === "1" ? { ...counters, keyed: keyed === true, ...(keys ? { keys } : {}) } : counters;
       const { bosses, regenPerMinute } = (await world.bosses.list(true)).body;
       return { status: 200, body: { story, bosses, regenPerMinute } };
     });

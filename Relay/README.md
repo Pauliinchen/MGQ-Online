@@ -18,6 +18,7 @@ core/story.test.js     tests of the story
 core/bosses.js         a Raid World's boss pools: the share of the raid HP left, the battles' reports, regeneration, the defeat
 core/bosses.test.js    tests of the boss pools and the admin routes
 core/raid_admin.js     what admins see and set right in a Raid World: counters, pools, the route lock
+core/raid_admin.test.js tests of the admin routes of a Raid World's story
 core/admin.js          the relay's own admin routes: the stats of what it carries
 core/migration.js      everything a relay keeps, handed to its admins for another relay to take over
 core/mods.js           the mod catalog's rules, over a store the platform passes in
@@ -192,7 +193,7 @@ A Raid World's story bosses each have a pool whose HP the whole world shares, ke
 
 | Request | What it does |
 |---|---|
-| `GET /v1/worlds/<id>/raid?player=<key>` | Hands out the story's counters without the sealed story (`story`), every pool with `hp` (the HP left now), `reports` and `byPlayer` (the id of the player whose report emptied it) besides what the players see, and `regenPerMinute`. |
+| `GET /v1/worlds/<id>/raid?player=<key>` | Hands out the story's counters without the sealed story and without a keyed story's keys (`story`), with `?keys=1` also `keyed` and, for a keyed story, `keys` (the lists as `GET .../story` hands them out), every pool with `hp` (the HP left now), `reports` and `byPlayer` (the id of the player whose report emptied it) besides what the players see, and `regenPerMinute`. |
 | `POST /v1/worlds/<id>/raid/bosses/<key>/reset` | Deletes a pool, so it is full again and its defeat taken back; the next report sets its max again. |
 | `POST /v1/worlds/<id>/raid/bosses/kill` | Defeats bosses for the world at once, such as every enemy of a troop: `keys` (1 to 500 pool keys as the games name them, not percent-encoded) and `max` (the raid max HP by key, more than 0 and at most 1e18), which a pool no game reported yet needs, since no game named its max; 400 naming those keys when `max` lacks them, and nothing changes. Each pool named is emptied with `by` `Admin` and `byPlayer` the admin's id, as a game's killing report would; a pool defeated already stays as it was. Answers `bosses`, every pool named as the admin view below shows it. Every game in the world room hears a `boss` frame for each pool it defeated, and so does every server battle of the world; a game then wins that boss's battle at once and the world overview shows it beaten. 413 with `code` `full` when the new pools would pass 500. |
 | `POST /v1/worlds/<id>/raid/route/clear` | Takes back the route locked at the Great Decision, so the next player who chooses sets it again, and answers `cleared` (false when no route was locked). Refused with 409 and `code` `started` while the world's story is on the locked route, since another route locked then would turn away every write of both routes; once the world returns from the route, the lock is gone anyway. |
