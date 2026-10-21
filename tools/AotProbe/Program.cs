@@ -2,7 +2,8 @@
 //  Program.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Printed and checked the formula vectors
+//      Paulinchen  2026-10-21: Printed and checked the simulation log hash
+//                            - Printed and checked the formula vectors
 //                            - Printed and checked the random reference vectors
 //                            - Created
 //
@@ -73,7 +74,7 @@ public static class Program
     {
         Console.WriteLine($"runtime {RuntimeInformation.RuntimeIdentifier}");
         Console.WriteLine($"aot {!RuntimeFeature.IsDynamicCodeSupported}");
-        bool matches = PrintRandomVectors() & PrintFormulaVectors();
+        bool matches = PrintRandomVectors() & PrintFormulaVectors() & SimulationVector.Print();
         Console.WriteLine(matches ? "vectors ok" : "vectors DIFFER");
         return matches ? 0 : 1;
     }

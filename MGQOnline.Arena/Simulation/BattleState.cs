@@ -1,0 +1,593 @@
+//----------------------------------------------------------------
+//  BattleState.cs
+//
+//  Changelog:
+//      Paulinchen  2026-10-21: Created
+//
+//----------------------------------------------------------------
+
+using System.Collections.Generic;
+using MGQOnline.Arena.Events;
+using MGQOnline.Arena.Formulas;
+using MGQOnline.Arena.Model;
+using MGQOnline.Arena.Randomness;
+
+namespace MGQOnline.Arena.Simulation;
+
+/// <summary>
+/// Where a battle's turn stands.
+/// </summary>
+public enum BattlePhase
+{
+    /// <summary>
+    /// Started and placed, before the first turn.
+    /// </summary>
+    Setup,
+
+    /// <summary>
+    /// The turn start: tier states, turn start rules and queued casts.
+    /// </summary>
+    TurnStart,
+
+    /// <summary>
+    /// The boss's plan is being made.
+    /// </summary>
+    Plan,
+
+    /// <summary>
+    /// The party moves and hits.
+    /// </summary>
+    Party,
+
+    /// <summary>
+    /// The boss's plan is being cast.
+    /// </summary>
+    Resolve,
+
+    /// <summary>
+    /// The turn end: marks, durations, rests, debris and turn end rules.
+    /// </summary>
+    TurnEnd,
+
+    /// <summary>
+    /// Every boss enemy fell.
+    /// </summary>
+    Won,
+
+    /// <summary>
+    /// Every unit fell.
+    /// </summary>
+    Lost,
+}
+
+/// <summary>
+/// A simulated battle: units, boss enemies, debris, rule memory, the plan and the log.
+/// </summary>
+public sealed class BattleState
+{
+    /// <summary>
+    /// Makes a battle in its setup phase.
+    /// </summary>
+    /// <param name="design">The design.</param>
+    /// <param name="boss">The boss fought.</param>
+    /// <param name="tier">The tier fought at.</param>
+    /// <param name="setup">The setup.</param>
+    /// <param name="grid">The grid.</param>
+    internal BattleState(RuntimeDesign design, RuntimeBoss boss, RuntimeTier tier, BattleSetup setup, GridSize grid)
+    {
+        Design = design;
+        Boss = boss;
+        Tier = tier;
+        Setup = setup;
+        Grid = grid;
+        Random = new RandomStreams(setup.Seed);
+    }
+
+    /// <summary>
+    /// Gets the design.
+    /// </summary>
+    public RuntimeDesign Design { get; }
+
+    /// <summary>
+    /// Gets the boss fought.
+    /// </summary>
+    public RuntimeBoss Boss { get; }
+
+    /// <summary>
+    /// Gets the tier fought at.
+    /// </summary>
+    public RuntimeTier Tier { get; }
+
+    /// <summary>
+    /// Gets the setup.
+    /// </summary>
+    public BattleSetup Setup { get; }
+
+    /// <summary>
+    /// Gets the current turn, 1 the first, 0 before it.
+    /// </summary>
+    public int Turn { get; internal set; }
+
+    /// <summary>
+    /// Gets where the turn stands.
+    /// </summary>
+    public BattlePhase Phase { get; internal set; }
+
+    /// <summary>
+    /// Gets the grid, at least the game rule's minimum and grown for a large party.
+    /// </summary>
+    public GridSize Grid { get; }
+
+    /// <summary>
+    /// Gets the units in seat order.
+    /// </summary>
+    public List<UnitState> Units { get; } = [];
+
+    /// <summary>
+    /// Gets the boss enemies of the fought troop in troop order.
+    /// </summary>
+    public List<EnemyState> Enemies { get; } = [];
+
+    /// <summary>
+    /// Gets the debris on the grid.
+    /// </summary>
+    public List<DebrisCell> Debris { get; } = [];
+
+    /// <summary>
+    /// Gets the rules' and actions' memory.
+    /// </summary>
+    public Dictionary<RuleMemoryKey, RuleMemory> Memory { get; } = [];
+
+    /// <summary>
+    /// Gets the current turn's plan of every enemy, in the order it runs.
+    /// </summary>
+    public List<PlannedCast> Plan { get; } = [];
+
+    /// <summary>
+    /// Gets the casts queued for the next turn's plan.
+    /// </summary>
+    public List<QueuedCast> NextTurn { get; } = [];
+
+    /// <summary>
+    /// Gets the battle's random streams.
+    /// </summary>
+    public RandomStreams Random { get; }
+
+    /// <summary>
+    /// Gets the battle log.
+    /// </summary>
+    public List<BattleEvent> Log { get; } = [];
+
+    /// <summary>
+    /// Gets the turns the party's Overdrive still freezes the boss, the current one included.
+    /// </summary>
+    public int OverdriveTurns { get; internal set; }
+
+    /// <summary>
+    /// Gets or sets how many casts the battle planned, which numbers the cast ids.
+    /// </summary>
+    internal int CastCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the place in the log where the current turn starts.
+    /// </summary>
+    internal int TurnLogStart { get; set; }
+
+    /// <summary>
+    /// Gets whether the battle is over.
+    /// </summary>
+    public bool IsOver => Phase is BattlePhase.Won or BattlePhase.Lost;
+
+    /// <summary>
+    /// Finds the living unit on a cell.
+    /// </summary>
+    /// <param name="cell">The cell.</param>
+    /// <returns>The unit, or null for none.</returns>
+    public UnitState? UnitAt(GridCell cell) => Units.Find(unit => !unit.Fallen && unit.Cell == cell);
+
+    /// <summary>
+    /// Tells whether debris stands on a cell.
+    /// </summary>
+    /// <param name="cell">The cell.</param>
+    /// <returns>Whether it does.</returns>
+    public bool DebrisAt(GridCell cell) => Debris.Exists(debris => debris.Cell == cell);
+
+    /// <summary>
+    /// Tells whether a cell lies on the grid.
+    /// </summary>
+    /// <param name="cell">The cell.</param>
+    /// <returns>Whether it does.</returns>
+    public bool OnGrid(GridCell cell) => cell.X >= 0 && cell.Y >= 0 && cell.X < Grid.Cols && cell.Y < Grid.Rows;
+
+    /// <summary>
+    /// Gets an entry of the memory, made on first use.
+    /// </summary>
+    /// <param name="key">The key.</param>
+    /// <returns>The memory.</returns>
+    public RuleMemory MemoryOf(RuleMemoryKey key)
+    {
+        if (!Memory.TryGetValue(key, out RuleMemory? memory))
+        {
+            memory = new RuleMemory();
+            Memory[key] = memory;
+        }
+
+        return memory;
+    }
+}
+
+/// <summary>
+/// A unit of the party in a battle.
+/// </summary>
+public sealed class UnitState
+{
+    /// <summary>
+    /// Makes a unit at full HP.
+    /// </summary>
+    /// <param name="seat">Its seat.</param>
+    /// <param name="setup">Its setup.</param>
+    public UnitState(int seat, PartyUnitSetup setup)
+    {
+        Seat = seat;
+        Cell = setup.Cell;
+        Hp = setup.MaxHp;
+        MaxHp = setup.MaxHp;
+        Stats = setup.Stats;
+        Sex = setup.Sex;
+        TgrPermille = setup.TgrPermille;
+        ElementRates = setup.ElementRates;
+        StateRates = setup.StateRates;
+    }
+
+    /// <summary>
+    /// Gets the unit's seat, its place in the party.
+    /// </summary>
+    public int Seat { get; }
+
+    /// <summary>
+    /// Gets or sets the cell it stands on.
+    /// </summary>
+    public GridCell Cell { get; set; }
+
+    /// <summary>
+    /// Gets or sets its HP.
+    /// </summary>
+    public int Hp { get; set; }
+
+    /// <summary>
+    /// Gets its max HP.
+    /// </summary>
+    public int MaxHp { get; }
+
+    /// <summary>
+    /// Gets its stats for formulas, with its HP as it started.
+    /// </summary>
+    public FormulaStats Stats { get; }
+
+    /// <summary>
+    /// Gets its kind for the skills' target filters.
+    /// </summary>
+    public CharacterKind Sex { get; }
+
+    /// <summary>
+    /// Gets its target rate in permille.
+    /// </summary>
+    public int TgrPermille { get; }
+
+    /// <summary>
+    /// Gets or sets whether it fell.
+    /// </summary>
+    public bool Fallen { get; set; }
+
+    /// <summary>
+    /// Gets the states it holds, one instance per state.
+    /// </summary>
+    public List<StateInstance> States { get; } = [];
+
+    /// <summary>
+    /// Gets its element rates in percent by element id.
+    /// </summary>
+    public IReadOnlyDictionary<int, double> ElementRates { get; }
+
+    /// <summary>
+    /// Gets its state rates in percent by state id.
+    /// </summary>
+    public IReadOnlyDictionary<int, double> StateRates { get; }
+}
+
+/// <summary>
+/// A boss enemy in a battle.
+/// </summary>
+public sealed class EnemyState
+{
+    /// <summary>
+    /// Makes an enemy at full HP and MP.
+    /// </summary>
+    /// <param name="enemy">The troop member.</param>
+    public EnemyState(RuntimeEnemy enemy)
+    {
+        Index = enemy.Index;
+        EnemyId = enemy.EnemyId;
+        Troop = enemy.Troop;
+        Stats = enemy.Stats;
+        Ap = enemy.Ap;
+        Hp = enemy.Stats.Mhp;
+        MaxHp = enemy.Stats.Mhp;
+        Mp = enemy.Stats.Mmp;
+        MaxMp = enemy.Stats.Mmp;
+    }
+
+    /// <summary>
+    /// Gets its place in the troop.
+    /// </summary>
+    public int Index { get; }
+
+    /// <summary>
+    /// Gets its enemy id.
+    /// </summary>
+    public int EnemyId { get; }
+
+    /// <summary>
+    /// Gets its troop.
+    /// </summary>
+    public int Troop { get; }
+
+    /// <summary>
+    /// Gets its stats with the tier factors applied.
+    /// </summary>
+    public EnemyStats Stats { get; }
+
+    /// <summary>
+    /// Gets the action points it spends per turn before its features.
+    /// </summary>
+    public int Ap { get; }
+
+    /// <summary>
+    /// Gets or sets its HP.
+    /// </summary>
+    public long Hp { get; set; }
+
+    /// <summary>
+    /// Gets its max HP.
+    /// </summary>
+    public long MaxHp { get; }
+
+    /// <summary>
+    /// Gets or sets its MP.
+    /// </summary>
+    public long Mp { get; set; }
+
+    /// <summary>
+    /// Gets its max MP.
+    /// </summary>
+    public long MaxMp { get; }
+
+    /// <summary>
+    /// Gets or sets the action points banked for its next plan.
+    /// </summary>
+    public int ApBank { get; set; }
+
+    /// <summary>
+    /// Gets or sets the action points rules gave or took for the plan being made.
+    /// </summary>
+    public int ApThis { get; set; }
+
+    /// <summary>
+    /// Gets or sets the action points rules gave or took for the next turn's plan.
+    /// </summary>
+    public int ApNext { get; set; }
+
+    /// <summary>
+    /// Gets the turns each skill still rests after a rolled use, by skill key.
+    /// </summary>
+    public Dictionary<string, int> Rest { get; } = new(System.StringComparer.Ordinal);
+
+    /// <summary>
+    /// Gets the states it holds, one instance per state.
+    /// </summary>
+    public List<StateInstance> States { get; } = [];
+
+    /// <summary>
+    /// Gets the HP percents it has crossed below.
+    /// </summary>
+    public HashSet<int> HpThresholdsCrossed { get; } = [];
+
+    /// <summary>
+    /// Gets whether it fell.
+    /// </summary>
+    public bool Fallen => Hp <= 0;
+
+    /// <summary>
+    /// Gets its stats for formulas.
+    /// </summary>
+    public FormulaStats FormulaStats => new(MaxHp, MaxMp, Stats.Atk, Stats.Def, Stats.Mat, Stats.Mdf, Stats.Agi, Stats.Luk, Hp, Mp, 0);
+}
+
+/// <summary>
+/// Where a state instance comes from.
+/// </summary>
+/// <param name="RuleId">The rule that added it, or null.</param>
+/// <param name="Skill">The skill whose cast added it, or null.</param>
+/// <param name="CastId">The cast that added it, or null.</param>
+/// <param name="Tier">Whether the tier keeps it on the boss.</param>
+public sealed record StateSource(string? RuleId = null, SkillRef? Skill = null, string? CastId = null, bool Tier = false);
+
+/// <summary>
+/// A state a unit or enemy holds.
+/// </summary>
+/// <param name="StateId">The state.</param>
+/// <param name="Source">Where it comes from.</param>
+/// <param name="AppliedTurn">The turn it was added or last refreshed.</param>
+/// <param name="TurnsLeft">The turn ends it still lasts, or null until something removes it.</param>
+/// <param name="MinUntilTurn">The turn from which a mark waiting for a cast may go.</param>
+/// <param name="UntilNextCastOf">The root scheduled action whose next cast ends it, or null.</param>
+/// <param name="AppliedCastId">The cast that added or last refreshed it, or null.</param>
+/// <param name="CastPassed">Whether the cast it waited for came before its minimum, so it goes at the first turn end from <paramref name="MinUntilTurn"/>.</param>
+public sealed record StateInstance(
+    int StateId,
+    StateSource Source,
+    int AppliedTurn,
+    int? TurnsLeft,
+    int MinUntilTurn,
+    string? UntilNextCastOf,
+    string? AppliedCastId,
+    bool CastPassed = false);
+
+/// <summary>
+/// The key of a memory entry: an enemy and a rule id, action id or skill key.
+/// </summary>
+/// <param name="Enemy">The enemy's index.</param>
+/// <param name="Key">The rule id, action id or skill key.</param>
+public readonly record struct RuleMemoryKey(int Enemy, string Key);
+
+/// <summary>
+/// What the battle remembers of a rule or action.
+/// </summary>
+public sealed class RuleMemory
+{
+    /// <summary>
+    /// Gets or sets the turn of its last cast, or null.
+    /// </summary>
+    public int? LastCastTurn { get; set; }
+
+    /// <summary>
+    /// Gets or sets the half of its last cast, or null.
+    /// </summary>
+    public GridHalf? LastSide { get; set; }
+
+    /// <summary>
+    /// Gets or sets how often it fired this turn.
+    /// </summary>
+    public int FiresThisTurn { get; set; }
+
+    /// <summary>
+    /// Gets or sets how often it fired in the battle.
+    /// </summary>
+    public int FiresTotal { get; set; }
+}
+
+/// <summary>
+/// An entry of a boss enemy's turn plan, telegraphed.
+/// </summary>
+/// <param name="CastId">The cast's id, unique in the battle.</param>
+/// <param name="Enemy">The casting enemy's index.</param>
+/// <param name="Skill">The skill.</param>
+/// <param name="ActionId">The action it comes from, or null.</param>
+/// <param name="RootActionId">The action at the root of its follow-up chain, or null.</param>
+/// <param name="Kind">Why it is in the plan.</param>
+/// <param name="Free">Whether it cost no action points.</param>
+/// <param name="Uninterruptible">Whether crowd control cannot disable it.</param>
+/// <param name="Side">The half it is cast on, or null.</param>
+/// <param name="TelegraphPerPulse">The telegraphed cells of each pulse.</param>
+/// <param name="Disabled">Whether it will not be cast.</param>
+/// <param name="DisabledBy">The state that disabled it, or null.</param>
+/// <param name="ParentCastId">The cast it follows up, or null.</param>
+public sealed record PlannedCast(
+    string CastId,
+    int Enemy,
+    SkillRef Skill,
+    string? ActionId,
+    string? RootActionId,
+    PlanKind Kind,
+    bool Free,
+    bool Uninterruptible,
+    GridHalf? Side,
+    IReadOnlyList<IReadOnlyList<GridCell>> TelegraphPerPulse,
+    bool Disabled,
+    int? DisabledBy,
+    string? ParentCastId)
+{
+    /// <summary>
+    /// Gets the action points it cost.
+    /// </summary>
+    public int Cost { get; init; }
+
+    /// <summary>
+    /// Gets the seat it is aimed at, or null for the skill's own targeting.
+    /// </summary>
+    public int? AimSeat { get; init; }
+
+    /// <summary>
+    /// Gets whether its skill is unstoppable.
+    /// </summary>
+    public bool Unstoppable { get; init; }
+
+    /// <summary>
+    /// Gets whether the party's Overdrive disabled it.
+    /// </summary>
+    public bool TimeStopped { get; init; }
+
+    /// <summary>
+    /// Gets whether a state that landed after the plan disabled it.
+    /// </summary>
+    public bool MidTurn { get; init; }
+
+    /// <summary>
+    /// Gets the redirecting states on the enemy that may redirect it.
+    /// </summary>
+    public IReadOnlyList<int> MayRedirect { get; init; } = [];
+
+    /// <summary>
+    /// Gets whether crowd control may pick it: neither uninterruptible, unstoppable nor a follow-up.
+    /// </summary>
+    public bool Stoppable => !Uninterruptible && !Unstoppable && ParentCastId is null;
+}
+
+/// <summary>
+/// A cast queued as a forced entry of the next turn's plan.
+/// </summary>
+/// <param name="Enemy">The casting enemy's index.</param>
+/// <param name="Skill">The skill.</param>
+/// <param name="Kind">Why it is forced.</param>
+/// <param name="Side">Which half it is cast on.</param>
+/// <param name="AimSeat">The seat it is aimed at, or null for the skill's own targeting.</param>
+/// <param name="ParentSide">The half of the cast that caused it, or null.</param>
+/// <param name="RootActionId">The root action of the cast that caused it, or null.</param>
+/// <param name="RuleId">The rule that queued it.</param>
+/// <param name="QueuedTurn">The turn it was queued in.</param>
+public sealed record QueuedCast(
+    int Enemy,
+    SkillRef Skill,
+    PlanKind Kind,
+    CastSide Side,
+    int? AimSeat,
+    GridHalf? ParentSide,
+    string? RootActionId,
+    string RuleId,
+    int QueuedTurn);
+
+/// <summary>
+/// A debris cell on the grid.
+/// </summary>
+/// <param name="cell">The cell.</param>
+/// <param name="turnsLeft">The turn ends it still lasts, 0 the rest of the battle.</param>
+/// <param name="hitsLeft">The hits that still break it, 0 unbreakable.</param>
+/// <param name="placedTurn">The turn it was placed.</param>
+/// <param name="castId">The cast that left it, or null.</param>
+public sealed class DebrisCell(GridCell cell, int turnsLeft, int hitsLeft, int placedTurn, string? castId)
+{
+    /// <summary>
+    /// Gets the cell.
+    /// </summary>
+    public GridCell Cell { get; } = cell;
+
+    /// <summary>
+    /// Gets or sets the turn ends it still lasts, 0 the rest of the battle.
+    /// </summary>
+    public int TurnsLeft { get; set; } = turnsLeft;
+
+    /// <summary>
+    /// Gets or sets the hits that still break it, 0 unbreakable.
+    /// </summary>
+    public int HitsLeft { get; set; } = hitsLeft;
+
+    /// <summary>
+    /// Gets the turn it was placed.
+    /// </summary>
+    public int PlacedTurn { get; } = placedTurn;
+
+    /// <summary>
+    /// Gets the cast that left it, or null.
+    /// </summary>
+    public string? CastId { get; } = castId;
+}
