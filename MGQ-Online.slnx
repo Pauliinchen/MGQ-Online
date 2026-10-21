@@ -91,4 +91,10 @@
   </Folder>
   <Project Path="MGQParadox.Multiplayer/MGQParadox.Multiplayer.csproj" />
   <Project Path="MGQParadox.Multiplayer.Tests/MGQParadox.Multiplayer.Tests.csproj" />
+  <Folder Name="/tools/">
+    <Project Path="tools/AotProbe/AotProbe.csproj" />
+  </Folder>
+  <Project Path="MGQOnline.Arena/MGQOnline.Arena.csproj" />
+  <Project Path="MGQOnline.Arena.Tests/MGQOnline.Arena.Tests.csproj" />
+  <Project Path="MGQOnline.Updates/MGQOnline.Updates.csproj" />
 </Solution>

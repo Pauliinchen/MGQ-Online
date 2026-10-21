@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Compiles the arena and update libraries whole with NativeAOT, for win-x86 like the mod DLL and
+       for linux-x64 like the battle server, and fails on any trim or AOT warning in them. Publish it
+       with -r win-x86 or -r linux-x64; NativeAOT cannot cross-compile between the two systems. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>MGQOnline.Tools.AotProbe</RootNamespace>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IlcTreatWarningsAsErrors>true</IlcTreatWarningsAsErrors>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\MGQOnline.Arena\MGQOnline.Arena.csproj" />
+    <ProjectReference Include="..\..\MGQOnline.Updates\MGQOnline.Updates.csproj" />
+  </ItemGroup>
+
+  <!-- Rooted whole, so the compiler checks every type in them and not only what the probe calls. -->
+  <ItemGroup>
+    <TrimmerRootAssembly Include="MGQOnline.Arena" />
+    <TrimmerRootAssembly Include="MGQOnline.Updates" />
+  </ItemGroup>
+
+</Project>
