@@ -22,8 +22,8 @@ namespace MGQOnline.Arena.Engine;
 /// <param name="Side">How the planner chooses the half when <paramref name="FixedSide"/> is null: own, random or alternate.</param>
 /// <param name="FixedSide">The half the rule fixed, or null for the planner to choose.</param>
 /// <param name="AimSeat">The seat of the unit it is aimed at, or null for the skill's own targeting.</param>
-/// <param name="RuleId">The rule that orders it, which also keys an alternating side's memory.</param>
-/// <param name="ActionId">The action it is a cast of, or null.</param>
+/// <param name="RuleId">The rule that orders it.</param>
+/// <param name="ActionId">The action it is a cast of, or null; with the enemy it keys an alternating side's memory, the skill keys it without an action.</param>
 /// <param name="RootActionId">The action at the root of its follow-up chain, or null.</param>
 /// <param name="ParentCastId">The cast it follows right behind, or null.</param>
 public sealed record CastOrder(

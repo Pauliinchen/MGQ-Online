@@ -2,47 +2,198 @@
 //  ArenaCasts.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Created
+//      Paulinchen  2026-10-21: Replaced the casting interface with the casting part over the cast resolver
+//                            - Created
 //
 //----------------------------------------------------------------
 
+using System;
 using System.Collections.Generic;
+using System.Linq;
+using MGQOnline.Arena.Casting;
+using MGQOnline.Arena.Debris;
+using MGQOnline.Arena.Formulas;
+using MGQOnline.Arena.Grids;
+using MGQOnline.Arena.Hits;
 using MGQOnline.Arena.Model;
+using MGQOnline.Arena.Numerics;
+using MGQOnline.Arena.Randomness;
 
 namespace MGQOnline.Arena.Simulation;
 
 /// <summary>
-/// What the simulation asks of the casting part: telegraph a cast at the plan, resolve it over its
-/// telegraphed cells, and place debris.
+/// The casting part of a simulated battle: telegraphs and resolves boss casts through
+/// <see cref="CastResolver"/> and places debris through <see cref="DebrisLayout"/> and <see cref="SkillDebris"/>.
 /// </summary>
-/// <remarks>The simulation chooses the half itself, because the side memory and the follow-ups' sides
-/// live in the battle state.</remarks>
-public interface IArenaCasts : ICastResolver<BattleState, PlannedCast, CastResult>
+/// <remarks>
+/// A hit deals the skill's formula only; a game skill without its own formula in the design deals 0,
+/// because the runtime model carries no game formulas.
+/// </remarks>
+public sealed class ArenaCasts : ICastResolver
 {
     /// <summary>
-    /// Chooses a cast's anchor and cells for every pulse, random strikes included.
+    /// Gets the casting part every simulation shares; it keeps no state of its own.
     /// </summary>
-    /// <param name="state">The battle as the plan is made.</param>
-    /// <param name="request">The cast.</param>
-    /// <returns>The telegraphed cells.</returns>
-    CastTelegraph Telegraph(BattleState state, TelegraphRequest request);
+    public static ArenaCasts Instance { get; } = new();
+
+    /// <inheritdoc />
+    public CastTelegraph Telegraph(BattleState state, TelegraphRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(request);
+        GridCell? aim = request.AimSeat is int seat && seat >= 0 && seat < state.Units.Count ? state.Units[seat].Cell : null;
+        return CastResolver.Telegraph(RequestOf(state, request.Skill, request.Side) with { Aim = aim });
+    }
+
+    /// <inheritdoc />
+    public CastResult Resolve(BattleState state, PlannedCast cast)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(cast);
+        if (cast.Telegraph is not CastTelegraph telegraph || !state.Boss.Skills.TryGetValue(cast.Skill.Key, out RuntimeSkill? skill))
+        {
+            return new CastResult([], state.Debris, []);
+        }
+
+        CastOutcome outcome = CastResolver.Resolve(RequestOf(state, skill, cast.Side), telegraph);
+        FormulaStats? user = state.Enemies.Find(enemy => enemy.Index == cast.Enemy)?.FormulaStats;
+        ArenaRandom hits = state.Random.Get(RandomStream.Hits);
+        Dictionary<int, long> damage = [];
+        Dictionary<int, bool> main = [];
+        foreach (UnitHit hit in outcome.Pulses.SelectMany(pulse => pulse.Layout.Hits))
+        {
+            int seat = hit.Unit.Seat;
+            damage[seat] = damage.GetValueOrDefault(seat) + DamageOf(skill, user, state.Units[seat], hit.Percent);
+            main[seat] = main.GetValueOrDefault(seat) || hit.Source == HitSource.Main;
+        }
+
+        List<CastHit> result = [];
+        foreach (int seat in outcome.HitSeats)
+        {
+            bool lands = skill.Spread.StatesLandOn == StateLanding.EveryoneHit || main[seat];
+            result.Add(new CastHit(seat, damage[seat], lands ? StatesLanding(skill, state.Units[seat], hits) : []));
+        }
+
+        return new CastResult(result, outcome.DebrisAfter, outcome.Debris.Placed) { Pushes = outcome.Debris.Pushes };
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<DebrisCell> PlaceRandomDebris(BattleState state, RandomDebris debris)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(debris);
+        DebrisField field = DebrisLayout.Roll(
+            state.Grid,
+            state.Units.Count,
+            debris,
+            state.Random.Get(RandomStream.Debris),
+            state.Design.Rules.Debris.FreeCellsPerCharacter,
+            state.Units.Select(unit => unit.Cell));
+        return field.Cells;
+    }
+
+    /// <inheritdoc />
+    public DebrisPlacement PlaceDebris(BattleState state, SkillDebrisSpec debris, PlannedCast? cast)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(debris);
+        if (cast?.Telegraph is not CastTelegraph telegraph)
+        {
+            return DebrisPlacement.None;
+        }
+
+        List<DebrisPulse> pulses = [.. telegraph.Pulses
+            .Where(pulse => pulse.Anchor is not null)
+            .Select(pulse => new DebrisPulse(pulse.Anchor!.Value, pulse.Cells, [], []))];
+        return SkillDebris.Place(
+            state.Grid,
+            UnitsOf(state),
+            cast.Skill,
+            debris,
+            pulses,
+            state.Debris,
+            state.Random.Get(RandomStream.Debris),
+            state.Design.Rules.Debris.FreeCellsPerCharacter);
+    }
 
     /// <summary>
-    /// Places the random debris a battle starts with.
-    /// </summary>
-    /// <param name="state">The battle, its units placed.</param>
-    /// <param name="debris">The tier's random debris, which rolled in.</param>
-    /// <returns>The debris cells.</returns>
-    IReadOnlyList<GridCell> PlaceRandomDebris(BattleState state, RandomDebris debris);
-
-    /// <summary>
-    /// Places the debris a rule's effect leaves.
+    /// Lists the party as casting reads it.
     /// </summary>
     /// <param name="state">The battle.</param>
-    /// <param name="debris">The debris.</param>
-    /// <param name="cast">The cast whose event fired the rule, or null.</param>
-    /// <returns>The debris cells.</returns>
-    IReadOnlyList<GridCell> PlaceDebris(BattleState state, SkillDebrisSpec debris, PlannedCast? cast);
+    /// <returns>The units in seat order, a fallen unit with no HP left.</returns>
+    public static IReadOnlyList<GridUnit> UnitsOf(BattleState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        return [.. state.Units.Select(unit => new GridUnit(unit.Seat, unit.Cell, unit.Fallen ? 0 : unit.Hp, unit.MaxHp, unit.Stats.Atk, unit.Stats.Mat, unit.TgrPermille, [unit.Sex]))];
+    }
+
+    /// <summary>
+    /// Makes the cast request of a skill on the battle's grid.
+    /// </summary>
+    /// <param name="state">The battle.</param>
+    /// <param name="skill">The skill.</param>
+    /// <param name="side">The half the simulation chose, or null for the whole zone.</param>
+    /// <returns>The request, its half fixed.</returns>
+    private static CastRequest RequestOf(BattleState state, RuntimeSkill skill, GridHalf? side) =>
+        new(state.Design.Rules, state.Grid, UnitsOf(state), state.Debris, skill, state.Random)
+        {
+            Side = side switch
+            {
+                GridHalf.Left => CastSide.FixedLeft,
+                GridHalf.Right => CastSide.FixedRight,
+                _ => CastSide.Own,
+            },
+        };
+
+    /// <summary>
+    /// Works out the damage of one hit: the skill's formula of the boss enemy on the unit, scaled by
+    /// the hit's percent and the unit's rate of the skill's element.
+    /// </summary>
+    /// <param name="skill">The skill.</param>
+    /// <param name="user">The casting enemy's stats, or null.</param>
+    /// <param name="unit">The unit hit.</param>
+    /// <param name="percent">The hit's percent of the base hit.</param>
+    /// <returns>The damage, rounded half away from zero; 0 without a formula.</returns>
+    private static long DamageOf(RuntimeSkill skill, FormulaStats? user, UnitState unit, double percent)
+    {
+        if (!skill.Payload.Damage || skill.Damage.Formula is not FormulaSpec formula || user is null)
+        {
+            return 0;
+        }
+
+        FormulaStats target = unit.Stats with { Mhp = unit.MaxHp, Hp = unit.Hp };
+        double rate = unit.ElementRates.TryGetValue(skill.Facts.ElementId, out double elementRate) ? elementRate : 100;
+        return RubyMath.RoundHalfAway(FormulaEvaluator.Evaluate(formula.Ast, user, target) * percent / 100 * rate / 100);
+    }
+
+    /// <summary>
+    /// Rolls the states a skill's payload lands on a unit, each at its chance times the unit's state rate.
+    /// </summary>
+    /// <param name="skill">The skill.</param>
+    /// <param name="unit">The unit hit.</param>
+    /// <param name="random">The hits' stream.</param>
+    /// <returns>The states that landed.</returns>
+    private static IReadOnlyList<int> StatesLanding(RuntimeSkill skill, UnitState unit, ArenaRandom random)
+    {
+        List<int> landed = [];
+        foreach (PayloadEffectSpec effect in skill.Payload.TargetEffects)
+        {
+            bool adds = effect.Kind == PayloadEffectKind.AddState
+                || (effect.Kind == PayloadEffectKind.GatedState && unit.States.Exists(held => held.StateId == effect.NeededState));
+            if (!adds || effect.DataId <= 0)
+            {
+                continue;
+            }
+
+            double rate = effect.IgnoresResistance || !unit.StateRates.TryGetValue(effect.DataId, out double stateRate) ? 100 : stateRate;
+            if (random.Roll((int)Math.Min(int.MaxValue, RubyMath.RoundHalfAway(effect.ChanceBasisPoints * rate / 100))))
+            {
+                landed.Add(effect.DataId);
+            }
+        }
+
+        return landed;
+    }
 }
 
 /// <summary>
@@ -56,23 +207,17 @@ public interface IArenaCasts : ICastResolver<BattleState, PlannedCast, CastResul
 public sealed record TelegraphRequest(string CastId, int Enemy, RuntimeSkill Skill, GridHalf? Side, int? AimSeat);
 
 /// <summary>
-/// A telegraphed cast.
-/// </summary>
-/// <param name="CellsPerPulse">The cells of each pulse; a random strike's pulse is one cell.</param>
-public sealed record CastTelegraph(IReadOnlyList<IReadOnlyList<GridCell>> CellsPerPulse);
-
-/// <summary>
 /// What a resolved cast did.
 /// </summary>
 /// <param name="Hits">The units it hit, each once with the damage of every pulse summed.</param>
-/// <param name="Debris">The cells the skill's debris landed on.</param>
-/// <param name="DebrisHit">The debris cells its hits struck, once per hit.</param>
-public sealed record CastResult(IReadOnlyList<CastHit> Hits, IReadOnlyList<GridCell> Debris, IReadOnlyList<GridCell> DebrisHit)
+/// <param name="DebrisAfter">The debris after the cast: worn down by its hits, its own included.</param>
+/// <param name="DebrisPlaced">The debris the skill left.</param>
+public sealed record CastResult(IReadOnlyList<CastHit> Hits, DebrisField DebrisAfter, IReadOnlyList<DebrisCell> DebrisPlaced)
 {
     /// <summary>
-    /// Gets the result of a cast that hit nothing.
+    /// Gets the units the skill's debris pushed off their cells.
     /// </summary>
-    public static CastResult Nothing { get; } = new([], [], []);
+    public IReadOnlyList<DebrisPush> Pushes { get; init; } = [];
 }
 
 /// <summary>

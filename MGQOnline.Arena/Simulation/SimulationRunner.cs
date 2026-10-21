@@ -2,7 +2,8 @@
 //  SimulationRunner.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Created
+//      Paulinchen  2026-10-21: Took the concrete party policy seam
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -27,7 +28,7 @@ public static class SimulationRunner
     /// <param name="turns">The turns to play at most; the battle may end before.</param>
     /// <param name="policy">The party policy.</param>
     /// <returns>The report.</returns>
-    public static SimulationReport Run(BattleSimulator simulator, BattleSetup setup, int turns, IPartyPolicy<BattleState, TurnPlan, PartyTurn> policy)
+    public static SimulationReport Run(BattleSimulator simulator, BattleSetup setup, int turns, IPartyPolicy policy)
     {
         ArgumentNullException.ThrowIfNull(simulator);
         ArgumentNullException.ThrowIfNull(setup);

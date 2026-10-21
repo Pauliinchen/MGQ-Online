@@ -2,7 +2,8 @@
 //  SimFixtures.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Created
+//      Paulinchen  2026-10-21: Ran the simulations through the real rule engine
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -265,14 +266,13 @@ internal static class SimFixtures
     public static BattleSetup Setup(int units = 4, ulong seed = 42) => Setup(Enumerable.Range(0, units).Select(i => new GridCell(i % 15, i / 15)), seed);
 
     /// <summary>
-    /// Makes a simulator over the fake casting part.
+    /// Makes a simulator over the fake casting part and the real rule engine.
     /// </summary>
     /// <param name="design">The design.</param>
-    /// <param name="rules">The rule engine, or the fake engine when null.</param>
     /// <param name="options">The options, or null.</param>
     /// <returns>The simulator.</returns>
-    public static BattleSimulator Simulator(RuntimeDesign design, IRuleEngine<BattleState>? rules = null, SimulationOptions? options = null) =>
-        new(design, new FakeCasts(), rules ?? new FakeRules(), options);
+    public static BattleSimulator Simulator(RuntimeDesign design, SimulationOptions? options = null) =>
+        new(design, new FakeCasts(), options);
 
     /// <summary>
     /// Plays turns with an idle party and returns each turn's result.

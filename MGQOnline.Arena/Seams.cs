@@ -2,69 +2,65 @@
 //  Seams.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Created
+//      Paulinchen  2026-10-21: Made the casting and party seams concrete and dropped the rule queue seam
+//                            - Created
 //
 //----------------------------------------------------------------
 
-using MGQOnline.Arena.Events;
+using System.Collections.Generic;
+using MGQOnline.Arena.Casting;
+using MGQOnline.Arena.Debris;
 using MGQOnline.Arena.Model;
+using MGQOnline.Arena.Simulation;
 
 namespace MGQOnline.Arena;
 
 /// <summary>
-/// Resolves a planned boss cast over its telegraphed cells: who it hits, how hard, and what it leaves.
+/// What the simulation asks of the casting part: telegraph a cast at the plan, resolve it over its
+/// telegraphed cells, and place debris.
 /// </summary>
-/// <remarks>The battle state, the request and the outcome are type parameters because their types belong to the simulation and casting parts, which build on this library's model.</remarks>
-/// <typeparam name="TState">The battle state.</typeparam>
-/// <typeparam name="TRequest">The cast to resolve.</typeparam>
-/// <typeparam name="TOutcome">What the cast did.</typeparam>
-public interface ICastResolver<in TState, in TRequest, out TOutcome>
+/// <remarks>The simulation chooses the half itself, because the side memory and the follow-ups' sides
+/// live in the battle state.</remarks>
+public interface ICastResolver
 {
     /// <summary>
-    /// Resolves a cast.
+    /// Chooses a cast's anchor and cells for every pulse, random strikes included.
+    /// </summary>
+    /// <param name="state">The battle as the plan is made.</param>
+    /// <param name="request">The cast.</param>
+    /// <returns>The telegraph.</returns>
+    CastTelegraph Telegraph(BattleState state, TelegraphRequest request);
+
+    /// <summary>
+    /// Resolves a planned cast over its telegraphed cells with the units where they stand now.
     /// </summary>
     /// <param name="state">The battle as the cast meets it.</param>
-    /// <param name="request">The cast with its telegraphed cells.</param>
+    /// <param name="cast">The planned cast with its telegraph.</param>
     /// <returns>What the cast did.</returns>
-    TOutcome Resolve(TState state, TRequest request);
-}
+    CastResult Resolve(BattleState state, PlannedCast cast);
 
-/// <summary>
-/// Matches the design's rules against a battle event and queues the effects of those that fire.
-/// </summary>
-/// <typeparam name="TState">The battle state.</typeparam>
-public interface IRuleEngine<in TState>
-{
     /// <summary>
-    /// Matches every rule of the tier, the boss and the casting skill against an event.
+    /// Rolls the random debris a battle starts with: its chance, its count and its cells.
     /// </summary>
-    /// <param name="state">The battle, for conditions, limits and the rules' random stream.</param>
-    /// <param name="battleEvent">The event.</param>
-    /// <param name="queue">Receives the effects of the rules that fire.</param>
-    void Dispatch(TState state, BattleEvent battleEvent, IEffectQueue queue);
-}
+    /// <param name="state">The battle, its units placed.</param>
+    /// <param name="debris">The tier's random debris.</param>
+    /// <returns>The debris, none when the chance fails.</returns>
+    IReadOnlyList<DebrisCell> PlaceRandomDebris(BattleState state, RandomDebris debris);
 
-/// <summary>
-/// Collects the effects of fired rules for the simulation to run in order.
-/// </summary>
-public interface IEffectQueue
-{
     /// <summary>
-    /// Queues one effect of a fired rule.
+    /// Places the debris a rule's effect leaves, over the area of the cast whose event fired the rule.
     /// </summary>
-    /// <param name="rule">The rule that fired.</param>
-    /// <param name="effect">The effect.</param>
-    /// <param name="cause">The event the rule matched, which names the triggering unit, cast and attacker.</param>
-    void Enqueue(RuleSpec rule, EffectSpec effect, BattleEvent cause);
+    /// <param name="state">The battle.</param>
+    /// <param name="debris">The debris.</param>
+    /// <param name="cast">The cast whose area it refers to, or null.</param>
+    /// <returns>The debris placed with the units it pushed; none without a cast.</returns>
+    DebrisPlacement PlaceDebris(BattleState state, SkillDebrisSpec debris, PlannedCast? cast);
 }
 
 /// <summary>
 /// Moves the party between the boss's plan and its resolve, and may hit the boss.
 /// </summary>
-/// <typeparam name="TState">The battle state.</typeparam>
-/// <typeparam name="TPlan">The boss's telegraphed plan.</typeparam>
-/// <typeparam name="TPartyTurn">The party's moves and hits.</typeparam>
-public interface IPartyPolicy<in TState, in TPlan, out TPartyTurn>
+public interface IPartyPolicy
 {
     /// <summary>
     /// Gets the policy's name for reports.
@@ -77,5 +73,5 @@ public interface IPartyPolicy<in TState, in TPlan, out TPartyTurn>
     /// <param name="state">The battle after the plan.</param>
     /// <param name="plan">The boss's telegraphed plan.</param>
     /// <returns>The party's moves and hits.</returns>
-    TPartyTurn Move(TState state, TPlan plan);
+    PartyTurn Move(BattleState state, TurnPlan plan);
 }

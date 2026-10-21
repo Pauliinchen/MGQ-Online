@@ -2,7 +2,8 @@
 //  PartyPolicies.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Created
+//      Paulinchen  2026-10-21: Took the concrete party policy seam
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -23,21 +24,21 @@ public static class PartyPolicies
     /// <summary>
     /// Gets the policy of a party that stands still and never hits.
     /// </summary>
-    public static IPartyPolicy<BattleState, TurnPlan, PartyTurn> Stay { get; } = new StayPolicy();
+    public static IPartyPolicy Stay { get; } = new StayPolicy();
 
     /// <summary>
     /// Makes the policy of a party that steps out of every telegraphed area.
     /// </summary>
     /// <param name="moveRange">How many steps a unit moves at most, counted as a king moves.</param>
     /// <returns>The policy.</returns>
-    public static IPartyPolicy<BattleState, TurnPlan, PartyTurn> DodgeTelegraphs(int moveRange = 2) => new DodgePolicy(moveRange);
+    public static IPartyPolicy DodgeTelegraphs(int moveRange = 2) => new DodgePolicy(moveRange);
 
     /// <summary>
     /// Makes the policy of a party whose units step to a random free cell nearby.
     /// </summary>
     /// <param name="steps">How many steps a unit moves at most, counted as a king moves.</param>
     /// <returns>The policy.</returns>
-    public static IPartyPolicy<BattleState, TurnPlan, PartyTurn> RandomStep(int steps) => new RandomStepPolicy(steps);
+    public static IPartyPolicy RandomStep(int steps) => new RandomStepPolicy(steps);
 
     /// <summary>
     /// Makes the policy of a party that moves by another policy and then hits the first living enemy once per living unit.
@@ -46,7 +47,7 @@ public static class PartyPolicies
     /// <param name="hitType">The kind of the hits.</param>
     /// <param name="moves">The policy that moves the party, <see cref="Stay"/> when null.</param>
     /// <returns>The policy.</returns>
-    public static IPartyPolicy<BattleState, TurnPlan, PartyTurn> PartyAttack(int basisPointsOfBossMhp, HitKind hitType, IPartyPolicy<BattleState, TurnPlan, PartyTurn>? moves = null) =>
+    public static IPartyPolicy PartyAttack(int basisPointsOfBossMhp, HitKind hitType, IPartyPolicy? moves = null) =>
         new AttackPolicy(basisPointsOfBossMhp, hitType, moves ?? Stay);
 
     /// <summary>
@@ -103,7 +104,7 @@ public static class PartyPolicies
     /// <summary>
     /// A party that stands still.
     /// </summary>
-    private sealed class StayPolicy : IPartyPolicy<BattleState, TurnPlan, PartyTurn>
+    private sealed class StayPolicy : IPartyPolicy
     {
         /// <inheritdoc />
         public string Name => "stay";
@@ -116,7 +117,7 @@ public static class PartyPolicies
     /// A party that steps out of the telegraphed areas.
     /// </summary>
     /// <param name="range">How many king's steps a unit moves at most.</param>
-    private sealed class DodgePolicy(int range) : IPartyPolicy<BattleState, TurnPlan, PartyTurn>
+    private sealed class DodgePolicy(int range) : IPartyPolicy
     {
         /// <inheritdoc />
         public string Name => "dodgeTelegraphs";
@@ -146,7 +147,7 @@ public static class PartyPolicies
     /// A party whose units step to a random free cell nearby.
     /// </summary>
     /// <param name="steps">How many king's steps a unit moves at most.</param>
-    private sealed class RandomStepPolicy(int steps) : IPartyPolicy<BattleState, TurnPlan, PartyTurn>
+    private sealed class RandomStepPolicy(int steps) : IPartyPolicy
     {
         /// <inheritdoc />
         public string Name => "randomStep";
@@ -179,7 +180,7 @@ public static class PartyPolicies
     /// <param name="basisPoints">Each hit's damage in basis points of the enemy's max HP.</param>
     /// <param name="hitType">The kind of the hits.</param>
     /// <param name="moves">The policy that moves the party.</param>
-    private sealed class AttackPolicy(int basisPoints, HitKind hitType, IPartyPolicy<BattleState, TurnPlan, PartyTurn> moves) : IPartyPolicy<BattleState, TurnPlan, PartyTurn>
+    private sealed class AttackPolicy(int basisPoints, HitKind hitType, IPartyPolicy moves) : IPartyPolicy
     {
         /// <summary>
         /// The skill the hits count as, the game's attack.

@@ -2,11 +2,15 @@
 //  BattleState.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Created
+//      Paulinchen  2026-10-21: Kept the rule ledger, the rule engine, the debris field and mark clocks
+//                            - Created
 //
 //----------------------------------------------------------------
 
 using System.Collections.Generic;
+using MGQOnline.Arena.Casting;
+using MGQOnline.Arena.Debris;
+using MGQOnline.Arena.Engine;
 using MGQOnline.Arena.Events;
 using MGQOnline.Arena.Formulas;
 using MGQOnline.Arena.Model;
@@ -81,6 +85,7 @@ public sealed class BattleState
         Setup = setup;
         Grid = grid;
         Random = new RandomStreams(setup.Seed);
+        Engine = new RuleEngine(RuleBook.ForTroop(boss, boss.Last));
     }
 
     /// <summary>
@@ -131,12 +136,22 @@ public sealed class BattleState
     /// <summary>
     /// Gets the debris on the grid.
     /// </summary>
-    public List<DebrisCell> Debris { get; } = [];
+    public DebrisField Debris { get; internal set; } = DebrisField.Empty;
 
     /// <summary>
-    /// Gets the rules' and actions' memory.
+    /// Gets the actions' and skills' memory of their casts.
     /// </summary>
     public Dictionary<RuleMemoryKey, RuleMemory> Memory { get; } = [];
+
+    /// <summary>
+    /// Gets the memory of how often each rule fired.
+    /// </summary>
+    public RuleLedger Ledger { get; } = new();
+
+    /// <summary>
+    /// Gets the rule engine of the fought troop's rules.
+    /// </summary>
+    public RuleEngine Engine { get; }
 
     /// <summary>
     /// Gets the current turn's plan of every enemy, in the order it runs.
@@ -190,7 +205,7 @@ public sealed class BattleState
     /// </summary>
     /// <param name="cell">The cell.</param>
     /// <returns>Whether it does.</returns>
-    public bool DebrisAt(GridCell cell) => Debris.Exists(debris => debris.Cell == cell);
+    public bool DebrisAt(GridCell cell) => Debris.Contains(cell);
 
     /// <summary>
     /// Tells whether a cell lies on the grid.
@@ -419,29 +434,18 @@ public sealed record StateSource(string? RuleId = null, SkillRef? Skill = null, 
 /// <param name="Source">Where it comes from.</param>
 /// <param name="AppliedTurn">The turn it was added or last refreshed.</param>
 /// <param name="TurnsLeft">The turn ends it still lasts, or null until something removes it.</param>
-/// <param name="MinUntilTurn">The turn from which a mark waiting for a cast may go.</param>
-/// <param name="UntilNextCastOf">The root scheduled action whose next cast ends it, or null.</param>
-/// <param name="AppliedCastId">The cast that added or last refreshed it, or null.</param>
-/// <param name="CastPassed">Whether the cast it waited for came before its minimum, so it goes at the first turn end from <paramref name="MinUntilTurn"/>.</param>
-public sealed record StateInstance(
-    int StateId,
-    StateSource Source,
-    int AppliedTurn,
-    int? TurnsLeft,
-    int MinUntilTurn,
-    string? UntilNextCastOf,
-    string? AppliedCastId,
-    bool CastPassed = false);
+/// <param name="Clock">The clock of a mark, which runs until a cast or a turn; null for a state that runs by turns.</param>
+public sealed record StateInstance(int StateId, StateSource Source, int AppliedTurn, int? TurnsLeft, MarkClock? Clock = null);
 
 /// <summary>
-/// The key of a memory entry: an enemy and a rule id, action id or skill key.
+/// The key of a memory entry: an enemy and an action id, or a skill key for a cast without an action.
 /// </summary>
 /// <param name="Enemy">The enemy's index.</param>
-/// <param name="Key">The rule id, action id or skill key.</param>
+/// <param name="Key">The action id or skill key.</param>
 public readonly record struct RuleMemoryKey(int Enemy, string Key);
 
 /// <summary>
-/// What the battle remembers of a rule or action.
+/// What the battle remembers of an action's or a skill's casts.
 /// </summary>
 public sealed class RuleMemory
 {
@@ -454,16 +458,6 @@ public sealed class RuleMemory
     /// Gets or sets the half of its last cast, or null.
     /// </summary>
     public GridHalf? LastSide { get; set; }
-
-    /// <summary>
-    /// Gets or sets how often it fired this turn.
-    /// </summary>
-    public int FiresThisTurn { get; set; }
-
-    /// <summary>
-    /// Gets or sets how often it fired in the battle.
-    /// </summary>
-    public int FiresTotal { get; set; }
 }
 
 /// <summary>
@@ -501,6 +495,11 @@ public sealed record PlannedCast(
     /// Gets the action points it cost.
     /// </summary>
     public int Cost { get; init; }
+
+    /// <summary>
+    /// Gets its whole telegraph, which its resolve reuses; null for a cast made without the casting part.
+    /// </summary>
+    public CastTelegraph? Telegraph { get; init; }
 
     /// <summary>
     /// Gets the seat it is aimed at, or null for the skill's own targeting.
@@ -555,39 +554,3 @@ public sealed record QueuedCast(
     string? RootActionId,
     string RuleId,
     int QueuedTurn);
-
-/// <summary>
-/// A debris cell on the grid.
-/// </summary>
-/// <param name="cell">The cell.</param>
-/// <param name="turnsLeft">The turn ends it still lasts, 0 the rest of the battle.</param>
-/// <param name="hitsLeft">The hits that still break it, 0 unbreakable.</param>
-/// <param name="placedTurn">The turn it was placed.</param>
-/// <param name="castId">The cast that left it, or null.</param>
-public sealed class DebrisCell(GridCell cell, int turnsLeft, int hitsLeft, int placedTurn, string? castId)
-{
-    /// <summary>
-    /// Gets the cell.
-    /// </summary>
-    public GridCell Cell { get; } = cell;
-
-    /// <summary>
-    /// Gets or sets the turn ends it still lasts, 0 the rest of the battle.
-    /// </summary>
-    public int TurnsLeft { get; set; } = turnsLeft;
-
-    /// <summary>
-    /// Gets or sets the hits that still break it, 0 unbreakable.
-    /// </summary>
-    public int HitsLeft { get; set; } = hitsLeft;
-
-    /// <summary>
-    /// Gets the turn it was placed.
-    /// </summary>
-    public int PlacedTurn { get; } = placedTurn;
-
-    /// <summary>
-    /// Gets the cast that left it, or null.
-    /// </summary>
-    public string? CastId { get; } = castId;
-}

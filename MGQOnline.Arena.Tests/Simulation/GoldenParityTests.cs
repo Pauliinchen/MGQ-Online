@@ -2,7 +2,8 @@
 //  GoldenParityTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Created
+//      Paulinchen  2026-10-21: Built state instances without a mark clock
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -247,13 +248,13 @@ public sealed class GoldenParityTests
         EnemyState enemy = state.Enemies[0];
         foreach (JsonElement landing in options.GetProperty("states").EnumerateArray().Where(landing => !landing.GetProperty("midTurn").GetBoolean()))
         {
-            StateClock.Put(enemy.States, new StateInstance(landing.GetProperty("state").GetInt32(), new StateSource(), 0, null, 0, null, null));
+            StateClock.Put(enemy.States, new StateInstance(landing.GetProperty("state").GetInt32(), new StateSource(), 0, null));
         }
 
         string grapple = options.GetProperty("grapple").GetString()!;
         if (grapple != "None")
         {
-            StateClock.Put(enemy.States, new StateInstance(grapple == "Bind" ? BattleSimulator.BindState : BattleSimulator.EternalBindState, new StateSource(), 0, null, 0, null, null));
+            StateClock.Put(enemy.States, new StateInstance(grapple == "Bind" ? BattleSimulator.BindState : BattleSimulator.EternalBindState, new StateSource(), 0, null));
         }
 
         if (options.GetProperty("lastStandStarts").GetBoolean())

@@ -2,7 +2,8 @@
 //  EffectHandlers.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Created
+//      Paulinchen  2026-10-21: Kept a Last stand start cast queued for the next turn a Last stand start
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -90,11 +91,11 @@ internal static class EffectHandlers
     /// <returns>The plan kind.</returns>
     private static PlanKind KindOf(TriggerSpec trigger, CastTiming timing) => (timing, trigger) switch
     {
+        (_, BossHpBelowTrigger) => PlanKind.LastStandStart,
         (CastTiming.NextTurn, _) => PlanKind.DelayedAnswer,
         (_, TurnScheduleTrigger) => PlanKind.Scheduled,
         (_, AfterCastTrigger) => PlanKind.FollowUp,
         (_, TurnStartTrigger) => PlanKind.TurnStart,
-        (_, BossHpBelowTrigger) => PlanKind.LastStandStart,
         _ => PlanKind.DelayedAnswer,
     };
 

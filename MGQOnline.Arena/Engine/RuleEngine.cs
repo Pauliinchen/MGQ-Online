@@ -2,7 +2,8 @@
 //  RuleEngine.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Created
+//      Paulinchen  2026-10-21: Dropped the effect queue seam, since the engine runs its effects itself
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -17,7 +18,7 @@ namespace MGQOnline.Arena.Engine;
 /// The Trigger -> Effect engine of one boss fight: it matches the fight's rules against battle events,
 /// checks their limits and conditions, and runs their effects.
 /// </summary>
-public sealed class RuleEngine : IRuleEngine<IRuleContext>
+public sealed class RuleEngine
 {
     /// <summary>
     /// The deepest event the engine dispatches; rule effects that raise events deeper log a rule loop instead.
@@ -63,25 +64,6 @@ public sealed class RuleEngine : IRuleEngine<IRuleContext>
                 }
 
                 Enqueue(effects, Match(context, raised, depth));
-            }
-        }
-    }
-
-    /// <summary>
-    /// Queues the effects of the rules that fire on an event without running them.
-    /// </summary>
-    /// <remarks>The queue learns neither the enemy a rule belongs to nor its depth; <see cref="Raise"/> keeps both.</remarks>
-    /// <param name="state">The battle.</param>
-    /// <param name="battleEvent">The event, at depth 0.</param>
-    /// <param name="queue">Receives the effects.</param>
-    public void Dispatch(IRuleContext state, BattleEvent battleEvent, IEffectQueue queue)
-    {
-        ArgumentNullException.ThrowIfNull(queue);
-        foreach (FiredRule fired in Match(state, battleEvent, 0))
-        {
-            foreach (EffectSpec effect in fired.Rule.Effects)
-            {
-                queue.Enqueue(fired.Rule, effect, battleEvent);
             }
         }
     }

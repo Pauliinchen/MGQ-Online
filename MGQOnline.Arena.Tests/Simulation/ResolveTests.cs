@@ -2,7 +2,8 @@
 //  ResolveTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Created
+//      Paulinchen  2026-10-21: Read rule fires from the battle's ledger and marks from their clocks
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -11,6 +12,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using MGQOnline.Arena.Engine;
 using MGQOnline.Arena.Events;
 using MGQOnline.Arena.Json;
 using MGQOnline.Arena.Model;
@@ -25,14 +27,14 @@ namespace MGQOnline.Arena.Tests.Simulation;
 public sealed class ResolveTests
 {
     /// <summary>
-    /// The golden hash of the reference battle's log.
+    /// The golden hash of the reference battle's log through the arena's casting part and rule engine.
     /// </summary>
-    private const string GoldenLogSha256 = "584f6259b26855ce7bfc59b7a4d54fc7c427e65c0eaa104222262bbee6100ba7";
+    private const string GoldenLogSha256 = "af003093c2229418892deaa02f5486371e62ceec115e36aaaedd3b421863220b";
 
     /// <summary>
     /// The cells of the halves battle's units: four on each half.
     /// </summary>
-    private static readonly GridCell[] HalvesCells = [new(0, 0), new(2, 1), new(4, 2), new(6, 3), new(8, 0), new(10, 1), new(12, 2), new(14, 3)];
+    internal static readonly GridCell[] HalvesCells = [new(0, 0), new(2, 1), new(4, 2), new(6, 3), new(8, 0), new(10, 1), new(12, 2), new(14, 3)];
 
     /// <summary>
     /// The light and dark halves leave their marks on turn 2; on turn 5 each unit reacts exactly once
@@ -41,7 +43,7 @@ public sealed class ResolveTests
     [Fact]
     public void ReactsOnceToMarksOfTheLastScheduledCast()
     {
-        (BattleSimulator simulator, FakeRules rules) = HalvesBattle();
+        BattleSimulator simulator = HalvesBattle();
         BattleState state = simulator.Start(SimFixtures.Setup(HalvesCells));
 
         List<TurnResult> turns = SimFixtures.Play(simulator, state, 5);
@@ -49,7 +51,7 @@ public sealed class ResolveTests
         Assert.All(turns.Take(4), turn => Assert.DoesNotContain(turn.Events, battleEvent => battleEvent is RuleFiredEvent { RuleId: "react-light" or "react-dark" }));
         List<RuleFiredEvent> reactions = [.. turns[4].Events.OfType<RuleFiredEvent>().Where(fired => fired.RuleId.StartsWith("react", System.StringComparison.Ordinal))];
         Assert.Equal(HalvesCells.Length, reactions.Count);
-        Assert.Equal(HalvesCells.Length, rules.Fires["react-light"] + rules.Fires["react-dark"]);
+        Assert.Equal(HalvesCells.Length, state.Ledger.FiresTotal(new RuleKey("react-light", 0)) + state.Ledger.FiresTotal(new RuleKey("react-dark", 0)));
         foreach (UnitState unit in state.Units)
         {
             int expected = unit.Cell.X < 7 ? SimFixtures.DarkMark : SimFixtures.LightMark;
@@ -64,11 +66,11 @@ public sealed class ResolveTests
     [Fact]
     public void DodgingUnitsAreNeverHit()
     {
-        (BattleSimulator simulator, FakeRules rules) = HalvesBattle();
+        BattleSimulator simulator = HalvesBattle();
 
         SimulationReport report = SimulationRunner.Run(simulator, SimFixtures.Setup([new GridCell(6, 0), new GridCell(6, 1), new GridCell(8, 2), new GridCell(8, 3)]), 6, PartyPolicies.DodgeTelegraphs());
 
-        Assert.False(rules.Fires.ContainsKey("react-light") || rules.Fires.ContainsKey("react-dark"));
+        Assert.DoesNotContain(report.Log, battleEvent => battleEvent is RuleFiredEvent { RuleId: "react-light" or "react-dark" });
         Assert.All(report.Turns, turn => Assert.Empty(turn.HitsPerUnit));
         Assert.Equal(BattlePhase.TurnEnd, report.Outcome);
         Assert.Contains(report.Log, battleEvent => battleEvent is UnitMovedEvent);
@@ -81,7 +83,7 @@ public sealed class ResolveTests
     [Fact]
     public void KeepsScheduledCastsThroughCrowdControl()
     {
-        (BattleSimulator simulator, _) = HalvesBattle(tierStates: [SimFixtures.Stone]);
+        BattleSimulator simulator = HalvesBattle(tierStates: [SimFixtures.Stone]);
         BattleState state = simulator.Start(SimFixtures.Setup(HalvesCells));
 
         List<TurnResult> turns = SimFixtures.Play(simulator, state, 6);
@@ -91,7 +93,8 @@ public sealed class ResolveTests
     }
 
     /// <summary>
-    /// A mark left by a cast of an unscheduled action lasts its minimum turns alone.
+    /// A mark left by a cast of an unscheduled action lasts its minimum turns alone, counted from the
+    /// turn after it landed.
     /// </summary>
     [Fact]
     public void LastsTheMinimumWithoutASchedule()
@@ -103,8 +106,10 @@ public sealed class ResolveTests
         SimFixtures.Play(simulator, state, 1);
         StateInstance held = Assert.Single(state.Units[0].States);
         SimFixtures.Play(simulator, state, 1);
+        Assert.Single(state.Units[0].States);
+        SimFixtures.Play(simulator, state, 1);
 
-        Assert.Equal((SimFixtures.LightMark, (int?)1, (string?)null), (held.StateId, held.TurnsLeft, held.UntilNextCastOf));
+        Assert.Equal((SimFixtures.LightMark, (int?)null, 3, (string?)null), (held.StateId, held.TurnsLeft, held.Clock?.MinUntilTurn, held.Clock?.UntilNextCastOf));
         Assert.Empty(state.Units[0].States);
     }
 
@@ -124,7 +129,7 @@ public sealed class ResolveTests
         StateInstance waiting = Assert.Single(state.Units[0].States);
         SimFixtures.Play(simulator, state, 1);
 
-        Assert.Equal((true, 4, "sched"), (waiting.CastPassed, waiting.MinUntilTurn, waiting.UntilNextCastOf));
+        Assert.Equal((4, (string?)null), (waiting.Clock?.MinUntilTurn, waiting.Clock?.UntilNextCastOf));
         Assert.Empty(state.Units[0].States);
         Assert.Contains(state.Log, battleEvent => battleEvent is StateRemovedEvent { Turn: 4, State: SimFixtures.LightMark });
     }
@@ -147,7 +152,7 @@ public sealed class ResolveTests
         BattleState state = simulator.Start(SimFixtures.Setup());
 
         Assert.Single(state.Log.OfType<WarningEvent>(), warning => warning.Code == WarningEvent.RuleLoop);
-        Assert.Equal(BattleSimulator.MaxRuleDepth, state.Log.OfType<RuleFiredEvent>().Count(fired => fired.RuleId == "loop"));
+        Assert.Equal(RuleEngine.MaxDepth, state.Log.OfType<RuleFiredEvent>().Count(fired => fired.RuleId == "loop"));
         Assert.Single(state.Enemies[0].States);
     }
 
@@ -222,23 +227,27 @@ public sealed class ResolveTests
     [Fact]
     public void KeepsTheReferenceDesignInStep()
     {
-        (BattleSimulator simulator, _) = HalvesBattle(withStrikes: true);
+        BattleSimulator simulator = HalvesBattle(withStrikes: true);
 
         Assert.Equal(File.ReadAllBytes(ReferenceDesignPath()), CanonicalJson.Serialize(simulator.Design, ArenaJsonContext.Default.RuntimeDesign));
     }
 
     /// <summary>
-    /// Plays the reference battle from the reference design: the halves battle with random strikes,
-    /// eight units, eight turns, the party stepping one cell and hitting for 0.5 % of the boss's max HP.
+    /// Reads the reference design: the halves battle with random strikes.
+    /// </summary>
+    /// <returns>The design.</returns>
+    internal static RuntimeDesign ReferenceDesign() =>
+        JsonSerializer.Deserialize(File.ReadAllBytes(ReferenceDesignPath()), ArenaJsonContext.Default.RuntimeDesign)!;
+
+    /// <summary>
+    /// Plays the reference battle from the reference design through the arena's casting part and rule
+    /// engine: eight units, eight turns, the party stepping one cell and hitting for 0.5 % of the boss's
+    /// max HP. The AOT probe plays the same battle.
     /// </summary>
     /// <param name="seed">The seed.</param>
     /// <returns>The log's hash.</returns>
-    private static string Run(ulong seed)
-    {
-        RuntimeDesign design = JsonSerializer.Deserialize(File.ReadAllBytes(ReferenceDesignPath()), ArenaJsonContext.Default.RuntimeDesign)!;
-        BattleSimulator simulator = SimFixtures.Simulator(design);
-        return SimulationRunner.Run(simulator, SimFixtures.Setup(HalvesCells, seed), 8, PartyPolicies.PartyAttack(50, HitKind.Physical, PartyPolicies.RandomStep(1))).LogSha256;
-    }
+    private static string Run(ulong seed) =>
+        SimulationRunner.Run(new BattleSimulator(ReferenceDesign()), SimFixtures.Setup(HalvesCells, seed), 8, PartyPolicies.PartyAttack(50, HitKind.Physical, PartyPolicies.RandomStep(1))).LogSha256;
 
     /// <summary>
     /// Finds the reference design's fixture, which the AOT probe embeds too.
@@ -255,8 +264,8 @@ public sealed class ResolveTests
     /// </summary>
     /// <param name="tierStates">The states the tier keeps on the boss, or null.</param>
     /// <param name="withStrikes">Whether the boss also rolls random strikes.</param>
-    /// <returns>The simulator and its rule engine.</returns>
-    private static (BattleSimulator Simulator, FakeRules Rules) HalvesBattle(IReadOnlyList<int>? tierStates = null, bool withStrikes = false)
+    /// <returns>The simulator.</returns>
+    private static BattleSimulator HalvesBattle(IReadOnlyList<int>? tierStates = null, bool withStrikes = false)
     {
         ZoneSpec zone = new(Half: GridHalf.Left, Side: SideChoice.Alternate);
         MarksSpec light = new([new MarkLeaveSpec("l1", SimFixtures.LightMark, 10000, StateLanding.EveryoneHit, MarkUntil.NextScheduledCast, 1)]);
@@ -277,8 +286,7 @@ public sealed class ResolveTests
             ],
             attackWeight: 0,
             tierStates: tierStates);
-        FakeRules rules = new();
-        return (SimFixtures.Simulator(design, rules), rules);
+        return SimFixtures.Simulator(design);
     }
 
     /// <summary>

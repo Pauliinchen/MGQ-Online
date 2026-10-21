@@ -15,7 +15,7 @@ using MGQOnline.Arena.Randomness;
 namespace MGQOnline.Arena.Engine;
 
 /// <summary>
-/// The battle as the rule engine reads and changes it; the simulation's battle state implements it.
+/// The battle as the rule engine reads and changes it; the simulator implements it over its battle state.
 /// </summary>
 /// <remarks>The engine keeps no battle state of its own, so a battle stays in one place the simulation can copy and hash.</remarks>
 public interface IRuleContext

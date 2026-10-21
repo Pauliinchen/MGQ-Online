@@ -2,7 +2,8 @@
 //  RuleEngineTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Created
+//      Paulinchen  2026-10-21: Dropped the test of the effect queue seam
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -154,23 +155,6 @@ public sealed class RuleEngineTests
     }
 
     /// <summary>
-    /// Queues effects into a foreign queue through the engine seam without running them.
-    /// </summary>
-    [Fact]
-    public void QueuesThroughTheSeam()
-    {
-        RecordingQueue queue = new();
-        RuleSpec rule = Rule("r", new TurnStartTrigger(), [new ApDeltaEffect(1, ApTurn.This), new ApDeltaEffect(2, ApTurn.Next)]);
-        IRuleEngine<IRuleContext> engine = EngineOf(rule);
-        TurnStartEvent start = new(1);
-
-        engine.Dispatch(_context, start, queue);
-
-        Assert.Equal([(rule, rule.Effects[0], (BattleEvent)start), (rule, rule.Effects[1], start)], queue.Entries);
-        Assert.Empty(_context.ApChanges);
-    }
-
-    /// <summary>
     /// Fires the same rules for the same seed and events.
     /// </summary>
     [Fact]
@@ -190,19 +174,5 @@ public sealed class RuleEngineTests
 
             return context.LoggedOf<RuleFiredEvent>().Select(fired => $"{fired.Turn}:{fired.RuleId}").ToArray();
         }
-    }
-
-    /// <summary>
-    /// An effect queue that records what it gets.
-    /// </summary>
-    private sealed class RecordingQueue : IEffectQueue
-    {
-        /// <summary>
-        /// Gets the queued effects.
-        /// </summary>
-        public List<(RuleSpec Rule, EffectSpec Effect, BattleEvent Cause)> Entries { get; } = [];
-
-        /// <inheritdoc />
-        public void Enqueue(RuleSpec rule, EffectSpec effect, BattleEvent cause) => Entries.Add((rule, effect, cause));
     }
 }
