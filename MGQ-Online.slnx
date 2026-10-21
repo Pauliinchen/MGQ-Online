@@ -97,4 +97,5 @@
   <Project Path="MGQOnline.Arena/MGQOnline.Arena.csproj" />
   <Project Path="MGQOnline.Arena.Tests/MGQOnline.Arena.Tests.csproj" />
   <Project Path="MGQOnline.Updates/MGQOnline.Updates.csproj" />
+  <Project Path="MGQOnline.Updates.Tests/MGQOnline.Updates.Tests.csproj" />
 </Solution>
