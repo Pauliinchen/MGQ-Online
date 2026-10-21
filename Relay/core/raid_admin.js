@@ -2,13 +2,15 @@
 //  raid_admin.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-21: Let an admin defeat every pool of a troop at once
 //      Paulinchen  2026-10-10: Showed each boss pool's share of HP left and the pools' regeneration per minute
 //      Paulinchen  2026-10-09: Created
 //
 //----------------------------------------------------------------
 
 // What the relay's admins may look at and set right in a Raid World from outside the game: the
-// story's counters and the boss pools, a boss pool filled up again, and the route lock taken back.
+// story's counters and the boss pools, a boss pool filled up again or defeated, and the route lock
+// taken back.
 // The sealed story stays out, since admins cannot open it anyway.
 
 import { WORLD_TYPE } from "./directory.js";
@@ -42,8 +44,8 @@ export function raidAdminRouteOf(url) {
  * @param {string[]} rest The address's parts after `raid`, see raidAdminRouteOf.
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {string | null} header The key the PLAYER_HEADER names, which wins over the address and the body.
- * @param {(key: unknown) => Promise<{status: number, body: object, type?: string}>} adminOf Asks the directory whether a key is an admin's, and the world's type.
- * @returns {Promise<{status: number, body: object, push?: number, boss?: import("./bosses.js").BossPush}>} The answer, the story's revision to tell every game when it changed, and the pool to tell every game when it changed.
+ * @param {(key: unknown) => Promise<{status: number, body: object, type?: string, player?: string}>} adminOf Asks the directory whether a key is an admin's, and the world's type and the admin's player id.
+ * @returns {Promise<{status: number, body: object, push?: number, boss?: import("./bosses.js").BossPush, bosses?: import("./bosses.js").BossPush[]}>} The answer, the story's revision to tell every game when it changed, and the pool or pools to tell every game when they changed.
  */
 export async function handleRaidAdminRequest(world, method, url, rest, readBody, header, adminOf) {
   const asAdmin = async (key, work) => {
@@ -53,7 +55,7 @@ export async function handleRaidAdminRequest(world, method, url, rest, readBody,
       return access;
     }
 
-    return access.type === WORLD_TYPE.raid ? work() : noRaidWorld();
+    return access.type === WORLD_TYPE.raid ? work(access) : noRaidWorld();
   };
 
   if (rest.length === 0 && method === "GET") {
@@ -64,7 +66,11 @@ export async function handleRaidAdminRequest(world, method, url, rest, readBody,
     });
   }
 
-  const post = (work) => withJson(readBody, MAX_ADMIN_BODY_LENGTH, (body) => (body !== null && typeof body !== "object" ? badRequest("the request must be a JSON object") : asAdmin(header || body?.player, work)));
+  const post = (work) => withJson(readBody, MAX_ADMIN_BODY_LENGTH, (body) => (body !== null && typeof body !== "object" ? badRequest("the request must be a JSON object") : asAdmin(header || body?.player, (access) => work(access, body))));
+
+  if (rest.length === 2 && rest[0] === "bosses" && rest[1] === "kill" && method === "POST") {
+    return post((access, body) => world.bosses.kill(body, access.player ?? null));
+  }
 
   if (rest.length === 3 && rest[0] === "bosses" && rest[2] === "reset" && method === "POST") {
     return post(() => world.bosses.reset(rest[1]));

@@ -2,7 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-21: Tested the admins' stats of the world rooms, PvP rooms, players and game versions
+//      Paulinchen  2026-10-21: Tested that every game of a Raid World hears each pool an admin defeated
+//                            - Tested the admins' stats of the world rooms, PvP rooms, players and game versions
 //      Paulinchen  2026-10-15: Tested that a relay that starts marks every player offline
 //                            - Covered a keyed Raid World story's pushes and the games sent to update
 //      Paulinchen  2026-10-14: Tested a Raid World's starting save from every game over HTTP
@@ -890,6 +891,10 @@ test("a Raid World's players wear its boss pools down over HTTP, every game hear
   const view = await (await admin(`?player=${ADMIN}`)).json();
   assert.deepEqual([view.story.rev, view.bosses.map((pool) => [pool.key, pool.hp, pool.max, pool.defeated, pool.by, pool.reports]), view.regenPerMinute],
     [0, [["Lilith", 0, 900, true, "Watcher", 1], ["Queen Harpy#1", 3_750_000, 5_000_000, false, null, 1]], 0.03]);
+
+  const defeated = await admin("/bosses/kill", { method: "POST", headers: { [PLAYER_HEADER]: ADMIN }, body: JSON.stringify({ keys: ["Queen Harpy#1", "Queen Harpy#2"], max: { "Queen Harpy#2": 4_000_000 } }) });
+  assert.equal(defeated.status, 200);
+  await until(async () => heard.includes("boss 0 5000000 1 Queen Harpy#1") && heard.includes("boss 0 4000000 1 Queen Harpy#2"));
 
   const reset = await admin("/bosses/Lilith/reset", { method: "POST", body: JSON.stringify({ player: ADMIN }) });
   assert.deepEqual(await reset.json().then((body) => [body.left, body.reset]), [1, true]);

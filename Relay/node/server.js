@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-21: Answered the admins' stats of what the relay carries, the battle server's ping included
+//                            - Told every game and server battle of a Raid World each pool an admin defeated
 //      Paulinchen  2026-10-15: Marked every player offline as it starts
 //                            - Handed its admins everything it keeps for another relay to take over
 //                            - Started co-op battles on the battle server and carried their channels
@@ -1220,8 +1221,8 @@ export function createRelay({
       tellWorld(route.id, storyPushText(answer.push, storyLimits));
     }
 
-    if (answer.boss) {
-      tellBosses(route.id, answer.boss);
+    for (const boss of [answer.boss, ...(answer.bosses ?? [])].filter(Boolean)) {
+      tellBosses(route.id, boss);
     }
 
     return answer;

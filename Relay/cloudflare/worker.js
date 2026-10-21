@@ -2,6 +2,7 @@
 //  worker.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-21: Told every game of a Raid World each pool an admin defeated
 //      Paulinchen  2026-10-15: Handed its admins everything it keeps for another relay to take over
 //                            - Refused every battle on the battle server, which Cloudflare runs none of
 //                            - Pushed what a write changed of a keyed Raid World story and turned games without keyed stories away from such a world
@@ -1367,8 +1368,8 @@ export class World extends DurableObject {
       this.tell(storyPushText(answer.push));
     }
 
-    if (answer.boss) {
-      this.tell(bossText(answer.boss.key, answer.boss.left, answer.boss.max, answer.boss.defeated));
+    for (const boss of [answer.boss, ...(answer.bosses ?? [])].filter(Boolean)) {
+      this.tell(bossText(boss.key, boss.left, boss.max, boss.defeated));
     }
 
     return json(answer.status, answer.body);

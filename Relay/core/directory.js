@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-21: Let an admin's edit rename a world, feature or hide it, hand it to another creator, give it a new lock and set its game data, strict rule and mod hashes
+//                            - Told the Raid World admin routes the admin's player id
 //      Paulinchen  2026-10-14: Let every game give a Raid World a starting save
 //      Paulinchen  2026-10-13: Kept a Classic world's raid bosses and told a world room after an edit that changed them
 //                            - Kept a Raid World's squad settings and told a world room after an edit that changed them
@@ -652,7 +653,7 @@ export class Directory {
    *
    * @param {string} id The world.
    * @param {unknown} key The asking player's key.
-   * @returns {Promise<{status: number, body: object, type?: string}>} The world's type, or 404 for no world and 403 for anyone but an admin.
+   * @returns {Promise<{status: number, body: object, type?: string, player?: string}>} The world's type and the admin's player id, or 404 for no world and 403 for anyone but an admin.
    */
   async raidAdmin(id, key) {
     const { entry, player, refusal } = await this.worldAndPlayer(id, key);
@@ -666,7 +667,7 @@ export class Directory {
     }
 
     const type = entry.type ?? WORLD_TYPE.classic;
-    return { status: 200, body: { type }, type };
+    return { status: 200, body: { type }, type, player };
   }
 
   /**

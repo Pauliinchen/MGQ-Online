@@ -2,6 +2,7 @@
 //  bosses.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-21: Let an admin defeat every pool of a troop at once
 //      Paulinchen  2026-10-10: Kept each boss pool as the share of its raid max HP left
 //      Paulinchen  2026-10-09: Created
 //
@@ -42,6 +43,11 @@ export const BOSS_LIMITS = Object.freeze({
  * `boss <left> <max> <defeated> <key>`.
  */
 export const BOSS = "boss";
+
+/**
+ * The name a pool an admin defeated carries as the one who emptied it.
+ */
+export const ADMIN_KILLER = "Admin";
 
 /**
  * The codes a refused report names why with.
@@ -104,8 +110,18 @@ export function readKey(raw, limits = BOSS_LIMITS) {
     return null;
   }
 
-  const length = [...key].length;
-  return length >= 1 && length <= limits.maxKeyLength && key.trim() === key && !new RegExp(CONTROL_CHARACTERS.source).test(key) ? key : null;
+  return keyOk(key, limits) ? key : null;
+}
+
+/**
+ * Checks a boss's key as the game sends it, already decoded.
+ *
+ * @param {unknown} key The key.
+ * @param {typeof BOSS_LIMITS} [limits] The limits.
+ * @returns {boolean} Whether it is a key.
+ */
+function keyOk(key, limits = BOSS_LIMITS) {
+  return typeof key === "string" && [...key].length >= 1 && [...key].length <= limits.maxKeyLength && key.trim() === key && !new RegExp(CONTROL_CHARACTERS.source).test(key);
 }
 
 /**
@@ -282,6 +298,68 @@ export class WorldBosses {
   }
 
   /**
+   * Defeats bosses for the world, as an admin asks: every pool named is emptied at once, as a
+   * report that killed the boss would, such as every enemy of a troop.
+   *
+   * @param {any} request `keys`, the pools' keys as the games name them; `max`, the raid max HP by key, needed for each pool never reported, whose max no game named yet.
+   * @param {string | null} admin The admin's player id, which the defeat keeps.
+   * @returns {Promise<{status: number, body: object, bosses?: BossPush[]}>} `bosses`, every pool named as viewOf makes it for admins, and the pools to tell every game, those that were not defeated already; or why the request is wrong.
+   */
+  async kill(request, admin) {
+    const keys = request?.keys;
+    const max = request?.max ?? {};
+
+    if (!Array.isArray(keys) || keys.length === 0 || keys.length > this.limits.maxPools || !keys.every((key) => keyOk(key, this.limits))) {
+      return badRequest(`keys must list 1 to ${this.limits.maxPools} boss keys; ${this.keyError()}`);
+    }
+
+    if (typeof max !== "object" || Array.isArray(max) || Object.values(max).some((value) => !maxOk(value, this.limits))) {
+      return badRequest(`max must name each boss's raid max HP by its key, more than 0 and at most ${this.limits.maxMax}`);
+    }
+
+    return this.exclusive(async () => {
+      const now = this.clock();
+      const named = [...new Set(keys)];
+      const kept = new Map();
+
+      for (const key of named) {
+        kept.set(key, poolOf(await this.store.get(key)));
+      }
+
+      const unknown = named.filter((key) => !kept.get(key) && max[key] === undefined);
+
+      if (unknown.length > 0) {
+        return badRequest(`no game reported these bosses yet, so max must name their raid max HP: ${unknown.join(", ")}`);
+      }
+
+      const added = named.filter((key) => !kept.get(key)).length;
+
+      if (added > 0 && (await this.pools()).length + added > this.limits.maxPools) {
+        return { status: 413, body: { error: `the world keeps at most ${this.limits.maxPools} boss pools`, code: BOSS_REFUSAL.full } };
+      }
+
+      const views = [];
+      const pushes = [];
+
+      for (const key of named) {
+        const pool = kept.get(key) ?? this.fresh(key, max[key], now);
+
+        if (pool.defeated) {
+          views.push(viewOf(pool, now, this.limits, true));
+          continue;
+        }
+
+        const next = { ...pool, left: 0, at: now, defeated: true, by: ADMIN_KILLER, byPlayer: admin };
+        await this.store.put(next);
+        views.push(viewOf(next, now, this.limits, true));
+        pushes.push({ key, left: 0, max: next.max, defeated: true });
+      }
+
+      return { status: 200, body: { bosses: views }, bosses: pushes };
+    });
+  }
+
+  /**
    * Deletes every pool, as when the world is deleted.
    *
    * @returns {Promise<void>} Completes once deleted.
@@ -337,7 +415,7 @@ export class WorldBosses {
       return "delta must be the share of the boss's max HP lost since the battle's last report, -1 to 1";
     }
 
-    if (typeof max !== "number" || !Number.isFinite(max) || max <= 0 || max > this.limits.maxMax) {
+    if (!maxOk(max, this.limits)) {
       return `max must be the boss's raid max HP, more than 0 and at most ${this.limits.maxMax}`;
     }
 
@@ -369,6 +447,17 @@ export class WorldBosses {
     this.queue = result.catch(() => {});
     return result;
   }
+}
+
+/**
+ * Checks a boss's raid max HP as a game or an admin names it.
+ *
+ * @param {unknown} max The max.
+ * @param {typeof BOSS_LIMITS} limits The limits.
+ * @returns {boolean} Whether it is more than 0 and at most the limit.
+ */
+function maxOk(max, limits) {
+  return typeof max === "number" && Number.isFinite(max) && max > 0 && max <= limits.maxMax;
 }
 
 /**

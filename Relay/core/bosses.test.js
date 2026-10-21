@@ -2,6 +2,7 @@
 //  bosses.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-21: Covered an admin defeating every pool of a troop at once
 //      Paulinchen  2026-10-10: Covered boss pools that keep the share of a raid max HP left
 //      Paulinchen  2026-10-09: Created
 //
@@ -273,6 +274,30 @@ test("an admin's reset deletes a pool, which fills it up and takes its defeat ba
   assert.deepEqual((await bosses.list()).body.bosses, []);
 });
 
+test("an admin defeats every pool named at once, a pool never reported with the max named for it, and a defeated one stays as it was", async () => {
+  const { bosses } = makeBosses();
+  await reported(bosses, "Metatronne and Sandalphone#0", { delta: 0.5 });
+  await reported(bosses, "Lilith", { killed: true }, BOB, "Alice");
+
+  const missing = await bosses.kill({ keys: ["Metatronne and Sandalphone#0", "Metatronne and Sandalphone#1"] }, ALICE);
+  assert.deepEqual([missing.status, missing.bosses], [400, undefined]);
+  assert.match(missing.body.error, /Sandalphone#1$/, "a pool never reported needs its max");
+  assert.equal((await bosses.get("Metatronne%20and%20Sandalphone%230")).body.defeated, false, "a refused kill changes nothing");
+  assert.equal((await bosses.kill({ keys: [" Lilith"] }, ALICE)).status, 400);
+  assert.equal((await bosses.kill({ keys: ["Lilith"], max: { Lilith: 0 } }, ALICE)).status, 400);
+
+  const killed = await bosses.kill({ keys: ["Metatronne and Sandalphone#0", "Metatronne and Sandalphone#1", "Lilith"], max: { "Metatronne and Sandalphone#1": 800 } }, ALICE);
+  assert.equal(killed.status, 200);
+  assert.deepEqual(killed.bosses, [
+    { key: "Metatronne and Sandalphone#0", left: 0, max: MAX, defeated: true },
+    { key: "Metatronne and Sandalphone#1", left: 0, max: 800, defeated: true },
+  ], "every game hears the pools it defeated, not the one defeated before");
+  assert.deepEqual(killed.body.bosses.map((pool) => [pool.key, pool.defeated, pool.by, pool.byPlayer]), [
+    ["Metatronne and Sandalphone#0", true, "Admin", ALICE], ["Metatronne and Sandalphone#1", true, "Admin", ALICE], ["Lilith", true, "Alice", BOB],
+  ]);
+  assert.equal((await reported(bosses, "Metatronne and Sandalphone#1", { battle: "b9", delta: -0.5 })).body.boss.defeated, true, "a defeat by an admin is final like any");
+});
+
 test("the frame names the share left to six decimals, the max as a whole number and the defeat, with the key last", () => {
   assert.equal(bossText("Alma Elma, then Granberia", 0.25, 5_000_000, false), "boss 0.25 5000000 0 Alma Elma, then Granberia");
   assert.equal(bossText("Lilith#2", 2 / 3, 1e18, false), "boss 0.666667 1000000000000000000 0 Lilith#2");
@@ -348,6 +373,10 @@ test("admins read a Raid World's counters and pools, fill a pool up and take the
   ]);
   assert.equal((await handleRaidAdminRequest(world, "GET", url("?player=other"), [], none, null, adminOf)).status, 403);
   assert.equal((await handleRaidAdminRequest(world, "GET", url("?player=other"), [], none, "admin", adminOf)).status, 200, "the header wins over the address");
+
+  const killed = await handleRaidAdminRequest(world, "POST", url("/bosses/kill"), ["bosses", "kill"], body({ keys: ["Morrigan"] }), "admin", adminOf);
+  assert.deepEqual([killed.status, killed.bosses], [200, [{ key: "Morrigan", left: 0, max: MAX, defeated: true }]]);
+  assert.equal((await handleRaidAdminRequest(world, "POST", url("/bosses/kill"), ["bosses", "kill"], body({ keys: ["Morrigan"] }), "other", adminOf)).status, 403);
 
   const reset = await handleRaidAdminRequest(world, "POST", url("/bosses/Lilith/reset"), ["bosses", "Lilith", "reset"], body({ player: "admin" }), null, adminOf);
   assert.deepEqual([reset.status, reset.body.left, reset.body.reset, reset.boss], [200, 1, true, { key: "Lilith", left: 1, max: 900, defeated: false }]);
