@@ -2,6 +2,7 @@
 //  worker.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-21: Tested that every Raid design route answers 404
 //      Paulinchen  2026-10-15: Tested the migration routes through the directory and a world room
 //                            - Tested that every battle on the battle server is refused
 //      Paulinchen  2026-10-12: Tested the schedules and the release notice to world rooms with players online
@@ -661,6 +662,23 @@ test("the Worker refuses every battle on the battle server, which it has none of
   assert.deepEqual([start.status, (await start.json()).code], [503, "no_server"]);
   const channel = await worker.fetch(new Request(`https://relay.test/v1/worlds/${world}/battles/k3x9`, { headers: { [FEATURES_HEADER]: "raid", Upgrade: "websocket" } }), env);
   assert.equal(channel.status, 503);
+  assert.deepEqual(reached, []);
+});
+
+test("the Worker answers every Raid design route with 404 no_designs, which only the Node relay keeps, and reaches no object for it", async () => {
+  const reached = [];
+  const env = { DIRECTORY: namespace(() => ({ fetch: async () => (reached.push("directory"), new Response("{}")) })) };
+  const designer = { "X-MGQ-Designer": "00112233445566778899aabbccddeeff", "X-MGQ-Designer-Version": "1.3.0", "X-MGQ-Design-Format": "1" };
+
+  for (const [method, path, headers, body] of [
+    ["GET", "/v1/designs/me", designer], ["POST", "/v1/designs/push", designer, JSON.stringify({ designFormat: 1, changes: [] })], ["GET", "/v1/designs/socket", { ...designer, Upgrade: "websocket" }],
+    ["GET", "/v1/raid-design", { [FEATURES_HEADER]: "raid", "X-MGQ-Design-Reader": "3" }], ["GET", `/v1/raid-design/${"ab".repeat(32)}`, { [FEATURES_HEADER]: "raid" }],
+  ]) {
+    const answer = await worker.fetch(new Request(`https://relay.test${path}`, { method, headers, body }), env);
+    assert.deepEqual([answer.status, await answer.json()], [404, { code: "no_designs" }], `${method} ${path}`);
+  }
+
+  assert.equal((await worker.fetch(new Request("https://relay.test/v1/raid-design"), env)).status, 426, "the game's design routes ask for X-MGQ-Features");
   assert.deepEqual(reached, []);
 });
 

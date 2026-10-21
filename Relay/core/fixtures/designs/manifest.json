@@ -1,0 +1,21 @@
+{
+  "product": "MGQ Online Raid Designer",
+  "version": "1.3.0",
+  "commit": "abc1234",
+  "designFormat": 1,
+  "files": [
+    {
+      "rid": "win-x64",
+      "name": "RaidDesigner-1.3.0-win-x64.exe",
+      "size": 71234567,
+      "sha256": "a3f1c2d4e5b60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00"
+    },
+    {
+      "rid": "linux-x64",
+      "name": "raid-designer-cli-1.3.0-linux-x64",
+      "size": 41234567,
+      "sha256": "0f1e2d3c4b5a69788796a5b4c3d2e1f00112233445566778899aabbccddeeff1"
+    }
+  ],
+  "notes": "Scheduled casts and mark reactions."
+}

@@ -1,0 +1,75 @@
+{
+  "exchanges": [
+    {
+      "name": "listed admin designer",
+      "request": {
+        "method": "GET",
+        "path": "/v1/designs/me",
+        "headers": {
+          "X-MGQ-Designer": "00112233445566778899aabbccddeeff",
+          "X-MGQ-Features": "designer",
+          "X-MGQ-Designer-Version": "1.3.0",
+          "X-MGQ-Design-Format": "1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "91ed34e44d37441292523754c3a84c2b",
+          "name": "Designer A",
+          "designer": true,
+          "admin": true,
+          "seq": 418,
+          "designFormat": 1,
+          "minFormat": 1,
+          "minVersion": "1.2.0"
+        }
+      }
+    },
+    {
+      "name": "unlisted key",
+      "request": {
+        "method": "GET",
+        "path": "/v1/designs/me",
+        "headers": {
+          "X-MGQ-Designer": "0123456789abcdef0123456789abcdef",
+          "X-MGQ-Features": "designer",
+          "X-MGQ-Designer-Version": "1.3.0",
+          "X-MGQ-Design-Format": "1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "b0e6ec7997dc2681a7a241cf467c3a4f",
+          "designer": false
+        }
+      }
+    },
+    {
+      "name": "rename",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/designs/me",
+        "headers": {
+          "X-MGQ-Designer": "00112233445566778899aabbccddeeff",
+          "X-MGQ-Features": "designer",
+          "X-MGQ-Designer-Version": "1.3.0",
+          "X-MGQ-Design-Format": "1"
+        },
+        "body": {
+          "name": "Designer A"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "91ed34e44d37441292523754c3a84c2b",
+          "name": "Designer A"
+        }
+      }
+    }
+  ]
+}

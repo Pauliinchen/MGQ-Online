@@ -1,0 +1,7 @@
+{
+  "id": "map:58",
+  "kind": "map",
+  "schema": 1,
+  "rev": 12,
+  "body": { "debris": { "look": { "kind": "tile", "tile": { "sheet": "A5", "tileId": 1544 } } } }
+}

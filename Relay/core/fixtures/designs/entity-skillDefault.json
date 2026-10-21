@@ -1,0 +1,20 @@
+{
+  "id": "skillDefault:3038",
+  "kind": "skillDefault",
+  "schema": 1,
+  "rev": 300,
+  "body": {
+    "kind": "area",
+    "shape": { "type": "custom", "offsets": [[0, 0], [-1, 0], [1, 0], [-1, -1], [0, -1], [1, -1]], "fit": "shift" },
+    "pulses": 1,
+    "cost": { "ap": 2 },
+    "targeting": { "mode": "mostHit", "zone": { "backRows": 2, "cells": [[3, 1]] } },
+    "damage": { "percent": 120 },
+    "spread": { "mode": "splash", "percent": 30, "shape": { "type": "diamond", "radius": 1 }, "rings": [100, 60] },
+    "falloff": { "metric": "manhattan", "rings": [100, 70] },
+    "presentation": { "cellFlash": { "color": [255, 200, 120, 128], "frames": 8 }, "danger": [255, 120, 40, 160] },
+    "debris": { "where": "hitCells", "turns": 2, "hits": 1, "look": { "kind": "picture", "picture": "Crater" } },
+    "marks": { "leaves": [ { "id": "3e4f5061", "state": 40, "chance": 50, "landsOn": "mainTarget", "until": "turns", "turns": 2 } ] },
+    "unstoppable": true
+  }
+}

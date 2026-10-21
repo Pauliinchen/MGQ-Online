@@ -1,0 +1,155 @@
+//----------------------------------------------------------------
+//  design_store_memory.js
+//
+//  Changelog:
+//      Paulinchen  2026-10-21: Created
+//
+//----------------------------------------------------------------
+
+// The Raid design store in memory, for a Node relay without a database and for the tests. It keeps
+// the same tables and rows as node/design_store_sqlite.js, so a migration reads both alike.
+
+/**
+ * The tables the store keeps, by name, with each row's key.
+ */
+const KEYS = Object.freeze({
+  designers: (row) => row.id,
+  design_meta: (row) => row.key,
+  design_pushes: (row) => row.seq,
+  design_entities: (row) => row.id,
+  design_history: (row) => `${row.id}\u0000${String(row.rev).padStart(16, "0")}`,
+  design_blobs: (row) => row.sha256,
+  design_builds: (row) => row.id,
+  design_live: (row) => row.channel,
+});
+
+/**
+ * Compares two keys in ordinal order, as SQLite sorts text and integers.
+ *
+ * @param {string | number} left The first key.
+ * @param {string | number} right The second key.
+ * @returns {number} Below 0 when the first comes first, 0 when both are equal, above 0 otherwise.
+ */
+function byKey(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/**
+ * Makes a Raid design store in memory.
+ *
+ * @returns {import("./designs.js").DesignStore} The store.
+ */
+export function memoryDesignStore() {
+  /** @type {Record<string, Map<string | number, object>>} */
+  const tables = Object.fromEntries(Object.keys(KEYS).map((name) => [name, new Map()]));
+  /** @type {Map<string, Uint8Array>} */
+  const blobs = new Map();
+
+  /**
+   * Puts a row into a table, a copy of it, over the row of the same key.
+   *
+   * @param {string} name The table.
+   * @param {object} row The row.
+   */
+  const put = (name, row) => void tables[name].set(KEYS[name](row), { ...row });
+
+  /**
+   * Names the designer of a revision: as the push named them, else as the designer list names them.
+   *
+   * @param {{rev: number, by: string}} row The revision.
+   * @returns {string} The name, empty when neither knows one.
+   */
+  const nameOf = (row) => tables.design_pushes.get(row.rev)?.by_name ?? tables.designers.get(row.by)?.name ?? "";
+
+  /**
+   * Reads a value of the design meta table.
+   *
+   * @param {string} key The key.
+   * @returns {string | undefined} The value, undefined when it is not set.
+   */
+  const meta = (key) => tables.design_meta.get(key)?.value;
+
+  /**
+   * Sets the design format and the lowest design format the relay takes.
+   *
+   * @param {{designFormat: number, minFormat: number}} format The formats.
+   */
+  const putFormat = ({ designFormat, minFormat }) => {
+    put("design_meta", { key: "design_format", value: String(designFormat) });
+    put("design_meta", { key: "min_format", value: String(minFormat) });
+  };
+
+  return {
+    state: async () => ({
+      seq: [...tables.design_pushes.keys()].reduce((newest, seq) => Math.max(newest, seq), 0),
+      designFormat: meta("design_format") === undefined ? undefined : Number(meta("design_format")),
+      minFormat: meta("min_format") === undefined ? undefined : Number(meta("min_format")),
+    }),
+    entity: async (id) => {
+      const row = tables.design_entities.get(id);
+      return row ? { ...row, name: nameOf(row) } : undefined;
+    },
+    entities: async ({ since, after, limit, tombstones }) => [...tables.design_entities.values()]
+      .filter((row) => row.rev > since && row.id > after && (tombstones || row.deleted === 0))
+      .sort((left, right) => byKey(left.id, right.id))
+      .slice(0, limit)
+      .map((row) => ({ ...row, name: nameOf(row) })),
+    history: async (id, limit) => [...tables.design_history.values()]
+      .filter((row) => row.id === id)
+      .sort((left, right) => right.rev - left.rev)
+      .slice(0, limit)
+      .map((row) => ({ ...row, name: nameOf(row) })),
+    commit: async (push) => {
+      put("design_pushes", {
+        seq: push.seq, by: push.by, by_name: push.name, at: push.at, message: push.message, design_format: push.designFormat,
+        client_version: push.clientVersion, ids: JSON.stringify(push.entities.map((entity) => entity.id)),
+      });
+
+      for (const entity of push.entities) {
+        const row = { id: entity.id, kind: entity.kind, schema: entity.schema, rev: push.seq, body: entity.body, deleted: entity.deleted ? 1 : 0, by: push.by, at: push.at };
+        put("design_entities", row);
+        put("design_history", { id: row.id, rev: row.rev, schema: row.schema, body: row.body, deleted: row.deleted, by: row.by, at: row.at });
+        const revisions = [...tables.design_history.values()].filter((each) => each.id === entity.id).sort((left, right) => right.rev - left.rev);
+
+        for (const old of revisions.slice(push.keep)) {
+          tables.design_history.delete(KEYS.design_history(old));
+        }
+      }
+
+      if (push.format) {
+        putFormat(push.format);
+      }
+    },
+    setFormat: async (format) => putFormat(format),
+    designer: async (id) => (tables.designers.has(id) ? { ...tables.designers.get(id) } : undefined),
+    designers: async () => [...tables.designers.values()].sort((left, right) => byKey(left.name, right.name) || byKey(left.id, right.id)).map((row) => ({ ...row })),
+    putDesigner: async ({ id, name, admin, addedBy, at }) => {
+      const earlier = tables.designers.get(id);
+      put("designers", earlier ? { ...earlier, name, admin: admin ? 1 : 0 } : { id, name, admin: admin ? 1 : 0, added_by: addedBy, at, last_seen: null });
+    },
+    removeDesigner: async (id) => void tables.designers.delete(id),
+    seen: async (id, at) => {
+      const earlier = tables.designers.get(id);
+
+      if (earlier) {
+        put("designers", { ...earlier, last_seen: at });
+      }
+    },
+    exportTables: async () => Object.fromEntries(Object.keys(KEYS).map((name) => [name, [...tables[name].values()]
+      .sort((left, right) => byKey(KEYS[name](left), KEYS[name](right)))
+      .map(({ gz, ...row }) => row)])),
+    blob: async (sha256) => blobs.get(sha256),
+    importTables: async (rows, bytes) => {
+      for (const [name, list] of Object.entries(rows).filter(([name]) => name in KEYS)) {
+        for (const row of list) {
+          put(name, row);
+        }
+      }
+
+      for (const [sha256, gz] of bytes) {
+        blobs.set(sha256, Uint8Array.from(gz));
+      }
+    },
+    close: () => {},
+  };
+}

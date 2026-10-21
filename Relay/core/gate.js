@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-22: Told which games hold a world's long mods and which read the world list with every world's mods
+//      Paulinchen  2026-10-21: Added the designer gate of the Raid design routes and held the game's design routes to X-MGQ-Features
 //      Paulinchen  2026-10-12: Held the world directory's and the mod catalog's routes to X-MGQ-Features
 //                            - Named the update code on the 400 of a world room refused to a game too old
 //                            - Refused a world room of a game too old with 400 and counted a request without X-MGQ-Version as 0.6.4
@@ -84,9 +85,64 @@ export const UPDATE_NEEDED = "Update MGQ Online to play online.";
 
 /**
  * What a route asks of a game: `features` the X-MGQ-Features header, which every game from 0.6.0
- * sends, and a version new enough; `version` only a version new enough.
+ * sends, and a version new enough; `version` only a version new enough; `designer` what the
+ * designer gate asks, which the design routes check themselves, see designerRefusal.
  */
-export const GATE = Object.freeze({ features: "features", version: "version" });
+export const GATE = Object.freeze({ features: "features", version: "version", designer: "designer" });
+
+/**
+ * The route's name after the version of the routes the Raid Designer uses.
+ */
+export const DESIGN_ROUTE = "designs";
+
+/**
+ * The route's name after the version of the routes games and the battle server read published
+ * Raid designs from.
+ */
+export const GAME_DESIGN_ROUTE = "raid-design";
+
+/**
+ * The request header in which the Raid Designer names its designer key, 32 lowercase hexadecimal
+ * characters.
+ */
+export const DESIGNER_HEADER = "X-MGQ-Designer";
+
+/**
+ * The request header in which the Raid Designer names its version, such as `1.3.0`, or
+ * DEVELOPMENT_VERSION for a development build.
+ */
+export const DESIGNER_VERSION_HEADER = "X-MGQ-Designer-Version";
+
+/**
+ * The request header in which the Raid Designer names the design format it writes, an integer.
+ */
+export const DESIGN_FORMAT_HEADER = "X-MGQ-Design-Format";
+
+/**
+ * The lowest designer version the relay serves unless its DESIGNER_MIN_VERSION setting names
+ * another: every version.
+ */
+export const DEFAULT_DESIGNER_MIN_VERSION = "0.0.0";
+
+/**
+ * What each kind of design route asks of a designer: `listed` a designer the relay lists,
+ * `current` a version and design format new enough, `write` the development rule, `admin` a
+ * designer admin, and `relayAdmin` whether a relay admin's player key passes too.
+ */
+export const DESIGNER_RULE = Object.freeze({
+  open: Object.freeze({ listed: false, current: false, write: false, admin: false, relayAdmin: false }),
+  listed: Object.freeze({ listed: true, current: false, write: false, admin: false, relayAdmin: false }),
+  read: Object.freeze({ listed: true, current: true, write: false, admin: false, relayAdmin: false }),
+  write: Object.freeze({ listed: true, current: true, write: true, admin: false, relayAdmin: false }),
+  adminWrite: Object.freeze({ listed: true, current: true, write: true, admin: true, relayAdmin: false }),
+  roster: Object.freeze({ listed: true, current: true, write: false, admin: false, relayAdmin: true }),
+  manage: Object.freeze({ listed: true, current: true, write: false, admin: true, relayAdmin: true }),
+});
+
+/**
+ * The design routes beside `POST builds` that change what players get, for designer admins only.
+ */
+const ADMIN_WRITES = new Set(["publish", "rollback", "format"]);
 
 /**
  * How much of a refused request's body is read and dropped before the refusal is answered, as much
@@ -104,14 +160,101 @@ const VERSION_PATTERN = /^(\d+(?:\.\d+)*)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?
  * Tells what a route asks of a game's version.
  *
  * @param {URL} url The request's address.
- * @returns {string | null} GATE.features for the world directory's and the mod catalog's routes, the Raid World admin, story and boss routes included, the trades, the bug reports and the world rooms; GATE.version for the PvP rooms, which released games open without X-MGQ-Features; null for every other route.
+ * @returns {string | null} GATE.features for the world directory's and the mod catalog's routes, the Raid World admin, story and boss routes included, the trades, the bug reports, the world rooms and the game's design routes; GATE.version for the PvP rooms, which released games open without X-MGQ-Features; GATE.designer for the Raid Designer's routes; null for every other route.
  */
 export function gateOf(url) {
-  if (storyRouteOf(url) || bossRouteOf(url) || routeIs(url, "trades") || routeIs(url, "reports") || routeIs(url, "world") || routeIs(url, "worlds") || routeIs(url, "mods")) {
+  if (storyRouteOf(url) || bossRouteOf(url) || routeIs(url, "trades") || routeIs(url, "reports") || routeIs(url, "world") || routeIs(url, "worlds") || routeIs(url, "mods")
+      || routeIs(url, GAME_DESIGN_ROUTE)) {
     return GATE.features;
   }
 
+  if (routeIs(url, DESIGN_ROUTE)) {
+    return GATE.designer;
+  }
+
   return routeIs(url, "room") ? GATE.version : null;
+}
+
+/**
+ * Tells what a design route asks of a designer.
+ *
+ * @param {string} method The HTTP method.
+ * @param {string[]} rest The address's parts after `designs`.
+ * @returns {typeof DESIGNER_RULE.open} The rule: `me` is open to any key to read and to a listed designer to rename; `release` needs a listed designer of any version; the designer list a designer or a relay admin, changing it a designer admin or a relay admin; builds, publish, rollback and format a designer admin; push the development rule; everything else a current designer.
+ */
+export function designerRuleOf(method, rest) {
+  const [route] = rest;
+
+  if (route === "me") {
+    return method === "GET" ? DESIGNER_RULE.open : DESIGNER_RULE.listed;
+  }
+
+  if (route === "release") {
+    return DESIGNER_RULE.listed;
+  }
+
+  if (route === "designers") {
+    return method === "GET" ? DESIGNER_RULE.roster : DESIGNER_RULE.manage;
+  }
+
+  if (route === "push") {
+    return DESIGNER_RULE.write;
+  }
+
+  if (ADMIN_WRITES.has(route) || (route === "builds" && method === "POST" && rest.length === 1)) {
+    return DESIGNER_RULE.adminWrite;
+  }
+
+  return DESIGNER_RULE.read;
+}
+
+/**
+ * Reads the design format a designer names.
+ *
+ * @param {string | null | undefined} header The request's DESIGN_FORMAT_HEADER.
+ * @returns {number} The format, 0 when it names none or no integer.
+ */
+export function designFormatOf(header) {
+  return typeof header === "string" && /^\s*\d{1,6}\s*$/.test(header) ? Number(header.trim()) : 0;
+}
+
+/**
+ * Turns a designer away from a design route it may not use: an unlisted key with
+ * `not_designer`, a version below the lowest the relay serves or a design format below the lowest
+ * it takes with `update`, a designer who is no admin from an admin route with `admin_only`, and a
+ * development build that writes with `dev_build`.
+ *
+ * Only DEVELOPMENT_VERSION passes the version check, as a game's development build passes the game
+ * gate; its design format is still checked, since it reads and writes the design.
+ *
+ * @param {typeof DESIGNER_RULE.open} rule What the route asks, see designerRuleOf.
+ * @param {{id: string | null, listed: boolean, admin: boolean}} designer The designer the key names: its id, null for a key that is none, whether the relay lists it and whether it is an admin.
+ * @param {{version: string | null | undefined, format: string | null | undefined}} client The request's DESIGNER_VERSION_HEADER and DESIGN_FORMAT_HEADER.
+ * @param {{minVersion: string, minFormat: number, allowDev: boolean}} settings The lowest designer version and design format the relay serves, and whether a development build writes as any designer.
+ * @returns {{status: number, body: object} | null} The refusal, or null when the designer may go on.
+ */
+export function designerRefusal(rule, designer, client, settings) {
+  if (rule.listed && !designer.listed) {
+    return { status: 403, body: designer.id ? { code: "not_designer", id: designer.id } : { code: "not_designer" } };
+  }
+
+  const version = parseVersion(client.version);
+  const minimum = parseVersion(settings.minVersion)?.parts ?? [];
+  const outdated = version === null || (!version.development && compareVersions(version.parts, minimum) < 0) || designFormatOf(client.format) < settings.minFormat;
+
+  if (rule.current && outdated) {
+    return { status: UPDATE_STATUS, body: { code: "update", minimum: settings.minVersion, minFormat: settings.minFormat } };
+  }
+
+  if (rule.admin && !designer.admin) {
+    return { status: 403, body: { code: "admin_only" } };
+  }
+
+  if (rule.write && version?.development && !designer.admin && !settings.allowDev) {
+    return { status: 403, body: { code: "dev_build" } };
+  }
+
+  return null;
 }
 
 /**
@@ -171,7 +314,8 @@ function sent(header) {
  * a game naming none counting as UNNAMED_VERSION.
  *
  * Only DEVELOPMENT_VERSION always passes, so a development build reaches every relay while a
- * pre-release such as `0.7.0-beta` is held to its numbers.
+ * pre-release such as `0.7.0-beta` is held to its numbers. GATE.designer passes here, since the
+ * design routes hold a designer to designerRefusal.
  *
  * @param {string | null} gate What the route asks, see gateOf.
  * @param {string | null | undefined} featuresHeader The request's FEATURES_HEADER.
@@ -180,7 +324,7 @@ function sent(header) {
  * @returns {boolean} Whether it is.
  */
 export function tooOld(gate, featuresHeader, versionHeader, minVersion) {
-  if (gate === null) {
+  if (gate === null || gate === GATE.designer) {
     return false;
   }
 

@@ -1,0 +1,26 @@
+{
+  "id": "tier:2",
+  "kind": "tier",
+  "schema": 1,
+  "rev": 7,
+  "body": {
+    "grid": [16, 7],
+    "ap": 10,
+    "stats": { "mhp": 1.5 },
+    "states": [144],
+    "elementRates": { "3": 50 },
+    "stateRates": { "40": 0 },
+    "traits": [
+      { "id": "0a1b2c3d", "kind": "triggerState", "fields": { "gauge": "hp", "trigger": "below", "percent": 50, "state": 29 } },
+      { "id": "4e5f6a7b", "kind": "lastStand",
+        "fields": { "gauge": "hp", "percent": 25 },
+        "phase": {
+          "traits": [ { "id": "8c9d0e1f", "kind": "damageBoost", "fields": { "percent": 20 } } ],
+          "states": [12],
+          "startSkill": { "game": 3764 },
+          "clearDebuffs": true
+        } }
+    ],
+    "debris": { "chance": 30, "min": 2, "max": 4, "hits": 2 }
+  }
+}

@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-22: Tested which games hold a world's long mods and which read the world list with every world's mods
+//      Paulinchen  2026-10-21: Tested the designer gate, the rule of every design route and the game's design routes asking for X-MGQ-Features
 //      Paulinchen  2026-10-12: Tested that the world directory, the mod catalog and the Raid World admin routes ask for X-MGQ-Features
 //                            - Tested the update code on the 400 of a world room and the World Admin tool passing with 0.0.0-dev
 //                            - Tested 400 for a world room, a request without X-MGQ-Version as 0.6.4, the version gate on the directory and mod catalog and only 0.0.0-dev as a development build
@@ -12,7 +13,10 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GATE, UPDATE_NEEDED, UPDATE_STATUS, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, compareVersions, gateOf, holdsLongMods, listsWorldMods, minVersionOf, parseVersion, tooOld, updateRefusal } from "./gate.js";
+import {
+  DESIGNER_RULE, GATE, UPDATE_NEEDED, UPDATE_STATUS, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, compareVersions, designFormatOf, designerRefusal, designerRuleOf, gateOf, holdsLongMods,
+  listsWorldMods, minVersionOf, parseVersion, tooOld, updateRefusal,
+} from "./gate.js";
 
 /**
  * A world's id as games make them.
@@ -132,4 +136,58 @@ test("games from 0.6.8 and development builds hold long mods, and only they read
   assert.equal(listsWorldMods("raid,keys", "0.6.8"), false);
   assert.equal(listsWorldMods("web", "0.0.0-dev"), true, "the website");
   assert.equal(listsWorldMods("admin", "0.0.0-dev"), true, "the World Admin tool");
+});
+
+test("the Raid Designer's routes go through the designer gate, which the game gate lets pass, and the game's design routes ask for X-MGQ-Features", () => {
+  for (const path of ["/v1/designs", "/v1/designs/me", "/v1/designs/push", "/v1/designs/release/file"]) {
+    assert.equal(gateOf(at(path)), GATE.designer, path);
+    assert.equal(updateRefusal(at(path), null, null, "0.9.0"), null, path);
+  }
+
+  for (const path of ["/v1/raid-design", `/v1/raid-design/${"ab".repeat(32)}`]) {
+    assert.equal(gateOf(at(path)), GATE.features, path);
+    assert.notEqual(updateRefusal(at(path), null, null), null, path);
+  }
+
+  assert.equal(gateOf(at("/v1/designsx")), null);
+  assert.equal(tooOld(GATE.designer, null, null, "9.0.0"), false);
+});
+
+test("each design route asks its own of a designer: me nothing, release a listed designer of any version, the designer list an admin to change it", () => {
+  const cases = [
+    ["GET", ["me"], DESIGNER_RULE.open], ["PUT", ["me"], DESIGNER_RULE.listed], ["GET", ["release"], DESIGNER_RULE.listed], ["GET", ["release", "file"], DESIGNER_RULE.listed],
+    ["GET", ["entities"], DESIGNER_RULE.read], ["GET", ["entities", "state:1", "history"], DESIGNER_RULE.read], ["POST", ["push"], DESIGNER_RULE.write],
+    ["POST", ["builds"], DESIGNER_RULE.adminWrite], ["GET", ["builds"], DESIGNER_RULE.read], ["GET", ["builds", "3", "snapshot"], DESIGNER_RULE.read],
+    ["POST", ["publish"], DESIGNER_RULE.adminWrite], ["POST", ["rollback"], DESIGNER_RULE.adminWrite], ["POST", ["format"], DESIGNER_RULE.adminWrite],
+    ["GET", ["designers"], DESIGNER_RULE.roster], ["PUT", ["designers", "x"], DESIGNER_RULE.manage], ["DELETE", ["designers", "x"], DESIGNER_RULE.manage], ["GET", ["socket"], DESIGNER_RULE.read],
+  ];
+
+  for (const [method, rest, rule] of cases) {
+    assert.equal(designerRuleOf(method, rest), rule, `${method} ${rest.join("/")}`);
+  }
+});
+
+test("the designer gate turns away an unlisted key first, then an old version or format, then a designer from an admin route, then a development build that writes", () => {
+  const settings = { minVersion: "1.2.0", minFormat: 2, allowDev: false };
+  const designer = { id: WORLD, listed: true, admin: false };
+  const admin = { ...designer, admin: true };
+  const current = { version: "1.3.0", format: "2" };
+  const dev = { version: "0.0.0-dev", format: "2" };
+
+  assert.deepEqual(designerRefusal(DESIGNER_RULE.read, { ...designer, listed: false }, { version: "0.1.0", format: null }, settings), { status: 403, body: { code: "not_designer", id: WORLD } });
+  assert.deepEqual(designerRefusal(DESIGNER_RULE.read, { id: null, listed: false, admin: false }, current, settings), { status: 403, body: { code: "not_designer" } });
+  assert.deepEqual(designerRefusal(DESIGNER_RULE.adminWrite, designer, { version: "1.1.9", format: "2" }, settings), { status: 426, body: { code: "update", minimum: "1.2.0", minFormat: 2 } });
+  assert.deepEqual(designerRefusal(DESIGNER_RULE.read, designer, { version: "1.3.0", format: "1" }, settings).status, 426, "a format below the lowest");
+  assert.deepEqual(designerRefusal(DESIGNER_RULE.read, designer, { version: "1.3.0", format: null }, settings).status, 426, "no format");
+  assert.deepEqual(designerRefusal(DESIGNER_RULE.read, designer, { version: "soon", format: "2" }, settings).status, 426, "no version");
+  assert.deepEqual(designerRefusal(DESIGNER_RULE.adminWrite, designer, current, settings), { status: 403, body: { code: "admin_only" } });
+  assert.deepEqual(designerRefusal(DESIGNER_RULE.write, designer, dev, settings), { status: 403, body: { code: "dev_build" } });
+
+  assert.equal(designerRefusal(DESIGNER_RULE.read, designer, dev, settings), null, "a development build reads");
+  assert.equal(designerRefusal(DESIGNER_RULE.write, admin, dev, settings), null, "an admin's development build writes");
+  assert.equal(designerRefusal(DESIGNER_RULE.write, designer, dev, { ...settings, allowDev: true }), null, "a relay that allows development builds");
+  assert.equal(designerRefusal(DESIGNER_RULE.listed, designer, { version: "0.1.0", format: null }, settings), null, "release needs no version");
+  assert.equal(designerRefusal(DESIGNER_RULE.open, { ...designer, listed: false }, { version: null, format: null }, settings), null, "me needs nothing");
+  assert.equal(designerRefusal(DESIGNER_RULE.write, designer, { version: "1.2.0+abc", format: " 3 " }, settings), null);
+  assert.deepEqual([designFormatOf("7"), designFormatOf("x"), designFormatOf(undefined), designFormatOf("-1")], [7, 0, 0, 0]);
 });

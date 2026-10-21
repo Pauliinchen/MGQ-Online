@@ -1,0 +1,60 @@
+{
+  "id": "rules",
+  "kind": "rules",
+  "schema": 1,
+  "rev": 1,
+  "body": {
+    "grid": { "min": [15, 6], "max": [16, 10], "noTier": [15, 6], "growRatio": 1.5 },
+    "tiers": {
+      "0": { "grid": [15, 7], "ap": 8, "stats": { "mhp": 1.5, "atk": 1.2 } },
+      "1": { "grid": [15, 6], "ap": 7 },
+      "2": { "grid": [15, 6], "ap": 7 },
+      "3": { "grid": [15, 6], "ap": 6 },
+      "4": { "grid": [15, 6], "ap": 6 },
+      "5": { "grid": [15, 6], "ap": 5 },
+      "6": { "grid": [15, 6], "ap": 5 },
+      "7": { "grid": [15, 6], "ap": 4 },
+      "8": { "grid": [15, 6], "ap": 4 },
+      "9": { "grid": [15, 6], "ap": 3, "stats": { "mhp": 0.8 } }
+    },
+    "units": { "cap": 16 },
+    "ap": {
+      "noTier": 3, "min": 1, "max": 20,
+      "cost": { "default": 1, "min": 1, "max": 20 },
+      "actionPlusFeature": 61, "actionMinusFeature": 180, "useWeightFactor": 0.5, "bankTurns": 1
+    },
+    "power": {
+      "ranks": ["E", "D", "C", "B", "A", "S", "SS", "SSS", "SSSS", "Z", "ZZ", "ZZZ", "ZZZZ", "ZZZZZ"],
+      "rankSizes": { "E": 3, "D": 3, "C": 3, "B": 3, "A": 3, "ZZZZZ": 99 },
+      "powerSizes": [[4181, 7], [2078, 5]],
+      "smallSize": 3, "powerlessSize": 3, "wholeSize": 99, "powerPerFactor": 500
+    },
+    "share": { "range": 2, "max": 4 },
+    "kinds": {
+      "damagingTypes": [1, 2, 5, 6],
+      "extensionKinds": { "1": "share", "2": "area", "3": "strikes", "7": "share" },
+      "plusAttackKinds": [1, 2, 3]
+    },
+    "crowdControl": {
+      "hardCcRestriction": 4, "neverHardCc": [1, 214, 230, 231, 232], "redirectRestrictions": [2, 3],
+      "disablesDefault": 1, "disablesMin": 1, "disablesMax": 20, "midTurnDisables": 1,
+      "turnsMin": 0, "turnsMax": 999
+    },
+    "debris": {
+      "freeCellsPerCharacter": 2,
+      "fallbackFloor": ["A5", 1536],
+      "fallbackDebris": ["A5", 0],
+      "random": { "chance": 10, "min": 1, "max": 2, "hits": 1 }
+    },
+    "presentation": {
+      "ringDelay": 6, "pulseGap": 20,
+      "animation": {
+        "area": { "placement": "oncePerWave", "screen": "fitArea" },
+        "single": { "placement": "perCharacter", "screen": "fitArea" },
+        "opacity": 100, "flash": 100
+      },
+      "danger": { "noElement": [230, 40, 40, 160], "elements": { "1": [255, 120, 40, 160] } }
+    },
+    "limits": { "percentMax": 1000 }
+  }
+}

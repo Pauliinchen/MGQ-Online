@@ -1,0 +1,409 @@
+{
+  "exchanges": [
+    {
+      "name": "invalid id",
+      "request": {
+        "method": "POST",
+        "path": "/v1/designs/push",
+        "headers": {
+          "X-MGQ-Designer": "00112233445566778899aabbccddeeff",
+          "X-MGQ-Features": "designer",
+          "X-MGQ-Designer-Version": "1.3.0",
+          "X-MGQ-Design-Format": "1"
+        },
+        "body": {
+          "designFormat": 1,
+          "message": "bad",
+          "changes": [
+            {
+              "id": "boss:Morrigan",
+              "kind": "boss",
+              "schema": 1,
+              "baseRev": 0,
+              "body": {}
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 400,
+        "body": {
+          "code": "invalid",
+          "errors": [
+            {
+              "id": "boss:Morrigan",
+              "message": "The id does not match the id pattern."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "unlisted designer",
+      "request": {
+        "method": "GET",
+        "path": "/v1/designs/entities?since=0&limit=500",
+        "headers": {
+          "X-MGQ-Designer": "0123456789abcdef0123456789abcdef",
+          "X-MGQ-Features": "designer",
+          "X-MGQ-Designer-Version": "1.3.0",
+          "X-MGQ-Design-Format": "1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 403,
+        "body": {
+          "code": "not_designer",
+          "id": "b0e6ec7997dc2681a7a241cf467c3a4f"
+        }
+      }
+    },
+    {
+      "name": "admin route by a designer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/designs/builds",
+        "headers": {
+          "X-MGQ-Designer": "ffeeddccbbaa99887766554433221100",
+          "X-MGQ-Features": "designer",
+          "X-MGQ-Designer-Version": "1.3.0",
+          "X-MGQ-Design-Format": "1"
+        },
+        "body": {
+          "seq": 419
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": {
+          "code": "admin_only"
+        }
+      }
+    },
+    {
+      "name": "development build writes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/designs/push",
+        "headers": {
+          "X-MGQ-Designer": "ffeeddccbbaa99887766554433221100",
+          "X-MGQ-Features": "designer",
+          "X-MGQ-Designer-Version": "0.0.0-dev",
+          "X-MGQ-Design-Format": "1"
+        },
+        "body": {
+          "designFormat": 1,
+          "message": "dev",
+          "changes": []
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": {
+          "code": "dev_build"
+        }
+      }
+    },
+    {
+      "name": "too many deletes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/designs/push",
+        "headers": {
+          "X-MGQ-Designer": "ffeeddccbbaa99887766554433221100",
+          "X-MGQ-Features": "designer",
+          "X-MGQ-Designer-Version": "1.3.0",
+          "X-MGQ-Design-Format": "1"
+        },
+        "body": {
+          "designFormat": 1,
+          "message": "clean up",
+          "changes": [
+            {
+              "id": "state:500",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:501",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:502",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:503",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:504",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:505",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:506",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:507",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:508",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:509",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:510",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:511",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:512",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:513",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:514",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:515",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:516",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:517",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:518",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:519",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            },
+            {
+              "id": "state:520",
+              "kind": "state",
+              "schema": 1,
+              "baseRev": 12,
+              "body": null
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "code": "deletes",
+          "count": 21
+        }
+      }
+    },
+    {
+      "name": "build on an old seq",
+      "request": {
+        "method": "POST",
+        "path": "/v1/designs/builds",
+        "headers": {
+          "X-MGQ-Designer": "00112233445566778899aabbccddeeff",
+          "X-MGQ-Features": "designer",
+          "X-MGQ-Designer-Version": "1.3.0",
+          "X-MGQ-Design-Format": "1"
+        },
+        "body": {
+          "seq": 417
+        }
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "code": "moved",
+          "seq": 419
+        }
+      }
+    },
+    {
+      "name": "body too big",
+      "request": {
+        "method": "POST",
+        "path": "/v1/designs/push",
+        "headers": {
+          "X-MGQ-Designer": "00112233445566778899aabbccddeeff",
+          "X-MGQ-Features": "designer",
+          "X-MGQ-Designer-Version": "1.3.0",
+          "X-MGQ-Design-Format": "1"
+        },
+        "body": {
+          "designFormat": 1,
+          "message": "huge",
+          "changes": [
+            {
+              "id": "customSkill:00000000000000000000000000000001",
+              "kind": "customSkill",
+              "schema": 1,
+              "baseRev": 0,
+              "body": {
+                "name": "More than 256 KiB",
+                "description": "<more than 256 KiB of text>"
+              }
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 413,
+        "body": {
+          "code": "too_big"
+        }
+      }
+    },
+    {
+      "name": "designer too old",
+      "request": {
+        "method": "GET",
+        "path": "/v1/designs/entities?since=0&limit=500",
+        "headers": {
+          "X-MGQ-Designer": "ffeeddccbbaa99887766554433221100",
+          "X-MGQ-Features": "designer",
+          "X-MGQ-Designer-Version": "1.1.0",
+          "X-MGQ-Design-Format": "1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 426,
+        "body": {
+          "code": "update",
+          "minimum": "1.2.0",
+          "minFormat": 1
+        }
+      }
+    },
+    {
+      "name": "rate limit",
+      "request": {
+        "method": "POST",
+        "path": "/v1/designs/push",
+        "headers": {
+          "X-MGQ-Designer": "ffeeddccbbaa99887766554433221100",
+          "X-MGQ-Features": "designer",
+          "X-MGQ-Designer-Version": "1.3.0",
+          "X-MGQ-Design-Format": "1"
+        },
+        "body": {
+          "designFormat": 1,
+          "message": "again",
+          "changes": []
+        }
+      },
+      "response": {
+        "status": 429,
+        "body": {
+          "code": "rate"
+        }
+      }
+    },
+    {
+      "name": "compiler missing",
+      "request": {
+        "method": "POST",
+        "path": "/v1/designs/builds",
+        "headers": {
+          "X-MGQ-Designer": "00112233445566778899aabbccddeeff",
+          "X-MGQ-Features": "designer",
+          "X-MGQ-Designer-Version": "1.3.0",
+          "X-MGQ-Design-Format": "1"
+        },
+        "body": {
+          "seq": 419
+        }
+      },
+      "response": {
+        "status": 503,
+        "body": {
+          "code": "compiler",
+          "message": "The compiler knows design format 0, below the minimum 1."
+        }
+      }
+    }
+  ]
+}
