@@ -2,6 +2,7 @@
 //  directory.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-21: Covered an admin's edit of a world's name, flags, creator, lock, game data and mod hashes
 //      Paulinchen  2026-10-14: Covered a Raid World's starting save from every game
 //      Paulinchen  2026-10-13: Covered whether a Classic world fights raid bosses
 //                            - Covered a Raid World's squad settings
@@ -202,11 +203,11 @@ test("a world made without them has no description, mods or game data, and takes
   assert.deepEqual([world.description, world.mods, world.data, world.strict], ["", "", "", false]);
 });
 
-test("only the creator replaces a world's game data, with data that reads as such", async () => {
+test("only the creator or an admin replaces a world's game data, with data that reads as such", async () => {
   const { directory } = newDirectory(DIRECTORY_LIMITS, [await playerIdOf(ADMIN)]);
   await directory.create(await newWorld({ data: "1:0a1b2c3d", strict: true }));
 
-  assert.equal((await directory.edit(WORLD, ADMIN, { data: "1:ffffffff" })).status, 403);
+  assert.equal((await directory.edit(WORLD, OTHER, { data: "1:ffffffff" })).status, 403);
   assert.equal((await directory.edit(WORLD, CREATOR, { data: "Not Data" })).status, 400);
   assert.equal((await directory.list()).body.worlds[0].data, "1:0a1b2c3d");
 
@@ -226,11 +227,11 @@ test("a world keeps its creator's hashes of mods outside the catalog and its mod
   assert.deepEqual([world.modHashes, world.settings], [hashes, "mod_level_cap=i:1;mod_x=b:true"]);
 });
 
-test("only the creator replaces a world's mod hashes, and the creator or an admin its mod settings", async () => {
+test("only the creator or an admin replaces a world's mod hashes and its mod settings", async () => {
   const { directory } = newDirectory(DIRECTORY_LIMITS, [await playerIdOf(ADMIN)]);
   await directory.create(await newWorld());
 
-  assert.equal((await directory.edit(WORLD, ADMIN, { modHashes: "" })).status, 403);
+  assert.equal((await directory.edit(WORLD, OTHER, { modHashes: "" })).status, 403);
   assert.equal((await directory.edit(WORLD, CREATOR, { modHashes: "x".repeat(10) })).status, 400);
   assert.equal((await directory.edit(WORLD, CREATOR, { modHashes: `Mod=${"c3".repeat(32)}`, settings: "a=i:2" })).status, 200);
 
@@ -269,6 +270,31 @@ test("the creator or an admin changes a world's seats, description and mods, and
   assert.equal((await directory.edit(WORLD, ADMIN, { mods: "" })).status, 200);
   world = (await directory.list()).body.worlds[0];
   assert.deepEqual([world.seats, world.description, world.mods], [8, "Newtext", ""]);
+});
+
+test("an admin renames a world, features or hides it, hands it to one of its players, gives it a new lock and sets its game data and strict rule", async () => {
+  const { directory } = newDirectory(DIRECTORY_LIMITS, [await playerIdOf(ADMIN)]);
+  await directory.create(await newWorld({ data: "1:0a1b2c3d" }));
+  await directory.presence(WORLD, [{ player: await playerIdOf(OTHER), name: "Other" }]);
+  const lock = { salt: "34".repeat(16), iterations: 600_000, box: "cd".repeat(40) };
+
+  assert.equal((await directory.edit(WORLD, ADMIN, { name: " \n " })).status, 400);
+  assert.equal((await directory.edit(WORLD, ADMIN, { featured: "yes" })).status, 400);
+  assert.equal((await directory.edit(WORLD, ADMIN, { open: true })).status, 400, "an open world needs a lock the empty password opens");
+  assert.equal((await directory.edit(WORLD, ADMIN, { lock: { ...lock, iterations: 5 } })).status, 400);
+  assert.equal((await directory.edit(WORLD, ADMIN, { creator: "f".repeat(32) })).status, 400, "only a player of the world becomes its creator");
+
+  const edited = await directory.edit(WORLD, ADMIN, { name: "  Featured\tWorld ", featured: true, hidden: true, strict: true, creator: await playerIdOf(OTHER), lock, open: true, data: "1:ffffffff" });
+  assert.deepEqual(edited, { status: 200, body: { edited: WORLD } });
+  const world = (await directory.list(ADMIN)).body.worlds[0];
+  assert.deepEqual([world.name, world.featured, world.hidden, world.strict, world.creator, world.open, world.data],
+                   ["FeaturedWorld", true, true, true, { id: await playerIdOf(OTHER), name: "Other" }, true, "1:ffffffff"]);
+  assert.deepEqual((await directory.lock(WORLD)).body.box, lock.box);
+  assert.equal((await directory.edit(WORLD, OTHER, { seats: 6 })).status, 200, "the new creator edits the world");
+  assert.equal((await directory.edit(WORLD, CREATOR, { seats: 6 })).status, 403, "the old creator no longer does");
+
+  await directory.edit(WORLD, OTHER, { name: "Mine", featured: false, hidden: false, creator: await playerIdOf(CREATOR) });
+  assert.deepEqual([(await directory.list(ADMIN)).body.worlds[0].name, (await directory.list(ADMIN)).body.worlds[0].featured], ["FeaturedWorld", true], "a creator's edit leaves these fields as they are");
 });
 
 test("a hidden world is listed only for its players, and found by its id", async () => {

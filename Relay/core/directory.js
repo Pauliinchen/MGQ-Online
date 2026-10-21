@@ -2,6 +2,7 @@
 //  directory.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-21: Let an admin's edit rename a world, feature or hide it, hand it to another creator, give it a new lock and set its game data, strict rule and mod hashes
 //      Paulinchen  2026-10-14: Let every game give a Raid World a starting save
 //      Paulinchen  2026-10-13: Kept a Classic world's raid bosses and told a world room after an edit that changed them
 //                            - Kept a Raid World's squad settings and told a world room after an edit that changed them
@@ -398,11 +399,13 @@ export class Directory {
    * seats, its description, the mods it needs, its mod settings, a Raid World's difficulty and
    * squad settings, whether a Classic world fights raid bosses and whether it turns other mods off.
    * Games already in the world stay when the seats become fewer.
-   * Its game data and its mods' hashes only the creator replaces, whose game they come from.
+   * Its game data and its mods' hashes only the creator or an admin replaces. Only an admin
+   * renames it, features or hides it, hands it to another of its players, gives it a new lock and
+   * sets its strict rule; for anyone else these fields stay as they are, as they always did.
    *
    * @param {string} id The world.
    * @param {unknown} key The asking player's key.
-   * @param {any} changes Whichever of `seats`, `description`, `mods`, `data`, `modHashes`, `settings`, `difficulty`, `squad`, `raidBosses` and `otherModsOff` change.
+   * @param {any} changes Whichever of `seats`, `description`, `mods`, `data`, `modHashes`, `settings`, `difficulty`, `squad`, `raidBosses` and `otherModsOff` change, and for an admin `name`, `featured`, `hidden`, `strict`, `creator` (a player's id), `lock` and `open`.
    * @returns {Promise<{status: number, body: object, difficulty?: number, squad?: {luka: boolean, formation: number, front: number, raidFront: number}, raidBosses?: boolean, modsRule?: {off: boolean, mods: string}}>} The answer, the difficulty, the squad settings and whether it fights raid bosses, which every game in the world room must be told when they changed, and whether the world turns other mods off with its mods, which every game must be told when either changed.
    */
   async edit(id, key, changes) {
@@ -413,6 +416,12 @@ export class Directory {
     }
 
     const { seats, description, mods, data, modHashes, settings, difficulty, squad, raidBosses, otherModsOff } = changes ?? {};
+    const admin = this.admins.has(player);
+    const settled = admin ? this.adminChanges(entry, changes ?? {}) : { changes: {} };
+
+    if (settled.refusal) {
+      return settled.refusal;
+    }
 
     if (data !== undefined && (typeof data !== "string" || !GAME_DATA.test(data))) {
       return badRequest("the game data must be 1 to 160 lowercase letters, digits, colons and dots");
@@ -426,8 +435,8 @@ export class Directory {
       return badRequest(`the mod settings must be a text of at most ${this.limits.maxSettingsLength} characters`);
     }
 
-    if ((data !== undefined || modHashes !== undefined) && player !== entry.creator.id) {
-      return { status: 403, body: { error: "only the world's creator may replace its game data and mod hashes" } };
+    if ((data !== undefined || modHashes !== undefined) && player !== entry.creator.id && !admin) {
+      return { status: 403, body: { error: "only the world's creator or an admin may replace its game data and mod hashes" } };
     }
 
     if (seats !== undefined && (!Number.isInteger(seats) || seats < WORLD_SEATS.min || seats > WORLD_SEATS.max)) {
@@ -486,12 +495,59 @@ export class Directory {
     if (newSquad !== undefined) entry.squad = newSquad;
     if (raidBosses !== undefined) entry.raidBosses = raidBosses;
     if (otherModsOff !== undefined) entry.otherModsOff = otherModsOff;
+    Object.assign(entry, settled.changes);
 
     const modsRule = { off: otherModsOffOf(entry), mods: entry.mods ?? "" };
     const ruleChanged = modsRule.off !== rule.off || modsRule.mods !== rule.mods;
 
     await this.store.put(entry);
     return { status: 200, body: { edited: entry.id }, ...(difficultyChanged ? { difficulty } : {}), ...(squadChanged ? { squad: newSquad } : {}), ...(raidBossesChanged ? { raidBosses } : {}), ...(ruleChanged ? { modsRule } : {}) };
+  }
+
+  /**
+   * Checks the fields of an edit only an admin changes and makes what they change of the world.
+   *
+   * @param {object} entry The world's entry.
+   * @param {any} changes The edit, see edit.
+   * @returns {{changes: object, refusal?: undefined} | {refusal: {status: number, body: object}}} The fields to set on the entry, or why the edit is refused.
+   */
+  adminChanges(entry, changes) {
+    const { name, featured, hidden, strict, creator, lock, open } = changes;
+    const flags = { featured, hidden, strict, open };
+    const set = {};
+
+    if (name !== undefined && !cleanName(name, this.limits)) {
+      return { refusal: badRequest("the world needs a name") };
+    }
+
+    for (const [field, value] of Object.entries(flags)) {
+      if (value !== undefined && typeof value !== "boolean") {
+        return { refusal: badRequest(`${field} must be true or false`) };
+      }
+    }
+
+    // The games enter an open world with the empty password, so its lock must open with it.
+    if (open !== undefined && lock === undefined) {
+      return { refusal: badRequest("open changes only together with a new lock") };
+    }
+
+    if (lock !== undefined && this.lockError(lock)) {
+      return { refusal: badRequest(this.lockError(lock)) };
+    }
+
+    if (creator !== undefined && (!isId(creator) || !entry.members[creator] || entry.bans.includes(creator))) {
+      return { refusal: badRequest("the new creator must be the id of a player of the world whom the creator did not remove") };
+    }
+
+    if (name !== undefined) set.name = cleanName(name, this.limits);
+    if (lock !== undefined) set.lock = { salt: lock.salt, iterations: lock.iterations, box: lock.box };
+    if (creator !== undefined) set.creator = { id: creator, name: entry.members[creator].name };
+
+    for (const [field, value] of Object.entries(flags)) {
+      if (value !== undefined) set[field] = value;
+    }
+
+    return { changes: set };
   }
 
   /**
@@ -989,8 +1045,6 @@ export class Directory {
    * @returns {string | null} What is wrong with it, or null.
    */
   checkNewWorld(request) {
-    const lock = request?.lock;
-
     if (!request || typeof request !== "object") return "the world must be a JSON object";
     if (!isId(request.id)) return "the id must be 32 lowercase hexadecimal characters";
     if (!cleanName(request.name, this.limits)) return "the world needs a name";
@@ -998,9 +1052,7 @@ export class Directory {
     if (!isId(request.player)) return "the creator's player key is missing";
     if (!cleanName(request.playerName, this.limits)) return "the creator needs a name";
     if (!isHash(request.authHash)) return "the auth hash must be 64 lowercase hexadecimal characters";
-    if (!lock || !isId(lock.salt)) return "the lock needs a salt of 32 lowercase hexadecimal characters";
-    if (!Number.isInteger(lock.iterations) || lock.iterations < this.limits.minIterations || lock.iterations > this.limits.maxIterations) return "the lock's iterations are out of range";
-    if (typeof lock.box !== "string" || !HEX.test(lock.box) || lock.box.length > this.limits.maxLockHex) return "the lock's box must be lowercase hexadecimal";
+    if (this.lockError(request.lock)) return this.lockError(request.lock);
     if (request.start !== undefined && typeof request.start !== "boolean") return "start must be true or false";
     if (request.hidden !== undefined && typeof request.hidden !== "boolean") return "hidden must be true or false";
     if (request.choose !== undefined && typeof request.choose !== "boolean") return "choose must be true or false";
@@ -1018,6 +1070,19 @@ export class Directory {
     if (request.squad !== undefined && !squadOk(request.squad)) return SQUAD_REFUSAL;
     if (request.raidBosses !== undefined && typeof request.raidBosses !== "boolean") return "raidBosses must be true or false";
     if (request.otherModsOff !== undefined && typeof request.otherModsOff !== "boolean") return "otherModsOff must be true or false";
+    return null;
+  }
+
+  /**
+   * Checks a world's lock: the token encrypted with a key from the password, as the games make it.
+   *
+   * @param {any} lock The lock: `salt`, `iterations` and `box`.
+   * @returns {string | null} What is wrong with it, or null.
+   */
+  lockError(lock) {
+    if (!lock || typeof lock !== "object" || !isId(lock.salt)) return "the lock needs a salt of 32 lowercase hexadecimal characters";
+    if (!Number.isInteger(lock.iterations) || lock.iterations < this.limits.minIterations || lock.iterations > this.limits.maxIterations) return "the lock's iterations are out of range";
+    if (typeof lock.box !== "string" || !HEX.test(lock.box) || lock.box.length > this.limits.maxLockHex) return "the lock's box must be lowercase hexadecimal";
     return null;
   }
 
