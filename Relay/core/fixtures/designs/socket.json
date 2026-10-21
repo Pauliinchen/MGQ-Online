@@ -1,0 +1,77 @@
+{
+  "path": "/v1/designs/socket",
+  "closeCodes": {
+    "4403": "not a designer",
+    "4426": "update"
+  },
+  "serverToClient": [
+    {
+      "op": "hello",
+      "seq": 418,
+      "you": {
+        "id": "91ed34e44d37441292523754c3a84c2b",
+        "name": "Designer A",
+        "admin": true
+      },
+      "presence": [
+        {
+          "id": "6c447a006e88d2506ad9606d12c6361e",
+          "name": "Designer B",
+          "entity": "boss:1b0a822614f83839e33ac1cbaa895e36",
+          "path": null
+        }
+      ]
+    },
+    {
+      "op": "pushed",
+      "seq": 419,
+      "by": "91ed34e44d37441292523754c3a84c2b",
+      "name": "Designer A",
+      "ids": ["boss:1b0a822614f83839e33ac1cbaa895e36", "skillDefault:3038"]
+    },
+    {
+      "op": "presence",
+      "id": "6c447a006e88d2506ad9606d12c6361e",
+      "name": "Designer B",
+      "entity": "boss:1b0a822614f83839e33ac1cbaa895e36",
+      "path": "skills.game:1515.shape",
+      "at": 1792500000
+    },
+    {
+      "op": "left",
+      "id": "6c447a006e88d2506ad9606d12c6361e"
+    },
+    {
+      "op": "build",
+      "build": {
+        "id": 12,
+        "seq": 419,
+        "status": "ok"
+      }
+    },
+    {
+      "op": "live",
+      "buildId": 12,
+      "marshalSha": "1111111111111111111111111111111111111111111111111111111111111111",
+      "runtimeSha": "2222222222222222222222222222222222222222222222222222222222222222",
+      "by": "91ed34e44d37441292523754c3a84c2b",
+      "name": "Designer A"
+    },
+    {
+      "op": "release",
+      "version": "1.3.0"
+    }
+  ],
+  "clientToServer": [
+    {
+      "op": "editing",
+      "entity": "boss:1b0a822614f83839e33ac1cbaa895e36",
+      "path": "skills.game:1515.shape"
+    },
+    {
+      "op": "editing",
+      "entity": null,
+      "path": null
+    }
+  ]
+}

@@ -2,18 +2,20 @@
 //  migration.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-21: Handed out the Raid design tables and their blobs in format 2
 //      Paulinchen  2026-10-15: Created
 //
 //----------------------------------------------------------------
 
 // Hands everything a relay keeps to its admins, so another relay can take it over: the worlds with
-// their starting saves, chats, stories and boss pools, the mod catalog with its uploads, and the
-// trades with their sealed offers. Both relays answer it through the same stores, the Cloudflare
-// relay from its objects and the Node relay from SQLite; node/migrate.js reads it into a database.
+// their starting saves, chats, stories and boss pools, the mod catalog with its uploads, the
+// trades with their sealed offers, and on the Node relay the Raid designs. Both relays answer it
+// through the same stores, the Cloudflare relay from its objects and the Node relay from SQLite;
+// node/migrate.js reads it into a database.
 
 import { playerIdOf } from "./directory.js";
 import { notFound } from "./http.js";
-import { isId } from "./ids.js";
+import { isHash, isId } from "./ids.js";
 import { VERSION } from "./relay.js";
 import { PART } from "./story.js";
 
@@ -23,9 +25,16 @@ import { PART } from "./story.js";
 export const MIGRATION_ROUTE = "migration";
 
 /**
- * The format of what the routes hand out, which an importer checks before reading anything.
+ * The format of what the routes hand out, which an importer checks before reading anything: the
+ * worlds, mods and trades, and the Raid designs under `designs`.
  */
-export const MIGRATION_FORMAT = 1;
+export const MIGRATION_FORMAT = 2;
+
+/**
+ * The format a relay that keeps no Raid designs, such as the Cloudflare relay, hands out: the
+ * worlds, mods and trades only, as before the designs.
+ */
+export const MIGRATION_FORMAT_WITHOUT_DESIGNS = 1;
 
 /**
  * Reads which part of the migration an address names.
@@ -84,7 +93,8 @@ export async function exportWorldData(story, bosses) {
  * `GET /v1/migration` lists the worlds, mods and trades; `GET /v1/migration/worlds/<id>` hands out a
  * world's entry, chat, story, checkpoints and boss pools, `.../start` its starting save;
  * `GET /v1/migration/mods/<key>` a mod's entry, `.../file` its upload; `GET /v1/migration/trades/<id>`
- * a trade's record and sealed offers.
+ * a trade's record and sealed offers; on a relay that keeps Raid designs `GET /v1/migration/designs`
+ * every design table's rows and `.../designs/blobs/<sha256>` a blob's gzipped bytes.
  *
  * @param {{directory: import("./directory.js").DirectoryStore, mods: import("./mods.js").ModStore, trades: import("./trades.js").TradeStore}} stores The relay's stores.
  * @param {(id: string) => Promise<{story: object | null, checkpoints: object[], pools: object[]}>} worldData Reads what a world keeps beside the directory, see exportWorldData.
@@ -92,9 +102,10 @@ export async function exportWorldData(story, bosses) {
  * @param {string[]} rest The address's parts after `migration`, see migrationRouteOf.
  * @param {string | null} key The player key the request names.
  * @param {(key: unknown) => Promise<boolean>} isAdmin Tells whether a key is an admin's, see adminCheck.
+ * @param {import("./designs.js").DesignStore | null} [designs] The Raid design store, none on a relay that keeps no designs, which hands out MIGRATION_FORMAT_WITHOUT_DESIGNS.
  * @returns {Promise<{status: number, body?: object, bytes?: Uint8Array | ReadableStream<Uint8Array>}>} The answer.
  */
-export async function handleMigrationRequest(stores, worldData, method, rest, key, isAdmin) {
+export async function handleMigrationRequest(stores, worldData, method, rest, key, isAdmin, designs = null) {
   if (method !== "GET") {
     return notFound("route");
   }
@@ -109,7 +120,15 @@ export async function handleMigrationRequest(stores, worldData, method, rest, ke
     const worlds = (await stores.directory.all()).map((entry) => entry.id);
     const mods = (await stores.mods.allMods()).map((entry) => entry.key);
     const trades = (await stores.trades.allTrades()).map((record) => record.id);
-    return { status: 200, body: { format: MIGRATION_FORMAT, worlds, mods, trades } };
+    return { status: 200, body: { format: designs ? MIGRATION_FORMAT : MIGRATION_FORMAT_WITHOUT_DESIGNS, worlds, mods, trades } };
+  }
+
+  if (kind === "designs" && designs) {
+    if (rest.length === 1) {
+      return { status: 200, body: { tables: await designs.exportTables() } };
+    }
+
+    return rest.length === 3 && id === "blobs" && isHash(part) ? bytesAnswer(await designs.blob(part), "blob") : notFound("route");
   }
 
   if (kind === "worlds" && rest.length <= 3) {

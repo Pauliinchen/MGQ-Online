@@ -2,6 +2,7 @@
 //  worker.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-21: Answered every Raid design route with 404, since only the Node relay keeps designs
 //      Paulinchen  2026-10-15: Handed its admins everything it keeps for another relay to take over
 //                            - Refused every battle on the battle server, which Cloudflare runs none of
 //                            - Pushed what a write changed of a keyed Raid World story and turned games without keyed stories away from such a world
@@ -62,7 +63,8 @@ import { BATTLE_LIMITS, BATTLE_REFUSAL, battleRouteOf } from "../core/battles.js
 import { DownloadGate, drainLimited, piecesStream, readLimited } from "../core/bodies.js";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
 import { DIRECTORY_LIMITS, Directory as WorldDirectory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, raidBossesText, sha256Hex, squadText } from "../core/directory.js";
-import { DRAIN_LIMITS, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, updateRefusal } from "../core/gate.js";
+import { DESIGN_LIMITS, noDesigns } from "../core/designs.js";
+import { DESIGN_ROUTE, DRAIN_LIMITS, GAME_DESIGN_ROUTE, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, updateRefusal } from "../core/gate.js";
 import { badRequest, notFound, routeIs } from "../core/http.js";
 import { isHash, isId } from "../core/ids.js";
 import { MIGRATION_ROUTE, adminCheck, exportWorldData, handleMigrationRequest, migrationRouteOf } from "../core/migration.js";
@@ -167,6 +169,13 @@ export default {
 
     if (outdated) {
       return refuseOutdated(request, outdated);
+    }
+
+    // The Raid designs live in the Node relay's database only.
+    if (routeIs(url, DESIGN_ROUTE) || routeIs(url, GAME_DESIGN_ROUTE)) {
+      await drainLimited(request.body, DESIGN_LIMITS.maxPushBytes, AbortSignal.timeout(DRAIN_LIMITS.readMs));
+      const answer = noDesigns();
+      return json(answer.status, answer.body);
     }
 
     // Cloudflare runs no battle server, so the game that starts a battle hosts it.

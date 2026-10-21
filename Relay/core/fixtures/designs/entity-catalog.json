@@ -1,0 +1,7 @@
+{
+  "id": "catalog",
+  "kind": "catalog",
+  "schema": 1,
+  "rev": 1,
+  "body": { "bossSwitch": 22, "tierTitle": "Tier {tier} Raid Boss", "noTierTitle": "Raid Boss" }
+}

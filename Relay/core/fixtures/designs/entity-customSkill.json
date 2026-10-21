@@ -1,0 +1,41 @@
+{
+  "id": "customSkill:e60606ab02f33e5bab0b8f64ec284fcd",
+  "kind": "customSkill",
+  "schema": 1,
+  "rev": 401,
+  "body": {
+    "name": "Dark Stigmata",
+    "template": 3764,
+    "description": "Darkness falls on half of the field.",
+    "iconIndex": 15,
+    "skillType": 2,
+    "scope": 1,
+    "occasion": 1,
+    "speed": 0,
+    "successRate": 100,
+    "repeats": 1,
+    "hitType": 2,
+    "animationId": 41,
+    "damage": { "type": 1, "elementId": 9, "formula": "a.mat * 3 - b.mdf", "variance": 20, "critical": false },
+    "effects": [
+      { "id": "5a6b7c8d", "code": 21, "dataId": 302, "value1": 1, "value2": 0 }
+    ],
+    "tags": [
+      { "id": "6b7c8d9e", "kind": "skillTypeBoost", "fields": { "skillType": 2, "percent": 10 } },
+      { "id": "7c8d9eaf", "kind": "raw", "text": "<old note line>" }
+    ],
+    "arena": {
+      "kind": "area",
+      "shape": { "type": "wholeGrid" },
+      "targeting": { "mode": "randomCell", "zone": { "half": "right", "side": "fixed", "cells": [[0, 0]] } },
+      "spread": { "mode": "splash", "percent": 20, "shape": { "type": "square", "size": 3 }, "rings": [100] },
+      "falloff": { "metric": "chebyshev", "rings": [100] },
+      "presentation": { "cellFlash": { "color": [40, 0, 80, 200], "frames": 10 }, "danger": [60, 0, 120, 160] },
+      "debris": { "where": "hitCells", "turns": 1, "hits": 1, "look": { "kind": "mapDefault" } },
+      "marks": { "leaves": [ { "id": "8d9eafb0", "state": 302, "chance": 100, "landsOn": "everyoneHit",
+                               "until": "nextScheduledCast", "minTurns": 1 } ] }
+    },
+    "unstoppable": false,
+    "stance": { "turns": 1, "counter": { "id": "9eafb0c1", "kind": "delayedCounter", "fields": { "skill": { "custom": "e60606ab02f33e5bab0b8f64ec284fcd" } } } }
+  }
+}

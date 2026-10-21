@@ -19,13 +19,18 @@ core/bosses.js         a Raid World's boss pools: the share of the raid HP left,
 core/bosses.test.js    tests of the boss pools and the admin routes
 core/raid_admin.js     what admins see and set right in a Raid World: counters, pools, the route lock
 core/migration.js      everything a relay keeps, handed to its admins for another relay to take over
+core/designs.js        the Raid designs several designers edit together: entities, pushes, pulls, history, the designer list (Node only)
+core/designs.test.js   tests of the designs, the contract's exchanges replayed
+core/design_store_memory.js the design store in memory
+core/test_designs.js   the contract's fixtures, canonical JSON and the states the design tests start from
+core/fixtures/designs/ a copy of the Raid Designer's contract fixtures (MGQ-Online-Raid-Designer/contract/designs)
 core/mods.js           the mod catalog's rules, over a store the platform passes in
 core/mods.test.js      tests of the mod catalog
 core/reports.js        the bug reports games send, committed to GitHub as private files with a public issue
 core/reports.test.js   tests of the bug reports, against a stand-in for GitHub
 core/http.js           the answers every router gives alike, and how each reads a JSON body
-core/gate.js           which games the relay still serves, by X-MGQ-Features and X-MGQ-Version
-core/gate.test.js      tests of the version gate
+core/gate.js           which games the relay still serves, by X-MGQ-Features and X-MGQ-Version, and the designer gate of the Raid designs
+core/gate.test.js      tests of the version gate and the designer gate
 core/bodies.js         reading a body up to its limit, sending a stored file piece by piece, and the limit on downloads at once
 core/bodies.test.js    tests of the bodies and the download limit
 core/ids.js            how ids, hashes and texts are read everywhere
@@ -37,6 +42,11 @@ node/server.js         the relay as a plain Node server, for a rented machine
 node/server.test.js    tests of the Node server over real WebSockets
 node/sqlite_store.js   the directory's, the catalog's, the trades', the stories' and the boss pools' stores over one SQLite database, for the Node server
 node/sqlite_store.test.js tests of the SQLite stores
+node/schema.js         the database's steps by PRAGMA user_version: 1 the tables above, 2 the Raid design tables
+node/schema.test.js    tests of the steps
+node/design_store_sqlite.js the design store over the same SQLite database
+node/design_store_sqlite.test.js tests of the SQLite design store
+node/designs_server.test.js tests of the design routes and their migration over HTTP
 node/migrate.js        copies everything a relay keeps into a new SQLite database and checks the copy
 node/migrate.test.js   tests of the copy from one relay to a new database
 ```
@@ -198,6 +208,27 @@ A co-op battle of two or more players goes to the relay's battle server (see [Ba
 
 Between the relay and the battle server one TCP connection per battle carries JSON lines: the relay's `serve`, `in`/`out` as players come and go, `message` (a player's message in base64), `boss` (a Raid World's boss pool) and `close`; the server's `serving` or `refused`, `send` (to a seat, -1 for every player), `boss_report` (what the battle did to a boss pool, which the relay counts as the starter's report and answers with the pool, and passes every other change of the world's pools on), `admit` (seats the battle takes in late, whose players may come onto the channel then) and `end`.
 
+### Raid designs (Node only)
+
+The Raid Designer and its `raid-designer` CLI keep one shared Raid design on the relay, split into entities (`rules`, `catalog`, `tier:<n>`, `boss:<32 hex>`, `skillDefault:<skill>`, `customSkill:<32 hex>`, `map:<n>`, `tileset:<n>`, `state:<n>`, `bossFight:<troop>`). The relay stores each entity's body as it comes and never reads it; the contract, with every body and exchange, is `docs/SERVER_FORMAT.md` in the MGQ-Online-Raid-Designer repository, and `core/fixtures/designs/` holds a copy of its fixtures, which the tests replay. The Cloudflare relay answers every route below with 404 and `code` `no_designs`.
+
+- **Designers:** a designer names its key in `X-MGQ-Designer` (32 lowercase hex characters), its version in `X-MGQ-Designer-Version` (`0.0.0-dev` for a development build) and its design format in `X-MGQ-Design-Format`. Its id is the first 32 hex characters of the SHA-256 of `mgqmp designer <key>`, never a player id. The relay serves the designers its `designers` table lists; `DESIGNER_ADMINS` (designer ids, separated by commas) makes designer admins on every start, adding the missing ones under the start of their id until they rename themselves.
+- **Gate:** an unlisted key gets 403 `not_designer`; a version below `DESIGNER_MIN_VERSION` (every version unless set) or a design format below the relay's lowest gets 426 `update` with `minimum` and `minFormat`, except on `me` and `release`; a designer who is no admin gets 403 `admin_only` on an admin route; a development build pushes only as a designer admin, or as anyone with `DESIGNER_ALLOW_DEV=1` on a local test relay (403 `dev_build` otherwise). The game gate of Versions does not apply to these routes.
+- **Push rule:** a push is all or nothing. A change whose stored rev differs from its `baseRev` (0 for an entity that must not exist yet) comes back in a 409 `conflict` with the stored entity; a lower schema than stored gets 409 `schema`; more than 20 deletes need `confirmDeletes` from a designer admin (409 `deletes`). A delete keeps a tombstone; a delete of what is missing or deleted changes nothing. Every entity of a push gets the push's `seq` as its rev, and each entity keeps its last 50 revisions. A push from a released designer raises the design format and the lowest format to its `designFormat`. Pushes are limited to 30 at once and then one every 2 seconds per designer (429 `rate`), a push to 2 MiB and 200 changes, one body to 256 KiB (413 `too_big`).
+
+| Request | What it does |
+|---|---|
+| `GET /v1/designs/me` | Any key: its `id`, and for a listed designer `name`, `designer`, `admin`, `seq`, `designFormat`, `minFormat` and `minVersion`. |
+| `PUT /v1/designs/me` | Renames a listed designer: `{name}`. |
+| `GET /v1/designs/entities?since=<seq>&after=<id>&limit=500` | The entities changed after `seq`, sorted by id, a page of up to 500, with `next` (the id to pass as `after`) while more follow; `since=0` leaves tombstones out. |
+| `POST /v1/designs/push` | `{designFormat, message, confirmDeletes?, changes: [{id, kind, schema, baseRev, body}]}`, `body` null to delete; answers `{seq, accepted: [{id, rev}]}`. |
+| `GET /v1/designs/entities/<id>/history?limit=50` | An entity's revisions, newest first. |
+| `GET /v1/designs/designers` | The designers with `online` and what each edits, for designers and relay admins. |
+| `PUT /v1/designs/designers/<id>` | Adds a designer or changes its `name` and `admin`, for designer admins and relay admins (an `X-MGQ-Player` key whose id is in `ADMINS`); a relay admin may do nothing else here. |
+| `DELETE /v1/designs/designers/<id>` | Removes a designer, for the same. |
+
+The builds, publishing, the designer socket and the designer's releases come later; until then their routes answer 404.
+
 ### World rooms
 
 - **Connect:** `wss://<relay>/v1/world/<world id>?name=<name>`, with the player's key in the header `X-MGQ-Player` and the auth key in the header `X-MGQ-Auth` (released games send them as `player=<key>&auth=<auth key>` in the address instead, which is kept for them). The relay lets the game in only if the world is in the directory, the SHA-256 of the auth key is the world's `authHash`, and the creator has not removed the player: otherwise HTTP 404, 401 or 403 before the WebSocket opens, HTTP 409 while the creator is still uploading the starting save, and HTTP 400 when the world is a Raid World and the request's header `X-MGQ-Features` (features separated by commas) does not name `raid`, which games take as final, unlike a 409, and HTTP 400 with the code `update` when the world's story is keyed and the header does not name `keys`. A game without `X-MGQ-Features`, or too old by its version, gets HTTP 400 with the code `update` before any of these checks, see Versions. Any other 400, a 403 or a 409 names why in the response header `X-MGQ-Refusal`, with the codes of the directory. Entering rooms and world rooms is limited per address, 30 at once and one more every 2 seconds (HTTP 429). When a player enters a world room again, the relay closes the player's earlier connection with 4009 and the reason `replaced`. The world's seats come from the directory; once every one is taken, the next game gets HTTP 409. After every change the room tells the directory who is in it.
@@ -252,6 +283,7 @@ Up to 0.6.6.1 relay r1 ran on the free Workers plan at `relay.mgqmp.workers.dev`
    - `GITHUB_ISSUES_TOKEN` and `GITHUB_BUG_FILES_TOKEN`, and `REPORT_ISSUES_REPO`, `REPORT_FILES_REPO` and `REPORT_FILES_BRANCH` unless the defaults fit: where the bug reports go, see above. Without both tokens the relay takes no reports.
    - `MIN_VERSION`: the lowest version a game may name, `0.6.0` unless set, see Versions.
    - `HOST` and `PORT`: where it listens, `127.0.0.1:8080` unless set.
+   - `DESIGNER_ADMINS`, `DESIGNER_MIN_VERSION` and `DESIGNER_ALLOW_DEV`: the designer admins' designer ids, the lowest Raid Designer version served and whether development builds push as anyone (`1` only on a local test relay), see Raid designs. The design tables live in the same database, which the relay brings up to its newest step (`PRAGMA user_version`) as it starts.
    - `BATTLE_SERVER`: the battle server's `host:port`, such as `127.0.0.1:8095`, which hosts the co-op battles; without it the starters host them, see Server battles. Run the battle server beside the relay as root (its sandbox needs it) with a game folder holding the game's `Data`, MGQ Online and Mod Config Remake, `BATTLE_RELAY_URL` pointing at this relay for the worlds' mods, see [BattleServer/README.md](../BattleServer/README.md).
 4. The relay writes one line per request to stdout (`<time> <method> <path> <status> <ms> <address>`, the path without its query, so no key ever appears) and every error it catches to stderr, with its stack. Under systemd both go to the journal (`journalctl -u <service>`); the service file's `StandardOutput=append:/var/log/mgq-relay/relay.log` keeps them in a file instead. The rooms and the WebSockets live in memory, so a restart ends every connection; the games connect again on their own.
 5. On its own the relay closes rooms and connections whose time is up every minute, checks the mod catalog's links every half hour, checks the mod's own releases every five minutes, and every ten minutes sweeps out worlds whose starting save never came and trades kept long enough, so the database does not grow with what nobody asks for again.
@@ -264,5 +296,5 @@ Up to 0.6.6.1 relay r1 ran on the free Workers plan at `relay.mgqmp.workers.dev`
    ```
 
 7. Run one process. The rate limits per address are counted in memory, so several processes behind one proxy would each let an address have the full allowance, and the rooms are in memory too, so two games of one room must reach the same process. One Node process carries the relay's load with room to spare.
-8. Take over what the Cloudflare relay keeps, before the new relay's first start: deploy the Worker with the migration routes, then run `MGQ_ADMIN_KEY=<an admin's player key> node node/migrate.js https://relay.mgqmp.workers.dev /var/lib/mgq-relay/relay.sqlite` on the server. Both relays answer the routes, for their admins only (403 for anyone else): `GET /v1/migration` lists the worlds, mods and trades (`format` 1), `GET /v1/migration/worlds/<id>` hands out a world's entry, chat, story, checkpoints and boss pools, `.../start` its starting save, `GET /v1/migration/mods/<key>` a mod's entry, `.../file` its upload, and `GET /v1/migration/trades/<id>` a trade's record and sealed offers. The tool writes into a database that does not exist yet, reads every record back and compares it with the relay's, and stops at the first that differs. It copies what the relay keeps at that moment, so whatever the old relay takes afterwards stays behind.
+8. Take over what the Cloudflare relay keeps, before the new relay's first start: deploy the Worker with the migration routes, then run `MGQ_ADMIN_KEY=<an admin's player key> node node/migrate.js https://relay.mgqmp.workers.dev /var/lib/mgq-relay/relay.sqlite` on the server. Both relays answer the routes, for their admins only (403 for anyone else): `GET /v1/migration` lists the worlds, mods and trades (`format` 1 on Cloudflare; `format` 2 on a Node relay, which also hands out every Raid design table under `GET /v1/migration/designs` and each blob's bytes under `.../designs/blobs/<sha256>`), `GET /v1/migration/worlds/<id>` hands out a world's entry, chat, story, checkpoints and boss pools, `.../start` its starting save, `GET /v1/migration/mods/<key>` a mod's entry, `.../file` its upload, and `GET /v1/migration/trades/<id>` a trade's record and sealed offers. The tool writes into a database that does not exist yet, reads every record back and compares it with the relay's, and stops at the first that differs. It copies what the relay keeps at that moment, so whatever the old relay takes afterwards stays behind.
 9. Point the relay list in the Multiplayer DLL at the new relay and release that version, then raise the old relay's `MIN_VERSION` to it, which turns every older version away, and copy once more right after, into a new database. A join code and a world code name their relay by id, so the id stays (`r1` moved from `relay.mgqmp.workers.dev` to `relay.mgqonline.org` in 0.6.7): every code made before reaches the new relay, and no older version reaches the old one any more.

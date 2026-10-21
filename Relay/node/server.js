@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-21: Answered the Raid designs' entity, push, history and designer routes and kept the designs beside the worlds
 //      Paulinchen  2026-10-15: Marked every player offline as it starts
 //                            - Handed its admins everything it keeps for another relay to take over
 //                            - Started co-op battles on the battle server and carried their channels
@@ -61,8 +62,13 @@ import {
   playerMessage, presenceLine, readOpen, readServerLine, serveLine, serverFrame,
 } from "../core/battles.js";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
+import { memoryDesignStore } from "../core/design_store_memory.js";
+import { DesignBook, designRouteOf, handleDesignRequest } from "../core/designs.js";
 import { Directory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, raidBossesText, squadText } from "../core/directory.js";
-import { DEFAULT_MIN_VERSION, DRAIN_LIMITS, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, updateRefusal } from "../core/gate.js";
+import {
+  DEFAULT_MIN_VERSION, DESIGN_FORMAT_HEADER, DESIGNER_HEADER, DESIGNER_VERSION_HEADER, DRAIN_LIMITS, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE,
+  WORLD_ROOM_UPDATE_STATUS, updateRefusal,
+} from "../core/gate.js";
 import { routeIs, withJson } from "../core/http.js";
 import { adminCheck, exportWorldData, handleMigrationRequest, migrationRouteOf } from "../core/migration.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
@@ -341,19 +347,27 @@ export async function clearPresence(directory) {
 }
 
 /**
- * Opens the stores the relay keeps its worlds, mods, trades and Raid Worlds' stories and boss
- * pools, and the newest release of the mod it has seen in: a SQLite database at a path, or memory without one.
+ * Opens the stores the relay keeps its worlds, mods, trades, Raid Worlds' stories and boss pools,
+ * the newest release of the mod it has seen and the Raid designs in: a SQLite database at a path,
+ * or memory without one.
  *
  * @param {string | undefined} path The database's path, as DATABASE_VARIABLE names it; empty or undefined for memory.
- * @returns {Promise<{directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, releases: import("../core/releases.js").ReleaseStore, close: () => void}>} The stores, and a way to close them.
+ * @returns {Promise<{directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, releases: import("../core/releases.js").ReleaseStore, designs: import("../core/designs.js").DesignStore, close: () => void}>} The stores, and a way to close them.
  */
 export async function openStores(path) {
   if (path) {
     const { openSqliteStores } = await import("./sqlite_store.js");
-    return openSqliteStores(path);
+    const { openSqliteDesignStore } = await import("./design_store_sqlite.js");
+    const stores = openSqliteStores(path);
+    const designs = openSqliteDesignStore(path);
+    const close = () => {
+      designs.close();
+      stores.close();
+    };
+    return { ...stores, designs, close };
   }
 
-  return { directory: memoryStore(), mods: memoryModStore(), trades: memoryTradeStore(), stories: memoryStoryStores(), bosses: memoryBossStores(), releases: memoryReleaseStore(), close: () => {} };
+  return { directory: memoryStore(), mods: memoryModStore(), trades: memoryTradeStore(), stories: memoryStoryStores(), bosses: memoryBossStores(), releases: memoryReleaseStore(), designs: memoryDesignStore(), close: () => {} };
 }
 
 /**
@@ -494,14 +508,15 @@ function headerOf(request, name) {
 /**
  * Creates a relay server, not yet listening.
  *
- * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk, minVersion?: string, releases?: ReleaseWatch | null}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log, the bug report desk, off unless given, the lowest game version served, DEFAULT_MIN_VERSION unless given, which tests change, and the watch of the mod's releases, off unless given.
- * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, check: () => void, sweep: () => Promise<void>, checkRelease: () => Promise<{version: string | null, worlds: number}>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, a world's story, a world's boss pools, a look at the deadlines, a sweep of what is kept too long, a check of the mod's releases, and a way to stop everything.
+ * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk, minVersion?: string, releases?: ReleaseWatch | null, designs?: DesignBook}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log, the bug report desk, off unless given, the lowest game version served, DEFAULT_MIN_VERSION unless given, which tests change, the watch of the mod's releases, off unless given, and the Raid designs, in memory unless given.
+ * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, designs: DesignBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, check: () => void, sweep: () => Promise<void>, checkRelease: () => Promise<{version: string | null, worlds: number}>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, the Raid designs, a world's story, a world's boss pools, a look at the deadlines, a sweep of what is kept too long, a check of the mod's releases, and a way to stop everything.
  */
 export function createRelay({
   limits = LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, directory = new Directory(memoryStore(), { clock }),
   mods = new ModCatalog(memoryModStore(), { clock }), trades = new TradeBook(memoryTradeStore(), (id) => directory.store.get(id), { clock }), stories = memoryStoryStores(),
   storyLimits = STORY_LIMITS, bosses = memoryBossStores(), bossLimits = BOSS_LIMITS, log = consoleLog, reports = new ReportDesk(reportSettingsOf({}), { clock, log: stamped(log) }),
   minVersion = DEFAULT_MIN_VERSION, releases = null, battleServer = null, battleLimits = BATTLE_LIMITS,
+  designs = new DesignBook(memoryDesignStore(), { clock, relayAdmins: directory.admins }),
 } = {}) {
   /** @type {Map<string, WorldStory>} */
   const worldStories = new Map();
@@ -642,6 +657,13 @@ export function createRelay({
       return;
     }
 
+    if (designRouteOf(url)) {
+      const answer = await answerDesigns(request, url);
+      response.writeHead(answer.status, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(answer.body));
+      return;
+    }
+
     const battleRoute = battleRouteOf(url);
 
     if (battleRoute) {
@@ -655,7 +677,8 @@ export function createRelay({
 
     if (migration) {
       const stores = { directory: directory.store, mods: mods.store, trades: trades.store };
-      const answer = await handleMigrationRequest(stores, (id) => exportWorldData(stories(id), bosses(id)), request.method, migration.rest, headerOf(request, PLAYER_HEADER), adminCheck(directory.admins));
+      const answer = await handleMigrationRequest(stores, (id) => exportWorldData(stories(id), bosses(id)), request.method, migration.rest, headerOf(request, PLAYER_HEADER), adminCheck(directory.admins),
+        designs.store);
       response.writeHead(answer.status, { "Content-Type": answer.bytes ? "application/octet-stream" : "application/json" });
       response.end(answer.bytes ?? JSON.stringify(answer.body));
       return;
@@ -759,6 +782,21 @@ export function createRelay({
     await drain(request, DRAIN_LIMITS.maxBytes, AbortSignal.timeout(DRAIN_LIMITS.readMs));
     response.writeHead(refusal.status, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ error: refusal.reason }));
+  }
+
+  /**
+   * Answers a request to the Raid designs, for the designers the relay lists and, on the designer
+   * list's routes, its admins.
+   *
+   * @param {http.IncomingMessage} request The request.
+   * @param {URL} url The request's address.
+   * @returns {Promise<{status: number, body: object}>} The answer.
+   */
+  function answerDesigns(request, url) {
+    const client = {
+      designer: headerOf(request, DESIGNER_HEADER), player: headerOf(request, PLAYER_HEADER), version: headerOf(request, DESIGNER_VERSION_HEADER), format: headerOf(request, DESIGN_FORMAT_HEADER),
+    };
+    return handleDesignRequest(designs, request.method, url, client, (limit) => readText(request, limit), (limit) => drain(request, limit, AbortSignal.timeout(DRAIN_LIMITS.readMs)));
   }
 
   /**
@@ -1622,7 +1660,7 @@ export function createRelay({
     return new Promise((resolve) => server.close(() => resolve()));
   }
 
-  return { server, directory, mods, trades, storyOf, bossesOf, battles, check, sweep, sweepBattles, checkRelease, stop };
+  return { server, directory, mods, trades, designs, storyOf, bossesOf, battles, check, sweep, sweepBattles, checkRelease, stop };
 }
 
 /**
@@ -1665,7 +1703,9 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const reports = new ReportDesk(reportSettingsOf(process.env), { log: stamped(consoleLog) });
   const releases = new ReleaseWatch(stores.releases, { repo: process.env.RELEASE_REPO || RELEASE_REPO });
   const battleServer = battleServerOf(process.env[BATTLE_SERVER_VARIABLE]);
-  const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports, minVersion: process.env.MIN_VERSION, releases, battleServer });
+  const designs = new DesignBook(stores.designs, { minVersion: process.env.DESIGNER_MIN_VERSION, allowDev: process.env.DESIGNER_ALLOW_DEV === "1", relayAdmins: directory.admins });
+  await designs.seedAdmins(parseAdmins(process.env.DESIGNER_ADMINS));
+  const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports, minVersion: process.env.MIN_VERSION, releases, battleServer, designs });
 
   relay.server.listen(port, host, () => console.log(`${new Date().toISOString()} relay listening on ${host}:${port}, ${database ? `database ${database}` : "everything in memory"}, ${battleServer ? `battle server ${battleServer.host}:${battleServer.port}` : "no battle server"}, ${offline} world(s) with players online marked empty`));
 
