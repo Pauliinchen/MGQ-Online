@@ -2,6 +2,7 @@
 //  BattleEvent.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Named the main target on unit hits
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -90,6 +91,7 @@ public sealed record AfterCastEvent(int Turn, string CastId, int Enemy, SkillRef
 /// <param name="HeldBefore">The states the unit held before this cast.</param>
 /// <param name="Leaves">The marks the skill leaves.</param>
 /// <param name="RootActionId">The action at the root of the cast's follow-up chain, or null.</param>
+/// <param name="MainTarget">Whether the unit is the cast's main target.</param>
 public sealed record UnitHitEvent(
     int Turn,
     string CastId,
@@ -99,7 +101,8 @@ public sealed record UnitHitEvent(
     GridCell Cell,
     IReadOnlyList<int> HeldBefore,
     IReadOnlyList<int> Leaves,
-    string? RootActionId = null) : BattleEvent(Turn);
+    string? RootActionId = null,
+    bool MainTarget = false) : BattleEvent(Turn);
 
 /// <summary>
 /// A party hit landed on a boss enemy.

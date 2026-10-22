@@ -2,6 +2,7 @@
 //  TriggerMatcher.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Matched unit hits by the main target
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -54,7 +55,8 @@ internal static class TriggerMatcher
         && HasType(trigger.SkillType, book.SkillTypesOf(cast.Skill));
 
     /// <summary>
-    /// Matches a unit hit trigger against the marks the unit held before the cast.
+    /// Matches a unit hit trigger against the marks the unit held before the cast and whether it is
+    /// the cast's main target.
     /// </summary>
     /// <param name="trigger">The trigger.</param>
     /// <param name="hit">The hit.</param>
@@ -62,7 +64,8 @@ internal static class TriggerMatcher
     private static bool MatchesUnitHit(UnitHitTrigger trigger, UnitHitEvent hit) =>
         Same(trigger.BySkill, hit.Skill)
         && (trigger.Holding is not int holding || hit.HeldBefore.Contains(holding))
-        && (trigger.HitByLeaving is not int leaving || hit.Leaves.Contains(leaving));
+        && (trigger.HitByLeaving is not int leaving || hit.Leaves.Contains(leaving))
+        && (trigger.MainTarget is not bool main || hit.MainTarget == main);
 
     /// <summary>
     /// Matches a boss hit trigger.

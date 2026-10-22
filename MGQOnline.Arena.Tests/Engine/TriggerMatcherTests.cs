@@ -2,10 +2,12 @@
 //  TriggerMatcherTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Tested the main target filter of unit hits
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
 
+using System.Linq;
 using MGQOnline.Arena.Engine;
 using MGQOnline.Arena.Events;
 using MGQOnline.Arena.Model;
@@ -99,6 +101,20 @@ public sealed class TriggerMatcherTests
         Assert.True(Matches(new UnitHitTrigger(Holding: Light, HitByLeaving: Dark), hit));
         Assert.False(Matches(new UnitHitTrigger(Holding: Dark, HitByLeaving: Dark), hit));
         Assert.False(Matches(new UnitHitTrigger(Holding: Light, HitByLeaving: Light), hit));
+    }
+
+    /// <summary>
+    /// Matches a unit hit by whether the unit is the cast's main target; no filter matches both.
+    /// </summary>
+    [Fact]
+    public void MatchesUnitHitsByTheMainTarget()
+    {
+        UnitHitEvent main = Hit(5, "c3", DarkStigmata, 1) with { MainTarget = true };
+        UnitHitEvent other = Hit(5, "c3", DarkStigmata, 2);
+
+        Assert.Equal([true, false], new[] { main, other }.Select(hit => Matches(new UnitHitTrigger(MainTarget: true), hit)));
+        Assert.Equal([false, true], new[] { main, other }.Select(hit => Matches(new UnitHitTrigger(MainTarget: false), hit)));
+        Assert.Equal([true, true], new[] { main, other }.Select(hit => Matches(new UnitHitTrigger(BySkill: DarkStigmata), hit)));
     }
 
     /// <summary>

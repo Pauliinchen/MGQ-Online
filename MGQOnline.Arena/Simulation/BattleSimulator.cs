@@ -2,6 +2,7 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Named the main target on unit hits
 //      Paulinchen  2026-10-21: Ran the rules through the rule engine and the casts through the casting part
 //                            - Created
 //
@@ -617,7 +618,8 @@ public sealed partial class BattleSimulator
 
     /// <summary>
     /// Resolves one cast: its debris, its damage, its payload states, a unit hit event per unit hit
-    /// with the states that unit held before the cast, the falls, and the units its debris pushed.
+    /// with the states that unit held before the cast and whether it is the main target, the falls,
+    /// and the units its debris pushed.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="entry">The cast.</param>
@@ -658,9 +660,9 @@ public sealed partial class BattleSimulator
             }
 
             IReadOnlyList<int> leaves = [.. skill.Marks?.Leaves.Select(leave => leave.State) ?? []];
-            foreach (int seat in seats.Where(seat => !state.Units[seat].Fallen))
+            foreach (CastHit hit in hits.Where(hit => !state.Units[hit.Seat].Fallen))
             {
-                Raise(state, new UnitHitEvent(state.Turn, entry.CastId, entry.Enemy, entry.Skill, seat, state.Units[seat].Cell, heldBefore[seat], leaves, entry.RootActionId));
+                Raise(state, new UnitHitEvent(state.Turn, entry.CastId, entry.Enemy, entry.Skill, hit.Seat, state.Units[hit.Seat].Cell, heldBefore[hit.Seat], leaves, entry.RootActionId, hit.MainTarget));
             }
 
             foreach (int seat in fell)

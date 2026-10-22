@@ -2,6 +2,7 @@
 //  ResolveTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Took the main target in the golden log hash
 //      Paulinchen  2026-10-21: Read rule fires from the battle's ledger and marks from their clocks
 //                            - Created
 //
@@ -29,7 +30,7 @@ public sealed class ResolveTests
     /// <summary>
     /// The golden hash of the reference battle's log through the arena's casting part and rule engine.
     /// </summary>
-    private const string GoldenLogSha256 = "af003093c2229418892deaa02f5486371e62ceec115e36aaaedd3b421863220b";
+    private const string GoldenLogSha256 = "ee11af59261cbd8140ef6389f678a811f2fca44917804d16ac3ad541202ab046";
 
     /// <summary>
     /// The cells of the halves battle's units: four on each half.

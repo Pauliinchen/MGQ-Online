@@ -2,6 +2,7 @@
 //  ArenaCasts.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Flagged the main target of each unit hit
 //      Paulinchen  2026-10-21: Replaced the casting interface with the casting part over the cast resolver
 //                            - Created
 //
@@ -71,7 +72,7 @@ public sealed class ArenaCasts : ICastResolver
         foreach (int seat in outcome.HitSeats)
         {
             bool lands = skill.Spread.StatesLandOn == StateLanding.EveryoneHit || main[seat];
-            result.Add(new CastHit(seat, damage[seat], lands ? StatesLanding(skill, state.Units[seat], hits) : []));
+            result.Add(new CastHit(seat, damage[seat], lands ? StatesLanding(skill, state.Units[seat], hits) : [], main[seat]));
         }
 
         return new CastResult(result, outcome.DebrisAfter, outcome.Debris.Placed) { Pushes = outcome.Debris.Pushes };
@@ -226,4 +227,5 @@ public sealed record CastResult(IReadOnlyList<CastHit> Hits, DebrisField DebrisA
 /// <param name="Seat">The unit's seat.</param>
 /// <param name="Damage">The damage, below 0 for a heal.</param>
 /// <param name="States">The states the skill's payload lands on it.</param>
-public sealed record CastHit(int Seat, long Damage, IReadOnlyList<int> States);
+/// <param name="MainTarget">Whether it is the cast's main target in a pulse, where states that land on the main target only land.</param>
+public sealed record CastHit(int Seat, long Damage, IReadOnlyList<int> States, bool MainTarget = false);

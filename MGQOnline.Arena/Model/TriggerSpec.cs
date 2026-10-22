@@ -2,6 +2,7 @@
 //  TriggerSpec.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Added the main target filter of unit hits
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -62,7 +63,8 @@ public sealed record AfterCastTrigger(string? CastOfAction = null, SkillRef? Ski
 /// <param name="BySkill">The skill that must hit, or null for any.</param>
 /// <param name="Holding">The state the unit must hold from before the cast, or null for any.</param>
 /// <param name="HitByLeaving">The state the hitting skill must leave, or null for any.</param>
-public sealed record UnitHitTrigger(SkillRef? BySkill = null, int? Holding = null, int? HitByLeaving = null) : TriggerSpec;
+/// <param name="MainTarget">True for the cast's main target only, false for everyone else it hits, null for anyone.</param>
+public sealed record UnitHitTrigger(SkillRef? BySkill = null, int? Holding = null, int? HitByLeaving = null, bool? MainTarget = null) : TriggerSpec;
 
 /// <summary>
 /// Fires when a party hit lands on the boss; every filter set must match.
