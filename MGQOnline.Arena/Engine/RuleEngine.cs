@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-23: Matched the fight rules once per event and the enemy rules by enemy slot
+//                            - Queued each effect with its place in its rule
 //      Paulinchen  2026-10-22: Ran the effects of a rule the battle fires itself
 //                            - Logged the seat a rule fired for
 //      Paulinchen  2026-10-21: Dropped the effect queue seam, since the engine runs its effects itself
@@ -250,9 +251,9 @@ public sealed class RuleEngine
     {
         foreach (FiredRule rule in fired)
         {
-            foreach (EffectSpec effect in rule.Rule.Effects)
+            for (int i = 0; i < rule.Rule.Effects.Count; i++)
             {
-                effects.Enqueue(new QueuedEffect(rule, effect));
+                effects.Enqueue(new QueuedEffect(rule, rule.Rule.Effects[i], i));
             }
         }
     }

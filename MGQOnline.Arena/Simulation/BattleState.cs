@@ -2,7 +2,8 @@
 //  BattleState.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Kept the enemies that join, leave or transform, and the rules of the whole boss
+//      Paulinchen  2026-10-23: Kept the damage reductions of units and enemies
+//                            - Kept the enemies that join, leave or transform, and the rules of the whole boss
 //      Paulinchen  2026-10-22: Kept the hazards and their fires
 //                            - Named the rest a planned cast skipped
 //      Paulinchen  2026-10-21: Kept the rule ledger, the rule engine, the debris field and mark clocks
@@ -333,6 +334,11 @@ public sealed class UnitState
     /// Gets its state rates in percent by state id.
     /// </summary>
     public IReadOnlyDictionary<int, double> StateRates { get; }
+
+    /// <summary>
+    /// Gets the damage reductions it holds, one per application.
+    /// </summary>
+    public List<DamageReductionInstance> Reductions { get; } = [];
 }
 
 /// <summary>
@@ -444,6 +450,11 @@ public sealed class EnemyState
     public HashSet<int> HpThresholdsCrossed { get; } = [];
 
     /// <summary>
+    /// Gets the damage reductions it holds, one per application.
+    /// </summary>
+    public List<DamageReductionInstance> Reductions { get; } = [];
+
+    /// <summary>
     /// Gets whether it fell.
     /// </summary>
     public bool Fallen => Hp <= 0;
@@ -469,6 +480,14 @@ public sealed class EnemyState
         MaxMp = slot.Stats.Mmp;
     }
 }
+
+/// <summary>
+/// One application of a damage reduction.
+/// </summary>
+/// <param name="Source">The effect it comes from.</param>
+/// <param name="Percent">Its percent.</param>
+/// <param name="UntilTurn">The turn whose end removes it, or null until a rule removes it.</param>
+public sealed record DamageReductionInstance(string Source, int Percent, int? UntilTurn);
 
 /// <summary>
 /// Where a state instance comes from.

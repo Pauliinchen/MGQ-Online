@@ -2,7 +2,8 @@
 //  EffectSpec.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Added the enemy joins, leaves and transforms effects
+//      Paulinchen  2026-10-23: Added the damage reduction and remove damage reduction effects
+//                            - Added the enemy joins, leaves and transforms effects
 //      Paulinchen  2026-10-22: Added the place hazard effect
 //                            - Added the clear debuffs effect
 //      Paulinchen  2026-10-21: Created
@@ -28,6 +29,8 @@ namespace MGQOnline.Arena.Model;
 [JsonDerivedType(typeof(EnemyJoinsEffect), "enemyJoins")]
 [JsonDerivedType(typeof(EnemyLeavesEffect), "enemyLeaves")]
 [JsonDerivedType(typeof(EnemyTransformsEffect), "enemyTransforms")]
+[JsonDerivedType(typeof(DamageReductionEffect), "damageReduction")]
+[JsonDerivedType(typeof(RemoveDamageReductionEffect), "removeDamageReduction")]
 public abstract record EffectSpec;
 
 /// <summary>
@@ -120,3 +123,18 @@ public sealed record EnemyLeavesEffect(string? Slot = null) : EffectSpec;
 /// <param name="KeepHpRatio">Whether HP and MP keep their ratio of the max; otherwise they are cut to the new max, as the game's transform does.</param>
 /// <param name="Slot">The slot whose every standing enemy transforms, or null for the rule's enemy, which may have fallen.</param>
 public sealed record EnemyTransformsEffect(string Into, bool KeepHpRatio, string? Slot = null) : EffectSpec;
+
+/// <summary>
+/// Reduces the damage whom it names takes by a percent, applied after everything else that changes the damage.
+/// </summary>
+/// <remarks>The same effect firing again adds up to at most 100 %; different effects do not combine, the highest total counts.</remarks>
+/// <param name="To">Who gets it: the rule's enemy or characters.</param>
+/// <param name="Percent">The percent, 0 to 100.</param>
+/// <param name="Turns">The turn ends it lasts, counted from the turn after it lands; null, or 0 and below, until removed.</param>
+public sealed record DamageReductionEffect(RuleTarget To, int Percent, int? Turns = null) : EffectSpec;
+
+/// <summary>
+/// Removes every damage reduction whom it names holds.
+/// </summary>
+/// <param name="From">Who loses them.</param>
+public sealed record RemoveDamageReductionEffect(RuleTarget From) : EffectSpec;

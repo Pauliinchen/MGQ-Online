@@ -2,7 +2,8 @@
 //  BattleSimulator.Hazards.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Left out the hazard effects that change the fight's enemies
+//      Paulinchen  2026-10-23: Left out the hazard effects that change the boss's damage reductions
+//                            - Left out the hazard effects that change the fight's enemies
 //      Paulinchen  2026-10-22: Created
 //
 //----------------------------------------------------------------
@@ -237,10 +238,12 @@ public sealed partial class BattleSimulator
     /// Tells whether an effect acts on the boss, which hazards never affect.
     /// </summary>
     /// <param name="effect">The effect.</param>
-    /// <returns>Whether it gives, takes, damages or clears the boss, changes its action points, or brings enemies in, takes them out or transforms them.</returns>
+    /// <returns>Whether it gives, takes, damages, clears or shields the boss, changes its action points, or brings enemies in, takes them out or transforms them.</returns>
     private static bool ActsOnBoss(EffectSpec effect) => effect switch
     {
         EnemyJoinsEffect or EnemyLeavesEffect or EnemyTransformsEffect => true,
+        DamageReductionEffect reduction => reduction.To == RuleTarget.Boss,
+        RemoveDamageReductionEffect remove => remove.From == RuleTarget.Boss,
         AddStateEffect add => add.To == RuleTarget.Boss,
         RemoveStateEffect remove => remove.From == RuleTarget.Boss,
         DamageEffect damage => damage.To == RuleTarget.Boss,

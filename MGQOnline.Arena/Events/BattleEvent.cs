@@ -2,7 +2,8 @@
 //  BattleEvent.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Added the enemy fell, all enemies fell, joined, left and transformed events
+//      Paulinchen  2026-10-23: Added the damage reduction added, expired and removed events
+//                            - Added the enemy fell, all enemies fell, joined, left and transformed events
 //      Paulinchen  2026-10-22: Added the hazard placed, fired and expired events
 //                            - Added the debuffs cleared event
 //                            - Added the rest skipped event
@@ -40,6 +41,9 @@ namespace MGQOnline.Arena.Events;
 [JsonDerivedType(typeof(EnemyJoinedEvent), "enemyJoined")]
 [JsonDerivedType(typeof(EnemyLeftEvent), "enemyLeft")]
 [JsonDerivedType(typeof(EnemyTransformedEvent), "enemyTransformed")]
+[JsonDerivedType(typeof(DamageReductionAddedEvent), "damageReductionAdded")]
+[JsonDerivedType(typeof(DamageReductionExpiredEvent), "damageReductionExpired")]
+[JsonDerivedType(typeof(DamageReductionRemovedEvent), "damageReductionRemoved")]
 [JsonDerivedType(typeof(CastDisabledEvent), "castDisabled")]
 [JsonDerivedType(typeof(CastResolvedEvent), "castResolved")]
 [JsonDerivedType(typeof(DamageEvent), "damage")]
@@ -209,6 +213,37 @@ public sealed record EnemyLeftEvent(int Turn, int Enemy, string Slot, int EnemyI
 /// <param name="HpAfter">Its HP afterwards.</param>
 /// <param name="RuleId">The rule that transformed it, or null.</param>
 public sealed record EnemyTransformedEvent(int Turn, int Enemy, string From, string Into, int EnemyId, long HpAfter, string? RuleId = null) : BattleEvent(Turn);
+
+/// <summary>
+/// A damage reduction landed on a unit or an enemy.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="On">Who holds it.</param>
+/// <param name="Index">The unit's seat or the enemy's index.</param>
+/// <param name="Source">The effect it comes from, as <see cref="Engine.DamageReductions.SourceOf"/> names it.</param>
+/// <param name="Percent">Its percent.</param>
+/// <param name="Effective">The reduction the holder takes damage with afterwards.</param>
+/// <param name="Turns">The turn ends it lasts, or null until removed.</param>
+public sealed record DamageReductionAddedEvent(int Turn, StateHolder On, int Index, string Source, int Percent, int Effective, int? Turns = null) : BattleEvent(Turn);
+
+/// <summary>
+/// A damage reduction ran out of turns.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="On">Who held it.</param>
+/// <param name="Index">The unit's seat or the enemy's index.</param>
+/// <param name="Source">The effect it came from.</param>
+/// <param name="Percent">Its percent.</param>
+public sealed record DamageReductionExpiredEvent(int Turn, StateHolder On, int Index, string Source, int Percent) : BattleEvent(Turn);
+
+/// <summary>
+/// A rule removed every damage reduction of a unit or an enemy.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="On">Who held them.</param>
+/// <param name="Index">The unit's seat or the enemy's index.</param>
+/// <param name="RuleId">The rule that removed them, or null.</param>
+public sealed record DamageReductionRemovedEvent(int Turn, StateHolder On, int Index, string? RuleId = null) : BattleEvent(Turn);
 
 /// <summary>
 /// A planned cast was disabled.

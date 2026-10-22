@@ -2,7 +2,8 @@
 //  FakeRuleContext.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Brought enemies in, took them out and transformed them
+//      Paulinchen  2026-10-23: Recorded damage reductions
+//                            - Brought enemies in, took them out and transformed them
 //                            - Handed the debris placed back as cells
 //      Paulinchen  2026-10-22: Recorded the hazards placed
 //                            - Listed the skills of a cast chain
@@ -132,6 +133,11 @@ internal sealed class FakeRuleContext : IRuleContext
     /// Gets the debris placed.
     /// </summary>
     public List<(int Enemy, SkillDebrisSpec Debris, string? CastId)> Debris { get; } = [];
+
+    /// <summary>
+    /// Gets the damage reductions held.
+    /// </summary>
+    public List<(StateHolder Holder, int Index, string Source, int Percent)> Reductions { get; } = [];
 
     /// <summary>
     /// Gets the hazards placed.
@@ -273,11 +279,21 @@ internal sealed class FakeRuleContext : IRuleContext
             crossed.AddRange(percents.Where(percent => after * 100 < percent * MaxHp && _crossed.Add((index, percent))));
         }
 
-        return new DamageResult(after, after == 0, crossed);
+        return new DamageResult(after, after == 0, crossed, amount);
     }
 
     /// <inheritdoc />
     public void AddAp(int enemy, int amount, ApTurn turn) => ApChanges.Add((enemy, amount, turn));
+
+    /// <inheritdoc />
+    public int? AddDamageReduction(StateHolder holder, int index, string source, int percent, int? turns)
+    {
+        Reductions.Add((holder, index, source, percent));
+        return DamageReductions.Effective(Reductions.Where(held => held.Holder == holder && held.Index == index).Select(held => (held.Source, held.Percent)));
+    }
+
+    /// <inheritdoc />
+    public bool RemoveDamageReductions(StateHolder holder, int index) => Reductions.RemoveAll(held => held.Holder == holder && held.Index == index) > 0;
 
     /// <inheritdoc />
     public IReadOnlyList<DebrisCell> PlaceDebris(int enemy, SkillDebrisSpec debris, string? castId)

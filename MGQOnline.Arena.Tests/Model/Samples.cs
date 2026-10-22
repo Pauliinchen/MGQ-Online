@@ -2,7 +2,8 @@
 //  Samples.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Gave the boss its event battle, enemy slots, a raid boss enemy and a reserve, and added fight change rules and events
+//      Paulinchen  2026-10-23: Added damage reduction effects and events
+//                            - Gave the boss its event battle, enemy slots, a raid boss enemy and a reserve, and added fight change rules and events
 //                            - Added debris types, the standard start debris and a boss's start debris
 //      Paulinchen  2026-10-22: Added a hazard type, its sources, its effect and its events
 //                            - Added a not in chain condition
@@ -158,7 +159,7 @@ internal static class Samples
             new RuleOrigin(PresetKind.Advanced, BossId, "6a7b8c9d"),
             new StateAddedTrigger(29, StateHolder.Unit),
             [],
-            [new AddStateEffect(RuleTarget.HitUnits, 30, Turns: 1)],
+            [new AddStateEffect(RuleTarget.HitUnits, 30, Turns: 1), new DamageReductionEffect(RuleTarget.TriggerUnit, 30, 2), new RemoveDamageReductionEffect(RuleTarget.Boss)],
             RuleLimits.None,
             null),
         Simple("1a1a1a1a", new BattleStartTrigger()),
@@ -445,9 +446,12 @@ internal static class Samples
         new EnemyJoinedEvent(1, 1, ReserveSlot, 302, true, "9f0a1b2c"),
         new EnemyTransformedEvent(1, 1, ReserveSlot, FirstSlot, 301, 2_500_000, "8e9f0a1b"),
         new EnemyLeftEvent(1, 1, FirstSlot, 301, "8e9f0a1b"),
+        new DamageReductionAddedEvent(1, StateHolder.Unit, 2, "6a7b8c9d#1", 30, 30, 2),
+        new DamageReductionRemovedEvent(1, StateHolder.Boss, 0, "6a7b8c9d"),
         new WarningEvent(1, WarningEvent.RuleLoop, "0d9e8f7a"),
         new TurnEndEvent(1),
         new HazardExpiredEvent(1, FireId, [new GridCell(7, 2)], HazardEnd.Lifetime),
+        new DamageReductionExpiredEvent(1, StateHolder.Unit, 2, "6a7b8c9d#1", 30),
     ];
 
     /// <summary>

@@ -2,7 +2,8 @@
 //  BattleSimulator.Rules.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Brought enemies in, took them out and transformed them by a rule
+//      Paulinchen  2026-10-23: Added and removed damage reductions and reduced every damage by them last
+//                            - Brought enemies in, took them out and transformed them by a rule
 //                            - Decided the victory once the rules of the last fall ran
 //                            - Handed the debris a rule placed back with its hits
 //      Paulinchen  2026-10-22: Placed hazards by a rule
@@ -137,10 +138,10 @@ public sealed partial class BattleSimulator
     }
 
     /// <summary>
-    /// Deals damage to a unit without logging it.
+    /// Deals damage to a unit without logging it, reduced last by its damage reduction.
     /// </summary>
     /// <param name="unit">The unit.</param>
-    /// <param name="amount">The damage, below 0 for a heal.</param>
+    /// <param name="amount">The damage after everything else that changes it, below 0 for a heal.</param>
     /// <returns>What it did, or null for a fallen unit.</returns>
     private static DamageResult? DamageUnit(UnitState unit, long amount)
     {
@@ -149,23 +150,71 @@ public sealed partial class BattleSimulator
             return null;
         }
 
-        unit.Hp = (int)Math.Clamp(unit.Hp - amount, 0, unit.MaxHp);
+        long dealt = DamageReductions.Reduce(amount, EffectiveReduction(unit.Reductions));
+        unit.Hp = (int)Math.Clamp(unit.Hp - dealt, 0, unit.MaxHp);
         unit.Fallen = unit.Hp == 0;
-        return new DamageResult(unit.Hp, unit.Fallen, []);
+        return new DamageResult(unit.Hp, unit.Fallen, [], dealt);
     }
 
     /// <summary>
-    /// Deals damage to a boss enemy without logging it; its fall is raised by the caller.
+    /// Deals damage to a boss enemy without logging it, reduced last by its damage reduction; its fall
+    /// is raised by the caller.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="enemy">The enemy.</param>
-    /// <param name="amount">The damage, below 0 for a heal.</param>
+    /// <param name="amount">The damage after everything else that changes it, below 0 for a heal.</param>
     /// <returns>What it did, with the HP percents of the enemy's rules it crossed below for the first time.</returns>
     private static DamageResult DamageEnemy(BattleState state, EnemyState enemy, long amount)
     {
-        enemy.Hp = Math.Clamp(enemy.Hp - amount, 0, enemy.MaxHp);
+        long dealt = DamageReductions.Reduce(amount, EffectiveReduction(enemy.Reductions));
+        enemy.Hp = Math.Clamp(enemy.Hp - dealt, 0, enemy.MaxHp);
         List<int> crossed = [.. state.Engine.Book.HpThresholdsOf(enemy.Slot).Where(percent => enemy.Hp * 100 < percent * enemy.MaxHp && enemy.HpThresholdsCrossed.Add(percent))];
-        return new DamageResult(enemy.Hp, enemy.Fallen, crossed);
+        return new DamageResult(enemy.Hp, enemy.Fallen, crossed, dealt);
+    }
+
+    /// <summary>
+    /// Works out the reduction a holder takes damage with.
+    /// </summary>
+    /// <param name="reductions">The holder's damage reductions.</param>
+    /// <returns>The effective percent.</returns>
+    private static int EffectiveReduction(List<DamageReductionInstance> reductions) =>
+        reductions.Count == 0 ? 0 : DamageReductions.Effective(reductions.Select(reduction => (reduction.Source, reduction.Percent)));
+
+    /// <summary>
+    /// Finds the damage reductions a unit or an enemy holds.
+    /// </summary>
+    /// <param name="state">The battle.</param>
+    /// <param name="holder">Whether a unit or an enemy is meant.</param>
+    /// <param name="index">The unit's seat or the enemy's index.</param>
+    /// <param name="living">Whether a fallen unit or enemy counts as none.</param>
+    /// <returns>The reductions, or null for no such holder.</returns>
+    private static List<DamageReductionInstance>? ReductionsOf(BattleState state, StateHolder holder, int index, bool living)
+    {
+        if (holder == StateHolder.Unit)
+        {
+            return index >= 0 && index < state.Units.Count && !(living && state.Units[index].Fallen) ? state.Units[index].Reductions : null;
+        }
+
+        return state.Enemies.Find(enemy => enemy.Index == index && !(living && enemy.Fallen))?.Reductions;
+    }
+
+    /// <summary>
+    /// Ends the turn of the damage reductions: those whose last turn this is go, each logged.
+    /// </summary>
+    /// <param name="state">The battle, at its turn end.</param>
+    private static void ExpireReductions(BattleState state)
+    {
+        IEnumerable<(StateHolder Holder, int Index, List<DamageReductionInstance> Reductions)> holders =
+            state.Units.Select(unit => (StateHolder.Unit, unit.Seat, unit.Reductions))
+                .Concat(state.Enemies.Select(enemy => (StateHolder.Boss, enemy.Index, enemy.Reductions)));
+        foreach ((StateHolder holder, int index, List<DamageReductionInstance> reductions) in holders)
+        {
+            foreach (DamageReductionInstance gone in reductions.Where(reduction => reduction.UntilTurn <= state.Turn).ToList())
+            {
+                reductions.Remove(gone);
+                Log(state, new DamageReductionExpiredEvent(state.Turn, holder, index, gone.Source, gone.Percent));
+            }
+        }
     }
 
     /// <summary>
@@ -316,6 +365,27 @@ public sealed partial class BattleSimulator
             }
 
             return state.Enemies.Find(enemy => enemy.Index == index) is { Fallen: false } target ? DamageEnemy(state, target, amount) : null;
+        }
+
+        /// <inheritdoc />
+        public int? AddDamageReduction(StateHolder holder, int index, string source, int percent, int? turns)
+        {
+            if (ReductionsOf(state, holder, index, living: true) is not List<DamageReductionInstance> reductions)
+            {
+                return null;
+            }
+
+            reductions.Add(new DamageReductionInstance(source, percent, turns is int lasts ? state.Turn + lasts : null));
+            return EffectiveReduction(reductions);
+        }
+
+        /// <inheritdoc />
+        public bool RemoveDamageReductions(StateHolder holder, int index)
+        {
+            List<DamageReductionInstance>? reductions = ReductionsOf(state, holder, index, living: false);
+            bool held = reductions is { Count: > 0 };
+            reductions?.Clear();
+            return held;
         }
 
         /// <inheritdoc />

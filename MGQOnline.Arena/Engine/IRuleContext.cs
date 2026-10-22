@@ -2,7 +2,8 @@
 //  IRuleContext.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Brought enemies in, took them out and transformed them
+//      Paulinchen  2026-10-23: Added and removed damage reductions
+//                            - Brought enemies in, took them out and transformed them
 //                            - Handed the debris placed back as cells with their hits
 //      Paulinchen  2026-10-22: Placed hazards
 //                            - Listed the skills of a cast chain
@@ -169,13 +170,32 @@ public interface IRuleContext
     void SetClock(StateHolder holder, int index, int state, MarkClock clock);
 
     /// <summary>
-    /// Deals damage.
+    /// Deals damage, reduced last by the receiver's damage reduction.
     /// </summary>
     /// <param name="holder">Whether a unit or an enemy takes it.</param>
     /// <param name="index">The unit's seat or the enemy's index.</param>
     /// <param name="amount">The damage, at least 0.</param>
-    /// <returns>What it did, or null when the receiver cannot take damage, such as a fallen unit.</returns>
+    /// <returns>What it did with the damage dealt, or null when the receiver cannot take damage, such as a fallen unit.</returns>
     DamageResult? Damage(StateHolder holder, int index, long amount);
+
+    /// <summary>
+    /// Gives a unit or an enemy a damage reduction of its own duration.
+    /// </summary>
+    /// <param name="holder">Whether a unit or an enemy is meant.</param>
+    /// <param name="index">The unit's seat or the enemy's index.</param>
+    /// <param name="source">The effect it comes from.</param>
+    /// <param name="percent">The percent, 0 to 100.</param>
+    /// <param name="turns">The turn ends it lasts, counted from the turn after it lands, or null until removed.</param>
+    /// <returns>The reduction the holder takes damage with afterwards; null for a fallen unit or an enemy not standing.</returns>
+    int? AddDamageReduction(StateHolder holder, int index, string source, int percent, int? turns);
+
+    /// <summary>
+    /// Removes every damage reduction of a unit or an enemy.
+    /// </summary>
+    /// <param name="holder">Whether a unit or an enemy is meant.</param>
+    /// <param name="index">The unit's seat or the enemy's index.</param>
+    /// <returns>Whether it held any.</returns>
+    bool RemoveDamageReductions(StateHolder holder, int index);
 
     /// <summary>
     /// Changes an enemy's action points.

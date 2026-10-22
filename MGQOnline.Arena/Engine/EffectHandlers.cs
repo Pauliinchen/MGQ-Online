@@ -2,7 +2,9 @@
 //  EffectHandlers.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Brought enemies in, took them out and transformed them by a rule
+//      Paulinchen  2026-10-23: Added and removed damage reductions by a rule
+//                            - Logged the damage a rule dealt after the damage reduction
+//                            - Brought enemies in, took them out and transformed them by a rule
 //                            - Raised the falls of the enemies a rule felled
 //                            - Logged the hits of the debris a rule placed
 //      Paulinchen  2026-10-22: Placed hazards by a rule
@@ -54,6 +56,8 @@ internal static class EffectHandlers
         EnemyJoinsEffect join => Join(context, queued.Fired, join),
         EnemyLeavesEffect leave => Leave(context, queued.Fired, leave),
         EnemyTransformsEffect transform => Transform(context, queued.Fired, transform),
+        DamageReductionEffect reduction => ReduceDamage(context, queued, reduction),
+        RemoveDamageReductionEffect remove => RemoveReductions(context, queued.Fired, remove),
         _ => throw new ArgumentOutOfRangeException(nameof(queued), queued.Effect, "The engine does not know this effect."),
     };
 
@@ -202,7 +206,7 @@ internal static class EffectHandlers
                 continue;
             }
 
-            context.Log(new DamageEvent(turn, holder, index, amount, result.HpAfter, castId, fired.Rule.Id));
+            context.Log(new DamageEvent(turn, holder, index, result.Amount, result.HpAfter, castId, fired.Rule.Id));
             if (holder == StateHolder.Unit && result.Fell)
             {
                 raised.Add(Logged(context, new UnitFellEvent(turn, index, castId)));
@@ -336,6 +340,50 @@ internal static class EffectHandlers
             {
                 context.Log(new WarningEvent(fired.Cause.Turn, EngineWarnings.UnknownEnemy, fired.Rule.Id));
                 break;
+            }
+        }
+
+        return [];
+    }
+
+    /// <summary>
+    /// Gives each receiver a damage reduction from the effect's source.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="queued">The effect, its place in the rule and the rule that fired it.</param>
+    /// <param name="effect">The effect.</param>
+    /// <returns>Nothing rules match.</returns>
+    private static IReadOnlyList<BattleEvent> ReduceDamage(IRuleContext context, QueuedEffect queued, DamageReductionEffect effect)
+    {
+        FiredRule fired = queued.Fired;
+        string source = DamageReductions.SourceOf(fired.Rule.Id, queued.Index);
+        int percent = Math.Clamp(effect.Percent, 0, DamageReductions.MaxPercent);
+        int? turns = effect.Turns is int lasts && lasts > 0 ? lasts : null;
+        foreach ((StateHolder holder, int index) in Receivers(context, fired, effect.To))
+        {
+            if (context.AddDamageReduction(holder, index, source, percent, turns) is int effective)
+            {
+                context.Log(new DamageReductionAddedEvent(fired.Cause.Turn, holder, index, source, percent, effective, turns));
+            }
+        }
+
+        return [];
+    }
+
+    /// <summary>
+    /// Removes every damage reduction of each receiver.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="fired">The fired rule.</param>
+    /// <param name="effect">The effect.</param>
+    /// <returns>Nothing rules match.</returns>
+    private static IReadOnlyList<BattleEvent> RemoveReductions(IRuleContext context, FiredRule fired, RemoveDamageReductionEffect effect)
+    {
+        foreach ((StateHolder holder, int index) in Receivers(context, fired, effect.From))
+        {
+            if (context.RemoveDamageReductions(holder, index))
+            {
+                context.Log(new DamageReductionRemovedEvent(fired.Cause.Turn, holder, index, fired.Rule.Id));
             }
         }
 

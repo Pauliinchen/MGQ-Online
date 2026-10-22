@@ -2,6 +2,7 @@
 //  ContextValues.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Handed back the damage dealt after the damage reduction
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -44,4 +45,5 @@ public sealed record StateGrant(StateHolder Holder, int Index, int State, int? T
 /// <param name="HpAfter">The HP left.</param>
 /// <param name="Fell">Whether it felled a unit.</param>
 /// <param name="CrossedPercents">The boss HP percents of the rules that it crossed below for the first time, highest first.</param>
-public sealed record DamageResult(long HpAfter, bool Fell, IReadOnlyList<int> CrossedPercents);
+/// <param name="Amount">The damage dealt after the receiver's damage reduction, below 0 for a heal.</param>
+public sealed record DamageResult(long HpAfter, bool Fell, IReadOnlyList<int> CrossedPercents, long Amount);

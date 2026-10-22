@@ -2,7 +2,8 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Fought the boss's starting line-up and raised the falls of the enemies the party felled
+//      Paulinchen  2026-10-23: Logged the damage dealt after the damage reduction and ended the reductions' turns
+//                            - Fought the boss's starting line-up and raised the falls of the enemies the party felled
 //                            - Read each enemy's actions from its slot
 //                            - Rolled the start debris of the boss or the game rule
 //      Paulinchen  2026-10-22: Placed and fired hazards
@@ -696,7 +697,7 @@ public sealed partial class BattleSimulator
     private void HitBoss(BattleState state, EnemyState enemy, PartyHit hit)
     {
         DamageResult dealt = DamageEnemy(state, enemy, hit.Damage);
-        Log(state, new DamageEvent(state.Turn, StateHolder.Boss, enemy.Index, hit.Damage, dealt.HpAfter));
+        Log(state, new DamageEvent(state.Turn, StateHolder.Boss, enemy.Index, dealt.Amount, dealt.HpAfter));
         UnitState attacker = state.Units[hit.Seat];
         if (!Overdrive.Freezes(state))
         {
@@ -790,7 +791,7 @@ public sealed partial class BattleSimulator
             {
                 if (DamageUnit(state.Units[hit.Seat], hit.Damage) is { } dealt)
                 {
-                    Log(state, new DamageEvent(state.Turn, StateHolder.Unit, hit.Seat, hit.Damage, dealt.HpAfter, entry.CastId));
+                    Log(state, new DamageEvent(state.Turn, StateHolder.Unit, hit.Seat, dealt.Amount, dealt.HpAfter, entry.CastId));
                     if (dealt.Fell)
                     {
                         fell.Add(hit.Seat);
@@ -830,7 +831,7 @@ public sealed partial class BattleSimulator
     }
 
     /// <summary>
-    /// Runs the turn end: marks, durations, rests, debris, the hazards of the units that end it on one,
+    /// Runs the turn end: marks, durations, rests, damage reductions, debris, the hazards of the units that end it on one,
     /// the turn end rules, the hazards' turns and the Overdrive's count.
     /// </summary>
     /// <param name="state">The battle.</param>
@@ -856,6 +857,7 @@ public sealed partial class BattleSimulator
             Cooldowns.CountDown(enemy);
         }
 
+        ExpireReductions(state);
         state.Debris = state.Debris.EndTurn();
         FireHazards(state, HazardTrigger.EndsTurnOn);
         if (state.IsOver)
