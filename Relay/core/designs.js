@@ -2,7 +2,8 @@
 //  designs.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Failed a build whose result could not be kept
+//      Paulinchen  2026-10-22: Left the designers DESIGNER_ADMINS names alone once listed
+//                            - Failed a build whose result could not be kept
 //                            - Told the world rooms of new live builds in the order they went live
 //                            - Checked a build or publish request before counting it against the rate limit
 //                            - Refused to publish a build compiled against another live build
@@ -803,17 +804,21 @@ export class DesignBook {
   }
 
   /**
-   * Makes the designer admins a setting names admins, adding the ones the relay does not list yet.
+   * Adds the designer admins a setting names that the relay does not list yet. A listed designer
+   * keeps its row, so an admin demoted through the designer routes stays demoted after a restart.
    *
    * @param {string[]} ids Their designer ids, as DESIGNER_ADMINS names them.
-   * @returns {Promise<void>} Completes once they are admins.
+   * @returns {Promise<void>} Completes once they are listed.
    */
   async seedAdmins(ids) {
     await this.exclusive(async () => {
       for (const id of ids) {
-        const earlier = await this.store.designer(id);
+        if (await this.store.designer(id)) {
+          continue;
+        }
+
         // A new admin is named by the start of its id until it renames itself.
-        await this.store.putDesigner({ id, name: earlier?.name ?? id.slice(0, 8), admin: true, addedBy: SEEDED_BY, at: this.now() });
+        await this.store.putDesigner({ id, name: id.slice(0, 8), admin: true, addedBy: SEEDED_BY, at: this.now() });
       }
     });
   }

@@ -70,7 +70,7 @@ Back up `relay.env` first (`sudo cp /etc/mgq-online/relay.env /etc/mgq-online/re
 
 | Variable | Value |
 |---|---|
-| `DESIGNER_ADMINS` | the designer ids of the admin designers, separated by commas; each designer reads their id in the designer (or `GET /v1/designs/me`, which answers an unlisted key with its id) |
+| `DESIGNER_ADMINS` | the designer ids of the admin designers, separated by commas; each designer reads their id in the designer (or `GET /v1/designs/me`, which answers an unlisted key with its id). The relay adds only the ids it does not list yet, so a demotion lasts; an admin removed through the designer list comes back at the next start until its id is taken out of this setting too |
 | `DESIGNER_MIN_VERSION` | the first designer release, such as `1.0.0`; raised with every release that must be taken |
 | `DESIGNER_REPO` | `Pauliinchen/MGQ-Online-Raid-Designer` (the default) |
 | `DESIGNER_GITHUB_TOKEN` | a fine-grained token with Contents: read on that repository only; it never leaves the server |
