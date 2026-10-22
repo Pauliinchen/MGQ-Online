@@ -62,7 +62,7 @@ A refused world room gets HTTP 400 with the text `Update MGQ Online to play onli
 
 ### Release control
 
-Which release the games should run and the lowest one the relay serves, kept in the relay's database, so they outlast a restart and need no change of its settings. The relay's admins set both (see Relay admin); the gate holds every game to the lowest at once.
+Which release the games should run and the lowest one the relay serves, kept in the relay's database, so they outlast a restart and need no change of its settings. The relay's admins set both (see Relay admin); the gate holds every game to the lowest at once. Once the update watch (see Mod catalog) reads a latest release newer than the current one and newer than the latest it had read when the current one was set, the relay clears the current release back to null, so the games follow GitHub's latest again, keeps the lowest one and logs it: a rollback to an older release lasts until the next release is out.
 
 | Request | What it does |
 |---|---|

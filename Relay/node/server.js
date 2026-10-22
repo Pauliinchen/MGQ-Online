@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Listed the worlds without their mods for games from 0.6.8 and sent released games to update at a world whose mods they cannot hold
+//      Paulinchen  2026-10-22: Cleared the current release once the watch saw a newer one published after it was set
+//                            - Listed the worlds without their mods for games from 0.6.8 and sent released games to update at a world whose mods they cannot hold
 //                            - Told no released game in a world room a mods rule longer than its DLL takes
 //                            - Read text bodies of up to 1 MB, four bytes for each character the directory takes
 //                            - Held games to the lowest release an admin set, at once, and answered the release control's routes
@@ -1613,12 +1614,23 @@ export function createRelay({
 
   /**
    * Reads the mod's latest release and, once it is newer than the last one seen, says the update
-   * notice in the chat of every world with players online and tells their games.
+   * notice in the chat of every world with players online and tells their games; hands the release
+   * control the latest seen, which clears the current release once a newer one is out.
    *
    * @returns {Promise<{version: string | null, worlds: number}>} The release announced, null for none or without a watch, and in how many worlds.
    */
   async function checkRelease() {
     const version = releases ? await releases.check() : null;
+
+    if (releases) {
+      const latest = await releases.store.getRelease();
+      const cleared = await release.seen(latest);
+
+      if (cleared) {
+        log.info(`${new Date().toISOString()} release ${latest} is out, so the current release ${cleared} an admin set is cleared; the lowest stays ${release.min}`);
+      }
+    }
+
     return version ? { version, worlds: await announce(updateLine(version)) } : { version: null, worlds: 0 };
   }
 

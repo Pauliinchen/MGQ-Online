@@ -2,7 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Tested the world list per game version, one world by its id, and released games kept out of a world with longer mods and from a longer mods rule
+//      Paulinchen  2026-10-22: Tested that the watch clears a rolled back current release once a newer release is out
+//                            - Tested the world list per game version, one world by its id, and released games kept out of a world with longer mods and from a longer mods rule
 //                            - Tested the release control's routes and the gate taking the lowest release an admin set at once
 //      Paulinchen  2026-10-21: Tested that an admin's announcement reaches every game of a world with players online
 //                            - Tested that every game of a keyed Raid World hears the keys an admin set and that the relay logs them
@@ -565,6 +566,26 @@ test("every game reads the release control, the admins set it, and the gate take
   }
 
   assert.equal((await gameFetch(directoryBase)).status, 200, "cleared, the MIN_VERSION setting counts again");
+});
+
+test("a rolled back current release stays while the same latest release is out and goes once a newer one is", async () => {
+  const release = (body) => fetch(`${directoryBase.replace("/worlds", "")}/admin/release`, { method: "POST", headers: { [PLAYER_HEADER]: ADMIN }, body: JSON.stringify(body) });
+  const current = async () => (await (await fetch(`${directoryBase.replace("/worlds", "")}/release`)).json()).current;
+  await relay.checkRelease();
+  const latest = latestTag.slice(1);
+
+  try {
+    assert.equal((await release({ current: "0.6.3", min: "0.6.0" })).status, 200);
+    await relay.checkRelease();
+    assert.equal(await current(), "0.6.3", "a rollback stays");
+
+    latestTag = `v${latest}.1`;
+    await relay.checkRelease();
+    assert.equal(await current(), null);
+    assert.ok(logged.info.some((line) => line.endsWith(`release ${latest}.1 is out, so the current release 0.6.3 an admin set is cleared; the lowest stays 0.6.0`)));
+  } finally {
+    assert.equal((await release({ current: null, min: null })).status, 200);
+  }
 });
 
 test("a game's chat lines past the chat's rate limit are dropped and answered, and an empty one is ignored", async () => {

@@ -2,7 +2,8 @@
 //  releases.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Tested the release control the relay's admins set
+//      Paulinchen  2026-10-22: Tested the current release cleared by a newer release only
+//                            - Tested the release control the relay's admins set
 //      Paulinchen  2026-10-12: Created
 //
 //----------------------------------------------------------------
@@ -142,4 +143,30 @@ test("the release control refuses a lowest release above the current one and any
   }
 
   assert.deepEqual(control.view(), { current: null, min: "0.7", repo: RELEASE_REPO }, "a refused change changes nothing");
+});
+
+test("a release published after the current one was set clears it, while the latest seen when it was set keeps a rollback", async () => {
+  const store = memoryRelease();
+  await store.putRelease("0.6.8");
+  const control = await new ReleaseControl(store, { envMin: "0.6.7", clock: () => 7000 }).load();
+  await control.set({ current: "0.6.7.7", min: "0.6.7.7" }, ADMIN_ID);
+
+  assert.equal(await control.seen("0.6.8"), null, "the latest seen when it was set");
+  assert.equal(control.view().current, "0.6.7.7");
+
+  assert.equal(await control.seen("0.6.9"), "0.6.7.7");
+  assert.deepEqual(control.adminView(), { current: null, min: "0.6.7.7", repo: RELEASE_REPO, envMin: "0.6.7", updatedAt: 7000, updatedBy: "relay" }, "the lowest release stays");
+  assert.equal((await new ReleaseControl(store).load()).view().current, null, "kept cleared");
+});
+
+test("a current release set ahead of the latest stays once it is published, and one set before any release was read waits for the next", async () => {
+  const store = memoryRelease();
+  const control = await new ReleaseControl(store, { envMin: "0.6.7" }).load();
+  await control.set({ current: "0.6.7.7" }, ADMIN_ID);
+  assert.equal(await control.seen("0.6.8"), null, "an older latest the watch reads first");
+  assert.equal(await control.seen("0.6.9"), "0.6.7.7");
+
+  await control.set({ current: "0.7.0" }, ADMIN_ID);
+  assert.equal(await control.seen("0.7.0"), null, "its own release");
+  assert.equal(await control.seen("0.7.1"), "0.7.0");
 });

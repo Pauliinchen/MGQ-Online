@@ -2,7 +2,8 @@
 //  releases.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Kept the release games should run and the lowest one the relay serves, which its admins set
+//      Paulinchen  2026-10-22: Cleared the current release once a newer one than it was published after it was set
+//                            - Kept the release games should run and the lowest one the relay serves, which its admins set
 //      Paulinchen  2026-10-12: Created
 //
 //----------------------------------------------------------------
@@ -40,6 +41,11 @@ export const RELEASE_ROUTE = "release";
  * A version an admin sets: one to four whole numbers separated by dots.
  */
 const SET_VERSION = /^\d{1,9}(?:\.\d{1,9}){0,3}$/;
+
+/**
+ * Who the release control names as having set it when the relay itself cleared the current release.
+ */
+export const RELEASE_WATCH_SETTER = "relay";
 
 /**
  * The codes a refusal of the release control names why with.
@@ -160,7 +166,8 @@ export class ReleaseControl {
     this.envMin = minVersionOf(envMin).join(".");
     this.clock = clock;
     this.repo = repo;
-    this.kept = { current: null, min: null, updatedAt: null, updatedBy: null };
+    this.kept = { current: null, min: null, updatedAt: null, updatedBy: null, latestAtSet: null };
+    this.latest = null;
     this.writing = Promise.resolve();
   }
 
@@ -171,6 +178,7 @@ export class ReleaseControl {
    */
   async load() {
     this.kept = { ...this.kept, ...(await this.store.getControl()) };
+    this.latest = (await this.store.getRelease()) ?? null;
     return this;
   }
 
@@ -210,9 +218,62 @@ export class ReleaseControl {
    * @returns {Promise<{status: number, body: object, before?: {current: string | null, min: string | null}}>} The admin view, with what was kept before; or why not.
    */
   set(changes, admin) {
-    const done = this.writing.then(() => this.apply(changes, admin));
+    return this.queued(() => this.apply(changes, admin));
+  }
+
+  /**
+   * Takes the latest release the watch has seen, and clears the current release once one newer
+   * than it was published after it was set, so a rollback lasts until the next release only.
+   *
+   * @param {string | null | undefined} latest The latest release the watch has seen, null before its first read.
+   * @returns {Promise<string | null>} The current release it cleared, null for none.
+   */
+  seen(latest) {
+    return this.queued(async () => {
+      this.latest = latest ?? null;
+      const { current, latestAtSet } = this.kept;
+
+      if (current === null || this.latest === null) {
+        return null;
+      }
+
+      // Set before the watch read any release: the first one it reads may be older, so it only becomes the baseline.
+      if (latestAtSet === null) {
+        await this.keep({ ...this.kept, latestAtSet: this.latest });
+        return null;
+      }
+
+      if (compareVersions(this.latest, latestAtSet) <= 0 || compareVersions(this.latest, current) <= 0) {
+        return null;
+      }
+
+      await this.keep({ ...this.kept, current: null, latestAtSet: null, updatedAt: this.clock(), updatedBy: RELEASE_WATCH_SETTER });
+      return current;
+    });
+  }
+
+  /**
+   * Runs a change after every change before it.
+   *
+   * @template T
+   * @param {() => Promise<T>} work The change.
+   * @returns {Promise<T>} What it answers.
+   */
+  queued(work) {
+    const done = this.writing.then(work);
     this.writing = done.catch(() => {});
     return done;
+  }
+
+  /**
+   * Keeps a record in the store and in memory.
+   *
+   * @param {object} record The record.
+   * @returns {Promise<void>} Completes once kept.
+   */
+  async keep(record) {
+    await this.store.putControl(record);
+    this.kept = record;
   }
 
   /**
@@ -240,9 +301,8 @@ export class ReleaseControl {
       return { status: 400, body: { error: "the lowest release may not be above the current one", code: RELEASE_REFUSAL.minAboveCurrent } };
     }
 
-    const record = { ...next, updatedAt: this.clock(), updatedBy: admin };
-    await this.store.putControl(record);
-    this.kept = record;
+    const latestAtSet = next.current === null ? null : next.current === before.current ? this.kept.latestAtSet : this.latest;
+    await this.keep({ ...next, updatedAt: this.clock(), updatedBy: admin, latestAtSet });
     return { status: 200, body: this.adminView(), before };
   }
 }
