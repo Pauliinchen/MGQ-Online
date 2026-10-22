@@ -2,6 +2,7 @@
 //  schema.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Tested that step 3 adds the live build each design build was compiled against
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -38,7 +39,7 @@ function tablesOf(db) {
   return db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map((row) => row.name);
 }
 
-test("a database the relay kept before the steps keeps every record and gains the design tables at step 2, once", async () => {
+test("a database the relay kept before the steps keeps every record, gains the design tables at step 2 and the base of each build at step 3, once", async () => {
   const path = join(folder, "live.db");
   const live = openSqliteStores(path);
   await live.directory.put({ id: "a".repeat(32), name: "Raid Night" });
@@ -48,9 +49,10 @@ test("a database the relay kept before the steps keeps every record and gains th
   const db = new DatabaseSync(path);
   const before = tablesOf(db);
   assert.equal(versionOf(db), 0);
-  assert.equal(migrate(db, STEPS), 2);
+  assert.equal(migrate(db, STEPS), 3);
   assert.deepEqual(tablesOf(db), [...before, ...DESIGN_TABLE_NAMES].sort());
-  assert.equal(migrate(db, STEPS), 2, "a second run changes nothing");
+  assert.ok(db.prepare("PRAGMA table_info(design_builds)").all().some((column) => column.name === "base_build_id"));
+  assert.equal(migrate(db, STEPS), 3, "a second run changes nothing");
   db.close();
 
   const again = openSqliteStores(path);

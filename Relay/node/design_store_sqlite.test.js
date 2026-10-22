@@ -2,7 +2,8 @@
 //  design_store_sqlite.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Tested that both stores keep builds, blobs and the live build alike
+//      Paulinchen  2026-10-22: Tested that both stores keep the live build each build was compiled against
+//                            - Tested that both stores keep builds, blobs and the live build alike
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -128,7 +129,9 @@ test("the design outlasts a restart, and an export read into a new database come
  */
 async function buildThrough(store) {
   const blob = (sha256, kind) => ({ sha256, kind, size: 4, gz: new Uint8Array([kind.length, 1, 2, 3]), at: 9 });
-  const fields = (status, marshal) => ({ status, report: JSON.stringify({ ok: status === "ok" }), snapshotSha: "11".repeat(32), runtimeSha: "22".repeat(32), marshalSha: marshal, format: 3, runtimeFormat: 1, compiler: "1.3.0", gameData: "33".repeat(32) });
+  const fields = (status, marshal, baseBuildId = null) => ({
+    status, report: JSON.stringify({ ok: status === "ok" }), snapshotSha: "11".repeat(32), runtimeSha: "22".repeat(32), marshalSha: marshal, format: 3, runtimeFormat: 1, compiler: "1.3.0", gameData: "33".repeat(32), baseBuildId,
+  });
   const ids = [];
 
   for (let seq = 1; seq <= 5; seq++) {
@@ -137,7 +140,7 @@ async function buildThrough(store) {
 
   await store.setBuildStatus(1, "compiling");
   await store.finishBuild(1, fields("ok", "44".repeat(32)), [blob("11".repeat(32), "snapshot"), blob("22".repeat(32), "runtime"), blob("44".repeat(32), "marshal")]);
-  await store.finishBuild(2, fields("ok", "55".repeat(32)), [blob("11".repeat(32), "snapshot"), blob("22".repeat(32), "runtime"), blob("55".repeat(32), "marshal")]);
+  await store.finishBuild(2, fields("ok", "55".repeat(32), 1), [blob("11".repeat(32), "snapshot"), blob("22".repeat(32), "runtime"), blob("55".repeat(32), "marshal")]);
   await store.finishBuild(3, fields("ok", "66".repeat(32)), [blob("66".repeat(32), "marshal")]);
   await store.setLive({ buildId: 2, previousBuildId: 1, by: DESIGNERS.A.id, at: 7 });
   await store.setBuildStatus(4, "compiling");
@@ -159,7 +162,7 @@ test("the SQLite store keeps builds, their blobs and the live build as the memor
     assert.deepEqual([done.results.failed, done.results.tidied, done.results.newest], [[4, 5], { builds: 1, blobs: 1 }, [5, 4]]);
     assert.deepEqual(done.results.live, { channel: "live", build_id: 2, previous_build_id: 1, by: DESIGNERS.A.id, at: 7 });
     assert.deepEqual([done.results.info, done.results.gone], [{ sha256: "55".repeat(32), kind: "marshal", size: 4, at: 9 }, undefined]);
-    assert.deepEqual(done.tables.design_builds.map((row) => [row.id, row.status]), [[1, "ok"], [2, "ok"], [4, "failed"], [5, "failed"]]);
+    assert.deepEqual(done.tables.design_builds.map((row) => [row.id, row.status, row.base_build_id]), [[1, "ok", null], [2, "ok", 1], [4, "failed", null], [5, "failed", null]]);
     assert.deepEqual(await sqlite.blob("22".repeat(32)), new Uint8Array([7, 1, 2, 3]), "a blob two builds name is kept once");
 
     await copy.importTables(done.tables, new Map(await Promise.all(done.tables.design_blobs.map(async (row) => [row.sha256, await sqlite.blob(row.sha256)]))));

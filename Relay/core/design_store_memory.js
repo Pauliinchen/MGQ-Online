@@ -2,7 +2,8 @@
 //  design_store_memory.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Kept the builds, their blobs and the live build
+//      Paulinchen  2026-10-22: Kept the live build each build was compiled against
+//                            - Kept the builds, their blobs and the live build
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -142,7 +143,7 @@ export function memoryDesignStore() {
       lastBuild += 1;
       put("design_builds", {
         id: lastBuild, seq, snapshot_sha: null, runtime_sha: null, marshal_sha: null, format: null, runtime_format: null, compiler: null, game_data: null,
-        status: "queued", report: null, by, at,
+        status: "queued", report: null, by, at, base_build_id: null,
       });
       return lastBuild;
     },
@@ -171,7 +172,7 @@ export function memoryDesignStore() {
 
       put("design_builds", {
         ...earlier, status: fields.status, report: fields.report, snapshot_sha: fields.snapshotSha, runtime_sha: fields.runtimeSha, marshal_sha: fields.marshalSha,
-        format: fields.format, runtime_format: fields.runtimeFormat, compiler: fields.compiler, game_data: fields.gameData,
+        format: fields.format, runtime_format: fields.runtimeFormat, compiler: fields.compiler, game_data: fields.gameData, base_build_id: fields.baseBuildId,
       });
     },
     failUnfinished: async (report) => {

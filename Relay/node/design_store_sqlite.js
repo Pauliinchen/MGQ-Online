@@ -2,7 +2,8 @@
 //  design_store_sqlite.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Kept the builds, their blobs and the live build
+//      Paulinchen  2026-10-22: Kept the live build each build was compiled against
+//                            - Kept the builds, their blobs and the live build
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -75,7 +76,7 @@ export function openSqliteDesignStore(path) {
   const builds = db.prepare("SELECT * FROM design_builds ORDER BY id DESC LIMIT ?");
   const buildStatus = db.prepare("UPDATE design_builds SET status = ? WHERE id = ?");
   const buildDone = db.prepare(`UPDATE design_builds SET status = ?, report = ?, snapshot_sha = ?, runtime_sha = ?, marshal_sha = ?, format = ?, runtime_format = ?,
-    compiler = ?, game_data = ? WHERE id = ?`);
+    compiler = ?, game_data = ?, base_build_id = ? WHERE id = ?`);
   const unfinished = db.prepare("UPDATE design_builds SET status = 'failed', report = ? WHERE status IN ('queued', 'compiling') RETURNING id");
   const live = db.prepare("SELECT * FROM design_live WHERE channel = 'live'");
   const liveRow = db.prepare("INSERT OR REPLACE INTO design_live (channel, build_id, previous_build_id, by, at) VALUES ('live', ?, ?, ?, ?)");
@@ -136,7 +137,7 @@ export function openSqliteDesignStore(path) {
         blobRow.run(blob.sha256, blob.kind, blob.size, blob.gz, blob.at);
       }
 
-      buildDone.run(fields.status, fields.report, fields.snapshotSha, fields.runtimeSha, fields.marshalSha, fields.format, fields.runtimeFormat, fields.compiler, fields.gameData, id);
+      buildDone.run(fields.status, fields.report, fields.snapshotSha, fields.runtimeSha, fields.marshalSha, fields.format, fields.runtimeFormat, fields.compiler, fields.gameData, fields.baseBuildId, id);
     }),
     failUnfinished: async (report) => unfinished.all(report).map((row) => Number(row.id)).sort((left, right) => left - right),
     blobInfo: async (sha256) => plain(blobInfo.get(sha256)),

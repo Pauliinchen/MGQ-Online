@@ -2,7 +2,8 @@
 //  design_builds.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Created
+//      Paulinchen  2026-10-22: Tested that a publish refuses a build compiled against another live build
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -228,9 +229,6 @@ test("publish makes an ok build live with the one before it as previous, rollbac
   compiler.outcome = (job) => compiledBuild(job.seq, { removed: ["Lilith"], renamed: [{ id: "boss:1", from: "Morrigan", to: "Morrigan Prime" }] });
   await pushNew(book, "state:1");
   const first = await buildNow(book);
-  compiler.outcome = (job) => compiledBuild(job.seq);
-  await pushNew(book, "state:2");
-  const second = await buildNow(book);
 
   assert.deepEqual(await call(book, "POST", "/publish", { buildId: 1 }), { status: 409, body: { code: "status", status: "failed" } });
   assert.deepEqual(await call(book, "POST", "/publish", { buildId: 99 }), { status: 404, body: { code: "none" } });
@@ -245,6 +243,9 @@ test("publish makes an ok build live with the one before it as previous, rollbac
   assert.equal(published.notice, undefined, "DESIGN_WORLD_NOTICE is off");
   assert.deepEqual(frames.at(-1), { op: "live", buildId: 2, marshalSha: first.marshalSha, runtimeSha: first.runtimeSha, by: DESIGNERS.A.id, name: DESIGNERS.A.name });
 
+  compiler.outcome = (job) => compiledBuild(job.seq);
+  await pushNew(book, "state:2");
+  const second = await buildNow(book);
   assert.deepEqual((await call(book, "POST", "/publish", { buildId: second.id })).body.live, { buildId: 3, previousBuildId: 2, by: DESIGNERS.A.id, at: NOW });
   assert.deepEqual((await call(book, "POST", "/publish", { buildId: second.id })).body.live.previousBuildId, 2, "publishing the live build again keeps its previous");
   assert.deepEqual((await call(book, "GET", "/builds")).body.live, 3);
@@ -254,6 +255,23 @@ test("publish makes an ok build live with the one before it as previous, rollbac
   const list = (await call(book, "GET", "/builds")).body;
   assert.deepEqual([list.live, list.previous, list.builds.map((build) => build.id)], [2, 3, [3, 2, 1]]);
   assert.deepEqual(Object.keys(list.builds[0]).sort(), ["at", "by", "format", "id", "marshalSha", "report", "runtimeSha", "seq", "snapshotSha", "status"]);
+});
+
+test("publish refuses a build compiled against another live build than the one live now as stale, but not the live build itself", async () => {
+  const { book } = await buildBook();
+  const first = await buildNow(book);
+  const early = await buildNow(book);
+  assert.equal((await call(book, "POST", "/publish", { buildId: first.id })).status, 200);
+  assert.deepEqual(await call(book, "POST", "/publish", { buildId: early.id }), { status: 409, body: { code: "stale" } }, "compiled while nothing was live");
+
+  const second = await buildNow(book);
+  assert.equal((await call(book, "POST", "/publish", { buildId: second.id })).status, 200);
+  assert.equal((await call(book, "POST", "/publish", { buildId: second.id })).status, 200, "the live build again");
+  assert.deepEqual(await call(book, "POST", "/publish", { buildId: first.id }), { status: 409, body: { code: "stale" } }, "the previous build is made live by a rollback");
+
+  assert.equal((await call(book, "POST", "/rollback")).status, 200);
+  assert.equal((await call(book, "POST", "/publish", { buildId: second.id })).status, 200, "compiled against the build live again");
+  assert.deepEqual((await call(book, "GET", "/builds")).body.live, second.id);
 });
 
 test("a later build is compiled against the live build's runtime JSON", async () => {
@@ -295,9 +313,9 @@ test("a game reads the live build at or below its format, else the previous one,
   assert.deepEqual(await game(book, ""), { status: 404, body: { code: "none" } });
 
   const first = await buildNow(book);
+  await call(book, "POST", "/publish", { buildId: first.id });
   compiler.outcome = (job) => ({ ...compiledBuild(job.seq + 50), fields: { ...compiledBuild(job.seq + 50).fields, format: 4 } });
   const second = await buildNow(book);
-  await call(book, "POST", "/publish", { buildId: first.id });
   await call(book, "POST", "/publish", { buildId: second.id });
 
   const answer = await game(book, "", { ...LOCAL, reader: "4" });
@@ -339,11 +357,13 @@ test("the sweep keeps the newest builds, the live and the previous one, and drop
   let next = 0;
   compiler.outcome = () => compiledBuild((next += 1));
 
-  for (let index = 0; index < 6; index++) {
+  await buildNow(book);
+  await call(book, "POST", "/publish", { buildId: 1 });
+
+  for (let index = 0; index < 5; index++) {
     await buildNow(book);
   }
 
-  await call(book, "POST", "/publish", { buildId: 1 });
   await call(book, "POST", "/publish", { buildId: 2 });
   const marshalOf3 = (await call(book, "GET", "/builds/3")).body.builds[0].marshalSha;
   assert.deepEqual(await book.tidyBuilds(), { builds: 1, blobs: 3 });

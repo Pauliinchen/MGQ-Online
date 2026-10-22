@@ -2,6 +2,7 @@
 //  schema.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Kept the live build each design build was compiled against
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -51,9 +52,14 @@ const DESIGN_TABLES = [
 ];
 
 /**
+ * Step 3: the live build each design build was compiled against, which a publish checks.
+ */
+const DESIGN_BUILD_BASE = ["ALTER TABLE design_builds ADD COLUMN base_build_id INTEGER"];
+
+/**
  * The steps of the relay's database in order; step n brings user_version from n - 1 to n.
  */
-export const STEPS = Object.freeze([RELAY_TABLES, DESIGN_TABLES]);
+export const STEPS = Object.freeze([RELAY_TABLES, DESIGN_TABLES, DESIGN_BUILD_BASE]);
 
 /**
  * The tables the design steps add, in the order a migration copies them.
