@@ -2,15 +2,17 @@
 //  admin.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Handed out and set the release games should run and the lowest one the relay serves
 //      Paulinchen  2026-10-21: Said an admin's line in every world with players online
 //                            - Created
 //
 //----------------------------------------------------------------
 
 // The relay's own admin routes, beside the directory's: what the relay carries right now, for the
-// website's dashboard, and a line said in every world with players online. The platform layer
-// gathers the figures and tells the world rooms, since only it holds the rooms.
+// website's dashboard, a line said in every world with players online, and the release control.
+// The platform layer gathers the figures and tells the world rooms, since only it holds the rooms.
 
+import { playerIdOf } from "./directory.js";
 import { badRequest, notFound, withJson } from "./http.js";
 import { cleanText } from "./ids.js";
 import { VERSION } from "./relay.js";
@@ -45,7 +47,7 @@ export function adminRouteOf(url) {
 /**
  * Answers a request to the relay's admin routes, for the relay's admins only.
  *
- * @param {{stats: () => Promise<object>, announce: (text: string) => Promise<number>}} relay What the platform layer does: hands out the figures of what it carries now, and says a line in every world with players online, answering in how many.
+ * @param {{stats: () => Promise<object>, announce: (text: string) => Promise<number>, release: import("./releases.js").ReleaseControl, releaseSet?: (answer: {status: number, body: object, before?: object}, admin: string) => void}} relay What the platform layer does: hands out the figures of what it carries now, says a line in every world with players online, answering in how many, keeps the release control, and hears of each change an admin made to it.
  * @param {string} method The HTTP method.
  * @param {URL} url The request's address, whose `player` names the admin's key when no header does.
  * @param {string[]} rest The address's parts after `admin`, see adminRouteOf.
@@ -59,6 +61,25 @@ export async function handleAdminRequest(relay, method, url, rest, readBody, hea
 
   if (rest.length === 1 && rest[0] === "stats" && method === "GET") {
     return (await isAdmin(header || url.searchParams.get("player"))) ? { status: 200, body: await relay.stats() } : refused;
+  }
+
+  if (rest.length === 1 && rest[0] === "release" && method === "GET") {
+    return (await isAdmin(header || url.searchParams.get("player"))) ? { status: 200, body: relay.release.adminView() } : refused;
+  }
+
+  if (rest.length === 1 && rest[0] === "release" && method === "POST") {
+    return withJson(readBody, MAX_BODY_LENGTH, async (body) => {
+      const key = header || body?.player;
+
+      if (!(await isAdmin(key))) {
+        return refused;
+      }
+
+      const admin = await playerIdOf(key);
+      const answer = await relay.release.set(body, admin);
+      relay.releaseSet?.(answer, admin);
+      return { status: answer.status, body: answer.body };
+    });
   }
 
   if (rest.length === 1 && rest[0] === "announce" && method === "POST") {

@@ -2,6 +2,7 @@
 //  sqlite_store.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Covered the release control kept over a restart beside the newest release seen
 //      Paulinchen  2026-10-12: Covered a trade's sealed offers kept beside it over a restart
 //      Paulinchen  2026-10-10: Covered boss pools that keep the share of a raid max HP left over a restart
 //      Paulinchen  2026-10-09: Covered a Raid World's boss pools kept over a restart
@@ -221,5 +222,17 @@ test("a trade's sealed offers outlast a restart beside it, never in the list of 
   await second.trades.removeTrade(trade, ["alice", "bob"]);
   assert.equal(await second.trades.getTrade(trade), undefined);
   assert.equal(await second.trades.getSealed(trade, "bob"), undefined);
+  second.close();
+});
+
+test("the release control outlasts a restart beside the newest release seen", async () => {
+  const first = openSqliteStores(path);
+  await first.releases.putRelease("0.6.7.7");
+  await first.releases.putControl({ current: "0.6.8", min: "0.6.7", updatedAt: 5000, updatedBy: "ad".repeat(16) });
+  first.close();
+
+  const second = openSqliteStores(path);
+  assert.equal(await second.releases.getRelease(), "0.6.7.7");
+  assert.deepEqual(await second.releases.getControl(), { current: "0.6.8", min: "0.6.7", updatedAt: 5000, updatedBy: "ad".repeat(16) });
   second.close();
 });

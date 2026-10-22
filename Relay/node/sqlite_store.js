@@ -2,6 +2,7 @@
 //  sqlite_store.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Kept the release control the relay's admins set
 //      Paulinchen  2026-10-12: Kept the newest release of the mod the relay has seen
 //                            - Kept each trade's sealed offers in a table of their own beside the trade
 //      Paulinchen  2026-10-09: Kept each Raid World's boss pools
@@ -118,6 +119,8 @@ export function openSqliteStores(path) {
     releases: {
       getRelease: async () => releases.get("latest"),
       putRelease: async (version) => releases.put("latest", version),
+      getControl: async () => releases.get("control"),
+      putControl: async (record) => releases.put("control", record),
     },
     close: () => db.close(),
   };

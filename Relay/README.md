@@ -20,6 +20,8 @@ core/bosses.test.js    tests of the boss pools and the admin routes
 core/raid_admin.js     what admins see and set right in a Raid World: counters, pools, the route lock
 core/raid_admin.test.js tests of the admin routes of a Raid World's story
 core/admin.js          the relay's own admin routes: the stats of what it carries, a line said in every world
+core/releases.js       the mod's own releases: the update notice and the release control the admins set
+core/releases.test.js  tests of the update notice and the release control
 core/migration.js      everything a relay keeps, handed to its admins for another relay to take over
 core/mods.js           the mod catalog's rules, over a store the platform passes in
 core/mods.test.js      tests of the mod catalog
@@ -53,10 +55,18 @@ A **room** pairs two games for a PvP battle. A **world room** seats up to 32 gam
 
 Every game from 0.6.0 names its features in the header `X-MGQ-Features` on its directory and mod catalog requests and world rooms, and newer ones name their version in `X-MGQ-Version` on these and on PvP rooms, such as `0.6.5` (`0.0.0-dev` for a development build). The World Admin tool names `admin` in `X-MGQ-Features` and `0.0.0-dev` in `X-MGQ-Version`. Before routing a request, the relay turns a game too old for it away:
 - the world directory's and the mod catalog's routes (the Raid World admin routes included), the trades, the bug reports, a Raid World's story and boss routes and the world rooms need `X-MGQ-Features`, so games before 0.6.0 and builds of the World Admin tool before it named `admin` are refused;
-- every one of these routes and the PvP rooms hold the version named in `X-MGQ-Version` against the setting `MIN_VERSION` (`0.6.0` unless set). An older version or one that is no version is refused. A request that names none counts as `0.6.4`, the last release that names none, so released games pass while `MIN_VERSION` is at most `0.6.4` and are refused once it is higher. Only the development stamp `0.0.0-dev` (with or without `+<commit>`) always passes, so the World Admin tool does too; another suffixed version such as `0.7.0-beta` counts by its numbers;
+- every one of these routes and the PvP rooms hold the version named in `X-MGQ-Version` against the lowest release an admin set (see Release control), else the setting `MIN_VERSION` (`0.6.0` unless set). An older version or one that is no version is refused. A request that names none counts as `0.6.4`, the last release that names none, so released games pass while `MIN_VERSION` is at most `0.6.4` and are refused once it is higher. Only the development stamp `0.0.0-dev` (with or without `+<commit>`) always passes, so the World Admin tool does too; another suffixed version such as `0.7.0-beta` counts by its numbers;
 - a PvP room never needs `X-MGQ-Features`, since released games open PvP rooms without any header.
 
 A refused world room gets HTTP 400 with the text `Update MGQ Online to play online.` and the code `update` in `X-MGQ-Refusal`: released games from 0.5.1 to 0.6.4 take a 400 with a code they do not know as final and show their own "The relay turned the request down. Update the mod.", while they would try a 426 again and again; newer ones show the text. A refused PvP room gets HTTP 426 with the same text in `X-MGQ-Refusal`; released games tell any refused PvP room as a relay out of reach, newer ones show the text. Any other refused request gets HTTP 426 with the text as `error` once its body is read and dropped, up to 16 MB or 60 seconds.
+
+### Release control
+
+Which release the games should run and the lowest one the relay serves, kept in the relay's database, so they outlast a restart and need no change of its settings. The relay's admins set both (see Relay admin); the gate holds every game to the lowest at once.
+
+| Request | What it does |
+|---|---|
+| `GET /v1/release` | Hands out `current` (the release the games should run, such as `0.6.8`, null while unset), `min` (the lowest release the relay serves: the one an admin set, else `MIN_VERSION`) and `repo` (the repository the games update from, `Pauliinchen/MGQ-Online`). Open to every game whatever its version and headers. Only the Node relay answers it. |
 
 ### Rooms
 
@@ -124,6 +134,8 @@ The relay's own routes for its admins (the `ADMINS` setting), such as the websit
 | Request | What it does |
 |---|---|
 | `GET /v1/admin/stats` | Hands out what the relay carries now: `startedAt` (ISO time), `uptimeSeconds`, `memory` (`rss`, `heapTotal`, `heapUsed`, `external`, in bytes), `worlds` (each world room open: `id`, `name`, `type`, `seats`, `players`), `rooms` (PvP rooms open), `players` (`worlds`, `rooms` and `total` connections), `versions` (the world rooms' games by the version they named in `X-MGQ-Version`, `unknown` for none, such as `{"0.6.7.7": 3}`), `battles` (`tracked`, the server battles the relay keeps, and `served`, those with a connection to the battle server) and `battleServer`, the battle server's answer to `{"op":"ping"}` as it sent it (`ok`, `boot_seconds`, `battles`, `busy`, `mode`, `pid`; in fork mode `battles` and `busy` are the child's own), null without a battle server or when it does not answer within 2 seconds. Only the Node relay answers it; Cloudflare's answers what it answers for any other address. |
+| `GET /v1/admin/release` | Hands out the release control as `GET /v1/release` does, with `envMin` (what `MIN_VERSION` sets), `updatedAt` (when an admin last set it, in milliseconds since 1970, null before) and `updatedBy` (that admin's player id). Only the Node relay answers it. |
+| `POST /v1/admin/release` | Sets `current`, `min` or both, each a version of 1 to 4 whole numbers separated by dots, or null to clear it back to its default (none for `current`, `MIN_VERSION` for `min`); one left out stays as it is (400 for a body naming neither, or a value that is no such version). A lowest release above the current one, `MIN_VERSION` counting while no `min` is set, is refused with 400 and `code` `min_above_current`. Answers as `GET /v1/admin/release`. The gate holds every request after it to the new lowest release; games already in a room stay. The relay logs each change with what it replaced. Only the Node relay answers it. |
 | `POST /v1/admin/announce` | Says `text` (1 to 120 characters once control characters are taken out, the most released games show of a chat line; 400 otherwise) in the chat of every world with players online, as the update notice is said: an admin's line named `MGQ Online` that every game in those world rooms hears as `chat MGQ Online` + tab + the line and the world's admins see in its chat. Games from 0.6.5 on show it red as `// <line> //` in every chat tab, older ones as `[Admin] MGQ Online: <line>`. Answers `text` as said and `worlds`, in how many it was said. The relay logs each line. Only the Node relay answers it. |
 
 ### Mod catalog
@@ -262,10 +274,10 @@ Up to 0.6.6.1 relay r1 ran on the free Workers plan at `relay.mgqmp.workers.dev`
 1. On the server, install Node.js 24 or later (the SQLite database needs `node:sqlite`) and [Caddy](https://caddyserver.com), and point a domain at the server.
 2. Copy `core/`, `node/`, `package.json` and `package-lock.json`, then run `npm install --omit=dev`.
 3. Start `node node/server.js` as a systemd service, with these environment variables:
-   - `MGQ_RELAY_DB=/var/lib/mgq-relay/relay.sqlite`: the SQLite database the worlds, their starting saves, the mod catalog, its uploaded zips, the trades, the Raid Worlds' stories and their boss pools are kept in, made on the first start (with its `-wal` and `-shm` files beside it). Without it everything stays in memory and is gone with the process. Back the file up with `sqlite3 relay.sqlite ".backup copy.sqlite"`, never by copying it while the relay runs.
+   - `MGQ_RELAY_DB=/var/lib/mgq-relay/relay.sqlite`: the SQLite database the worlds, their starting saves, the mod catalog, its uploaded zips, the trades, the Raid Worlds' stories and their boss pools and the release control are kept in, made on the first start (with its `-wal` and `-shm` files beside it). Without it everything stays in memory and is gone with the process. Back the file up with `sqlite3 relay.sqlite ".backup copy.sqlite"`, never by copying it while the relay runs.
    - `ADMINS`: the admins' player ids, as above.
    - `GITHUB_ISSUES_TOKEN` and `GITHUB_BUG_FILES_TOKEN`, and `REPORT_ISSUES_REPO`, `REPORT_FILES_REPO` and `REPORT_FILES_BRANCH` unless the defaults fit: where the bug reports go, see above. Without both tokens the relay takes no reports.
-   - `MIN_VERSION`: the lowest version a game may name, `0.6.0` unless set, see Versions.
+   - `MIN_VERSION`: the lowest version a game may name while no admin set one, `0.6.0` unless set, see Versions and Release control.
    - `HOST` and `PORT`: where it listens, `127.0.0.1:8080` unless set.
    - `BATTLE_SERVER`: the battle server's `host:port`, such as `127.0.0.1:8095`, which hosts the co-op battles; without it the starters host them, see Server battles. Run the battle server beside the relay as root (its sandbox needs it) with a game folder holding the game's `Data`, MGQ Online and Mod Config Remake, `BATTLE_RELAY_URL` pointing at this relay for the worlds' mods, see [BattleServer/README.md](../BattleServer/README.md).
 4. The relay writes one line per request to stdout (`<time> <method> <path> <status> <ms> <address>`, the path without its query, so no key ever appears) and every error it catches to stderr, with its stack. Under systemd both go to the journal (`journalctl -u <service>`); the service file's `StandardOutput=append:/var/log/mgq-relay/relay.log` keeps them in a file instead. The rooms and the WebSockets live in memory, so a restart ends every connection; the games connect again on their own.

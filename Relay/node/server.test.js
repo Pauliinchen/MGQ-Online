@@ -2,6 +2,7 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Tested the release control's routes and the gate taking the lowest release an admin set at once
 //      Paulinchen  2026-10-21: Tested that an admin's announcement reaches every game of a world with players online
 //                            - Tested that every game of a keyed Raid World hears the keys an admin set and that the relay logs them
 //                            - Tested that every game hears a write without its pinned keys, then their pinned values
@@ -539,6 +540,30 @@ test("an admin's announcement reaches every game of a world with players online 
   assert.ok((await said.json()).worlds >= 1);
   assert.equal(await game.next(), "chat MGQ Online	The relay restarts in five minutes.");
   game.socket.close();
+});
+
+test("every game reads the release control, the admins set it, and the gate takes the lowest release at once", async () => {
+  const relayBase = directoryBase.replace("/worlds", "");
+  const admin = await playerIdOf(ADMIN);
+  const release = (headers, body) => fetch(`${relayBase}/admin/release`, body ? { method: "POST", headers, body: JSON.stringify(body) } : { headers });
+
+  const read = await fetch(`${relayBase}/release`);
+  assert.deepEqual([read.status, await read.json()], [200, { current: null, min: "0.6.0", repo: RELEASE_REPO }], "open to a game of any version, without headers");
+  assert.deepEqual([(await release({ [PLAYER_HEADER]: CREATOR })).status, (await release({ [PLAYER_HEADER]: CREATOR }, { min: "0.6.5" })).status], [403, 403]);
+  assert.equal((await release({ [PLAYER_HEADER]: ADMIN }, { current: "0.6.4", min: "0.6.5" })).status, 400);
+
+  try {
+    const set = await release({ [PLAYER_HEADER]: ADMIN }, { current: "0.6.8", min: "0.6.5" });
+    assert.equal(set.status, 200);
+    assert.deepEqual((await set.json()).updatedBy, admin);
+    assert.ok(logged.info.some((line) => line.endsWith(`admin ${admin} set the release: current unset -> 0.6.8, min unset -> 0.6.5 (0.6.5 served)`)));
+    assert.deepEqual([(await gameFetch(directoryBase)).status, (await gameFetch(directoryBase, { headers: { [VERSION_HEADER]: "0.6.5" } })).status], [426, 200], "a game naming none counts as 0.6.4");
+    assert.deepEqual(await (await release({ [PLAYER_HEADER]: ADMIN })).json(), { current: "0.6.8", min: "0.6.5", repo: RELEASE_REPO, envMin: "0.6.0", updatedAt: now, updatedBy: admin });
+  } finally {
+    assert.equal((await release({ [PLAYER_HEADER]: ADMIN }, { current: null, min: null })).status, 200);
+  }
+
+  assert.equal((await gameFetch(directoryBase)).status, 200, "cleared, the MIN_VERSION setting counts again");
 });
 
 test("a game's chat lines past the chat's rate limit are dropped and answered, and an empty one is ignored", async () => {

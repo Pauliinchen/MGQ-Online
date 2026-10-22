@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Held games to the lowest release an admin set, at once, and answered the release control's routes
 //      Paulinchen  2026-10-21: Said an admin's line in every world with players online as the relay's own
 //                            - Answered the admins' stats of what the relay carries, the battle server's ping included
 //                            - Told every game and server battle of a Raid World each pool an admin defeated
@@ -73,7 +74,7 @@ import { routeIs, withJson } from "../core/http.js";
 import { adminCheck, exportWorldData, handleMigrationRequest, migrationRouteOf } from "../core/migration.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
-import { RELEASE_REPO, ReleaseWatch, UPDATE_NAME, updateLine } from "../core/releases.js";
+import { RELEASE_REPO, RELEASE_ROUTE, ReleaseControl, ReleaseWatch, UPDATE_NAME, handleReleaseRequest, updateLine } from "../core/releases.js";
 import { ReportDesk, handleReportRequest, reportSettingsOf } from "../core/reports.js";
 import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, sealedGameRefusal, sealedGameRefused, storyPushText, storyRouteOf } from "../core/story.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
@@ -218,17 +219,23 @@ export function memoryStore() {
 }
 
 /**
- * Keeps the newest release of the mod the relay has seen in memory, as the release watch's store.
+ * Keeps the newest release of the mod the relay has seen and the release control in memory, as
+ * the release watch's and the release control's store.
  *
  * @returns {import("../core/releases.js").ReleaseStore} The store.
  */
 export function memoryReleaseStore() {
   let seen;
+  let control;
 
   return {
     getRelease: async () => seen,
     putRelease: async (version) => {
       seen = version;
+    },
+    getControl: async () => (control ? structuredClone(control) : undefined),
+    putControl: async (record) => {
+      control = structuredClone(record);
     },
   };
 }
@@ -363,7 +370,7 @@ export async function clearPresence(directory) {
 
 /**
  * Opens the stores the relay keeps its worlds, mods, trades and Raid Worlds' stories and boss
- * pools, and the newest release of the mod it has seen in: a SQLite database at a path, or memory without one.
+ * pools, the newest release of the mod it has seen and the release control in: a SQLite database at a path, or memory without one.
  *
  * @param {string | undefined} path The database's path, as DATABASE_VARIABLE names it; empty or undefined for memory.
  * @returns {Promise<{directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, releases: import("../core/releases.js").ReleaseStore, close: () => void}>} The stores, and a way to close them.
@@ -515,14 +522,14 @@ function headerOf(request, name) {
 /**
  * Creates a relay server, not yet listening.
  *
- * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk, minVersion?: string, releases?: ReleaseWatch | null}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log, the bug report desk, off unless given, the lowest game version served, DEFAULT_MIN_VERSION unless given, which tests change, and the watch of the mod's releases, off unless given.
+ * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk, minVersion?: string, release?: ReleaseControl, releases?: ReleaseWatch | null}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log, the bug report desk, off unless given, the lowest game version served while no admin set one, DEFAULT_MIN_VERSION unless given, which tests change, the release control, loaded, an empty one in memory over minVersion unless given, and the watch of the mod's releases, off unless given.
  * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, check: () => void, sweep: () => Promise<void>, checkRelease: () => Promise<{version: string | null, worlds: number}>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, a world's story, a world's boss pools, a look at the deadlines, a sweep of what is kept too long, a check of the mod's releases, and a way to stop everything.
  */
 export function createRelay({
   limits = LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, directory = new Directory(memoryStore(), { clock }),
   mods = new ModCatalog(memoryModStore(), { clock }), trades = new TradeBook(memoryTradeStore(), (id) => directory.store.get(id), { clock }), stories = memoryStoryStores(),
   storyLimits = STORY_LIMITS, bosses = memoryBossStores(), bossLimits = BOSS_LIMITS, log = consoleLog, reports = new ReportDesk(reportSettingsOf({}), { clock, log: stamped(log) }),
-  minVersion = DEFAULT_MIN_VERSION, releases = null, battleServer = null, battleLimits = BATTLE_LIMITS,
+  minVersion = DEFAULT_MIN_VERSION, release = new ReleaseControl(memoryReleaseStore(), { envMin: minVersion, clock }), releases = null, battleServer = null, battleLimits = BATTLE_LIMITS,
 } = {}) {
   const started = clock();
   /** @type {Map<string, WorldStory>} */
@@ -570,7 +577,7 @@ export function createRelay({
       logged(101);
       seat(webSocket);
     });
-    const outdated = updateRefusal(new URL(request.url, "http://relay"), headerOf(request, FEATURES_HEADER), headerOf(request, VERSION_HEADER), minVersion);
+    const outdated = updateRefusal(new URL(request.url, "http://relay"), headerOf(request, FEATURES_HEADER), headerOf(request, VERSION_HEADER), release.min);
 
     if (outdated) {
       turnAway(outdated.status, outdated.reason, outdated.code);
@@ -657,7 +664,7 @@ export function createRelay({
    */
   async function answerDirectory(request, response) {
     const url = new URL(request.url, "http://relay");
-    const outdated = updateRefusal(url, headerOf(request, FEATURES_HEADER), headerOf(request, VERSION_HEADER), minVersion);
+    const outdated = updateRefusal(url, headerOf(request, FEATURES_HEADER), headerOf(request, VERSION_HEADER), release.min);
 
     if (outdated) {
       await refuseOutdated(request, response, outdated);
@@ -673,10 +680,17 @@ export function createRelay({
       return;
     }
 
+    if (routeIs(url, RELEASE_ROUTE)) {
+      const answer = handleReleaseRequest(release, request.method, url);
+      response.writeHead(answer.status, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(answer.body));
+      return;
+    }
+
     const admin = adminRouteOf(url);
 
     if (admin) {
-      const answer = await handleAdminRequest({ stats, announce }, request.method, url, admin.rest, () => readText(request), headerOf(request, PLAYER_HEADER), adminCheck(directory.admins));
+      const answer = await handleAdminRequest({ stats, announce, release, releaseSet }, request.method, url, admin.rest, () => readText(request), headerOf(request, PLAYER_HEADER), adminCheck(directory.admins));
       response.writeHead(answer.status, { "Content-Type": "application/json" });
       response.end(JSON.stringify(answer.body));
       return;
@@ -1617,6 +1631,19 @@ export function createRelay({
   }
 
   /**
+   * Logs a change an admin made to the release control, with what it replaced.
+   *
+   * @param {{status: number, body: object, before?: {current: string | null, min: string | null}}} answer The release control's answer.
+   * @param {string} admin The admin's player id.
+   */
+  function releaseSet(answer, admin) {
+    if (answer.before) {
+      const { current, min } = answer.body;
+      log.info(`${new Date().toISOString()} admin ${admin} set the release: current ${answer.before.current ?? "unset"} -> ${current ?? "unset"}, min ${answer.before.min ?? "unset"} -> ${release.kept.min ?? "unset"} (${min} served)`);
+    }
+  }
+
+  /**
    * Sweeps out the worlds whose starting save did not come in time and the trades kept long
    * enough, which the directory and the trades otherwise only do when a request reads them.
    *
@@ -1794,8 +1821,9 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const trades = new TradeBook(stores.trades, (id) => directory.store.get(id));
   const reports = new ReportDesk(reportSettingsOf(process.env), { log: stamped(consoleLog) });
   const releases = new ReleaseWatch(stores.releases, { repo: process.env.RELEASE_REPO || RELEASE_REPO });
+  const release = await new ReleaseControl(stores.releases, { envMin: process.env.MIN_VERSION, repo: process.env.RELEASE_REPO || RELEASE_REPO }).load();
   const battleServer = battleServerOf(process.env[BATTLE_SERVER_VARIABLE]);
-  const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports, minVersion: process.env.MIN_VERSION, releases, battleServer });
+  const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports, minVersion: process.env.MIN_VERSION, release, releases, battleServer });
 
   relay.server.listen(port, host, () => console.log(`${new Date().toISOString()} relay listening on ${host}:${port}, ${database ? `database ${database}` : "everything in memory"}, ${battleServer ? `battle server ${battleServer.host}:${battleServer.port}` : "no battle server"}, ${offline} world(s) with players online marked empty`));
 
