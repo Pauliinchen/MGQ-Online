@@ -1,0 +1,31 @@
+#----------------------------------------------------------------
+#  mgq-relay-backup.service
+#
+#  Changelog:
+#      Paulinchen  2026-10-22: Created
+#
+#----------------------------------------------------------------
+
+# Backs up the relay's database once, started by mgq-relay-backup.timer. It runs as the relay's
+# user, so the database's -wal and -shm files stay the relay's (see backup-relay.sh).
+
+[Unit]
+Description=Back up the MGQ Online relay database
+After=mgq-relay.service
+
+[Service]
+Type=oneshot
+User=mgq-relay
+Group=mgq-relay
+UMask=0077
+Environment=MGQ_RELAY_DB=/var/lib/mgq-relay/relay.sqlite
+Environment=BACKUP_DIR=/var/backups/mgq-relay
+Environment=BACKUP_KEEP=14
+ExecStart=/usr/local/sbin/mgq-relay-backup
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/mgq-relay /var/backups/mgq-relay
