@@ -2,7 +2,8 @@
 //  design_builds.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Tested that a publish refuses a build compiled against another live build
+//      Paulinchen  2026-10-22: Tested that a request that is not as it should be takes no rate limit token
+//                            - Tested that a publish refuses a build compiled against another live build
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -203,9 +204,15 @@ test("only designer admins build, publish, roll back and set the format; every d
   assert.deepEqual((await call(book, "POST", "/builds", { seq: 0 }, { ...A, "X-MGQ-Designer-Version": "0.0.0-dev" })).status, 202, "an admin builds from a development build");
 });
 
-test("builds, publishing and rolling back are rate limited per designer", async () => {
+test("builds, publishing and rolling back are rate limited per designer, and a request that is not as it should be counts against none", async () => {
   const { book } = await buildBook({ rateLimits: {} });
   const answers = [];
+
+  for (let index = 0; index < 4; index++) {
+    answers.push((await call(book, "POST", "/builds", { seq: "0" })).status, (await call(book, "POST", "/publish", { buildId: 0 })).status);
+  }
+
+  assert.deepEqual(answers.splice(0), [400, 400, 400, 400, 400, 400, 400, 400]);
 
   for (let index = 0; index < 4; index++) {
     answers.push((await call(book, "POST", "/builds", { seq: 0 })).status);

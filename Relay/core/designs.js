@@ -2,7 +2,8 @@
 //  designs.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Refused to publish a build compiled against another live build
+//      Paulinchen  2026-10-22: Checked a build or publish request before counting it against the rate limit
+//                            - Refused to publish a build compiled against another live build
 //                            - Built the design on the server one build at a time, published a build, rolled back to the previous one and served the live build to games
 //      Paulinchen  2026-10-21: Kept the designers' presence and their sockets and served the newest designer release
 //                            - Created
@@ -1212,11 +1213,15 @@ export class DesignBook {
    *
    * @param {{id: string, name: string}} designer The designer admin.
    * @param {any} body The request, `{seq}`, the current seq.
-   * @returns {Promise<{status: number, body: object}>} `202 {build}` once queued; `409 moved` on an old seq, `503 compiler` while the compiler cannot build.
+   * @returns {Promise<{status: number, body: object}>} `202 {build}` once queued; `409 moved` on an old seq, `429 rate` past the designer's build limit, which a request that is not as it should be never counts against, `503 compiler` while the compiler cannot build.
    */
   async startBuild(designer, body) {
     if (!isObject(body) || !wholeIn(body.seq, 0, Number.MAX_SAFE_INTEGER)) {
       return invalid([{ id: null, message: "seq must be a whole number." }]);
+    }
+
+    if (!this.buildStarts.take(designer.id)) {
+      return { status: 429, body: { code: "rate" } };
     }
 
     const moved = (state) => (body.seq === state.seq ? null : { status: 409, body: { code: "moved", seq: state.seq } });
@@ -1446,11 +1451,15 @@ export class DesignBook {
    *
    * @param {{id: string, name: string}} designer The designer admin.
    * @param {any} body The request, `{buildId}` of a build whose status is ok.
-   * @returns {Promise<{status: number, body: object, notice?: {text: string, resetKeys: string[]}}>} `{live, catalogDiff}`, with what to tell the world rooms while DESIGN_WORLD_NOTICE is on; `404 none` for a build the relay does not hold, `409 status` for one not ok, `409 stale` for one compiled against another live build than the one live now, which a new build replaces.
+   * @returns {Promise<{status: number, body: object, notice?: {text: string, resetKeys: string[]}}>} `{live, catalogDiff}`, with what to tell the world rooms while DESIGN_WORLD_NOTICE is on; `404 none` for a build the relay does not hold, `409 status` for one not ok, `409 stale` for one compiled against another live build than the one live now, which a new build replaces; `429 rate` past the designer's publish limit, which a request that is not as it should be never counts against.
    */
   async publish(designer, body) {
     if (!isObject(body) || !wholeIn(body.buildId, 1, Number.MAX_SAFE_INTEGER)) {
       return invalid([{ id: null, message: "buildId must be a whole number from 1." }]);
+    }
+
+    if (!this.publishes.take(designer.id)) {
+      return { status: 429, body: { code: "rate" } };
     }
 
     return this.exclusive(async () => {
@@ -1704,11 +1713,6 @@ export async function handleDesignRequest(book, method, url, client, readBody, d
   }
 
   if (route === "builds" && bare && method === "POST") {
-    if (!book.buildStarts.take(designer.id)) {
-      await drain(limit);
-      return { status: 429, body: { code: "rate" } };
-    }
-
     return withBody((body) => book.startBuild(designer, body));
   }
 
@@ -1717,18 +1721,13 @@ export async function handleDesignRequest(book, method, url, client, readBody, d
     return rest.length === 3 ? book.buildSnapshot(id) : book.buildList(id);
   }
 
-  if ((route === "publish" || route === "rollback") && bare && method === "POST") {
-    if (!book.publishes.take(designer.id)) {
-      await drain(limit);
-      return { status: 429, body: { code: "rate" } };
-    }
-
-    if (route === "rollback") {
-      await drain(limit);
-      return book.rollback(designer);
-    }
-
+  if (route === "publish" && bare && method === "POST") {
     return withBody((body) => book.publish(designer, body));
+  }
+
+  if (route === "rollback" && bare && method === "POST") {
+    await drain(limit);
+    return book.publishes.take(designer.id) ? book.rollback(designer) : { status: 429, body: { code: "rate" } };
   }
 
   if (route === "format" && bare && method === "POST") {
