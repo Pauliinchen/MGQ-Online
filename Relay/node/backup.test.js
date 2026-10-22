@@ -2,7 +2,8 @@
 //  backup.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Created
+//      Paulinchen  2026-10-22: Tested the line of a database without worlds or design tables
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -139,6 +140,16 @@ test("the script copies the open database with its design tables, keeps the newe
   assert.equal(backup({ MGQ_RELAY_DB: `${folder}/relay.sqlite`, BACKUP_DIR: dest, BACKUP_KEEP: "3" }).status, 0, "a second run on one day replaces that day's copy");
   assert.equal(readdirSync(dest).filter((name) => COPY_NAME.test(name)).length, 3);
   assert.equal(readdirSync(dest).some((name) => name.includes("partial")), false);
+});
+
+test("the script names a missing worlds table and missing design tables in its line", { skip: SKIP }, () => {
+  const bare = `${folder}/bare.sqlite`;
+  const created = spawnSync(SQLITE3, [bare, "CREATE TABLE notes (text TEXT);"], { encoding: "utf8", windowsHide: true });
+  assert.equal(created.status, 0, created.stderr);
+
+  const run = backup({ MGQ_RELAY_DB: bare, BACKUP_DIR: `${folder}/bare-backups`, BACKUP_KEEP: "1" });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, / bytes, step 0, no worlds table, no design tables\), keeping 1 copies\n?$/);
 });
 
 test("the script refuses a missing database and a count of copies that is no whole number above 0", { skip: SKIP }, () => {
