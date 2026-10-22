@@ -3,7 +3,8 @@
 #  backup-relay.sh
 #
 #  Changelog:
-#      Paulinchen  2026-10-22: Created
+#      Paulinchen  2026-10-22: Named a missing worlds table in the backup line
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -63,7 +64,12 @@ COUNTS="$(query "SELECT name FROM sqlite_master WHERE type = 'table' AND name LI
     printf ' %s=%s' "$TABLE" "$(query "SELECT count(*) FROM \"$TABLE\";")"
 done)"
 STEP="$(query "PRAGMA user_version;")"
-WORLDS="$(query "SELECT count(*) FROM worlds;" 2>/dev/null || echo 0)"
+# A pipeline answers with the status of its last command, so the table is looked up, not queried blind.
+if [ "$(query "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'worlds';")" = "1" ]; then
+    WORLDS="$(query "SELECT count(*) FROM worlds;") worlds"
+else
+    WORLDS="no worlds table"
+fi
 
 mv -f "$PARTIAL" "$TARGET"
 trap - EXIT
@@ -78,4 +84,4 @@ if [ "$EXCESS" -gt 0 ]; then
     done
 fi
 
-echo "backup-relay: $DB -> $TARGET ($(wc -c < "$TARGET" | tr -d ' ') bytes, step $STEP, $WORLDS worlds,${COUNTS:- no design tables}), keeping $((COPIES < KEEP ? COPIES : KEEP)) copies"
+echo "backup-relay: $DB -> $TARGET ($(wc -c < "$TARGET" | tr -d ' ') bytes, step $STEP, $WORLDS,${COUNTS:- no design tables}), keeping $((COPIES < KEEP ? COPIES : KEEP)) copies"
