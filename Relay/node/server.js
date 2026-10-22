@@ -8,6 +8,7 @@
 //                            - Told no released game in a world room a mods rule longer than its DLL takes
 //                            - Read text bodies of up to 1 MB, four bytes for each character the directory takes
 //                            - Held games to the lowest release an admin set, at once, and answered the release control's routes
+//                            - Told the world rooms of new live builds in the order they went live
 //                            - Built the Raid design with the designer's compiler, published and rolled back builds and served the live build to games
 //      Paulinchen  2026-10-21: Said an admin's line in every world with players online as the relay's own
 //                            - Answered the admins' stats of what the relay carries, the battle server's ping included
@@ -756,11 +757,6 @@ export function createRelay({
 
       if (answer.removed) {
         designs.presence.disconnect(answer.removed, DESIGN_CLOSE.notDesigner);
-      }
-
-      // The build is live by now, so a failed notice is logged, not answered.
-      if (answer.notice) {
-        await noticeWorlds(answer.notice).catch((error) => log.error(errorLine(new Date(), "notice of the live design", error)));
       }
 
       if (answer.file) {
@@ -2028,6 +2024,8 @@ export function createRelay({
   designerPingTimer.unref();
   const presenceTimer = setInterval(() => designs.presence.expire(), DESIGN_SOCKET.expireEveryMs);
   presenceTimer.unref();
+  // The build is live by then, so a failed notice is logged, not answered.
+  designs.worldTeller = (notice) => noticeWorlds(notice).catch((error) => log.error(errorLine(new Date(), "notice of the live design", error)));
   const designerReleaseTimer = designs.releases
     ? setInterval(() => checkDesignerRelease().catch((error) => log.error(errorLine(new Date(), "check of the designer releases", error))), designerReleaseEveryMs)
     : null;

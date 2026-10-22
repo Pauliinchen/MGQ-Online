@@ -2,7 +2,8 @@
 //  designs.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Checked a build or publish request before counting it against the rate limit
+//      Paulinchen  2026-10-22: Told the world rooms of new live builds in the order they went live
+//                            - Checked a build or publish request before counting it against the rate limit
 //                            - Refused to publish a build compiled against another live build
 //                            - Built the design on the server one build at a time, published a build, rolled back to the previous one and served the live build to games
 //      Paulinchen  2026-10-21: Kept the designers' presence and their sockets and served the newest designer release
@@ -764,6 +765,10 @@ export class DesignBook {
     this.blobDownloads = new RateLimiter(downloads, clock);
     this.compiler = compiler;
     this.worldNotice = worldNotice;
+    /** @type {((notice: {text: string, resetKeys: string[]}) => Promise<void>) | null} Tells the world rooms of a new live build, as the relay serving the book sets it; never throws. */
+    this.worldTeller = null;
+    /** @type {Promise<void>} The world notices queued so far, told one after another in the order their builds went live. */
+    this.notices = Promise.resolve();
     this.queue = Promise.resolve();
     this.compiles = Promise.resolve();
   }
@@ -1486,7 +1491,7 @@ export class DesignBook {
       const catalogDiff = catalogDiffOf(build.report === null ? null : JSON.parse(build.report));
       this.presence.broadcast(liveFrame({ buildId: build.id, marshalSha: build.marshal_sha, runtimeSha: build.runtime_sha, by: designer.id, name: designer.name }));
       const resetKeys = [...new Set([...catalogDiff.removed, ...catalogDiff.renamed.map((renamed) => renamed.from)])];
-      return { status: 200, body: { live, catalogDiff }, ...this.noticeOf(build, resetKeys) };
+      return { status: 200, body: { live, catalogDiff }, ...this.tellWorlds(build, resetKeys) };
     });
   }
 
@@ -1507,20 +1512,27 @@ export class DesignBook {
       const live = { buildId: previous.id, previousBuildId: earlier.build_id, by: designer.id, at: this.now() };
       await this.store.setLive(live);
       this.presence.broadcast(liveFrame({ buildId: previous.id, marshalSha: previous.marshal_sha, runtimeSha: previous.runtime_sha, by: designer.id, name: designer.name }));
-      return { status: 200, body: { live }, ...this.noticeOf(previous, []) };
+      return { status: 200, body: { live }, ...this.tellWorlds(previous, []) };
     });
   }
 
   /**
-   * Names what a new live build tells the world rooms, only while DESIGN_WORLD_NOTICE is on, since
-   * released games read no compiled format 3 yet.
+   * Queues what a new live build tells the world rooms behind the notices before it, only while
+   * DESIGN_WORLD_NOTICE is on, since released games read no compiled format 3 yet. Called inside
+   * exclusive, so the world rooms hear the builds in the order they went live.
    *
    * @param {{marshal_sha: string, runtime_sha: string}} build The build now live.
    * @param {string[]} resetKeys The boss keys whose pools end.
    * @returns {{notice?: {text: string, resetKeys: string[]}}} The notice, none while off.
    */
-  noticeOf(build, resetKeys) {
-    return this.worldNotice ? { notice: { text: worldDesignText(build.marshal_sha, build.runtime_sha), resetKeys } } : {};
+  tellWorlds(build, resetKeys) {
+    if (!this.worldNotice) {
+      return {};
+    }
+
+    const notice = { text: worldDesignText(build.marshal_sha, build.runtime_sha), resetKeys };
+    this.notices = this.notices.then(() => this.worldTeller?.(notice)).catch(() => {});
+    return { notice };
   }
 
   /**
@@ -1647,7 +1659,7 @@ async function readDesignJson(readBody, limit) {
  * @param {{designer: string | null, player: string | null, version: string | null, format: string | null}} client The request's DESIGNER_HEADER, PLAYER_HEADER, DESIGNER_VERSION_HEADER and DESIGN_FORMAT_HEADER.
  * @param {(limit: number) => Promise<string | null>} readBody Reads the request's body as text up to a limit in bytes, null when it is longer.
  * @param {(limit: number) => Promise<void>} drain Reads the request's body to its end and drops it, for a refusal answered before the body was read.
- * @returns {Promise<{status: number, body: object, pushed?: {seq: number, by: string, name: string, ids: string[]}, removed?: string, file?: {path: string, name: string, size: number, sha256: string}, bytes?: Uint8Array, headers?: Record<string, string>, notice?: {text: string, resetKeys: string[]}}>} The answer, with what a push changed, the designer removed, the release file or the bytes with their headers to send in place of the body, or what a new live build tells the world rooms.
+ * @returns {Promise<{status: number, body: object, pushed?: {seq: number, by: string, name: string, ids: string[]}, removed?: string, file?: {path: string, name: string, size: number, sha256: string}, bytes?: Uint8Array, headers?: Record<string, string>, notice?: {text: string, resetKeys: string[]}}>} The answer, with what a push changed, the designer removed, the release file or the bytes with their headers to send in place of the body, or what a new live build was queued to tell the world rooms.
  */
 export async function handleDesignRequest(book, method, url, client, readBody, drain) {
   const rest = designRouteOf(url)?.rest ?? [];
