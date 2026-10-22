@@ -2,6 +2,7 @@
 //  designer_releases.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Checked the latest designer release every 10 minutes
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -37,7 +38,7 @@ export const DESIGNER_RID = "win-x64";
  * The limits and timings of the designer releases.
  */
 export const DESIGNER_RELEASE_LIMITS = Object.freeze({
-  checkEveryMs: 30 * 60 * 1000,
+  checkEveryMs: 10 * 60 * 1000,
   maxManifestBytes: 64 * 1024,
   maxSignatureBytes: 1024,
   maxExeBytes: 1024 * 1024 * 1024,

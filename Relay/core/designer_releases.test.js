@@ -359,7 +359,7 @@ test("the settings come from the environment and leave the releases off while in
   }
 
   assert.throws(() => new DesignerReleases({ repo: REPO, token: TOKEN, publicKey: "no key", dataDir: freshFolder() }));
-  assert.equal(DESIGNER_RELEASE_LIMITS.checkEveryMs, 30 * 60 * 1000);
+  assert.equal(DESIGNER_RELEASE_LIMITS.checkEveryMs, 10 * 60 * 1000);
 });
 
 test("a Range header asks for one byte range; anything else for the whole file, a range past the end for none", () => {
