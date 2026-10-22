@@ -1,0 +1,2 @@
+# the server reads these files, so they keep Linux line endings
+* text eol=lf
