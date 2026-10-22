@@ -2,6 +2,7 @@
 //  RuleLimitsAndGroupsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Tested the rank within a group
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -129,6 +130,42 @@ public sealed class RuleLimitsAndGroupsTests
         Dictionary<string, int> counts = FiredIds(context).GroupBy(id => id).ToDictionary(group => group.Key, group => group.Count());
         Assert.Equal(200, counts["a"] + counts["b"]);
         Assert.InRange(counts["a"], 70, 130);
+    }
+
+    /// <summary>
+    /// Draws only among the successes of a group's highest rank, as a nullifying counter wins over the others.
+    /// </summary>
+    [Fact]
+    public void DrawsAmongTheHighestRank()
+    {
+        FakeRuleContext context = new();
+        RuleEngine engine = EngineOf(
+            Marker("low", new BossHitTrigger(HitKind.Any, false), group: "counters"),
+            Marker("first", new BossHitTrigger(HitKind.Any, false), group: "counters") with { GroupRank = 1 },
+            Marker("second", new BossHitTrigger(HitKind.Any, false), group: "counters") with { GroupRank = 1 });
+        ArenaRandom twin = new RandomStreams(42).Get(RandomStream.Rules);
+
+        engine.Raise(context, PartyHit(1));
+
+        Assert.Equal([new[] { "first", "second" }[twin.NextInt(2)]], FiredIds(context));
+    }
+
+    /// <summary>
+    /// A lone success of the highest rank fires without a draw.
+    /// </summary>
+    [Fact]
+    public void ALoneTopRankFiresWithoutADraw()
+    {
+        FakeRuleContext context = new();
+        RuleEngine engine = EngineOf(
+            Marker("low", new BossHitTrigger(HitKind.Any, false), group: "counters"),
+            Marker("top", new BossHitTrigger(HitKind.Any, false), group: "counters") with { GroupRank = 1 });
+        int next = new RandomStreams(42).Get(RandomStream.Rules).NextInt(1000);
+
+        engine.Raise(context, PartyHit(1));
+
+        Assert.Equal(["top"], FiredIds(context));
+        Assert.Equal(next, context.Rules.NextInt(1000));
     }
 
     /// <summary>

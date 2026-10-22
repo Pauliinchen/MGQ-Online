@@ -2,6 +2,7 @@
 //  RuleSpec.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Added the rank within a group
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -20,6 +21,7 @@ namespace MGQOnline.Arena.Model;
 /// <param name="Effects">What it does, in order.</param>
 /// <param name="Limits">How often it may fire.</param>
 /// <param name="Group">The group whose rules firing on one event yield one random success, or null for none.</param>
+/// <param name="GroupRank">Its rank within its group: a group draws among the successes of its highest rank, null counting as 0.</param>
 public sealed record RuleSpec(
     string Id,
     RuleOrigin Origin,
@@ -27,7 +29,8 @@ public sealed record RuleSpec(
     IReadOnlyList<ConditionSpec> Conditions,
     IReadOnlyList<EffectSpec> Effects,
     RuleLimits Limits,
-    string? Group = null);
+    string? Group = null,
+    int? GroupRank = null);
 
 /// <summary>
 /// Where a rule comes from, so the designer can open its editor.

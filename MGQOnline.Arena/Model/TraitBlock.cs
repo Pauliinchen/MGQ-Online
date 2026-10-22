@@ -2,6 +2,7 @@
 //  TraitBlock.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Named a delayed counter by its trait's id
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -120,6 +121,7 @@ public sealed record StateRecipe(
 /// <param name="PhaseState">The index of the Last stand phase recipe it records under, or null.</param>
 /// <param name="StanceSkill">The skill whose use arms a stance, or null.</param>
 /// <param name="StanceTurns">The turns a stance lasts, or null.</param>
+/// <param name="Id">The item id of its trait, which its rule is named after; null for a stance's counter.</param>
 public sealed record DelayedCounterSpec(
     CounterSource Source,
     HitKind HitType,
@@ -132,7 +134,8 @@ public sealed record DelayedCounterSpec(
     int? TriggerSkillType = null,
     int? PhaseState = null,
     SkillRef? StanceSkill = null,
-    int? StanceTurns = null);
+    int? StanceTurns = null,
+    string? Id = null);
 
 /// <summary>
 /// A custom skill's stance: using it arms a delayed counter for some turns.

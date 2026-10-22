@@ -2,6 +2,7 @@
 //  RuleGroups.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Drew among the highest rank of a group
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -20,9 +21,10 @@ namespace MGQOnline.Arena.Engine;
 internal static class RuleGroups
 {
     /// <summary>
-    /// Keeps every rule without a group and one random rule of each group.
+    /// Keeps every rule without a group and one random rule of each group, drawn among the group's
+    /// successes of its highest rank.
     /// </summary>
-    /// <remarks>Groups draw in the order of their first rule, and a group with one success draws nothing.</remarks>
+    /// <remarks>Groups draw in the order of their first rule, and a group with one success of that rank draws nothing.</remarks>
     /// <param name="successes">The rules whose conditions held, in match order.</param>
     /// <param name="random">The rules' stream.</param>
     /// <returns>The rules that fire, in match order.</returns>
@@ -32,11 +34,10 @@ internal static class RuleGroups
         foreach (IGrouping<string, RuleSpec> group in successes.Where(rule => rule.Group is not null).GroupBy(rule => rule.Group!))
         {
             RuleSpec[] members = group.ToArray();
-            if (members.Length > 1)
-            {
-                int winner = random.NextInt(members.Length);
-                losers.UnionWith(members.Where((_, index) => index != winner));
-            }
+            int top = members.Max(rule => rule.GroupRank ?? 0);
+            RuleSpec[] drawn = members.Where(rule => (rule.GroupRank ?? 0) == top).ToArray();
+            RuleSpec winner = drawn.Length > 1 ? drawn[random.NextInt(drawn.Length)] : drawn[0];
+            losers.UnionWith(members.Where(rule => !ReferenceEquals(rule, winner)));
         }
 
         return losers.Count == 0 ? successes : successes.Where(rule => !losers.Contains(rule)).ToArray();
