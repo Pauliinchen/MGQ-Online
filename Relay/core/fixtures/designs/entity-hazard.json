@@ -1,0 +1,17 @@
+{
+  "id": "hazard:9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
+  "kind": "hazard",
+  "schema": 1,
+  "rev": 430,
+  "body": {
+    "name": "Hellfire",
+    "triggers": ["stepsOnto", "endsTurnOn"],
+    "effects": [
+      { "type": "damage", "to": "triggerUnit", "percent": 10 },
+      { "type": "addState", "to": "triggerUnit", "state": 302, "turns": 2 }
+    ],
+    "turns": 3,
+    "fires": 2,
+    "look": { "tile": ["Dungeon_B", 57], "animation": 41, "opacity": 80, "tint": [255, 80, 0, 96] }
+  }
+}

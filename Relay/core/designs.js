@@ -2,7 +2,8 @@
 //  designs.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Handed out the design epoch with the seq and refused pushes made before a restore
+//      Paulinchen  2026-10-22: Took hazard entities
+//                            - Handed out the design epoch with the seq and refused pushes made before a restore
 //                            - Raised the design format only one step at a time to the format the push names in its header
 //                            - Let the format route lower the formats too
 //                            - Left the designers DESIGNER_ADMINS names alone once listed
@@ -62,12 +63,12 @@ import { RATE_LIMITS, RateLimiter } from "./relay.js";
 /**
  * The entity kinds a design holds.
  */
-export const DESIGN_KINDS = Object.freeze(["rules", "catalog", "tier", "boss", "skillDefault", "customSkill", "map", "tileset", "state", "bossFight"]);
+export const DESIGN_KINDS = Object.freeze(["rules", "catalog", "tier", "boss", "skillDefault", "customSkill", "map", "tileset", "state", "bossFight", "hazard"]);
 
 /**
  * The pattern every entity id matches; the kind comes before the colon, or is the whole id.
  */
-export const ENTITY_ID = /^(rules|catalog)$|^(tier|skillDefault|map|tileset|state|bossFight):\d{1,6}$|^(boss|customSkill):[0-9a-f]{32}$/;
+export const ENTITY_ID = /^(rules|catalog)$|^(tier|skillDefault|map|tileset|state|bossFight):\d{1,6}$|^(boss|customSkill|hazard):[0-9a-f]{32}$/;
 
 /**
  * The first design format, which a relay without pushes from a released designer holds.

@@ -21,7 +21,8 @@
       "game:1515": {
         "kind": "single",
         "spread": { "mode": "splash", "percent": 30, "range": 1, "maxSharers": 5, "metric": "manhattan",
-                    "shape": { "type": "diamond", "radius": 1, "fit": "clip" } }
+                    "shape": { "type": "diamond", "radius": 1, "fit": "clip" } },
+        "hazard": { "hazard": "hazard:9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f", "chance": 50, "where": "randomInArea", "count": 2, "turns": 0 }
       },
       "game:3764": {
         "kind": "area",
@@ -78,7 +79,8 @@
       { "id": "0d9e8f7a", "name": "Dark answers light",
         "on": { "type": "unitHit", "holding": 301, "hitByLeaving": 302 },
         "if": [ { "type": "chance", "basisPoints": 10000 } ],
-        "do": [ { "type": "damage", "to": "triggerUnit", "percent": 30 } ],
+        "do": [ { "type": "damage", "to": "triggerUnit", "percent": 30 },
+                { "type": "placeHazard", "hazard": { "hazard": "hazard:9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f", "where": "aimedCell" } } ],
         "limit": { "oncePerUnitPerUse": true, "oncePerTurn": false } }
     ]
   }
