@@ -2,7 +2,8 @@
 //  design_compiler.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Created
+//      Paulinchen  2026-10-22: Probed the compiler once for builds that start together
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -154,6 +155,8 @@ export class DesignCompiler {
     this.log = log;
     /** @type {{identity: string, probe: {designFormat: number, version: string | null, message: string | null}} | null} */
     this.probed = null;
+    /** @type {{identity: string, probe: Promise<{designFormat: number, version: string | null, message: string | null}>} | null} The probe of a binary still running, which later callers share. */
+    this.probing = null;
   }
 
   /**
@@ -187,7 +190,8 @@ export class DesignCompiler {
 
   /**
    * Reads the compiler's version and design format and checks the game data, once per binary; a
-   * failed probe is tried again on the next call, since the game data may be fixed meanwhile.
+   * call while a probe of the same binary runs shares it, and a failed probe is tried again on the
+   * next call, since the game data may be fixed meanwhile.
    *
    * @returns {Promise<{designFormat: number, version: string | null, message: string | null}>} The design format it writes, 0 for a compiler that is missing or names none; its version; and why it cannot compile, null when it can.
    */
@@ -203,15 +207,35 @@ export class DesignCompiler {
       return this.probed.probe;
     }
 
-    const probe = await this.freshProbe();
-
-    if (probe.message === null && probe.designFormat > 0) {
-      this.probed = { identity, probe };
-    } else {
-      this.log.error(`the compiler ${this.settings.compiler} failed its probe: ${probe.message ?? `design format ${probe.designFormat}`}`);
+    if (this.probing?.identity !== identity) {
+      this.probing = { identity, probe: this.probeBinary(identity) };
     }
 
-    return probe;
+    return this.probing.probe;
+  }
+
+  /**
+   * Probes one binary, keeps a passed probe for it and logs a failed one.
+   *
+   * @param {string} identity The binary, see identity.
+   * @returns {Promise<{designFormat: number, version: string | null, message: string | null}>} The probe, see probe.
+   */
+  async probeBinary(identity) {
+    try {
+      const probe = await this.freshProbe();
+
+      if (probe.message === null && probe.designFormat > 0) {
+        this.probed = { identity, probe };
+      } else {
+        this.log.error(`the compiler ${this.settings.compiler} failed its probe: ${probe.message ?? `design format ${probe.designFormat}`}`);
+      }
+
+      return probe;
+    } finally {
+      if (this.probing?.identity === identity) {
+        this.probing = null;
+      }
+    }
   }
 
   /**
