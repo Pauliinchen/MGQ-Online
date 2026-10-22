@@ -2,7 +2,9 @@
 //  designs.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Left the designers DESIGNER_ADMINS names alone once listed
+//      Paulinchen  2026-10-22: Raised the design format only one step at a time to the format the push names in its header
+//                            - Let the format route lower the formats too
+//                            - Left the designers DESIGNER_ADMINS names alone once listed
 //                            - Failed a build whose result could not be kept
 //                            - Told the world rooms of new live builds in the order they went live
 //                            - Checked a build or publish request before counting it against the rate limit
@@ -21,7 +23,7 @@
 // MGQ-Online-Raid-Designer/docs/SERVER_FORMAT.md, its fixtures are in fixtures/designs.
 
 import { playerIdOf, sha256Hex } from "./directory.js";
-import { DEFAULT_DESIGNER_MIN_VERSION, DESIGN_ROUTE, GAME_DESIGN_ROUTE, designerRefusal, designerRuleOf, parseVersion } from "./gate.js";
+import { DEFAULT_DESIGNER_MIN_VERSION, DESIGN_ROUTE, GAME_DESIGN_ROUTE, designFormatOf, designerRefusal, designerRuleOf, parseVersion } from "./gate.js";
 import { notFound, routeIs } from "./http.js";
 import { CONTROL_CHARACTERS, cleanText, isId } from "./ids.js";
 import { RATE_LIMITS, RateLimiter } from "./relay.js";
@@ -949,7 +951,7 @@ export class DesignBook {
    * Takes a push: every change or none, each on the revision it was made on: `POST push`.
    *
    * @param {{id: string, name: string, admin: boolean}} designer The pushing designer.
-   * @param {{version: string | null | undefined}} client The request's DESIGNER_VERSION_HEADER.
+   * @param {{version: string | null | undefined, format: string | null | undefined}} client The request's DESIGNER_VERSION_HEADER and DESIGN_FORMAT_HEADER.
    * @param {any} body The push, `{designFormat, message, confirmDeletes?, changes: [{id, kind, schema, baseRev, body | null}]}`.
    * @returns {Promise<{status: number, body: object, pushed?: {seq: number, by: string, name: string, ids: string[]}}>} The push's seq and every change's new rev, with what to tell the other designers; or why not.
    */
@@ -996,9 +998,7 @@ export class DesignBook {
         return { status: 200, body: { seq, accepted } };
       }
 
-      const version = parseVersion(client.version);
-      const released = version !== null && !version.development;
-      const format = released && push.designFormat > state.designFormat ? { designFormat: push.designFormat, minFormat: Math.max(state.minFormat, push.designFormat) } : null;
+      const format = this.raisedFormat(push.designFormat, client, state);
 
       await this.store.commit({
         seq, by: designer.id, name: designer.name, at: this.now(), message: push.message, designFormat: push.designFormat,
@@ -1008,6 +1008,27 @@ export class DesignBook {
 
       return { status: 200, body: { seq, accepted }, pushed: { seq, by: designer.id, name: designer.name, ids: writes.map((change) => change.id) } };
     });
+  }
+
+  /**
+   * Tells which design formats a push raises the relay to: the next format, when a released
+   * version pushes it and names it in its header too. A push that names anything else is taken
+   * without raising, so one wrong or forged number cannot lock every designer out.
+   *
+   * @param {number} pushed The push's designFormat.
+   * @param {{version: string | null | undefined, format: string | null | undefined}} client The request's DESIGNER_VERSION_HEADER and DESIGN_FORMAT_HEADER.
+   * @param {{designFormat: number, minFormat: number}} state The formats now.
+   * @returns {{designFormat: number, minFormat: number} | null} The raised formats, null to keep them.
+   */
+  raisedFormat(pushed, client, state) {
+    const version = parseVersion(client.version);
+    const released = version !== null && !version.development;
+
+    if (!released || pushed !== designFormatOf(client.format) || pushed !== state.designFormat + 1) {
+      return null;
+    }
+
+    return { designFormat: pushed, minFormat: Math.max(state.minFormat, pushed) };
   }
 
   /**
@@ -1558,21 +1579,32 @@ export class DesignBook {
   }
 
   /**
-   * Raises the lowest design format the relay takes: `POST format`.
+   * Sets the lowest design format the relay takes, and lowers the design format when the request
+   * names one: `POST format`.
    *
-   * @param {any} body The request, `{minFormat}`, from the current lowest up to the design format.
+   * @param {any} body The request, `{minFormat, designFormat?}`: designFormat from FIRST_DESIGN_FORMAT up to the current one, which it keeps when left out, and minFormat from FIRST_DESIGN_FORMAT up to that.
    * @returns {Promise<{status: number, body: object}>} `{designFormat, minFormat}`.
    */
   setMinFormat(body) {
     return this.exclusive(async () => {
       const state = await this.state();
 
-      if (!isObject(body) || !wholeIn(body.minFormat, state.minFormat, state.designFormat)) {
-        return invalid([{ id: null, message: `minFormat must be a whole number from ${state.minFormat} to ${state.designFormat}.` }]);
+      if (!isObject(body)) {
+        return invalid([{ id: null, message: "The request must be an object." }]);
       }
 
-      await this.store.setFormat({ designFormat: state.designFormat, minFormat: body.minFormat });
-      return { status: 200, body: { designFormat: state.designFormat, minFormat: body.minFormat } };
+      const designFormat = body.designFormat ?? state.designFormat;
+
+      if (!wholeIn(designFormat, FIRST_DESIGN_FORMAT, state.designFormat)) {
+        return invalid([{ id: null, message: `designFormat must be a whole number from ${FIRST_DESIGN_FORMAT} to ${state.designFormat}.` }]);
+      }
+
+      if (!wholeIn(body.minFormat, FIRST_DESIGN_FORMAT, designFormat)) {
+        return invalid([{ id: null, message: `minFormat must be a whole number from ${FIRST_DESIGN_FORMAT} to ${designFormat}.` }]);
+      }
+
+      await this.store.setFormat({ designFormat, minFormat: body.minFormat });
+      return { status: 200, body: { designFormat, minFormat: body.minFormat } };
     });
   }
 

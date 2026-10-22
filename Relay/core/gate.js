@@ -2,6 +2,7 @@
 //  gate.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Let a relay admin set the design formats
 //      Paulinchen  2026-10-21: Added the designer gate of the Raid design routes and held the game's design routes to X-MGQ-Features
 //      Paulinchen  2026-10-12: Held the world directory's and the mod catalog's routes to X-MGQ-Features
 //                            - Named the update code on the 400 of a world room refused to a game too old
@@ -123,12 +124,13 @@ export const DESIGNER_RULE = Object.freeze({
   adminWrite: Object.freeze({ listed: true, current: true, write: true, admin: true, relayAdmin: false }),
   roster: Object.freeze({ listed: true, current: true, write: false, admin: false, relayAdmin: true }),
   manage: Object.freeze({ listed: true, current: true, write: false, admin: true, relayAdmin: true }),
+  adminSetting: Object.freeze({ listed: true, current: true, write: true, admin: true, relayAdmin: true }),
 });
 
 /**
  * The design routes beside `POST builds` that change what players get, for designer admins only.
  */
-const ADMIN_WRITES = new Set(["publish", "rollback", "format"]);
+const ADMIN_WRITES = new Set(["publish", "rollback"]);
 
 /**
  * How much of a refused request's body is read and dropped before the refusal is answered, as much
@@ -166,7 +168,7 @@ export function gateOf(url) {
  *
  * @param {string} method The HTTP method.
  * @param {string[]} rest The address's parts after `designs`.
- * @returns {typeof DESIGNER_RULE.open} The rule: `me` is open to any key to read and to a listed designer to rename; `release` needs a listed designer of any version; the designer list a designer or a relay admin, changing it a designer admin or a relay admin; builds, publish, rollback and format a designer admin; push the development rule; everything else a current designer.
+ * @returns {typeof DESIGNER_RULE.open} The rule: `me` is open to any key to read and to a listed designer to rename; `release` needs a listed designer of any version; the designer list a designer or a relay admin, changing it a designer admin or a relay admin; builds, publish and rollback a designer admin; format a designer admin or a relay admin, who can undo a lowest format no designer reaches; push the development rule; everything else a current designer.
  */
 export function designerRuleOf(method, rest) {
   const [route] = rest;
@@ -185,6 +187,10 @@ export function designerRuleOf(method, rest) {
 
   if (route === "push") {
     return DESIGNER_RULE.write;
+  }
+
+  if (route === "format") {
+    return DESIGNER_RULE.adminSetting;
   }
 
   if (ADMIN_WRITES.has(route) || (route === "builds" && method === "POST" && rest.length === 1)) {
