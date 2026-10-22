@@ -2,6 +2,7 @@
 //  designs.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Replayed the build exchanges too and tested the routes that remain no routes
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -12,7 +13,7 @@ import { memoryDesignStore } from "./design_store_memory.js";
 import { DESIGN_KINDS, DESIGN_LIMITS, DesignBook, ENTITY_ID, SEEDED_BY, designRouteOf, designerIdOf } from "./designs.js";
 import { playerIdOf } from "./directory.js";
 import { DEFAULT_DESIGNER_MIN_VERSION } from "./gate.js";
-import { DEFERRED, DESIGNERS, NOW, RELAY_ADMIN_KEY, SCENARIOS, canonicalJson, entity, fixture, fixtureBook, fixtureNames, replayScenarios, seedEntities, send } from "./test_designs.js";
+import { DESIGNERS, NOW, RELAY_ADMIN_KEY, SCENARIOS, canonicalJson, entity, fixture, fixtureBook, fixtureNames, replayScenarios, seedEntities, send } from "./test_designs.js";
 
 /**
  * The headers of designer A, a listed admin, on a released version.
@@ -86,18 +87,14 @@ function pull(book, query) {
   return send(book, { method: "GET", path: `/v1/designs/entities?${query}`, headers: A, body: null });
 }
 
-test("every contract fixture parses, and every exchange is replayed here or belongs to a later relay package", () => {
+test("every contract fixture parses, and every exchange is replayed here", () => {
   const replayed = new Set(SCENARIOS.map((scenario) => scenario.file));
 
   for (const name of fixtureNames()) {
     const data = fixture(name);
 
     if (Array.isArray(data.exchanges)) {
-      assert.ok(replayed.has(name) || DEFERRED[name]?.length === data.exchanges.length, `${name} is replayed`);
-
-      for (const deferred of DEFERRED[name] ?? []) {
-        assert.ok(data.exchanges.some((exchange) => exchange.name === deferred), `${name} holds ${deferred}`);
-      }
+      assert.ok(replayed.has(name), `${name} is replayed`);
     }
   }
 
@@ -323,7 +320,7 @@ test("the admins DESIGNER_ADMINS names are added under the start of their id, an
   assert.deepEqual([(await store.designer(DESIGNERS.B.id)).name, (await store.designer(DESIGNERS.B.id)).admin], [DESIGNERS.B.name, 1]);
 });
 
-test("the lowest designer version is the setting's, every version without a setting, and the routes the later packages add are no routes yet", async () => {
+test("the lowest designer version is the setting's, every version without a setting, and other paths are no routes", async () => {
   assert.equal(new DesignBook(memoryDesignStore()).minVersion, DEFAULT_DESIGNER_MIN_VERSION);
   assert.equal(new DesignBook(memoryDesignStore(), { minVersion: "0.0.0-dev" }).minVersion, DEFAULT_DESIGNER_MIN_VERSION);
   assert.equal(new DesignBook(memoryDesignStore(), { minVersion: " 1.4 " }).minVersion, "1.4");
@@ -331,7 +328,9 @@ test("the lowest designer version is the setting's, every version without a sett
   const book = await freshBook();
   await seedEntities(book.store, [entity("rules", 1, {})]);
 
-  for (const [method, path] of [["GET", "/v1/designs/builds"], ["GET", "/v1/designs/release"], ["POST", "/v1/designs/me"], ["GET", "/v1/designs"]]) {
-    assert.equal((await send(book, { method, path, headers: A, body: null })).status, 404, `${method} ${path}`);
+  for (const [method, path] of [["GET", "/v1/designs/builds/1/report"], ["PUT", "/v1/designs/publish"], ["GET", "/v1/designs/format"], ["POST", "/v1/designs/me"], ["GET", "/v1/designs"]]) {
+    assert.deepEqual((await send(book, { method, path, headers: A, body: null })).body, { error: "there is no such route" }, `${method} ${path}`);
   }
+
+  assert.deepEqual((await send(book, { method: "GET", path: "/v1/designs/release", headers: A, body: null })).body, { code: "none" }, "a relay without designer releases names none");
 });

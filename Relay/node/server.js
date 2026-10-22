@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Built the Raid design with the designer's compiler, published and rolled back builds and served the live build to games
 //      Paulinchen  2026-10-21: Opened the designer socket and served the newest designer release
 //                            - Answered the Raid designs' entity, push, history and designer routes and kept the designs beside the worlds
 //      Paulinchen  2026-10-15: Marked every player offline as it starts
@@ -66,7 +67,9 @@ import {
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
 import { memoryDesignStore } from "../core/design_store_memory.js";
 import { DESIGNER_RELEASE_LIMITS, DesignerReleases, byteRangeOf, designerReleaseSettingsOf } from "../core/designer_releases.js";
-import { DESIGN_CLOSE, DESIGN_SOCKET, DesignBook, admitDesigner, designRouteOf, handleDesignRequest, pushedFrame, releaseFrame } from "../core/designs.js";
+import {
+  DESIGN_CLOSE, DESIGN_READER_HEADER, DESIGN_SOCKET, DesignBook, admitDesigner, designRouteOf, gameDesignRouteOf, handleDesignRequest, handleGameDesignRequest, pushedFrame, releaseFrame,
+} from "../core/designs.js";
 import { Directory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, raidBossesText, squadText } from "../core/directory.js";
 import {
   DEFAULT_MIN_VERSION, DESIGN_FORMAT_HEADER, DESIGNER_HEADER, DESIGNER_VERSION_HEADER, DRAIN_LIMITS, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE,
@@ -80,6 +83,7 @@ import { RELEASE_REPO, ReleaseWatch, UPDATE_NAME, updateLine } from "../core/rel
 import { ReportDesk, handleReportRequest, reportSettingsOf } from "../core/reports.js";
 import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, sealedGameRefusal, sealedGameRefused, storyPushText, storyRouteOf } from "../core/story.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
+import { DesignCompiler, designCompilerSettingsOf } from "./design_compiler.js";
 import {
   AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, LIMITS, OUT, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, admit, chatLineOf, chatText, newPeer, newWorldPeer,
   overdue, parseFeatures, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText, takeChatLine, takeMessage, takeSeat, worldOverdue,
@@ -487,13 +491,23 @@ async function readText(request, limit = MAX_BODY_BYTES, signal) {
 export function addressOf(request) {
   const remote = request.socket.remoteAddress ?? null;
   const forwarded = request.headers["x-forwarded-for"];
-  const local = remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
+  const local = isLoopback(remote);
 
   if (local && typeof forwarded === "string" && forwarded.trim().length > 0) {
     return forwarded.split(",").at(-1).trim();
   }
 
   return remote;
+}
+
+/**
+ * Tells whether an address is this machine's, such as the battle server's beside the relay.
+ *
+ * @param {string | null} address The address, see addressOf.
+ * @returns {boolean} Whether it is.
+ */
+export function isLoopback(address) {
+  return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
 }
 
 /**
@@ -704,13 +718,24 @@ export function createRelay({
         designs.presence.disconnect(answer.removed, DESIGN_CLOSE.notDesigner);
       }
 
+      // The build is live by now, so a failed notice is logged, not answered.
+      if (answer.notice) {
+        await noticeWorlds(answer.notice).catch((error) => log.error(errorLine(new Date(), "notice of the live design", error)));
+      }
+
       if (answer.file) {
         await sendReleaseFile(request, response, answer.file);
         return;
       }
 
-      response.writeHead(answer.status, { "Content-Type": "application/json" });
-      response.end(JSON.stringify(answer.body));
+      sendDesignAnswer(response, answer);
+      return;
+    }
+
+    if (gameDesignRouteOf(url)) {
+      const address = addressOf(request);
+      const client = { reader: headerOf(request, DESIGN_READER_HEADER), address, local: isLoopback(address), etag: headerOf(request, "If-None-Match") };
+      sendDesignAnswer(response, await handleGameDesignRequest(designs, request.method, url, client, (limit) => drain(request, limit, AbortSignal.timeout(DRAIN_LIMITS.readMs))));
       return;
     }
 
@@ -844,6 +869,56 @@ export function createRelay({
    */
   function answerDesigns(request, url) {
     return handleDesignRequest(designs, request.method, url, designerClientOf(request), (limit) => readText(request, limit), (limit) => drain(request, limit, AbortSignal.timeout(DRAIN_LIMITS.readMs)));
+  }
+
+  /**
+   * Sends a design route's answer: its bytes with their headers, or its JSON body.
+   *
+   * @param {http.ServerResponse} response The response.
+   * @param {{status: number, body: object, bytes?: Uint8Array, headers?: Record<string, string>}} answer The answer.
+   */
+  function sendDesignAnswer(response, answer) {
+    if (answer.bytes) {
+      response.writeHead(answer.status, { ...answer.headers, "Content-Length": answer.bytes.length });
+      response.end(answer.bytes);
+      return;
+    }
+
+    if (answer.status === 304) {
+      response.writeHead(304, answer.headers);
+      response.end();
+      return;
+    }
+
+    response.writeHead(answer.status, { "Content-Type": "application/json" });
+    response.end(JSON.stringify(answer.body));
+  }
+
+  /**
+   * Tells every world room of a new live build and ends the pools of the bosses its catalog removed
+   * or renamed in every Raid World, telling their games; only while DESIGN_WORLD_NOTICE is on.
+   *
+   * @param {{text: string, resetKeys: string[]}} notice The world-room text frame and the boss keys whose pools end.
+   * @returns {Promise<void>} Completes once told.
+   */
+  async function noticeWorlds(notice) {
+    for (const roomId of worlds.keys()) {
+      tellWorld(roomId, notice.text);
+    }
+
+    if (notice.resetKeys.length === 0) {
+      return;
+    }
+
+    for (const entry of (await directory.entries()).filter((each) => each.type === WORLD_TYPE.raid)) {
+      for (const key of notice.resetKeys) {
+        const answer = await bossesOf(entry.id).reset(key);
+
+        if (answer.boss) {
+          tellBosses(entry.id, answer.boss);
+        }
+      }
+    }
   }
 
   /**
@@ -1758,6 +1833,7 @@ export function createRelay({
     try {
       await directory.entries();
       await trades.exclusive(() => trades.tidy());
+      await designs.tidyBuilds();
     } catch (error) {
       log.error(errorLine(new Date(), "sweep", error));
     }
@@ -1876,10 +1952,13 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const releases = new ReleaseWatch(stores.releases, { repo: process.env.RELEASE_REPO || RELEASE_REPO });
   const battleServer = battleServerOf(process.env[BATTLE_SERVER_VARIABLE]);
   const designerReleases = await openDesignerReleases(process.env);
+  const compilerSettings = designCompilerSettingsOf(process.env);
   const designs = new DesignBook(stores.designs, {
     minVersion: process.env.DESIGNER_MIN_VERSION, allowDev: process.env.DESIGNER_ALLOW_DEV === "1", relayAdmins: directory.admins, releases: designerReleases,
+    compiler: compilerSettings ? new DesignCompiler(compilerSettings, { log: stamped(consoleLog) }) : null, worldNotice: process.env.DESIGN_WORLD_NOTICE === "1",
   });
   await designs.seedAdmins(parseAdmins(process.env.DESIGNER_ADMINS));
+  await designs.recoverBuilds().catch((error) => consoleLog.error(errorLine(new Date(), "recovery of the design builds", error)));
   const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports, minVersion: process.env.MIN_VERSION, releases, battleServer, designs });
   relay.checkDesignerRelease().catch((error) => consoleLog.error(errorLine(new Date(), "check of the designer releases", error)));
 

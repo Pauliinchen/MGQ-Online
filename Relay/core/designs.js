@@ -2,6 +2,7 @@
 //  designs.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Built the design on the server one build at a time, published a build, rolled back to the previous one and served the live build to games
 //      Paulinchen  2026-10-21: Kept the designers' presence and their sockets and served the newest designer release
 //                            - Created
 //
@@ -9,15 +10,16 @@
 
 // The Raid designs several designers edit together, on the Node relay only: entities with their
 // revisions and history, all-or-nothing pushes on a base revision, pulls since a revision, the
-// designers the relay serves, who of them is online and what they edit, and the newest designer
-// release. The relay never reads an entity's body; the contract is
+// designers the relay serves, who of them is online and what they edit, the newest designer
+// release, the builds the compiler makes, the live build and the routes games read it from. The
+// relay never reads an entity's body; the contract is
 // MGQ-Online-Raid-Designer/docs/SERVER_FORMAT.md, its fixtures are in fixtures/designs.
 
 import { playerIdOf, sha256Hex } from "./directory.js";
-import { DEFAULT_DESIGNER_MIN_VERSION, DESIGN_ROUTE, designerRefusal, designerRuleOf, parseVersion } from "./gate.js";
+import { DEFAULT_DESIGNER_MIN_VERSION, DESIGN_ROUTE, GAME_DESIGN_ROUTE, designerRefusal, designerRuleOf, parseVersion } from "./gate.js";
 import { notFound, routeIs } from "./http.js";
 import { CONTROL_CHARACTERS, cleanText, isId } from "./ids.js";
-import { RateLimiter } from "./relay.js";
+import { RATE_LIMITS, RateLimiter } from "./relay.js";
 
 /**
  * @typedef {object} DesignStore What the design book keeps its entities, history, pushes and designers in, see core/design_store_memory.js and node/design_store_sqlite.js.
@@ -34,6 +36,16 @@ import { RateLimiter } from "./relay.js";
  * @property {(id: string, at: number) => Promise<void>} seen Notes when a designer was last seen.
  * @property {() => Promise<Record<string, object[]>>} exportTables Every design table's rows, blobs without their bytes.
  * @property {(sha256: string) => Promise<Uint8Array | undefined>} blob A blob's gzipped bytes.
+ * @property {(sha256: string) => Promise<{sha256: string, kind: string, size: number, at: number} | undefined>} blobInfo A blob's row without its bytes, `size` the bytes before gzip.
+ * @property {(build: {seq: number, by: string, at: number}) => Promise<number>} addBuild Adds a queued build and hands out its id, never one handed out before.
+ * @property {(id: number) => Promise<object | undefined>} build A build's row.
+ * @property {(limit: number) => Promise<object[]>} builds The newest builds' rows, newest first.
+ * @property {(id: number, status: string) => Promise<void>} setBuildStatus Sets a build's status.
+ * @property {(id: number, fields: {status: string, report: string | null, snapshotSha: string | null, runtimeSha: string | null, marshalSha: string | null, format: number | null, runtimeFormat: number | null, compiler: string | null, gameData: string | null}, blobs: {sha256: string, kind: string, size: number, gz: Uint8Array, at: number}[]) => Promise<void>} finishBuild Keeps a build's result and its blobs, all or nothing; a blob kept before stays as it is.
+ * @property {(report: string) => Promise<number[]>} failUnfinished Fails every build still queued or compiling with a report, and hands out their ids.
+ * @property {() => Promise<{build_id: number, previous_build_id: number | null, by: string, at: number} | undefined>} live The live build's row.
+ * @property {(live: {buildId: number, previousBuildId: number | null, by: string, at: number}) => Promise<void>} setLive Sets the live build and the one before it.
+ * @property {(keep: number) => Promise<{builds: number, blobs: number}>} tidyBuilds Drops the builds past the newest `keep` but the live, the previous and unfinished ones, then every blob no build names; hands out how many of each.
  * @property {(rows: Record<string, object[]>, blobs: Map<string, Uint8Array>) => Promise<void>} importTables Writes exported rows and blobs into an empty store.
  * @property {() => void} close Closes the store.
  */
@@ -75,6 +87,8 @@ export const DESIGN_LIMITS = Object.freeze({
   maxNameLength: 32,
   maxMessageLength: 200,
   maxVersionLength: 64,
+  // Builds kept beside the live and the previous one.
+  buildsKept: 20,
 });
 
 /**
@@ -82,6 +96,9 @@ export const DESIGN_LIMITS = Object.freeze({
  */
 export const DESIGN_RATE_LIMITS = Object.freeze({
   push: Object.freeze({ burst: 30, refillMs: 2 * 1000 }),
+  build: Object.freeze({ burst: 3, refillMs: 5 * 60 * 1000 }),
+  // Publishing and rolling back, counted together.
+  publish: Object.freeze({ burst: 3, refillMs: 60 * 1000 }),
   // Three downloads of the designer's exe an hour.
   releaseFile: Object.freeze({ burst: 3, refillMs: 20 * 60 * 1000 }),
 });
@@ -111,6 +128,38 @@ export const DESIGN_CLOSE = Object.freeze({
   notDesigner: Object.freeze({ code: 4403, reason: "not a designer" }),
   update: Object.freeze({ code: 4426, reason: "update" }),
 });
+
+/**
+ * The statuses of a build: waiting for the compiler, compiling, compiled, refused by the
+ * compiler's checks, or failed.
+ */
+export const BUILD_STATUS = Object.freeze({ queued: "queued", compiling: "compiling", ok: "ok", refused: "refused", failed: "failed" });
+
+/**
+ * The `format` field of a snapshot, the compiler's input.
+ */
+export const SNAPSHOT_FORMAT = "mgq-raid-design-snapshot";
+
+/**
+ * The request header in which a game names the highest compiled format it reads, an integer.
+ */
+export const DESIGN_READER_HEADER = "X-MGQ-Design-Reader";
+
+/**
+ * The world-room text frame that tells every game of a new live build, followed by the build's
+ * marshal and runtime SHA-256.
+ */
+export const WORLD_DESIGN_FRAME = "raid_design";
+
+/**
+ * A SHA-256 as the builds and the game routes write it.
+ */
+const SHA256 = /^[0-9a-f]{64}$/;
+
+/**
+ * The result fields of a build without them, as a failed or refused build keeps them.
+ */
+const EMPTY_FIELDS = Object.freeze({ snapshotSha: null, runtimeSha: null, marshalSha: null, format: null, runtimeFormat: null, compiler: null, gameData: null });
 
 /**
  * Who added the designer admins the DESIGNER_ADMINS setting names.
@@ -217,6 +266,67 @@ function utf8Length(text) {
 }
 
 /**
+ * Writes a value as canonical JSON, as the contract compares values and the snapshot is written:
+ * object keys in ordinal order, nulls in objects left out, integral numbers as integers and others
+ * without an exponent.
+ *
+ * @param {unknown} value The value.
+ * @returns {string} The canonical text.
+ * @throws {Error} For a number the contract refuses.
+ */
+export function canonicalJson(value) {
+  if (value === null || value === undefined) {
+    return "null";
+  }
+
+  if (typeof value === "number") {
+    return canonicalNumber(value);
+  }
+
+  if (typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  }
+
+  const keys = Object.keys(value).filter((key) => value[key] !== null && value[key] !== undefined).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+}
+
+/**
+ * Writes a number as the contract does.
+ *
+ * @param {number} value The number.
+ * @returns {string} The number's text.
+ * @throws {Error} For NaN, Infinity and non-integral numbers of 1e15 or more.
+ */
+function canonicalNumber(value) {
+  if (Number.isInteger(value)) {
+    return Number.isSafeInteger(value) ? String(value) : BigInt(value).toString();
+  }
+
+  if (!Number.isFinite(value) || Math.abs(value) >= 1e15) {
+    throw new Error(`the contract refuses the number ${value}`);
+  }
+
+  const text = String(value);
+
+  if (!text.includes("e")) {
+    return text;
+  }
+
+  // Only numbers below 1e-6 come with an exponent here, always a negative one.
+  const [mantissa, exponent] = text.split("e");
+  const unsigned = mantissa.replace("-", "");
+  const point = unsigned.indexOf(".");
+  const digits = unsigned.replace(".", "");
+  const whole = (point < 0 ? digits.length : point) + Number(exponent);
+  return `${mantissa.startsWith("-") ? "-" : ""}0.${"0".repeat(-whole)}${digits}`;
+}
+
+/**
  * Turns a stored entity row into the entity the wire carries.
  *
  * @param {{id: string, kind: string, schema: number, rev: number, deleted: number, body: string | null, by: string, name: string, at: number}} row The row.
@@ -224,6 +334,72 @@ function utf8Length(text) {
  */
 function wireEntity(row) {
   return { id: row.id, kind: row.kind, schema: row.schema, rev: row.rev, deleted: row.deleted === 1, body: row.body === null ? null : JSON.parse(row.body), by: row.by, name: row.name, at: row.at };
+}
+
+/**
+ * Turns a stored build row into the build the wire carries.
+ *
+ * @param {{id: number, seq: number, status: string, format: number | null, marshal_sha: string | null, runtime_sha: string | null, snapshot_sha: string | null, report: string | null, by: string, at: number}} row The row.
+ * @returns {object} The wire build, its report as JSON.
+ */
+function wireBuild(row) {
+  return {
+    id: row.id, seq: row.seq, status: row.status, format: row.format, marshalSha: row.marshal_sha, runtimeSha: row.runtime_sha, snapshotSha: row.snapshot_sha,
+    report: row.report === null ? null : JSON.parse(row.report), by: row.by, at: row.at,
+  };
+}
+
+/**
+ * The answer for a build, a live build or a blob the relay does not hold.
+ *
+ * @returns {{status: number, body: object}} The answer.
+ */
+function none() {
+  return { status: 404, body: { code: "none" } };
+}
+
+/**
+ * The answer for a build the compiler cannot make.
+ *
+ * @param {string} message Why.
+ * @returns {{status: number, body: object}} The answer.
+ */
+function compilerRefusal(message) {
+  return { status: 503, body: { code: "compiler", message } };
+}
+
+/**
+ * The report of a build the relay failed on its own, beside the compiler's reports.
+ *
+ * @param {string} message What went wrong.
+ * @returns {object} The report.
+ */
+export function failureReport(message) {
+  return { ok: false, failure: { message } };
+}
+
+/**
+ * Reads the catalog changes a build's report names against the build live as it was compiled.
+ *
+ * @param {any} report The report.
+ * @returns {{removed: string[], renamed: {id: string, from: string, to: string}[], troopsChanged: string[]}} The changes, lists the report lacks empty.
+ */
+export function catalogDiffOf(report) {
+  const diff = report?.catalogDiff;
+  const texts = (list) => (Array.isArray(list) ? list.filter((item) => typeof item === "string") : []);
+  const renamed = Array.isArray(diff?.renamed) ? diff.renamed.filter((item) => isObject(item) && typeof item.from === "string" && typeof item.to === "string") : [];
+  return { removed: texts(diff?.removed), renamed: renamed.map((item) => ({ id: item.id, from: item.from, to: item.to })), troopsChanged: texts(diff?.troopsChanged) };
+}
+
+/**
+ * The world-room text frame that tells every game of a new live build.
+ *
+ * @param {string} marshalSha The build's marshal SHA-256.
+ * @param {string} runtimeSha The build's runtime SHA-256.
+ * @returns {string} The frame.
+ */
+export function worldDesignText(marshalSha, runtimeSha) {
+  return `${WORLD_DESIGN_FRAME} ${marshalSha} ${runtimeSha}`;
 }
 
 /**
@@ -533,17 +709,30 @@ function send(socket, frame) {
 }
 
 /**
+ * @typedef {object} DesignCompilerPort What the design book builds with, see node/design_compiler.js; every file it writes stays its own.
+ * @property {() => Promise<{designFormat: number, version: string | null, message: string | null}>} probe Reads the compiler's version and design format and checks the game data, once per compiler binary; `message` names why it cannot compile, null when it can.
+ * @property {(buildId: number, snapshot: string) => Promise<void>} prepare Keeps a build's snapshot for its compile.
+ * @property {(job: {buildId: number, seq: number, previous: Uint8Array | null}) => Promise<{status: string, report: object | null, fields: {snapshotSha: string | null, runtimeSha: string | null, marshalSha: string | null, format: number | null, runtimeFormat: number | null, compiler: string | null, gameData: string | null}, blobs: {sha256: string, kind: string, size: number, gz: Uint8Array}[]}>} compile Compiles a prepared build against the live runtime JSON, gzipped, none before the first publish; never throws.
+ * @property {(buildId: number) => Promise<void>} clean Removes a build's files.
+ * @property {() => Promise<void>} reset Removes the files of every build, as the relay starts.
+ */
+
+/**
  * The Raid design several designers share, over a store: the entities, their history, the pushes
- * and the designers. Writes run one at a time.
+ * and the designers, the builds and the live build. Writes run one at a time; compiles run one at
+ * a time on a queue of their own, so a push never waits for a compile.
  */
 export class DesignBook {
   /**
    * Creates the book.
    *
    * @param {DesignStore} store Where the design is kept.
-   * @param {{clock?: () => number, minVersion?: string, allowDev?: boolean, relayAdmins?: Set<string>, presence?: DesignPresence, releases?: {answer: (minimum: string) => {status: number, body: object}, file: () => {path: string, name: string, size: number, sha256: string} | null} | null, limits?: typeof DESIGN_LIMITS, rateLimits?: Partial<typeof DESIGN_RATE_LIMITS>}} [options] The clock, which tests change; the lowest designer version served, as DESIGNER_MIN_VERSION names it; whether a development build writes as any designer, as DESIGNER_ALLOW_DEV=1 sets it; the relay admins' player ids; who is online and what they edit, a DesignPresence of its own unless given; the newest designer release, see core/designer_releases.js, none unless given; the limits; the rate limits, DESIGN_RATE_LIMITS' for those not given.
+   * @param {{clock?: () => number, minVersion?: string, allowDev?: boolean, relayAdmins?: Set<string>, presence?: DesignPresence, releases?: {answer: (minimum: string) => {status: number, body: object}, file: () => {path: string, name: string, size: number, sha256: string} | null} | null, compiler?: DesignCompilerPort | null, worldNotice?: boolean, limits?: typeof DESIGN_LIMITS, rateLimits?: Partial<typeof DESIGN_RATE_LIMITS>, downloads?: {burst: number, refillMs: number}}} [options] The clock, which tests change; the lowest designer version served, as DESIGNER_MIN_VERSION names it; whether a development build writes as any designer, as DESIGNER_ALLOW_DEV=1 sets it; the relay admins' player ids; who is online and what they edit, a DesignPresence of its own unless given; the newest designer release, see core/designer_releases.js, none unless given; the compiler, none unless given; whether a publish tells the world rooms and ends the pools of removed and renamed bosses, as DESIGN_WORLD_NOTICE=1 sets it; the limits; the rate limits, DESIGN_RATE_LIMITS' for those not given; the rate limit of blob downloads per address.
    */
-  constructor(store, { clock = Date.now, minVersion, allowDev = false, relayAdmins = new Set(), presence = new DesignPresence({ clock }), releases = null, limits = DESIGN_LIMITS, rateLimits = DESIGN_RATE_LIMITS } = {}) {
+  constructor(store, {
+    clock = Date.now, minVersion, allowDev = false, relayAdmins = new Set(), presence = new DesignPresence({ clock }), releases = null, compiler = null, worldNotice = false,
+    limits = DESIGN_LIMITS, rateLimits = DESIGN_RATE_LIMITS, downloads = RATE_LIMITS.downloads,
+  } = {}) {
     const version = parseVersion(minVersion);
     this.store = store;
     this.clock = clock;
@@ -555,7 +744,13 @@ export class DesignBook {
     this.limits = limits;
     this.pushes = new RateLimiter(rateLimits.push ?? DESIGN_RATE_LIMITS.push, clock);
     this.releaseFiles = new RateLimiter(rateLimits.releaseFile ?? DESIGN_RATE_LIMITS.releaseFile, clock);
+    this.buildStarts = new RateLimiter(rateLimits.build ?? DESIGN_RATE_LIMITS.build, clock);
+    this.publishes = new RateLimiter(rateLimits.publish ?? DESIGN_RATE_LIMITS.publish, clock);
+    this.blobDownloads = new RateLimiter(downloads, clock);
+    this.compiler = compiler;
+    this.worldNotice = worldNotice;
     this.queue = Promise.resolve();
+    this.compiles = Promise.resolve();
   }
 
   /**
@@ -998,6 +1193,383 @@ export class DesignBook {
   }
 
   /**
+   * Starts a build of the design as it stands: `POST builds`. Under the exclusive queue it checks
+   * the seq and keeps the snapshot; the compile then waits on the compile queue, outside the lock.
+   *
+   * @param {{id: string, name: string}} designer The designer admin.
+   * @param {any} body The request, `{seq}`, the current seq.
+   * @returns {Promise<{status: number, body: object}>} `202 {build}` once queued; `409 moved` on an old seq, `503 compiler` while the compiler cannot build.
+   */
+  async startBuild(designer, body) {
+    if (!isObject(body) || !wholeIn(body.seq, 0, Number.MAX_SAFE_INTEGER)) {
+      return invalid([{ id: null, message: "seq must be a whole number." }]);
+    }
+
+    const moved = (state) => (body.seq === state.seq ? null : { status: 409, body: { code: "moved", seq: state.seq } });
+    const state = await this.state();
+    // Probed outside the lock, since it may run the compiler.
+    const refusal = moved(state) ?? (await this.compilerCheck(state.minFormat));
+
+    if (refusal) {
+      return refusal;
+    }
+
+    const queued = await this.exclusive(async () => {
+      const current = await this.state();
+      const late = moved(current);
+
+      if (late) {
+        return { refusal: late };
+      }
+
+      const id = await this.store.addBuild({ seq: current.seq, by: designer.id, at: this.now() });
+
+      try {
+        await this.compiler.prepare(id, await this.snapshotText(current.designFormat));
+      } catch (error) {
+        const report = JSON.stringify(failureReport(`The relay could not keep the snapshot: ${error.message}`));
+        await this.store.finishBuild(id, { ...EMPTY_FIELDS, status: BUILD_STATUS.failed, report }, []);
+        return { refusal: compilerRefusal("The relay could not keep the snapshot.") };
+      }
+
+      return { build: { id, seq: current.seq, status: BUILD_STATUS.queued } };
+    });
+
+    if (queued.refusal) {
+      return queued.refusal;
+    }
+
+    this.presence.broadcast(buildFrame(queued.build));
+    this.enqueueCompile(queued.build.id, queued.build.seq);
+    return { status: 202, body: { build: queued.build } };
+  }
+
+  /**
+   * Tells why the compiler cannot build now, after probing it.
+   *
+   * @param {number} minFormat The lowest design format the relay takes.
+   * @returns {Promise<{status: number, body: object} | null>} `503 compiler`, or null when it can build.
+   */
+  async compilerCheck(minFormat) {
+    if (!this.compiler) {
+      return compilerRefusal("This relay has no compiler.");
+    }
+
+    const probe = await this.compiler.probe();
+
+    if (probe.message) {
+      return compilerRefusal(probe.message);
+    }
+
+    return probe.designFormat < minFormat ? compilerRefusal(`The compiler knows design format ${probe.designFormat}, below the minimum ${minFormat}.`) : null;
+  }
+
+  /**
+   * Writes the snapshot of the design as it stands: every entity but the tombstones, sorted by id.
+   * Called inside exclusive.
+   *
+   * @param {number} designFormat The design format.
+   * @returns {Promise<string>} The snapshot, canonical JSON.
+   */
+  async snapshotText(designFormat) {
+    const entities = [];
+    let after = "";
+
+    for (;;) {
+      const rows = await this.store.entities({ since: 0, after, limit: this.limits.maxPage, tombstones: false });
+      entities.push(...rows.map((row) => ({ body: JSON.parse(row.body), id: row.id, kind: row.kind, schema: row.schema })));
+
+      if (rows.length < this.limits.maxPage) {
+        break;
+      }
+
+      after = rows.at(-1).id;
+    }
+
+    return canonicalJson({ designFormat, entities, format: SNAPSHOT_FORMAT });
+  }
+
+  /**
+   * Puts a build on the compile queue, which runs one compile at a time.
+   *
+   * @param {number} id The build.
+   * @param {number} seq Its seq.
+   * @returns {Promise<void>} Completes once the build finished.
+   */
+  enqueueCompile(id, seq) {
+    const run = this.compiles.then(() => this.compile(id, seq));
+    this.compiles = run.catch(() => {});
+    return run;
+  }
+
+  /**
+   * Waits until every build queued so far finished.
+   *
+   * @returns {Promise<void>} Completes once the compile queue is empty.
+   */
+  idle() {
+    return this.compiles;
+  }
+
+  /**
+   * Compiles a queued build against the live build's runtime JSON, keeps its result and tells the
+   * designers each status.
+   *
+   * @param {number} id The build.
+   * @param {number} seq Its seq.
+   * @returns {Promise<void>} Completes once kept.
+   */
+  async compile(id, seq) {
+    let result;
+
+    try {
+      await this.store.setBuildStatus(id, BUILD_STATUS.compiling);
+      this.presence.broadcast(buildFrame({ id, seq, status: BUILD_STATUS.compiling }));
+      // The compiler may have been replaced since the build was queued.
+      const refusal = await this.compilerCheck((await this.state()).minFormat);
+
+      if (refusal) {
+        result = { status: BUILD_STATUS.failed, report: failureReport(refusal.body.message), fields: EMPTY_FIELDS, blobs: [] };
+      } else {
+        const { build } = await this.liveRows();
+        const previous = build?.runtime_sha ? ((await this.store.blob(build.runtime_sha)) ?? null) : null;
+        result = await this.compiler.compile({ buildId: id, seq, previous });
+      }
+    } catch (error) {
+      result = { status: BUILD_STATUS.failed, report: failureReport(error.message), fields: EMPTY_FIELDS, blobs: [] };
+    }
+
+    const at = this.now();
+    const fields = { ...EMPTY_FIELDS, ...result.fields, status: result.status, report: result.report === null ? null : JSON.stringify(result.report) };
+    await this.exclusive(() => this.store.finishBuild(id, fields, result.blobs.map((blob) => ({ ...blob, at }))));
+    await this.compiler?.clean(id).catch(() => {});
+    this.presence.broadcast(buildFrame({ id, seq, status: result.status }));
+  }
+
+  /**
+   * Fails the builds a restart cut off and removes their files, as the relay starts.
+   *
+   * @returns {Promise<number[]>} The failed builds' ids.
+   */
+  async recoverBuilds() {
+    const failed = await this.exclusive(() => this.store.failUnfinished(JSON.stringify(failureReport("The relay restarted during the build."))));
+    await this.compiler?.reset();
+    return failed;
+  }
+
+  /**
+   * Drops the builds past the newest DESIGN_LIMITS.buildsKept, but the live, the previous and
+   * unfinished ones, and every blob no build names.
+   *
+   * @returns {Promise<{builds: number, blobs: number}>} How many of each were dropped.
+   */
+  tidyBuilds() {
+    return this.exclusive(() => this.store.tidyBuilds(this.limits.buildsKept));
+  }
+
+  /**
+   * Reads the live build and the one before it.
+   *
+   * @returns {Promise<{live: object | undefined, build: object | undefined, previous: object | undefined}>} The live row and both builds' rows, undefined for none.
+   */
+  async liveRows() {
+    const live = await this.store.live();
+    return { live, build: live ? await this.store.build(live.build_id) : undefined, previous: live?.previous_build_id ? await this.store.build(live.previous_build_id) : undefined };
+  }
+
+  /**
+   * Lists the builds, or one: `GET builds` and `GET builds/<id>`.
+   *
+   * @param {string | undefined} raw The build id as the address names it, undefined for every build.
+   * @returns {Promise<{status: number, body: object}>} `{live, previous, builds}`: the live and the previous build's ids, null for none, and the builds newest first, the one asked for alone; `404 none` for a build the relay does not hold.
+   */
+  async buildList(raw) {
+    const live = await this.store.live();
+    const ids = { live: live?.build_id ?? null, previous: live?.previous_build_id ?? null };
+
+    if (raw === undefined) {
+      const rows = await this.store.builds(this.limits.buildsKept);
+
+      for (const id of [ids.live, ids.previous]) {
+        if (id !== null && !rows.some((row) => row.id === id)) {
+          rows.push(await this.store.build(id));
+        }
+      }
+
+      return { status: 200, body: { ...ids, builds: rows.filter(Boolean).sort((left, right) => right.id - left.id).map(wireBuild) } };
+    }
+
+    const row = await this.buildOf(raw);
+    return row ? { status: 200, body: { ...ids, builds: [wireBuild(row)] } } : none();
+  }
+
+  /**
+   * Finds the build an address names.
+   *
+   * @param {string} raw The build id as the address names it.
+   * @returns {Promise<object | undefined>} Its row, undefined for none.
+   */
+  async buildOf(raw) {
+    return /^\d{1,15}$/.test(raw) ? this.store.build(Number(raw)) : undefined;
+  }
+
+  /**
+   * Hands out a build's snapshot, gzipped: `GET builds/<id>/snapshot`.
+   *
+   * @param {string} raw The build id as the address names it.
+   * @returns {Promise<{status: number, body: object, bytes?: Uint8Array, headers?: Record<string, string>}>} The bytes; `404 none` for a build without one.
+   */
+  async buildSnapshot(raw) {
+    const row = await this.buildOf(raw);
+    const bytes = row?.snapshot_sha ? await this.store.blob(row.snapshot_sha) : undefined;
+    return bytes ? { status: 200, body: {}, bytes, headers: { "Content-Type": "application/gzip", ETag: `"${row.snapshot_sha}"` } } : none();
+  }
+
+  /**
+   * Makes a compiled build live, the live one before it the previous: `POST publish`.
+   *
+   * @param {{id: string, name: string}} designer The designer admin.
+   * @param {any} body The request, `{buildId}` of a build whose status is ok.
+   * @returns {Promise<{status: number, body: object, notice?: {text: string, resetKeys: string[]}}>} `{live, catalogDiff}`, with what to tell the world rooms while DESIGN_WORLD_NOTICE is on; `404 none` for a build the relay does not hold, `409 status` for one not ok.
+   */
+  async publish(designer, body) {
+    if (!isObject(body) || !wholeIn(body.buildId, 1, Number.MAX_SAFE_INTEGER)) {
+      return invalid([{ id: null, message: "buildId must be a whole number from 1." }]);
+    }
+
+    return this.exclusive(async () => {
+      const build = await this.store.build(body.buildId);
+
+      if (!build) {
+        return none();
+      }
+
+      if (build.status !== BUILD_STATUS.ok) {
+        return { status: 409, body: { code: "status", status: build.status } };
+      }
+
+      const earlier = await this.store.live();
+      // Publishing the live build again keeps the build before it.
+      const previousBuildId = earlier?.build_id === build.id ? earlier.previous_build_id : (earlier?.build_id ?? null);
+      const live = { buildId: build.id, previousBuildId, by: designer.id, at: this.now() };
+      await this.store.setLive(live);
+      const catalogDiff = catalogDiffOf(build.report === null ? null : JSON.parse(build.report));
+      this.presence.broadcast(liveFrame({ buildId: build.id, marshalSha: build.marshal_sha, runtimeSha: build.runtime_sha, by: designer.id, name: designer.name }));
+      const resetKeys = [...new Set([...catalogDiff.removed, ...catalogDiff.renamed.map((renamed) => renamed.from)])];
+      return { status: 200, body: { live, catalogDiff }, ...this.noticeOf(build, resetKeys) };
+    });
+  }
+
+  /**
+   * Makes the previous build live again, the live one the previous: `POST rollback`.
+   *
+   * @param {{id: string, name: string}} designer The designer admin.
+   * @returns {Promise<{status: number, body: object, notice?: {text: string, resetKeys: string[]}}>} `{live}`, with what to tell the world rooms while DESIGN_WORLD_NOTICE is on; `404 none` without a previous build.
+   */
+  rollback(designer) {
+    return this.exclusive(async () => {
+      const { live: earlier, previous } = await this.liveRows();
+
+      if (!previous) {
+        return none();
+      }
+
+      const live = { buildId: previous.id, previousBuildId: earlier.build_id, by: designer.id, at: this.now() };
+      await this.store.setLive(live);
+      this.presence.broadcast(liveFrame({ buildId: previous.id, marshalSha: previous.marshal_sha, runtimeSha: previous.runtime_sha, by: designer.id, name: designer.name }));
+      return { status: 200, body: { live }, ...this.noticeOf(previous, []) };
+    });
+  }
+
+  /**
+   * Names what a new live build tells the world rooms, only while DESIGN_WORLD_NOTICE is on, since
+   * released games read no compiled format 3 yet.
+   *
+   * @param {{marshal_sha: string, runtime_sha: string}} build The build now live.
+   * @param {string[]} resetKeys The boss keys whose pools end.
+   * @returns {{notice?: {text: string, resetKeys: string[]}}} The notice, none while off.
+   */
+  noticeOf(build, resetKeys) {
+    return this.worldNotice ? { notice: { text: worldDesignText(build.marshal_sha, build.runtime_sha), resetKeys } } : {};
+  }
+
+  /**
+   * Raises the lowest design format the relay takes: `POST format`.
+   *
+   * @param {any} body The request, `{minFormat}`, from the current lowest up to the design format.
+   * @returns {Promise<{status: number, body: object}>} `{designFormat, minFormat}`.
+   */
+  setMinFormat(body) {
+    return this.exclusive(async () => {
+      const state = await this.state();
+
+      if (!isObject(body) || !wholeIn(body.minFormat, state.minFormat, state.designFormat)) {
+        return invalid([{ id: null, message: `minFormat must be a whole number from ${state.minFormat} to ${state.designFormat}.` }]);
+      }
+
+      await this.store.setFormat({ designFormat: state.designFormat, minFormat: body.minFormat });
+      return { status: 200, body: { designFormat: state.designFormat, minFormat: body.minFormat } };
+    });
+  }
+
+  /**
+   * Names the live build a game reads: `GET /v1/raid-design`.
+   *
+   * @param {string | null | undefined} reader The request's DESIGN_READER_HEADER, the highest compiled format the game reads.
+   * @returns {Promise<{status: number, body: object}>} `{buildId, format, seq, marshal, runtime, at}` of the live build, else of the previous one, whose format the game reads; `404 none` when neither is.
+   */
+  async gameDesign(reader) {
+    const format = typeof reader === "string" && /^\s*\d{1,6}\s*$/.test(reader) ? Number(reader.trim()) : 0;
+    const { build, previous } = await this.liveRows();
+
+    for (const row of [build, previous]) {
+      if (row?.status !== BUILD_STATUS.ok || row.format === null || row.format > format) {
+        continue;
+      }
+
+      const marshal = await this.store.blobInfo(row.marshal_sha);
+      const runtime = await this.store.blobInfo(row.runtime_sha);
+
+      if (marshal && runtime) {
+        const body = { buildId: row.id, format: row.format, seq: row.seq, marshal: { sha256: marshal.sha256, size: marshal.size }, runtime: { sha256: runtime.sha256, size: runtime.size }, at: row.at };
+        return { status: 200, body };
+      }
+    }
+
+    return none();
+  }
+
+  /**
+   * Hands out a compiled blob, gzipped, by its SHA-256: `GET /v1/raid-design/<sha256>`. The bytes
+   * never change, so games and the battle server keep them for good.
+   *
+   * @param {string} sha256 The blob's SHA-256.
+   * @param {{address: string | null, local: boolean, etag: string | null}} client The request's address; whether it came from this machine, which the download limit leaves out; its If-None-Match header.
+   * @returns {Promise<{status: number, body: object, bytes?: Uint8Array, headers?: Record<string, string>}>} The bytes, or 304 for the copy the game holds; `404 none` for a blob that is no compiled design the relay holds, `429 rate` past the download limit.
+   */
+  async gameBlob(sha256, client) {
+    const info = SHA256.test(sha256) ? await this.store.blobInfo(sha256) : undefined;
+
+    if (!info || (info.kind !== "marshal" && info.kind !== "runtime")) {
+      return none();
+    }
+
+    const headers = { "Cache-Control": "public, max-age=31536000, immutable", ETag: `"${sha256}"` };
+    const held = client.etag?.split(",").map((tag) => tag.trim()).some((tag) => tag === `"${sha256}"` || tag === `W/"${sha256}"` || tag === "*");
+
+    if (held) {
+      return { status: 304, body: {}, headers };
+    }
+
+    if (!client.local && !this.blobDownloads.take(client.address)) {
+      return { status: 429, body: { code: "rate" } };
+    }
+
+    const bytes = await this.store.blob(sha256);
+    return bytes ? { status: 200, body: {}, bytes, headers: { ...headers, "Content-Type": "application/gzip" } } : none();
+  }
+
+  /**
    * Runs one read and write of the design at a time, so a second push reads the first.
    *
    * @template T
@@ -1035,8 +1607,9 @@ async function readDesignJson(readBody, limit) {
 /**
  * Answers a request to the design routes, after the designer gate: `GET/PUT me`, `GET entities`,
  * `GET entities/<id>/history`, `POST push`, `GET designers`, `PUT/DELETE designers/<id>`,
- * `GET release` and `GET release/file`. A relay admin's player key passes on the designer list's
- * routes only.
+ * `GET release`, `GET release/file`, `POST builds`, `GET builds`, `GET builds/<id>`,
+ * `GET builds/<id>/snapshot`, `POST publish`, `POST rollback` and `POST format`. A relay admin's
+ * player key passes on the designer list's routes only.
  *
  * @param {DesignBook} book The design.
  * @param {string} method The HTTP method.
@@ -1044,7 +1617,7 @@ async function readDesignJson(readBody, limit) {
  * @param {{designer: string | null, player: string | null, version: string | null, format: string | null}} client The request's DESIGNER_HEADER, PLAYER_HEADER, DESIGNER_VERSION_HEADER and DESIGN_FORMAT_HEADER.
  * @param {(limit: number) => Promise<string | null>} readBody Reads the request's body as text up to a limit in bytes, null when it is longer.
  * @param {(limit: number) => Promise<void>} drain Reads the request's body to its end and drops it, for a refusal answered before the body was read.
- * @returns {Promise<{status: number, body: object, pushed?: {seq: number, by: string, name: string, ids: string[]}, removed?: string, file?: {path: string, name: string, size: number, sha256: string}}>} The answer, with what a push changed, the designer removed, or the release file to send in place of the body.
+ * @returns {Promise<{status: number, body: object, pushed?: {seq: number, by: string, name: string, ids: string[]}, removed?: string, file?: {path: string, name: string, size: number, sha256: string}, bytes?: Uint8Array, headers?: Record<string, string>, notice?: {text: string, resetKeys: string[]}}>} The answer, with what a push changed, the designer removed, the release file or the bytes with their headers to send in place of the body, or what a new live build tells the world rooms.
  */
 export async function handleDesignRequest(book, method, url, client, readBody, drain) {
   const rest = designRouteOf(url)?.rest ?? [];
@@ -1109,8 +1682,77 @@ export async function handleDesignRequest(book, method, url, client, readBody, d
     return bare ? book.release() : book.releaseFile(designer);
   }
 
+  if (route === "builds" && bare && method === "POST") {
+    if (!book.buildStarts.take(designer.id)) {
+      await drain(limit);
+      return { status: 429, body: { code: "rate" } };
+    }
+
+    return withBody((body) => book.startBuild(designer, body));
+  }
+
+  if (route === "builds" && method === "GET" && (rest.length <= 2 || (rest.length === 3 && part === "snapshot"))) {
+    await drain(limit);
+    return rest.length === 3 ? book.buildSnapshot(id) : book.buildList(id);
+  }
+
+  if ((route === "publish" || route === "rollback") && bare && method === "POST") {
+    if (!book.publishes.take(designer.id)) {
+      await drain(limit);
+      return { status: 429, body: { code: "rate" } };
+    }
+
+    if (route === "rollback") {
+      await drain(limit);
+      return book.rollback(designer);
+    }
+
+    return withBody((body) => book.publish(designer, body));
+  }
+
+  if (route === "format" && bare && method === "POST") {
+    return withBody((body) => book.setMinFormat(body));
+  }
+
   await drain(limit);
   return notFound("route");
+}
+
+/**
+ * Reads which game design route an address names.
+ *
+ * @param {URL} url The request's address.
+ * @returns {{sha256: string | null} | null} The blob's SHA-256 the address names, null for the live build's route, an empty text for a deeper path; or null when it is no game design route.
+ */
+export function gameDesignRouteOf(url) {
+  if (!routeIs(url, GAME_DESIGN_ROUTE)) {
+    return null;
+  }
+
+  const rest = url.pathname.split("/").filter((part) => part.length > 0).slice(2);
+  return { sha256: rest.length === 0 ? null : rest.length === 1 ? rest[0] : "" };
+}
+
+/**
+ * Answers a request to the routes games and the battle server read the live build from, after the
+ * game gate: `GET /v1/raid-design` and `GET /v1/raid-design/<sha256>`.
+ *
+ * @param {DesignBook} book The design.
+ * @param {string} method The HTTP method.
+ * @param {URL} url The request's address.
+ * @param {{reader: string | null, address: string | null, local: boolean, etag: string | null}} client The request's DESIGN_READER_HEADER, its address, whether it came from this machine, and its If-None-Match header.
+ * @param {(limit: number) => Promise<void>} drain Reads the request's body to its end and drops it.
+ * @returns {Promise<{status: number, body: object, bytes?: Uint8Array, headers?: Record<string, string>}>} The answer, with the bytes and their headers to send in place of the body.
+ */
+export async function handleGameDesignRequest(book, method, url, client, drain) {
+  const route = gameDesignRouteOf(url);
+  await drain(book.limits.maxBodyBytes);
+
+  if (method !== "GET" || !route || route.sha256 === "") {
+    return notFound("route");
+  }
+
+  return route.sha256 === null ? book.gameDesign(client.reader) : book.gameBlob(route.sha256, client);
 }
 
 /**

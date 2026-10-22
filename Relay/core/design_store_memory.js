@@ -2,6 +2,7 @@
 //  design_store_memory.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Kept the builds, their blobs and the live build
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -44,6 +45,8 @@ export function memoryDesignStore() {
   const tables = Object.fromEntries(Object.keys(KEYS).map((name) => [name, new Map()]));
   /** @type {Map<string, Uint8Array>} */
   const blobs = new Map();
+  // The newest build id handed out, which never comes again, as SQLite's AUTOINCREMENT keeps it.
+  let lastBuild = 0;
 
   /**
    * Puts a row into a table, a copy of it, over the row of the same key.
@@ -135,6 +138,74 @@ export function memoryDesignStore() {
         put("designers", { ...earlier, last_seen: at });
       }
     },
+    addBuild: async ({ seq, by, at }) => {
+      lastBuild += 1;
+      put("design_builds", {
+        id: lastBuild, seq, snapshot_sha: null, runtime_sha: null, marshal_sha: null, format: null, runtime_format: null, compiler: null, game_data: null,
+        status: "queued", report: null, by, at,
+      });
+      return lastBuild;
+    },
+    build: async (id) => (tables.design_builds.has(id) ? { ...tables.design_builds.get(id) } : undefined),
+    builds: async (limit) => [...tables.design_builds.values()].sort((left, right) => right.id - left.id).slice(0, limit).map((row) => ({ ...row })),
+    setBuildStatus: async (id, status) => {
+      const earlier = tables.design_builds.get(id);
+
+      if (earlier) {
+        put("design_builds", { ...earlier, status });
+      }
+    },
+    finishBuild: async (id, fields, finished) => {
+      const earlier = tables.design_builds.get(id);
+
+      if (!earlier) {
+        return;
+      }
+
+      for (const blob of finished) {
+        if (!tables.design_blobs.has(blob.sha256)) {
+          put("design_blobs", { sha256: blob.sha256, kind: blob.kind, size: blob.size, at: blob.at });
+          blobs.set(blob.sha256, Uint8Array.from(blob.gz));
+        }
+      }
+
+      put("design_builds", {
+        ...earlier, status: fields.status, report: fields.report, snapshot_sha: fields.snapshotSha, runtime_sha: fields.runtimeSha, marshal_sha: fields.marshalSha,
+        format: fields.format, runtime_format: fields.runtimeFormat, compiler: fields.compiler, game_data: fields.gameData,
+      });
+    },
+    failUnfinished: async (report) => {
+      const unfinished = [...tables.design_builds.values()].filter((row) => row.status === "queued" || row.status === "compiling");
+
+      for (const row of unfinished) {
+        put("design_builds", { ...row, status: "failed", report });
+      }
+
+      return unfinished.map((row) => row.id).sort((left, right) => left - right);
+    },
+    blobInfo: async (sha256) => (tables.design_blobs.has(sha256) ? { ...tables.design_blobs.get(sha256) } : undefined),
+    live: async () => (tables.design_live.has("live") ? { ...tables.design_live.get("live") } : undefined),
+    setLive: async ({ buildId, previousBuildId, by, at }) => put("design_live", { channel: "live", build_id: buildId, previous_build_id: previousBuildId, by, at }),
+    tidyBuilds: async (keep) => {
+      const live = tables.design_live.get("live");
+      const kept = new Set([live?.build_id, live?.previous_build_id]);
+      const newest = [...tables.design_builds.values()].sort((left, right) => right.id - left.id);
+      const dropped = newest.slice(keep).filter((row) => !kept.has(row.id) && row.status !== "queued" && row.status !== "compiling");
+
+      for (const row of dropped) {
+        tables.design_builds.delete(row.id);
+      }
+
+      const used = new Set([...tables.design_builds.values()].flatMap((row) => [row.snapshot_sha, row.runtime_sha, row.marshal_sha]));
+      const unused = [...tables.design_blobs.keys()].filter((sha256) => !used.has(sha256));
+
+      for (const sha256 of unused) {
+        tables.design_blobs.delete(sha256);
+        blobs.delete(sha256);
+      }
+
+      return { builds: dropped.length, blobs: unused.length };
+    },
     exportTables: async () => Object.fromEntries(Object.keys(KEYS).map((name) => [name, [...tables[name].values()]
       .sort((left, right) => byKey(KEYS[name](left), KEYS[name](right)))
       .map(({ gz, ...row }) => row)])),
@@ -149,6 +220,8 @@ export function memoryDesignStore() {
       for (const [sha256, gz] of bytes) {
         blobs.set(sha256, Uint8Array.from(gz));
       }
+
+      lastBuild = Math.max(lastBuild, ...tables.design_builds.keys());
     },
     close: () => {},
   };
