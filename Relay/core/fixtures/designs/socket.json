@@ -8,6 +8,7 @@
     {
       "op": "hello",
       "seq": 418,
+      "epoch": "e90c4a1d5b3f2e7086a9d1c4b7e25f30",
       "you": {
         "id": "91ed34e44d37441292523754c3a84c2b",
         "name": "Designer A",

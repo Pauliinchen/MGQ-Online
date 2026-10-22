@@ -2,7 +2,8 @@
 //  designs.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Raised the design format only one step at a time to the format the push names in its header
+//      Paulinchen  2026-10-22: Handed out the design epoch with the seq and refused pushes made before a restore
+//                            - Raised the design format only one step at a time to the format the push names in its header
 //                            - Let the format route lower the formats too
 //                            - Left the designers DESIGNER_ADMINS names alone once listed
 //                            - Failed a build whose result could not be kept
@@ -30,12 +31,13 @@ import { RATE_LIMITS, RateLimiter } from "./relay.js";
 
 /**
  * @typedef {object} DesignStore What the design book keeps its entities, history, pushes and designers in, see core/design_store_memory.js and node/design_store_sqlite.js.
- * @property {() => Promise<{seq: number, designFormat: number | undefined, minFormat: number | undefined}>} state The newest push's seq, 0 before the first, and the design formats, undefined while never set.
+ * @property {() => Promise<{seq: number, epoch: string, designFormat: number | undefined, minFormat: number | undefined}>} state The newest push's seq, 0 before the first, the design epoch and the design formats, undefined while never set.
  * @property {(id: string) => Promise<object | undefined>} entity An entity's row with its designer's name, a tombstone included.
  * @property {(query: {since: number, after: string, limit: number, tombstones: boolean}) => Promise<object[]>} entities The rows changed after a seq whose ids come after an id, sorted by id.
  * @property {(id: string, limit: number) => Promise<object[]>} history An entity's revisions with their designers' names, newest first.
  * @property {(push: {seq: number, by: string, name: string, at: number, message: string, designFormat: number, clientVersion: string, entities: {id: string, kind: string, schema: number, body: string | null, deleted: boolean}[], keep: number, format: {designFormat: number, minFormat: number} | null}) => Promise<void>} commit Keeps a push, its entities and their history, keeping `keep` revisions per entity, all or nothing.
  * @property {(format: {designFormat: number, minFormat: number}) => Promise<void>} setFormat Sets the design formats.
+ * @property {(epoch: string) => Promise<void>} setEpoch Sets the design epoch.
  * @property {(id: string) => Promise<object | undefined>} designer A designer's row.
  * @property {() => Promise<object[]>} designers Every designer's row, sorted by name.
  * @property {(designer: {id: string, name: string, admin: boolean, addedBy: string, at: number}) => Promise<void>} putDesigner Adds a designer, or changes the name and admin flag of one.
@@ -443,13 +445,13 @@ function wholeParameter(query, name, fallback) {
 /**
  * The frame that greets a designer on its socket.
  *
- * @param {number} seq The newest push's seq.
+ * @param {{seq: number, epoch: string}} state The newest push's seq and the design epoch.
  * @param {{id: string, name: string, admin: boolean}} you The designer.
  * @param {{id: string, name: string, entity: string | null, path: string | null}[]} presence The other designers online and what they edit.
  * @returns {object} The frame.
  */
-export function helloFrame(seq, you, presence) {
-  return { op: "hello", seq, you: { id: you.id, name: you.name, admin: you.admin }, presence };
+export function helloFrame(state, you, presence) {
+  return { op: "hello", seq: state.seq, epoch: state.epoch, you: { id: you.id, name: you.name, admin: you.admin }, presence };
 }
 
 /**
@@ -587,16 +589,16 @@ export class DesignPresence {
    * online yet.
    *
    * @param {{id: string, name: string, admin: boolean}} designer The designer.
-   * @param {number} seq The newest push's seq.
+   * @param {{seq: number, epoch: string}} state The newest push's seq and the design epoch.
    * @param {{readyState: number, send: (text: string) => void, close: (code: number, reason: string) => void}} socket Its socket.
    */
-  join(designer, seq, socket) {
+  join(designer, state, socket) {
     const earlier = this.designers.get(designer.id);
     const entry = earlier ?? { id: designer.id, name: designer.name, admin: designer.admin, sockets: new Set(), entity: null, path: null, at: this.clock(), toldAt: 0, pending: false };
     entry.sockets.add(socket);
     this.designers.set(designer.id, entry);
     this.sockets.set(socket, designer.id);
-    send(socket, helloFrame(seq, designer, this.list(designer.id)));
+    send(socket, helloFrame(state, designer, this.list(designer.id)));
 
     if (!earlier) {
       this.tell(entry);
@@ -787,13 +789,13 @@ export class DesignBook {
   }
 
   /**
-   * Reads the newest push's seq and the design formats.
+   * Reads the newest push's seq, the design epoch and the design formats.
    *
-   * @returns {Promise<{seq: number, designFormat: number, minFormat: number}>} The state; both formats FIRST_DESIGN_FORMAT while never set.
+   * @returns {Promise<{seq: number, epoch: string, designFormat: number, minFormat: number}>} The state; both formats FIRST_DESIGN_FORMAT while never set.
    */
   async state() {
     const state = await this.store.state();
-    return { seq: state.seq, designFormat: state.designFormat ?? FIRST_DESIGN_FORMAT, minFormat: state.minFormat ?? FIRST_DESIGN_FORMAT };
+    return { seq: state.seq, epoch: state.epoch, designFormat: state.designFormat ?? FIRST_DESIGN_FORMAT, minFormat: state.minFormat ?? FIRST_DESIGN_FORMAT };
   }
 
   /**
@@ -860,7 +862,7 @@ export class DesignBook {
    * Tells a designer who the relay takes it for: `GET me`.
    *
    * @param {{id: string | null, listed: boolean, admin: boolean, name: string | null}} designer The designer.
-   * @returns {Promise<{status: number, body: object}>} Its id, name, admin flag and the design's seq, formats and lowest version for a listed designer; its id alone for any other key.
+   * @returns {Promise<{status: number, body: object}>} Its id, name, admin flag and the design's seq, epoch, formats and lowest version for a listed designer; its id alone for any other key.
    */
   async me(designer) {
     if (!designer.id) {
@@ -875,7 +877,10 @@ export class DesignBook {
     const state = await this.state();
     return {
       status: 200,
-      body: { id: designer.id, name: designer.name, designer: true, admin: designer.admin, seq: state.seq, designFormat: state.designFormat, minFormat: state.minFormat, minVersion: this.minVersion },
+      body: {
+        id: designer.id, name: designer.name, designer: true, admin: designer.admin, seq: state.seq, epoch: state.epoch, designFormat: state.designFormat, minFormat: state.minFormat,
+        minVersion: this.minVersion,
+      },
     };
   }
 
@@ -909,7 +914,7 @@ export class DesignBook {
    * Hands out the entities changed since a seq, a page at a time: `GET entities`.
    *
    * @param {URLSearchParams} query `since` (0 for every entity without tombstones), `after` (the id the page starts after) and `limit`.
-   * @returns {Promise<{status: number, body: object}>} The seq, the formats, the page's entities sorted by id and the id to pass as `after` for the next page, null on the last.
+   * @returns {Promise<{status: number, body: object}>} The seq, the epoch, the formats, the page's entities sorted by id and the id to pass as `after` for the next page, null on the last.
    */
   async pull(query) {
     const since = wholeParameter(query, "since", 0);
@@ -925,7 +930,7 @@ export class DesignBook {
     const rows = await this.store.entities({ since, after: query.get("after") ?? "", limit: page + 1, tombstones: since > 0 });
     const entities = rows.slice(0, page).map(wireEntity);
     const next = rows.length > page ? entities.at(-1).id : null;
-    return { status: 200, body: { seq: state.seq, designFormat: state.designFormat, minFormat: state.minFormat, entities, next } };
+    return { status: 200, body: { seq: state.seq, epoch: state.epoch, designFormat: state.designFormat, minFormat: state.minFormat, entities, next } };
   }
 
   /**
@@ -952,7 +957,7 @@ export class DesignBook {
    *
    * @param {{id: string, name: string, admin: boolean}} designer The pushing designer.
    * @param {{version: string | null | undefined, format: string | null | undefined}} client The request's DESIGNER_VERSION_HEADER and DESIGN_FORMAT_HEADER.
-   * @param {any} body The push, `{designFormat, message, confirmDeletes?, changes: [{id, kind, schema, baseRev, body | null}]}`.
+   * @param {any} body The push, `{designFormat, message, epoch?, confirmDeletes?, changes: [{id, kind, schema, baseRev, body | null}]}`.
    * @returns {Promise<{status: number, body: object, pushed?: {seq: number, by: string, name: string, ids: string[]}}>} The push's seq and every change's new rev, with what to tell the other designers; or why not.
    */
   async push(designer, client, body) {
@@ -971,6 +976,11 @@ export class DesignBook {
 
     return this.exclusive(async () => {
       const state = await this.state();
+
+      // Base revisions of another epoch name revisions a restore from a backup took back.
+      if (push.epoch !== null && push.epoch !== state.epoch) {
+        return { status: 409, body: { code: "epoch", epoch: state.epoch, seq: state.seq } };
+      }
 
       if (push.designFormat < state.minFormat) {
         return { status: 426, body: { code: "update", minimum: this.minVersion, minFormat: state.minFormat } };
@@ -1036,7 +1046,7 @@ export class DesignBook {
    * schemas and base revisions, and the size of every body.
    *
    * @param {any} body The push.
-   * @returns {{push: {designFormat: number, message: string, confirmDeletes: boolean, changes: {id: string, kind: string, schema: number, baseRev: number, body: string | null}[]}, refusal?: undefined} | {refusal: {status: number, body: object}}} The push, each body as JSON text; or why not.
+   * @returns {{push: {designFormat: number, message: string, epoch: string | null, confirmDeletes: boolean, changes: {id: string, kind: string, schema: number, baseRev: number, body: string | null}[]}, refusal?: undefined} | {refusal: {status: number, body: object}}} The push, each body as JSON text, its epoch null when it names none; or why not.
    */
   readPush(body) {
     const limits = this.limits;
@@ -1053,6 +1063,10 @@ export class DesignBook {
 
     if (body.message !== undefined && body.message !== null && typeof body.message !== "string") {
       errors.push({ id: null, message: "The message must be a text." });
+    }
+
+    if (body.epoch !== undefined && body.epoch !== null && !isId(body.epoch)) {
+      errors.push({ id: null, message: "The epoch must be 32 lowercase hex characters." });
     }
 
     if (body.confirmDeletes !== undefined && body.confirmDeletes !== null && typeof body.confirmDeletes !== "boolean") {
@@ -1091,7 +1105,9 @@ export class DesignBook {
       return { refusal: tooBig() };
     }
 
-    return { push: { designFormat: body.designFormat, message: cleanText(body.message ?? "", limits.maxMessageLength), confirmDeletes: body.confirmDeletes === true, changes } };
+    return {
+      push: { designFormat: body.designFormat, message: cleanText(body.message ?? "", limits.maxMessageLength), epoch: body.epoch ?? null, confirmDeletes: body.confirmDeletes === true, changes },
+    };
   }
 
   /**
@@ -1848,7 +1864,7 @@ export async function handleGameDesignRequest(book, method, url, client, drain) 
  * @param {DesignBook} book The design.
  * @param {string[]} rest The address's parts after `designs`.
  * @param {{designer: string | null, version: string | null, format: string | null}} client The request's DESIGNER_HEADER, DESIGNER_VERSION_HEADER and DESIGN_FORMAT_HEADER.
- * @returns {Promise<{designer: {id: string, name: string, admin: boolean}, seq: number} | {close: {code: number, reason: string}} | {status: number, reason: string}>} The designer and the newest push's seq to greet it with; the close code to open and close the socket with; or the status to refuse the upgrade with for any other path.
+ * @returns {Promise<{designer: {id: string, name: string, admin: boolean}, state: {seq: number, epoch: string}} | {close: {code: number, reason: string}} | {status: number, reason: string}>} The designer and the newest push's seq and the design epoch to greet it with; the close code to open and close the socket with; or the status to refuse the upgrade with for any other path.
  */
 export async function admitDesigner(book, rest, client) {
   if (rest.length !== 1 || rest[0] !== DESIGN_SOCKET.route) {
@@ -1863,5 +1879,6 @@ export async function admitDesigner(book, rest, client) {
   }
 
   await book.store.seen(designer.id, book.now());
-  return { designer: { id: designer.id, name: designer.name, admin: designer.admin }, seq: (await book.state()).seq };
+  const { seq, epoch } = await book.state();
+  return { designer: { id: designer.id, name: designer.name, admin: designer.admin }, state: { seq, epoch } };
 }

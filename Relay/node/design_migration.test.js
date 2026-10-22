@@ -2,7 +2,8 @@
 //  design_migration.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Created
+//      Paulinchen  2026-10-22: Tested that the migration carries the design epoch
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -245,7 +246,9 @@ test("the migration hands out every design table the database steps make, each w
   }
 
   assert.deepEqual(exported.design_live.map((row) => [row.build_id, row.previous_build_id]), [[2, 1]]);
-  assert.deepEqual(Object.fromEntries(exported.design_meta.map((row) => [row.key, row.value])), { design_format: String(FORMAT), min_format: String(FORMAT) });
+  const meta = Object.fromEntries(exported.design_meta.map((row) => [row.key, row.value]));
+  assert.deepEqual({ ...meta, epoch: undefined }, { design_format: String(FORMAT), min_format: String(FORMAT), epoch: undefined });
+  assert.match(meta.epoch, /^[0-9a-f]{32}$/, "the copy keeps the epoch, so the designers go on without pulling again");
   assert.ok(exported.design_history.some((row) => row.id === "state:8" && row.deleted === 1), "the tombstone's revision is kept");
 });
 

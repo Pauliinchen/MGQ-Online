@@ -2,7 +2,8 @@
 //  backup.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Tested the line of a database without worlds or design tables
+//      Paulinchen  2026-10-22: Counted the design epoch in the backup line
+//                            - Tested the line of a database without worlds or design tables
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -117,7 +118,7 @@ test("the script copies the open database with its design tables, keeps the newe
   writeFileSync(`${dest}/relay-before-the-move.sqlite`, "a copy made by hand");
   const run = backup({ MGQ_RELAY_DB: `${folder}/relay.sqlite`, BACKUP_DIR: dest, BACKUP_KEEP: "3" });
   assert.equal(run.status, 0, run.stderr);
-  assert.match(run.stdout, / 1 worlds, design_blobs=0 design_builds=0 design_entities=4 design_history=6 design_live=0 design_meta=0 design_pushes=3 designers=1\), keeping 3 copies/);
+  assert.match(run.stdout, / 1 worlds, design_blobs=0 design_builds=0 design_entities=4 design_history=6 design_live=0 design_meta=1 design_pushes=3 designers=1\), keeping 3 copies/);
 
   const names = readdirSync(dest).sort();
   const today = names.filter((name) => COPY_NAME.test(name) && !name.startsWith("relay-2026-01-"));

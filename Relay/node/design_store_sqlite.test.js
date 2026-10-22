@@ -2,7 +2,8 @@
 //  design_store_sqlite.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Tested that both stores keep the live build each build was compiled against
+//      Paulinchen  2026-10-22: Tested the design epoch over restarts, restores from a backup and imports
+//                            - Tested that both stores keep the live build each build was compiled against
 //                            - Tested that both stores keep builds, blobs and the live build alike
 //      Paulinchen  2026-10-21: Created
 //
@@ -10,12 +11,13 @@
 
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { memoryDesignStore } from "../core/design_store_memory.js";
-import { DESIGNERS, fixtureBook, replayScenarios, send } from "../core/test_designs.js";
-import { openSqliteDesignStore } from "./design_store_sqlite.js";
+import { DESIGNERS, EPOCH, fixtureBook, replayScenarios, send } from "../core/test_designs.js";
+import { openSqliteDesignStore, seqMarkOf } from "./design_store_sqlite.js";
 
 /**
  * The folder the test databases live in, deleted afterwards.
@@ -122,7 +124,8 @@ test("the design outlasts a restart, and an export read into a new database come
 });
 
 /**
- * Queues, finishes, fails and tidies builds, keeps their blobs and sets the live build, through a store.
+ * Queues, finishes, fails and tidies builds, keeps their blobs and sets the live build, through a store
+ * on the fixtures' epoch.
  *
  * @param {import("../core/designs.js").DesignStore} store The store.
  * @returns {Promise<{tables: Record<string, object[]>, results: object}>} The store's tables afterwards, as JSON reads them, and what each call handed out.
@@ -133,6 +136,7 @@ async function buildThrough(store) {
     status, report: JSON.stringify({ ok: status === "ok" }), snapshotSha: "11".repeat(32), runtimeSha: "22".repeat(32), marshalSha: marshal, format: 3, runtimeFormat: 1, compiler: "1.3.0", gameData: "33".repeat(32), baseBuildId,
   });
   const ids = [];
+  await store.setEpoch(EPOCH);
 
   for (let seq = 1; seq <= 5; seq++) {
     ids.push(await store.addBuild({ seq, by: DESIGNERS.A.id, at: seq }));
@@ -172,4 +176,90 @@ test("the SQLite store keeps builds, their blobs and the live build as the memor
     sqlite.close();
     copy.close();
   }
+});
+
+/**
+ * Keeps an empty push in a store.
+ *
+ * @param {import("../core/designs.js").DesignStore} store The store.
+ * @param {number} seq The push's seq.
+ * @returns {Promise<void>} Completes once kept.
+ */
+function commitSeq(store, seq) {
+  return store.commit({
+    seq, by: DESIGNERS.A.id, name: DESIGNERS.A.name, at: seq, message: "test", designFormat: 1, clientVersion: "1.3.0", keep: 50, format: null,
+    entities: [{ id: `state:${seq}`, kind: "state", schema: 1, body: "{}", deleted: false }],
+  });
+}
+
+test("the design epoch outlasts a restart and comes anew once a restored backup holds fewer pushes than the relay handed out", async () => {
+  const path = join(folder, "relay.sqlite");
+  const backup = join(folder, "backup.sqlite");
+  const lines = [];
+  const open = () => openSqliteDesignStore(path, { log: (line) => lines.push(line) });
+  let store = open();
+  const first = (await store.state()).epoch;
+  assert.match(first, /^[0-9a-f]{32}$/);
+
+  for (let seq = 1; seq <= 90; seq++) {
+    await commitSeq(store, seq);
+  }
+
+  store.close();
+  copyFileSync(path, backup);
+  store = open();
+  assert.equal((await store.state()).epoch, first, "a restart keeps the epoch");
+
+  for (let seq = 91; seq <= 100; seq++) {
+    await commitSeq(store, seq);
+  }
+
+  store.close();
+  assert.equal(seqMarkOf(path), join(folder, "relay.design-seq"), "moving relay.sqlite* aside leaves the mark");
+  assert.equal(readFileSync(seqMarkOf(path), "utf8"), "100\n");
+  assert.ok(!existsSync(path + "-wal"), "the relay left no write-ahead log to restore beside the copy");
+  copyFileSync(backup, path);
+
+  store = open();
+  const restored = await store.state();
+  assert.equal(restored.seq, 90);
+  assert.notEqual(restored.epoch, first, "the restored database starts a new epoch");
+  assert.equal(readFileSync(seqMarkOf(path), "utf8"), "90\n", "the mark goes back, so the next start keeps the new epoch");
+  assert.match(lines.join("\n"), /holds pushes up to seq 90, the relay handed out 100/);
+  await commitSeq(store, 91);
+  store.close();
+
+  store = open();
+  assert.equal((await store.state()).epoch, restored.epoch, "a start after the restore keeps its epoch");
+  store.close();
+  assert.equal(lines.length, 1);
+});
+
+test("a database whose epoch the restore procedure removed, or an import without one, gets a new epoch; an import with one keeps it", async () => {
+  const path = join(folder, "removed.sqlite");
+  let store = openSqliteDesignStore(path);
+  const first = (await store.state()).epoch;
+  store.close();
+
+  const db = new DatabaseSync(path);
+  db.exec("DELETE FROM design_meta WHERE key = 'epoch'");
+  db.close();
+  store = openSqliteDesignStore(path);
+  const second = (await store.state()).epoch;
+  assert.match(second, /^[0-9a-f]{32}$/);
+  assert.notEqual(second, first);
+
+  await store.importTables({ design_meta: [{ key: "epoch", value: EPOCH }] }, new Map());
+  assert.equal((await store.state()).epoch, EPOCH, "a migrated copy keeps the source's epoch");
+  await store.importTables({ design_meta: [{ key: "design_format", value: "1" }] }, new Map());
+  assert.deepEqual(JSON.parse(JSON.stringify(await store.exportTables())).design_meta, [{ key: "design_format", value: "1" }], "the copy holds the rows of the source alone");
+  assert.match((await store.state()).epoch, /^[0-9a-f]{32}$/, "a copy of a relay without an epoch gets one");
+  store.close();
+
+  const memory = memoryDesignStore();
+  const memoryEpoch = (await memory.state()).epoch;
+  assert.match(memoryEpoch, /^[0-9a-f]{32}$/);
+  assert.notEqual((await memoryDesignStore().state()).epoch, memoryEpoch, "a relay without a database starts a new epoch every start");
+  await memory.setEpoch(EPOCH);
+  assert.equal((await memory.state()).epoch, EPOCH);
 });

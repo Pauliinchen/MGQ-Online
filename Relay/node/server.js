@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Checked the mod catalog's links half a minute after a start and every five minutes
+//      Paulinchen  2026-10-22: Greeted designers with the design epoch and logged a new epoch after a restore
+//                            - Checked the mod catalog's links half a minute after a start and every five minutes
 //                            - Cleared the current release once the watch saw a newer one published after it was set
 //                            - Listed the worlds without their mods for games from 0.6.8 and sent released games to update at a world whose mods they cannot hold
 //                            - Told no released game in a world room a mods rule longer than its DLL takes
@@ -406,7 +407,7 @@ export async function openStores(path) {
     const { openSqliteStores } = await import("./sqlite_store.js");
     const { openSqliteDesignStore } = await import("./design_store_sqlite.js");
     const stores = openSqliteStores(path);
-    const designs = openSqliteDesignStore(path);
+    const designs = openSqliteDesignStore(path, { log: (line) => console.log(`${new Date().toISOString()} ${line}`) });
     const close = () => {
       designs.close();
       stores.close();
@@ -1021,12 +1022,12 @@ export function createRelay({
   /**
    * Seats a designer on the designer socket: greets it, takes what it edits and keeps it awake.
    *
-   * @param {{designer: {id: string, name: string, admin: boolean}, seq: number}} admission The designer and the newest push's seq, see admitDesigner.
+   * @param {{designer: {id: string, name: string, admin: boolean}, state: {seq: number, epoch: string}}} admission The designer, the newest push's seq and the design epoch, see admitDesigner.
    * @param {import("ws").WebSocket} socket The designer's socket.
    */
   function seatDesigner(admission, socket) {
     awakeDesigners.add(socket);
-    designs.presence.join(admission.designer, admission.seq, socket);
+    designs.presence.join(admission.designer, admission.state, socket);
     socket.on("pong", () => awakeDesigners.add(socket));
     socket.on("message", (data, binary) => {
       if (!binary) {
