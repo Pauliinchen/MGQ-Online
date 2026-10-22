@@ -2,7 +2,8 @@
 //  Samples.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Gave the area skill a cycle
+//      Paulinchen  2026-10-22: Added a clear debuffs effect and its event
+//                            - Gave the area skill a cycle
 //                            - Added a rest skipped event
 //                            - Added a start rest event and an opener
 //                            - Named a seat on the sample rule fire
@@ -433,6 +434,7 @@ internal static class Samples
             AreaSkill.Debris!, AreaSkill.Debris!.Look!, AreaSkill.Marks!, AreaSkill.Marks!.Leaves[0], AreaSkill.Payload, AreaSkill.Payload.TargetEffects[0],
             AreaSkill.Payload.Restorations[0], AreaSkill.Payload.Recoveries[0], AreaSkill.Payload.Hit, SupportSkill.Support!, AreaSkill.Facts, AreaSkill.Facts.Filter, AreaSkill.Cycle!,
             EveryNodeFormula, Stigmata, Blast, new GridCell(3, 4), new GridSize(16, 10), new ColorRgba(1, 2, 3, 4), new TileRef("Sheet", 7), new PowerSize(100, 3),
+            new ClearDebuffsEffect(RuleTarget.Boss), new DebuffsClearedEvent(2, StateHolder.Boss, 0, "5e6f7a8b:stand"),
         ];
         foreach (RuleSpec rule in Rules)
         {

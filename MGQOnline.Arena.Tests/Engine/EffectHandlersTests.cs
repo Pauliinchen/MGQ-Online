@@ -2,6 +2,7 @@
 //  EffectHandlersTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Tested clearing debuffs
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -288,5 +289,16 @@ public sealed class EffectHandlersTests
         Assert.Equal([(0, debris, "c1")], _context.Debris);
         DebrisPlacedEvent placed = Assert.Single(_context.LoggedOf<DebrisPlacedEvent>());
         Assert.Equal((new GridCell(3, 2), 2, 1, "c1"), (Assert.Single(placed.Cells), placed.Turns, placed.Hits, placed.CastId));
+    }
+
+    /// <summary>
+    /// Clears the boss's debuffs and logs it under the rule.
+    /// </summary>
+    [Fact]
+    public void ClearsTheBossDebuffs()
+    {
+        EngineOf(Rule("r", new BossHpBelowTrigger(50), [new ClearDebuffsEffect(RuleTarget.Boss)])).Raise(_context, new BossHpBelowEvent(2, 0, 50));
+
+        Assert.Equal(new DebuffsClearedEvent(2, StateHolder.Boss, 0, "r"), Assert.Single(_context.LoggedOf<DebuffsClearedEvent>()));
     }
 }

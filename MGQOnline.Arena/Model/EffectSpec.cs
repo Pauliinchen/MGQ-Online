@@ -2,6 +2,7 @@
 //  EffectSpec.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Added the clear debuffs effect
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -20,6 +21,7 @@ namespace MGQOnline.Arena.Model;
 [JsonDerivedType(typeof(DamageEffect), "damage")]
 [JsonDerivedType(typeof(ApDeltaEffect), "apDelta")]
 [JsonDerivedType(typeof(PlaceDebrisEffect), "placeDebris")]
+[JsonDerivedType(typeof(ClearDebuffsEffect), "clearDebuffs")]
 public abstract record EffectSpec;
 
 /// <summary>
@@ -77,3 +79,9 @@ public sealed record ApDeltaEffect(int Amount, ApTurn Turn) : EffectSpec;
 /// </summary>
 /// <param name="Debris">The debris.</param>
 public sealed record PlaceDebrisEffect(SkillDebrisSpec Debris) : EffectSpec;
+
+/// <summary>
+/// Clears the stat debuffs of whom it names; its bad states stay.
+/// </summary>
+/// <param name="From">Whom it clears.</param>
+public sealed record ClearDebuffsEffect(RuleTarget From) : EffectSpec;

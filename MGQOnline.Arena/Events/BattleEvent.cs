@@ -2,7 +2,8 @@
 //  BattleEvent.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Added the rest skipped event
+//      Paulinchen  2026-10-22: Added the debuffs cleared event
+//                            - Added the rest skipped event
 //                            - Added the start rest event
 //                            - Named the seat a rule fired for
 //                            - Named the main target on unit hits
@@ -41,6 +42,7 @@ namespace MGQOnline.Arena.Events;
 [JsonDerivedType(typeof(ApTurnEvent), "apTurn")]
 [JsonDerivedType(typeof(StartRestEvent), "startRest")]
 [JsonDerivedType(typeof(RestSkippedEvent), "restSkipped")]
+[JsonDerivedType(typeof(DebuffsClearedEvent), "debuffsCleared")]
 [JsonDerivedType(typeof(RuleFiredEvent), "ruleFired")]
 [JsonDerivedType(typeof(WarningEvent), "warning")]
 public abstract record BattleEvent(int Turn);
@@ -238,6 +240,15 @@ public sealed record StartRestEvent(int Turn, int Enemy, string Skill, int Turns
 /// <param name="Turns">The plans of rest it skipped, this one included.</param>
 /// <param name="Price">The points it paid: its cost plus its cost again per plan skipped.</param>
 public sealed record RestSkippedEvent(int Turn, int Enemy, string Skill, int Turns, int Price) : BattleEvent(Turn);
+
+/// <summary>
+/// A rule cleared the stat debuffs of a unit or an enemy.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="On">Whether a unit or an enemy was cleared.</param>
+/// <param name="Index">The unit's seat or the enemy's index.</param>
+/// <param name="RuleId">The rule that cleared them, or null.</param>
+public sealed record DebuffsClearedEvent(int Turn, StateHolder On, int Index, string? RuleId = null) : BattleEvent(Turn);
 
 /// <summary>
 /// A rule fired and queued its effects.

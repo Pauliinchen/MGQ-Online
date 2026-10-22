@@ -2,6 +2,7 @@
 //  EffectHandlers.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Cleared debuffs by a rule
 //      Paulinchen  2026-10-21: Kept a Last stand start cast queued for the next turn a Last stand start
 //                            - Created
 //
@@ -42,6 +43,7 @@ internal static class EffectHandlers
         DamageEffect damage => Damage(context, queued.Fired, damage),
         ApDeltaEffect apDelta => ApDelta(context, queued.Fired, apDelta),
         PlaceDebrisEffect placeDebris => PlaceDebris(context, queued.Fired, placeDebris),
+        ClearDebuffsEffect clearDebuffs => ClearDebuffs(context, queued.Fired, clearDebuffs),
         _ => throw new ArgumentOutOfRangeException(nameof(queued), queued.Effect, "The engine does not know this effect."),
     };
 
@@ -245,6 +247,24 @@ internal static class EffectHandlers
         if (cells.Count > 0)
         {
             context.Log(new DebrisPlacedEvent(fired.Cause.Turn, cells, effect.Debris.Turns, effect.Debris.Hits, castId));
+        }
+
+        return [];
+    }
+
+    /// <summary>
+    /// Clears the stat debuffs of each receiver.
+    /// </summary>
+    /// <remarks>The battle keeps no stat buffs, so the clearing shows in the log alone.</remarks>
+    /// <param name="context">The battle.</param>
+    /// <param name="fired">The fired rule.</param>
+    /// <param name="effect">The effect.</param>
+    /// <returns>Nothing rules match.</returns>
+    private static IReadOnlyList<BattleEvent> ClearDebuffs(IRuleContext context, FiredRule fired, ClearDebuffsEffect effect)
+    {
+        foreach ((StateHolder holder, int index) in Receivers(context, fired, effect.From))
+        {
+            context.Log(new DebuffsClearedEvent(fired.Cause.Turn, holder, index, fired.Rule.Id));
         }
 
         return [];
