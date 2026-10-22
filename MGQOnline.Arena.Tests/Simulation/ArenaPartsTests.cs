@@ -2,7 +2,8 @@
 //  ArenaPartsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Tested a mark that lands on the main target
+//      Paulinchen  2026-10-22: Tested the formula floored at 0
+//                            - Tested a mark that lands on the main target
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -14,6 +15,7 @@ using MGQOnline.Arena.Events;
 using MGQOnline.Arena.Grids;
 using MGQOnline.Arena.Model;
 using MGQOnline.Arena.Simulation;
+using MGQOnline.Arena.Tests.Engine;
 
 namespace MGQOnline.Arena.Tests.Simulation;
 
@@ -116,6 +118,32 @@ public sealed class ArenaPartsTests
         Assert.Equal(turn.Plan.Single().Telegraph!.Pulses.Single().Anchor, main.Cell);
         Assert.Equal([SimFixtures.LightMark], state.Units[main.Seat].States.Select(held => held.StateId));
         Assert.Equal([SimFixtures.DarkMark], state.Units[other.Seat].States.Select(held => held.StateId));
+    }
+
+    /// <summary>
+    /// A formula below 0 deals no damage, as the game floors a formula at 0, instead of healing.
+    /// </summary>
+    /// <param name="formula">The skill's formula.</param>
+    /// <param name="damage">The damage the unit takes.</param>
+    [Theory]
+    [InlineData("b.mhp - 1150", 0)]
+    [InlineData("b.mhp - 850", 150)]
+    public void FloorsTheFormulaAtZero(string formula, long damage)
+    {
+        RuntimeSkill strike = SimFixtures.Skill(SimFixtures.Strike) with
+        {
+            Kind = SkillKind.Single,
+            Targeting = new TargetSpec(TargetMode.RandomCharacter, false),
+            Damage = new DamageSpec(100, EngineSamples.Formula(formula)),
+            Payload = SimFixtures.Skill(SimFixtures.Strike).Payload with { Damage = true },
+        };
+        BattleSimulator simulator = new(SimFixtures.Design([SimFixtures.Action("strike", SimFixtures.Strike)], [strike], ap: 1, attackWeight: 0));
+        BattleState state = simulator.Start(SimFixtures.Setup(1));
+
+        TurnResult turn = SimFixtures.Play(simulator, state, 1).Single();
+
+        Assert.Equal(damage, Assert.Single(turn.Events.OfType<DamageEvent>()).Amount);
+        Assert.Equal(1000 - damage, state.Units[0].Hp);
     }
 
     /// <summary>

@@ -2,7 +2,8 @@
 //  ArenaCasts.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Flagged the main target of each unit hit
+//      Paulinchen  2026-10-22: Floored the formula of a hit at 0
+//                            - Flagged the main target of each unit hit
 //      Paulinchen  2026-10-21: Replaced the casting interface with the casting part over the cast resolver
 //                            - Created
 //
@@ -147,8 +148,9 @@ public sealed class ArenaCasts : ICastResolver
         };
 
     /// <summary>
-    /// Works out the damage of one hit: the skill's formula of the boss enemy on the unit, scaled by
-    /// the hit's percent and the unit's rate of the skill's element.
+    /// Works out the damage of one hit: the skill's formula of the boss enemy on the unit, floored at
+    /// 0 as the game floors a formula, then scaled by the hit's percent and the unit's rate of the
+    /// skill's element.
     /// </summary>
     /// <param name="skill">The skill.</param>
     /// <param name="user">The casting enemy's stats, or null.</param>
@@ -164,7 +166,8 @@ public sealed class ArenaCasts : ICastResolver
 
         FormulaStats target = unit.Stats with { Mhp = unit.MaxHp, Hp = unit.Hp };
         double rate = unit.ElementRates.TryGetValue(skill.Facts.ElementId, out double elementRate) ? elementRate : 100;
-        return RubyMath.RoundHalfAway(FormulaEvaluator.Evaluate(formula.Ast, user, target) * percent / 100 * rate / 100);
+        double value = Math.Max(0, FormulaEvaluator.Evaluate(formula.Ast, user, target));
+        return RubyMath.RoundHalfAway(value * percent / 100 * rate / 100);
     }
 
     /// <summary>
