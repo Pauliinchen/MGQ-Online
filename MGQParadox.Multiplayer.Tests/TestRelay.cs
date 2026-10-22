@@ -2,6 +2,7 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Listed worlds without their mods for newer games once a test says so, and handed out one world with them
 //      Paulinchen  2026-10-17: Told a world's new game the seats that left or came during its handshake
 //                            - Kept the frozen raid boss fights among a keyed story's keys
 //      Paulinchen  2026-10-15: Passed battle routes on to the battle stand-in and cut its players on stopping
@@ -123,7 +124,7 @@ internal sealed partial class TestRelay : IDisposable
     /// <summary>
     /// The longest mods text a world may name, as Relay/core/directory.js keeps it.
     /// </summary>
-    private const int MaxModsLength = 300;
+    private const int MaxModsLength = 16_000;
 
     /// <summary>
     /// The games of each world room by seat.
@@ -187,6 +188,13 @@ internal sealed partial class TestRelay : IDisposable
     /// Whether the list names whether each world turns other mods off; tests clear it to stand in for a relay from before.
     /// </summary>
     public bool ListsOtherModsOff { get; set; } = true;
+
+    /// <summary>
+    /// Whether the list names each world's mods, mod hashes and settings, as for released games
+    /// before 0.6.8; tests clear it to stand in for the list newer games get, which counts the mods
+    /// instead and leaves them to the world's own route.
+    /// </summary>
+    public bool ListsMods { get; set; } = true;
 
     /// <summary>
     /// How many worlds a player who is no admin may make, as maxWorldsPerCreator in
@@ -1049,6 +1057,7 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
             {
                 ["v1", "worlds"] when method == "GET" => (200, List(PlayerKeyOf(context), query["ids"])),
                 ["v1", "worlds"] when method == "POST" => Create(body!),
+                ["v1", "worlds", var id] when method == "GET" && _directory.TryGetValue(id, out var world) => (200, new JsonObject { ["world"] = ListedWorld(id, world), ["admin"] = false }),
                 ["v1", "worlds", var id, "lock"] when _directory.TryGetValue(id, out var world) => (200, LockOf(world)),
                 ["v1", "worlds", var id, "delete"] when CreatorOrAdminOf(id, body?["player"]?.GetValue<string>()) is { } world => Delete(id, toClose, out closeCode),
                 ["v1", "worlds", var id, "ban"] when CreatorOf(id, body?["player"]?.GetValue<string>()) is { } world => Ban(id, world, body!["target"]!.GetValue<string>(), toClose, out closeCode),
@@ -1091,7 +1100,23 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
         var player = key != null ? PlayerIdOf(key) : null;
         var admin = player != null && Admins.Contains(player);
         var seen = _directory.Where(entry => admin || !entry.Value.Hidden || (player != null && entry.Value.Members.ContainsKey(player)) || named.Contains(entry.Key));
-        return new JsonObject { ["worlds"] = new JsonArray(seen.Select(entry => ListedWorld(entry.Key, entry.Value)).ToArray()), ["admin"] = admin };
+        return new JsonObject { ["worlds"] = new JsonArray(seen.Select(entry => ListsMods ? ListedWorld(entry.Key, entry.Value) : WithoutMods(ListedWorld(entry.Key, entry.Value))).ToArray()), ["admin"] = admin };
+    }
+
+    /// <summary>
+    /// Leaves a listed world's mods, mod hashes and settings out, counting its mods instead, as the
+    /// relay lists worlds for newer games.
+    /// </summary>
+    /// <param name="world">The world as the list names it.</param>
+    /// <returns>The same world.</returns>
+    private static JsonNode WithoutMods(JsonNode world)
+    {
+        var entry = world.AsObject();
+        entry["modsCount"] = (entry["mods"]?.GetValue<string>() ?? string.Empty).Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length;
+        entry.Remove("mods");
+        entry.Remove("modHashes");
+        entry.Remove("settings");
+        return entry;
     }
 
     /// <summary>

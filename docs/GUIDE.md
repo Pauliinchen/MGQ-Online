@@ -168,7 +168,7 @@ The creator can change Max Players, Mods, *Shared Mod Settings*, *Turn off other
 | Essential | For mods that are data files without a script. Keeps nobody out by itself; green while your game data matches the world's, gold otherwise. |
 
 - *Add a mod by name* names a mod you don't have yourself, such as a mod of data files: its row becomes a text box, **Enter** adds the name you typed, **Esc** or numpad **0** goes back. Such a mod stays in the list when unlisted; **Del** removes it.
-- The mods take 300 characters at most; the top right of the list says when a change would pass that. **Esc** or numpad **0** goes back to the form, which shows them as the world keeps them: `!` in front of a required mod, `?` in front of an essential one.
+- The mods take 16,000 characters at most, far more than any real list; the top right of the list says when a change would pass that. **Esc** or numpad **0** goes back to the form, which shows them as the world keeps them: `!` in front of a required mod, `?` in front of an essential one.
 
 The details show each mod in a box of its own, as many as fit the row, and count the rest in a last box.
 

@@ -2,6 +2,7 @@
 #  world_mods_parking.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Checked a world's mods again only once the list carries them
 #      Paulinchen  2026-10-10: Told the player on the title screen how many mods a restore sent to Parked mods/Conflicts
 #                            - Refused saving outside a world while the game runs without the player's other mods
 #                            - Kept the game out of a world that turns off scripts behind a link to another drive, and counted those as on
@@ -1000,10 +1001,10 @@ module MGQ_MpModParking
   # @return [Array, nil] Whether it turns other mods off and its mods; nil when the list lacks it.
   def self.rule_from_list(world_id)
     state, _error, worlds = MGQ_MpWorld::Directory.list
-    listed = state == "ready" ? worlds.find { |world| world.id == world_id } : nil
+    listed = state == "ready" ? worlds.find { |world| world.id == world_id && !world.mods_unread } : nil
     return [listed.other_mods_off, listed.mods.to_s] if listed
 
-    log("the list #{state == 'ready' ? 'lacks the world' : "did not arrive (#{state})"}, so its mods are not checked again")
+    log("the list #{state == 'ready' ? 'lacks the world or its mods' : "did not arrive (#{state})"}, so its mods are not checked again")
     nil
   end
 

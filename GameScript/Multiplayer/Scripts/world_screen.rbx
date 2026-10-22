@@ -2,6 +2,7 @@
 #  world_screen.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Opened the world the cursor is on, whose mods the list then carries, and read them before entering or editing it
 #      Paulinchen  2026-10-14: Named a Raid World's starting save in its details in every build
 #      Paulinchen  2026-10-13: Sent a Classic world's raid bosses with the new world and the edits, and showed them in the details
 #                            - Sent a Raid World's squad rules with the new world and the edits, and showed them in the details
@@ -171,6 +172,7 @@ class Scene_MpWorlds < Scene_MenuBase
     "start" => "Fetching the starting save . . .",
     "mods" => "Downloading the mods . . .",
     "settings" => "Saving the mod settings . . .",
+    "read" => "Reading the world's mods . . .",
   }
 
   # Lines of a world's description one notch of the mouse wheel scrolls in the list box.
@@ -454,13 +456,17 @@ class Scene_MpWorlds < Scene_MenuBase
     !@busy && !form && !popup_open? && !@box && !@mod_view && !@focus && !@own_start
   end
 
-  # Shows at the right what the list points at: a world's details, or a form.
+  # Shows at the right what the list points at: a world's details, or a form. While the screen
+  # waits for the player, the world the cursor is on is opened, so the list carries its mods; once
+  # a world is being entered, that one stays opened instead.
   def show_panel
     shown = form || @forms[@list_window.current_symbol]
     @form_window.form = shown if shown
     @form_window.visible = !shown.nil?
     @detail_window.visible = shown.nil?
-    @detail_window.show(@list_window.current_ext, @me) unless shown
+    pointed = @list_window.current_ext
+    MGQ_MpWorld::Directory.open(pointed && pointed.listed ? pointed.id : nil) if idle? && !scene_changing?
+    @detail_window.show(pointed, @me) unless shown
   end
 
   # Acts on what the text screen handed back, and asks for the player's name once, as the screen
@@ -530,6 +536,10 @@ class Scene_MpWorlds < Scene_MenuBase
     log_screen("enter #{entry_text}")
     @park_after_unlock = nil
     return if listed && !open_now?(listed)
+    return read_mods(:enter) if listed && listed.mods_unread
+
+    # The world entered stays opened, so the list in the world carries its mods.
+    MGQ_MpWorld::Directory.open(listed.id) if listed
     return if listed && !mods_allow?(listed)
 
     # Its mod settings are noted only as the world opens, so a refused entry leaves nothing behind.
@@ -557,6 +567,34 @@ class Scene_MpWorlds < Scene_MenuBase
     else
       ask_password
     end
+  end
+
+  # Reads the chosen world's mods, mod hashes and settings, which the list leaves out until the
+  # world is opened, before the screen acts on them.
+  #
+  # @param after [Symbol] What follows once they are read: :enter or :edit.
+  def read_mods(after)
+    log_screen("reading the mods of #{entry_text} before #{after == :enter ? 'entering' : 'editing'} it")
+    @after_read = after
+    start_action("read") { MGQ_MpWorld::Directory.read(@entry.id) }
+  end
+
+  # Goes on with what waited for the chosen world's mods, once the list carries them.
+  #
+  # @param after [Symbol, nil] What waited: :enter or :edit.
+  def mods_read(after)
+    listed = MGQ_MpWorld::Directory.list[2].find { |world| world.id == @entry.id }
+
+    if listed.nil? || listed.mods_unread
+      log_screen("the mods of #{entry_text} were read, yet the list #{listed ? 'still lacks them' : 'lacks the world'}")
+      Sound.play_buzzer
+      say("The mods of #{@entry.name} could not be read. Try again in a moment.")
+      return back_to_list
+    end
+
+    log_screen("read the mods of #{entry_text}: #{MGQ_MpWorld.mods_of(listed.mods).size} named")
+    @entry.listed = listed
+    after == :edit ? on_edit_world : on_enter
   end
 
   # Decides whether a world takes players now: not while its creator still sets up its starting
@@ -1713,6 +1751,8 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Opens the form that changes the chosen world, filled in as the world is.
   def on_edit_world
+    return read_mods(:edit) if @entry.listed.mods_unread
+
     log_screen("editing #{entry_text}#{@entry.listed.creator_id == @me ? ' as its creator' : ' as an admin'}")
     close_popups
     @forms[:edit_world] = MGQ_MpWorld::Form.edit(@entry.listed, @entry.listed.creator_id == @me)
@@ -1834,6 +1874,7 @@ class Scene_MpWorlds < Scene_MenuBase
 
     unless yield
       @enter_after_data = nil
+      @after_read = nil
       log_screen("the #{kind} request could not be started")
       Sound.play_buzzer
       say(kind == "settings" ? settings_failed_text("the request could not be started. Try again in a moment.") : "The request could not be started. Try again in a moment.")
@@ -1864,6 +1905,8 @@ class Scene_MpWorlds < Scene_MenuBase
     @busy = nil
     enter_after_data = @enter_after_data
     @enter_after_data = nil
+    after_read = @after_read
+    @after_read = nil
     MGQ_MpWorld::Directory.clear
 
     if action["state"] == "failed"
@@ -1902,6 +1945,8 @@ class Scene_MpWorlds < Scene_MenuBase
     when "start"
       log_screen("fetched the starting save of #{@fetched.name} (#{@fetched.id})")
       return start_world(@fetched, true)
+    when "read"
+      return mods_read(after_read)
     when "mods"
       log_screen("installed the mods #{(@mod_rows || []).map(&:name).join(', ')} for #{entry_text}")
       return restart_for_mods
@@ -2165,6 +2210,7 @@ class Scene_MpWorlds < Scene_MenuBase
     unless error
       # Before the world opens, since loading its save applies its mod settings.
       listed, fresh = @entering
+      MGQ_MpWorld::Directory.open(listed.id) if listed
       MGQ_MpWorldMods.enter_world(listed, @me, fresh ? true : false)
       error = MGQ_MpWorld.start(world, self)
       MGQ_MpWorldMods.forget_world if error
@@ -2890,6 +2936,8 @@ class Window_MpWorldDetail < Window_Base
            elsif differing
              "differing games are warned"
            end
+    return Panel.new("Game data", note, [[Cell.new("Mods", "Reading . . .", :normal)], [game]]) if listed.mods_unread
+
     colors = mod_colors(listed.mods, differing, MGQ_MpWorldMods.differing(listed))
     settings = Cell.new(nil, MGQ_MpWorldMods.details_text(listed, me), MGQ_MpWorldMods.shared?(listed.settings) ? :gold : :normal)
     other_mods = Cell.new(nil, other_mods_text(listed), listed.other_mods_off ? :warn : :normal)

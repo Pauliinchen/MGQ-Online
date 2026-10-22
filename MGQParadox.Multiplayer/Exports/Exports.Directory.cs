@@ -2,6 +2,7 @@
 //  Exports.Directory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Added mp_dir_open and mp_dir_read
 //      Paulinchen  2026-10-15: Took the options of mp_dir_create in one number
 //      Paulinchen  2026-10-13: Took a Classic world's raid bosses setting in mp_dir_create and mp_dir_edit
 //                            - Took a Raid World's squad settings in mp_dir_create and mp_dir_edit
@@ -104,6 +105,47 @@ internal static unsafe partial class Exports
         catch (Exception ex)
         {
             Log.Write($"mp_dir_find failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Opens a world, whose mods, mod hashes and settings the list then carries, see
+    /// <see cref="WorldDirectory.Open"/>. Returns at once; they are read on a thread of their own.
+    /// </summary>
+    /// <param name="id">The world, UTF-8 and null-terminated; empty for none.</param>
+    /// <returns>1 when opened, 0 when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dir_open", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DirectoryOpen(byte* id)
+    {
+        try
+        {
+            WorldDirectory.Current.Open(Text(id));
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_dir_open failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Opens a world and reads its mods, mod hashes and settings as an action, see
+    /// <see cref="WorldDirectory.Read"/>. Returns at once; <c>mp_dir_action</c> tells when the list carries them.
+    /// </summary>
+    /// <param name="id">The world, UTF-8 and null-terminated.</param>
+    /// <returns>1 when started, 0 while another action runs or when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_dir_read", CallConvs = [typeof(CallConvStdcall)])]
+    public static int DirectoryRead(byte* id)
+    {
+        try
+        {
+            return WorldDirectory.Current.Read(Text(id)) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_dir_read failed: {ex}");
             return 0;
         }
     }

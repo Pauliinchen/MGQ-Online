@@ -2,6 +2,7 @@
 //  WorldModsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Covered the list without the worlds' mods, which carries those of the world opened or read
 //      Paulinchen  2026-10-13: Expected the raid bosses setting of a Classic world at the end of its line
 //                            - Expected the empty squad settings of a Classic world at the end of its line
 //      Paulinchen  2026-10-09: Covered the mods the catalog marks personal
@@ -16,10 +17,12 @@
 //
 //----------------------------------------------------------------
 
+using System;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Threading;
 using MGQParadox.Multiplayer.Mods;
 using MGQParadox.Multiplayer.Network.Transport;
 using MGQParadox.Multiplayer.Network.World;
@@ -246,6 +249,47 @@ public sealed class WorldModsTests
     }
 
     /// <summary>
+    /// Asserts that a list without the worlds' mods marks them unread and carries those of the world
+    /// opened once they are read, until another world is opened.
+    /// </summary>
+    [Fact]
+    public void Open_CarriesTheOpenedWorldsModsInTheList()
+    {
+        using var relay = new TestRelay { ListsMods = false };
+        var creator = NewDirectory(relay, CreatorKey, "Creator");
+        var hashes = $"Some Mod={new string('a', 64)}";
+        var made = Act(creator, directory => directory.Create("Modded", "secret", 4, false, false, [], new WorldAbout(string.Empty, "!Some Mod", string.Empty, false, hashes, "key=i:1")));
+        var other = Act(creator, directory => directory.Create("Plain", "secret", 4, false, false, []));
+
+        Assert.Equal("unread", LineAfterWorld(List(creator), made["world"]));
+
+        creator.Open(made["world"]);
+        var lines = WaitForLines(creator, lines => LineAfterWorld(lines, made["world"]) != "unread");
+        Assert.Contains(lines, line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith($"\t!Some Mod\t\t{hashes}\tkey=i:1\tclassic\toff\t\t0\t\t0"));
+        Assert.Equal("unread", LineAfterWorld(lines, other["world"]));
+
+        creator.Open(other["world"]);
+        WaitForLines(creator, lines => LineAfterWorld(lines, made["world"]) == "unread" && LineAfterWorld(lines, other["world"]) != "unread");
+    }
+
+    /// <summary>
+    /// Asserts that reading a world as an action leaves its mods in the list once it is done, also
+    /// after the list is fetched again.
+    /// </summary>
+    [Fact]
+    public void Read_LeavesTheWorldsModsInTheList()
+    {
+        using var relay = new TestRelay { ListsMods = false };
+        var creator = NewDirectory(relay, CreatorKey, "Creator");
+        var made = Act(creator, directory => directory.Create("Modded", "secret", 4, false, false, [], new WorldAbout(string.Empty, "!Some Mod", string.Empty, false)));
+        List(creator);
+
+        Assert.Equal("done", Act(creator, directory => directory.Read(made["world"]))["state"]);
+        Assert.NotEqual("unread", LineAfterWorld(ListState(creator).Team.Split('\n'), made["world"]));
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.Contains("\t!Some Mod\t"));
+    }
+
+    /// <summary>
     /// Asserts that a world's creator and an admin replace its mod settings on their own, and another player may not.
     /// </summary>
     [Fact]
@@ -283,4 +327,41 @@ public sealed class WorldModsTests
         ["files"] = new JsonObject { ["Level_Cap.rb"] = hash },
         ["versions"] = new JsonArray(versions.Select(entry => (JsonNode)new JsonObject { ["version"] = entry[0], ["files"] = new JsonObject { ["Level_Cap.rb"] = entry[1] } }).ToArray()),
     };
+
+    /// <summary>
+    /// Reads the line that follows a world's line in the list.
+    /// </summary>
+    /// <param name="lines">The list's lines.</param>
+    /// <param name="id">The world.</param>
+    /// <returns>The next line, such as <c>unread</c>, or <see langword="null"/> for none.</returns>
+    private static string? LineAfterWorld(string[] lines, string id)
+    {
+        var at = Array.FindIndex(lines, line => line.StartsWith($"world\t{id}\t", StringComparison.Ordinal));
+        return at >= 0 && at + 1 < lines.Length ? lines[at + 1] : null;
+    }
+
+    /// <summary>
+    /// Reads the list as it stands until it holds what a test waits for, without fetching it again.
+    /// </summary>
+    /// <param name="directory">The directory.</param>
+    /// <param name="done">Tells whether the lines hold it.</param>
+    /// <returns>The lines that held it.</returns>
+    private static string[] WaitForLines(WorldDirectory directory, Func<string[], bool> done)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(20);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            var lines = Message.Decode(directory.DescribeList()).Team.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+            if (done(lines))
+            {
+                return lines;
+            }
+
+            Thread.Sleep(20);
+        }
+
+        throw new TimeoutException("The list never held what the test waits for.");
+    }
 }

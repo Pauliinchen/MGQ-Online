@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-22: Named mp_update_rollback, told whether the release to install is a step back and said the version to play for one
+#      Paulinchen  2026-10-22: Named mp_dir_open and mp_dir_read
+#                            - Named mp_update_rollback, told whether the release to install is a step back and said the version to play for one
 #      Paulinchen  2026-10-17: Loaded battles_raid_freeze_data.rbx, battles_raid_freeze.rbx and world_freeze.rbx after battles_raid_pool.rbx
 #                            - Loaded ui_raid_freeze.rbx after ui_raid_bar.rbx
 #      Paulinchen  2026-10-15: Loaded battles_served.rbx after battles_sync_live.rbx and named the mp_battle_* exports
@@ -823,6 +824,8 @@ module MGQ_Multiplayer
       'mp_dir_watch' => 'p',
       'mp_dir_refresh' => 'v',
       'mp_dir_find' => 'p',
+      'mp_dir_open' => 'p',
+      'mp_dir_read' => 'p',
       'mp_dir_list' => READ_ARGUMENTS,
       'mp_dir_create' => 'ppllppppppppllpl',
       'mp_dir_unlock' => 'pp',

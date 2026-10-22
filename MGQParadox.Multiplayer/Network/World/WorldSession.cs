@@ -2,6 +2,7 @@
 //  WorldSession.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Took a mods rule as long as the relay's mods now may be
 //      Paulinchen  2026-10-15: Laid the relay's push of what a write changed of a keyed Raid World story over the story held
 //      Paulinchen  2026-10-13: Handed a changed Classic world raid bosses setting to the game script as a raid_bosses entry
 //                            - Handed changed Raid World squad settings to the game script as a squad entry
@@ -201,7 +202,7 @@ internal sealed class WorldSession
     /// The longest mods text a <see cref="ModsRuleKind"/> frame may carry, far above the relay's own
     /// limit, so a broken frame never fills the inbox.
     /// </summary>
-    private const int MaxModsRuleLength = 4096;
+    private const int MaxModsRuleLength = 65536;
 
     /// <summary>
     /// The kind of an inbox entry that carries another game's message.

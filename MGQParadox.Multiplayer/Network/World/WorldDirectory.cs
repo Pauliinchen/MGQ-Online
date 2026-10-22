@@ -2,6 +2,7 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Read the mods, mod hashes and settings of the opened world on their own, which the list leaves out for this version
 //      Paulinchen  2026-10-13: Made, changed and listed Classic worlds with their raid bosses
 //                            - Made, changed and listed Raid Worlds with their squad settings
 //      Paulinchen  2026-10-12: Told the creator limit only for a create refused with 429
@@ -125,9 +126,25 @@ internal sealed class WorldDirectory
     private readonly object _gate = new();
 
     /// <summary>
-    /// The list as the game script reads it, <see langword="null"/> before the first one arrived.
+    /// The worlds of the last list fetched, <see langword="null"/> before the first one arrived.
     /// </summary>
-    private string? _list;
+    private IReadOnlyList<ListedWorld>? _worlds;
+
+    /// <summary>
+    /// The world whose mods, mod hashes and settings the list carries, read on their own when the
+    /// list leaves them out: the world the game script opened last; <see langword="null"/> for none.
+    /// </summary>
+    private string? _opened;
+
+    /// <summary>
+    /// The mods, mod hashes and settings last read of <see cref="_opened"/>, with its id.
+    /// </summary>
+    private (string Id, WorldAbout About)? _details;
+
+    /// <summary>
+    /// Whether the opened world's mods are being read outside the list and the actions.
+    /// </summary>
+    private bool _reading;
 
     /// <summary>
     /// The ids of the hidden worlds the list is asked for too.
@@ -264,6 +281,11 @@ internal sealed class WorldDirectory
                 error = ReasonFor("list", ex);
             }
 
+            if (listing != null)
+            {
+                ReadOpened(listing.Worlds);
+            }
+
             try
             {
                 catalog = Client().Mods();
@@ -293,7 +315,7 @@ internal sealed class WorldDirectory
 
                 if (listing != null)
                 {
-                    _list = ListText(listing.Worlds);
+                    _worlds = listing.Worlds;
                 }
 
                 if (catalog != null)
@@ -313,6 +335,138 @@ internal sealed class WorldDirectory
             }
         });
     }
+
+    /// <summary>
+    /// Opens a world: from now on the list carries its mods, mod hashes and settings, which the
+    /// relay leaves out of the list for this version, read on their own as it is opened and each
+    /// time the list is fetched again.
+    /// </summary>
+    /// <param name="id">The world; empty for none.</param>
+    public void Open(string id)
+    {
+        lock (_gate)
+        {
+            if (id == (_opened ?? string.Empty))
+            {
+                return;
+            }
+
+            _opened = id.Length > 0 ? id : null;
+
+            if (_opened == null || _reading || !Unread(_worlds, _opened) || _details?.Id == _opened)
+            {
+                return;
+            }
+
+            _reading = true;
+        }
+
+        Threads.Start("MultiplayerDirectoryWorld", ReadUntilOpenedKnown);
+    }
+
+    /// <summary>
+    /// Reads the opened world's mods, then again for a world opened meanwhile, until the one opened
+    /// last is read or needs nothing.
+    /// </summary>
+    private void ReadUntilOpenedKnown()
+    {
+        while (true)
+        {
+            string id;
+
+            lock (_gate)
+            {
+                if (_opened == null || !Unread(_worlds, _opened) || _details?.Id == _opened)
+                {
+                    _reading = false;
+                    return;
+                }
+
+                id = _opened;
+            }
+
+            if (!TryReadDetails(id))
+            {
+                lock (_gate)
+                {
+                    _reading = false;
+                }
+
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reads the opened world's mods again for a list just fetched, when the list leaves them out.
+    /// </summary>
+    /// <param name="worlds">The list's worlds.</param>
+    private void ReadOpened(IReadOnlyList<ListedWorld> worlds)
+    {
+        string? id;
+
+        lock (_gate)
+        {
+            id = _opened;
+        }
+
+        if (id != null && Unread(worlds, id))
+        {
+            TryReadDetails(id);
+        }
+    }
+
+    /// <summary>
+    /// Reads a world's mods, mod hashes and settings and keeps them while it stays opened. A world
+    /// that could not be read keeps what was read of it before.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <returns>Whether they were read.</returns>
+    private bool TryReadDetails(string id)
+    {
+        try
+        {
+            KeepDetails(Client().World(id, Playing()?.Key));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"the mods of world {Log.Short(id)} could not be read: {ReasonFor("world", ex)}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Keeps a world's mods, mod hashes and settings as the opened world's, if it is still opened.
+    /// </summary>
+    /// <param name="world">The world as its own route hands it out.</param>
+    private void KeepDetails(ListedWorld world)
+    {
+        bool kept;
+
+        lock (_gate)
+        {
+            kept = world.Id == _opened;
+
+            if (kept)
+            {
+                _details = (world.Id, world.About);
+            }
+        }
+
+        Log.Write(kept
+            ? $"read the mods of world {Log.Short(world.Id)}: {world.About.Mods.Length.ToString(CultureInfo.InvariantCulture)} characters of mods, {world.About.ModHashes.Length.ToString(CultureInfo.InvariantCulture)} of mod hashes, {world.About.Settings.Length.ToString(CultureInfo.InvariantCulture)} of settings"
+            : $"read the mods of world {Log.Short(world.Id)}, which is no longer opened");
+    }
+
+    /// <summary>
+    /// Tells whether a list leaves out a world's mods.
+    /// </summary>
+    /// <param name="worlds">The list's worlds, <see langword="null"/> before the first list.</param>
+    /// <param name="id">The world.</param>
+    /// <returns>Whether the list names the world without its mods; false for a world it lacks.</returns>
+    private static bool Unread(IReadOnlyList<ListedWorld>? worlds, string id) =>
+        worlds?.FirstOrDefault(world => world.Id == id)?.ModsUnread == true;
 
     /// <summary>
     /// Sums a fetched list up for the log.
@@ -336,13 +490,16 @@ internal sealed class WorldDirectory
     /// <summary>
     /// Describes the list for the game script.
     /// </summary>
-    /// <returns><c>state</c> ("loading", "ready" or "failed"), <c>error</c> and <c>admin</c> (1 for an admin), then one line per world and player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"), 1 when hidden, 1 when new players choose where to start, 1 without a password, 1 when featured, 1 when only games with the same data may enter, the creator's game data, the mods it needs, its description, the creator's hashes of required mods outside the catalog, its mod settings, its type ("classic" or "raid"), how a Raid World shares companions ("off", "story" or "all"), a Raid World's difficulty (-2 to 4, empty when it sets none), 1 when it turns other mods off, a Raid World's squad settings (see <see cref="RaidSquad"/>, empty when it keeps none), 1 when a Classic world's players meet raid bosses; <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
+    /// <returns><c>state</c> ("loading", "ready" or "failed"), <c>error</c> and <c>admin</c> (1 for an admin), then one line per world, a line <c>unread</c> after a world whose mods, mod hashes and settings are not read yet (see <see cref="Open"/>), and one line per player: <c>world</c>, id, seats, players online, creator's id, when last active, creator's name, name, starting save ("none", "pending" or "ready"), 1 when hidden, 1 when new players choose where to start, 1 without a password, 1 when featured, 1 when only games with the same data may enter, the creator's game data, the mods it needs, its description, the creator's hashes of required mods outside the catalog, its mod settings, its type ("classic" or "raid"), how a Raid World shares companions ("off", "story" or "all"), a Raid World's difficulty (-2 to 4, empty when it sets none), 1 when it turns other mods off, a Raid World's squad settings (see <see cref="RaidSquad"/>, empty when it keeps none), 1 when a Classic world's players meet raid bosses; <c>member</c>, id, 1 when online, name; each separated by tabs.</returns>
     public string DescribeList()
     {
         lock (_gate)
         {
-            var state = _listing ? "loading" : _listError != null ? "failed" : _list != null ? "ready" : "idle";
-            return new Message([new(StateHeader, state), new(ErrorHeader, _listError), new(AdminHeader, _admin ? "1" : null)], _list ?? string.Empty).Encode();
+            var state = _listing ? "loading" : _listError != null ? "failed" : _worlds != null ? "ready" : "idle";
+            var worlds = _worlds?.Select(world => world.ModsUnread && _details is { } details && details.Id == world.Id
+                ? world with { About = world.About with { Mods = details.About.Mods, ModHashes = details.About.ModHashes, Settings = details.About.Settings }, ModsUnread = false }
+                : world);
+            return new Message([new(StateHeader, state), new(ErrorHeader, _listError), new(AdminHeader, _admin ? "1" : null)], worlds != null ? ListText(worlds) : string.Empty).Encode();
         }
     }
 
@@ -674,6 +831,24 @@ internal sealed class WorldDirectory
     });
 
     /// <summary>
+    /// Opens a world and reads its mods, mod hashes and settings at once, which the list then carries,
+    /// see <see cref="Open"/>; for the game script to wait on before it acts on them.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <returns><see langword="false"/> while another action runs.</returns>
+    public bool Read(string id) => Start("read", () =>
+    {
+        lock (_gate)
+        {
+            _opened = id;
+        }
+
+        var world = Client().World(id, Playing()?.Key);
+        KeepDetails(world);
+        return new ActionResult(string.Empty, world.Name);
+    });
+
+    /// <summary>
     /// Changes a world's seats, description, mods, whether it turns other mods off, a Raid World's
     /// difficulty and squad settings and a Classic world's raid bosses setting, which only its creator
     /// or one of the relay's admins may, and for its creator the hashes of its required mods outside
@@ -931,6 +1106,11 @@ internal sealed class WorldDirectory
                 .Append('\t').Append(OnOneField(world.About.Settings)).Append('\t').Append(OnOneField(world.Type)).Append('\t').Append(OnOneField(world.Share))
                 .Append('\t').Append(world.Difficulty is { } difficulty ? difficulty.ToString(CultureInfo.InvariantCulture) : string.Empty)
                 .Append('\t').Append(world.OtherModsOff ? '1' : '0').Append('\t').Append(world.Squad).Append('\t').Append(world.RaidBosses ? '1' : '0').Append('\n');
+
+            if (world.ModsUnread)
+            {
+                text.Append("unread\n");
+            }
 
             foreach (var member in world.Members.OrderByDescending(member => member.Online).ThenBy(member => member.Name, StringComparer.OrdinalIgnoreCase))
             {

@@ -2,6 +2,7 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Read one world with its mods, mod hashes and settings, which the list leaves out for this version
 //      Paulinchen  2026-10-15: Named the Raid World stories kept key by key in the X-MGQ-Features header
 //      Paulinchen  2026-10-14: Dropped the dev feature, as every game may give a Raid World a starting save
 //      Paulinchen  2026-10-13: Made and changed a Classic world with its raid bosses, and read them from the list
@@ -181,39 +182,65 @@ internal sealed partial class DirectoryClient
 
         foreach (var world in document.RootElement.GetProperty("worlds").EnumerateArray())
         {
-            var members = new List<ListedMember>();
-
-            foreach (var member in world.GetProperty("members").EnumerateArray())
-            {
-                members.Add(new ListedMember(member.GetProperty("id").GetString()!, member.GetProperty("name").GetString() ?? "?", member.GetProperty("online").GetBoolean()));
-            }
-
-            var creator = world.GetProperty("creator");
-            var type = Text(world, "type") is { Length: > 0 } named ? named : WorldType.Classic;
-            worlds.Add(new ListedWorld(
-                world.GetProperty("id").GetString()!,
-                world.GetProperty("name").GetString() ?? "?",
-                world.GetProperty("seats").GetInt32(),
-                creator.GetProperty("id").GetString()!,
-                creator.GetProperty("name").GetString() ?? "?",
-                world.GetProperty("online").GetInt32(),
-                world.GetProperty("active").GetInt64(),
-                world.TryGetProperty("start", out var start) ? start.GetString() ?? "none" : "none",
-                Flag(world, "hidden"),
-                Flag(world, "choose"),
-                Flag(world, "open"),
-                Flag(world, "featured"),
-                new WorldAbout(Text(world, "description"), Text(world, "mods"), Text(world, "data"), Flag(world, "strict"), Text(world, "modHashes"), Text(world, "settings")),
-                members,
-                type,
-                Text(world, "share") is { Length: > 0 } share ? share : CompanionSharing.Off,
-                world.TryGetProperty("difficulty", out var difficulty) && difficulty.ValueKind == JsonValueKind.Number && difficulty.TryGetInt32(out var level) && WorldDifficulty.IsValid(level) ? level : null,
-                world.TryGetProperty("otherModsOff", out var otherModsOff) && otherModsOff.ValueKind is JsonValueKind.True or JsonValueKind.False ? otherModsOff.GetBoolean() : type == WorldType.Raid,
-                world.TryGetProperty(RaidSquad.Name, out var squad) ? RaidSquad.TextOf(squad) : string.Empty,
-                Flag(world, "raidBosses")));
+            worlds.Add(WorldOf(world));
         }
 
         return new WorldListing(worlds, Flag(document.RootElement, "admin"));
+    }
+
+    /// <summary>
+    /// Reads one world as the list names it, with its mods, mod hashes and settings, which the list
+    /// leaves out for this version, under the same rules as the list: a hidden one by its id too.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <param name="playerKey">The player's key, or <see langword="null"/> for none.</param>
+    /// <returns>The world.</returns>
+    /// <exception cref="DirectoryException">The directory could not be reached, knows no such world, or answered with an error.</exception>
+    public ListedWorld World(string id, string? playerKey)
+    {
+        using var document = Send(HttpMethod.Get, new Uri($"{_worlds}/{Uri.EscapeDataString(id)}"), $"world {Log.Short(id)}", null, playerKey, $"world {id}");
+        var root = document.RootElement;
+        return WorldOf(root.TryGetProperty("world", out var world) && world.ValueKind == JsonValueKind.Object ? world : root);
+    }
+
+    /// <summary>
+    /// Reads a world of the directory's answer.
+    /// </summary>
+    /// <param name="world">The world as the relay describes it.</param>
+    /// <returns>The world; without <c>mods</c> in it, its mods, mod hashes and settings are unread.</returns>
+    private static ListedWorld WorldOf(JsonElement world)
+    {
+        var members = new List<ListedMember>();
+
+        foreach (var member in world.GetProperty("members").EnumerateArray())
+        {
+            members.Add(new ListedMember(member.GetProperty("id").GetString()!, member.GetProperty("name").GetString() ?? "?", member.GetProperty("online").GetBoolean()));
+        }
+
+        var creator = world.GetProperty("creator");
+        var type = Text(world, "type") is { Length: > 0 } named ? named : WorldType.Classic;
+        return new ListedWorld(
+            world.GetProperty("id").GetString()!,
+            world.GetProperty("name").GetString() ?? "?",
+            world.GetProperty("seats").GetInt32(),
+            creator.GetProperty("id").GetString()!,
+            creator.GetProperty("name").GetString() ?? "?",
+            world.GetProperty("online").GetInt32(),
+            world.GetProperty("active").GetInt64(),
+            world.TryGetProperty("start", out var start) ? start.GetString() ?? "none" : "none",
+            Flag(world, "hidden"),
+            Flag(world, "choose"),
+            Flag(world, "open"),
+            Flag(world, "featured"),
+            new WorldAbout(Text(world, "description"), Text(world, "mods"), Text(world, "data"), Flag(world, "strict"), Text(world, "modHashes"), Text(world, "settings")),
+            members,
+            type,
+            Text(world, "share") is { Length: > 0 } share ? share : CompanionSharing.Off,
+            world.TryGetProperty("difficulty", out var difficulty) && difficulty.ValueKind == JsonValueKind.Number && difficulty.TryGetInt32(out var level) && WorldDifficulty.IsValid(level) ? level : null,
+            world.TryGetProperty("otherModsOff", out var otherModsOff) && otherModsOff.ValueKind is JsonValueKind.True or JsonValueKind.False ? otherModsOff.GetBoolean() : type == WorldType.Raid,
+            world.TryGetProperty(RaidSquad.Name, out var squad) ? RaidSquad.TextOf(squad) : string.Empty,
+            Flag(world, "raidBosses"),
+            !world.TryGetProperty("mods", out _));
     }
 
     /// <summary>
@@ -966,7 +993,8 @@ internal sealed record WorldListing(IReadOnlyList<ListedWorld> Worlds, bool Admi
 /// <param name="OtherModsOff">Whether the world turns off every mod of its players it does not name and the catalog does not mark personal.</param>
 /// <param name="Squad">A Raid World's squad settings as text, see <see cref="RaidSquad"/>; empty for a world that keeps none.</param>
 /// <param name="RaidBosses">Whether a Classic world's players meet raid bosses.</param>
-internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, bool Choose, bool Open, bool Featured, WorldAbout About, IReadOnlyList<ListedMember> Members, string Type, string Share, int? Difficulty = null, bool OtherModsOff = false, string Squad = "", bool RaidBosses = false);
+/// <param name="ModsUnread">Whether the list left out its mods, mod hashes and settings, which <see cref="DirectoryClient.World"/> reads.</param>
+internal sealed record ListedWorld(string Id, string Name, int Seats, string CreatorId, string CreatorName, int Online, long Active, string Start, bool Hidden, bool Choose, bool Open, bool Featured, WorldAbout About, IReadOnlyList<ListedMember> Members, string Type, string Share, int? Difficulty = null, bool OtherModsOff = false, string Squad = "", bool RaidBosses = false, bool ModsUnread = false);
 
 /// <summary>
 /// A world's types, as the relay names them, fixed once the world is made.

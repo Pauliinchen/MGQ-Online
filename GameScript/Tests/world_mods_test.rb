@@ -2,7 +2,8 @@
 #  world_mods_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-22: Stood in for the update message
+#      Paulinchen  2026-10-22: Measured the settings and the creator's hashes against the relay's limits as the script names them
+#                            - Stood in for the update message
 #      Paulinchen  2026-10-15: Checked the world's mods and options this game hands the battle server
 #      Paulinchen  2026-10-13: Kept the title screen from writing GameData.ini
 #      Paulinchen  2026-10-12: Followed the settings to their own Mod Config group and checked the dump leaves the hotkeys out
@@ -434,6 +435,7 @@ Dir.mktmpdir do |folder|
     mods.forget_installed
     check("a name longer than the relay takes is left out of the creator's hashes", mods.creator_hashes("!Other Mod; !#{long}"), "Other Mod=#{'f' * 64}")
     File.delete(File.join(folder, "Patch", "#{long}.rb"))
+    check("hashes past the relay's limit are left out, those that fit kept", mods.fit_hashes(["A=#{'1' * 64}", "B=#{'2' * 64}", "C=3"], 70), "A=#{'1' * 64};C=3")
 
     # The world screen: the offer.
     $file_hashes = { "Patch/Mods/Level Cap.rb" => "aa" }
@@ -505,8 +507,9 @@ check("shared settings are the marker, then the creator's options of the named m
       mods.shared_text("!Level_Cap; Party Sheet; Free", "")[0], "@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:1;mod_party_sheet_theme=y:dark")
 check("they keep the world's options the creator's game does not know, and drop those it knows of mods the world no longer names",
       mods.shared_text("!Level_Cap", "@shared=o:1;mod_other=i:3;mod_level_cap=i:1;mod_party_sheet_theme=y:light")[0], "@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:1;mod_other=i:3")
-check("settings join as long as they fit into the relay's 2000 characters", mods.fit_settings([[:a, "a=s:#{'x' * 1990}"], [:b, "b=s:#{'y' * 20}"], [:c, "c=i:1"]]),
-      ["a=s:#{'x' * 1990};c=i:1", [:b]])
+most = MGQ_MpWorldMods::MAX_SETTINGS_CHARS
+check("settings join as long as they fit into the relay's limit", mods.fit_settings([[:a, "a=s:#{'x' * (most - 10)}"], [:b, "b=s:#{'y' * 20}"], [:c, "c=i:1"]]),
+      ["a=s:#{'x' * (most - 10)};c=i:1", [:b]])
 check("values keep their type, and semicolons and equal signs survive", ["i:-3", "f:1.5", "b:true", "b:false", "y:dark", mods.encode("a;b=c%")].map { |text| mods.decode(text) },
       [[true, -3], [true, 1.5], [true, true], [true, false], [true, :dark], [true, "a;b=c%"]])
 check("a large decimal as Ruby writes it survives", mods.decode(mods.encode(1.0e20)), [true, 1.0e20])
@@ -709,7 +712,7 @@ $scene = nil
 Scene_Base.new.update
 $dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
 Scene_Base.new.update
-check("an option past the relay's 2000 characters is left out, and the creator told so first", [sent.call.last, shown, fits],
+check("an option past the relay's limit is left out, and the creator told so first", [sent.call.last, shown, fits],
       ["@shared=o:1;mod_level_cap_limits=i:1", "1 option(s) did not fit and were left out. Shared with every player: Level Cap: On -> no longer shared.", [true, true]])
 $game_system.conf[:mod_level_cap] = 1
 $notices.clear

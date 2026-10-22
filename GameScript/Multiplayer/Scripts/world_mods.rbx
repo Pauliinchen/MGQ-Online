@@ -2,7 +2,8 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-22: Said the version to play for a step back when the entry after a restart is refused
+#      Paulinchen  2026-10-22: Took a world's settings only once the list carries its mods, and as many settings and mod hashes as the relay's new limit
+#                            - Said the version to play for a step back when the entry after a restart is refused
 #      Paulinchen  2026-10-15: Listed the world's mods and their options this game runs for the battle server
 #      Paulinchen  2026-10-13: Left the mod's single player group out of the options dump
 #      Paulinchen  2026-10-12: Listed the Shared Mod Settings row among the mod's settings and left the mod's groups out of the options dump
@@ -213,10 +214,13 @@ module MGQ_MpWorldMods
   ZIP_KINDS = %w(upload zip)
 
   # Most characters of a world's settings, as many as the relay takes.
-  MAX_SETTINGS_CHARS = 2000
+  MAX_SETTINGS_CHARS = 64_000
 
   # Longest mod name the relay takes among the creator's hashes.
   MAX_HASH_NAME_CHARS = 100
+
+  # Most characters of the creator's hashes, as many as the relay takes.
+  MAX_HASHES_CHARS = 64_000
 
   # A mod of the catalog.
   #
@@ -523,17 +527,35 @@ module MGQ_MpWorldMods
   # @return [String] "name=hash" pairs separated by semicolons.
   def self.creator_hashes(mods)
     known = catalog
-    MGQ_MpWorld.required_mods(mods).map do |name|
+    pairs = MGQ_MpWorld.required_mods(mods).map do |name|
       next if mod_named(name, known) || name =~ /[=;]/ || name.size > MAX_HASH_NAME_CHARS
 
       path = MGQ_MpWorld.installed_path(name)
       hash = path && hash_of(path)
       log("creator's hash of #{name} left out: #{path ? 'it could not be read' : 'not installed here'}") unless hash
       hash && "#{name}=#{hash}"
-    end.compact.join(";")
+    end
+    fit_hashes(pairs.compact)
   rescue => e
     log("hashing the required mods failed: #{e.class}: #{e.message}")
     ""
+  end
+
+  # Joins the creator's hashes as long as they fit what the relay takes, leaving out and logging the
+  # rest, whose mods then only need to be installed.
+  #
+  # @param pairs [Array<String>] Each mod's "name=hash".
+  # @param most [Integer] The most characters the joined hashes take.
+  # @return [String] The hashes that fit, separated by semicolons.
+  def self.fit_hashes(pairs, most = MAX_HASHES_CHARS)
+    kept = []
+    pairs.each do |pair|
+      joined = (kept + [pair]).join(";")
+      next log("creator's hash of #{pair.split('=').first} left out: the hashes would pass the #{most} characters the relay takes") if joined.size > most
+
+      kept << pair
+    end
+    kept.join(";")
   end
 
   # Tells the player what differs, in the world screen's lines.
@@ -1586,8 +1608,8 @@ module MGQ_MpWorldMods
     end
 
     state, _error, worlds = MGQ_MpWorld::Directory.list
-    listed = state == "ready" ? worlds.find { |world| world.id == @world[:id] } : nil
-    log("the list #{state == 'ready' ? 'lacks the world' : "did not arrive (#{state})"}, so its mod settings on the relay are unknown") unless listed
+    listed = state == "ready" ? worlds.find { |world| world.id == @world[:id] && !world.mods_unread } : nil
+    log("the list #{state == 'ready' ? 'lacks the world or its mods' : "did not arrive (#{state})"}, so its mod settings on the relay are unknown") unless listed
     complete_check(listed && listed.settings.to_s)
   end
 

@@ -2,6 +2,7 @@
 #  world_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Checked a world read before entering while the list lacks its mods, and the mods measured against the relay's limit
 #      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number
 #      Paulinchen  2026-10-14: Expected a Raid World's Shared save and Save in the new world's form
 #      Paulinchen  2026-10-13: Checked GameData.ini, written once per session as the title screen opens
@@ -452,7 +453,8 @@ scene.instance_variable_set(:@entry, entries[0])
 $calls.clear
 $sounds.clear
 scene.on_enter
-check("a game that differs is kept out of a world for the same data", [$calls, $sounds, scene.instance_variable_get(:@busy)], [[], ["buzzer"], nil])
+check("entering a world opens it, so the list in the world carries its mods", $calls, [["mp_dir_open", "p", ["w1\0"]]])
+check("a game that differs is kept out of a world for the same data", [$sounds, scene.instance_variable_get(:@busy)], [["buzzer"], nil])
 check("and told what the world needs", said(scene), "Strict only takes matching game data. It needs: No mods.")
 
 scene = new_scene
@@ -460,7 +462,7 @@ scene.instance_variable_set(:@entry, entries[1])
 $calls.clear
 scene.on_enter
 confirming = scene.instance_variable_get(:@confirm_window)
-check("in another world it is asked first", [$calls, confirming.choices.map { |choice| choice[1] }], [[], [:yes, :cancel]])
+check("in another world it is asked first", [$calls.reject { |call| call[0] == "mp_dir_open" }, confirming.choices.map { |choice| choice[1] }], [[], [:yes, :cancel]])
 check("with what the world needs", said(scene), "Your game data differs. It needs: Some Mod. Enter anyway?")
 scene.on_confirmed
 check("and enters once the player says so", [$calls.last[0], $calls.last[2], scene.instance_variable_get(:@busy)], ["mp_dir_unlock", ["w2\0", "\0"], "unlock"])
@@ -938,7 +940,31 @@ scene.instance_variable_set(:@entry, essential_entry)
 $calls.clear
 $sounds.clear
 scene.on_enter
-check("a game that lacks a required mod is kept out and told which", [$calls, $sounds, said(scene)], [[], ["buzzer"], "Loose needs Mod C: no such script in your Patch folder."])
+check("a game that lacks a required mod is kept out and told which", [$calls.reject { |call| call[0] == "mp_dir_open" }, $sounds, said(scene)], [[], ["buzzer"], "Loose needs Mod C: no such script in your Patch folder."])
+
+# A world the list names without its mods, as the relay lists it for this version.
+unread_world = listed[1].dup
+unread_world.mods = ""
+unread_world.mods_unread = true
+unread_entry = MGQ_MpWorld::Entry.new("w2", "Loose", unread_world, nil, false, false)
+check("its details say its mods are being read", cell_of(detail.panels(unread_entry, "me"), "Mods").text, "Reading . . .")
+scene = new_scene
+scene.instance_variable_set(:@entry, unread_entry)
+$calls.clear
+scene.on_enter
+check("entering it reads its mods first", [$calls.map { |call| [call[0], call[2]] }, scene.instance_variable_get(:@busy)], [[["mp_dir_read", ["w2\0"]]], "read"])
+listed_before = $dll["mp_dir_list"]
+$dll["mp_dir_list"] = "state=ready\n\nworld\tw2\t4\t0\tc\t0\tC\tLoose\tnone\t0\t0\t1\t0\t0\t#{plain}\t!Mod C\tA slow run.\n"
+$dll["mp_dir_action"] = "state=done\nkind=read\nname=Loose\n\n"
+$sounds.clear
+scene.follow_action
+check("and goes on once the list carries them, which keep a game that lacks one out", [unread_entry.listed.mods, $sounds, said(scene)], ["!Mod C", ["buzzer"], "Loose needs Mod C: no such script in your Patch folder."])
+$dll["mp_dir_list"] = "state=ready\n\nworld\tw2\t4\t0\tc\t0\tC\tLoose\tnone\t0\t0\t1\t0\t0\t#{plain}\t\tA slow run.\nunread\n"
+unread_entry.listed = unread_world
+scene.on_enter
+scene.follow_action
+check("mods the list still lacks after the read keep the player out, told to try again", said(scene), "The mods of Loose could not be read. Try again in a moment.")
+$dll["mp_dir_list"] = listed_before
 essential_world.mods = "Mod A; !Mod B; ?Mod E"
 scene = new_scene
 scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w2", "Loose", essential_world, nil, false, false))
@@ -1321,12 +1347,14 @@ all = MGQ_MpWorld::ModPick.new("?Data Pack; !B", ["A", "B", "C"])
 check("not every installed mod is listed yet", all.all_listed?, false)
 check("list all lists the unlisted installed mods and keeps how the others are named", [all.list_all, all.text, all.all_listed?], [nil, "A; !B; C; ?Data Pack", true])
 check("unlist all unlists every installed mod and keeps the added ones", [all.unlist_all, all.text], [nil, "?Data Pack"])
-long = MGQ_MpWorld::ModPick.new("", ["A" * 150, "B" * 150])
+half = MGQ_MpWorld::MAX_MODS_CHARS / 2
+too_long = "The mods may take #{MGQ_MpWorld::MAX_MODS_CHARS} characters at most."
+long = MGQ_MpWorld::ModPick.new("", ["A" * half, "B" * half])
 long.toggle(0)
-check("a change past 300 characters is refused and undone, and so is an added mod", [long.mark(1, :required), long.add("C" * 160), long.text, long.entries.size],
-      ["The mods may take 300 characters at most.", "The mods may take 300 characters at most.", "A" * 150, 2])
+check("a change past the relay's limit is refused and undone, and so is an added mod", [long.mark(1, :required), long.add("C" * (half + 10)), long.text, long.entries.size],
+      [too_long, too_long, "A" * half, 2])
 long.unlist_all
-check("list all lists as many as fit and says why the rest are not", [long.list_all, long.text], ["The mods may take 300 characters at most.", "A" * 150])
+check("list all lists as many as fit and says why the rest are not", [long.list_all, long.text], [too_long, "A" * half])
 
 Dir.mktmpdir do |folder|
   FileUtils.mkdir_p(File.join(folder, "Patch", "Sub"))

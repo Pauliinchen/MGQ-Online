@@ -2,7 +2,8 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-22: Offered a step back to an older release as the one to install
+#      Paulinchen  2026-10-22: Read the mods of the opened world on their own and let a world name mods up to the relay's new limit
+#                            - Offered a step back to an older release as the one to install
 #      Paulinchen  2026-10-15: Handed keywords on through the wrapped File and Dir methods
 #                            - Passed a new world's options to the DLL in one number
 #      Paulinchen  2026-10-14: Gave a Raid World a shared save in every build, ticked as for a Classic world
@@ -162,8 +163,9 @@ module MGQ_MpWorld
   # Longest description of a world.
   MAX_DESCRIPTION_CHARS = 1000
 
-  # Longest text that names the mods a world needs.
-  MAX_MODS_CHARS = 300
+  # Longest text that names the mods a world needs, as long as the relay takes, far above any real
+  # list.
+  MAX_MODS_CHARS = 16_000
 
   # Scripts every player of a world has, which the mod picker leaves out: the mod loader, this mod
   # and Mod Config Remake, which ships with it. Compared by mod_key.
@@ -1121,8 +1123,10 @@ module MGQ_MpWorld
     # @!attribute other_mods_off [Boolean] Whether it turns off every mod it does not name, see MGQ_MpModParking.
     # @!attribute squad [Hash, nil] The squad rules a Raid World sets for every player's team, see MGQ_MpWorld.squad; nil when it names none.
     # @!attribute raid_bosses [Boolean] Whether a Classic world's story bosses fight as raid bosses, see MGQ_MpWorld.raid_bosses?.
+    # @!attribute mods_unread [Boolean, nil] Whether its mods, mod hashes and settings are not read yet, which the list leaves out
+    #   for every world but the one opened, see open; they are empty meanwhile.
     ListedWorld = Struct.new(:id, :seats, :online, :creator_id, :active, :creator_name, :name, :start, :members, :hidden, :choose, :open, :featured, :strict, :data, :mods, :description, :mod_hashes, :settings,
-                             :type, :share, :difficulty, :other_mods_off, :squad, :raid_bosses) do
+                             :type, :share, :difficulty, :other_mods_off, :squad, :raid_bosses, :mods_unread) do
       # Tells whether the world is a Raid World.
       #
       # @return [Boolean] Whether it is.
@@ -1151,6 +1155,27 @@ module MGQ_MpWorld
     def self.refresh
       MGQ_Multiplayer::Link.function('mp_dir_watch').call(Added.all.join(",") + "\0")
       MGQ_Multiplayer::Link.function('mp_dir_refresh').call
+    end
+
+    # Opens a world, whose mods, mod hashes and settings the list then carries: the DLL reads them on
+    # a thread of its own whenever the list leaves them out, as the relay does for this version.
+    #
+    # @param id [String, nil] The world's id, nil for none.
+    def self.open(id)
+      return if id == @opened
+
+      @opened = id
+      MGQ_Multiplayer::Link.function('mp_dir_open').call(id.to_s + "\0")
+    end
+
+    # Opens a world and reads its mods, mod hashes and settings as an action, after which the list
+    # carries them.
+    #
+    # @param id [String] The world's id.
+    # @return [Boolean] Whether the action started.
+    def self.read(id)
+      @opened = id
+      started(MGQ_Multiplayer::Link.function('mp_dir_read').call(id + "\0") == 1, "read the mods of world #{MGQ_MpWorld.short(id)}")
     end
 
     # Looks a world up by its id alone; the action tells its name.
@@ -1189,6 +1214,8 @@ module MGQ_MpWorld
                                      fields[19] != RAID && fields[24] == "1"))
         when "member"
           worlds.last.members.push(Member.new(fields[1], fields[2] == "1", fields[3].to_s)) if worlds.last
+        when "unread"
+          worlds.last.mods_unread = true if worlds.last
         end
       end
 
