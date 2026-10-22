@@ -2,6 +2,7 @@
 //  GoldenParityTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Planned the Overdrive and Last stand cases through the plan toggles
 //      Paulinchen  2026-10-21: Built state instances without a mark clock
 //                            - Created
 //
@@ -257,18 +258,13 @@ public sealed class GoldenParityTests
             StateClock.Put(enemy.States, new StateInstance(grapple == "Bind" ? BattleSimulator.BindState : BattleSimulator.EternalBindState, new StateSource(), 0, null));
         }
 
-        if (options.GetProperty("lastStandStarts").GetBoolean())
-        {
-            state.NextTurn.Add(new QueuedCast(0, SkillRef.OfGame(15), PlanKind.LastStandStart, CastSide.Own, null, null, null, "stand", 0));
-        }
-
         if (options.GetProperty("delayedAnswer").GetBoolean())
         {
             state.NextTurn.Add(new QueuedCast(0, SkillRef.OfGame(13), PlanKind.DelayedAnswer, CastSide.Own, null, null, null, "counter", 0));
         }
 
-        state.OverdriveTurns = options.GetProperty("overdrive").GetBoolean() ? 1 : 0;
-        EnemyPlan plan = simulator.Plan(state).Enemies[0];
+        PlanToggles toggles = new(options.GetProperty("overdrive").GetBoolean(), options.GetProperty("lastStandStarts").GetBoolean());
+        EnemyPlan plan = simulator.Plan(state, toggles).Enemies[0];
         int from = state.Plan.Count / 2;
         foreach (JsonElement landing in options.GetProperty("states").EnumerateArray().Where(landing => landing.GetProperty("midTurn").GetBoolean()))
         {
@@ -321,9 +317,14 @@ public sealed class GoldenParityTests
                 SimFixtures.Rule("start13", PresetKind.TurnStartSkill, "start13", new TurnStartTrigger(), [new UseSkillEffect(SkillRef.OfGame(13), true, true, CastTiming.PlanNow, CastSide.Own, CastAim.Default)], [new ChanceCondition(5000)]),
             ]
             : [];
-        TraitBlock traits = name == "ignoresTimeStop"
-            ? TraitBlock.Empty with { Entries = [new TraitEntrySpec("t1", Overdrive.IgnoresTimeStopKind, TraitSource.Boss, 0, [], new Dictionary<int, SkillRef>(), false)] }
-            : TraitBlock.Empty;
+        TraitEntrySpec lastStand = new("stand", "lastStand", TraitSource.Boss, 0, [], new Dictionary<int, SkillRef>(), false, LastStand: new LastStandSpec(50, 3, 0, 1));
+        TraitBlock traits = TraitBlock.Empty with
+        {
+            Entries = name == "ignoresTimeStop"
+                ? [lastStand, new TraitEntrySpec("t1", Overdrive.IgnoresTimeStopKind, TraitSource.Boss, 1, [], new Dictionary<int, SkillRef>(), false)]
+                : [lastStand],
+            StateRecipes = [new StateRecipe(1, StateRecipeRole.Phase, "stand", string.Empty, [], 0, StateRemoval.None, 0, 0, true, false, SkillRef.OfGame(15))],
+        };
         RuntimeDesign design = SimFixtures.Design(actions, skills, rules, BaseAp(name), attackWeight: AttackWeight, traits: traits, attackCost: scenario.GetProperty("attack").GetProperty("cost").GetInt32());
         return design with
         {

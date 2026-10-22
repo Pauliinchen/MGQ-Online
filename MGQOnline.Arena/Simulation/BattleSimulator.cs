@@ -2,7 +2,8 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Named the main target on unit hits
+//      Paulinchen  2026-10-22: Planned a turn with the Overdrive and Last stand toggles
+//                            - Named the main target on unit hits
 //      Paulinchen  2026-10-21: Ran the rules through the rule engine and the casts through the casting part
 //                            - Created
 //
@@ -213,9 +214,10 @@ public sealed partial class BattleSimulator
     /// party's Overdrive do to it. Everything is telegraphed.
     /// </summary>
     /// <param name="state">The battle, after its start or a resolved turn.</param>
+    /// <param name="toggles">What the turn starts with besides the battle, or null for nothing.</param>
     /// <returns>The plan.</returns>
     /// <exception cref="InvalidOperationException">The battle is over or its turn not resolved.</exception>
-    public TurnPlan Plan(BattleState state)
+    public TurnPlan Plan(BattleState state, PlanToggles? toggles = null)
     {
         ArgumentNullException.ThrowIfNull(state);
         if (state.IsOver || state.Phase is not (BattlePhase.Setup or BattlePhase.TurnEnd))
@@ -227,6 +229,7 @@ public sealed partial class BattleSimulator
         state.TurnLogStart = state.Log.Count;
         state.Plan.Clear();
         state.Phase = BattlePhase.TurnStart;
+        Toggle(state, toggles ?? PlanToggles.None);
         _drafts = [];
         try
         {
@@ -296,6 +299,28 @@ public sealed partial class BattleSimulator
         }
 
         return new TurnResult(state.Turn, [.. state.Plan], cast, state.Log.GetRange(state.TurnLogStart, state.Log.Count - state.TurnLogStart), state.Phase);
+    }
+
+    /// <summary>
+    /// Starts a turn with its toggles: the party's Overdrive for this turn, and the first Last stand's
+    /// start skill queued for every living enemy, so a frozen turn keeps it waiting like any queued cast.
+    /// </summary>
+    /// <param name="state">The battle, at its turn start.</param>
+    /// <param name="toggles">The toggles.</param>
+    private static void Toggle(BattleState state, PlanToggles toggles)
+    {
+        if (toggles.Overdrive)
+        {
+            state.OverdriveTurns = Math.Max(state.OverdriveTurns, 1);
+        }
+
+        if (toggles.LastStandStarts && LastStand.StartSkillOf(state.Boss) is SkillRef start)
+        {
+            foreach (EnemyState enemy in state.Enemies.Where(enemy => !enemy.Fallen))
+            {
+                state.NextTurn.Add(new QueuedCast(enemy.Index, start, PlanKind.LastStandStart, CastSide.Own, null, null, null, LastStand.ToggleRule, state.Turn - 1));
+            }
+        }
     }
 
     /// <summary>
