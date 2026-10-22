@@ -2,7 +2,8 @@
 //  design_compiler.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Created
+//      Paulinchen  2026-10-22: Tested that builds starting together share one probe
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -53,6 +54,13 @@ test("the probe runs --version and preflight once per binary, again after the bi
   setMode({ designFormat: 3, preflight: 1 });
   writeFileSync(compiler.settings.compiler, `${readFileSync(compiler.settings.compiler, "utf8")}\n// 1.4.1\n`);
   assert.equal((await compiler.probe()).message, "The compiler's preflight failed with exit code 1.");
+});
+
+test("probes that start together share one run of --version and preflight", async () => {
+  const { compiler, calls } = stubCompiler({ designFormat: 2 });
+  const probes = await Promise.all([compiler.probe(), compiler.probe(), compiler.probe()]);
+  assert.deepEqual(probes, Array(3).fill({ designFormat: 2, version: "1.3.0", message: null }));
+  assert.deepEqual(calls(), ["--version", "preflight"]);
 });
 
 test("a missing compiler, or one that names no design format, knows design format 0", async () => {
