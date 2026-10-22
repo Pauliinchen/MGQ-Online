@@ -2,11 +2,13 @@
 //  RuntimeSkill.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Added the opener flag
+//      Paulinchen  2026-10-22: Added the cycle
+//                            - Added the opener flag
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
 
+using System;
 using System.Collections.Generic;
 
 namespace MGQOnline.Arena.Model;
@@ -32,6 +34,7 @@ namespace MGQOnline.Arena.Model;
 /// <param name="Marks">The marks it leaves, or null for none.</param>
 /// <param name="Support">Whom it acts on on the boss's side, or null for a skill aimed at the party.</param>
 /// <param name="Opener">Whether a skill with a cooldown is ready at the battle's start instead of resting a start rest.</param>
+/// <param name="Cycle">The game's cycle of the skill, or null for a skill rolled on every turn.</param>
 public sealed record RuntimeSkill(
     SkillRef Ref,
     SkillKind Kind,
@@ -50,7 +53,29 @@ public sealed record RuntimeSkill(
     SkillDebrisSpec? Debris = null,
     MarksSpec? Marks = null,
     SupportSpec? Support = null,
-    bool Opener = false);
+    bool Opener = false,
+    CycleSpec? Cycle = null);
+
+/// <summary>
+/// The game's cycle of a skill, &lt;周期技 a+b*X&gt;: on the turns it fires only the cycle skills
+/// that fire are rolled, and on the others it is never rolled.
+/// </summary>
+/// <param name="Start">The start a.</param>
+/// <param name="Step">The step b; below 1 counts as 1.</param>
+public sealed record CycleSpec(int Start, int Step)
+{
+    /// <summary>
+    /// Tells whether the cycle fires on a turn, as the game's ($game_troop.turn_count - a) % b == 0
+    /// finds it while it picks the actions of the turn, so it fires even before turn a + 1.
+    /// </summary>
+    /// <param name="turn">The turn, 1 the first.</param>
+    /// <returns>Whether it fires.</returns>
+    public bool Fires(int turn)
+    {
+        long every = Math.Max(1, Step);
+        return ((((long)turn - 1 - Start) % every) + every) % every == 0;
+    }
+}
 
 /// <summary>
 /// A shape of cells placed on an anchor cell, its sizes given their defaults and clamped.

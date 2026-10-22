@@ -2,7 +2,8 @@
 //  Samples.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Added a rest skipped event
+//      Paulinchen  2026-10-22: Gave the area skill a cycle
+//                            - Added a rest skipped event
 //                            - Added a start rest event and an opener
 //                            - Named a seat on the sample rule fire
 //                            - Set the main target on a unit hit trigger and event
@@ -166,7 +167,8 @@ internal static class Samples
         new SkillFacts(3, 1, 2, 1, 0, 1, 4181, 7, [1, 12], new TargetFilter([CharacterKind.Female, CharacterKind.Hero]), "SS"),
         new SkillDebrisSpec(DebrisPlace.HitCells, 3, 2, Look: new DebrisLook(DebrisLookKind.Tile, new TileRef("Dungeon_A2", 1536))),
         new MarksSpec([new MarkLeaveSpec("1c2d3e4f", 301, 10000, StateLanding.EveryoneHit, MarkUntil.NextScheduledCast, 1, null)]),
-        Opener: true);
+        Opener: true,
+        Cycle: new CycleSpec(5, 3));
 
     /// <summary>
     /// Gets a support skill without the optional sections.
@@ -429,7 +431,7 @@ internal static class Samples
             AreaSkill, AreaSkill.Shape, AreaSkill.Targeting, AreaSkill.Targeting.Zone!, AreaSkill.Damage, Formula, AreaSkill.Spread, AreaSkill.Falloff,
             AreaSkill.Presentation, AreaSkill.Presentation.CellAnimation!, AreaSkill.Presentation.CellFlash!, AreaSkill.Presentation.Animation,
             AreaSkill.Debris!, AreaSkill.Debris!.Look!, AreaSkill.Marks!, AreaSkill.Marks!.Leaves[0], AreaSkill.Payload, AreaSkill.Payload.TargetEffects[0],
-            AreaSkill.Payload.Restorations[0], AreaSkill.Payload.Recoveries[0], AreaSkill.Payload.Hit, SupportSkill.Support!, AreaSkill.Facts, AreaSkill.Facts.Filter,
+            AreaSkill.Payload.Restorations[0], AreaSkill.Payload.Recoveries[0], AreaSkill.Payload.Hit, SupportSkill.Support!, AreaSkill.Facts, AreaSkill.Facts.Filter, AreaSkill.Cycle!,
             EveryNodeFormula, Stigmata, Blast, new GridCell(3, 4), new GridSize(16, 10), new ColorRgba(1, 2, 3, 4), new TileRef("Sheet", 7), new PowerSize(100, 3),
         ];
         foreach (RuleSpec rule in Rules)

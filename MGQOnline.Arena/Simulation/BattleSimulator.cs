@@ -2,7 +2,8 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Let a full bank pay to skip a rest
+//      Paulinchen  2026-10-22: Rolled the game's cycle skills
+//                            - Let a full bank pay to skip a rest
 //                            - Gave the cooldown skills their start rests
 //                            - Capped the normal attacks per turn
 //                            - Planned a turn with the Overdrive and Last stand toggles
@@ -405,7 +406,8 @@ public sealed partial class BattleSimulator
     }
 
     /// <summary>
-    /// Gives an enemy's rolled cooldown skills their start rests on its first turn's points and logs each.
+    /// Gives an enemy's rolled cooldown skills their start rests on its first turn's points and logs
+    /// each; a cycle skill's turns already spread its uses, so it never gets one.
     /// </summary>
     /// <param name="state">The battle, at its start.</param>
     /// <param name="enemy">The enemy.</param>
@@ -414,7 +416,7 @@ public sealed partial class BattleSimulator
         List<StartRestSkill> skills = [];
         foreach (RuntimeAction action in ActionsOf(state, enemy.EnemyId))
         {
-            if (!action.Scheduled && action.Rating >= 1 && state.Boss.Skills.TryGetValue(action.Skill.Key, out RuntimeSkill? skill) && !IsGrappleSkill(skill))
+            if (!action.Scheduled && action.Rating >= 1 && state.Boss.Skills.TryGetValue(action.Skill.Key, out RuntimeSkill? skill) && !IsGrappleSkill(skill) && skill.Cycle is null)
             {
                 skills.Add(new StartRestSkill(skill.Ref.Key, skill.ApCost, skill.Cooldown, skill.Opener));
             }
@@ -422,7 +424,7 @@ public sealed partial class BattleSimulator
 
         RuntimeNormalAttack attack = state.Boss.NormalAttack;
         SkillRef? attackSkill = attack.Override ?? (attack.ByEnemy.TryGetValue(enemy.EnemyId, out SkillRef byEnemy) ? byEnemy : null);
-        if (attackSkill is SkillRef normal && state.Boss.Skills.TryGetValue(normal.Key, out RuntimeSkill? attackOwn) && Design.Rules.Ap.NormalAttackWeight > 0)
+        if (attackSkill is SkillRef normal && state.Boss.Skills.TryGetValue(normal.Key, out RuntimeSkill? attackOwn) && attackOwn.Cycle is null && Design.Rules.Ap.NormalAttackWeight > 0)
         {
             skills.Add(new StartRestSkill(attackOwn.Ref.Key, attackOwn.ApCost, attackOwn.Cooldown, attackOwn.Opener));
         }
@@ -465,7 +467,8 @@ public sealed partial class BattleSimulator
     /// condition holds and whose skill does not rest, and the normal attack with the lowest weight;
     /// every entry of the normal attack's skill runs at most the boss's or its tier's normal attacks
     /// per turn. With a full bank a resting skill joins at its skip price, and its use starts its
-    /// rest anew.
+    /// rest anew. On a turn a cycle skill fires only the cycle skills that fire are rolled, and on
+    /// the others no cycle skill is, as the game picks them.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="enemy">The enemy.</param>
@@ -479,6 +482,7 @@ public sealed partial class BattleSimulator
         RuntimeNormalAttack attack = state.Boss.NormalAttack;
         SkillRef? attackSkill = attack.Override ?? (attack.ByEnemy.TryGetValue(enemy.EnemyId, out SkillRef byEnemy) ? byEnemy : null);
         int attackCap = Math.Max(0, state.Boss.NormalAttacks ?? state.Tier.NormalAttacks);
+        List<(RuntimeAction Action, RuntimeSkill Skill)> pickable = [];
         foreach (RuntimeAction action in ActionsOf(state, enemy.EnemyId))
         {
             if (action.Scheduled
@@ -490,12 +494,21 @@ public sealed partial class BattleSimulator
                 continue;
             }
 
+            pickable.Add((action, skill));
+        }
+
+        bool cycleTurn = pickable.Exists(entry => entry.Skill.Cycle?.Fires(state.Turn) == true);
+        foreach ((RuntimeAction action, RuntimeSkill skill) in pickable.Where(entry => CycleAllows(entry.Skill, cycleTurn, state.Turn)))
+        {
             int? most = attackSkill?.Key == action.Skill.Key ? attackCap : null;
             candidates.Add(new RollCandidate(action.Skill.Key, action.Rating * ActionRoll.WeightPerRating, Math.Max(1, skill.ApCost), skill.Cooldown, most));
             actions.Add(action);
         }
 
-        if (attackSkill is SkillRef normal && state.Boss.Skills.TryGetValue(normal.Key, out RuntimeSkill? attackOwn) && Design.Rules.Ap.NormalAttackWeight > 0)
+        if (attackSkill is SkillRef normal
+            && state.Boss.Skills.TryGetValue(normal.Key, out RuntimeSkill? attackOwn)
+            && CycleAllows(attackOwn, cycleTurn, state.Turn)
+            && Design.Rules.Ap.NormalAttackWeight > 0)
         {
             candidates.Add(new RollCandidate(normal.Key, Design.Rules.Ap.NormalAttackWeight, Math.Max(1, attackOwn.ApCost), attackOwn.Cooldown, attackCap));
             actions.Add(null);
@@ -903,6 +916,16 @@ public sealed partial class BattleSimulator
     /// <returns>Whether it is a bind or eternal bind skill.</returns>
     private static bool IsGrappleSkill(RuntimeSkill skill) =>
         skill.Facts.SkillTypes.Contains(BindSkillType) || skill.Facts.SkillTypes.Contains(EternalBindSkillType);
+
+    /// <summary>
+    /// Tells whether a skill may join a turn's roll by the game's cycles.
+    /// </summary>
+    /// <param name="skill">The skill.</param>
+    /// <param name="cycleTurn">Whether a cycle skill of the enemy's roll fires on the turn.</param>
+    /// <param name="turn">The turn.</param>
+    /// <returns>A cycle skill when its cycle fires; any other skill when no cycle fires.</returns>
+    private static bool CycleAllows(RuntimeSkill skill, bool cycleTurn, int turn) =>
+        skill.Cycle is { } cycle ? cycle.Fires(turn) : !cycleTurn;
 
     /// <summary>
     /// Finds the place right behind an entry and every follow-up below it.
