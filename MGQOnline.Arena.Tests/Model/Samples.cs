@@ -2,6 +2,7 @@
 //  Samples.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Added debris types, the standard start debris and a boss's start debris
 //      Paulinchen  2026-10-22: Added a hazard type, its sources, its effect and its events
 //                            - Added a not in chain condition
 //                            - Added a cast resolved trigger
@@ -49,6 +50,16 @@ internal static class Samples
     /// The hazard id.
     /// </summary>
     public const string FireId = "hazard:3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b";
+
+    /// <summary>
+    /// The standard debris type id.
+    /// </summary>
+    public const string RockId = "debris:5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d";
+
+    /// <summary>
+    /// A debris type id that gives no cover.
+    /// </summary>
+    public const string CrystalId = "debris:c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5";
 
     /// <summary>
     /// Gets a game skill reference.
@@ -125,7 +136,7 @@ internal static class Samples
             new BossHpBelowTrigger(50),
             [],
             [
-                new PlaceDebrisEffect(new SkillDebrisSpec(DebrisPlace.RandomInArea, 2, 1, Count: 3)),
+                new PlaceDebrisEffect(new SkillDebrisSpec(DebrisPlace.RandomInArea, 2, Count: 3)),
                 new AddStateEffect(RuleTarget.Boss, 15, Turns: 2),
                 new PlaceHazardEffect(new HazardPlacement(FireId, 10000, HazardPlace.AimedCell)),
             ],
@@ -178,7 +189,7 @@ internal static class Samples
             ["predation"],
             new HitFactsSpec(100, 1, -500, false, 15000)),
         new SkillFacts(3, 1, 2, 1, 0, 1, 4181, 7, [1, 12], new TargetFilter([CharacterKind.Female, CharacterKind.Hero]), "SS"),
-        new SkillDebrisSpec(DebrisPlace.HitCells, 3, 2, Look: new DebrisLook(DebrisLookKind.Tile, new TileRef("Dungeon_A2", 1536))),
+        new SkillDebrisSpec(DebrisPlace.HitCells, 3, 2, Type: CrystalId),
         new MarksSpec([new MarkLeaveSpec("1c2d3e4f", 301, 10000, StateLanding.EveryoneHit, MarkUntil.NextScheduledCast, 1, null)]),
         Opener: true,
         Cycle: new CycleSpec(5, 3),
@@ -253,7 +264,6 @@ internal static class Samples
         [144],
         new Dictionary<int, double> { [3] = 50, [1] = 125.5 },
         new Dictionary<int, double> { [40] = 0 },
-        new RandomDebris(3000, 2, 4, 2),
         Traits,
         2,
         Hazards: [new RandomHazards(FireId, 2500, 1, 3)]);
@@ -298,7 +308,8 @@ internal static class Samples
             new MarkReactionSpec("aadd3e4f", 302, 302, new DamageGift(10, Formula), false),
         ],
         [new BattleMapRef(88, false), new BattleMapRef(723, true)],
-        2);
+        2,
+        StartDebris: new RandomDebris(5000, 1, 3, CrystalId));
 
     /// <summary>
     /// Gets a custom skill.
@@ -327,7 +338,7 @@ internal static class Samples
         new ShareRules(2, 4),
         new KindRules([1, 2, 5, 6], new Dictionary<int, ExtensionKind> { [1] = ExtensionKind.Share, [2] = ExtensionKind.Area, [3] = ExtensionKind.Strikes }, [1, 2, 3]),
         new CrowdControlRules(4, [1, 214], [2, 3], 1, 1, 20, 1, 0, 999),
-        new DebrisRules(2, new TileRef("Dungeon_A1", 1536), new TileRef("Dungeon_B", 0), RandomDebris.None),
+        new DebrisRules(2, new TileRef("Dungeon_A1", 1536), new TileRef("Dungeon_B", 0), new RandomDebris(3000, 2, 4), RockId),
         new PresentationRules(
             6,
             20,
@@ -348,7 +359,7 @@ internal static class Samples
             [126] = new("Morrigan", true, true, 4, Unpooled: "route"),
         }),
         new Dictionary<int, RuntimeTier> { [2] = Tier },
-        new RuntimeTier(new GridSize(15, 6), StatFactors.One, 3, [], new Dictionary<int, double>(), new Dictionary<int, double>(), RandomDebris.None, TraitBlock.Empty),
+        new RuntimeTier(new GridSize(15, 6), StatFactors.One, 3, [], new Dictionary<int, double>(), new Dictionary<int, double>(), TraitBlock.Empty),
         new Dictionary<string, RuntimeBoss> { ["Morrigan"] = Boss },
         [CustomSkill],
         new Dictionary<int, RuntimeState>
@@ -364,14 +375,19 @@ internal static class Samples
                 ["Morrigan"],
                 7,
                 new TileRef("Dungeon_A2", 1540),
-                DebrisLook: new DebrisLook(DebrisLookKind.Picture, Picture: "Rock"),
+                DebrisType: CrystalId,
                 Hazards: [new FixedHazard(FireId, new GridCell(7, 2))],
                 RandomHazards: [new RandomHazards(FireId, 10000, 2, 2)]),
-            [723] = new(false, false, [], DebrisLook: new DebrisLook(DebrisLookKind.MapDefault)),
+            [723] = new(false, false, []),
         },
         new Dictionary<int, RuntimeTileset> { [7] = new([1540, 1541], [], null, null, 57, new TileRef("Dungeon_B", 57)) },
         new BossFightOverrides([1], [299]),
-        new Dictionary<string, RuntimeHazard> { [FireId] = Hazard });
+        new Dictionary<string, RuntimeHazard> { [FireId] = Hazard },
+        new Dictionary<string, RuntimeDebrisType>
+        {
+            [RockId] = new("Rock", 0, Look: new DebrisLook(DebrisLookKind.Picture, Picture: "Rock")),
+            [CrystalId] = new("Crystal", 3, false, new DebrisLook(DebrisLookKind.Tile, new TileRef("Dungeon_A2", 1536))),
+        });
 
     /// <summary>
     /// Gets a battle log with one event of every type.
@@ -471,12 +487,12 @@ internal static class Samples
             GameRules, GameRules.Grid, GameRules.Tiers[0], GameRules.Units, GameRules.Ap, GameRules.Ap.Cost, GameRules.Power, GameRules.Share,
             GameRules.Kinds, GameRules.CrowdControl, GameRules.Debris, GameRules.Presentation, GameRules.Presentation.Animation,
             GameRules.Presentation.Animation.Area, GameRules.Presentation.Danger, GameRules.Limits,
-            Tier, Tier.Stats, Tier.Debris, Traits, Traits.Entries[1], Traits.Features[0], Traits.Entries[1].LastStand!, Traits.StateRecipes[1], Counter,
+            Tier, Tier.Stats, Boss.StartDebris!, Design.DebrisTypes![CrystalId], Traits, Traits.Entries[1], Traits.Features[0], Traits.Entries[1].LastStand!, Traits.StateRecipes[1], Counter,
             Boss, Boss.Troops[0], Boss.Enemies[0], Boss.Enemies[0].Stats, Boss.NormalAttack, Boss.BattleMaps[0], Boss.Actions[301][0], Boss.Actions[301][0].FollowUp!,
             CustomSkill, CustomSkill.Fields, CustomSkill.Fields.Damage, CustomSkill.Effects[0], CustomSkill.Stance!,
             AreaSkill, AreaSkill.Shape, AreaSkill.Targeting, AreaSkill.Targeting.Zone!, AreaSkill.Damage, Formula, AreaSkill.Spread, AreaSkill.Falloff,
             AreaSkill.Presentation, AreaSkill.Presentation.CellAnimation!, AreaSkill.Presentation.CellFlash!, AreaSkill.Presentation.Animation,
-            AreaSkill.Debris!, AreaSkill.Debris!.Look!, AreaSkill.Marks!, AreaSkill.Marks!.Leaves[0], AreaSkill.Payload, AreaSkill.Payload.TargetEffects[0],
+            AreaSkill.Debris!, Design.DebrisTypes![CrystalId].Look!, AreaSkill.Marks!, AreaSkill.Marks!.Leaves[0], AreaSkill.Payload, AreaSkill.Payload.TargetEffects[0],
             AreaSkill.Payload.Restorations[0], AreaSkill.Payload.Recoveries[0], AreaSkill.Payload.Hit, SupportSkill.Support!, AreaSkill.Facts, AreaSkill.Facts.Filter, AreaSkill.Cycle!,
             EveryNodeFormula, Stigmata, Blast, new GridCell(3, 4), new GridSize(16, 10), new ColorRgba(1, 2, 3, 4), new TileRef("Sheet", 7), new PowerSize(100, 3),
             new ClearDebuffsEffect(RuleTarget.Boss), new DebuffsClearedEvent(2, StateHolder.Boss, 0, "5e6f7a8b:stand"), new CastResolvedTrigger(Blast), new NotInChainCondition(Blast),

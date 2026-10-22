@@ -2,6 +2,7 @@
 //  FakeRuleContext.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Handed the debris placed back as cells
 //      Paulinchen  2026-10-22: Recorded the hazards placed
 //                            - Listed the skills of a cast chain
 //      Paulinchen  2026-10-21: Created
@@ -11,6 +12,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using MGQOnline.Arena.Debris;
 using MGQOnline.Arena.Engine;
 using MGQOnline.Arena.Events;
 using MGQOnline.Arena.Formulas;
@@ -225,10 +227,10 @@ internal sealed class FakeRuleContext : IRuleContext
     public void AddAp(int enemy, int amount, ApTurn turn) => ApChanges.Add((enemy, amount, turn));
 
     /// <inheritdoc />
-    public IReadOnlyList<GridCell> PlaceDebris(int enemy, SkillDebrisSpec debris, string? castId)
+    public IReadOnlyList<DebrisCell> PlaceDebris(int enemy, SkillDebrisSpec debris, string? castId)
     {
         Debris.Add((enemy, debris, castId));
-        return [new GridCell(3, 2)];
+        return [new DebrisCell(new GridCell(3, 2), DebrisOrigin.Skill, null, debris.Hits ?? 0, debris.Turns, null)];
     }
 
     /// <inheritdoc />

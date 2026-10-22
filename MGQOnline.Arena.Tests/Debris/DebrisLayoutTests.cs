@@ -2,6 +2,7 @@
 //  DebrisLayoutTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Dropped the hits of the random debris
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -25,7 +26,7 @@ public sealed class DebrisLayoutTests
     public void RollsTheSameDebrisForTheSameSeed()
     {
         GridSize grid = new(15, 6);
-        RandomDebris amount = new(10_000, 3, 8, 2);
+        RandomDebris amount = new(10_000, 3, 8);
 
         string first = Cells(DebrisLayout.Roll(grid, 4, amount, new RandomStreams(42).Get(RandomStream.Debris), 2));
         string again = Cells(DebrisLayout.Roll(grid, 4, amount, new RandomStreams(42).Get(RandomStream.Debris), 2));

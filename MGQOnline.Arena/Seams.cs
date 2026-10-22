@@ -2,6 +2,7 @@
 //  Seams.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Read the debris type of the start debris
 //      Paulinchen  2026-10-21: Made the casting and party seams concrete and dropped the rule queue seam
 //                            - Created
 //
@@ -43,7 +44,7 @@ public interface ICastResolver
     /// Rolls the random debris a battle starts with: its chance, its count and its cells.
     /// </summary>
     /// <param name="state">The battle, its units placed.</param>
-    /// <param name="debris">The tier's random debris.</param>
+    /// <param name="debris">The boss's or the game rule's start debris, its type the boss's own or null.</param>
     /// <returns>The debris, none when the chance fails.</returns>
     IReadOnlyList<DebrisCell> PlaceRandomDebris(BattleState state, RandomDebris debris);
 
@@ -51,7 +52,7 @@ public interface ICastResolver
     /// Places the debris a rule's effect leaves, over the area of the cast whose event fired the rule.
     /// </summary>
     /// <param name="state">The battle.</param>
-    /// <param name="debris">The debris.</param>
+    /// <param name="debris">The debris, its type its own or null.</param>
     /// <param name="cast">The cast whose area it refers to, or null.</param>
     /// <returns>The debris placed with the units it pushed; none without a cast.</returns>
     DebrisPlacement PlaceDebris(BattleState state, SkillDebrisSpec debris, PlannedCast? cast);

@@ -2,6 +2,7 @@
 //  RuntimeDesign.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Added the debris types and the debris type of a map
 //      Paulinchen  2026-10-22: Added the hazard types and the hazards of a map
 //      Paulinchen  2026-10-21: Created
 //
@@ -27,6 +28,7 @@ namespace MGQOnline.Arena.Model;
 /// <param name="Tilesets">The tilesets' tile rules by tileset id.</param>
 /// <param name="BossFights">The troops added to or taken from the boss fights.</param>
 /// <param name="Hazards">The hazard types by hazard id, or null for none.</param>
+/// <param name="DebrisTypes">The debris types by debris id, or null for none.</param>
 public sealed record RuntimeDesign(
     int RuntimeFormat,
     RuntimeSource Source,
@@ -40,7 +42,8 @@ public sealed record RuntimeDesign(
     IReadOnlyDictionary<int, RuntimeMap> Maps,
     IReadOnlyDictionary<int, RuntimeTileset> Tilesets,
     BossFightOverrides BossFights,
-    IReadOnlyDictionary<string, RuntimeHazard>? Hazards = null)
+    IReadOnlyDictionary<string, RuntimeHazard>? Hazards = null,
+    IReadOnlyDictionary<string, RuntimeDebrisType>? DebrisTypes = null)
 {
     /// <summary>
     /// The runtime format this library reads and writes.
@@ -107,7 +110,7 @@ public sealed record RuntimeState(
 /// <param name="Tileset">The battle tileset, or null when unknown.</param>
 /// <param name="Floor">The floor tile, or null when unknown.</param>
 /// <param name="DebrisTile">The debris tile, or null when unknown.</param>
-/// <param name="DebrisLook">The design's debris look of the map, or null.</param>
+/// <param name="DebrisType">The debris type of the debris on it, or null for the game rule's standard type.</param>
 /// <param name="Hazards">The hazards every battle on it starts with on fixed cells, or null for none.</param>
 /// <param name="RandomHazards">The hazards its battles may start with at random, after the tier's; null for none.</param>
 public sealed record RuntimeMap(
@@ -117,9 +120,18 @@ public sealed record RuntimeMap(
     int? Tileset = null,
     TileRef? Floor = null,
     TileRef? DebrisTile = null,
-    DebrisLook? DebrisLook = null,
+    string? DebrisType = null,
     IReadOnlyList<FixedHazard>? Hazards = null,
     IReadOnlyList<RandomHazards>? RandomHazards = null);
+
+/// <summary>
+/// A debris type: how its debris breaks, whether it gives cover, and how it looks.
+/// </summary>
+/// <param name="Name">The name the designer shows.</param>
+/// <param name="Hits">The hits that break a cell of it, 0 unbreakable.</param>
+/// <param name="Cover">Whether its cells shield the cells behind them from waves; every debris cell blocks movement.</param>
+/// <param name="Look">How it looks, or null for the battle map's debris tile.</param>
+public sealed record RuntimeDebrisType(string Name, int Hits, bool Cover = true, DebrisLook? Look = null);
 
 /// <summary>
 /// A tileset's tile rules.

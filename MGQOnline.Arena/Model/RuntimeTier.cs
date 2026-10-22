@@ -2,6 +2,7 @@
 //  RuntimeTier.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Moved the random debris to the game rule and the bosses and gave it a debris type
 //      Paulinchen  2026-10-22: Added the random hazards
 //                            - Added the normal attacks per turn
 //      Paulinchen  2026-10-21: Created
@@ -21,7 +22,6 @@ namespace MGQOnline.Arena.Model;
 /// <param name="States">The states its bosses keep all battle.</param>
 /// <param name="ElementRates">The element rates in percent by element id, 100 unchanged.</param>
 /// <param name="StateRates">The state rates in percent by state id.</param>
-/// <param name="Debris">The random debris its battles may start with.</param>
 /// <param name="Traits">Its own traits, for reference; each boss's block already holds them merged.</param>
 /// <param name="Tier">The tier, or null for bosses without one.</param>
 /// <param name="NormalAttacks">The most normal attacks each enemy rolls per turn; the points left are banked.</param>
@@ -33,7 +33,6 @@ public sealed record RuntimeTier(
     IReadOnlyList<int> States,
     IReadOnlyDictionary<int, double> ElementRates,
     IReadOnlyDictionary<int, double> StateRates,
-    RandomDebris Debris,
     TraitBlock Traits,
     int? Tier = null,
     int NormalAttacks = 1,
@@ -64,11 +63,11 @@ public sealed record StatFactors(double Mhp, double Mmp, double Atk, double Def,
 /// <param name="ChanceBasisPoints">The chance per battle out of 10,000.</param>
 /// <param name="Min">The fewest debris cells.</param>
 /// <param name="Max">The most debris cells.</param>
-/// <param name="Hits">The hits that break each, 0 unbreakable.</param>
-public sealed record RandomDebris(int ChanceBasisPoints, int Min, int Max, int Hits)
+/// <param name="Type">The debris type id, or null for the battle map's or the standard one.</param>
+public sealed record RandomDebris(int ChanceBasisPoints, int Min, int Max, string? Type = null)
 {
     /// <summary>
     /// Gets random debris that never comes.
     /// </summary>
-    public static RandomDebris None { get; } = new(0, 0, 0, 0);
+    public static RandomDebris None { get; } = new(0, 0, 0);
 }

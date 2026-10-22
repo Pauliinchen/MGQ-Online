@@ -2,6 +2,7 @@
 //  CastRequest.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Carried the style of the skill's debris
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -50,4 +51,10 @@ public sealed record CastRequest(GameRules Rules, GridSize Grid, IReadOnlyList<G
     /// Gets the cell the designer clicked in the preview, null in a battle.
     /// </summary>
     public GridCell? Click { get; init; }
+
+    /// <summary>
+    /// Gets the style of the debris the skill leaves, resolved over its battle map and the game rule;
+    /// null for the plain style. The skill's own hits win over the style's either way.
+    /// </summary>
+    public DebrisStyle? SkillDebrisStyle { get; init; }
 }

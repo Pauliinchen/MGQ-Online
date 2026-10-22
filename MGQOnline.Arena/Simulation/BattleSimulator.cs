@@ -2,6 +2,7 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Rolled the start debris of the boss or the game rule
 //      Paulinchen  2026-10-22: Placed and fired hazards
 //                            - Fired the rules of a resolved cast
 //                            - Rolled the game's cycle skills
@@ -162,8 +163,8 @@ public sealed partial class BattleSimulator
 
     /// <summary>
     /// Starts a battle: places the party, forces the tier's states on the enemies, gives their
-    /// cooldown skills their start rests, rolls the random debris, places the start hazards and fires
-    /// the battle start rules.
+    /// cooldown skills their start rests, rolls the boss's or the game rule's start debris, places the
+    /// start hazards and fires the battle start rules.
     /// </summary>
     /// <param name="setup">The setup.</param>
     /// <returns>The battle before its first turn.</returns>
@@ -211,9 +212,10 @@ public sealed partial class BattleSimulator
             RestAtStart(state, enemy);
         }
 
-        if (!DebrisLayout.IsNone(tier.Debris))
+        RandomDebris start = boss.StartDebris ?? Design.Rules.Debris.Start with { Type = null };
+        if (!DebrisLayout.IsNone(start))
         {
-            AddDebris(state, _casts.PlaceRandomDebris(state, tier.Debris), null);
+            AddDebris(state, _casts.PlaceRandomDebris(state, start), null);
         }
 
         PlaceStartHazards(state);

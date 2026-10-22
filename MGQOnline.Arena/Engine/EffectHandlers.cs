@@ -2,6 +2,7 @@
 //  EffectHandlers.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Logged the hits of the debris a rule placed
 //      Paulinchen  2026-10-22: Placed hazards by a rule
 //                            - Cleared debuffs by a rule
 //      Paulinchen  2026-10-21: Kept a Last stand start cast queued for the next turn a Last stand start
@@ -11,6 +12,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using MGQOnline.Arena.Debris;
 using MGQOnline.Arena.Events;
 using MGQOnline.Arena.Formulas;
 using MGQOnline.Arena.Model;
@@ -245,10 +248,10 @@ internal static class EffectHandlers
     private static IReadOnlyList<BattleEvent> PlaceDebris(IRuleContext context, FiredRule fired, PlaceDebrisEffect effect)
     {
         string? castId = EventFacts.CastIdOf(fired.Cause);
-        IReadOnlyList<GridCell> cells = context.PlaceDebris(fired.Enemy, effect.Debris, castId);
+        IReadOnlyList<DebrisCell> cells = context.PlaceDebris(fired.Enemy, effect.Debris, castId);
         if (cells.Count > 0)
         {
-            context.Log(new DebrisPlacedEvent(fired.Cause.Turn, cells, effect.Debris.Turns, effect.Debris.Hits, castId));
+            context.Log(new DebrisPlacedEvent(fired.Cause.Turn, [.. cells.Select(debris => debris.Cell)], effect.Debris.Turns, cells[0].MaxHits, castId));
         }
 
         return [];

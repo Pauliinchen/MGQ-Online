@@ -2,6 +2,7 @@
 //  BattleSimulator.Rules.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Handed the debris a rule placed back with its hits
 //      Paulinchen  2026-10-22: Placed hazards by a rule
 //                            - Listed the skills of a cast chain
 //      Paulinchen  2026-10-21: Created
@@ -314,14 +315,14 @@ public sealed partial class BattleSimulator
         }
 
         /// <inheritdoc />
-        public IReadOnlyList<GridCell> PlaceDebris(int enemy, SkillDebrisSpec debris, string? castId)
+        public IReadOnlyList<DebrisCell> PlaceDebris(int enemy, SkillDebrisSpec debris, string? castId)
         {
             PlannedCast? cast = castId is null ? simulator._resolving : state.Plan.Find(entry => entry.CastId == castId);
             DebrisPlacement placement = simulator._casts.PlaceDebris(state, debris, cast);
             state.Debris = state.Debris.With(placement.Placed);
             ClearHazardsUnder(state, placement.Placed.Select(cell => cell.Cell));
             simulator.Push(state, placement.Pushes);
-            return [.. placement.Placed.Select(cell => cell.Cell)];
+            return placement.Placed;
         }
 
         /// <inheritdoc />

@@ -2,6 +2,7 @@
 //  DebrisLayout.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Rolled the debris in a debris style
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -41,12 +42,12 @@ public static class DebrisLayout
     /// <param name="random">The debris stream.</param>
     /// <param name="freeCellsPerCharacter">The free cells the game rule keeps per unit.</param>
     /// <param name="avoid">Cells that stay free, such as the units' cells.</param>
-    /// <param name="look">The debris' look, null for the battle map's.</param>
-    /// <param name="hits">The hits that break each cell, 0 for unbreakable.</param>
+    /// <param name="style">The debris' style, or null for the plain one.</param>
     /// <returns>The random debris, lasting the whole battle.</returns>
-    public static DebrisField Roll(GridSize grid, int partySize, int min, int max, ArenaRandom random, int freeCellsPerCharacter, IEnumerable<GridCell>? avoid = null, DebrisLook? look = null, int hits = 0)
+    public static DebrisField Roll(GridSize grid, int partySize, int min, int max, ArenaRandom random, int freeCellsPerCharacter, IEnumerable<GridCell>? avoid = null, DebrisStyle? style = null)
     {
         ArgumentNullException.ThrowIfNull(random);
+        DebrisStyle kind = style ?? DebrisStyle.Plain;
         HashSet<GridCell> kept = [.. avoid ?? []];
         List<GridCell> free = Grid.AllCells(grid).Where(cell => !kept.Contains(cell)).ToList();
         int cap = Math.Min(MaxCount(grid, partySize, freeCellsPerCharacter), free.Count);
@@ -59,21 +60,21 @@ public static class DebrisLayout
             (free[i], free[j]) = (free[j], free[i]);
         }
 
-        return DebrisField.Of(free.Take(count).Select(cell => new DebrisCell(cell, DebrisOrigin.Map, null, Math.Max(hits, 0), 0, look)));
+        return DebrisField.Of(free.Take(count).Select(cell => DebrisCell.Of(cell, DebrisOrigin.Map, null, kind, 0)));
     }
 
     /// <summary>
-    /// Rolls a battle's random debris by a tier's amount: its chance first, then the count and cells.
+    /// Rolls a battle's random debris by an amount: its chance first, then the count and cells.
     /// </summary>
     /// <param name="grid">The grid.</param>
     /// <param name="partySize">The units, which the cap keeps room for.</param>
-    /// <param name="amount">The tier's random debris.</param>
+    /// <param name="amount">The random debris.</param>
     /// <param name="random">The debris stream.</param>
     /// <param name="freeCellsPerCharacter">The free cells the game rule keeps per unit.</param>
     /// <param name="avoid">Cells that stay free.</param>
-    /// <param name="look">The debris' look, null for the battle map's.</param>
+    /// <param name="style">The debris' style, or null for the plain one.</param>
     /// <returns>The random debris, lasting the whole battle; none when the chance fails.</returns>
-    public static DebrisField Roll(GridSize grid, int partySize, RandomDebris amount, ArenaRandom random, int freeCellsPerCharacter, IEnumerable<GridCell>? avoid = null, DebrisLook? look = null)
+    public static DebrisField Roll(GridSize grid, int partySize, RandomDebris amount, ArenaRandom random, int freeCellsPerCharacter, IEnumerable<GridCell>? avoid = null, DebrisStyle? style = null)
     {
         ArgumentNullException.ThrowIfNull(amount);
         ArgumentNullException.ThrowIfNull(random);
@@ -82,7 +83,7 @@ public static class DebrisLayout
             return DebrisField.Empty;
         }
 
-        return Roll(grid, partySize, amount.Min, amount.Max, random, freeCellsPerCharacter, avoid, look, amount.Hits);
+        return Roll(grid, partySize, amount.Min, amount.Max, random, freeCellsPerCharacter, avoid, style);
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 //  DebrisGoldenTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Rolled and placed the debris in a debris style
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -59,7 +60,7 @@ public sealed class DebrisGoldenTests
             int min = (int)entry["min"]!;
             int max = (int)entry["max"]!;
             IReadOnlyList<GridCell> avoid = Format1Goldens.Cells(entry["avoid"]);
-            DebrisField field = DebrisLayout.Roll(grid, partySize, min, max, Format1Goldens.Streams((int)entry["seed"]!).Get(RandomStream.Debris), free, avoid, null, (int)entry["hits"]!);
+            DebrisField field = DebrisLayout.Roll(grid, partySize, min, max, Format1Goldens.Streams((int)entry["seed"]!).Get(RandomStream.Debris), free, avoid, DebrisStyle.Plain with { Hits = Math.Max((int)entry["hits"]!, 0) });
 
             int cap = Math.Min(DebrisLayout.MaxCount(grid, partySize, free), (grid.Cols * grid.Rows) - avoid.Count);
             int low = Math.Clamp(min, 0, cap);
@@ -81,7 +82,7 @@ public sealed class DebrisGoldenTests
     {
         foreach (JsonObject entry in Format1Goldens.Cases(Format1Goldens.Load("debris"), "chance").Where(entry => (double)entry["chance"]! is 0 or 100))
         {
-            RandomDebris amount = new(BasisPointsOf((double)entry["chance"]!), 1, 2, 0);
+            RandomDebris amount = new(BasisPointsOf((double)entry["chance"]!), 1, 2);
             DebrisField field = DebrisLayout.Roll(new GridSize(15, 6), 4, amount, Format1Goldens.Streams((int)entry["seed"]!).Get(RandomStream.Debris), 2);
 
             Assert.Equal((bool)entry["hits"]!, field.Count > 0);
@@ -123,7 +124,7 @@ public sealed class DebrisGoldenTests
                 .Select(anchor => HitCalculator.Compute(grid, party, skill, anchor, Format1Goldens.Limits, before).ToDebrisPulse(anchor))
                 .ToList();
             DebrisPlacement placement = skill.Debris is { } debris
-                ? SkillDebris.Place(grid, party, skill.Ref, debris, pulses, before, Format1Goldens.Streams((int)entry["seed"]!).Get(RandomStream.Debris), free)
+                ? SkillDebris.Place(grid, party, skill.Ref, debris, DebrisStyle.Plain, pulses, before, Format1Goldens.Streams((int)entry["seed"]!).Get(RandomStream.Debris), free)
                 : DebrisPlacement.None;
 
             bool random = skill.Debris?.Where == DebrisPlace.RandomInArea;

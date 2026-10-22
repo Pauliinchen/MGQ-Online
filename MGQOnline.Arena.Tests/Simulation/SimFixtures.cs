@@ -2,6 +2,7 @@
 //  SimFixtures.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Left the samples' debris types and start debris out
 //      Paulinchen  2026-10-22: Left the samples' hazards out
 //                            - Gave the tier its normal attacks per turn
 //      Paulinchen  2026-10-21: Ran the simulations through the real rule engine
@@ -159,7 +160,6 @@ internal static class SimFixtures
             Grid = new GridSize(15, 6),
             Ap = ap,
             States = tierStates ?? [],
-            Debris = RandomDebris.None,
             Traits = TraitBlock.Empty,
             Tier = TierNumber,
             NormalAttacks = normalAttacks,
@@ -178,16 +178,19 @@ internal static class SimFixtures
             Rules = rules ?? [],
             MarkReactions = [],
             Tier = TierNumber,
+            StartDebris = null,
         };
         GameRules gameRules = Samples.GameRules with
         {
             Ap = Samples.GameRules.Ap with { BankTurns = bankTurns, NormalAttackWeight = attackWeight },
+            Debris = Samples.GameRules.Debris with { Start = RandomDebris.None, Standard = null },
         };
         return Samples.Design with
         {
             Rules = gameRules,
-            Maps = Samples.Design.Maps.ToDictionary(map => map.Key, map => map.Value with { Hazards = null, RandomHazards = null }),
+            Maps = Samples.Design.Maps.ToDictionary(map => map.Key, map => map.Value with { Hazards = null, RandomHazards = null, DebrisType = null }),
             Hazards = null,
+            DebrisTypes = null,
             Tiers = new Dictionary<int, RuntimeTier> { [TierNumber] = tier },
             Bosses = new Dictionary<string, RuntimeBoss> { [BossKey] = boss },
             States = new Dictionary<int, RuntimeState>

@@ -2,6 +2,7 @@
 //  IRuleContext.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Handed the debris placed back as cells with their hits
 //      Paulinchen  2026-10-22: Placed hazards
 //                            - Listed the skills of a cast chain
 //      Paulinchen  2026-10-21: Created
@@ -9,6 +10,7 @@
 //----------------------------------------------------------------
 
 using System.Collections.Generic;
+using MGQOnline.Arena.Debris;
 using MGQOnline.Arena.Events;
 using MGQOnline.Arena.Formulas;
 using MGQOnline.Arena.Model;
@@ -146,8 +148,8 @@ public interface IRuleContext
     /// <param name="enemy">The enemy whose rule places it.</param>
     /// <param name="debris">The debris.</param>
     /// <param name="castId">The cast whose area it refers to, or null.</param>
-    /// <returns>The cells it landed on.</returns>
-    IReadOnlyList<GridCell> PlaceDebris(int enemy, SkillDebrisSpec debris, string? castId);
+    /// <returns>The debris cells it left, with the hits of its type or its own.</returns>
+    IReadOnlyList<DebrisCell> PlaceDebris(int enemy, SkillDebrisSpec debris, string? castId);
 
     /// <summary>
     /// Places hazards as a skill would, replacing older hazards on their cells, and logs them.

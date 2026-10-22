@@ -2,6 +2,7 @@
 //  DebrisCover.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Shielded by the debris that gives cover only
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -16,12 +17,12 @@ namespace MGQOnline.Arena.Debris;
 /// <summary>
 /// The cover debris gives: a wave travels in straight lines from its impact cell, so a cell is
 /// shielded when the line from the impact cell's centre to its centre passes through the inside of a
-/// debris cell. The two end cells never shield.
+/// debris cell that gives cover. The two end cells never shield.
 /// </summary>
 /// <remarks>
 /// A line through a corner where four cells meet counts as blocked only when both cells beside its
-/// path there hold debris, so a wave never slips between two diagonal rocks but passes beside a
-/// single one.
+/// path there hold debris that gives cover, so a wave never slips between two diagonal rocks but
+/// passes beside a single one.
 /// </remarks>
 public static class DebrisCover
 {
@@ -35,7 +36,7 @@ public static class DebrisCover
     public static bool IsShielded(DebrisField debris, GridCell impact, GridCell cell)
     {
         ArgumentNullException.ThrowIfNull(debris);
-        if (debris.Count == 0 || cell == impact)
+        if (debris.CoverCount == 0 || cell == impact)
         {
             return false;
         }
@@ -47,7 +48,7 @@ public static class DebrisCover
         foreach (DebrisCell blocker in debris.Cells)
         {
             GridCell at = blocker.Cell;
-            if (at.X >= left && at.X <= right && at.Y >= top && at.Y <= bottom && at != impact && at != cell && Crosses(impact, cell, at))
+            if (blocker.Cover && at.X >= left && at.X <= right && at.Y >= top && at.Y <= bottom && at != impact && at != cell && Crosses(impact, cell, at))
             {
                 return true;
             }
@@ -55,7 +56,7 @@ public static class DebrisCover
 
         foreach ((GridCell first, GridCell second) in CornerPinches(impact, cell))
         {
-            if (debris.Contains(first) && debris.Contains(second))
+            if (debris.At(first) is { Cover: true } && debris.At(second) is { Cover: true })
             {
                 return true;
             }
@@ -75,7 +76,7 @@ public static class DebrisCover
     {
         ArgumentNullException.ThrowIfNull(debris);
         ArgumentNullException.ThrowIfNull(cells);
-        return debris.Count == 0 ? [] : cells.Where(cell => debris.Shields(impact, cell)).ToList();
+        return debris.CoverCount == 0 ? [] : cells.Where(cell => debris.Shields(impact, cell)).ToList();
     }
 
     /// <summary>

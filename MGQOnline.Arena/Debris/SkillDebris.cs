@@ -2,6 +2,7 @@
 //  SkillDebris.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Placed the debris in a debris style
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -84,15 +85,17 @@ public static class SkillDebris
     /// <param name="units">The party, whose cells stay free but for an impact cell.</param>
     /// <param name="skill">The skill that leaves the debris.</param>
     /// <param name="debris">What debris it leaves.</param>
+    /// <param name="style">The style of its debris type; the debris' own hits win over the style's.</param>
     /// <param name="pulses">Each pulse's landing, in order.</param>
     /// <param name="field">The debris after the last pulse's hits.</param>
     /// <param name="random">The debris stream, which the random cells draw from.</param>
     /// <param name="freeCellsPerCharacter">The free cells the game rule keeps per unit.</param>
     /// <returns>The new debris with the units pushed; none without a pulse.</returns>
-    public static DebrisPlacement Place(GridSize grid, IReadOnlyList<GridUnit> units, SkillRef skill, SkillDebrisSpec debris, IReadOnlyList<DebrisPulse> pulses, DebrisField field, ArenaRandom random, int freeCellsPerCharacter)
+    public static DebrisPlacement Place(GridSize grid, IReadOnlyList<GridUnit> units, SkillRef skill, SkillDebrisSpec debris, DebrisStyle style, IReadOnlyList<DebrisPulse> pulses, DebrisField field, ArenaRandom random, int freeCellsPerCharacter)
     {
         ArgumentNullException.ThrowIfNull(units);
         ArgumentNullException.ThrowIfNull(debris);
+        ArgumentNullException.ThrowIfNull(style);
         ArgumentNullException.ThrowIfNull(pulses);
         ArgumentNullException.ThrowIfNull(field);
         ArgumentNullException.ThrowIfNull(random);
@@ -154,9 +157,10 @@ public static class SkillDebris
             }
         }
 
+        DebrisStyle own = style.WithHits(debris.Hits);
         List<DebrisCell> placed = kept
             .Order(Grid.RowOrderComparer)
-            .Select(cell => new DebrisCell(cell, DebrisOrigin.Skill, skill, Math.Max(debris.Hits, 0), Math.Max(debris.Turns, 0), debris.Look) { PlacedThisTurn = true })
+            .Select(cell => DebrisCell.Of(cell, DebrisOrigin.Skill, skill, own, debris.Turns) with { PlacedThisTurn = true })
             .ToList();
         return new DebrisPlacement(placed, blocked) { Pushes = moved, Dropped = dropped, Beyond = beyond };
     }

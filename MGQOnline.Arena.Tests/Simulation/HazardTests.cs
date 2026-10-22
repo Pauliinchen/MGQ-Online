@@ -2,6 +2,7 @@
 //  HazardTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Took the random debris from the game rule
 //      Paulinchen  2026-10-22: Created
 //
 //----------------------------------------------------------------
@@ -193,11 +194,11 @@ public sealed class HazardTests
     [Fact]
     public void NeverLiesOnDebris()
     {
-        RuntimeSkill strike = SimFixtures.Skill(SimFixtures.Strike) with { Debris = new SkillDebrisSpec(DebrisPlace.HitCells, 0, 0) };
+        RuntimeSkill strike = SimFixtures.Skill(SimFixtures.Strike) with { Debris = new SkillDebrisSpec(DebrisPlace.HitCells, 0) };
         RuntimeDesign design = Design(Hazard(FireId, [HazardTrigger.StepsOnto]), [.. Grid.AllCells(new GridSize(15, 6)).Select(cell => new FixedHazard(FireId, cell))]);
         design = design with
         {
-            Tiers = new Dictionary<int, RuntimeTier> { [SimFixtures.TierNumber] = design.Tiers[SimFixtures.TierNumber] with { Debris = new RandomDebris(10000, 10, 10, 0) } },
+            Rules = design.Rules with { Debris = design.Rules.Debris with { Start = new RandomDebris(10000, 10, 10) } },
             Bosses = new Dictionary<string, RuntimeBoss>
             {
                 [SimFixtures.BossKey] = design.Bosses[SimFixtures.BossKey] with

@@ -2,6 +2,7 @@
 //  ArenaCasts.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Placed debris in the style of its debris type
 //      Paulinchen  2026-10-22: Gave the landing of each pulse to the hazards
 //                            - Floored the formula of a hit at 0
 //                            - Flagged the main target of each unit hit
@@ -95,7 +96,8 @@ public sealed class ArenaCasts : ICastResolver
             debris,
             state.Random.Get(RandomStream.Debris),
             state.Design.Rules.Debris.FreeCellsPerCharacter,
-            state.Units.Select(unit => unit.Cell));
+            state.Units.Select(unit => unit.Cell),
+            DebrisTypes.For(state.Design, state.Setup.MapId, debris.Type));
         return field.Cells;
     }
 
@@ -117,6 +119,7 @@ public sealed class ArenaCasts : ICastResolver
             UnitsOf(state),
             cast.Skill,
             debris,
+            DebrisTypes.For(state.Design, state.Setup.MapId, debris.Type),
             pulses,
             state.Debris,
             state.Random.Get(RandomStream.Debris),
@@ -140,10 +143,11 @@ public sealed class ArenaCasts : ICastResolver
     /// <param name="state">The battle.</param>
     /// <param name="skill">The skill.</param>
     /// <param name="side">The half the simulation chose, or null for the whole zone.</param>
-    /// <returns>The request, its half fixed.</returns>
+    /// <returns>The request, its half fixed and its debris style resolved.</returns>
     private static CastRequest RequestOf(BattleState state, RuntimeSkill skill, GridHalf? side) =>
         new(state.Design.Rules, state.Grid, UnitsOf(state), state.Debris, skill, state.Random)
         {
+            SkillDebrisStyle = skill.Debris is { } debris ? DebrisTypes.For(state.Design, state.Setup.MapId, debris.Type) : null,
             Side = side switch
             {
                 GridHalf.Left => CastSide.FixedLeft,

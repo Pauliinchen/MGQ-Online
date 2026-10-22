@@ -2,6 +2,7 @@
 //  DebrisField.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Counted the debris that gives cover
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -47,6 +48,7 @@ public sealed class DebrisField
     {
         _cells = cells;
         _ordered = cells.Values.OrderBy(debris => debris.Cell, Grid.RowOrderComparer).ToList();
+        CoverCount = _ordered.Count(debris => debris.Cover);
     }
 
     /// <summary>
@@ -63,6 +65,11 @@ public sealed class DebrisField
     /// Gets the number of debris cells.
     /// </summary>
     public int Count => _cells.Count;
+
+    /// <summary>
+    /// Gets the number of debris cells that give cover.
+    /// </summary>
+    public int CoverCount { get; }
 
     /// <summary>
     /// Makes a field of debris cells; a later cell on the same place replaces an earlier one.
@@ -158,6 +165,6 @@ public sealed class DebrisField
     /// <param name="cell">The cell.</param>
     /// <returns>Whether debris stands between them.</returns>
     public bool Shields(GridCell impact, GridCell cell) =>
-        _cells.Count > 0 && cell != impact
+        CoverCount > 0 && cell != impact
         && _shields.GetOrAdd(Grid.RowOrder(impact, cell) < 0 ? (impact, cell) : (cell, impact), pair => DebrisCover.IsShielded(this, pair.First, pair.Second));
 }

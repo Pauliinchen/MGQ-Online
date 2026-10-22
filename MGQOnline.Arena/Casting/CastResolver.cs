@@ -2,6 +2,7 @@
 //  CastResolver.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Placed the skill's debris in its debris style
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -109,7 +110,7 @@ public static class CastResolver
         }
 
         DebrisPlacement placement = skill.Debris is { } debris && skill.Kind is SkillKind.Single or SkillKind.Area
-            ? SkillDebris.Place(request.Grid, request.Units, skill.Ref, debris, landed, field, request.Random.Get(RandomStream.Debris), request.Rules.Debris.FreeCellsPerCharacter)
+            ? SkillDebris.Place(request.Grid, request.Units, skill.Ref, debris, request.SkillDebrisStyle ?? DebrisStyle.Plain, landed, field, request.Random.Get(RandomStream.Debris), request.Rules.Debris.FreeCellsPerCharacter)
             : DebrisPlacement.None;
         AddPlacementWarnings(placement, warnings);
         Dictionary<int, GridCell> moved = placement.Pushes.ToDictionary(push => push.Seat, push => push.To);
