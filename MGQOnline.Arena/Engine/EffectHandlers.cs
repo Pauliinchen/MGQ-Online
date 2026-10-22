@@ -2,7 +2,9 @@
 //  EffectHandlers.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Logged the hits of the debris a rule placed
+//      Paulinchen  2026-10-23: Brought enemies in, took them out and transformed them by a rule
+//                            - Raised the falls of the enemies a rule felled
+//                            - Logged the hits of the debris a rule placed
 //      Paulinchen  2026-10-22: Placed hazards by a rule
 //                            - Cleared debuffs by a rule
 //      Paulinchen  2026-10-21: Kept a Last stand start cast queued for the next turn a Last stand start
@@ -49,6 +51,9 @@ internal static class EffectHandlers
         PlaceDebrisEffect placeDebris => PlaceDebris(context, queued.Fired, placeDebris),
         ClearDebuffsEffect clearDebuffs => ClearDebuffs(context, queued.Fired, clearDebuffs),
         PlaceHazardEffect placeHazard => PlaceHazard(context, queued.Fired, placeHazard),
+        EnemyJoinsEffect join => Join(context, queued.Fired, join),
+        EnemyLeavesEffect leave => Leave(context, queued.Fired, leave),
+        EnemyTransformsEffect transform => Transform(context, queued.Fired, transform),
         _ => throw new ArgumentOutOfRangeException(nameof(queued), queued.Effect, "The engine does not know this effect."),
     };
 
@@ -178,7 +183,8 @@ internal static class EffectHandlers
     /// <param name="context">The battle.</param>
     /// <param name="fired">The fired rule.</param>
     /// <param name="effect">The effect.</param>
-    /// <returns>A unit fell event per unit it felled and a boss HP event per percent crossed.</returns>
+    /// <returns>A unit fell event per unit it felled, a boss HP event per percent crossed, an enemy fell
+    /// event per enemy it felled, and the all enemies fell event when none stands any more.</returns>
     private static IReadOnlyList<BattleEvent> Damage(IRuleContext context, FiredRule fired, DamageEffect effect)
     {
         int turn = fired.Cause.Turn;
@@ -207,6 +213,15 @@ internal static class EffectHandlers
                 foreach (int percent in result.CrossedPercents)
                 {
                     raised.Add(Logged(context, new BossHpBelowEvent(turn, index, percent)));
+                }
+
+                if (result.Fell)
+                {
+                    raised.Add(Logged(context, new EnemyFellEvent(turn, index, context.SlotOf(index) ?? string.Empty, context.EnemyIdOf(index) ?? 0)));
+                    if (context.LivingEnemies.Count == 0)
+                    {
+                        raised.Add(Logged(context, new AllEnemiesFellEvent(turn)));
+                    }
                 }
             }
         }
@@ -269,6 +284,75 @@ internal static class EffectHandlers
         context.PlaceHazards(fired.Enemy, effect.Hazard, EventFacts.CastIdOf(fired.Cause), EventFacts.TriggerUnitOf(fired.Cause), fired.Rule.Id);
         return [];
     }
+
+    /// <summary>
+    /// Brings an enemy slot into the fight, or warns when the boss lacks it.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="fired">The fired rule.</param>
+    /// <param name="effect">The effect.</param>
+    /// <returns>The events the join raised, such as the tier's states it got.</returns>
+    private static IReadOnlyList<BattleEvent> Join(IRuleContext context, FiredRule fired, EnemyJoinsEffect effect)
+    {
+        if (context.JoinEnemy(effect.Slot, fired.Rule.Id) is IReadOnlyList<BattleEvent> raised)
+        {
+            return raised;
+        }
+
+        context.Log(new WarningEvent(fired.Cause.Turn, EngineWarnings.UnknownEnemy, fired.Rule.Id));
+        return [];
+    }
+
+    /// <summary>
+    /// Takes enemies out of the fight.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="fired">The fired rule.</param>
+    /// <param name="effect">The effect.</param>
+    /// <returns>The all enemies fell event when the last standing enemy left, nothing otherwise.</returns>
+    private static IReadOnlyList<BattleEvent> Leave(IRuleContext context, FiredRule fired, EnemyLeavesEffect effect)
+    {
+        bool left = false;
+        foreach (int enemy in Enemies(context, fired, effect.Slot))
+        {
+            left |= context.RemoveEnemy(enemy, fired.Rule.Id) is not null;
+        }
+
+        return left && context.LivingEnemies.Count == 0 ? [Logged(context, new AllEnemiesFellEvent(fired.Cause.Turn))] : [];
+    }
+
+    /// <summary>
+    /// Turns enemies into another enemy slot, or warns once when the boss lacks it.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="fired">The fired rule.</param>
+    /// <param name="effect">The effect.</param>
+    /// <returns>Nothing rules match.</returns>
+    private static IReadOnlyList<BattleEvent> Transform(IRuleContext context, FiredRule fired, EnemyTransformsEffect effect)
+    {
+        foreach (int enemy in Enemies(context, fired, effect.Slot))
+        {
+            if (context.TransformEnemy(enemy, effect.Into, effect.KeepHpRatio, fired.Rule.Id) is null)
+            {
+                context.Log(new WarningEvent(fired.Cause.Turn, EngineWarnings.UnknownEnemy, fired.Rule.Id));
+                break;
+            }
+        }
+
+        return [];
+    }
+
+    /// <summary>
+    /// Lists the enemies a fight change acts on.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="fired">The fired rule.</param>
+    /// <param name="slot">The slot whose every standing enemy is meant, or null for the rule's enemy.</param>
+    /// <returns>The enemies' indexes; the rule's enemy only while it is in the fight, fallen or not.</returns>
+    private static IReadOnlyList<int> Enemies(IRuleContext context, FiredRule fired, string? slot) =>
+        slot is not null
+            ? [.. context.LivingEnemies.Where(enemy => context.SlotOf(enemy) == slot)]
+            : context.SlotOf(fired.Enemy) is not null ? [fired.Enemy] : [];
 
     /// <summary>
     /// Clears the stat debuffs of each receiver.

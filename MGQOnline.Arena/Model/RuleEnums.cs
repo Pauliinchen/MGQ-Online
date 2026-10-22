@@ -2,6 +2,7 @@
 //  RuleEnums.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Added the rule scope and the fight change origin
 //      Paulinchen  2026-10-22: Added the hazard origin
 //      Paulinchen  2026-10-21: Created
 //
@@ -77,6 +78,28 @@ public enum PresetKind
     /// A hazard's effects, run for the character who fired it.
     /// </summary>
     Hazard,
+
+    /// <summary>
+    /// A fight change: an enemy joins, leaves or transforms.
+    /// </summary>
+    FightChange,
+}
+
+/// <summary>
+/// Whom a rule is matched for.
+/// </summary>
+[JsonConverter(typeof(CamelCaseEnumConverter<RuleScope>))]
+public enum RuleScope
+{
+    /// <summary>
+    /// Every enemy whose rules hold it, each in turn; the rule's enemy is that enemy.
+    /// </summary>
+    Enemy,
+
+    /// <summary>
+    /// The fight once per event, also when no enemy stands; the rule's enemy is the one the event names.
+    /// </summary>
+    Fight,
 }
 
 /// <summary>

@@ -2,6 +2,7 @@
 //  EngineSamples.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Keyed the sample book by enemy slot
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -114,7 +115,7 @@ internal static class EngineSamples
     public static RuleBook Book(IReadOnlyList<RuleSpec> rules, int enemies = 1) =>
         new(
             rules,
-            Enumerable.Range(0, enemies).ToDictionary(enemy => enemy, _ => Actions),
+            Enumerable.Range(0, enemies).ToDictionary(FakeRuleContext.SlotOfIndex, _ => Actions),
             new Dictionary<string, IReadOnlyList<int>> { [Blast.Key] = [3], [LightStigmata.Key] = [1], [DarkStigmata.Key] = [1] });
 
     /// <summary>

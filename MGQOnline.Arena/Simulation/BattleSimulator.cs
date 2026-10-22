@@ -2,7 +2,9 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Rolled the start debris of the boss or the game rule
+//      Paulinchen  2026-10-23: Fought the boss's starting line-up and raised the falls of the enemies the party felled
+//                            - Read each enemy's actions from its slot
+//                            - Rolled the start debris of the boss or the game rule
 //      Paulinchen  2026-10-22: Placed and fired hazards
 //                            - Fired the rules of a resolved cast
 //                            - Rolled the game's cycle skills
@@ -196,18 +198,20 @@ public sealed partial class BattleSimulator
             state.Units.Add(new UnitState(seat, unit));
         }
 
-        foreach (RuntimeEnemy enemy in boss.Enemies.Where(enemy => enemy.Troop == boss.Last).OrderBy(enemy => enemy.Index))
+        foreach (RuntimeEnemy enemy in boss.Enemies.OrderBy(enemy => enemy.Index))
         {
             state.Enemies.Add(new EnemyState(enemy));
         }
 
+        state.NextEnemyIndex = state.Enemies.Count == 0 ? 0 : state.Enemies.Max(enemy => enemy.Index) + 1;
         state.Phase = BattlePhase.Setup;
-        foreach (EnemyState enemy in state.Enemies)
+        List<EnemyState> lineUp = [.. state.Enemies];
+        foreach (EnemyState enemy in lineUp)
         {
             KeepTierStates(state, enemy);
         }
 
-        foreach (EnemyState enemy in state.Enemies)
+        foreach (EnemyState enemy in lineUp.Where(state.Enemies.Contains))
         {
             RestAtStart(state, enemy);
         }
@@ -249,11 +253,14 @@ public sealed partial class BattleSimulator
         _drafts = [];
         try
         {
-            foreach (EnemyState enemy in state.Enemies.Where(enemy => !enemy.Fallen))
+            foreach (EnemyState enemy in Standing(state))
             {
-                enemy.ApThis += enemy.ApNext;
-                enemy.ApNext = 0;
-                KeepTierStates(state, enemy);
+                if (IsStanding(state, enemy))
+                {
+                    enemy.ApThis += enemy.ApNext;
+                    enemy.ApNext = 0;
+                    KeepTierStates(state, enemy);
+                }
             }
 
             Raise(state, new TurnStartEvent(state.Turn));
@@ -276,9 +283,12 @@ public sealed partial class BattleSimulator
 
             state.Phase = BattlePhase.Plan;
             List<EnemyPlan> plans = [];
-            foreach (EnemyState enemy in state.Enemies.Where(enemy => !enemy.Fallen))
+            foreach (EnemyState enemy in Standing(state))
             {
-                plans.Add(PlanEnemy(state, enemy, frozen));
+                if (IsStanding(state, enemy))
+                {
+                    plans.Add(PlanEnemy(state, enemy, frozen));
+                }
             }
 
             return new TurnPlan(state.Turn, plans);
@@ -433,7 +443,7 @@ public sealed partial class BattleSimulator
     private void RestAtStart(BattleState state, EnemyState enemy)
     {
         List<StartRestSkill> skills = [];
-        foreach (RuntimeAction action in ActionsOf(state, enemy.EnemyId))
+        foreach (RuntimeAction action in ActionsOf(state, enemy))
         {
             if (!action.Scheduled && action.Rating >= 1 && state.Boss.Skills.TryGetValue(action.Skill.Key, out RuntimeSkill? skill) && !IsGrappleSkill(skill) && skill.Cycle is null)
             {
@@ -465,7 +475,7 @@ public sealed partial class BattleSimulator
     /// <returns>Whether the pool had an action to plan.</returns>
     private bool Grapple(BattleState state, EnemyState enemy, int skillType)
     {
-        List<RuntimeAction> pool = [.. ActionsOf(state, enemy.EnemyId).Where(action =>
+        List<RuntimeAction> pool = [.. ActionsOf(state, enemy).Where(action =>
             action.Rating >= 1
             && state.Boss.Skills.TryGetValue(action.Skill.Key, out RuntimeSkill? skill)
             && skill.Facts.SkillTypes.Contains(skillType)
@@ -502,7 +512,7 @@ public sealed partial class BattleSimulator
         SkillRef? attackSkill = attack.Override ?? (attack.ByEnemy.TryGetValue(enemy.EnemyId, out SkillRef byEnemy) ? byEnemy : null);
         int attackCap = Math.Max(0, state.Boss.NormalAttacks ?? state.Tier.NormalAttacks);
         List<(RuntimeAction Action, RuntimeSkill Skill)> pickable = [];
-        foreach (RuntimeAction action in ActionsOf(state, enemy.EnemyId))
+        foreach (RuntimeAction action in ActionsOf(state, enemy))
         {
             if (action.Scheduled
                 || action.Rating < 1
@@ -678,7 +688,7 @@ public sealed partial class BattleSimulator
 
     /// <summary>
     /// Lands a party hit on a boss enemy: its damage, the boss hit rules unless the boss is frozen,
-    /// the HP thresholds it crosses, and its states.
+    /// the HP thresholds it crosses, its fall, and its states.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="enemy">The enemy.</param>
@@ -696,6 +706,11 @@ public sealed partial class BattleSimulator
         foreach (int percent in dealt.CrossedPercents)
         {
             Raise(state, new BossHpBelowEvent(state.Turn, enemy.Index, percent));
+        }
+
+        if (dealt.Fell)
+        {
+            RaiseFall(state, enemy);
         }
 
         foreach (int stateId in hit.States)
@@ -937,20 +952,27 @@ public sealed partial class BattleSimulator
     }
 
     /// <summary>
-    /// Logs an event without firing rules.
+    /// Logs an event without firing rules, and notes the all enemies fell event the victory waits for.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="battleEvent">The event.</param>
-    private static void Log(BattleState state, BattleEvent battleEvent) => state.Log.Add(battleEvent);
+    private static void Log(BattleState state, BattleEvent battleEvent)
+    {
+        state.Log.Add(battleEvent);
+        if (battleEvent is AllEnemiesFellEvent)
+        {
+            state.AllEnemiesFell = true;
+        }
+    }
 
     /// <summary>
     /// Lists an enemy's actions.
     /// </summary>
     /// <param name="state">The battle.</param>
-    /// <param name="enemyId">The enemy id.</param>
-    /// <returns>The actions, none for an enemy without a list.</returns>
-    private static IReadOnlyList<RuntimeAction> ActionsOf(BattleState state, int enemyId) =>
-        state.Boss.Actions.TryGetValue(enemyId, out IReadOnlyList<RuntimeAction>? actions) ? actions : [];
+    /// <param name="enemy">The enemy, whose slot names its action list.</param>
+    /// <returns>The actions, none for a slot without a list.</returns>
+    private static IReadOnlyList<RuntimeAction> ActionsOf(BattleState state, EnemyState enemy) =>
+        state.Boss.Actions.TryGetValue(enemy.Slot, out IReadOnlyList<RuntimeAction>? actions) ? actions : [];
 
     /// <summary>
     /// Tells whether a skill belongs to a grapple pool.

@@ -2,6 +2,7 @@
 //  TriggerSpec.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Added the enemy fell and all enemies fell triggers
 //      Paulinchen  2026-10-22: Added the cast resolved trigger
 //                            - Added the main target filter of unit hits
 //      Paulinchen  2026-10-21: Created
@@ -27,6 +28,8 @@ namespace MGQOnline.Arena.Model;
 [JsonDerivedType(typeof(BossHpBelowTrigger), "bossHpBelow")]
 [JsonDerivedType(typeof(StateAddedTrigger), "stateAdded")]
 [JsonDerivedType(typeof(UnitFellTrigger), "unitFell")]
+[JsonDerivedType(typeof(EnemyFellTrigger), "enemyFell")]
+[JsonDerivedType(typeof(AllEnemiesFellTrigger), "allEnemiesFell")]
 public abstract record TriggerSpec;
 
 /// <summary>
@@ -100,3 +103,14 @@ public sealed record StateAddedTrigger(int State, StateHolder On) : TriggerSpec;
 /// Fires when a unit falls.
 /// </summary>
 public sealed record UnitFellTrigger : TriggerSpec;
+
+/// <summary>
+/// Fires when a boss enemy's HP reaches 0.
+/// </summary>
+/// <param name="Slot">The enemy slot that must fall, or null for any.</param>
+public sealed record EnemyFellTrigger(string? Slot = null) : TriggerSpec;
+
+/// <summary>
+/// Fires once no boss enemy stands, every one fallen or gone; its rules are always fight rules.
+/// </summary>
+public sealed record AllEnemiesFellTrigger : TriggerSpec;

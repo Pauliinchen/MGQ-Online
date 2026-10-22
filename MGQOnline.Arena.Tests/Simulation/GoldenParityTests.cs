@@ -2,6 +2,7 @@
 //  GoldenParityTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Built the enemy without a troop
 //      Paulinchen  2026-10-22: Planned the Overdrive and Last stand cases through the plan toggles
 //      Paulinchen  2026-10-21: Built state instances without a mark clock
 //                            - Created
@@ -382,7 +383,7 @@ public sealed class GoldenParityTests
     /// <returns>Each candidate's uses per turn.</returns>
     private static double[] PlayLong(IReadOnlyList<RollCandidate> candidates, int ap)
     {
-        EnemyState enemy = new(new RuntimeEnemy(1, 0, 1, new EnemyStats(1, 1, 1, 1, 1, 1, 1, 1), ap));
+        EnemyState enemy = new(new RuntimeEnemy(0, "00000001", 1, new EnemyStats(1, 1, 1, 1, 1, 1, 1, 1), ap));
         ArenaRandom random = new(7);
         double[] uses = new double[candidates.Count];
         for (int turn = 0; turn < Turns; turn++)

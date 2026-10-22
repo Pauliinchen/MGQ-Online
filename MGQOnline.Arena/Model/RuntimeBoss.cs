@@ -2,13 +2,17 @@
 //  RuntimeBoss.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Added the boss's start debris
+//      Paulinchen  2026-10-23: Fought one event battle with its starting enemies and a reserve in place of the troop phases
+//                            - Gave every enemy of a fight its own slot with its own action list
+//                            - Added the boss's start debris
 //      Paulinchen  2026-10-22: Added the boss's own normal attacks per turn
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
 
 using System.Collections.Generic;
+using System.Globalization;
+using System.Text.Json.Serialization;
 
 namespace MGQOnline.Arena.Model;
 
@@ -20,13 +24,12 @@ namespace MGQOnline.Arena.Model;
 /// <param name="Name">The boss's name.</param>
 /// <param name="Title">The title below its HP gauge, resolved.</param>
 /// <param name="Order">The story order within its tier.</param>
-/// <param name="Removed">Whether the design took it out of the catalog; its troops fight as normal battles.</param>
+/// <param name="Removed">Whether the design took it out of the catalog; its battle fights as a normal one.</param>
 /// <param name="Optional">Whether it is a one-time boss outside the story.</param>
 /// <param name="Origin">Where it comes from.</param>
-/// <param name="Troops">Its troops in phase order, the earlier phases first.</param>
-/// <param name="Last">The troop the challenge picker fights and whose HP the pool shares.</param>
-/// <param name="Enemies">The members of every troop in phase order.</param>
-/// <param name="Actions">The action list per enemy id.</param>
+/// <param name="Event">The event battle it is fought in.</param>
+/// <param name="Enemies">The starting line-up, in its order.</param>
+/// <param name="Actions">The action list per enemy slot, the reserve's included.</param>
 /// <param name="NormalAttack">The normal attack.</param>
 /// <param name="Traits">The tier's and the boss's traits, merged.</param>
 /// <param name="Skills">Every skill the boss uses, by skill key.</param>
@@ -35,6 +38,7 @@ namespace MGQOnline.Arena.Model;
 /// <param name="BattleMaps">The maps the boss is fought on, its own first.</param>
 /// <param name="Tier">The tier, or null for none.</param>
 /// <param name="NormalAttacks">The most normal attacks each enemy rolls per turn, or null for its tier's.</param>
+/// <param name="Reserve">The slots a rule may only bring in by a join or a transform, or null for none.</param>
 /// <param name="StartDebris">The random debris its battles start with, resolved over the game rule's, its type the boss's own; null for the game rule's.</param>
 public sealed record RuntimeBoss(
     string Id,
@@ -45,10 +49,9 @@ public sealed record RuntimeBoss(
     bool Removed,
     bool Optional,
     BossOrigin Origin,
-    IReadOnlyList<TroopPhase> Troops,
-    int Last,
+    BattleEventRef Event,
     IReadOnlyList<RuntimeEnemy> Enemies,
-    IReadOnlyDictionary<int, IReadOnlyList<RuntimeAction>> Actions,
+    IReadOnlyDictionary<string, IReadOnlyList<RuntimeAction>> Actions,
     RuntimeNormalAttack NormalAttack,
     TraitBlock Traits,
     IReadOnlyDictionary<string, RuntimeSkill> Skills,
@@ -57,38 +60,49 @@ public sealed record RuntimeBoss(
     IReadOnlyList<BattleMapRef> BattleMaps,
     int? Tier = null,
     int? NormalAttacks = null,
+    IReadOnlyList<ReserveEnemy>? Reserve = null,
     RandomDebris? StartDebris = null);
 
 /// <summary>
-/// One troop of a boss fight.
+/// The event command that starts a boss's battle.
 /// </summary>
-/// <param name="Troop">The troop id.</param>
-/// <param name="Last">Whether the troop always ends the fight.</param>
-/// <param name="Milestone">The story milestone, or null.</param>
-/// <param name="Cap">The milestone's level cap, or null.</param>
-/// <param name="LastSwitch">The switch while which it ends the fight, or null.</param>
-/// <param name="LeadsInto">The fight troop this earlier phase's battle leads into, or null.</param>
-/// <param name="SkirmishMap">The map where the story fights it before the fight that defeats it, or null.</param>
-/// <param name="Unpooled">Why its last phase never has a pool, or null when it may.</param>
-public sealed record TroopPhase(
-    int Troop,
-    bool Last,
-    string? Milestone = null,
-    int? Cap = null,
-    int? LastSwitch = null,
-    int? LeadsInto = null,
-    int? SkirmishMap = null,
-    string? Unpooled = null);
+/// <param name="Command">The command's index in the page's or the common event's list, from 0.</param>
+/// <param name="Map">The map of a map event, or null for a common event.</param>
+/// <param name="Event">The map event's id, or null for a common event.</param>
+/// <param name="Page">The event page's index, from 0, or null for a common event.</param>
+/// <param name="CommonEvent">The common event's id, or null for a map event.</param>
+public sealed record BattleEventRef(int Command, int? Map = null, int? Event = null, int? Page = null, int? CommonEvent = null)
+{
+    /// <summary>
+    /// Gets the key that names the battle command: <c>m{map}e{event}p{page}c{command}</c> for a map event,
+    /// <c>ce{commonEvent}c{command}</c> for a common event.
+    /// </summary>
+    [JsonIgnore]
+    public string Key => CommonEvent is int common
+        ? string.Create(CultureInfo.InvariantCulture, $"ce{common}c{Command}")
+        : string.Create(CultureInfo.InvariantCulture, $"m{Map}e{Event}p{Page}c{Command}");
+}
 
 /// <summary>
-/// A member of a boss's troop.
+/// An enemy slot of a boss's starting line-up.
 /// </summary>
-/// <param name="Troop">The troop id.</param>
-/// <param name="Index">Its place in the troop.</param>
+/// <param name="Index">Its place in the starting line-up.</param>
+/// <param name="Slot">The slot's item id, which names its action list.</param>
 /// <param name="EnemyId">The enemy id.</param>
-/// <param name="Stats">Its stats with the tier factors applied.</param>
+/// <param name="Stats">Its stats, resolved by the designer.</param>
 /// <param name="Ap">The action points it spends per turn before its features.</param>
-public sealed record RuntimeEnemy(int Troop, int Index, int EnemyId, EnemyStats Stats, int Ap);
+/// <param name="RaidBoss">Whether its HP is in the shared raid pool.</param>
+public sealed record RuntimeEnemy(int Index, string Slot, int EnemyId, EnemyStats Stats, int Ap, bool RaidBoss = false);
+
+/// <summary>
+/// An enemy slot that only joins a boss's battle or is transformed into by a rule.
+/// </summary>
+/// <param name="Slot">The slot's item id, which names its action list.</param>
+/// <param name="EnemyId">The enemy id.</param>
+/// <param name="Stats">Its stats, resolved by the designer.</param>
+/// <param name="Ap">The action points it spends per turn before its features.</param>
+/// <param name="RaidBoss">Whether its HP is in the shared raid pool when it joins.</param>
+public sealed record ReserveEnemy(string Slot, int EnemyId, EnemyStats Stats, int Ap, bool RaidBoss = false);
 
 /// <summary>
 /// An enemy's base stats.

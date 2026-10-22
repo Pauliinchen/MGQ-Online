@@ -2,7 +2,8 @@
 //  CanonicalGoldenTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Took the debris types in the design golden
+//      Paulinchen  2026-10-23: Took the fight changes in the goldens
+//                            - Took the debris types in the design golden
 //      Paulinchen  2026-10-22: Took the hazards in the goldens
 //                            - Took the cycle in the design golden
 //                            - Took the rest skip switch and event in the goldens
@@ -36,12 +37,12 @@ public sealed class CanonicalGoldenTests
     /// <summary>
     /// The SHA-256 of the design golden.
     /// </summary>
-    private const string DesignSha256 = "47d09b3b3fb3101651d11bac4e4de9d075f93fd413318b59084f9565b0a87955";
+    private const string DesignSha256 = "2505b5a2c27a28b0a9236e68d2a3e095fa34e659b5c888f4b31312c0efce422a";
 
     /// <summary>
     /// The SHA-256 of the battle log golden.
     /// </summary>
-    private const string EventsSha256 = "e43f6bee5540b804f77d131b512d7d5239004d85374e87887be6f8578f4f5938";
+    private const string EventsSha256 = "5ce1a091d935ede91cc7145cb163bbf61726c21a31bf2f3249c736b97e692a2f";
 
     /// <summary>
     /// The sample design writes the golden's bytes.

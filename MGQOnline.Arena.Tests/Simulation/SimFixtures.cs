@@ -2,7 +2,8 @@
 //  SimFixtures.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Left the samples' debris types and start debris out
+//      Paulinchen  2026-10-23: Fought the test boss in an event battle with one enemy slot and without a reserve
+//                            - Left the samples' debris types and start debris out
 //      Paulinchen  2026-10-22: Left the samples' hazards out
 //                            - Gave the tier its normal attacks per turn
 //      Paulinchen  2026-10-21: Ran the simulations through the real rule engine
@@ -33,6 +34,11 @@ internal static class SimFixtures
     /// The enemy id of the test boss's first enemy.
     /// </summary>
     public const int EnemyId = 501;
+
+    /// <summary>
+    /// The enemy slot of the test boss's first enemy.
+    /// </summary>
+    public const string Slot = "0e0e0e0e";
 
     /// <summary>
     /// The tier of the test boss.
@@ -168,10 +174,10 @@ internal static class SimFixtures
         RuntimeBoss boss = Samples.Boss with
         {
             Key = BossKey,
-            Troops = [new TroopPhase(900, true)],
-            Last = 900,
-            Enemies = [new RuntimeEnemy(900, 0, EnemyId, new EnemyStats(100_000, 500, 100, 100, 100, 100, 100, 100), ap)],
-            Actions = new Dictionary<int, IReadOnlyList<RuntimeAction>> { [EnemyId] = actions },
+            Event = new BattleEventRef(0, 88, 1, 0),
+            Enemies = [new RuntimeEnemy(0, Slot, EnemyId, new EnemyStats(100_000, 500, 100, 100, 100, 100, 100, 100), ap)],
+            Reserve = null,
+            Actions = new Dictionary<string, IReadOnlyList<RuntimeAction>> { [Slot] = actions },
             NormalAttack = new RuntimeNormalAttack(new Dictionary<int, SkillRef> { [EnemyId] = Attack }, new Dictionary<int, int>()),
             Traits = traits ?? TraitBlock.Empty,
             Skills = byKey,

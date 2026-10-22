@@ -2,6 +2,7 @@
 //  RuleEngine.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Matched the fight rules once per event and the enemy rules by enemy slot
 //      Paulinchen  2026-10-22: Ran the effects of a rule the battle fires itself
 //                            - Logged the seat a rule fired for
 //      Paulinchen  2026-10-21: Dropped the effect queue seam, since the engine runs its effects itself
@@ -28,6 +29,11 @@ public sealed class RuleEngine
     public const int MaxDepth = 8;
 
     /// <summary>
+    /// The enemy of a fight rule fired on an event that names no enemy, and the enemy its ledger counts under.
+    /// </summary>
+    public const int FightEnemy = -1;
+
+    /// <summary>
     /// Initializes the engine of a fight.
     /// </summary>
     /// <param name="book">The fight's rules.</param>
@@ -52,8 +58,25 @@ public sealed class RuleEngine
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(battleEvent);
+        Raise(context, [battleEvent]);
+    }
+
+    /// <summary>
+    /// Dispatches battle events that happened together, each matched before any effect runs, and runs
+    /// every effect that follows from them as <see cref="Raise(IRuleContext, BattleEvent)"/> does.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="battleEvents">The events in order, each at depth 0.</param>
+    public void Raise(IRuleContext context, IReadOnlyList<BattleEvent> battleEvents)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(battleEvents);
         Queue<QueuedEffect> effects = new();
-        Enqueue(effects, Match(context, battleEvent, 0));
+        foreach (BattleEvent battleEvent in battleEvents)
+        {
+            Enqueue(effects, Match(context, battleEvent, 0));
+        }
+
         RunQueue(context, effects);
     }
 
@@ -101,7 +124,8 @@ public sealed class RuleEngine
     /// </summary>
     /// <remarks>
     /// An event that names an enemy reaches that enemy's rules only; any other event reaches the rules of
-    /// every living enemy, each enemy in turn.
+    /// every living enemy, each enemy in turn. The fight rules come last, once, for the enemy the event
+    /// names or the fallen one.
     /// </remarks>
     /// <param name="context">The battle.</param>
     /// <param name="battleEvent">The event.</param>
@@ -116,36 +140,56 @@ public sealed class RuleEngine
         int? seat = EventFacts.TriggerUnitOf(battleEvent);
         foreach (int enemy in context.LivingEnemies)
         {
-            if (named is int only && only != enemy)
+            if ((named is int only && only != enemy) || context.SlotOf(enemy) is not string slot)
             {
                 continue;
             }
 
-            foreach (RuleSpec rule in RuleGroups.Pick(Successes(context, battleEvent, enemy), context.Rules))
-            {
-                Record(context, battleEvent, enemy, rule);
-                context.Log(new RuleFiredEvent(battleEvent.Turn, rule.Id, depth, seat));
-                fired.Add(new FiredRule(rule, enemy, battleEvent, depth));
-            }
+            Fire(context, battleEvent, depth, seat, enemy, enemy, Book.RulesOf(slot), fired);
         }
 
+        int subject = EventFacts.SubjectOf(battleEvent) ?? FightEnemy;
+        Fire(context, battleEvent, depth, seat, subject, FightEnemy, Book.FightRules, fired);
         return fired;
     }
 
     /// <summary>
-    /// Finds an enemy's rules whose trigger matches, whose limits allow a fire and whose conditions hold.
+    /// Fires the rules of one list that match an event and records and logs each fire.
     /// </summary>
     /// <param name="context">The battle.</param>
     /// <param name="battleEvent">The event.</param>
-    /// <param name="enemy">The enemy.</param>
+    /// <param name="depth">How many rule effects led to the event.</param>
+    /// <param name="seat">The unit the event names, or null.</param>
+    /// <param name="enemy">The rule's enemy: the caster of its casts and the boss of its effects.</param>
+    /// <param name="ledgerEnemy">The enemy the ledger counts the fires under.</param>
+    /// <param name="rules">The rules in match order.</param>
+    /// <param name="fired">Receives the fired rules.</param>
+    private void Fire(IRuleContext context, BattleEvent battleEvent, int depth, int? seat, int enemy, int ledgerEnemy, IReadOnlyList<RuleSpec> rules, List<FiredRule> fired)
+    {
+        foreach (RuleSpec rule in RuleGroups.Pick(Successes(context, battleEvent, enemy, ledgerEnemy, rules), context.Rules))
+        {
+            Record(context, battleEvent, ledgerEnemy, rule);
+            context.Log(new RuleFiredEvent(battleEvent.Turn, rule.Id, depth, seat));
+            fired.Add(new FiredRule(rule, enemy, battleEvent, depth));
+        }
+    }
+
+    /// <summary>
+    /// Finds the rules of a list whose trigger matches, whose limits allow a fire and whose conditions hold.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="battleEvent">The event.</param>
+    /// <param name="enemy">The rule's enemy, whom the conditions ask about.</param>
+    /// <param name="ledgerEnemy">The enemy the ledger counts the fires under.</param>
+    /// <param name="rules">The rules in match order.</param>
     /// <returns>The rules, in match order.</returns>
-    private List<RuleSpec> Successes(IRuleContext context, BattleEvent battleEvent, int enemy)
+    private List<RuleSpec> Successes(IRuleContext context, BattleEvent battleEvent, int enemy, int ledgerEnemy, IReadOnlyList<RuleSpec> rules)
     {
         List<RuleSpec> successes = [];
-        foreach (RuleSpec rule in Book.RulesOf(enemy))
+        foreach (RuleSpec rule in rules)
         {
             if (TriggerMatcher.Matches(rule.Trigger, battleEvent, context, Book)
-                && Allows(context.Ledger, rule, battleEvent, enemy)
+                && Allows(context.Ledger, rule, battleEvent, ledgerEnemy)
                 && ConditionEvaluator.Holds(rule.Conditions, context, enemy, battleEvent))
             {
                 successes.Add(rule);

@@ -2,6 +2,7 @@
 //  BattleEvent.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Added the enemy fell, all enemies fell, joined, left and transformed events
 //      Paulinchen  2026-10-22: Added the hazard placed, fired and expired events
 //                            - Added the debuffs cleared event
 //                            - Added the rest skipped event
@@ -21,7 +22,7 @@ namespace MGQOnline.Arena.Events;
 /// <summary>
 /// Something that happened in a simulated battle: what the rules match against and what the battle log holds.
 /// </summary>
-/// <remarks>The first ten types match the rule triggers one to one; the rest only feed the log.</remarks>
+/// <remarks>Rules match the events their triggers name; the others only feed the log.</remarks>
 /// <param name="Turn">The turn it happened in, counted from 1; 0 before the first turn.</param>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type", UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FailSerialization)]
 [JsonDerivedType(typeof(BattleStartEvent), "battleStart")]
@@ -34,6 +35,11 @@ namespace MGQOnline.Arena.Events;
 [JsonDerivedType(typeof(BossHpBelowEvent), "bossHpBelow")]
 [JsonDerivedType(typeof(StateAddedEvent), "stateAdded")]
 [JsonDerivedType(typeof(UnitFellEvent), "unitFell")]
+[JsonDerivedType(typeof(EnemyFellEvent), "enemyFell")]
+[JsonDerivedType(typeof(AllEnemiesFellEvent), "allEnemiesFell")]
+[JsonDerivedType(typeof(EnemyJoinedEvent), "enemyJoined")]
+[JsonDerivedType(typeof(EnemyLeftEvent), "enemyLeft")]
+[JsonDerivedType(typeof(EnemyTransformedEvent), "enemyTransformed")]
 [JsonDerivedType(typeof(CastDisabledEvent), "castDisabled")]
 [JsonDerivedType(typeof(CastResolvedEvent), "castResolved")]
 [JsonDerivedType(typeof(DamageEvent), "damage")]
@@ -73,7 +79,7 @@ public sealed record TurnEndEvent(int Turn) : BattleEvent(Turn);
 /// An enemy's plan of a turn is being made; turn schedule rules match it.
 /// </summary>
 /// <param name="Turn">The turn planned.</param>
-/// <param name="Enemy">The enemy's index in its troop.</param>
+/// <param name="Enemy">The enemy's index.</param>
 public sealed record TurnScheduleEvent(int Turn, int Enemy) : BattleEvent(Turn);
 
 /// <summary>
@@ -155,6 +161,54 @@ public sealed record StateAddedEvent(int Turn, StateHolder On, int Index, int St
 /// <param name="Seat">The unit's seat.</param>
 /// <param name="CastId">The cast that felled it, or null.</param>
 public sealed record UnitFellEvent(int Turn, int Seat, string? CastId = null) : BattleEvent(Turn);
+
+/// <summary>
+/// A boss enemy's HP reached 0.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="Enemy">The enemy's index.</param>
+/// <param name="Slot">Its enemy slot.</param>
+/// <param name="EnemyId">Its enemy id.</param>
+public sealed record EnemyFellEvent(int Turn, int Enemy, string Slot, int EnemyId) : BattleEvent(Turn);
+
+/// <summary>
+/// No boss enemy stands any more, every one fallen or gone; the battle is won unless its rules bring one back.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+public sealed record AllEnemiesFellEvent(int Turn) : BattleEvent(Turn);
+
+/// <summary>
+/// An enemy slot joined the fight.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="Enemy">Its new index.</param>
+/// <param name="Slot">Its enemy slot.</param>
+/// <param name="EnemyId">Its enemy id.</param>
+/// <param name="RaidBoss">Whether its HP is in the shared raid pool.</param>
+/// <param name="RuleId">The rule that brought it in, or null.</param>
+public sealed record EnemyJoinedEvent(int Turn, int Enemy, string Slot, int EnemyId, bool RaidBoss, string? RuleId = null) : BattleEvent(Turn);
+
+/// <summary>
+/// An enemy left the fight.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="Enemy">Its index.</param>
+/// <param name="Slot">Its enemy slot.</param>
+/// <param name="EnemyId">Its enemy id.</param>
+/// <param name="RuleId">The rule that took it out, or null.</param>
+public sealed record EnemyLeftEvent(int Turn, int Enemy, string Slot, int EnemyId, string? RuleId = null) : BattleEvent(Turn);
+
+/// <summary>
+/// An enemy turned into another.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="Enemy">Its index.</param>
+/// <param name="From">The enemy slot it was.</param>
+/// <param name="Into">The enemy slot it became.</param>
+/// <param name="EnemyId">The enemy id it became.</param>
+/// <param name="HpAfter">Its HP afterwards.</param>
+/// <param name="RuleId">The rule that transformed it, or null.</param>
+public sealed record EnemyTransformedEvent(int Turn, int Enemy, string From, string Into, int EnemyId, long HpAfter, string? RuleId = null) : BattleEvent(Turn);
 
 /// <summary>
 /// A planned cast was disabled.

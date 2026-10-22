@@ -2,7 +2,8 @@
 //  IRuleContext.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Handed the debris placed back as cells with their hits
+//      Paulinchen  2026-10-23: Brought enemies in, took them out and transformed them
+//                            - Handed the debris placed back as cells with their hits
 //      Paulinchen  2026-10-22: Placed hazards
 //                            - Listed the skills of a cast chain
 //      Paulinchen  2026-10-21: Created
@@ -35,7 +36,7 @@ public interface IRuleContext
     IRuleLedger Ledger { get; }
 
     /// <summary>
-    /// Gets the indexes of the enemies still fighting, in troop order.
+    /// Gets the indexes of the enemies still standing, in line-up order.
     /// </summary>
     IReadOnlyList<int> LivingEnemies { get; }
 
@@ -43,6 +44,48 @@ public interface IRuleContext
     /// Gets the seats of every unit, the fallen ones included.
     /// </summary>
     IReadOnlyList<int> Seats { get; }
+
+    /// <summary>
+    /// Gives the enemy slot of an enemy in the fight.
+    /// </summary>
+    /// <param name="enemy">The enemy's index.</param>
+    /// <returns>The slot, fallen or not; null for an enemy that left or never was.</returns>
+    string? SlotOf(int enemy);
+
+    /// <summary>
+    /// Gives the enemy id of an enemy in the fight.
+    /// </summary>
+    /// <param name="enemy">The enemy's index.</param>
+    /// <returns>The enemy id, fallen or not; null for an enemy that left or never was.</returns>
+    int? EnemyIdOf(int enemy);
+
+    /// <summary>
+    /// Brings an enemy slot into the fight under the next unused index, at full HP and MP, with what a
+    /// starting enemy gets at the battle's start, and logs its join.
+    /// </summary>
+    /// <param name="slot">The slot, of the reserve or of the starting line-up.</param>
+    /// <param name="ruleId">The rule that brings it in.</param>
+    /// <returns>The events the join logged, the joined event first; null when the boss lacks the slot.</returns>
+    IReadOnlyList<BattleEvent>? JoinEnemy(string slot, string ruleId);
+
+    /// <summary>
+    /// Takes a standing enemy out of the fight, disables its plan entries still to run this turn, and logs it.
+    /// </summary>
+    /// <param name="enemy">The enemy's index.</param>
+    /// <param name="ruleId">The rule that takes it out.</param>
+    /// <returns>The logged event; null for an enemy that is not standing.</returns>
+    EnemyLeftEvent? RemoveEnemy(int enemy, string ruleId);
+
+    /// <summary>
+    /// Turns an enemy into another enemy slot, disables its plan entries still to run this turn, and
+    /// logs it; a fallen enemy comes back at full HP.
+    /// </summary>
+    /// <param name="enemy">The enemy's index.</param>
+    /// <param name="into">The slot it becomes, of the reserve or of the starting line-up.</param>
+    /// <param name="keepHpRatio">Whether HP and MP keep their ratio of the max rather than being cut to the new max.</param>
+    /// <param name="ruleId">The rule that transforms it.</param>
+    /// <returns>The logged event; null when the boss lacks the slot or the enemy is not in the fight.</returns>
+    EnemyTransformedEvent? TransformEnemy(int enemy, string into, bool keepHpRatio, string ruleId);
 
     /// <summary>
     /// Tells whether the game's turn condition holds for a turn.

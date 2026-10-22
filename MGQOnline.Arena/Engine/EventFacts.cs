@@ -2,6 +2,7 @@
 //  EventFacts.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Read the subject enemy of an event for the fight rules
 //      Paulinchen  2026-10-22: Read the unit of a hazard fire
 //                            - Read the enemy and cast of a resolved cast
 //      Paulinchen  2026-10-21: Created
@@ -34,6 +35,14 @@ internal static class EventFacts
         StateAddedEvent { On: StateHolder.Boss } added => added.Index,
         _ => null,
     };
+
+    /// <summary>
+    /// Gives the enemy a fight rule fired on an event belongs to: the one the event names, or the fallen one.
+    /// </summary>
+    /// <remarks>A fallen enemy names no enemy for the per-enemy rules, so every living enemy's rules see its fall.</remarks>
+    /// <param name="battleEvent">The event.</param>
+    /// <returns>The enemy's index, or null for an event about no enemy.</returns>
+    public static int? SubjectOf(BattleEvent battleEvent) => battleEvent is EnemyFellEvent fell ? fell.Enemy : EnemyOf(battleEvent);
 
     /// <summary>
     /// Gives the unit an event names: the unit hit, given a state or fallen, the attacker of a boss hit,

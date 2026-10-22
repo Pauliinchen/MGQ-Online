@@ -2,6 +2,7 @@
 //  BattleState.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Kept the enemies that join, leave or transform, and the rules of the whole boss
 //      Paulinchen  2026-10-22: Kept the hazards and their fires
 //                            - Named the rest a planned cast skipped
 //      Paulinchen  2026-10-21: Kept the rule ledger, the rule engine, the debris field and mark clocks
@@ -10,6 +11,7 @@
 //----------------------------------------------------------------
 
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using MGQOnline.Arena.Casting;
 using MGQOnline.Arena.Debris;
 using MGQOnline.Arena.Engine;
@@ -57,7 +59,7 @@ public enum BattlePhase
     TurnEnd,
 
     /// <summary>
-    /// Every boss enemy fell.
+    /// No boss enemy stands any more and the rules of that moment brought none back.
     /// </summary>
     Won,
 
@@ -88,7 +90,7 @@ public sealed class BattleState
         Setup = setup;
         Grid = grid;
         Random = new RandomStreams(setup.Seed);
-        Engine = new RuleEngine(RuleBook.ForTroop(boss, boss.Last));
+        Engine = new RuleEngine(RuleBook.ForBoss(boss));
     }
 
     /// <summary>
@@ -132,7 +134,7 @@ public sealed class BattleState
     public List<UnitState> Units { get; } = [];
 
     /// <summary>
-    /// Gets the boss enemies of the fought troop in troop order.
+    /// Gets the boss enemies in the fight in line-up order, the fallen ones included; an enemy that left is gone.
     /// </summary>
     public List<EnemyState> Enemies { get; } = [];
 
@@ -157,7 +159,7 @@ public sealed class BattleState
     public RuleLedger Ledger { get; } = new();
 
     /// <summary>
-    /// Gets the rule engine of the fought troop's rules.
+    /// Gets the rule engine of the boss's rules.
     /// </summary>
     public RuleEngine Engine { get; }
 
@@ -200,6 +202,16 @@ public sealed class BattleState
     /// Gets or sets the place in the log where the current turn starts.
     /// </summary>
     internal int TurnLogStart { get; set; }
+
+    /// <summary>
+    /// Gets or sets the index the next enemy that joins gets.
+    /// </summary>
+    internal int NextEnemyIndex { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether the all enemies fell event was logged since an enemy last stood, which the victory waits for.
+    /// </summary>
+    internal bool AllEnemiesFell { get; set; }
 
     /// <summary>
     /// Gets whether the battle is over.
@@ -329,46 +341,57 @@ public sealed class UnitState
 public sealed class EnemyState
 {
     /// <summary>
-    /// Makes an enemy at full HP and MP.
+    /// Makes an enemy of the starting line-up at full HP and MP.
     /// </summary>
-    /// <param name="enemy">The troop member.</param>
+    /// <param name="enemy">The enemy of the line-up.</param>
     public EnemyState(RuntimeEnemy enemy)
+        : this(enemy.Index, new ReserveEnemy(enemy.Slot, enemy.EnemyId, enemy.Stats, enemy.Ap, enemy.RaidBoss))
     {
-        Index = enemy.Index;
-        EnemyId = enemy.EnemyId;
-        Troop = enemy.Troop;
-        Stats = enemy.Stats;
-        Ap = enemy.Ap;
-        Hp = enemy.Stats.Mhp;
-        MaxHp = enemy.Stats.Mhp;
-        Mp = enemy.Stats.Mmp;
-        MaxMp = enemy.Stats.Mmp;
     }
 
     /// <summary>
-    /// Gets its place in the troop.
+    /// Makes an enemy of a slot that joins the fight, at full HP and MP.
+    /// </summary>
+    /// <param name="index">Its index, unused so far.</param>
+    /// <param name="slot">The slot.</param>
+    public EnemyState(int index, ReserveEnemy slot)
+    {
+        Index = index;
+        RaidBoss = slot.RaidBoss;
+        Become(slot);
+        Hp = slot.Stats.Mhp;
+        Mp = slot.Stats.Mmp;
+    }
+
+    /// <summary>
+    /// Gets its index: its place in the starting line-up, or the next unused one for an enemy that joined.
     /// </summary>
     public int Index { get; }
 
     /// <summary>
-    /// Gets its enemy id.
+    /// Gets its enemy slot, which names its action list and which a transform changes.
     /// </summary>
-    public int EnemyId { get; }
+    public string Slot { get; private set; }
 
     /// <summary>
-    /// Gets its troop.
+    /// Gets its enemy id, which a transform changes.
     /// </summary>
-    public int Troop { get; }
+    public int EnemyId { get; private set; }
+
+    /// <summary>
+    /// Gets whether its HP is in the shared raid pool.
+    /// </summary>
+    public bool RaidBoss { get; }
 
     /// <summary>
     /// Gets its stats with the tier factors applied.
     /// </summary>
-    public EnemyStats Stats { get; }
+    public EnemyStats Stats { get; private set; }
 
     /// <summary>
     /// Gets the action points it spends per turn before its features.
     /// </summary>
-    public int Ap { get; }
+    public int Ap { get; private set; }
 
     /// <summary>
     /// Gets or sets its HP.
@@ -378,7 +401,7 @@ public sealed class EnemyState
     /// <summary>
     /// Gets its max HP.
     /// </summary>
-    public long MaxHp { get; }
+    public long MaxHp { get; private set; }
 
     /// <summary>
     /// Gets or sets its MP.
@@ -388,7 +411,7 @@ public sealed class EnemyState
     /// <summary>
     /// Gets its max MP.
     /// </summary>
-    public long MaxMp { get; }
+    public long MaxMp { get; private set; }
 
     /// <summary>
     /// Gets or sets the action points banked for its next plan.
@@ -429,6 +452,22 @@ public sealed class EnemyState
     /// Gets its stats for formulas.
     /// </summary>
     public FormulaStats FormulaStats => new(MaxHp, MaxMp, Stats.Atk, Stats.Def, Stats.Mat, Stats.Mdf, Stats.Agi, Stats.Luk, Hp, Mp, 0);
+
+    /// <summary>
+    /// Takes a slot's id, enemy id, stats, max HP and MP and action points, keeping its HP, MP and raid
+    /// boss flag as they are.
+    /// </summary>
+    /// <param name="slot">The slot.</param>
+    [MemberNotNull(nameof(Slot), nameof(Stats))]
+    internal void Become(ReserveEnemy slot)
+    {
+        Slot = slot.Slot;
+        EnemyId = slot.EnemyId;
+        Stats = slot.Stats;
+        Ap = slot.Ap;
+        MaxHp = slot.Stats.Mhp;
+        MaxMp = slot.Stats.Mmp;
+    }
 }
 
 /// <summary>

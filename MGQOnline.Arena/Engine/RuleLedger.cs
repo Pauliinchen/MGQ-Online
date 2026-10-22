@@ -12,7 +12,7 @@ using System.Collections.Generic;
 namespace MGQOnline.Arena.Engine;
 
 /// <summary>
-/// Names a rule as one enemy holds it; every enemy of a troop keeps its own fires.
+/// Names a rule as one enemy holds it; every enemy of the fight keeps its own fires, and the fight rules keep theirs under one enemy.
 /// </summary>
 /// <param name="RuleId">The rule's id.</param>
 /// <param name="Enemy">The enemy's index.</param>

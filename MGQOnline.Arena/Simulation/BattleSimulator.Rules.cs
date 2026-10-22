@@ -2,7 +2,9 @@
 //  BattleSimulator.Rules.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Handed the debris a rule placed back with its hits
+//      Paulinchen  2026-10-23: Brought enemies in, took them out and transformed them by a rule
+//                            - Decided the victory once the rules of the last fall ran
+//                            - Handed the debris a rule placed back with its hits
 //      Paulinchen  2026-10-22: Placed hazards by a rule
 //                            - Listed the skills of a cast chain
 //      Paulinchen  2026-10-21: Created
@@ -39,14 +41,28 @@ public sealed partial class BattleSimulator
     public const int SkillSealFeature = 44;
 
     /// <summary>
-    /// Logs an event and lets the rule engine fire the rules that match it and run their effects.
+    /// Logs an event, lets the rule engine fire the rules that match it and run their effects, and
+    /// decides the victory afterwards.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="battleEvent">The event.</param>
-    private void Raise(BattleState state, BattleEvent battleEvent)
+    private void Raise(BattleState state, BattleEvent battleEvent) => Raise(state, [battleEvent]);
+
+    /// <summary>
+    /// Logs events that happened together, lets the rule engine fire the rules that match them and
+    /// run their effects, and decides the victory afterwards.
+    /// </summary>
+    /// <param name="state">The battle.</param>
+    /// <param name="battleEvents">The events in order.</param>
+    private void Raise(BattleState state, IReadOnlyList<BattleEvent> battleEvents)
     {
-        Log(state, battleEvent);
-        state.Engine.Raise(ContextOf(state), battleEvent);
+        foreach (BattleEvent battleEvent in battleEvents)
+        {
+            Log(state, battleEvent);
+        }
+
+        state.Engine.Raise(ContextOf(state), battleEvents);
+        CheckWon(state);
     }
 
     /// <summary>
@@ -139,7 +155,7 @@ public sealed partial class BattleSimulator
     }
 
     /// <summary>
-    /// Deals damage to a boss enemy without logging it, and marks the battle won once every enemy fell.
+    /// Deals damage to a boss enemy without logging it; its fall is raised by the caller.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="enemy">The enemy.</param>
@@ -148,12 +164,7 @@ public sealed partial class BattleSimulator
     private static DamageResult DamageEnemy(BattleState state, EnemyState enemy, long amount)
     {
         enemy.Hp = Math.Clamp(enemy.Hp - amount, 0, enemy.MaxHp);
-        List<int> crossed = [.. state.Engine.Book.HpThresholdsOf(enemy.Index).Where(percent => enemy.Hp * 100 < percent * enemy.MaxHp && enemy.HpThresholdsCrossed.Add(percent))];
-        if (state.Enemies.TrueForAll(each => each.Fallen))
-        {
-            state.Phase = BattlePhase.Won;
-        }
-
+        List<int> crossed = [.. state.Engine.Book.HpThresholdsOf(enemy.Slot).Where(percent => enemy.Hp * 100 < percent * enemy.MaxHp && enemy.HpThresholdsCrossed.Add(percent))];
         return new DamageResult(enemy.Hp, enemy.Fallen, crossed);
     }
 
@@ -182,6 +193,21 @@ public sealed partial class BattleSimulator
 
         /// <inheritdoc />
         public IReadOnlyList<int> Seats => [.. state.Units.Select(unit => unit.Seat)];
+
+        /// <inheritdoc />
+        public string? SlotOf(int enemy) => state.Enemies.Find(each => each.Index == enemy)?.Slot;
+
+        /// <inheritdoc />
+        public int? EnemyIdOf(int enemy) => state.Enemies.Find(each => each.Index == enemy)?.EnemyId;
+
+        /// <inheritdoc />
+        public IReadOnlyList<BattleEvent>? JoinEnemy(string slot, string ruleId) => simulator.Join(state, slot, ruleId);
+
+        /// <inheritdoc />
+        public EnemyLeftEvent? RemoveEnemy(int enemy, string ruleId) => simulator.Leave(state, enemy, ruleId);
+
+        /// <inheritdoc />
+        public EnemyTransformedEvent? TransformEnemy(int enemy, string into, bool keepHpRatio, string ruleId) => simulator.Transform(state, enemy, into, keepHpRatio, ruleId);
 
         /// <inheritdoc />
         public bool TurnHolds(int a, int b, int turn) => TurnSchedule.Holds(a, b, turn);

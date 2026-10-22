@@ -2,6 +2,7 @@
 //  ConditionEvaluator.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Checked the enemy is condition
 //      Paulinchen  2026-10-22: Checked the not in chain condition
 //      Paulinchen  2026-10-21: Created
 //
@@ -83,6 +84,7 @@ internal static class ConditionEvaluator
         TurnAtLeastCondition atLeast => battleEvent.Turn >= atLeast.Turn,
         NotSealedCondition notSealed => !context.IsSealed(enemy, notSealed.Skill),
         NotInChainCondition notInChain => EventFacts.CastIdOf(battleEvent) is not string castId || !context.ChainOf(castId).Contains(notInChain.Skill),
+        EnemyIsCondition enemyIs => context.SlotOf(enemy) == enemyIs.Slot,
         _ => throw new ArgumentOutOfRangeException(nameof(condition), condition, "The engine does not know this condition."),
     };
 

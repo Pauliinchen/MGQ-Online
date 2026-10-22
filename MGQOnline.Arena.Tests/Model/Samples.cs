@@ -2,7 +2,8 @@
 //  Samples.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Added debris types, the standard start debris and a boss's start debris
+//      Paulinchen  2026-10-23: Gave the boss its event battle, enemy slots, a raid boss enemy and a reserve, and added fight change rules and events
+//                            - Added debris types, the standard start debris and a boss's start debris
 //      Paulinchen  2026-10-22: Added a hazard type, its sources, its effect and its events
 //                            - Added a not in chain condition
 //                            - Added a cast resolved trigger
@@ -60,6 +61,16 @@ internal static class Samples
     /// A debris type id that gives no cover.
     /// </summary>
     public const string CrystalId = "debris:c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5";
+
+    /// <summary>
+    /// The enemy slot of the starting line-up.
+    /// </summary>
+    public const string FirstSlot = "1a2b3c4d";
+
+    /// <summary>
+    /// The enemy slot of the reserve.
+    /// </summary>
+    public const string ReserveSlot = "2b3c4d5e";
 
     /// <summary>
     /// Gets a game skill reference.
@@ -154,6 +165,21 @@ internal static class Samples
         Simple("2b2b2b2b", new TurnStartTrigger()),
         Simple("3c3c3c3c", new TurnEndTrigger()),
         Simple("4d4d4d4d", new UnitFellTrigger()),
+        new RuleSpec(
+            "8e9f0a1b",
+            new RuleOrigin(PresetKind.FightChange, BossId, "8e9f0a1b"),
+            new EnemyFellTrigger(FirstSlot),
+            [new EnemyIsCondition(FirstSlot)],
+            [new EnemyTransformsEffect(ReserveSlot, true), new EnemyLeavesEffect(ReserveSlot)],
+            RuleLimits.None,
+            Scope: RuleScope.Fight),
+        new RuleSpec(
+            "9f0a1b2c",
+            new RuleOrigin(PresetKind.FightChange, BossId, "9f0a1b2c"),
+            new AllEnemiesFellTrigger(),
+            [],
+            [new EnemyJoinsEffect(ReserveSlot)],
+            new RuleLimits(false, false, 1)),
     ];
 
     /// <summary>
@@ -280,12 +306,11 @@ internal static class Samples
         false,
         true,
         BossOrigin.Catalog,
-        [new TroopPhase(125, false, LeadsInto: 126, SkirmishMap: 723), new TroopPhase(126, true, "Morrigan", 18, 4, Unpooled: "route")],
-        126,
-        [new RuntimeEnemy(126, 0, 301, new EnemyStats(5_000_000, 900, 410, 380, 395, 360, 120, 80), 9)],
-        new Dictionary<int, IReadOnlyList<RuntimeAction>>
+        new BattleEventRef(3, 723, 12, 1),
+        [new RuntimeEnemy(0, FirstSlot, 301, new EnemyStats(5_000_000, 900, 410, 380, 395, 360, 120, 80), 9, true)],
+        new Dictionary<string, IReadOnlyList<RuntimeAction>>
         {
-            [301] =
+            [FirstSlot] =
             [
                 new RuntimeAction("a1b2c3d4", Stigmata, 5, new TurnActionCondition(2, 3), true, new FollowUpSpec(Blast, FollowUpSide.Opposite)),
                 new RuntimeAction("b2c3d4e5", SkillRef.OfGame(1515), 4, new AlwaysActionCondition(), false, null),
@@ -295,7 +320,7 @@ internal static class Samples
                 new RuntimeAction("f6a7b8c9", SkillRef.OfGame(1519), 2, new PartyLevelActionCondition(60), false, null),
                 new RuntimeAction("a7b8c9d0", SkillRef.OfGame(1520), 1, new SwitchActionCondition(22), false, null),
             ],
-            [302] = [],
+            [ReserveSlot] = [],
         },
         new RuntimeNormalAttack(new Dictionary<int, SkillRef> { [301] = Blast }, new Dictionary<int, int> { [301] = 0 }, Blast, "<通常攻撃 {custom:0}>"),
         Traits,
@@ -309,6 +334,7 @@ internal static class Samples
         ],
         [new BattleMapRef(88, false), new BattleMapRef(723, true)],
         2,
+        Reserve: [new ReserveEnemy(ReserveSlot, 302, new EnemyStats(2_500_000, 600, 380, 300, 410, 300, 140, 60), 7, true)],
         StartDebris: new RandomDebris(5000, 1, 3, CrystalId));
 
     /// <summary>
@@ -353,11 +379,7 @@ internal static class Samples
         RuntimeDesign.CurrentFormat,
         new RuntimeSource("09688b016a9392eadceae70c2a1d7b2a4ee04a8114e0f7028a301fa0ed4eb39e", 418, "1.3.0", "c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00"),
         GameRules,
-        new RuntimeCatalog(22, "Tier {tier} Raid Boss", "Raid Boss", new Dictionary<int, CatalogTroop>
-        {
-            [125] = new("Morrigan", false, true, SkirmishMap: 723),
-            [126] = new("Morrigan", true, true, 4, Unpooled: "route"),
-        }),
+        new RuntimeCatalog(22, "Tier {tier} Raid Boss", "Raid Boss"),
         new Dictionary<int, RuntimeTier> { [2] = Tier },
         new RuntimeTier(new GridSize(15, 6), StatFactors.One, 3, [], new Dictionary<int, double>(), new Dictionary<int, double>(), TraitBlock.Empty),
         new Dictionary<string, RuntimeBoss> { ["Morrigan"] = Boss },
@@ -381,7 +403,6 @@ internal static class Samples
             [723] = new(false, false, []),
         },
         new Dictionary<int, RuntimeTileset> { [7] = new([1540, 1541], [], null, null, 57, new TileRef("Dungeon_B", 57)) },
-        new BossFightOverrides([1], [299]),
         new Dictionary<string, RuntimeHazard> { [FireId] = Hazard },
         new Dictionary<string, RuntimeDebrisType>
         {
@@ -419,6 +440,11 @@ internal static class Samples
         new HazardPlacedEvent(1, FireId, [new GridCell(1, 0), new GridCell(2, 0)], 1, 4, "c1", "5e6f7a8b"),
         new HazardExpiredEvent(1, FireId, [new GridCell(3, 1)], HazardEnd.Replaced),
         new UnitFellEvent(1, 2, "c1"),
+        new EnemyFellEvent(1, 0, FirstSlot, 301),
+        new AllEnemiesFellEvent(1),
+        new EnemyJoinedEvent(1, 1, ReserveSlot, 302, true, "9f0a1b2c"),
+        new EnemyTransformedEvent(1, 1, ReserveSlot, FirstSlot, 301, 2_500_000, "8e9f0a1b"),
+        new EnemyLeftEvent(1, 1, FirstSlot, 301, "8e9f0a1b"),
         new WarningEvent(1, WarningEvent.RuleLoop, "0d9e8f7a"),
         new TurnEndEvent(1),
         new HazardExpiredEvent(1, FireId, [new GridCell(7, 2)], HazardEnd.Lifetime),
@@ -483,12 +509,12 @@ internal static class Samples
     {
         List<object> all =
         [
-            Design, Design.Source, Design.Catalog, Design.Catalog.Troops[125], Design.States[10], Design.Maps[88], Design.Tilesets[7], Design.BossFights,
+            Design, Design.Source, Design.Catalog, Design.States[10], Design.Maps[88], Design.Tilesets[7],
             GameRules, GameRules.Grid, GameRules.Tiers[0], GameRules.Units, GameRules.Ap, GameRules.Ap.Cost, GameRules.Power, GameRules.Share,
             GameRules.Kinds, GameRules.CrowdControl, GameRules.Debris, GameRules.Presentation, GameRules.Presentation.Animation,
             GameRules.Presentation.Animation.Area, GameRules.Presentation.Danger, GameRules.Limits,
             Tier, Tier.Stats, Boss.StartDebris!, Design.DebrisTypes![CrystalId], Traits, Traits.Entries[1], Traits.Features[0], Traits.Entries[1].LastStand!, Traits.StateRecipes[1], Counter,
-            Boss, Boss.Troops[0], Boss.Enemies[0], Boss.Enemies[0].Stats, Boss.NormalAttack, Boss.BattleMaps[0], Boss.Actions[301][0], Boss.Actions[301][0].FollowUp!,
+            Boss, Boss.Event, new BattleEventRef(0, CommonEvent: 40), Boss.Enemies[0], Boss.Reserve![0], Boss.Enemies[0].Stats, Boss.NormalAttack, Boss.BattleMaps[0], Boss.Actions[FirstSlot][0], Boss.Actions[FirstSlot][0].FollowUp!,
             CustomSkill, CustomSkill.Fields, CustomSkill.Fields.Damage, CustomSkill.Effects[0], CustomSkill.Stance!,
             AreaSkill, AreaSkill.Shape, AreaSkill.Targeting, AreaSkill.Targeting.Zone!, AreaSkill.Damage, Formula, AreaSkill.Spread, AreaSkill.Falloff,
             AreaSkill.Presentation, AreaSkill.Presentation.CellAnimation!, AreaSkill.Presentation.CellFlash!, AreaSkill.Presentation.Animation,

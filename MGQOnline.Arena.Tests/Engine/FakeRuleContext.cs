@@ -2,7 +2,8 @@
 //  FakeRuleContext.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Handed the debris placed back as cells
+//      Paulinchen  2026-10-23: Brought enemies in, took them out and transformed them
+//                            - Handed the debris placed back as cells
 //      Paulinchen  2026-10-22: Recorded the hazards placed
 //                            - Listed the skills of a cast chain
 //      Paulinchen  2026-10-21: Created
@@ -11,6 +12,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using MGQOnline.Arena.Debris;
 using MGQOnline.Arena.Engine;
@@ -82,6 +84,11 @@ internal sealed class FakeRuleContext : IRuleContext
     public IReadOnlyList<int> Seats => UnitSeats;
 
     /// <summary>
+    /// Gets the enemy slot of each enemy index whose slot is not <see cref="SlotOfIndex"/>.
+    /// </summary>
+    public Dictionary<int, string> Slots { get; } = [];
+
+    /// <summary>
     /// Gets the sealed skills.
     /// </summary>
     public HashSet<SkillRef> Sealed { get; } = [];
@@ -143,6 +150,52 @@ internal sealed class FakeRuleContext : IRuleContext
 
     /// <inheritdoc />
     public bool TurnHolds(int a, int b, int turn) => TurnCondition(a, b, turn);
+
+    /// <summary>
+    /// Gives the slot an enemy index has until a join or a transform gives it another.
+    /// </summary>
+    /// <param name="enemy">The enemy's index.</param>
+    /// <returns>The slot: the index in invariant digits.</returns>
+    public static string SlotOfIndex(int enemy) => enemy.ToString(CultureInfo.InvariantCulture);
+
+    /// <inheritdoc />
+    public string? SlotOf(int enemy) => Slots.TryGetValue(enemy, out string? slot) ? slot : SlotOfIndex(enemy);
+
+    /// <inheritdoc />
+    public int? EnemyIdOf(int enemy) => enemy;
+
+    /// <inheritdoc />
+    public IReadOnlyList<BattleEvent>? JoinEnemy(string slot, string ruleId)
+    {
+        int index = Living.Count == 0 ? 0 : Living.Max() + 1;
+        Living.Add(index);
+        Slots[index] = slot;
+        EnemyJoinedEvent joined = new(0, index, slot, index, false, ruleId);
+        Logged.Add(joined);
+        return [joined];
+    }
+
+    /// <inheritdoc />
+    public EnemyLeftEvent? RemoveEnemy(int enemy, string ruleId)
+    {
+        if (!Living.Remove(enemy))
+        {
+            return null;
+        }
+
+        EnemyLeftEvent left = new(0, enemy, SlotOf(enemy)!, enemy, ruleId);
+        Logged.Add(left);
+        return left;
+    }
+
+    /// <inheritdoc />
+    public EnemyTransformedEvent? TransformEnemy(int enemy, string into, bool keepHpRatio, string ruleId)
+    {
+        EnemyTransformedEvent transformed = new(0, enemy, SlotOf(enemy)!, into, enemy, HpOf(StateHolder.Boss, enemy), ruleId);
+        Slots[enemy] = into;
+        Logged.Add(transformed);
+        return transformed;
+    }
 
     /// <inheritdoc />
     public FormulaStats StatsOf(StateHolder holder, int index)

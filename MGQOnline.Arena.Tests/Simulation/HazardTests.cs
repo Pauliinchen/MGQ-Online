@@ -2,7 +2,8 @@
 //  HazardTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Took the random debris from the game rule
+//      Paulinchen  2026-10-23: Keyed the actions by enemy slot
+//                            - Took the random debris from the game rule
 //      Paulinchen  2026-10-22: Created
 //
 //----------------------------------------------------------------
@@ -203,7 +204,7 @@ public sealed class HazardTests
             {
                 [SimFixtures.BossKey] = design.Bosses[SimFixtures.BossKey] with
                 {
-                    Actions = new Dictionary<int, IReadOnlyList<RuntimeAction>> { [SimFixtures.EnemyId] = [SimFixtures.Action("strike", SimFixtures.Strike)] },
+                    Actions = new Dictionary<string, IReadOnlyList<RuntimeAction>> { [SimFixtures.Slot] = [SimFixtures.Action("strike", SimFixtures.Strike)] },
                     Skills = new Dictionary<string, RuntimeSkill>(design.Bosses[SimFixtures.BossKey].Skills) { [SimFixtures.Strike.Key] = strike },
                 },
             },

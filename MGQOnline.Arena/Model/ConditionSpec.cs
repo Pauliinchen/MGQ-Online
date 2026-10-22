@@ -2,6 +2,7 @@
 //  ConditionSpec.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Added the enemy is condition
 //      Paulinchen  2026-10-22: Added the not in chain condition
 //      Paulinchen  2026-10-21: Created
 //
@@ -22,6 +23,7 @@ namespace MGQOnline.Arena.Model;
 [JsonDerivedType(typeof(TurnAtLeastCondition), "turnAtLeast")]
 [JsonDerivedType(typeof(NotSealedCondition), "notSealed")]
 [JsonDerivedType(typeof(NotInChainCondition), "notInChain")]
+[JsonDerivedType(typeof(EnemyIsCondition), "enemyIs")]
 public abstract record ConditionSpec;
 
 /// <summary>
@@ -67,3 +69,9 @@ public sealed record NotSealedCondition(SkillRef Skill) : ConditionSpec;
 /// </summary>
 /// <param name="Skill">The skill.</param>
 public sealed record NotInChainCondition(SkillRef Skill) : ConditionSpec;
+
+/// <summary>
+/// Holds while the rule's enemy is of an enemy slot, which a transform changes.
+/// </summary>
+/// <param name="Slot">The enemy slot.</param>
+public sealed record EnemyIsCondition(string Slot) : ConditionSpec;

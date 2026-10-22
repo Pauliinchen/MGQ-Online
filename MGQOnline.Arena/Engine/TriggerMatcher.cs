@@ -2,6 +2,7 @@
 //  TriggerMatcher.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Matched the enemy fell and all enemies fell triggers
 //      Paulinchen  2026-10-22: Matched resolved casts by their skill
 //                            - Matched unit hits by the main target
 //      Paulinchen  2026-10-21: Created
@@ -41,6 +42,8 @@ internal static class TriggerMatcher
         (BossHpBelowTrigger below, BossHpBelowEvent crossed) => below.Percent == crossed.Percent,
         (StateAddedTrigger added, StateAddedEvent landed) => added.State == landed.State && added.On == landed.On,
         (UnitFellTrigger, UnitFellEvent) => true,
+        (EnemyFellTrigger fell, EnemyFellEvent fallen) => fell.Slot is null || fell.Slot == fallen.Slot,
+        (AllEnemiesFellTrigger, AllEnemiesFellEvent) => true,
         _ => false,
     };
 

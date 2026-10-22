@@ -2,6 +2,7 @@
 //  EffectSpec.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Added the enemy joins, leaves and transforms effects
 //      Paulinchen  2026-10-22: Added the place hazard effect
 //                            - Added the clear debuffs effect
 //      Paulinchen  2026-10-21: Created
@@ -24,6 +25,9 @@ namespace MGQOnline.Arena.Model;
 [JsonDerivedType(typeof(PlaceDebrisEffect), "placeDebris")]
 [JsonDerivedType(typeof(ClearDebuffsEffect), "clearDebuffs")]
 [JsonDerivedType(typeof(PlaceHazardEffect), "placeHazard")]
+[JsonDerivedType(typeof(EnemyJoinsEffect), "enemyJoins")]
+[JsonDerivedType(typeof(EnemyLeavesEffect), "enemyLeaves")]
+[JsonDerivedType(typeof(EnemyTransformsEffect), "enemyTransforms")]
 public abstract record EffectSpec;
 
 /// <summary>
@@ -95,3 +99,24 @@ public sealed record ClearDebuffsEffect(RuleTarget From) : EffectSpec;
 /// and random cells come from the whole grid.</remarks>
 /// <param name="Hazard">The hazards.</param>
 public sealed record PlaceHazardEffect(HazardPlacement Hazard) : EffectSpec;
+
+/// <summary>
+/// Brings an enemy slot into the fight at full HP and MP, with the slot's raid boss flag, stats and actions.
+/// </summary>
+/// <param name="Slot">The slot, of the reserve or of the starting line-up.</param>
+public sealed record EnemyJoinsEffect(string Slot) : EffectSpec;
+
+/// <summary>
+/// Takes enemies out of the fight; they count nowhere afterwards.
+/// </summary>
+/// <param name="Slot">The slot whose every standing enemy leaves, or null for the rule's enemy.</param>
+public sealed record EnemyLeavesEffect(string? Slot = null) : EffectSpec;
+
+/// <summary>
+/// Turns enemies into another enemy slot, which gives them its enemy id, stats, action points and
+/// actions; their states and raid boss flag stay.
+/// </summary>
+/// <param name="Into">The slot they become, of the reserve or of the starting line-up.</param>
+/// <param name="KeepHpRatio">Whether HP and MP keep their ratio of the max; otherwise they are cut to the new max, as the game's transform does.</param>
+/// <param name="Slot">The slot whose every standing enemy transforms, or null for the rule's enemy, which may have fallen.</param>
+public sealed record EnemyTransformsEffect(string Into, bool KeepHpRatio, string? Slot = null) : EffectSpec;

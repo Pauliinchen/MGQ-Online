@@ -16,7 +16,7 @@ namespace MGQOnline.Arena.Simulation;
 /// The boss's telegraphed plan of a turn.
 /// </summary>
 /// <param name="Turn">The turn.</param>
-/// <param name="Enemies">Each living enemy's plan in troop order.</param>
+/// <param name="Enemies">Each standing enemy's plan in line-up order.</param>
 public sealed record TurnPlan(int Turn, IReadOnlyList<EnemyPlan> Enemies)
 {
     /// <summary>

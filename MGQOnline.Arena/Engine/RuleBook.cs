@@ -2,6 +2,7 @@
 //  RuleBook.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Kept the rules per enemy slot for the whole boss and the fight rules apart
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -14,19 +15,21 @@ using MGQOnline.Arena.Model;
 namespace MGQOnline.Arena.Engine;
 
 /// <summary>
-/// The rules of one boss fight per enemy of the fighting troop, with the facts the rules ask about.
+/// The rules of one boss fight per enemy slot and for the fight as a whole, with the facts the rules ask about.
 /// </summary>
+/// <remarks>The rules hang on slots rather than places, so an enemy that joins or transforms
+/// follows the rules of its slot's action list.</remarks>
 public sealed class RuleBook
 {
     /// <summary>
-    /// The rules per enemy index, mark reactions first.
+    /// The per-enemy rules per enemy slot, mark reactions first.
     /// </summary>
-    private readonly Dictionary<int, IReadOnlyList<RuleSpec>> _rulesByEnemy = [];
+    private readonly Dictionary<string, IReadOnlyList<RuleSpec>> _rulesBySlot = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// The boss HP percents of the bossHpBelow rules per enemy index, highest first.
+    /// The boss HP percents of the bossHpBelow rules per enemy slot, the fight rules' included, highest first.
     /// </summary>
-    private readonly Dictionary<int, IReadOnlyList<int>> _thresholdsByEnemy = [];
+    private readonly Dictionary<string, IReadOnlyList<int>> _thresholdsBySlot = new(StringComparer.Ordinal);
 
     /// <summary>
     /// The ids of the scheduled actions.
@@ -42,61 +45,81 @@ public sealed class RuleBook
     /// Initializes a rule book.
     /// </summary>
     /// <remarks>
-    /// A rule lowered from an action's preset belongs to the enemies whose action list holds the action,
-    /// since a turn schedule names no action; every other rule belongs to every enemy.
+    /// A rule lowered from an action's preset belongs to the slots whose action list holds the action,
+    /// since a turn schedule names no action; every other per-enemy rule belongs to every slot.
     /// </remarks>
     /// <param name="rules">The rules in design order.</param>
-    /// <param name="actionsByEnemy">The action list per enemy index, one entry for every enemy of the troop.</param>
+    /// <param name="actionsBySlot">The action list per enemy slot, one entry for every slot the fight may hold.</param>
     /// <param name="skillTypes">The skill types by skill key.</param>
     public RuleBook(
         IReadOnlyList<RuleSpec> rules,
-        IReadOnlyDictionary<int, IReadOnlyList<RuntimeAction>> actionsByEnemy,
+        IReadOnlyDictionary<string, IReadOnlyList<RuntimeAction>> actionsBySlot,
         IReadOnlyDictionary<string, IReadOnlyList<int>> skillTypes)
     {
         ArgumentNullException.ThrowIfNull(rules);
-        ArgumentNullException.ThrowIfNull(actionsByEnemy);
+        ArgumentNullException.ThrowIfNull(actionsBySlot);
         ArgumentNullException.ThrowIfNull(skillTypes);
         _skillTypes = skillTypes;
-        _scheduledActions = actionsByEnemy.Values.SelectMany(actions => actions).Where(action => action.Scheduled).Select(action => action.Id).ToHashSet();
+        _scheduledActions = actionsBySlot.Values.SelectMany(actions => actions).Where(action => action.Scheduled).Select(action => action.Id).ToHashSet();
         RuleSpec[] ordered = rules.Where(IsMarkReaction).Concat(rules.Where(rule => !IsMarkReaction(rule))).ToArray();
-        foreach ((int enemy, IReadOnlyList<RuntimeAction> actions) in actionsByEnemy)
+        FightRules = ordered.Where(IsFightRule).ToArray();
+        RuleSpec[] perEnemy = ordered.Where(rule => !IsFightRule(rule)).ToArray();
+        foreach ((string slot, IReadOnlyList<RuntimeAction> actions) in actionsBySlot)
         {
-            RuleSpec[] own = ordered.Where(rule => !IsActionOwned(rule) || actions.Any(action => action.Id == rule.Origin.ItemId)).ToArray();
-            _rulesByEnemy[enemy] = own;
-            _thresholdsByEnemy[enemy] = own.Select(rule => rule.Trigger).OfType<BossHpBelowTrigger>().Select(trigger => trigger.Percent)
+            RuleSpec[] own = perEnemy.Where(rule => !IsActionOwned(rule) || actions.Any(action => action.Id == rule.Origin.ItemId)).ToArray();
+            _rulesBySlot[slot] = own;
+            _thresholdsBySlot[slot] = own.Concat(FightRules).Select(rule => rule.Trigger).OfType<BossHpBelowTrigger>().Select(trigger => trigger.Percent)
                 .Distinct().OrderByDescending(percent => percent).ToArray();
         }
     }
 
     /// <summary>
-    /// Makes the rule book of a boss's troop.
+    /// Gets the fight rules in the order they are matched: mark reactions first, then design order.
+    /// </summary>
+    public IReadOnlyList<RuleSpec> FightRules { get; }
+
+    /// <summary>
+    /// Makes the rule book of a boss's fight, for its starting enemies and its reserve.
     /// </summary>
     /// <param name="boss">The boss.</param>
-    /// <param name="troop">The troop being fought.</param>
     /// <returns>The rule book.</returns>
-    public static RuleBook ForTroop(RuntimeBoss boss, int troop)
+    public static RuleBook ForBoss(RuntimeBoss boss)
     {
         ArgumentNullException.ThrowIfNull(boss);
-        Dictionary<int, IReadOnlyList<RuntimeAction>> actionsByEnemy = boss.Enemies
-            .Where(enemy => enemy.Troop == troop)
-            .ToDictionary(enemy => enemy.Index, enemy => boss.Actions.TryGetValue(enemy.EnemyId, out IReadOnlyList<RuntimeAction>? actions) ? actions : []);
+        IEnumerable<string> slots = boss.Actions.Keys
+            .Concat(boss.Enemies.Select(enemy => enemy.Slot))
+            .Concat(boss.Reserve?.Select(enemy => enemy.Slot) ?? []);
+        Dictionary<string, IReadOnlyList<RuntimeAction>> actionsBySlot = slots
+            .Distinct(StringComparer.Ordinal)
+            .ToDictionary(slot => slot, slot => boss.Actions.TryGetValue(slot, out IReadOnlyList<RuntimeAction>? actions) ? actions : [], StringComparer.Ordinal);
         Dictionary<string, IReadOnlyList<int>> skillTypes = boss.Skills.ToDictionary(pair => pair.Key, pair => pair.Value.Facts.SkillTypes);
-        return new RuleBook(boss.Rules, actionsByEnemy, skillTypes);
+        return new RuleBook(boss.Rules, actionsBySlot, skillTypes);
     }
 
     /// <summary>
-    /// Gives an enemy's rules in the order they are matched: mark reactions first, then design order.
+    /// Tells whether a rule is matched once for the fight rather than per enemy.
     /// </summary>
-    /// <param name="enemy">The enemy's index.</param>
-    /// <returns>The rules, empty for an enemy outside the troop.</returns>
-    public IReadOnlyList<RuleSpec> RulesOf(int enemy) => _rulesByEnemy.TryGetValue(enemy, out IReadOnlyList<RuleSpec>? rules) ? rules : [];
+    /// <param name="rule">The rule.</param>
+    /// <returns>Whether its scope is the fight or its trigger waits for every enemy to fall.</returns>
+    public static bool IsFightRule(RuleSpec rule)
+    {
+        ArgumentNullException.ThrowIfNull(rule);
+        return rule.Scope == RuleScope.Fight || rule.Trigger is AllEnemiesFellTrigger;
+    }
 
     /// <summary>
-    /// Gives the boss HP percents whose crossing the simulation reports for an enemy.
+    /// Gives the per-enemy rules of an enemy slot in the order they are matched: mark reactions first, then design order.
     /// </summary>
-    /// <param name="enemy">The enemy's index.</param>
-    /// <returns>The percents, highest first.</returns>
-    public IReadOnlyList<int> HpThresholdsOf(int enemy) => _thresholdsByEnemy.TryGetValue(enemy, out IReadOnlyList<int>? percents) ? percents : [];
+    /// <param name="slot">The enemy slot.</param>
+    /// <returns>The rules, empty for a slot the boss does not know.</returns>
+    public IReadOnlyList<RuleSpec> RulesOf(string slot) => _rulesBySlot.TryGetValue(slot, out IReadOnlyList<RuleSpec>? rules) ? rules : [];
+
+    /// <summary>
+    /// Gives the boss HP percents whose crossing the simulation reports for an enemy slot.
+    /// </summary>
+    /// <param name="slot">The enemy slot.</param>
+    /// <returns>The percents of its rules and the fight rules, highest first.</returns>
+    public IReadOnlyList<int> HpThresholdsOf(string slot) => _thresholdsBySlot.TryGetValue(slot, out IReadOnlyList<int>? percents) ? percents : [];
 
     /// <summary>
     /// Tells whether an action is scheduled.
