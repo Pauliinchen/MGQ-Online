@@ -2,7 +2,8 @@
 //  design_builds.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Tested that a request that is not as it should be takes no rate limit token
+//      Paulinchen  2026-10-22: Tested that the world rooms hear racing publishes in the order the builds went live
+//                            - Tested that a request that is not as it should be takes no rate limit token
 //                            - Tested that a publish refuses a build compiled against another live build
 //                            - Created
 //
@@ -301,6 +302,42 @@ test("with DESIGN_WORLD_NOTICE a publish names the world-room frame and the pool
   const second = await buildNow(book);
   await call(book, "POST", "/publish", { buildId: second.id });
   assert.deepEqual((await call(book, "POST", "/rollback")).notice, { text: `raid_design ${first.marshalSha} ${first.runtimeSha}`, resetKeys: [] });
+});
+
+test("the world rooms hear racing rollbacks one at a time, in the order the builds went live", async () => {
+  const { book, compiler } = await buildBook({ worldNotice: true });
+  const first = await buildNow(book);
+  await call(book, "POST", "/publish", { buildId: first.id });
+  compiler.outcome = (job) => compiledBuild(job.seq + 100);
+  const second = await buildNow(book);
+  await call(book, "POST", "/publish", { buildId: second.id });
+  const textOf = (build) => `raid_design ${build.marshalSha} ${build.runtimeSha}`;
+
+  const started = [];
+  const told = [];
+  let release;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  book.worldTeller = async (notice) => {
+    started.push(notice.text);
+
+    if (started.length === 1) {
+      await held;
+    }
+
+    told.push(notice.text);
+  };
+
+  const answers = await Promise.all([call(book, "POST", "/rollback"), call(book, "POST", "/rollback")]);
+  assert.deepEqual(answers.map((answer) => answer.status), [200, 200]);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(started.length, 1, "the later notice waits for the earlier one");
+
+  release();
+  await book.notices;
+  assert.deepEqual(told, [textOf(first), textOf(second)]);
+  assert.equal((await call(book, "GET", "/builds")).body.live, second.id);
 });
 
 test("an admin raises the lowest format up to the design format, which then holds older designers back", async () => {

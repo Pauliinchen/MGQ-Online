@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Built the Raid design with the designer's compiler, published and rolled back builds and served the live build to games
+//      Paulinchen  2026-10-22: Told the world rooms of new live builds in the order they went live
+//                            - Built the Raid design with the designer's compiler, published and rolled back builds and served the live build to games
 //      Paulinchen  2026-10-21: Opened the designer socket and served the newest designer release
 //                            - Answered the Raid designs' entity, push, history and designer routes and kept the designs beside the worlds
 //      Paulinchen  2026-10-15: Marked every player offline as it starts
@@ -716,11 +717,6 @@ export function createRelay({
 
       if (answer.removed) {
         designs.presence.disconnect(answer.removed, DESIGN_CLOSE.notDesigner);
-      }
-
-      // The build is live by now, so a failed notice is logged, not answered.
-      if (answer.notice) {
-        await noticeWorlds(answer.notice).catch((error) => log.error(errorLine(new Date(), "notice of the live design", error)));
       }
 
       if (answer.file) {
@@ -1853,6 +1849,8 @@ export function createRelay({
   designerPingTimer.unref();
   const presenceTimer = setInterval(() => designs.presence.expire(), DESIGN_SOCKET.expireEveryMs);
   presenceTimer.unref();
+  // The build is live by then, so a failed notice is logged, not answered.
+  designs.worldTeller = (notice) => noticeWorlds(notice).catch((error) => log.error(errorLine(new Date(), "notice of the live design", error)));
   const designerReleaseTimer = designs.releases
     ? setInterval(() => checkDesignerRelease().catch((error) => log.error(errorLine(new Date(), "check of the designer releases", error))), designerReleaseEveryMs)
     : null;
