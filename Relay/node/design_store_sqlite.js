@@ -2,6 +2,7 @@
 //  design_store_sqlite.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Kept the builds, their blobs and the live build
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -67,6 +68,22 @@ export function openSqliteDesignStore(path) {
   const seen = db.prepare("UPDATE designers SET last_seen = ? WHERE id = ?");
   const blob = db.prepare("SELECT gz FROM design_blobs WHERE sha256 = ?");
   const blobBytes = db.prepare("UPDATE design_blobs SET gz = ? WHERE sha256 = ?");
+  const blobRow = db.prepare("INSERT OR IGNORE INTO design_blobs (sha256, kind, size, gz, at) VALUES (?, ?, ?, ?, ?)");
+  const blobInfo = db.prepare("SELECT sha256, kind, size, at FROM design_blobs WHERE sha256 = ?");
+  const buildRow = db.prepare("INSERT INTO design_builds (seq, status, by, at) VALUES (?, 'queued', ?, ?)");
+  const build = db.prepare("SELECT * FROM design_builds WHERE id = ?");
+  const builds = db.prepare("SELECT * FROM design_builds ORDER BY id DESC LIMIT ?");
+  const buildStatus = db.prepare("UPDATE design_builds SET status = ? WHERE id = ?");
+  const buildDone = db.prepare(`UPDATE design_builds SET status = ?, report = ?, snapshot_sha = ?, runtime_sha = ?, marshal_sha = ?, format = ?, runtime_format = ?,
+    compiler = ?, game_data = ? WHERE id = ?`);
+  const unfinished = db.prepare("UPDATE design_builds SET status = 'failed', report = ? WHERE status IN ('queued', 'compiling') RETURNING id");
+  const live = db.prepare("SELECT * FROM design_live WHERE channel = 'live'");
+  const liveRow = db.prepare("INSERT OR REPLACE INTO design_live (channel, build_id, previous_build_id, by, at) VALUES ('live', ?, ?, ?, ?)");
+  const dropBuilds = db.prepare(`DELETE FROM design_builds WHERE status NOT IN ('queued', 'compiling')
+    AND id NOT IN (SELECT id FROM design_builds ORDER BY id DESC LIMIT ?)
+    AND id NOT IN (SELECT build_id FROM design_live UNION SELECT previous_build_id FROM design_live WHERE previous_build_id IS NOT NULL)`);
+  const dropBlobs = db.prepare(`DELETE FROM design_blobs WHERE sha256 NOT IN (SELECT snapshot_sha FROM design_builds WHERE snapshot_sha IS NOT NULL
+    UNION SELECT runtime_sha FROM design_builds WHERE runtime_sha IS NOT NULL UNION SELECT marshal_sha FROM design_builds WHERE marshal_sha IS NOT NULL)`);
 
   /**
    * Sets the design format and the lowest design format the relay takes.
@@ -110,6 +127,28 @@ export function openSqliteDesignStore(path) {
     putDesigner: async ({ id, name, admin, addedBy, at }) => void designerRow.run(id, name, admin ? 1 : 0, addedBy, at),
     removeDesigner: async (id) => void removeDesigner.run(id),
     seen: async (id, at) => void seen.run(at, id),
+    addBuild: async ({ seq, by, at }) => Number(buildRow.run(seq, by, at).lastInsertRowid),
+    build: async (id) => plain(build.get(id)),
+    builds: async (limit) => builds.all(limit).map(plain),
+    setBuildStatus: async (id, status) => void buildStatus.run(status, id),
+    finishBuild: async (id, fields, finished) => transaction(db, () => {
+      for (const blob of finished) {
+        blobRow.run(blob.sha256, blob.kind, blob.size, blob.gz, blob.at);
+      }
+
+      buildDone.run(fields.status, fields.report, fields.snapshotSha, fields.runtimeSha, fields.marshalSha, fields.format, fields.runtimeFormat, fields.compiler, fields.gameData, id);
+    }),
+    failUnfinished: async (report) => unfinished.all(report).map((row) => Number(row.id)).sort((left, right) => left - right),
+    blobInfo: async (sha256) => plain(blobInfo.get(sha256)),
+    live: async () => plain(live.get()),
+    setLive: async ({ buildId, previousBuildId, by, at }) => void liveRow.run(buildId, previousBuildId, by, at),
+    tidyBuilds: async (keep) => {
+      let counts;
+      transaction(db, () => {
+        counts = { builds: Number(dropBuilds.run(keep).changes), blobs: Number(dropBlobs.run().changes) };
+      });
+      return counts;
+    },
     exportTables: async () => Object.fromEntries(DESIGN_TABLE_NAMES.map((name) => [name, db.prepare(`SELECT * FROM ${name} ORDER BY ${ORDER[name]}`).all()
       .map(({ gz, ...row }) => plain(row))])),
     blob: async (sha256) => blob.get(sha256)?.gz,

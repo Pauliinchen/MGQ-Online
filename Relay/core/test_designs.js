@@ -2,6 +2,7 @@
 //  test_designs.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Replayed the build exchanges over a compiler the tests drive and took canonical JSON from the designs
 //      Paulinchen  2026-10-21: Replayed the release exchanges over a release the relay serves
 //                            - Created
 //
@@ -10,13 +11,14 @@
 // What the design tests share: the contract's fixtures, canonical JSON to compare answers by, and
 // the state each fixture's exchanges start from, so every design store replays them alike.
 
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { gzipSync } from "node:zlib";
 import { DesignerReleases } from "./designer_releases.js";
 import { playerIdOf } from "./directory.js";
 import { DESIGN_FORMAT_HEADER, DESIGNER_HEADER, DESIGNER_VERSION_HEADER } from "./gate.js";
-import { DesignBook, handleDesignRequest } from "./designs.js";
+import { DesignBook, canonicalJson, handleDesignRequest } from "./designs.js";
 import { PLAYER_HEADER } from "./relay.js";
 
 /**
@@ -64,65 +66,7 @@ export function fixtureNames() {
  */
 export const DESIGNERS = Object.freeze(Object.fromEntries(fixture("identity.json").designers.map((designer, index) => ["ABC"[index], Object.freeze(designer)])));
 
-/**
- * Writes a value as canonical JSON, as the contract compares values: object keys in ordinal order,
- * nulls in objects left out, integral numbers as integers and others without an exponent.
- *
- * @param {unknown} value The value.
- * @returns {string} The canonical text.
- * @throws {Error} For a number the contract refuses.
- */
-export function canonicalJson(value) {
-  if (value === null || value === undefined) {
-    return "null";
-  }
-
-  if (typeof value === "number") {
-    return canonicalNumber(value);
-  }
-
-  if (typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
-  }
-
-  const keys = Object.keys(value).filter((key) => value[key] !== null && value[key] !== undefined).sort();
-  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
-}
-
-/**
- * Writes a number as the contract does.
- *
- * @param {number} value The number.
- * @returns {string} The number's text.
- * @throws {Error} For NaN, Infinity and non-integral numbers of 1e15 or more.
- */
-function canonicalNumber(value) {
-  if (Number.isInteger(value)) {
-    return Number.isSafeInteger(value) ? String(value) : BigInt(value).toString();
-  }
-
-  if (!Number.isFinite(value) || Math.abs(value) >= 1e15) {
-    throw new Error(`the contract refuses the number ${value}`);
-  }
-
-  const text = String(value);
-
-  if (!text.includes("e")) {
-    return text;
-  }
-
-  // Only numbers below 1e-6 come with an exponent here, always a negative one.
-  const [mantissa, exponent] = text.split("e");
-  const unsigned = mantissa.replace("-", "");
-  const point = unsigned.indexOf(".");
-  const digits = unsigned.replace(".", "");
-  const whole = (point < 0 ? digits.length : point) + Number(exponent);
-  return `${mantissa.startsWith("-") ? "-" : ""}0.${"0".repeat(-whole)}${digits}`;
-}
+export { canonicalJson };
 
 /**
  * Reads the headers of a fixture's request as the design routes take them.
@@ -173,12 +117,13 @@ export async function seedEntities(store, entities) {
  * Makes a design book over a store as the fixtures' relay runs it, with designers A and B listed.
  *
  * @param {import("./designs.js").DesignStore} store The store.
- * @param {{presence?: {of: (id: string) => {online: boolean, editing: string | null}}, releases?: () => object}} [options] Who is online; makes the designer release served, none unless given.
+ * @param {{presence?: {of: (id: string) => {online: boolean, editing: string | null}}, releases?: () => object, compiler?: () => object}} [options] Who is online; makes the designer release served, none unless given; makes the compiler, none unless given.
  * @returns {Promise<DesignBook>} The book.
  */
-export async function fixtureBook(store, { presence, releases } = {}) {
+export async function fixtureBook(store, { presence, releases, compiler } = {}) {
   const book = new DesignBook(store, {
     clock: () => NOW * 1000, minVersion: MIN_VERSION, relayAdmins: new Set([await playerIdOf(RELAY_ADMIN_KEY)]), ...(presence ? { presence } : {}), ...(releases ? { releases: releases() } : {}),
+    ...(compiler ? { compiler: compiler() } : {}),
   });
 
   for (const designer of [DESIGNERS.A, DESIGNERS.B]) {
@@ -217,12 +162,64 @@ export function fixtureReleases() {
 }
 
 /**
- * The exchanges that belong to later relay packages, which this relay answers otherwise: the
- * builds (R3). The socket and the manifest hold no exchanges.
+ * Makes a compiler that compiles in memory, as the tests drive it: each compile waits for the
+ * test's go-ahead when one is asked for, and ends as the test sets.
+ *
+ * @param {{designFormat?: number, message?: string | null}} [probe] What its probe names: design format 1 and no refusal unless given.
+ * @returns {{probe: () => Promise<object>, prepare: (id: number, snapshot: string) => Promise<void>, compile: (job: object) => Promise<object>, clean: (id: number) => Promise<void>, reset: () => Promise<void>, snapshots: Map<number, string>, jobs: object[], probes: number, hold: () => () => void, outcome: (job: object) => object}} The compiler, with the snapshots it was given, the jobs it ran, how often it was probed, a hold that keeps the next compiles waiting until its release is called, and the outcome the test sets.
  */
-export const DEFERRED = Object.freeze({
-  "refusals.json": Object.freeze(["build on an old seq", "compiler missing"]),
-});
+export function fakeCompiler({ designFormat = 1, message = null } = {}) {
+  let gate = Promise.resolve();
+  const compiler = {
+    snapshots: new Map(),
+    jobs: [],
+    probes: 0,
+    probe: async () => {
+      compiler.probes += 1;
+      return { designFormat, version: "1.3.0", message };
+    },
+    prepare: async (id, snapshot) => void compiler.snapshots.set(id, snapshot),
+    compile: async (job) => {
+      compiler.jobs.push(job);
+      await gate;
+      return compiler.outcome(job);
+    },
+    clean: async () => {},
+    reset: async () => {},
+    hold: () => {
+      let release;
+      gate = new Promise((resolve) => {
+        release = resolve;
+      });
+      return release;
+    },
+    outcome: (job) => compiledBuild(job.seq),
+  };
+  return compiler;
+}
+
+/**
+ * Makes the result of an ok build whose blobs are made of its seq, so each seq gives other bytes.
+ *
+ * @param {number} seq The build's seq.
+ * @param {{removed?: string[], renamed?: object[]}} [catalogDiff] The catalog changes its report names.
+ * @returns {{status: string, report: object, fields: object, blobs: object[]}} The result.
+ */
+export function compiledBuild(seq, catalogDiff = {}) {
+  const blob = (kind) => {
+    const text = `${kind} ${seq}`;
+    const sha256 = createHash("sha256").update(text).digest("hex");
+    return { sha256, kind, size: text.length, gz: new Uint8Array(gzipSync(text)) };
+  };
+  const blobs = [blob("marshal"), blob("runtime"), blob("snapshot")];
+  const [marshal, runtime, snapshot] = blobs;
+  const report = {
+    ok: true, designFormat: 1, format: 3, runtimeFormat: 1, seq, snapshotSha256: snapshot.sha256, marshal: { sha256: marshal.sha256, size: marshal.size }, runtime: { sha256: runtime.sha256, size: runtime.size },
+    compiler: "1.3.0", gameData: "ab".repeat(32), bossKeys: [], catalogDiff: { removed: [], renamed: [], troopsChanged: [], ...catalogDiff }, issues: [],
+  };
+  const fields = { snapshotSha: snapshot.sha256, runtimeSha: runtime.sha256, marshalSha: marshal.sha256, format: 3, runtimeFormat: 1, compiler: "1.3.0", gameData: report.gameData };
+  return { status: "ok", report, fields, blobs };
+}
 
 /**
  * The state each exchange fixture starts from, and what changes a request before it is sent.
@@ -281,6 +278,8 @@ export const SCENARIOS = Object.freeze([
     request: {
       "body too big": (request) => ({ ...request, body: { ...request.body, changes: [{ ...request.body.changes[0], body: { ...request.body.changes[0].body, description: "x".repeat(300 * 1024) } }] } }),
     },
+    // A compiler that names no design format, as a missing one.
+    compiler: () => fakeCompiler({ designFormat: 0 }),
   },
   {
     file: "release.json",
@@ -306,10 +305,6 @@ export async function replayScenarios(makeStore) {
 
     try {
       for (const exchange of fixture(scenario.file).exchanges) {
-        if (DEFERRED[scenario.file]?.includes(exchange.name)) {
-          continue;
-        }
-
         scenario.before?.[exchange.name]?.(book);
         const request = scenario.request?.[exchange.name]?.(exchange.request) ?? exchange.request;
         const answer = await send(book, request);

@@ -2,6 +2,7 @@
 //  designs_server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Answered the builds route on a relay without a compiler
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -80,7 +81,8 @@ test("a designer pushes and pulls over HTTP without the game's X-MGQ-Features or
   assert.deepEqual(pulled.body.entities.map((entity) => [entity.id, entity.body, entity.name]), [["catalog", { bossSwitch: 22 }, DESIGNERS.A.name]]);
   assert.deepEqual((await call("GET", "/v1/designs/me", { "X-MGQ-Designer": DESIGNERS.C.key })).body, { id: DESIGNERS.C.id, designer: false });
   assert.deepEqual(await call("GET", "/v1/designs/entities", { ...headers, "X-MGQ-Designer": DESIGNERS.C.key }), { status: 403, body: { code: "not_designer", id: DESIGNERS.C.id } });
-  assert.deepEqual(await call("GET", "/v1/designs/builds", headers), { status: 404, body: { error: "there is no such route" } });
+  assert.deepEqual(await call("GET", "/v1/designs/builds", headers), { status: 200, body: { live: null, previous: null, builds: [] } });
+  assert.deepEqual(await call("POST", "/v1/designs/builds", headers, { seq: 1 }), { status: 503, body: { code: "compiler", message: "This relay has no compiler." } });
   assert.deepEqual((await call("GET", "/v1/designs/designers", { [PLAYER_HEADER]: ADMIN })).body.designers.map((designer) => designer.id), [DESIGNERS.A.id, DESIGNERS.B.id]);
 });
 
