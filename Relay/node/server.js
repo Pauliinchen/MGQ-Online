@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Cleared the current release once the watch saw a newer one published after it was set
+//      Paulinchen  2026-10-22: Checked the mod catalog's links half a minute after a start and every five minutes
+//                            - Cleared the current release once the watch saw a newer one published after it was set
 //                            - Listed the worlds without their mods for games from 0.6.8 and sent released games to update at a world whose mods they cannot hold
 //                            - Told no released game in a world room a mods rule longer than its DLL takes
 //                            - Read text bodies of up to 1 MB, four bytes for each character the directory takes
@@ -93,9 +94,15 @@ import {
 const CHECK_EVERY_MS = 60 * 1000;
 
 /**
- * How often the server checks the mod catalog's links for new releases, half an hour.
+ * How often the server checks the mod catalog's links for new releases, five minutes, which is
+ * cheap because a link still leading to the same release is not downloaded again.
  */
-const CHECK_MODS_EVERY_MS = 30 * 60 * 1000;
+const CHECK_MODS_EVERY_MS = 5 * 60 * 1000;
+
+/**
+ * How long after a start the server checks the mod catalog's links the first time, half a minute.
+ */
+const FIRST_MODS_CHECK_MS = 30 * 1000;
 
 /**
  * How often the server checks the mod's own releases, five minutes.
@@ -1758,7 +1765,11 @@ export function createRelay({
   sweepTimer.unref();
   const battleTimer = setInterval(sweepBattles, BATTLE_SWEEP_EVERY_MS);
   battleTimer.unref();
-  const modTimer = setInterval(() => mods.checkAll().catch((error) => log.error(errorLine(new Date(), "check of the mod catalog", error))), CHECK_MODS_EVERY_MS);
+  const checkMods = () => mods.checkAll().catch((error) => log.error(errorLine(new Date(), "check of the mod catalog", error)));
+  // A restart would otherwise leave a release published meanwhile unseen for a whole interval.
+  const firstModCheck = setTimeout(checkMods, FIRST_MODS_CHECK_MS);
+  firstModCheck.unref();
+  const modTimer = setInterval(checkMods, CHECK_MODS_EVERY_MS);
   modTimer.unref();
   const releaseTimer = releases ? setInterval(() => checkRelease().catch((error) => log.error(errorLine(new Date(), "check of the mod's releases", error))), CHECK_RELEASE_EVERY_MS) : null;
   releaseTimer?.unref();
@@ -1771,6 +1782,7 @@ export function createRelay({
   function stop() {
     clearInterval(timer);
     clearInterval(sweepTimer);
+    clearTimeout(firstModCheck);
     clearInterval(modTimer);
     clearInterval(releaseTimer);
     clearInterval(battleTimer);

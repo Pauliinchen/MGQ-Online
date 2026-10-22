@@ -2,6 +2,7 @@
 //  mods.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Downloaded a link mod's file only when its link leads to a new release
 //      Paulinchen  2026-10-12: Stopped reading a release file from GitHub once it passes its size limit
 //                            - Read a mod again after its link was checked and kept only the check's result
 //                            - Kept a mod that a link replaces listed until the link was checked
@@ -223,7 +224,7 @@ export class ModCatalog {
     const existing = await this.store.getMod(modKey(cleaned));
     const entry = existing?.kind === "link" ? { ...existing, name: cleaned, link } : newEntry(modKey(cleaned), cleaned, "link", existing?.personal === true);
     entry.link = link;
-    await this.checkLink(entry);
+    await this.checkLink(entry, true);
 
     // GitHub lets other requests in, so the mod is read again and only the check's result is kept.
     const fresh = await this.store.getMod(modKey(cleaned));
@@ -531,15 +532,24 @@ export class ModCatalog {
 
   /**
    * Reads a link mod's current release and notes a new version, keeping the last good one when
-   * the release cannot be read.
+   * the release cannot be read. A link that leads to the same release file as last time is not
+   * downloaded again unless asked to.
    *
    * @param {object} entry The mod, changed in place.
+   * @param {boolean} [reread] Whether to download the release file even when it is the known one.
    */
-  async checkLink(entry) {
+  async checkLink(entry, reread = false) {
     entry.checked = this.clock();
 
     try {
-      const release = await readRelease(entry.link, this.fetch, this.limits);
+      // A link that still leads to the file of the last good check is the same release.
+      const release = await readRelease(entry.link, this.fetch, this.limits, reread || entry.error ? undefined : entry.fileUrl);
+
+      if (!release.bytes) {
+        entry.error = "";
+        return;
+      }
+
       const archive = isZip(release.file);
       const files = archive ? await zipHashes(release.bytes, this.limits) : { [release.file]: await hashModFile(release.file, release.bytes) };
       entry.fileUrl = release.url;
@@ -602,9 +612,10 @@ export class ModCatalog {
  * @param {string} link The link, such as .../releases/latest/download/Mod.rb or .../Mod.zip.
  * @param {typeof fetch} fetcher Fetches an address.
  * @param {typeof MOD_LIMITS} limits The limits.
- * @returns {Promise<{url: string, file: string, version: string, bytes: Uint8Array}>} The release file's address, its name, the version and the file.
+ * @param {string} [known] The release file the link led to last time, which is not downloaded again.
+ * @returns {Promise<{url: string, file: string, version: string, bytes: Uint8Array | null}>} The release file's address, its name, the version and the file, null when it is the known one.
  */
-export async function readRelease(link, fetcher, limits = MOD_LIMITS) {
+export async function readRelease(link, fetcher, limits = MOD_LIMITS, known = undefined) {
   let url = link;
 
   if (!RELEASE_FILE.test(url)) {
@@ -625,8 +636,14 @@ export async function readRelease(link, fetcher, limits = MOD_LIMITS) {
   }
 
   const file = decodeURIComponent(match[2]);
+  const version = decodeURIComponent(match[1]).replace(/^v/i, "");
+
+  if (url === known) {
+    return { url, file, version, bytes: null };
+  }
+
   const bytes = await download(url, fetcher, limits, isZip(file) ? limits.maxUploadBytes : limits.maxLinkBytes);
-  return { url, file, version: decodeURIComponent(match[1]).replace(/^v/i, ""), bytes };
+  return { url, file, version, bytes };
 }
 
 /**

@@ -2,6 +2,8 @@
 //  mods.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Covered a check whose link still leads to the same release
+//                            - Published a new release before holding the schedule's check, which reads only new ones
 //      Paulinchen  2026-10-12: Covered changes made while a link is checked and an upload listed until the link that replaces it is checked
 //                            - Covered a mod name with ':' refused by a link, an upload and a name alone
 //      Paulinchen  2026-10-09: Covered personal mods and mods known by their name alone
@@ -265,6 +267,28 @@ test("a new release becomes the latest version, the earlier ones kept to name a 
   state.tag = "v1.4.1";
   assert.equal(await catalog.checkAll(), 1, "a new tag with the same script is a new version name");
   assert.deepEqual((await catalog.list()).body.mods[0].versions.map((version) => version.version), ["1.4.1", "1.3.5"]);
+});
+
+test("a check whose link still leads to the same release downloads nothing", async () => {
+  const state = { tag: "v1.3.5", script: "# one" };
+  const github = fakeGitHub(state);
+  let downloads = 0;
+  const counting = async (url, init) => {
+    downloads += url.endsWith(`/file/${state.tag}`) ? 1 : 0;
+    return github(url, init);
+  };
+  const { catalog } = await newCatalog(state, MOD_LIMITS, counting);
+  await catalog.setLink(ADMIN, "Level Cap", LATEST);
+  assert.equal(downloads, 1);
+
+  assert.equal(await catalog.checkAll(), 0);
+  assert.equal(downloads, 1, "the same release is not read again");
+
+  state.tag = "v1.4.0";
+  state.script = "# two";
+  assert.equal(await catalog.checkAll(), 1);
+  assert.equal(downloads, 2);
+  assert.equal((await catalog.list()).body.mods[0].version, "1.4.0");
 });
 
 test("a release that cannot be read keeps the last good version and tells the admin why", async () => {
@@ -623,14 +647,15 @@ test("a link changed during the schedule's check is not overwritten by the old l
   const { catalog } = await newCatalog(state, MOD_LIMITS, github.fetch);
   await catalog.setLink(ADMIN, "Level Cap", LATEST);
 
+  state.tag = "v1.3.6";
   const gate = github.arm();
   const checking = catalog.checkAll();
   await gate.reached;
-  assert.equal((await catalog.setLink(ADMIN, "Level Cap", releaseFile("v1.3.5"))).status, 200);
+  assert.equal((await catalog.setLink(ADMIN, "Level Cap", releaseFile("v1.3.6"))).status, 200);
   gate.open();
 
   assert.equal(await checking, 0);
-  assert.equal((await catalog.list(ADMIN)).body.mods[0].link, releaseFile("v1.3.5"));
+  assert.equal((await catalog.list(ADMIN)).body.mods[0].link, releaseFile("v1.3.6"));
 });
 
 test("setLink keeps a personal mark set during its own check", async () => {
