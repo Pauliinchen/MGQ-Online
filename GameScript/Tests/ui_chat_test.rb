@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-22: Checked the chat box and its log in a scene of menus such as a shop
+#                            - Checked that a mod loaded later keeps its hook in a shop
 #                            - Checked the relay's notice handed to the notification box
 #      Paulinchen  2026-10-12: Checked the relay's notice in red between slashes
 #                            - Checked the open log scrolled with the mouse wheel and its scrollbar
@@ -595,7 +596,7 @@ check("and an admin's line of another name stays an admin's", chat.instance_vari
 
 # A scene of menus the chat follows, such as a shop: the chat box opens with its key after each
 # frame, takes typing there and shows its log, and goes once another scene shows.
-class Scene_TestShop; def update_basic; end; def terminate; end; end
+class Scene_TestShop < Scene_Base; end
 $open = true
 chat.stop_typing
 chat.follow_scene(Scene_TestShop)
@@ -615,5 +616,10 @@ $pressed = MGQ_MpHotkeys.code(:chat)
 shop.update_basic
 check("while a question of the mod holds the buttons there, the chat key waits", chat.typing?, false)
 MGQ_Multiplayer::Capture.stop(:confirm)
+# A mod loaded later, such as Party Sheet, wraps every scene's basics for its hotkey.
+class Scene_Base; alias test_later_update_basic update_basic; def update_basic(*args); $later_mod = true; test_later_update_basic(*args); end; end
+$later_mod = false
+shop.update_basic
+check("a mod loaded later that wraps every scene's basics still runs in a shop", $later_mod, true)
 shop.terminate
 check("the log goes with the shop", shop.instance_variable_get(:@mgq_mp_chat_log), nil)

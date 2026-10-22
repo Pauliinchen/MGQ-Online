@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-22: Opened the chat box and showed its log in the shops, the casino and the trade screen
+#                            - Kept the hooks of mods loaded later in the shops, the casino and the trade screen
 #                            - Showed the relay's own notices in the notification box too
 #      Paulinchen  2026-10-12: Showed the relay's own notices red between slashes in every tab
 #                            - Scrolled the open chat log with the mouse wheel
@@ -1402,7 +1403,15 @@ module MGQ_MpChat
   # @param scene [Scene_Base, nil] The scene.
   # @return [Boolean] Whether it does.
   def self.chat_scene?(scene)
-    scene.is_a?(Scene_Map) || scene.is_a?(Scene_Battle) || @menu_scenes.any? { |owner| scene.is_a?(owner) }
+    scene.is_a?(Scene_Map) || scene.is_a?(Scene_Battle) || menu_scene?(scene)
+  end
+
+  # Tells whether a scene is one of menus the chat follows, see follow_scene.
+  #
+  # @param scene [Scene_Base, nil] The scene.
+  # @return [Boolean] Whether it is.
+  def self.menu_scene?(scene)
+    @menu_scenes.any? { |owner| scene.is_a?(owner) }
   end
 
   # Lets the chat box open, take typing and show its log in a scene of menus, as in a battle: after
@@ -1411,18 +1420,6 @@ module MGQ_MpChat
   #
   # @param owner [Class] The scene, such as Scene_Shop.
   def self.follow_scene(owner)
-    MGQ_MpHooks.after(owner, :update_basic, "ui_chat") do
-      MGQ_MpChat.on_menu
-      if @mgq_mp_chat_log || MGQ_MpOverworldSync.in_world?
-        # Above every window of the scene, as in a battle.
-        @mgq_mp_chat_log ||= Sprite_MpChatLog.new(:menu_chat, Sprite_MpChatLog::MENU_ROOM, MGQ_MpUi::Z[:wheels])
-        @mgq_mp_chat_log.update
-      end
-    end
-    MGQ_MpHooks.before(owner, :terminate, "ui_chat") do
-      @mgq_mp_chat_log.dispose if @mgq_mp_chat_log
-      @mgq_mp_chat_log = nil
-    end
     @menu_scenes << owner unless @menu_scenes.include?(owner)
   end
 end
@@ -2219,6 +2216,25 @@ rescue => e
 end
 
 begin
+  # After every scene's basics, the chat box and its log in the scenes of menus the chat follows.
+  # These scenes inherit update_basic, and a hook on one of them would keep a copy of Scene_Base's
+  # that misses what mods loaded later add to it, such as Party Sheet's hotkey.
+  MGQ_MpHooks.after(Scene_Base, :update_basic, "ui_chat") do
+    if MGQ_MpChat.menu_scene?(self)
+      MGQ_MpChat.on_menu
+      if @mgq_mp_chat_log || MGQ_MpOverworldSync.in_world?
+        # Above every window of the scene, as in a battle.
+        @mgq_mp_chat_log ||= Sprite_MpChatLog.new(:menu_chat, Sprite_MpChatLog::MENU_ROOM, MGQ_MpUi::Z[:wheels])
+        @mgq_mp_chat_log.update
+      end
+    end
+  end
+
+  MGQ_MpHooks.before(Scene_Base, :terminate, "ui_chat") do
+    @mgq_mp_chat_log.dispose if @mgq_mp_chat_log
+    @mgq_mp_chat_log = nil
+  end
+
   # The game's shops and its casino: the slot machines (Scene_Slot, a Scene_CasinoBase), poker and
   # the prize exchange. Each is looked up by name, since a game without one leaves it out.
   %w[Scene_Shop Scene_CasinoBase Scene_Poker Scene_CasinoPrize].each do |name|

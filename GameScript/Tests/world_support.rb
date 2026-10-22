@@ -2,6 +2,7 @@
 #  world_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Gave the scenes' base its basics and its end
 #      Paulinchen  2026-10-12: Stood in for the notice of an unreadable Player.ini
 #                            - Told the mouse wheel's notches from $wheel
 #                            - Stood in for the title screen and a world's waiting new game
@@ -41,7 +42,7 @@ module Graphics; def self.update; end; def self.width; 640; end; def self.height
 # Stands in for the map's spriteset.
 class Spriteset_Map; def update; end; def dispose; end; end
 # Stands in for the scenes' base.
-class Scene_Base; def update; end; def start; end; end
+class Scene_Base; def update; end; def update_basic; end; def start; end; def terminate; end; end
 # Stands in for the title screen.
 class Scene_Title < Scene_Base; end
 # A rectangle, as the game's Rect holds one.
