@@ -59,6 +59,11 @@ node/test_compiler_stub.js the stand-in for the Raid Designer's CLI the tests ru
 node/test_design_compiler.js the stand-in compilers the tests share
 node/migrate.js        copies everything a relay keeps into a new SQLite database and checks the copy
 node/migrate.test.js   tests of the copy from one relay to a new database
+node/design_migration.test.js tests that the copy carries every design table to a relay that serves them alike
+node/design_cli.test.js runs the designs against a real raid-designer binary, skipped unless RAID_DESIGNER_CLI names one
+node/backup.test.js    tests of ops/backup-relay.sh, skipped without sh and sqlite3
+ops/backup-relay.sh    the daily backup of the database, with ops/mgq-relay-backup.service and .timer
+ops/DEPLOY_DESIGNS.md  the runbook of the Raid designs' deploy, the backups and a restore
 ```
 
 Both servers follow the same rules from `core/`, so the games cannot tell them apart.
@@ -290,6 +295,10 @@ npm install
 npm test
 ```
 
+Two tests need more than Node and skip without it:
+- `node/backup.test.js` runs `ops/backup-relay.sh` with `sh` and the `sqlite3` program; `SQLITE3` names it when it is not on the PATH.
+- `node/design_cli.test.js` imports a format 1 design with a real `raid-designer` binary, pushes it to a local relay, builds it through the same binary and publishes it: `RAID_DESIGNER_CLI` names the binary, `RAID_DESIGNER_GAME` the game folder it compiles against (only read) and `RAID_DESIGNER_FIXTURE` the design file, such as the Raid Designer's `RaidDesigner.Tests/Fixtures/Format1/test-install-2026-10-17.json`.
+
 ## Cloudflare (relay r1 until 0.6.6.1)
 
 Up to 0.6.6.1 relay r1 ran on the free Workers plan at `relay.mgqmp.workers.dev`. Past the free plan's daily limits, requests fail until midnight UTC; nothing is billed. From 0.6.7 on r1 is the Node relay on our own server at `relay.mgqonline.org` (see Moving to a rented server), and the Worker's `MIN_VERSION` turns every older version away.
@@ -306,7 +315,7 @@ Up to 0.6.6.1 relay r1 ran on the free Workers plan at `relay.mgqmp.workers.dev`
 1. On the server, install Node.js 24 or later (the SQLite database needs `node:sqlite`) and [Caddy](https://caddyserver.com), and point a domain at the server.
 2. Copy `core/`, `node/`, `package.json` and `package-lock.json`, then run `npm install --omit=dev`.
 3. Start `node node/server.js` as a systemd service, with these environment variables:
-   - `MGQ_RELAY_DB=/var/lib/mgq-relay/relay.sqlite`: the SQLite database the worlds, their starting saves, the mod catalog, its uploaded zips, the trades, the Raid Worlds' stories and their boss pools are kept in, made on the first start (with its `-wal` and `-shm` files beside it). Without it everything stays in memory and is gone with the process. Back the file up with `sqlite3 relay.sqlite ".backup copy.sqlite"`, never by copying it while the relay runs.
+   - `MGQ_RELAY_DB=/var/lib/mgq-relay/relay.sqlite`: the SQLite database the worlds, their starting saves, the mod catalog, its uploaded zips, the trades, the Raid Worlds' stories and their boss pools are kept in, made on the first start (with its `-wal` and `-shm` files beside it). Without it everything stays in memory and is gone with the process. Back the file up with `sqlite3 relay.sqlite ".backup copy.sqlite"`, never by copying it while the relay runs; `ops/backup-relay.sh` with its systemd timer does so every night and keeps 14 copies, see [ops/DEPLOY_DESIGNS.md](ops/DEPLOY_DESIGNS.md).
    - `ADMINS`: the admins' player ids, as above.
    - `GITHUB_ISSUES_TOKEN` and `GITHUB_BUG_FILES_TOKEN`, and `REPORT_ISSUES_REPO`, `REPORT_FILES_REPO` and `REPORT_FILES_BRANCH` unless the defaults fit: where the bug reports go, see above. Without both tokens the relay takes no reports.
    - `MIN_VERSION`: the lowest version a game may name, `0.6.0` unless set, see Versions.
