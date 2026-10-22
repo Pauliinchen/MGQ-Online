@@ -2,6 +2,7 @@
 //  ConditionEvaluator.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Checked the not in chain condition
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -81,6 +82,7 @@ internal static class ConditionEvaluator
         BossHpBetweenCondition between => HpBetween(context.StatsOf(StateHolder.Boss, enemy), between.Min, between.Max),
         TurnAtLeastCondition atLeast => battleEvent.Turn >= atLeast.Turn,
         NotSealedCondition notSealed => !context.IsSealed(enemy, notSealed.Skill),
+        NotInChainCondition notInChain => EventFacts.CastIdOf(battleEvent) is not string castId || !context.ChainOf(castId).Contains(notInChain.Skill),
         _ => throw new ArgumentOutOfRangeException(nameof(condition), condition, "The engine does not know this condition."),
     };
 

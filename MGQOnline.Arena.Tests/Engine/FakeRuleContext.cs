@@ -2,6 +2,7 @@
 //  FakeRuleContext.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Listed the skills of a cast chain
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -93,6 +94,11 @@ internal sealed class FakeRuleContext : IRuleContext
     public Dictionary<string, GridHalf> Sides { get; } = [];
 
     /// <summary>
+    /// Gets the skills of each cast's chain, the cast's own first.
+    /// </summary>
+    public Dictionary<string, List<SkillRef>> Chains { get; } = [];
+
+    /// <summary>
     /// Gets the boss HP percents whose crossing damage reports, per enemy.
     /// </summary>
     public Dictionary<int, int[]> Thresholds { get; } = [];
@@ -151,6 +157,9 @@ internal sealed class FakeRuleContext : IRuleContext
 
     /// <inheritdoc />
     public GridHalf? SideOf(string castId) => Sides.TryGetValue(castId, out GridHalf side) ? side : null;
+
+    /// <inheritdoc />
+    public IReadOnlyList<SkillRef> ChainOf(string castId) => Chains.TryGetValue(castId, out List<SkillRef>? skills) ? skills : [];
 
     /// <inheritdoc />
     public bool AddState(StateGrant grant)

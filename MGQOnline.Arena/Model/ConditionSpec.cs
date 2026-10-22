@@ -2,6 +2,7 @@
 //  ConditionSpec.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Added the not in chain condition
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -20,6 +21,7 @@ namespace MGQOnline.Arena.Model;
 [JsonDerivedType(typeof(BossHpBetweenCondition), "bossHpBetween")]
 [JsonDerivedType(typeof(TurnAtLeastCondition), "turnAtLeast")]
 [JsonDerivedType(typeof(NotSealedCondition), "notSealed")]
+[JsonDerivedType(typeof(NotInChainCondition), "notInChain")]
 public abstract record ConditionSpec;
 
 /// <summary>
@@ -58,3 +60,10 @@ public sealed record TurnAtLeastCondition(int Turn) : ConditionSpec;
 /// </summary>
 /// <param name="Skill">The skill.</param>
 public sealed record NotSealedCondition(SkillRef Skill) : ConditionSpec;
+
+/// <summary>
+/// Holds while a skill is neither that of the triggering cast nor that of a cast it follows up, as
+/// the game uses a combo skill once a chain.
+/// </summary>
+/// <param name="Skill">The skill.</param>
+public sealed record NotInChainCondition(SkillRef Skill) : ConditionSpec;

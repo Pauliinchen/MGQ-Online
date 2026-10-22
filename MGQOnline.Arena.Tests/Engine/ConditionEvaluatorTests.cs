@@ -2,6 +2,7 @@
 //  ConditionEvaluatorTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Tested the not in chain condition
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -87,6 +88,20 @@ public sealed class ConditionEvaluatorTests
         _context.Sealed.Add(Blast);
 
         Assert.False(Holds(new NotSealedCondition(Blast), new TurnStartEvent(1)));
+    }
+
+    /// <summary>
+    /// Holds not in chain while neither the triggering cast nor a cast it follows up uses the skill,
+    /// and on an event without a cast.
+    /// </summary>
+    [Fact]
+    public void HoldsNotInChainOutsideTheCastsChain()
+    {
+        _context.Chains["c2"] = [Blast, LightStigmata];
+
+        Assert.False(Holds(new NotInChainCondition(LightStigmata), new AfterCastEvent(1, "c2", 0, Blast, PlanKind.FollowUp)));
+        Assert.True(Holds(new NotInChainCondition(DarkStigmata), new AfterCastEvent(1, "c2", 0, Blast, PlanKind.FollowUp)));
+        Assert.True(Holds(new NotInChainCondition(LightStigmata), new TurnStartEvent(1)));
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 //  BattleSimulator.Rules.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Listed the skills of a cast chain
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -231,6 +232,18 @@ public sealed partial class BattleSimulator
 
         /// <inheritdoc />
         public GridHalf? SideOf(string castId) => state.Plan.Find(entry => entry.CastId == castId)?.Side;
+
+        /// <inheritdoc />
+        public IReadOnlyList<SkillRef> ChainOf(string castId)
+        {
+            List<SkillRef> skills = [];
+            for (PlannedCast? cast = state.Plan.Find(entry => entry.CastId == castId); cast is not null; cast = cast.ParentCastId is string parent ? state.Plan.Find(entry => entry.CastId == parent) : null)
+            {
+                skills.Add(cast.Skill);
+            }
+
+            return skills;
+        }
 
         /// <inheritdoc />
         public bool AddState(StateGrant grant)

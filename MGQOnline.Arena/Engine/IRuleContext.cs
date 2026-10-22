@@ -2,6 +2,7 @@
 //  IRuleContext.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Listed the skills of a cast chain
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -87,6 +88,13 @@ public interface IRuleContext
     /// <param name="castId">The cast's id.</param>
     /// <returns>The half, or null for a cast without one or an unknown cast.</returns>
     GridHalf? SideOf(string castId);
+
+    /// <summary>
+    /// Lists the skills of a planned cast and of every cast it follows up.
+    /// </summary>
+    /// <param name="castId">The cast's id.</param>
+    /// <returns>The skills, the cast's own first; none for an unknown cast.</returns>
+    IReadOnlyList<SkillRef> ChainOf(string castId);
 
     /// <summary>
     /// Adds a state or refreshes the instance already held.
