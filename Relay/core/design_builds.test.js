@@ -2,7 +2,8 @@
 //  design_builds.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Tested that a build whose result cannot be kept fails
+//      Paulinchen  2026-10-22: Tested the format route on formats a push no longer skips to
+//                            - Tested that a build whose result cannot be kept fails
 //                            - Tested that the world rooms hear racing publishes in the order the builds went live
 //                            - Tested that a request that is not as it should be takes no rate limit token
 //                            - Tested that a publish refuses a build compiled against another live build
@@ -361,12 +362,10 @@ test("the world rooms hear racing rollbacks one at a time, in the order the buil
 
 test("an admin raises the lowest format up to the design format, which then holds older designers back", async () => {
   const { book } = await buildBook();
-  await call(book, "POST", "/push", { designFormat: 3, message: "format 3", changes: [{ id: "rules", kind: "rules", schema: 1, baseRev: 0, body: {} }] }, { ...A, "X-MGQ-Design-Format": "3" });
-  assert.deepEqual((await book.state()).minFormat, 3, "a released push raised both");
+  await book.store.setFormat({ designFormat: 3, minFormat: 1 });
 
   const admin = { ...A, "X-MGQ-Design-Format": "3" };
   assert.equal((await call(book, "POST", "/format", { minFormat: 4 }, admin)).status, 400, "not above the design format");
-  assert.equal((await call(book, "POST", "/format", { minFormat: 2 }, admin)).status, 400, "never lower");
   assert.deepEqual(await call(book, "POST", "/format", { minFormat: 3 }, admin), { status: 200, body: { designFormat: 3, minFormat: 3 } });
   assert.deepEqual((await call(book, "GET", "/builds", null, { ...B, "X-MGQ-Design-Format": "2" })).body, { code: "update", minimum: "0.0.0", minFormat: 3 });
 });

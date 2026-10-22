@@ -2,7 +2,8 @@
 //  gate.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Tested which games hold a world's long mods and which read the world list with every world's mods
+//      Paulinchen  2026-10-22: Tested that a relay admin passes on the format route
+//                            - Tested which games hold a world's long mods and which read the world list with every world's mods
 //      Paulinchen  2026-10-21: Tested the designer gate, the rule of every design route and the game's design routes asking for X-MGQ-Features
 //      Paulinchen  2026-10-12: Tested that the world directory, the mod catalog and the Raid World admin routes ask for X-MGQ-Features
 //                            - Tested the update code on the 400 of a world room and the World Admin tool passing with 0.0.0-dev
@@ -158,7 +159,7 @@ test("each design route asks its own of a designer: me nothing, release a listed
     ["GET", ["me"], DESIGNER_RULE.open], ["PUT", ["me"], DESIGNER_RULE.listed], ["GET", ["release"], DESIGNER_RULE.listed], ["GET", ["release", "file"], DESIGNER_RULE.listed],
     ["GET", ["entities"], DESIGNER_RULE.read], ["GET", ["entities", "state:1", "history"], DESIGNER_RULE.read], ["POST", ["push"], DESIGNER_RULE.write],
     ["POST", ["builds"], DESIGNER_RULE.adminWrite], ["GET", ["builds"], DESIGNER_RULE.read], ["GET", ["builds", "3", "snapshot"], DESIGNER_RULE.read],
-    ["POST", ["publish"], DESIGNER_RULE.adminWrite], ["POST", ["rollback"], DESIGNER_RULE.adminWrite], ["POST", ["format"], DESIGNER_RULE.adminWrite],
+    ["POST", ["publish"], DESIGNER_RULE.adminWrite], ["POST", ["rollback"], DESIGNER_RULE.adminWrite], ["POST", ["format"], DESIGNER_RULE.adminSetting],
     ["GET", ["designers"], DESIGNER_RULE.roster], ["PUT", ["designers", "x"], DESIGNER_RULE.manage], ["DELETE", ["designers", "x"], DESIGNER_RULE.manage], ["GET", ["socket"], DESIGNER_RULE.read],
   ];
 

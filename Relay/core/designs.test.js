@@ -2,7 +2,8 @@
 //  designs.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Tested that a seeded admin stays demoted
+//      Paulinchen  2026-10-22: Tested that a push raises the design format one named step only and that the format route lowers it
+//                            - Tested that a seeded admin stays demoted
 //                            - Replayed the build exchanges too and tested the routes that remain no routes
 //      Paulinchen  2026-10-21: Created
 //
@@ -208,13 +209,47 @@ test("a released designer's push raises the design format and the lowest format,
   await push(book, dev, [change("state:1", 0, {})], { designFormat: 3 });
   assert.deepEqual(await book.state(), { seq: 1, designFormat: 1, minFormat: 1 });
 
-  await push(book, A, [change("state:2", 0, {})], { designFormat: 2 });
+  await push(book, { ...A, "X-MGQ-Design-Format": "2" }, [change("state:2", 0, {})], { designFormat: 2 });
   assert.deepEqual(await book.state(), { seq: 2, designFormat: 2, minFormat: 2 });
 
   const behind = await push(book, { ...B, "X-MGQ-Design-Format": "2" }, [change("state:3", 0, {})], { designFormat: 1 });
   assert.deepEqual(behind, { status: 426, body: { code: "update", minimum: "1.2.0", minFormat: 2 } });
   assert.equal((await pull(book, "since=0")).status, 426, "a designer naming format 1 reads no more");
   assert.equal((await send(book, { method: "GET", path: "/v1/designs/me", headers: A, body: null })).body.minFormat, 2, "me answers any format");
+});
+
+test("a push raises the design format only to the next format its header names too, and is taken either way", async () => {
+  const book = await freshBook();
+  const forged = { ...B, "X-MGQ-Design-Format": "999" };
+
+  assert.equal((await push(book, forged, [change("state:1", 0, {})], { designFormat: 999 })).status, 200);
+  assert.equal((await push(book, B, [change("state:2", 0, {})], { designFormat: 2 })).status, 200);
+  assert.equal((await push(book, { ...B, "X-MGQ-Design-Format": "3" }, [change("state:3", 0, {})], { designFormat: 3 })).status, 200);
+  assert.deepEqual(await book.state(), { seq: 3, designFormat: 1, minFormat: 1 }, "a forged, unnamed or skipping format raises nothing");
+
+  await push(book, { ...B, "X-MGQ-Design-Format": "2" }, [change("state:4", 0, {})], { designFormat: 2 });
+  assert.deepEqual(await book.state(), { seq: 4, designFormat: 2, minFormat: 2 });
+});
+
+test("the format route sets the lowest format and lowers the design format for a designer admin or a relay admin, never past the first", async () => {
+  const book = await freshBook();
+  const relayAdmin = { "X-MGQ-Player": RELAY_ADMIN_KEY };
+  const format = (headers, body) => send(book, { method: "POST", path: "/v1/designs/format", headers, body });
+  await book.store.setFormat({ designFormat: 5, minFormat: 4 });
+  const current = { ...A, "X-MGQ-Design-Format": "5" };
+
+  assert.deepEqual((await format({ ...B, "X-MGQ-Design-Format": "5" }, { minFormat: 1 })).body, { code: "admin_only" });
+  assert.equal((await format(A, { minFormat: 1 })).status, 426, "a designer admin below the lowest format is still held back");
+  assert.deepEqual((await format(current, { minFormat: 5 })).body, { designFormat: 5, minFormat: 5 });
+  assert.deepEqual((await format(current, { minFormat: 2 })).body, { designFormat: 5, minFormat: 2 });
+  assert.deepEqual((await format(relayAdmin, { minFormat: 1, designFormat: 1 })).body, { designFormat: 1, minFormat: 1 });
+  assert.deepEqual(await book.state(), { seq: 0, designFormat: 1, minFormat: 1 });
+
+  for (const body of [{ minFormat: 0 }, { minFormat: 2 }, { minFormat: 1, designFormat: 2 }, { minFormat: 1, designFormat: 0 }, []]) {
+    assert.equal((await format(relayAdmin, body)).status, 400, JSON.stringify(body));
+  }
+
+  assert.equal((await push(book, A, [change("state:1", 0, {})])).status, 200, "a designer on the first format pushes again");
 });
 
 test("a development build reads as any designer and writes only as an admin or where the relay allows it", async () => {
