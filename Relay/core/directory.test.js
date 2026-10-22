@@ -2,7 +2,8 @@
 //  directory.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Tested the long mods limit, the list without mods, one world by its id and released games sent to update
+//      Paulinchen  2026-10-22: Tested released games sent to update at a world with longer mod hashes or settings
+//                            - Tested the long mods limit, the list without mods, one world by its id and released games sent to update
 //      Paulinchen  2026-10-21: Covered an admin's edit of a world's name, flags, creator, lock, game data and mod hashes
 //      Paulinchen  2026-10-14: Covered a Raid World's starting save from every game
 //      Paulinchen  2026-10-13: Covered whether a Classic world fights raid bosses
@@ -939,8 +940,22 @@ test("a released game is sent to update at a world whose mods are longer than it
 
   assert.equal((await directory.admit(WORLD, OTHER, AUTH, null, [], true)).status, 200, "300 characters, as a released game counts them");
   await directory.edit(WORLD, CREATOR, { mods: "é".repeat(301) });
-  assert.deepEqual(await directory.admit(WORLD, OTHER, AUTH, null, [], true), { status: 400, body: { error: "the world names more mods than this game holds", code: "update" } });
+  assert.deepEqual(await directory.admit(WORLD, OTHER, AUTH, null, [], true), { status: 400, body: { error: "the world names more mods, mod hashes or settings than this game holds", code: "update" } });
   assert.equal((await directory.admit(WORLD, OTHER, AUTH, null, [], false)).status, 200);
+});
+
+test("a released game is sent to update at a world whose mod hashes or settings are longer than it holds", async () => {
+  const { directory } = newDirectory();
+  const hashes = (count) => Array.from({ length: count }, (_, index) => `m${index}=${"a1".repeat(32)}`).join(";");
+  await directory.create(await newWorld({ mods: "!Level Cap", modHashes: hashes(29), settings: `a=s:${"é".repeat(1996)}` }));
+  const admitted = async () => (await directory.admit(WORLD, OTHER, AUTH, null, [], true)).status;
+
+  assert.equal(await admitted(), 200, "2000 characters each, as a released game wrote them at most");
+  await directory.edit(WORLD, CREATOR, { modHashes: hashes(30) });
+  assert.equal(await admitted(), 400);
+  await directory.edit(WORLD, CREATOR, { modHashes: hashes(29), settings: `a=s:${"é".repeat(1997)}` });
+  assert.equal(await admitted(), 400);
+  assert.equal((await directory.admit(WORLD, OTHER, AUTH, null, [], false)).status, 200, "a newer game enters");
 });
 
 test("a world turns other mods off as made, by default a Raid World only", async () => {

@@ -2,7 +2,8 @@
 //  directory.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Took a world's mods up to 16000 characters and its mod hashes and settings up to 64000 each
+//      Paulinchen  2026-10-22: Sent a released game to update at a world whose mod hashes or settings are longer than it holds
+//                            - Took a world's mods up to 16000 characters and its mod hashes and settings up to 64000 each
 //                            - Listed the worlds without their mods, mod hashes and settings for games that read them from the world's own route
 //                            - Handed out one world by its id with everything the list names of it
 //                            - Sent a released game to update at a world whose mods are longer than it holds
@@ -100,10 +101,11 @@ export const DIRECTORY_LIMITS = Object.freeze({
 });
 
 /**
- * What released games before 0.6.8 hold of a world's mods: the text of the list, and the text of
- * the frame telling a world room the mods rule, past which their DLL drops the frame.
+ * What released games before 0.6.8 hold of a world's mods: the texts of its mods, mod hashes and
+ * settings, and the text of the frame telling a world room the mods rule, past which their DLL
+ * drops the frame.
  */
-export const RELEASED_MOD_LIMITS = Object.freeze({ maxModsLength: 300, maxRuleLength: 4096 });
+export const RELEASED_MOD_LIMITS = Object.freeze({ maxModsLength: 300, maxModHashesLength: 2000, maxSettingsLength: 2000, maxRuleLength: 4096 });
 
 /**
  * The name an admin's line of a world's chat carries when the request names none.
@@ -620,7 +622,7 @@ export class Directory {
    * @param {unknown} auth The auth key the player's game made from the world's token.
    * @param {string | null} [address] The game's address, whose entering a rate limit counts; null for none.
    * @param {string[]} [features] What the game names in FEATURES_HEADER; released games name nothing.
-   * @param {boolean} [released] Whether the game is a released one before 0.6.8, which holds no longer mods than RELEASED_MOD_LIMITS.
+   * @param {boolean} [released] Whether the game is a released one before 0.6.8, which holds no longer mods, mod hashes and settings than RELEASED_MOD_LIMITS.
    * @returns {Promise<{status: number, body: object, seats?: number, player?: string}>} The world's seats and the player's id, or why not.
    */
   async admit(id, key, auth, address = null, features = [], released = false) {
@@ -641,8 +643,8 @@ export class Directory {
     }
 
     // A game that cannot hold the world's mods could neither check nor turn off what it needs.
-    if (released && !releasedGamesHold(entry.mods ?? "")) {
-      return { status: 400, body: { error: "the world names more mods than this game holds", code: REFUSAL.update } };
+    if (released && !releasedGamesHold(entry)) {
+      return { status: 400, body: { error: "the world names more mods, mod hashes or settings than this game holds", code: REFUSAL.update } };
     }
 
     if (entry.start === START.pending) {
@@ -1256,13 +1258,16 @@ export function modsRuleText(off, mods) {
 }
 
 /**
- * Tells whether released games before 0.6.8 hold a world's mods, in the list and as they enter it.
+ * Tells whether released games before 0.6.8 hold a world's mods, mod hashes and settings, each
+ * counted as the relay counted it when it took no longer ones.
  *
- * @param {string} mods The world's mods as kept.
+ * @param {object} entry The world's entry.
  * @returns {boolean} Whether they do.
  */
-export function releasedGamesHold(mods) {
-  return [...mods].length <= RELEASED_MOD_LIMITS.maxModsLength;
+export function releasedGamesHold(entry) {
+  return [...(entry.mods ?? "")].length <= RELEASED_MOD_LIMITS.maxModsLength
+    && (entry.modHashes ?? "").length <= RELEASED_MOD_LIMITS.maxModHashesLength
+    && [...(entry.settings ?? "")].length <= RELEASED_MOD_LIMITS.maxSettingsLength;
 }
 
 /**
