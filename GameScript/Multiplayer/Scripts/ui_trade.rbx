@@ -2,6 +2,7 @@
 #  ui_trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Let the chat box open in the trade screen, whose gold digits leave the cancel to the open chat box
 #      Paulinchen  2026-10-12: Kept the bag's and the offers' pictures as tall as the rows they show
 #                            - Scrolled the offers and the bag with the mouse wheel and drew their scrollbars
 #      Paulinchen  2026-10-11: Dressed the trade screen's windows in the interface look
@@ -549,7 +550,7 @@ class Window_MpTradeGold < Window_Base
       Sound.play_ok
       self.visible = false
       @handlers[:ok].call(amount) if @handlers[:ok]
-    elsif MGQ_MpUi.cancel?
+    elsif !MGQ_Multiplayer::Capture.on? && MGQ_MpUi.cancel?
       Sound.play_cancel
       self.visible = false
       @handlers[:cancel].call if @handlers[:cancel]
@@ -733,4 +734,12 @@ class Scene_MpTrade < Scene_MenuBase
     end
     @command_window.activate unless asked
   end
+end
+
+# The chat box in the trade screen, through ui_chat.rbx.
+
+begin
+  MGQ_MpChat.follow_scene(Scene_MpTrade) if defined?(MGQ_MpChat)
+rescue => e
+  MGQ_MpChat.log("chat in the trade screen FAILED: #{e.class}: #{e.message}")
 end

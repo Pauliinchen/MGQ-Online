@@ -2,7 +2,8 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-22: Checked the relay's notice handed to the notification box
+#      Paulinchen  2026-10-22: Checked the chat box and its log in a scene of menus such as a shop
+#                            - Checked the relay's notice handed to the notification box
 #      Paulinchen  2026-10-12: Checked the relay's notice in red between slashes
 #                            - Checked the open log scrolled with the mouse wheel and its scrollbar
 #                            - Checked every chat tab going back to All as the world closes
@@ -444,9 +445,9 @@ forget_places = lambda { layout.instance_variable_get(:@stored).clear; layout.in
 # The log's height for a number of rows: the tabs, the rows and the chat box's row.
 high = lambda { |rows| log_class::TAB_ROW + log_class::ROW * (rows + 1) }
 
-check("the map's and the battle's log are boxes of their own, resized both ways, no smaller than the tabs, the hints and the list of names need",
-      [:chat, :battle_chat].map { |id| box = layout.instance_variable_get(:@boxes)[id]; box && [box.name, box.min_width, box.min_height, box.resize] },
-      [["Chat", 400, high.call(MGQ_MpChat::SUGGESTIONS), :both], ["Battle chat", 400, high.call(MGQ_MpChat::SUGGESTIONS), :both]])
+check("the map's, the battle's and the menus' log are boxes of their own, resized both ways, no smaller than the tabs, the hints and the list of names need",
+      [:chat, :battle_chat, :menu_chat].map { |id| box = layout.instance_variable_get(:@boxes)[id]; box && [box.name, box.min_width, box.min_height, box.resize] },
+      [["Chat", 400, high.call(MGQ_MpChat::SUGGESTIONS), :both], ["Battle chat", 400, high.call(MGQ_MpChat::SUGGESTIONS), :both], ["Menu chat", 400, high.call(MGQ_MpChat::SUGGESTIONS), :both]])
 check("the chat keeps no resizing of its own", [chat.respond_to?(:resize), chat.respond_to?(:keep_size)], [false, false])
 check("the chat's Alt is the layout's", MGQ_MpChat::ALT_KEY, layout::ALT_KEY)
 
@@ -591,3 +592,28 @@ chat.take_line(nil, "hello", MGQ_MpChat::NOTICE_NAME, :global, false)
 check("a player of that name says a plain line", [chat.instance_variable_get(:@log).last.who, map_log.text_color(chat.instance_variable_get(:@log).last)], [:other, MGQ_MpUi::Style::TEXT])
 chat.take_line(nil, "hi", "Global", :global, true)
 check("and an admin's line of another name stays an admin's", chat.instance_variable_get(:@log).last.to_s, "[Admin] Global: hi")
+
+# A scene of menus the chat follows, such as a shop: the chat box opens with its key after each
+# frame, takes typing there and shows its log, and goes once another scene shows.
+class Scene_TestShop; def update_basic; end; def terminate; end; end
+$open = true
+chat.stop_typing
+chat.follow_scene(Scene_TestShop)
+shop = Scene_TestShop.new
+SceneManager.scene = shop
+$pressed = MGQ_MpHotkeys.code(:chat)
+shop.update_basic
+check("the chat key opens the chat box in a shop, which shows the menus' log", [chat.typing?, shop.instance_variable_get(:@mgq_mp_chat_log).class], [true, Sprite_MpChatLog])
+chat.tick(true)
+check("and the box stays open while the shop shows", chat.typing?, true)
+SceneManager.scene = Object.new
+chat.tick(true)
+check("another scene closes it", chat.typing?, false)
+SceneManager.scene = shop
+MGQ_Multiplayer::Capture.start(:confirm)
+$pressed = MGQ_MpHotkeys.code(:chat)
+shop.update_basic
+check("while a question of the mod holds the buttons there, the chat key waits", chat.typing?, false)
+MGQ_Multiplayer::Capture.stop(:confirm)
+shop.terminate
+check("the log goes with the shop", shop.instance_variable_get(:@mgq_mp_chat_log), nil)

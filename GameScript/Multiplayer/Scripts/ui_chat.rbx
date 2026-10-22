@@ -2,7 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-22: Showed the relay's own notices in the notification box too
+#      Paulinchen  2026-10-22: Opened the chat box and showed its log in the shops, the casino and the trade screen
+#                            - Showed the relay's own notices in the notification box too
 #      Paulinchen  2026-10-12: Showed the relay's own notices red between slashes in every tab
 #                            - Scrolled the open chat log with the mouse wheel
 #                            - Drew a scrollbar beside the open log's rows
@@ -294,6 +295,9 @@ module MGQ_MpChat
 
   # The log's lines, oldest first, KEPT at most.
   @log = []
+
+  # The scenes besides the map and battles where the chat box opens, see follow_scene.
+  @menu_scenes = []
 
   # Each sender's bubble as [text, frames left, chat], by their seat or :me.
   @bubbles = {}
@@ -607,8 +611,9 @@ module MGQ_MpChat
   end
 
   # Builds the choices of the open menu: what every script offers with the player, see
-  # MGQ_MpActions.peer_options, and a whisper; in a battle the whisper alone, since the others
-  # start what a battle cannot take part in, such as a party, a duel or a trade.
+  # MGQ_MpActions.peer_options, and a whisper; off the map, in a battle, a shop, the casino or a
+  # trade, the whisper alone, since the others start what those cannot take part in, such as a
+  # party, a duel or a trade.
   #
   # @return [Array<MGQ_MpActions::Option>] The choices, none without a menu or once the player left.
   def self.build_menu_options
@@ -617,7 +622,7 @@ module MGQ_MpChat
 
     name = MGQ_MpOverworldSync::Peers.label_of(peer) || peer.state["name"].to_s
     option = MGQ_MpActions::Option.new("Whisper", lambda { whisper(name, peer) }, nil)
-    SceneManager.scene.is_a?(Scene_Battle) ? [option] : MGQ_MpActions.peer_options(peer) + [option]
+    SceneManager.scene.is_a?(Scene_Map) ? MGQ_MpActions.peer_options(peer) + [option] : [option]
   end
 
   # Points at a choice of the open menu.
@@ -1286,14 +1291,14 @@ module MGQ_MpChat
   end
 
   # Counts the frame, which ends what suggestions and menu_options keep, lets bubbles and chat lines
-  # run out, closes the chat box once neither the map nor a battle shows, and forgets the chat once
-  # no world is open. Called by overworld_sync.rbx every frame in every scene.
+  # run out, closes the chat box once a scene shows that it does not open in, and forgets the chat
+  # once no world is open. Called by overworld_sync.rbx every frame in every scene.
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
     @frame += 1
     scene = SceneManager.scene
-    stop_typing("#{scene.class.name} shows, neither the map nor a battle") unless in_world && (scene.is_a?(Scene_Map) || scene.is_a?(Scene_Battle))
+    stop_typing("#{scene.class.name} shows, where the chat does not open") unless in_world && chat_scene?(scene)
     see_tab
     in_world ? count_down : reset
   end
@@ -1359,20 +1364,66 @@ module MGQ_MpChat
   # Opens the chat box with its key in a battle of a world, and types into it while it is open.
   # Called by the battle every frame, its waits included, so the player chats while the battle plays on.
   def self.on_battle
+    chat_anywhere("battle")
+  end
+
+  # Opens the chat box with its key in a scene follow_scene names, such as a shop, and types into
+  # it while it is open, as in a battle. Called by the scene every frame, its waits included.
+  def self.on_menu
+    chat_anywhere(SceneManager.scene.class.name, true)
+  end
+
+  # Opens the chat box with its key, and types into it while it is open, in a scene that holds no
+  # event the chat box could interrupt.
+  #
+  # @param where [String] The scene, for the log.
+  # @param menus [Boolean] Whether the scene is one of menus, where the chat box waits while another
+  #   box of the mod, such as a question, holds the buttons, since that box reads them past it.
+  def self.chat_anywhere(where, menus = false)
     chat_key = MGQ_MpHotkeys.pressed?(:chat)
     return stop_typing("no world is open") unless MGQ_MpOverworldSync.in_world?
 
+    held = menus && MGQ_Multiplayer::Capture.on?
     if typing?
       update_typing
-    elsif chat_key && available?
+    elsif chat_key && available? && !held
       Sound.play_ok
       start_typing(MGQ_MpHotkeys.code(:chat))
     elsif chat_key
-      MGQ_MpHotkeys.log_refusal(:chat, "the keyboard cannot reach the game")
+      MGQ_MpHotkeys.log_refusal(:chat, held ? "another box of the mod holds the buttons" : "the keyboard cannot reach the game")
     end
   rescue => e
-    log("battle chat failed: #{e.class}: #{e.message}")
+    log("#{where} chat failed: #{e.class}: #{e.message}")
     stop_typing("it failed")
+  end
+
+  # Tells whether the chat box opens in a scene: the map, a battle and the scenes follow_scene names.
+  #
+  # @param scene [Scene_Base, nil] The scene.
+  # @return [Boolean] Whether it does.
+  def self.chat_scene?(scene)
+    scene.is_a?(Scene_Map) || scene.is_a?(Scene_Battle) || @menu_scenes.any? { |owner| scene.is_a?(owner) }
+  end
+
+  # Lets the chat box open, take typing and show its log in a scene of menus, as in a battle: after
+  # each of its frames, its waits included, and gone as it ends. Its menus hold no input while the
+  # chat box holds the buttons.
+  #
+  # @param owner [Class] The scene, such as Scene_Shop.
+  def self.follow_scene(owner)
+    MGQ_MpHooks.after(owner, :update_basic, "ui_chat") do
+      MGQ_MpChat.on_menu
+      if @mgq_mp_chat_log || MGQ_MpOverworldSync.in_world?
+        # Above every window of the scene, as in a battle.
+        @mgq_mp_chat_log ||= Sprite_MpChatLog.new(:menu_chat, Sprite_MpChatLog::MENU_ROOM, MGQ_MpUi::Z[:wheels])
+        @mgq_mp_chat_log.update
+      end
+    end
+    MGQ_MpHooks.before(owner, :terminate, "ui_chat") do
+      @mgq_mp_chat_log.dispose if @mgq_mp_chat_log
+      @mgq_mp_chat_log = nil
+    end
+    @menu_scenes << owner unless @menu_scenes.include?(owner)
   end
 end
 
@@ -1501,8 +1552,9 @@ class Sprite_MpChatLog < Sprite
   # Lowest the log gets: the tabs, MIN_ROWS rows and the chat box's row.
   MIN_HEIGHT = TAB_ROW + ROW * (MIN_ROWS + 1)
 
-  # The log's boxes in the layout, by their id: the map's and the battle's, each placed on its own.
-  BOXES = { :chat => "Chat", :battle_chat => "Battle chat" }
+  # The log's boxes in the layout, by their id: the map's, the battle's and that of the shops, the
+  # casino and the trade screen, each placed on its own.
+  BOXES = { :chat => "Chat", :battle_chat => "Battle chat", :menu_chat => "Menu chat" }
 
   # Room between the screen's edges and the log at its default place: on the left, and on the right
   # at its widest.
@@ -1513,6 +1565,10 @@ class Sprite_MpChatLog < Sprite
 
   # Room a battle's command and status windows keep at the bottom of the screen.
   BATTLE_ROOM = 200
+
+  # Room kept at the bottom of the screen in the shops, the casino and the trade screen, whose
+  # windows fill the screen, so the log keeps only the margin.
+  MENU_ROOM = SCREEN_MARGIN
 
   # Colors of the senders' names, the style's: the player's own, a member of the player's party as
   # their label on the map, an admin's gold as the featured worlds, and the game's own lines dim.
@@ -2160,4 +2216,14 @@ begin
   end
 rescue => e
   MGQ_MpChat.log("battle hooks FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  # The game's shops and its casino: the slot machines (Scene_Slot, a Scene_CasinoBase), poker and
+  # the prize exchange. Each is looked up by name, since a game without one leaves it out.
+  %w[Scene_Shop Scene_CasinoBase Scene_Poker Scene_CasinoPrize].each do |name|
+    Object.const_defined?(name) ? MGQ_MpChat.follow_scene(Object.const_get(name)) : MGQ_MpChat.log("#{name} is not in this game, so the chat does not open there")
+  end
+rescue => e
+  MGQ_MpChat.log("shop and casino hooks FAILED: #{e.class}: #{e.message}")
 end

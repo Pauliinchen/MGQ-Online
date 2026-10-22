@@ -59,7 +59,7 @@ The raid boss bar's red HP stays red in both.
 - Hold the left **Alt** and drag it to move it, like the other boxes.
 - It hides while a message shows at the top of the screen. The map's name, a medal just won and the notification box move below it while it sits at the top left.
 
-The boxes you can move: the chat (on the map and in battles, each its own place), the Leader HUD, the notification box, the party box, the world status lines, the World overview, the raid boss bar, the waiting box of a co-op battle, the question and message boxes, and the list box of the world screen. Things that follow a character (names, bubbles, wheels, the bar above a raid boss) stay with it.
+The boxes you can move: the chat (on the map, in battles and in shops, the casino and trades, each its own place), the Leader HUD, the notification box, the party box, the world status lines, the World overview, the raid boss bar, the waiting box of a co-op battle, the question and message boxes, and the list box of the world screen. Things that follow a character (names, bubbles, wheels, the bar above a raid boss) stay with it.
 
 - A box never gets smaller than it needs to show everything it holds, and never leaves the screen.
 - While **Alt** is held, the mouse only moves and resizes; clicks don't reach the boxes.
@@ -230,7 +230,7 @@ Press **B** on the map. Its choices sit in a ring around your character. The whe
 
 ![The open chat: the tabs above the log, the Party tab glowing for unread lines, and the hint in the empty box](images/chat.png)
 
-Press **T**, or pick *Chat* in the wheel. The chat works on the map, in battles (above the battle's windows) and while your party gathers for a story scene.
+Press **T**, or pick *Chat* in the wheel. The chat works on the map, in battles (above the battle's windows), in shops, at the casino's slot machines, poker and prize exchange, in a trade, and while your party gathers for a story scene.
 
 | Key | What it does |
 |---|---|
@@ -270,7 +270,7 @@ The chats take the colors World of Warcraft gives its chats.
 - Your line shows in a speech bubble in its chat's color just above your name, for the players on your map.
 - Names are yellow for you, green for your party's members and white for everyone else.
 - When several players share a name, the later ones show as "Name (2)", "Name (3)" in the log, above their head and in the whisper list.
-- Click a player's name in the open chat to invite them to your party, challenge them to a duel, offer a trade or whisper to them. In a battle only the whisper is offered. **Esc** or numpad **0** closes the menu.
+- Click a player's name in the open chat to invite them to your party, challenge them to a duel, offer a trade or whisper to them. In a battle, a shop, the casino or a trade only the whisper is offered. **Esc** or numpad **0** closes the menu.
 
 ### Emotes
 
