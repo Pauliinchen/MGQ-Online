@@ -17,6 +17,7 @@
         "status": 200,
         "body": {
           "seq": 418,
+          "epoch": "e90c4a1d5b3f2e7086a9d1c4b7e25f30",
           "designFormat": 1,
           "minFormat": 1,
           "entities": [
@@ -332,6 +333,7 @@
         "status": 200,
         "body": {
           "seq": 418,
+          "epoch": "e90c4a1d5b3f2e7086a9d1c4b7e25f30",
           "designFormat": 1,
           "minFormat": 1,
           "entities": [
@@ -374,6 +376,7 @@
         "status": 200,
         "body": {
           "seq": 418,
+          "epoch": "e90c4a1d5b3f2e7086a9d1c4b7e25f30",
           "designFormat": 1,
           "minFormat": 1,
           "entities": [

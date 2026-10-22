@@ -2,7 +2,8 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Told the world rooms of new live builds in the order they went live
+//      Paulinchen  2026-10-22: Greeted designers with the design epoch and logged a new epoch after a restore
+//                            - Told the world rooms of new live builds in the order they went live
 //                            - Built the Raid design with the designer's compiler, published and rolled back builds and served the live build to games
 //      Paulinchen  2026-10-21: Opened the designer socket and served the newest designer release
 //                            - Answered the Raid designs' entity, push, history and designer routes and kept the designs beside the worlds
@@ -367,7 +368,7 @@ export async function openStores(path) {
     const { openSqliteStores } = await import("./sqlite_store.js");
     const { openSqliteDesignStore } = await import("./design_store_sqlite.js");
     const stores = openSqliteStores(path);
-    const designs = openSqliteDesignStore(path);
+    const designs = openSqliteDesignStore(path, { log: (line) => console.log(`${new Date().toISOString()} ${line}`) });
     const close = () => {
       designs.close();
       stores.close();
@@ -961,12 +962,12 @@ export function createRelay({
   /**
    * Seats a designer on the designer socket: greets it, takes what it edits and keeps it awake.
    *
-   * @param {{designer: {id: string, name: string, admin: boolean}, seq: number}} admission The designer and the newest push's seq, see admitDesigner.
+   * @param {{designer: {id: string, name: string, admin: boolean}, state: {seq: number, epoch: string}}} admission The designer, the newest push's seq and the design epoch, see admitDesigner.
    * @param {import("ws").WebSocket} socket The designer's socket.
    */
   function seatDesigner(admission, socket) {
     awakeDesigners.add(socket);
-    designs.presence.join(admission.designer, admission.seq, socket);
+    designs.presence.join(admission.designer, admission.state, socket);
     socket.on("pong", () => awakeDesigners.add(socket));
     socket.on("message", (data, binary) => {
       if (!binary) {

@@ -19,6 +19,7 @@ Milestones (spec H): **M1** needs steps 1 to 5 (backup, then the relay with desi
 Only additions:
 - new routes `/v1/designs/*`, `/v1/raid-design` and `/v1/raid-design/<sha256>`, the designer socket `/v1/designs/socket`, and `/v1/migration/designs` for the relay's admins;
 - the database steps (`node/schema.js`): step 1 is the tables the relay already has (`CREATE TABLE IF NOT EXISTS`, nothing changes), steps 2 and 3 add the design tables;
+- the design epoch, a random id in `design_meta`, and `relay.design-seq` beside the database, which the relay writes after every design push (see [step 7](#7-restoring-a-backup)), so the database's folder must stay writable for `mgq-relay`, as it already is for the `-wal` file;
 - `GET /v1/migration` answers `format` 2 instead of 1; nothing but `node/migrate.js`, which reads both, uses it (the website and the World Admin tool do not);
 - the game's version gate is unchanged: the designer gate applies to the design routes only, and released games never call them;
 - the Cloudflare relay answers the design routes with 404 `no_designs`; it is frozen and needs no deploy.
@@ -133,7 +134,11 @@ sudo -u mgq-relay mkdir /var/lib/mgq-relay/before-restore-$STAMP
 sudo -u mgq-relay sh -c 'mv /var/lib/mgq-relay/relay.sqlite* /var/lib/mgq-relay/before-restore-'$STAMP'/'
 sudo -u mgq-relay cp /var/backups/mgq-relay/relay-<date>.sqlite /var/lib/mgq-relay/relay.sqlite
 sudo -u mgq-relay sqlite3 /var/lib/mgq-relay/relay.sqlite "PRAGMA integrity_check;"   # ok
+sudo -u mgq-relay sqlite3 /var/lib/mgq-relay/relay.sqlite "DELETE FROM design_meta WHERE key = 'epoch';"
 sudo systemctl start mgq-relay
+journalctl -u mgq-relay -n 20                          # designs: the database holds pushes up to seq ... (when the relay noticed the restore itself)
 ```
 
-Move the `-wal` and `-shm` files away with the database: a `-wal` left beside a restored copy would be replayed into it. Everything the relay took after the copy is lost: tell the designers and check the worlds.
+Move the `-wal` and `-shm` files away with the database: a `-wal` left beside a restored copy would be replayed into it. Leave `relay.design-seq` where it is; the move above does not take it. Everything the relay took after the copy is lost: tell the designers and check the worlds.
+
+**Why the epoch goes.** A restored database hands out the seqs it already handed out before, for other pushes, so a designer that pulled up to a later seq would skip them. The design epoch tells the designers apart from that: every pull, `GET /v1/designs/me` and socket greeting names it, a designer that meets another epoch than its cache holds pulls everything again and keeps its unpushed edits dirty on the restored revisions (an entity the backup lacks goes out again as a new one), and a push naming an older epoch is refused with `409 {code: "epoch"}`. The relay makes a new epoch when the design tables are made, when the epoch is missing (the `DELETE` above) and when the database holds fewer pushes than `relay.design-seq` says it handed out, so a restore without the `DELETE` is noticed too. The `DELETE` stays the rule for a restore onto another server or folder, where `relay.design-seq` is missing. A move with `node/migrate.js` keeps the epoch and the seqs, so the designers go on without pulling again.

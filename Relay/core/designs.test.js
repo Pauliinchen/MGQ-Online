@@ -2,7 +2,8 @@
 //  designs.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Tested that a push raises the design format one named step only and that the format route lowers it
+//      Paulinchen  2026-10-22: Tested that a push from another design epoch is refused
+//                            - Tested that a push raises the design format one named step only and that the format route lowers it
 //                            - Tested that a seeded admin stays demoted
 //                            - Replayed the build exchanges too and tested the routes that remain no routes
 //      Paulinchen  2026-10-21: Created
@@ -15,7 +16,7 @@ import { memoryDesignStore } from "./design_store_memory.js";
 import { DESIGN_KINDS, DESIGN_LIMITS, DesignBook, ENTITY_ID, SEEDED_BY, designRouteOf, designerIdOf } from "./designs.js";
 import { playerIdOf } from "./directory.js";
 import { DEFAULT_DESIGNER_MIN_VERSION } from "./gate.js";
-import { DESIGNERS, NOW, RELAY_ADMIN_KEY, SCENARIOS, canonicalJson, entity, fixture, fixtureBook, fixtureNames, replayScenarios, seedEntities, send } from "./test_designs.js";
+import { DESIGNERS, EPOCH, NOW, RELAY_ADMIN_KEY, SCENARIOS, canonicalJson, entity, fixture, fixtureBook, fixtureNames, replayScenarios, seedEntities, send } from "./test_designs.js";
 
 /**
  * The headers of designer A, a listed admin, on a released version.
@@ -201,16 +202,33 @@ test("more than 20 deletes pass only with confirmDeletes from a designer admin",
   assert.equal((await push(book, A, deletes.slice(0, 20).map((each) => ({ ...each, baseRev: 2 })))).status, 200, "20 deletes need no confirmation");
 });
 
+test("a push naming another design epoch is refused with the current epoch and changes nothing, one naming the current epoch or none lands", async () => {
+  const book = await freshBook();
+  const other = "0".repeat(32);
+  await push(book, A, [change("state:1", 0, { hardCc: true })]);
+
+  assert.deepEqual(await push(book, A, [change("state:1", 1, { hardCc: false })], { epoch: other }), { status: 409, body: { code: "epoch", epoch: EPOCH, seq: 1 } });
+  assert.equal((await pull(book, "since=0")).body.entities[0].body.hardCc, true, "the refused push changed nothing");
+  assert.equal((await push(book, A, [change("state:1", 1, { hardCc: false })], { epoch: "not an epoch" })).status, 400);
+  assert.deepEqual((await push(book, A, [change("state:1", 1, { hardCc: false })], { epoch: EPOCH })).body.seq, 2);
+  assert.deepEqual((await push(book, A, [change("state:1", 2, { hardCc: true })])).body.seq, 3, "a designer that names no epoch pushes as before");
+
+  await book.store.setEpoch(other);
+  assert.deepEqual(await book.state(), { seq: 3, epoch: other, designFormat: 1, minFormat: 1 });
+  assert.equal((await pull(book, "since=3")).body.epoch, other);
+  assert.equal((await send(book, { method: "GET", path: "/v1/designs/me", headers: A, body: null })).body.epoch, other);
+});
+
 test("a released designer's push raises the design format and the lowest format, a development build's never does", async () => {
   const store = memoryDesignStore();
   const book = await fixtureBook(store);
   const dev = { ...A, "X-MGQ-Designer-Version": "0.0.0-dev" };
 
   await push(book, dev, [change("state:1", 0, {})], { designFormat: 3 });
-  assert.deepEqual(await book.state(), { seq: 1, designFormat: 1, minFormat: 1 });
+  assert.deepEqual(await book.state(), { seq: 1, epoch: EPOCH, designFormat: 1, minFormat: 1 });
 
   await push(book, { ...A, "X-MGQ-Design-Format": "2" }, [change("state:2", 0, {})], { designFormat: 2 });
-  assert.deepEqual(await book.state(), { seq: 2, designFormat: 2, minFormat: 2 });
+  assert.deepEqual(await book.state(), { seq: 2, epoch: EPOCH, designFormat: 2, minFormat: 2 });
 
   const behind = await push(book, { ...B, "X-MGQ-Design-Format": "2" }, [change("state:3", 0, {})], { designFormat: 1 });
   assert.deepEqual(behind, { status: 426, body: { code: "update", minimum: "1.2.0", minFormat: 2 } });
@@ -225,10 +243,10 @@ test("a push raises the design format only to the next format its header names t
   assert.equal((await push(book, forged, [change("state:1", 0, {})], { designFormat: 999 })).status, 200);
   assert.equal((await push(book, B, [change("state:2", 0, {})], { designFormat: 2 })).status, 200);
   assert.equal((await push(book, { ...B, "X-MGQ-Design-Format": "3" }, [change("state:3", 0, {})], { designFormat: 3 })).status, 200);
-  assert.deepEqual(await book.state(), { seq: 3, designFormat: 1, minFormat: 1 }, "a forged, unnamed or skipping format raises nothing");
+  assert.deepEqual(await book.state(), { seq: 3, epoch: EPOCH, designFormat: 1, minFormat: 1 }, "a forged, unnamed or skipping format raises nothing");
 
   await push(book, { ...B, "X-MGQ-Design-Format": "2" }, [change("state:4", 0, {})], { designFormat: 2 });
-  assert.deepEqual(await book.state(), { seq: 4, designFormat: 2, minFormat: 2 });
+  assert.deepEqual(await book.state(), { seq: 4, epoch: EPOCH, designFormat: 2, minFormat: 2 });
 });
 
 test("the format route sets the lowest format and lowers the design format for a designer admin or a relay admin, never past the first", async () => {
@@ -243,7 +261,7 @@ test("the format route sets the lowest format and lowers the design format for a
   assert.deepEqual((await format(current, { minFormat: 5 })).body, { designFormat: 5, minFormat: 5 });
   assert.deepEqual((await format(current, { minFormat: 2 })).body, { designFormat: 5, minFormat: 2 });
   assert.deepEqual((await format(relayAdmin, { minFormat: 1, designFormat: 1 })).body, { designFormat: 1, minFormat: 1 });
-  assert.deepEqual(await book.state(), { seq: 0, designFormat: 1, minFormat: 1 });
+  assert.deepEqual(await book.state(), { seq: 0, epoch: EPOCH, designFormat: 1, minFormat: 1 });
 
   for (const body of [{ minFormat: 0 }, { minFormat: 2 }, { minFormat: 1, designFormat: 2 }, { minFormat: 1, designFormat: 0 }, []]) {
     assert.equal((await format(relayAdmin, body)).status, 400, JSON.stringify(body));

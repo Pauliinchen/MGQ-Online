@@ -2,6 +2,7 @@
 //  designs_socket.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Tested the design epoch of the greeting
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -15,7 +16,7 @@ import { join } from "node:path";
 import { WebSocket } from "ws";
 import { memoryDesignStore } from "../core/design_store_memory.js";
 import { DesignerReleases } from "../core/designer_releases.js";
-import { DESIGNERS, fixtureBook, fixtureReleases } from "../core/test_designs.js";
+import { DESIGNERS, EPOCH, fixtureBook, fixtureReleases } from "../core/test_designs.js";
 import { createRelay } from "./server.js";
 
 /**
@@ -118,7 +119,7 @@ function call(method, path, headers, body) {
 
 test("designers are greeted, hear each other edit, hear pushes and hear a designer leave", async () => {
   const a = await connect(headersOf(DESIGNERS.A));
-  assert.deepEqual(await a.hello, { op: "hello", seq: 0, you: { id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, presence: [] });
+  assert.deepEqual(await a.hello, { op: "hello", seq: 0, epoch: EPOCH, you: { id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, presence: [] });
 
   a.socket.send(JSON.stringify({ op: "editing", entity: BOSS, path: "skills.game:1515.shape" }));
   const joined = a.next("presence");

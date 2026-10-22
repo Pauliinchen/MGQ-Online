@@ -2,7 +2,8 @@
 //  test_designs.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Replayed the build exchanges over a compiler the tests drive and took canonical JSON from the designs
+//      Paulinchen  2026-10-22: Gave the fixtures' relay the fixtures' design epoch
+//                            - Replayed the build exchanges over a compiler the tests drive and took canonical JSON from the designs
 //      Paulinchen  2026-10-21: Replayed the release exchanges over a release the relay serves
 //                            - Created
 //
@@ -35,6 +36,11 @@ export const MIN_VERSION = "1.2.0";
  * The time the fixtures' relay runs at, in unix seconds.
  */
 export const NOW = 1792500000;
+
+/**
+ * The design epoch of the fixtures' relay.
+ */
+export const EPOCH = fixture("me.json").exchanges[0].response.body.epoch;
 
 /**
  * The player key of the relay admin in the fixtures.
@@ -125,6 +131,8 @@ export async function fixtureBook(store, { presence, releases, compiler } = {}) 
     clock: () => NOW * 1000, minVersion: MIN_VERSION, relayAdmins: new Set([await playerIdOf(RELAY_ADMIN_KEY)]), ...(presence ? { presence } : {}), ...(releases ? { releases: releases() } : {}),
     ...(compiler ? { compiler: compiler() } : {}),
   });
+
+  await store.setEpoch(EPOCH);
 
   for (const designer of [DESIGNERS.A, DESIGNERS.B]) {
     await store.putDesigner({ id: designer.id, name: designer.name, admin: designer.admin, addedBy: "test", at: NOW });

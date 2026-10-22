@@ -2,7 +2,8 @@
 //  design_store_memory.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Kept the live build each build was compiled against
+//      Paulinchen  2026-10-22: Kept the design epoch
+//                            - Kept the live build each build was compiled against
 //                            - Kept the builds, their blobs and the live build
 //      Paulinchen  2026-10-21: Created
 //
@@ -10,6 +11,8 @@
 
 // The Raid design store in memory, for a Node relay without a database and for the tests. It keeps
 // the same tables and rows as node/design_store_sqlite.js, so a migration reads both alike.
+
+import { hexOf } from "./ids.js";
 
 /**
  * The tables the store keeps, by name, with each row's key.
@@ -24,6 +27,20 @@ const KEYS = Object.freeze({
   design_builds: (row) => row.id,
   design_live: (row) => row.channel,
 });
+
+/**
+ * The design meta key of the design epoch.
+ */
+export const EPOCH_KEY = "epoch";
+
+/**
+ * Makes a new design epoch.
+ *
+ * @returns {string} 32 random hex characters.
+ */
+export function newEpoch() {
+  return hexOf(crypto.getRandomValues(new Uint8Array(16)));
+}
 
 /**
  * Compares two keys in ordinal order, as SQLite sorts text and integers.
@@ -74,6 +91,19 @@ export function memoryDesignStore() {
   const meta = (key) => tables.design_meta.get(key)?.value;
 
   /**
+   * Reads the design epoch, making a new one when an import left none.
+   *
+   * @returns {string} The epoch.
+   */
+  const epoch = () => {
+    if (meta(EPOCH_KEY) === undefined) {
+      put("design_meta", { key: EPOCH_KEY, value: newEpoch() });
+    }
+
+    return meta(EPOCH_KEY);
+  };
+
+  /**
    * Sets the design format and the lowest design format the relay takes.
    *
    * @param {{designFormat: number, minFormat: number}} format The formats.
@@ -83,9 +113,13 @@ export function memoryDesignStore() {
     put("design_meta", { key: "min_format", value: String(minFormat) });
   };
 
+  // A store in memory starts empty on every start, so every start is a new epoch.
+  epoch();
+
   return {
     state: async () => ({
       seq: [...tables.design_pushes.keys()].reduce((newest, seq) => Math.max(newest, seq), 0),
+      epoch: epoch(),
       designFormat: meta("design_format") === undefined ? undefined : Number(meta("design_format")),
       minFormat: meta("min_format") === undefined ? undefined : Number(meta("min_format")),
     }),
@@ -125,6 +159,7 @@ export function memoryDesignStore() {
       }
     },
     setFormat: async (format) => putFormat(format),
+    setEpoch: async (value) => put("design_meta", { key: EPOCH_KEY, value }),
     designer: async (id) => (tables.designers.has(id) ? { ...tables.designers.get(id) } : undefined),
     designers: async () => [...tables.designers.values()].sort((left, right) => byKey(left.name, right.name) || byKey(left.id, right.id)).map((row) => ({ ...row })),
     putDesigner: async ({ id, name, admin, addedBy, at }) => {
@@ -212,6 +247,10 @@ export function memoryDesignStore() {
       .map(({ gz, ...row }) => row)])),
     blob: async (sha256) => blobs.get(sha256),
     importTables: async (rows, bytes) => {
+      if (rows.design_meta) {
+        tables.design_meta.clear();
+      }
+
       for (const [name, list] of Object.entries(rows).filter(([name]) => name in KEYS)) {
         for (const row of list) {
           put(name, row);

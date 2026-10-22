@@ -2,6 +2,7 @@
 //  design_presence.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Greeted designers with the design epoch
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -12,7 +13,7 @@ import { memoryDesignStore } from "./design_store_memory.js";
 import {
   DESIGN_CLOSE, DESIGN_SOCKET, DesignPresence, admitDesigner, buildFrame, helloFrame, leftFrame, liveFrame, presenceFrame, pushedFrame, readEditing, releaseFrame,
 } from "./designs.js";
-import { DESIGNERS, NOW, canonicalJson, clientOf, fixture, fixtureBook, fixtureReleases, send } from "./test_designs.js";
+import { DESIGNERS, EPOCH, NOW, canonicalJson, clientOf, fixture, fixtureBook, fixtureReleases, send } from "./test_designs.js";
 
 /**
  * The headers of designer A, a listed admin, on a released version.
@@ -80,7 +81,7 @@ test("every server frame is built as socket.json shows it", () => {
   const live = of("live");
 
   const built = [
-    helloFrame(hello.seq, hello.you, hello.presence),
+    helloFrame(hello, hello.you, hello.presence),
     pushedFrame(of("pushed")),
     presenceFrame(presence, presence.at),
     leftFrame(of("left").id),
@@ -119,12 +120,12 @@ test("a designer joining is greeted with the seq and the others online, and the 
   const { presence } = testPresence();
   const a = fakeSocket();
   const b = fakeSocket();
-  presence.join({ id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, 418, a);
+  presence.join({ id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, { seq: 418, epoch: EPOCH }, a);
   presence.editing(a, editing(BOSS, null));
-  presence.join({ id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false }, 418, b);
+  presence.join({ id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false }, { seq: 418, epoch: EPOCH }, b);
 
-  assert.deepEqual(a.frames[0], { op: "hello", seq: 418, you: { id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, presence: [] });
-  assert.deepEqual(b.frames, [{ op: "hello", seq: 418, you: { id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false }, presence: [{ id: DESIGNERS.A.id, name: DESIGNERS.A.name, entity: BOSS, path: null }] }]);
+  assert.deepEqual(a.frames[0], { op: "hello", seq: 418, epoch: EPOCH, you: { id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, presence: [] });
+  assert.deepEqual(b.frames, [{ op: "hello", seq: 418, epoch: EPOCH, you: { id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false }, presence: [{ id: DESIGNERS.A.id, name: DESIGNERS.A.name, entity: BOSS, path: null }] }]);
   assert.deepEqual(a.frames.at(-1), { op: "presence", id: DESIGNERS.B.id, name: DESIGNERS.B.name, entity: null, path: null, at: NOW });
   assert.deepEqual(presence.of(DESIGNERS.A.id), { online: true, editing: BOSS });
   assert.deepEqual(presence.of(DESIGNERS.B.id), { online: true, editing: null });
@@ -135,9 +136,9 @@ test("what a designer edits reaches the others, never itself, at most once a sec
   const { presence, time, timers } = testPresence();
   const a = fakeSocket();
   const b = fakeSocket();
-  presence.join({ id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, 1, a);
+  presence.join({ id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, { seq: 1, epoch: EPOCH }, a);
   time.now += 5000;
-  presence.join({ id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false }, 1, b);
+  presence.join({ id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false }, { seq: 1, epoch: EPOCH }, b);
   const told = () => b.frames.filter((frame) => frame.op === "presence");
 
   presence.editing(a, editing(BOSS, "skills.game:1515.shape"));
@@ -170,8 +171,8 @@ test("a frame told late is dropped once its designer left", () => {
   const { presence, time, timers } = testPresence();
   const a = fakeSocket();
   const b = fakeSocket();
-  presence.join({ id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, 1, a);
-  presence.join({ id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false }, 1, b);
+  presence.join({ id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, { seq: 1, epoch: EPOCH }, a);
+  presence.join({ id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false }, { seq: 1, epoch: EPOCH }, b);
   time.now += 100;
   presence.editing(a, editing(BOSS, null));
   presence.leave(a);
@@ -183,8 +184,8 @@ test("presence lasts 60 seconds unless told again, then the others hear the desi
   const { presence, time } = testPresence();
   const a = fakeSocket();
   const b = fakeSocket();
-  presence.join({ id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, 1, a);
-  presence.join({ id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false }, 1, b);
+  presence.join({ id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, { seq: 1, epoch: EPOCH }, a);
+  presence.join({ id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false }, { seq: 1, epoch: EPOCH }, b);
   presence.editing(a, editing(BOSS, "shape"));
 
   time.now += 30_000;
@@ -210,9 +211,9 @@ test("a designer with two sockets stays online until both close, then the others
   const a1 = fakeSocket();
   const a2 = fakeSocket();
   const b = fakeSocket();
-  presence.join({ id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false }, 1, b);
-  presence.join({ id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, 1, a1);
-  presence.join({ id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, 1, a2);
+  presence.join({ id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false }, { seq: 1, epoch: EPOCH }, b);
+  presence.join({ id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, { seq: 1, epoch: EPOCH }, a1);
+  presence.join({ id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, { seq: 1, epoch: EPOCH }, a2);
   assert.equal(b.frames.filter((frame) => frame.op === "presence").length, 1, "the second socket is no new designer");
 
   presence.leave(a1);
@@ -228,9 +229,9 @@ test("broadcast reaches every open socket, and disconnect closes every socket of
   const a = fakeSocket();
   const b1 = fakeSocket();
   const b2 = fakeSocket();
-  presence.join({ id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, 1, a);
-  presence.join({ id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false }, 1, b1);
-  presence.join({ id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false }, 1, b2);
+  presence.join({ id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, { seq: 1, epoch: EPOCH }, a);
+  presence.join({ id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false }, { seq: 1, epoch: EPOCH }, b1);
+  presence.join({ id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false }, { seq: 1, epoch: EPOCH }, b2);
   b2.readyState = 2;
   presence.broadcast(releaseFrame("1.3.0"));
   assert.deepEqual([a, b1, b2].map((socket) => socket.frames.at(-1)?.op), ["release", "release", "hello"], "a closing socket is sent nothing");
@@ -244,7 +245,7 @@ test("the socket admits a current listed designer, closes on others with 4403 or
   const book = await fixtureBook(store);
 
   const admitted = await admitDesigner(book, ["socket"], clientOf(A));
-  assert.deepEqual(admitted, { designer: { id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, seq: 0 });
+  assert.deepEqual(admitted, { designer: { id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, state: { seq: 0, epoch: EPOCH } });
   assert.equal((await store.designer(DESIGNERS.A.id)).last_seen, NOW);
 
   assert.deepEqual(await admitDesigner(book, ["socket"], clientOf({ ...A, "X-MGQ-Designer": DESIGNERS.C.key })), { close: DESIGN_CLOSE.notDesigner });
@@ -260,7 +261,7 @@ test("the designer list shows who the presence has online", async () => {
   const { presence } = testPresence();
   const book = await fixtureBook(memoryDesignStore(), { presence });
   const socket = fakeSocket();
-  presence.join({ id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, 0, socket);
+  presence.join({ id: DESIGNERS.A.id, name: DESIGNERS.A.name, admin: true }, { seq: 0, epoch: EPOCH }, socket);
   presence.editing(socket, editing(BOSS, null));
 
   const listed = await send(book, { method: "GET", path: "/v1/designs/designers", headers: B, body: null });
