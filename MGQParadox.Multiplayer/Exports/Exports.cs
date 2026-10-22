@@ -2,6 +2,7 @@
 //  Exports.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Handed out the release the relay names, an older one too, added mp_update_rollback and passed the release to the updater
 //      Paulinchen  2026-10-10: Added mp_dev_build
 //      Paulinchen  2026-10-09: Took the parked mods' lock as the game starts and marked their journal while an update runs
 //      Paulinchen  2026-10-08: Logged the Wine version the game runs under
@@ -94,7 +95,7 @@ internal static unsafe partial class Exports
     }
 
     /// <summary>
-    /// Starts asking GitHub for a newer release. Calling it again does nothing.
+    /// Starts asking the relay, or GitHub, for the release to play. Calling it again does nothing.
     /// </summary>
     /// <returns>1 when started, 0 when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_check_for_update", CallConvs = [typeof(CallConvStdcall)])]
@@ -113,7 +114,7 @@ internal static unsafe partial class Exports
     }
 
     /// <summary>
-    /// Hands out the version of a newer release, once the check found one.
+    /// Hands out the version of the release to install, newer or older, once the check found one.
     /// </summary>
     /// <param name="buffer">Receives the version, UTF-8 and null-terminated.</param>
     /// <param name="size">The size of the buffer in bytes.</param>
@@ -123,12 +124,30 @@ internal static unsafe partial class Exports
     {
         try
         {
-            var version = UpdateCheck.NewerVersion;
-            return version == null ? 0 : Math.Max(Copy(version, buffer, size), 0);
+            var offer = UpdateCheck.Offer;
+            return offer == null ? 0 : Math.Max(Copy(offer.Version, buffer, size), 0);
         }
         catch (Exception ex)
         {
             Log.Write($"mp_newer_version failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Tells whether the release to install is older than this DLL, a step back the relay asks for.
+    /// </summary>
+    /// <returns>1 for a step back, 0 for a newer release or none.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_update_rollback", CallConvs = [typeof(CallConvStdcall)])]
+    public static int UpdateRollback()
+    {
+        try
+        {
+            return UpdateCheck.Offer?.Rollback == true ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_update_rollback failed: {ex}");
             return 0;
         }
     }
@@ -152,8 +171,8 @@ internal static unsafe partial class Exports
     }
 
     /// <summary>
-    /// Has the mod's updater update the mod once the game closed and start the game again. The game
-    /// script closes the game right after.
+    /// Has the mod's updater install the release the check offers once the game closed and start the
+    /// game again. The game script closes the game right after.
     /// </summary>
     /// <returns>1 when the updater waits for the game to close, 0 when it failed, 2 under Wine, where it cannot run.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_update_game", CallConvs = [typeof(CallConvStdcall)])]
@@ -163,7 +182,7 @@ internal static unsafe partial class Exports
         {
             // Marked before the updater starts, which may see the game close at once.
             ModParking.Current.MarkUpdate(true);
-            var started = GameRestart.UpdateAfterExit(ModFolder.Root);
+            var started = GameRestart.UpdateAfterExit(ModFolder.Root, UpdateCheck.Offer?.Version);
 
             if (started != RestartStart.Waiting)
             {

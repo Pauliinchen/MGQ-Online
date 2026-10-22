@@ -2,6 +2,7 @@
 //  GameRestartTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Covered the release passed to the updater
 //      Paulinchen  2026-10-09: Covered when the parked mods' watchdog does not start
 //      Paulinchen  2026-10-08: Created
 //
@@ -14,7 +15,7 @@ using MGQParadox.Multiplayer.Mods;
 namespace MGQParadox.Multiplayer.Tests.Mods;
 
 /// <summary>
-/// Covers when the game is not started again.
+/// Covers when the game is not started again, and what the updater is told.
 /// </summary>
 public sealed class GameRestartTests : IDisposable
 {
@@ -52,6 +53,18 @@ public sealed class GameRestartTests : IDisposable
 
         Assert.Equal(RestartStart.Failed, GameRestart.AfterExit(_folder));
         Assert.Equal(RestartStart.Failed, GameRestart.UpdateAfterExit(_folder));
+    }
+
+    /// <summary>
+    /// Asserts that the updater is told the release to install only as dotted numbers, since cmd
+    /// reads its arguments again.
+    /// </summary>
+    [Fact]
+    public void UpdaterArguments_PassOnlyAReleaseVersion()
+    {
+        Assert.Equal("-GameProcess 42 -Version 0.6.7.7", GameRestart.UpdaterArguments(42, "0.6.7.7"));
+        Assert.Equal("-GameProcess 42", GameRestart.UpdaterArguments(42, null));
+        Assert.Equal("-GameProcess 42", GameRestart.UpdaterArguments(42, "0.6.8 & calc"));
     }
 
     /// <summary>

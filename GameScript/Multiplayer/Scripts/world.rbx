@@ -2,6 +2,7 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Offered a step back to an older release as the one to install
 #      Paulinchen  2026-10-15: Handed keywords on through the wrapped File and Dir methods
 #                            - Passed a new world's options to the DLL in one number
 #      Paulinchen  2026-10-14: Gave a Raid World a shared save in every build, ticked as for a Classic world
@@ -491,7 +492,7 @@ module MGQ_MpWorld
   def self.start(world, scene)
     unless available?
       log("not entering world #{world.id}: worlds are off, the DLL is missing or the mod is outdated")
-      return MGQ_Multiplayer::UPDATE_MESSAGE
+      return MGQ_Multiplayer.update_message
     end
 
     enter(world)
@@ -668,25 +669,43 @@ module MGQ_MpWorld
     true
   end
 
-  # A message box that offers the update once the player picks Multiplayer while a newer release
-  # is out: the DLL starts Update.bat, which waits for the game to close, updates the mod and
-  # starts the game again in the world screen. The box holds the buttons while it shows.
+  # A message box that offers the update once the player picks Multiplayer while another release
+  # is the one to play, a newer one or a step back the relay asks for: the DLL starts Update.bat,
+  # which waits for the game to close, installs that release and starts the game again in the
+  # world screen. The box holds the buttons while it shows.
   module UpdateOffer
     # The box's title, the newer version filled in.
     TITLE = "Monster Girl Quest! Online %s is out"
+
+    # The box's title for a step back, the older version filled in.
+    ROLLBACK_TITLE = "Monster Girl Quest! Online %s is the version to play"
 
     # What the box offers.
     TEXT = "This is an older version, which cannot play online. Update and install closes the game, " \
            "updates the mod and starts the game again in the Multiplayer menu."
 
+    # What the box offers for a step back.
+    ROLLBACK_TEXT = "This version cannot play online right now. Install closes the game, installs the " \
+                    "version to play and starts the game again in the Multiplayer menu."
+
     # The hint at the bottom of the box while it offers the update.
     HINT = "Enter: update and install     Esc or Numpad 0: back"
+
+    # The hint at the bottom of the box while it offers a step back.
+    ROLLBACK_HINT = "Enter: install     Esc or Numpad 0: back"
 
     # What the box says when the updater could not start.
     FAILED_TEXT = "The updater could not start. Close the game and run Patch\\Multiplayer\\Update.bat to update."
 
+    # What the box says when the updater could not start for a step back, the version filled in,
+    # since Update.bat alone installs the latest release.
+    ROLLBACK_FAILED_TEXT = "The updater could not start. Close the game and run Patch\\Multiplayer\\Update.bat -Version %s from a console."
+
     # What the box says under Wine or Proton, where the updater cannot run.
     WINE_TEXT = "Updating from the game needs Windows. Download the latest release and extract it over the game folder."
+
+    # What the box says under Wine or Proton for a step back, the version filled in.
+    ROLLBACK_WINE_TEXT = "Installing from the game needs Windows. Download release %s and extract it over the game folder."
 
     # The hint at the bottom of the box once the updater could not start.
     FAILED_HINT = "Enter, Esc, Numpad 0 or a click: close"
@@ -699,7 +718,7 @@ module MGQ_MpWorld
       @scene = scene
       @failed = false
       @box ||= Sprite_MpMessageBox.new
-      @box.show(title, TEXT, HINT)
+      @box.show(title, MGQ_Multiplayer.rollback? ? ROLLBACK_TEXT : TEXT, MGQ_Multiplayer.rollback? ? ROLLBACK_HINT : HINT)
       MGQ_MpWorld.log("update to #{MGQ_Multiplayer.newer_version} offered")
       MGQ_Multiplayer::Capture.start(:update_offer)
       # Windows keeps a click until it is asked for, so one from before the box would close it.
@@ -751,7 +770,7 @@ module MGQ_MpWorld
       Sound.play_buzzer
       MGQ_MpWorld.log(started == 2 ? "the updater cannot run under Wine" : "the updater could not start")
       @failed = true
-      @box.show(title, started == 2 ? WINE_TEXT : FAILED_TEXT, FAILED_HINT)
+      @box.show(title, failed_text(started == 2), FAILED_HINT)
     end
 
     # Hides the box and gives the buttons back to the title menu.
@@ -764,11 +783,22 @@ module MGQ_MpWorld
       commands.activate if commands && !commands.disposed?
     end
 
+    # Tells what the box says once the updater could not start.
+    #
+    # @param wine [Boolean] Whether the game runs under Wine or Proton, where the updater cannot run.
+    # @return [String] The text, for a step back with the version to install filled in.
+    def self.failed_text(wine)
+      version = MGQ_Multiplayer.newer_version
+      return format(wine ? ROLLBACK_WINE_TEXT : ROLLBACK_FAILED_TEXT, version) if MGQ_Multiplayer.rollback?
+
+      wine ? WINE_TEXT : FAILED_TEXT
+    end
+
     # The box's title.
     #
-    # @return [String] The title, the newer version filled in.
+    # @return [String] The title, the version to install filled in.
     def self.title
-      format(TITLE, MGQ_Multiplayer.newer_version)
+      format(MGQ_Multiplayer.rollback? ? ROLLBACK_TITLE : TITLE, MGQ_Multiplayer.newer_version)
     end
   end
 

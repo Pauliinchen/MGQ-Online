@@ -2,6 +2,7 @@
 #  Update.ps1
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Installed the release -Version names, an older one too
 #      Paulinchen  2026-10-08: Took the game's process from the game that starts the update and started the game again afterwards
 #                            - Held the game's process from the start
 #                            - Took every path literally
@@ -14,13 +15,18 @@
 #----------------------------------------------------------------
 
 # Updates the mod in the game folder two levels above this one (this script lives in
-# Patch\Multiplayer) to the latest release on GitHub, removing files an earlier version left behind
-# that the new one no longer ships. Update.bat runs it, started by the player or by the game.
+# Patch\Multiplayer) to the latest release on GitHub, or to the release -Version names, older ones
+# too, removing files the version before left behind that the installed one no longer ships.
+# Update.bat runs it, started by the player or by the game.
 
 param(
     # The game's process when the game started the update: the update waits for it to close and
     # starts the game again afterwards.
-    [int]$GameProcess = 0
+    [int]$GameProcess = 0,
+
+    # The release to install, like 0.6.8, newer or older than the installed one; empty for the
+    # latest release.
+    [string]$Version = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -30,6 +36,7 @@ $ProgressPreference = 'SilentlyContinue'
 
 # GitHub's answer for the latest release, the user agent its API asks for, and the release's zip.
 $LatestReleaseUrl = 'https://api.github.com/repos/Pauliinchen/MGQ-Online/releases/latest'
+$TaggedReleaseUrl = 'https://api.github.com/repos/Pauliinchen/MGQ-Online/releases/tags/v{0}'
 $UserAgent        = 'MGQ-Online'
 $ReleaseZip       = 'MGQ-Online-*.zip'
 
@@ -135,9 +142,15 @@ function Remove-StaleFiles([string[]]$Old, [string[]]$New) {
 # Prints a release's notes.
 #
 # $Release: the release, as GitHub's API describes it.
-function Show-ReleaseNotes($Release) {
+# $Older: whether the release is older than the version it replaced.
+function Show-ReleaseNotes($Release, [bool]$Older) {
     Write-Host ''
-    Write-Host "What's new in $($Release.tag_name):"
+    if ($Older) {
+        Write-Host "Notes of $($Release.tag_name):"
+    }
+    else {
+        Write-Host "What's new in $($Release.tag_name):"
+    }
     Write-Host ('-' * 60)
 
     if ([string]::IsNullOrWhiteSpace($Release.body)) {
@@ -216,10 +229,42 @@ function Expand-Release([string]$Zip) {
     }
 }
 
-# Installs the latest release over the game folder, unless the mod is up to date.
+# Asks GitHub for the release to install: the one -Version names, else the latest.
 #
-# Returns $true once the mod is up to date.
-function Install-LatestRelease {
+# Returns the release, as GitHub's API describes it.
+function Get-WantedRelease {
+    if ($Version -eq '') {
+        Write-Host 'Looking for the latest release . . .'
+        return Invoke-RestMethod -Uri $LatestReleaseUrl -UserAgent $UserAgent -UseBasicParsing
+    }
+
+    # The version goes into the address, so only dotted numbers pass.
+    if ($Version -notmatch '^\d+(\.\d+){0,3}$') {
+        throw "$Version is no release version, such as 0.6.8."
+    }
+
+    Write-Host "Looking for release $Version . . ."
+    return Invoke-RestMethod -Uri ($TaggedReleaseUrl -f $Version) -UserAgent $UserAgent -UseBasicParsing
+}
+
+# Reads a release's tag as a version that compares with the installed one, the parts it lacks as 0.
+#
+# $Tag: the tag, like v0.6.8.
+#
+# Returns the version with four parts.
+function ConvertTo-FullVersion([string]$Tag) {
+    $parts = @($Tag.TrimStart('v').Split('.') | ForEach-Object { [int]$_ })
+    while ($parts.Count -lt 4) {
+        $parts += 0
+    }
+
+    return New-Object System.Version $parts[0], $parts[1], $parts[2], $parts[3]
+}
+
+# Installs the wanted release over the game folder, unless it is installed already.
+#
+# Returns $true once the mod is at the wanted release.
+function Install-WantedRelease {
     if (-not (Test-Path -LiteralPath $GameExe)) {
         throw "Game.exe is not in $GameDir. Keep this script in Patch\Multiplayer inside the game folder."
     }
@@ -227,15 +272,23 @@ function Install-LatestRelease {
     # Windows PowerShell 5.1 may still default to TLS 1.0, which GitHub refuses.
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-    Write-Host 'Looking for the latest release . . .'
-    $release = Invoke-RestMethod -Uri $LatestReleaseUrl -UserAgent $UserAgent -UseBasicParsing
-    $latest = [version]$release.tag_name.TrimStart('v')
+    $release = Get-WantedRelease
+    $latest = $release.tag_name.TrimStart('v')
+    $wanted = ConvertTo-FullVersion $latest
     $installed = Get-InstalledVersion
+    $current = if ($installed) { ConvertTo-FullVersion $installed.ToString() } else { $null }
 
-    if ($installed -and $installed -ge $latest) {
-        Write-Host "The mod is up to date ($installed)."
+    if ($current -and ($current -eq $wanted -or ($Version -eq '' -and $current -gt $wanted))) {
+        if ($Version -eq '') {
+            Write-Host "The mod is up to date ($installed)."
+        }
+        else {
+            Write-Host "Release $installed is installed already."
+        }
         return $true
     }
+
+    $older = $current -and $current -gt $wanted
 
     $zip = $release.assets | Where-Object { $_.name -like $ReleaseZip } | Select-Object -First 1
     if (-not $zip) {
@@ -243,7 +296,12 @@ function Install-LatestRelease {
     }
 
     $from = if ($installed) { $installed } else { 'an unknown version' }
-    Write-Host "Updating from $from to $latest."
+    if ($older) {
+        Write-Host "Going back from $from to $latest."
+    }
+    else {
+        Write-Host "Updating from $from to $latest."
+    }
 
     Wait-GameClosed
 
@@ -269,15 +327,15 @@ function Install-LatestRelease {
         Write-Host "Removed $removed file(s) of the old version that the new one no longer ships."
     }
 
-    Write-Host "Updated to $latest. Your player name and worlds are kept."
+    Write-Host "Installed $latest. Your player name and worlds are kept."
     # Last, so nothing the update prints scrolls the notes out of sight.
-    Show-ReleaseNotes $release
+    Show-ReleaseNotes $release $older
     return $true
 }
 
 $updated = $false
 try {
-    $updated = Install-LatestRelease
+    $updated = Install-WantedRelease
 }
 catch {
     Write-Host "The update failed: $($_.Exception.Message)" -ForegroundColor Red

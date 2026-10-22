@@ -2,6 +2,7 @@
 #  world_mods.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Said the version to play for a step back when the entry after a restart is refused
 #      Paulinchen  2026-10-15: Listed the world's mods and their options this game runs for the battle server
 #      Paulinchen  2026-10-13: Left the mod's single player group out of the options dump
 #      Paulinchen  2026-10-12: Listed the Shared Mod Settings row among the mod's settings and left the mod's groups out of the options dump
@@ -613,7 +614,7 @@ module MGQ_MpWorldMods
 
     if MGQ_Multiplayer.outdated?
       log("not entering world #{MGQ_MpWorld.short(id)} again after the restart: the mod is outdated")
-      return MGQ_MpModParking.give_up(MGQ_Multiplayer::UPDATE_MESSAGE) if defined?(MGQ_MpModParking) && MGQ_MpModParking.holding?
+      return MGQ_MpModParking.give_up(MGQ_Multiplayer.update_message) if defined?(MGQ_MpModParking) && MGQ_MpModParking.holding?
 
       return MGQ_MpWorld.offer_update(scene)
     end

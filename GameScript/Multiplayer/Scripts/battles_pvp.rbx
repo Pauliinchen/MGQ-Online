@@ -2,6 +2,7 @@
 #  battles_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Said the version to play on F11 for a step back to an older release
 #      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #      Paulinchen  2026-10-08: Left out a skill hit's message without a target in co-op and live battles too
 #                            - Fought a duel in a Raid World with each player's squad
@@ -103,7 +104,7 @@ module MGQ_MpBattlesPvp
 
       if pressed
         MGQ_MpHotkeys.log_refusal(:overview, "the PvP battle screen stays closed, a newer release is out")
-        $game_message.add(MGQ_Multiplayer::UPDATE_MESSAGE)
+        $game_message.add(MGQ_Multiplayer.update_message)
       end
       return
     end

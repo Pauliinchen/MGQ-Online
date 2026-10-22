@@ -2,6 +2,7 @@
 #  world_open_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Checked the update offer of a step back to an older release
 #      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number
 #      Paulinchen  2026-10-14: Expected a Raid World's starting save in its details and its Save in every build
 #      Paulinchen  2026-10-13: Checked a Classic world's raid bosses in the list, the details, world.ini and the open world
@@ -97,6 +98,9 @@ module MGQ_Multiplayer
   # What an outdated game is told.
   UPDATE_MESSAGE = "Update."
 
+  # Gives the update message, for a step back with the version to play, from $rollback.
+  def self.update_message; $rollback ? "#{newer_version} is the version to play now." : UPDATE_MESSAGE; end
+
   # Answers that the mod is available.
   def self.available?; true; end
 
@@ -105,6 +109,9 @@ module MGQ_Multiplayer
 
   # Gives the newer version while the game is outdated.
   def self.newer_version; $outdated ? "9.9.9" : nil; end
+
+  # Answers whether the version to install is a step back, from $rollback.
+  def self.rollback?; $rollback == true; end
 
   # Gives the text as it is.
   def self.clean(text); text; end
@@ -844,6 +851,28 @@ check("under Wine the game stays open and the box tells to update by hand", [$ex
 offer.hide
 MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| working_function(name) }
 offer.hide
+$rollback = true
+MGQ_MpWorld.open_world_screen(title_scene)
+check("a step back the relay asks for is offered as the version to play",
+      offer.instance_variable_get(:@box).shown[0, 3], ["Monster Girl Quest! Online 9.9.9 is the version to play", MGQ_MpWorld::UpdateOffer::ROLLBACK_TEXT, MGQ_MpWorld::UpdateOffer::ROLLBACK_HINT])
+$calls.clear
+$pressed = :C
+offer.update
+$pressed = nil
+check("confirm starts the updater for it and closes the game, as for an update", [$calls.map(&:first), $exited], [["mp_update_game"], true])
+$exited = nil
+offer.hide
+MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| Struct.new(:name) { def call(*); 0; end }.new(name) }
+MGQ_MpWorld.open_world_screen(title_scene)
+$pressed = :C
+offer.update
+$pressed = nil
+check("an updater that cannot start names the version to install by hand",
+      offer.instance_variable_get(:@box).shown[1], "The updater could not start. Close the game and run Patch\\Multiplayer\\Update.bat -Version 9.9.9 from a console.")
+MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| working_function(name) }
+offer.hide
+check("and the world refusal says so too", MGQ_MpWorld.start(MGQ_MpWorld::World.allocate, nil), "9.9.9 is the version to play now.")
+$rollback = false
 $outdated = false
 
 # The game started again by the updater opens the world screen once.

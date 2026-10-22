@@ -2,6 +2,7 @@
 #  bug_report_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Stood in for the update message
 #      Paulinchen  2026-10-12: Checked when what the notification box says waits, shows or is dropped
 #                            - Checked that the wheel scrolling the box being typed into draws it anew
 #                            - Checked that a refused bug report hotkey is logged under the hotkeys
@@ -127,6 +128,8 @@ end
 module MGQ_Multiplayer
   DLL = "Multiplayer.dll"
   UPDATE_MESSAGE = "Update."
+  # Gives the update message as it is.
+  def self.update_message; UPDATE_MESSAGE; end
   def self.available?; true; end
   def self.outdated?; false; end
   def self.clean(text, _fallback = nil); text; end

@@ -2,6 +2,7 @@
 #  world_mods_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Stood in for the update message
 #      Paulinchen  2026-10-15: Checked the world's mods and options this game hands the battle server
 #      Paulinchen  2026-10-13: Kept the title screen from writing GameData.ini
 #      Paulinchen  2026-10-12: Followed the settings to their own Mod Config group and checked the dump leaves the hotkeys out
@@ -196,6 +197,8 @@ $ini = {}
 module MGQ_Multiplayer
   # The message of an update.
   UPDATE_MESSAGE = "Update."
+  # Gives the update message as it is.
+  def self.update_message; UPDATE_MESSAGE; end
   # The DLL is always there.
   def self.available?; true; end
   # The game is never outdated.

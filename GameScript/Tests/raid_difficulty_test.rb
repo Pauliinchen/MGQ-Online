@@ -2,6 +2,7 @@
 #  raid_difficulty_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Stood in for whether the version to install is a step back and for the update message
 #      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number
 #      Paulinchen  2026-10-14: Checked a Raid World's Shared save in every build
 #      Paulinchen  2026-10-13: Checked a Classic world's raid bosses in the forms and the calls of mp_dir_create and mp_dir_edit
@@ -120,12 +121,16 @@ $ini = {}
 module MGQ_Multiplayer
   # Stands in for the text that asks for an update.
   UPDATE_MESSAGE = "Update."
+  # Gives the update message as it is.
+  def self.update_message; UPDATE_MESSAGE; end
   # Stands in for whether the mod can run: answers true.
   def self.available?; true; end
   # Stands in for whether the mod is outdated: answers false.
   def self.outdated?; false; end
   # Stands in for a newer version: there is none.
   def self.newer_version; nil; end
+  # Stands in for a step back to an older version: there is none.
+  def self.rollback?; false; end
   # Stands in for cleaning a text for the screen, keeping it as it is.
   def self.clean(text); text; end
   # Stands in for a path in the game's folder, keeping it as it is.

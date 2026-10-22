@@ -2,6 +2,7 @@
 //  GameRestart.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Had the updater install the release offered, an older one too
 //      Paulinchen  2026-10-09: Started the parked mods' watchdog
 //      Paulinchen  2026-10-08: Started the mod's updater
 //                            - Started neither the updater nor the restart under Wine
@@ -61,12 +62,13 @@ internal static class GameRestart
     internal static Func<string?> WineVersion { get; set; } = NativeMethods.WineVersion;
 
     /// <summary>
-    /// Has the mod's updater wait in a console of its own for this game to close, update the mod and
-    /// start the game again.
+    /// Has the mod's updater wait in a console of its own for this game to close, install a release
+    /// of the mod and start the game again.
     /// </summary>
     /// <param name="modFolder">The mod folder, which holds the updater.</param>
+    /// <param name="version">The release to install, newer or older, like <c>0.6.8</c>; <see langword="null"/> for GitHub's latest.</param>
     /// <returns>Whether the updater started, or why not.</returns>
-    public static RestartStart UpdateAfterExit(string modFolder)
+    public static RestartStart UpdateAfterExit(string modFolder, string? version = null)
     {
         var updater = Path.Combine(modFolder, Updater);
 
@@ -87,13 +89,26 @@ internal static class GameRestart
         {
             UseShellExecute = true,
             WorkingDirectory = modFolder,
-            Arguments = string.Create(CultureInfo.InvariantCulture, $"-GameProcess {Environment.ProcessId}"),
+            Arguments = UpdaterArguments(Environment.ProcessId, version),
         };
 
         using var process = Process.Start(start);
-        Log.Write(process != null ? "the updater waits for the game to close" : "update failed: the updater did not start");
+        Log.Write(process != null ? $"the updater waits for the game to close to install {version ?? "the latest release"}" : "update failed: the updater did not start");
         return process != null ? RestartStart.Waiting : RestartStart.Failed;
     }
+
+    /// <summary>
+    /// Writes the updater's arguments.
+    /// </summary>
+    /// <remarks>
+    /// cmd reads the arguments again, so a version is passed only as dotted numbers.
+    /// </remarks>
+    /// <param name="processId">This game's process id, which the updater waits for.</param>
+    /// <param name="version">The release to install; <see langword="null"/> or anything but dotted numbers for GitHub's latest.</param>
+    /// <returns>The arguments for Update.bat.</returns>
+    internal static string UpdaterArguments(int processId, string? version) =>
+        string.Create(CultureInfo.InvariantCulture, $"-GameProcess {processId}")
+        + (UpdateCheck.ParseRelease(version) != null ? $" -Version {version}" : string.Empty);
 
     /// <summary>
     /// Has a hidden PowerShell wait for this game to close and then start Game.exe again.

@@ -2,6 +2,7 @@
 #  mod_parking_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Stood in for whether the version to install is a step back and for the update message
 #      Paulinchen  2026-10-14: Expected a Raid World's row of its Save in every build
 #      Paulinchen  2026-10-13: Expected the raid bosses of a Classic world in its edit form and after the squad rules in the DLL calls
 #                            - Expected the row of a Raid World's squad rules' button and the squad rules after the other mods in the DLL calls
@@ -117,11 +118,14 @@ $recover = 0
 module MGQ_Multiplayer
   # The text that tells of an update.
   UPDATE_MESSAGE = "Update."
+  # Gives the update message as it is.
+  def self.update_message; UPDATE_MESSAGE; end
   def self.available?; true; end
   def self.outdated?; $outdated == true; end
   def self.clean(text); text; end
   def self.path(name); name; end
   def self.newer_version; "9.9.9"; end
+  def self.rollback?; false; end
   # Stands in for the log, keeping its lines in $log.
   module Log; def self.write(message); ($log ||= []) << message; end; end
   # Stands in for the keyboard, no key pressed.

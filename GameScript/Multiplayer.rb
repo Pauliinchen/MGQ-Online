@@ -2,6 +2,7 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Named mp_update_rollback, told whether the release to install is a step back and said the version to play for one
 #      Paulinchen  2026-10-17: Loaded battles_raid_freeze_data.rbx, battles_raid_freeze.rbx and world_freeze.rbx after battles_raid_pool.rbx
 #                            - Loaded ui_raid_freeze.rbx after ui_raid_bar.rbx
 #      Paulinchen  2026-10-15: Loaded battles_served.rbx after battles_sync_live.rbx and named the mp_battle_* exports
@@ -166,6 +167,10 @@ module MGQ_Multiplayer
   # What the game says wherever the player tries to use the mod once a newer release is out.
   UPDATE_MESSAGE = "A Monster Girl Quest! Online update is out. Pick Multiplayer on the title screen to update."
 
+  # What the game says there instead once the release to play is older than this one, its version
+  # filled in.
+  ROLLBACK_MESSAGE = "Monster Girl Quest! Online %s is the version to play now. Pick Multiplayer on the title screen to install it."
+
   # Tells whether the mod can run.
   #
   # @return [Boolean] Whether the mod is on and its DLL is in the mod folder.
@@ -192,8 +197,9 @@ module MGQ_Multiplayer
     Log.write("start failed: #{e.class}: #{e.message}")
   end
 
-  # Tells whether a newer release of the mod is out, which MGQ_MpWorld and MGQ_MpBattlesPvp disable
-  # themselves for, so two games speaking a protocol a refactor changed never meet.
+  # Tells whether another release of the mod is the one to play, a newer one or a step back the
+  # relay asks for, which MGQ_MpWorld and MGQ_MpBattlesPvp disable themselves for, so two games
+  # speaking a protocol a refactor changed never meet.
   #
   # @return [Boolean] Whether one was found.
   def self.outdated?
@@ -218,11 +224,26 @@ module MGQ_Multiplayer
     Log.write("F12 reset the game: its scenes start again from the title (run #{@runs}), the mod keeps its hooks and state") if @runs > 1
   end
 
-  # Reads the newer release's version, once the check found one.
+  # Reads the version of the release to install, once the check found one.
   #
   # @return [String, nil] The version, nil until one was found.
   def self.newer_version
     UpdateCheck.version
+  end
+
+  # Tells whether the release to install is older than this one, a step back the relay asks for.
+  #
+  # @return [Boolean] Whether it is.
+  def self.rollback?
+    UpdateCheck.rollback?
+  end
+
+  # Tells what the game says wherever the player tries to use the mod while another release is the
+  # one to play.
+  #
+  # @return [String] UPDATE_MESSAGE, or ROLLBACK_MESSAGE for a step back.
+  def self.update_message
+    rollback? ? format(ROLLBACK_MESSAGE, newer_version) : UPDATE_MESSAGE
   end
 
   # Builds the path of a file inside the mod folder, relative to the game's folder.
@@ -777,6 +798,7 @@ module MGQ_Multiplayer
       'mp_player_id' => READ_ARGUMENTS,
       'mp_restart_game' => 'v',
       'mp_update_game' => 'v',
+      'mp_update_rollback' => 'v',
       'mp_dev_build' => 'v',
 
       # The keyboard, the clipboard and the mouse wheel.
@@ -1074,8 +1096,8 @@ module MGQ_Multiplayer
     end
   end
 
-  # Asks GitHub for the latest release of the mod, once per game session, on a thread of the DLL's
-  # own, see MGQ_Multiplayer.outdated?.
+  # Asks the relay for the release to play, or GitHub for the latest release, once per game session,
+  # on a thread of the DLL's own, see MGQ_Multiplayer.outdated?.
   module UpdateCheck
     # Frames between two looks at the DLL, half a second at 60 frames per second.
     CHECK_FRAMES = 30
@@ -1088,11 +1110,11 @@ module MGQ_Multiplayer
       return unless MGQ_Multiplayer.available?
 
       Link.function('mp_check_for_update').call
-      Log.write("asked the DLL to look for a newer release; Multiplayer.log tells its answer")
+      Log.write("asked the DLL for the release to play; Multiplayer.log tells its answer")
     end
 
-    # Polls the DLL for a newer release. Called every frame, acts every CHECK_FRAMES, and stops
-    # asking once one was found.
+    # Polls the DLL for the release to install. Called every frame, acts every CHECK_FRAMES, and
+    # stops asking once one was found.
     def self.tick
       return if @version
 
@@ -1104,16 +1126,25 @@ module MGQ_Multiplayer
       return if text.empty?
 
       @version = text
-      Log.write("update gate closed: release #{text} is out, so worlds and PvP battles stay shut until the update")
+      @rollback = Link.function('mp_update_rollback').call == 1
+      Log.write("update gate closed: release #{text} is #{@rollback ? 'the one to play, a step back' : 'out'}, so worlds and PvP battles stay shut until it is installed")
     rescue => e
       Log.write("update check failed: #{e.class}: #{e.message}")
     end
 
-    # Reads the latest release's version, once the check found it newer than the installed one.
+    # Reads the version of the release to install, once the check found one other than the
+    # installed one.
     #
     # @return [String, nil] The version, nil while none was found.
     def self.version
       @version
+    end
+
+    # Tells whether the release to install is older than the installed one.
+    #
+    # @return [Boolean] Whether it is, false while none was found.
+    def self.rollback?
+      @rollback == true
     end
   end
 
