@@ -2,7 +2,8 @@
 //  design_builds.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Tested that the world rooms hear racing publishes in the order the builds went live
+//      Paulinchen  2026-10-22: Tested that a build whose result cannot be kept fails
+//                            - Tested that the world rooms hear racing publishes in the order the builds went live
 //                            - Tested that a request that is not as it should be takes no rate limit token
 //                            - Tested that a publish refuses a build compiled against another live build
 //                            - Created
@@ -183,6 +184,24 @@ test("a build the compiler refuses keeps its report; a failed compile, a throwin
   const late = (await call(book, "GET", `/builds/${started.body.build.id}`)).body.builds[0];
   assert.deepEqual([late.status, late.report.failure.message], ["failed", "The compiler misses game data on the relay."]);
   assert.deepEqual(await call(book, "POST", "/builds", { seq: 0 }), { status: 503, body: { code: "compiler", message: "The compiler misses game data on the relay." } });
+});
+
+test("a build whose result the store cannot keep ends as failed, and the next build is kept", async () => {
+  const { book, frames } = await buildBook();
+  const finishBuild = book.store.finishBuild;
+  let refusals = 1;
+  book.store.finishBuild = async (id, fields, blobs) => {
+    if (blobs.length > 0 && refusals-- > 0) {
+      throw new Error("the disk is full");
+    }
+
+    return finishBuild(id, fields, blobs);
+  };
+
+  const lost = await buildNow(book);
+  assert.deepEqual([lost.status, lost.report, lost.marshalSha], ["failed", { ok: false, failure: { message: "The relay could not keep the build: the disk is full" } }, null]);
+  assert.equal(frames.at(-1).build.status, "failed");
+  assert.equal((await buildNow(book)).status, "ok");
 });
 
 test("a relay without a compiler refuses builds, and a bad seq is invalid", async () => {
