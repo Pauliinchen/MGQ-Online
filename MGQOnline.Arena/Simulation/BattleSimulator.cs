@@ -2,7 +2,8 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Gave the cooldown skills their start rests
+//      Paulinchen  2026-10-22: Let a full bank pay to skip a rest
+//                            - Gave the cooldown skills their start rests
 //                            - Capped the normal attacks per turn
 //                            - Planned a turn with the Overdrive and Last stand toggles
 //                            - Named the main target on unit hits
@@ -341,6 +342,7 @@ public sealed partial class BattleSimulator
     {
         int start = state.Plan.Count;
         int points = ApBudget.PointsOf(state, enemy, _options);
+        bool fullBank = FullBank(state, enemy.ApBank);
         enemy.ApThis = 0;
         enemy.ApBank = 0;
         Raise(state, new TurnScheduleEvent(state.Turn, enemy.Index));
@@ -361,7 +363,7 @@ public sealed partial class BattleSimulator
         if (grapple == 0 || !Grapple(state, enemy, grapple))
         {
             grapple = 0;
-            (left, spent) = Roll(state, enemy, points);
+            (left, spent) = Roll(state, enemy, points, fullBank);
         }
 
         left = Math.Max(0, left + enemy.ApThis);
@@ -388,6 +390,18 @@ public sealed partial class BattleSimulator
 
         Log(state, new ApTurnEvent(state.Turn, enemy.Index, points, spent, banked));
         return new EnemyPlan(enemy.Index, points, spent, banked, grapple == 0 ? 0 : grapple == BindSkillType ? BindState : EternalBindState, frozen, state.Plan.GetRange(start, state.Plan.Count - start));
+    }
+
+    /// <summary>
+    /// Tells whether a bank is at its cap, so it may pay to skip rests when the game rule lets it.
+    /// </summary>
+    /// <param name="state">The battle.</param>
+    /// <param name="bank">The points the enemy banked last turn.</param>
+    /// <returns>Whether the switch is on and the bank holds its cap, a cap of 0 never counting as full.</returns>
+    private bool FullBank(BattleState state, int bank)
+    {
+        int cap = ApBudget.Bank(int.MaxValue, Design.Rules.Ap.BankTurns, state.Tier.Ap);
+        return Design.Rules.Ap.BankSkipsRests && cap > 0 && bank >= cap;
     }
 
     /// <summary>
@@ -450,13 +464,15 @@ public sealed partial class BattleSimulator
     /// Rolls an enemy's actions on its points: the unscheduled actions of the normal pool whose
     /// condition holds and whose skill does not rest, and the normal attack with the lowest weight;
     /// every entry of the normal attack's skill runs at most the boss's or its tier's normal attacks
-    /// per turn.
+    /// per turn. With a full bank a resting skill joins at its skip price, and its use starts its
+    /// rest anew.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="enemy">The enemy.</param>
     /// <param name="points">The points.</param>
+    /// <param name="fullBank">Whether the enemy's bank is at its cap and may pay to skip rests.</param>
     /// <returns>The points left and spent.</returns>
-    private (int Left, int Spent) Roll(BattleState state, EnemyState enemy, int points)
+    private (int Left, int Spent) Roll(BattleState state, EnemyState enemy, int points, bool fullBank)
     {
         List<RollCandidate> candidates = [];
         List<RuntimeAction?> actions = [];
@@ -486,6 +502,7 @@ public sealed partial class BattleSimulator
         }
 
         int spent = 0;
+        Dictionary<string, int>? skippable = fullBank ? enemy.Rest.Where(rest => rest.Value > 0).ToDictionary(StringComparer.Ordinal) : null;
         RollResult result = ActionRoll.Roll(
             candidates,
             points,
@@ -496,14 +513,22 @@ public sealed partial class BattleSimulator
             {
                 RollCandidate candidate = candidates[place];
                 RuntimeAction? action = actions[place];
-                spent += candidate.Cost;
+                int skipped = Cooldowns.Resting(enemy, candidate.SkillKey) ? enemy.Rest[candidate.SkillKey] : 0;
+                int price = skipped > 0 ? ActionRoll.SkipPrice(candidate.Cost, skipped) : candidate.Cost;
+                spent += price;
                 Cooldowns.Start(enemy, candidate.SkillKey, candidate.Cooldown);
                 SkillRef skill = action?.Skill ?? attackSkill!.Value;
-                PlanCast(state, new Draft(enemy.Index, skill, PlanKind.Rolled, CastSide.Own, null, null, action?.Id, action?.Id), candidate.Cost, false, false);
+                if (skipped > 0)
+                {
+                    Log(state, new RestSkippedEvent(state.Turn, enemy.Index, candidate.SkillKey, skipped, price));
+                }
+
+                PlanCast(state, new Draft(enemy.Index, skill, PlanKind.Rolled, CastSide.Own, null, null, action?.Id, action?.Id) { SkippedRest = skipped }, price, false, false);
                 int given = enemy.ApThis;
                 enemy.ApThis = 0;
                 return given;
-            });
+            },
+            skippable);
         return (result.Left, spent);
     }
 
@@ -555,6 +580,7 @@ public sealed partial class BattleSimulator
             AimSeat = draft.AimSeat,
             Unstoppable = skill.Unstoppable,
             Telegraph = telegraph,
+            SkippedRest = draft.SkippedRest,
         };
         state.Plan.Insert(place, planned);
         return new AfterCastEvent(state.Turn, castId, draft.Enemy, draft.Skill, draft.Kind, draft.ActionId, draft.RootActionId, side);
@@ -917,5 +943,11 @@ public sealed partial class BattleSimulator
     /// <param name="ParentSide">The half of the cast that caused it, or null.</param>
     /// <param name="ActionId">The action it comes from, or null.</param>
     /// <param name="RootActionId">The action at the root of its chain, or null.</param>
-    private sealed record Draft(int Enemy, SkillRef Skill, PlanKind Kind, CastSide Side, int? AimSeat, GridHalf? ParentSide, string? ActionId, string? RootActionId);
+    private sealed record Draft(int Enemy, SkillRef Skill, PlanKind Kind, CastSide Side, int? AimSeat, GridHalf? ParentSide, string? ActionId, string? RootActionId)
+    {
+        /// <summary>
+        /// Gets the plans of rest a full bank paid to skip, 0 for none.
+        /// </summary>
+        public int SkippedRest { get; init; }
+    }
 }

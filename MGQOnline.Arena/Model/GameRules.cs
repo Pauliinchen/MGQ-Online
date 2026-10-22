@@ -2,7 +2,8 @@
 //  GameRules.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Added the game rule's normal attacks per turn
+//      Paulinchen  2026-10-22: Added the switch that lets a full bank pay to skip a rest
+//                            - Added the game rule's normal attacks per turn
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -74,6 +75,7 @@ public sealed record UnitRules(int Cap);
 /// <param name="BankTurns">How many turns' points a boss may bank.</param>
 /// <param name="NormalAttackWeight">The roll weight of the normal attack, on the scale of rating × 1024.</param>
 /// <param name="NormalAttacks">The most normal attacks an enemy rolls per turn where neither its tier nor its boss sets them.</param>
+/// <param name="BankSkipsRests">Whether an enemy whose bank is at its cap may roll a resting skill at its cost plus its cost again per turn of rest left.</param>
 public sealed record ApRules(
     int NoTier,
     int Min,
@@ -84,7 +86,8 @@ public sealed record ApRules(
     int UseWeightPermille,
     int BankTurns,
     int NormalAttackWeight,
-    int NormalAttacks = 1);
+    int NormalAttacks = 1,
+    bool BankSkipsRests = true);
 
 /// <summary>
 /// The cost limits of a skill.

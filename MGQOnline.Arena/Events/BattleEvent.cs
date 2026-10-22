@@ -2,7 +2,8 @@
 //  BattleEvent.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Added the start rest event
+//      Paulinchen  2026-10-22: Added the rest skipped event
+//                            - Added the start rest event
 //                            - Named the seat a rule fired for
 //                            - Named the main target on unit hits
 //      Paulinchen  2026-10-21: Created
@@ -39,6 +40,7 @@ namespace MGQOnline.Arena.Events;
 [JsonDerivedType(typeof(DebrisPlacedEvent), "debrisPlaced")]
 [JsonDerivedType(typeof(ApTurnEvent), "apTurn")]
 [JsonDerivedType(typeof(StartRestEvent), "startRest")]
+[JsonDerivedType(typeof(RestSkippedEvent), "restSkipped")]
 [JsonDerivedType(typeof(RuleFiredEvent), "ruleFired")]
 [JsonDerivedType(typeof(WarningEvent), "warning")]
 public abstract record BattleEvent(int Turn);
@@ -226,6 +228,16 @@ public sealed record ApTurnEvent(int Turn, int Enemy, int Start, int Spent, int 
 /// <param name="Skill">The skill's key.</param>
 /// <param name="Turns">The plans it rests before its first use.</param>
 public sealed record StartRestEvent(int Turn, int Enemy, string Skill, int Turns) : BattleEvent(Turn);
+
+/// <summary>
+/// A full bank paid to roll a resting skill, which starts its rest anew.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="Enemy">The enemy's index.</param>
+/// <param name="Skill">The skill's key.</param>
+/// <param name="Turns">The plans of rest it skipped, this one included.</param>
+/// <param name="Price">The points it paid: its cost plus its cost again per plan skipped.</param>
+public sealed record RestSkippedEvent(int Turn, int Enemy, string Skill, int Turns, int Price) : BattleEvent(Turn);
 
 /// <summary>
 /// A rule fired and queued its effects.

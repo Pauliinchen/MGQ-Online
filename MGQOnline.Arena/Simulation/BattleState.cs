@@ -2,6 +2,7 @@
 //  BattleState.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Named the rest a planned cast skipped
 //      Paulinchen  2026-10-21: Kept the rule ledger, the rule engine, the debris field and mark clocks
 //                            - Created
 //
@@ -520,6 +521,11 @@ public sealed record PlannedCast(
     /// Gets whether a state that landed after the plan disabled it.
     /// </summary>
     public bool MidTurn { get; init; }
+
+    /// <summary>
+    /// Gets the plans of rest a full bank paid to skip for it, 0 for none.
+    /// </summary>
+    public int SkippedRest { get; init; }
 
     /// <summary>
     /// Gets the redirecting states on the enemy that may redirect it.

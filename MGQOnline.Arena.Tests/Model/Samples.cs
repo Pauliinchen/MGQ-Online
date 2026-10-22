@@ -2,7 +2,8 @@
 //  Samples.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Added a start rest event and an opener
+//      Paulinchen  2026-10-22: Added a rest skipped event
+//                            - Added a start rest event and an opener
 //                            - Named a seat on the sample rule fire
 //                            - Set the main target on a unit hit trigger and event
 //      Paulinchen  2026-10-21: Kept the parsed tree in every sample formula
@@ -341,6 +342,7 @@ internal static class Samples
         new TurnScheduleEvent(1, 0),
         new AfterCastEvent(1, "c1", 0, Stigmata, PlanKind.Scheduled, "a1b2c3d4", "a1b2c3d4", GridHalf.Left),
         new AfterCastEvent(1, "c2", 0, Blast, PlanKind.FollowUp, null, "a1b2c3d4", GridHalf.Right),
+        new RestSkippedEvent(1, 0, "game:1515", 1, 4),
         new ApTurnEvent(1, 0, 9, 6, 3),
         new CastDisabledEvent(1, "c3", 10),
         new UnitMovedEvent(1, 3, new GridCell(2, 1), new GridCell(3, 1)),

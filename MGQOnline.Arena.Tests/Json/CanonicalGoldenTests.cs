@@ -2,7 +2,8 @@
 //  CanonicalGoldenTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Took the start rest event and the opener in the goldens
+//      Paulinchen  2026-10-22: Took the rest skip switch and event in the goldens
+//                            - Took the start rest event and the opener in the goldens
 //                            - Took the normal attacks per turn in the design golden
 //                            - Took the seat of a rule fire in the events golden
 //                            - Took the main target in the goldens
@@ -32,12 +33,12 @@ public sealed class CanonicalGoldenTests
     /// <summary>
     /// The SHA-256 of the design golden.
     /// </summary>
-    private const string DesignSha256 = "d7c4ebb6462d4de9f5b6d6bdf3c6665ade4b79824790c2f22e0125e9d28b5c96";
+    private const string DesignSha256 = "98e840290e64b2977bfe3b75caae09323c48ff5643a9ada4d86f332fa97eac0f";
 
     /// <summary>
     /// The SHA-256 of the battle log golden.
     /// </summary>
-    private const string EventsSha256 = "454f267e911442e45c6f09754d4eea1b4b5f66a3bd85c9f4086bbbf7518a9c70";
+    private const string EventsSha256 = "ce3d8b4e096810462998506c1fd4fd4765ad31351bb287d7e1b3d610f7cc747b";
 
     /// <summary>
     /// The sample design writes the golden's bytes.
