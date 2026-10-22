@@ -2,6 +2,7 @@
 //  EventFacts.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Read the enemy and cast of a resolved cast
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -25,6 +26,7 @@ internal static class EventFacts
     {
         TurnScheduleEvent schedule => schedule.Enemy,
         AfterCastEvent cast => cast.Enemy,
+        CastResolvedEvent resolved => resolved.Enemy,
         UnitHitEvent hit => hit.Enemy,
         BossHitEvent hit => hit.Enemy,
         BossHpBelowEvent below => below.Enemy,
@@ -55,6 +57,7 @@ internal static class EventFacts
     {
         UnitHitEvent hit => hit.CastId,
         AfterCastEvent cast => cast.CastId,
+        CastResolvedEvent resolved => resolved.CastId,
         StateAddedEvent added => added.CastId,
         UnitFellEvent fell => fell.CastId,
         _ => null,

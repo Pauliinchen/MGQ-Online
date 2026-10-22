@@ -2,7 +2,8 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Rolled the game's cycle skills
+//      Paulinchen  2026-10-22: Fired the rules of a resolved cast
+//                            - Rolled the game's cycle skills
 //                            - Let a full bank pay to skip a rest
 //                            - Gave the cooldown skills their start rests
 //                            - Capped the normal attacks per turn
@@ -723,9 +724,9 @@ public sealed partial class BattleSimulator
     }
 
     /// <summary>
-    /// Resolves one cast: its debris, its damage, its payload states, a unit hit event per unit hit
-    /// with the states that unit held before the cast and whether it is the main target, the falls,
-    /// and the units its debris pushed.
+    /// Resolves one cast: its debris, the rules its run fires, its damage, its payload states, a unit
+    /// hit event per unit hit with the states that unit held before the cast and whether it is the
+    /// main target, the falls, and the units its debris pushed.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="entry">The cast.</param>
@@ -742,7 +743,7 @@ public sealed partial class BattleSimulator
         _resolvingHits = seats;
         try
         {
-            Log(state, new CastResolvedEvent(state.Turn, entry.CastId, entry.Enemy, entry.Skill, seats, seats.Count == 0));
+            Raise(state, new CastResolvedEvent(state.Turn, entry.CastId, entry.Enemy, entry.Skill, seats, seats.Count == 0));
             List<int> fell = [];
             foreach (CastHit hit in hits)
             {

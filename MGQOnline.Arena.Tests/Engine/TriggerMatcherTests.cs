@@ -2,7 +2,8 @@
 //  TriggerMatcherTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Tested the main target filter of unit hits
+//      Paulinchen  2026-10-22: Tested the cast resolved trigger
+//                            - Tested the main target filter of unit hits
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -57,6 +58,20 @@ public sealed class TriggerMatcherTests
     [InlineData(8, true)]
     public void FiresTheScheduleOnTheConditionsTurns(int turn, bool fires) =>
         Assert.Equal(fires, Matches(new TurnScheduleTrigger(2, 3), new TurnScheduleEvent(turn, 0)));
+
+    /// <summary>
+    /// Fires on a resolved cast of its skill, or of any skill without one.
+    /// </summary>
+    [Fact]
+    public void MatchesAResolvedCastBySkill()
+    {
+        CastResolvedEvent resolved = new(2, "c1", 0, Blast, [], true);
+
+        Assert.True(Matches(new CastResolvedTrigger(Blast), resolved));
+        Assert.True(Matches(new CastResolvedTrigger(), resolved));
+        Assert.False(Matches(new CastResolvedTrigger(LightStigmata), resolved));
+        Assert.False(Matches(new CastResolvedTrigger(Blast), new AfterCastEvent(2, "c1", 0, Blast, PlanKind.Rolled)));
+    }
 
     /// <summary>
     /// Asks the battle for the turn condition, so the simulation alone pins the game's turn base.

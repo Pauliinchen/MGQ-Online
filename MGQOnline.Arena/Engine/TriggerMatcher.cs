@@ -2,7 +2,8 @@
 //  TriggerMatcher.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Matched unit hits by the main target
+//      Paulinchen  2026-10-22: Matched resolved casts by their skill
+//                            - Matched unit hits by the main target
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -34,6 +35,7 @@ internal static class TriggerMatcher
         (TurnEndTrigger, TurnEndEvent) => true,
         (TurnScheduleTrigger schedule, TurnScheduleEvent planned) => context.TurnHolds(schedule.A, schedule.B, planned.Turn),
         (AfterCastTrigger after, AfterCastEvent cast) => MatchesCast(after, cast, book),
+        (CastResolvedTrigger resolved, CastResolvedEvent cast) => Same(resolved.Skill, cast.Skill),
         (UnitHitTrigger unitHit, UnitHitEvent hit) => MatchesUnitHit(unitHit, hit),
         (BossHitTrigger bossHit, BossHitEvent hit) => MatchesBossHit(bossHit, hit),
         (BossHpBelowTrigger below, BossHpBelowEvent crossed) => below.Percent == crossed.Percent,

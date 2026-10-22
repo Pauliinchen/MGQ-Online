@@ -2,7 +2,8 @@
 //  TriggerSpec.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Added the main target filter of unit hits
+//      Paulinchen  2026-10-22: Added the cast resolved trigger
+//                            - Added the main target filter of unit hits
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -20,6 +21,7 @@ namespace MGQOnline.Arena.Model;
 [JsonDerivedType(typeof(TurnEndTrigger), "turnEnd")]
 [JsonDerivedType(typeof(TurnScheduleTrigger), "turnSchedule")]
 [JsonDerivedType(typeof(AfterCastTrigger), "afterCast")]
+[JsonDerivedType(typeof(CastResolvedTrigger), "castResolved")]
 [JsonDerivedType(typeof(UnitHitTrigger), "unitHit")]
 [JsonDerivedType(typeof(BossHitTrigger), "bossHit")]
 [JsonDerivedType(typeof(BossHpBelowTrigger), "bossHpBelow")]
@@ -56,6 +58,12 @@ public sealed record TurnScheduleTrigger(int A, int B) : TriggerSpec;
 /// <param name="Skill">The skill whose cast fires it, or null for any.</param>
 /// <param name="SkillType">The skill type whose cast fires it, or null for any.</param>
 public sealed record AfterCastTrigger(string? CastOfAction = null, SkillRef? Skill = null, int? SkillType = null) : TriggerSpec;
+
+/// <summary>
+/// Fires when a boss cast runs at the resolve, one that crowd control or the Overdrive did not stop.
+/// </summary>
+/// <param name="Skill">The skill whose cast fires it, or null for any.</param>
+public sealed record CastResolvedTrigger(SkillRef? Skill = null) : TriggerSpec;
 
 /// <summary>
 /// Fires once per unit a boss cast hits; every filter set must match.
