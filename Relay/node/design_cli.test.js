@@ -2,7 +2,8 @@
 //  design_cli.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Created
+//      Paulinchen  2026-10-22: Required an import without errors unless the dropped parts are accepted
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -11,6 +12,7 @@
 // data and publishes it, and a game fetches the build. Skipped unless RAID_DESIGNER_CLI names the
 // binary; RAID_DESIGNER_GAME then names the game folder (only read) and RAID_DESIGNER_FIXTURE the
 // format 1 design file, such as MGQ-Online-Raid-Designer/RaidDesigner.Tests/Fixtures/Format1/test-install-2026-10-17.json.
+// The import must report no errors; RAID_DESIGNER_ACCEPT_DROPPED=1 pushes the parts it drops anyway.
 
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
@@ -41,6 +43,11 @@ const GAME = process.env.RAID_DESIGNER_GAME?.trim() || null;
  * The format 1 design file the binary imports.
  */
 const FIXTURE = process.env.RAID_DESIGNER_FIXTURE?.trim() || null;
+
+/**
+ * Whether the import pushes a design whose report has errors, the parts it drops left out.
+ */
+const ACCEPT_DROPPED = process.env.RAID_DESIGNER_ACCEPT_DROPPED?.trim() === "1";
 
 /**
  * How long a build may take before the harness gives up: the compile's own limit, the probe's,
@@ -226,7 +233,12 @@ test("a local relay builds the user design through the real raid-designer binary
   const address = await startRelay(folder, designerId);
   const headers = { [DESIGNER_HEADER]: key, [FEATURES_HEADER]: "designer", [DESIGNER_VERSION_HEADER]: version.output.version, [DESIGN_FORMAT_HEADER]: String(version.output.designFormat) };
 
-  const imported = await cli(["import", "--format1", FIXTURE, "--push", "--accept-dropped", "--message", "the user design, imported by the relay harness", "--server", address, "--key-file", keyFile]);
+  const imported = await cli(["import", "--format1", FIXTURE, "--push", ...(ACCEPT_DROPPED ? ["--accept-dropped"] : []), "--message", "the user design, imported by the relay harness", "--server", address, "--key-file", keyFile]);
+
+  if (!ACCEPT_DROPPED) {
+    assert.equal(imported.output?.errors, 0, `the import report holds errors; RAID_DESIGNER_ACCEPT_DROPPED=1 pushes the design anyway: ${JSON.stringify(imported.output?.report?.filter((note) => note.severity === "error")) ?? imported.stderr}`);
+  }
+
   assert.equal(imported.code, 0, `import: ${JSON.stringify(imported.output) ?? imported.stderr}`);
   t.diagnostic(`imported ${imported.output.imported} entities with ${imported.output.errors} errors and ${imported.output.warnings} warnings in the report`);
 
