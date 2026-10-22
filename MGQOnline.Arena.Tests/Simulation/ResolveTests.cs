@@ -2,7 +2,9 @@
 //  ResolveTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Took the main target in the golden log hash
+//      Paulinchen  2026-10-22: Took the seats of rule fires in the golden log hash
+//                            - Tested the seat each rule fired for
+//                            - Took the main target in the golden log hash
 //      Paulinchen  2026-10-21: Read rule fires from the battle's ledger and marks from their clocks
 //                            - Created
 //
@@ -30,7 +32,7 @@ public sealed class ResolveTests
     /// <summary>
     /// The golden hash of the reference battle's log through the arena's casting part and rule engine.
     /// </summary>
-    private const string GoldenLogSha256 = "ee11af59261cbd8140ef6389f678a811f2fca44917804d16ac3ad541202ab046";
+    private const string GoldenLogSha256 = "71e4be2607e864ea5f340ddc071c602395df50d297e3ed08da6de590575313d5";
 
     /// <summary>
     /// The cells of the halves battle's units: four on each half.
@@ -197,6 +199,23 @@ public sealed class ResolveTests
         CastResolvedEvent resolved = Assert.Single(result.Events.OfType<CastResolvedEvent>());
         Assert.Equal([0], resolved.HitSeats);
         Assert.Equal((900, 1000), (state.Units[0].Hp, state.Units[1].Hp));
+    }
+
+    /// <summary>
+    /// The turn report names the seat each rule fired for: every unit's reaction on turn 5 once, and
+    /// no seat for a rule that fired on a turn's schedule.
+    /// </summary>
+    [Fact]
+    public void NamesTheSeatEachRuleFiredFor()
+    {
+        SimulationReport report = SimulationRunner.Run(HalvesBattle(), SimFixtures.Setup(HalvesCells), 5, PartyPolicies.Stay);
+
+        TurnReport five = report.Turns[4];
+        List<RuleFiredEvent> reactions = [.. five.Rules.Where(fired => fired.RuleId.StartsWith("react", System.StringComparison.Ordinal))];
+        Assert.Equal(Enumerable.Range(0, HalvesCells.Length), reactions.Select(fired => fired.Seat!.Value).Order());
+        Assert.All(reactions, fired => Assert.Equal(HalvesCells[fired.Seat!.Value].X < 7 ? "react-light" : "react-dark", fired.RuleId));
+        Assert.Contains(five.Rules, fired => fired.RuleId.EndsWith(":sched", System.StringComparison.Ordinal) && fired.Seat is null);
+        Assert.Equal(report.Log.OfType<RuleFiredEvent>().Where(fired => fired.Turn == 5), five.Rules);
     }
 
     /// <summary>

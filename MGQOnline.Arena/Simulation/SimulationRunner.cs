@@ -2,6 +2,7 @@
 //  SimulationRunner.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Reported the rules fired in each turn
 //      Paulinchen  2026-10-21: Took the concrete party policy seam
 //                            - Created
 //
@@ -91,7 +92,8 @@ public static class SimulationRunner
             [.. result.Events.OfType<UnitFellEvent>().Select(fell => fell.Seat)],
             [.. result.Events.OfType<ApTurnEvent>()],
             [.. state.Enemies.SelectMany(enemy => enemy.Rest.OrderBy(rest => rest.Key, StringComparer.Ordinal).Select(rest => new SkillRest(enemy.Index, rest.Key, rest.Value)))],
-            [.. result.Events.OfType<WarningEvent>().Select(warning => warning.Code)]);
+            [.. result.Events.OfType<WarningEvent>().Select(warning => warning.Code)],
+            [.. result.Events.OfType<RuleFiredEvent>()]);
     }
 
     /// <summary>

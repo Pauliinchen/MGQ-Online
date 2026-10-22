@@ -2,6 +2,7 @@
 //  SimulationReport.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Listed the rules fired in a turn with their seats
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -45,6 +46,7 @@ public sealed record SimulationReport(
 /// <param name="Ap">Each enemy's action points of the turn.</param>
 /// <param name="Rests">The skills resting at the turn's end.</param>
 /// <param name="Warnings">The warning codes of the turn.</param>
+/// <param name="Rules">The rules that fired in the turn, each with the seat it fired for.</param>
 public sealed record TurnReport(
     int Turn,
     IReadOnlyList<PlannedCast> Plan,
@@ -55,7 +57,8 @@ public sealed record TurnReport(
     IReadOnlyList<int> Fallen,
     IReadOnlyList<ApTurnEvent> Ap,
     IReadOnlyList<SkillRest> Rests,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    IReadOnlyList<RuleFiredEvent> Rules);
 
 /// <summary>
 /// A skill resting after a rolled use.

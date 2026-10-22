@@ -2,6 +2,7 @@
 //  RuleEngine.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Logged the seat a rule fired for
 //      Paulinchen  2026-10-21: Dropped the effect queue seam, since the engine runs its effects itself
 //                            - Created
 //
@@ -69,7 +70,7 @@ public sealed class RuleEngine
     }
 
     /// <summary>
-    /// Finds the rules that fire on an event, records their fires and logs them.
+    /// Finds the rules that fire on an event, records their fires and logs them with the unit they fired for.
     /// </summary>
     /// <remarks>
     /// An event that names an enemy reaches that enemy's rules only; any other event reaches the rules of
@@ -85,6 +86,7 @@ public sealed class RuleEngine
         ArgumentNullException.ThrowIfNull(battleEvent);
         List<FiredRule> fired = [];
         int? named = EventFacts.EnemyOf(battleEvent);
+        int? seat = EventFacts.TriggerUnitOf(battleEvent);
         foreach (int enemy in context.LivingEnemies)
         {
             if (named is int only && only != enemy)
@@ -95,7 +97,7 @@ public sealed class RuleEngine
             foreach (RuleSpec rule in RuleGroups.Pick(Successes(context, battleEvent, enemy), context.Rules))
             {
                 Record(context, battleEvent, enemy, rule);
-                context.Log(new RuleFiredEvent(battleEvent.Turn, rule.Id, depth));
+                context.Log(new RuleFiredEvent(battleEvent.Turn, rule.Id, depth, seat));
                 fired.Add(new FiredRule(rule, enemy, battleEvent, depth));
             }
         }

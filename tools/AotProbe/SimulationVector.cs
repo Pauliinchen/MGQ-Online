@@ -2,7 +2,8 @@
 //  SimulationVector.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Took the main target in the log hash
+//      Paulinchen  2026-10-22: Took the seats of rule fires in the log hash
+//                            - Took the main target in the log hash
 //      Paulinchen  2026-10-21: Played the reference battle through the arena's casting part and rule engine
 //                            - Created
 //
@@ -29,7 +30,7 @@ internal static class SimulationVector
     /// <summary>
     /// The SHA-256 of the reference battle's log, as the arena tests hold it.
     /// </summary>
-    public const string LogSha256 = "ee11af59261cbd8140ef6389f678a811f2fca44917804d16ac3ad541202ab046";
+    public const string LogSha256 = "71e4be2607e864ea5f340ddc071c602395df50d297e3ed08da6de590575313d5";
 
     /// <summary>
     /// The embedded reference design, the arena tests' fixture.

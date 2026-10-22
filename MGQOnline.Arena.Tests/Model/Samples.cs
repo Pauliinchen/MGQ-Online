@@ -2,7 +2,8 @@
 //  Samples.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Set the main target on a unit hit trigger and event
+//      Paulinchen  2026-10-22: Named a seat on the sample rule fire
+//                            - Set the main target on a unit hit trigger and event
 //      Paulinchen  2026-10-21: Kept the parsed tree in every sample formula
 //                            - Added a formula with a node of every kind
 //                            - Created
@@ -343,7 +344,7 @@ internal static class Samples
         new BossHitEvent(1, 0, 3, new GridCell(3, 1), HitKind.Physical, SkillRef.OfGame(1), [1], true),
         new BossHpBelowEvent(1, 0, 50),
         new UnitHitEvent(1, "c1", 0, Stigmata, 2, new GridCell(1, 0), [302], [301], "a1b2c3d4", true),
-        new RuleFiredEvent(1, "77aa0b1c", 0),
+        new RuleFiredEvent(1, "77aa0b1c", 0, 2),
         new DamageEvent(1, StateHolder.Unit, 2, 1234, 766, "c1", null),
         new StateAddedEvent(1, StateHolder.Unit, 2, 301, "c1", "game:3764:1c2d3e4f"),
         new StateRemovedEvent(1, StateHolder.Unit, 2, 302, "77aa0b1c"),

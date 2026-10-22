@@ -2,7 +2,8 @@
 //  BattleEvent.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Named the main target on unit hits
+//      Paulinchen  2026-10-22: Named the seat a rule fired for
+//                            - Named the main target on unit hits
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -221,7 +222,8 @@ public sealed record ApTurnEvent(int Turn, int Enemy, int Start, int Spent, int 
 /// <param name="Turn">The turn.</param>
 /// <param name="RuleId">The rule's id.</param>
 /// <param name="Depth">How many rule effects led to the event it matched, 0 for a battle event.</param>
-public sealed record RuleFiredEvent(int Turn, string RuleId, int Depth) : BattleEvent(Turn);
+/// <param name="Seat">The unit it fired for: the unit hit, given a state or fallen, or the attacker of a boss hit; null for none.</param>
+public sealed record RuleFiredEvent(int Turn, string RuleId, int Depth, int? Seat = null) : BattleEvent(Turn);
 
 /// <summary>
 /// Something went other than designed; the code names what.
