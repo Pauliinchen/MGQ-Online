@@ -55,6 +55,7 @@
       },
       "danger": { "noElement": [230, 40, 40, 160], "elements": { "1": [255, 120, 40, 160] } }
     },
-    "limits": { "percentMax": 1000 }
+    "limits": { "percentMax": 1000 },
+    "hazards": { "random": { "hazard:9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f": { "chance": 25, "min": 1, "max": 2 } } }
   }
 }

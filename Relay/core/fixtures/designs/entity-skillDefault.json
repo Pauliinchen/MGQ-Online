@@ -15,6 +15,7 @@
     "presentation": { "cellFlash": { "color": [255, 200, 120, 128], "frames": 8 }, "danger": [255, 120, 40, 160] },
     "debris": { "where": "hitCells", "turns": 2, "hits": 1, "look": { "kind": "picture", "picture": "Crater" } },
     "marks": { "leaves": [ { "id": "3e4f5061", "state": 40, "chance": 50, "landsOn": "mainTarget", "until": "turns", "turns": 2 } ] },
+    "hazard": {},
     "unstoppable": true
   }
 }

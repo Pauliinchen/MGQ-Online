@@ -33,7 +33,8 @@
       "presentation": { "cellFlash": { "color": [40, 0, 80, 200], "frames": 10 }, "danger": [60, 0, 120, 160] },
       "debris": { "where": "hitCells", "turns": 1, "hits": 1, "look": { "kind": "mapDefault" } },
       "marks": { "leaves": [ { "id": "8d9eafb0", "state": 302, "chance": 100, "landsOn": "everyoneHit",
-                               "until": "nextScheduledCast", "minTurns": 1 } ] }
+                               "until": "nextScheduledCast", "minTurns": 1 } ] },
+      "hazard": { "hazard": "hazard:9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f", "where": "aimedCell", "turns": 2 }
     },
     "unstoppable": false,
     "stance": { "turns": 1, "counter": { "id": "9eafb0c1", "kind": "delayedCounter", "fields": { "skill": { "custom": "e60606ab02f33e5bab0b8f64ec284fcd" } } } }
