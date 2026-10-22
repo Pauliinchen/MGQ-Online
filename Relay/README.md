@@ -19,9 +19,12 @@ core/bosses.js         a Raid World's boss pools: the share of the raid HP left,
 core/bosses.test.js    tests of the boss pools and the admin routes
 core/raid_admin.js     what admins see and set right in a Raid World: counters, pools, the route lock
 core/migration.js      everything a relay keeps, handed to its admins for another relay to take over
-core/designs.js        the Raid designs several designers edit together: entities, pushes, pulls, history, the designer list (Node only)
+core/designs.js        the Raid designs several designers edit together: entities, pushes, pulls, history, the designer list, presence and the newest designer release (Node only)
 core/designs.test.js   tests of the designs, the contract's exchanges replayed
+core/design_presence.test.js tests of the designer socket's frames and who is online
 core/design_store_memory.js the design store in memory
+core/designer_releases.js the newest Raid Designer release, read from its private repository and checked against its signed manifest (Node only)
+core/designer_releases.test.js tests of the designer releases, against a stand-in for GitHub
 core/test_designs.js   the contract's fixtures, canonical JSON and the states the design tests start from
 core/fixtures/designs/ a copy of the Raid Designer's contract fixtures (MGQ-Online-Raid-Designer/contract/designs)
 core/mods.js           the mod catalog's rules, over a store the platform passes in
@@ -47,6 +50,7 @@ node/schema.test.js    tests of the steps
 node/design_store_sqlite.js the design store over the same SQLite database
 node/design_store_sqlite.test.js tests of the SQLite design store
 node/designs_server.test.js tests of the design routes and their migration over HTTP
+node/designs_socket.test.js tests of the designer socket over real WebSockets
 node/migrate.js        copies everything a relay keeps into a new SQLite database and checks the copy
 node/migrate.test.js   tests of the copy from one relay to a new database
 ```
@@ -213,7 +217,7 @@ Between the relay and the battle server one TCP connection per battle carries JS
 The Raid Designer and its `raid-designer` CLI keep one shared Raid design on the relay, split into entities (`rules`, `catalog`, `tier:<n>`, `boss:<32 hex>`, `skillDefault:<skill>`, `customSkill:<32 hex>`, `map:<n>`, `tileset:<n>`, `state:<n>`, `bossFight:<troop>`). The relay stores each entity's body as it comes and never reads it; the contract, with every body and exchange, is `docs/SERVER_FORMAT.md` in the MGQ-Online-Raid-Designer repository, and `core/fixtures/designs/` holds a copy of its fixtures, which the tests replay. The Cloudflare relay answers every route below with 404 and `code` `no_designs`.
 
 - **Designers:** a designer names its key in `X-MGQ-Designer` (32 lowercase hex characters), its version in `X-MGQ-Designer-Version` (`0.0.0-dev` for a development build) and its design format in `X-MGQ-Design-Format`. Its id is the first 32 hex characters of the SHA-256 of `mgqmp designer <key>`, never a player id. The relay serves the designers its `designers` table lists; `DESIGNER_ADMINS` (designer ids, separated by commas) makes designer admins on every start, adding the missing ones under the start of their id until they rename themselves.
-- **Gate:** an unlisted key gets 403 `not_designer`; a version below `DESIGNER_MIN_VERSION` (every version unless set) or a design format below the relay's lowest gets 426 `update` with `minimum` and `minFormat`, except on `me` and `release`; a designer who is no admin gets 403 `admin_only` on an admin route; a development build pushes only as a designer admin, or as anyone with `DESIGNER_ALLOW_DEV=1` on a local test relay (403 `dev_build` otherwise). The game gate of Versions does not apply to these routes.
+- **Gate:** an unlisted key gets 403 `not_designer`; a version below `DESIGNER_MIN_VERSION` (every version unless set) or a design format below the relay's lowest gets 426 `update` with `minimum` and `minFormat`, except on `me`, `release` and `release/file`, which a listed designer of any version reaches, so an outdated designer can always update itself; a designer who is no admin gets 403 `admin_only` on an admin route (builds, publish, rollback, format); a development build writes (push, builds, publish, rollback, format) only as a designer admin, or as anyone with `DESIGNER_ALLOW_DEV=1` on a local test relay (403 `dev_build` otherwise). The game gate of Versions does not apply to these routes.
 - **Push rule:** a push is all or nothing. A change whose stored rev differs from its `baseRev` (0 for an entity that must not exist yet) comes back in a 409 `conflict` with the stored entity; a lower schema than stored gets 409 `schema`; more than 20 deletes need `confirmDeletes` from a designer admin (409 `deletes`). A delete keeps a tombstone; a delete of what is missing or deleted changes nothing. Every entity of a push gets the push's `seq` as its rev, and each entity keeps its last 50 revisions. A push from a released designer raises the design format and the lowest format to its `designFormat`. Pushes are limited to 30 at once and then one every 2 seconds per designer (429 `rate`), a push to 2 MiB and 200 changes, one body to 256 KiB (413 `too_big`).
 
 | Request | What it does |
@@ -225,9 +229,15 @@ The Raid Designer and its `raid-designer` CLI keep one shared Raid design on the
 | `GET /v1/designs/entities/<id>/history?limit=50` | An entity's revisions, newest first. |
 | `GET /v1/designs/designers` | The designers with `online` and what each edits, for designers and relay admins. |
 | `PUT /v1/designs/designers/<id>` | Adds a designer or changes its `name` and `admin`, for designer admins and relay admins (an `X-MGQ-Player` key whose id is in `ADMINS`); a relay admin may do nothing else here. |
-| `DELETE /v1/designs/designers/<id>` | Removes a designer, for the same. |
+| `DELETE /v1/designs/designers/<id>` | Removes a designer, for the same; its sockets close with 4403. |
+| `GET /v1/designs/release` | The newest designer release: `{version, minimum, notes, manifest, signature, size, sha256}`, the manifest's exact bytes and its signature in base64; 404 `none` while the relay holds none. |
+| `GET /v1/designs/release/file` | The release's exe, whole or the part a `Range` header asks for (206, 416 for a range past its end), 3 an hour per designer (429 `rate`); 404 `none` while the relay holds none. |
+| `wss://<relay>/v1/designs/socket` | The designer socket, under the same headers and gate as the read routes; a refused designer's socket opens and closes at once with 4403 (not a designer) or 4426 (update). |
 
-The builds, publishing, the designer socket and the designer's releases come later; until then their routes answer 404.
+- **Socket:** the relay greets a designer with `hello` (the seq, the designer, and the other designers online with what they edit) and tells every designer `pushed` after each push (its seq, designer and ids), `presence` and `left` as designers edit and go, and `release` for a new designer release; `build` and `live` come with the builds. A designer sends `{"op": "editing", "entity", "path"}` (nulls for nothing), told on at most once a second; what it edits is forgotten after 60 seconds without another, and once its last socket closes. The relay pings every 30 seconds and closes a socket that did not answer the last ping; a frame over 4 KB closes the socket. A designer pulls `since=<last seq>` on every connect, so a missed frame never matters.
+- **Releases:** with `DESIGNER_GITHUB_TOKEN`, `DESIGNER_RELEASE_PUBKEY` and `DESIGN_DATA_DIR` set, the relay reads the latest release of `DESIGNER_REPO` every 30 minutes with the token, which never leaves the server, downloads `RaidDesigner-<v>-win-x64.exe`, `RaidDesigner-<v>.manifest.json` and its `.sig`, checks the manifest's ECDSA P-256 signature and the exe's SHA-256 against it, and keeps the exe in `DESIGN_DATA_DIR/releases`. The designer checks everything again. It logs a warning from 30 days before `DESIGNER_GITHUB_TOKEN_EXPIRES`.
+
+The builds, publishing and the routes games read the live build from come later; until then their routes answer 404.
 
 ### World rooms
 
@@ -284,6 +294,8 @@ Up to 0.6.6.1 relay r1 ran on the free Workers plan at `relay.mgqmp.workers.dev`
    - `MIN_VERSION`: the lowest version a game may name, `0.6.0` unless set, see Versions.
    - `HOST` and `PORT`: where it listens, `127.0.0.1:8080` unless set.
    - `DESIGNER_ADMINS`, `DESIGNER_MIN_VERSION` and `DESIGNER_ALLOW_DEV`: the designer admins' designer ids, the lowest Raid Designer version served and whether development builds push as anyone (`1` only on a local test relay), see Raid designs. The design tables live in the same database, which the relay brings up to its newest step (`PRAGMA user_version`) as it starts.
+   - `DESIGN_DATA_DIR`: the folder the designer releases are kept in (`releases/`), such as `/var/lib/mgq-relay/designs`.
+   - `DESIGNER_REPO`, `DESIGNER_GITHUB_TOKEN`, `DESIGNER_GITHUB_TOKEN_EXPIRES` and `DESIGNER_RELEASE_PUBKEY`: the designer's private repository (`Pauliinchen/MGQ-Online-Raid-Designer` unless set), a fine-grained token with Contents: read on that repository only, its expiry date (such as `2027-10-01`) and the PEM of the release key (line breaks may be written `\n`); without the token, the key or `DESIGN_DATA_DIR` the relay serves no designer releases.
    - `BATTLE_SERVER`: the battle server's `host:port`, such as `127.0.0.1:8095`, which hosts the co-op battles; without it the starters host them, see Server battles. Run the battle server beside the relay as root (its sandbox needs it) with a game folder holding the game's `Data`, MGQ Online and Mod Config Remake, `BATTLE_RELAY_URL` pointing at this relay for the worlds' mods, see [BattleServer/README.md](../BattleServer/README.md).
 4. The relay writes one line per request to stdout (`<time> <method> <path> <status> <ms> <address>`, the path without its query, so no key ever appears) and every error it catches to stderr, with its stack. Under systemd both go to the journal (`journalctl -u <service>`); the service file's `StandardOutput=append:/var/log/mgq-relay/relay.log` keeps them in a file instead. The rooms and the WebSockets live in memory, so a restart ends every connection; the games connect again on their own.
 5. On its own the relay closes rooms and connections whose time is up every minute, checks the mod catalog's links every half hour, checks the mod's own releases every five minutes, and every ten minutes sweeps out worlds whose starting save never came and trades kept long enough, so the database does not grow with what nobody asks for again.
