@@ -2,6 +2,7 @@
 //  RandomStreamsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Counted the start rest stream
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -49,7 +50,7 @@ public sealed class RandomStreamsTests
     public void SeedsFromTheBattleSeedsDraws()
     {
         ulong state = 1234;
-        ulong[] draws = Enumerable.Range(0, 8).Select(_ => SplitMix64.Next(ref state)).ToArray();
+        ulong[] draws = Enumerable.Range(0, Enum.GetValues<RandomStream>().Length).Select(_ => SplitMix64.Next(ref state)).ToArray();
 
         Assert.Equal(draws, Enum.GetValues<RandomStream>().Select(stream => RandomStreams.SeedOf(1234, stream)));
     }
@@ -78,5 +79,5 @@ public sealed class RandomStreamsTests
     /// </summary>
     [Fact]
     public void GivesEveryStreamItsOwnSeed() =>
-        Assert.Equal(8, Enum.GetValues<RandomStream>().Select(stream => RandomStreams.SeedOf(0, stream)).Distinct().Count());
+        Assert.Equal(9, Enum.GetValues<RandomStream>().Select(stream => RandomStreams.SeedOf(0, stream)).Distinct().Count());
 }

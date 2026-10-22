@@ -2,7 +2,8 @@
 //  Samples.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Named a seat on the sample rule fire
+//      Paulinchen  2026-10-22: Added a start rest event and an opener
+//                            - Named a seat on the sample rule fire
 //                            - Set the main target on a unit hit trigger and event
 //      Paulinchen  2026-10-21: Kept the parsed tree in every sample formula
 //                            - Added a formula with a node of every kind
@@ -163,7 +164,8 @@ internal static class Samples
             new HitFactsSpec(100, 1, -500, false, 15000)),
         new SkillFacts(3, 1, 2, 1, 0, 1, 4181, 7, [1, 12], new TargetFilter([CharacterKind.Female, CharacterKind.Hero]), "SS"),
         new SkillDebrisSpec(DebrisPlace.HitCells, 3, 2, Look: new DebrisLook(DebrisLookKind.Tile, new TileRef("Dungeon_A2", 1536))),
-        new MarksSpec([new MarkLeaveSpec("1c2d3e4f", 301, 10000, StateLanding.EveryoneHit, MarkUntil.NextScheduledCast, 1, null)]));
+        new MarksSpec([new MarkLeaveSpec("1c2d3e4f", 301, 10000, StateLanding.EveryoneHit, MarkUntil.NextScheduledCast, 1, null)]),
+        Opener: true);
 
     /// <summary>
     /// Gets a support skill without the optional sections.
@@ -334,6 +336,7 @@ internal static class Samples
     [
         new BattleStartEvent(0),
         new DebrisPlacedEvent(0, [new GridCell(4, 2), new GridCell(5, 2)], 0, 2, null),
+        new StartRestEvent(0, 0, "game:3764", 2),
         new TurnStartEvent(1),
         new TurnScheduleEvent(1, 0),
         new AfterCastEvent(1, "c1", 0, Stigmata, PlanKind.Scheduled, "a1b2c3d4", "a1b2c3d4", GridHalf.Left),

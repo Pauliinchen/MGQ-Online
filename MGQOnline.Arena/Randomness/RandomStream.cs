@@ -2,6 +2,7 @@
 //  RandomStream.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Added the stream of the start rests
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -55,4 +56,9 @@ public enum RandomStream
     /// The simulated party's moves.
     /// </summary>
     Party = 7,
+
+    /// <summary>
+    /// The order in which the start rests of the cooldown skills are picked.
+    /// </summary>
+    StartRests = 8,
 }

@@ -2,7 +2,8 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Capped the normal attacks per turn
+//      Paulinchen  2026-10-22: Gave the cooldown skills their start rests
+//                            - Capped the normal attacks per turn
 //                            - Planned a turn with the Overdrive and Last stand toggles
 //                            - Named the main target on unit hits
 //      Paulinchen  2026-10-21: Ran the rules through the rule engine and the casts through the casting part
@@ -156,8 +157,8 @@ public sealed partial class BattleSimulator
     }
 
     /// <summary>
-    /// Starts a battle: places the party, forces the tier's states on the enemies, rolls the random
-    /// debris and fires the battle start rules.
+    /// Starts a battle: places the party, forces the tier's states on the enemies, gives their
+    /// cooldown skills their start rests, rolls the random debris and fires the battle start rules.
     /// </summary>
     /// <param name="setup">The setup.</param>
     /// <returns>The battle before its first turn.</returns>
@@ -198,6 +199,11 @@ public sealed partial class BattleSimulator
         foreach (EnemyState enemy in state.Enemies)
         {
             KeepTierStates(state, enemy);
+        }
+
+        foreach (EnemyState enemy in state.Enemies)
+        {
+            RestAtStart(state, enemy);
         }
 
         if (!DebrisLayout.IsNone(tier.Debris))
@@ -382,6 +388,37 @@ public sealed partial class BattleSimulator
 
         Log(state, new ApTurnEvent(state.Turn, enemy.Index, points, spent, banked));
         return new EnemyPlan(enemy.Index, points, spent, banked, grapple == 0 ? 0 : grapple == BindSkillType ? BindState : EternalBindState, frozen, state.Plan.GetRange(start, state.Plan.Count - start));
+    }
+
+    /// <summary>
+    /// Gives an enemy's rolled cooldown skills their start rests on its first turn's points and logs each.
+    /// </summary>
+    /// <param name="state">The battle, at its start.</param>
+    /// <param name="enemy">The enemy.</param>
+    private void RestAtStart(BattleState state, EnemyState enemy)
+    {
+        List<StartRestSkill> skills = [];
+        foreach (RuntimeAction action in ActionsOf(state, enemy.EnemyId))
+        {
+            if (!action.Scheduled && action.Rating >= 1 && state.Boss.Skills.TryGetValue(action.Skill.Key, out RuntimeSkill? skill) && !IsGrappleSkill(skill))
+            {
+                skills.Add(new StartRestSkill(skill.Ref.Key, skill.ApCost, skill.Cooldown, skill.Opener));
+            }
+        }
+
+        RuntimeNormalAttack attack = state.Boss.NormalAttack;
+        SkillRef? attackSkill = attack.Override ?? (attack.ByEnemy.TryGetValue(enemy.EnemyId, out SkillRef byEnemy) ? byEnemy : null);
+        if (attackSkill is SkillRef normal && state.Boss.Skills.TryGetValue(normal.Key, out RuntimeSkill? attackOwn) && Design.Rules.Ap.NormalAttackWeight > 0)
+        {
+            skills.Add(new StartRestSkill(attackOwn.Ref.Key, attackOwn.ApCost, attackOwn.Cooldown, attackOwn.Opener));
+        }
+
+        int points = ApBudget.PointsOf(state, enemy, _options);
+        foreach ((string key, int turns) in StartRests.Pick(skills, points, state.Random.Get(RandomStream.StartRests)))
+        {
+            enemy.Rest[key] = turns;
+            Log(state, new StartRestEvent(state.Turn, enemy.Index, key, turns));
+        }
     }
 
     /// <summary>

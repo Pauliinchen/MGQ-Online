@@ -2,6 +2,7 @@
 //  RuntimeSkill.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Added the opener flag
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -30,6 +31,7 @@ namespace MGQOnline.Arena.Model;
 /// <param name="Debris">The debris it leaves, or null for none.</param>
 /// <param name="Marks">The marks it leaves, or null for none.</param>
 /// <param name="Support">Whom it acts on on the boss's side, or null for a skill aimed at the party.</param>
+/// <param name="Opener">Whether a skill with a cooldown is ready at the battle's start instead of resting a start rest.</param>
 public sealed record RuntimeSkill(
     SkillRef Ref,
     SkillKind Kind,
@@ -47,7 +49,8 @@ public sealed record RuntimeSkill(
     SkillFacts Facts,
     SkillDebrisSpec? Debris = null,
     MarksSpec? Marks = null,
-    SupportSpec? Support = null);
+    SupportSpec? Support = null,
+    bool Opener = false);
 
 /// <summary>
 /// A shape of cells placed on an anchor cell, its sizes given their defaults and clamped.
