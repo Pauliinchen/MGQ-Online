@@ -2,6 +2,7 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Checked the relay's notice handed to the notification box
 #      Paulinchen  2026-10-12: Checked the relay's notice in red between slashes
 #                            - Checked the open log scrolled with the mouse wheel and its scrollbar
 #                            - Checked every chat tab going back to All as the world closes
@@ -578,8 +579,10 @@ map_log.update
 check("and not once it shows nothing", offered.call(:chat), nil)
 
 # The relay's notice, such as a new release's, which reaches the chat as an admin's line named
-# MGQ_MpChat::NOTICE_NAME.
+# MGQ_MpChat::NOTICE_NAME, and the notification box, which stands in here.
+module MGQ_MpNotices; def self.announce(text); ($announced ||= []) << text; end; end
 chat.take_line(nil, "MGQ Online 0.6.5 is out.", MGQ_MpChat::NOTICE_NAME, :global, true)
+check("the relay's notice goes to the notification box too", $announced, ["MGQ Online 0.6.5 is out."])
 notice = chat.instance_variable_get(:@log).last
 check("the relay's notice shows red between slashes, without a name or tag",
       [notice.to_s, notice.who, map_log.text_color(notice)], ["// MGQ Online 0.6.5 is out. //", :notice, log_class::NOTICE_COLOR])

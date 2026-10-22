@@ -2,6 +2,7 @@
 #  ui_notices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Showed the relay's announcements, broken into the box's rows
 #      Paulinchen  2026-10-12: Put the box at its default 4 pixels below the Leader HUD
 #                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #                            - Moved the box at its default below the Leader HUD
@@ -60,6 +61,12 @@ module MGQ_MpNotices
   # Frames the notice that Player.ini cannot be read shows, ten seconds.
   PLAYER_INI_FRAMES = 600
 
+  # What the rows of the relay's announcement are about, each with its row's number.
+  ANNOUNCEMENT_KEY = :announcement
+
+  # Frames the relay's announcement shows, ten seconds.
+  ANNOUNCEMENT_FRAMES = 600
+
   # The hotkey of each answer to the first invite.
   ANSWER_HOTKEYS = { :take => :accept, :decline => :decline }
 
@@ -93,6 +100,18 @@ module MGQ_MpNotices
     world = MGQ_MpOverworldSync.in_world?
     @messages << { :key => key, :text => text, :frames => frames, :world => world }
     log("message posted for #{frames} frames#{world ? ' while in a world' : ''} (#{key.inspect}): #{MGQ_MpLog.short(text)}")
+  end
+
+  # Shows a line the relay announces to every world, such as an admin's or a new release's, in as
+  # many rows as the box's width needs, in place of the one before.
+  #
+  # @param text [String] The line.
+  def self.announce(text)
+    @messages.select { |entry| entry[:key].is_a?(Array) && entry[:key][0] == ANNOUNCEMENT_KEY }.each { |entry| drop(entry[:key], "a newer announcement replaces it") }
+    # The box shows the newest message first, so the last row goes in first.
+    Sprite_MpNoticeBox.rows_of(text).each_with_index.to_a.reverse.each { |row, index| message([ANNOUNCEMENT_KEY, index], row, ANNOUNCEMENT_FRAMES) }
+  rescue => e
+    log_once(:announce, "announcement failed: #{e.class}: #{e.message}")
   end
 
   # Takes a message away before its time.
@@ -301,6 +320,18 @@ class Sprite_MpNoticeBox < Sprite
     hud = MGQ_MpLeaderHud.room
     default = Rect.new(MARGIN, MGQ_MpUi.top_room + (hud > 0 ? hud : MARGIN), WIDTH, ROW * MGQ_MpNotices::MAX_ROWS + 2 * SPACING)
     MGQ_MpUi::Layout.rect(LAYOUT, default)
+  end
+
+  # Breaks a text into the rows of the box as wide as the layout makes it now.
+  #
+  # @param text [String] The text.
+  # @return [Array<String>] The rows.
+  def self.rows_of(text)
+    measure = Bitmap.new(1, 1)
+    MGQ_MpUi::Style.use_font(measure, MGQ_MpUi::Style::SMALL_SIZE, MGQ_MpUi::Style::DIM)
+    MGQ_MpUi.wrap(measure, text, rect.width - 2 * EDGE)
+  ensure
+    measure.dispose if measure
   end
 
   # Tells how many rows a box of a height shows.

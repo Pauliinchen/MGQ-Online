@@ -2,6 +2,7 @@
 #  ui_chat.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Showed the relay's own notices in the notification box too
 #      Paulinchen  2026-10-12: Showed the relay's own notices red between slashes in every tab
 #                            - Scrolled the open chat log with the mouse wheel
 #                            - Drew a scrollbar beside the open log's rows
@@ -1183,13 +1184,14 @@ module MGQ_MpChat
     push(Line.new(nil, text, :system, nil))
   end
 
-  # Adds a notice of the relay's own, such as a new release's, to every tab of the log, red between
-  # slashes.
+  # Adds a notice of the relay's own, such as a new release's or an admin's announcement, to every
+  # tab of the log, red between slashes, and to the notification box.
   #
   # @param text [String] The notice.
   def self.notice(text)
     log("relay notice: #{text}")
     push(Line.new(nil, "// #{text} //", :notice, nil))
+    MGQ_MpNotices.announce(text) if defined?(MGQ_MpNotices)
   end
 
   # Adds a line to the log, forgetting the oldest beyond KEPT.

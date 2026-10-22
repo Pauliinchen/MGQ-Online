@@ -2,6 +2,7 @@
 #  notices_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-22: Checked the relay's announcement in the box's rows, in place of the one before
 #      Paulinchen  2026-10-12: Checked that the box at its default lies 4 pixels below the Leader HUD
 #                            - Checked the log of the accept hotkey while typing and when refused
 #                            - Checked that the box at its default moves below the Leader HUD
@@ -248,6 +249,18 @@ check("the long message is cut to its row", box.call.bitmap.text_size(shown.call
 (1..7).each { |n| notices.drop([:many, n]) }
 notices.tick(true)
 check("dropped, they are gone at once", notices.notices, [])
+
+# The relay's announcement breaks into the box's rows, first row on top, and replaces the one before.
+notices.announce("The relay restarts in ten minutes for an update. Finish your battles and stay on the map please.")
+notices.tick(true)
+check("the relay's announcement shows whole, in rows that fit the box, the first on top",
+      [shown.call.join(" "), shown.call.size > 1, shown.call.all? { |row| row.size * 7 <= Sprite_MpNoticeBox::WIDTH - 2 * Sprite_MpNoticeBox::EDGE }],
+      ["The relay restarts in ten minutes for an update. Finish your battles and stay on the map please.", true, true])
+notices.announce("Short news.")
+notices.tick(true)
+check("a newer announcement takes the place of every row of the one before", shown.call, ["Short news."])
+(notices::ANNOUNCEMENT_FRAMES + MGQ_MpUi::Style::FADE_FRAMES).times { notices.tick(true) }
+check("and runs out after a while", notices.notices, [])
 
 # Where the box lies: its default, a place the player left it in, its least size and the preset.
 layout = MGQ_MpUi::Layout
