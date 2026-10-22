@@ -2,7 +2,8 @@
 //  RandomStreamsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Counted the start rest stream
+//      Paulinchen  2026-10-22: Counted the hazard stream
+//                            - Counted the start rest stream
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -79,5 +80,5 @@ public sealed class RandomStreamsTests
     /// </summary>
     [Fact]
     public void GivesEveryStreamItsOwnSeed() =>
-        Assert.Equal(9, Enum.GetValues<RandomStream>().Select(stream => RandomStreams.SeedOf(0, stream)).Distinct().Count());
+        Assert.Equal(10, Enum.GetValues<RandomStream>().Select(stream => RandomStreams.SeedOf(0, stream)).Distinct().Count());
 }

@@ -22,9 +22,10 @@
     <ProjectReference Include="..\..\MGQOnline.Updates\MGQOnline.Updates.csproj" />
   </ItemGroup>
 
-  <!-- The arena tests' reference battle design, which the probe replays for the simulation log hash. -->
+  <!-- The arena tests' reference battle designs, which the probe replays for the simulation log hashes. -->
   <ItemGroup>
     <EmbeddedResource Include="..\..\MGQOnline.Arena.Tests\Simulation\Fixtures\referenceDesign.json" LogicalName="referenceDesign.json" />
+    <EmbeddedResource Include="..\..\MGQOnline.Arena.Tests\Simulation\Fixtures\hazardDesign.json" LogicalName="hazardDesign.json" />
   </ItemGroup>
 
   <!-- Rooted whole, so the compiler checks every type in them and not only what the probe calls. -->

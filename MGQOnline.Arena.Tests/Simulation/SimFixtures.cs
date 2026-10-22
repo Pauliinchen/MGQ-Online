@@ -2,7 +2,8 @@
 //  SimFixtures.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Gave the tier its normal attacks per turn
+//      Paulinchen  2026-10-22: Left the samples' hazards out
+//                            - Gave the tier its normal attacks per turn
 //      Paulinchen  2026-10-21: Ran the simulations through the real rule engine
 //                            - Created
 //
@@ -162,6 +163,7 @@ internal static class SimFixtures
             Traits = TraitBlock.Empty,
             Tier = TierNumber,
             NormalAttacks = normalAttacks,
+            Hazards = null,
         };
         RuntimeBoss boss = Samples.Boss with
         {
@@ -184,6 +186,8 @@ internal static class SimFixtures
         return Samples.Design with
         {
             Rules = gameRules,
+            Maps = Samples.Design.Maps.ToDictionary(map => map.Key, map => map.Value with { Hazards = null, RandomHazards = null }),
+            Hazards = null,
             Tiers = new Dictionary<int, RuntimeTier> { [TierNumber] = tier },
             Bosses = new Dictionary<string, RuntimeBoss> { [BossKey] = boss },
             States = new Dictionary<int, RuntimeState>

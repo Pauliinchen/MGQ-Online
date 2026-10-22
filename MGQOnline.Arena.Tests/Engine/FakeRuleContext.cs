@@ -2,7 +2,8 @@
 //  FakeRuleContext.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Listed the skills of a cast chain
+//      Paulinchen  2026-10-22: Recorded the hazards placed
+//                            - Listed the skills of a cast chain
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -124,6 +125,11 @@ internal sealed class FakeRuleContext : IRuleContext
     public List<(int Enemy, SkillDebrisSpec Debris, string? CastId)> Debris { get; } = [];
 
     /// <summary>
+    /// Gets the hazards placed.
+    /// </summary>
+    public List<(int Enemy, HazardPlacement Hazard, string? CastId, int? Seat, string RuleId)> Hazards { get; } = [];
+
+    /// <summary>
     /// Gets the battle log.
     /// </summary>
     public List<BattleEvent> Logged { get; } = [];
@@ -223,6 +229,13 @@ internal sealed class FakeRuleContext : IRuleContext
     {
         Debris.Add((enemy, debris, castId));
         return [new GridCell(3, 2)];
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<GridCell> PlaceHazards(int enemy, HazardPlacement hazard, string? castId, int? seat, string ruleId)
+    {
+        Hazards.Add((enemy, hazard, castId, seat, ruleId));
+        return [new GridCell(4, 1)];
     }
 
     /// <inheritdoc />

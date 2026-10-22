@@ -2,7 +2,8 @@
 //  ArenaCasts.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Floored the formula of a hit at 0
+//      Paulinchen  2026-10-22: Gave the landing of each pulse to the hazards
+//                            - Floored the formula of a hit at 0
 //                            - Flagged the main target of each unit hit
 //      Paulinchen  2026-10-21: Replaced the casting interface with the casting part over the cast resolver
 //                            - Created
@@ -76,7 +77,11 @@ public sealed class ArenaCasts : ICastResolver
             result.Add(new CastHit(seat, damage[seat], lands ? StatesLanding(skill, state.Units[seat], hits) : [], main[seat]));
         }
 
-        return new CastResult(result, outcome.DebrisAfter, outcome.Debris.Placed) { Pushes = outcome.Debris.Pushes };
+        return new CastResult(result, outcome.DebrisAfter, outcome.Debris.Placed)
+        {
+            Pushes = outcome.Debris.Pushes,
+            Landing = [.. outcome.Pulses.Where(pulse => pulse.Anchor is not null).Select(pulse => pulse.Layout.ToDebrisPulse(pulse.Anchor!.Value))],
+        };
     }
 
     /// <inheritdoc />
@@ -222,6 +227,12 @@ public sealed record CastResult(IReadOnlyList<CastHit> Hits, DebrisField DebrisA
     /// Gets the units the skill's debris pushed off their cells.
     /// </summary>
     public IReadOnlyList<DebrisPush> Pushes { get; init; } = [];
+
+    /// <summary>
+    /// Gets where each aimed pulse landed, with the cells debris shielded, for the skill's hazards;
+    /// none to read the landing from the cast's telegraph.
+    /// </summary>
+    public IReadOnlyList<DebrisPulse> Landing { get; init; } = [];
 }
 
 /// <summary>

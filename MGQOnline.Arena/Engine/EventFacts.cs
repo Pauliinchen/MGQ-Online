@@ -2,7 +2,8 @@
 //  EventFacts.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Read the enemy and cast of a resolved cast
+//      Paulinchen  2026-10-22: Read the unit of a hazard fire
+//                            - Read the enemy and cast of a resolved cast
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -35,7 +36,8 @@ internal static class EventFacts
     };
 
     /// <summary>
-    /// Gives the unit an event names: the unit hit, given a state or fallen, or the attacker of a boss hit.
+    /// Gives the unit an event names: the unit hit, given a state or fallen, the attacker of a boss hit,
+    /// or the unit that fired a hazard.
     /// </summary>
     /// <param name="battleEvent">The event.</param>
     /// <returns>The unit's seat, or null.</returns>
@@ -45,6 +47,7 @@ internal static class EventFacts
         StateAddedEvent { On: StateHolder.Unit } added => added.Index,
         UnitFellEvent fell => fell.Seat,
         BossHitEvent hit => hit.Attacker,
+        HazardFiredEvent hazard => hazard.Seat,
         _ => null,
     };
 

@@ -2,7 +2,8 @@
 //  RuntimeTier.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Added the normal attacks per turn
+//      Paulinchen  2026-10-22: Added the random hazards
+//                            - Added the normal attacks per turn
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -24,6 +25,7 @@ namespace MGQOnline.Arena.Model;
 /// <param name="Traits">Its own traits, for reference; each boss's block already holds them merged.</param>
 /// <param name="Tier">The tier, or null for bosses without one.</param>
 /// <param name="NormalAttacks">The most normal attacks each enemy rolls per turn; the points left are banked.</param>
+/// <param name="Hazards">The hazards its battles may start with at random, or null for none.</param>
 public sealed record RuntimeTier(
     GridSize Grid,
     StatFactors Stats,
@@ -34,7 +36,8 @@ public sealed record RuntimeTier(
     RandomDebris Debris,
     TraitBlock Traits,
     int? Tier = null,
-    int NormalAttacks = 1);
+    int NormalAttacks = 1,
+    IReadOnlyList<RandomHazards>? Hazards = null);
 
 /// <summary>
 /// The factors on an enemy's stats.

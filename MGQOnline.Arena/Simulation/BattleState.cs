@@ -2,7 +2,8 @@
 //  BattleState.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Named the rest a planned cast skipped
+//      Paulinchen  2026-10-22: Kept the hazards and their fires
+//                            - Named the rest a planned cast skipped
 //      Paulinchen  2026-10-21: Kept the rule ledger, the rule engine, the debris field and mark clocks
 //                            - Created
 //
@@ -14,6 +15,7 @@ using MGQOnline.Arena.Debris;
 using MGQOnline.Arena.Engine;
 using MGQOnline.Arena.Events;
 using MGQOnline.Arena.Formulas;
+using MGQOnline.Arena.Hazards;
 using MGQOnline.Arena.Model;
 using MGQOnline.Arena.Randomness;
 
@@ -30,7 +32,7 @@ public enum BattlePhase
     Setup,
 
     /// <summary>
-    /// The turn start: tier states, turn start rules and queued casts.
+    /// The turn start: tier states, turn start rules, hazards and queued casts.
     /// </summary>
     TurnStart,
 
@@ -50,7 +52,7 @@ public enum BattlePhase
     Resolve,
 
     /// <summary>
-    /// The turn end: marks, durations, rests, debris and turn end rules.
+    /// The turn end: marks, durations, rests, debris, hazards and turn end rules.
     /// </summary>
     TurnEnd,
 
@@ -66,7 +68,7 @@ public enum BattlePhase
 }
 
 /// <summary>
-/// A simulated battle: units, boss enemies, debris, rule memory, the plan and the log.
+/// A simulated battle: units, boss enemies, debris, hazards, rule memory, the plan and the log.
 /// </summary>
 public sealed class BattleState
 {
@@ -140,6 +142,11 @@ public sealed class BattleState
     public DebrisField Debris { get; internal set; } = DebrisField.Empty;
 
     /// <summary>
+    /// Gets the hazards on the grid.
+    /// </summary>
+    public HazardField Hazards { get; internal set; } = HazardField.Empty;
+
+    /// <summary>
     /// Gets the actions' and skills' memory of their casts.
     /// </summary>
     public Dictionary<RuleMemoryKey, RuleMemory> Memory { get; } = [];
@@ -178,6 +185,11 @@ public sealed class BattleState
     /// Gets the turns the party's Overdrive still freezes the boss, the current one included.
     /// </summary>
     public int OverdriveTurns { get; internal set; }
+
+    /// <summary>
+    /// Gets the hazard types each unit fired per turn and trigger, so none fires twice.
+    /// </summary>
+    internal HashSet<HazardFireKey> HazardFires { get; } = [];
 
     /// <summary>
     /// Gets or sets how many casts the battle planned, which numbers the cast ids.
@@ -437,6 +449,15 @@ public sealed record StateSource(string? RuleId = null, SkillRef? Skill = null, 
 /// <param name="TurnsLeft">The turn ends it still lasts, or null until something removes it.</param>
 /// <param name="Clock">The clock of a mark, which runs until a cast or a turn; null for a state that runs by turns.</param>
 public sealed record StateInstance(int StateId, StateSource Source, int AppliedTurn, int? TurnsLeft, MarkClock? Clock = null);
+
+/// <summary>
+/// A hazard type a unit fired in a turn by a trigger.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="Seat">The unit's seat.</param>
+/// <param name="Hazard">The hazard id.</param>
+/// <param name="Trigger">The trigger.</param>
+internal readonly record struct HazardFireKey(int Turn, int Seat, string Hazard, HazardTrigger Trigger);
 
 /// <summary>
 /// The key of a memory entry: an enemy and an action id, or a skill key for a cast without an action.

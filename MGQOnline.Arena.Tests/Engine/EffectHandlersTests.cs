@@ -2,7 +2,8 @@
 //  EffectHandlersTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Tested clearing debuffs
+//      Paulinchen  2026-10-22: Tested placing hazards
+//                            - Tested clearing debuffs
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -289,6 +290,19 @@ public sealed class EffectHandlersTests
         Assert.Equal([(0, debris, "c1")], _context.Debris);
         DebrisPlacedEvent placed = Assert.Single(_context.LoggedOf<DebrisPlacedEvent>());
         Assert.Equal((new GridCell(3, 2), 2, 1, "c1"), (Assert.Single(placed.Cells), placed.Turns, placed.Hits, placed.CastId));
+    }
+
+    /// <summary>
+    /// Places hazards over the area of the cast that fired the rule, for the unit it names, under the rule.
+    /// </summary>
+    [Fact]
+    public void PlacesHazardsOverTheCast()
+    {
+        HazardPlacement hazard = new("fire", 5000, HazardPlace.HitCells, Turns: 2);
+
+        EngineOf(Rule("r", new UnitHitTrigger(), [new PlaceHazardEffect(hazard)])).Raise(_context, Hit(2, "c1", Blast, 1));
+
+        Assert.Equal([(0, hazard, "c1", (int?)1, "r")], _context.Hazards);
     }
 
     /// <summary>

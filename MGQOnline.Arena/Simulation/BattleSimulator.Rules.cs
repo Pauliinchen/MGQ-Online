@@ -2,7 +2,8 @@
 //  BattleSimulator.Rules.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Listed the skills of a cast chain
+//      Paulinchen  2026-10-22: Placed hazards by a rule
+//                            - Listed the skills of a cast chain
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -14,6 +15,7 @@ using MGQOnline.Arena.Debris;
 using MGQOnline.Arena.Engine;
 using MGQOnline.Arena.Events;
 using MGQOnline.Arena.Formulas;
+using MGQOnline.Arena.Hazards;
 using MGQOnline.Arena.Model;
 using MGQOnline.Arena.Randomness;
 
@@ -317,8 +319,20 @@ public sealed partial class BattleSimulator
             PlannedCast? cast = castId is null ? simulator._resolving : state.Plan.Find(entry => entry.CastId == castId);
             DebrisPlacement placement = simulator._casts.PlaceDebris(state, debris, cast);
             state.Debris = state.Debris.With(placement.Placed);
-            Push(state, placement.Pushes);
+            ClearHazardsUnder(state, placement.Placed.Select(cell => cell.Cell));
+            simulator.Push(state, placement.Pushes);
             return [.. placement.Placed.Select(cell => cell.Cell)];
+        }
+
+        /// <inheritdoc />
+        public IReadOnlyList<GridCell> PlaceHazards(int enemy, HazardPlacement hazard, string? castId, int? seat, string ruleId)
+        {
+            ArgumentNullException.ThrowIfNull(hazard);
+            PlannedCast? cast = castId is not null ? state.Plan.Find(entry => entry.CastId == castId) : seat is null ? simulator._resolving : null;
+            IReadOnlyList<DebrisPulse> landing = cast is null ? [] : cast == simulator._resolving ? simulator._resolvingLanding : TelegraphLanding(cast);
+            GridCell? unitCell = seat is int unit && unit >= 0 && unit < state.Units.Count ? state.Units[unit].Cell : null;
+            IReadOnlyList<GridCell> cells = HazardLayout.Place(state.Grid, hazard, landing, state.Debris, unitCell, state.Random.Get(RandomStream.Hazards));
+            return simulator.PlaceHazardCells(state, hazard.Hazard, cells, hazard.Turns, enemy, cast?.CastId, ruleId);
         }
 
         /// <inheritdoc />

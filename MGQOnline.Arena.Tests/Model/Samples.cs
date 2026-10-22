@@ -2,7 +2,8 @@
 //  Samples.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Added a not in chain condition
+//      Paulinchen  2026-10-22: Added a hazard type, its sources, its effect and its events
+//                            - Added a not in chain condition
 //                            - Added a cast resolved trigger
 //                            - Added a clear debuffs effect and its event
 //                            - Gave the area skill a cycle
@@ -43,6 +44,11 @@ internal static class Samples
     /// The boss entity id.
     /// </summary>
     public const string BossId = "boss:7f3a91c04be2d55e0a1c9b8e2f6d4a10";
+
+    /// <summary>
+    /// The hazard id.
+    /// </summary>
+    public const string FireId = "hazard:3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b";
 
     /// <summary>
     /// Gets a game skill reference.
@@ -118,7 +124,11 @@ internal static class Samples
             new RuleOrigin(PresetKind.Advanced, BossId, "5e6f7a8b"),
             new BossHpBelowTrigger(50),
             [],
-            [new PlaceDebrisEffect(new SkillDebrisSpec(DebrisPlace.RandomInArea, 2, 1, Count: 3)), new AddStateEffect(RuleTarget.Boss, 15, Turns: 2)],
+            [
+                new PlaceDebrisEffect(new SkillDebrisSpec(DebrisPlace.RandomInArea, 2, 1, Count: 3)),
+                new AddStateEffect(RuleTarget.Boss, 15, Turns: 2),
+                new PlaceHazardEffect(new HazardPlacement(FireId, 10000, HazardPlace.AimedCell)),
+            ],
             new RuleLimits(false, false, 1),
             null),
         new RuleSpec(
@@ -171,7 +181,25 @@ internal static class Samples
         new SkillDebrisSpec(DebrisPlace.HitCells, 3, 2, Look: new DebrisLook(DebrisLookKind.Tile, new TileRef("Dungeon_A2", 1536))),
         new MarksSpec([new MarkLeaveSpec("1c2d3e4f", 301, 10000, StateLanding.EveryoneHit, MarkUntil.NextScheduledCast, 1, null)]),
         Opener: true,
-        Cycle: new CycleSpec(5, 3));
+        Cycle: new CycleSpec(5, 3),
+        Hazard: new HazardPlacement(FireId, 5000, HazardPlace.RandomInArea, 2, 1));
+
+    /// <summary>
+    /// Gets a hazard type with every part set.
+    /// </summary>
+    public static RuntimeHazard Hazard { get; } = new(
+        FireId,
+        "Burning ground",
+        [HazardTrigger.StepsOnto, HazardTrigger.EndsTurnOn],
+        [
+            new DamageEffect(RuleTarget.TriggerUnit, 5),
+            new AddStateEffect(RuleTarget.TriggerUnit, 29, Turns: 2),
+            new RemoveStateEffect(RuleTarget.TriggerUnit, 30),
+            new UseSkillEffect(Blast, true, false, CastTiming.NextTurn, CastSide.Own, CastAim.TriggerUnit),
+        ],
+        3,
+        new HazardLook(180, new TileRef("Dungeon_A1", 2048), 112, new ColorRgba(255, 80, 0, 96)),
+        4);
 
     /// <summary>
     /// Gets a support skill without the optional sections.
@@ -227,7 +255,8 @@ internal static class Samples
         new Dictionary<int, double> { [40] = 0 },
         new RandomDebris(3000, 2, 4, 2),
         Traits,
-        2);
+        2,
+        Hazards: [new RandomHazards(FireId, 2500, 1, 3)]);
 
     /// <summary>
     /// Gets a boss with every part set.
@@ -329,11 +358,20 @@ internal static class Samples
         },
         new Dictionary<int, RuntimeMap>
         {
-            [88] = new(false, false, ["Morrigan"], 7, new TileRef("Dungeon_A2", 1540), DebrisLook: new DebrisLook(DebrisLookKind.Picture, Picture: "Rock")),
+            [88] = new(
+                false,
+                false,
+                ["Morrigan"],
+                7,
+                new TileRef("Dungeon_A2", 1540),
+                DebrisLook: new DebrisLook(DebrisLookKind.Picture, Picture: "Rock"),
+                Hazards: [new FixedHazard(FireId, new GridCell(7, 2))],
+                RandomHazards: [new RandomHazards(FireId, 10000, 2, 2)]),
             [723] = new(false, false, [], DebrisLook: new DebrisLook(DebrisLookKind.MapDefault)),
         },
         new Dictionary<int, RuntimeTileset> { [7] = new([1540, 1541], [], null, null, 57, new TileRef("Dungeon_B", 57)) },
-        new BossFightOverrides([1], [299]));
+        new BossFightOverrides([1], [299]),
+        new Dictionary<string, RuntimeHazard> { [FireId] = Hazard });
 
     /// <summary>
     /// Gets a battle log with one event of every type.
@@ -342,6 +380,7 @@ internal static class Samples
     [
         new BattleStartEvent(0),
         new DebrisPlacedEvent(0, [new GridCell(4, 2), new GridCell(5, 2)], 0, 2, null),
+        new HazardPlacedEvent(0, FireId, [new GridCell(7, 2)], 3, 4),
         new StartRestEvent(0, 0, "game:3764", 2),
         new TurnStartEvent(1),
         new TurnScheduleEvent(1, 0),
@@ -351,6 +390,7 @@ internal static class Samples
         new ApTurnEvent(1, 0, 9, 6, 3),
         new CastDisabledEvent(1, "c3", 10),
         new UnitMovedEvent(1, 3, new GridCell(2, 1), new GridCell(3, 1)),
+        new HazardFiredEvent(1, FireId, new GridCell(3, 1), 3, HazardTrigger.StepsOnto),
         new BossHitEvent(1, 0, 3, new GridCell(3, 1), HitKind.Physical, SkillRef.OfGame(1), [1], true),
         new BossHpBelowEvent(1, 0, 50),
         new UnitHitEvent(1, "c1", 0, Stigmata, 2, new GridCell(1, 0), [302], [301], "a1b2c3d4", true),
@@ -360,9 +400,12 @@ internal static class Samples
         new StateRemovedEvent(1, StateHolder.Unit, 2, 302, "77aa0b1c"),
         new CastResolvedEvent(1, "c1", 0, Stigmata, [2], false),
         new CastResolvedEvent(1, "c2", 0, Blast, [], true),
+        new HazardPlacedEvent(1, FireId, [new GridCell(1, 0), new GridCell(2, 0)], 1, 4, "c1", "5e6f7a8b"),
+        new HazardExpiredEvent(1, FireId, [new GridCell(3, 1)], HazardEnd.Replaced),
         new UnitFellEvent(1, 2, "c1"),
         new WarningEvent(1, WarningEvent.RuleLoop, "0d9e8f7a"),
         new TurnEndEvent(1),
+        new HazardExpiredEvent(1, FireId, [new GridCell(7, 2)], HazardEnd.Lifetime),
     ];
 
     /// <summary>
@@ -437,6 +480,7 @@ internal static class Samples
             AreaSkill.Payload.Restorations[0], AreaSkill.Payload.Recoveries[0], AreaSkill.Payload.Hit, SupportSkill.Support!, AreaSkill.Facts, AreaSkill.Facts.Filter, AreaSkill.Cycle!,
             EveryNodeFormula, Stigmata, Blast, new GridCell(3, 4), new GridSize(16, 10), new ColorRgba(1, 2, 3, 4), new TileRef("Sheet", 7), new PowerSize(100, 3),
             new ClearDebuffsEffect(RuleTarget.Boss), new DebuffsClearedEvent(2, StateHolder.Boss, 0, "5e6f7a8b:stand"), new CastResolvedTrigger(Blast), new NotInChainCondition(Blast),
+            Hazard, Hazard.Look, AreaSkill.Hazard!, Tier.Hazards![0], Design.Maps[88].Hazards![0],
         ];
         foreach (RuleSpec rule in Rules)
         {

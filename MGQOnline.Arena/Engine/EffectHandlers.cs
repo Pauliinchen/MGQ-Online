@@ -2,7 +2,8 @@
 //  EffectHandlers.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Cleared debuffs by a rule
+//      Paulinchen  2026-10-22: Placed hazards by a rule
+//                            - Cleared debuffs by a rule
 //      Paulinchen  2026-10-21: Kept a Last stand start cast queued for the next turn a Last stand start
 //                            - Created
 //
@@ -44,6 +45,7 @@ internal static class EffectHandlers
         ApDeltaEffect apDelta => ApDelta(context, queued.Fired, apDelta),
         PlaceDebrisEffect placeDebris => PlaceDebris(context, queued.Fired, placeDebris),
         ClearDebuffsEffect clearDebuffs => ClearDebuffs(context, queued.Fired, clearDebuffs),
+        PlaceHazardEffect placeHazard => PlaceHazard(context, queued.Fired, placeHazard),
         _ => throw new ArgumentOutOfRangeException(nameof(queued), queued.Effect, "The engine does not know this effect."),
     };
 
@@ -249,6 +251,19 @@ internal static class EffectHandlers
             context.Log(new DebrisPlacedEvent(fired.Cause.Turn, cells, effect.Debris.Turns, effect.Debris.Hits, castId));
         }
 
+        return [];
+    }
+
+    /// <summary>
+    /// Places hazards; the battle logs them.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="fired">The fired rule.</param>
+    /// <param name="effect">The effect.</param>
+    /// <returns>Nothing rules match.</returns>
+    private static IReadOnlyList<BattleEvent> PlaceHazard(IRuleContext context, FiredRule fired, PlaceHazardEffect effect)
+    {
+        context.PlaceHazards(fired.Enemy, effect.Hazard, EventFacts.CastIdOf(fired.Cause), EventFacts.TriggerUnitOf(fired.Cause), fired.Rule.Id);
         return [];
     }
 

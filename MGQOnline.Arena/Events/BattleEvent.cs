@@ -2,7 +2,8 @@
 //  BattleEvent.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Added the debuffs cleared event
+//      Paulinchen  2026-10-22: Added the hazard placed, fired and expired events
+//                            - Added the debuffs cleared event
 //                            - Added the rest skipped event
 //                            - Added the start rest event
 //                            - Named the seat a rule fired for
@@ -43,6 +44,9 @@ namespace MGQOnline.Arena.Events;
 [JsonDerivedType(typeof(StartRestEvent), "startRest")]
 [JsonDerivedType(typeof(RestSkippedEvent), "restSkipped")]
 [JsonDerivedType(typeof(DebuffsClearedEvent), "debuffsCleared")]
+[JsonDerivedType(typeof(HazardPlacedEvent), "hazardPlaced")]
+[JsonDerivedType(typeof(HazardFiredEvent), "hazardFired")]
+[JsonDerivedType(typeof(HazardExpiredEvent), "hazardExpired")]
 [JsonDerivedType(typeof(RuleFiredEvent), "ruleFired")]
 [JsonDerivedType(typeof(WarningEvent), "warning")]
 public abstract record BattleEvent(int Turn);
@@ -249,6 +253,38 @@ public sealed record RestSkippedEvent(int Turn, int Enemy, string Skill, int Tur
 /// <param name="Index">The unit's seat or the enemy's index.</param>
 /// <param name="RuleId">The rule that cleared them, or null.</param>
 public sealed record DebuffsClearedEvent(int Turn, StateHolder On, int Index, string? RuleId = null) : BattleEvent(Turn);
+
+/// <summary>
+/// Hazards were placed.
+/// </summary>
+/// <param name="Turn">The turn, 0 at the battle's start.</param>
+/// <param name="Hazard">The hazard id.</param>
+/// <param name="Cells">The cells, row by row.</param>
+/// <param name="Turns">The turn ends they last, 0 the rest of the battle.</param>
+/// <param name="Fires">How often each fires before it goes, or null for no limit.</param>
+/// <param name="CastId">The cast that left them, or null.</param>
+/// <param name="RuleId">The rule that placed them, or null.</param>
+public sealed record HazardPlacedEvent(int Turn, string Hazard, IReadOnlyList<GridCell> Cells, int Turns, int? Fires = null, string? CastId = null, string? RuleId = null)
+    : BattleEvent(Turn);
+
+/// <summary>
+/// A unit fired a hazard; its effects follow.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="Hazard">The hazard id.</param>
+/// <param name="Cell">The hazard's cell.</param>
+/// <param name="Seat">The unit's seat.</param>
+/// <param name="Trigger">What the unit did on the cell.</param>
+public sealed record HazardFiredEvent(int Turn, string Hazard, GridCell Cell, int Seat, HazardTrigger Trigger) : BattleEvent(Turn);
+
+/// <summary>
+/// Placed hazards went.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="Hazard">The hazard id.</param>
+/// <param name="Cells">The cells, row by row.</param>
+/// <param name="Reason">Why they went.</param>
+public sealed record HazardExpiredEvent(int Turn, string Hazard, IReadOnlyList<GridCell> Cells, HazardEnd Reason) : BattleEvent(Turn);
 
 /// <summary>
 /// A rule fired and queued its effects.

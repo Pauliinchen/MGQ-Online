@@ -2,7 +2,8 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Fired the rules of a resolved cast
+//      Paulinchen  2026-10-22: Placed and fired hazards
+//                            - Fired the rules of a resolved cast
 //                            - Rolled the game's cycle skills
 //                            - Let a full bank pay to skip a rest
 //                            - Gave the cooldown skills their start rests
@@ -161,7 +162,8 @@ public sealed partial class BattleSimulator
 
     /// <summary>
     /// Starts a battle: places the party, forces the tier's states on the enemies, gives their
-    /// cooldown skills their start rests, rolls the random debris and fires the battle start rules.
+    /// cooldown skills their start rests, rolls the random debris, places the start hazards and fires
+    /// the battle start rules.
     /// </summary>
     /// <param name="setup">The setup.</param>
     /// <returns>The battle before its first turn.</returns>
@@ -214,18 +216,20 @@ public sealed partial class BattleSimulator
             AddDebris(state, _casts.PlaceRandomDebris(state, tier.Debris), null);
         }
 
+        PlaceStartHazards(state);
         Raise(state, new BattleStartEvent(0));
         return state;
     }
 
     /// <summary>
-    /// Starts the next turn and makes the boss's plan: the turn start, then per living enemy its
-    /// forced entries, its roll or grapple, its follow-ups, its bank and what crowd control and the
-    /// party's Overdrive do to it. Everything is telegraphed.
+    /// Starts the next turn and makes the boss's plan: the turn start with the hazards of the units
+    /// that start it on one, then per living enemy its forced entries, its roll or grapple, its
+    /// follow-ups, its bank and what crowd control and the party's Overdrive do to it. Everything is
+    /// telegraphed.
     /// </summary>
     /// <param name="state">The battle, after its start or a resolved turn.</param>
     /// <param name="toggles">What the turn starts with besides the battle, or null for nothing.</param>
-    /// <returns>The plan.</returns>
+    /// <returns>The plan; empty when the hazards ended the battle.</returns>
     /// <exception cref="InvalidOperationException">The battle is over or its turn not resolved.</exception>
     public TurnPlan Plan(BattleState state, PlanToggles? toggles = null)
     {
@@ -251,6 +255,12 @@ public sealed partial class BattleSimulator
             }
 
             Raise(state, new TurnStartEvent(state.Turn));
+            FireHazards(state, HazardTrigger.StartsTurnOn);
+            if (state.IsOver)
+            {
+                return new TurnPlan(state.Turn, []);
+            }
+
             bool frozen = Overdrive.Freezes(state);
             if (!frozen)
             {
@@ -279,7 +289,8 @@ public sealed partial class BattleSimulator
 
     /// <summary>
     /// Resolves the turn: the party's Overdrive, moves and hits, then the boss's entries in plan
-    /// order over their telegraphed cells, then the turn end.
+    /// order over their telegraphed cells, then the turn end. A battle that ended, such as by hazards
+    /// at its turn start, resolves to its turn as it stands.
     /// </summary>
     /// <param name="state">The battle, after its plan.</param>
     /// <param name="party">The party's turn.</param>
@@ -289,6 +300,11 @@ public sealed partial class BattleSimulator
     {
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(party);
+        if (state.IsOver)
+        {
+            return new TurnResult(state.Turn, [.. state.Plan], [], state.Log.GetRange(state.TurnLogStart, state.Log.Count - state.TurnLogStart), state.Phase);
+        }
+
         if (state.Phase != BattlePhase.Plan)
         {
             throw new InvalidOperationException("Only a planned turn can be resolved.");
@@ -601,7 +617,8 @@ public sealed partial class BattleSimulator
     }
 
     /// <summary>
-    /// Runs the party's turn: its Overdrive, its moves, then its hits on the boss.
+    /// Runs the party's turn: its Overdrive, its moves with the hazards they step onto, then its hits
+    /// on the boss.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="party">The party's turn.</param>
@@ -633,6 +650,11 @@ public sealed partial class BattleSimulator
                 GridCell from = unit.Cell;
                 unit.Cell = move.To;
                 Log(state, new UnitMovedEvent(state.Turn, unit.Seat, from, move.To));
+                FireHazard(state, unit, HazardTrigger.StepsOnto);
+                if (state.IsOver)
+                {
+                    return;
+                }
             }
         }
 
@@ -724,9 +746,9 @@ public sealed partial class BattleSimulator
     }
 
     /// <summary>
-    /// Resolves one cast: its debris, the rules its run fires, its damage, its payload states, a unit
-    /// hit event per unit hit with the states that unit held before the cast and whether it is the
-    /// main target, the falls, and the units its debris pushed.
+    /// Resolves one cast: its debris, its hazards, the rules its run fires, its damage, its payload
+    /// states, a unit hit event per unit hit with the states that unit held before the cast and
+    /// whether it is the main target, the falls, and the units its debris pushed.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="entry">The cast.</param>
@@ -737,6 +759,8 @@ public sealed partial class BattleSimulator
         CastResult result = _casts.Resolve(state, entry);
         state.Debris = result.DebrisAfter;
         LogDebris(state, result.DebrisPlaced, entry.CastId);
+        _resolvingLanding = result.Landing.Count > 0 ? result.Landing : TelegraphLanding(entry);
+        PlaceSkillHazards(state, skill, entry);
         List<CastHit> hits = [.. result.Hits.Where(hit => hit.Seat >= 0 && hit.Seat < state.Units.Count && !state.Units[hit.Seat].Fallen).DistinctBy(hit => hit.Seat)];
         List<int> seats = [.. hits.Select(hit => hit.Seat)];
         _resolving = entry;
@@ -784,11 +808,13 @@ public sealed partial class BattleSimulator
         {
             _resolving = null;
             _resolvingHits = [];
+            _resolvingLanding = [];
         }
     }
 
     /// <summary>
-    /// Runs the turn end: marks, durations, rests, debris, the turn end rules and the Overdrive's count.
+    /// Runs the turn end: marks, durations, rests, debris, the hazards of the units that end it on one,
+    /// the turn end rules, the hazards' turns and the Overdrive's count.
     /// </summary>
     /// <param name="state">The battle.</param>
     private void EndTurn(BattleState state)
@@ -814,7 +840,14 @@ public sealed partial class BattleSimulator
         }
 
         state.Debris = state.Debris.EndTurn();
+        FireHazards(state, HazardTrigger.EndsTurnOn);
+        if (state.IsOver)
+        {
+            return;
+        }
+
         Raise(state, new TurnEndEvent(state.Turn));
+        ExpireHazards(state);
         if (state.OverdriveTurns > 0)
         {
             state.OverdriveTurns--;
@@ -839,7 +872,7 @@ public sealed partial class BattleSimulator
     }
 
     /// <summary>
-    /// Logs debris put on the grid.
+    /// Logs debris put on the grid and takes the hazards off its cells.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="cells">The debris cells, which share their turns and hits.</param>
@@ -849,20 +882,27 @@ public sealed partial class BattleSimulator
         if (cells.Count > 0)
         {
             Log(state, new DebrisPlacedEvent(state.Turn, [.. cells.Select(cell => cell.Cell)], cells[0].Turns, cells[0].MaxHits, castId));
+            ClearHazardsUnder(state, cells.Select(cell => cell.Cell));
         }
     }
 
     /// <summary>
-    /// Moves the units debris pushed off their cells.
+    /// Moves the units debris pushed off their cells and fires the hazards they land on.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="pushes">The pushes.</param>
-    private static void Push(BattleState state, IReadOnlyList<DebrisPush> pushes)
+    private void Push(BattleState state, IReadOnlyList<DebrisPush> pushes)
     {
-        foreach (DebrisPush push in pushes.Where(push => push.Seat >= 0 && push.Seat < state.Units.Count))
+        List<DebrisPush> moved = [.. pushes.Where(push => push.Seat >= 0 && push.Seat < state.Units.Count)];
+        foreach (DebrisPush push in moved)
         {
             state.Units[push.Seat].Cell = push.To;
             Log(state, new UnitMovedEvent(state.Turn, push.Seat, push.From, push.To));
+        }
+
+        foreach (DebrisPush push in moved)
+        {
+            FireHazard(state, state.Units[push.Seat], HazardTrigger.StepsOnto);
         }
     }
 

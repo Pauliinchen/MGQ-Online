@@ -2,7 +2,8 @@
 //  RandomStream.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Added the stream of the start rests
+//      Paulinchen  2026-10-22: Added the stream of the hazards
+//                            - Added the stream of the start rests
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -61,4 +62,9 @@ public enum RandomStream
     /// The order in which the start rests of the cooldown skills are picked.
     /// </summary>
     StartRests = 8,
+
+    /// <summary>
+    /// Where hazards land and whether they land.
+    /// </summary>
+    Hazards = 9,
 }

@@ -2,7 +2,8 @@
 //  IRuleContext.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Listed the skills of a cast chain
+//      Paulinchen  2026-10-22: Placed hazards
+//                            - Listed the skills of a cast chain
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -147,6 +148,17 @@ public interface IRuleContext
     /// <param name="castId">The cast whose area it refers to, or null.</param>
     /// <returns>The cells it landed on.</returns>
     IReadOnlyList<GridCell> PlaceDebris(int enemy, SkillDebrisSpec debris, string? castId);
+
+    /// <summary>
+    /// Places hazards as a skill would, replacing older hazards on their cells, and logs them.
+    /// </summary>
+    /// <param name="enemy">The enemy whose rule places them, the caster of their effects.</param>
+    /// <param name="hazard">The hazards.</param>
+    /// <param name="castId">The cast whose area they refer to, or null.</param>
+    /// <param name="seat">The unit the firing event names, whose cell stands in for a cast's cells without one; null for none.</param>
+    /// <param name="ruleId">The rule that places them.</param>
+    /// <returns>The cells they landed on.</returns>
+    IReadOnlyList<GridCell> PlaceHazards(int enemy, HazardPlacement hazard, string? castId, int? seat, string ruleId);
 
     /// <summary>
     /// Puts a cast into the plan being made or queues it for the next turn's plan, telegraphed either way.

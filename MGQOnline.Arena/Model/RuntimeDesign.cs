@@ -2,6 +2,7 @@
 //  RuntimeDesign.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Added the hazard types and the hazards of a map
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -25,6 +26,7 @@ namespace MGQOnline.Arena.Model;
 /// <param name="Maps">The battle maps by map id.</param>
 /// <param name="Tilesets">The tilesets' tile rules by tileset id.</param>
 /// <param name="BossFights">The troops added to or taken from the boss fights.</param>
+/// <param name="Hazards">The hazard types by hazard id, or null for none.</param>
 public sealed record RuntimeDesign(
     int RuntimeFormat,
     RuntimeSource Source,
@@ -37,7 +39,8 @@ public sealed record RuntimeDesign(
     IReadOnlyDictionary<int, RuntimeState> States,
     IReadOnlyDictionary<int, RuntimeMap> Maps,
     IReadOnlyDictionary<int, RuntimeTileset> Tilesets,
-    BossFightOverrides BossFights)
+    BossFightOverrides BossFights,
+    IReadOnlyDictionary<string, RuntimeHazard>? Hazards = null)
 {
     /// <summary>
     /// The runtime format this library reads and writes.
@@ -105,6 +108,8 @@ public sealed record RuntimeState(
 /// <param name="Floor">The floor tile, or null when unknown.</param>
 /// <param name="DebrisTile">The debris tile, or null when unknown.</param>
 /// <param name="DebrisLook">The design's debris look of the map, or null.</param>
+/// <param name="Hazards">The hazards every battle on it starts with on fixed cells, or null for none.</param>
+/// <param name="RandomHazards">The hazards its battles may start with at random, after the tier's; null for none.</param>
 public sealed record RuntimeMap(
     bool FloorIsFallback,
     bool DebrisTileIsFallback,
@@ -112,7 +117,9 @@ public sealed record RuntimeMap(
     int? Tileset = null,
     TileRef? Floor = null,
     TileRef? DebrisTile = null,
-    DebrisLook? DebrisLook = null);
+    DebrisLook? DebrisLook = null,
+    IReadOnlyList<FixedHazard>? Hazards = null,
+    IReadOnlyList<RandomHazards>? RandomHazards = null);
 
 /// <summary>
 /// A tileset's tile rules.

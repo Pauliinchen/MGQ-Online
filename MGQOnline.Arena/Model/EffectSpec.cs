@@ -2,7 +2,8 @@
 //  EffectSpec.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Added the clear debuffs effect
+//      Paulinchen  2026-10-22: Added the place hazard effect
+//                            - Added the clear debuffs effect
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -22,6 +23,7 @@ namespace MGQOnline.Arena.Model;
 [JsonDerivedType(typeof(ApDeltaEffect), "apDelta")]
 [JsonDerivedType(typeof(PlaceDebrisEffect), "placeDebris")]
 [JsonDerivedType(typeof(ClearDebuffsEffect), "clearDebuffs")]
+[JsonDerivedType(typeof(PlaceHazardEffect), "placeHazard")]
 public abstract record EffectSpec;
 
 /// <summary>
@@ -85,3 +87,11 @@ public sealed record PlaceDebrisEffect(SkillDebrisSpec Debris) : EffectSpec;
 /// </summary>
 /// <param name="From">Whom it clears.</param>
 public sealed record ClearDebuffsEffect(RuleTarget From) : EffectSpec;
+
+/// <summary>
+/// Places hazards as a skill would, over the area of the cast whose event fired the rule.
+/// </summary>
+/// <remarks>Without a cast, hit cells and the aimed cell mean the cell of the unit the event names,
+/// and random cells come from the whole grid.</remarks>
+/// <param name="Hazard">The hazards.</param>
+public sealed record PlaceHazardEffect(HazardPlacement Hazard) : EffectSpec;

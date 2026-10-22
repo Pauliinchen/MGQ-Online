@@ -2,7 +2,8 @@
 //  RuntimeSkill.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Added the cycle
+//      Paulinchen  2026-10-22: Added the hazards a skill leaves
+//                            - Added the cycle
 //                            - Added the opener flag
 //      Paulinchen  2026-10-21: Created
 //
@@ -35,6 +36,7 @@ namespace MGQOnline.Arena.Model;
 /// <param name="Support">Whom it acts on on the boss's side, or null for a skill aimed at the party.</param>
 /// <param name="Opener">Whether a skill with a cooldown is ready at the battle's start instead of resting a start rest.</param>
 /// <param name="Cycle">The game's cycle of the skill, or null for a skill rolled on every turn.</param>
+/// <param name="Hazard">The hazards it leaves after its last pulse, or null for none.</param>
 public sealed record RuntimeSkill(
     SkillRef Ref,
     SkillKind Kind,
@@ -54,7 +56,8 @@ public sealed record RuntimeSkill(
     MarksSpec? Marks = null,
     SupportSpec? Support = null,
     bool Opener = false,
-    CycleSpec? Cycle = null);
+    CycleSpec? Cycle = null,
+    HazardPlacement? Hazard = null);
 
 /// <summary>
 /// The game's cycle of a skill, &lt;周期技 a+b*X&gt;: on the turns it fires only the cycle skills

@@ -2,6 +2,7 @@
 //  RuleEnums.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Added the hazard origin
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -71,6 +72,11 @@ public enum PresetKind
     /// A combo skill trait.
     /// </summary>
     ComboSkill,
+
+    /// <summary>
+    /// A hazard's effects, run for the character who fired it.
+    /// </summary>
+    Hazard,
 }
 
 /// <summary>

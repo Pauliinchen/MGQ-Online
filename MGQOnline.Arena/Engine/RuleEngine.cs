@@ -2,7 +2,8 @@
 //  RuleEngine.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Logged the seat a rule fired for
+//      Paulinchen  2026-10-22: Ran the effects of a rule the battle fires itself
+//                            - Logged the seat a rule fired for
 //      Paulinchen  2026-10-21: Dropped the effect queue seam, since the engine runs its effects itself
 //                            - Created
 //
@@ -53,6 +54,32 @@ public sealed class RuleEngine
         ArgumentNullException.ThrowIfNull(battleEvent);
         Queue<QueuedEffect> effects = new();
         Enqueue(effects, Match(context, battleEvent, 0));
+        RunQueue(context, effects);
+    }
+
+    /// <summary>
+    /// Runs the effects of a rule the battle fires itself, such as a hazard's for the unit that fired
+    /// it, and every effect that follows from them as <see cref="Raise"/> does.
+    /// </summary>
+    /// <remarks>The rule skips the matching, its limits and the ledger, since the battle decided it fires.</remarks>
+    /// <param name="context">The battle.</param>
+    /// <param name="fired">The rule, its enemy and the event it fired on.</param>
+    public void Run(IRuleContext context, FiredRule fired)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(fired);
+        Queue<QueuedEffect> effects = new();
+        Enqueue(effects, [fired]);
+        RunQueue(context, effects);
+    }
+
+    /// <summary>
+    /// Runs queued effects in order, and queues the effects of the rules the events they raise fire.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="effects">The queue.</param>
+    private void RunQueue(IRuleContext context, Queue<QueuedEffect> effects)
+    {
         while (effects.TryDequeue(out QueuedEffect? queued))
         {
             foreach (BattleEvent raised in EffectHandlers.Run(context, Book, queued))
