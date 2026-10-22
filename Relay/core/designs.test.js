@@ -2,7 +2,8 @@
 //  designs.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Replayed the build exchanges too and tested the routes that remain no routes
+//      Paulinchen  2026-10-22: Tested that a seeded admin stays demoted
+//                            - Replayed the build exchanges too and tested the routes that remain no routes
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -310,14 +311,28 @@ test("designer admins and relay admins manage the designers; a relay admin can n
   assert.equal(await book.store.designer(DESIGNERS.C.id), undefined);
 });
 
-test("the admins DESIGNER_ADMINS names are added under the start of their id, and a listed one becomes an admin", async () => {
+test("the admins DESIGNER_ADMINS names are added under the start of their id, and a listed one keeps its row", async () => {
   const store = memoryDesignStore();
   const book = new DesignBook(store, { clock: () => NOW * 1000 });
   await store.putDesigner({ id: DESIGNERS.B.id, name: DESIGNERS.B.name, admin: false, addedBy: "test", at: 0 });
   await book.seedAdmins([DESIGNERS.A.id, DESIGNERS.B.id]);
 
   assert.deepEqual(await store.designer(DESIGNERS.A.id), { id: DESIGNERS.A.id, name: DESIGNERS.A.id.slice(0, 8), admin: 1, added_by: SEEDED_BY, at: NOW, last_seen: null });
-  assert.deepEqual([(await store.designer(DESIGNERS.B.id)).name, (await store.designer(DESIGNERS.B.id)).admin], [DESIGNERS.B.name, 1]);
+  assert.deepEqual([(await store.designer(DESIGNERS.B.id)).name, (await store.designer(DESIGNERS.B.id)).admin], [DESIGNERS.B.name, 0]);
+});
+
+test("a seeded admin demoted through the designer routes stays demoted when the relay seeds again, and a removed one comes back", async () => {
+  const store = memoryDesignStore();
+  const book = new DesignBook(store, { clock: () => NOW * 1000 });
+  await book.seedAdmins([DESIGNERS.A.id, DESIGNERS.B.id]);
+  assert.equal((await send(book, { method: "PUT", path: `/v1/designs/designers/${DESIGNERS.B.id}`, headers: A, body: { admin: false } })).status, 200);
+
+  await book.seedAdmins([DESIGNERS.A.id, DESIGNERS.B.id]);
+  assert.equal((await store.designer(DESIGNERS.B.id)).admin, 0, "the restart keeps the demotion");
+
+  assert.equal((await send(book, { method: "DELETE", path: `/v1/designs/designers/${DESIGNERS.B.id}`, headers: A, body: null })).status, 200);
+  await book.seedAdmins([DESIGNERS.A.id, DESIGNERS.B.id]);
+  assert.equal((await store.designer(DESIGNERS.B.id)).admin, 1, "a removed seeded admin is seeded again");
 });
 
 test("the lowest designer version is the setting's, every version without a setting, and other paths are no routes", async () => {
