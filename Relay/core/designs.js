@@ -2,7 +2,8 @@
 //  designs.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Built the design on the server one build at a time, published a build, rolled back to the previous one and served the live build to games
+//      Paulinchen  2026-10-22: Refused to publish a build compiled against another live build
+//                            - Built the design on the server one build at a time, published a build, rolled back to the previous one and served the live build to games
 //      Paulinchen  2026-10-21: Kept the designers' presence and their sockets and served the newest designer release
 //                            - Created
 //
@@ -41,7 +42,7 @@ import { RATE_LIMITS, RateLimiter } from "./relay.js";
  * @property {(id: number) => Promise<object | undefined>} build A build's row.
  * @property {(limit: number) => Promise<object[]>} builds The newest builds' rows, newest first.
  * @property {(id: number, status: string) => Promise<void>} setBuildStatus Sets a build's status.
- * @property {(id: number, fields: {status: string, report: string | null, snapshotSha: string | null, runtimeSha: string | null, marshalSha: string | null, format: number | null, runtimeFormat: number | null, compiler: string | null, gameData: string | null}, blobs: {sha256: string, kind: string, size: number, gz: Uint8Array, at: number}[]) => Promise<void>} finishBuild Keeps a build's result and its blobs, all or nothing; a blob kept before stays as it is.
+ * @property {(id: number, fields: {status: string, report: string | null, snapshotSha: string | null, runtimeSha: string | null, marshalSha: string | null, format: number | null, runtimeFormat: number | null, compiler: string | null, gameData: string | null, baseBuildId: number | null}, blobs: {sha256: string, kind: string, size: number, gz: Uint8Array, at: number}[]) => Promise<void>} finishBuild Keeps a build's result, with the live build it was compiled against, null for none, and its blobs, all or nothing; a blob kept before stays as it is.
  * @property {(report: string) => Promise<number[]>} failUnfinished Fails every build still queued or compiling with a report, and hands out their ids.
  * @property {() => Promise<{build_id: number, previous_build_id: number | null, by: string, at: number} | undefined>} live The live build's row.
  * @property {(live: {buildId: number, previousBuildId: number | null, by: string, at: number}) => Promise<void>} setLive Sets the live build and the one before it.
@@ -159,7 +160,7 @@ const SHA256 = /^[0-9a-f]{64}$/;
 /**
  * The result fields of a build without them, as a failed or refused build keeps them.
  */
-const EMPTY_FIELDS = Object.freeze({ snapshotSha: null, runtimeSha: null, marshalSha: null, format: null, runtimeFormat: null, compiler: null, gameData: null });
+const EMPTY_FIELDS = Object.freeze({ snapshotSha: null, runtimeSha: null, marshalSha: null, format: null, runtimeFormat: null, compiler: null, gameData: null, baseBuildId: null });
 
 /**
  * Who added the designer admins the DESIGNER_ADMINS setting names.
@@ -389,6 +390,19 @@ export function catalogDiffOf(report) {
   const texts = (list) => (Array.isArray(list) ? list.filter((item) => typeof item === "string") : []);
   const renamed = Array.isArray(diff?.renamed) ? diff.renamed.filter((item) => isObject(item) && typeof item.from === "string" && typeof item.to === "string") : [];
   return { removed: texts(diff?.removed), renamed: renamed.map((item) => ({ id: item.id, from: item.from, to: item.to })), troopsChanged: texts(diff?.troopsChanged) };
+}
+
+/**
+ * Tells whether a build was compiled against another live build than the one live now, so its
+ * catalog changes, which the pools follow, no longer name what the publish changes.
+ *
+ * @param {{id: number, base_build_id: number | null}} build The build.
+ * @param {{build_id: number} | undefined} live The live build's row, undefined for none.
+ * @returns {boolean} Whether it was; never for the live build itself.
+ */
+function isStale(build, live) {
+  const liveId = live?.build_id ?? null;
+  return build.id !== liveId && (build.base_build_id ?? null) !== liveId;
 }
 
 /**
@@ -1321,6 +1335,7 @@ export class DesignBook {
    */
   async compile(id, seq) {
     let result;
+    let baseBuildId = null;
 
     try {
       await this.store.setBuildStatus(id, BUILD_STATUS.compiling);
@@ -1332,6 +1347,7 @@ export class DesignBook {
         result = { status: BUILD_STATUS.failed, report: failureReport(refusal.body.message), fields: EMPTY_FIELDS, blobs: [] };
       } else {
         const { build } = await this.liveRows();
+        baseBuildId = build?.id ?? null;
         const previous = build?.runtime_sha ? ((await this.store.blob(build.runtime_sha)) ?? null) : null;
         result = await this.compiler.compile({ buildId: id, seq, previous });
       }
@@ -1340,7 +1356,7 @@ export class DesignBook {
     }
 
     const at = this.now();
-    const fields = { ...EMPTY_FIELDS, ...result.fields, status: result.status, report: result.report === null ? null : JSON.stringify(result.report) };
+    const fields = { ...EMPTY_FIELDS, ...result.fields, baseBuildId, status: result.status, report: result.report === null ? null : JSON.stringify(result.report) };
     await this.exclusive(() => this.store.finishBuild(id, fields, result.blobs.map((blob) => ({ ...blob, at }))));
     await this.compiler?.clean(id).catch(() => {});
     this.presence.broadcast(buildFrame({ id, seq, status: result.status }));
@@ -1430,7 +1446,7 @@ export class DesignBook {
    *
    * @param {{id: string, name: string}} designer The designer admin.
    * @param {any} body The request, `{buildId}` of a build whose status is ok.
-   * @returns {Promise<{status: number, body: object, notice?: {text: string, resetKeys: string[]}}>} `{live, catalogDiff}`, with what to tell the world rooms while DESIGN_WORLD_NOTICE is on; `404 none` for a build the relay does not hold, `409 status` for one not ok.
+   * @returns {Promise<{status: number, body: object, notice?: {text: string, resetKeys: string[]}}>} `{live, catalogDiff}`, with what to tell the world rooms while DESIGN_WORLD_NOTICE is on; `404 none` for a build the relay does not hold, `409 status` for one not ok, `409 stale` for one compiled against another live build than the one live now, which a new build replaces.
    */
   async publish(designer, body) {
     if (!isObject(body) || !wholeIn(body.buildId, 1, Number.MAX_SAFE_INTEGER)) {
@@ -1449,6 +1465,11 @@ export class DesignBook {
       }
 
       const earlier = await this.store.live();
+
+      if (isStale(build, earlier)) {
+        return { status: 409, body: { code: "stale" } };
+      }
+
       // Publishing the live build again keeps the build before it.
       const previousBuildId = earlier?.build_id === build.id ? earlier.previous_build_id : (earlier?.build_id ?? null);
       const live = { buildId: build.id, previousBuildId, by: designer.id, at: this.now() };
