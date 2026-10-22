@@ -2,7 +2,8 @@
 //  designs.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Told the world rooms of new live builds in the order they went live
+//      Paulinchen  2026-10-22: Failed a build whose result could not be kept
+//                            - Told the world rooms of new live builds in the order they went live
 //                            - Checked a build or publish request before counting it against the rate limit
 //                            - Refused to publish a build compiled against another live build
 //                            - Built the design on the server one build at a time, published a build, rolled back to the previous one and served the live build to games
@@ -1365,11 +1366,27 @@ export class DesignBook {
       result = { status: BUILD_STATUS.failed, report: failureReport(error.message), fields: EMPTY_FIELDS, blobs: [] };
     }
 
+    const kept = await this.keepBuild(id, result, baseBuildId).then(() => result, async (error) => {
+      const failed = { status: BUILD_STATUS.failed, report: failureReport(`The relay could not keep the build: ${error.message}`), fields: EMPTY_FIELDS, blobs: [] };
+      await this.keepBuild(id, failed, baseBuildId).catch(() => {});
+      return failed;
+    });
+    await this.compiler?.clean(id).catch(() => {});
+    this.presence.broadcast(buildFrame({ id, seq, status: kept.status }));
+  }
+
+  /**
+   * Keeps a compiled build's result and blobs under the exclusive queue.
+   *
+   * @param {number} id The build.
+   * @param {{status: string, report: object | null, fields: object, blobs: {sha256: string, kind: string, size: number, gz: Uint8Array}[]}} result The compile's result.
+   * @param {number | null} baseBuildId The live build it was compiled against, null for none.
+   * @returns {Promise<void>} Completes once kept; rejects when the store failed, which keeps nothing.
+   */
+  keepBuild(id, result, baseBuildId) {
     const at = this.now();
     const fields = { ...EMPTY_FIELDS, ...result.fields, baseBuildId, status: result.status, report: result.report === null ? null : JSON.stringify(result.report) };
-    await this.exclusive(() => this.store.finishBuild(id, fields, result.blobs.map((blob) => ({ ...blob, at }))));
-    await this.compiler?.clean(id).catch(() => {});
-    this.presence.broadcast(buildFrame({ id, seq, status: result.status }));
+    return this.exclusive(() => this.store.finishBuild(id, fields, result.blobs.map((blob) => ({ ...blob, at }))));
   }
 
   /**
