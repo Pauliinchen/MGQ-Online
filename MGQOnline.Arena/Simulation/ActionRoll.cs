@@ -2,6 +2,7 @@
 //  ActionRoll.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Capped a candidate's uses per turn
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -19,7 +20,8 @@ namespace MGQOnline.Arena.Simulation;
 /// <param name="Weight">The weight before any use, rating × <see cref="ActionRoll.WeightPerRating"/>.</param>
 /// <param name="Cost">The points it costs, at least 1.</param>
 /// <param name="Cooldown">The skill's cooldown, 0 for none; a skill with one leaves the candidates after a use.</param>
-public sealed record RollCandidate(string SkillKey, int Weight, int Cost, int Cooldown);
+/// <param name="MaxUses">The most uses of its skill per turn, or null for no limit.</param>
+public sealed record RollCandidate(string SkillKey, int Weight, int Cost, int Cooldown, int? MaxUses = null);
 
 /// <summary>
 /// What a roll picked.
@@ -30,7 +32,8 @@ public sealed record RollResult(IReadOnlyList<int> Picks, int Left);
 
 /// <summary>
 /// The action point roll: by integer weight among the affordable candidates, each use paying its
-/// cost and lowering its skill's weight, until nothing affordable is left.
+/// cost and lowering its skill's weight, until nothing affordable is left; a candidate whose skill
+/// reached its most uses of the turn leaves the candidates.
 /// </summary>
 public static class ActionRoll
 {
@@ -94,7 +97,8 @@ public static class ActionRoll
                 int used = uses.GetValueOrDefault(candidate.SkillKey);
                 bool open = candidate.Cost <= left
                     && resting?.Contains(candidate.SkillKey) != true
-                    && !(candidate.Cooldown > 0 && used > 0);
+                    && !(candidate.Cooldown > 0 && used > 0)
+                    && !(candidate.MaxUses is int most && used >= most);
                 weights[i] = open ? WeightAfter(candidate.Weight, used, useWeightPermille) : 0;
             }
 

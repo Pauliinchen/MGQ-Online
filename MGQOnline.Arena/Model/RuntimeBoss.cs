@@ -2,6 +2,7 @@
 //  RuntimeBoss.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Added the boss's own normal attacks per turn
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -32,6 +33,7 @@ namespace MGQOnline.Arena.Model;
 /// <param name="MarkReactions">The mark reactions as set, for the logs.</param>
 /// <param name="BattleMaps">The maps the boss is fought on, its own first.</param>
 /// <param name="Tier">The tier, or null for none.</param>
+/// <param name="NormalAttacks">The most normal attacks each enemy rolls per turn, or null for its tier's.</param>
 public sealed record RuntimeBoss(
     string Id,
     string Key,
@@ -51,7 +53,8 @@ public sealed record RuntimeBoss(
     IReadOnlyList<RuleSpec> Rules,
     IReadOnlyList<MarkReactionSpec> MarkReactions,
     IReadOnlyList<BattleMapRef> BattleMaps,
-    int? Tier = null);
+    int? Tier = null,
+    int? NormalAttacks = null);
 
 /// <summary>
 /// One troop of a boss fight.

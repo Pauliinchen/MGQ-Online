@@ -2,7 +2,8 @@
 //  CanonicalGoldenTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Took the seat of a rule fire in the events golden
+//      Paulinchen  2026-10-22: Took the normal attacks per turn in the design golden
+//                            - Took the seat of a rule fire in the events golden
 //                            - Took the main target in the goldens
 //      Paulinchen  2026-10-21: Took the hash of the design golden with formula trees
 //                            - Created
@@ -30,7 +31,7 @@ public sealed class CanonicalGoldenTests
     /// <summary>
     /// The SHA-256 of the design golden.
     /// </summary>
-    private const string DesignSha256 = "1c651ce6d6e2a2cf761df9727790667f28f6adca872a373a12ebc4b7de96ba9f";
+    private const string DesignSha256 = "91f590426b512db20baaef3e95efef76e079dcd29d9886425cca470bf3a1adc9";
 
     /// <summary>
     /// The SHA-256 of the battle log golden.

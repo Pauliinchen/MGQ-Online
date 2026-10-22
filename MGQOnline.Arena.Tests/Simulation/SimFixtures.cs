@@ -2,6 +2,7 @@
 //  SimFixtures.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Gave the tier its normal attacks per turn
 //      Paulinchen  2026-10-21: Ran the simulations through the real rule engine
 //                            - Created
 //
@@ -136,6 +137,7 @@ internal static class SimFixtures
     /// <param name="tierStates">The states the tier keeps on the boss, or null for none.</param>
     /// <param name="traits">The boss's traits, or null for none.</param>
     /// <param name="attackCost">The normal attack's cost.</param>
+    /// <param name="normalAttacks">The tier's normal attacks per turn.</param>
     /// <returns>The design.</returns>
     public static RuntimeDesign Design(
         IReadOnlyList<RuntimeAction> actions,
@@ -146,7 +148,8 @@ internal static class SimFixtures
         int attackWeight = 512,
         IReadOnlyList<int>? tierStates = null,
         TraitBlock? traits = null,
-        int attackCost = 1)
+        int attackCost = 1,
+        int normalAttacks = 1)
     {
         Dictionary<string, RuntimeSkill> byKey = skills.ToDictionary(skill => skill.Ref.Key);
         byKey.TryAdd(Attack.Key, Skill(Attack, attackCost));
@@ -158,6 +161,7 @@ internal static class SimFixtures
             Debris = RandomDebris.None,
             Traits = TraitBlock.Empty,
             Tier = TierNumber,
+            NormalAttacks = normalAttacks,
         };
         RuntimeBoss boss = Samples.Boss with
         {

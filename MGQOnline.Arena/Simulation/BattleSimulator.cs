@@ -2,7 +2,8 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Planned a turn with the Overdrive and Last stand toggles
+//      Paulinchen  2026-10-22: Capped the normal attacks per turn
+//                            - Planned a turn with the Overdrive and Last stand toggles
 //                            - Named the main target on unit hits
 //      Paulinchen  2026-10-21: Ran the rules through the rule engine and the casts through the casting part
 //                            - Created
@@ -410,7 +411,9 @@ public sealed partial class BattleSimulator
 
     /// <summary>
     /// Rolls an enemy's actions on its points: the unscheduled actions of the normal pool whose
-    /// condition holds and whose skill does not rest, and the normal attack with the lowest weight.
+    /// condition holds and whose skill does not rest, and the normal attack with the lowest weight;
+    /// every entry of the normal attack's skill runs at most the boss's or its tier's normal attacks
+    /// per turn.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="enemy">The enemy.</param>
@@ -420,6 +423,9 @@ public sealed partial class BattleSimulator
     {
         List<RollCandidate> candidates = [];
         List<RuntimeAction?> actions = [];
+        RuntimeNormalAttack attack = state.Boss.NormalAttack;
+        SkillRef? attackSkill = attack.Override ?? (attack.ByEnemy.TryGetValue(enemy.EnemyId, out SkillRef byEnemy) ? byEnemy : null);
+        int attackCap = Math.Max(0, state.Boss.NormalAttacks ?? state.Tier.NormalAttacks);
         foreach (RuntimeAction action in ActionsOf(state, enemy.EnemyId))
         {
             if (action.Scheduled
@@ -431,15 +437,14 @@ public sealed partial class BattleSimulator
                 continue;
             }
 
-            candidates.Add(new RollCandidate(action.Skill.Key, action.Rating * ActionRoll.WeightPerRating, Math.Max(1, skill.ApCost), skill.Cooldown));
+            int? most = attackSkill?.Key == action.Skill.Key ? attackCap : null;
+            candidates.Add(new RollCandidate(action.Skill.Key, action.Rating * ActionRoll.WeightPerRating, Math.Max(1, skill.ApCost), skill.Cooldown, most));
             actions.Add(action);
         }
 
-        RuntimeNormalAttack attack = state.Boss.NormalAttack;
-        SkillRef? attackSkill = attack.Override ?? (attack.ByEnemy.TryGetValue(enemy.EnemyId, out SkillRef byEnemy) ? byEnemy : null);
         if (attackSkill is SkillRef normal && state.Boss.Skills.TryGetValue(normal.Key, out RuntimeSkill? attackOwn) && Design.Rules.Ap.NormalAttackWeight > 0)
         {
-            candidates.Add(new RollCandidate(normal.Key, Design.Rules.Ap.NormalAttackWeight, Math.Max(1, attackOwn.ApCost), attackOwn.Cooldown));
+            candidates.Add(new RollCandidate(normal.Key, Design.Rules.Ap.NormalAttackWeight, Math.Max(1, attackOwn.ApCost), attackOwn.Cooldown, attackCap));
             actions.Add(null);
         }
 

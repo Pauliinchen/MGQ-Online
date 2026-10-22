@@ -2,6 +2,7 @@
 //  GameRules.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Added the game rule's normal attacks per turn
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -72,6 +73,7 @@ public sealed record UnitRules(int Cap);
 /// <param name="UseWeightPermille">What a use leaves of a skill's weight, in permille.</param>
 /// <param name="BankTurns">How many turns' points a boss may bank.</param>
 /// <param name="NormalAttackWeight">The roll weight of the normal attack, on the scale of rating × 1024.</param>
+/// <param name="NormalAttacks">The most normal attacks an enemy rolls per turn where neither its tier nor its boss sets them.</param>
 public sealed record ApRules(
     int NoTier,
     int Min,
@@ -81,7 +83,8 @@ public sealed record ApRules(
     int ActionMinusFeature,
     int UseWeightPermille,
     int BankTurns,
-    int NormalAttackWeight);
+    int NormalAttackWeight,
+    int NormalAttacks = 1);
 
 /// <summary>
 /// The cost limits of a skill.

@@ -2,6 +2,7 @@
 //  PlanTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Tested the normal attacks per turn
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -85,12 +86,12 @@ public sealed class PlanTests
 
     /// <summary>
     /// The normal attack is an ordinary roll candidate: with nothing else to roll it takes every
-    /// point, and a weight of 0 keeps it out.
+    /// point its normal attacks per turn allow, and a weight of 0 keeps it out.
     /// </summary>
     [Fact]
     public void RollsTheNormalAttackAsACandidate()
     {
-        BattleSimulator attacking = SimFixtures.Simulator(SimFixtures.Design([], [], ap: 4));
+        BattleSimulator attacking = SimFixtures.Simulator(SimFixtures.Design([], [], ap: 4, normalAttacks: 4));
         BattleSimulator silent = SimFixtures.Simulator(SimFixtures.Design([], [], ap: 4, attackWeight: 0));
 
         TurnPlan withAttack = attacking.Plan(attacking.Start(SimFixtures.Setup()));
@@ -133,6 +134,51 @@ public sealed class PlanTests
 
         Assert.Equal([6, 12, 12, 12, 12], ap.Select(turn => turn.Start));
         Assert.All(ap, turn => Assert.Equal(6, turn.Banked));
+    }
+
+    /// <summary>
+    /// The normal attack runs at most its tier's normal attacks per turn, one by default, and the
+    /// points it leaves are banked.
+    /// </summary>
+    [Fact]
+    public void CapsTheNormalAttacksPerTurnAndBanksTheRest()
+    {
+        RuntimeDesign design = SimFixtures.Design([], [], ap: 6);
+        BattleSimulator simulator = SimFixtures.Simulator(design);
+        BattleState state = simulator.Start(SimFixtures.Setup());
+
+        List<TurnResult> turns = SimFixtures.Play(simulator, state, 3);
+        List<ApTurnEvent> ap = [.. turns.SelectMany(turn => turn.Events.OfType<ApTurnEvent>())];
+
+        Assert.All(turns, turn => Assert.Equal(SimFixtures.Attack, Assert.Single(turn.Plan).Skill));
+        Assert.Equal([(6, 5), (11, 6), (12, 6)], ap.Select(turn => (turn.Start, turn.Banked)));
+    }
+
+    /// <summary>
+    /// A boss's own normal attacks per turn win over its tier's, an action of the normal attack's
+    /// skill counts against them, and 0 rolls none.
+    /// </summary>
+    /// <param name="own">The boss's own normal attacks, null for its tier's.</param>
+    /// <param name="tier">The tier's normal attacks.</param>
+    /// <param name="expected">The casts of the normal attack's skill per turn.</param>
+    [Theory]
+    [InlineData(3, 1, 3)]
+    [InlineData(null, 2, 2)]
+    [InlineData(0, 4, 0)]
+    public void TakesTheBossOwnNormalAttacks(int? own, int tier, int expected)
+    {
+        RuntimeDesign basic = SimFixtures.Design([SimFixtures.Action("swing", SimFixtures.Attack, 5)], [], ap: 6, bankTurns: 0);
+        RuntimeDesign design = basic with
+        {
+            Tiers = new Dictionary<int, RuntimeTier> { [SimFixtures.TierNumber] = basic.Tiers[SimFixtures.TierNumber] with { NormalAttacks = tier } },
+            Bosses = new Dictionary<string, RuntimeBoss> { [SimFixtures.BossKey] = basic.Bosses[SimFixtures.BossKey] with { NormalAttacks = own } },
+        };
+        BattleSimulator simulator = SimFixtures.Simulator(design);
+        BattleState state = simulator.Start(SimFixtures.Setup());
+
+        List<TurnResult> turns = SimFixtures.Play(simulator, state, 4);
+
+        Assert.All(turns, turn => Assert.Equal(expected, turn.Plan.Count(entry => entry.Skill == SimFixtures.Attack)));
     }
 
     /// <summary>
