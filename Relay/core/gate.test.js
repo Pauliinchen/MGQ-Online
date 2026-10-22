@@ -2,6 +2,7 @@
 //  gate.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Tested which games hold a world's long mods and which read the world list with every world's mods
 //      Paulinchen  2026-10-12: Tested that the world directory, the mod catalog and the Raid World admin routes ask for X-MGQ-Features
 //                            - Tested the update code on the 400 of a world room and the World Admin tool passing with 0.0.0-dev
 //                            - Tested 400 for a world room, a request without X-MGQ-Version as 0.6.4, the version gate on the directory and mod catalog and only 0.0.0-dev as a development build
@@ -11,7 +12,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GATE, UPDATE_NEEDED, UPDATE_STATUS, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, compareVersions, gateOf, minVersionOf, parseVersion, tooOld, updateRefusal } from "./gate.js";
+import { GATE, UPDATE_NEEDED, UPDATE_STATUS, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, compareVersions, gateOf, holdsLongMods, listsWorldMods, minVersionOf, parseVersion, tooOld, updateRefusal } from "./gate.js";
 
 /**
  * A world's id as games make them.
@@ -122,4 +123,13 @@ test("a world room refuses with 400 and the update code, a PvP room with 426 and
   }
 
   assert.equal(updateRefusal(at(`/v1/world/${WORLD}`), "raid", null, "0.6.4"), null, "a released 0.6.4 game");
+});
+
+test("games from 0.6.8 and development builds hold long mods, and only they read the list without them but for the website and the World Admin tool", () => {
+  assert.deepEqual(["0.6.7.7", "0.6.8", "0.6.8.1+abc", "0.7", "0.0.0-dev", "0.6.8-beta", null, "no version"].map(holdsLongMods), [false, true, true, true, true, true, false, false]);
+  assert.equal(listsWorldMods("raid,keys", "0.6.7.7"), true, "a released game");
+  assert.equal(listsWorldMods("raid", null), true, "a game naming no version");
+  assert.equal(listsWorldMods("raid,keys", "0.6.8"), false);
+  assert.equal(listsWorldMods("web", "0.0.0-dev"), true, "the website");
+  assert.equal(listsWorldMods("admin", "0.0.0-dev"), true, "the World Admin tool");
 });

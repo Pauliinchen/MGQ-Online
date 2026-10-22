@@ -2,6 +2,10 @@
 //  directory.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Took a world's mods up to 16000 characters and its mod hashes and settings up to 64000 each
+//                            - Listed the worlds without their mods, mod hashes and settings for games that read them from the world's own route
+//                            - Handed out one world by its id with everything the list names of it
+//                            - Sent a released game to update at a world whose mods are longer than it holds
 //      Paulinchen  2026-10-21: Let an admin's edit rename a world, feature or hide it, hand it to another creator, give it a new lock and set its game data, strict rule and mod hashes
 //                            - Told the Raid World admin routes the admin's player id
 //      Paulinchen  2026-10-14: Let every game give a Raid World a starting save
@@ -70,9 +74,10 @@ import { FEATURE, MAX_CHAT_LENGTH, RATE_LIMITS, RateLimiter, VERSION, WORLD_SEAT
 export const DIRECTORY_LIMITS = Object.freeze({
   maxNameLength: 32,
   maxDescriptionLength: 1000,
-  maxModsLength: 300,
-  maxModHashesLength: 2000,
-  maxSettingsLength: 2000,
+  // Far above any real list; games from 0.6.8 read a world's mods from its own route, not the list.
+  maxModsLength: 16_000,
+  maxModHashesLength: 64_000,
+  maxSettingsLength: 64_000,
   maxWorlds: 2000,
   maxWorldsPerCreator: 20,
   maxMembers: 200,
@@ -87,11 +92,18 @@ export const DIRECTORY_LIMITS = Object.freeze({
   maxStartBytesTotal: 1024 * 1024 * 1024,
   // How long a world waits for its starting save before it is deleted.
   pendingMs: 10 * 60 * 1000,
-  maxJsonLength: 32 * 1024,
+  // A world's longest texts together, with room for JSON escapes.
+  maxJsonLength: 256 * 1024,
   // Lines of a world's chat kept, the oldest forgotten first, and the longest line.
   maxChatLines: 200,
   maxChatLength: MAX_CHAT_LENGTH,
 });
+
+/**
+ * What released games before 0.6.8 hold of a world's mods: the text of the list, and the text of
+ * the frame telling a world room the mods rule, past which their DLL drops the frame.
+ */
+export const RELEASED_MOD_LIMITS = Object.freeze({ maxModsLength: 300, maxRuleLength: 4096 });
 
 /**
  * The name an admin's line of a world's chat carries when the request names none.
@@ -114,6 +126,7 @@ export const REFUSAL = Object.freeze({
   storage: "storage",
   raid: "raid_unsupported",
   raidStart: "raid_start",
+  update: "update",
 });
 
 /**
@@ -272,14 +285,28 @@ export class Directory {
    *
    * @param {unknown} [key] The asking player's key; without one, only the public worlds and the named ones.
    * @param {unknown} [ids] The ids of hidden worlds to list too, separated by commas.
+   * @param {boolean} [withMods] Whether each world comes with its mods, mod hashes and settings, as released games read them; else with how many mods it names.
    * @returns {Promise<{status: number, body: object}>} The worlds, and whether the player is an admin.
    */
-  async list(key, ids) {
+  async list(key, ids, withMods = true) {
     const named = new Set(typeof ids === "string" ? ids.split(",").filter((id) => ID.test(id)).slice(0, this.limits.maxListedIds) : []);
     const player = isId(key) ? await playerIdOf(key) : null;
     const admin = this.admins.has(player);
-    const worlds = (await this.entries()).filter((entry) => admin || !entry.hidden || (player && entry.members[player]) || named.has(entry.id)).map((entry) => publicView(entry));
-    return { status: 200, body: { worlds, admin } };
+    const listed = (await this.entries()).filter((entry) => admin || !entry.hidden || (player && entry.members[player]) || named.has(entry.id));
+    return { status: 200, body: { worlds: listed.map((entry) => (withMods ? publicView(entry) : listedView(entry))), admin } };
+  }
+
+  /**
+   * Hands out one world with everything the list names of it, its mods, mod hashes and settings
+   * included. Naming its id is enough, as it is for a hidden world in the list.
+   *
+   * @param {string} id The world.
+   * @param {unknown} [key] The asking player's key, which tells whether the player is an admin.
+   * @returns {Promise<{status: number, body: object}>} The world and whether the player is an admin, or 404.
+   */
+  async world(id, key) {
+    const { entry, player, refusal } = await this.worldAndPlayer(id, key);
+    return refusal ?? { status: 200, body: { world: publicView(entry), admin: this.admins.has(player) } };
   }
 
   /**
@@ -593,9 +620,10 @@ export class Directory {
    * @param {unknown} auth The auth key the player's game made from the world's token.
    * @param {string | null} [address] The game's address, whose entering a rate limit counts; null for none.
    * @param {string[]} [features] What the game names in FEATURES_HEADER; released games name nothing.
+   * @param {boolean} [released] Whether the game is a released one before 0.6.8, which holds no longer mods than RELEASED_MOD_LIMITS.
    * @returns {Promise<{status: number, body: object, seats?: number, player?: string}>} The world's seats and the player's id, or why not.
    */
-  async admit(id, key, auth, address = null, features = []) {
+  async admit(id, key, auth, address = null, features = [], released = false) {
     if (!this.rates.joins.take(address)) {
       return tooMany();
     }
@@ -610,6 +638,11 @@ export class Directory {
     // since released games retry a 409 as a full world for as long as they run but stop at a 400.
     if (entry.type === WORLD_TYPE.raid && !features.includes(FEATURE.raid)) {
       return { status: 400, body: { error: "the world is a Raid World, which this game cannot play", code: REFUSAL.raid } };
+    }
+
+    // A game that cannot hold the world's mods could neither check nor turn off what it needs.
+    if (released && !releasedGamesHold(entry.mods ?? "")) {
+      return { status: 400, body: { error: "the world names more mods than this game holds", code: REFUSAL.update } };
     }
 
     if (entry.start === START.pending) {
@@ -1223,6 +1256,38 @@ export function modsRuleText(off, mods) {
 }
 
 /**
+ * Tells whether released games before 0.6.8 hold a world's mods, in the list and as they enter it.
+ *
+ * @param {string} mods The world's mods as kept.
+ * @returns {boolean} Whether they do.
+ */
+export function releasedGamesHold(mods) {
+  return [...mods].length <= RELEASED_MOD_LIMITS.maxModsLength;
+}
+
+/**
+ * Tells whether released games before 0.6.8 take the frame telling a world room its mods rule,
+ * whose mods their DLL drops past RELEASED_MOD_LIMITS.maxRuleLength characters.
+ *
+ * @param {string} mods The world's mods as kept.
+ * @returns {boolean} Whether they do.
+ */
+export function releasedGamesTakeRule(mods) {
+  return mods.length <= RELEASED_MOD_LIMITS.maxRuleLength;
+}
+
+/**
+ * Counts the mods a world names, as the games split them: at each semicolon, without the marks
+ * of required and essential mods, and leaving out empty names.
+ *
+ * @param {string} mods The world's mods as kept.
+ * @returns {number} How many.
+ */
+export function modsCountOf(mods) {
+  return mods.split(";").filter((mod) => mod.trim().replace(/^[!?]\s*/, "").length > 0).length;
+}
+
+/**
  * Tells whether a world turns its players' other mods off.
  *
  * @param {object} entry The world's entry.
@@ -1261,7 +1326,7 @@ function cleanSettings(text) {
  * @param {URL} url The request's address.
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {(limit: number) => Promise<Uint8Array | null>} readBytes Reads the request's body as bytes, null when it is longer than the limit.
- * @param {{player?: string | null, auth?: string | null, address?: string | null}} [client] The PLAYER_HEADER and AUTH_HEADER of the request, which win over the key and auth key in its body or address, and the address it came from.
+ * @param {{player?: string | null, auth?: string | null, address?: string | null, modsListed?: boolean}} [client] The PLAYER_HEADER and AUTH_HEADER of the request, which win over the key and auth key in its body or address, the address it came from, and whether the list names each world's mods, mod hashes and settings, as it does unless told otherwise.
  * @returns {Promise<{status: number, body: object, bytes?: Uint8Array | ReadableStream<Uint8Array>, close?: boolean, kick?: string, difficulty?: number, squad?: object, raidBosses?: boolean, modsRule?: {off: boolean, mods: string}, id?: string}>} The answer, sent as the bytes when there are any, and what the platform layer must do beyond it for the world with that id.
  */
 export async function handleDirectoryRequest(directory, method, url, readBody, readBytes, client = {}) {
@@ -1278,7 +1343,11 @@ export async function handleDirectoryRequest(directory, method, url, readBody, r
   }
 
   if (parts.length === 2 && method === "GET") {
-    return directory.list(fromQuery(), url.searchParams.get("ids"));
+    return directory.list(fromQuery(), url.searchParams.get("ids"), client.modsListed !== false);
+  }
+
+  if (parts.length === 3 && method === "GET") {
+    return directory.world(parts[2], fromQuery());
   }
 
   if (parts.length === 2 && method === "POST") {
@@ -1356,6 +1425,19 @@ export function publicView(entry) {
     active: entry.active,
     members,
   };
+}
+
+/**
+ * Makes the view of a world the list hands games that read its mods from the world's own route:
+ * the public view without its mods, mod hashes and settings, which may be long, and with how many
+ * mods it names.
+ *
+ * @param {object} entry The world entry.
+ * @returns {object} The view.
+ */
+export function listedView(entry) {
+  const { mods, modHashes, settings, ...view } = publicView(entry);
+  return { ...view, modsCount: modsCountOf(mods) };
 }
 
 /**

@@ -2,6 +2,7 @@
 //  gate.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Told which games hold a world's long mods and which read the world list with every world's mods
 //      Paulinchen  2026-10-12: Held the world directory's and the mod catalog's routes to X-MGQ-Features
 //                            - Named the update code on the 400 of a world room refused to a game too old
 //                            - Refused a world room of a game too old with 400 and counted a request without X-MGQ-Version as 0.6.4
@@ -18,6 +19,7 @@
 import { bossRouteOf } from "./bosses.js";
 import { routeIs } from "./http.js";
 import { MOD_LIMITS } from "./mods.js";
+import { parseFeatures } from "./relay.js";
 import { REPORT_LIMITS } from "./reports.js";
 import { storyRouteOf } from "./story.js";
 
@@ -36,6 +38,18 @@ export const UNNAMED_VERSION = "0.6.4";
  * The stamp of a development build and the World Admin tool, which passes on every relay.
  */
 export const DEVELOPMENT_VERSION = "0.0.0-dev";
+
+/**
+ * The first version that holds a world's mods past what released games hold and reads them from
+ * the world's own route instead of the list.
+ */
+export const LONG_MODS_VERSION = "0.6.8";
+
+/**
+ * What the website and the World Admin tool name in X-MGQ-Features: both read the world list with
+ * every world's mods, whatever version they name.
+ */
+const FULL_LIST_FEATURES = Object.freeze(["web", "admin"]);
 
 /**
  * The lowest version the relay serves unless its MIN_VERSION setting names another.
@@ -176,6 +190,31 @@ export function tooOld(gate, featuresHeader, versionHeader, minVersion) {
 
   const version = parseVersion(sent(versionHeader) ? versionHeader : UNNAMED_VERSION);
   return version === null || (!version.development && compareVersions(version.parts, minVersionOf(minVersion)) < 0);
+}
+
+/**
+ * Tells whether a game holds a world's mods past what released games hold: one naming
+ * LONG_MODS_VERSION or newer, or DEVELOPMENT_VERSION.
+ *
+ * @param {string | null | undefined} versionHeader The request's VERSION_HEADER, a game naming none counting as UNNAMED_VERSION.
+ * @returns {boolean} Whether it does.
+ */
+export function holdsLongMods(versionHeader) {
+  const version = parseVersion(sent(versionHeader) ? versionHeader : UNNAMED_VERSION);
+  return version !== null && (version.development || compareVersions(version.parts, parseVersion(LONG_MODS_VERSION).parts) >= 0);
+}
+
+/**
+ * Tells whether the world list names each world's mods, mod hashes and settings for a request:
+ * for released games before LONG_MODS_VERSION, the website and the World Admin tool, while newer
+ * games read them from the world's own route.
+ *
+ * @param {string | null | undefined} featuresHeader The request's FEATURES_HEADER.
+ * @param {string | null | undefined} versionHeader The request's VERSION_HEADER.
+ * @returns {boolean} Whether it does.
+ */
+export function listsWorldMods(featuresHeader, versionHeader) {
+  return !holdsLongMods(versionHeader) || parseFeatures(featuresHeader).some((feature) => FULL_LIST_FEATURES.includes(feature));
 }
 
 /**

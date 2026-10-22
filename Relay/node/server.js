@@ -2,7 +2,10 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Held games to the lowest release an admin set, at once, and answered the release control's routes
+//      Paulinchen  2026-10-22: Listed the worlds without their mods for games from 0.6.8 and sent released games to update at a world whose mods they cannot hold
+//                            - Told no released game in a world room a mods rule longer than its DLL takes
+//                            - Read text bodies of up to 1 MB, four bytes for each character the directory takes
+//                            - Held games to the lowest release an admin set, at once, and answered the release control's routes
 //      Paulinchen  2026-10-21: Said an admin's line in every world with players online as the relay's own
 //                            - Answered the admins' stats of what the relay carries, the battle server's ping included
 //                            - Told every game and server battle of a Raid World each pool an admin defeated
@@ -68,8 +71,8 @@ import {
   playerMessage, presenceLine, readOpen, readServerLine, serveLine, serverFrame,
 } from "../core/battles.js";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
-import { Directory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, raidBossesText, squadText } from "../core/directory.js";
-import { DEFAULT_MIN_VERSION, DRAIN_LIMITS, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, updateRefusal } from "../core/gate.js";
+import { DIRECTORY_LIMITS, Directory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, raidBossesText, releasedGamesTakeRule, squadText } from "../core/directory.js";
+import { DEFAULT_MIN_VERSION, DRAIN_LIMITS, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, holdsLongMods, listsWorldMods, updateRefusal } from "../core/gate.js";
 import { routeIs, withJson } from "../core/http.js";
 import { adminCheck, exportWorldData, handleMigrationRequest, migrationRouteOf } from "../core/migration.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
@@ -130,9 +133,9 @@ const NO_VERSION = "unknown";
 
 /**
  * Longest request body the directory and the mod catalog read as text, in bytes: the longest JSON
- * either takes, written in characters of up to four bytes each.
+ * either takes, the directory's, written in characters of up to four bytes each.
  */
-const MAX_BODY_BYTES = 256 * 1024;
+const MAX_BODY_BYTES = 4 * DIRECTORY_LIMITS.maxJsonLength;
 
 /**
  * How much of a body over its limit is still read and dropped, so the refusal reaches a client
@@ -626,7 +629,7 @@ export function createRelay({
     }
 
     const features = parseFeatures(headerOf(request, FEATURES_HEADER));
-    directory.admit(route.roomId, route.player, route.auth, address, features).then(async (answer) => {
+    directory.admit(route.roomId, route.player, route.auth, address, features, !holdsLongMods(headerOf(request, VERSION_HEADER))).then(async (answer) => {
       if (answer.status !== 200) {
         turnAway(answer.status, answer.body.error, answer.body.code);
         return;
@@ -738,7 +741,10 @@ export function createRelay({
       return;
     }
 
-    const client = { player: headerOf(request, PLAYER_HEADER), auth: headerOf(request, AUTH_HEADER), address: addressOf(request) };
+    const client = {
+      player: headerOf(request, PLAYER_HEADER), auth: headerOf(request, AUTH_HEADER), address: addressOf(request),
+      modsListed: listsWorldMods(headerOf(request, FEATURES_HEADER), headerOf(request, VERSION_HEADER)),
+    };
     const answer = trading
       ? await handleTradeRequest(trades, request.method, url, () => readText(request), client.player)
       : catalog
@@ -771,7 +777,8 @@ export function createRelay({
     }
 
     if (answer.modsRule) {
-      tellWorld(answer.id, modsRuleText(answer.modsRule.off, answer.modsRule.mods));
+      const { off, mods } = answer.modsRule;
+      tellWorld(answer.id, modsRuleText(off, mods), (peer) => holdsLongMods(peer.version) || releasedGamesTakeRule(mods));
     }
 
     if (answer.bytes) {
@@ -1308,10 +1315,13 @@ export function createRelay({
    *
    * @param {string} roomId The world.
    * @param {string} text The frame.
+   * @param {(peer: {version: string | null}) => boolean} [takes] Which games take the frame, every one unless given.
    */
-  function tellWorld(roomId, text) {
+  function tellWorld(roomId, text, takes = () => true) {
     for (const peer of worlds.get(roomId) ?? []) {
-      peer.socket.send(text);
+      if (takes(peer)) {
+        peer.socket.send(text);
+      }
     }
   }
 

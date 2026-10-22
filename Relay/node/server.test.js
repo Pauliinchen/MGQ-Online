@@ -2,7 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-22: Tested the release control's routes and the gate taking the lowest release an admin set at once
+//      Paulinchen  2026-10-22: Tested the world list per game version, one world by its id, and released games kept out of a world with longer mods and from a longer mods rule
+//                            - Tested the release control's routes and the gate taking the lowest release an admin set at once
 //      Paulinchen  2026-10-21: Tested that an admin's announcement reaches every game of a world with players online
 //                            - Tested that every game of a keyed Raid World hears the keys an admin set and that the relay logs them
 //                            - Tested that every game hears a write without its pinned keys, then their pinned values
@@ -1293,6 +1294,56 @@ test("every game of a world hears that it turns other mods off, with its mods, o
   await until(async () => heard.includes("mods_rule 1\t!Level Cap;Party Sheet"));
   assert.deepEqual(heard.filter((text) => text.startsWith("mods_rule")), ["mods_rule 1\t!Level Cap", "mods_rule 1\t!Level Cap;Party Sheet"], "an edit that changes neither tells none");
   watcher.socket.close();
+});
+
+test("games from 0.6.8 read a world's mods by its id, and released ones keep the list but stay out of a world with more mods than they hold", async () => {
+  const room = roomId(210);
+  const creator = playerKey(110);
+  const newer = { ...GAME, [VERSION_HEADER]: "0.6.8" };
+  const released = { ...GAME, [VERSION_HEADER]: "0.6.7.7" };
+  const created = await gameFetch(directoryBase, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: creator },
+    body: JSON.stringify({ id: room, name: "Many Mods", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, otherModsOff: true, mods: "!Level Cap", settings: "a=i:1" }),
+  });
+  assert.equal(created.status, 201);
+  const enter = (player, headers) => openWithHeaders(`${worldBase}${room}?name=P&auth=${AUTH}`, { ...headers, [PLAYER_HEADER]: playerKey(player) });
+  const old = await enter(111, released);
+  const current = await enter(112, newer);
+  assert.deepEqual([await old.first, await current.first], ["seat 0", "seat 1 0"]);
+  const heard = { old: [], current: [] };
+  old.socket.on("message", (data) => heard.old.push(data.toString()));
+  current.socket.on("message", (data) => heard.current.push(data.toString()));
+  const edit = (mods) => gameFetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: creator }, body: JSON.stringify({ mods }) });
+
+  const rules = (texts) => texts.filter((text) => text.startsWith("mods_rule"));
+  const many = Array.from({ length: 600 }, (_, index) => `Mod ${index}`).join(";");
+  assert.ok(many.length > 4096);
+  assert.equal((await edit(many)).status, 200);
+  await until(async () => rules(heard.current).length === 1);
+  assert.equal(rules(heard.current)[0], `mods_rule 1	${many}`);
+  assert.equal(rules(heard.old).length, 0, "a released game never hears a rule longer than its DLL takes");
+  assert.equal((await edit("x".repeat(400))).status, 200);
+  await until(async () => rules(heard.old).length === 1);
+  assert.deepEqual(rules(heard.old), [`mods_rule 1	${"x".repeat(400)}`]);
+
+  const listedFor = async (headers) => (await (await gameFetch(directoryBase, { headers })).json()).worlds.find((world) => world.id === room);
+  assert.equal((await listedFor(released)).mods, "x".repeat(400));
+  assert.equal((await listedFor({})).settings, "a=i:1", "a game naming no version");
+  assert.equal((await listedFor({ [FEATURES_HEADER]: "web", [VERSION_HEADER]: "0.0.0-dev" })).mods, "x".repeat(400), "the website");
+  const slim = await listedFor(newer);
+  assert.deepEqual([slim.mods, slim.modHashes, slim.settings, slim.modsCount], [undefined, undefined, undefined, 1]);
+  const opened = await gameFetch(`${directoryBase}/${room}`, { headers: newer });
+  assert.deepEqual([opened.status, (await opened.json()).world.mods], [200, "x".repeat(400)]);
+
+  assert.deepEqual(await enter(113, released), { status: 400, refusal: "update" }, "a released game is sent to update, as when it is too old");
+  const unnamed = await enter(114, GAME);
+  assert.equal(unnamed.status, 400, "a game naming no version too");
+  const later = await enter(115, newer);
+  assert.equal(await later.first, "seat 2 0 1");
+  later.socket.close();
+  current.socket.close();
+  old.socket.close();
 });
 
 test("the creator or an admin edits a world over HTTP", async () => {

@@ -2,6 +2,7 @@
 //  directory.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-22: Tested the long mods limit, the list without mods, one world by its id and released games sent to update
 //      Paulinchen  2026-10-21: Covered an admin's edit of a world's name, flags, creator, lock, game data and mod hashes
 //      Paulinchen  2026-10-14: Covered a Raid World's starting save from every game
 //      Paulinchen  2026-10-13: Covered whether a Classic world fights raid bosses
@@ -162,7 +163,7 @@ test("a world is refused twice, with bad fields, or beyond a creator's limit", a
   assert.equal((await directory.create(await newWorld())).status, 409);
   assert.equal((await directory.create(await newWorld({ id: "1".repeat(32) }))).status, 429);
 
-  for (const bad of [{ start: "yes" }, { hidden: 1 }, { choose: "no" }, { open: "yes" }, { featured: 1 }, { description: 5 }, { mods: [] }, { data: "A B" }, { data: "x".repeat(161) }, { strict: "yes" }, { type: "duel" }, { type: true }, { share: "some" }, { share: 1 }, { otherModsOff: "yes" }, { otherModsOff: 1 }, { otherModsOff: null }, { mods: "x".repeat(301) }, { seats: 1 }, { seats: 33 }, { name: " " }, { id: "xyz" }, { player: "short" }, { authHash: "00" }, { lock: { salt: "12", iterations: 200_000, box: "ab" } }, { lock: { salt: "12".repeat(16), iterations: 10, box: "ab" } }]) {
+  for (const bad of [{ start: "yes" }, { hidden: 1 }, { choose: "no" }, { open: "yes" }, { featured: 1 }, { description: 5 }, { mods: [] }, { data: "A B" }, { data: "x".repeat(161) }, { strict: "yes" }, { type: "duel" }, { type: true }, { share: "some" }, { share: 1 }, { otherModsOff: "yes" }, { otherModsOff: 1 }, { otherModsOff: null }, { mods: "x".repeat(DIRECTORY_LIMITS.maxModsLength + 1) }, { seats: 1 }, { seats: 33 }, { name: " " }, { id: "xyz" }, { player: "short" }, { authHash: "00" }, { lock: { salt: "12", iterations: 200_000, box: "ab" } }, { lock: { salt: "12".repeat(16), iterations: 10, box: "ab" } }]) {
     assert.equal((await directory.create(await newWorld({ id: "2".repeat(32), player: OTHER, ...bad }))).status, 400, JSON.stringify(bad));
   }
 });
@@ -659,7 +660,7 @@ test("presence lists a player in the room twice only once", async () => {
   assert.equal((await directory.list()).body.worlds[0].online, 1);
 });
 
-test("handleDirectoryRequest takes the player key of the header before the body's or the address's, and JSON of up to 32 KB", async () => {
+test("handleDirectoryRequest takes the player key of the header before the body's or the address's, and JSON of up to 256 KB", async () => {
   const { directory } = newDirectory();
   const body = (value) => async () => JSON.stringify(value);
   const url = (path) => new URL(`https://relay.test${path}`);
@@ -893,15 +894,53 @@ test("handleDirectoryRequest makes a Raid World with a starting save and takes i
 
 test("a world's mods past the limit are refused, never cut, when it is made or edited", async () => {
   const { directory } = newDirectory();
-  const refused = await directory.create(await newWorld({ mods: "!Level Cap;" + "x".repeat(300) }));
+  const refused = await directory.create(await newWorld({ mods: "!Level Cap;" + "x".repeat(16_000) }));
   assert.equal(refused.status, 400);
-  assert.match(refused.body.error, /at most 300 characters/);
+  assert.match(refused.body.error, /at most 16000 characters/);
 
   await directory.create(await newWorld({ mods: "!Level Cap" }));
-  assert.equal((await directory.edit(WORLD, CREATOR, { mods: "y".repeat(301) })).status, 400);
+  assert.equal((await directory.edit(WORLD, CREATOR, { mods: "y".repeat(16_001) })).status, 400);
   assert.equal((await directory.list()).body.worlds[0].mods, "!Level Cap", "a refused edit changes nothing");
-  assert.equal((await directory.edit(WORLD, CREATOR, { mods: "y".repeat(300) })).status, 200);
-  assert.equal((await directory.list()).body.worlds[0].mods, "y".repeat(300));
+  assert.equal((await directory.edit(WORLD, CREATOR, { mods: "y".repeat(16_000) })).status, 200);
+  assert.equal((await directory.list()).body.worlds[0].mods, "y".repeat(16_000));
+});
+
+test("the list leaves out each world's mods, mod hashes and settings when asked, counting its mods instead", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld({ mods: "!Level Cap; ?Party Sheet;;Invasions; ! ", modHashes: `Level Cap=${"a1".repeat(32)}`, settings: "a=i:1" }));
+  await directory.create(await newWorld({ id: "1".repeat(32) }));
+
+  const [full, none] = (await directory.list()).body.worlds;
+  assert.deepEqual([full.mods, full.modHashes, full.settings, full.modsCount], ["!Level Cap; ?Party Sheet;;Invasions; !", `Level Cap=${"a1".repeat(32)}`, "a=i:1", undefined]);
+
+  const [listed, empty] = (await directory.list(undefined, undefined, false)).body.worlds;
+  const { mods, modHashes, settings, ...rest } = full;
+  assert.deepEqual(listed, { ...rest, modsCount: 3 });
+  assert.equal(empty.modsCount, 0);
+  assert.equal(none.mods, "");
+});
+
+test("one world is handed out by its id with everything the list names of it, a hidden one too", async () => {
+  const { directory } = newDirectory(DIRECTORY_LIMITS, [await playerIdOf(ADMIN)]);
+  await directory.create(await newWorld({ hidden: true, mods: "!Level Cap", settings: "a=i:1" }));
+  const url = (path) => new URL(`https://relay.test${path}`);
+
+  const asked = await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${WORLD}`), undefined, undefined, { player: OTHER, modsListed: false });
+  assert.deepEqual([asked.status, asked.body], [200, { world: (await directory.list(ADMIN)).body.worlds[0], admin: false }]);
+  assert.equal(asked.body.world.settings, "a=i:1");
+  assert.equal((await directory.world(WORLD, ADMIN)).body.admin, true);
+  assert.equal((await handleDirectoryRequest(directory, "GET", url(`/v1/worlds/${"1".repeat(32)}`))).status, 404);
+  assert.equal((await handleDirectoryRequest(directory, "GET", url("/v1/worlds/xyz"))).status, 404);
+});
+
+test("a released game is sent to update at a world whose mods are longer than it holds, a newer one enters", async () => {
+  const { directory } = newDirectory();
+  await directory.create(await newWorld({ mods: "é".repeat(300) }));
+
+  assert.equal((await directory.admit(WORLD, OTHER, AUTH, null, [], true)).status, 200, "300 characters, as a released game counts them");
+  await directory.edit(WORLD, CREATOR, { mods: "é".repeat(301) });
+  assert.deepEqual(await directory.admit(WORLD, OTHER, AUTH, null, [], true), { status: 400, body: { error: "the world names more mods than this game holds", code: "update" } });
+  assert.equal((await directory.admit(WORLD, OTHER, AUTH, null, [], false)).status, 200);
 });
 
 test("a world turns other mods off as made, by default a Raid World only", async () => {
