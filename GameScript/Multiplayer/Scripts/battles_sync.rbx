@@ -2,6 +2,7 @@
 #  battles_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Asked the player before they leave the battle from a wait
 #      Paulinchen  2026-10-20: Sent the skills a guest chains after an action and chained them on the host
 #      Paulinchen  2026-10-15: Carried a battle the battle server hosts over its battle channel
 #                            - Sent a served battle's messages to single players over its battle channel too
@@ -1226,8 +1227,8 @@ module MGQ_MpBattlesSync
   end
 
   # The box that says what the game waits for, whom it still waits for and for how long, and offers
-  # to leave the battle when the wait drags on. The player moves it and changes its width with Alt
-  # (MGQ_MpUi::Layout); its three lines keep their height.
+  # to leave the battle when the wait drags on, asking first. The player moves it and changes its
+  # width with Alt (MGQ_MpUi::Layout); its three lines keep their height.
   module Waiting
     # Width of the box where it starts.
     WIDTH = 360
@@ -1266,6 +1267,23 @@ module MGQ_MpBattlesSync
 
     # What the box says once it offers to leave a story's battle, which the player then loses.
     LEAVE_LOSES_TEXT = "Cancel leaves and loses."
+
+    # What the box says once it offers to leave while the host waits for the commands, where Cancel
+    # before goes back to the host's own commands.
+    BACK_TEXT = "Cancel chooses again or leaves."
+
+    # What the player is asked before they leave the battle.
+    LEAVE_QUESTION = "Leave the battle?"
+
+    # What the player is asked before they leave a story's battle, which they then lose.
+    LEAVE_LOSES_QUESTION = "Leave the battle? You lose it, and the others fight on."
+
+    # The answers to the leave question during a wait: leave, or stay and wait on.
+    LEAVE_CHOICES = ["Leave", "Stay"]
+
+    # The answers to the leave question while the host waits for the commands: leave, or choose the
+    # host's own commands again.
+    BACK_CHOICES = ["Leave", "Choose again"]
 
     # What starts the names line unless the caller passes another.
     WAITING_PREFIX = "Waiting for: "
@@ -1313,7 +1331,7 @@ module MGQ_MpBattlesSync
       window = Window_MpWaiting.new(rect.x, rect.y, rect.width, HEIGHT)
       window.z = Z
       box = Box.new(window, text, details, prefix, nil, nil, "")
-      register_layout(least_width(window.contents, [text, LEAVE_TEXT, LEAVE_LOSES_TEXT]))
+      register_layout(least_width(window.contents, [text, LEAVE_TEXT, LEAVE_LOSES_TEXT, BACK_TEXT]))
       draw_line(box, TEXT_LINE, text)
       place(box)
       box
@@ -1349,7 +1367,7 @@ module MGQ_MpBattlesSync
     # Makes the box movable before any box opens, with the least width its leave offer needs.
     def self.register_at_load
       measure = Bitmap.new(1, 1)
-      register_layout(least_width(measure, [LEAVE_TEXT, LEAVE_LOSES_TEXT]))
+      register_layout(least_width(measure, [LEAVE_TEXT, LEAVE_LOSES_TEXT, BACK_TEXT]))
       measure.dispose
     end
 
@@ -1402,7 +1420,8 @@ module MGQ_MpBattlesSync
     #
     # @param box [Box] The box.
     # @param frames [Integer] Frames the box has been open, 0 in the frame it opened.
-    def self.refresh(box, frames)
+    # @param back [Boolean] Whether Cancel goes back to the host's own commands, see wait_for.
+    def self.refresh(box, frames, back = false)
       place(box)
       names = names_of(box)
       if names != box.names
@@ -1410,7 +1429,7 @@ module MGQ_MpBattlesSync
         draw_line(box, NAMES_LINE, names_line(box))
       end
       if frames == LEAVE_FRAMES
-        box.time = Live.leaving_loses? ? LEAVE_LOSES_TEXT : LEAVE_TEXT
+        box.time = back ? BACK_TEXT : (Live.leaving_loses? ? LEAVE_LOSES_TEXT : LEAVE_TEXT)
         draw_line(box, TIME_LINE, box.time)
       elsif frames >= 0 && frames < LEAVE_FRAMES && frames % REDRAW_FRAMES == 0
         box.seconds = frames / REDRAW_FRAMES
@@ -1433,38 +1452,103 @@ module MGQ_MpBattlesSync
     end
 
     # Draws what changed, offers to leave the battle once the wait lasted LEAVE_FRAMES, and tells
-    # whether the player took the offer.
+    # whether the player confirmed leaving.
     #
     # @param box [Box] The box.
     # @param frames [Integer] Frames the box has been open.
     # @return [Boolean] Whether the player leaves the battle.
     def self.leave?(box, frames)
-      refresh(box, frames)
-      return false if frames < LEAVE_FRAMES
-
-      MGQ_MpBattlesSync.log("still waiting after #{LEAVE_FRAMES / MGQ_MpUi::FRAMES_PER_SECOND} s (#{box.text}), Cancel now leaves the battle") if frames == LEAVE_FRAMES
-      Input.trigger?(:B)
+      choice(box, frames) == :left
     end
 
-    # Closes a box.
+    # Draws what changed and reads the player's Cancel: with back, Cancel goes back to the host's
+    # own commands at once; once the wait lasted LEAVE_FRAMES it asks whether the player leaves the
+    # battle, a no answer then going back or waiting on.
+    #
+    # A single Cancel never leaves, since players press it to go back and choose again.
+    #
+    # @param box [Box] The box.
+    # @param frames [Integer] Frames the box has been open.
+    # @param back [Boolean] Whether Cancel goes back to the host's own commands.
+    # @return [Symbol, nil] :left once the player confirmed leaving, :back to choose again, nil to
+    #   wait on.
+    def self.choice(box, frames, back = false)
+      refresh(box, frames, back)
+      return answer_to_leave if @leave_asked
+      if frames == LEAVE_FRAMES
+        MGQ_MpBattlesSync.log("still waiting after #{LEAVE_FRAMES / MGQ_MpUi::FRAMES_PER_SECOND} s (#{box.text}), Cancel now asks whether to leave the battle")
+      end
+      return nil unless Input.trigger?(:B)
+      return :back if back && frames < LEAVE_FRAMES
+      return nil if frames < LEAVE_FRAMES
+
+      ask_to_leave(back)
+      nil
+    end
+
+    # Asks the player whether they leave the battle, "no" picked first.
+    #
+    # @param back [Boolean] Whether "no" goes back to the host's own commands instead of waiting on.
+    def self.ask_to_leave(back)
+      question = Live.leaving_loses? ? LEAVE_LOSES_QUESTION : LEAVE_QUESTION
+      token = Object.new
+      @leave_asked = token
+      @leave_answer = nil
+      opened = MGQ_MpUi::Confirm.ask(question, back ? BACK_CHOICES : LEAVE_CHOICES) do |yes|
+        # A question the wait closed answers later, after the wait is gone.
+        @leave_answer = yes ? :left : (back ? :back : :stay) if @leave_asked.equal?(token)
+      end
+      @leave_asked = nil unless opened
+      MGQ_MpBattlesSync.log(opened ? "asked the player whether to leave the battle" : "could not ask the player whether to leave the battle")
+    end
+
+    # Ticks the open leave question and takes its answer once given.
+    #
+    # The battle's waits never reach Scene_Base#update, whose hook ticks the question elsewhere.
+    #
+    # @return [Symbol, nil] :left or :back once answered so, nil while open or answered "Stay".
+    def self.answer_to_leave
+      MGQ_MpUi::Confirm.tick
+      answer = @leave_answer
+      return nil unless answer
+
+      @leave_asked = nil
+      @leave_answer = nil
+      MGQ_MpBattlesSync.log(answer == :left ? "the player confirmed leaving the battle" : "the player stays in the battle")
+      answer == :stay ? nil : answer
+    end
+
+    # Closes the leave question a wait leaves open, which then answers nothing.
+    def self.drop_leave_question
+      return unless @leave_asked
+
+      @leave_asked = nil
+      @leave_answer = nil
+      MGQ_MpUi::Confirm.close("the wait ended")
+    end
+
+    # Closes a box, and the leave question it asked.
     #
     # @param box [Box, nil] The box.
     # @return [nil] Always, so the caller's box is gone.
     def self.close(box)
+      drop_leave_question
       box.window.dispose if box && !box.window.disposed?
       nil
     end
 
-    # Waits, with the box open, until the block has an answer, the battle ended early or the player
-    # left it.
+    # Waits, with the box open, until the block has an answer, the battle ended early, the player
+    # left it or, with back, went back to choose their commands again.
     #
     # @param scene [Scene_Battle] The battle.
     # @param text [String] What the game waits for.
     # @param details [Proc, nil] Names the players still waited for, see open.
     # @param prefix [String] What starts the names line, see open.
+    # @param back [Boolean] Whether Cancel goes back to the host's own commands, see choice.
     # @yieldreturn [Object, nil] The answer, nil to wait on.
-    # @return [Object, Symbol] The answer, an ending of Channel.ending, or :left when the player left.
-    def self.wait_for(scene, text, details = nil, prefix = WAITING_PREFIX)
+    # @return [Object, Symbol] The answer, an ending of Channel.ending, :left when the player left,
+    #   or :back when they go back to their commands.
+    def self.wait_for(scene, text, details = nil, prefix = WAITING_PREFIX, back = false)
       box = nil
       frames = 0
       was_active = @active
@@ -1478,9 +1562,10 @@ module MGQ_MpBattlesSync
         return ending if ending
 
         box ||= open(text, details, prefix)
-        if leave?(box, frames)
-          MGQ_MpBattlesSync.log("the player left the battle during the wait (#{text})")
-          return :left
+        choice = choice(box, frames, back)
+        if choice
+          MGQ_MpBattlesSync.log(choice == :left ? "the player left the battle during the wait (#{text})" : "the player went back to their commands during the wait (#{text})")
+          return choice
         end
 
         frames += 1

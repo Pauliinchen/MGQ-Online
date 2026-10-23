@@ -2,6 +2,7 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Stood in for the confirm box
 #      Paulinchen  2026-10-20: Stood in for skills chained after an action
 #      Paulinchen  2026-10-12: Stood in for the battle log's popup
 #                            - Stood in for a troop whose enemies all fell and for a battle that ended
@@ -427,6 +428,14 @@ module MGQ_MpOverworldSync
 end
 load_script "ui"
 load_script "ui_layout"
+# Stands in for the confirm box: each question lands in $asked, and $confirm answers the open one
+# in a tick, true for yes, false for no, nil to keep it open.
+module MGQ_MpUi::Confirm
+  def self.ask(question, choices, &answer); ($asked ||= []) << [question, choices]; @block = answer; true; end
+  def self.open?; !@block.nil?; end
+  def self.tick; return if @block.nil? || $confirm.nil?; block = @block; @block = nil; block.call($confirm); end
+  def self.close(_reason = nil); block = @block; @block = nil; block.call(false) if block; end
+end
 load_script "coop_scope"
 load_script "coop_squad"
 load_script "battles"
