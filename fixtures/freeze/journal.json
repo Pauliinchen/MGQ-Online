@@ -1,0 +1,555 @@
+{
+  "source": "battles_raid_freeze.rbx story_diff at 6fde52ff, Ruby 3.3.12",
+  "cases": [
+    {
+      "name": "a key written twice keeps its first value, a key set back drops out of the diff, a key written only before the mark is none of the journal's",
+      "start": {
+        "switches": [
+          [
+            10,
+            true
+          ]
+        ],
+        "variables": [
+          [
+            1075,
+            12
+          ]
+        ],
+        "selves": [
+
+        ]
+      },
+      "before_mark": [
+        [
+          1,
+          1020,
+          5
+        ],
+        [
+          0,
+          10,
+          false
+        ]
+      ],
+      "after_mark": [
+        [
+          1,
+          1075,
+          14
+        ],
+        [
+          0,
+          31,
+          true
+        ],
+        [
+          1,
+          1075,
+          16
+        ],
+        [
+          0,
+          31,
+          false
+        ],
+        [
+          0,
+          10,
+          true
+        ]
+      ],
+      "entries": [
+        [
+          1,
+          1,
+          1020,
+          null
+        ],
+        [
+          2,
+          0,
+          10,
+          true
+        ],
+        [
+          3,
+          1,
+          1075,
+          12
+        ],
+        [
+          4,
+          0,
+          31,
+          null
+        ],
+        [
+          5,
+          1,
+          1075,
+          14
+        ],
+        [
+          6,
+          0,
+          31,
+          true
+        ],
+        [
+          7,
+          0,
+          10,
+          false
+        ]
+      ],
+      "mark": 2,
+      "rows": [
+        [
+          1,
+          1075,
+          12
+        ],
+        [
+          0,
+          31,
+          null
+        ],
+        [
+          0,
+          10,
+          false
+        ]
+      ],
+      "diff": [
+        [
+          0,
+          10,
+          false,
+          true
+        ],
+        [
+          1,
+          1075,
+          12,
+          16
+        ]
+      ]
+    },
+    {
+      "name": "a self switch new to the story comes after those it held, which keep their order",
+      "start": {
+        "switches": [
+
+        ],
+        "variables": [
+
+        ],
+        "selves": [
+          [
+            138,
+            13,
+            "A",
+            true
+          ],
+          [
+            138,
+            14,
+            "A",
+            false
+          ],
+          [
+            7,
+            1,
+            "B",
+            true
+          ]
+        ]
+      },
+      "before_mark": [
+
+      ],
+      "after_mark": [
+        [
+          2,
+          [
+            7,
+            1,
+            "B"
+          ],
+          false
+        ],
+        [
+          2,
+          [
+            200,
+            3,
+            "C"
+          ],
+          true
+        ],
+        [
+          2,
+          [
+            138,
+            13,
+            "A"
+          ],
+          false
+        ]
+      ],
+      "entries": [
+        [
+          1,
+          2,
+          [
+            7,
+            1,
+            "B"
+          ],
+          true
+        ],
+        [
+          2,
+          2,
+          [
+            200,
+            3,
+            "C"
+          ],
+          null
+        ],
+        [
+          3,
+          2,
+          [
+            138,
+            13,
+            "A"
+          ],
+          true
+        ]
+      ],
+      "mark": 0,
+      "rows": [
+        [
+          2,
+          [
+            7,
+            1,
+            "B"
+          ],
+          true
+        ],
+        [
+          2,
+          [
+            200,
+            3,
+            "C"
+          ],
+          null
+        ],
+        [
+          2,
+          [
+            138,
+            13,
+            "A"
+          ],
+          true
+        ]
+      ],
+      "diff": [
+        [
+          2,
+          [
+            138,
+            13,
+            "A"
+          ],
+          true,
+          false
+        ],
+        [
+          2,
+          [
+            7,
+            1,
+            "B"
+          ],
+          true,
+          false
+        ],
+        [
+          2,
+          [
+            200,
+            3,
+            "C"
+          ],
+          null,
+          true
+        ]
+      ]
+    },
+    {
+      "name": "off and nil are the same for a switch and a self switch, 0 and nil for a variable",
+      "start": {
+        "switches": [
+          [
+            5,
+            null
+          ]
+        ],
+        "variables": [
+          [
+            60,
+            null
+          ]
+        ],
+        "selves": [
+
+        ]
+      },
+      "before_mark": [
+
+      ],
+      "after_mark": [
+        [
+          0,
+          5,
+          false
+        ],
+        [
+          1,
+          60,
+          0
+        ],
+        [
+          2,
+          [
+            9,
+            9,
+            "A"
+          ],
+          false
+        ],
+        [
+          1,
+          61,
+          3
+        ]
+      ],
+      "entries": [
+        [
+          1,
+          0,
+          5,
+          null
+        ],
+        [
+          2,
+          1,
+          60,
+          null
+        ],
+        [
+          3,
+          2,
+          [
+            9,
+            9,
+            "A"
+          ],
+          null
+        ],
+        [
+          4,
+          1,
+          61,
+          null
+        ]
+      ],
+      "mark": 0,
+      "rows": [
+        [
+          0,
+          5,
+          null
+        ],
+        [
+          1,
+          60,
+          null
+        ],
+        [
+          2,
+          [
+            9,
+            9,
+            "A"
+          ],
+          null
+        ],
+        [
+          1,
+          61,
+          null
+        ]
+      ],
+      "diff": [
+        [
+          1,
+          61,
+          null,
+          3
+        ]
+      ]
+    },
+    {
+      "name": "a variable holding a float or a text keeps it",
+      "start": {
+        "switches": [
+
+        ],
+        "variables": [
+          [
+            70,
+            1.5
+          ],
+          [
+            71,
+            "abc"
+          ]
+        ],
+        "selves": [
+
+        ]
+      },
+      "before_mark": [
+
+      ],
+      "after_mark": [
+        [
+          1,
+          70,
+          2.25
+        ],
+        [
+          1,
+          71,
+          "def"
+        ],
+        [
+          1,
+          72,
+          7.5
+        ]
+      ],
+      "entries": [
+        [
+          1,
+          1,
+          70,
+          1.5
+        ],
+        [
+          2,
+          1,
+          71,
+          "abc"
+        ],
+        [
+          3,
+          1,
+          72,
+          null
+        ]
+      ],
+      "mark": 0,
+      "rows": [
+        [
+          1,
+          70,
+          1.5
+        ],
+        [
+          1,
+          71,
+          "abc"
+        ],
+        [
+          1,
+          72,
+          null
+        ]
+      ],
+      "diff": [
+        [
+          1,
+          70,
+          1.5,
+          2.25
+        ],
+        [
+          1,
+          71,
+          "abc",
+          "def"
+        ],
+        [
+          1,
+          72,
+          null,
+          7.5
+        ]
+      ]
+    },
+    {
+      "name": "nothing written since the mark",
+      "start": {
+        "switches": [
+          [
+            1,
+            true
+          ]
+        ],
+        "variables": [
+          [
+            1,
+            1
+          ]
+        ],
+        "selves": [
+
+        ]
+      },
+      "before_mark": [
+        [
+          0,
+          1,
+          false
+        ]
+      ],
+      "after_mark": [
+
+      ],
+      "entries": [
+        [
+          1,
+          0,
+          1,
+          true
+        ]
+      ],
+      "mark": 1,
+      "rows": [
+
+      ],
+      "diff": [
+
+      ]
+    }
+  ]
+}

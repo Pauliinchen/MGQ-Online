@@ -12,6 +12,7 @@
 //                            - Registered the topics of the worlds on this PC and of the mod picker
 //                            - Registered the topics of the World overview
 //                            - Kept the bug report's screenshot by walking to its pixels here
+//                            - Registered the topics of the frozen fights' write journal
 //                            - Registered the interface's models with the keyboard
 //                            - Registered the topics of the story tracks and the story tables
 //                            - Registered the topics of the open world
@@ -85,6 +86,7 @@ internal static unsafe class GameBridge
         EnteringTopics.Register(context, services, local.Worlds, local.Lists, session, forms, local.Fingerprint);
         WorldRoomTopics.Register(context);
         StoryTopics.Register(context);
+        JournalTopics.Register(context);
         UiTopics.Register(context, new TypedText());
         context.Register(SnapTopic, (_, request) => Snap(request.AsArray()));
     }

@@ -2,7 +2,8 @@
 #  battles_raid_freeze.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Resumed a frozen fight from a vehicle, putting the vehicles back as at the battle
+#      Paulinchen  2026-10-23: Kept the story's writes in a DLL journal instead of copying the whole story
+#                            - Resumed a frozen fight from a vehicle, putting the vehicles back as at the battle
 #      Paulinchen  2026-10-17: Created
 #
 #----------------------------------------------------------------
@@ -62,6 +63,24 @@ module MGQ_MpRaidFreeze
   # The event commands a page holds when it runs nothing: its end and comments.
   QUIET_CODES = [0, 108, 408]
 
+  # The topic the journal's writes go to the DLL by, see JournalTopics in the DLL.
+  JOURNAL_TOPIC = "freeze.journal"
+
+  # The topic that lists the keys written since a mark.
+  SINCE_TOPIC = "freeze.since"
+
+  # The writes the journal keeps in the scripts at most before it hands them over, past the
+  # largest frame the game was seen to write (the Final Chapter's reset, about 1,900).
+  MAX_PENDING = 8000
+
+  # The writes the journal keeps in the scripts at most while the DLL refuses them; the oldest go
+  # first, and a mark before them reads as lost.
+  MAX_HELD = 4 * MAX_PENDING
+
+  # Refused hand-overs between two log lines while the DLL keeps refusing the journal's writes, about
+  # ten seconds at one a frame.
+  REFUSALS_PER_LOG = 600
+
   # The switches of the scenes when the freeze's data lacks them, see scene_page?.
   SCENE_SWITCHES = [31..39]
 
@@ -74,6 +93,26 @@ module MGQ_MpRaidFreeze
   # Where the frame stack of the common events the map's event runs, the battle command and the
   # rest stand; see forget.
   @stack = []
+
+  # The number of the last write the journal noted, which a mark takes; it never goes back, so a
+  # mark of an earlier run never names a later write.
+  @seq = 0
+
+  # The writes noted since they last went to the DLL, each [seq, kind, key, before].
+  @journal = []
+
+  # The oldest live mark the DLL last heard, :none before the first.
+  @kept = :none
+
+  # The number of the last write the scripts dropped while the DLL refused the journal; a mark
+  # before it is lost.
+  @lost_through = 0
+
+  # How many hand-overs of the journal failed in a row.
+  @refusals = 0
+
+  # How deep the blocks whose writes the journal leaves out nest, see unjournaled.
+  @unjournaled = 0
 
   extend MGQ_MpLog
 
@@ -216,9 +255,9 @@ module MGQ_MpRaidFreeze
     notes
   end
 
-  # Notes the story's values and the events that show as the map's own event starts, with the page
-  # it runs and where it stands: a freeze of a fight in it shares the world the values as they were
-  # then, and its stand-ins are the events its scene brought out since. Called after
+  # Notes the story's journal mark and the events that show as the map's own event starts, with the
+  # page it runs and where it stands: a freeze of a fight in it shares the world the values as they
+  # were then, and its stand-ins are the events its scene brought out since. Called after
   # Game_Interpreter#setup.
   #
   # @param interpreter [Game_Interpreter] The interpreter.
@@ -232,7 +271,7 @@ module MGQ_MpRaidFreeze
 
     event = $game_map.events[event_id.to_i]
     page = event ? event.mgq_mp_pages.index { |candidate| candidate.list.equal?(list) } : nil
-    @run = { :list => list, :event_id => event_id.to_i, :map => $game_map.map_id, :story => MGQ_MpStoryState.raw_state, :shown => event_states,
+    @run = { :list => list, :event_id => event_id.to_i, :map => $game_map.map_id, :mark => @seq, :shown => event_states,
              :page => page, :place => event ? [event.x, event.y] : nil }
   rescue => e
     @run = nil
@@ -376,7 +415,9 @@ module MGQ_MpRaidFreeze
     run = @run
     outer_list = at ? outer_list_of(at) : nil
     known = run && outer_list && run[:list].equal?(outer_list) ? true : false
-    start, pre = known ? pre_battle(run[:story]) : [[], []]
+    values = known ? pre_battle(run) : nil
+    known &&= !values.nil?
+    start, pre = values || [[], []]
     @battle = { :troop => troop, :kind => kind, :side => side, :entry => world_entry(troop), :start => start, :pre => pre,
                 :record => false, :undo => at.nil? || known }
     log("a battle against troop #{troop} (#{kind || 'no pool'}#{side ? ', side' : ''}) is set up: #{start.size} story value(s) changed since its event started" \
@@ -488,16 +529,24 @@ module MGQ_MpRaidFreeze
     nil
   end
 
-  # Lists the story values that changed between an event's start and now, as both had them.
+  # Lists the story values that changed between an event's start and now, as both had them: the
+  # keys written since the run's mark, and for a resumed run the record's start values, which stand
+  # for the story at its start.
   #
-  # @param story [Array] The story at the event's start, see MGQ_MpStoryState.raw_state.
-  # @return [Array(Array, Array)] Each key's start value and its value now: [kind, key, value].
-  def self.pre_battle(story)
-    now = MGQ_MpStoryState.raw_state
+  # @param run [Hash] The run, see note_run.
+  # @return [Array(Array, Array), nil] Each key's start value and its value now: [kind, key, value];
+  #   nil when the journal lost the run's start.
+  def self.pre_battle(run)
+    rows = changed_since(run[:mark], run[:starts])
+    unless rows
+      log("the journal lost the story at the event's start: its values are unknown")
+      return nil
+    end
+
     start = []
     pre = []
     skipped = []
-    story_diff(story, now).each do |kind, key, before, after|
+    rows.each do |kind, key, before, after|
       next skipped << value_name(kind, key) unless core?(key) && core?(before) && core?(after)
 
       start << [kind, key, before]
@@ -866,8 +915,8 @@ module MGQ_MpRaidFreeze
     nil
   end
 
-  # Takes the story's values as a raid boss battle's defeat starts, which its end compares with to
-  # put back what the defeat changed. Called before BattleManager.process_defeat.
+  # Takes the journal's mark as a raid boss battle's defeat starts, which its end puts back what the
+  # defeat changed since. Called before BattleManager.process_defeat.
   def self.defeated
     battle = @battle
     return unless battle
@@ -882,7 +931,7 @@ module MGQ_MpRaidFreeze
       return log("the lost battle against troop #{troop} puts nothing back: #{reason}#{record && record['state'] == 'battle' ? '; its record goes' : ''}")
     end
 
-    @pending = { :troop => troop, :kind => battle[:kind], :story => MGQ_MpStoryState.raw_state, :items => item_counts,
+    @pending = { :troop => troop, :kind => battle[:kind], :mark => @seq, :items => item_counts,
                  :start => battle[:start], :pre => battle[:pre], :at => Graphics.frame_count }
     record = record_for(troop)
     record["state"] = "lost" if record && battle[:record]
@@ -1097,9 +1146,7 @@ module MGQ_MpRaidFreeze
     return fall_back(resume, event, page, "found no #{frames.size > 1 ? 'call' : 'battle command'} near command #{index} of #{key}") unless found
 
     start = frames.size > 1 ? found : record["resume"].to_i + found - index.to_i
-    story = MGQ_MpStoryState.raw_state
-    start_values = MGQ_MpStoryState.deep_copy(story)
-    Array(record["start"]).each { |kind, value_key, value| put_value(start_values, kind, value_key, value) }
+    mark = @seq
     interpreter = $game_map.interpreter
     @own_setup = true
     begin
@@ -1108,7 +1155,7 @@ module MGQ_MpRaidFreeze
       @own_setup = false
     end
     MGQ_MpGame.set(interpreter, :map_id, map) if moved
-    @run = { :list => list, :event_id => event_id, :map => map, :story => start_values }
+    @run = { :list => list, :event_id => event_id, :map => map, :mark => mark, :starts => Array(record["start"]) }
     MGQ_MpGame.set(interpreter, :index, start)
     MGQ_MpGame.set(interpreter, :branch, branch.dup)
     resume[:frames] = frames[1..-1].map { |frame| [frame[0], frame[1], frame[2].dup, frame[3]] }
@@ -1586,13 +1633,14 @@ module MGQ_MpRaidFreeze
   #
   # @param pending [Hash] The defeat's snapshot.
   def self.undo(pending)
-    before = pending[:story]
-    after = MGQ_MpStoryState.raw_state
+    rows = changed_since(pending[:mark])
+    return lost_undo(pending) unless rows
+
     starts = {}
     Array(pending[:start]).each { |kind, key, value| starts[[kind, key]] = value }
     undone = []
     texts = []
-    story_diff(before, after).each do |kind, key, was, now|
+    rows.each do |kind, key, was, now|
       next if defeat_write?(kind, key) || personal?(kind, key)
 
       value = starts.key?([kind, key]) ? starts[[kind, key]] : was
@@ -1940,18 +1988,144 @@ module MGQ_MpRaidFreeze
     end
   end
 
-  # Lists what differs between two stories, of every kind.
+  # Notes a write of the game's switches, variables or self switches into the journal with the
+  # key's value before it, while a mark lives: a run's (see note_run) or a defeat's (see
+  # defeated). Called before Game_Switches#[]=, Game_Variables#[]= and Game_SelfSwitches#[]=.
   #
-  # @param before [Array] The one story, see MGQ_MpStoryState.raw_state.
-  # @param after [Array] The other.
-  # @return [Array<Array>] Each [kind, key, value before, value after].
-  def self.story_diff(before, after)
-    [0, 1, 2].flat_map do |kind|
-      one = before[kind]
-      other = after[kind]
-      keys = kind == 2 ? (one.keys | other.keys) : (0...[one.size, other.size].max).to_a
-      keys.reject { |key| MGQ_MpWorldStory.same?(kind, one[key], other[key]) }.map { |key| [kind, key, one[key], other[key]] }
+  # @param object [Game_Switches, Game_Variables, Game_SelfSwitches] What is written to.
+  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
+  # @param key [Integer, Array] Its id, or a self switch's map, event and letter.
+  def self.writing(object, kind, key)
+    return unless @unjournaled == 0 && ((@run && @run[:mark]) || (@pending && @pending[:mark]))
+    return unless object.equal?(kind == 0 ? $game_switches : kind == 1 ? $game_variables : $game_self_switches)
+
+    hand_journal if @journal.size >= MAX_PENDING && @refusals == 0
+    trim_journal(MAX_HELD - 1)
+    @journal << [@seq += 1, kind, kind == 2 ? key.dup : key, plain_value(MGQ_MpStoryState.data_of(object)[key])]
+  rescue => e
+    log_once([:writing, e.class], "noting a write in the journal failed: #{e.class}: #{e.message}")
+  end
+
+  # Runs a block whose writes the journal leaves out: the world's story the relay handed
+  # (world_story.rbx), which is the world's and never an event's or a defeat's to put back.
+  #
+  # @yieldreturn [Object] What the block returns.
+  # @return [Object] What the block returned.
+  def self.unjournaled
+    @unjournaled += 1
+    yield
+  ensure
+    @unjournaled -= 1
+  end
+
+  # Hands the writes noted to the DLL's journal with the oldest live mark, which drops the writes no
+  # mark needs, every one once no mark lives. Called before every frame's Graphics.update and before
+  # the journal is asked. Writes the DLL refuses stay for the next hand-over (see held_back).
+  #
+  # @param asked [Integer, nil] A mark about to be asked, which stays though its run or defeat just
+  #   ended.
+  # @return [Boolean] Whether the DLL holds every write noted.
+  def self.hand_journal(asked = nil)
+    keep = [@run && @run[:mark], @pending && @pending[:mark], asked].compact.min
+    return true if @journal.empty? && keep == @kept
+
+    MGQ_Multiplayer::Bridge.call!(JOURNAL_TOPIC, "entries" => @journal, "keep" => keep)
+    log("the DLL took the journal's #{@journal.size} write(s) after #{@refusals} refusal(s)") if @refusals > 0
+    @journal = []
+    @kept = keep
+    @refusals = 0
+    true
+  rescue => e
+    held_back(keep, e)
+    false
+  end
+
+  # Keeps the writes the DLL refused for the next hand-over, but those no live mark needs, and at
+  # most MAX_HELD (see trim_journal). Logs the first refusal and then every REFUSALS_PER_LOG.
+  #
+  # @param keep [Integer, nil] The oldest live mark, nil for none.
+  # @param error [Exception] Why the hand-over failed.
+  def self.held_back(keep, error)
+    @journal.reject! { |entry| keep.nil? || entry[0] <= keep }
+    trim_journal(MAX_HELD)
+    @refusals += 1
+    return unless @refusals == 1 || @refusals % REFUSALS_PER_LOG == 0
+
+    log("the DLL refused the journal's writes #{@refusals} time(s) in a row (#{error.class}: #{error.message}): " \
+        "#{@journal.size} write(s) wait to go again#{@lost_through > 0 ? ", every write up to #{@lost_through} is lost" : ''}")
+  end
+
+  # Drops the oldest writes the scripts hold beyond a number, which a mark before them then lacks.
+  #
+  # @param most [Integer] The number.
+  def self.trim_journal(most)
+    return if @journal.size <= most
+
+    dropped = @journal.slice!(0, @journal.size - most)
+    @lost_through = [@lost_through, dropped.last[0]].max
+  end
+
+  # Lists the story values that changed since a mark, as the old whole-story diff did: each key
+  # written since, with its value at the mark (or the start value that stands for it), the value
+  # now, the same ones left out (MGQ_MpWorldStory.same?), switches and variables by id, self
+  # switches in the order the game's own Hash holds them.
+  #
+  # @param mark [Integer] The mark.
+  # @param starts [Array<Array>, nil] Values that stand for the story at the mark, each [kind, key,
+  #   value], as a resume's record keeps them; nil for none.
+  # @return [Array<Array>, nil] Each [kind, key, value at the mark, value now]; nil when the journal
+  #   lost the mark, or the DLL lacks writes since it.
+  def self.changed_since(mark, starts = nil)
+    return nil unless hand_journal(mark) && mark >= @lost_through
+
+    answer = MGQ_Multiplayer::Bridge.call(SINCE_TOPIC, mark)
+    return nil if answer.nil? || answer["overflow"]
+
+    befores = {}
+    answer["rows"].each { |kind, key, before| befores[[kind, key]] = value_of(before) }
+    Array(starts).each { |kind, key, value| befores[[kind, key]] = value }
+    order = {}
+    MGQ_MpStoryState.data_of($game_self_switches).each_key { |key| order[key] = order.size }
+    rows = befores.map { |(kind, key), before| [kind, key, before, read_value(kind, key)] }
+    rows.reject! { |kind, _key, before, now| MGQ_MpWorldStory.same?(kind, before, now) }
+    rows.each_with_index.sort_by { |(kind, key, _, _), at| [kind, kind == 2 ? order.fetch(key, order.size + at) : key, at] }.map(&:first)
+  end
+
+  # Writes a story value as the journal carries it: nil, true, false and an Integer as they are, any
+  # other value as its Marshal dump in an Array of one.
+  #
+  # @param value [Object] The value.
+  # @return [Object] The plain value.
+  def self.plain_value(value)
+    case value
+    when nil, true, false, Integer then value
+    else [Marshal.dump(value)]
     end
+  rescue => e
+    log_once([:plain_value, e.class], "a story value cannot be kept in the journal (#{e.class}: #{e.message}): it never counts as unchanged")
+    [""]
+  end
+
+  # Reads a story value back from the journal, see plain_value.
+  #
+  # @param value [Object] The plain value.
+  # @return [Object] The value; a new Object, equal to nothing, for one the journal could not keep.
+  def self.value_of(value)
+    return value unless value.is_a?(Array)
+
+    value[0].to_s.empty? ? Object.new : Marshal.load(value[0])
+  end
+
+  # Gives back the items whose count a defeat changed when the journal lost the defeat's start, so
+  # nothing of the story goes back, and drops the fight's record, which then cannot wait.
+  #
+  # @param pending [Hash] The defeat's snapshot.
+  def self.lost_undo(pending)
+    texts = give_items_back(pending[:items])
+    record = record_for(pending[:troop])
+    field["records"].delete(pending[:troop]) if record && record["state"] == "lost"
+    log("the defeat by troop #{pending[:troop]} ended, but the journal lost the story at its start: put back nothing of the story" \
+        "#{texts.empty? ? '' : ", #{texts.join(', ')}"}#{record && record['state'] == 'lost' ? '; its record goes' : ''}")
   end
 
   # Reports whether the post-defeat processing writes a switch or variable itself, which its undo
@@ -2144,6 +2318,12 @@ begin
   MGQ_MpHooks.after(Scene_Map, :update, "battles_raid_freeze") { MGQ_MpRaidFreeze.on_map }
   MGQ_MpHooks.before(Scene_Title, :start, "battles_raid_freeze") { MGQ_MpRaidFreeze.forget }
   MGQ_MpHooks.after(DataManager.singleton_class, :extract_save_contents, "battles_raid_freeze") { |_contents| MGQ_MpRaidFreeze.loaded }
+  # Every write of the game's story goes into the journal with the value it replaces, and the
+  # frame's writes go to the DLL before the frame's batch of the bridge.
+  MGQ_MpHooks.before(Game_Switches, :[]=, "battles_raid_freeze") { |id, _value| MGQ_MpRaidFreeze.writing(self, 0, id) }
+  MGQ_MpHooks.before(Game_Variables, :[]=, "battles_raid_freeze") { |id, _value| MGQ_MpRaidFreeze.writing(self, 1, id) }
+  MGQ_MpHooks.before(Game_SelfSwitches, :[]=, "battles_raid_freeze") { |key, _value| MGQ_MpRaidFreeze.writing(self, 2, key) }
+  MGQ_MpHooks.before(Graphics.singleton_class, :update, "battles_raid_freeze") { MGQ_MpRaidFreeze.hand_journal }
 rescue => e
   MGQ_MpRaidFreeze.log("hooks FAILED: #{e.class}: #{e.message}")
 end

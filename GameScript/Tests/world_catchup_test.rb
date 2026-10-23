@@ -1657,7 +1657,7 @@ check("so Ilias of the roster takes that persona and its level", [roster.include
 
 # A lost raid boss battle's defeat takes items its undo gives back, so the catch-up waits meanwhile.
 # Stands in for the freeze engine: a lost raid boss battle's defeat runs while $holding.
-module MGQ_MpRaidFreeze; def self.holding_writes?; $holding ? true : false; end; end
+module MGQ_MpRaidFreeze; def self.holding_writes?; $holding ? true : false; end; def self.unjournaled; yield; end; end
 tables
 new_game({ 1001 => 7 }, [], 12)
 frames(1)

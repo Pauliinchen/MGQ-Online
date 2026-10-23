@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-28: Left the player's telling to the DLL's telling machine
 #                            - Told the player's track in their state and read the tellings on it from the DLL
 #                            - Let the DLL say whose ended telling the player's story events wait for, ten seconds at most
+#                            - Wrote what the relay handed outside the write journal of the frozen fights
 #                            - Sent the frame's writes to the DLL ahead of the world's close
 #      Paulinchen  2026-10-24: Kept on the unlocks the player holds that the relay hands off, as the second accessory slot
 #      Paulinchen  2026-10-23: Asked the DLL for the part a story is in
@@ -606,7 +607,7 @@ module MGQ_MpWorldStory
   # Writes what the relay handed into the player's story: a whole track over every key the mapping
   # keeps, then the keys pushed or answered; then follows what it brought: the player's track, the
   # frozen fights, the scene switches left on, the catch-up, the choices and routes it carried them
-  # past.
+  # past. The frozen fights' write journal leaves every kind of these writes out.
   #
   # @param take [Hash] The take, see StoryTopics.TakeOf in the DLL.
   def self.apply(take)
@@ -616,9 +617,11 @@ module MGQ_MpWorldStory
     first = @mode.nil?
     freezes = {}
     written = 0
-    MGQ_MpStoryKeys.applying do
-      written += lay_over(state, freezes) if state
-      take["keys"].each { |key, value| written += 1 if put_key(key, value, freezes) }
+    unjournaled do
+      MGQ_MpStoryKeys.applying do
+        written += lay_over(state, freezes) if state
+        take["keys"].each { |key, value| written += 1 if put_key(key, value, freezes) }
+      end
     end
     MGQ_MpWorldFreeze.take_keys(freezes) if defined?(MGQ_MpWorldFreeze) && !freezes.empty?
     $game_map.need_refresh = true if written > 0
@@ -632,7 +635,7 @@ module MGQ_MpWorldStory
     MGQ_MpWorldCatchup.moved(state["move"], world) if state && state["move"] && defined?(MGQ_MpWorldCatchup)
     follow_catchup(before, written > 0 || state, state ? mode_of(state) : @mode)
     took_state(state) if state
-    end_left_scenes
+    unjournaled { end_left_scenes }
     followed(own, after, first && state ? true : false, state && state["move"] ? true : false)
     @returned_route = nil
     route_taken if @route_refused
@@ -858,6 +861,15 @@ module MGQ_MpWorldStory
   rescue => e
     log_once(:holding, "looking whether a lost raid boss battle holds the story failed: #{e.class}: #{e.message}")
     false
+  end
+
+  # Runs a block whose writes the frozen fights' write journal leaves out (see
+  # MGQ_MpRaidFreeze.unjournaled): the world's story is no event's or defeat's to put back.
+  #
+  # @yieldreturn [Object] What the block returns.
+  # @return [Object] What the block returned.
+  def self.unjournaled
+    defined?(MGQ_MpRaidFreeze) ? MGQ_MpRaidFreeze.unjournaled { yield } : yield
   end
 
   # Turns off the refusal of recruits the world's story once handed over and ends a collab the

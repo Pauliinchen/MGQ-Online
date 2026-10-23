@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Dropped the stand-in of the directory's tickets, which no script asks for any more
+#                            - Stood in for the frozen fights' write journal, checked against its golden cases
 #                            - Answered the world screen's steps into a world with the steps a test sets
 #                            - Answered the world screen's model
 #                            - Answered the parking topics as for a game with no mod turned off
@@ -531,6 +532,57 @@ def golden_sort(request)
   { "needs" => Hash[needs.map { |kind, ids| [kind, ids.uniq] }] }
 end
 
+# The frozen fights' write journal as StoryJournal in MGQOnline.Game keeps it: the writes taken,
+# those at or before the oldest live mark dropped, and each key written since a mark once, with its
+# value before its first write since it; a mark the journal dropped writes after reads as unknown.
+class StandInJournal
+  # Starts empty.
+  def initialize; @entries = []; @floor = 0; @last = 0; end
+
+  # Takes writes and drops those no live mark needs.
+  #
+  # @param entries [Array<Array>] Each [seq, kind, key, before].
+  # @param keep [Integer, nil] The oldest live mark, nil for none.
+  def take(entries, keep)
+    @entries.concat(entries)
+    @last = ([@last] + entries.map(&:first)).max
+    return (@entries = []) && (@floor = [@floor, @last].max) if keep.nil?
+
+    @entries.reject! { |seq, *_| seq <= keep }
+    @floor = [@floor, keep].max
+  end
+
+  # Lists the keys written since a mark.
+  #
+  # @param mark [Integer] The mark.
+  # @return [Hash] "rows" (each [kind, key, before]) and "overflow".
+  def since(mark)
+    return { "rows" => [], "overflow" => true } if mark < @floor
+
+    seen = {}
+    rows = @entries.select { |seq, kind, key, _| seq > mark && !seen[[kind, key]] && (seen[[kind, key]] = true) }.map { |_, kind, key, before| [kind, key, before] }
+    { "rows" => rows, "overflow" => false }
+  end
+end
+
+# The golden cases of the journal, which the old whole-story diff gave.
+JOURNAL_CASES = rule_cases("freeze", "journal.json")["cases"]
+
+JOURNAL_CASES.each do |entry|
+  journal = StandInJournal.new
+  journal.take(entry["entries"], entry["mark"])
+  raise "the stand-in of the journal differs from fixtures/freeze/journal.json: #{entry['name']}" unless journal.since(entry["mark"]) == { "rows" => entry["rows"], "overflow" => false }
+end
+
+# Answers the frozen fights' write journal with a stand-in of its own.
+#
+# @param fake [FakeBridge] The bridge.
+def answer_journal(fake)
+  journal = StandInJournal.new
+  fake.answer("freeze.journal") { |request| journal.take(request["entries"], request["keep"]) && nil }
+  fake.answer("freeze.since") { |mark| journal.since(mark) }
+end
+
 require_relative "local_worlds_support"
 require_relative "screen_support"
 # What the mods check answers, a block a test sets that takes the request; nil checks only whether
@@ -739,6 +791,7 @@ def open_rules_bridge
   answer_gather(fake)
   answer_scene(fake)
   answer_pages(fake)
+  answer_journal(fake)
   MGQ_Multiplayer::Bridge.open(fake)
   fake
 end

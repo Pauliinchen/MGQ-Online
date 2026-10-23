@@ -2,7 +2,9 @@
 #  raid_freeze_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Checked a resume from a boat in place of its refusal
+#      Paulinchen  2026-10-28: Checked writes the DLL refuses, writes the journal looks away from and a defeat whose start the journal lost
+#      Paulinchen  2026-10-23: Ran on the shared stand-in bridge, whose journal keeps the story's writes, and replayed the journal's golden cases
+#                            - Checked a resume from a boat in place of its refusal
 #      Paulinchen  2026-10-17: Created
 #
 #----------------------------------------------------------------
@@ -15,9 +17,9 @@
 # of a fight, its boss and the events only its scene shows while the map's own stay live, and of a
 # cutscene fight; the joiner's spot; and the save field. The interpreter runs real fibers as the
 # game's does; the raid pool, the freeze's data, the world's story and the world's entries are
-# stand-ins.
+# stand-ins; the DLL's write journal is the shared stand-in bridge's (rules_support.rb).
 
-require_relative "support"
+require_relative "rules_support"
 
 # Stands in for the mod's base script, whose log prints each line and keeps it in $log.
 module MGQ_Multiplayer; module Log; def self.write(m); $log << m; puts "  log: #{m}"; end; end; end
@@ -630,8 +632,6 @@ module MGQ_MpWorldStory
 end
 # Stands in for the story's state model's raw access.
 module MGQ_MpStoryState
-  # Copies the story.
-  def self.raw_state; [data_of($game_switches).dup, data_of($game_variables).dup, data_of($game_self_switches).dup]; end
   # Answers the data of switches, variables or self switches.
   def self.data_of(object); object.instance_variable_get(:@data); end
   # Copies a story deeply.
@@ -658,6 +658,7 @@ module MGQ_MpHotkeys; def self.label(_action); "J"; end; end
 
 load_script "battles_raid_bosses"
 load_script "battles_raid_freeze"
+open_rules_bridge
 freeze = MGQ_MpRaidFreeze
 
 # Makes a command.
@@ -814,6 +815,45 @@ def core_only?(value)
   else false
   end
 end
+
+# The journal finds what the old diff of the story at a mark against the story now found, on its
+# golden cases: the writes before the mark are the story's, those after go through the game's own
+# writes, which the journal notes while the mark lives.
+JOURNAL_CASES.each do |entry|
+  reset
+  start = entry["start"]
+  start["switches"].each { |id, value| MGQ_MpStoryState.data_of($game_switches)[id] = value }
+  start["variables"].each { |id, value| MGQ_MpStoryState.data_of($game_variables)[id] = value }
+  start["selves"].each { |map, event, letter, value| MGQ_MpStoryState.data_of($game_self_switches)[[map, event, letter]] = value }
+  objects = [$game_switches, $game_variables, $game_self_switches]
+  entry["before_mark"].each { |kind, key, value| objects[kind][key] = value }
+  mark = freeze.instance_variable_get(:@seq)
+  freeze.instance_variable_set(:@run, { :mark => mark })
+  entry["after_mark"].each { |kind, key, value| objects[kind][key] = value }
+  check("the journal finds what the whole-story diff found: #{entry['name']}", freeze.changed_since(mark), entry["diff"])
+end
+
+# Writes the DLL refuses stay with the scripts until it takes them; meanwhile the journal knows
+# nothing since the mark.
+reset
+mark = freeze.instance_variable_get(:@seq)
+freeze.instance_variable_set(:@run, { :mark => mark })
+$world_bridge.answer("freeze.journal") { |_request| raise FakeBridge::BadRequest, "refused" }
+$game_variables[1075] = 3
+freeze.hand_journal
+check("writes the DLL refuses stay with the scripts, which know nothing since the mark meanwhile, logged once",
+      [freeze.changed_since(mark), $log.grep(/the DLL refused the journal's writes 1 time\(s\) in a row/).size], [nil, 1])
+answer_journal($world_bridge)
+$game_variables[1076] = 4
+check("and go once the DLL takes them again", freeze.changed_since(mark), [[1, 1075, nil, 3], [1, 1076, nil, 4]])
+
+# The world's story the relay hands is no event's to put back: its writes stay out of the journal.
+reset
+mark = freeze.instance_variable_get(:@seq)
+freeze.instance_variable_set(:@run, { :mark => mark })
+freeze.unjournaled { $game_variables[1075] = 5 }
+$game_switches[2307] = true
+check("writes the journal looks away from stay out of it", freeze.changed_since(mark), [[0, 2307, nil, true]])
 
 # A fight at a map page's battle command is recorded, its page by the list that runs.
 reset
@@ -1037,6 +1077,22 @@ fight_event(13)
 BattleManager.process_defeat
 DataManager.extract_save_contents(DataManager.make_save_contents)
 check("a load drops the pending undo and the battle", [freeze.holding_writes?, freeze.instance_variable_get(:@battle)], [false, nil])
+
+# A defeat whose start the journal lost puts back nothing of the story, but the items, and its record
+# goes.
+reset
+$game_switches[4] = true
+$game_switches[2307] = true
+$game_variables[1075] = 14
+$game_party.gain_item($data_items[557], 1)
+fight_event(13)
+$world_bridge.answer("freeze.since") { |_mark| { "rows" => [], "overflow" => true } }
+lose(SONYA_DEFEAT)
+answer_journal($world_bridge)
+check("a defeat whose start the journal lost puts back nothing of the story", [$game_variables[1075], $game_switches[2307]], [12, false])
+check("but the item it took, and the record goes, logged",
+      [$game_party.item_number($data_items[557]), freeze.record_for(868), $log.grep(/the journal lost the story at its start: put back nothing of the story, item 557 \+1; its record goes\z/).size],
+      [1, nil, 1])
 
 # An earlier phase, a guest's and a side battle undo without a record.
 reset

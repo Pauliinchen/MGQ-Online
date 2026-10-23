@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-28: Left the player's telling to the DLL's telling machine
 #                            - Let the DLL name whose ended telling the player's story events wait for
+#                            - Checked that the relay's values are written outside the frozen fights' write journal
 #                            - Checked that the world's close sends the frame's writes first
 #      Paulinchen  2026-10-24: Checked that an unlock the player holds stays on when the relay hands it off
 #      Paulinchen  2026-10-23: Answered the rules the DLL owns through the bridge from the golden cases
@@ -706,16 +707,23 @@ $game_switches[7039] = $game_switches[7096] = $game_switches[7097] = false
 
 
 # A lost battle's defeat scene and a frozen fight's undo: nothing is written meanwhile.
-# Stands in for the freeze engine: a lost raid boss battle's defeat runs while $holding.
-module MGQ_MpRaidFreeze; def self.holding_writes?; $holding ? true : false; end; end
+# Stands in for the freeze engine: a lost raid boss battle's defeat runs while $holding, and the
+# values written while its journal looks away are noted in $unjournaled.
+module MGQ_MpRaidFreeze
+  def self.holding_writes?; $holding ? true : false; end
+  def self.unjournaled; $looking_away = true; yield; ensure; $looking_away = false; end
+end
+$unjournaled = []
 $holding = true
 $takes << keys_take([["v1001", "n41"]], 9)
 tell_status(fake, "pending" => true)
 frames(2)
 check("nothing the relay hands is written while a lost raid boss battle's defeat runs", $game_variables[1001], 39)
 $holding = false
+MGQ_MpHooks.before(Game_Variables, :[]=, "world_story_test") { |id, _value| $unjournaled << id if $looking_away }
 frames(1)
 check("but once it ended", $game_variables[1001], 41)
+check("outside the frozen fights' write journal", $unjournaled, [1001])
 
 # A loaded save and a new game: the relay places the player again, a new game anew by its story.
 $story_staged.clear
