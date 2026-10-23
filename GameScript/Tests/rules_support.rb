@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Kept the test's one stand-in bridge in $world_bridge
+#                            - Answered the event sorter
 #                            - Answered the mod catalog a test sets
 #                            - Added the answers to the world room's stand-in bridge when a test has one
 #                            - Stood in for the squad math, checked against its golden cases
@@ -367,6 +368,53 @@ end
 # Opens the scripts' bridge on the test's one FakeBridge, $world_bridge, made here unless the world
 # room's or the interface's stand-ins made it, adding the answers of the rule topics from the golden
 # cases.
+# The event sorter's golden cases of fixtures/events/script_cases.json.
+EVENT_CASES = rule_cases("events", "script_cases.json")["cases"]
+
+# The values a sort's case recorded, by kind.
+SORT_VALUE_KINDS = %w(s v ps pv)
+
+# Answers the event sorter's topics from fixtures/events/script_cases.json: a list the scripts hand
+# over is looked up among the cases with its trigger, command and resident flag; the values it lacks
+# are named as the DLL names them, and those it hands over pick the case. A map event's page or a
+# common event is unknown, as the DLL holds no data in the tests, so the scripts hand the list over.
+#
+# @param fake [FakeBridge] The bridge.
+def answer_events(fake)
+  fake.answer("events.sort") { |request| golden_sort(request) }
+  fake.answer("events.kinds") { |request| { "kinds" => Array(request["pages"]).map { nil } } }
+end
+
+# Answers one sort from the golden cases, see answer_events.
+#
+# @param request [Hash] The request.
+# @return [Hash] The case's answer, the values it needs, or unknown.
+def golden_sort(request)
+  return { "unknown" => true } unless request["list"]
+
+  rows = JSON.parse(JSON.generate(request["list"]))
+  call = request["index"] ? "command" : (request["trigger"].nil? ? "list" : "page")
+  found = EVENT_CASES.select do |known|
+    known["call"] == call && known["list"] == rows && known["index"] == request["index"] &&
+      known["resident"] == (request["resident"] == true) && (call != "page" || known["trigger"] == request["trigger"])
+  end
+  raise "no golden sort for the #{call} #{rows.inspect}" if found.empty?
+
+  values = request["values"] || {}
+  held = found.find { |known| SORT_VALUE_KINDS.all? { |kind| (known[kind] || {}).all? { |id, value| (values[kind] || {}).key?(id.to_i) && values[kind][id.to_i] == value } } }
+  return held["answer"] if held
+
+  needs = {}
+  found.each do |known|
+    SORT_VALUE_KINDS.each { |kind| (known[kind] || {}).each_key { |id| (needs[kind] ||= []) << id.to_i unless (values[kind] || {}).key?(id.to_i) } }
+  end
+  raise "no golden sort for the #{call} #{rows.inspect} with #{values.inspect}" if needs.empty?
+
+  { "needs" => Hash[needs.map { |kind, ids| [kind, ids.uniq] }] }
+end
+
+# Opens the scripts' bridge on a FakeBridge that answers the rule topics from the golden cases, or adds
+# those answers to the world room's stand-in bridge when the test loaded it.
 #
 # @return [FakeBridge] The bridge, for a test to add answers or read the calls.
 def open_rules_bridge
@@ -380,6 +428,7 @@ def open_rules_bridge
   answer_story_parts(fake)
   answer_random_ids(fake)
   answer_squads(fake)
+  answer_events(fake)
   MGQ_Multiplayer::Bridge.open(fake)
   fake
 end

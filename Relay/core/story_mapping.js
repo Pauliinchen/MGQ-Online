@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-23: Let shared and one-way keys be the whole world's, players behind included
+//                            - Kept the common events and the game's names with the derived index, which the battle server sends
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -34,6 +35,11 @@ export const MAPPING_LIMITS = Object.freeze({
   // events in the game.
   maxIndexEvents: 100_000,
   maxIndexBodyLength: 1_000_000,
+  // The common events of the derived index, of about 10,000 in the game.
+  maxIndexCommons: 10_000,
+  // The names of the game's keys, maps and events kept with the index, of about 70,000 events.
+  maxNames: 200_000,
+  maxNameLength: 200,
 });
 
 /**
@@ -51,6 +57,11 @@ export const MAPPING_REFUSAL = Object.freeze({
   key: "key",
   rev: "rev",
 });
+
+/**
+ * Who the derived index names as its author when the battle server built it.
+ */
+export const BATTLE_SERVER_AUTHOR = "battle server";
 
 /**
  * The route's name after `/v1/admin`.
@@ -119,6 +130,12 @@ const STORY_KEY = /^(s|v)([1-9]\d{0,4})$/;
  * every event or letter; or the self switches a common event writes as `ce<id>.<letter>`.
  */
 const EVENT_KEY = /^(?:ss(0|[1-9]\d{0,3})\.([1-9]\d{0,4}|\*)|ce([1-9]\d{0,3}))\.([A-Za-z0-9_]{1,8}|\*)$/;
+
+/**
+ * The parts of the game's names kept with the derived index, each with the keys it takes: switch,
+ * variable and map ids, and `<map>.<event>`.
+ */
+const NAME_PARTS = Object.freeze([["switches", /^[1-9]\d{0,4}$/], ["variables", /^[1-9]\d{0,4}$/], ["maps", /^[1-9]\d{0,3}$/], ["events", /^[1-9]\d{0,3}\.[1-9]\d{0,4}$/]]);
 
 /**
  * One self switch as the story names it: `ss<map>.<event>.<letter>`.
@@ -602,7 +619,7 @@ export class StoryMapping {
   /**
    * Sums up the mapping for an admin: the revision, the rows of each table and the derived index.
    *
-   * @returns {Promise<{status: number, body: object}>} `rev` (raised by every change), `rowsRev` (the last change of rows), `tables` (each table's rows counted) and `index` (`built`, the rows' revision it was built from, `stale`, `events` counted, `author`, `time`; null before the first).
+   * @returns {Promise<{status: number, body: object}>} `rev` (raised by every change), `rowsRev` (the last change of rows), `tables` (each table's rows counted) and `index` (`built`, the rows' revision it was built from, `stale`, `events` and `commons` counted, `author`, `time`; null before the first).
    */
   async summary() {
     const meta = await this.meta();
@@ -613,7 +630,7 @@ export class StoryMapping {
     }
 
     const index = await this.store.getIndex();
-    const view = index ? { built: index.built, stale: index.built !== meta.rowsRev, events: index.events.length, author: index.author, time: index.time } : null;
+    const view = index ? { built: index.built, stale: index.built !== meta.rowsRev, events: index.events.length, commons: (index.commons ?? []).length, author: index.author, time: index.time } : null;
     return { status: 200, body: { rev: meta.rev, rowsRev: meta.rowsRev, tables, index: view } };
   }
 
@@ -647,14 +664,28 @@ export class StoryMapping {
   }
 
   /**
-   * Hands an admin the derived index whole.
+   * Hands an admin the derived index whole, without the game's names (see names).
    *
-   * @returns {Promise<{status: number, body: object}>} `rowsRev` and `index` (`built`, `stale`, `events` as `[map, event]` pairs, `author`, `time`; null before the first).
+   * @returns {Promise<{status: number, body: object}>} `rowsRev` and `index` (`built`, `stale`, `events` as `[map, event]` pairs, `commons`, `author`, `time`; null before the first).
    */
   async index() {
     const meta = await this.meta();
     const index = await this.store.getIndex();
-    return { status: 200, body: { rowsRev: meta.rowsRev, index: index ? { ...index, stale: index.built !== meta.rowsRev } : null } };
+    const view = index ? { built: index.built, stale: index.built !== meta.rowsRev, events: index.events, commons: index.commons ?? [], author: index.author, time: index.time } : null;
+    return { status: 200, body: { rowsRev: meta.rowsRev, index: view } };
+  }
+
+  /**
+   * Hands an admin the names of the game's switches, variables, maps and events the battle server
+   * sent with the derived index, which the website shows the keys with.
+   *
+   * @returns {Promise<{status: number, body: object}>} `rowsRev` and `names` (`built`, `stale`, `names`, `author`, `time`; null before an index with names).
+   */
+  async names() {
+    const meta = await this.meta();
+    const index = await this.store.getIndex();
+    const view = index?.names ? { built: index.built, stale: index.built !== meta.rowsRev, names: index.names, author: index.author, time: index.time } : null;
+    return { status: 200, body: { rowsRev: meta.rowsRev, names: view } };
   }
 
   /**
@@ -823,19 +854,32 @@ export class StoryMapping {
   }
 
   /**
-   * Keeps the derived index of the map events whose self switches are shared, which the battle
-   * server builds from the rows of one revision and the game's events. Raises the revision, since
-   * games read it with the rows.
+   * Keeps the derived index an admin sends, see keepIndex.
    *
-   * @param {any} request `built`, the rows' revision (`rowsRev`) it was built from, and `events`, each `[map, event]`.
+   * @param {any} request See keepIndex.
    * @param {string} admin The player id of the admin who sent it.
-   * @returns {Promise<{status: number, body: object, audit?: string}>} `rev` and `index` as summary names it; 409 with code `rev` when the rows changed since `built`; or why the request is wrong.
+   * @returns {Promise<{status: number, body: object, audit?: string}>} See keepIndex.
    */
   async putIndex(request, admin) {
-    const events = readIndexEvents(request?.events, this.limits);
+    return this.keepIndex(request, admin);
+  }
 
-    if (!events || !Number.isSafeInteger(request?.built)) {
-      return badRequest(`the index needs built, the rows' revision it was built from, and events, at most ${this.limits.maxIndexEvents} [map, event] pairs`);
+  /**
+   * Keeps the derived index of the map events and common events whose self switches are shared,
+   * which the battle server builds from the rows of one revision and the game's events, and the
+   * game's names it read on the way. Raises the revision, since games read it with the rows.
+   *
+   * @param {any} request `built`, the rows' revision (`rowsRev`) it was built from, `events`, each `[map, event]`, `commons` (common event ids, none when left out) and `names` (see readIndexNames, none when left out).
+   * @param {string} by Who built it: the player id of an admin, or BATTLE_SERVER_AUTHOR.
+   * @returns {Promise<{status: number, body: object, audit?: string}>} `rev` and `index` as summary names it; 409 with code `rev` when the rows changed since `built`; or why the request is wrong.
+   */
+  async keepIndex(request, by) {
+    const events = readIndexEvents(request?.events, this.limits);
+    const commons = request?.commons === undefined ? [] : readIndexCommons(request.commons, this.limits);
+    const names = request?.names === undefined ? undefined : readIndexNames(request.names, this.limits);
+
+    if (!events || !commons || names === null || !Number.isSafeInteger(request?.built)) {
+      return badRequest(`the index needs built, the rows' revision it was built from, and events, at most ${this.limits.maxIndexEvents} [map, event] pairs; commons, at most ${this.limits.maxIndexCommons} common event ids, and names may come with it`);
     }
 
     return this.exclusive(async () => {
@@ -846,11 +890,12 @@ export class StoryMapping {
       }
 
       const rev = meta.rev + 1;
-      const index = { built: request.built, events, author: admin, time: this.clock() };
+      const index = { built: request.built, events, commons, ...(names ? { names } : {}), author: by, time: this.clock() };
       await this.store.commit({ meta: { ...meta, rev }, puts: [], removes: [], changes: [], index }, this.limits.history);
       this.gameView = null;
-      const view = { built: index.built, stale: false, events: events.length, author: admin, time: index.time };
-      return { status: 200, body: { rev, index: view }, audit: `admin ${admin} kept the story index of rows rev ${index.built} with ${events.length} events, rev ${rev}` };
+      const view = { built: index.built, stale: false, events: events.length, commons: commons.length, author: by, time: index.time };
+      const who = by === BATTLE_SERVER_AUTHOR ? "the battle server" : `admin ${by}`;
+      return { status: 200, body: { rev, index: view }, audit: `${who} kept the story index of rows rev ${index.built} with ${events.length} events and ${commons.length} common events${names ? " and the game's names" : ""}, rev ${rev}` };
     });
   }
 
@@ -859,7 +904,7 @@ export class StoryMapping {
    * read them, without the notes.
    *
    * @param {number | null} known The revision the game holds, which is answered with `same` alone.
-   * @returns {Promise<{status: number, body: object}>} `rev`, `tables` (each table's rows) and `index` (`built`, `stale` and `events`; null before the first); or `rev` and `same`.
+   * @returns {Promise<{status: number, body: object}>} `rev`, `tables` (each table's rows) and `index` (`built`, `stale`, `events` and `commons`; null before the first); or `rev` and `same`.
    */
   async forGames(known) {
     const view = this.gameView ?? (await this.exclusive(() => this.buildGameView()));
@@ -885,7 +930,7 @@ export class StoryMapping {
     }
 
     const index = await this.store.getIndex();
-    this.gameView = { rev: meta.rev, tables, index: index ? { built: index.built, stale: index.built !== meta.rowsRev, events: index.events } : null };
+    this.gameView = { rev: meta.rev, tables, index: index ? { built: index.built, stale: index.built !== meta.rowsRev, events: index.events, commons: index.commons ?? [] } : null };
     return this.gameView;
   }
 
@@ -939,6 +984,60 @@ function readIndexEvents(events, limits) {
 }
 
 /**
+ * Reads the derived index's common events: ids, each once, sorted.
+ *
+ * @param {unknown} commons The common events.
+ * @param {typeof MAPPING_LIMITS} limits The limits.
+ * @returns {number[] | null} The ids, null when they are wrong.
+ */
+function readIndexCommons(commons, limits) {
+  if (!Array.isArray(commons) || commons.length > limits.maxIndexCommons || commons.some((id) => MAP.read(id) === undefined)) {
+    return null;
+  }
+
+  return [...new Set(commons)].sort((a, b) => a - b);
+}
+
+/**
+ * Reads the game's names kept with the derived index: `switches`, `variables` and `maps` (each id
+ * to its name), `events` (each `"<map>.<event>"` to its name) and `companions` (how many affection
+ * variables the game keeps); a part left out is none.
+ *
+ * @param {unknown} names The names.
+ * @param {typeof MAPPING_LIMITS} limits The limits.
+ * @returns {{switches: Object<string, string>, variables: Object<string, string>, maps: Object<string, string>, events: Object<string, string>, companions: number} | null} The names, null when they are wrong.
+ */
+function readIndexNames(names, limits) {
+  if (!names || typeof names !== "object" || Array.isArray(names)) {
+    return null;
+  }
+
+  const read = {};
+  let count = 0;
+
+  for (const [part, key] of NAME_PARTS) {
+    const given = names[part] ?? {};
+
+    if (!given || typeof given !== "object" || Array.isArray(given)) {
+      return null;
+    }
+
+    read[part] = {};
+
+    for (const [id, name] of Object.entries(given)) {
+      if (!key.test(id) || typeof name !== "string" || name.length > limits.maxNameLength || ++count > limits.maxNames) {
+        return null;
+      }
+
+      read[part][id] = name;
+    }
+  }
+
+  const companions = names.companions ?? 0;
+  return Number.isSafeInteger(companions) && companions >= 0 && companions <= MAX_ID ? { ...read, companions } : null;
+}
+
+/**
  * Names a batch's changes for the log, the first 20 of them.
  *
  * @param {{table: string, id: string, op: string}[]} changed The changes.
@@ -967,7 +1066,7 @@ function decodedParts(rest) {
  * Answers a request to the story mapping's admin routes, for the relay's admins only:
  * `GET /v1/admin/story` sums it up, `GET .../<table>` hands out a table's rows,
  * `GET .../<table>/<id>/history` a row's last changes, `POST .../edit` applies a batch of edits,
- * `GET` and `POST .../index` hand out and keep the derived index.
+ * `GET` and `POST .../index` hand out and keep the derived index, `GET .../names` the game's names kept with it.
  *
  * @param {StoryMapping} mapping The story mapping.
  * @param {string} method The HTTP method.
@@ -997,6 +1096,10 @@ export async function handleMappingAdminRequest(mapping, method, url, rest, read
 
     if (parts.length === 1 && parts[0] === "index") {
       return mapping.index();
+    }
+
+    if (parts.length === 1 && parts[0] === "names") {
+      return mapping.names();
     }
 
     if (parts.length === 1) {

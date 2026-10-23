@@ -6,6 +6,7 @@
 //                            - Registered the interface's models with the keyboard
 //                            - Registered the topics of the open world
 //                            - Registered the topics both hosts answer
+//                            - Registered the topics of the event sorter
 //                            - Registered the topics of Player.ini and the other settings files
 //                            - Registered the topics of the scripts' log
 //                            - Registered the topics of a world's rules
@@ -56,6 +57,7 @@ internal static unsafe class GameBridge
         RuleTopics.Register(context);
         SharedTopics.Register(context);
         ModTopics.Register(context, () => ModParking.Current, () => WorldDirectory.Current);
+        EventTopics.Register(context, () => EventTopics.Current);
         WorldTopics.Register(context);
         WorldRoomTopics.Register(context);
         UiTopics.Register(context, new TypedText());

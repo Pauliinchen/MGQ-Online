@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Checked the ids the core makes up
+#                            - Counted the core's topic that derives the story mapping's index
 #                            - Created
 #
 #----------------------------------------------------------------

@@ -2,7 +2,8 @@
 //  MarshalReader.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Took Integer Hash keys in strict mode
+//      Paulinchen  2026-10-23: Read game data through a pruner that leaves fields out, builds its own values and seals objects
+//                            - Took Integer Hash keys in strict mode
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -51,6 +52,11 @@ internal ref struct MarshalReader
     private readonly bool _strict;
 
     /// <summary>
+    /// Shapes a full-mode read, <see langword="null"/> to keep everything.
+    /// </summary>
+    private readonly MarshalPruner? _pruner;
+
+    /// <summary>
     /// The symbols read so far, which later ones may point back to.
     /// </summary>
     private readonly List<string> _symbols = [];
@@ -67,6 +73,17 @@ internal ref struct MarshalReader
     private readonly HashSet<int> _open = [];
 
     /// <summary>
+    /// The runs of objects the read let go of inside sealed objects (see <see cref="MarshalPruner.Seals"/>),
+    /// in the order of their places, which no longer stand in <see cref="_objects"/>.
+    /// </summary>
+    private readonly List<Forgotten> _forgotten = [];
+
+    /// <summary>
+    /// The objects of every run in <see cref="_forgotten"/>.
+    /// </summary>
+    private int _forgottenCount;
+
+    /// <summary>
     /// The place of the next byte.
     /// </summary>
     private int _position;
@@ -81,10 +98,12 @@ internal ref struct MarshalReader
     /// </summary>
     /// <param name="data">The dump.</param>
     /// <param name="strict">Whether only plain values are taken.</param>
-    public MarshalReader(ReadOnlySpan<byte> data, bool strict)
+    /// <param name="pruner">Shapes a full-mode read, <see langword="null"/> to keep everything.</param>
+    public MarshalReader(ReadOnlySpan<byte> data, bool strict, MarshalPruner? pruner = null)
     {
         _data = data;
         _strict = strict;
+        _pruner = strict ? null : pruner;
     }
 
     /// <summary>
@@ -338,7 +357,7 @@ internal ref struct MarshalReader
     /// </summary>
     /// <param name="isStruct">Whether it is a Struct.</param>
     /// <returns>The object.</returns>
-    private RubyObject ReadObject(bool isStruct)
+    private RubyValue ReadObject(bool isStruct)
     {
         string className = ReadSymbol();
         if (_strict)
@@ -347,15 +366,62 @@ internal ref struct MarshalReader
         }
 
         var obj = new RubyObject(className, isStruct);
-        Register(obj);
+        int place = Register(obj, open: false);
         int count = ReadCount(bytesEach: 2);
         for (int index = 0; index < count; index++)
         {
             string name = ReadSymbol();
-            obj.Add(isStruct ? name : name.TrimStart('@'), ReadValue());
+            string field = isStruct ? name : name.TrimStart('@');
+            if (_pruner is null || _pruner.Keeps(obj, field))
+            {
+                obj.Add(field, ReadValue());
+            }
+            else
+            {
+                SkipValue();
+                obj.Add(field, RubySkipped.Value);
+            }
         }
 
-        return obj;
+        if (_pruner is null)
+        {
+            return obj;
+        }
+
+        RubyValue finished = _pruner.Finish(obj);
+        _objects[place] = finished;
+        if (_pruner.Seals(obj))
+        {
+            ForgetFrom(place + 1);
+        }
+
+        return finished;
+    }
+
+    /// <summary>
+    /// Lets go of every object read from a place on, the contents of a sealed object that just
+    /// finished; a link into them reads as <see cref="RubySkipped"/>.
+    /// </summary>
+    /// <param name="place">The first place in <see cref="_objects"/> to let go of.</param>
+    private void ForgetFrom(int place)
+    {
+        int inside = 0;
+        while (_forgotten.Count > 0 && _forgotten[^1].After > place)
+        {
+            inside += _forgotten[^1].Count;
+            _forgotten.RemoveAt(_forgotten.Count - 1);
+        }
+
+        int before = _forgottenCount - inside;
+        int count = _objects.Count - place + inside;
+        if (count == 0)
+        {
+            return;
+        }
+
+        _objects.RemoveRange(place, _objects.Count - place);
+        _forgotten.Add(new Forgotten(place, place + before, count, before));
+        _forgottenCount = before + count;
     }
 
     /// <summary>
@@ -467,6 +533,136 @@ internal ref struct MarshalReader
         var module = new RubyModule(name);
         return _strict ? throw Refused(module.KindName) : Register(module);
     }
+
+    /// <summary>
+    /// Walks past the next value without building it, one level deeper, keeping the places of the
+    /// objects in it so later links still point where Ruby wrote them.
+    /// </summary>
+    private void SkipValue()
+    {
+        if (++_depth > RubyValue.MaxDepth)
+        {
+            throw new RubyValueException(RubyValueException.TooDeep);
+        }
+
+        SkipValueBody();
+        _depth--;
+    }
+
+    /// <summary>
+    /// Walks past the next value's type and contents, see <see cref="SkipValue"/>.
+    /// </summary>
+    private void SkipValueBody()
+    {
+        int start = _position;
+        char type = (char)ReadByte();
+        switch (type)
+        {
+            case '0':
+            case 'T':
+            case 'F':
+                return;
+            case 'i':
+                ReadLong();
+                return;
+            case '@':
+            case ';':
+                ReadCount();
+                return;
+            case ':':
+                ReadSymbolBody();
+                return;
+            case 'l':
+                Skipped();
+                ReadByte();
+                Take(ReadCount(bytesEach: 2) * 2);
+                return;
+            case '"':
+            case 'f':
+            case 'c':
+            case 'm':
+            case 'M':
+                Skipped();
+                Take(ReadCount(bytesEach: 1));
+                return;
+            case '/':
+                Skipped();
+                Take(ReadCount(bytesEach: 1));
+                ReadByte();
+                return;
+            case 'I':
+                SkipValue();
+                SkipFields();
+                return;
+            case '[':
+                Skipped();
+                SkipValues(ReadCount(bytesEach: 1));
+                return;
+            case '{':
+            case '}':
+                Skipped();
+                SkipValues(ReadCount(bytesEach: 2) * 2);
+                if (type == '}')
+                {
+                    SkipValue();
+                }
+
+                return;
+            case 'o':
+            case 'S':
+                ReadSymbol();
+                Skipped();
+                SkipFields();
+                return;
+            case 'u':
+                ReadSymbol();
+                Skipped();
+                Take(ReadCount(bytesEach: 1));
+                return;
+            case 'U':
+                ReadSymbol();
+                Skipped();
+                SkipValue();
+                return;
+            case 'e':
+            case 'C':
+                ReadSymbol();
+                SkipValue();
+                return;
+            default:
+                throw Broken(string.Create(CultureInfo.InvariantCulture, $"It holds the unknown type '{type}' at byte {start}."));
+        }
+    }
+
+    /// <summary>
+    /// Walks past a count of values, see <see cref="SkipValue"/>.
+    /// </summary>
+    /// <param name="count">How many.</param>
+    private void SkipValues(int count)
+    {
+        for (int index = 0; index < count; index++)
+        {
+            SkipValue();
+        }
+    }
+
+    /// <summary>
+    /// Walks past a count and that many named fields, see <see cref="SkipValue"/>.
+    /// </summary>
+    private void SkipFields()
+    {
+        int count = ReadCount(bytesEach: 2);
+        for (int index = 0; index < count; index++)
+        {
+            ReadSymbol();
+            SkipValue();
+        }
+    }
+
+    /// <summary>
+    /// Keeps the place of an object left out, which a later link reads as left out too.
+    /// </summary>
+    private readonly void Skipped() => _objects.Add(RubySkipped.Value);
 
     /// <summary>
     /// Reads a symbol where only a symbol may stand, such as a class name: new or one read before.
@@ -604,17 +800,53 @@ internal ref struct MarshalReader
     /// <returns>The object.</returns>
     private readonly RubyValue Earlier(int place)
     {
-        if (place >= _objects.Count || _objects[place] is not RubyValue value)
+        int kept = KeptPlace(place);
+        if (kept < 0)
+        {
+            return RubySkipped.Value;
+        }
+
+        if (kept >= _objects.Count || _objects[kept] is not RubyValue value)
         {
             throw Broken(string.Create(CultureInfo.InvariantCulture, $"It points to object {place}, which it does not hold yet."));
         }
 
-        if (_strict && _open.Contains(place))
+        if (_strict && _open.Contains(kept))
         {
             throw Refused(value.KindName + " that holds itself");
         }
 
         return value;
+    }
+
+    /// <summary>
+    /// Finds where an object stands in <see cref="_objects"/>, past the runs the read let go of.
+    /// </summary>
+    /// <param name="place">The object's place as the data counts it.</param>
+    /// <returns>Its place in <see cref="_objects"/>, -1 for an object the read let go of.</returns>
+    private readonly int KeptPlace(int place)
+    {
+        int low = 0;
+        int high = _forgotten.Count - 1;
+        while (low <= high)
+        {
+            int middle = (low + high) / 2;
+            Forgotten run = _forgotten[middle];
+            if (place < run.Start)
+            {
+                high = middle - 1;
+            }
+            else if (place >= run.Start + run.Count)
+            {
+                low = middle + 1;
+            }
+            else
+            {
+                return -1;
+            }
+        }
+
+        return high < 0 ? place : place - _forgotten[high].Before - _forgotten[high].Count;
     }
 
     /// <summary>
@@ -657,4 +889,13 @@ internal ref struct MarshalReader
 
         return place;
     }
+
+    /// <summary>
+    /// A run of objects the read let go of, see <see cref="ForgetFrom"/>.
+    /// </summary>
+    /// <param name="After">The place in <see cref="_objects"/> the run stood at, which the next kept object takes.</param>
+    /// <param name="Start">The place the data counts the run's first object at.</param>
+    /// <param name="Count">How many objects the run held.</param>
+    /// <param name="Before">How many objects the runs before it held.</param>
+    private readonly record struct Forgotten(int After, int Start, int Count, int Before);
 }

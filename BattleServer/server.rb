@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Refused MGQ Online's battles without the core library, telling the relay why
+#                            - Derived the story mapping's index for the relay
 #                            - Loaded MGQ Online's core library in each battle child before its sandbox and shook hands after it
 #                            - Answered a battle whose sandbox could not drop root as one that could not be sandboxed
 #                            - Let a co-op battle use CPU time for as long as the relay keeps it and ended it as failed past that
@@ -24,6 +25,7 @@ require_relative "lib/served"
 require_relative "lib/relay_bridge"
 require_relative "lib/mods"
 require_relative "lib/core"
+require_relative "lib/story_index"
 
 # The battle server: it loads the game once and then plays battles for its clients over TCP, one
 # JSON object per line each way. Requests:
@@ -35,6 +37,8 @@ require_relative "lib/core"
 #       starts a battle played turn by turn and answers its first event.
 #   {"op":"answer", "commands":{"1":[{"skill":23,"target":0}]}} or {"op":"answer", "choice":0}
 #       answers the event the battle waits on and answers its next event.
+#   {"op":"story_index", "rowsRev":3, "keys":[...], "events":[...]}
+#       derives the story mapping's index for the relay, see StoryIndex.
 # Every answer holds "ok", and "error" when it is false. The game's globals hold one battle per
 # process: where the system can fork (Linux), each connection gets a child process of its own,
 # which shares the loaded game with the others, is sandboxed when the server runs as root, and
@@ -384,6 +388,8 @@ module BattleServer
       end
 
       case request["op"]
+      when "story_index"
+        [StoryIndex.answer(request), session]
       when "ping"
         [{ ok: true, boot_seconds: @boot_seconds.round(1), battles: @battles, busy: @busy,
            mode: @mode, pid: Process.pid }, session]

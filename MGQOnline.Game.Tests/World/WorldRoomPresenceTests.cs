@@ -46,7 +46,7 @@ public sealed class WorldRoomPresenceTests
         host.Inbox.Enqueue(Told(2, Other, "Other"));
         host.Run();
 
-        Peer kept = Assert.Single(host.Peers.Where(peer => peer.Id == Friend));
+        Peer kept = Assert.Single(host.Peers, peer => peer.Id == Friend);
         Assert.Equal(Other, room.At(2)?.Id);
         Assert.Equal([Other], room.Peers.Select(peer => peer.Id));
         Assert.False(kept.Present);

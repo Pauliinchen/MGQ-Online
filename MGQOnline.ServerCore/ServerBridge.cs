@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-23: Registered the topics both hosts answer
+//                            - Registered the topic that derives the story mapping's index
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -58,6 +59,7 @@ internal static class ServerBridge
         log.Attach(context);
         context.Register(RuntimeTopic, (_, _) => DescribeRuntime());
         SharedTopics.Register(context);
+        StoryIndexTopic.Register(context, System.IO.Directory.GetCurrentDirectory);
     }
 
     /// <summary>

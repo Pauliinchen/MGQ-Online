@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-23: Covered the keys the whole world keeps
+//                            - Covered the derived index's common events and the game's names kept with it
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -10,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { playerIdOf } from "./directory.js";
-import { MAPPING_LIMITS, MAPPING_REFUSAL, StoryMapping, handleMappingAdminRequest, handleMappingGameRequest } from "./story_mapping.js";
+import { BATTLE_SERVER_AUTHOR, MAPPING_LIMITS, MAPPING_REFUSAL, StoryMapping, handleMappingAdminRequest, handleMappingGameRequest } from "./story_mapping.js";
 
 /**
  * The admin's player key.
@@ -195,10 +196,30 @@ test("the derived index keeps the rows' revision it was built from and goes stal
   assert.deepEqual((await ask("GET", "/index")).body.index.events, [[5, 27], [7, 60]]);
 
   const game = (known) => handleMappingGameRequest(mapping, "GET", new URL(`https://relay/v1/story-mapping${known === undefined ? "" : `?known=${known}`}`));
-  assert.deepEqual((await game()).body, { rev: 2, tables: { keys: [{ key: "s2010", kind: "shared" }], events: [] }, index: { built: 1, stale: false, events: [[5, 27], [7, 60]] } });
+  assert.deepEqual((await game()).body, { rev: 2, tables: { keys: [{ key: "s2010", kind: "shared" }], events: [] }, index: { built: 1, stale: false, events: [[5, 27], [7, 60]], commons: [] } });
   assert.deepEqual((await game(2)).body, { rev: 2, same: true });
 
   await ask("POST", "/edit", { edits: [add("keys", { key: "s2018", kind: "shared" })] });
   assert.deepEqual((await game(2)).body.index.stale, true);
   assert.deepEqual((await ask("GET", "")).body.index.stale, true);
+});
+
+test("the battle server's index keeps its common events and the game's names, which only the names route hands out", async () => {
+  const { mapping, ask } = makeMapping();
+  await ask("POST", "/edit", { edits: [add("keys", { key: "v1001", kind: "one_way" })] });
+  const names = { switches: { 60: "Sonya met" }, variables: { 1001: "Story progress" }, maps: { 7: "Iliasville", 1848: "Mt. Horai" }, events: { "7.60": "EV060" }, companions: 3202 };
+
+  assert.equal((await mapping.keepIndex({ built: 1, events: [[7, 60]], commons: [380, 154, 380], names: { ...names, events: { "7": "no event" } } }, BATTLE_SERVER_AUTHOR)).status, 400);
+  assert.equal((await mapping.keepIndex({ built: 1, events: [], commons: [0] }, BATTLE_SERVER_AUTHOR)).status, 400);
+  const kept = await mapping.keepIndex({ built: 1, events: [[7, 60]], commons: [380, 154, 380], names }, BATTLE_SERVER_AUTHOR);
+  assert.deepEqual([kept.status, kept.body.index.commons, kept.body.index.author], [200, 2, BATTLE_SERVER_AUTHOR]);
+
+  const index = (await ask("GET", "/index")).body.index;
+  assert.deepEqual([index.commons, "names" in index], [[154, 380], false]);
+  const game = (await handleMappingGameRequest(mapping, "GET", new URL("https://relay/v1/story-mapping"))).body.index;
+  assert.deepEqual(game, { built: 1, stale: false, events: [[7, 60]], commons: [154, 380] });
+  assert.deepEqual((await ask("GET", "/names")).body, { rowsRev: 1, names: { built: 1, stale: false, names, author: BATTLE_SERVER_AUTHOR, time: 1000 } });
+
+  await ask("POST", "/edit", { edits: [add("keys", { key: "v1141", kind: "one_way" })] });
+  assert.equal((await ask("GET", "/names")).body.names.stale, true);
 });

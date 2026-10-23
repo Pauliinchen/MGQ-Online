@@ -2,7 +2,8 @@
 //  battles.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Covered a battle the battle server ends in the same breath as it takes it
+//      Paulinchen  2026-10-23: Covered the story index the battle server derives after a change of the mapping's rows
+//                            - Covered a battle the battle server ends in the same breath as it takes it
 //                            - Covered how long a world connection lasts, in a battle and out of one
 //      Paulinchen  2026-10-21: Covered the battle server's ping in the admins' stats
 //      Paulinchen  2026-10-15: Covered the battle server's boss reports and the pool changes it hears of
@@ -75,6 +76,16 @@ let now = 1_000_000;
 let serverAnswers = "serving";
 
 /**
+ * How the stand-in battle server answers a request for the story index: "derived" or "refused".
+ */
+let indexAnswers = "derived";
+
+/**
+ * The names the stand-in battle server derives with the story index.
+ */
+const NAMES = Object.freeze({ switches: { 60: "Sonya met" }, variables: { 1001: "Story progress" }, maps: { 7: "Iliasville" }, events: { "7.60": "EV060" }, companions: 3202 });
+
+/**
  * The stand-in battle server's connections, each with the lines it got and a way to send one.
  */
 const served = [];
@@ -106,6 +117,10 @@ before(async () => {
 
         if (line.op === "ping") {
           connection.send(PING_REPLY);
+        }
+
+        if (line.op === "story_index") {
+          connection.send(indexAnswers === "derived" ? { ok: true, built: line.rowsRev, events: [[7, 60]], commons: [154], names: NAMES } : { ok: false, error: "no core library" });
         }
 
         if (line.op === "serve" && serverAnswers === "over") {
@@ -521,4 +536,29 @@ test("the admins' stats hold the battle server's answer to a ping, and null for 
   await new Promise((resolve) => unreachable.server.listen(0, "127.0.0.1", resolve));
   assert.equal((await stats(`http://127.0.0.1:${unreachable.server.address().port}/v1/worlds`)).battleServer, null);
   await unreachable.stop();
+});
+
+test("after an admin changed the mapping's rows the battle server derives the story index, and a refusal keeps none", async () => {
+  const admin = `${httpBase.replace("/worlds", "")}/admin/story`;
+  const edit = (key) => fetch(`${admin}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: ADMIN, "Content-Type": "application/json" }, body: JSON.stringify({ edits: [{ table: "keys", op: "add", row: { key, kind: "shared" } }] }) });
+  const index = async () => (await (await fetch(`${admin}/index`, { headers: { [PLAYER_HEADER]: ADMIN } })).json()).index;
+  const settled = async (done) => {
+    for (let tries = 0; tries < 100 && !done(await index()); tries++) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  };
+
+  indexAnswers = "refused";
+  assert.equal((await edit("s61")).status, 200);
+  await settled(() => served.some((connection) => connection.lines.some((line) => line.op === "story_index")));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(await index(), null);
+
+  indexAnswers = "derived";
+  assert.equal((await edit("v1001")).status, 200);
+  await settled((kept) => kept && !kept.stale);
+  const asked = served.flatMap((connection) => connection.lines).filter((line) => line.op === "story_index").at(-1);
+  assert.deepEqual([asked.rowsRev, asked.keys, asked.events], [2, [{ key: "s61", kind: "shared" }, { key: "v1001", kind: "shared" }], []]);
+  assert.deepEqual(await index(), { built: 2, stale: false, events: [[7, 60]], commons: [154], author: "battle server", time: now });
+  assert.deepEqual((await (await fetch(`${admin}/names`, { headers: { [PLAYER_HEADER]: ADMIN } })).json()).names.names, NAMES);
 });

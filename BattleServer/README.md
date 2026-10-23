@@ -41,3 +41,15 @@ not shake hands is logged, and those battles are refused. The library carries it
 limit (256 MB); leave `DOTNET_GCHeapHardLimit` unset unless a larger one is needed (hexadecimal
 without `0x`). Removing the setting and restarting turns the core off again, and with it MGQ Online's battles on
 this server.
+
+## The story mapping's index
+
+The relay asks the server for the derived index of the story mapping (see "Story mapping" in
+[Relay/README.md](../Relay/README.md)) over a connection of its own, after every batch of the
+mapping that changed rows and as it starts while the index is missing or stale:
+`{"op":"story_index","rowsRev":3,"keys":[{"key":"v1001","kind":"one_way"}],"events":[{"key":"ss231.*.*","share":"personal"}]}`.
+The child that takes the connection hands the rows to the core (`lib/story_index.rb`, the core's
+topic `story.index`), which reads every map and common event of the game folder, about 2.5 s and
+under 256 MB, and answers one line:
+`{"ok":true,"built":3,"events":[[12,3],...],"commons":[40,...],"names":{"switches":{...},"variables":{...},"maps":{...},"events":{"12.3":"EV003",...},"companions":3202}}`.
+Without the core library the answer is `{"ok":false,"error":"..."}` and the relay keeps the index it has.

@@ -2,7 +2,8 @@
 //  RubyMarshal.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Created
+//      Paulinchen  2026-10-23: Read game data through a pruner
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -54,6 +55,20 @@ public static class RubyMarshal
     public static RubyValue Read(ReadOnlySpan<byte> data, MarshalMode mode = MarshalMode.Strict)
     {
         var reader = new MarshalReader(data, mode == MarshalMode.Strict);
+        return reader.ReadDump();
+    }
+
+    /// <summary>
+    /// Reads game data in full mode, shaped by a pruner as it goes.
+    /// </summary>
+    /// <param name="data">The Marshal dump, nothing after its value.</param>
+    /// <param name="pruner">Leaves out the fields it does not keep and builds its own values of finished objects.</param>
+    /// <returns>The value, as the pruner shaped it.</returns>
+    /// <exception cref="RubyValueException">The data is broken.</exception>
+    public static RubyValue Read(ReadOnlySpan<byte> data, MarshalPruner pruner)
+    {
+        ArgumentNullException.ThrowIfNull(pruner);
+        var reader = new MarshalReader(data, strict: false, pruner);
         return reader.ReadDump();
     }
 

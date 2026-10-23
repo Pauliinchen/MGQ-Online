@@ -5,6 +5,7 @@
 //      Paulinchen  2026-10-23: Covered a battle's players arranged by the core
 //                            - Covered the squad rules the core answers
 //                            - Covered the topics both hosts answer
+//                            - Counted the topic that derives the story mapping's index
 //                            - Created
 //
 //----------------------------------------------------------------

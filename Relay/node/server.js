@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-23: Kept the story mapping, answered its admin routes and handed it to games
+//                            - Asked the battle server for the derived story index after every change of rows and at start
 //                            - Played each Raid World's story on tracks with the games that name tracks, over their world room
 //                            - Kept the catch-up tables beside the story mapping
 //                            - Kept a battle on the battle server from the moment the server took it
@@ -90,7 +91,7 @@ import { RELEASE_REPO, RELEASE_ROUTE, ReleaseControl, ReleaseWatch, UPDATE_NAME,
 import { ReportDesk, handleReportRequest, reportSettingsOf } from "../core/reports.js";
 import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, pinOf, sealedGameRefusal, sealedGameRefused, storyPushText, storyRouteOf } from "../core/story.js";
 import { STORY_TABLES } from "../core/story_catchup.js";
-import { MAPPING_ADMIN_ROUTE, MAPPING_GAME_ROUTE, StoryMapping, handleMappingGameRequest } from "../core/story_mapping.js";
+import { BATTLE_SERVER_AUTHOR, MAPPING_ADMIN_ROUTE, MAPPING_GAME_ROUTE, MAPPING_REFUSAL, StoryMapping, handleMappingGameRequest } from "../core/story_mapping.js";
 import { StoryTracks, TRACKS_FEATURE, TRACK_FRAME } from "../core/story_tracks.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
@@ -138,6 +139,28 @@ const BATTLE_SERVER_VARIABLE = "BATTLE_SERVER";
  * How long the admins' stats wait for the battle server's answer to a ping.
  */
 const BATTLE_PING_WAIT_MS = 2000;
+
+/**
+ * The longest answer to a ping the relay reads.
+ */
+const BATTLE_PING_BYTES = 64 * 1024;
+
+/**
+ * How long the relay waits for the battle server's derived story index: the server reads every
+ * map and common event of the game, a few seconds, in a battle child of its own.
+ */
+const STORY_INDEX_WAIT_MS = 120 * 1000;
+
+/**
+ * The longest derived story index the relay reads, the game's names with it.
+ */
+const STORY_INDEX_BYTES = 64 * 1024 * 1024;
+
+/**
+ * How long after a start the relay asks the battle server for a story index that is missing or
+ * stale, half a minute, once the server is up too.
+ */
+const FIRST_STORY_INDEX_MS = 30 * 1000;
 
 /**
  * The longest version the admins' stats keep of a world room's game, so no game fills them with text.
@@ -647,7 +670,7 @@ function headerOf(request, name) {
  * Creates a relay server, not yet listening.
  *
  * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk, minVersion?: string, release?: ReleaseControl, releases?: ReleaseWatch | null, mapping?: StoryMapping}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log, the bug report desk, off unless given, the lowest game version served while no admin set one, DEFAULT_MIN_VERSION unless given, which tests change, the release control, loaded, an empty one in memory over minVersion unless given, the watch of the mod's releases, off unless given, the story mapping with the catch-up tables, an empty one in memory unless given, and the Raid Worlds' story track stores.
- * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, tracksOf: (id: string) => StoryTracks, mapping: StoryMapping, check: () => void, sweep: () => Promise<void>, checkRelease: () => Promise<{version: string | null, worlds: number}>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, a world's story, a world's boss pools, a world's story tracks, the story mapping, a look at the deadlines, a sweep of what is kept too long, a check of the mod's releases, and a way to stop everything.
+ * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, tracksOf: (id: string) => StoryTracks, mapping: StoryMapping, check: () => void, sweep: () => Promise<void>, checkRelease: () => Promise<{version: string | null, worlds: number}>, deriveStoryIndex: () => Promise<void>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, a world's story, a world's boss pools, a world's story tracks, the story mapping, a look at the deadlines, a sweep of what is kept too long, a check of the mod's releases, a request for the derived story index, and a way to stop everything.
  */
 export function createRelay({
   limits = NODE_LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, directory = new Directory(memoryStore(), { clock }),
@@ -822,6 +845,10 @@ export function createRelay({
 
       if (answer.audit) {
         log.info(`${new Date().toISOString()} ${answer.audit}`);
+      }
+
+      if (admin.rest[0] === MAPPING_ADMIN_ROUTE && admin.rest[1] === "edit" && request.method === "POST" && answer.status === 200 && answer.body.changed?.length > 0) {
+        deriveStoryIndex();
       }
 
       if (admin.rest[0] === MAPPING_ADMIN_ROUTE && request.method === "POST" && answer.status === 200) {
@@ -1927,9 +1954,23 @@ export function createRelay({
    * @returns {Promise<object | null>} The server's answer as it sent it, such as `boot_seconds`, `battles`, `busy` and `mode`; null when it is out of reach or did not answer in time.
    */
   function pingBattleServer() {
+    return askBattleServer({ op: "ping" }, BATTLE_PING_WAIT_MS, BATTLE_PING_BYTES);
+  }
+
+  /**
+   * Sends the battle server one request over a connection of its own and reads its one answer, a
+   * JSON object on a line.
+   *
+   * @param {object} request The request.
+   * @param {number} waitMs How long to wait for the answer.
+   * @param {number} maxBytes The longest answer read; a longer one counts as none.
+   * @returns {Promise<object | null>} The answer, null when the server is out of reach, did not answer in time or answered no JSON object.
+   */
+  function askBattleServer(request, waitMs, maxBytes) {
     return new Promise((resolve) => {
       const socket = net.connect(battleServer.port, battleServer.host);
-      let pending = "";
+      const chunks = [];
+      let length = 0;
       let answered = false;
       const answer = (reply) => {
         if (!answered) {
@@ -1939,20 +1980,96 @@ export function createRelay({
           resolve(reply);
         }
       };
-      const deadline = setTimeout(() => answer(null), BATTLE_PING_WAIT_MS);
+      const deadline = setTimeout(() => answer(null), waitMs);
 
-      socket.on("connect", () => socket.write(`${JSON.stringify({ op: "ping" })}\n`));
+      socket.on("connect", () => socket.write(`${JSON.stringify(request)}\n`));
       socket.on("data", (data) => {
-        pending += data.toString("utf8");
-        const end = pending.indexOf("\n");
+        const end = data.indexOf(10);
+        chunks.push(end >= 0 ? data.subarray(0, end) : data);
+        length += end >= 0 ? end : data.length;
 
-        if (end >= 0) {
-          answer(pingReplyOf(pending.slice(0, end)));
+        if (length > maxBytes) {
+          answer(null);
+        } else if (end >= 0) {
+          answer(pingReplyOf(Buffer.concat(chunks).toString("utf8")));
         }
       });
       socket.on("error", () => answer(null));
       socket.on("close", () => answer(null));
     });
+  }
+
+  /** Whether a derived story index is being asked for now. */
+  let deriving = false;
+  /** Whether another was asked for while one was under way, which runs once more after it. */
+  let deriveAgain = false;
+
+  /**
+   * Asks the battle server to derive the story index from the mapping's rows and the game's events
+   * and keeps what it sends (see StoryMapping.keepIndex); nothing without a battle server. One runs
+   * at a time; a call while one runs makes it run once more after it, also when the rows changed
+   * while the server derived.
+   *
+   * @returns {Promise<void>} Completes once the index is kept or could not be had, which is logged.
+   */
+  async function deriveStoryIndex() {
+    if (!battleServer) {
+      return;
+    }
+
+    if (deriving) {
+      deriveAgain = true;
+      return;
+    }
+
+    deriving = true;
+
+    try {
+      const meta = await mapping.meta();
+      const keys = (await mapping.rows("keys")).body.rows.map((entry) => ({ key: entry.row.key, kind: entry.row.kind }));
+      const events = (await mapping.rows("events")).body.rows.map((entry) => ({ key: entry.row.key, share: entry.row.share }));
+      const reply = await askBattleServer({ op: "story_index", rowsRev: meta.rowsRev, keys, events }, STORY_INDEX_WAIT_MS, STORY_INDEX_BYTES);
+
+      if (!reply?.ok) {
+        log.error(`${new Date().toISOString()} the battle server derived no story index of rows rev ${meta.rowsRev}: ${reply ? String(reply.error).slice(0, 200) : "no answer"}`);
+      } else {
+        const kept = await mapping.keepIndex({ built: reply.built, events: reply.events, commons: reply.commons, names: reply.names }, BATTLE_SERVER_AUTHOR);
+
+        if (kept.status === 409 && kept.body.code === MAPPING_REFUSAL.rev) {
+          deriveAgain = true;
+        } else if (kept.status !== 200) {
+          log.error(`${new Date().toISOString()} the battle server's story index of rows rev ${meta.rowsRev} was not kept: ${kept.body.error}`);
+        } else {
+          log.info(`${new Date().toISOString()} ${kept.audit}`);
+
+          for (const each of worldTracks.values()) {
+            each.mappingChanged().catch((error) => log.error(errorLine(new Date(), "story mapping push", error)));
+          }
+        }
+      }
+    } catch (error) {
+      log.error(errorLine(new Date(), "story index", error));
+    } finally {
+      deriving = false;
+
+      if (deriveAgain) {
+        deriveAgain = false;
+        deriveStoryIndex();
+      }
+    }
+  }
+
+  /**
+   * Asks for the derived story index when it is missing or stale, as the relay starts.
+   *
+   * @returns {Promise<void>} Completes once asked, or at once when the index is current.
+   */
+  async function deriveStaleStoryIndex() {
+    const summary = (await mapping.summary()).body;
+
+    if (!summary.index || summary.index.stale) {
+      await deriveStoryIndex();
+    }
   }
 
   const timer = setInterval(check, checkEveryMs);
@@ -1967,6 +2084,8 @@ export function createRelay({
   firstModCheck.unref();
   const modTimer = setInterval(checkMods, CHECK_MODS_EVERY_MS);
   modTimer.unref();
+  const firstStoryIndex = battleServer ? setTimeout(() => deriveStaleStoryIndex().catch((error) => log.error(errorLine(new Date(), "story index", error))), FIRST_STORY_INDEX_MS) : null;
+  firstStoryIndex?.unref();
   const releaseTimer = releases ? setInterval(() => checkRelease().catch((error) => log.error(errorLine(new Date(), "check of the mod's releases", error))), CHECK_RELEASE_EVERY_MS) : null;
   releaseTimer?.unref();
 
@@ -1981,6 +2100,7 @@ export function createRelay({
     clearInterval(timer);
     clearInterval(sweepTimer);
     clearTimeout(firstModCheck);
+    clearTimeout(firstStoryIndex);
     clearInterval(modTimer);
     clearInterval(releaseTimer);
     clearInterval(battleTimer);
@@ -2011,7 +2131,7 @@ export function createRelay({
     return new Promise((resolve) => server.close(() => resolve()));
   }
 
-  return { server, directory, mods, trades, storyOf, bossesOf, tracksOf, mapping, battles, check, sweep, sweepBattles, checkRelease, stop };
+  return { server, directory, mods, trades, storyOf, bossesOf, tracksOf, mapping, battles, check, sweep, sweepBattles, checkRelease, deriveStoryIndex, stop };
 }
 
 /**

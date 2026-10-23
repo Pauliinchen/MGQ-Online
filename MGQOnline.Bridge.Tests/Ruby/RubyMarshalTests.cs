@@ -2,7 +2,8 @@
 //  RubyMarshalTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Expected Integer Hash keys to cross and an Array key to be refused
+//      Paulinchen  2026-10-23: Checked a pruned read of game data
+//                            - Expected Integer Hash keys to cross and an Array key to be refused
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -196,5 +197,63 @@ public sealed class RubyMarshalTests
         Assert.Equal("Shift_JIS", ((RubyString)data[2]).EncodingName);
         Assert.Equal("Table", table.ClassName);
         Assert.Equal(24, table.Data.Length);
+    }
+
+    /// <summary>
+    /// Asserts that a pruned read leaves out the fields its pruner drops, hands a link the value the
+    /// pruner built, and still finds the objects after a value it left out.
+    /// </summary>
+    [Fact]
+    public void Read_WithAPruner_LeavesOutFieldsAndKeepsWhatItBuilt()
+    {
+        RubyArray data = RubyMarshal.Read(Fixtures.Codec("game_data"), new PageNames()).AsArray();
+
+        var gameEvent = (RubyObject)data[0];
+        RubyArray pages = gameEvent["pages"].AsArray();
+
+        Assert.Equal("page of Chest", ((RubyBox<string>)pages[0]).Content);
+        Assert.Same(pages[0], pages[1]);
+        Assert.Same(RubySkipped.Value, gameEvent["name"]);
+        Assert.Equal(2, ((RubyObject)data[1])["y"].AsInt());
+        Assert.Equal("Shift_JIS", ((RubyString)data[2]).EncodingName);
+    }
+
+    /// <summary>
+    /// Asserts that a read lets go of a sealed object's contents: a link past them still finds its
+    /// object, a link into them reads as left out.
+    /// </summary>
+    [Fact]
+    public void Read_WithASealingPruner_FindsLinksPastTheSealedContents()
+    {
+        // [#<S @a="x">, "y", (link to "y"), (link to "x")]
+        byte[] dump = [4, 8, (byte)'[', 9, (byte)'o', (byte)':', 6, (byte)'S', 6, (byte)':', 7, (byte)'@', (byte)'a', (byte)'"', 6, (byte)'x', (byte)'"', 6, (byte)'y', (byte)'@', 8, (byte)'@', 7];
+
+        RubyArray data = RubyMarshal.Read(dump, new SealsEverything()).AsArray();
+
+        Assert.Equal((byte)'x', ((RubyObject)data[0])["a"].AsBytes().Span[0]);
+        Assert.Same(data[1], data[2]);
+        Assert.Same(RubySkipped.Value, data[3]);
+    }
+
+    /// <summary>
+    /// Seals every object.
+    /// </summary>
+    private sealed class SealsEverything : MarshalPruner
+    {
+        /// <inheritdoc />
+        public override bool Seals(RubyObject value) => true;
+    }
+
+    /// <summary>
+    /// Builds a text of each event page and leaves out the events' names.
+    /// </summary>
+    private sealed class PageNames : MarshalPruner
+    {
+        /// <inheritdoc />
+        public override bool Keeps(RubyObject owner, string field) => !(owner.ClassName == "RPG::Event" && field == "name");
+
+        /// <inheritdoc />
+        public override RubyValue Finish(RubyObject value) =>
+            value.ClassName == "RPG::Event::Page" ? new RubyBox<string>("page of Chest") : value;
     }
 }

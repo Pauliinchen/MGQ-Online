@@ -6,7 +6,8 @@
 #                            - Named the game's own common event that starts in the log
 #                            - Noted the teller whose story event that runs by itself the player's game keeps from starting
 #                            - Let that event start once nothing came for thirty seconds of a telling outside battle
-#      Paulinchen  2026-10-23: Took back what a talk or story event changed once it ends early
+#      Paulinchen  2026-10-23: Sorted event pages in the DLL over the game's own data and deleted the script's sorter
+#                            - Took back what a talk or story event changed once it ends early
 #                            - Noted the values that move the world's story on as a telling starts
 #                            - Faded the screen in once it stayed dark for ten seconds while nothing of a watched scene reached it
 #      Paulinchen  2026-10-17: Sorted a resumed raid boss fight's event as story
@@ -105,7 +106,7 @@
 #----------------------------------------------------------------
 
 # The events of a party. Every event page is sorted by what its commands that can run now do, before
-# it runs:
+# it runs, in the DLL (MGQOnline.Game's EventSorter, over the game's event data it reads itself):
 # a talk (conversations, shops, the job change menu), travel (a transfer), a chest (items and its
 # own self switch), a battle without dialogue, or story (everything that moves the story on).
 # Chests are the player's own, and opening one opens it for the whole party: every member who has
@@ -118,33 +119,25 @@
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopEvents
-  # Event commands that move the story on wherever they appear: party changes (129), vehicles (206),
-  # name input (303), game over and title (353, 354).
-  STORY_CODES = [129, 206, 303, 353, 354]
+  # The DLL's topic that sorts one list of event commands, see EventTopics.Sort.
+  SORT_TOPIC = "events.sort"
 
-  # Scripts a talk may run, such as companions' lines, choices, presents, menus, shops that list
-  # their goods in a script, and cosmetic scripts like move routes, waits and zooms.
-  TALK_SCRIPTS = /\A\s*(actor_label_jump|unlimited_choices|ex_choice_\w+|present_start|change_friend|gain_medal|gain_coin|play_base_bgm|clear_skill_name|display_skill_name|call_synthesize|call_slot_scene|start_poker|call_party_edit|SceneManager\.call\(Scene_JobChange\)|names = party_members|@?goods\b|\w+ = RPG::MoveRoute\.new|wait\(|set_(angle|zoom|zoom_anime|swing_anime|circle_anime|cycle)\(|map_zoom|input_keys|check_picture_exist)/
+  # The DLL's topic that sorts every page of the map's events at once, see EventTopics.Kinds.
+  KINDS_TOPIC = "events.kinds"
 
-  # A script that shows a choice and writes the answer into a variable, which the page then
-  # branches on. The variable's id is its first argument.
-  CHOICE_SCRIPT = /\A\s*unlimited_choices\(\s*(\d+)/
+  # How often a sort hands over the values the DLL names it needs, at most: a branch the values
+  # open may read more.
+  MAX_SORT_ROUNDS = 8
 
-  # Event commands that start a choice's branch: one choice (402) and the choice of cancelling (403).
-  CHOICE_BRANCHES = [402, 403]
+  # Sorts kept with the values they read, at most, before they are all forgotten.
+  MAX_KEPT_SORTS = 4000
 
-  # Scripts that travel.
-  TRAVEL_SCRIPTS = /\A\s*(forced_transfer|forced_get_off_vehicle|forced_get_on_airship)/
+  # What a sort answers when the DLL cannot sort: the page plays as the player's own talk.
+  UNSORTED = { :kind => :talk, :list_kind => :talk, :may_tell => false, :scene => false, :marks => [] }
 
   # Kinds of page that may turn into story behind one of their choices, which guard watches: a
   # talk, and travel whose transfer lies behind the choice with the story, as the Great Decision's.
   WATCHED_KINDS = [:talk, :travel]
-
-  # Names of switches and variables the game uses as scratch while an event runs.
-  TEMPORARY_NAMES = /general|temp|system only|汎用|一時/i
-
-  # Event commands that show dialogue: text, choices, scrolling text.
-  MESSAGE_CODES = [101, 102, 105]
 
   # Messages of the leader's story kept at most while the player is busy.
   MAX_HEARD = 30
@@ -221,9 +214,6 @@ module MGQ_MpCoopEvents
   # rest, two and a half seconds, as the leader's game shows the whole page at once.
   OVERFLOW_FRAMES = 150
 
-  # How deep called common events are followed.
-  MAX_DEPTH = 5
-
   # The class of each kind of item a chest gives, by the letter a message writes it with.
   ITEM_CLASSES = { "i" => RPG::Item, "w" => RPG::Weapon, "a" => RPG::Armor }
 
@@ -248,8 +238,10 @@ module MGQ_MpCoopEvents
   # The game's switch that is on while the Library replays a scene, by its id in 3.06.
   LIBRARY_REPLAY_SWITCH = 443
 
-  # What each common event does, by its id and depth, sorted in the frame of @common_frame.
-  @common_kinds = {}
+  # The values the DLL named a sort's list needs, by the list's key (see site_key) and kind.
+  @needs = {}
+  # The last sort of each list, with the values it read, see sorting.
+  @answers = {}
   # The checks of what waits for the player to be free, see give_way_to.
   @waits = []
   # The chest the player opens: its interpreter, self switch, gains and sound.
@@ -264,336 +256,241 @@ module MGQ_MpCoopEvents
   # What starts this script's lines in the log.
   LOG_TAG = "co-op events"
 
-  # Sorts an event's current page, by what of it can run now.
+  # Sorts an event's current page by what of it can run now, in the DLL (MGQOnline.Game's
+  # EventSorter): a talk, travel, a chest, a battle or story.
   #
   # @param event [Game_Event] The event.
   # @return [Symbol] :talk, :travel, :chest, :battle, :story or :own, see kind_of; :talk for an
   #   event without a page.
   def self.kind(event)
     return :talk if event.mgq_mp_page < 0
-    return :travel if exit?(event)
 
-    sorted = kind_of(event.list || [])
-    # A scene that runs by itself and hides its story behind a choice, as Alice's recap at the
-    # Strategy Conference, plays in the leader's game alone: a member's copy, ended at the story
-    # as a talk's would be, would start over and over.
-    sorted == :talk && event.trigger == 3 && may_tell?(event.list || []) ? :story : sorted
+    sorting(event.list || [], event)[:kind]
   end
 
-  # Reports whether an event's page only takes the player elsewhere when they step on it or press a
-  # button: a transfer without dialogue, battle, items, self switch or script, which may note a
-  # switch or variable on the way, such as the warp and library flags of a town's entrance.
+  # Sorts a list of event commands by what of it can run now, see kind; no page's trigger counts.
   #
-  # @param event [Game_Event] The event.
-  # @return [Boolean] Whether it does.
-  def self.exit?(event)
-    return false if event.trigger > 2
-
-    marks = marks_of(runnable(event.list || []), 0)
-    marks[:travel] && [:story, :says, :battle, :gives, :own_switch].none? { |mark| marks[mark] } ? true : false
-  end
-
-  # Lists the commands of a list that can run now: a branch on a switch or a variable runs only
-  # when its condition holds, its else only when it does not; branches on anything else may run. A
-  # jump that can run makes the commands after its label run too, up to the end of the label's
-  # block, also inside a branch that does not hold.
-  #
-  # Exits hold the story's warnings in such branches, as Iliasville's do, which would make every
-  # exit story long after the warnings passed.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @return [Array<RPG::EventCommand>] Those that can run.
-  def self.runnable(list)
-    variables = choice_variables(list)
-    kept = {}.compare_by_identity
-    starts = [0]
-    jumped = {}
-    until starts.empty?
-      start = starts.shift
-      runnable_from(list, start, variables).each do |command|
-        kept[command] = true
-        next unless command.code == 119 && !jumped[command.parameters[0]]
-
-        name = jumped[command.parameters[0]] = command.parameters[0]
-        label = list.index { |other| other.code == 118 && other.parameters[0] == name }
-        starts << label if label
-      end
-    end
-    list.select { |command| kept[command] }
-  end
-
-  # Lists the commands that can run from a place in a list, see runnable: to its end from the
-  # list's start, else to the end of the block the place stands in.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @param start [Integer] The place.
-  # @param variables [Array<Integer>] The choice scripts' variables, see choice_variables.
-  # @return [Array<RPG::EventCommand>] Those that can run.
-  def self.runnable_from(list, start, variables)
-    held = {}
-    skip = nil
-    floor = start > 0 ? list[start].indent : nil
-    list[start..-1].take_while { |command| floor.nil? || command.indent >= floor }.select do |command|
-      indent = command.indent
-      next false if skip && indent > skip
-
-      case command.code
-      when 111
-        # A branch on a choice's variable may run either way, since the choice is not made yet.
-        params = command.parameters
-        held[indent] = params[0] == 1 && variables.include?(params[1]) ? nil : holds?(params)
-        skip = indent if held[indent] == false
-      when 411 then skip = held[indent] == true ? indent : nil
-      when 412 then skip = nil
-      end
-      true
-    end
-  end
-
-  # Lists the variables the choice scripts of a list write their answers into, see CHOICE_SCRIPT.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @return [Array<Integer>] The variables.
-  def self.choice_variables(list)
-    list.each_with_object([]) do |command, ids|
-      ids.push(Regexp.last_match(1).to_i) if command.code == 355 && command.parameters[0].to_s =~ CHOICE_SCRIPT
-    end
-  end
-
-  # Reports whether a command starts a branch on a choice script's variable, which counts as a
-  # choice's branch: the branch itself (111) and its else (411), until the branch ends (412).
-  #
-  # @param command [RPG::EventCommand] The command.
-  # @param variables [Array<Integer>] The choice scripts' variables, see choice_variables.
-  # @param open [Hash] The indents of such branches open now, kept between calls.
-  # @return [Boolean] Whether it does.
-  def self.choice_branch?(command, variables, open)
-    params = command.parameters
-    case command.code
-    when 111 then open[command.indent] = params[0] == 1 && variables.include?(params[1])
-    when 411 then open[command.indent] ? true : false
-    when 412
-      open.delete(command.indent)
-      false
-    else false
-    end
-  end
-
-  # Reports whether a branch's condition on a switch or a variable holds now.
-  #
-  # @param params [Array] The branch's parameters.
-  # @return [Boolean, nil] Whether it holds, nil for a condition on anything else.
-  def self.holds?(params)
-    return nil unless $game_switches && $game_variables
-
-    case params[0]
-    when 0 then $game_switches[params[1]] == (params[2] == 0)
-    when 1
-      value = $game_variables[params[1]].to_i
-      other = params[2] == 0 ? params[3].to_i : $game_variables[params[3]].to_i
-      [value == other, value >= other, value <= other, value > other, value < other, value != other][params[4]]
-    end
-  rescue => e
-    log("reading a branch failed: #{e.class}: #{e.message}")
-    nil
-  end
-
-  # Sorts a list of event commands by what of it can run now.
-  #
-  # Story only behind a choice, such as a trader's "Talk" that moves a side quest on, leaves a page a
-  # talk, or travel when a transfer lies behind the choice too, which may turn into story once that
-  # choice is taken (see may_tell? and guard).
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @return [Symbol] :talk, :travel, :chest, :battle or :story; :own for a battlefuck (battlefuck?).
-  def self.kind_of(list)
-    can_run = runnable(list)
-    return :own if battlefuck?(can_run)
-    return :talk if defined?(MGQ_MpCoopCastle) && MGQ_MpCoopCastle.resident?(list)
-
-    list = can_run
-    # Wandering monsters call the game's common events before and after their battle, which set
-    # variables, so a battle is told apart by the page itself: a fight without its own dialogue.
-    return :battle if list.any? { |c| c.code == 301 } && list.none? { |c| MESSAGE_CODES.include?(c.code) }
-
-    marks = marks_of(list, 0)
-    return :story if story_marks?(marks)
-    return :chest if marks[:gives] && marks[:own_switch] && !marks[:choice_story]
-    return :talk if one_time_talk?(marks)
-    return :story if marks[:own_switch] || marks[:battle]
-
-    marks[:travel] ? :travel : :talk
-  end
-
-  # Reports whether a list may start a battlefuck: it calls one of the battlefuck events
-  # (MGQ_MpCoopStoryRewards::BATTLEFUCK_EVENTS), which plays in the player's own game alone, with
-  # nobody taken along. Only what can run now counts, since a town's quest page may hold its
-  # battlefuck in one step's branch and story in the others.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands that can run now, see runnable.
-  # @return [Boolean] Whether it does.
-  def self.battlefuck?(list)
-    return false unless defined?(MGQ_MpCoopStoryRewards::BATTLEFUCK_EVENTS)
-
-    @battlefuck_events ||= MGQ_MpCoopStoryRewards::BATTLEFUCK_EVENTS.each_with_object({}) { |id, found| found[id] = true }
-    list.any? { |command| command.code == 117 && @battlefuck_events[command.parameters[0]] }
-  end
-
-  # Reports whether marks are a one-time talk's: dialogue and the page's own self switch, nothing
-  # else, as a signpost or a villager who says something once. Each player reads it in their own
-  # game; the self switch follows the leader's story like any other and only decides whether the
-  # first words show.
-  #
-  # @param marks [Hash] The marks, see marks_of.
-  # @return [Boolean] Whether they are.
-  def self.one_time_talk?(marks)
-    marks[:own_switch] && marks[:says] && marks.none? { |key, value| value && ![:own_switch, :says].include?(key) } ? true : false
-  end
-
-  # Reports whether marks say story, past a choice or not.
-  #
-  # @param marks [Hash] What a list does, see marks_of.
-  # @return [Boolean] Whether they do.
-  def self.story_marks?(marks)
-    marks[:story] || marks[:sets] ? true : false
+  # @param list [Array<RPG::EventCommand>] The commands, such as a common event's.
+  # @param event [Game_Event, nil] The event whose page the list may be, nil for none.
+  # @return [Symbol] :talk, :travel, :chest, :battle or :story.
+  def self.kind_of(list, event = nil)
+    sorting(list || [], event)[:list_kind]
   end
 
   # Reports whether a talk turns into story behind one of its choices.
   #
   # @param list [Array<RPG::EventCommand>] The commands.
+  # @param event [Game_Event, nil] The event whose page the list may be, nil for none.
   # @return [Boolean] Whether it does.
-  def self.may_tell?(list)
-    marks_of(runnable(list), 0)[:choice_story] ? true : false
+  def self.may_tell?(list, event = nil)
+    sorting(list || [], event)[:may_tell]
   end
 
-  # Finds what a list of event commands does. What a choice's branch does that would make it story
-  # counts as :choice_story instead, since the player may never take that choice.
+  # Reports whether a list of commands is a story scene: story with its own dialogue or novel scene.
   #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @param depth [Integer] How many common events deep the list is.
-  # @return [Hash] :story, :sets (a switch or variable of the story), :says (dialogue), :gives,
-  #   :own_switch, :battle, :travel and :choice_story, each true when found.
-  def self.marks_of(list, depth)
-    marks = {}
-    choice = {}
-    branches = []
-    open = {}
-    variables = choice_variables(list)
-    list.each_with_index do |command, index|
-      branches.pop while !branches.empty? && command.indent <= branches.last
-      next branches.push(command.indent) if CHOICE_BRANCHES.include?(command.code) || choice_branch?(command, variables, open)
-
-      mark_command(branches.empty? ? marks : choice, list, index, depth)
-    end
-    # A chest asks first whether to open it, so its own switch with items behind a choice keeps it a
-    # chest, unless story lies behind the choice too, as behind Amira's paid tip in Iliasburg, whose
-    # story value a chest kept from the world's story.
-    chest = choice[:gives] && choice[:own_switch] && !story_marks?(choice) && !choice[:battle] && !choice[:choice_story]
-    marks[:choice_story] = true if story_marks?(choice) || choice[:battle] || choice[:choice_story] || (choice[:own_switch] && !chest)
-    [:says, :gives, :travel].each { |key| marks[key] ||= choice[key] if choice[key] }
-    marks[:own_switch] ||= true if chest
-    marks
+  # @param list [Array<RPG::EventCommand>, nil] The commands.
+  # @param event [Game_Event, nil] The event whose page the list may be, nil for none.
+  # @return [Boolean] Whether it is.
+  def self.scene?(list, event = nil)
+    list ? sorting(list, event)[:scene] : false
   end
 
-  # Marks what one event command does.
+  # Reports whether an event command moves the story on, whatever branch it stands in.
   #
-  # @param marks [Hash] What the list does so far.
   # @param list [Array<RPG::EventCommand>] The commands.
   # @param index [Integer] The command's place.
-  # @param depth [Integer] How many common events deep the list is.
-  def self.mark_command(marks, list, index, depth)
-    command = list[index]
-    params = command.parameters
-    case command.code
-    when 121 then marks[:sets] ||= !(params[0]..params[1]).all? { |id| temporary_switch?(id) }
-    when 122 then marks[:sets] ||= !(params[0]..params[1]).all? { |id| temporary_variable?(id) }
-    when 123 then marks[:own_switch] = true
-    when 125, 126, 127, 128 then marks[:gives] = true
-    when 201 then marks[:travel] = true
-    when 301 then marks[:battle] = true
-    when *MESSAGE_CODES then marks[:says] = true
-    when 355 then mark_script(marks, script_at(list, index))
-    when 117 then merge(marks, common_marks(params[0], depth + 1))
-    else marks[:story] = true if STORY_CODES.include?(command.code)
-    end
+  # @param event [Game_Event, nil] The event whose page the list may be, nil for none.
+  # @return [Boolean] Whether it does.
+  def self.story_command?(list, index, event = nil)
+    sorting(list, event, index)[:story]
   end
 
-  # Adds what a common event does, of what can run now, sorted once per common event and depth in
-  # a frame, since the game's state decides what can run.
-  #
-  # The depth is part of the key, since a common event sorted deep down counts the events it calls
-  # past MAX_DEPTH as story, which a call from higher up must not take over.
-  #
-  # @param id [Integer] The common event.
-  # @param depth [Integer] How deep it is called.
-  # @return [Hash] What it does, see marks_of; nothing for one of OWN_COMMON_EVENTS, which runs in
-  #   the player's own game whoever calls it; a common event too deep counts as story.
-  def self.common_marks(id, depth)
-    return {} if OWN_COMMON_EVENTS.include?(id)
-    return { :story => true } if depth > MAX_DEPTH
-
-    unless @common_frame == Graphics.frame_count
-      @common_frame = Graphics.frame_count
-      @common_kinds = {}
-    end
-    @common_kinds[[id, depth]] ||= begin
-      common = $data_common_events[id]
-      common ? marks_of(runnable(common.list || []), depth) : {}
-    end
-  end
-
-  # Joins what a called common event does into what its caller does.
-  #
-  # @param marks [Hash] The caller's.
-  # @param more [Hash] The common event's.
-  def self.merge(marks, more)
-    more.each { |key, value| marks[key] ||= value }
-  end
-
-  # Marks what a script does: a talk's, travel, or story for any other.
-  #
-  # @param marks [Hash] What the list does so far.
-  # @param script [String] The script.
-  def self.mark_script(marks, script)
-    if script =~ TRAVEL_SCRIPTS
-      marks[:travel] = true
-    elsif script !~ TALK_SCRIPTS
-      marks[:story] = true
-    end
-  end
-
-  # Reads a script command with its continuation lines.
+  # Sorts a list in the DLL, or takes its last answer while the values the sort read stay as they
+  # were. The DLL names the switches, variables and personal checks a sort reads the first time
+  # (needs), which are kept per list and sent with every later sort, so a sort is one call.
   #
   # @param list [Array<RPG::EventCommand>] The commands.
-  # @param index [Integer] The script command's place.
-  # @return [String] The script.
-  def self.script_at(list, index)
-    lines = [list[index].parameters[0].to_s]
-    index += 1
-    while list[index] && list[index].code == 655
-      lines << list[index].parameters[0].to_s
-      index += 1
+  # @param event [Game_Event, nil] The event whose page the list may be, nil for none.
+  # @param index [Integer, nil] The command whose story alone is asked, see story_command?.
+  # @return [Hash] :kind, :list_kind, :may_tell and :scene, or :story for an index; UNSORTED when
+  #   the DLL does not answer.
+  def self.sorting(list, event = nil, index = nil)
+    request = request_for(list, event)
+    request["index"] = index if index
+    key = [site_key(request, list), index]
+    needs = (@needs[key[0]] ||= {})
+    kept = @answers[key]
+    return kept[1] if kept && kept[2].equal?(list) && kept[0] == values_of(needs)
+
+    answer = ask(SORT_TOPIC, request, needs)
+    if answer && answer["unknown"] && !request["list"]
+      request = inline_request(list, event).merge(request.select { |field, _value| %w(index resident).include?(field) })
+      answer = ask(SORT_TOPIC, request, needs)
     end
-    lines.join("\n")
+    found = answer && !answer["unknown"] ? answer_of(answer) : unsorted(key, index)
+    @answers.clear if @answers.size >= MAX_KEPT_SORTS
+    @answers[key] = [values_of(needs), found, list]
+    found
   end
 
-  # Reports whether a switch is only scratch, or the player's own apart from party membership.
+  # Names the list a sort asks for: a map event's page or a common event, which the DLL reads from
+  # the game's data, or the commands themselves for any other list.
   #
-  # @param id [Integer] The switch.
-  # @return [Boolean] Whether it is.
-  def self.temporary_switch?(id)
-    return false if id.between?(1001, 2000)
-
-    $data_system.switches[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpStoryState) && MGQ_MpStoryState.personal_switch?(id)) ? true : false
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @param event [Game_Event, nil] The event whose page the list may be, nil for none.
+  # @return [Hash] The request.
+  def self.request_for(list, event)
+    page = event && $game_map ? event.mgq_mp_pages.index { |candidate| candidate.list.equal?(list) } : nil
+    id = page ? nil : common_id(list)
+    request = if page
+                { "map" => $game_map.map_id, "event" => event.id, "page" => page, "size" => list.size }
+              elsif id
+                { "common" => id, "size" => list.size }
+              else
+                inline_request(list, event)
+              end
+    request["resident"] = true if defined?(MGQ_MpCoopCastle) && MGQ_MpCoopCastle.resident?(list)
+    request
   end
 
-  # Reports whether a variable is only scratch, or the player's own, such as affection or where the
-  # Pocket Castle's way out returns them.
+  # Hands a list to the DLL whole, for a list the game's data does not hold as the game shows it:
+  # each command's parameters as plain values, anything else as nil.
   #
-  # @param id [Integer] The variable.
-  # @return [Boolean] Whether it is.
-  def self.temporary_variable?(id)
-    $data_system.variables[id].to_s =~ TEMPORARY_NAMES || (defined?(MGQ_MpStoryState) && MGQ_MpStoryState.personal_variable?(id)) ? true : false
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @param event [Game_Event, nil] The event whose current page the list may be, whose trigger counts then.
+  # @return [Hash] The request.
+  def self.inline_request(list, event)
+    rows = list.map { |command| [command.code, command.indent, plain(command.parameters)] }
+    { "list" => rows, "trigger" => event && list.equal?(event.list) ? event.trigger : nil }
+  end
+
+  # Turns a parameter into a value that crosses the bridge.
+  #
+  # @param value [Object] The parameter.
+  # @return [Object] It, an Array of its plain values, or nil.
+  def self.plain(value)
+    case value
+    when nil, true, false, Integer then value
+    when String then value.valid_encoding? ? value : nil
+    when Array then value.map { |item| plain(item) }
+    end
+  end
+
+  # Names a sort's list for the kept needs and answers.
+  #
+  # @param request [Hash] The request.
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @return [Array] The key.
+  def self.site_key(request, list)
+    return [:page, request["map"], request["event"], request["page"]] if request["page"]
+    return [:common, request["common"]] if request["common"]
+
+    [:list, list.object_id]
+  end
+
+  # Finds a common event by its commands, as the game sets one up with its list alone.
+  #
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @return [Integer, nil] The common event, nil for none.
+  def self.common_id(list)
+    return nil unless $data_common_events
+
+    unless @common_ids && @common_ids_of.equal?($data_common_events)
+      @common_ids_of = $data_common_events
+      @common_ids = {}.compare_by_identity
+      $data_common_events.each_with_index { |common, id| @common_ids[common.list] = id if common && common.list }
+    end
+    @common_ids[list]
+  end
+
+  # Asks a topic of the sorter, handing over the values it names it needs until it has them all.
+  #
+  # @param topic [String] SORT_TOPIC or KINDS_TOPIC.
+  # @param request [Hash] The request, which takes the values.
+  # @param needs [Hash] The values the DLL named for this list, by kind, kept and grown here.
+  # @return [Hash, nil] The answer, nil when the DLL did not give one.
+  def self.ask(topic, request, needs)
+    MAX_SORT_ROUNDS.times do
+      request["values"] = values_of(needs)
+      answer = MGQ_Multiplayer::Bridge.call(topic, request)
+      return nil unless answer.is_a?(Hash)
+      return answer unless answer["needs"]
+      return nil unless add_needs(needs, answer["needs"])
+    end
+    nil
+  end
+
+  # Adds what the DLL named it needs to the kept needs.
+  #
+  # @param needs [Hash] The kept needs: each kind's ids as Hash keys.
+  # @param wanted [Hash] The DLL's needs: each kind's ids.
+  # @return [Boolean] Whether any is new.
+  def self.add_needs(needs, wanted)
+    grew = false
+    wanted.each do |kind, ids|
+      known = (needs[kind] ||= {})
+      ids.each { |id| grew = known[id] = true unless known[id] }
+    end
+    grew
+  end
+
+  # Reads the values the DLL named: switches, variables (their whole numbers, nil for none) and
+  # whether switches and variables are the player's own.
+  #
+  # @param needs [Hash] The kept needs, see add_needs.
+  # @return [Hash] The values, by kind and id.
+  def self.values_of(needs)
+    values = {}
+    needs.each do |kind, ids|
+      values[kind] = Hash[ids.keys.map { |id| [id, value_of(kind, id)] }]
+    end
+    values
+  end
+
+  # Reads one value the DLL named.
+  #
+  # @param kind [String] "s", "v", "ps" or "pv".
+  # @param id [Integer] The switch or variable.
+  # @return [Boolean, Integer, nil] The value.
+  def self.value_of(kind, id)
+    case kind
+    when "s" then $game_switches ? $game_switches[id] == true : false
+    when "v" then $game_variables ? number($game_variables[id]) : 0
+    when "ps" then defined?(MGQ_MpStoryState) && MGQ_MpStoryState.personal_switch?(id) ? true : false
+    when "pv" then defined?(MGQ_MpStoryState) && MGQ_MpStoryState.personal_variable?(id) ? true : false
+    end
+  end
+
+  # Reads a variable as a branch does, its to_i, nil for a value without a number.
+  #
+  # @param value [Object] The variable's value.
+  # @return [Integer, nil] Its number.
+  def self.number(value)
+    value.to_i
+  rescue NoMethodError
+    nil
+  end
+
+  # Takes the DLL's sort.
+  #
+  # @param answer [Hash] The answer.
+  # @return [Hash] :kind, :list_kind, :may_tell, :scene and :marks, or :story.
+  def self.answer_of(answer)
+    return { :story => answer["story"] == true } if answer.key?("story")
+
+    { :kind => answer["kind"].to_s.to_sym, :list_kind => answer["list_kind"].to_s.to_sym,
+      :may_tell => answer["may_tell"] == true, :scene => answer["scene"] == true, :marks => Array(answer["marks"]) }
+  end
+
+  # The answer of a sort the DLL could not give, logged once per list: the list plays as the
+  # player's own talk, as it would without the mod.
+  #
+  # @param key [Array] The list's key, see site_key.
+  # @param index [Integer, nil] The command asked for.
+  # @return [Hash] UNSORTED, or no story for a command.
+  def self.unsorted(key, index)
+    log_once([:unsorted, key[0]], "the DLL could not sort #{key[0].inspect}: it plays as a talk")
+    index ? { :story => false } : UNSORTED
   end
 
   # Lists the self switches of the chests on the map.
@@ -603,17 +500,44 @@ module MGQ_MpCoopEvents
     return @chest_keys if @chest_keys_map == $game_map.map_id
 
     @chest_keys_map = $game_map.map_id
-    @chest_keys = $game_map.events.values.map { |event| chest_key_of_pages(event) }.compact
+    events = $game_map.events.values
+    kinds = page_kinds(events)
+    @chest_keys = events.map { |event| chest_key_of_pages(event, kinds) }.compact
   end
 
   # Finds the self switch an event sets as a chest, on whichever of its pages gives the chest's
   # items, since a chest the player opened shows another page.
   #
   # @param event [Game_Event] The event.
+  # @param kinds [Hash] The kinds of the map's pages the DLL sorted at once, see page_kinds.
   # @return [Array, nil] Its key, nil when no page is a chest's.
-  def self.chest_key_of_pages(event)
-    page = event.mgq_mp_pages.find { |candidate| kind_of(candidate.list || []) == :chest }
-    page ? chest_key(event, page.list) : nil
+  def self.chest_key_of_pages(event, kinds = {})
+    pages = event.mgq_mp_pages
+    index = (0...pages.size).find { |place| (kinds[[event.id, place]] || kind_of(pages[place].list || [])) == :chest }
+    index ? chest_key(event, pages[index].list) : nil
+  end
+
+  # Sorts every page of the map's events in one call to the DLL, by the game's data; a page the
+  # data does not hold as the game shows it is left to kind_of.
+  #
+  # @param events [Array<Game_Event>] The map's events.
+  # @return [Hash] Each page's kind by [event, page].
+  def self.page_kinds(events)
+    pages = []
+    residents = []
+    events.each do |event|
+      event.mgq_mp_pages.each_with_index do |page, place|
+        list = page.list || []
+        pages << [event.id, place, list.size]
+        residents << [event.id, place] if defined?(MGQ_MpCoopCastle) && MGQ_MpCoopCastle.resident?(list)
+      end
+    end
+    request = { "map" => $game_map.map_id, "pages" => pages }
+    request["residents"] = residents unless residents.empty?
+    answer = ask(KINDS_TOPIC, request, @needs[[:map, $game_map.map_id]] ||= {})
+    kinds = {}
+    Array(answer && answer["kinds"]).each_with_index { |kind, place| kinds[pages[place][0, 2]] = kind.to_s.to_sym if kind }
+    kinds
   end
 
   # Reports whether a self switch belongs to a chest on the map, which makes it the player's own.
@@ -677,8 +601,8 @@ module MGQ_MpCoopEvents
       hold_for_tie(interpreter)
     end
     @moved_by_story_at = nil if @telling
-    @may_tell = WATCHED_KINDS.include?(sorted) && (following? || leading_story?) && may_tell?(list || [])
-    hold = @telling && scene?(list) && !MGQ_MpCoopGather.gathered?
+    @may_tell = WATCHED_KINDS.include?(sorted) && (following? || leading_story?) && may_tell?(list || [], event)
+    hold = @telling && scene?(list, event) && !MGQ_MpCoopGather.gathered?
     MGQ_MpCoopGather.hold(interpreter) if hold
     @chest = event && sorted == :chest && shares_chests? ? { :interpreter => interpreter, :key => chest_key(event), :gains => [] } : nil
     log_start(event, sorted, hold, list) if MGQ_MpCoop::Scope.sharing?
@@ -840,7 +764,8 @@ module MGQ_MpCoopEvents
 
     list = MGQ_MpGame.get(interpreter, :list)
     index = MGQ_MpGame.get(interpreter, :index).to_i
-    return unless list && list[index] && story_command?(list, index)
+    event_id = MGQ_MpGame.get(interpreter, :event_id).to_i
+    return unless list && list[index] && story_command?(list, index, event_id > 0 ? $game_map.events[event_id] : nil)
 
     @may_tell = false
     lead = MGQ_MpCoop::Scope.teller
@@ -907,27 +832,6 @@ module MGQ_MpCoopEvents
   # @return [String] The notice.
   def self.refusal_text(lead)
     MGQ_MpCoop::Scope.raid? ? "#{lead.state['name']} is telling the story here." : "Only #{lead.state['name']} can move the story on."
-  end
-
-  # Reports whether an event command moves the story on, as story_marks? sorts it.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @param index [Integer] The command's place.
-  # @return [Boolean] Whether it does.
-  def self.story_command?(list, index)
-    marks = {}
-    mark_command(marks, list, index, 0)
-    story_marks?(marks) || marks[:own_switch] || marks[:battle] || marks[:choice_story] ? true : false
-  end
-
-  # Reports whether a list of commands is a story scene: story with its own dialogue or novel scene.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @return [Boolean] Whether it is.
-  def self.scene?(list)
-    return false unless list
-
-    runnable(list).any? { |c| MESSAGE_CODES.include?(c.code) || (c.code == 355 && c.parameters[0].to_s =~ /\A\s*call_novel_scene/) } && kind_of(list) == :story
   end
 
   # Reports whether the leader's main event plays story now, whose companions join the members too.
