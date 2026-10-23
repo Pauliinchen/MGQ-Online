@@ -2,6 +2,7 @@
 #  coop_events.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Faded the screen in once it stayed dark for ten seconds while nothing of a watched scene reached it
 #      Paulinchen  2026-10-17: Sorted a resumed raid boss fight's event as story
 #      Paulinchen  2026-10-15: Faded the screen in once it stayed dark with nothing running that could fade it in
 #      Paulinchen  2026-10-12: Faded the screen in once per arrival on a map whose self-running story another game runs
@@ -155,6 +156,10 @@ module MGQ_MpCoopEvents
 
   # Frames the screen may stay dark while nothing runs that could fade it in, five seconds.
   DARK_SCREEN_FRAMES = 300
+
+  # Frames the screen may stay dark while the player watches another player's scene on the map and
+  # nothing of it reaches the player's screen, ten seconds.
+  WATCHED_DARK_FRAMES = 600
 
   # The trigger of an event that runs alongside the map, and the command that fades the screen in.
   PARALLEL_TRIGGER = 4
@@ -1066,33 +1071,37 @@ module MGQ_MpCoopEvents
     log("fading the screen in for a story under way failed: #{e.class}: #{e.message}")
   end
 
-  # Fades the screen in once it stayed dark for DARK_SCREEN_FRAMES while nothing could fade it in.
+  # Fades the screen in once it stayed dark for DARK_SCREEN_FRAMES while nothing could fade it in,
+  # or for WATCHED_DARK_FRAMES while the player watches another player's scene that shows nothing.
   #
   # A story event whose fade-in another game's story already ran, as an arrival after a game over
   # returned the player to an earlier point, leaves the screen black for good.
   def self.lift_dark_screen
     return @dark_frames = 0 unless stuck_dark?
 
+    watching = MGQ_MpCoopScene.watching?
+    limit = watching ? WATCHED_DARK_FRAMES : DARK_SCREEN_FRAMES
     @dark_frames = @dark_frames.to_i + 1
-    return if @dark_frames < DARK_SCREEN_FRAMES
+    return if @dark_frames < limit
 
     @dark_frames = 0
     $game_map.screen.start_fadein(LATE_FADEIN_FRAMES)
-    log("faded the screen in on map #{$game_map.map_id}: it stayed dark for #{DARK_SCREEN_FRAMES} frames with no event running that could fade it in")
+    log("faded the screen in on map #{$game_map.map_id}: it stayed dark for #{limit} frames with no event running that could fade it in" \
+        "#{watching ? ", and nothing of the scene the player watches reached the screen" : ''}")
   rescue => e
     log_once(:dark_screen, "fading in a screen left dark failed: #{e.class}: #{e.message}")
   end
 
   # Reports whether the screen is dark in a world while the player stands free on the map: no
-  # event runs or starts, no message shows, no transfer waits, no other player's scene plays here
-  # and no opening's setup runs.
+  # event runs or starts, no message shows, no transfer waits, no change of another player's scene
+  # the player watches reached the screen a moment ago and no opening's setup runs.
   #
   # @return [Boolean] Whether it is.
   def self.stuck_dark?
     return false unless MGQ_MpOverworldSync.in_world? && SceneManager.scene_is?(Scene_Map) && $game_map.screen.brightness == 0
     return false if $game_map.interpreter.running? || $game_message.busy? || $game_player.transfer?
     return false if $game_map.events.values.any? { |event| event.starting }
-    return false if MGQ_MpCoopScene.watching? || (defined?(MGQ_MpWorldOpening) && MGQ_MpWorldOpening.running?)
+    return false if (MGQ_MpCoopScene.watching? && MGQ_MpCoopScene.just_changed?) || (defined?(MGQ_MpWorldOpening) && MGQ_MpWorldOpening.running?)
 
     !parallel_fade_in?
   end

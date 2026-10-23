@@ -2,6 +2,7 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that a dark screen fades in while a watched scene shows nothing for ten seconds
 #      Paulinchen  2026-10-17: Checked that a resumed raid boss fight's event starts as story
 #      Paulinchen  2026-10-15: Checked that a screen left dark with nothing running fades in
 #                            - Checked that the Pocket Castle's tour is travel in a Raid World and story in a Classic world
@@ -2530,7 +2531,7 @@ $leader = nil
 $members = []
 
 # A screen left dark with nothing running that could fade it in.
-module MGQ_MpCoopScene; def self.watching?; $watching; end; end
+module MGQ_MpCoopScene; def self.watching?; $watching; end; def self.just_changed?; $scene_changed; end; end
 class Game_Map; def parallel_common_events; []; end; end
 SceneManager.scene = Scene_Map.new
 $game_map.events = { 30 => Game_Event.new(30, [RPG::Page.new([c(201, 0, 2, 5, 5, 2), c(0)])], 3) }
@@ -2540,8 +2541,16 @@ $game_message.busy = false
 $game_player = Game_Player.new
 $game_map.screen = LateScreen.new
 $watching = true
-MGQ_MpCoopEvents::DARK_SCREEN_FRAMES.times { MGQ_MpCoopEvents.update }
-check("a dark screen stays while another player's scene plays here", $game_map.screen.fadein, nil)
+$scene_changed = true
+MGQ_MpCoopEvents::WATCHED_DARK_FRAMES.times { MGQ_MpCoopEvents.update }
+check("a dark screen stays while another player's scene plays here and reaches the screen", $game_map.screen.fadein, nil)
+$scene_changed = false
+(MGQ_MpCoopEvents::WATCHED_DARK_FRAMES - 1).times { MGQ_MpCoopEvents.update }
+check("and a while after the scene last reached it", $game_map.screen.fadein, nil)
+MGQ_MpCoopEvents.update
+check("then fades in, as a scene the player cannot follow leaves it dark for good",
+      [$game_map.screen.fadein, $log.grep(/faded the screen in on map \d+: it stayed dark for 600 frames .*nothing of the scene/).size], [MGQ_MpCoopEvents::LATE_FADEIN_FRAMES, 1])
+$game_map.screen = LateScreen.new
 $watching = false
 $game_map.events[31] = Game_Event.new(31, [RPG::Page.new([c(230, 60), c(222), c(0)])], 4)
 MGQ_MpCoopEvents::DARK_SCREEN_FRAMES.times { MGQ_MpCoopEvents.update }
