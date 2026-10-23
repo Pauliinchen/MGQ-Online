@@ -2,6 +2,10 @@
 #  battles_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Asked the player before they leave the battle from a wait
+#                            - Told a guest who never got into the battle why, on the map, instead of the battle breaking off
+#                            - Numbered the battle's messages and sent those lost over a reconnect again
+#                            - Kept the battle's players by the seats they held at its start, taking one out only once gone
 #      Paulinchen  2026-10-20: Sent the skills a guest chains after an action and chained them on the host
 #      Paulinchen  2026-10-15: Carried a battle the battle server hosts over its battle channel
 #                            - Sent a served battle's messages to single players over its battle channel too
@@ -185,8 +189,10 @@ module MGQ_MpBattlesSync
     @battle_id = battle_id
     @solo = false
     @broken = false
+    @missed = nil
     @battle_running = false
     @served = false
+    Seats.pin_room
     Channel.reset
     kind = mode == :pvp ? (team ? 'team duel' : 'duel') : 'co-op battle'
     log("#{kind} #{battle_id} as #{role}, with #{seats.empty? ? 'nobody yet' : seats.map { |seat| who(seat) }.join(', ')}")
@@ -238,7 +244,7 @@ module MGQ_MpBattlesSync
   #   player, the seat alone for a player the game does not know.
   def self.who(seat)
     return @player.to_s if seat.nil?
-    return "the player (seat #{seat})" if seat == MGQ_MpOverworldSync::Me.seat
+    return "the player (seat #{seat})" if seat == own_seat
 
     name = peer_name(seat)
     name ? "#{name} (seat #{seat})" : "seat #{seat}"
@@ -252,7 +258,7 @@ module MGQ_MpBattlesSync
   # @param seat [Integer] Their world seat.
   # @return [String] The name.
   def self.seat_name(seat)
-    return Waiting::OWN_NAME if seat == MGQ_MpOverworldSync::Me.seat
+    return Waiting::OWN_NAME if seat == own_seat
 
     peer_name(seat) || "seat #{seat}"
   end
@@ -263,11 +269,42 @@ module MGQ_MpBattlesSync
   # @return [String, nil] The name, nil for a seat the game does not know or cannot read, as on a
   #   guest whose world closed during the battle.
   def self.peer_name(seat)
-    peer = MGQ_MpOverworldSync::Peers.at(seat)
+    peer = peer_at(seat)
     name = peer && peer.state && peer.state["name"]
     name ? name.to_s : nil
   rescue
     nil
+  end
+
+  # Tells the player's own seat in the live battle, see Seats.
+  #
+  # @return [Integer] The seat the battle knows the player by, the world seat outside a battle.
+  def self.own_seat
+    Seats.own
+  end
+
+  # Finds the player the live battle knows by a seat, see Seats.
+  #
+  # @param seat [Integer] The seat the battle knows them by.
+  # @return [MGQ_MpOverworldSync::Peers::Peer, nil] The player, also while away; nil once gone.
+  def self.peer_at(seat)
+    Seats.peer(seat)
+  end
+
+  # Tells the seat the live battle knows a player by, see Seats.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+  # @return [Integer, nil] The seat, nil when it names another player of the battle.
+  def self.seat_of(peer)
+    Seats.of(peer)
+  end
+
+  # Tells the world seat a message to a player of the live battle goes to, see Seats.
+  #
+  # @param seat [Integer] The seat the battle knows them by.
+  # @return [Integer, nil] Their world seat, nil while they are away or once gone.
+  def self.world_seat_of(seat)
+    Seats.world(seat)
   end
 
   # Names a battler with its id for Multiplayer InGame.log.
@@ -349,8 +386,9 @@ module MGQ_MpBattlesSync
   # Lets in the messages of players who are to join the running co-op battle late, before they are
   # among its guests (see battles_coop_hotjoin.rbx).
   #
-  # @param seats [Array<Integer>] Their world seats.
+  # @param seats [Array<Integer>] Their world seats, which the battle knows them by from then on.
   def self.expect(seats)
+    seats.each { |seat| peer_at(seat) }
     @expected = expected | seats
   end
 
@@ -409,9 +447,17 @@ module MGQ_MpBattlesSync
     return dropped(kind, peer, "no live battle over the world runs") unless world? && @role
     return dropped(kind, peer, "it is for another battle") unless message["bid"] == @battle_id
 
+    seat = seat_of(peer)
+    return dropped(kind, peer, "its seat names another player of the battle") unless seat
+
     # Every player of the battle hears of one who leaves, not only the host who takes them out.
     Departures.left(peer) if kind == "leave"
-    Channel.receive(peer.seat, kind, message[:payload].to_s)
+    return Sequence.resend(seat, message[:payload].to_s) if kind == Sequence::RESYNC_KIND
+
+    number = message[Sequence::NUMBER_FIELD].to_s
+    return Channel.receive(seat, kind, message[:payload].to_s) unless number =~ /\A\d{1,9}\z/
+
+    Sequence.take(seat, number.to_i, kind, message[:payload].to_s)
   end
 
   # Logs a battle message from the world's room that is left untaken, once per kind, reason and
@@ -431,7 +477,7 @@ module MGQ_MpBattlesSync
   def self.player_seats
     seats = Array(@seats)
     seats |= mode.player_seats
-    seats - [MGQ_MpOverworldSync::Me.seat]
+    seats - [own_seat]
   end
 
   # Marks the live battle as started. Called by the mode once its battle scene is on the way.
@@ -472,6 +518,7 @@ module MGQ_MpBattlesSync
     @broken = false
     @battle_running = false
     @transport = nil
+    Seats.forget
     MGQ_MpBattlesServed.close if @served && defined?(MGQ_MpBattlesServed)
     @served = false
     # The world's room stays open after a co-op battle; only a PvP battle's link ends with it.
@@ -492,6 +539,24 @@ module MGQ_MpBattlesSync
     Channel.post("broken") if tell_friend
   rescue => e
     log("break-off failed: #{e.class}: #{e.message}")
+  end
+
+  # Ends the live battle of a guest who never got into it, such as one that ended before its roster
+  # came: it breaks off, and the player is told why on the map instead of the battle breaking off.
+  #
+  # @param text [String] What the player is told, such as "Name's battle ended before you could join."
+  def self.miss(text)
+    @missed = text
+    break_off("the player never got into it: #{text}", false)
+  end
+
+  # Takes what the player is told of a live battle they never got into, see miss.
+  #
+  # @return [String, nil] The text, nil when the battle broke off otherwise.
+  def self.take_missed
+    text = @missed
+    @missed = nil
+    text
   end
 
   # Tells whether the live battle broke off.
@@ -592,13 +657,16 @@ module MGQ_MpBattlesSync
   # @param kind [String] What it is.
   # @param battle_id [String] The battle's id.
   # @param body [String] The rest.
+  # @param number [Integer, nil] The message's number to that game, see Sequence; nil for none.
   # @return [Boolean] Whether it went out.
-  def self.tell(seat, kind, battle_id, body = "")
+  def self.tell(seat, kind, battle_id, body = "", number = nil)
     if served? && battle_id.to_s == @battle_id.to_s
       return !MGQ_MpBattlesServed.post([host? ? seat : MGQ_MpBattlesServed::SERVER_SEAT], kind, body).empty?
     end
 
-    MGQ_MpOverworldSync.tell(seat, { "battle" => kind, "bid" => battle_id }, body)
+    fields = { "battle" => kind, "bid" => battle_id }
+    fields[Sequence::NUMBER_FIELD] = number if number
+    MGQ_MpOverworldSync.tell(seat, fields, body)
   end
 
   # Ends the battle once the friend is gone: won, or played on by the computer on the host.
@@ -647,6 +715,7 @@ module MGQ_MpBattlesSync
       @messages = []
       @checked = 0
       @gone = false
+      Sequence.reset
     end
 
     # Sends a message: over the world's room to each of the battle's other players, see
@@ -668,9 +737,18 @@ module MGQ_MpBattlesSync
         return !reached.empty?
       end
 
-      reached = MGQ_MpBattlesSync.player_seats.select do |seat|
-        MGQ_MpBattlesSync.tell(seat, kind, MGQ_MpBattlesSync.battle_id, body)
-      end
+      post_to(MGQ_MpBattlesSync.player_seats, kind, body)
+    end
+
+    # Sends a message over the world's room to some players of the battle, numbered for each (see
+    # Sequence), so a player away gets it once they are back.
+    #
+    # @param seats [Array<Integer>] The seats the battle knows them by.
+    # @param kind [String] What it is.
+    # @param body [String] The rest.
+    # @return [Boolean] Whether it went out to anyone now.
+    def self.post_to(seats, kind, body = "")
+      reached = seats.select { |seat| Sequence.deliver(seat, kind, body) }
       noted_post(kind, body, reached.empty? ? nil : "to #{reached.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
       !reached.empty?
     end
@@ -766,34 +844,40 @@ module MGQ_MpBattlesSync
       @gone
     end
 
-    # Looks at who of a co-op battle or a duel is still in the world's room.
+    # Looks at who of a co-op battle or a duel is still in it: the players who said they leave and
+    # those the world told are gone (see Seats.presence). A player away is still in it.
     #
     # @return [Boolean] Whether the other side is gone: every guest for the host, the host for a guest.
     def self.world_gone?
       return served_gone? if MGQ_MpBattlesSync.served?
       return true unless MGQ_MpOverworldSync.in_world?
 
-      MGQ_MpBattlesSync.guests_in.each do |seat|
-        MGQ_MpBattlesSync.guest_left(seat) if MGQ_MpOverworldSync::Peers.at(seat).nil? || take_from("leave", seat)
-      end
+      take_departures
       return true if MGQ_MpBattlesSync.host? && MGQ_MpBattlesSync.mode.other_side_gone?
 
       MGQ_MpBattlesSync.guests_in.empty?
     end
 
-    # Looks at who of a battle the server hosts is still on its battle channel: the server notes
-    # each player who left it or said they leave, a guest counts the battle as gone once the
-    # channel closed.
+    # Looks at who of a battle the server hosts is still in it: the server notes each player who
+    # said they leave or whom the presence of its players tells gone (see MGQ_MpBattlesServed.take),
+    # a guest counts the battle as gone once the channel closed.
     #
     # @return [Boolean] Whether the other side is gone.
     def self.served_gone?
       return true if MGQ_MpBattlesServed.closed?
       return false unless MGQ_MpBattlesSync.host?
 
-      MGQ_MpBattlesSync.guests_in.each do |seat|
-        MGQ_MpBattlesSync.guest_left(seat) if MGQ_MpBattlesServed.out?(seat) || take_from("leave", seat)
-      end
+      take_departures
       MGQ_MpBattlesSync.guests_in.empty?
+    end
+
+    # Takes the players who left the battle out of it: those who said they leave, and those the
+    # presence of the players tells gone.
+    def self.take_departures
+      gone = Seats.take_gone
+      MGQ_MpBattlesSync.guests_in.each do |seat|
+        MGQ_MpBattlesSync.guest_left(seat) if gone.include?(seat) || take_from("leave", seat)
+      end
     end
 
     # Reports why the friend's game will send nothing more for the battle, taking a forfeit or
@@ -824,7 +908,7 @@ module MGQ_MpBattlesSync
     def self.poll
       @messages ||= []
       MGQ_MpBattlesServed.drain if MGQ_MpBattlesSync.served?
-      return if MGQ_MpBattlesSync.world?
+      return Sequence.let_gaps_go if MGQ_MpBattlesSync.world?
 
       while (text = MGQ_Multiplayer::Link.next_message)
         kind, body = text.split("\n", 2)
@@ -1150,6 +1234,264 @@ module MGQ_MpBattlesSync
     end
   end
 
+  # Carries a live battle's messages over the world's room across a reconnect, in which messages
+  # may be lost and the relay keeps none. Each message to a player carries its number to them; the
+  # sender keeps the last KEPT_SENDS it sent each player; whoever sees a player of the battle come
+  # back asks them for what came after the last number taken (RESYNC_KIND); the receiver takes
+  # each number once and in order.
+  #
+  # Games of 0.6.8 and before number nothing and ignore the number, so the battle asks no game
+  # again before one of its messages came numbered.
+  module Sequence
+    # The message's field that carries its number.
+    NUMBER_FIELD = "sq"
+
+    # The message that asks a player for what they sent after a number, as its body.
+    RESYNC_KIND = "resync"
+
+    # Messages kept per player to send again, about fifty seconds of the host's stream.
+    KEPT_SENDS = 300
+
+    # Forgets the numbers of an earlier battle.
+    def self.reset
+      @sent = {}
+      @taken = {}
+      @held = {}
+      @held_since = {}
+      @numbering = []
+    end
+
+    # Numbers a message to a player, keeps it, and sends it unless the player is away.
+    #
+    # @param seat [Integer] The seat the battle knows them by.
+    # @param kind [String] What it is.
+    # @param body [String] The rest.
+    # @return [Boolean] Whether it went out now.
+    def self.deliver(seat, kind, body)
+      reset unless @sent
+      counter = @sent[seat] ||= [0, []]
+      counter[0] += 1
+      entry = [counter[0], kind, body]
+      counter[1] << entry
+      counter[1].shift while counter[1].size > KEPT_SENDS
+      transmit(seat, entry)
+    end
+
+    # Sends a kept message to the world seat its player holds now.
+    #
+    # @param seat [Integer] The seat the battle knows them by.
+    # @param entry [Array] The message's number, kind and body.
+    # @return [Boolean] Whether it went out.
+    def self.transmit(seat, entry)
+      world = MGQ_MpBattlesSync.world_seat_of(seat)
+      world ? MGQ_MpBattlesSync.tell(world, entry[1], MGQ_MpBattlesSync.battle_id, entry[2], entry[0]) : false
+    end
+
+    # Takes a numbered message: the next one at once with those held after it, a later one held
+    # until the ones before came, one taken before left out.
+    #
+    # @param seat [Integer] The seat the battle knows the sender by.
+    # @param number [Integer] Its number.
+    # @param kind [String] What it is.
+    # @param body [String] The rest.
+    def self.take(seat, number, kind, body)
+      reset unless @taken
+      @numbering << seat unless @numbering.include?(seat)
+      last = @taken[seat]
+      if last && number <= last
+        return MGQ_MpBattlesSync.log_once([:taken_before, seat, MGQ_MpBattlesSync.battle_id], "left out #{kind[0, 40]} from #{MGQ_MpBattlesSync.who(seat)}, taken before")
+      end
+      if last && number > last + 1
+        (@held[seat] ||= {})[number] = [kind, body]
+        @held_since[seat] ||= Graphics.frame_count
+        return MGQ_MpBattlesSync.log_once([:held, seat, last, MGQ_MpBattlesSync.battle_id], "holds #{kind[0, 40]} from #{MGQ_MpBattlesSync.who(seat)} until those after #{last} came")
+      end
+
+      @taken[seat] = number
+      Channel.receive(seat, kind, body)
+      release(seat)
+    end
+
+    # Hands on the held messages that follow the last one taken from a player.
+    #
+    # @param seat [Integer] The seat the battle knows the sender by.
+    def self.release(seat)
+      held = @held[seat]
+      return unless held
+
+      while (entry = held.delete(@taken[seat] + 1))
+        @taken[seat] += 1
+        Channel.receive(seat, *entry)
+      end
+      @held_since.delete(seat) if held.empty?
+    end
+
+    # Hands on the held messages of a player whose missing ones never came within the world's
+    # grace, so the battle goes on without them.
+    def self.let_gaps_go
+      return unless @held_since
+
+      @held_since.keys.each do |seat|
+        next if Graphics.frame_count - @held_since[seat] < MGQ_MpOverworldSync::REJOIN_FRAMES
+
+        first = @held[seat].keys.min
+        MGQ_MpBattlesSync.log("messages #{@taken[seat] + 1} to #{first - 1} from #{MGQ_MpBattlesSync.who(seat)} never came, going on without them")
+        @taken[seat] = first - 1
+        @held_since.delete(seat)
+        release(seat)
+      end
+    end
+
+    # Asks a player of the battle who came back for what they sent after the last message taken.
+    # Called by overworld_sync.rbx for each change of a player's presence.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    # @param change [Symbol] :away, :back, :moved or :gone.
+    def self.presence(peer, change)
+      return unless [:back, :moved].include?(change) && peer.away.nil?
+      return unless MGQ_MpBattlesSync.role && MGQ_MpBattlesSync.world? && !MGQ_MpBattlesSync.served?
+
+      seat = Seats.of_kept(peer)
+      return unless seat && Array(@numbering).include?(seat)
+
+      last = @taken[seat].to_i
+      MGQ_MpBattlesSync.tell(peer.seat, RESYNC_KIND, MGQ_MpBattlesSync.battle_id, last.to_s)
+      MGQ_MpBattlesSync.log("#{MGQ_MpBattlesSync.who(seat)} is back: asked for what they sent after message #{last}")
+    end
+
+    # Sends a player who came back the kept messages after the last one they took, forgetting
+    # those before.
+    #
+    # @param seat [Integer] The seat the battle knows them by.
+    # @param body [String] The number of the last message they took.
+    def self.resend(seat, body)
+      return unless (MGQ_MpBattlesSync.player_seats | MGQ_MpBattlesSync.expected).include?(seat)
+
+      counter = (@sent || {})[seat]
+      return MGQ_MpBattlesSync.log("#{MGQ_MpBattlesSync.who(seat)} asked for messages again, none kept for them") unless counter
+
+      counter[1].reject! { |entry| entry[0] <= body.to_i }
+      sent = counter[1].select { |entry| transmit(seat, entry) }
+      MGQ_MpBattlesSync.log("#{MGQ_MpBattlesSync.who(seat)} asked for what came after message #{body.to_i}: sent #{sent.size} of #{counter[1].size} again")
+    end
+  end
+
+  # The live battle's names for its players: the world seats they held as the battle began, which
+  # its structures and the messages between its games carry. A reconnect may deal the world's seats
+  # anew, so each name stays with its player's id. Where a player is, and whether they are present,
+  # away or gone, only MGQ_MpOverworldSync::Peers knows; it is asked at every send and receive, and
+  # its gone event alone takes a player out (see presence).
+  module Seats
+    # Names the room as it is at the battle's start: the player's own seat and every known player's.
+    def self.pin_room
+      @own = MGQ_MpOverworldSync::Me.seat
+      @ids = {}
+      @gone = []
+      MGQ_MpOverworldSync::Peers.all.each { |peer| pin(peer.seat, peer) }
+    end
+
+    # Forgets the names, as the live battle finishes.
+    def self.forget
+      @own = nil
+      @ids = {}
+      @gone = []
+    end
+
+    # Tells the player's own seat in the battle.
+    #
+    # @return [Integer] The world seat they held at its start, their world seat outside a battle.
+    def self.own
+      @own || MGQ_MpOverworldSync::Me.seat
+    end
+
+    # Tells the seat the battle knows a player by: the one named for their id, else, for a player
+    # new to the battle, their world seat, named for them from then on.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    # @return [Integer, nil] The seat, nil when their world seat names another player still kept.
+    def self.of(peer)
+      id = peer.state["id"].to_s
+      return peer.seat if @own.nil? || id.empty?
+
+      named = @ids.key(id)
+      return named if named
+
+      holder = @ids[peer.seat]
+      return nil if holder && MGQ_MpOverworldSync::Peers.kept_with_id(holder)
+
+      pin(peer.seat, peer)
+    end
+
+    # Finds the player the battle knows by a seat, on whatever world seat they hold now.
+    #
+    # @param seat [Integer] The seat the battle knows them by.
+    # @return [MGQ_MpOverworldSync::Peers::Peer, nil] The player, also while away; nil once gone.
+    def self.peer(seat)
+      return MGQ_MpOverworldSync::Peers.at(seat) unless @own
+
+      id = @ids[seat]
+      return MGQ_MpOverworldSync::Peers.kept_with_id(id) if id
+
+      peer = MGQ_MpOverworldSync::Peers.at(seat)
+      peer && of(peer) == seat ? peer : nil
+    end
+
+    # Tells the world seat a message to a player of the battle goes to.
+    #
+    # @param seat [Integer] The seat the battle knows them by.
+    # @return [Integer, nil] Their world seat now, the seat itself for a player the world never told
+    #   of; nil while they are away, since their old seat may be another player's, or once gone.
+    def self.world(seat)
+      found = peer(seat)
+      return found.away.nil? ? found.seat : nil if found
+
+      @own && @ids[seat] ? nil : seat
+    end
+
+    # Names a seat for a player's id.
+    #
+    # @param seat [Integer] The seat.
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    # @return [Integer] The seat.
+    def self.pin(seat, peer)
+      id = peer.state["id"].to_s
+      @ids[seat] = id unless id.empty? || seat == @own
+      seat
+    end
+
+    # Notes a player of the battle the world tells is gone, whom the battle's next look takes out
+    # (see take_gone). Called by overworld_sync.rbx for each change of a player's presence.
+    #
+    # Away is a pause: the battle sends them nothing meanwhile and waits for them.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    # @param change [Symbol] :away, :back, :moved or :gone.
+    def self.presence(peer, change)
+      return unless @own && change == :gone
+
+      seat = of_kept(peer)
+      @gone << seat if seat && !@gone.include?(seat)
+    end
+
+    # Tells the seat the battle knows a player by, without naming one for a player new to it.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    # @return [Integer, nil] The seat, nil for a player the battle never named.
+    def self.of_kept(peer)
+      id = peer.state["id"].to_s
+      id.empty? ? peer.seat : @ids.key(id)
+    end
+
+    # Takes the players the world told are gone since the last look.
+    #
+    # @return [Array<Integer>] The seats the battle knows them by.
+    def self.take_gone
+      gone = Array(@gone)
+      @gone = []
+      gone
+    end
+  end
+
   # Tells the player at once when another player leaves the live battle or joins it while it runs,
   # in the battle's popup at the top and in a notice at the bottom left of the map.
   #
@@ -1171,16 +1513,28 @@ module MGQ_MpBattlesSync
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
     def self.left(peer)
-      return unless MGQ_MpBattlesSync.player_seats.include?(peer.seat)
+      return unless MGQ_MpBattlesSync.player_seats.include?(MGQ_MpBattlesSync.seat_of(peer))
 
       tell(peer, "#{peer.state['name']} left the battle.")
     end
 
-    # Tells that a player of the battle left the world. Called by overworld_sync.rbx.
+    # Tells the player something of the battle at once, in the battle's popup and in a notice on the
+  # map, such as why they never got into a battle.
+  #
+  # @param text [String] What the player sees.
+  def self.say(text)
+    MGQ_MpBattlesSync.log("told the player: #{text}")
+    popup(text, [POPUP_MARK, :said])
+    MGQ_MpOverworldSync.notice(text)
+  rescue => e
+    MGQ_MpBattlesSync.log("telling the player failed: #{e.class}: #{e.message}")
+  end
+
+  # Tells that a player of the battle left the world. Called by overworld_sync.rbx.
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
     def self.gone(peer)
-      return unless MGQ_MpBattlesSync.role && MGQ_MpBattlesSync.world? && MGQ_MpBattlesSync.player_seats.include?(peer.seat)
+      return unless MGQ_MpBattlesSync.role && MGQ_MpBattlesSync.world? && MGQ_MpBattlesSync.player_seats.include?(Seats.of_kept(peer))
 
       tell(peer, "#{peer.state['name']} left the world, and the battle.")
     end
@@ -1200,13 +1554,14 @@ module MGQ_MpBattlesSync
     # @param kind [Symbol] :left for a departure, :joined for a join, told apart since a player may
     #   join and then leave.
     def self.tell(peer, text, kind = :left)
-      key = [MGQ_MpBattlesSync.battle_id, peer.seat, kind]
+      seat = Seats.of_kept(peer) || peer.seat
+      key = [MGQ_MpBattlesSync.battle_id, seat, kind]
       return if @told.include?(key)
 
       @told.push(key)
       @told.shift while @told.size > KEPT
       MGQ_MpBattlesSync.log("told the player: #{text}")
-      popup(text, [POPUP_MARK, kind, peer.seat])
+      popup(text, [POPUP_MARK, kind, seat])
       MGQ_MpOverworldSync.notice(text)
     rescue => e
       MGQ_MpBattlesSync.log("telling of a departure failed: #{e.class}: #{e.message}")
@@ -1226,8 +1581,8 @@ module MGQ_MpBattlesSync
   end
 
   # The box that says what the game waits for, whom it still waits for and for how long, and offers
-  # to leave the battle when the wait drags on. The player moves it and changes its width with Alt
-  # (MGQ_MpUi::Layout); its three lines keep their height.
+  # to leave the battle when the wait drags on, asking first. The player moves it and changes its
+  # width with Alt (MGQ_MpUi::Layout); its three lines keep their height.
   module Waiting
     # Width of the box where it starts.
     WIDTH = 360
@@ -1266,6 +1621,23 @@ module MGQ_MpBattlesSync
 
     # What the box says once it offers to leave a story's battle, which the player then loses.
     LEAVE_LOSES_TEXT = "Cancel leaves and loses."
+
+    # What the box says once it offers to leave while the host waits for the commands, where Cancel
+    # before goes back to the host's own commands.
+    BACK_TEXT = "Cancel chooses again or leaves."
+
+    # What the player is asked before they leave the battle.
+    LEAVE_QUESTION = "Leave the battle?"
+
+    # What the player is asked before they leave a story's battle, which they then lose.
+    LEAVE_LOSES_QUESTION = "Leave the battle? You lose it, and the others fight on."
+
+    # The answers to the leave question during a wait: leave, or stay and wait on.
+    LEAVE_CHOICES = ["Leave", "Stay"]
+
+    # The answers to the leave question while the host waits for the commands: leave, or choose the
+    # host's own commands again.
+    BACK_CHOICES = ["Leave", "Choose again"]
 
     # What starts the names line unless the caller passes another.
     WAITING_PREFIX = "Waiting for: "
@@ -1313,7 +1685,7 @@ module MGQ_MpBattlesSync
       window = Window_MpWaiting.new(rect.x, rect.y, rect.width, HEIGHT)
       window.z = Z
       box = Box.new(window, text, details, prefix, nil, nil, "")
-      register_layout(least_width(window.contents, [text, LEAVE_TEXT, LEAVE_LOSES_TEXT]))
+      register_layout(least_width(window.contents, [text, LEAVE_TEXT, LEAVE_LOSES_TEXT, BACK_TEXT]))
       draw_line(box, TEXT_LINE, text)
       place(box)
       box
@@ -1349,7 +1721,7 @@ module MGQ_MpBattlesSync
     # Makes the box movable before any box opens, with the least width its leave offer needs.
     def self.register_at_load
       measure = Bitmap.new(1, 1)
-      register_layout(least_width(measure, [LEAVE_TEXT, LEAVE_LOSES_TEXT]))
+      register_layout(least_width(measure, [LEAVE_TEXT, LEAVE_LOSES_TEXT, BACK_TEXT]))
       measure.dispose
     end
 
@@ -1402,7 +1774,8 @@ module MGQ_MpBattlesSync
     #
     # @param box [Box] The box.
     # @param frames [Integer] Frames the box has been open, 0 in the frame it opened.
-    def self.refresh(box, frames)
+    # @param back [Boolean] Whether Cancel goes back to the host's own commands, see wait_for.
+    def self.refresh(box, frames, back = false)
       place(box)
       names = names_of(box)
       if names != box.names
@@ -1410,7 +1783,7 @@ module MGQ_MpBattlesSync
         draw_line(box, NAMES_LINE, names_line(box))
       end
       if frames == LEAVE_FRAMES
-        box.time = Live.leaving_loses? ? LEAVE_LOSES_TEXT : LEAVE_TEXT
+        box.time = back ? BACK_TEXT : (Live.leaving_loses? ? LEAVE_LOSES_TEXT : LEAVE_TEXT)
         draw_line(box, TIME_LINE, box.time)
       elsif frames >= 0 && frames < LEAVE_FRAMES && frames % REDRAW_FRAMES == 0
         box.seconds = frames / REDRAW_FRAMES
@@ -1433,38 +1806,103 @@ module MGQ_MpBattlesSync
     end
 
     # Draws what changed, offers to leave the battle once the wait lasted LEAVE_FRAMES, and tells
-    # whether the player took the offer.
+    # whether the player confirmed leaving.
     #
     # @param box [Box] The box.
     # @param frames [Integer] Frames the box has been open.
     # @return [Boolean] Whether the player leaves the battle.
     def self.leave?(box, frames)
-      refresh(box, frames)
-      return false if frames < LEAVE_FRAMES
-
-      MGQ_MpBattlesSync.log("still waiting after #{LEAVE_FRAMES / MGQ_MpUi::FRAMES_PER_SECOND} s (#{box.text}), Cancel now leaves the battle") if frames == LEAVE_FRAMES
-      Input.trigger?(:B)
+      choice(box, frames) == :left
     end
 
-    # Closes a box.
+    # Draws what changed and reads the player's Cancel: with back, Cancel goes back to the host's
+    # own commands at once; once the wait lasted LEAVE_FRAMES it asks whether the player leaves the
+    # battle, a no answer then going back or waiting on.
+    #
+    # A single Cancel never leaves, since players press it to go back and choose again.
+    #
+    # @param box [Box] The box.
+    # @param frames [Integer] Frames the box has been open.
+    # @param back [Boolean] Whether Cancel goes back to the host's own commands.
+    # @return [Symbol, nil] :left once the player confirmed leaving, :back to choose again, nil to
+    #   wait on.
+    def self.choice(box, frames, back = false)
+      refresh(box, frames, back)
+      return answer_to_leave if @leave_asked
+      if frames == LEAVE_FRAMES
+        MGQ_MpBattlesSync.log("still waiting after #{LEAVE_FRAMES / MGQ_MpUi::FRAMES_PER_SECOND} s (#{box.text}), Cancel now asks whether to leave the battle")
+      end
+      return nil unless Input.trigger?(:B)
+      return :back if back && frames < LEAVE_FRAMES
+      return nil if frames < LEAVE_FRAMES
+
+      ask_to_leave(back)
+      nil
+    end
+
+    # Asks the player whether they leave the battle, "no" picked first.
+    #
+    # @param back [Boolean] Whether "no" goes back to the host's own commands instead of waiting on.
+    def self.ask_to_leave(back)
+      question = Live.leaving_loses? ? LEAVE_LOSES_QUESTION : LEAVE_QUESTION
+      token = Object.new
+      @leave_asked = token
+      @leave_answer = nil
+      opened = MGQ_MpUi::Confirm.ask(question, back ? BACK_CHOICES : LEAVE_CHOICES) do |yes|
+        # A question the wait closed answers later, after the wait is gone.
+        @leave_answer = yes ? :left : (back ? :back : :stay) if @leave_asked.equal?(token)
+      end
+      @leave_asked = nil unless opened
+      MGQ_MpBattlesSync.log(opened ? "asked the player whether to leave the battle" : "could not ask the player whether to leave the battle")
+    end
+
+    # Ticks the open leave question and takes its answer once given.
+    #
+    # The battle's waits never reach Scene_Base#update, whose hook ticks the question elsewhere.
+    #
+    # @return [Symbol, nil] :left or :back once answered so, nil while open or answered "Stay".
+    def self.answer_to_leave
+      MGQ_MpUi::Confirm.tick
+      answer = @leave_answer
+      return nil unless answer
+
+      @leave_asked = nil
+      @leave_answer = nil
+      MGQ_MpBattlesSync.log(answer == :left ? "the player confirmed leaving the battle" : "the player stays in the battle")
+      answer == :stay ? nil : answer
+    end
+
+    # Closes the leave question a wait leaves open, which then answers nothing.
+    def self.drop_leave_question
+      return unless @leave_asked
+
+      @leave_asked = nil
+      @leave_answer = nil
+      MGQ_MpUi::Confirm.close("the wait ended")
+    end
+
+    # Closes a box, and the leave question it asked.
     #
     # @param box [Box, nil] The box.
     # @return [nil] Always, so the caller's box is gone.
     def self.close(box)
+      drop_leave_question
       box.window.dispose if box && !box.window.disposed?
       nil
     end
 
-    # Waits, with the box open, until the block has an answer, the battle ended early or the player
-    # left it.
+    # Waits, with the box open, until the block has an answer, the battle ended early, the player
+    # left it or, with back, went back to choose their commands again.
     #
     # @param scene [Scene_Battle] The battle.
     # @param text [String] What the game waits for.
     # @param details [Proc, nil] Names the players still waited for, see open.
     # @param prefix [String] What starts the names line, see open.
+    # @param back [Boolean] Whether Cancel goes back to the host's own commands, see choice.
     # @yieldreturn [Object, nil] The answer, nil to wait on.
-    # @return [Object, Symbol] The answer, an ending of Channel.ending, or :left when the player left.
-    def self.wait_for(scene, text, details = nil, prefix = WAITING_PREFIX)
+    # @return [Object, Symbol] The answer, an ending of Channel.ending, :left when the player left,
+    #   or :back when they go back to their commands.
+    def self.wait_for(scene, text, details = nil, prefix = WAITING_PREFIX, back = false)
       box = nil
       frames = 0
       was_active = @active
@@ -1478,9 +1916,10 @@ module MGQ_MpBattlesSync
         return ending if ending
 
         box ||= open(text, details, prefix)
-        if leave?(box, frames)
-          MGQ_MpBattlesSync.log("the player left the battle during the wait (#{text})")
-          return :left
+        choice = choice(box, frames, back)
+        if choice
+          MGQ_MpBattlesSync.log(choice == :left ? "the player left the battle during the wait (#{text})" : "the player went back to their commands during the wait (#{text})")
+          return choice
         end
 
         frames += 1
@@ -1547,6 +1986,10 @@ end
 begin
   MGQ_MpOverworldSync.route("battle") { |peer, message| MGQ_MpBattlesSync.take(peer, message) }
   MGQ_MpOverworldSync.on_leave { |peer| MGQ_MpBattlesSync::Departures.gone(peer) }
+  MGQ_MpOverworldSync.on_presence do |peer, change|
+    MGQ_MpBattlesSync::Seats.presence(peer, change)
+    MGQ_MpBattlesSync::Sequence.presence(peer, change)
+  end
 rescue => e
   MGQ_MpBattlesSync.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end

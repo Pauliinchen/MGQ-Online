@@ -2,6 +2,8 @@
 #  core_game_access.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Named the world's story a save built on
+#                            - Named whether a vehicle is driven
 #      Paulinchen  2026-10-17: Named what a frozen raid boss fight keeps and puts back
 #      Paulinchen  2026-10-13: Named a window's cursor check and handler call
 #      Paulinchen  2026-10-12: Named an event's page that applies now
@@ -139,6 +141,9 @@ module MGQ_MpGame
     # $game_system: the trades applied in this save, a field of the mod's own that its saves keep.
     :trades => :@mgq_mp_trades,
 
+    # $game_system: the world's story a save built on (world_story.rbx), a field of the mod's own.
+    :world_story => :@mgq_mp_world_story,
+
     # Scene_Map: whether the game's menu was asked for.
     :menu_calling => :@menu_calling,
 
@@ -158,8 +163,9 @@ module MGQ_MpGame
 
     # A frozen raid boss fight (battles_raid_freeze.rbx): the fights $game_system keeps, a field of
     # the mod's own; an interpreter's branches, indent and common event; how an event, the player
-    # or a follower shows and moves; where the player's transfer goes and their vehicle; the party's
-    # temporary members and split parties; and the map's tileset and parallax.
+    # or a follower shows and moves; where the player's transfer goes and their vehicle, and whether a
+    # vehicle is driven; the party's temporary members and split parties; and the map's tileset and
+    # parallax.
     :raid_freeze => :@mgq_mp_raid_freeze,
     :branch => :@branch,
     :indent => :@indent,
@@ -178,6 +184,7 @@ module MGQ_MpGame
     :move_speed => :@move_speed,
     :new_map_id => :@new_map_id,
     :vehicle_type => :@vehicle_type,
+    :driving => :@driving,
     :temp_actors => :@temp_actors,
     :multi_party_flag => :@multi_party_flag,
     :multi_party => :@multi_party,
@@ -190,7 +197,7 @@ module MGQ_MpGame
 
   # The fields the game sets only once it needs them, so one that is missing is no reason to log:
   # a battle has no acting battler before its first action, which a guest's playback reads first.
-  LAZY = [:stones, :enchants, :retry_data, :system_save_count, :subject, :trades, :raid_freeze, :common_event_id, :multi_party, :multi_party_flag]
+  LAZY = [:stones, :enchants, :retry_data, :system_save_count, :subject, :trades, :world_story, :raid_freeze, :common_event_id, :multi_party, :multi_party_flag]
 
   # The game's private methods the mod calls.
   METHODS = [

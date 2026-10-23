@@ -2,6 +2,10 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Sent to and found the battle's players by the seats they held at its start
+#                            - Told the players taken in why their joining was called off
+#                            - Numbered the messages to the players taken in
+#                            - Made added enemies of the kind the troop's battle needs
 #      Paulinchen  2026-10-15: Joined a battle the battle server hosts late through its starter and its channel
 #      Paulinchen  2026-10-12: Took a joining player's party_member_max only as a number
 #                            - Dropped an enemy of the host's changed troop whose id, place or mark is no number
@@ -47,6 +51,12 @@
 # who meets enemies knows whom to ask. It must never interrupt the game, so every entry point
 # rescues.
 module MGQ_MpBattlesHotjoin
+  # The reason of an "off" whose battle is over, see MGQ_MpBattlesCoop::OFF_WHY_FIELD.
+  OFF_OVER = "over"
+
+  # The reason of an "off" whose battle takes no more players, such as one going on alone.
+  OFF_CLOSED = "closed"
+
   # Frames the player whose encounter asks to join a running battle waits for its host's answer,
   # three seconds.
   ANSWER_FRAMES = 180
@@ -132,9 +142,18 @@ module MGQ_MpBattlesHotjoin
 
     sync = MGQ_MpBattlesSync
     if sync.role && sync.coop?
-      return [sync.battle_id, sync.role == :host ? MGQ_MpOverworldSync::Me.seat : Array(sync.seats).first]
+      return [sync.battle_id, sync.role == :host ? MGQ_MpOverworldSync::Me.seat : host_world_seat]
     end
     @own_bid ? [@own_bid, MGQ_MpOverworldSync::Me.seat] : nil
+  end
+
+  # Tells the world seat of the host of the co-op battle the player is a guest of, which the others
+  # look the host up by.
+  #
+  # @return [Integer, nil] The seat, the seat the battle knows the host by while the host is away.
+  def self.host_world_seat
+    host = Array(MGQ_MpBattlesSync.seats).first
+    host && (MGQ_MpBattlesSync.world_seat_of(host) || host)
   end
 
   # Tells the scene the player's state names while a battle in a Raid World waits on SceneManager's
@@ -694,9 +713,21 @@ module MGQ_MpBattlesHotjoin
 
   # Takes the host's word that it called off the player's joining before its roster came, see
   # MGQ_MpBattlesCoop.join, which then lets the encounter start on its own.
-  def self.call_off_own
+  #
+  # @param text [String, nil] What the player is told why, nil when the host told no reason.
+  def self.call_off_own(text = nil)
     @called_off = true
+    @off_text = text
     log("#{MGQ_MpBattlesSync.player} called the player's joining off before its roster came")
+  end
+
+  # Takes what the player is told of why the host called their joining off, see call_off_own.
+  #
+  # @return [String, nil] The text, nil when the host told no reason.
+  def self.take_off_text
+    text = @off_text
+    @off_text = nil
+    text
   end
 
   # Reports whether the host called the player's joining off, see call_off_own.
@@ -1102,7 +1133,7 @@ module MGQ_MpBattlesHotjoin
     sync.battle_started
     MGQ_MpBattles.begin(:coop)
     sync.show_everything
-    coop.form(scene, coop.arrange([[MGQ_MpOverworldSync::Me.seat, MGQ_Multiplayer::Player.name.to_s] + coop.own_build]))
+    coop.form(scene, coop.arrange([[MGQ_MpBattlesSync.own_seat, MGQ_Multiplayer::Player.name.to_s] + coop.own_build]))
     coop.note_troop
     sync::Recorder.start(:link)
     log("battle #{sync.battle_id} turns live for the players who join it, the player hosting")
@@ -1120,7 +1151,7 @@ module MGQ_MpBattlesHotjoin
 
     forget_ready
     return if @pending.empty?
-    return call_off("the computer plays on for those who left") if sync.solo?
+    return call_off("the computer plays on for those who left", OFF_CLOSED) if sync.solo?
 
     # Players kept waiting too long have given up on the roster, even when their join came in time.
     expire
@@ -1157,7 +1188,7 @@ module MGQ_MpBattlesHotjoin
       entry[:seats].dup.each do |seat|
         reason = if channel.take_from("decline", seat) then "turned the invite down or stopped waiting"
                  elsif channel.take_from("leave", seat) then "left the battle"
-                 elsif MGQ_MpOverworldSync::Peers.at(seat).nil? then "left the world"
+                 elsif MGQ_MpBattlesSync.peer_at(seat).nil? then "left the world"
                  elsif Time.now - entry[:at] > WAIT_SECONDS then "did not join within #{WAIT_SECONDS} s"
                  end
         next unless reason
@@ -1196,7 +1227,7 @@ module MGQ_MpBattlesHotjoin
     players = coop.players.map(&:to_a)
     joined.each do |seat, body|
       builds, vitals, max = sync::Wire.parse(body.to_s)
-      peer = MGQ_MpOverworldSync::Peers.at(seat)
+      peer = MGQ_MpBattlesSync.peer_at(seat)
       players << [seat, peer ? peer.state["name"].to_s : "?", builds.to_s, Array(vitals), max.is_a?(Integer) ? max : 0]
     end
     players = coop.arrange(players)
@@ -1231,7 +1262,7 @@ module MGQ_MpBattlesHotjoin
 
       entry[:added] = true
       place_anew(entry[:enemies]).each do |id, x, y, _hidden|
-        enemy = Game_Enemy.new(enemies.size, id)
+        enemy = MGQ_MpBattlesCoop.new_enemy(enemies.size, id)
         enemy.screen_x = x
         enemy.screen_y = y
         enemies << enemy
@@ -1324,29 +1355,28 @@ module MGQ_MpBattlesHotjoin
     log("laying a fallen enemy down failed: #{e.class}: #{e.message}")
   end
 
-  # Sends a battle message to some of the battle's players alone.
+  # Sends a battle message to some of the battle's players alone, numbered for each as every message
+  # of the battle (see MGQ_MpBattlesSync::Sequence).
   #
-  # @param seats [Array<Integer>] Their world seats.
+  # @param seats [Array<Integer>] The seats the battle knows them by.
   # @param kind [String] What it is.
   # @param body [String] The rest.
   def self.send_to(seats, kind, body)
     return if seats.empty?
 
-    sync = MGQ_MpBattlesSync
-    seats.each { |seat| sync.tell(seat, kind, sync.battle_id, body) }
-    log("sent #{kind} (#{body.size} bytes) to #{seats.map { |seat| sync.who(seat) }.join(', ')}")
+    MGQ_MpBattlesSync::Channel.post_to(seats, kind, body)
   end
 
   # Tells every player taken in who has not joined that it is off, and forgets them.
   #
   # @param reason [String] Why, for Multiplayer InGame.log.
-  def self.call_off(reason)
+  def self.call_off(reason, why = OFF_CLOSED)
     seats = pending_seats
     @pending = []
     return if seats.empty?
 
     MGQ_MpBattlesSync.unexpect(seats)
-    MGQ_MpBattlesCoop.tell_map(seats, "off", "bid" => MGQ_MpBattlesSync.battle_id.to_s)
+    MGQ_MpBattlesCoop.tell_map(seats, "off", "bid" => MGQ_MpBattlesSync.battle_id.to_s, MGQ_MpBattlesCoop::OFF_WHY_FIELD => why)
     log("called joining battle #{MGQ_MpBattlesSync.battle_id} off for #{seats.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}: #{reason}")
   end
 
@@ -1440,7 +1470,7 @@ module MGQ_MpBattlesHotjoin
   def self.grow_troop(scene, entries)
     enemies = MGQ_MpGame.get($game_troop, :enemies)
     added = entries.map do |id, x, y, hidden|
-      enemy = Game_Enemy.new(enemies.size, id.to_i)
+      enemy = MGQ_MpBattlesCoop.new_enemy(enemies.size, id.to_i)
       enemy.screen_x = x.to_i
       enemy.screen_y = y.to_i
       enemy.hide if hidden.to_i == 1
@@ -1462,7 +1492,7 @@ module MGQ_MpBattlesHotjoin
   # Ends hotjoining with the battle: tells the players taken in who have not joined that it is off,
   # and forgets the player's own battle and a late join. Called once the battle's scene ended.
   def self.ended
-    call_off("the battle is over") unless @pending.empty?
+    call_off("the battle is over", OFF_OVER) unless @pending.empty?
     forget
   rescue => e
     forget

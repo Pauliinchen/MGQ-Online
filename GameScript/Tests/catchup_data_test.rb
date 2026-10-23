@@ -2,6 +2,7 @@
 #  catchup_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that the pedestals of job orbs are world chests
 #      Paulinchen  2026-10-17: Checked where Remina's Card Key comes from
 #                            - Checked that the story first comes to a map before the part ending its lists set a value before
 #      Paulinchen  2026-10-14: Checked hide and seek's gifts by the count of Amiras, Adramelech's return point and the one-way variables
@@ -108,7 +109,8 @@ check("Granberia joins and then leaves in one event at Part 2's step 24, in that
 orb = DATA::KEY_ITEMS.select { |row| row.item == 596 && row.part.nil? }.map(&:amount)
 check("an item given and taken with no step between comes first, then goes", orb, [1, -1])
 
-check("the chests that hold key items are the story's 25, 11 of ore and 57 of items that unlock a job or a race", DATA::CHESTS.size, 93)
+check("the chests that hold key items are the story's 25, 11 of ore and 59 of items that unlock a job or a race", DATA::CHESTS.size, 95)
+check("among them the pedestals of job orbs, which hand out a medal by script", DATA::CHESTS.select { |chest| chest.key[0] == 1650 }.map(&:items), [[665], [671]])
 check("the Ghost Ship's Purple Orb chest is one of them", DATA::CHESTS.find { |chest| chest.key == [371, 12, "A"] }.items, [541])
 ores = (151..158).to_a + (943..947).to_a
 check("every ore the blacksmiths ask for comes from a chest or a key item row",

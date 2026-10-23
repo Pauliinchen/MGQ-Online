@@ -2,6 +2,7 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Kept the prompt off the live map behind menus
 #      Paulinchen  2026-10-17: Offered the frozen fight of a raid boss near the player
 #      Paulinchen  2026-10-15: Told whether a served battle takes players in by the battle server's state
 #      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
@@ -511,6 +512,8 @@ begin
 
   # After the map's sprites, the prompt below the player's character.
   MGQ_MpHooks.after(Spriteset_Map, :update, "battles_coop_join") do
+    next unless mgq_mp_hud?
+
     @mgq_mp_join_prompt ||= Sprite_MpJoinPrompt.new(MGQ_MpGame.get(self, :viewport1))
     @mgq_mp_join_prompt.show(MGQ_MpGame.get(self, :character_sprites).find { |sprite| sprite.character.equal?($game_player) })
   end

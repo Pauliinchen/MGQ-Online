@@ -2,6 +2,9 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that a found job item comes to every player at once
+#                            - Checked that the gate's notices name the cap of another mod below it
+#                            - Checked that the story sets a return point only on the map of its event
 #      Paulinchen  2026-10-17: Checked that the Unlocks page lists no companion the story took away
 #                            - Checked that the catch-up waits while a lost raid boss battle's defeat runs
 #                            - Checked that a player on Ilias's side gets the Remina Key Card back
@@ -448,7 +451,7 @@ def tables(tables = {})
     DATA.send(:remove_const, name)
     DATA.const_set(name, tables[name] || [])
   end
-  [:@joins_by_actor, :@story_joins, :@taking_back, :@visits, :@makina_ids, :@unlock_items, :@unlock_rows, :@story_sources].each { |name| MGQ_MpWorldCatchup.instance_variable_set(name, nil) }
+  [:@joins_by_actor, :@story_joins, :@taking_back, :@visits, :@makina_ids, :@unlock_items, :@unlock_rows].each { |name| MGQ_MpWorldCatchup.instance_variable_set(name, nil) }
   MGQ_MpWorldStory.instance_variable_set(:@world_chests, nil)
 end
 
@@ -598,11 +601,15 @@ checkpoint("2", packed({ 1001 => 33 }))
 frames(70)
 check("and stays there until that part's gate", [$game_variables[1001], story.mode, catchup.refusal_text], [33, :behind, "Reach level 55 to continue the story."])
 
-# A cap of another mod below the gate holds nobody back.
+# A cap of another mod below the gate holds nobody back, and the notices name the cap (issue #53).
 $game_actors[1].cap = 40
+check("a player capped below the gate is told to reach the cap",
+      [catchup.refusal_text, catchup.behind_text(MGQ_MpWorldStory.local_counters(catchup.story_now))],
+      ["Reach level 40 to continue the story.", "The world's story is further than yours. You see the world as it was before the end of Part 2; reach level 40 to move on."])
 $game_actors[1].level = 40
 frames(40)
 check("a player capped below the gate is caught up once at their cap", calls_of("mp_raid_story_fetch").size, 2)
+check("told the cap reached", $messages.last.to_s[/\ALevel \d+ reached/], "Level 40 reached")
 $game_actors[1].cap = 9999
 
 # A player behind learns no skill of the world's story, and the story's skills and items a move on
@@ -1051,8 +1058,8 @@ $game_system.encounter_disabled = true
 frames(1)
 relay({ "rev" => 25, "wrev" => 25, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
 frames(40)
-check("on entering, the player's own values the story sets move on from an earlier step's to the latest step's, the warp ban lifts where warping is free, and Luka learns the skill he lacks",
-      [$game_system.encounter_disabled, $game_variables[1002], $game_switches[100], $game_actors[1].instance_variable_get(:@skills).include?(930)], [false, 2, false, true])
+check("on entering, the encounters move on from an earlier step's to the latest step's, the return point stays away from its event's map, the warp ban lifts where warping is free, and Luka learns the skill he lacks",
+      [$game_system.encounter_disabled, $game_variables[1002], $game_switches[100], $game_actors[1].instance_variable_get(:@skills).include?(930)], [false, 1, false, true])
 check("and a story companion missing from the roster joins at their gate", $game_party.all_members.map(&:id).include?(77), true)
 $game_party.remove_actor(77)
 $game_variables[1002] = 9
@@ -1106,8 +1113,16 @@ told_on_route[1001] = 40
 told_on_route[1141] = 70
 check("a world's story on another route sets none of its return points",
       settled.call({ 1001 => 40, 1142 => 1, 1002 => 112 }, [7096], [[], told_on_route, {}]), 112)
-check("a return point left at Adramelech moves on to Part 2's once the story is past him",
+$game_map.map_id = 634
+check("a return point left at Adramelech moves on to Part 2's on the map of its event once the story is past him",
       [settled.call({ 1001 => 19, 1032 => 7, 1002 => 19 }, []), settled.call({ 1001 => 17, 1032 => 7, 1002 => 19 }, [])], [2, 19])
+$game_map.map_id = 3
+on_san_ilia = { 1001 => 40, 1142 => 46, 1169 => 26, 1002 => 112 }
+check("a player elsewhere keeps their return point when the world's story reaches one inside a scene another player plays",
+      settled.call(on_san_ilia, []), 112)
+$game_map.map_id = 1904
+check("but takes it on that scene's map", settled.call(on_san_ilia, []), 98)
+$game_map.map_id = 3
 
 # A player behind keeps the return point of their own part.
 new_game({ 1001 => 7, 1002 => 2 }, [], 12)
@@ -1449,21 +1464,26 @@ relay({ "rev" => 32, "wrev" => 32, "p" => 9, "part" => "1" }, packed({ 1001 => 9
 frames(40)
 check("one the player held before, as from an earlier version, is noted for the world on entering", $game_self_switches[[0, 616, "F"]], true)
 
-# A job item another player found comes once a story reached where the story gives it, and one the
-# story gives nowhere once a player holds it.
+# A job or race item another player found comes to every player of the world at once, though the
+# story gives it further on or on the route the world never took, as the Sealed Orb of Darkness
+# (issue #45); a found Makina still waits for its level.
 $data_items[617] = RPG::Item.new(617, "Battle Permit", "[Job] Allows access to a job.")
-tables(:REWARDS => [reward.new(:i, 616, 1, "map:30:2:1", "1", 12, nil, [[:v, 1001, 12]], true)])
+found = { [0, 616, "F"] => true, [0, 617, "F"] => true, [0, 701, "F"] => true }
+tables(:REWARDS => [reward.new(:i, 616, 1, "map:30:2:1", "1", 12, :alice, [[:v, 1001, 12]], true)], :MAKINA => [makina.new(701, 30, "map:218:21:1")])
 new_game({ 1001 => 9 }, [], 10)
 frames(1)
-relay({ "rev" => 35, "wrev" => 35, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }, [], { [0, 616, "F"] => true, [0, 617, "F"] => true }))
+relay({ "rev" => 35, "wrev" => 35, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }, [], found))
 frames(40)
-check("a found job item waits for a story to reach where the story gives it, one it gives nowhere comes",
-      [$game_party.items[616], $game_party.items[617]], [0, 1])
-story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "36", :relay => true)
+check("a found job item comes at once to a player who plays the world's story, a found Makina below its level not",
+      [story.mode, $game_party.items[616], $game_party.items[617], $game_party.items[701]], [:world, 1, 1, 0])
+new_game({ 1001 => 7 }, [], 10)
 frames(1)
-relay({ "rev" => 36, "wrev" => 36, "p" => 12, "part" => "1" }, packed({ 1001 => 12 }, [], { [0, 616, "F"] => true, [0, 617, "F"] => true }))
-frames(40)
-check("and comes once the world's story is there", $game_party.items[616], 1)
+relay({ "rev" => 36, "wrev" => 36, "p" => 25, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 25 }, [], found))
+frames(16)
+checkpoint("1", packed({ 1001 => 18 }))
+frames(100)
+check("and to a player behind it, from the world's story they do not play",
+      [story.mode, $game_party.items[616], $game_party.items[617]], [:behind, 1, 1])
 
 # A job item an event gives once behind its own self switch comes by the world's story, though the
 # rows' ledger noted it done.

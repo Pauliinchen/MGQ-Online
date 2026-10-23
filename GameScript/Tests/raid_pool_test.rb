@@ -2,6 +2,8 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that a refight of a boss the story beat is won at once
+#                            - Checked that a boss built anew at full HP heals no pool
 #      Paulinchen  2026-10-20: Checked that a max HP lowered under the boss's HP heals no pool
 #      Paulinchen  2026-10-17: Checked in_map?, retrying? and set_up_kind, and the rewards of a resumed frozen fight
 #      Paulinchen  2026-10-15: Checked the pools a starter hands the battle server and the server fights
@@ -615,13 +617,31 @@ check("and reports nothing", [reports, $ran], [[], [:after]])
   "a Hades rematch" => proc { $game_switches[97] = true },
   "an event of the Hades rematch hall, before it turns the rematch's switch on" => proc { $game_map.map_id = 576 },
   "a Colosseum battle" => proc { $game_switches[87] = true },
-  "a boss the story beat" => proc { $game_variables[1011] = 4 },
 }.each do |label, set|
   reset
   set.call
   start([[:battle, 71], [:mark, :after]])
   check("#{label} fights no pool", pool.fight, nil)
 end
+
+# A refight of a boss the world's story beat already fights no pool and is won at once, as against
+# empty pools (issue #57).
+reset
+$game_variables[1011] = 4
+$game_map.interpreter.instance_variable_set(:@event_id, 7)
+pool.in_map { pool.at_command { check("a refight of a boss the story beat is won already, so it invites nobody", pool.won_already?(71), true) } }
+start([[:battle, 71], [:mark, :after]])
+check("it fights no pool, its boss starts dead", [pool.fight, enemy.dead?], [nil, true])
+$scene.start_party_command_selection
+check("and its first command phase wins it", $won, [71])
+frames
+check("the event goes on", $ran, [:after])
+reset
+$game_variables[1011] = 4
+$game_switches[87] = true
+start([[:battle, 71], [:mark, :after]])
+$scene.start_party_command_selection
+check("a Colosseum battle of the boss is fought as the game fights it", [enemy.dead?, $won], [false, []])
 reset
 start([[:battle, 1507], [:mark, :after]])
 check("the Great Decision fights no pool", pool.fight, nil)
@@ -874,6 +894,22 @@ rebuilt[0].hp = 400
 $game_troop.instance_variable_set(:@members, rebuilt)
 pool.rescale
 check("gets the raised max HP at once, keeping its share", [enemy.mhp, enemy.hp], [6000, 3000])
+
+# A boss built anew at full HP, as the battle server rebuilt its troop, heals no pool: it reports
+# nothing and takes its pool's HP (the boss healed to full once a second player joined).
+reset
+push("Queen Harpy", "0.1")
+start([[:battle, 71], [:mark, :after]])
+check("the boss starts at its pool's HP", enemy.hp, 600)
+$game_troop.instance_variable_set(:@members, [Game_Enemy.new(0, 1)])
+next_turn
+check("one built anew at full HP reports nothing and takes its pool's HP", [reports, enemy.hp], [[], 600])
+enemy.hp = 300
+next_turn
+check("what the battle deals to it after counts", reports.last[2], "1	0.0500000000	6000	0")
+$game_troop.instance_variable_set(:@members, [Game_Enemy.new(0, 1)])
+pool.rescale
+check("one built anew and given its tier's stats takes its pool's HP at once", enemy.hp, 300)
 
 # The fetch the DLL did not start is tried again.
 reset

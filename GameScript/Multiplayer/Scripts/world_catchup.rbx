@@ -2,6 +2,9 @@
 #  world_catchup.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Gave job and race items another player found to every player of the world at once
+#                            - Told the level a cap of another mod opens the gate at in the gate's notices
+#                            - Set the game over's return point of the story only on the map of the event that sets it
 #      Paulinchen  2026-10-17: Listed no companion on the Unlocks page whom a removal of the story took away
 #                            - Held the catch-up while a lost raid boss battle's defeat runs
 #                            - Ordered the key items one event gives and takes back by their rows, which no longer fails the catch-up
@@ -321,7 +324,7 @@ module MGQ_MpWorldCatchup
   #
   # @return [String] The notice.
   def self.refusal_text
-    "Reach level #{gate_of(own_part)} to continue the story."
+    "Reach level #{level_to_reach(own_part)} to continue the story."
   end
 
   # Tells the player they are behind the world's story.
@@ -330,7 +333,7 @@ module MGQ_MpWorldCatchup
   # @return [String] The notice.
   def self.behind_text(own)
     part = MGQ_MpWorldStory.part_of(own)
-    "The world's story is further than yours. You see the world as it was before the end of #{part_name(part)}; reach level #{gate_of(part)} to move on."
+    "The world's story is further than yours. You see the world as it was before the end of #{part_name(part)}; reach level #{level_to_reach(part)} to move on."
   end
 
   # Follows the catch-up for one frame: the relay's answers, the checkpoint and the orbs' event that
@@ -473,6 +476,19 @@ module MGQ_MpWorldCatchup
   def self.gate_of(id)
     entry = part(id)
     entry ? entry.gate : DATA::PARTS.last.gate
+  end
+
+  # The level a part's gate asks of the player: the gate, or the cap another mod holds them at
+  # below it, which opens the gate too (see gate_open?).
+  #
+  # @param id [String] The part.
+  # @return [Integer] The level.
+  def self.level_to_reach(id)
+    gate = gate_of(id)
+    cap = roster_view[:cap]
+    cap.is_a?(Integer) && cap < gate ? cap : gate
+  rescue
+    gate_of(id)
   end
 
   # What the notices call a part.
@@ -772,7 +788,7 @@ module MGQ_MpWorldCatchup
     gate = gate_of(from)
     name = target == :world ? "the world's story" : part_name(target)
     log("level #{gate} reached in #{part_name(from)}: moving on to #{name}")
-    notice(:gate, "Level #{gate} reached: catching up to #{name}.")
+    notice(:gate, "Level #{level_to_reach(from)} reached: catching up to #{name}.")
     note_capped(gate)
     return_from_route(from, world)
     target == :world ? join_world : want(target, "moving on from #{part_name(from)}")
@@ -1269,7 +1285,8 @@ module MGQ_MpWorldCatchup
   # point, the random encounters) to what the latest step their story or the world's passed set,
   # where they still hold what an earlier step set: a story laid over theirs, or the opening's
   # setup, skipped the events. A value of their own making, such as a church they prayed at, stays,
-  # and so do the encounters on a map whose events set them the other way now. Of the routes
+  # and so do the encounters on a map whose events set them the other way now, and a variable of
+  # the player's own away from the map of the event that sets it (see at_site?). Of the routes
   # only the rows of the route under way count, none at the Great Decision: a finished route's
   # rows, which passed? counts for its rewards, would set its last return point.
   #
@@ -1291,10 +1308,25 @@ module MGQ_MpWorldCatchup
       now = setting_now(row)
       next if now == row.value || !earlier[key].include?(now)
       next log_once([:own_encounters, $game_map.map_id], "left the random encounters to map #{$game_map.map_id}, whose event sets them the other way now") if row.kind == :encounters && map_sets_encounters?(row.value)
+      next log_once([:elsewhere, row.site, $game_map.map_id], "left #{setting_label(row)} at #{now.inspect}: #{row.site} sets it where the player does not stand") unless at_site?(row)
 
       row.kind == :encounters ? $game_system.encounter_disabled = !row.value : $game_variables[row.id] = row.value
       log("set #{setting_label(row)} from #{now.inspect} to #{row.value.inspect}, as #{row.site} of the story left it")
     end
+  end
+
+  # Reports whether a setting of settle may apply where the player stands: the random encounters
+  # anywhere, a variable of the player's own only on the map of the event that sets it.
+  #
+  # Such a variable tells a place, as where a game over returns the player, so a value the world's
+  # story set elsewhere could send them into another player's scene with no way out.
+  #
+  # @param row [Struct] A row of DATA::SETTINGS.
+  # @return [Boolean] Whether it may.
+  def self.at_site?(row)
+    return true unless row.kind == :v && MGQ_MpStoryState.personal_variable?(row.id)
+
+    row.site.to_s =~ /\Amap:(\d+):/ && $1.to_i == $game_map.map_id ? true : false
   end
 
   # Reads a value of the player's own that the story sets, see settle.
@@ -1913,64 +1945,27 @@ module MGQ_MpWorldCatchup
     item.is_a?(RPG::Item) && item.description.to_s =~ UNLOCK_ITEM_TAG ? true : false
   end
 
-  # Hands out every item unlocking a job or a race the world found that the player lacks once the
-  # player's story or the world's reached where the story gives it (source_reached?), and takes back
-  # copies beyond the first, as a chest of one gives a second.
+  # Hands out every item unlocking a job or a race a player of the world found that the player
+  # lacks, at once, wherever their story is, and takes back copies beyond the first, as a chest of
+  # one gives a second.
   def self.check_found_items
-    story = nil
-    MGQ_MpStoryState.data_of($game_self_switches).each do |key, on|
-      next unless on && key[0] == FOUND_MAP && key[2] == FOUND_LETTER
-
-      item = MGQ_MpGame.item("i", key[1])
+    found_ids.each do |id|
+      item = MGQ_MpGame.item("i", id)
       next unless item && !makina?(item) && !trim_copies(item) && $game_party.item_number(item) == 0
 
-      story ||= story_now
-      give("i", key[1], 1, "found:#{key[1]}") if source_reached?(key[1], story, @world_told)
+      give("i", id, 1, "found:#{id}")
     end
   end
 
-  # Reports whether the player's story or the world's reached a place the story gives an item at:
-  # a reward row it is past or a chest of the world it opened. An item the story gives nowhere
-  # counts as reached once a player holds it.
+  # Lists the items the world found: those noted in the player's story and in the world's, which a
+  # player behind it does not play.
   #
-  # @param id [Integer] The item.
-  # @param story [Array] The player's story.
-  # @param told [Array, nil] The world's story, nil before it came.
-  # @return [Boolean] Whether one did.
-  def self.source_reached?(id, story, told)
-    rows = story_sources[id]
-    return true unless rows
-
-    rows.any? do |row|
-      next passed_any?(unsided(row), story, told) unless row.is_a?(DATA::Chest)
-
-      story[2][row.key] || (told && told[2][row.key]) ? true : false
-    end
-  end
-
-  # A reward row without its side, as a found item reaches the other side too once a story is past
-  # its place.
-  #
-  # @param row [MGQ_MpWorldCatchupData::Reward] The row.
-  # @return [MGQ_MpWorldCatchupData::Reward] The row, or a copy without its side.
-  def self.unsided(row)
-    return row unless row.side
-
-    copy = row.dup
-    copy.side = nil
-    copy
-  end
-
-  # The reward rows and the world's chests that give each item, by item.
-  #
-  # @return [Hash{Integer => Array<Struct>}] The rows.
-  def self.story_sources
-    @story_sources ||= begin
-      sources = {}
-      DATA::REWARDS.each { |row| (sources[row.id] ||= []) << row if row.kind == :i }
-      DATA::CHESTS.each { |row| row.items.each { |id| (sources[id] ||= []) << row } }
-      sources
-    end
+  # @return [Array<Integer>] The items.
+  def self.found_ids
+    stories = [MGQ_MpStoryState.data_of($game_self_switches)]
+    stories << @world_told[2] if @world_told
+    keys = stories.flat_map { |selfs| selfs.keys.select { |key| selfs[key] && key[0] == FOUND_MAP && key[2] == FOUND_LETTER } }
+    keys.map { |key| key[1] }.uniq
   end
 
   # Turns on the chest flags a world-wide chest turns on, which are each player's own: the Chaos

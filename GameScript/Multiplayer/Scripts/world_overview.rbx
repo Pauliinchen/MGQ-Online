@@ -2,6 +2,7 @@
 #  world_overview.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Kept the overview off the live map behind menus
 #      Paulinchen  2026-10-13: Removed the unused YOUR_LEVEL
 #      Paulinchen  2026-10-12: Moved the World, Quests and Unlocks pages into world_overview_pages.rbx
 #                            - Renamed the Levels page Unlocks
@@ -1547,6 +1548,8 @@ begin
 
   # After the map's sprites, the overview's box.
   MGQ_MpHooks.after(Spriteset_Map, :update, "world_overview") do
+    next unless mgq_mp_hud?
+
     (@mgq_mp_overview ||= Sprite_MpWorldOverview.new(MGQ_MpGame.get(self, :viewport3))).update
   end
 

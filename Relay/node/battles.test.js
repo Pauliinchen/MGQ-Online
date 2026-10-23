@@ -2,6 +2,8 @@
 //  battles.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Covered a battle the battle server ends in the same breath as it takes it
+//                            - Covered how long a world connection lasts, in a battle and out of one
 //      Paulinchen  2026-10-21: Covered the battle server's ping in the admins' stats
 //      Paulinchen  2026-10-15: Covered the battle server's boss reports and the pool changes it hears of
 //                            - Covered the players the battle server takes in late
@@ -15,10 +17,11 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";
+import WebSocketClient from "ws";
 import { BATTLE_LIMITS, SERVER_SEAT } from "../core/battles.js";
 import { Directory, playerIdOf, sha256Hex } from "../core/directory.js";
-import { AUTH_HEADER, CLOSE, FEATURES_HEADER, PLAYER_HEADER } from "../core/relay.js";
-import { battleServerOf, createRelay, memoryStore } from "./server.js";
+import { AUTH_HEADER, CLOSE, FEATURES_HEADER, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER } from "../core/relay.js";
+import { NODE_LIMITS, battleServerOf, createRelay, memoryStore } from "./server.js";
 
 /**
  * The world's auth key.
@@ -66,7 +69,8 @@ const SETUP = Buffer.from("1\tsetup").toString("base64");
 let now = 1_000_000;
 
 /**
- * How the stand-in battle server answers a battle: "serving", "refused" or "silent".
+ * How the stand-in battle server answers a battle: "serving", "refused", "silent", or "over" for
+ * serving and its end in one write.
  */
 let serverAnswers = "serving";
 
@@ -104,7 +108,9 @@ before(async () => {
           connection.send(PING_REPLY);
         }
 
-        if (line.op === "serve" && serverAnswers !== "silent") {
+        if (line.op === "serve" && serverAnswers === "over") {
+          socket.write(`${JSON.stringify({ op: "serving" })}\n${JSON.stringify({ op: "end", result: "failed" })}\n`);
+        } else if (line.op === "serve" && serverAnswers !== "silent") {
           connection.send(serverAnswers === "serving" ? { op: "serving" } : { op: "refused", code: "data", error: "the game data differs" });
         }
 
@@ -236,6 +242,26 @@ function channel(world, battle, player) {
 }
 
 /**
+ * Tells how the relay refuses a player's battle channel.
+ *
+ * @param {string} world The world.
+ * @param {string} battle The battle.
+ * @param {number} player Which player.
+ * @returns {Promise<{status: number, code: string | undefined}>} The refusal's status and REFUSAL_HEADER.
+ */
+function refusalOf(world, battle, player) {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocketClient(`${wsBase}/worlds/${world}/battles/${battle}`, { headers: { ...GAME, [PLAYER_HEADER]: playerKey(player), [AUTH_HEADER]: AUTH } });
+    socket.on("open", () => reject(new Error("the channel opened")));
+    socket.on("unexpected-response", (request, response) => {
+      resolve({ status: response.statusCode, code: response.headers[REFUSAL_HEADER.toLowerCase()] });
+      request.destroy();
+    });
+    socket.on("error", () => {});
+  });
+}
+
+/**
  * Takes the next line the battle server got on a connection.
  *
  * @param {object} connection The connection.
@@ -328,6 +354,17 @@ test("a battle starts for players seated in the world, and its channel carries t
   await until(() => server.closed);
   first.connection.socket.close();
   second.connection.socket.close();
+});
+
+test("a battle the server ends as it takes it ends as the server said, and a player who comes then learns it ended", async () => {
+  serverAnswers = "over";
+  const world = worldId(10);
+  await makeWorld(world);
+  const player = await sit(world, 1);
+  assert.equal((await startBattle(httpBase, world, 1, { battle: "h9", seats: [player.seat], setup: SETUP })).status, 201);
+  assert.deepEqual(await refusalOf(world, "h9", 1), { status: 404, code: "ended" });
+  serverAnswers = "serving";
+  player.connection.socket.close();
 });
 
 test("a player's message to another seat than the server's closes their channel", async () => {
@@ -449,6 +486,26 @@ test("a player the battle server takes in late comes onto the battle's channel, 
   server.send({ op: "end", result: "victory" });
   first.connection.socket.close();
   late.connection.socket.close();
+});
+
+test("a world connection lasts a day, and longer while its player is in a battle on the battle server", async () => {
+  serverAnswers = "serving";
+  const world = worldId(11);
+  await makeWorld(world);
+  const player = await sit(world, 5);
+  assert.equal((await startBattle(httpBase, world, 5, { battle: "j1", seats: [player.seat], setup: SETUP })).status, 201);
+  const server = served.at(-1);
+  await nextLine(server);
+
+  now += NODE_LIMITS.worldConnectionMs;
+  relay.check();
+  player.connection.socket.send(PING);
+  assert.equal(await Promise.race([nextText(player.connection, PONG), player.connection.closed.then(() => "closed")]), PONG);
+
+  server.send({ op: "end", result: "victory" });
+  await until(() => relay.battles.get(world, "j1") === null);
+  relay.check();
+  assert.equal((await player.connection.closed).code, CLOSE.connectionExpired);
 });
 
 test("the admins' stats hold the battle server's answer to a ping, and null for a server out of reach", async () => {

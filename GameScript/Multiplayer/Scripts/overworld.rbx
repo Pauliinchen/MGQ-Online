@@ -2,6 +2,7 @@
 #  overworld.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Kept the status line off the live map behind menus
 #      Paulinchen  2026-10-12: Read the map's viewports and character sprites through MGQ_MpGame
 #      Paulinchen  2026-10-11: Made the line at the bottom left movable and widenable with the left Alt held
 #                            - Drew the outline standing in for a follower in the shared style's colors
@@ -814,12 +815,12 @@ begin
   MGQ_MpHooks.after(Game_Map, :update, "overworld") { MGQ_MpOverworld.update_ghosts }
 
   # After the map's sprites, a sprite and label per ghost on this map, a sprite per ghost's
-  # follower, the player's own ping and the status line.
+  # follower, the player's own ping and, unless the map shows behind a menu, the status line.
   MGQ_MpHooks.after(Spriteset_Map, :update, "overworld") do
     @mgq_mp_ghosts ||= {}
     @mgq_mp_followers ||= {}
     viewport = MGQ_MpGame.get(self, :viewport1)
-    @mgq_mp_status ||= Sprite_MpWorldStatus.new(MGQ_MpGame.get(self, :viewport3))
+    @mgq_mp_status ||= Sprite_MpWorldStatus.new(MGQ_MpGame.get(self, :viewport3)) if mgq_mp_hud?
     @mgq_mp_own_ping ||= Sprite_MpOwnPing.new(viewport)
     @mgq_mp_own_ping.show(MGQ_MpGame.get(self, :character_sprites).find { |sprite| sprite.character.equal?($game_player) })
     peers = MGQ_MpOverworld.ghosts
@@ -852,7 +853,7 @@ begin
       taken[tile] = taken[tile].to_i + label.show(sprite, peer, taken[tile].to_i)
     end
 
-    @mgq_mp_status.update
+    @mgq_mp_status.update if @mgq_mp_status
   end
 
   MGQ_MpHooks.before(Spriteset_Map, :dispose, "overworld") do

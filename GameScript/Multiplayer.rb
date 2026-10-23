@@ -2,6 +2,7 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Named mp_memory_usage
 #      Paulinchen  2026-10-22: Named mp_dir_open and mp_dir_read
 #                            - Named mp_update_rollback, told whether the release to install is a step back and said the version to play for one
 #      Paulinchen  2026-10-17: Loaded battles_raid_freeze_data.rbx, battles_raid_freeze.rbx and world_freeze.rbx after battles_raid_pool.rbx
@@ -801,6 +802,7 @@ module MGQ_Multiplayer
       'mp_update_game' => 'v',
       'mp_update_rollback' => 'v',
       'mp_dev_build' => 'v',
+      'mp_memory_usage' => READ_ARGUMENTS,
 
       # The keyboard, the clipboard and the mouse wheel.
       'mp_typing' => 'l',

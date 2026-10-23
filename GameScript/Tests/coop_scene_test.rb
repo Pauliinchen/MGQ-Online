@@ -2,6 +2,8 @@
 #  coop_scene_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked what an event ended early and the return to the Great Decision take back
+#                            - Checked that a viewer the story brought to another map comes back shown and without a tint
 #      Paulinchen  2026-10-12: Checked missing pictures and picture and screen changes with bad arguments
 #                            - Checked that a frame's changes go out at its end in one message, also while skipping
 #                            - Checked how a viewer takes the changes of one message
@@ -113,11 +115,14 @@ class Game_Screen
   def clear_flash; @done << [:clear_flash]; end
   def clear_shake; @done << [:clear_shake]; end
 end
-# Stands in for the game's interpreter, whose update runs the work a test hands it.
+# Stands in for the game's interpreter, whose update runs the work a test hands it, running while
+# running is set.
 class Game_Interpreter
   def initialize(depth = 0); @depth = depth; @list = []; @index = 0; end
   def update; @work.call if @work; end
-  attr_accessor :list, :index, :work
+  def setup(list, _event_id = 0); @list = list; @index = 0; end
+  def running?; @running ? true : false; end
+  attr_accessor :list, :index, :work, :running
   def map_zoom(rate = 100); $game_system.zoom_mode = rate; end
 end
 # Stands in for the story's switches.
@@ -171,7 +176,7 @@ end
 # Stands in for the scene manager, holding the scene shown.
 module SceneManager; class << self; attr_accessor :scene; end; end
 # Stands in for the data manager.
-module DataManager; def self.extract_save_contents(contents); end; end
+module DataManager; def self.extract_save_contents(contents); end; def self.setup_new_game; end; end
 # Stands in for the world room's players, each a Peer of seat and state.
 module MGQ_MpOverworldSync; module Peers; Peer = Struct.new(:seat, :state); end; end
 # Stands in for coop.rbx: routes in $routes, tells in $sent and the leader in $leader.
@@ -434,8 +439,9 @@ done = $game_map.screen.done.size
 $game_map.update
 check("only once", $game_map.screen.done.size, done)
 
-# A member the story brought to another map keeps the story's last tint and shown character, as
-# when the story ends a new game's hidden start.
+# A member the story brought to another map comes back without a tint and with their character
+# shown, as when the story ends a new game's hidden start, and as when the teller's own ending goes
+# on hidden and dark after it brought them there.
 leader.state["telling"] = "1"
 $game_player.transparent = true
 take.call("screen.start_tone_change", [Tone.new(-68, -68, 0, 0), 30])
@@ -444,8 +450,19 @@ $game_map.map_id = 8
 leader.state["telling"] = "0"
 $frame_count += MGQ_MpCoopScene::STATE_GRACE_FRAMES
 $game_map.update
-check("on another map the story's tint stays", $game_map.screen.done.last(3), [[:tone, [-68, -68, 0, 0], 30], [:clear_flash], [:clear_shake]])
+check("on another map the story's tint goes", $game_map.screen.done.last, [:tone, [0, 0, 0, 0], MGQ_MpCoopScene::RESTORE_FRAMES])
 check("and the character the story showed stays shown", $game_player.transparent, false)
+leader.state["telling"] = "1"
+$game_map.map_id = 7
+take.call("screen.start_tone_change", [Tone.new(-255, -255, -255, 0), 30])
+take.call("player.transparent", [true])
+$game_map.map_id = 8
+leader.state["telling"] = "0"
+$frame_count += MGQ_MpCoopScene::STATE_GRACE_FRAMES
+$game_map.update
+check("a character the teller's story hid on the way shows again on the other map, with no tint",
+      [$game_player.transparent, $game_map.screen.done.last], [false, [:tone, [0, 0, 0, 0], MGQ_MpCoopScene::RESTORE_FRAMES]])
+$game_map.map_id = 7
 
 # In a Raid World the player telling the story on the map shows it to everyone there whose story
 # matches.
@@ -747,3 +764,75 @@ check("a route still walked once the viewer no longer sees the scene ends, givin
 check("and the scene switch the scene turned on is off again", $game_switches[2029], false)
 teller.state["telling"] = "1"
 $raid = false
+
+# The player's own scene: what the events of the player's own map interpreter change is taken back
+# where the mod ends such an event early or moves the player away from it.
+
+# Stands in for the party, which plays a story's temporary party while $temp_party is set.
+class Game_Party
+  def temp_actors_use?; $temp_party ? true : false; end
+  def release_temp_actors; $temp_party = false; end
+end
+# Gives the player's character stand-in its followers, shown while visible.
+class Game_Player
+  def followers; @followers ||= Struct.new(:visible).new(true); end
+  def refresh; end
+end
+# Stands in for the music that plays, kept in $music.
+class RPG::BGM; def self.last; $music; end; end
+own = MGQ_MpCoopScene::Own
+pictures = $game_map.screen.pictures
+$game_party = Game_Party.new
+$playing = false
+$played = []
+$music = RPG::BGM.new("Castle", 100, 100)
+$game_map.screen.start_tone_change(Tone.new(0, 0, 0, 0), 0)
+talk = $game_map.interpreter
+talk.setup([:talk])
+talk.running = true
+run.call(talk, lambda do
+  pictures[5].show("companion", 0, 0, 0, 100, 100, 255, 0)
+  $game_map.screen.start_tone_change(Tone.new(-68, -68, -68, 0), 30)
+  $game_map.screen.start_fadeout(30)
+  $music = RPG::BGM.new("Sad", 90, 100)
+end)
+run.call(Game_Interpreter.new, lambda { pictures[20].show("hud", 0, 0, 0, 100, 100, 255, 0) })
+own.cut("a talk ended where it would move the story on")
+check("a talk the mod ends erases the picture it showed, but not a parallel event's", [pictures[5].done.last, pictures[20].done.last.first], [[:erase], :show])
+check("and brings back the tint, the light and the music it began with",
+      [$game_map.screen.done.last(2), $played], [[[:tone, [0, 0, 0, 0], MGQ_MpCoopScene::RESTORE_FRAMES], [:fadein, MGQ_MpCoopScene::RESTORE_FRAMES]], [["BGM", "Castle", 100, 100]]])
+talk.running = false
+$game_map.update
+check("once its event ended with nothing of it standing, the player's own scene closes", own.open?, false)
+
+# An ending puts the player in a temporary party, hidden, and lets them walk; the world's return to
+# the Great Decision then takes them out of it.
+ending = $game_map.interpreter
+ending.setup([:ending])
+ending.running = true
+run.call(ending, lambda do
+  $temp_party = true
+  $game_player.transparent = true
+  $game_player.followers.visible = false
+end)
+ending.running = false
+$game_map.update
+check("an ending that leaves the player walking in a temporary party stays under way", own.open?, true)
+ending.setup([:talk])
+ending.running = true
+run.call(ending, lambda { pictures[6].show("villager", 0, 0, 0, 100, 100, 255, 0) })
+own.cut("a talk ended where it would move the story on")
+check("a talk cut on that walk takes back only its own picture, not the ending's party or hidden character",
+      [pictures[6].done.last, $temp_party, $game_player.transparent], [[:erase], true, true])
+ending.running = false
+$game_map.update
+own.leave("the world went back to the Great Decision", true)
+check("the world's return ends the temporary party and shows the player and the followers",
+      [$temp_party, $game_player.transparent, $game_player.followers.visible, own.open?], [false, false, true, false])
+$temp_party = true
+$game_player.transparent = true
+own.leave("the player went to the story")
+check("a teleport with no scene of the player's own under way leaves the party and the character as they are", [$temp_party, $game_player.transparent], [true, true])
+DataManager.extract_save_contents({})
+own.leave("the world went back to the Great Decision", true)
+check("the world's return after a save loaded in the middle of the ending ends its temporary party and shows the player", [$temp_party, $game_player.transparent], [false, false])

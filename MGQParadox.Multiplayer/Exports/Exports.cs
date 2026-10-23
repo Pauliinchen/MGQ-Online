@@ -2,6 +2,7 @@
 //  Exports.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Logged the crashes Windows recorded since the previous start and added mp_memory_usage
 //      Paulinchen  2026-10-22: Handed out the release the relay names, an older one too, added mp_update_rollback and passed the release to the updater
 //      Paulinchen  2026-10-10: Added mp_dev_build
 //      Paulinchen  2026-10-09: Took the parked mods' lock as the game starts and marked their journal while an update runs
@@ -65,6 +66,7 @@ internal static unsafe partial class Exports
             }
 
             ModParking.Current.Begin();
+            CrashEvents.LogOnce();
             return 1;
         }
         catch (Exception ex)
@@ -204,6 +206,26 @@ internal static unsafe partial class Exports
                 Log.Write($"mp_update_game could not take the update mark back: {unmark}");
             }
 
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Describes the memory and the handles the game uses now, for the game script's log.
+    /// </summary>
+    /// <param name="buffer">Receives the line, UTF-8 and null-terminated.</param>
+    /// <param name="size">The size of the buffer in bytes.</param>
+    /// <returns>The line's length, or its length negated when the buffer is too small; 0 when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_memory_usage", CallConvs = [typeof(CallConvStdcall)])]
+    public static int MemoryUsage(byte* buffer, int size)
+    {
+        try
+        {
+            return Copy(ProcessUsage.Describe(), buffer, size);
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_memory_usage failed: {ex}");
             return 0;
         }
     }

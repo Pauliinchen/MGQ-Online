@@ -2,6 +2,7 @@
 #  ui_chat.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Kept the chat log off the live map behind menus
 #      Paulinchen  2026-10-22: Opened the chat box and showed its log in the shops, the casino and the trade screen
 #                            - Kept the hooks of mods loaded later in the shops, the casino and the trade screen
 #                            - Showed the relay's own notices in the notification box too
@@ -2152,12 +2153,14 @@ begin
   # scene change is in the way.
   MGQ_MpHooks.after(Scene_Map, :update_scene, "ui_chat") { MGQ_MpChat.on_map unless scene_changing? }
 
-  # After the map's sprites, the chat log and a bubble per player with a recent chat line, above
-  # them while they are on this map.
+  # After the map's sprites, the chat log unless the map shows behind a menu, and a bubble per
+  # player with a recent chat line, above them while they are on this map.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_chat") do
-    # Just under the topmost viewport, whose wheels and World overview lie above the log.
-    @mgq_mp_chat_log ||= Sprite_MpChatLog.new(:chat, Sprite_MpChatLog::STATUS_ROOM, MGQ_MpGame.get(self, :viewport3).z - 1)
-    @mgq_mp_chat_log.update
+    if mgq_mp_hud?
+      # Just under the topmost viewport, whose wheels and World overview lie above the log.
+      @mgq_mp_chat_log ||= Sprite_MpChatLog.new(:chat, Sprite_MpChatLog::STATUS_ROOM, MGQ_MpGame.get(self, :viewport3).z - 1)
+      @mgq_mp_chat_log.update
+    end
     @mgq_mp_bubbles ||= {}
     chat = MGQ_MpChat
     senders = MGQ_MpOverworldSync.in_world? ? chat.senders : []

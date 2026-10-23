@@ -2,6 +2,7 @@
 #  ui_party_box.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Kept the box off the live map behind menus
 #      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #                            - Read the map's viewport through MGQ_MpGame
 #      Paulinchen  2026-10-11: Listed a Raid World's party in the box with the other players on the map below it
@@ -563,7 +564,9 @@ begin
   MGQ_MpHooks.after(Scene_Map, :update_scene, "ui_party_box") { MGQ_MpPartyBox.on_map unless scene_changing? }
 
   # After the map's sprites, the party's box.
-  MGQ_MpHooks.after(Spriteset_Map, :update, "ui_party_box") { (@mgq_mp_party_box ||= Sprite_MpPartyBox.new(MGQ_MpGame.get(self, :viewport3))).update }
+  MGQ_MpHooks.after(Spriteset_Map, :update, "ui_party_box") do
+    (@mgq_mp_party_box ||= Sprite_MpPartyBox.new(MGQ_MpGame.get(self, :viewport3))).update if mgq_mp_hud?
+  end
 
   MGQ_MpHooks.before(Spriteset_Map, :dispose, "ui_party_box") do
     @mgq_mp_party_box.dispose if @mgq_mp_party_box

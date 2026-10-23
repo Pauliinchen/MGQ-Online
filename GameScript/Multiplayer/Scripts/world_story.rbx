@@ -2,6 +2,10 @@
 #  world_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Took the player out of their own scene before the return to the Great Decision and the end of a cleared collab
+#                            - Told whether event commands may move the world's story on and read the values that do
+#                            - Wrote the story's waiting changes at once as the game saves, goes to the title screen, resets or closes
+#                            - Kept in the save the world's story the player built on and took a loaded save's changes to it as their own
 #      Paulinchen  2026-10-18: Shared the Sonya scene's step as its start while none of its fights is frozen or over
 #                            - Ended the collab scenario the world's story cleared and gave back its stored items
 #                            - Turned the collab scenario's start off in Raid Worlds
@@ -107,6 +111,13 @@ module MGQ_MpWorldStory
   # Frames before a request the DLL did not start is tried again, a second.
   START_FRAMES = 60
 
+  # Seconds the closing game waits at most for the relay to answer the write of the story's waiting
+  # changes, since the DLL's request ends with the game.
+  CLOSE_WAIT_SECONDS = 3
+
+  # Seconds between two looks at that write while the closing game waits.
+  CLOSE_POLL_SECONDS = 0.05
+
   # Bytes the DLL may write the story's state into at first; a larger story asks for a larger buffer.
   STATE_SIZE = 4096
 
@@ -133,6 +144,9 @@ module MGQ_MpWorldStory
   # Switches whose change moves the story on: the bosses of the Monster Lord's Castle and the route
   # clears.
   PROGRESS_SWITCHES = [2485, 2486, 2487] + CLEAR_SWITCHES
+
+  # How many common events deep progress_ahead? follows the calls of the commands it reads.
+  PROGRESS_CALL_DEPTH = 3
 
   # The main story's progress from which Part 2 runs, set by Tartarus Escape.
   PART_TWO = 19
@@ -288,6 +302,7 @@ module MGQ_MpWorldStory
     @teller = nil
     @decision_roster = nil
     @was_running = false
+    @saved_base = nil unless reason
     @entry_story = reason ? entry_story : nil
     @retry_at = 0
     @fetch_at = 0
@@ -300,13 +315,81 @@ module MGQ_MpWorldStory
   end
 
   # Copies the story the player brings into the world, a save's or a new game's, which their changes
-  # before the world's story first came are told by.
+  # before the world's story first came are told by: where a loaded save noted the world's story
+  # it built on (see note_save), with that story's values.
   #
   # @return [Array, nil] The switches, variables and self switches, nil before the game's exist.
   def self.entry_story
-    $game_switches && $game_variables && $game_self_switches ? MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state) : nil
+    return nil unless $game_switches && $game_variables && $game_self_switches
+
+    based_on_save(MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state))
   rescue
     nil
+  end
+
+  # Puts the values of the world's story a loaded save built on back where the save's differ from
+  # them, so a load counts what the player changed before saving as their own changes, which the
+  # world's story may lack: the write waits a few seconds and a closing game sends nothing.
+  #
+  # @param story [Array] The switches, variables and self switches the save brings, changed in place.
+  # @return [Array] The story.
+  def self.based_on_save(story)
+    note = @saved_base
+    return story unless note && note["world"] == world_id
+
+    count = 0
+    note["base"].each_with_index do |values, kind|
+      next unless kind < 3 && values.is_a?(Hash)
+
+      values.each do |key, value|
+        if kind == 2 && value.nil?
+          story[2].delete(key)
+        else
+          story[kind][key] = value
+        end
+        count += 1
+      end
+    end
+    log("the loaded save differs in #{count} value(s) from the world's story it built on: they count as the player's own changes") if count > 0
+    story
+  end
+
+  # Reads what a loaded save noted of the world's story it built on, see note_save.
+  #
+  # @return [Hash, nil] "world", the world's id, and "base", the story's values where the save's
+  #   differ, as three hashes by kind; nil for a save that noted none.
+  def self.saved_base
+    note = $game_system ? MGQ_MpGame.get($game_system, :world_story) : nil
+    note.is_a?(Hash) && note["base"].is_a?(Array) ? note : nil
+  end
+
+  # Notes in the save the world's story the player built on, where their story differs from it (see
+  # based_on_save); a save outside a Raid World notes none. Called before the game makes a save.
+  def self.note_save
+    return unless $game_system
+
+    base = active? ? @base || @entry_story : nil
+    MGQ_MpGame.set($game_system, :world_story, base ? { "world" => world_id, "base" => differences(base) } : nil)
+  end
+
+  # Lists the values of a story where the player's differs from it, as the world shares them.
+  #
+  # @param base [Array] The story: switches, variables and self switches.
+  # @return [Array<Hash>] The story's values by key, by kind.
+  def self.differences(base)
+    local = MGQ_MpStoryState.raw_state
+    (0...3).map do |kind|
+      found = {}
+      changes(kind, base[kind], local[kind]).each { |key| found[key] = base[kind][key] }
+      found
+    end
+  end
+
+  # Forgets the story the player brought into the world and what a loaded save noted of the world's
+  # it built on, once another story is the base of the player's changes.
+  def self.drop_entry_story
+    @entry_story = nil
+    @saved_base = nil
   end
 
   forget
@@ -447,10 +530,12 @@ module MGQ_MpWorldStory
   end
 
   # Forgets the story this game played, as a loaded save or a new game bring their own, and
-  # fetches the world's to lay over it.
+  # fetches the world's to lay over it; reads what a loaded save noted of the world's story it built
+  # on (see note_save).
   #
   # @param reason [Symbol] :load or :new_game.
   def self.loaded(reason)
+    @saved_base = reason == :load ? saved_base : nil
     return unless active?
 
     log("#{reason == :load ? 'a save was loaded' : 'a new game started'}: fetching the world's story to lay over it")
@@ -696,7 +781,7 @@ module MGQ_MpWorldStory
       @mode = :world
       @wrev = world["wrev"]
       @force_post = true
-      @entry_story = nil
+      drop_entry_story
       return log("the world has #{world['wrev'] == 0 ? 'no story yet' : "no story this game can read at revision #{world['wrev']}"}: writing the player's (#{counters_text(own)})")
     end
     # A player the catch-up moves on into the world's story takes it whatever their part.
@@ -778,7 +863,7 @@ module MGQ_MpWorldStory
     @wrev = world["wrev"]
     @base = nil
     @force_post = true
-    @entry_story = nil
+    drop_entry_story
     log("the player's story (#{counters_text(own)}) is further than the world's (#{counters_text(world)}): writing it as the world's")
   end
 
@@ -794,7 +879,7 @@ module MGQ_MpWorldStory
     # A later fetch while behind keeps the base, or it would take in what the player changed since.
     @base ||= @entry_story || MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state)
     @mode = :behind
-    @entry_story = nil
+    drop_entry_story
     log_once([:behind, part_of(own), world["wrev"]], "the player's story (part #{part_of(own)}, #{counters_text(own)}) is in an earlier part than the world's (part #{part_of(world)}, #{counters_text(world)}): the player is behind")
     catch_up = defined?(MGQ_MpWorldCatchup)
     MGQ_MpWorldCatchup.behind(world, own, frozen_told(text)) if catch_up
@@ -886,7 +971,7 @@ module MGQ_MpWorldStory
       MGQ_MpWorldCatchup.carried(local)
     end
     @base = base
-    @entry_story = nil
+    drop_entry_story
     @end_local = nil if pending[:drop]
     @wrev = world["wrev"]
     @mode = :world
@@ -1072,7 +1157,8 @@ module MGQ_MpWorldStory
 
   # Ends the Pocket Castle's collab scenario for a player still on its maps once the world's story
   # cleared its progress, as its own exit does: the collab party goes, the items and equipment its
-  # start stored come back, its switches go off and the player returns to the castle.
+  # start stored come back, its switches go off and the player returns to the castle, out of the
+  # scenario's scene (see MGQ_MpCoopScene::Own.leave).
   #
   # @return [Boolean] Whether it ended it.
   def self.leave_cleared_collab
@@ -1081,6 +1167,7 @@ module MGQ_MpWorldStory
 
     interpreter = $game_map.interpreter
     interpreter.release_temp_actors if $game_party.respond_to?(:temp_actors_use?) && $game_party.temp_actors_use?
+    MGQ_MpCoopScene::Own.leave("the world's story cleared the collab scenario", true) if defined?(MGQ_MpCoopScene::Own)
     interpreter.take_all_item
     COLLAB_SWITCHES.each { |id| $game_switches[id] = false }
     $game_player.reserve_transfer(*COLLAB_RETURN)
@@ -1370,12 +1457,18 @@ module MGQ_MpWorldStory
     MGQ_MpOverworldSync.notice("The world's story went back to the Great Decision.")
   end
 
-  # Plays the commands that wait, once the player is free on the map.
+  # Plays the commands that wait, once the player is free on the map, taking the player out of a
+  # scene of their own first (see MGQ_MpCoopScene::Own.leave), such as their route's ending walked
+  # in a temporary party, whose own end the return would cut off.
+  #
+  # The return plays whether or not such a scene runs: nothing tells an ending's walk from a long
+  # part played in a temporary party, so waiting for it might keep the player off the world's story.
   def self.play_queued
     return unless @queued && MGQ_MpOverworldSync.map_free?
 
     commands = @queued
     @queued = nil
+    MGQ_MpCoopScene::Own.leave("the world went back to the Great Decision", true) if defined?(MGQ_MpCoopScene::Own)
     log("playing #{commands.map { |entry| entry.code }.join(' ')} now")
     $game_map.interpreter.setup(commands, 0)
   end
@@ -1681,6 +1774,56 @@ module MGQ_MpWorldStory
     @force_post = true
   end
 
+  # Writes the story's waiting changes at once, without the wait for the story to rest, as the game
+  # saves or leaves the world, after which this game may write nothing. Not while the player tells
+  # the story, nor while a write or a take waits or post_due? holds every write back.
+  #
+  # @param reason [String] Why, for the log.
+  # @return [Boolean] Whether a request to the relay started.
+  def self.flush(reason)
+    return false unless @mode == :world && @base && @pending.nil? && !@busy[:post] && !@busy[:lock] && active?
+    return false if MGQ_MpCoopEvents.telling_or_moved? || MGQ_MpCoopEvents.pvp_running? || novel_running? || holding?
+
+    scan
+    return false unless @force_post || @marker_at || @change_at
+
+    log("#{reason}: writing the story's waiting changes at once")
+    send_post
+    @busy[:post] || @busy[:lock] ? true : false
+  rescue => e
+    log("writing the story's waiting changes at once failed: #{e.class}: #{e.message}")
+    false
+  end
+
+  # Notes the story the player built on in the save and writes the story's waiting changes at once.
+  # Called before the game makes a save's contents.
+  def self.saving
+    note_save
+    flush("the game saves")
+  rescue => e
+    log("noting the story in the save failed: #{e.class}: #{e.message}")
+  end
+
+  # Writes the story's waiting changes as the game closes, waiting CLOSE_WAIT_SECONDS at most for
+  # the relay's answer, since the DLL's request ends with the game.
+  def self.game_closes
+    return unless flush("the game closes")
+
+    give_up_at = Time.now + CLOSE_WAIT_SECONDS
+    sleep(CLOSE_POLL_SECONDS) while writing? && Time.now < give_up_at
+    log(writing? ? "the game closes before the relay answered the write" : "the relay answered the write before the game closed")
+  rescue => e
+    log("writing the story as the game closes failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether the DLL still writes the story or locks a route for this game.
+  #
+  # @return [Boolean] Whether it does.
+  def self.writing?
+    state = Relay.headers
+    state["post"] == "busy" || state["lock"] == "busy"
+  end
+
   # Writes counters for the relay: the main story, the route under way alone, the routes cleared,
   # and the endpoint when it moved.
   #
@@ -1864,6 +2007,48 @@ module MGQ_MpWorldStory
   # @return [Boolean] Whether it does.
   def self.marker?(kind, key)
     (kind == 0 && PROGRESS_SWITCHES.include?(key)) || (kind == 1 && PROGRESS_VARIABLES.include?(key))
+  end
+
+  # Reports whether a switch or variable moves the world's story on as it changes: one that tells
+  # how far the story is (see marker?) or a one-way variable (see one_way?).
+  #
+  # @param kind [Integer] 0 for a switch, 1 for a variable.
+  # @param id [Integer] Its id.
+  # @return [Boolean] Whether it does.
+  def self.moves_on?(kind, id)
+    marker?(kind, id) || (kind == 1 && one_way?(id))
+  end
+
+  # Reads the values of the switches and variables that move the world's story on, see moves_on?.
+  #
+  # @return [Array] Their values, in an order that stays the same.
+  def self.progress_now
+    variables = MGQ_MpStoryState.data_of($game_variables)
+    switches = MGQ_MpStoryState.data_of($game_switches)
+    one_way = defined?(MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES) ? MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES.select { |id| one_way?(id) } : []
+    (PROGRESS_VARIABLES | one_way).map { |id| variables[id].to_i } + PROGRESS_SWITCHES.map { |id| switches[id] ? true : false }
+  end
+
+  # Reports whether event commands from a place on may move the world's story on: they set a
+  # switch or variable that does (see moves_on?), themselves or in a common event they call, up to
+  # PROGRESS_CALL_DEPTH deep, behind a branch taken or not.
+  #
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @param from [Integer] The place to read from.
+  # @param depth [Integer] How many common events deep the list is.
+  # @return [Boolean] Whether they may.
+  def self.progress_ahead?(list, from, depth = 0)
+    list[from..-1].to_a.any? do |entry|
+      params = entry.parameters
+      case entry.code
+      when 121 then (params[0]..params[1]).any? { |id| moves_on?(0, id) }
+      when 122 then (params[0]..params[1]).any? { |id| moves_on?(1, id) }
+      when 117
+        common = depth < PROGRESS_CALL_DEPTH && $data_common_events[params[0]]
+        common ? progress_ahead?(common.list || [], 0, depth + 1) : false
+      else false
+      end
+    end
   end
 
   # Names a switch, variable or self switch for the log.
@@ -2192,6 +2377,22 @@ begin
   MGQ_MpHooks.after(DataManager.singleton_class, :setup_new_game, "world_story") { MGQ_MpWorldStory.loaded(:new_game) }
 rescue => e
   MGQ_MpWorldStory.log("hooks FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  # Before a save is made, the save notes the story the player built on, and the story's waiting
+  # changes go out at once.
+  MGQ_MpHooks.before(DataManager.singleton_class, :make_save_contents, "world_story") { MGQ_MpWorldStory.saving }
+
+  # Before the title screen closes the world, and before F12 starts the game's scenes anew, the
+  # story's waiting changes go out at once.
+  MGQ_MpHooks.before(Scene_Title, :start, "world_story") { MGQ_MpWorldStory.flush("the game goes back to the title screen") } if defined?(Scene_Title)
+  MGQ_MpHooks.before(SceneManager.singleton_class, :run, "world_story") { MGQ_MpWorldStory.flush("F12 reset the game") }
+
+  # As the game closes, the story's waiting changes go out too.
+  at_exit { MGQ_MpWorldStory.game_closes }
+rescue => e
+  MGQ_MpWorldStory.log("leaving hooks FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks of this script alone, through core_hooks.rbx.

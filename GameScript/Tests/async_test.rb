@@ -2,6 +2,9 @@
 #  async_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that the live map shows none of the HUD the map shows
+#                            - Checked that the save and load screens keep their picture of the map
+#                            - Checked the memory the game uses in the log of a switch of screens
 #      Paulinchen  2026-10-06: Checked that a live map that fails is freed and the menu's picture shows again
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-09-30: Created
@@ -42,6 +45,9 @@ end
 $screen = []
 # Stands in for the loader's log, printing its lines.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
+# Stands in for the DLL, which describes the memory the game uses as $memory_usage says.
+module MGQ_Multiplayer; module Link; def self.read(_name, _size); $memory_usage; end; end; end
+$memory_usage = ""
 # Stands in for world.rbx, a world open while $open is.
 module MGQ_MpWorld; def self.open?; $open; end; end
 
@@ -80,6 +86,10 @@ class Scene_MenuBase < Scene_Base
 end
 # Stands in for the main menu.
 class Scene_Menu < Scene_MenuBase; end
+# Stands in for the save and load screens' base.
+class Scene_File < Scene_MenuBase; end
+# Stands in for the save screen.
+class Scene_Save < Scene_File; end
 # Stands in for a menu with a background of its own.
 class Scene_Poker < Scene_MenuBase
   def create_background; @background_sprite = Sprite.new; @background_sprite.bitmap = Bitmap.new; end
@@ -218,6 +228,7 @@ live = menu.instance_variable_get(:@mgq_mp_live_map)
 check("a menu shows the live map", live.is_a?(Spriteset_MpLiveMap), true)
 check("in place of its picture", menu.background_sprite.visible, false)
 check("below the menu", [live.viewport1.z, live.viewport2.z, live.viewport3.z].all? { |z| z < 0 }, true)
+check("without the HUD the map shows", [live.mgq_mp_hud?, Spriteset_Map.new.mgq_mp_hud?], [false, true])
 menu.update_basic
 check("the live map moves every frame", live.updates, 1)
 menu.dispose_background
@@ -231,6 +242,9 @@ menu.dispose_background
 poker = Scene_Poker.new
 poker.create_background
 check("a menu with its own background keeps it", [poker.instance_variable_get(:@mgq_mp_live_map), poker.background_sprite.visible], [nil, true])
+save = Scene_Save.new
+save.create_background
+check("the save screen keeps its picture of the map (issue 42)", [save.instance_variable_get(:@mgq_mp_live_map), save.background_sprite.visible], [nil, true])
 SceneManager.instance_variable_set(:@stack, [])
 title_menu = Scene_Menu.new
 title_menu.create_background
@@ -259,6 +273,10 @@ check("the map to a battle keeps its fade", switch(map_scene, Scene_Battle.new, 
 check("a menu to the title keeps its fade", switch(menu_scene, Scene_Title.new, [map_scene]), [:freeze, :transition])
 $open = false
 check("outside a world everything fades as ever", switch(map_scene, menu_scene, [map_scene]), [:freeze, :transition])
+$memory_usage = "private 812 MB, 320 GDI and 150 USER handles"
+check("every switch logs the memory the game uses", logged_lines { switch(menu_scene, Scene_Battle.new, [map_scene]) },
+      ["async: switching from Scene_Menu to Scene_Battle; private 812 MB, 320 GDI and 150 USER handles"])
+$memory_usage = ""
 $open = true
 SceneManager.scene = menu_scene
 $screen.clear

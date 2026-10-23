@@ -2,6 +2,8 @@
 //  battles.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Told a player who comes onto a battle that just ended how it ended
+//                            - Told whether a player plays in a running battle of a world
 //      Paulinchen  2026-10-15: Read the battle server's boss reports and wrote the pools' lines for it
 //                            - Added the players the battle server takes in late
 //                            - Created
@@ -139,6 +141,13 @@ export class BattleTable {
     this.limits = limits;
     /** @type {Map<string, {world: string, battle: string, players: Map<string, number>, came: Set<string>, startedAt: number, starter: string}>} */
     this.battles = new Map();
+    /**
+     * Why each battle that ended within the last limits.arriveMs ended, so its players who come
+     * late learn it.
+     *
+     * @type {Map<string, {end: string, at: number}>}
+     */
+    this.ended = new Map();
     this.opens = new RateLimiter({ burst: limits.openBurst, refillMs: limits.openRefillMs }, clock);
   }
 
@@ -198,13 +207,17 @@ export class BattleTable {
    * @param {string} world The world.
    * @param {string} battle The battle's id.
    * @param {string} player The player's id.
-   * @returns {{seat: number} | {status: number, body: object}} Their seat, or why not.
+   * @returns {{seat: number} | {status: number, body: object}} Their seat, or why not: for a battle
+   *   that ended within limits.arriveMs, 404 with how it ended, one of BATTLE_END, as its code.
    */
   admit(world, battle, player) {
     const entry = this.get(world, battle);
 
     if (!entry) {
-      return { status: 404, body: { error: "no such battle runs in the world" } };
+      const ended = this.ended.get(keyOf(world, battle));
+      return ended
+        ? { status: 404, body: { error: `the battle ended: ${ended.end}`, code: ended.end } }
+        : { status: 404, body: { error: "no such battle runs in the world" } };
     }
 
     if (!entry.players.has(player)) {
@@ -240,13 +253,35 @@ export class BattleTable {
   }
 
   /**
-   * Forgets a battle.
+   * Forgets a battle, but for how it ended, see admit.
    *
    * @param {string} world The world.
    * @param {string} battle The battle's id.
+   * @param {string} [end] Why it ended, one of BATTLE_END.
    */
-  close(world, battle) {
-    this.battles.delete(keyOf(world, battle));
+  close(world, battle, end = BATTLE_END.ended) {
+    const key = keyOf(world, battle);
+
+    if (this.battles.delete(key)) {
+      this.ended.set(key, { end, at: this.clock() });
+    }
+  }
+
+  /**
+   * Tells whether a player plays in a running battle of a world.
+   *
+   * @param {string} world The world.
+   * @param {string} player The player's id.
+   * @returns {boolean} Whether they do, whether or not they came onto its channel yet.
+   */
+  playing(world, player) {
+    for (const entry of this.battles.values()) {
+      if (entry.world === world && entry.players.has(player)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -268,12 +303,19 @@ export class BattleTable {
   }
 
   /**
-   * Finds the battles whose time is up: no player came since they started, or they lasted too long.
+   * Finds the battles whose time is up: no player came since they started, or they lasted too long;
+   * forgets how the battles that ended long enough ago ended.
    *
    * @param {number} now The current time in milliseconds.
    * @returns {{world: string, battle: string, end: string}[]} The battles and why they end.
    */
   overdue(now) {
+    for (const [key, { at }] of this.ended) {
+      if (now - at >= this.limits.arriveMs) {
+        this.ended.delete(key);
+      }
+    }
+
     const ended = [];
 
     for (const entry of this.battles.values()) {

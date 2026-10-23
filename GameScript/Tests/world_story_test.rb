@@ -2,6 +2,9 @@
 #  world_story_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that the return to the Great Decision takes the player out of their own scene first
+#                            - Checked which event commands may move the world's story on
+#                            - Checked that a change saved before its write goes out at once and stays after a load
 #      Paulinchen  2026-10-18: Checked the Sonya scene's step in the world's story
 #                            - Checked that a story lists no switch or variable 0
 #      Paulinchen  2026-10-17: Checked that the story waits while a lost raid boss battle's defeat runs
@@ -239,6 +242,10 @@ class Window_MpWorldForm; def initialize(*); end; end
 class Scene_MenuBase; end
 # Stands in for the map scene.
 class Scene_Map; end
+# Stands in for the title screen, which starts with nothing to show.
+class Scene_Title; def start; end; end
+# Stands in for the game's system data, which a save keeps.
+class Game_System; end
 
 # Stands in for the scene manager: the checks set the scene, and scenes called go into $scenes.
 module SceneManager
@@ -440,6 +447,7 @@ def lists_of(text); MGQ_MpStoryState.unpack(text.chomp("\0")); end
 $game_map = Game_Map.new
 $game_player = Game_Player.new
 $game_party = Game_Party.new
+$game_system = Game_System.new
 $game_system_switches = {}
 SceneManager.scene = Scene_Map.new
 $telling = false
@@ -1017,6 +1025,13 @@ check("never the Final Chapter's reset, the route's progress or the transfer",
 choices.forget("next check")
 
 # The world going back to the Great Decision.
+# Stands in for the co-op scene: nothing of a teller's scene waits to be put back while
+# $scene_pending is unset, and each time the player is taken out of their own scene, whether wholly
+# and how many lists were set up by then, is noted in $left.
+module MGQ_MpCoopScene
+  def self.pending?; $scene_pending; end
+  module Own; def self.leave(_reason, whole = false); ($left ||= []) << [whole, $setups.size]; end; end
+end
 $notices.clear
 $setups = []
 story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "33", :relay => true)
@@ -1027,6 +1042,18 @@ check("the world's return to the Great Decision reaches the player", [$game_vari
 check("and says so", $notices, ["The world's story went back to the Great Decision."])
 check("whose own half plays once the player is free: the Final Chapter's reset, where a game over returns them and the transfer to the Great Decision",
       ($setups.last || []).map { |entry| [entry.code, entry.parameters] }, [[117, [154]], [122, [1002, 1002, 0, 0, 112]], [122, [57, 57, 0, 0, 407]], [201, [0, 544, 25, 25, 8, 2]], [0, []]])
+check("after taking the player wholly out of a scene of their own, such as their route's ending walked in a temporary party",
+      $left, [[true, $setups.size - 1]])
+
+# Event commands may move the world's story on when they set a value that tells how far it is or a
+# one-way variable, themselves or in a common event they call.
+$data_common_events[390] = RPG::CommonEvent.new([c(122, [1144, 1144, 0, 0, 2])])
+minigame = [c(122, [845, 845, 0, 0, 1]), c(201, [0, 1886, 55, 11, 2, 0]), c(121, [96, 96, 0])]
+scene = [c(201, [0, 430, 5, 5, 2, 0]), c(117, [390])]
+check("a scene that moves its teller first and moves the story on in a common event after may move it on, a minigame setting values of its own does not",
+      [story.progress_ahead?(scene, 0), story.progress_ahead?(minigame, 0)], [true, false])
+check("nor does a scene whose progress lies behind the place read from", story.progress_ahead?([c(122, [1001, 1001, 0, 0, 40]), c(201, [0, 430, 5, 5, 2, 0])], 1), false)
+$data_common_events[390] = nil
 check("the Great Decision then offers the route left", choices.labels(:decision), ["Side with the Goddess Ilias (Judgement)"])
 
 # The choices each player keeps their own in a Raid World.
@@ -1267,6 +1294,56 @@ relay({ "rev" => 6, "wrev" => 6, "p" => 30, "part" => "2", "fetch" => "done" })
 frames(400)
 check("a player behind whose story the world cannot read writes theirs, built on nothing they stood on behind",
       [stood_on.nil?, story.mode, story.base.nil? || !stood_on.equal?(story.base)], [false, :world, true])
+
+# A change the player saves within the seconds a write waits for the story to rest, as a scene's
+# last self switch: the save writes it at once, and a load keeps it as the player's own though the
+# relay never got it.
+$calls.clear
+new_story({ 1001 => 30 })
+story.loaded(:load)
+frames(1)
+relay({ "rev" => 7, "wrev" => 7, "p" => 30, "part" => "2", "fetch" => "done" }, packed({ 1001 => 30 }))
+frames(16)
+$calls.clear
+$game_self_switches[[110, 28, "A"]] = true
+frames(60)
+check("a change waits for the story to rest", calls_of("mp_raid_story_post"), [])
+DataManager.make_save_contents
+check("saving writes it at once", calls_of("mp_raid_story_post").map { |args| args[1] }, [7])
+relay("rev" => 7, "wrev" => 7, "p" => 30, "part" => "2", "post" => "failed", "post_error" => "offline")
+frames(16)
+save = Marshal.dump($game_system)
+# Loads the save made above, its story with the scene's self switch on.
+def load_save(save)
+  new_story({ 1001 => 30 }, [], { [110, 28, "A"] => true })
+  $game_system = Marshal.load(save)
+  DataManager.load_game_without_rescue(0)
+end
+$calls.clear
+load_save(save)
+frames(1)
+relay({ "rev" => 8, "wrev" => 8, "p" => 30, "part" => "2", "fetch" => "done" }, packed({ 1001 => 30 }))
+frames(16)
+check("a load keeps the change the world's story lacks", $game_self_switches[[110, 28, "A"]], true)
+frames(400)
+post = calls_of("mp_raid_story_post").last
+check("and writes it", post && [post[1], lists_of(post[3])["ss"]], [8, "110.28.A"])
+relay("rev" => 9, "wrev" => 9, "p" => 30, "part" => "2", "post" => "accepted", "post_rev" => 9)
+frames(16)
+MGQ_MpGame.get($game_system, :world_story)["world"] = "w9"
+save = Marshal.dump($game_system)
+load_save(save)
+frames(1)
+relay({ "rev" => 10, "wrev" => 10, "p" => 30, "part" => "2", "fetch" => "done" }, packed({ 1001 => 30 }))
+frames(16)
+check("a save that noted another world's story takes the world's as before", $game_self_switches[[110, 28, "A"]], false)
+$calls.clear
+$game_switches[330] = true
+frames(60)
+Scene_Title.new.start
+check("going back to the title screen writes a waiting change at once", calls_of("mp_raid_story_post").map { |args| lists_of(args[3])["s"] }, ["330"])
+relay("rev" => 11, "wrev" => 11, "p" => 30, "part" => "2", "post" => "accepted", "post_rev" => 11)
+frames(16)
 
 # Closing the world forgets its story.
 MGQ_MpWorld.world = nil
