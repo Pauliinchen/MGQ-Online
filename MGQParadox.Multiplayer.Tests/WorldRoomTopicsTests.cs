@@ -2,7 +2,8 @@
 //  WorldRoomTopicsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Created
+//      Paulinchen  2026-10-23: Checked that the event data reads ahead as the world opens
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -18,8 +19,8 @@ namespace MGQParadox.Multiplayer.Tests;
 
 /// <summary>
 /// Covers the open world's bridge topics over a world connection that never connects: what the
-/// scripts hand over, a party action answering the party's view, the views the drain posts, and a
-/// chat line that cannot go out.
+/// scripts hand over, a party action answering the party's view, the views the drain posts, a
+/// chat line that cannot go out, and the event data read ahead.
 /// </summary>
 public sealed class WorldRoomTopicsTests
 {
@@ -34,9 +35,14 @@ public sealed class WorldRoomTopicsTests
     private readonly BridgeContext _context = new(1, new QuietLog());
 
     /// <summary>
+    /// The maps the event data was read ahead for, in order.
+    /// </summary>
+    private readonly List<long> _readAhead = [];
+
+    /// <summary>
     /// Registers the topics over a world connection of the test's own.
     /// </summary>
-    public WorldRoomTopicsTests() => WorldRoomTopics.Register(_context, new WorldSession());
+    public WorldRoomTopicsTests() => WorldRoomTopics.Register(_context, new WorldSession(), _readAhead.Add);
 
     /// <summary>
     /// Asserts that an invite answers the party's view, standing for its frames counted from the
@@ -67,6 +73,24 @@ public sealed class WorldRoomTopicsTests
     }
 
     /// <summary>
+    /// Asserts that the event data reads ahead as the world opens, again on every other map and once
+    /// the world opens anew, never while the player stays on one map or outside a world.
+    /// </summary>
+    [Fact]
+    public void Me_ReadsTheEventDataAheadAsTheWorldOpensAndOnEveryOtherMap()
+    {
+        TellMe(false, null);
+        TellMe(true, null);
+        TellMe(true, "5");
+        TellMe(true, "5");
+        TellMe(true, "7");
+        TellMe(false, null);
+        TellMe(true, "7");
+
+        Assert.Equal([0, 5, 7, 7], _readAhead);
+    }
+
+    /// <summary>
     /// Asserts that a global chat line is turned down without a connection: not mirrored, not sent.
     /// </summary>
     [Fact]
@@ -76,6 +100,19 @@ public sealed class WorldRoomTopicsTests
 
         Assert.Equal(new RubyHash { { "sent", false }, { "said", 0 } }, answer);
     }
+
+    /// <summary>
+    /// Tells the player's frame.
+    /// </summary>
+    /// <param name="inWorld">Whether a world is open.</param>
+    /// <param name="map">The player's map, <see langword="null"/> while on none.</param>
+    private void TellMe(bool inWorld, string? map) => Call(WorldRoomTopics.MeTopic, new RubyHash
+    {
+        { "in_world", inWorld },
+        { "state", map is null ? RubyNil.Value : new RubyHash { { "state", "1" }, { "map", map }, { "x", "3" }, { "y", "4" } } },
+        { "raid", false },
+        { "story_map", RubyNil.Value },
+    });
 
     /// <summary>
     /// Calls a topic and reads the value it answers.

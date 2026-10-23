@@ -2,14 +2,17 @@
 //  EventTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Answered the event command index
+//      Paulinchen  2026-10-23: Read the event data ahead on a thread of the dll
+//                            - Answered the event command index
 //                            - Created
 //
 //----------------------------------------------------------------
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Events;
@@ -69,6 +72,11 @@ internal static class EventTopics
     ];
 
     /// <summary>
+    /// Held while <see cref="_current"/> is made.
+    /// </summary>
+    private static readonly Lock CurrentLock = new();
+
+    /// <summary>
     /// The game's events, read from the game folder on first use.
     /// </summary>
     private static EventCatalog? _current;
@@ -76,7 +84,44 @@ internal static class EventTopics
     /// <summary>
     /// Gets the game's events, read from the game folder on first use.
     /// </summary>
-    public static EventCatalog Current => _current ??= new EventCatalog(GameData.OfFolder(ModFolder.GamePathOf(".")));
+    public static EventCatalog Current
+    {
+        get
+        {
+            lock (CurrentLock)
+            {
+                return _current ??= new EventCatalog(GameData.OfFolder(ModFolder.GamePathOf(".")));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reads the game's common events and a map on a thread of the DLL, so the first sort there
+    /// finds them read.
+    /// </summary>
+    /// <param name="map">The map, 0 for none.</param>
+    public static void ReadAhead(long map) => Threads.Start("Event data", () => ReadAhead(() => Current, map, Log.Write));
+
+    /// <summary>
+    /// Reads the game's common events and a map, logging a failure, after which the first sort
+    /// that needs them reads them itself.
+    /// </summary>
+    /// <param name="catalog">Gives the game's events.</param>
+    /// <param name="map">The map, 0 for none.</param>
+    /// <param name="log">Writes a line into the log.</param>
+    internal static void ReadAhead(Func<EventCatalog> catalog, long map, Action<string> log)
+    {
+        try
+        {
+            long started = Stopwatch.GetTimestamp();
+            catalog().ReadAhead(map is > 0 and <= int.MaxValue ? (int)map : 0);
+            log($"events: read the event data ahead for map {map} in {Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms");
+        }
+        catch (Exception e)
+        {
+            log($"events: could not read the event data ahead for map {map}: {e.GetType().Name}: {e.Message}");
+        }
+    }
 
     /// <summary>
     /// Registers the topics on a context.

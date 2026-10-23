@@ -2,7 +2,8 @@
 //  GameData.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Created
+//      Paulinchen  2026-10-23: Read each file once when threads ask for it together
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -19,61 +20,80 @@ namespace MGQOnline.Game.Events.Data;
 /// </summary>
 /// <remarks>
 /// Each file is read once on first use and kept, the maps excepted, which a caller keeps as it
-/// needs them; a game of 1,843 maps would not fit the game's 32-bit process at once.
+/// needs them; a game of 1,843 maps would not fit the game's 32-bit process at once. A file another
+/// thread reads meanwhile is waited for, never read twice.
 /// </remarks>
-/// <param name="files">Where the files come from.</param>
-public sealed class GameData(IGameDataFiles files)
+public sealed class GameData
 {
     /// <summary>
-    /// The switch and variable names, <see langword="null"/> before they are read.
+    /// Where the files come from.
     /// </summary>
-    private GameSystemNames? _system;
+    private readonly IGameDataFiles _files;
 
     /// <summary>
-    /// The common events by id, <see langword="null"/> before they are read.
+    /// The switch and variable names.
     /// </summary>
-    private CommonEvent?[]? _commonEvents;
+    private readonly ReadOnce<GameSystemNames> _system;
 
     /// <summary>
-    /// The troops by id, <see langword="null"/> before they are read.
+    /// The common events by id.
     /// </summary>
-    private Troop?[]? _troops;
+    private readonly ReadOnce<CommonEvent?[]> _commonEvents;
 
     /// <summary>
-    /// Every map the map lists name, <see langword="null"/> before they are read.
+    /// The troops by id.
     /// </summary>
-    private MapInfo[]? _maps;
+    private readonly ReadOnce<Troop?[]> _troops;
 
     /// <summary>
-    /// How many actors the game's list holds, <see langword="null"/> before it is read.
+    /// Every map the map lists name.
     /// </summary>
-    private int? _actorCount;
+    private readonly ReadOnce<MapInfo[]> _maps;
+
+    /// <summary>
+    /// How many actors the game's list holds.
+    /// </summary>
+    private readonly ReadOnce<int> _actorCount;
+
+    /// <summary>
+    /// Initializes the data of some files, each read on first use.
+    /// </summary>
+    /// <param name="files">Where the files come from.</param>
+    public GameData(IGameDataFiles files)
+    {
+        _files = files;
+        _system = new(ReadSystem);
+        _commonEvents = new(() => ReadList<CommonEvent>(GameDataPaths.CommonEvents));
+        _troops = new(() => ReadList<Troop>(GameDataPaths.Troops));
+        _maps = new(ReadMapInfos);
+        _actorCount = new(() => Read(GameDataPaths.Actors) is RubyArray actors ? actors.Count : 0);
+    }
 
     /// <summary>
     /// Gets the switch and variable names.
     /// </summary>
-    public GameSystemNames System => _system ??= ReadSystem();
+    public GameSystemNames System => _system.Value;
 
     /// <summary>
     /// Gets the common events by id, <see langword="null"/> where the game has none.
     /// </summary>
-    public IReadOnlyList<CommonEvent?> CommonEvents => _commonEvents ??= ReadList<CommonEvent>(GameDataPaths.CommonEvents);
+    public IReadOnlyList<CommonEvent?> CommonEvents => _commonEvents.Value;
 
     /// <summary>
     /// Gets the troops by id, <see langword="null"/> where the game has none.
     /// </summary>
-    public IReadOnlyList<Troop?> Troops => _troops ??= ReadList<Troop>(GameDataPaths.Troops);
+    public IReadOnlyList<Troop?> Troops => _troops.Value;
 
     /// <summary>
     /// Gets every map the map lists of Data and its Data/Map folders name, by id.
     /// </summary>
-    public IReadOnlyList<MapInfo> Maps => _maps ??= ReadMapInfos();
+    public IReadOnlyList<MapInfo> Maps => _maps.Value;
 
     /// <summary>
     /// Gets how many entries the game's actor list holds, its first empty one included, which is
     /// how many affection variables the game keeps.
     /// </summary>
-    public int ActorCount => _actorCount ??= Read(GameDataPaths.Actors) is RubyArray actors ? actors.Count : 0;
+    public int ActorCount => _actorCount.Value;
 
     /// <summary>
     /// Opens the data of a game folder, see <see cref="GameFolderFiles"/>.
@@ -99,7 +119,7 @@ public sealed class GameData(IGameDataFiles files)
     public GameMap? ReadMap(int id)
     {
         string path = GameDataPaths.Map(id);
-        if (id <= 0 || !files.Exists(path))
+        if (id <= 0 || !_files.Exists(path))
         {
             return null;
         }
@@ -122,7 +142,7 @@ public sealed class GameData(IGameDataFiles files)
     /// </summary>
     /// <param name="path">The file.</param>
     /// <returns>Its value, nil for a file that is not there.</returns>
-    private RubyValue Read(string path) => files.Exists(path) ? RubyMarshal.Read(files.Read(path), GameDataPruner.Instance) : RubyNil.Value;
+    private RubyValue Read(string path) => _files.Exists(path) ? RubyMarshal.Read(_files.Read(path), GameDataPruner.Instance) : RubyNil.Value;
 
     /// <summary>
     /// Reads a data file that lists objects by id, its first entry empty.
@@ -159,7 +179,7 @@ public sealed class GameData(IGameDataFiles files)
     private MapInfo[] ReadMapInfos()
     {
         var maps = new List<MapInfo>();
-        for (int folder = 0; folder == 0 || files.Exists(GameDataPaths.MapInfos(folder)); folder++)
+        for (int folder = 0; folder == 0 || _files.Exists(GameDataPaths.MapInfos(folder)); folder++)
         {
             if (Read(GameDataPaths.MapInfos(folder)) is not RubyHash infos)
             {

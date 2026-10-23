@@ -3,7 +3,8 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-28: Registered the topic that waits for the world room's sends as the game closes
-//      Paulinchen  2026-10-23: Posted a game kept aside and the ids of a player moved or gone
+//      Paulinchen  2026-10-23: Read the event data ahead as the world opens and the map changes
+//                            - Posted a game kept aside and the ids of a player moved or gone
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -19,6 +20,7 @@ using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.World;
 using MGQParadox.Multiplayer.Network.Transport;
 using MGQParadox.Multiplayer.Network.World;
+using MGQParadox.Multiplayer.Topics;
 
 namespace MGQParadox.Multiplayer;
 
@@ -172,14 +174,27 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     private readonly Dictionary<string, RubyValue> _posted = new(StringComparer.Ordinal);
 
     /// <summary>
+    /// Reads the event data of a map ahead, see <see cref="EventTopics.ReadAhead(long)"/>.
+    /// </summary>
+    private readonly Action<long> _readAhead;
+
+    /// <summary>
+    /// The map the event data was last read ahead for in the open world, <see langword="null"/>
+    /// while no world is open.
+    /// </summary>
+    private long? _readAheadMap;
+
+    /// <summary>
     /// Initializes the room of a context.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
     /// <param name="session">The world connection.</param>
-    private WorldRoomTopics(BridgeContext context, WorldSession session)
+    /// <param name="readAhead">Reads the event data of a map ahead.</param>
+    private WorldRoomTopics(BridgeContext context, WorldSession session, Action<long> readAhead)
     {
         _context = context;
         _session = session;
+        _readAhead = readAhead;
         _room = new WorldRoom(this, Identity, () => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), RandomId);
     }
 
@@ -187,17 +202,18 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     /// Registers the topics and the frame step on a context, over the game's world connection.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
-    public static void Register(BridgeContext context) => Register(context, WorldSession.Current);
+    public static void Register(BridgeContext context) => Register(context, WorldSession.Current, EventTopics.ReadAhead);
 
     /// <summary>
     /// Registers the topics and the frame step on a context.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
     /// <param name="session">The world connection.</param>
+    /// <param name="readAhead">Reads the event data of a map ahead, as the world opens and on every other map.</param>
     /// <returns>The room's topics, for tests.</returns>
-    internal static WorldRoomTopics Register(BridgeContext context, WorldSession session)
+    internal static WorldRoomTopics Register(BridgeContext context, WorldSession session, Action<long> readAhead)
     {
-        var topics = new WorldRoomTopics(context, session);
+        var topics = new WorldRoomTopics(context, session, readAhead);
         context.Register(MeTopic, (_, request) => topics.TakeMe(request.AsHash()));
         context.Register(RoutesTopic, (_, request) => topics.TakeRoutes(request.AsArray()));
         context.Register(ResetSinceTopic, (_, _) =>
@@ -308,7 +324,8 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     private static string RandomId(int length) => RandomNumberGenerator.GetString(RandomLetters, length);
 
     /// <summary>
-    /// Takes the player's frame.
+    /// Takes the player's frame, and reads the event data ahead as the world opens and the player
+    /// enters another map.
     /// </summary>
     /// <param name="request">{"in_world", "state", "raid", "story_map"}.</param>
     /// <returns><see langword="null"/>, no reply.</returns>
@@ -326,6 +343,16 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
 
         int? storyMap = request["story_map"] is RubyInteger map ? (int)map.Value : null;
         _room.TakeOwn(request["in_world"] is RubyBool { Flag: true }, state, request["raid"] is RubyBool { Flag: true }, storyMap);
+        if (!_room.InWorld)
+        {
+            _readAheadMap = null;
+        }
+        else if (_readAheadMap != _room.OwnMap)
+        {
+            _readAheadMap = _room.OwnMap;
+            _readAhead(_room.OwnMap);
+        }
+
         return null;
     }
 

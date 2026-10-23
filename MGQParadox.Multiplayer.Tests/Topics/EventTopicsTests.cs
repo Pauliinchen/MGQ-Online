@@ -2,12 +2,15 @@
 //  EventTopicsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Checked the event command index
+//      Paulinchen  2026-10-23: Checked that a failed read ahead is logged
+//                            - Checked the event command index
 //                            - Created
 //
 //----------------------------------------------------------------
 
 using System;
+using System.Collections.Generic;
+using System.IO;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Events;
 using MGQOnline.Game.Events.Data;
@@ -18,7 +21,7 @@ namespace MGQParadox.Multiplayer.Tests.Topics;
 
 /// <summary>
 /// Covers the event sorter's topics as the scripts call them: the values a sort names it needs,
-/// pages the DLL's data lacks, and the map's pages at once.
+/// pages the DLL's data lacks, the map's pages at once, and a read ahead that fails.
 /// </summary>
 public sealed class EventTopicsTests : IDisposable
 {
@@ -102,6 +105,20 @@ public sealed class EventTopicsTests : IDisposable
 
         Assert.Equal(new RubyArray { 71 }, answer["troops"]);
         Assert.Equal(new RubyHash { { "s", new RubyArray { new RubyArray { 60, 61 } } }, { "v", new RubyArray() }, { "ss", new RubyArray { "A" } } }, answer["writes"]);
+    }
+
+    /// <summary>
+    /// Asserts that a read ahead that fails is logged and goes no further, since an exception
+    /// escaping the DLL's thread would end the game.
+    /// </summary>
+    [Fact]
+    public void ReadAhead_ThatFails_IsLogged()
+    {
+        var lines = new List<string>();
+
+        EventTopics.ReadAhead(() => throw new IOException("Data/CommonEvents.rvdata2 is locked"), 5, lines.Add);
+
+        Assert.Equal(["events: could not read the event data ahead for map 5: IOException: Data/CommonEvents.rvdata2 is locked"], lines);
     }
 
     /// <inheritdoc />
