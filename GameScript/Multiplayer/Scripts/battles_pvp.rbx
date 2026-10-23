@@ -2,6 +2,7 @@
 #  battles_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Left out a skill hit's message without a target in every battle
 #      Paulinchen  2026-10-22: Said the version to play on F11 for a step back to an older release
 #      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #      Paulinchen  2026-10-08: Left out a skill hit's message without a target in co-op and live battles too
@@ -290,11 +291,10 @@ module MGQ_MpBattlesPvp
     install_turns
   end
 
-  # Leaves out the message of a skill's next hit that finds no target any more in every battle the
-  # mod runs.
+  # Leaves out the message of a skill's next hit that finds no target any more in every battle.
   #
-  # Once a skill's hits struck the whole Frontline down while the Backline keeps the battle going,
-  # the game's message names the first target and ends the game on finding none.
+  # Once a skill's hits struck the whole Frontline down, such as one a Raid World's squad cut, the
+  # game's message names the first target and ends the game on finding none.
   def self.install_untargeted_messages
     MGQ_MpHooks.around(Scene_Battle, :display_use_item, "battles_pvp") do |scene, args, original|
       MGQ_MpBattlesPvp.leave_out_message?(scene, args) ? nil : original.call
@@ -312,7 +312,7 @@ module MGQ_MpBattlesPvp
   # @param args [Array] The arguments of the game's Scene_Battle#display_use_item: the action and the item.
   # @return [Boolean] Whether the message names a target that is not there.
   def self.leave_out_message?(scene, args)
-    return false unless MGQ_MpBattles.running? && args.size == 2
+    return false unless args.size == 2
     return false unless Battle.message_without_target?(MGQ_MpGame.get(scene, :subject), args[0], args[1])
 
     log("left out the message of #{args[1].name} in turn #{$game_troop.turn_count}: it names a target and none is left") rescue nil
