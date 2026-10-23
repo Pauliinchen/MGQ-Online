@@ -2,7 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Tested that a stopping relay closes every connection as a service restart and logs it
+//      Paulinchen  2026-10-23: Tested the story mapping's admin routes, their log and the games' read of the mapping
+//                            - Tested that a stopping relay closes every connection as a service restart and logs it
 //                            - Tested that the relay logs a world connection it closes
 //      Paulinchen  2026-10-22: Tested that the watch clears a rolled back current release once a newer release is out
 //                            - Tested the world list per game version, one world by its id, and released games kept out of a world with longer mods and from a longer mods rule
@@ -569,6 +570,25 @@ test("every game reads the release control, the admins set it, and the gate take
   }
 
   assert.equal((await gameFetch(directoryBase)).status, 200, "cleared, the MIN_VERSION setting counts again");
+});
+
+test("the admins edit the story mapping, the relay logs each batch, and every game reads it", async () => {
+  const relayBase = directoryBase.replace("/worlds", "");
+  const admin = await playerIdOf(ADMIN);
+  const edit = (key, edits) => fetch(`${relayBase}/admin/story/edit`, { method: "POST", headers: { [PLAYER_HEADER]: key }, body: JSON.stringify({ edits }) });
+
+  assert.equal((await edit(CREATOR, [{ table: "keys", op: "add", row: { key: "s2029", kind: "scene" } }])).status, 403);
+  assert.equal((await fetch(`${relayBase}/admin/story?player=${CREATOR}`)).status, 403);
+
+  const done = await edit(ADMIN, [{ table: "keys", op: "add", row: { key: "s2029", kind: "scene" } }]);
+  const { rev } = await done.json();
+  assert.equal(done.status, 200);
+  assert.ok(logged.info.some((line) => line.endsWith(`admin ${admin} changed the story mapping to rev ${rev}: add keys s2029`)));
+  assert.equal((await (await fetch(`${relayBase}/admin/story/keys/s2029/history`, { headers: { [PLAYER_HEADER]: ADMIN } })).json()).history[0].rev, rev);
+
+  const read = await (await fetch(`${relayBase}/story-mapping`)).json();
+  assert.deepEqual([read.rev, read.tables.keys], [rev, [{ key: "s2029", kind: "scene" }]]);
+  assert.deepEqual(await (await fetch(`${relayBase}/story-mapping?known=${rev}`)).json(), { rev, same: true });
 });
 
 test("a rolled back current release stays while the same latest release is out and goes once a newer one is", async () => {

@@ -361,6 +361,15 @@ Each starts a request on a thread of its own and returns at once; one request of
 
 **`mp_raid_checkpoint_state`**: `state` (`busy`, `done`, `none`, `failed`), `part`, `error` when failed, and when done the checkpoint's story headers (as above, `rev` and `wrev` both the revision of its write) and its unsealed text after them.
 
+### Story mapping (relay, not read by games yet)
+
+The relay keeps one story mapping that every Raid World shares (`Relay/core/story_mapping.js`, routes in [Relay/README.md](../Relay/README.md#story-mapping)), filled by hand after review, never imported. Until the game side reads it (story plan phase 3) the game keeps the Ruby tables it replaces:
+
+- `keys` rows: kind `shared`, `one_way` (`ONE_WAY_VARIABLES`, affection), `scene` (`SCENE_SWITCHES`), `chest` (`CHEST_FLAGS`), `count` (`COUNTS`), `personal`; options `defeatWrite` (`DEFEAT_WRITES`), `routeReturnClears` (`RETURN_CLEARED`), `defeatReturns` (`DEFEAT_RETURNS`), `battleScene` (`BATTLE_SCENES`), `localSteps` (the Queen's Cup: `CUP_VARIABLE`, `CUP_STEPS`, `CUP_OPEN`, `CUP_PLACES`). A key without a row is personal, so the Raid personal lists of `story_state.rbx` need no rows.
+- `events` rows: self switches shared or personal against the derived index, such as the Navy's lines (`NAVY_MAPS`, `NAVY_SELF_SWITCHES`), the chests (`coop_story_rewards.rbx` `CHESTS`, `chest: true`) and the found items on map 0 (`FOUND_MAP`, `FOUND_LETTER`), which no event reads.
+- The derived index (map events whose self switches are shared because they read or write a shared key) is built by the battle server from the rows of one `rowsRev` and kept beside them; it goes stale with the next batch.
+- The catch-up tables (`Relay/core/story_catchup.js`) hold one table per Ruby table of `world_catchup_data.rbx` (`PARTS` to `MAKINA`), `world_catchup.rbx` `COMPANION_VALUES` and `coop_story_rewards.rbx` (`event_rewards`, `side_events`), each row with every field of the Ruby row and an `order` where the game reads the table's order (`listed_after?`, the joins' story order).
+
 ### In the game (`world_story.rbx`)
 
 `MGQ_MpWorldStory` follows the story after the map's update (`tick`), behind menus and battles too, while a Raid World the directory knows is open (`active?`); the world's id is its `directory_id`. Classic worlds never reach it.

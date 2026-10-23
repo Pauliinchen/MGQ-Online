@@ -2,7 +2,9 @@
 //  server.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Kept a battle on the battle server from the moment the server took it
+//      Paulinchen  2026-10-23: Kept the story mapping, answered its admin routes and handed it to games
+//                            - Kept the catch-up tables beside the story mapping
+//                            - Kept a battle on the battle server from the moment the server took it
 //                            - Told a player who comes onto a battle that just ended how it ended
 //                            - Kept a world room connection for up to a day, and past that while its player is in a battle on the battle server
 //                            - Closed every connection as a service restart when it stops, and logged its start and the close codes it sends
@@ -86,6 +88,8 @@ import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js"
 import { RELEASE_REPO, RELEASE_ROUTE, ReleaseControl, ReleaseWatch, UPDATE_NAME, handleReleaseRequest, updateLine } from "../core/releases.js";
 import { ReportDesk, handleReportRequest, reportSettingsOf } from "../core/reports.js";
 import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, sealedGameRefusal, sealedGameRefused, storyPushText, storyRouteOf } from "../core/story.js";
+import { STORY_TABLES } from "../core/story_catchup.js";
+import { MAPPING_GAME_ROUTE, StoryMapping, handleMappingGameRequest } from "../core/story_mapping.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
   AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, LIMITS, OUT, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, admit, chatLineOf, chatText, newPeer, newWorldPeer,
@@ -381,6 +385,48 @@ export function memoryBossStores() {
 }
 
 /**
+ * Keeps the story mapping in memory, as its store.
+ *
+ * @returns {import("../core/story_mapping.js").StoryMappingStore} The store.
+ */
+export function memoryMappingStore() {
+  let meta;
+  let index;
+  /** @type {Map<string, Map<string, object>>} */
+  const tables = new Map();
+  /** @type {Map<string, object[]>} */
+  const histories = new Map();
+  const table = (name) => tables.get(name) ?? tables.set(name, new Map()).get(name);
+
+  return {
+    getMeta: async () => (meta ? structuredClone(meta) : undefined),
+    all: async (name) => [...table(name).values()].map((entry) => structuredClone(entry)),
+    get: async (name, id) => (table(name).has(id) ? structuredClone(table(name).get(id)) : undefined),
+    history: async (name, id) => structuredClone(histories.get(`${name}\n${id}`) ?? []),
+    commit: async (commit, keep) => {
+      meta = structuredClone(commit.meta);
+
+      for (const { table: name, entry } of commit.puts) {
+        table(name).set(entry.id, structuredClone(entry));
+      }
+
+      for (const { table: name, id } of commit.removes) {
+        table(name).delete(id);
+      }
+
+      for (const { table: name, id, change } of commit.changes) {
+        histories.set(`${name}\n${id}`, [structuredClone(change), ...(histories.get(`${name}\n${id}`) ?? [])].slice(0, keep));
+      }
+
+      if (commit.index) {
+        index = structuredClone(commit.index);
+      }
+    },
+    getIndex: async () => (index ? structuredClone(index) : undefined),
+  };
+}
+
+/**
  * Marks every player of every world offline, as the relay does when it starts: the world rooms
  * live in memory, so whoever the database still lists, from before a restart or from the relay a
  * copy came from, is in none of them.
@@ -403,10 +449,10 @@ export async function clearPresence(directory) {
 
 /**
  * Opens the stores the relay keeps its worlds, mods, trades and Raid Worlds' stories and boss
- * pools, the newest release of the mod it has seen and the release control in: a SQLite database at a path, or memory without one.
+ * pools, the newest release of the mod it has seen, the release control and the story mapping in: a SQLite database at a path, or memory without one.
  *
  * @param {string | undefined} path The database's path, as DATABASE_VARIABLE names it; empty or undefined for memory.
- * @returns {Promise<{directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, releases: import("../core/releases.js").ReleaseStore, close: () => void}>} The stores, and a way to close them.
+ * @returns {Promise<{directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, releases: import("../core/releases.js").ReleaseStore, mapping: import("../core/story_mapping.js").StoryMappingStore, close: () => void}>} The stores, and a way to close them.
  */
 export async function openStores(path) {
   if (path) {
@@ -414,7 +460,10 @@ export async function openStores(path) {
     return openSqliteStores(path);
   }
 
-  return { directory: memoryStore(), mods: memoryModStore(), trades: memoryTradeStore(), stories: memoryStoryStores(), bosses: memoryBossStores(), releases: memoryReleaseStore(), close: () => {} };
+  return {
+    directory: memoryStore(), mods: memoryModStore(), trades: memoryTradeStore(), stories: memoryStoryStores(), bosses: memoryBossStores(), releases: memoryReleaseStore(), mapping: memoryMappingStore(),
+    close: () => {},
+  };
 }
 
 /**
@@ -555,14 +604,15 @@ function headerOf(request, name) {
 /**
  * Creates a relay server, not yet listening.
  *
- * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk, minVersion?: string, release?: ReleaseControl, releases?: ReleaseWatch | null}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log, the bug report desk, off unless given, the lowest game version served while no admin set one, DEFAULT_MIN_VERSION unless given, which tests change, the release control, loaded, an empty one in memory over minVersion unless given, and the watch of the mod's releases, off unless given.
- * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, check: () => void, sweep: () => Promise<void>, checkRelease: () => Promise<{version: string | null, worlds: number}>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, a world's story, a world's boss pools, a look at the deadlines, a sweep of what is kept too long, a check of the mod's releases, and a way to stop everything.
+ * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk, minVersion?: string, release?: ReleaseControl, releases?: ReleaseWatch | null, mapping?: StoryMapping}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log, the bug report desk, off unless given, the lowest game version served while no admin set one, DEFAULT_MIN_VERSION unless given, which tests change, the release control, loaded, an empty one in memory over minVersion unless given, the watch of the mod's releases, off unless given, and the story mapping with the catch-up tables, an empty one in memory unless given.
+ * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, mapping: StoryMapping, check: () => void, sweep: () => Promise<void>, checkRelease: () => Promise<{version: string | null, worlds: number}>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, a world's story, a world's boss pools, the story mapping, a look at the deadlines, a sweep of what is kept too long, a check of the mod's releases, and a way to stop everything.
  */
 export function createRelay({
   limits = NODE_LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, directory = new Directory(memoryStore(), { clock }),
   mods = new ModCatalog(memoryModStore(), { clock }), trades = new TradeBook(memoryTradeStore(), (id) => directory.store.get(id), { clock }), stories = memoryStoryStores(),
   storyLimits = STORY_LIMITS, bosses = memoryBossStores(), bossLimits = BOSS_LIMITS, log = consoleLog, reports = new ReportDesk(reportSettingsOf({}), { clock, log: stamped(log) }),
   minVersion = DEFAULT_MIN_VERSION, release = new ReleaseControl(memoryReleaseStore(), { envMin: minVersion, clock }), releases = null, battleServer = null, battleLimits = BATTLE_LIMITS,
+  mapping = new StoryMapping(memoryMappingStore(), { tables: STORY_TABLES, clock }),
 } = {}) {
   const started = clock();
   /** @type {Map<string, WorldStory>} */
@@ -723,7 +773,19 @@ export function createRelay({
     const admin = adminRouteOf(url);
 
     if (admin) {
-      const answer = await handleAdminRequest({ stats, announce, release, releaseSet }, request.method, url, admin.rest, () => readText(request), headerOf(request, PLAYER_HEADER), adminCheck(directory.admins));
+      const answer = await handleAdminRequest({ stats, announce, release, releaseSet, mapping }, request.method, url, admin.rest, () => readText(request), headerOf(request, PLAYER_HEADER), adminCheck(directory.admins));
+
+      if (answer.audit) {
+        log.info(`${new Date().toISOString()} ${answer.audit}`);
+      }
+
+      response.writeHead(answer.status, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(answer.body));
+      return;
+    }
+
+    if (routeIs(url, MAPPING_GAME_ROUTE)) {
+      const answer = await handleMappingGameRequest(mapping, request.method, url);
       response.writeHead(answer.status, { "Content-Type": "application/json" });
       response.end(JSON.stringify(answer.body));
       return;
@@ -1848,7 +1910,7 @@ export function createRelay({
     return new Promise((resolve) => server.close(() => resolve()));
   }
 
-  return { server, directory, mods, trades, storyOf, bossesOf, battles, check, sweep, sweepBattles, checkRelease, stop };
+  return { server, directory, mods, trades, storyOf, bossesOf, mapping, battles, check, sweep, sweepBattles, checkRelease, stop };
 }
 
 /**
@@ -1907,7 +1969,8 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const releases = new ReleaseWatch(stores.releases, { repo: process.env.RELEASE_REPO || RELEASE_REPO });
   const release = await new ReleaseControl(stores.releases, { envMin: process.env.MIN_VERSION, repo: process.env.RELEASE_REPO || RELEASE_REPO }).load();
   const battleServer = battleServerOf(process.env[BATTLE_SERVER_VARIABLE]);
-  const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports, minVersion: process.env.MIN_VERSION, release, releases, battleServer });
+  const mapping = new StoryMapping(stores.mapping, { tables: STORY_TABLES });
+  const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports, minVersion: process.env.MIN_VERSION, release, releases, battleServer, mapping });
 
   relay.server.listen(port, host, () => console.log(`${new Date().toISOString()} relay listening on ${host}:${port}, ${database ? `database ${database}` : "everything in memory"}, ${battleServer ? `battle server ${battleServer.host}:${battleServer.port}` : "no battle server"}, ${offline} world(s) with players online marked empty`));
 

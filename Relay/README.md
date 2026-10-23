@@ -20,6 +20,10 @@ core/bosses.test.js    tests of the boss pools and the admin routes
 core/raid_admin.js     what admins see and set right in a Raid World: counters, pools, the route lock
 core/raid_admin.test.js tests of the admin routes of a Raid World's story
 core/admin.js          the relay's own admin routes: the stats of what it carries, a line said in every world
+core/story_mapping.js  the story mapping every Raid World shares: its rows, revision, each row's changes, the derived index, the routes
+core/story_mapping.test.js tests of the story mapping
+core/story_catchup.js  the catch-up's tables beside the story mapping, in the same engine
+core/story_catchup.test.js tests of the catch-up's tables
 core/releases.js       the mod's own releases: the update notice and the release control the admins set
 core/releases.test.js  tests of the update notice and the release control
 core/migration.js      everything a relay keeps, handed to its admins for another relay to take over
@@ -39,7 +43,7 @@ cloudflare/worker.test.js tests of the Worker and the Durable Objects against st
 cloudflare/wrangler.toml
 node/server.js         the relay as a plain Node server, for a rented machine
 node/server.test.js    tests of the Node server over real WebSockets
-node/sqlite_store.js   the directory's, the catalog's, the trades', the stories' and the boss pools' stores over one SQLite database, for the Node server
+node/sqlite_store.js   the directory's, the catalog's, the trades', the stories', the boss pools' and the story mapping's stores over one SQLite database, for the Node server
 node/sqlite_store.test.js tests of the SQLite stores
 node/migrate.js        copies everything a relay keeps into a new SQLite database and checks the copy
 node/migrate.test.js   tests of the copy from one relay to a new database
@@ -139,6 +143,55 @@ The relay's own routes for its admins (the `ADMINS` setting), such as the websit
 | `GET /v1/admin/release` | Hands out the release control as `GET /v1/release` does, with `envMin` (what `MIN_VERSION` sets), `updatedAt` (when an admin last set it, in milliseconds since 1970, null before) and `updatedBy` (that admin's player id). Only the Node relay answers it. |
 | `POST /v1/admin/release` | Sets `current`, `min` or both, each a version of 1 to 4 whole numbers separated by dots, or null to clear it back to its default (none for `current`, `MIN_VERSION` for `min`); one left out stays as it is (400 for a body naming neither, or a value that is no such version). A lowest release above the current one, `MIN_VERSION` counting while no `min` is set, is refused with 400 and `code` `min_above_current`. Answers as `GET /v1/admin/release`. The gate holds every request after it to the new lowest release; games already in a room stay. The relay logs each change with what it replaced. Only the Node relay answers it. |
 | `POST /v1/admin/announce` | Says `text` (1 to 120 characters once control characters are taken out, the most released games show of a chat line; 400 otherwise) in the chat of every world with players online, as the update notice is said: an admin's line named `MGQ Online` that every game in those world rooms hears as `chat MGQ Online` + tab + the line and the world's admins see in its chat. Games from 0.6.5 on show it red as `// <line> //` in every chat tab, older ones as `[Admin] MGQ Online: <line>`. Answers `text` as said and `worlds`, in how many it was said. The relay logs each line. Only the Node relay answers it. |
+
+### Story mapping
+
+One story mapping every Raid World shares, which the relay's admins keep by hand in the website's World Admin (story plan phase 1): which switches and variables the world's story shares and by which rule (`keys`), the events whose self switches go against the rule (`events`), the index of the map events whose self switches are shared because they read or write a shared key, which the battle server derives from the rows and the game's events, and beside them the catch-up's tables, kept and served alike (see below). A key without a row is each player's own, so an empty mapping leaves the whole story personal. Only the Node relay keeps it, in the SQLite tables `story_meta`, `story_history`, `story_index` and one `story_<table>` per table. The admin routes take an admin's key as the relay's admin routes do; edits and the index take bodies of up to 1,000,000 characters.
+
+| Request | What it does |
+|---|---|
+| `GET /v1/admin/story` | Sums the mapping up: `rev` (raised by every batch and every index kept), `rowsRev` (the last batch that changed rows), `tables` (each table's rows counted) and `index` (`built`, the `rowsRev` it was built from, `stale` once rows changed since, `events` counted, `author`, `time`; null before the first). |
+| `GET /v1/admin/story/<table>` | Hands out `rev`, `table` and `rows`, each `{id, row, note, author, time, rev}` (the admin's player id, milliseconds since 1970, the revision of its last change), in the order games read them. 404 for no such table. |
+| `GET /v1/admin/story/<table>/<id>/history` | Hands out the row's last 20 changes, newest first, also of a row removed since: each `{rev, op, before, after, note, author, time}`, `before` and `after` the whole rows (null for an add or a remove). |
+| `POST /v1/admin/story/edit` | Applies `edits` (1 to 2000) whole or not at all, as one new revision: each `{table, op, ...}`, `op` `add` with `row`, `change` with `id` and the whole `row`, `remove` with `id`; `note` (at most 500 characters) sets the row's note, left out it keeps the note it had. A row of `keys` or `events` is named by its `key`, which a change keeps. `rev`, the revision the admin read, refuses the batch once the mapping moved on; left out, nothing is checked. Answers `rev` and `changed` (each `{table, id, op}`; a change that leaves a row and its note as they were is none, and a batch of only those raises nothing). Refused with `error`, `code` and `edit` (the index of the edit refused): 400 `edits` (not a list of edits, an unknown `op`, an add with an `id`, a change or remove without one), `table` (no such table), `field` (a field missing, unknown or not as it should be), `kind` (a kind that does not fit a switch or a variable), `option` (an option the kind does not take, or one it needs left out), `twice` (one row named twice), `key` (a change of a row's key); 409 `exists` (an add of a key the table holds), `missing` (a change or remove of a row it lacks), `rev` (with the current `rev`). The relay logs each batch. |
+| `GET /v1/admin/story/index` | Hands out `rowsRev` and the whole `index` with its `events`, each `[map, event]`. |
+| `POST /v1/admin/story/index` | Keeps the derived index: `built` (the `rowsRev` it was built from) and `events` (at most 100,000 `[map, event]` pairs, kept each once, sorted). 409 `rev` with `rowsRev` once rows changed since `built`. Raises `rev`, since games read the index with the rows. The relay logs it. |
+| `GET /v1/story-mapping` | For games, open to all, unused until the game side (story plan phase 3): `rev`, `tables` (each table's rows as `row` alone, without ids and notes, in story order) and `index` (`built`, `stale`, `events`; null before the first). `?known=<rev>` answers `{rev, same: true}` alone while the mapping is at that revision. |
+
+**`keys`** rows: `key` (`s<id>` or `v<id>`, ids 1 to 99999), `kind` and the options its kind takes:
+
+| Kind | Fits | What it means | Options |
+|---|---|---|---|
+| `personal` | switches, variables | each player's own, as a key without a row; a row only carries an option or a reviewed decision | `defeatWrite` |
+| `shared` | switches, variables | the world's story shares it | `defeatWrite`; variables also `routeReturnClears`, `defeatReturns`, `battleScene`, `localSteps` |
+| `one_way` | variables | shared, and only goes up (the story variables that only rise, the companions' affection) | as `shared` |
+| `scene` | switches | on only while a scene runs: mirrored to viewers, never kept in the world's story | `defeatWrite` |
+| `chest` | switches | turned on by chests only, each player's own as the chest is | `defeatWrite` |
+| `count` | variables | how many switches of a range are on, which the relay counts | `counts` (needed) |
+
+Options, each left out when off: `defeatWrite: true` (the post-defeat processing writes it, and a frozen fight's undo leaves it as the defeat set it); `routeReturnClears: true` (the route return, common event 154, clears it, so a one-way key may go down then); `defeatReturns` (`{"<step>": <value>}`: steps a story event sets before a battle it cannot lose, which the world keeps as the value its defeat sets); `battleScene` (`{steps, start, mainStep, troops}`: steps a story event sets before raid boss battles of its own, which the world keeps as `start` while variable 1001 is at `mainStep` and no fight of the troops is frozen or over); `localSteps` (`{steps, sharedAs, places}`: steps that stay each player's own while they stand in one of the `places`, each `{map, fromX}`, and that the world keeps as `sharedAs`); `counts` (`{from, to}`: the switches counted, at most 1000).
+
+**`events`** rows: `key`, the self switches of a map event (`ss<map>.<event>.<letter>`, `*` for every event or every letter: `ss231.*.*` for every self switch of map 231, `ss0.*.F` for the found items' self switches on map 0, which has no events) or those a common event writes (`ce<id>.<letter>`); `share` (`shared` or `personal`, against what the derived index says); `chest: true` for a chest's self switches, with `share` `personal` only.
+
+**Catch-up tables**, each replacing the Ruby table named, with its fields in this order. A row's place is `site` (`map:<map>:<event>:<page>`, pages from 1, or `ce:<id>`), `part` (`1`, `2`, `3`, `ad`, `mr`, `chaos` or null), `step` (null where nothing tells it), `side` (`alice`, `ilias` or null) and `marks` (each `["s", switch]`, `["v", variable, at least]` or `["ss", map, event, letter]`); `ran` tells whether the marks show that the event ran. Tables marked *ordered* also take `order` (0 to 1,000,000,000), the story's order games read them in, rows of one order in the order of their ids; rows of tables without a key are numbered by the relay, a number never given twice.
+
+| Table | Replaces | Key | Fields |
+|---|---|---|---|
+| `parts` *ordered* | `PARTS` | `id` | `id` (part), `name`, `ending` (marks right before its ending), `gate` (level) |
+| `joins` *ordered* | `JOINS` | numbered | `actor`, `persona`, place, `gate`, `rule` (`floor`, `start`, `cap`, `kept`), `index` (the command's index in its list), `ran` |
+| `removals` *ordered* | `REMOVALS` | numbered | `actor`, `persona`, place, `first` (only a first playthrough takes them), `index` |
+| `key_items` *ordered* | `KEY_ITEMS` | numbered | `item`, `amount` (above 0 given, below 0 taken), place, `ran` |
+| `chests` *ordered* | world `CHESTS` | `key` | `key` (`ss<map>.<event>.<letter>`), `items`, `part`, `step`, `flags` (chest flags it turns on) |
+| `rewards` *ordered* | `REWARDS` | numbered | `kind` (`skill`, `item`, `weapon`, `armor`), `id`, `amount`, place, `ran` |
+| `lessons` *ordered* | `LESSONS` | numbered | `actor`, `skill`, place, `ran` |
+| `class_levels` *ordered* | `CLASS_LEVELS` | numbered | `actor`, `class`, `level`, place, `ran` |
+| `settings` *ordered* | `SETTINGS` | numbered | `kind` (`variable` with a whole number, `switch` or `encounters` with id 0, both with true or false), `id`, `value`, place, `ran` |
+| `vehicles` *ordered* | `VEHICLES` | numbered | `vehicle` (`boat`, `ship`, `airship`), place, `ran` |
+| `warp_free_maps` | `WARP_FREE_MAPS` | `map` | `map` |
+| `makina` | `MAKINA` | `item` | `item`, `level`, `site` |
+| `companion_values` | `COMPANION_VALUES` | `<actor>:<variable>` | `actor`, `variable`, `atLeast` |
+| `event_rewards` | `coop_story_rewards.rbx` `SKILLS`, `ACTORS`, `ITEMS`, `SIDED`, `ROUTE`, `FINAL` | `<kind>:<id>` | `kind` (`skill`, `companion`, `item`, `weapon`, `armor`), `id`, `most` (items only), `sided`, `route` (sided ones only), `final` |
+| `side_events` | `coop_story_rewards.rbx` `GROUPS` | `site` | `site` (`map:<map>:<event>` or `ce:<id>`), `alice` and `ilias` (each `{skills, companions}`), `choice`, `marks` (one list of marks per page) |
 
 ### Mod catalog
 
@@ -276,7 +329,7 @@ Up to 0.6.6.1 relay r1 ran on the free Workers plan at `relay.mgqmp.workers.dev`
 1. On the server, install Node.js 24 or later (the SQLite database needs `node:sqlite`) and [Caddy](https://caddyserver.com), and point a domain at the server.
 2. Copy `core/`, `node/`, `package.json` and `package-lock.json`, then run `npm install --omit=dev`.
 3. Start `node node/server.js` as a systemd service, with these environment variables:
-   - `MGQ_RELAY_DB=/var/lib/mgq-relay/relay.sqlite`: the SQLite database the worlds, their starting saves, the mod catalog, its uploaded zips, the trades, the Raid Worlds' stories and their boss pools and the release control are kept in, made on the first start (with its `-wal` and `-shm` files beside it). Without it everything stays in memory and is gone with the process. Back the file up with `sqlite3 relay.sqlite ".backup copy.sqlite"`, never by copying it while the relay runs.
+   - `MGQ_RELAY_DB=/var/lib/mgq-relay/relay.sqlite`: the SQLite database the worlds, their starting saves, the mod catalog, its uploaded zips, the trades, the Raid Worlds' stories and their boss pools, the release control and the story mapping are kept in, made on the first start (with its `-wal` and `-shm` files beside it). Without it everything stays in memory and is gone with the process. Back the file up with `sqlite3 relay.sqlite ".backup copy.sqlite"`, never by copying it while the relay runs.
    - `ADMINS`: the admins' player ids, as above.
    - `GITHUB_ISSUES_TOKEN` and `GITHUB_BUG_FILES_TOKEN`, and `REPORT_ISSUES_REPO`, `REPORT_FILES_REPO` and `REPORT_FILES_BRANCH` unless the defaults fit: where the bug reports go, see above. Without both tokens the relay takes no reports.
    - `MIN_VERSION`: the lowest version a game may name while no admin set one, `0.6.0` unless set, see Versions and Release control.

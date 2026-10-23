@@ -2,6 +2,7 @@
 //  sqlite_store.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Kept the story mapping, its revision, each row's last changes and the derived index
 //      Paulinchen  2026-10-22: Kept the release control the relay's admins set
 //      Paulinchen  2026-10-12: Kept the newest release of the mod the relay has seen
 //                            - Kept each trade's sealed offers in a table of their own beside the trade
@@ -12,8 +13,9 @@
 //
 //----------------------------------------------------------------
 
-// The Node relay's stores over one SQLite database, so worlds, mods, trades, stories and boss pools
-// outlast a restart. Records are kept as JSON, starting saves and uploaded mods' zips as blobs.
+// The Node relay's stores over one SQLite database, so worlds, mods, trades, stories, boss pools and
+// the story mapping outlast a restart. Records are kept as JSON, starting saves and uploaded mods'
+// zips as blobs.
 
 import { DatabaseSync } from "node:sqlite";
 
@@ -21,7 +23,7 @@ import { DatabaseSync } from "node:sqlite";
  * Opens the stores over a SQLite database, making its tables when they are missing.
  *
  * @param {string} path The database file's path, made when it is missing.
- * @returns {{path: string, directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, releases: import("../core/releases.js").ReleaseStore, close: () => void}} The stores, and a way to close the database.
+ * @returns {{path: string, directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, releases: import("../core/releases.js").ReleaseStore, mapping: import("../core/story_mapping.js").StoryMappingStore, close: () => void}} The stores, and a way to close the database.
  */
 export function openSqliteStores(path) {
   const db = new DatabaseSync(path);
@@ -42,6 +44,7 @@ export function openSqliteStores(path) {
   const worldPools = db.prepare("SELECT json FROM boss_pools WHERE id LIKE ?");
   const worldPoolsRemove = db.prepare("DELETE FROM boss_pools WHERE id LIKE ?");
   const releases = jsonTable(db, "releases");
+  const mapping = mappingStore(db);
 
   return {
     path,
@@ -122,7 +125,71 @@ export function openSqliteStores(path) {
       getControl: async () => releases.get("control"),
       putControl: async (record) => releases.put("control", record),
     },
+    mapping,
     close: () => db.close(),
+  };
+}
+
+/**
+ * The store of the story mapping: its revision and derived index, one JSON table per table of
+ * rows, made when first used, and each row's last changes.
+ *
+ * @param {DatabaseSync} db The database.
+ * @returns {import("../core/story_mapping.js").StoryMappingStore} The store.
+ */
+function mappingStore(db) {
+  const meta = jsonTable(db, "story_meta");
+  db.exec("CREATE TABLE IF NOT EXISTS story_history (tbl TEXT NOT NULL, id TEXT NOT NULL, rev INTEGER NOT NULL, json TEXT NOT NULL, PRIMARY KEY (tbl, id, rev))");
+  const history = db.prepare("SELECT json FROM story_history WHERE tbl = ? AND id = ? ORDER BY rev DESC");
+  const addChange = db.prepare("INSERT OR REPLACE INTO story_history (tbl, id, rev, json) VALUES (?, ?, ?, ?)");
+  const trim = db.prepare("DELETE FROM story_history WHERE tbl = ? AND id = ? AND rev <= (SELECT rev FROM story_history WHERE tbl = ? AND id = ? ORDER BY rev DESC LIMIT 1 OFFSET ?)");
+  /** @type {Map<string, ReturnType<typeof jsonTable>>} */
+  const tables = new Map();
+  const table = (name) => {
+    // The names come from the table specs in core, never from a request; checked anyway, since
+    // they go into SQL as they are.
+    if (!/^story_[a-z_]+$/.test(name)) {
+      throw new Error(`no story mapping table may be named ${name}`);
+    }
+
+    return tables.get(name) ?? tables.set(name, jsonTable(db, name)).get(name);
+  };
+  const write = (commit, keep) => {
+    meta.put("mapping", commit.meta);
+
+    for (const { table: name, entry } of commit.puts) {
+      table(name).put(entry.id, entry);
+    }
+
+    for (const { table: name, id } of commit.removes) {
+      table(name).remove(id);
+    }
+
+    for (const { table: name, id, change } of commit.changes) {
+      addChange.run(name, id, change.rev, JSON.stringify(change));
+      trim.run(name, id, name, id, keep);
+    }
+
+    if (commit.index) {
+      meta.put("index", commit.index);
+    }
+  };
+
+  return {
+    getMeta: async () => meta.get("mapping"),
+    all: async (name) => table(name).all(),
+    get: async (name, id) => table(name).get(id),
+    history: async (name, id) => history.all(name, id).map((row) => JSON.parse(row.json)),
+    commit: async (commit, keep) => {
+      try {
+        transaction(db, () => write(commit, keep));
+      } catch (error) {
+        // A table first made in the batch went with its rollback, so its statements are made anew.
+        tables.clear();
+        throw error;
+      }
+    },
+    getIndex: async () => meta.get("index"),
   };
 }
 

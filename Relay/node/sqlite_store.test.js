@@ -2,6 +2,7 @@
 //  sqlite_store.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Covered the story mapping, its rows' changes and its index kept over a restart, and a batch that fails kept not at all
 //      Paulinchen  2026-10-22: Covered the release control kept over a restart beside the newest release seen
 //      Paulinchen  2026-10-12: Covered a trade's sealed offers kept beside it over a restart
 //      Paulinchen  2026-10-10: Covered boss pools that keep the share of a raid max HP left over a restart
@@ -21,6 +22,7 @@ import { WorldBosses } from "../core/bosses.js";
 import { Directory, playerIdOf, sha256Hex } from "../core/directory.js";
 import { ModCatalog, zipHashes } from "../core/mods.js";
 import { WorldStory } from "../core/story.js";
+import { MAPPING_LIMITS, StoryMapping } from "../core/story_mapping.js";
 import { makeUpload, makeZip } from "../core/test_zip.js";
 import { TradeBook } from "../core/trades.js";
 import { openStores } from "./server.js";
@@ -234,5 +236,28 @@ test("the release control outlasts a restart beside the newest release seen", as
   const second = openSqliteStores(path);
   assert.equal(await second.releases.getRelease(), "0.6.7.7");
   assert.deepEqual(await second.releases.getControl(), { current: "0.6.8", min: "0.6.7", updatedAt: 5000, updatedBy: "ad".repeat(16) });
+  second.close();
+});
+
+test("the story mapping outlasts a restart with each row's last changes and the index, and a batch that fails keeps nothing", async () => {
+  const admin = "ad".repeat(16);
+  const first = openSqliteStores(path);
+  const mapping = new StoryMapping(first.mapping, { limits: { ...MAPPING_LIMITS, history: 2 } });
+
+  for (const kind of ["shared", "one_way", "shared"]) {
+    const edit = kind === "shared" && !(await first.mapping.get("story_keys", "v1009")) ? { op: "add" } : { op: "change", id: "v1009" };
+    await mapping.edit({ edits: [{ table: "keys", ...edit, row: { key: "v1009", kind } }] }, admin);
+  }
+
+  await mapping.putIndex({ built: 3, events: [[228, 51]] }, admin);
+  const broken = { meta: { rev: 9, rowsRev: 9, next: {} }, puts: [{ table: "story_keys", entry: { id: "s1", row: {} } }, { table: "no such table", entry: { id: "s1", row: {} } }], removes: [], changes: [] };
+  await assert.rejects(first.mapping.commit(broken, 2));
+  first.close();
+
+  const second = openSqliteStores(path);
+  assert.deepEqual(await second.mapping.getMeta(), { rev: 4, rowsRev: 3, next: {} });
+  assert.deepEqual((await second.mapping.all("story_keys")).map((entry) => entry.row), [{ key: "v1009", kind: "shared" }]);
+  assert.deepEqual((await second.mapping.history("story_keys", "v1009")).map((change) => change.rev), [3, 2]);
+  assert.deepEqual((await second.mapping.getIndex()).events, [[228, 51]]);
   second.close();
 });

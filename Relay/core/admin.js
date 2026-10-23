@@ -2,6 +2,7 @@
 //  admin.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Answered the story mapping's admin routes
 //      Paulinchen  2026-10-22: Handed out and set the release games should run and the lowest one the relay serves
 //      Paulinchen  2026-10-21: Said an admin's line in every world with players online
 //                            - Created
@@ -9,13 +10,15 @@
 //----------------------------------------------------------------
 
 // The relay's own admin routes, beside the directory's: what the relay carries right now, for the
-// website's dashboard, a line said in every world with players online, and the release control.
+// website's dashboard, a line said in every world with players online, the release control, and
+// the story mapping (story_mapping.js).
 // The platform layer gathers the figures and tells the world rooms, since only it holds the rooms.
 
 import { playerIdOf } from "./directory.js";
 import { badRequest, notFound, withJson } from "./http.js";
 import { cleanText } from "./ids.js";
 import { VERSION } from "./relay.js";
+import { MAPPING_ADMIN_ROUTE, handleMappingAdminRequest } from "./story_mapping.js";
 
 /**
  * The route's name after the version.
@@ -47,17 +50,21 @@ export function adminRouteOf(url) {
 /**
  * Answers a request to the relay's admin routes, for the relay's admins only.
  *
- * @param {{stats: () => Promise<object>, announce: (text: string) => Promise<number>, release: import("./releases.js").ReleaseControl, releaseSet?: (answer: {status: number, body: object, before?: object}, admin: string) => void}} relay What the platform layer does: hands out the figures of what it carries now, says a line in every world with players online, answering in how many, keeps the release control, and hears of each change an admin made to it.
+ * @param {{stats: () => Promise<object>, announce: (text: string) => Promise<number>, release: import("./releases.js").ReleaseControl, releaseSet?: (answer: {status: number, body: object, before?: object}, admin: string) => void, mapping?: import("./story_mapping.js").StoryMapping}} relay What the platform layer does: hands out the figures of what it carries now, says a line in every world with players online, answering in how many, keeps the release control, hears of each change an admin made to it, and keeps the story mapping, whose routes answer 404 without it.
  * @param {string} method The HTTP method.
  * @param {URL} url The request's address, whose `player` names the admin's key when no header does.
  * @param {string[]} rest The address's parts after `admin`, see adminRouteOf.
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {string | null} header The key the PLAYER_HEADER names, which wins over the address and the body.
  * @param {(key: unknown) => Promise<boolean>} isAdmin Tells whether a key is an admin's, see adminCheck.
- * @returns {Promise<{status: number, body: object}>} The answer.
+ * @returns {Promise<{status: number, body: object, audit?: string}>} The answer, with what an admin changed of the story mapping for the log.
  */
 export async function handleAdminRequest(relay, method, url, rest, readBody, header, isAdmin) {
   const refused = { status: 403, body: { error: "only the relay's admins may do this" } };
+
+  if (rest[0] === MAPPING_ADMIN_ROUTE && relay.mapping) {
+    return handleMappingAdminRequest(relay.mapping, method, url, rest.slice(1), readBody, header, isAdmin);
+  }
 
   if (rest.length === 1 && rest[0] === "stats" && method === "GET") {
     return (await isAdmin(header || url.searchParams.get("player"))) ? { status: 200, body: await relay.stats() } : refused;
