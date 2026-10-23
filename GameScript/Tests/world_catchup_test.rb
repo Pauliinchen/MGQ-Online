@@ -2,6 +2,7 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that the story sets a return point only on the map of its event
 #      Paulinchen  2026-10-17: Checked that the Unlocks page lists no companion the story took away
 #                            - Checked that the catch-up waits while a lost raid boss battle's defeat runs
 #                            - Checked that a player on Ilias's side gets the Remina Key Card back
@@ -1051,8 +1052,8 @@ $game_system.encounter_disabled = true
 frames(1)
 relay({ "rev" => 25, "wrev" => 25, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
 frames(40)
-check("on entering, the player's own values the story sets move on from an earlier step's to the latest step's, the warp ban lifts where warping is free, and Luka learns the skill he lacks",
-      [$game_system.encounter_disabled, $game_variables[1002], $game_switches[100], $game_actors[1].instance_variable_get(:@skills).include?(930)], [false, 2, false, true])
+check("on entering, the encounters move on from an earlier step's to the latest step's, the return point stays away from its event's map, the warp ban lifts where warping is free, and Luka learns the skill he lacks",
+      [$game_system.encounter_disabled, $game_variables[1002], $game_switches[100], $game_actors[1].instance_variable_get(:@skills).include?(930)], [false, 1, false, true])
 check("and a story companion missing from the roster joins at their gate", $game_party.all_members.map(&:id).include?(77), true)
 $game_party.remove_actor(77)
 $game_variables[1002] = 9
@@ -1106,8 +1107,16 @@ told_on_route[1001] = 40
 told_on_route[1141] = 70
 check("a world's story on another route sets none of its return points",
       settled.call({ 1001 => 40, 1142 => 1, 1002 => 112 }, [7096], [[], told_on_route, {}]), 112)
-check("a return point left at Adramelech moves on to Part 2's once the story is past him",
+$game_map.map_id = 634
+check("a return point left at Adramelech moves on to Part 2's on the map of its event once the story is past him",
       [settled.call({ 1001 => 19, 1032 => 7, 1002 => 19 }, []), settled.call({ 1001 => 17, 1032 => 7, 1002 => 19 }, [])], [2, 19])
+$game_map.map_id = 3
+on_san_ilia = { 1001 => 40, 1142 => 46, 1169 => 26, 1002 => 112 }
+check("a player elsewhere keeps their return point when the world's story reaches one inside a scene another player plays",
+      settled.call(on_san_ilia, []), 112)
+$game_map.map_id = 1904
+check("but takes it on that scene's map", settled.call(on_san_ilia, []), 98)
+$game_map.map_id = 3
 
 # A player behind keeps the return point of their own part.
 new_game({ 1001 => 7, 1002 => 2 }, [], 12)

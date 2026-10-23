@@ -2,6 +2,7 @@
 #  world_catchup.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Set the game over's return point of the story only on the map of the event that sets it
 #      Paulinchen  2026-10-17: Listed no companion on the Unlocks page whom a removal of the story took away
 #                            - Held the catch-up while a lost raid boss battle's defeat runs
 #                            - Ordered the key items one event gives and takes back by their rows, which no longer fails the catch-up
@@ -1269,7 +1270,8 @@ module MGQ_MpWorldCatchup
   # point, the random encounters) to what the latest step their story or the world's passed set,
   # where they still hold what an earlier step set: a story laid over theirs, or the opening's
   # setup, skipped the events. A value of their own making, such as a church they prayed at, stays,
-  # and so do the encounters on a map whose events set them the other way now. Of the routes
+  # and so do the encounters on a map whose events set them the other way now, and a variable of
+  # the player's own away from the map of the event that sets it (see at_site?). Of the routes
   # only the rows of the route under way count, none at the Great Decision: a finished route's
   # rows, which passed? counts for its rewards, would set its last return point.
   #
@@ -1291,10 +1293,25 @@ module MGQ_MpWorldCatchup
       now = setting_now(row)
       next if now == row.value || !earlier[key].include?(now)
       next log_once([:own_encounters, $game_map.map_id], "left the random encounters to map #{$game_map.map_id}, whose event sets them the other way now") if row.kind == :encounters && map_sets_encounters?(row.value)
+      next log_once([:elsewhere, row.site, $game_map.map_id], "left #{setting_label(row)} at #{now.inspect}: #{row.site} sets it where the player does not stand") unless at_site?(row)
 
       row.kind == :encounters ? $game_system.encounter_disabled = !row.value : $game_variables[row.id] = row.value
       log("set #{setting_label(row)} from #{now.inspect} to #{row.value.inspect}, as #{row.site} of the story left it")
     end
+  end
+
+  # Reports whether a setting of settle may apply where the player stands: the random encounters
+  # anywhere, a variable of the player's own only on the map of the event that sets it.
+  #
+  # Such a variable tells a place, as where a game over returns the player, so a value the world's
+  # story set elsewhere could send them into another player's scene with no way out.
+  #
+  # @param row [Struct] A row of DATA::SETTINGS.
+  # @return [Boolean] Whether it may.
+  def self.at_site?(row)
+    return true unless row.kind == :v && MGQ_MpStoryState.personal_variable?(row.id)
+
+    row.site.to_s =~ /\Amap:(\d+):/ && $1.to_i == $game_map.map_id ? true : false
   end
 
   # Reads a value of the player's own that the story sets, see settle.
