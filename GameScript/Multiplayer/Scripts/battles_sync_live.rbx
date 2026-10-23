@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Went back to the host's own commands on Cancel during the wait for the guests' commands
+#                            - Named the player by their seat in the battle
 #      Paulinchen  2026-10-17: Set the party's battle counters at a guest's start, so a guest's characters gain EXP
 #      Paulinchen  2026-10-12: Took the host's defeat scene and enemy only when valid here
 #                            - Won the battle when its enemies fall during the wait for commands
@@ -438,7 +439,7 @@ module MGQ_MpBattlesSync
         @host_waiting = body.split(WAITING_SEPARATOR).map { |seat| seat.to_i }
         MGQ_MpBattlesSync.log("the host still waits for #{@host_waiting.empty? ? 'nobody' : @host_waiting.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
       end
-      (Array(@host_waiting) - [MGQ_MpOverworldSync::Me.seat]).map { |seat| MGQ_MpBattlesSync.seat_name(seat) }
+      (Array(@host_waiting) - [MGQ_MpBattlesSync.own_seat]).map { |seat| MGQ_MpBattlesSync.seat_name(seat) }
     end
 
     # Forgets whom the host told it waits for, as a battle begins, so an earlier battle's word
@@ -795,7 +796,7 @@ module MGQ_MpBattlesSync
       MGQ_MpBattlesSync.log("command phase of turn #{MGQ_MpBattlesSync.turn + 1} opened, #{guests_text} in")
       MGQ_MpBattlesSync.mode.settle(scene)
       # Everyone chooses now, the host too, which a guest done choosing sees while its turn waits.
-      tell_waiting(MGQ_MpBattlesSync.guests_in + [MGQ_MpOverworldSync::Me.seat])
+      tell_waiting(MGQ_MpBattlesSync.guests_in + [MGQ_MpBattlesSync.own_seat])
     end
 
     # As host, reports whether the battle ended while the turn waited to start, such as by an
@@ -874,7 +875,7 @@ module MGQ_MpBattlesSync
       end
       if answer == :back
         # The guests see the host choose again, as with any other player still choosing.
-        tell_waiting(waiting + [MGQ_MpOverworldSync::Me.seat])
+        tell_waiting(waiting + [MGQ_MpBattlesSync.own_seat])
         return go_back(scene)
       end
       return end_early(scene, answer) if answer.is_a?(Symbol)
@@ -895,7 +896,7 @@ module MGQ_MpBattlesSync
     # @return [Boolean] Whether the turn goes on: false while the host chooses again.
     def self.choose_again_for(scene, seats)
       MGQ_MpBattlesSync.mode.choose_again(seats)
-      asked = seats & (MGQ_MpBattlesSync.guests_in + [MGQ_MpOverworldSync::Me.seat])
+      asked = seats & (MGQ_MpBattlesSync.guests_in + [MGQ_MpBattlesSync.own_seat])
       MGQ_MpBattlesSync.log("commands of seats #{seats.join(', ')} lost their target to a swap, choosing again: #{asked.empty? ? 'nobody' : asked.join(', ')}")
       return host_guests_commands(scene) if asked.empty?
 
@@ -904,7 +905,7 @@ module MGQ_MpBattlesSync
       tell_waiting(asked)
       Recorder.event("choose_again", asked)
       Recorder.flush
-      return host_guests_commands(scene) unless asked.include?(MGQ_MpOverworldSync::Me.seat)
+      return host_guests_commands(scene) unless asked.include?(MGQ_MpBattlesSync.own_seat)
 
       choose_again(scene)
       false

@@ -2,7 +2,8 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Made added enemies of the kind the troop's battle needs
+#      Paulinchen  2026-10-23: Sent to and found the battle's players by the seats they held at its start
+#                            - Made added enemies of the kind the troop's battle needs
 #      Paulinchen  2026-10-15: Joined a battle the battle server hosts late through its starter and its channel
 #      Paulinchen  2026-10-12: Took a joining player's party_member_max only as a number
 #                            - Dropped an enemy of the host's changed troop whose id, place or mark is no number
@@ -133,9 +134,18 @@ module MGQ_MpBattlesHotjoin
 
     sync = MGQ_MpBattlesSync
     if sync.role && sync.coop?
-      return [sync.battle_id, sync.role == :host ? MGQ_MpOverworldSync::Me.seat : Array(sync.seats).first]
+      return [sync.battle_id, sync.role == :host ? MGQ_MpOverworldSync::Me.seat : host_world_seat]
     end
     @own_bid ? [@own_bid, MGQ_MpOverworldSync::Me.seat] : nil
+  end
+
+  # Tells the world seat of the host of the co-op battle the player is a guest of, which the others
+  # look the host up by.
+  #
+  # @return [Integer, nil] The seat, the seat the battle knows the host by while the host is away.
+  def self.host_world_seat
+    host = Array(MGQ_MpBattlesSync.seats).first
+    host && (MGQ_MpBattlesSync.world_seat_of(host) || host)
   end
 
   # Tells the scene the player's state names while a battle in a Raid World waits on SceneManager's
@@ -1103,7 +1113,7 @@ module MGQ_MpBattlesHotjoin
     sync.battle_started
     MGQ_MpBattles.begin(:coop)
     sync.show_everything
-    coop.form(scene, coop.arrange([[MGQ_MpOverworldSync::Me.seat, MGQ_Multiplayer::Player.name.to_s] + coop.own_build]))
+    coop.form(scene, coop.arrange([[MGQ_MpBattlesSync.own_seat, MGQ_Multiplayer::Player.name.to_s] + coop.own_build]))
     coop.note_troop
     sync::Recorder.start(:link)
     log("battle #{sync.battle_id} turns live for the players who join it, the player hosting")
@@ -1158,7 +1168,7 @@ module MGQ_MpBattlesHotjoin
       entry[:seats].dup.each do |seat|
         reason = if channel.take_from("decline", seat) then "turned the invite down or stopped waiting"
                  elsif channel.take_from("leave", seat) then "left the battle"
-                 elsif MGQ_MpOverworldSync::Peers.at(seat).nil? then "left the world"
+                 elsif MGQ_MpBattlesSync.peer_at(seat).nil? then "left the world"
                  elsif Time.now - entry[:at] > WAIT_SECONDS then "did not join within #{WAIT_SECONDS} s"
                  end
         next unless reason
@@ -1197,7 +1207,7 @@ module MGQ_MpBattlesHotjoin
     players = coop.players.map(&:to_a)
     joined.each do |seat, body|
       builds, vitals, max = sync::Wire.parse(body.to_s)
-      peer = MGQ_MpOverworldSync::Peers.at(seat)
+      peer = MGQ_MpBattlesSync.peer_at(seat)
       players << [seat, peer ? peer.state["name"].to_s : "?", builds.to_s, Array(vitals), max.is_a?(Integer) ? max : 0]
     end
     players = coop.arrange(players)
@@ -1334,7 +1344,7 @@ module MGQ_MpBattlesHotjoin
     return if seats.empty?
 
     sync = MGQ_MpBattlesSync
-    seats.each { |seat| sync.tell(seat, kind, sync.battle_id, body) }
+    seats.each { |seat| (world = sync.world_seat_of(seat)) && sync.tell(world, kind, sync.battle_id, body) }
     log("sent #{kind} (#{body.size} bytes) to #{seats.map { |seat| sync.who(seat) }.join(', ')}")
   end
 

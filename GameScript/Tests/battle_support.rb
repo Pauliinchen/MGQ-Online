@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Stood in for the confirm box
+#                            - Stood in for finding a player by id and following presence
 #      Paulinchen  2026-10-20: Stood in for skills chained after an action
 #      Paulinchen  2026-10-12: Stood in for the battle log's popup
 #                            - Stood in for a troop whose enemies all fell and for a battle that ended
@@ -66,11 +67,12 @@ module MGQ_MpOverworldSync
   def self.who(peer); peer == :me ? "the player" : (peer ? "#{peer.state['name']} (seat #{peer.seat})" : "an unknown player"); end
   module Peers
     # A player in the room.
-    Peer = Struct.new(:seat, :state, :ghost, :member)
+    Peer = Struct.new(:seat, :state, :ghost, :member, :away)
     @all = []
     def self.all; @all; end
     def self.at(seat); @all.find { |p| p.seat == seat }; end
     def self.present; @all; end
+    def self.kept_with_id(id); @all.find { |p| p.state["id"].to_s == id.to_s }; end
     def self.on_this_map?(peer); peer.state["map"].to_i == $game_map.map_id; end
   end
   module Me
@@ -424,6 +426,7 @@ module MGQ_MpOverworldSync
   def self.busy_scene(*); end
   def self.on_observe(*); end
   def self.on_leave(*); end
+  def self.on_presence(*); end
   def self.label_line(*); end
 end
 load_script "ui"

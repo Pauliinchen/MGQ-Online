@@ -2,6 +2,7 @@
 #  battles_sync_playback.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Named the player by their seat in the battle
 #      Paulinchen  2026-10-15: Noted the enemies a co-op host defeats as fallen, for the player's own recruit
 #      Paulinchen  2026-10-12: Left out failing mode messages and unreadable stream lines
 #                            - Checked the host's picture and screen calls and erased a picture this game lacks
@@ -122,7 +123,7 @@ module MGQ_MpBattlesSync
         end
         if event[0] == "choose_again"
           # Only the players named choose again; the others wait on for the turn.
-          if Array(event[1]).include?(MGQ_MpOverworldSync::Me.seat)
+          if Array(event[1]).include?(MGQ_MpBattlesSync.own_seat)
             outcome = "this player choosing again"
             return event
           end

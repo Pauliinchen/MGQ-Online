@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Checked that Cancel during a wait goes back or asks before leaving
+#                            - Checked that a battle keeps its players through seats dealt anew and while away
 #      Paulinchen  2026-10-15: Checked that a co-op enemy the host defeats counts as fallen on the guest for its recruit
 #      Paulinchen  2026-10-12: Checked that the wire reads hostile lines safely
 #                            - Checked failing names, stream lines and mode messages, and a time stop without a battler
@@ -453,6 +454,34 @@ waiting.refresh(box, 2)
 check("never narrower than its text and the leave offer need whole", [window.width, window.contents.lines[2]], [leave_width, "0 s"])
 waiting.close(box)
 place.call(nil)
+
+# A reconnect that deals the world's seats anew keeps the battle: the guest who comes back on the
+# host's old seat is the same guest, the host keeps its own seat in the battle, a guest away is
+# waited for, and only the world's word that they are gone takes them out.
+peers.all.replace([peers::Peer.new(2, { "id" => "id-a", "name" => "Player A" }, nil, false)])
+$my_seat = 0
+sync.join_world(:host, "w9", [2], "the party")
+sync.battle_started
+guest = peers.all.first
+$my_seat = 2
+guest.seat = 0
+$sent.clear
+sync::Channel.post("ready")
+sync.take(guest, { "battle" => "commands", "bid" => "w9", :payload => "c1" })
+check("after the seats were dealt anew the host sends to the guest's new seat and takes their messages as before",
+      [$sent.map(&:first), sync::Channel.take_from("commands", 2), sync.own_seat, sync.player_seats], [[0], "c1", 0, [2]])
+check("and the battle goes on with them", [sync::Channel.world_gone?, sync.guests_in], [false, [2]])
+guest.away = 900
+$sent.clear
+sync::Channel.post("ready")
+check("a guest away is sent nothing and stays in the battle", [$sent, sync::Channel.world_gone?, sync.guests_in], [[], false, [2]])
+guest.away = nil
+sync::Seats.presence(guest, :gone)
+peers.all.clear
+check("the world telling they are gone takes them out", [sync::Channel.world_gone?, sync.guests_in], [true, []])
+sync.finish
+check("and the battle's seats are forgotten as it finishes", sync.own_seat, 2)
+$my_seat = 0
 
 # The host's wait for the commands names who still chooses, and tells the guests, whose boxes
 # name them too.

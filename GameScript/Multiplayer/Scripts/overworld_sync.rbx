@@ -2,6 +2,7 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Kept a player away whose seat another player took, and told each change of a player's presence
 #      Paulinchen  2026-10-13: Handed the relay's raid bosses push to the script registered for it
 #                            - Handed the relay's squad push to the script registered for it
 #      Paulinchen  2026-10-12: Announced only the players who join after the player
@@ -42,7 +43,8 @@
 # hands every other message to the script that registered for the field that marks it. What the
 # player sees of it is overworld.rbx's. Scripts that load after this one take part through its
 # registry: route for their messages, state_fields and busy_scene for the player's state, on_tick,
-# on_observe and on_leave to follow the others, and label_line for the line above a ghost's name.
+# on_observe, on_leave and on_presence to follow the others, and label_line for the line above a
+# ghost's name.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpOverworldSync
@@ -109,8 +111,8 @@ module MGQ_MpOverworldSync
   # The scripts' message handlers, by the field that marks their messages, see route.
   @routes = {}
 
-  # The blocks the scripts registered, by kind: :tick, :state_fields, :busy_scene, :observe, :leave
-  # and :label_line.
+  # The blocks the scripts registered, by kind: :tick, :state_fields, :busy_scene, :observe, :leave,
+  # :presence and :label_line.
   @handlers = Hash.new { |handlers, kind| handlers[kind] = [] }
 
   extend MGQ_MpLog
@@ -271,6 +273,16 @@ module MGQ_MpOverworldSync
   # @yieldparam peer [Peers::Peer] The player.
   def self.on_leave(&block)
     @handlers[:leave] << block
+  end
+
+  # Tells a script each change of another player's presence: their connection dropped and they
+  # are kept for REJOIN_FRAMES (:away), it came back (:back), they tell from another seat (:moved),
+  # or they left the world or stayed away too long (:gone, also told through on_leave).
+  #
+  # @yieldparam peer [Peers::Peer] The player, on their current seat.
+  # @yieldparam change [Symbol] :away, :back, :moved or :gone.
+  def self.on_presence(&block)
+    @handlers[:presence] << block
   end
 
   # Lets a script give the line above a ghost's name, such as an invite.
@@ -559,6 +571,10 @@ module MGQ_MpOverworldSync
     # The other games, by seat.
     @peers = {}
 
+    # The players away whose seat another player took, kept until they come back on another seat or
+    # stay away for REJOIN_FRAMES.
+    @displaced = []
+
     # Frames since the player entered the world, see SETTLE_FRAMES.
     @in_world = 0
 
@@ -569,16 +585,18 @@ module MGQ_MpOverworldSync
     # @param state [Hash] What it told.
     def self.take(seat, state)
       peer = @peers[seat]
-      # Another player took the seat of one who is away.
-      remove(seat, "#{state['name']} took their seat while they were away") if peer && peer.away && peer.state["id"] != state["id"]
+      # Another player took the seat of one who is away, as when the relay deals the seats anew.
+      displace(peer, state) if peer && peer.away && peer.state["id"] != state["id"]
       peer = @peers[seat] || moved(seat, state)
 
       if peer
         changed = MGQ_MpOverworldSync.changes(peer.state, state)
-        MGQ_MpOverworldSync.log("#{MGQ_MpOverworldSync.who(peer)} is back, after #{(REJOIN_FRAMES - peer.away) / 60} s away") if peer.away
+        back = peer.away
+        MGQ_MpOverworldSync.log("#{MGQ_MpOverworldSync.who(peer)} is back, after #{(REJOIN_FRAMES - peer.away) / 60} s away") if back
         MGQ_MpOverworldSync.log("#{MGQ_MpOverworldSync.who(peer)}: #{changed}") unless changed.empty?
         peer.state = state
         peer.away = nil
+        changed_presence(peer, :back) if back
       else
         peer = @peers[seat] = Peer.new(seat, state, nil, false, nil)
         settled = @in_world > SETTLE_FRAMES
@@ -599,13 +617,28 @@ module MGQ_MpOverworldSync
     # @param state [Hash] What they told.
     # @return [Peer, nil] The player, nil when nobody else has their id.
     def self.moved(seat, state)
-      peer = @peers.values.find { |other| !state["id"].to_s.empty? && other.state["id"] == state["id"] }
+      peer = (@peers.values + @displaced).find { |other| !state["id"].to_s.empty? && other.state["id"] == state["id"] }
       return nil unless peer
 
       MGQ_MpOverworldSync.log("#{peer.state['name']} moved from seat #{peer.seat} to seat #{seat}#{peer.away ? '' : ', the old seat still standing'}")
-      @peers.delete(peer.seat)
+      @peers.delete(peer.seat) if @peers[peer.seat].equal?(peer)
+      @displaced.delete(peer)
       peer.seat = seat
       @peers[seat] = peer
+      changed_presence(peer, :moved)
+      peer
+    end
+
+    # Keeps a player who is away aside once another player tells from their seat, so they stay the
+    # same player when they come back on another seat.
+    #
+    # @param peer [Peer] The player away.
+    # @param state [Hash] What the player now on the seat told.
+    def self.displace(peer, state)
+      @peers.delete(peer.seat)
+      peer.ghost = nil
+      @displaced << peer
+      MGQ_MpOverworldSync.log("#{state['name']} took the seat of #{MGQ_MpOverworldSync.who(peer)} while they are away, who stays kept")
     end
 
     # Keeps a game whose connection dropped for REJOIN_FRAMES, in which it may come back.
@@ -617,6 +650,28 @@ module MGQ_MpOverworldSync
 
       peer.away = REJOIN_FRAMES
       MGQ_MpOverworldSync.log("#{MGQ_MpOverworldSync.who(peer)} is away, kept for #{REJOIN_FRAMES / 60} s")
+      changed_presence(peer, :away)
+    end
+
+    # Takes back a game kept away whose connection came back without a new state, as a battle
+    # channel tells the battle server, which sits in no world's room.
+    #
+    # @param seat [Integer] Its seat.
+    def self.come_back(seat)
+      peer = @peers[seat]
+      return unless peer && peer.away
+
+      MGQ_MpOverworldSync.log("#{MGQ_MpOverworldSync.who(peer)} is back, after #{(REJOIN_FRAMES - peer.away) / 60} s away")
+      peer.away = nil
+      changed_presence(peer, :back)
+    end
+
+    # Tells the scripts that follow presence of a player's change, see MGQ_MpOverworldSync.on_presence.
+    #
+    # @param peer [Peer] The player.
+    # @param change [Symbol] :away, :back, :moved or :gone.
+    def self.changed_presence(peer, change)
+      MGQ_MpOverworldSync.ask(:presence, peer, change)
     end
 
     # Keeps every game for REJOIN_FRAMES after the player's own connection came back, in which
@@ -634,6 +689,13 @@ module MGQ_MpOverworldSync
         peer.away -= 1
         remove(peer.seat, "away for #{REJOIN_FRAMES / 60} s") if peer.away <= 0
       end
+      @displaced.dup.each do |peer|
+        peer.away -= 1
+        next if peer.away > 0
+
+        @displaced.delete(peer)
+        forget(peer, "away for #{REJOIN_FRAMES / 60} s")
+      end
     end
 
     # Finds a game by its seat.
@@ -650,17 +712,25 @@ module MGQ_MpOverworldSync
     # @param reason [String] Why, for the log.
     def self.remove(seat, reason = "left")
       peer = @peers.delete(seat)
-      return unless peer
+      forget(peer, reason) if peer
+    end
 
+    # Tells everyone a player left the world, once they are no longer kept.
+    #
+    # @param peer [Peer] The player.
+    # @param reason [String] Why, for the log.
+    def self.forget(peer, reason)
       MGQ_MpOverworldSync.log("#{MGQ_MpOverworldSync.who(peer)} left the world: #{reason}")
       Status.notice("#{peer.state['name']} left the world.")
       MGQ_MpOverworldSync.ask(:leave, peer)
+      changed_presence(peer, :gone)
     end
 
     # Forgets every game, as once the world closed.
     def self.clear
-      MGQ_MpOverworldSync.log("no world open: forgot #{@peers.size} player(s)") unless @peers.empty?
+      MGQ_MpOverworldSync.log("no world open: forgot #{@peers.size + @displaced.size} player(s)") unless empty?
       @peers.clear
+      @displaced.clear
     end
 
     # Notes that the player is in no world, so the next one they enter starts its settling anew.
@@ -672,7 +742,7 @@ module MGQ_MpOverworldSync
     #
     # @return [Boolean] Whether none is.
     def self.empty?
-      @peers.empty?
+      @peers.empty? && @displaced.empty?
     end
 
     # Lists the other games.
@@ -732,6 +802,17 @@ module MGQ_MpOverworldSync
       return nil if id.to_s.empty?
 
       present.find { |peer| peer.state["id"].to_s == id.to_s }
+    end
+
+    # Finds a player by their player id, also while their connection is down and they are kept,
+    # which a battle asks to know them on whatever seat they hold.
+    #
+    # @param id [String, nil] The id.
+    # @return [Peer, nil] The player, nil when nobody kept has that id, or for none.
+    def self.kept_with_id(id)
+      return nil if id.to_s.empty?
+
+      (@peers.values + @displaced).find { |peer| peer.state["id"].to_s == id.to_s }
     end
 
     # Reports whether another player's connection stands and they are on the player's map, as their

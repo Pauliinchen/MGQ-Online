@@ -2,6 +2,7 @@
 #  battles_served_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that the server keeps a player who drops from the battle channel until gone
 #      Paulinchen  2026-10-15: Checked the starter as the front of its served battle and players who join it late
 #                            - Checked that the last player of the server's battle fights on there and a battle every player left ends
 #                            - Checked the world's mods and the starter's options of them in the setup
@@ -330,6 +331,32 @@ MGQ_MpBattlesCoop.settle(scene)
 check("a battle every player left ends", [formed.size, aborted], [1, [true]])
 MGQ_MpBattlesCoop.define_singleton_method(:form, form)
 BattleManager.define_singleton_method(:process_abort, abort)
+MGQ_MpBattlesServed.instance_variable_set(:@server, nil)
+MGQ_MpBattlesSync.finish
+MGQ_MpBattlesCoop.ended
+
+# On the server a player's drop from the battle channel is a pause: the presence of the players
+# keeps them away for the world's grace, and only its word that they are gone takes them out.
+module MGQ_MpOverworldSync
+  module Peers
+    def self.wait_for(seat); $presence_calls << [:away, seat]; end
+    def self.come_back(seat); $presence_calls << [:back, seat]; end
+  end
+end
+BattleManager.setup(40, true, false)
+bid = MGQ_MpBattlesSync.battle_id
+MGQ_MpBattlesServed.instance_variable_set(:@server, true)
+MGQ_MpBattlesSync.serve_over_channel(:host, bid, [1, 2], "the players")
+MGQ_MpBattlesServed.instance_variable_set(:@channel, :open)
+MGQ_MpBattlesServed.instance_variable_set(:@in, [1, 2])
+$presence_calls = []
+$dll_entries << "kind=out\nseat=1\n\n" << "kind=in\nseat=1\n\n"
+MGQ_MpBattlesServed.drain
+check("the server hands a player's drop from the battle channel and their return to the presence of the players",
+      $presence_calls, [[:away, 1], [:back, 1]])
+check("and keeps them in the battle meanwhile", [MGQ_MpBattlesSync::Channel.served_gone?, MGQ_MpBattlesSync.guests_in], [false, [1, 2]])
+MGQ_MpBattlesSync::Seats.presence(MGQ_MpOverworldSync::Peers::Peer.new(1, { "name" => "Me" }, nil, false), :gone)
+check("until the presence tells they are gone", [MGQ_MpBattlesSync::Channel.served_gone?, MGQ_MpBattlesSync.guests_in], [false, [2]])
 MGQ_MpBattlesServed.instance_variable_set(:@server, nil)
 MGQ_MpBattlesSync.finish
 MGQ_MpBattlesCoop.ended

@@ -2,6 +2,7 @@
 #  battles_team.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Named the player by their seat in the battle
 #      Paulinchen  2026-10-12: Took only pairs of seats as who commands the characters of who left
 #                            - Left out the players of a side that do not read
 #      Paulinchen  2026-10-07: Named players and characters through battles_sync.rbx
@@ -179,7 +180,7 @@ module MGQ_MpBattlesTeam
   # @param ally [Game_MpAlly] The character.
   # @return [Boolean] Whether they do.
   def self.commands?(ally)
-    MGQ_MpBattlesSync.team? && heir_of(ally.mp_seat) == MGQ_MpOverworldSync::Me.seat
+    MGQ_MpBattlesSync.team? && heir_of(ally.mp_seat) == MGQ_MpBattlesSync.own_seat
   end
 
   # Lists the players of a side still in the duel: the host and the guests who did not leave.
@@ -187,7 +188,7 @@ module MGQ_MpBattlesTeam
   # @param side [Array<MGQ_MpBattlesCoop::Player>] The side's players.
   # @return [Array<Integer>] Their seats, in the side's order.
   def self.staying(side)
-    host = MGQ_MpOverworldSync::Me.seat
+    host = MGQ_MpBattlesSync.own_seat
     side.map(&:seat).select { |seat| seat == host || MGQ_MpBattlesSync.guests_in.include?(seat) }
   end
 

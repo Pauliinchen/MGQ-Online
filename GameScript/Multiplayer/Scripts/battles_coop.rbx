@@ -2,7 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Kept a guest's own enemies at the host's places when only their places differ
+#      Paulinchen  2026-10-23: Found the battle's players by the seats they held at its start
+#                            - Kept a guest's own enemies at the host's places when only their places differ
 #                            - Made rebuilt enemies of the kind the troop's battle needs
 #      Paulinchen  2026-10-17: Started another player's character in battle at the HP it came with
 #      Paulinchen  2026-10-15: Handed a gathered battle to the battle server and followed one there as guest
@@ -1013,7 +1014,7 @@ module MGQ_MpBattlesCoop
         joined[seat] = body if body
         outcome = if body then "joined (#{body.to_s.size} bytes)"
                   elsif channel.take_from("decline", seat) then "declined"
-                  elsif MGQ_MpOverworldSync::Peers.at(seat).nil? then "left the world"
+                  elsif MGQ_MpBattlesSync.peer_at(seat).nil? then "left the world"
                   end
         next unless outcome
 
@@ -1031,11 +1032,11 @@ module MGQ_MpBattlesCoop
     return stand_down if joined.empty? || answer == :gone
 
     MGQ_MpBattlesSync.keep_seats(joined.keys)
-    players = [[MGQ_MpOverworldSync::Me.seat, MGQ_Multiplayer::Player.name.to_s] + own_build]
+    players = [[MGQ_MpBattlesSync.own_seat, MGQ_Multiplayer::Player.name.to_s] + own_build]
     joined.keys.sort.each do |seat|
       builds, vitals, max = MGQ_MpBattlesSync::Wire.parse(joined[seat].to_s)
       # A player who joined may have left the world since; their characters fight on all the same.
-      peer = MGQ_MpOverworldSync::Peers.at(seat)
+      peer = MGQ_MpBattlesSync.peer_at(seat)
       players << [seat, peer ? peer.state["name"].to_s : "?", builds.to_s, Array(vitals), max.is_a?(Integer) ? max : 0]
     end
     players = arrange(players)
@@ -1732,7 +1733,7 @@ module MGQ_MpBattlesCoop
     players = Player.read_all(players)
     log("took the roster of battle #{MGQ_MpBattlesSync.battle_id} (#{roster.to_s.size} bytes): #{Array(enemies).size} enemies, #{players.size} players, level #{level.inspect}#{", turn #{turn}" if turn}")
     decline(@invite[:peer], @invite[:message], "the player's battle #{MGQ_MpBattlesSync.battle_id} began") if @invite
-    return left_out("the host's party came without the player") unless players.any? { |player| player.seat == MGQ_MpOverworldSync::Me.seat }
+    return left_out("the host's party came without the player") unless players.any? { |player| player.seat == MGQ_MpBattlesSync.own_seat }
 
     MGQ_MpGame.set($game_troop, :turn_count, turn) if turn.is_a?(Integer)
     take_troop(scene, Array(enemies))
@@ -1992,7 +1993,7 @@ module MGQ_MpBattlesCoop
   def self.arrange(players, backline = true)
     players = Player.read_all(players)
     hosted = backline && raid?
-    first = lambda { |seat| hosted ? seat == MGQ_MpOverworldSync::Me.seat : leads?(seat) }
+    first = lambda { |seat| hosted ? seat == MGQ_MpBattlesSync.own_seat : leads?(seat) }
     ranked = MGQ_MpCoopSquad.ranked(players.map { |player| [player_id(player.seat), first.call(player.seat)] })
     players = players.sort_by { |player| ranked.index(player_id(player.seat)) }
     players.each_with_index.map do |player, position|
@@ -2010,9 +2011,9 @@ module MGQ_MpBattlesCoop
   # @param seat [Integer] The player's world seat.
   # @return [String] The id, empty when unknown.
   def self.player_id(seat)
-    return MGQ_MpOverworldSync::Me.id if seat == MGQ_MpOverworldSync::Me.seat
+    return MGQ_MpOverworldSync::Me.id if seat == MGQ_MpBattlesSync.own_seat
 
-    peer = MGQ_MpOverworldSync::Peers.at(seat)
+    peer = MGQ_MpBattlesSync.peer_at(seat)
     peer ? peer.state["id"].to_s : ""
   end
 
@@ -2021,7 +2022,7 @@ module MGQ_MpBattlesCoop
   # @param seat [Integer] The player's world seat.
   # @return [Boolean] Whether they do.
   def self.leads?(seat)
-    player = seat == MGQ_MpOverworldSync::Me.seat ? :me : MGQ_MpOverworldSync::Peers.at(seat)
+    player = seat == MGQ_MpBattlesSync.own_seat ? :me : MGQ_MpBattlesSync.peer_at(seat)
     player ? MGQ_MpCoop.leads?(player) : false
   end
 
@@ -2062,7 +2063,7 @@ module MGQ_MpBattlesCoop
   #
   # @return [Player, nil] The entry, see arrange, nil outside a co-op battle.
   def self.own_player
-    Array(@players).find { |player| player.seat == MGQ_MpOverworldSync::Me.seat }
+    Array(@players).find { |player| player.seat == MGQ_MpBattlesSync.own_seat }
   end
 
   # Lists the player's own characters on the battle's Backline, those they may swap in.
@@ -2109,7 +2110,7 @@ module MGQ_MpBattlesCoop
     members = []
     @players.each do |player|
       front = player.lines[0]
-      if player.seat == MGQ_MpOverworldSync::Me.seat
+      if player.seat == MGQ_MpBattlesSync.own_seat
         members.concat(front.map { |place| @own_squad[place] }.compact)
       else
         members.concat(front.map { |place| ally(player.seat, player.name, player.builds, player.vitals, place) }.compact)
@@ -2226,7 +2227,7 @@ module MGQ_MpBattlesCoop
   def self.settle(scene)
     return unless active?
 
-    staying = @players.select { |player| player.seat == MGQ_MpOverworldSync::Me.seat || MGQ_MpBattlesSync.guests_in.include?(player.seat) }
+    staying = @players.select { |player| player.seat == MGQ_MpBattlesSync.own_seat || MGQ_MpBattlesSync.guests_in.include?(player.seat) }
     return if staying.size == @players.size
 
     log("#{(@players - staying).map { |player| "#{player.name} (seat #{player.seat})" }.join(', ')} left battle #{MGQ_MpBattlesSync.battle_id}, their characters leave the party")
@@ -2261,8 +2262,8 @@ module MGQ_MpBattlesCoop
   #
   # @param seats [Array<Integer>] The seats new to the party.
   def self.tell_joined(seats)
-    (seats - [MGQ_MpOverworldSync::Me.seat]).each do |seat|
-      peer = MGQ_MpOverworldSync::Peers.at(seat)
+    (seats - [MGQ_MpBattlesSync.own_seat]).each do |seat|
+      peer = MGQ_MpBattlesSync.peer_at(seat)
       next MGQ_MpBattlesSync::Departures.joined(peer) if peer
 
       log("#{MGQ_MpBattlesSync.who(seat)} joined battle #{MGQ_MpBattlesSync.battle_id}, which the player is not told: the game does not know them")
@@ -2528,7 +2529,7 @@ module MGQ_MpBattlesCoop
   # @param actor [Game_Actor] The character.
   # @return [Integer] Its owner's world seat.
   def self.seat_of(actor)
-    own?(actor) ? MGQ_MpOverworldSync::Me.seat : actor.mp_seat
+    own?(actor) ? MGQ_MpBattlesSync.own_seat : actor.mp_seat
   end
 
   # As host, makes the other players' characters whose commands lost their target new actions,
@@ -2910,7 +2911,7 @@ module MGQ_MpBattlesCoop
     return original.call unless active? && actor && width && actor.hp >= actor.mhp / 4
 
     ally = actor.is_a?(Game_MpAlly)
-    window.change_color(ally ? MGQ_MpUi::PlayerColor.of(MGQ_MpOverworldSync::Peers.at(actor.mp_seat) || actor.owner) : MGQ_MpUi::Style::OWN)
+    window.change_color(ally ? MGQ_MpUi::PlayerColor.of(MGQ_MpBattlesSync.peer_at(actor.mp_seat) || actor.owner) : MGQ_MpUi::Style::OWN)
     window.draw_text(x, y, width, window.line_height, MGQ_MpUi.cut(window, ally ? actor.base_name : actor.name, width))
     nil
   rescue => e

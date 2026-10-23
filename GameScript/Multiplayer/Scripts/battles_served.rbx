@@ -2,6 +2,7 @@
 #  battles_served.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Handed a player's drop from the battle channel to the presence of the players on the server
 #      Paulinchen  2026-10-15: Handed the battle server how the battle's boss fights, by pools or by tier
 #                            - Stood in for the battle server in the world's room as its starter, for players who join late
 #                            - Named the world's mods the starter runs and its options of them in the setup
@@ -192,7 +193,6 @@ module MGQ_MpBattlesServed
   # @param battle_id [String] The battle's id.
   def self.open(battle_id)
     @in = []
-    @out = []
     @opened = 0
     @channel = Link.open(world_id, battle_id) ? :opening : :closed
     log(@channel == :opening ? "opening the battle channel of battle #{battle_id}" : "the DLL did not open the battle channel of battle #{battle_id}")
@@ -240,7 +240,7 @@ module MGQ_MpBattlesServed
   # @param body [String] The player's world seat.
   def self.take_departure(body)
     seat = MGQ_MpBattlesSync::Wire.parse(body.to_s)[0]
-    peer = world_seat?(seat) && MGQ_MpOverworldSync::Peers.at(seat)
+    peer = world_seat?(seat) && MGQ_MpBattlesSync.peer_at(seat)
     MGQ_MpBattlesSync::Departures.left(peer) if peer
   end
 
@@ -276,11 +276,13 @@ module MGQ_MpBattlesServed
       log("on the battle channel as seat #{seat}")
     when "in"
       @in << seat unless @in.include?(seat)
-      @out.delete(seat)
       log("seat #{seat} came onto the battle channel")
+      MGQ_MpOverworldSync::Peers.come_back(seat) if server?
     when "out"
-      @out << seat unless @out.include?(seat)
       log("seat #{seat} left the battle channel")
+      # On the server, which sits in no world's room, the channel tells the players' presence: away
+      # for the world's grace, gone once it runs out (see MGQ_MpBattlesSync::Seats.presence).
+      MGQ_MpOverworldSync::Peers.wait_for(seat) if server?
     when "closed"
       @channel = :closed
       log("the battle channel closed: #{entry['code']}")
@@ -481,14 +483,6 @@ module MGQ_MpBattlesServed
   def self.closed?
     drain
     @channel == :closed
-  end
-
-  # Reports whether a player left the battle channel. Asked by the server.
-  #
-  # @param seat [Integer] The player's world seat.
-  # @return [Boolean] Whether they did.
-  def self.out?(seat)
-    Array(@out).include?(seat)
   end
 
   # Lists the players who came onto the battle channel. Asked by the server.

@@ -2,6 +2,7 @@
 #  served.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Counted down the grace of the players kept away
 #      Paulinchen  2026-10-15: Left recruiting to the players' games
 #                            - Read the boss pools the relay told and forgot the last battle's boss fight
 #                            - Hosted a Raid World's battle as one, took players in late and told the starter the battle's state
@@ -95,6 +96,8 @@ module ServedBattle
         ServedBattle.read_pools
         ServedBattle.tell_front
         ServedBattle.pace
+        # The world sync tick is left out below, so the players kept away count down their grace here.
+        MGQ_MpOverworldSync::Peers.tick if MGQ_MpBattlesServed.server?
       end
       # The server sits in no world, so the battle's world type comes with its setup.
       wrap.around(MGQ_MpWorld.singleton_class, :raid?, :served) do |_world, original, args, _block|

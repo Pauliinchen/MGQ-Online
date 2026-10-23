@@ -2,7 +2,8 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Checked that a Challenge Battle's enemies keep their kind on the battle server
+#      Paulinchen  2026-10-23: Sent nothing to a player gone from the world
+#                            - Checked that a Challenge Battle's enemies keep their kind on the battle server
 #      Paulinchen  2026-10-20: Checked the skills a guest chains after an action
 #      Paulinchen  2026-10-17: Checked that a guest's start sets the party's battle counters
 #                            - Checked that a rebuilt character starts the battle at the HP sent
@@ -123,7 +124,7 @@ end
 check("a player who joined and left the world since does not stop the battle", MGQ_MpBattlesCoop.gather(scene), nil)
 $inject = nil
 roster = $sent.map { |seat, text| fields_of(text) }.find { |f| f["battle"] == "roster" }
-check("and is named as unknown", MGQ_MpBattlesSync::Wire.parse(roster[:payload])[1].map { |p| p[0, 2] }, [[0, "Me"], [2, "?"]])
+check("and is named as unknown, the roster going to nobody gone", [MGQ_MpBattlesCoop.players.map { |p| [p.seat, p.name] }, roster], [[[0, "Me"], [2, "?"]], nil])
 MGQ_MpOverworldSync::Peers.all.unshift(friend)
 MGQ_MpBattlesCoop.ended
 
@@ -448,7 +449,8 @@ MGQ_MpBattlesSync::Departures.gone(g2)
 check("once per battle", $notices, ["Other left the battle."])
 MGQ_MpBattlesSync::Departures.gone(MGQ_MpOverworldSync::Peers::Peer.new(9, { "name" => "Stranger" }, nil, false))
 check("a player outside the battle who leaves the world is not", $notices.size, 1)
-MGQ_MpOverworldSync::Peers.all.clear
+# The player who stays is still in the world, whom the new party goes to.
+MGQ_MpOverworldSync::Peers.all.replace([g1])
 
 MGQ_MpBattlesSync.guest_left(3)
 $sent.clear

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Asked the player before they leave the battle from a wait
+#                            - Kept the battle's players by the seats they held at its start, taking one out only once gone
 #      Paulinchen  2026-10-20: Sent the skills a guest chains after an action and chained them on the host
 #      Paulinchen  2026-10-15: Carried a battle the battle server hosts over its battle channel
 #                            - Sent a served battle's messages to single players over its battle channel too
@@ -188,6 +189,7 @@ module MGQ_MpBattlesSync
     @broken = false
     @battle_running = false
     @served = false
+    Seats.pin_room
     Channel.reset
     kind = mode == :pvp ? (team ? 'team duel' : 'duel') : 'co-op battle'
     log("#{kind} #{battle_id} as #{role}, with #{seats.empty? ? 'nobody yet' : seats.map { |seat| who(seat) }.join(', ')}")
@@ -239,7 +241,7 @@ module MGQ_MpBattlesSync
   #   player, the seat alone for a player the game does not know.
   def self.who(seat)
     return @player.to_s if seat.nil?
-    return "the player (seat #{seat})" if seat == MGQ_MpOverworldSync::Me.seat
+    return "the player (seat #{seat})" if seat == own_seat
 
     name = peer_name(seat)
     name ? "#{name} (seat #{seat})" : "seat #{seat}"
@@ -253,7 +255,7 @@ module MGQ_MpBattlesSync
   # @param seat [Integer] Their world seat.
   # @return [String] The name.
   def self.seat_name(seat)
-    return Waiting::OWN_NAME if seat == MGQ_MpOverworldSync::Me.seat
+    return Waiting::OWN_NAME if seat == own_seat
 
     peer_name(seat) || "seat #{seat}"
   end
@@ -264,11 +266,42 @@ module MGQ_MpBattlesSync
   # @return [String, nil] The name, nil for a seat the game does not know or cannot read, as on a
   #   guest whose world closed during the battle.
   def self.peer_name(seat)
-    peer = MGQ_MpOverworldSync::Peers.at(seat)
+    peer = peer_at(seat)
     name = peer && peer.state && peer.state["name"]
     name ? name.to_s : nil
   rescue
     nil
+  end
+
+  # Tells the player's own seat in the live battle, see Seats.
+  #
+  # @return [Integer] The seat the battle knows the player by, the world seat outside a battle.
+  def self.own_seat
+    Seats.own
+  end
+
+  # Finds the player the live battle knows by a seat, see Seats.
+  #
+  # @param seat [Integer] The seat the battle knows them by.
+  # @return [MGQ_MpOverworldSync::Peers::Peer, nil] The player, also while away; nil once gone.
+  def self.peer_at(seat)
+    Seats.peer(seat)
+  end
+
+  # Tells the seat the live battle knows a player by, see Seats.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+  # @return [Integer, nil] The seat, nil when it names another player of the battle.
+  def self.seat_of(peer)
+    Seats.of(peer)
+  end
+
+  # Tells the world seat a message to a player of the live battle goes to, see Seats.
+  #
+  # @param seat [Integer] The seat the battle knows them by.
+  # @return [Integer, nil] Their world seat, nil while they are away or once gone.
+  def self.world_seat_of(seat)
+    Seats.world(seat)
   end
 
   # Names a battler with its id for Multiplayer InGame.log.
@@ -350,8 +383,9 @@ module MGQ_MpBattlesSync
   # Lets in the messages of players who are to join the running co-op battle late, before they are
   # among its guests (see battles_coop_hotjoin.rbx).
   #
-  # @param seats [Array<Integer>] Their world seats.
+  # @param seats [Array<Integer>] Their world seats, which the battle knows them by from then on.
   def self.expect(seats)
+    seats.each { |seat| peer_at(seat) }
     @expected = expected | seats
   end
 
@@ -410,9 +444,12 @@ module MGQ_MpBattlesSync
     return dropped(kind, peer, "no live battle over the world runs") unless world? && @role
     return dropped(kind, peer, "it is for another battle") unless message["bid"] == @battle_id
 
+    seat = seat_of(peer)
+    return dropped(kind, peer, "its seat names another player of the battle") unless seat
+
     # Every player of the battle hears of one who leaves, not only the host who takes them out.
     Departures.left(peer) if kind == "leave"
-    Channel.receive(peer.seat, kind, message[:payload].to_s)
+    Channel.receive(seat, kind, message[:payload].to_s)
   end
 
   # Logs a battle message from the world's room that is left untaken, once per kind, reason and
@@ -432,7 +469,7 @@ module MGQ_MpBattlesSync
   def self.player_seats
     seats = Array(@seats)
     seats |= mode.player_seats
-    seats - [MGQ_MpOverworldSync::Me.seat]
+    seats - [own_seat]
   end
 
   # Marks the live battle as started. Called by the mode once its battle scene is on the way.
@@ -473,6 +510,7 @@ module MGQ_MpBattlesSync
     @broken = false
     @battle_running = false
     @transport = nil
+    Seats.forget
     MGQ_MpBattlesServed.close if @served && defined?(MGQ_MpBattlesServed)
     @served = false
     # The world's room stays open after a co-op battle; only a PvP battle's link ends with it.
@@ -669,8 +707,10 @@ module MGQ_MpBattlesSync
         return !reached.empty?
       end
 
+      # A player away is sent nothing, since their old world seat may be another player's by now.
       reached = MGQ_MpBattlesSync.player_seats.select do |seat|
-        MGQ_MpBattlesSync.tell(seat, kind, MGQ_MpBattlesSync.battle_id, body)
+        world = MGQ_MpBattlesSync.world_seat_of(seat)
+        world && MGQ_MpBattlesSync.tell(world, kind, MGQ_MpBattlesSync.battle_id, body)
       end
       noted_post(kind, body, reached.empty? ? nil : "to #{reached.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
       !reached.empty?
@@ -767,34 +807,40 @@ module MGQ_MpBattlesSync
       @gone
     end
 
-    # Looks at who of a co-op battle or a duel is still in the world's room.
+    # Looks at who of a co-op battle or a duel is still in it: the players who said they leave and
+    # those the world told are gone (see Seats.presence). A player away is still in it.
     #
     # @return [Boolean] Whether the other side is gone: every guest for the host, the host for a guest.
     def self.world_gone?
       return served_gone? if MGQ_MpBattlesSync.served?
       return true unless MGQ_MpOverworldSync.in_world?
 
-      MGQ_MpBattlesSync.guests_in.each do |seat|
-        MGQ_MpBattlesSync.guest_left(seat) if MGQ_MpOverworldSync::Peers.at(seat).nil? || take_from("leave", seat)
-      end
+      take_departures
       return true if MGQ_MpBattlesSync.host? && MGQ_MpBattlesSync.mode.other_side_gone?
 
       MGQ_MpBattlesSync.guests_in.empty?
     end
 
-    # Looks at who of a battle the server hosts is still on its battle channel: the server notes
-    # each player who left it or said they leave, a guest counts the battle as gone once the
-    # channel closed.
+    # Looks at who of a battle the server hosts is still in it: the server notes each player who
+    # said they leave or whom the presence of its players tells gone (see MGQ_MpBattlesServed.take),
+    # a guest counts the battle as gone once the channel closed.
     #
     # @return [Boolean] Whether the other side is gone.
     def self.served_gone?
       return true if MGQ_MpBattlesServed.closed?
       return false unless MGQ_MpBattlesSync.host?
 
-      MGQ_MpBattlesSync.guests_in.each do |seat|
-        MGQ_MpBattlesSync.guest_left(seat) if MGQ_MpBattlesServed.out?(seat) || take_from("leave", seat)
-      end
+      take_departures
       MGQ_MpBattlesSync.guests_in.empty?
+    end
+
+    # Takes the players who left the battle out of it: those who said they leave, and those the
+    # presence of the players tells gone.
+    def self.take_departures
+      gone = Seats.take_gone
+      MGQ_MpBattlesSync.guests_in.each do |seat|
+        MGQ_MpBattlesSync.guest_left(seat) if gone.include?(seat) || take_from("leave", seat)
+      end
     end
 
     # Reports why the friend's game will send nothing more for the battle, taking a forfeit or
@@ -1151,6 +1197,122 @@ module MGQ_MpBattlesSync
     end
   end
 
+  # The live battle's names for its players: the world seats they held as the battle began, which
+  # its structures and the messages between its games carry. A reconnect may deal the world's seats
+  # anew, so each name stays with its player's id. Where a player is, and whether they are present,
+  # away or gone, only MGQ_MpOverworldSync::Peers knows; it is asked at every send and receive, and
+  # its gone event alone takes a player out (see presence).
+  module Seats
+    # Names the room as it is at the battle's start: the player's own seat and every known player's.
+    def self.pin_room
+      @own = MGQ_MpOverworldSync::Me.seat
+      @ids = {}
+      @gone = []
+      MGQ_MpOverworldSync::Peers.all.each { |peer| pin(peer.seat, peer) }
+    end
+
+    # Forgets the names, as the live battle finishes.
+    def self.forget
+      @own = nil
+      @ids = {}
+      @gone = []
+    end
+
+    # Tells the player's own seat in the battle.
+    #
+    # @return [Integer] The world seat they held at its start, their world seat outside a battle.
+    def self.own
+      @own || MGQ_MpOverworldSync::Me.seat
+    end
+
+    # Tells the seat the battle knows a player by: the one named for their id, else, for a player
+    # new to the battle, their world seat, named for them from then on.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    # @return [Integer, nil] The seat, nil when their world seat names another player still kept.
+    def self.of(peer)
+      id = peer.state["id"].to_s
+      return peer.seat if @own.nil? || id.empty?
+
+      named = @ids.key(id)
+      return named if named
+
+      holder = @ids[peer.seat]
+      return nil if holder && MGQ_MpOverworldSync::Peers.kept_with_id(holder)
+
+      pin(peer.seat, peer)
+    end
+
+    # Finds the player the battle knows by a seat, on whatever world seat they hold now.
+    #
+    # @param seat [Integer] The seat the battle knows them by.
+    # @return [MGQ_MpOverworldSync::Peers::Peer, nil] The player, also while away; nil once gone.
+    def self.peer(seat)
+      return MGQ_MpOverworldSync::Peers.at(seat) unless @own
+
+      id = @ids[seat]
+      return MGQ_MpOverworldSync::Peers.kept_with_id(id) if id
+
+      peer = MGQ_MpOverworldSync::Peers.at(seat)
+      peer && of(peer) == seat ? peer : nil
+    end
+
+    # Tells the world seat a message to a player of the battle goes to.
+    #
+    # @param seat [Integer] The seat the battle knows them by.
+    # @return [Integer, nil] Their world seat now, the seat itself for a player the world never told
+    #   of; nil while they are away, since their old seat may be another player's, or once gone.
+    def self.world(seat)
+      found = peer(seat)
+      return found.away.nil? ? found.seat : nil if found
+
+      @own && @ids[seat] ? nil : seat
+    end
+
+    # Names a seat for a player's id.
+    #
+    # @param seat [Integer] The seat.
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    # @return [Integer] The seat.
+    def self.pin(seat, peer)
+      id = peer.state["id"].to_s
+      @ids[seat] = id unless id.empty? || seat == @own
+      seat
+    end
+
+    # Notes a player of the battle the world tells is gone, whom the battle's next look takes out
+    # (see take_gone). Called by overworld_sync.rbx for each change of a player's presence.
+    #
+    # Away is a pause: the battle sends them nothing meanwhile and waits for them.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    # @param change [Symbol] :away, :back, :moved or :gone.
+    def self.presence(peer, change)
+      return unless @own && change == :gone
+
+      seat = of_kept(peer)
+      @gone << seat if seat && !@gone.include?(seat)
+    end
+
+    # Tells the seat the battle knows a player by, without naming one for a player new to it.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    # @return [Integer, nil] The seat, nil for a player the battle never named.
+    def self.of_kept(peer)
+      id = peer.state["id"].to_s
+      id.empty? ? peer.seat : @ids.key(id)
+    end
+
+    # Takes the players the world told are gone since the last look.
+    #
+    # @return [Array<Integer>] The seats the battle knows them by.
+    def self.take_gone
+      gone = Array(@gone)
+      @gone = []
+      gone
+    end
+  end
+
   # Tells the player at once when another player leaves the live battle or joins it while it runs,
   # in the battle's popup at the top and in a notice at the bottom left of the map.
   #
@@ -1172,7 +1334,7 @@ module MGQ_MpBattlesSync
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
     def self.left(peer)
-      return unless MGQ_MpBattlesSync.player_seats.include?(peer.seat)
+      return unless MGQ_MpBattlesSync.player_seats.include?(MGQ_MpBattlesSync.seat_of(peer))
 
       tell(peer, "#{peer.state['name']} left the battle.")
     end
@@ -1181,7 +1343,7 @@ module MGQ_MpBattlesSync
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
     def self.gone(peer)
-      return unless MGQ_MpBattlesSync.role && MGQ_MpBattlesSync.world? && MGQ_MpBattlesSync.player_seats.include?(peer.seat)
+      return unless MGQ_MpBattlesSync.role && MGQ_MpBattlesSync.world? && MGQ_MpBattlesSync.player_seats.include?(Seats.of_kept(peer))
 
       tell(peer, "#{peer.state['name']} left the world, and the battle.")
     end
@@ -1201,13 +1363,14 @@ module MGQ_MpBattlesSync
     # @param kind [Symbol] :left for a departure, :joined for a join, told apart since a player may
     #   join and then leave.
     def self.tell(peer, text, kind = :left)
-      key = [MGQ_MpBattlesSync.battle_id, peer.seat, kind]
+      seat = Seats.of_kept(peer) || peer.seat
+      key = [MGQ_MpBattlesSync.battle_id, seat, kind]
       return if @told.include?(key)
 
       @told.push(key)
       @told.shift while @told.size > KEPT
       MGQ_MpBattlesSync.log("told the player: #{text}")
-      popup(text, [POPUP_MARK, kind, peer.seat])
+      popup(text, [POPUP_MARK, kind, seat])
       MGQ_MpOverworldSync.notice(text)
     rescue => e
       MGQ_MpBattlesSync.log("telling of a departure failed: #{e.class}: #{e.message}")
@@ -1632,6 +1795,7 @@ end
 begin
   MGQ_MpOverworldSync.route("battle") { |peer, message| MGQ_MpBattlesSync.take(peer, message) }
   MGQ_MpOverworldSync.on_leave { |peer| MGQ_MpBattlesSync::Departures.gone(peer) }
+  MGQ_MpOverworldSync.on_presence { |peer, change| MGQ_MpBattlesSync::Seats.presence(peer, change) }
 rescue => e
   MGQ_MpBattlesSync.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end
