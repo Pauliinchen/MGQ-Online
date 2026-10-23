@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Gave job and race items another player found to every player of the world at once
+#                            - Told the level a cap of another mod opens the gate at in the gate's notices
 #                            - Set the game over's return point of the story only on the map of the event that sets it
 #      Paulinchen  2026-10-17: Listed no companion on the Unlocks page whom a removal of the story took away
 #                            - Held the catch-up while a lost raid boss battle's defeat runs
@@ -323,7 +324,7 @@ module MGQ_MpWorldCatchup
   #
   # @return [String] The notice.
   def self.refusal_text
-    "Reach level #{gate_of(own_part)} to continue the story."
+    "Reach level #{level_to_reach(own_part)} to continue the story."
   end
 
   # Tells the player they are behind the world's story.
@@ -332,7 +333,7 @@ module MGQ_MpWorldCatchup
   # @return [String] The notice.
   def self.behind_text(own)
     part = MGQ_MpWorldStory.part_of(own)
-    "The world's story is further than yours. You see the world as it was before the end of #{part_name(part)}; reach level #{gate_of(part)} to move on."
+    "The world's story is further than yours. You see the world as it was before the end of #{part_name(part)}; reach level #{level_to_reach(part)} to move on."
   end
 
   # Follows the catch-up for one frame: the relay's answers, the checkpoint and the orbs' event that
@@ -475,6 +476,19 @@ module MGQ_MpWorldCatchup
   def self.gate_of(id)
     entry = part(id)
     entry ? entry.gate : DATA::PARTS.last.gate
+  end
+
+  # The level a part's gate asks of the player: the gate, or the cap another mod holds them at
+  # below it, which opens the gate too (see gate_open?).
+  #
+  # @param id [String] The part.
+  # @return [Integer] The level.
+  def self.level_to_reach(id)
+    gate = gate_of(id)
+    cap = roster_view[:cap]
+    cap.is_a?(Integer) && cap < gate ? cap : gate
+  rescue
+    gate_of(id)
   end
 
   # What the notices call a part.
@@ -774,7 +788,7 @@ module MGQ_MpWorldCatchup
     gate = gate_of(from)
     name = target == :world ? "the world's story" : part_name(target)
     log("level #{gate} reached in #{part_name(from)}: moving on to #{name}")
-    notice(:gate, "Level #{gate} reached: catching up to #{name}.")
+    notice(:gate, "Level #{level_to_reach(from)} reached: catching up to #{name}.")
     note_capped(gate)
     return_from_route(from, world)
     target == :world ? join_world : want(target, "moving on from #{part_name(from)}")

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Checked that a found job item comes to every player at once
+#                            - Checked that the gate's notices name the cap of another mod below it
 #                            - Checked that the story sets a return point only on the map of its event
 #      Paulinchen  2026-10-17: Checked that the Unlocks page lists no companion the story took away
 #                            - Checked that the catch-up waits while a lost raid boss battle's defeat runs
@@ -600,11 +601,15 @@ checkpoint("2", packed({ 1001 => 33 }))
 frames(70)
 check("and stays there until that part's gate", [$game_variables[1001], story.mode, catchup.refusal_text], [33, :behind, "Reach level 55 to continue the story."])
 
-# A cap of another mod below the gate holds nobody back.
+# A cap of another mod below the gate holds nobody back, and the notices name the cap (issue #53).
 $game_actors[1].cap = 40
+check("a player capped below the gate is told to reach the cap",
+      [catchup.refusal_text, catchup.behind_text(MGQ_MpWorldStory.local_counters(catchup.story_now))],
+      ["Reach level 40 to continue the story.", "The world's story is further than yours. You see the world as it was before the end of Part 2; reach level 40 to move on."])
 $game_actors[1].level = 40
 frames(40)
 check("a player capped below the gate is caught up once at their cap", calls_of("mp_raid_story_fetch").size, 2)
+check("told the cap reached", $messages.last.to_s[/\ALevel \d+ reached/], "Level 40 reached")
 $game_actors[1].cap = 9999
 
 # A player behind learns no skill of the world's story, and the story's skills and items a move on
