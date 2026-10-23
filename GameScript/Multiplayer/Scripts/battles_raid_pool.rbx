@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Won a refight of a boss the world's story beat already at once
+#                            - Reported nothing for an enemy built anew since its HP was last taken, and took its pool's HP
 #      Paulinchen  2026-10-20: Counted a boss HP above its max as the max, so a lowered max heals no pool
 #      Paulinchen  2026-10-17: Withheld the rewards of a resumed fight whose side battle gave them
 #                            - Added in_map?, retrying? and set_up_kind
@@ -301,7 +302,8 @@ module MGQ_MpRaidPool
   # @!attribute killed [Boolean] Whether its death was reported.
   # @!attribute held [Boolean] Whether the DLL refused its last report, so its HP waits for the next
   #   instead of taking the pool's.
-  Member = Struct.new(:key, :index, :base, :killed, :held)
+  # @!attribute enemy [Game_Enemy, nil] The enemy whose HP the base is, nil before.
+  Member = Struct.new(:key, :index, :base, :killed, :held, :enemy)
 
   # A pool as the player's game knows it.
   #
@@ -765,11 +767,15 @@ module MGQ_MpRaidPool
   end
 
   # Gives the enemies of a troop built anew in the battle that fights a pool their tier's stats
-  # before the host's HP reaches them, which their own max HP would cut. Called by
-  # MGQ_MpBattlesCoop.take_troop and MGQ_MpBattlesHotjoin.take_troop.
+  # before the host's HP reaches them, which their own max HP would cut, and where this game
+  # reports, their pools' HP. Called by MGQ_MpBattlesCoop.take_troop and
+  # MGQ_MpBattlesHotjoin.take_troop.
   def self.rescale
     fight = @fight
-    scale_enemies(fight) if fight
+    return unless fight
+
+    scale_enemies(fight)
+    sync(fight) unless fight.guest
   rescue => e
     log("raising the max HP of the troop built anew failed: #{e.class}: #{e.message}")
   end
@@ -827,7 +833,7 @@ module MGQ_MpRaidPool
       pool = @pools[member.key]
       unless pool && !enemy.dead?
         # Set only once, since a later base would swallow what the battle dealt since its last report.
-        member.base = enemy.hp if member.base.nil? && !only_kill
+        rebase(member, enemy) if member.base.nil? && !only_kill
         next
       end
 
@@ -843,9 +849,19 @@ module MGQ_MpRaidPool
       elsif enemy.hp != target
         enemy.hp = target
       end
-      member.base = enemy.hp
+      rebase(member, enemy)
     end
     killed
+  end
+
+  # Takes an enemy's HP as the base its next report counts from.
+  #
+  # @param member [Member] The enemy's place in the battle.
+  # @param enemy [Game_Enemy] The enemy at the place.
+  # @param hp [Integer] The HP.
+  def self.rebase(member, enemy, hp = enemy.hp)
+    member.base = hp
+    member.enemy = enemy
   end
 
   # Reports whether the player's game reports the battle's pools now, noting whether a host's stream
@@ -865,7 +881,7 @@ module MGQ_MpRaidPool
     fight.guest = false
     fight.members.each do |member|
       enemy = $game_troop.members[member.index]
-      member.base = enemy.hp if enemy
+      rebase(member, enemy) if enemy
       member.held = false
     end
     log("battle #{fight.battle} is the player's to report from here: #{fight.members.map { |member| enemy_text(member) }.join(', ')}")
@@ -1007,6 +1023,7 @@ module MGQ_MpRaidPool
     fight.members.each do |member|
       enemy = enemies[member.index]
       next if member.killed || enemy.nil?
+      next if rebuilt?(member, enemy)
 
       max = enemy.mhp.to_i
       next unless max > 0
@@ -1029,7 +1046,7 @@ module MGQ_MpRaidPool
       end
 
       fight.seq = seq
-      member.base = hp
+      rebase(member, enemy, hp)
       member.killed = dead
       member.held = false
       @pending << member.key
@@ -1037,6 +1054,21 @@ module MGQ_MpRaidPool
       note_own(member.key, delta, max, dead)
       log("battle #{fight.battle} reports #{member.key} ##{seq}: #{format('%.6f', delta)} of #{max}#{dead ? ', killed' : ''}")
     end
+  end
+
+  # Reports whether an enemy was built anew since its HP was last taken, such as a troop rebuilt
+  # from its host's, and takes its HP as the base then, so its full HP never counts as healing the
+  # pool; the next sync gives it the pool's.
+  #
+  # @param member [Member] The enemy's place in the battle.
+  # @param enemy [Game_Enemy] The enemy at the place now.
+  # @return [Boolean] Whether it was.
+  def self.rebuilt?(member, enemy)
+    return false if member.enemy.nil? || member.enemy.equal?(enemy)
+
+    rebase(member, enemy)
+    log("#{enemy.name} at place #{member.index} was built anew since its HP was last taken: it reports nothing until it takes its pool's HP")
+    true
   end
 
   # Counts the player's own report in the pool as the player's game knows it, so a command phase
