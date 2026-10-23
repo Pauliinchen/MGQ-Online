@@ -1,10 +1,15 @@
 {
-  "id": "boss:1b0a822614f83839e33ac1cbaa895e36",
+  "id": "boss:d31ee3e0e22c3c664ea4cb67daa31d93",
   "kind": "boss",
   "schema": 2,
   "rev": 418,
   "body": {
-    "key": "Morrigan",
+    "event": {
+      "command": 22,
+      "map": 576,
+      "event": 14,
+      "page": 0
+    },
     "name": "Morrigan",
     "title": "",
     "tier": 2,
@@ -12,76 +17,317 @@
     "origin": "catalog",
     "removed": false,
     "optional": false,
-    "troops": [
-      { "troop": 125, "milestone": "Morrigan", "cap": 18, "last": false, "leadsInto": 126 },
-      { "troop": 126, "milestone": "Morrigan", "cap": 18, "last": true }
-    ],
-    "normalAttack": { "custom": "e60606ab02f33e5bab0b8f64ec284fcd" },
+    "normalAttack": {
+      "custom": "e60606ab02f33e5bab0b8f64ec284fcd"
+    },
     "skills": {
       "game:1515": {
         "kind": "single",
-        "spread": { "mode": "splash", "percent": 30, "range": 1, "maxSharers": 5, "metric": "manhattan",
-                    "shape": { "type": "diamond", "radius": 1, "fit": "clip" } },
-        "hazard": { "hazard": "hazard:9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f", "chance": 50, "where": "randomInArea", "count": 2, "turns": 0 }
+        "spread": {
+          "mode": "splash",
+          "percent": 30,
+          "range": 1,
+          "maxSharers": 5,
+          "metric": "manhattan",
+          "shape": {
+            "type": "diamond",
+            "radius": 1,
+            "fit": "clip"
+          }
+        },
+        "hazard": {
+          "hazard": "hazard:9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
+          "chance": 50,
+          "where": "randomInArea",
+          "count": 2,
+          "turns": 0
+        }
       },
       "game:3764": {
         "kind": "area",
-        "shape": { "type": "zone" },
-        "pulses": 1,
-        "cost": { "ap": 3, "cooldown": 2 },
-        "targeting": { "mode": "randomCell",
-                       "zone": { "frontRows": 2, "cells": [[0, 0], [1, 0]], "half": "left", "side": "alternate" },
-                       "newTargetEachPulse": false },
-        "damage": { "percent": 100, "formula": "a.atk * 4 - b.def * 2" },
-        "spread": { "mode": "weighted", "percent": 50, "rings": [100, 50], "metric": "chebyshev", "statesLandOn": "mainTarget" },
-        "falloff": { "metric": "chebyshev", "rings": [100, 85, 70, 55] },
-        "presentation": {
-          "ringDelay": 0, "pulseGap": 20,
-          "cellAnimation": { "animation": 41, "where": "eachCell" },
-          "cellFlash": { "color": [255, 255, 255, 160], "frames": 12 },
-          "danger": [120, 60, 255, 160],
-          "animation": { "placement": "oncePerWave", "screen": "fitArea", "opacity": 80, "flash": 40 }
+        "shape": {
+          "type": "zone"
         },
-        "debris": { "where": "hitCells", "turns": 3, "hits": 2, "type": "debris:5e6f708192a3b4c5d6e7f8091a2b3c4d" },
-        "marks": { "leaves": [ { "id": "1c2d3e4f", "state": 301, "chance": 100, "landsOn": "everyoneHit",
-                                 "until": "nextScheduledCast", "minTurns": 1 } ] }
+        "pulses": 1,
+        "cost": {
+          "ap": 3,
+          "cooldown": 2
+        },
+        "targeting": {
+          "mode": "randomCell",
+          "zone": {
+            "frontRows": 2,
+            "cells": [[0, 0], [1, 0]],
+            "half": "left",
+            "side": "alternate"
+          },
+          "newTargetEachPulse": false
+        },
+        "damage": {
+          "percent": 100,
+          "formula": "a.atk * 4 - b.def * 2"
+        },
+        "spread": {
+          "mode": "weighted",
+          "percent": 50,
+          "rings": [100, 50],
+          "metric": "chebyshev",
+          "statesLandOn": "mainTarget"
+        },
+        "falloff": {
+          "metric": "chebyshev",
+          "rings": [100, 85, 70, 55]
+        },
+        "presentation": {
+          "ringDelay": 0,
+          "pulseGap": 20,
+          "cellAnimation": {
+            "animation": 41,
+            "where": "eachCell"
+          },
+          "cellFlash": {
+            "color": [255, 255, 255, 160],
+            "frames": 12
+          },
+          "danger": [120, 60, 255, 160],
+          "animation": {
+            "placement": "oncePerWave",
+            "screen": "fitArea",
+            "opacity": 80,
+            "flash": 40
+          }
+        },
+        "debris": {
+          "where": "hitCells",
+          "turns": 3,
+          "hits": 2,
+          "type": "debris:5e6f708192a3b4c5d6e7f8091a2b3c4d"
+        },
+        "marks": {
+          "leaves": [
+            {
+              "id": "1c2d3e4f",
+              "state": 301,
+              "chance": 100,
+              "landsOn": "everyoneHit",
+              "until": "nextScheduledCast",
+              "minTurns": 1
+            }
+          ]
+        }
       },
       "custom:e60606ab02f33e5bab0b8f64ec284fcd": {
-        "marks": { "leaves": [ { "id": "2d3e4f50", "state": 302, "chance": 100, "landsOn": "everyoneHit",
-                                 "until": "nextScheduledCast", "minTurns": 1 } ] }
+        "marks": {
+          "leaves": [
+            {
+              "id": "2d3e4f50",
+              "state": 302,
+              "chance": 100,
+              "landsOn": "everyoneHit",
+              "until": "nextScheduledCast",
+              "minTurns": 1
+            }
+          ]
+        }
       }
     },
-    "actions": {
-      "301": [
-        { "id": "a1b2c3d4", "skill": { "game": 3764 }, "rating": 5, "condition": { "type": "turn", "a": 2, "b": 3 },
-          "scheduled": true, "followUp": { "skill": { "custom": "e60606ab02f33e5bab0b8f64ec284fcd" }, "side": "opposite" } },
-        { "id": "b2c3d4e5", "skill": { "game": 1515 }, "rating": 4, "condition": { "type": "hp", "min": 0, "max": 50 },
-          "scheduled": false }
-      ],
-      "302": []
-    },
+    "enemies": [
+      {
+        "id": "51a0b0c1",
+        "enemy": 301,
+        "raidBoss": true,
+        "stats": {
+          "mhp": 50000
+        },
+        "actions": [
+          {
+            "id": "a1b2c3d4",
+            "skill": {
+              "game": 3764
+            },
+            "rating": 5,
+            "condition": {
+              "type": "turn",
+              "a": 2,
+              "b": 3
+            },
+            "scheduled": true,
+            "followUp": {
+              "skill": {
+                "custom": "e60606ab02f33e5bab0b8f64ec284fcd"
+              },
+              "side": "opposite"
+            }
+          },
+          {
+            "id": "b2c3d4e5",
+            "skill": {
+              "game": 1515
+            },
+            "rating": 4,
+            "condition": {
+              "type": "hp",
+              "min": 0,
+              "max": 50
+            },
+            "scheduled": false
+          }
+        ]
+      },
+      {
+        "id": "51a0b0c2",
+        "enemy": 302,
+        "actions": []
+      }
+    ],
+    "reserve": [
+      {
+        "id": "51a0b0c3",
+        "enemy": 303,
+        "raidBoss": true,
+        "actions": [
+          {
+            "id": "a1b2c3e6",
+            "skill": {
+              "game": 1515
+            },
+            "rating": 3,
+            "condition": {
+              "type": "hp",
+              "min": 0,
+              "max": 50
+            },
+            "scheduled": false,
+            "followUp": {
+              "skill": {
+                "game": 3764
+              },
+              "side": "same"
+            }
+          }
+        ]
+      }
+    ],
+    "changes": [
+      {
+        "id": "c4a0b0c1",
+        "when": {
+          "type": "everyoneFallen"
+        },
+        "then": {
+          "type": "join",
+          "slots": ["51a0b0c3"]
+        }
+      },
+      {
+        "id": "c4a0b0c2",
+        "when": {
+          "type": "hpBelow",
+          "slot": "51a0b0c1",
+          "percent": 50
+        },
+        "then": {
+          "type": "leave",
+          "slot": "51a0b0c2"
+        }
+      }
+    ],
     "traits": [
-      { "id": "e5f6a7b8", "kind": "triggerState", "fields": { "gauge": "hp", "trigger": "below", "percent": 50, "state": 29 } },
-      { "id": "f6a7b8c9", "kind": "lastStand",
-        "fields": { "gauge": "hp", "percent": 25 },
+      {
+        "id": "e5f6a7b8",
+        "kind": "triggerState",
+        "fields": {
+          "gauge": "hp",
+          "trigger": "below",
+          "percent": 50,
+          "state": 29
+        }
+      },
+      {
+        "id": "f6a7b8c9",
+        "kind": "lastStand",
+        "fields": {
+          "gauge": "hp",
+          "percent": 25
+        },
         "phase": {
-          "traits": [ { "id": "07b8c9d0", "kind": "skillBoost", "fields": { "skill": { "game": 1515 }, "percent": 30 } } ],
+          "traits": [
+            {
+              "id": "07b8c9d0",
+              "kind": "skillBoost",
+              "fields": {
+                "skill": {
+                  "game": 1515
+                },
+                "percent": 30
+              }
+            }
+          ],
           "states": [12, 13],
-          "startSkill": { "custom": "e60606ab02f33e5bab0b8f64ec284fcd" },
+          "startSkill": {
+            "custom": "e60606ab02f33e5bab0b8f64ec284fcd"
+          },
           "clearDebuffs": false
-        } }
+        }
+      }
     ],
     "markReactions": [
-      { "id": "77aa0b1c", "holding": 301, "hitByLeaving": 302, "gives": { "type": "damage", "percent": 150 }, "keepMark": false },
-      { "id": "88bb1c2d", "holding": 302, "hitByLeaving": 301, "gives": { "type": "state", "state": 15, "turns": 2 }, "keepMark": false }
+      {
+        "id": "77aa0b1c",
+        "holding": 301,
+        "hitByLeaving": 302,
+        "gives": {
+          "type": "damage",
+          "percent": 150
+        },
+        "keepMark": false
+      },
+      {
+        "id": "88bb1c2d",
+        "holding": 302,
+        "hitByLeaving": 301,
+        "gives": {
+          "type": "state",
+          "state": 15,
+          "turns": 2
+        },
+        "keepMark": false
+      }
     ],
     "rules": [
-      { "id": "0d9e8f7a", "name": "Dark answers light",
-        "on": { "type": "unitHit", "holding": 301, "hitByLeaving": 302 },
-        "if": [ { "type": "chance", "basisPoints": 10000 } ],
-        "do": [ { "type": "damage", "to": "triggerUnit", "percent": 30 },
-                { "type": "placeHazard", "hazard": { "hazard": "hazard:9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f", "where": "aimedCell" } } ],
-        "limit": { "oncePerUnitPerUse": true, "oncePerTurn": false } }
+      {
+        "id": "0d9e8f7a",
+        "name": "Dark answers light",
+        "on": {
+          "type": "unitHit",
+          "holding": 301,
+          "hitByLeaving": 302
+        },
+        "if": [
+          {
+            "type": "chance",
+            "basisPoints": 10000
+          }
+        ],
+        "do": [
+          {
+            "type": "damage",
+            "to": "triggerUnit",
+            "percent": 30
+          },
+          {
+            "type": "placeHazard",
+            "hazard": {
+              "hazard": "hazard:9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f",
+              "where": "aimedCell"
+            }
+          }
+        ],
+        "limit": {
+          "oncePerUnitPerUse": true,
+          "oncePerTurn": false
+        }
+      }
     ]
   }
 }
