@@ -2,7 +2,8 @@
 //  GameRestartTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Made the parking without the deleted options dump check
+//      Paulinchen  2026-10-23: Covered the arguments the helper gets and the helper's restart in place of the Wine refusals
+//                            - Made the parking without the deleted options dump check
 //      Paulinchen  2026-10-22: Covered the release passed to the updater
 //      Paulinchen  2026-10-09: Covered when the parked mods' watchdog does not start
 //      Paulinchen  2026-10-08: Created
@@ -10,97 +11,114 @@
 //----------------------------------------------------------------
 
 using System;
+using System.Diagnostics;
 using System.IO;
 using MGQParadox.Multiplayer.Mods;
 
 namespace MGQParadox.Multiplayer.Tests.Mods;
 
 /// <summary>
-/// Covers when the game is not started again, and what the updater is told.
+/// Covers when the game is not started again, what the helper is told, and the helper's restart.
 /// </summary>
 public sealed class GameRestartTests : IDisposable
 {
     /// <summary>
-    /// A folder of the test's own, which holds neither Game.exe nor the updater.
+    /// How long the helper may take.
     /// </summary>
-    private readonly string _folder = Directory.CreateTempSubdirectory("mgqmp-restart-").FullName;
+    private static readonly TimeSpan Patience = TimeSpan.FromSeconds(60);
 
     /// <summary>
-    /// How GameRestart read the Wine version before the test changed it.
+    /// A game folder of the test's own, which holds neither Game.exe nor the helper at first.
     /// </summary>
-    private readonly Func<string?> _wineVersion = GameRestart.WineVersion;
+    private readonly string _game = Directory.CreateTempSubdirectory("mgqmp-restart-").FullName;
 
     /// <summary>
-    /// Asserts that neither the restart nor the updater starts under Wine, even where both could.
+    /// The mod folder in <see cref="_game"/>.
     /// </summary>
-    [Fact]
-    public void UnderWine_StartsNothing()
-    {
-        File.WriteAllText(Path.Combine(_folder, "Game.exe"), string.Empty);
-        File.WriteAllText(Path.Combine(_folder, "Update.bat"), string.Empty);
-        GameRestart.WineVersion = () => "9.0";
-
-        Assert.Equal(RestartStart.NeedsWindows, GameRestart.AfterExit(_folder));
-        Assert.Equal(RestartStart.NeedsWindows, GameRestart.UpdateAfterExit(_folder));
-    }
+    private string ModFolder => Path.Combine(_game, "Patch", "Multiplayer");
 
     /// <summary>
-    /// Asserts that a missing Game.exe or updater fails on Windows.
+    /// Asserts that nothing starts without the helper or Game.exe.
     /// </summary>
     [Fact]
     public void MissingFiles_Fail()
     {
-        GameRestart.WineVersion = () => null;
+        Directory.CreateDirectory(ModFolder);
+        Assert.Equal(RestartStart.Failed, GameRestart.AfterExit(ModFolder));
+        Assert.Equal(RestartStart.Failed, GameRestart.UpdateAfterExit(ModFolder));
 
-        Assert.Equal(RestartStart.Failed, GameRestart.AfterExit(_folder));
-        Assert.Equal(RestartStart.Failed, GameRestart.UpdateAfterExit(_folder));
+        File.WriteAllText(Path.Combine(_game, "Game.exe"), string.Empty);
+        Assert.Equal(RestartStart.Failed, GameRestart.AfterExit(ModFolder));
     }
 
     /// <summary>
-    /// Asserts that the updater is told the release to install only as dotted numbers, since cmd
-    /// reads its arguments again.
+    /// Asserts that the helper is told the release to install only as dotted numbers.
     /// </summary>
     [Fact]
     public void UpdaterArguments_PassOnlyAReleaseVersion()
     {
-        Assert.Equal("-GameProcess 42 -Version 0.6.7.7", GameRestart.UpdaterArguments(42, "0.6.7.7"));
-        Assert.Equal("-GameProcess 42", GameRestart.UpdaterArguments(42, null));
-        Assert.Equal("-GameProcess 42", GameRestart.UpdaterArguments(42, "0.6.8 & calc"));
+        Assert.Equal(["update", "--game", "42", "--version", "0.6.7.7"], GameRestart.UpdaterArguments(42, "0.6.7.7"));
+        Assert.Equal(["update", "--game", "42"], GameRestart.UpdaterArguments(42, null));
+        Assert.Equal(["update", "--game", "42"], GameRestart.UpdaterArguments(42, "0.6.8 --folder C:\\"));
     }
 
     /// <summary>
-    /// Asserts that the parked mods' watchdog never starts under Wine, and fails on Windows without
-    /// Game.exe or the watchdog, leaving the journal as it was either way.
+    /// Asserts that the parked mods' watchdog fails without Game.exe or the helper, leaving the
+    /// journal as it was.
     /// </summary>
     [Fact]
-    public void WatchParked_StartsNothingWithoutWindowsOrItsFiles()
+    public void WatchParked_StartsNothingWithoutItsFiles()
     {
-        var game = Path.Combine(_folder, "Game");
-        var modFolder = Path.Combine(game, "Patch", "Multiplayer");
-        Directory.CreateDirectory(modFolder);
-        File.WriteAllText(Path.Combine(game, "Patch", "A.rb"), "# A\n");
-        using var parking = new ModParking(game);
+        Directory.CreateDirectory(ModFolder);
+        File.WriteAllText(Path.Combine(_game, "Patch", "A.rb"), "# A\n");
+        using var parking = new ModParking(_game);
         parking.Park(["Patch/A.rb"], "world");
         var journal = File.ReadAllText(parking.JournalPath);
 
-        GameRestart.WineVersion = () => "9.0";
-        File.WriteAllText(Path.Combine(game, "Game.exe"), string.Empty);
-        File.WriteAllText(Path.Combine(modFolder, "ModParking.ps1"), string.Empty);
-        Assert.Equal(RestartStart.NeedsWindows, GameRestart.WatchParked(parking, modFolder, "world", true));
-
-        GameRestart.WineVersion = () => null;
-        File.Delete(Path.Combine(modFolder, "ModParking.ps1"));
-        Assert.Equal(RestartStart.Failed, GameRestart.WatchParked(parking, modFolder, "world", true));
-        File.Delete(Path.Combine(game, "Game.exe"));
-        Assert.Equal(RestartStart.Failed, GameRestart.WatchParked(parking, modFolder, "world", false));
+        File.WriteAllText(Path.Combine(_game, "Game.exe"), string.Empty);
+        Assert.Equal(RestartStart.Failed, GameRestart.WatchParked(parking, ModFolder, "world", true));
+        File.Delete(Path.Combine(_game, "Game.exe"));
+        File.WriteAllText(Path.Combine(ModFolder, GameRestart.HelperName), string.Empty);
+        Assert.Equal(RestartStart.Failed, GameRestart.WatchParked(parking, ModFolder, "world", false));
 
         Assert.Equal(journal, File.ReadAllText(parking.JournalPath));
+    }
+
+    /// <summary>
+    /// Asserts that the helper's restart waits for the running game to close and then starts its
+    /// Game.exe again.
+    /// </summary>
+    [Fact]
+    public void Restart_WaitsForTheGameAndStartsItAgain()
+    {
+        // ping stands in for the game: it runs for a few seconds, and without arguments it ends at once.
+        var game = Path.Combine(_game, "Game.exe");
+        File.Copy(Path.Combine(Environment.SystemDirectory, "PING.EXE"), game);
+        using var running = Process.Start(new ProcessStartInfo(game, "-n 4 127.0.0.1") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true })!;
+        using var helper = HelperRun.Start("restart", "--game", running.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), "--folder", _game);
+
+        Assert.False(helper.WaitForExit(TimeSpan.FromSeconds(1)));
+        Assert.Equal(0, HelperRun.Finish(helper, Patience));
+
+        Assert.True(running.HasExited);
+        Assert.Contains("started the game again", File.ReadAllText(Path.Combine(_game, "Logs", "Multiplayer Helper.log")));
     }
 
     /// <inheritdoc />
     public void Dispose()
     {
-        GameRestart.WineVersion = _wineVersion;
-        Directory.Delete(_folder, true);
+        // The game the restart started may still be on its way out.
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                Directory.Delete(_game, true);
+                return;
+            }
+            catch (UnauthorizedAccessException) when (attempt < 50)
+            {
+                System.Threading.Thread.Sleep(100);
+            }
+        }
     }
 }

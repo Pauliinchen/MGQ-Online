@@ -2,6 +2,8 @@
 //  GameRestart.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Started Helper.exe for the update, the restart and the watchdog, under Wine too
+//                            - Read the release version through ReleaseVersion
 //      Paulinchen  2026-10-22: Had the updater install the release offered, an older one too
 //      Paulinchen  2026-10-09: Started the parked mods' watchdog
 //      Paulinchen  2026-10-08: Started the mod's updater
@@ -12,10 +14,10 @@
 //----------------------------------------------------------------
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
-using MGQParadox.Multiplayer.Windows;
 
 namespace MGQParadox.Multiplayer.Mods;
 
@@ -30,99 +32,64 @@ internal enum RestartStart
     Failed = 0,
 
     /// <summary>
-    /// The restart waits for the game to close.
+    /// The helper waits for the game to close.
     /// </summary>
     Waiting = 1,
-
-    /// <summary>
-    /// Nothing started, since the game runs under Wine, whose missing PowerShell cannot run the restart.
-    /// </summary>
-    NeedsWindows = 2,
 }
 
 /// <summary>
 /// Starts the game again once it closed, so new mods or a new release of this mod load: the game
-/// reads its scripts only as it starts.
+/// reads its scripts only as it starts. Helper.exe in the mod folder does the waiting, a native
+/// program that runs under Wine too.
 /// </summary>
 internal static class GameRestart
 {
     /// <summary>
-    /// The mod's updater in the mod folder, which runs Update.ps1.
+    /// The helper in the mod folder.
     /// </summary>
-    private const string Updater = "Update.bat";
+    internal const string HelperName = "Helper.exe";
 
     /// <summary>
-    /// The parked mods' watchdog in the mod folder.
+    /// Has the helper wait in a console of its own for this game to close, install a release of the
+    /// mod and start the game again.
     /// </summary>
-    private const string Watchdog = "ModParking.ps1";
-
-    /// <summary>
-    /// Reads the Wine version the game runs under, <see langword="null"/> on Windows; tests set another.
-    /// </summary>
-    internal static Func<string?> WineVersion { get; set; } = NativeMethods.WineVersion;
-
-    /// <summary>
-    /// Has the mod's updater wait in a console of its own for this game to close, install a release
-    /// of the mod and start the game again.
-    /// </summary>
-    /// <param name="modFolder">The mod folder, which holds the updater.</param>
+    /// <param name="modFolder">The mod folder, which holds the helper.</param>
     /// <param name="version">The release to install, newer or older, like <c>0.6.8</c>; <see langword="null"/> for GitHub's latest.</param>
-    /// <returns>Whether the updater started, or why not.</returns>
+    /// <returns>Whether the helper started.</returns>
     public static RestartStart UpdateAfterExit(string modFolder, string? version = null)
     {
-        var updater = Path.Combine(modFolder, Updater);
-
-        if (NeedsWindows("update"))
-        {
-            return RestartStart.NeedsWindows;
-        }
-
-        if (!File.Exists(updater))
-        {
-            Log.Write($"update failed: {updater} does not exist");
-            return RestartStart.Failed;
-        }
-
-        // The shell runs a batch file through cmd and quotes its path, which may hold brackets or
-        // ampersands that cmd /c would take apart.
-        var start = new ProcessStartInfo(updater)
-        {
-            UseShellExecute = true,
-            WorkingDirectory = modFolder,
-            Arguments = UpdaterArguments(Environment.ProcessId, version),
-        };
-
-        using var process = Process.Start(start);
-        Log.Write(process != null ? $"the updater waits for the game to close to install {version ?? "the latest release"}" : "update failed: the updater did not start");
-        return process != null ? RestartStart.Waiting : RestartStart.Failed;
+        var started = StartHelper(modFolder, UpdaterArguments(Environment.ProcessId, version), ProcessWindowStyle.Normal, "update");
+        Log.Write(started == RestartStart.Waiting ? $"the updater waits for the game to close to install {version ?? "the latest release"}" : "update failed: the updater did not start");
+        return started;
     }
 
     /// <summary>
-    /// Writes the updater's arguments.
+    /// Writes the helper's arguments for an update.
     /// </summary>
-    /// <remarks>
-    /// cmd reads the arguments again, so a version is passed only as dotted numbers.
-    /// </remarks>
-    /// <param name="processId">This game's process id, which the updater waits for.</param>
+    /// <param name="processId">This game's process id, which the helper waits for.</param>
     /// <param name="version">The release to install; <see langword="null"/> or anything but dotted numbers for GitHub's latest.</param>
-    /// <returns>The arguments for Update.bat.</returns>
-    internal static string UpdaterArguments(int processId, string? version) =>
-        string.Create(CultureInfo.InvariantCulture, $"-GameProcess {processId}")
-        + (UpdateCheck.ParseRelease(version) != null ? $" -Version {version}" : string.Empty);
+    /// <returns>The arguments.</returns>
+    internal static List<string> UpdaterArguments(int processId, string? version)
+    {
+        List<string> arguments = ["update", "--game", processId.ToString(CultureInfo.InvariantCulture)];
+
+        if (ReleaseVersion.Parse(version) != null)
+        {
+            arguments.AddRange(["--version", version!]);
+        }
+
+        return arguments;
+    }
 
     /// <summary>
-    /// Has a hidden PowerShell wait for this game to close and then start Game.exe again.
+    /// Has the helper wait hidden for this game to close and then start Game.exe again.
     /// </summary>
-    /// <param name="gameFolder">The game's folder.</param>
-    /// <returns>Whether the waiting PowerShell started, or why not.</returns>
-    public static RestartStart AfterExit(string gameFolder)
+    /// <param name="modFolder">The mod folder, which holds the helper.</param>
+    /// <returns>Whether the helper started.</returns>
+    public static RestartStart AfterExit(string modFolder)
     {
+        var gameFolder = ModFolder.GamePathOf(".", modFolder);
         var game = Path.Combine(gameFolder, "Game.exe");
-
-        if (NeedsWindows("restart"))
-        {
-            return RestartStart.NeedsWindows;
-        }
 
         if (!File.Exists(game))
         {
@@ -130,51 +97,29 @@ internal static class GameRestart
             return RestartStart.Failed;
         }
 
-        // Start-Process reads its paths as wildcards, so a folder such as "MGQ Paradox [EN]" would
-        // not be found.
-        var command = $"Wait-Process -Id {Environment.ProcessId} -ErrorAction SilentlyContinue; $start = New-Object System.Diagnostics.ProcessStartInfo -ArgumentList {Quoted(game)}; $start.WorkingDirectory = {Quoted(gameFolder)}; $start.UseShellExecute = $true; [void][System.Diagnostics.Process]::Start($start)";
-        var start = new ProcessStartInfo("powershell.exe")
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            WindowStyle = ProcessWindowStyle.Hidden,
-        };
-
-        start.ArgumentList.Add("-NoProfile");
-        start.ArgumentList.Add("-NonInteractive");
-        start.ArgumentList.Add("-WindowStyle");
-        start.ArgumentList.Add("Hidden");
-        start.ArgumentList.Add("-Command");
-        start.ArgumentList.Add(command);
-
-        using var process = Process.Start(start);
-        Log.Write(process != null ? "the game starts again once it closed" : "restart failed: PowerShell did not start");
-        return process != null ? RestartStart.Waiting : RestartStart.Failed;
+        var started = StartHelper(modFolder, ["restart", "--game", Environment.ProcessId.ToString(CultureInfo.InvariantCulture), "--folder", gameFolder], ProcessWindowStyle.Hidden, "restart");
+        Log.Write(started == RestartStart.Waiting ? "the game starts again once it closed" : "restart failed: the helper did not start");
+        return started;
     }
 
     /// <summary>
-    /// Has the watchdog ModParking.ps1 wait in a hidden PowerShell for this game to close, start it
-    /// again into the world when it rejoins, and move the parked mods back once no game of the
-    /// folder runs any more, whichever way the game closed.
+    /// Has the helper wait hidden for this game to close, start it again into the world when it
+    /// rejoins, and move the parked mods back once no game of the folder runs any more, whichever
+    /// way the game closed.
     /// </summary>
     /// <param name="parking">The game's parking, whose journal the watchdog follows.</param>
-    /// <param name="modFolder">The mod folder, which holds the watchdog.</param>
+    /// <param name="modFolder">The mod folder, which holds the helper.</param>
     /// <param name="world">The world the mods are parked for.</param>
     /// <param name="rejoin">Whether the watchdog starts the game again into the world; else it starts it to the title once the mods are back.</param>
-    /// <returns>Whether the watchdog started, or why not.</returns>
+    /// <returns>Whether the watchdog started.</returns>
     public static RestartStart WatchParked(ModParking parking, string modFolder, string world, bool rejoin)
     {
         var game = Path.Combine(parking.GameFolder, "Game.exe");
-        var watchdog = Path.Combine(modFolder, Watchdog);
+        var helper = Path.Combine(modFolder, HelperName);
 
-        if (NeedsWindows("the parked mods' restart"))
+        if (!File.Exists(game) || !File.Exists(helper))
         {
-            return RestartStart.NeedsWindows;
-        }
-
-        if (!File.Exists(game) || !File.Exists(watchdog))
-        {
-            Log.Write($"the parked mods' restart failed: {(File.Exists(game) ? watchdog : game)} does not exist");
+            Log.Write($"the parked mods' restart failed: {(File.Exists(game) ? helper : game)} does not exist");
             return RestartStart.Failed;
         }
 
@@ -183,47 +128,44 @@ internal static class GameRestart
             return RestartStart.Failed;
         }
 
-        // The shell starts it without handing down the game's handles, which would outlive the
-        // game in it.
-        var start = new ProcessStartInfo("powershell.exe")
+        List<string> arguments = ["watch", "--game", Environment.ProcessId.ToString(CultureInfo.InvariantCulture), "--folder", parking.GameFolder, "--mode", rejoin ? "rejoin" : "title", "--watch", watch];
+        var started = StartHelper(modFolder, arguments, ProcessWindowStyle.Hidden, "the parked mods' restart");
+        Log.Write(started == RestartStart.Waiting ? $"the parked mods' watchdog waits for the game to close, then {(rejoin ? $"starts it again into world {Log.Short(world)}" : "brings the mods back and starts it to the title")}" : "the parked mods' restart failed: the helper did not start");
+        return started;
+    }
+
+    /// <summary>
+    /// Starts the helper through the shell, which hands it none of this game's handles, the parked
+    /// mods' lock among them, that would outlive the game in it.
+    /// </summary>
+    /// <param name="modFolder">The mod folder, which holds the helper.</param>
+    /// <param name="arguments">The helper's mode and options.</param>
+    /// <param name="window">How its console window shows: only the update's is seen.</param>
+    /// <param name="what">What it starts, for the log.</param>
+    /// <returns>Whether it started.</returns>
+    private static RestartStart StartHelper(string modFolder, IEnumerable<string> arguments, ProcessWindowStyle window, string what)
+    {
+        var helper = Path.Combine(modFolder, HelperName);
+
+        if (!File.Exists(helper))
+        {
+            Log.Write($"{what} failed: {helper} does not exist");
+            return RestartStart.Failed;
+        }
+
+        var start = new ProcessStartInfo(helper)
         {
             UseShellExecute = true,
-            WindowStyle = ProcessWindowStyle.Hidden,
-            WorkingDirectory = parking.GameFolder,
+            WindowStyle = window,
+            WorkingDirectory = modFolder,
         };
 
-        foreach (var argument in (string[])["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", watchdog,
-            "-GameProcess", Environment.ProcessId.ToString(CultureInfo.InvariantCulture), "-GameFolder", parking.GameFolder, "-Mode", rejoin ? "rejoin" : "title", "-Watch", watch])
+        foreach (var argument in arguments)
         {
             start.ArgumentList.Add(argument);
         }
 
         using var process = Process.Start(start);
-        Log.Write(process != null ? $"the parked mods' watchdog waits for the game to close, then {(rejoin ? $"starts it again into world {Log.Short(world)}" : "brings the mods back and starts it to the title")}" : "the parked mods' restart failed: PowerShell did not start");
         return process != null ? RestartStart.Waiting : RestartStart.Failed;
     }
-
-    /// <summary>
-    /// Tells whether the game runs under Wine, where the updater, the restart and the parked mods'
-    /// watchdog need a PowerShell it lacks, so the game would close for nothing.
-    /// </summary>
-    /// <param name="what">What is not started, for the log.</param>
-    /// <returns><see langword="true"/> under Wine.</returns>
-    private static bool NeedsWindows(string what)
-    {
-        if (WineVersion() is not { } wine)
-        {
-            return false;
-        }
-
-        Log.Write($"{what} not started: it needs Windows, and the game runs under Wine {wine}");
-        return true;
-    }
-
-    /// <summary>
-    /// Quotes a path for PowerShell.
-    /// </summary>
-    /// <param name="path">The path.</param>
-    /// <returns>The path in single quotes, its own single quotes doubled.</returns>
-    private static string Quoted(string path) => $"'{path.Replace("'", "''", StringComparison.Ordinal)}'";
 }

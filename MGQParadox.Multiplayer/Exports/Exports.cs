@@ -2,7 +2,8 @@
 //  Exports.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Logged the crashes Windows recorded since the previous start and added mp_memory_usage
+//      Paulinchen  2026-10-23: Started the updater under Wine too
+//                            - Logged the crashes Windows recorded since the previous start and added mp_memory_usage
 //      Paulinchen  2026-10-22: Handed out the release the relay names, an older one too, added mp_update_rollback and passed the release to the updater
 //      Paulinchen  2026-10-10: Added mp_dev_build
 //      Paulinchen  2026-10-09: Took the parked mods' lock as the game starts and marked their journal while an update runs
@@ -176,7 +177,7 @@ internal static unsafe partial class Exports
     /// Has the mod's updater install the release the check offers once the game closed and start the
     /// game again. The game script closes the game right after.
     /// </summary>
-    /// <returns>1 when the updater waits for the game to close, 0 when it failed, 2 under Wine, where it cannot run.</returns>
+    /// <returns>1 when the updater waits for the game to close, 0 when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_update_game", CallConvs = [typeof(CallConvStdcall)])]
     public static int UpdateGame()
     {

@@ -2,6 +2,7 @@
 //  Message.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Dropped a using it does not need
 //      Paulinchen  2026-10-10: Kept header keys on their line too
 //      Paulinchen  2026-10-07: Summed a message up for the log by its keys alone
 //      Paulinchen  2026-09-29: Dropped the token header
@@ -12,7 +13,6 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using MGQParadox.Multiplayer.Network.World;
 
 namespace MGQParadox.Multiplayer.Network.Transport;
 

@@ -2,6 +2,7 @@
 #  ui_single_player.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Started the game again under Wine or Proton too
 #      Paulinchen  2026-10-13: Created
 #
 #----------------------------------------------------------------
@@ -36,9 +37,6 @@ module MGQ_MpSinglePlayer
 
   # The box's yes and no choices.
   RESTART_CHOICES = ["Restart", "Later"]
-
-  # What the player reads under Wine or Proton, where the game cannot start itself again.
-  BY_HAND_TEXT = "Start the game again yourself: it goes on right where you are."
 
   # What the player reads when the game could not start itself again.
   FAILED_TEXT = "The game could not start itself again. The settings apply as they are."
@@ -198,10 +196,6 @@ module MGQ_MpSinglePlayer
     case MGQ_Multiplayer::Link.function('mp_restart_game').call
     when 1
       log("starting the game again, which goes on from #{RESUME_FILE}")
-      SceneManager.exit
-    when 2
-      log("the game cannot start itself again under Wine, so the player does; it goes on from #{RESUME_FILE}")
-      msgbox(BY_HAND_TEXT)
       SceneManager.exit
     else
       forget_resume

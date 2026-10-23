@@ -2,7 +2,10 @@
 //  ModParking.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Deleted the check of a game started for the options dump
+//      Paulinchen  2026-10-23: Read the journal for the helper's watchdog and let it take the lock
+//                            - Read the journal sharing it for writes and deletes
+//                            - Skipped a parked file whose path leads outside Patch
+//                            - Deleted the check of a game started for the options dump
 //      Paulinchen  2026-10-10: Never parked scripts behind a link to another volume and listed them as elsewhere
 //                            - Cleared a parked file's read-only attribute for a move or delete and set it again
 //                            - Sent a parked file whose hash differs from the journal's to the conflicts folder
@@ -738,10 +741,26 @@ internal sealed class ModParking : IDisposable
         !string.Equals(Path.GetPathRoot(target), Path.GetPathRoot(folder), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Takes the lock unless this game holds it already.
+    /// Reads what the watchdog follows in the journal, trying again for a moment while another program writes it.
     /// </summary>
-    /// <returns>Whether this game holds it.</returns>
-    private bool TakeLock()
+    /// <returns>The journal's state, <see langword="null"/> when there is none.</returns>
+    /// <exception cref="IOException">The journal could not be read.</exception>
+    /// <exception cref="UnauthorizedAccessException">The journal may not be read.</exception>
+    public WatchState? ReadWatch()
+    {
+        lock (_gate)
+        {
+            return WithRetries(() => Journal.Read(JournalPath), JournalAttempts) is { } journal
+                ? new WatchState(journal.World, journal.After == AfterTitle, journal.Update, journal.Watch, journal.Files.Count)
+                : null;
+        }
+    }
+
+    /// <summary>
+    /// Takes the lock unless this process holds it already.
+    /// </summary>
+    /// <returns>Whether this process holds it.</returns>
+    public bool TakeLock()
     {
         if (_lock != null)
         {
@@ -861,6 +880,12 @@ internal sealed class ModParking : IDisposable
     {
         var parked = ParkedPathOf(file.Path);
         var original = GamePathOf(file.Path);
+
+        if (FolderGuard.Inside(PatchFolder, original) == null)
+        {
+            Log.Write($"skipped {file.Path}, which lies outside Patch");
+            return RestoreOutcome.Handled;
+        }
 
         if (!File.Exists(parked))
         {
@@ -1270,6 +1295,16 @@ internal sealed class ModParking : IDisposable
     }
 
     /// <summary>
+    /// What the watchdog follows in the journal.
+    /// </summary>
+    /// <param name="World">The world the mods are parked for.</param>
+    /// <param name="AfterTitle">Whether the watchdog starts the game again to the title once the mods are back.</param>
+    /// <param name="Update">Whether the mod's updater runs, which starts the game itself.</param>
+    /// <param name="Watch">The id of the watchdog the journal belongs to; empty when none waits.</param>
+    /// <param name="Files">How many mods it lists.</param>
+    public sealed record WatchState(string World, bool AfterTitle, bool Update, string Watch, int Files);
+
+    /// <summary>
     /// A mod the journal lists.
     /// </summary>
     /// <param name="path">Its script's path relative to the game folder, with forward slashes.</param>
@@ -1293,7 +1328,7 @@ internal sealed class ModParking : IDisposable
     }
 
     /// <summary>
-    /// The journal of the parked mods, Parked.txt, which the watchdog ModParking.ps1 reads too.
+    /// The journal of the parked mods, Parked.txt, which the helper's watchdog reads too.
     /// </summary>
     private sealed class Journal
     {
@@ -1337,7 +1372,11 @@ internal sealed class ModParking : IDisposable
 
             var journal = new Journal();
 
-            foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+            // Shared for writing and deleting, so a game or the watchdog replacing or deleting the
+            // journal meanwhile never fails because of this read.
+            using var reader = new StreamReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete), Encoding.UTF8);
+
+            for (var line = reader.ReadLine(); line != null; line = reader.ReadLine())
             {
                 var fields = line.Split('\t');
 

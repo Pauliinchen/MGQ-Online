@@ -2,7 +2,8 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Gave the stand-in world list every field the DLL writes
+#      Paulinchen  2026-10-23: Dropped the update offer under Wine and expected --version for a step back by hand
+#                            - Gave the stand-in world list every field the DLL writes
 #      Paulinchen  2026-10-22: Checked the update offer of a step back to an older release
 #      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number
 #      Paulinchen  2026-10-14: Expected a Raid World's starting save in its details and its Save in every build
@@ -843,13 +844,6 @@ check("an updater that cannot start keeps the game open and tells how to update 
 offer.update
 $pressed = nil
 check("confirm then closes the box", offer.shown?, false)
-MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| Struct.new(:name) { def call(*); 2; end }.new(name) }
-MGQ_MpWorld.open_world_screen(title_scene)
-$pressed = :C
-offer.update
-$pressed = nil
-check("under Wine the game stays open and the box tells to update by hand", [$exited, offer.instance_variable_get(:@box).shown[1]], [nil, MGQ_MpWorld::UpdateOffer::WINE_TEXT])
-offer.hide
 MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| working_function(name) }
 offer.hide
 $rollback = true
@@ -869,7 +863,7 @@ $pressed = :C
 offer.update
 $pressed = nil
 check("an updater that cannot start names the version to install by hand",
-      offer.instance_variable_get(:@box).shown[1], "The updater could not start. Close the game and run Patch\\Multiplayer\\Update.bat -Version 9.9.9 from a console.")
+      offer.instance_variable_get(:@box).shown[1], "The updater could not start. Close the game and run Patch\\Multiplayer\\Update.bat --version 9.9.9 from a console.")
 MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| working_function(name) }
 offer.hide
 check("and the world refusal says so too", MGQ_MpWorld.start(MGQ_MpWorld::World.allocate, nil), "9.9.9 is the version to play now.")

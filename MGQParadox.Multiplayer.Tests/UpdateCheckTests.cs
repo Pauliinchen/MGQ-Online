@@ -2,6 +2,7 @@
 //  UpdateCheckTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Read the release version through ReleaseVersion
 //      Paulinchen  2026-10-22: Covered the release the relay names, a step back too, and GitHub without its answer
 //      Paulinchen  2026-10-12: Covered the version named to the relay
 //      Paulinchen  2026-10-10: Covered telling a development build by its stamp
@@ -29,8 +30,8 @@ public sealed class UpdateCheckTests
     [InlineData("0.2.0", "0.2.0")]
     [InlineData("0.0.0-dev+9611cfb", null)]
     [InlineData("", null)]
-    public void ReleaseVersionOf_SkipsDevelopmentBuilds(string informationalVersion, string? expected) =>
-        Assert.Equal(expected, UpdateCheck.ReleaseVersionOf(informationalVersion)?.ToString());
+    public void ReleaseVersion_SkipsDevelopmentBuilds(string informationalVersion, string? expected) =>
+        Assert.Equal(expected, ReleaseVersion.OfStamp(informationalVersion)?.ToString());
 
     /// <summary>
     /// Asserts that the version named to the relay leaves out the commit and keeps a development stamp.

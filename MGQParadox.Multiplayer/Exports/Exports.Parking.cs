@@ -2,6 +2,7 @@
 //  Exports.Parking.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Started the watchdog under Wine too
 //      Paulinchen  2026-10-10: Answered a failed description of the parked mods with the error header
 //      Paulinchen  2026-10-09: Created
 //
@@ -106,7 +107,7 @@ internal static unsafe partial class Exports
     /// </summary>
     /// <param name="world">The world the mods are parked for, UTF-8 and null-terminated.</param>
     /// <param name="mode">1 to start the game again into the world, 0 to bring the mods back and start it to the title.</param>
-    /// <returns>1 when the watchdog waits for the game to close, 0 when it failed, 2 under Wine, where it cannot run and the player restarts the game themselves.</returns>
+    /// <returns>1 when the watchdog waits for the game to close, 0 when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_mods_restart_parked", CallConvs = [typeof(CallConvStdcall)])]
     public static int ModsRestartParked(byte* world, int mode)
     {

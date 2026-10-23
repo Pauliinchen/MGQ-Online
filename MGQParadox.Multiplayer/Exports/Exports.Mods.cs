@@ -2,6 +2,7 @@
 //  Exports.Mods.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Started the game again through the helper, under Wine too
 //      Paulinchen  2026-10-08: Answered mp_restart_game with 2 under Wine
 //      Paulinchen  2026-10-06: Sent the Mod Config options an admin's game reads for the catalog
 //                            - Created
@@ -118,13 +119,13 @@ internal static unsafe partial class Exports
     /// Has the game start again once it closed, so the mods just installed load. The game script
     /// closes the game right after.
     /// </summary>
-    /// <returns>1 when the restart waits for the game to close, 0 when it failed, 2 under Wine, where it cannot run and the player restarts the game themselves.</returns>
+    /// <returns>1 when the restart waits for the game to close, 0 when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_restart_game", CallConvs = [typeof(CallConvStdcall)])]
     public static int RestartGame()
     {
         try
         {
-            return (int)GameRestart.AfterExit(ModFolder.GamePathOf("."));
+            return (int)GameRestart.AfterExit(ModFolder.Root);
         }
         catch (Exception ex)
         {

@@ -2,6 +2,7 @@
 //  UpdateCheck.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Read release versions through ReleaseVersion
 //      Paulinchen  2026-10-22: Asked the relay for the release to play first, an older one too, and GitHub only without its answer
 //      Paulinchen  2026-10-12: Told the version this DLL names to the relay
 //      Paulinchen  2026-10-10: Told whether this DLL is a development build
@@ -12,7 +13,6 @@
 //----------------------------------------------------------------
 
 using System;
-using System.Linq;
 using System.Net.Http;
 using System.Reflection;
 using System.Text.Json;
@@ -68,11 +68,6 @@ internal static class UpdateCheck
     private const string DevelopmentVersion = "0.0.0-dev";
 
     /// <summary>
-    /// The most parts of a release's version, like <c>0.6.7.7</c>.
-    /// </summary>
-    private const int MaxVersionParts = 4;
-
-    /// <summary>
     /// How long the check waits for the relay, and then for GitHub.
     /// </summary>
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
@@ -123,24 +118,13 @@ internal static class UpdateCheck
 
         var informationalVersion = InformationalVersion;
 
-        if (ReleaseVersionOf(informationalVersion) is not { } installed)
+        if (ReleaseVersion.OfStamp(informationalVersion) is not { } installed)
         {
             Log.Write($"update check skipped: {informationalVersion} is no release");
             return;
         }
 
         Threads.Start("MultiplayerUpdateCheck", () => Run(installed));
-    }
-
-    /// <summary>
-    /// Reads the release version from the DLL's informational version.
-    /// </summary>
-    /// <param name="informationalVersion">The version the build stamped, like <c>0.1.0+&lt;commit&gt;</c>.</param>
-    /// <returns>The version, or <see langword="null"/> for one with a pre-release tag, like <c>0.0.0-dev</c>, or none.</returns>
-    internal static Version? ReleaseVersionOf(string informationalVersion)
-    {
-        var version = informationalVersion.Split('+')[0];
-        return !version.Contains('-') && Version.TryParse(version, out var parsed) ? parsed : null;
     }
 
     /// <summary>
@@ -162,24 +146,6 @@ internal static class UpdateCheck
         string.Equals(informationalVersion.Split('+')[0], DevelopmentVersion, StringComparison.Ordinal);
 
     /// <summary>
-    /// Reads a release's version as the relay and the updater name it: dotted numbers alone.
-    /// </summary>
-    /// <param name="text">The version, like <c>0.6.8</c>.</param>
-    /// <returns>The version with every part it lacks as 0, or <see langword="null"/> for anything else.</returns>
-    internal static Version? ParseRelease(string? text)
-    {
-        var parts = text?.Split('.') ?? [];
-
-        if (parts.Length is 0 or > MaxVersionParts || !parts.All(part => part.Length is > 0 and <= 9 && part.All(char.IsAsciiDigit)))
-        {
-            return null;
-        }
-
-        var numbers = parts.Select(int.Parse).Concat(Enumerable.Repeat(0, MaxVersionParts - parts.Length)).ToArray();
-        return new Version(numbers[0], numbers[1], numbers[2], numbers[3]);
-    }
-
-    /// <summary>
     /// Compares the latest release with the installed version.
     /// </summary>
     /// <param name="installed">The version of this DLL.</param>
@@ -190,7 +156,7 @@ internal static class UpdateCheck
         using var release = JsonDocument.Parse(releaseJson);
         var tag = release.RootElement.GetProperty(TagProperty).GetString()?.TrimStart('v');
 
-        return ParseRelease(tag) is { } latest && latest > Padded(installed) ? tag : null;
+        return ReleaseVersion.Parse(tag) is { } latest && latest > ReleaseVersion.Padded(installed) ? tag : null;
     }
 
     /// <summary>
@@ -204,7 +170,7 @@ internal static class UpdateCheck
         var root = release.RootElement;
 
         return root.ValueKind == JsonValueKind.Object && root.TryGetProperty(CurrentProperty, out var current) && current.ValueKind == JsonValueKind.String
-            && ParseRelease(current.GetString()) != null ? current.GetString() : null;
+            && ReleaseVersion.Parse(current.GetString()) != null ? current.GetString() : null;
     }
 
     /// <summary>
@@ -228,9 +194,9 @@ internal static class UpdateCheck
             Log.Write($"the relay could not tell the release to play, asking GitHub: {ex.GetBaseException().Message}");
         }
 
-        if (ParseRelease(current) is { } wanted)
+        if (ReleaseVersion.Parse(current) is { } wanted)
         {
-            var offer = wanted == Padded(installed) ? null : new ReleaseOffer(current!, wanted < Padded(installed));
+            var offer = wanted == ReleaseVersion.Padded(installed) ? null : new ReleaseOffer(current!, wanted < ReleaseVersion.Padded(installed));
             Log.Write(offer == null ? $"the relay names {current}, which is installed" : $"the relay names {current}, {installed} is installed{(offer.Rollback ? ": a step back" : string.Empty)}");
             return offer;
         }
@@ -247,14 +213,6 @@ internal static class UpdateCheck
     /// <returns>The route's address over https:// or http://.</returns>
     internal static Uri ReleaseAddress(Uri relay) =>
         new UriBuilder(relay) { Scheme = relay.Scheme == "wss" ? "https" : "http", Port = relay.IsDefaultPort ? -1 : relay.Port, Path = ReleasePath }.Uri;
-
-    /// <summary>
-    /// Writes a version with every part it lacks as 0, so <c>0.6.8</c> and <c>0.6.8.0</c> count as one.
-    /// </summary>
-    /// <param name="version">The version.</param>
-    /// <returns>The version with four parts.</returns>
-    private static Version Padded(Version version) =>
-        new(version.Major, version.Minor, Math.Max(version.Build, 0), Math.Max(version.Revision, 0));
 
     /// <summary>
     /// Asks the relay and GitHub and keeps the answer.

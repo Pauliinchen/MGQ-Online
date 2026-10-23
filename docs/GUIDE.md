@@ -79,7 +79,7 @@ Outside a world, the world features (chat, players, parties, trading) stay hidde
 
 They are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save.
 
-**Restart.** After you change one of them while playing outside a world, the map asks whether to start the game again so they apply cleanly, as soon as nothing runs there and the game would let you save. *Restart* saves your game apart from your save slots (`Patch\Multiplayer\Resume.rvdata2`), starts the game again and goes on right where you were; nothing is lost and no slot is touched. *Later* keeps playing; the settings apply anyway. Under Wine or Proton the game closes and you start it again yourself; it still goes on where you were. Should that game ever fail to load, it is kept as `Patch\Multiplayer\Resume <date>.rvdata2` and a message names it.
+**Restart.** After you change one of them while playing outside a world, the map asks whether to start the game again so they apply cleanly, as soon as nothing runs there and the game would let you save. *Restart* saves your game apart from your save slots (`Patch\Multiplayer\Resume.rvdata2`), starts the game again and goes on right where you were; nothing is lost and no slot is touched. *Later* keeps playing; the settings apply anyway. Should that game ever fail to load, it is kept as `Patch\Multiplayer\Resume <date>.rvdata2` and a message names it.
 
 ## Mods
 
@@ -188,7 +188,7 @@ The details show each mod in a box of its own, as many as fit the row, and count
 
 **Same version for everyone.** The relay keeps a catalog of mods its admins added, with each one's current version.
 
-- When you enter a world, each required mod is compared with the catalog. If one is missing or another version, the world screen says which and offers *Download and restart*: it fetches the world's version, checks every file, puts it into your `Patch` folder, restarts the game and enters the world. Under Wine or Proton the game cannot restart itself: close it and start it again, and it enters the world. *See the mods* lists your version and the world's.
+- When you enter a world, each required mod is compared with the catalog. If one is missing or another version, the world screen says which and offers *Download and restart*: it fetches the world's version, checks every file, puts it into your `Patch` folder, restarts the game and enters the world. *See the mods* lists your version and the world's.
 - A required mod the catalog doesn't know is compared with the creator's copy. If yours differs, get the creator's version from the mod's author; nothing downloads it for you.
 - A new version only reaches players the next time they enter.
 
@@ -211,7 +211,6 @@ A script in a folder inside `Patch` belongs to the mod that folder is named afte
 - **Saving is off** outside a world while your other mods are turned off, such as after they could not come back on leaving a world: a save you make shows "Saving is off until your other mods are back. Start the game again to bring them back.", and the autosave is skipped. Saving inside a world works as usual.
 - **A world's mods downloaded** while your other mods could not be turned off, or kept off, for the restart: the game stays on the world screen and asks you to try again, instead of restarting with your mods half turned off.
 - **Updating the mod** while mods are turned off: they come back once the updater has started. If the updater can't start, they stay off until the next start of the game.
-- **Under Wine or Proton** the game cannot start itself again: close it and start it yourself. It enters the world once it is back, and after you leave the world, the mods are back once you start it again.
 
 ### Game data
 
@@ -452,7 +451,7 @@ Your games meet at the mod's **relay**, a small server that passes their data on
 
 | Message or problem | What to do |
 |---|---|
-| *Multiplayer* says a new version is out | Press Enter for *update and install*: the game closes, updates the mod and starts again in the Multiplayer menu. Or close the game and run `Patch\Multiplayer\Update.bat`. A Discord invite, or the return to a world after a mod download, shows the same offer while the mod is outdated; after updating, enter the world again yourself. Under Wine or Proton the updater can't run: close the game and update by hand. |
+| *Multiplayer* says a new version is out | Press Enter for *update and install*: the game closes, updates the mod and starts again in the Multiplayer menu. Or close the game and run `Patch\Multiplayer\Update.bat`. A Discord invite, or the return to a world after a mod download, shows the same offer while the mod is outdated; after updating, enter the world again yourself. |
 | "Your friend's game is not hosting with this join code right now" | Your friend stopped hosting, or hosted again, which makes a new join code: ask for the new one. Or their game is reconnecting to the relay: try again in a minute. |
 | "Nobody joined in time, so hosting stopped" | Hosting waits 30 minutes for a friend. Host again for a new join code. |
 | "Your team is too large to send" | Your party has more characters, skills or equipment than one PvP exchange carries. Leave a few characters out of the party and try again. |

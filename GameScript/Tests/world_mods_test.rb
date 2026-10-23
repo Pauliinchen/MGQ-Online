@@ -2,7 +2,8 @@
 #  world_mods_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Dropped the checks of the deleted options dump
+#      Paulinchen  2026-10-23: Dropped the restart by hand under Wine
+#                            - Dropped the checks of the deleted options dump
 #      Paulinchen  2026-10-22: Measured the settings and the creator's hashes against the relay's limits as the script names them
 #                            - Stood in for the update message
 #      Paulinchen  2026-10-15: Checked the world's mods and options this game hands the battle server
@@ -463,14 +464,6 @@ Dir.mktmpdir do |folder|
     scene.instance_variable_set(:@busy, "mods")
     scene.follow_action
     check("when it cannot start again, it says what to do and stays", [$ini["rejoin"], $exited, said(scene)], ["", false, "The mods were installed. Close the game and start it again to enter Modded."])
-    $restart = 1
-
-    $restart = 2
-    scene.instance_variable_set(:@busy, "mods")
-    scene.follow_action
-    check("under Wine or Proton it stays, keeps the world to enter once the player started the game again, and says so", [$ini["rejoin"], $exited, said(scene)],
-          ["w1", false, "The mods were installed. Restart the game by hand: it enters Modded once it is back."])
-    $ini["rejoin"] = ""
     $restart = 1
 
     # A mod only its author has.

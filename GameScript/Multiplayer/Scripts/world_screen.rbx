@@ -2,6 +2,7 @@
 #  world_screen.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Dropped the restart by hand under Wine or Proton, where the game starts itself again now
 #      Paulinchen  2026-10-22: Opened the world the cursor is on, whose mods the list then carries, and read them before entering or editing it
 #      Paulinchen  2026-10-14: Named a Raid World's starting save in its details in every build
 #      Paulinchen  2026-10-13: Sent a Classic world's raid bosses with the new world and the edits, and showed them in the details
@@ -769,8 +770,6 @@ class Scene_MpWorlds < Scene_MenuBase
       log_screen("closing the game to start it again with other mods turned off for #{entry_text}")
       SceneManager.exit
       return false
-    when :by_hand
-      say(format(@park_plan.empty? ? MGQ_MpModParking::BACK_BY_HAND_TEXT : MGQ_MpModParking::BY_HAND_TEXT, @entry.name))
     when :held
       refuse(MGQ_MpModParking::HELD_TEXT)
     when :not_parked
@@ -2018,17 +2017,13 @@ class Scene_MpWorlds < Scene_MenuBase
     end
     return keep_open_for_mods(plan) if result == :not_kept
 
-    case result
-    when :restarting
+    if result == :restarting
       log_screen("closing the game to start it again for the mods of #{entry_text}")
       return SceneManager.exit
-    when :by_hand
-      log_screen("the game cannot start itself again under Wine, the player restarts it and enters #{entry_text} on its own")
-      say("The mods were installed. Restart the game by hand: it enters #{@entry.name} once it is back.")
-    else
-      log_screen("the game could not start itself again, the player restarts it for #{entry_text}#{claimed ? ', the mods parked for it staying parked until then' : ''}")
-      say("The mods were installed. Close the game and start it again to enter #{@entry.name}.")
     end
+
+    log_screen("the game could not start itself again, the player restarts it for #{entry_text}#{claimed ? ', the mods parked for it staying parked until then' : ''}")
+    say("The mods were installed. Close the game and start it again to enter #{@entry.name}.")
     back_to_list
   end
 

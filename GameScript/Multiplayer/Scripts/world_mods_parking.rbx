@@ -2,6 +2,7 @@
 #  world_mods_parking.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Started the game again with the mods parked under Wine or Proton too, dropping the restart by hand
 #      Paulinchen  2026-10-22: Checked a world's mods again only once the list carries them
 #      Paulinchen  2026-10-10: Told the player on the title screen how many mods a restore sent to Parked mods/Conflicts
 #                            - Refused saving outside a world while the game runs without the player's other mods
@@ -114,13 +115,6 @@ module MGQ_MpModParking
 
   # What the world screen says when the mods could not be moved, the world filled in.
   PARK_FAILED_TEXT = "Your other mods could not be turned off, so you cannot enter %s now. See the log."
-
-  # What the world screen says under Wine or Proton, the world filled in.
-  BY_HAND_TEXT = "Your other mods are turned off. Restart the game by hand: it enters %s once it is back."
-
-  # What the world screen says under Wine or Proton once the parked mods came back, the world filled
-  # in.
-  BACK_BY_HAND_TEXT = "Your mods are back on. Restart the game by hand: it enters %s once it is back."
 
   # What the world screen says when the game could not start again, the world filled in.
   RESTART_FAILED_TEXT = "The game could not start again, so your mods stay on and %s was not entered."
@@ -554,17 +548,13 @@ module MGQ_MpModParking
   # included.
   #
   # @param world_id [String] The world the mods are parked for.
-  # @return [Symbol] :restarting when the game closes now, :by_hand under Wine or Proton, where the
-  #   player starts it again, :failed when it could not and stays open.
+  # @return [Symbol] :restarting when the game closes now, :failed when it could not and stays open.
   def self.restart(world_id)
     answer = MGQ_Multiplayer::Link.function('mp_mods_restart_parked').call(world_id.to_s + "\0", REJOIN)
     case answer
     when 1
       log("starting the game again with the mods parked, to enter world #{MGQ_MpWorld.short(world_id)}")
       :restarting
-    when 2
-      log("the game cannot start itself again under Wine, so the player does with the mods parked")
-      :by_hand
     else
       log("the game could not start itself again with the mods parked")
       :failed
@@ -579,7 +569,7 @@ module MGQ_MpModParking
   #
   # @param plan [Array<String>] The scripts to park, none to put every parked one back.
   # @param world_id [String] The world.
-  # @return [Symbol] :restarting, :by_hand, :failed (the game could not start again, the mods are
+  # @return [Symbol] :restarting, :failed (the game could not start again, the mods are
   #   back), :not_parked (the scripts could not be moved; those moved came back) or :held (another
   #   game of this folder holds the parked ones).
   def self.park_and_rejoin(plan, world_id)
@@ -610,16 +600,11 @@ module MGQ_MpModParking
   # mods back as this game closes, while the next one starts.
   #
   # @param world_id [String] The world the journal names.
-  # @return [Symbol] :restarting, :by_hand, or :failed when the game could not start again and
-  #   stays open, the mods still parked.
+  # @return [Symbol] :restarting, or :failed when the game could not start again and stays open,
+  #   the mods still parked.
   def self.rejoin_parked(world_id)
     MGQ_Multiplayer::Player.store(MGQ_MpWorldMods::REJOIN_SETTING, world_id)
     result = restart(world_id)
-    if result == :by_hand
-      # The mods stay parked for the start the player makes, which enters the world.
-      @by_hand = true
-      @hold = nil
-    end
     MGQ_Multiplayer::Player.store(MGQ_MpWorldMods::REJOIN_SETTING, "") if result == :failed
     result
   end
@@ -713,16 +698,15 @@ module MGQ_MpModParking
   end
 
   # Puts the parked mods back as the game returned to the title screen, unless the world stays open
-  # there for its new game, this is the first title screen of a start whose recovery kept them
-  # parked, or the player restarts the game by hand. Called by MGQ_MpWorld as the title screen
-  # starts, after it closed the world.
+  # there for its new game, or this is the first title screen of a start whose recovery kept them
+  # parked. Called by MGQ_MpWorld as the title screen starts, after it closed the world.
   #
   # Mods this session neither parked nor kept parked are another game's, which is told only as the
   # player leaves a world, not on every title screen.
   #
   # @param left_world [Boolean] Whether the game left a world for the title screen.
   def self.on_title_start(left_world = false)
-    return if @due || @by_hand || !usable?
+    return if @due || !usable?
     return if @kept_at_start && @title_starts <= 1
 
     @hold = nil

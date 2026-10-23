@@ -2,7 +2,8 @@
 #  mod_parking_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Gave the stand-in world list every field the DLL writes
+#      Paulinchen  2026-10-23: Checked putting the mods back and starting again into the world in place of the restart by hand under Wine
+#                            - Gave the stand-in world list every field the DLL writes
 #      Paulinchen  2026-10-22: Stood in for whether the version to install is a step back and for the update message
 #      Paulinchen  2026-10-14: Expected a Raid World's row of its Save in every build
 #      Paulinchen  2026-10-13: Expected the raid bosses of a Classic world in its edit form and after the squad rules in the DLL calls
@@ -288,7 +289,7 @@ end
 # Starts a new session of the game: the parking script forgets everything but the files.
 def new_session
   parking = MGQ_MpModParking
-  [:@started, :@hold, :@kept_at_start, :@owned, :@due, :@notice, :@by_hand, :@kick, :@box, :@box_shown, :@scene, :@start_parked, :@recheck, :@last_state].each { |name| parking.instance_variable_set(name, nil) }
+  [:@started, :@hold, :@kept_at_start, :@owned, :@due, :@notice, :@kick, :@box, :@box_shown, :@scene, :@start_parked, :@recheck, :@last_state].each { |name| parking.instance_variable_set(name, nil) }
   parking.instance_variable_set(:@title_starts, 0)
   MGQ_MpWorldMods.rejoined
   $box = nil
@@ -484,11 +485,8 @@ Dir.mktmpdir do |folder|
     scene.on_enter
     check("a world that allows them asks before putting them back", [said(scene), asked(scene), $parked.size],
           ["Classic allows your turned-off mods, which come back after a restart. Restart and join?", [:yes, :cancel], 2])
-    $restart = 2
     scene.on_confirmed
-    check("under Wine they come back and the player restarts by hand", [$parked, $ini["rejoin"], said(scene)],
-          [[], "w1", "Your mods are back on. Restart the game by hand: it enters Classic once it is back."])
-    $restart = 1
+    check("confirming puts them back and starts the game again into the world", [$parked, $ini["rejoin"], $exited], [[], "w1", true])
     $recover = 0
     $ini["rejoin"] = ""
     new_session
@@ -550,19 +548,6 @@ Dir.mktmpdir do |folder|
     scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w1", "Strict", full_strict, local, false, false))
     scene.on_enter
     check("a full world is refused before anything is turned off", [said(scene), asked(scene), $parked], ["Strict is full right now.", nil, []])
-
-    $parked = []
-    $ini["rejoin"] = ""
-    $restart_parked = 2
-    scene = new_scene
-    scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w1", "Strict", strict, local, false, false))
-    scene.on_enter
-    scene.on_confirmed
-    check("under Wine the mods stay parked and the world noted for the start the player makes", [$parked.size, $ini["rejoin"], $exited, said(scene)],
-          [2, "w1", false, "Your other mods are turned off. Restart the game by hand: it enters Strict once it is back."])
-    Scene_Title.new.start
-    check("the title screen then leaves them parked", [$parked.size, parking.title_busy?], [2, false])
-    new_session
 
     $parked = []
     $ini["rejoin"] = ""

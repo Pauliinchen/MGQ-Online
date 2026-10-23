@@ -44,8 +44,8 @@ like this:
    Patch\Multiplayer\Multiplayer.dll
    Patch\Multiplayer\Manifest.txt
    Patch\Multiplayer\README.txt
+   Patch\Multiplayer\Helper.exe
    Patch\Multiplayer\Update.bat
-   Patch\Multiplayer\Update.ps1
    Patch\Multiplayer\Scripts\*.rbx      (the mod's other scripts)
    ...
 
@@ -63,12 +63,12 @@ When a new release is out, "Multiplayer" on the title screen says so
 and offers to update and install it, since everyone needs the same
 version. Until you update, F11 doesn't open PvP battles either.
 
-Update and install closes the game and runs Patch\Multiplayer\Update.bat,
-which shows what's new, downloads the release, installs it, and removes
-files an older version left behind; then the game starts again in the
-Multiplayer menu. You can also close the game and double-click
-Update.bat yourself. Your player name, hotkeys, favourites and worlds are
-kept.
+Update and install closes the game and runs Patch\Multiplayer\Helper.exe,
+which downloads the release, installs it, removes files an older version
+left behind and shows what's new; then the game starts again in the
+Multiplayer menu. This works under Wine and Proton too. You can also
+close the game and double-click Update.bat yourself. Your player name,
+hotkeys, favourites and worlds are kept.
 
 To update by hand, close the game and extract the new download over the
 old one; then delete any Patch\Multiplayer\Scripts\*.rbx file the new

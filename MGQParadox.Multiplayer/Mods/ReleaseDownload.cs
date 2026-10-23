@@ -2,6 +2,7 @@
 //  ReleaseDownload.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Took the largest size from the caller too
 //      Paulinchen  2026-10-07: Logged each request to GitHub and each refused download
 //                            - Took the client to download with
 //      Paulinchen  2026-10-06: Took a zip of a release too
@@ -75,16 +76,17 @@ internal static partial class ReleaseDownload
     /// </summary>
     /// <param name="url">The release file's address, as the catalog names it.</param>
     /// <param name="http">The client, which follows no redirect by itself.</param>
+    /// <param name="maxBytes">The largest file taken; <see langword="null"/> for the relay's limit of a script or a zip.</param>
     /// <returns>The file.</returns>
     /// <exception cref="InvalidOperationException">The address or a redirect breaks the rules, or the download failed.</exception>
-    internal static byte[] Get(string url, HttpClient http)
+    internal static byte[] Get(string url, HttpClient http, int? maxBytes = null)
     {
         if (!IsReleaseFile(url))
         {
             throw new InvalidOperationException("The mod's address is no release file on the admins' GitHub.");
         }
 
-        var maxBytes = url.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? MaxZipBytes : MaxScriptBytes;
+        var limit = maxBytes ?? (url.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? MaxZipBytes : MaxScriptBytes);
         var address = new Uri(url);
         Log.Write($"downloading {url}");
 
@@ -111,13 +113,13 @@ internal static partial class ReleaseDownload
                 throw new InvalidOperationException($"GitHub answered {(int)response.StatusCode}.");
             }
 
-            if (response.Content.Headers.ContentLength > maxBytes)
+            if (response.Content.Headers.ContentLength > limit)
             {
                 throw new InvalidOperationException("The mod is larger than the relay takes.");
             }
 
             var bytes = response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
-            return bytes.Length > 0 && bytes.Length <= maxBytes ? bytes : throw new InvalidOperationException("The mod is empty or larger than the relay takes.");
+            return bytes.Length > 0 && bytes.Length <= limit ? bytes : throw new InvalidOperationException("The mod is empty or larger than the relay takes.");
         }
 
         throw new InvalidOperationException("The mod was sent on too often.");

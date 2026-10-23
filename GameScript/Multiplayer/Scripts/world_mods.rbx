@@ -2,7 +2,8 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Deleted the options dump for the World Admin tool
+#      Paulinchen  2026-10-23: Started the game again for downloaded mods under Wine or Proton too
+#                            - Deleted the options dump for the World Admin tool
 #      Paulinchen  2026-10-22: Took a world's settings only once the list carries its mods, and as many settings and mod hashes as the relay's new limit
 #                            - Said the version to play for a step back when the entry after a restart is refused
 #      Paulinchen  2026-10-15: Listed the world's mods and their options this game runs for the battle server
@@ -582,21 +583,15 @@ module MGQ_MpWorldMods
 
   # Starts the game again so the installed mods load, and enters the world once it is back.
   #
-  # Under Wine or Proton the game cannot start itself again, so the world stays noted for the
-  # start the player makes by hand.
-  #
   # @param world_id [String] The world to enter again.
-  # @return [Symbol] :restarting when the game closes now to start again, :by_hand under Wine or
-  #   Proton, where the player starts it again, :failed when it could not and stays open.
+  # @return [Symbol] :restarting when the game closes now to start again, :failed when it could not
+  #   and stays open.
   def self.restart(world_id)
     MGQ_Multiplayer::Player.store(REJOIN_SETTING, world_id)
     case MGQ_Multiplayer::Link.function('mp_restart_game').call
     when 1
       log("starting the game again, to enter world #{MGQ_MpWorld.short(world_id)} once it is back")
       :restarting
-    when 2
-      log("the game cannot start itself again under Wine, so the player does; world #{MGQ_MpWorld.short(world_id)} is entered once it is back")
-      :by_hand
     else
       MGQ_Multiplayer::Player.store(REJOIN_SETTING, "")
       log("the game could not start itself again, so world #{MGQ_MpWorld.short(world_id)} is not entered on its own")

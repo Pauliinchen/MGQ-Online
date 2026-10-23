@@ -88,6 +88,7 @@
     <File Path="GameScript/Tests/world_overview_test.rb" />
     <File Path="GameScript/Tests/world_support.rb" />
   </Folder>
+  <Project Path="MGQOnline.Helper/MGQOnline.Helper.csproj" />
   <Project Path="MGQParadox.Multiplayer/MGQParadox.Multiplayer.csproj" />
   <Project Path="MGQParadox.Multiplayer.Tests/MGQParadox.Multiplayer.Tests.csproj" />
   <Project Path="MGQOnline.Bridge/MGQOnline.Bridge.csproj" />

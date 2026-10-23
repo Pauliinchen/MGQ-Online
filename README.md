@@ -48,7 +48,7 @@ You then have `Multiplayer.rb` in your `Patch` folder, and next to it a `Multipl
 
 While the mod is installed, the game keeps running when its window is in the background, so no player holds the others up. A gamepad does nothing meanwhile.
 
-**Update:** when a new release is out, *Multiplayer* on the title screen says so and offers to *update and install*, since everyone needs the same version; until then F11's PvP battles stay off too. The game closes, `Patch\Multiplayer\Update.bat` shows what's new, installs the release and removes files an older version left behind, and the game starts again in the Multiplayer menu. You can also close the game and double-click `Update.bat` yourself. Your name, hotkeys, favourites and worlds are kept.
+**Update:** when a new release is out, *Multiplayer* on the title screen says so and offers to *update and install*, since everyone needs the same version; until then F11's PvP battles stay off too. The game closes, `Patch\Multiplayer\Helper.exe` installs the release, removes files an older version left behind and shows what's new, and the game starts again in the Multiplayer menu; under Wine and Proton too. You can also close the game and double-click `Update.bat` yourself. Your name, hotkeys, favourites and worlds are kept.
 
 **Uninstall:** close the game and delete `Multiplayer.rb` and the `Multiplayer` folder in `Patch`. A `Parked mods` folder in your game folder only exists while mods are turned off for a world; if you see one, start the game once before uninstalling so your mods come back. Keep `Patch\Multiplayer\Worlds` if you want to play your worlds again later.
 

@@ -2,25 +2,31 @@
 //  ModParkingWatchdogTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Made the parking without the deleted options dump check
+//      Paulinchen  2026-10-23: Ran the helper's watch mode instead of ModParking.ps1
+//                            - Covered leaving the start to an update that runs
+//                            - Made the parking without the deleted options dump check
 //      Paulinchen  2026-10-10: Covered read-only and changed parked files, unreadable journals and long paths
 //                            - Covered read-only scripts, unreadable journals on a rejoin and giving up on them
 //      Paulinchen  2026-10-09: Created
 //
 //----------------------------------------------------------------
 
+extern alias helper;
+
 using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using MGQParadox.Multiplayer.Mods;
 using MGQParadox.Multiplayer.Tests.Network.World;
+using UpdateMutex = helper::MGQOnline.Helper.UpdateMutex;
 
 namespace MGQParadox.Multiplayer.Tests.Mods;
 
 /// <summary>
-/// Covers the watchdog package/Multiplayer/ModParking.ps1 in Windows PowerShell, as it finds a game
-/// that parked mods closed: once no game holds the lock, it brings back the mods of the journal that
+/// Covers the parked mods' watchdog, Helper.exe in watch mode, as it finds a game that parked mods
+/// closed: once no game holds the lock, it brings back the mods of the journal that
 /// names it, by the same rules as the DLL, and leaves a journal that names a later watchdog alone.
 /// </summary>
 public sealed class ModParkingWatchdogTests : IDisposable
@@ -63,7 +69,7 @@ public sealed class ModParkingWatchdogTests : IDisposable
         Assert.False(File.Exists(Path.Combine(conflicts[0], "Patch", "Same.rb")));
         Assert.False(File.Exists(GamePath("Parked mods/Parked.txt")));
         Assert.False(Directory.Exists(GamePath("Parked mods/Patch")));
-        Assert.Contains("restored Patch/Extra/Other.rb", File.ReadAllText(GamePath("Logs/Multiplayer Parking.log")));
+        Assert.Contains("restored Patch/Extra/Other.rb", File.ReadAllText(GamePath("Logs/Multiplayer Helper.log")));
     }
 
     /// <summary>
@@ -122,7 +128,7 @@ public sealed class ModParkingWatchdogTests : IDisposable
         Assert.True(File.GetAttributes(Path.Combine(conflicts, "Patch", "Changed.rb")).HasFlag(FileAttributes.ReadOnly));
         Assert.True(File.GetAttributes(GamePath("Patch/Kept.rb")).HasFlag(FileAttributes.ReadOnly));
         Assert.False(File.Exists(GamePath("Parked mods/Parked.txt")));
-        Assert.Contains("not the file the tool parked", File.ReadAllText(GamePath("Logs/Multiplayer Parking.log")));
+        Assert.Contains("not the file the tool parked", File.ReadAllText(GamePath("Logs/Multiplayer Helper.log")));
     }
 
     /// <summary>
@@ -139,7 +145,8 @@ public sealed class ModParkingWatchdogTests : IDisposable
         using (new FileStream(GamePath("Parked mods/Parked.txt"), FileMode.Open, FileAccess.Read, FileShare.None))
         {
             watchdog = StartWatchdog("title", watch);
-            Assert.False(watchdog.WaitForExit(TimeSpan.FromSeconds(4)));
+            WaitForLog("the journal could not be read, trying again");
+            Assert.False(watchdog.HasExited);
         }
 
         using (watchdog)
@@ -148,7 +155,7 @@ public sealed class ModParkingWatchdogTests : IDisposable
         }
 
         Assert.Equal("# A\n", File.ReadAllText(GamePath("Patch/A.rb")));
-        Assert.Contains("the journal could not be read, trying again", File.ReadAllText(GamePath("Logs/Multiplayer Parking.log")));
+        Assert.Contains("the journal could not be read, trying again", File.ReadAllText(GamePath("Logs/Multiplayer Helper.log")));
     }
 
     /// <summary>
@@ -165,7 +172,8 @@ public sealed class ModParkingWatchdogTests : IDisposable
         using (new FileStream(GamePath("Parked mods/Parked.txt"), FileMode.Open, FileAccess.Read, FileShare.None))
         {
             watchdog = StartWatchdog("rejoin", watch);
-            Assert.False(watchdog.WaitForExit(TimeSpan.FromSeconds(4)));
+            WaitForLog("the game is not started again");
+            Assert.False(watchdog.HasExited);
         }
 
         using (watchdog)
@@ -173,7 +181,7 @@ public sealed class ModParkingWatchdogTests : IDisposable
             Assert.Equal(0, Finish(watchdog));
         }
 
-        var log = File.ReadAllText(GamePath("Logs/Multiplayer Parking.log"));
+        var log = File.ReadAllText(GamePath("Logs/Multiplayer Helper.log"));
         Assert.Equal("# A\n", File.ReadAllText(GamePath("Patch/A.rb")));
         Assert.Contains("the game is not started again, since the journal could not be read", log);
         Assert.DoesNotContain("starting the game failed", log);
@@ -191,18 +199,18 @@ public sealed class ModParkingWatchdogTests : IDisposable
 
         using (new FileStream(GamePath("Parked mods/Parked.txt"), FileMode.Open, FileAccess.Read, FileShare.None))
         {
-            using var watchdog = StartWatchdog("title", watch, "-UnreadableSeconds", "2");
+            using var watchdog = StartWatchdog("title", watch, "--unreadable-seconds", "2");
             Assert.Equal(1, Finish(watchdog));
         }
 
         Assert.True(File.Exists(GamePath("Parked mods/Patch/A.rb")));
         Assert.True(File.Exists(GamePath("Parked mods/Parked.txt")));
-        Assert.Contains("the journal stayed unreadable for 2 seconds", File.ReadAllText(GamePath("Logs/Multiplayer Parking.log")));
+        Assert.Contains("the journal stayed unreadable for 2 seconds", File.ReadAllText(GamePath("Logs/Multiplayer Helper.log")));
     }
 
     /// <summary>
-    /// Asserts that the watchdog brings back a script in a path longer than Windows PowerShell reaches
-    /// on its own, and removes the deep parking folders it leaves.
+    /// Asserts that the watchdog brings back a script in a path longer than 260 characters, and
+    /// removes the deep parking folders it leaves.
     /// </summary>
     [Fact]
     public void Watchdog_ALongPath_StillComesBack()
@@ -232,7 +240,26 @@ public sealed class ModParkingWatchdogTests : IDisposable
 
         Assert.True(File.Exists(GamePath("Parked mods/Patch/A.rb")));
         Assert.True(File.Exists(GamePath("Parked mods/Parked.txt")));
-        Assert.Contains("belongs to a later watchdog", File.ReadAllText(GamePath("Logs/Multiplayer Parking.log")));
+        Assert.Contains("belongs to a later watchdog", File.ReadAllText(GamePath("Logs/Multiplayer Helper.log")));
+    }
+
+    /// <summary>
+    /// Asserts that a rejoining watchdog leaves starting the game to an update that runs, and still
+    /// brings the mods back.
+    /// </summary>
+    [Fact]
+    public void Watchdog_WhileAnUpdateRuns_StartsNoGame()
+    {
+        WriteFile("Patch/A.rb", "# A\n");
+        var watch = Park(["Patch/A.rb"]);
+
+        using (UpdateMutex.Take(_game.Path))
+        {
+            Assert.Equal(0, RunWatchdog("rejoin", watch));
+        }
+
+        Assert.Equal("# A\n", File.ReadAllText(GamePath("Patch/A.rb")));
+        Assert.Contains("an update was asked for", File.ReadAllText(GamePath("Logs/Multiplayer Helper.log")));
     }
 
     /// <inheritdoc />
@@ -272,55 +299,17 @@ public sealed class ModParkingWatchdogTests : IDisposable
     /// </summary>
     /// <param name="mode">"rejoin" or "title".</param>
     /// <param name="watch">The watchdog's id.</param>
-    /// <param name="extra">Further arguments of the script.</param>
+    /// <param name="extra">Further options of the helper.</param>
     /// <returns>Its process, which the caller disposes.</returns>
-    private Process StartWatchdog(string mode, string watch, params string[] extra)
-    {
-        var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, CreateNoWindow = true };
-
-        foreach (var argument in (string[])["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", Script(), "-GameProcess", "0", "-GameFolder", _game.Path, "-Mode", mode, "-Watch", watch, .. extra])
-        {
-            start.ArgumentList.Add(argument);
-        }
-
-        return Process.Start(start)!;
-    }
+    private Process StartWatchdog(string mode, string watch, params string[] extra) =>
+        HelperRun.Start(["watch", "--game", "0", "--folder", _game.Path, "--mode", mode, "--watch", watch, .. extra]);
 
     /// <summary>
     /// Waits for a watchdog to finish, killing it once it took longer than <see cref="Patience"/>.
     /// </summary>
     /// <param name="process">The watchdog's process.</param>
     /// <returns>Its exit code.</returns>
-    /// <exception cref="TimeoutException">It did not finish in time.</exception>
-    private static int Finish(Process process)
-    {
-        if (!process.WaitForExit(Patience))
-        {
-            process.Kill();
-            throw new TimeoutException("The watchdog did not finish.");
-        }
-
-        return process.ExitCode;
-    }
-
-    /// <summary>
-    /// Finds the watchdog in the repository the tests were built from.
-    /// </summary>
-    /// <returns>Its full path.</returns>
-    private static string Script()
-    {
-        for (var folder = new DirectoryInfo(AppContext.BaseDirectory); folder != null; folder = folder.Parent)
-        {
-            var script = Path.Combine(folder.FullName, "package", "Multiplayer", "ModParking.ps1");
-
-            if (File.Exists(script))
-            {
-                return script;
-            }
-        }
-
-        throw new FileNotFoundException("package/Multiplayer/ModParking.ps1 is not above the tests' folder.");
-    }
+    private static int Finish(Process process) => HelperRun.Finish(process, Patience);
 
     /// <summary>
     /// Writes a file into the test's game folder.
@@ -332,6 +321,42 @@ public sealed class ModParkingWatchdogTests : IDisposable
         var path = GamePath(relative);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, text);
+    }
+
+    /// <summary>
+    /// Waits until the watchdog logged a line, so a test changes something only once the watchdog
+    /// got that far, however long it took to start.
+    /// </summary>
+    /// <param name="text">What the line holds.</param>
+    /// <exception cref="TimeoutException">It was not logged in time.</exception>
+    private void WaitForLog(string text)
+    {
+        var log = GamePath("Logs/Multiplayer Helper.log");
+
+        for (var until = DateTime.UtcNow + Patience; !Logged(log, text); Thread.Sleep(100))
+        {
+            if (DateTime.UtcNow > until)
+            {
+                throw new TimeoutException($"The watchdog did not log: {text}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Tells whether the watchdog's log holds a line, reading it shared so the watchdog can go on writing.
+    /// </summary>
+    /// <param name="log">The log's full path.</param>
+    /// <param name="text">What the line holds.</param>
+    /// <returns>Whether it does.</returns>
+    private static bool Logged(string log, string text)
+    {
+        if (!File.Exists(log))
+        {
+            return false;
+        }
+
+        using var reader = new StreamReader(new FileStream(log, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete));
+        return reader.ReadToEnd().Contains(text, StringComparison.Ordinal);
     }
 
     /// <summary>

@@ -6,6 +6,7 @@
 //                            - Renamed a loaded DLL that cannot be overwritten out of the way
 //                            - Shared how a path is read inside Patch with the mod browser
 //                            - Left the files of other installed mods when removing an older version's files
+//      Paulinchen  2026-10-23: Kept a file inside the Patch folder through FolderGuard
 //      Paulinchen  2026-10-07: Logged hash checks, files written or put back, and zip files the catalog does not name
 //      Paulinchen  2026-10-06: Put every replaced file back when one cannot be written
 //                            - Deleted files that an older version of a zip mod shipped
@@ -336,9 +337,6 @@ internal static class ModInstaller
     /// <param name="path">The path.</param>
     /// <param name="mod">The mod it belongs to.</param>
     /// <returns>The full path.</returns>
-    private static string Inside(string patch, string path, CatalogMod mod)
-    {
-        var full = Path.GetFullPath(path);
-        return full.StartsWith(patch + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ? full : throw new InvalidDataException($"{mod.Name} would land outside the Patch folder.");
-    }
+    private static string Inside(string patch, string path, CatalogMod mod) =>
+        FolderGuard.Inside(patch, path) ?? throw new InvalidDataException($"{mod.Name} would land outside the Patch folder.");
 }

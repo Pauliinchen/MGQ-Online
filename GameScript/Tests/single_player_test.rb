@@ -2,6 +2,7 @@
 #  single_player_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Dropped the restart by hand under Wine
 #      Paulinchen  2026-10-13: Created
 #
 #----------------------------------------------------------------
@@ -379,11 +380,6 @@ kept = kept_files
 check("a game kept from a restart before goes aside, the new one in its place",
       [kept.size, kept.map { |file| File.open(file, "rb") { |each| Marshal.load(each) } }, File.open(sp::RESUME_FILE, "rb") { |file| Marshal.load(file) }, $exits],
       [1, ["on map 5 at 3, 4"], "in the Pocket Castle", 1])
-reset
-$restart_result = 2
-restart
-check("under Wine the player reads that they start it themselves, and the game ends, keeping the save",
-      [$msgboxes, $exits, File.exist?(sp::RESUME_FILE)], [[sp::BY_HAND_TEXT], 1, true])
 reset
 $restart_result = 0
 restart
