@@ -2,6 +2,7 @@
 #  world_text_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Typed through the stand-in text box, the game's letters too
 #      Paulinchen  2026-10-12: Checked the description scrolled with the mouse wheel and its scrollbar
 #                            - Created
 #
@@ -12,7 +13,7 @@
 # a taller box at words, stars of a password inside the box, and what is typed in one frame drawn
 # once with one sound. The game's Window_NameEdit stands in with its own layout.
 
-require_relative "support"
+require_relative "bridge_support"
 
 # Stand-ins for the game's pictures, windows and scenes.
 
@@ -245,26 +246,14 @@ module MGQ_Multiplayer
   module Link
     # Takes the typing state without keeping it.
     def self.typing(_on); end
-    # Hands out what $typed holds once.
-    def self.take_typed; typed = $typed; $typed = ["", 0]; typed; end
   end
   # The game always runs in the background.
   module Background; def self.running?; true; end; end
   # The mouse at $mouse, with $wheel notches.
   module Mouse; def self.position; $mouse; end; def self.wheel; $wheel.to_i; end; end
 end
-# The scrollbar of ui.rbx, which records what it was asked to draw.
-$scrollbars = []
-# The interface script, as far as its scrollbar.
-module MGQ_MpUi
-  # The shared style's scrollbar.
-  module Style
-    # The scrollbar's width.
-    SCROLLBAR_WIDTH = 4
-    # Records the scrollbar's arguments past its canvas.
-    def self.draw_scrollbar(*args); $scrollbars << args[1..-1]; end
-  end
-end
+# The game's sprite, which the interface script builds its boxes on.
+class Sprite; end
 # The world script: keeps the text screen's result, logs nothing and has no gamepad held.
 module MGQ_MpWorld
   # The text screen's result.
@@ -275,8 +264,15 @@ module MGQ_MpWorld
   def self.gamepad_pressed?; false; end
 end
 
+load_script "ui"
 load_script "ui_text_box"
 load_script "world_text"
+
+# The scrollbar of ui.rbx, which records what it was asked to draw.
+$scrollbars = []
+MGQ_MpUi::Style.define_singleton_method(:draw_scrollbar) { |*args| $scrollbars << args[1..-1] }
+# The text box types what $typed holds, the game's letters at once.
+open_fake_ui { typed = $typed; $typed = ["", 0]; typed }
 
 # Tells whether a rectangle lies inside the box, allowing a character the pixel to its left and the
 # three to its right the game draws it with.
@@ -405,17 +401,28 @@ scene.prepare(:mod_name, "The mod's name", "", :max_chars => 300)
 scene.start
 edit = scene.instance_variable_get(:@edit_window)
 clears = edit.contents.clears
+# The frame a text is typed in hands it to the box; the frame after draws it and plays the sound.
+#
+# @param scene [Scene_MpText] The text screen.
+def two_frames(scene)
+  2.times do
+    scene.update
+    ui_frame
+  end
+end
 $typed = ["a" * 120, 1]
-scene.update
+two_frames(scene)
 check("a pasted text is drawn once with one sound", [edit.name.size, edit.contents.clears - clears, $sounds], [120, 1, ["cursor"]])
 $sounds.clear
 $typed = ["b" * 200, 1]
-scene.update
+two_frames(scene)
 check("a paste past the most plays the buzzer once and keeps what fits", [edit.name.size, $sounds], [300, ["buzzer"]])
 $sounds.clear
 $typed = ["\b\b\b", 1]
-scene.update
+two_frames(scene)
 check("Backspaces in one frame play the cancel sound once", [edit.name.size, $sounds], [297, ["cancel"]])
 $typed = ["\r", 1]
+scene.update
+ui_frame
 scene.update
 check("Enter hands the text back", MGQ_MpWorld.text_result, [:mod_name, "a" * 120 + "b" * 177])

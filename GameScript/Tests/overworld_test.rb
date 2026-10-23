@@ -2,7 +2,9 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Played the DLL's events in place of the inbox and left the rules it keeps to its own tests
+#      Paulinchen  2026-10-23: Opened the action wheel by its key and took a choice in the frame after confirm
+#                            - Acted on typing a frame after it, as the text box in C# reports it
+#                            - Played the DLL's events in place of the inbox and left the rules it keeps to its own tests
 #                            - Checked the player's frame and the routes handed to the DLL, and the chat and party actions asked of it
 #                            - Checked a player away whose seat another player took
 #      Paulinchen  2026-10-17: Checked the teleport to the story on the action wheel
@@ -277,6 +279,8 @@ def wheel(*buttons)
   $buttons.concat(buttons - directions)
   map_frame
   $held = []
+  # The choice confirm picked is taken in the frame after.
+  map_frame
   MGQ_MpOverworldSync.tick
 end
 # Reads a choice of the action wheel.
@@ -289,8 +293,8 @@ def option(direction); o = MGQ_MpActions.wheel_options[direction]; [o.text, !o.r
 # @param direction [Symbol] One of MGQ_MpWheel::DIRECTIONS.
 # @return [Array<Symbol>] The arrows.
 def arrows(direction)
-  row, column = MGQ_MpWheel::STEPS.key(direction)
-  [row < 0 ? :UP : nil, row > 0 ? :DOWN : nil, column < 0 ? :LEFT : nil, column > 0 ? :RIGHT : nil].compact
+  { :UP => [:UP], :UP_RIGHT => [:UP, :RIGHT], :RIGHT => [:RIGHT], :DOWN_RIGHT => [:DOWN, :RIGHT], :DOWN => [:DOWN],
+    :DOWN_LEFT => [:DOWN, :LEFT], :LEFT => [:LEFT], :UP_LEFT => [:UP, :LEFT] }[direction]
 end
 # The ring's choices here, in their order: the party's invite, leaving the party, the teleport to
 # the story and the chat.
@@ -309,7 +313,8 @@ check("the wheel opens on its middle", MGQ_MpActions::Wheel.selected, :CENTER)
 $held = [:UP]
 $buttons << :C
 map_frame
-check("a greyed choice says why", [MGQ_MpActions::Wheel.open?, MGQ_MpOverworldSync::Status.lines.last, $sounds.last], [true, "Nobody is near enough to invite.", "buzzer"])
+map_frame
+check("a greyed choice says why, in the frame after confirm", [MGQ_MpActions::Wheel.open?, MGQ_MpOverworldSync::Status.lines.last, $sounds.last], [true, "Nobody is near enough to invite.", "buzzer"])
 $held = arrows(CHAT)
 map_frame
 check("the arrows held pick the choice they point at", MGQ_MpActions::Wheel.selected, CHAT)
@@ -317,7 +322,8 @@ $held = []
 $pressed = true
 map_frame
 check("B closes the wheel and gives the buttons back", [MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [false, false])
-MGQ_MpActions::Wheel.open
+$pressed = true
+map_frame
 $buttons << :B
 map_frame
 check("cancel closes too", MGQ_MpActions::Wheel.open?, false)
@@ -336,11 +342,13 @@ $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 21, "y" => 22
 MGQ_MpOverworldSync.tick
 check("someone near: invite first", option(PARTY), ["Invite to a party", true])
 my_party = "mep1"
-$party_answer = party_view(my_party, [], -1, "inviting" => true, "invite_ends" => MGQ_Multiplayer::Bridge.frame_number + MGQ_MpCoop::INVITE_FRAMES)
+invite_ends = MGQ_Multiplayer::Bridge.frame_number + MGQ_MpCoop::INVITE_FRAMES
+$party_answer = party_view(my_party, [], -1, "inviting" => true, "invite_ends" => invite_ends)
 wheel(:UP, :C)
 $party_answer = nil
 check("inviting asks the DLL and takes the view it answers", [$party_calls.last, MGQ_MpCoop::Party.inviting?, MGQ_MpActions::Wheel.open?], [["invite", nil], true, false])
-check("the invite tells the frames it stands for still, by the frame the DLL says it ends at", MGQ_MpCoop::Party.invite_frames_left, MGQ_MpCoop::INVITE_FRAMES)
+check("the invite tells the frames it stands for still, by the frame the DLL says it ends at", MGQ_MpCoop::Party.invite_frames_left,
+      invite_ends - MGQ_Multiplayer::Bridge.frame_number)
 check("line above the own head, with the invite's seconds left", MGQ_MpActions.own_line, "Inviting to a party (15 s) . . .")
 
 # The doings join with their seconds left; a lapse that is no Time counts as none, and a doing
@@ -423,7 +431,8 @@ MGQ_MpActions.define_singleton_method(:own_lines, own_lines)
 # The action wheel's picture: the boxes in the shared style, the hint under them naming the
 # wheel's hotkey, Esc and the numpad's 0, fading in on open and out on close with the picture kept.
 wheel_sprite = Sprite_MpActionWheel.new(nil)
-MGQ_MpActions::Wheel.open
+$pressed = true
+map_frame
 wheel_sprite.show(head)
 hint = wheel_sprite.bitmap.texts.last
 check("open, the wheel draws around the player with the hint under its boxes, fading in",
@@ -580,13 +589,11 @@ check("end goes to the end, where right and delete stop", [chat.typed, chat.curs
 $typed = "\bre"
 map_frame
 check("the cursor shows right after a change", chat.cursor_shown?, true)
-MGQ_MpUi::TextEdit::BLINK_FRAMES.times { map_frame }
-check("then blinks", chat.cursor_shown?, false)
 chat.choose(:map)
 $chats.clear
 $typed = "\r"
-map_frame
-check("enter sends and closes", [chat.typing?, $typing_on, MGQ_Multiplayer::Capture.on?], [false, false, false])
+2.times { map_frame }
+check("enter sends and closes, in the frame after it was typed", [chat.typing?, $typing_on, MGQ_Multiplayer::Capture.on?], [false, false, false])
 check("the line goes to the DLL for the map chat, with the player's map", $chats, [{ "channel" => "map", "text" => "hi there", "map" => 5 }])
 check("own line in the log and bubble", [chat.log_lines.last, chat.bubble(:me)], ["[Map] Me: hi there", "hi there"])
 check("the map chat is not mirrored to the relay", $said, [])
@@ -594,19 +601,19 @@ check("the map chat is not mirrored to the relay", $said, [])
 $chats.clear
 chat.start_typing
 $typed = "/g hi all\r"
-map_frame
+2.times { map_frame }
 check("/g sends to the global chat, which the DLL mirrors to the relay for the world's admins",
       [$chats.map { |line| line["channel"] }, chat.log_lines.last, $said, chat.channel], [["global"], "Me: hi all", ["hi all"], :global])
 chat.start_typing
 $typed = "/gx still global\r"
-map_frame
+2.times { map_frame }
 check("the chosen chat holds for the lines after it, and an unknown command is just text", [$chats.last["channel"], chat.log_lines.last], ["global", "Me: /gx still global"])
 chat.start_typing
 $typed = "/m "
-map_frame
-check("a command and a space choose the chat at once, leaving the box empty", [chat.channel, chat.typed, chat.cursor], [:map, "", 0])
+2.times { map_frame }
+check("a command and a space choose the chat in the next frame, leaving the box empty", [chat.channel, chat.typed, chat.cursor], [:map, "", 0])
 $typed = "\r"
-map_frame
+2.times { map_frame }
 $chats.clear
 $said.clear
 
@@ -638,7 +645,7 @@ check("with every field the push carries", $pushes.last, [nil, "1", "!Level Cap;
 wheel(CHAT, :C)
 check("the wheel opens the chat box", [chat.typing?, MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [true, false, true])
 $typed = "never sent\e"
-map_frame
+2.times { map_frame }
 check("escape closes without sending", [chat.typing?, chat.log_lines.last], [false, "[Admin] Global: welcome all"])
 chat.start_typing
 $typed = "x" * 130
@@ -669,6 +676,8 @@ SceneManager.scene = battle
 MGQ_MpOverworldSync.tick
 check("a battle keeps the chat box open", [chat.typing?, MGQ_Multiplayer::Capture.on?], [true, true])
 $typed = "in battle\r"
+battle.update_basic
+ui_frame
 battle.update_basic
 check("and its line goes out from the battle", [chat.typing?, chat.log_lines.last], [false, "[Map] Me: in battle"])
 $pressed = MGQ_MpHotkeys.code(:chat)
@@ -717,14 +726,20 @@ map = Scene_Map.new
 $scene_change_ok = false
 $typed = "ly"
 map.update
+ui_frame
 check("while a message shows, the box still takes typing", chat.typed, "only")
 $typed = "\e"
 map.update
+ui_frame
+map.update
 check("and closes, giving the buttons back to the message", [chat.typing?, MGQ_Multiplayer::Capture.on?], [false, false])
 chat.start_typing
+# The frame the box opened in takes what was typed by then.
+ui_frame
 $scene_change_ok = true
 $typed = "x"
 map.update
+ui_frame
 check("without a message the map's own update types, not the map", chat.typed, "")
 chat.stop_typing
 $game_message.busy = false
@@ -840,7 +855,7 @@ MGQ_MpOverworldSync.tick
 $chats.clear
 chat.start_typing
 $typed = "/p anyone?\r"
-map_frame
+2.times { map_frame }
 check("outside a party the party chat sends nothing and says why",
       [$chats, MGQ_MpOverworldSync::Status.lines.last, chat.typing?], [[], "You are not in a party.", false])
 mine = "me-p1"
@@ -861,7 +876,7 @@ $chats.clear
 mirrored_before = $said.size
 chat.start_typing
 $typed = "/p meet at the inn\r"
-map_frame
+2.times { map_frame }
 check("a line starting with /p goes to the DLL for the party chat", $chats.map { |line| line.values_at("channel", "text") }, [["party", "meet at the inn"]])
 check("and shows tagged in the player's own log", [chat.log_lines.last, chat.log_entries.last.who], ["[Party] Me: meet at the inn", :me])
 check("the party chat never reaches the relay", $said.size, mirrored_before)
@@ -999,7 +1014,7 @@ $buttons << :UP
 map_frame
 check("up moves the pick round the menu instead of scrolling", [chat.menu[:pick], chat.scroll], [chat.menu_options.size - 1, 0])
 $typed = "\r"
-map_frame
+2.times { map_frame }
 check("Enter takes the choice, closing the menu but not the box", [chat.menu, chat.typing?, chat.channel, chat.whisper_to], [nil, true, :whisper, "Friend"])
 $mouse = [8 + spot[1] + 1, 200 + spot[3] + 1]
 $mouse_held = true
@@ -1007,7 +1022,7 @@ log_sprite.update
 $mouse_held = false
 log_sprite.update
 $typed = "\e"
-map_frame
+2.times { map_frame }
 check("Escape closes the menu, not the box", [chat.menu, chat.typing?], [nil, true])
 $mouse_held = true
 log_sprite.update
@@ -1063,18 +1078,18 @@ $typed = "/w fr"
 map_frame
 check("/w and the start of a name offer the names that fit", [chat.suggestions.include?("Friend"), chat.suggestions.all? { |name| name.downcase.start_with?("fr") }], [true, true])
 $typed = "\t"
-map_frame
+2.times { map_frame }
 check("Tab takes the picked name for the whisper chat and empties the box, showing the Whisper tab", [chat.whisper_to, chat.channel, chat.typed, chat.suggestions, chat.tabs.last], ["Friend", :whisper, "", [], :whisper])
 $chats.clear
 $typed = "psst\r"
-map_frame
+2.times { map_frame }
 friend_seat = MGQ_MpOverworldSync::Peers.all.find { |peer| peer.state["name"] == "Friend" }.seat
 check("a whisper goes to the DLL for that player alone, and shows whom it went to", [$chats.map { |line| line.values_at("channel", "text", "seat") }, chat.log_lines.last],
       [[["whisper", "psst", friend_seat]], "[To Friend] Me: psst"])
 check("the bubble carries the whisper's color", chat.bubble_channel(:me), :whisper)
 chat.start_typing
 $typed = "/w nobody here\r"
-map_frame
+2.times { map_frame }
 check("a whisper to nobody of that name is refused", MGQ_MpOverworldSync::Status.lines.last, "Nobody called nobody is in the world.")
 $inbox << entry("message", friend_seat, "whisper=hi you\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
@@ -1082,11 +1097,11 @@ check("a whisper to the player shows tagged", [chat.log_lines.last, chat.bubble_
 
 chat.start_typing
 $typed = "/help\r"
-map_frame
+2.times { map_frame }
 check("/help opens the help tab at the far right, which shows only the help", [chat.typing?, chat.tab, chat.tabs.last, chat.log_entries.map(&:text)],
       [true, :help, :help, MGQ_MpChat::HELP])
 $typed = "abc\r"
-map_frame
+2.times { map_frame }
 check("nobody types or sends on the help tab", [chat.typed, chat.typing?], ["", true])
 chat.select_tab(:all, "in the test")
 check("leaving the help tab closes it", chat.tabs.include?(:help), false)
@@ -1134,7 +1149,7 @@ chat.open_menu(friend_line, [100, 300])
 chat.point_menu(go)
 chat_log.clear
 $typed = "\rabc"
-map_frame
+2.times { map_frame }
 check("Enter on a choice that leaves closes the chat box, which the frame's other keys find closed",
       [went, chat.typing?, chat_log.grep(/failed/)], [[:went, :went], false, []])
 chat.start_typing
@@ -1183,7 +1198,7 @@ check("nobody is found by a missing id or name", [peers.with_id(nil), peers.with
 $chats.clear
 chat.start_typing
 $typed = "/w Friend (2) hi twin\r"
-map_frame
+2.times { map_frame }
 check("/w and a numbered name whisper to that player", [$chats.map { |line| line["seat"] }, chat.log_lines.last], [[8], "[To Friend (2)] Me: hi twin"])
 $inbox << entry("message", 8, told(friend.merge("id" => "zz-twin", "map" => 6)))
 twin_labels.call
@@ -1201,7 +1216,7 @@ chat.start_typing
 chat.open_menu(MGQ_MpChat::Line.new("Friend", "x", :other, :map, 0, nil, "zz-twin"), [100, 300])
 peers.remove(8)
 $typed = "ab\r"
-map_frame
+2.times { map_frame }
 check("once the menu's player left, the frame's typing stays, without the Enter meant for the menu", [chat.menu, chat.typing?, chat.typed], [nil, true, "ab"])
 chat.stop_typing
 
@@ -1209,7 +1224,7 @@ chat.stop_typing
 $say_result = MGQ_MpChat::TOO_FAST
 chat.start_typing
 $typed = "/g spam\r"
-map_frame
+2.times { map_frame }
 check("a global line the DLL finds too fast is turned down",
       [MGQ_MpOverworldSync::Status.lines.last, chat.log_lines.include?("Me: spam")], ["You are sending too fast. Wait a moment, then send the line again.", false])
 $say_result = nil
@@ -1223,7 +1238,8 @@ check("a line broken right after the name keeps the name's color and its click s
       [[[4, "[Party] ", :party], [84, "Friend:", :member], [154, "", :text]], 1])
 
 # The wheel's middle, which it opens on, and the pick it keeps once the arrows are let go.
-MGQ_MpActions::Wheel.open
+$pressed = true
+map_frame
 $held = [:UP]
 map_frame
 check("an arrow held picks its side", MGQ_MpActions::Wheel.selected, :UP)

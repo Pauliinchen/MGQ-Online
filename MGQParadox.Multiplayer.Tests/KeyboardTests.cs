@@ -2,6 +2,7 @@
 //  KeyboardTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Checked a take handed out once and forgotten when typing stops
 //      Paulinchen  2026-10-06: Created
 //
 //----------------------------------------------------------------
@@ -16,34 +17,30 @@ namespace MGQParadox.Multiplayer.Tests;
 public sealed class KeyboardTests
 {
     /// <summary>
-    /// Asserts that a take given back comes out first with the next take, and only once.
+    /// Asserts that what was typed comes out with the next take, and only once.
     /// </summary>
     [Fact]
-    public void GiveBack_HandsTheTakeOutAgainOnce()
+    public void Take_HandsWhatWasTypedOutOnce()
     {
         Keyboard.SetActive(true);
-        Keyboard.TakeCharacter('c');
+        Keyboard.TakeCharacter('a');
+        Keyboard.TakeCharacter('b');
         var first = Keyboard.Take();
-
-        Keyboard.GiveBack("ab", 2);
-        Keyboard.TakeCharacter('d');
         var second = Keyboard.Take();
-        var third = Keyboard.Take();
         Keyboard.SetActive(false);
 
-        Assert.Equal(("c", 0), first);
-        Assert.Equal(("abd", 2), second);
-        Assert.Equal((string.Empty, 0), third);
+        Assert.Equal(("ab", 0), first);
+        Assert.Equal((string.Empty, 0), second);
     }
 
     /// <summary>
-    /// Asserts that stopping the typing forgets a take given back.
+    /// Asserts that stopping the typing forgets what nobody took.
     /// </summary>
     [Fact]
-    public void SetActive_ForgetsATakeGivenBack()
+    public void SetActive_ForgetsWhatWasNotTaken()
     {
         Keyboard.SetActive(true);
-        Keyboard.GiveBack("ab", 2);
+        Keyboard.TakeCharacter('c');
         Keyboard.SetActive(false);
 
         Assert.Equal((string.Empty, 0), Keyboard.Take());

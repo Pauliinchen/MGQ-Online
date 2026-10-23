@@ -2,6 +2,7 @@
 //  Keyboard.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Dropped giving a take back, since the text box in C# takes it whole
 //      Paulinchen  2026-10-07: Logged once when the keyboard's state could not be read
 //      Paulinchen  2026-10-06: Kept a take the game script had no room for
 //      Paulinchen  2026-09-29: Created
@@ -71,16 +72,6 @@ internal static partial class Keyboard
     private static int keys;
 
     /// <summary>
-    /// The characters of a take given back, which the next take hands out first.
-    /// </summary>
-    private static string givenBack = string.Empty;
-
-    /// <summary>
-    /// The keys of a take given back, which the next take counts too.
-    /// </summary>
-    private static int givenBackKeys;
-
-    /// <summary>
     /// Whether a text screen wants what is typed.
     /// </summary>
     public static bool Active => Volatile.Read(ref active);
@@ -97,8 +88,6 @@ internal static partial class Keyboard
             FromMessages.Clear();
             FromKeys.Clear();
             keys = 0;
-            givenBack = string.Empty;
-            givenBackKeys = 0;
         }
     }
 
@@ -145,19 +134,15 @@ internal static partial class Keyboard
     public static (string Text, int Keys) Take()
     {
         string typed;
-        string returned;
         int pressed;
 
         lock (Gate)
         {
             typed = (translated ? FromMessages : FromKeys).ToString();
-            returned = givenBack;
-            pressed = keys + givenBackKeys;
+            pressed = keys;
             FromMessages.Clear();
             FromKeys.Clear();
             keys = 0;
-            givenBack = string.Empty;
-            givenBackKeys = 0;
         }
 
         if (typed.Contains(Paste))
@@ -166,21 +151,7 @@ internal static partial class Keyboard
             typed = typed.Replace(Paste.ToString(), pasted);
         }
 
-        return (returned + typed, pressed);
-    }
-
-    /// <summary>
-    /// Gives a take back that could not be handed out, so the next take hands it out first.
-    /// </summary>
-    /// <param name="text">The take's characters, as <see cref="Take"/> handed them out.</param>
-    /// <param name="pressed">The take's keys.</param>
-    public static void GiveBack(string text, int pressed)
-    {
-        lock (Gate)
-        {
-            givenBack = text + givenBack;
-            givenBackKeys += pressed;
-        }
+        return (typed, pressed);
     }
 
     /// <summary>

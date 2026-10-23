@@ -2,7 +2,8 @@
 #  world_room_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Created
+#      Paulinchen  2026-10-23: Kept the stand-in bridge a test already opened
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -16,8 +17,9 @@ require_relative "bridge_support"
 
 load_bridge unless defined?(MGQ_Multiplayer::Bridge)
 
-# The fake DLL the scripts' world room topics go to.
-$world_bridge = FakeBridge.new
+# The fake DLL the scripts' world room topics go to, the test's one FakeBridge, which the rules' and
+# the interface's answers share.
+$world_bridge ||= FakeBridge.new
 # What the scripts staged for the world room, each [topic, payload].
 $staged_world = []
 # The party's actions the scripts asked the DLL for, each [action, request].

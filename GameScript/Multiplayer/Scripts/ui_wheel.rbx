@@ -2,6 +2,7 @@
 #  ui_wheel.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Left the pointing, the placing and the wheels' rules to C#
 #      Paulinchen  2026-10-11: Drew a close hint under both wheels
 #      Paulinchen  2026-10-06: Waited a moment before an arrow let go of a diagonal counts
 #                            - Spread a wheel's choices evenly over the directions the arrows point to
@@ -10,85 +11,74 @@
 #----------------------------------------------------------------
 
 # What the wheels on the map share, the action wheel (ui_actions.rbx) and the emote wheel
-# (ui_emotes.rbx): the arrows held point like a joystick, one arrow to its side and two to the
-# diagonal between them, and nowhere while none is held. A wheel spreads its choices evenly over
-# those directions (places), picks what lies in the direction pointed to, and keeps it picked once
-# the arrows are let go.
+# (ui_emotes.rbx), whose rules C# keeps (WheelModel in MGQOnline.Game's Ui/Wheels): the arrows held
+# point like a joystick, one arrow to its side and two to the diagonal between them, and nowhere
+# while none is held. A wheel spreads its choices evenly over those directions (places), picks what
+# lies in the direction pointed to, and keeps it picked once the arrows are let go. Each wheel's
+# owner hands over its frame where it read the keys, and takes the wheel's events.
 module MGQ_MpWheel
-  # The directions the arrows can point to, clockwise from the top.
+  # The directions the arrows can point to, clockwise from the top, WheelDirection in C#.
   DIRECTIONS = [:UP, :UP_RIGHT, :RIGHT, :DOWN_RIGHT, :DOWN, :DOWN_LEFT, :LEFT, :UP_LEFT]
 
-  # The direction by the row and the column the arrows held point to, from -1 (up, left) to 1
-  # (down, right).
-  STEPS = {
-    [-1, 0] => :UP, [-1, 1] => :UP_RIGHT, [0, 1] => :RIGHT, [1, 1] => :DOWN_RIGHT,
-    [1, 0] => :DOWN, [1, -1] => :DOWN_LEFT, [0, -1] => :LEFT, [-1, -1] => :UP_LEFT,
-  }
+  # The wheels' event, WheelModel.EventTopic.
+  EVENT = "ui.wheel"
 
-  # Frames one arrow of a diagonal must stay held alone before it points to its own side, about an
-  # eighth of a second, since two arrows let go together are seldom let go in the same frame.
-  GRACE_FRAMES = 8
+  # Closes a wheel from outside, WheelModel.CloseTopic.
+  CLOSE = "ui.wheel.close"
+
+  # Places a count of choices, WheelModel.PlacesTopic.
+  PLACES = "ui.wheel.places"
+
+  # What a wheel's event names the action wheel's middle choice, WheelModel.Center.
+  CENTER = -1
+
+  # The bits of the arrows held, WheelArrows in C#.
+  ARROW_BITS = { :UP => 1, :DOWN => 2, :LEFT => 4, :RIGHT => 8 }
 
   # Height of the hint under a wheel, see draw_hint.
   HINT_HEIGHT = 18
 
-  # The direction steady last reported.
-  @steady = nil
+  # The places of each count of choices C# answered.
+  @places = {}
 
-  # Frames one side of that diagonal has been held alone.
-  @waited = 0
-
-  # Finds the direction the arrows held point to, past the capture of the wheel's buttons.
+  # Hands a wheel its frame on the map: whether the map leaves it free, its hotkey, and while it is
+  # open cancel, confirm and the arrows held, past the capture of the wheel's buttons.
   #
-  # @return [Symbol, nil] One of DIRECTIONS, nil while no arrow is held or only opposite ones are.
-  def self.held
+  # @param name [String] The wheel's name in the tick, "wheel" or "emotes".
+  # @param free [Boolean, String] true, or why the wheel may not show, which closes it.
+  # @param key [Boolean] Whether its hotkey went down.
+  # @param count [Integer] How many choices it has.
+  # @param open [Boolean] Whether it is open, so the buttons are read.
+  def self.put(name, free, key, count, open)
     capture = MGQ_Multiplayer::Capture
-    row = (capture.press?(:DOWN) ? 1 : 0) - (capture.press?(:UP) ? 1 : 0)
-    column = (capture.press?(:RIGHT) ? 1 : 0) - (capture.press?(:LEFT) ? 1 : 0)
-    STEPS[[row, column]]
-  end
-
-  # Finds the direction the arrows held point to as steady as a wheel needs it: one arrow left of
-  # a diagonal still points to the diagonal for GRACE_FRAMES, so letting go of both never lands on
-  # one side. Called once a frame by the wheel that is open.
-  #
-  # @return [Symbol, nil] One of DIRECTIONS, nil while no arrow is held or only opposite ones are.
-  def self.steady
-    raw = held
-    if raw && side_of?(raw, @steady) && (@waited += 1) < GRACE_FRAMES
-      return @steady
-    end
-
-    @waited = 0
-    @steady = raw
-  end
-
-  # Forgets the direction pointed to, as a wheel opens.
-  def self.reset
-    @steady = nil
-    @waited = 0
-  end
-
-  # Reports whether a direction is one of the two sides of a diagonal.
-  #
-  # @param side [Symbol] The direction.
-  # @param diagonal [Symbol, nil] The diagonal.
-  # @return [Boolean] Whether it is.
-  def self.side_of?(side, diagonal)
-    return false unless diagonal && side != diagonal
-
-    row, column = STEPS.key(side)
-    diagonal_row, diagonal_column = STEPS.key(diagonal)
-    diagonal_row != 0 && diagonal_column != 0 && (row == 0 ? column == diagonal_column : column == 0 && row == diagonal_row)
+    arrows = 0
+    ARROW_BITS.each { |button, bit| arrows |= bit if open && capture.press?(button) }
+    cancel = open && MGQ_MpUi.cancel?
+    confirm = open && capture.trigger?(:C)
+    MGQ_MpUi::Tick.put(name, [free, key ? true : false, cancel ? true : false, confirm ? true : false, arrows, count])
   end
 
   # Spreads a wheel's choices evenly over DIRECTIONS, clockwise from the top, mirror-symmetric for
-  # every count.
+  # every count, as C# places them; asked once per count.
   #
   # @param count [Integer] How many choices the wheel has, at most DIRECTIONS.size.
-  # @return [Array<Symbol>] Each choice's direction, in the choices' order.
+  # @return [Array<Symbol>] Each choice's direction, in the choices' order; none while the bridge is closed.
   def self.places(count)
-    Array.new(count) { |index| DIRECTIONS[(index * DIRECTIONS.size.to_f / count).round % DIRECTIONS.size] }
+    return @places[count] if @places.key?(count)
+
+    answer = MGQ_Multiplayer::Bridge.call(PLACES, [count])
+    return [] unless answer
+
+    @places[count] = answer.map { |direction| DIRECTIONS[direction] }
+  end
+
+  # Names the pick of a wheel's event.
+  #
+  # @param selected [Integer, nil] The direction's number, CENTER for the middle, nil for none.
+  # @param center [Object] What the middle is named.
+  # @return [Symbol, Object, nil] One of DIRECTIONS, the middle's name, or nil.
+  def self.direction_of(selected, center)
+    selected == CENTER ? center : selected && DIRECTIONS[selected]
   end
 
   # Draws the hint under a wheel, HINT_HEIGHT high: what closes it, Esc, the numpad's 0 and the

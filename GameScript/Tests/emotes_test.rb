@@ -2,6 +2,7 @@
 #  emotes_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Left the wheel's pointing to C# and checked what the script does with its events
 #      Paulinchen  2026-10-12: Checked the log of the emote hotkey while typing and when refused
 #      Paulinchen  2026-10-11: Checked the wheel's boxes, the picked one lit and a redraw after a preset change
 #                            - Checked the wheel's hint, the name of the emote pointed at and the fades
@@ -39,73 +40,62 @@ $inbox << entry("message", 2, told(friend))
 MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
 
-# Opening and pointing.
+# Opening, pointing and playing one: C# keeps the wheel's rules (WheelModel, its pointing checked
+# in MGQOnline.Game.Tests); the script holds the buttons while the wheel is open and plays the
+# emote confirm took, in the frame after.
+#
+# Runs one frame of the map with the wheel.
+emote_frame = lambda do
+  emotes.on_map
+  ui_frame
+end
+# Opens the wheel, points at a direction's emote and confirms it, then plays it in the frame after.
+#
+# @param arrows [Array<Symbol>] The arrows held.
+play_emote = lambda do |arrows|
+  $pressed = MGQ_MpHotkeys.code(:emotes)
+  emote_frame.call
+  $held = arrows
+  emote_frame.call
+  $held = []
+  $buttons << :C
+  emote_frame.call
+  emote_frame.call
+end
 $pressed = MGQ_MpHotkeys.code(:emotes)
-emotes.on_map
+emote_frame.call
 check("E opens the emote wheel on the map, which holds the buttons and points at none", [emotes.open?, MGQ_Multiplayer::Capture.on?, emotes.selected], [true, true, nil])
-$held = [:RIGHT]
-emotes.on_map
-check("an arrow held points at the emote on its side", emotes.selected, 2)
-$held = [:UP, :LEFT]
-emotes.on_map
-check("two point at the diagonal between them", emotes.selected, MGQ_MpEmotes::EMOTES.size - 1)
-$held = [:LEFT, :RIGHT]
-emotes.on_map
-check("opposite ones keep the emote", emotes.selected, MGQ_MpEmotes::EMOTES.size - 1)
-$held = []
-emotes.on_map
-check("letting go keeps it too", emotes.selected, MGQ_MpEmotes::EMOTES.size - 1)
-$held = [:DOWN, :RIGHT]
-emotes.on_map
-$held = [:RIGHT]
-emotes.on_map
-$held = []
-emotes.on_map
-check("letting go of a diagonal one arrow after the other keeps the diagonal", emotes.selected, 3)
-$held = [:DOWN, :RIGHT]
-emotes.on_map
-$held = [:RIGHT]
-MGQ_MpWheel::GRACE_FRAMES.times { emotes.on_map }
-check("one arrow held on alone points to its side after a moment", emotes.selected, 2)
-$held = []
-emotes.close
-emotes.open
-$buttons << :C
-emotes.on_map
-check("confirm on none closes the wheel without an emote", [emotes.open?, $game_player.balloon_id, $sent.count { |message| message[1].start_with?("emote=") }], [false, nil, 0])
-
-# Playing one.
-emotes.open
-$sent.clear
 $held = [:UP, :RIGHT]
+emote_frame.call
+check("the arrows held point at the emote of their direction", emotes.selected, 1)
+$held = []
 $buttons << :C
-emotes.on_map
-check("confirm closes the wheel and plays the picked emote, a balloon above the player", [emotes.open?, $game_player.balloon_id], [false, 1])
-check("and tells the others", $sent.last[1].start_with?("emote=1\n") && $sent.last[1].include?("map=5"), true)
+emote_frame.call
+check("confirm closes the wheel and gives the buttons back", [emotes.open?, MGQ_Multiplayer::Capture.on?], [false, false])
 $sent.clear
-emotes.open
-$held = [:LEFT]
+emote_frame.call
+check("the frame after plays the picked emote, a balloon above the player", $game_player.balloon_id, 1)
+check("and tells the others", $sent.last[1].start_with?("emote=1\n") && $sent.last[1].include?("map=5"), true)
+$pressed = MGQ_MpHotkeys.code(:emotes)
+emote_frame.call
 $buttons << :C
-emotes.on_map
+$sounds.clear
+emote_frame.call
+emote_frame.call
+check("confirm on none closes the wheel without an emote, with the cancel sound", [emotes.open?, $sent.size, $sounds], [false, 1, ["cancel"]])
+$sent.clear
+play_emote.call([:LEFT])
 check("a second emote right after is refused", [$sent, $sounds.last], [[], "buzzer"])
 $frame_count += MGQ_MpEmotes::COOLDOWN_FRAMES
-emotes.open
-$held = [:UP]
-$buttons << :C
-emotes.on_map
-$held = []
+play_emote.call([:UP])
 check("the jump plays once a moment passed", [$game_player.jumps, $sent.size], [1, 1])
 $frame_count = 5
-emotes.open
-$held = [:UP]
-$buttons << :C
-emotes.on_map
-$held = []
+play_emote.call([:UP])
 check("a save loaded with fewer frames played ends the moment too", [$game_player.jumps, $sent.size], [2, 2])
 $pressed = MGQ_MpHotkeys.code(:emotes)
-emotes.on_map
+emote_frame.call
 $pressed = MGQ_MpHotkeys.code(:emotes)
-emotes.on_map
+emote_frame.call
 check("its key closes it again", emotes.open?, false)
 
 # Another player's emote.
@@ -179,7 +169,8 @@ wheel = Sprite_MpEmoteWheel.new(nil)
 player = Struct.new(:x, :y).new(100, 120)
 # The frames below are Legacy's, one pixel of edge.
 MGQ_MpUi::Theme.apply("Legacy", "a test")
-emotes.open
+$pressed = MGQ_MpHotkeys.code(:emotes)
+emote_frame.call
 wheel.show(player)
 hint = wheel.bitmap.texts.last
 check("open, the wheel draws around the player, None named below the ring and the hint under it, fading in",
@@ -203,7 +194,7 @@ wide.show(player)
 check("a rebound key's longer name leaves the hint whole, wider than the wheel, never cut", wide.bitmap.texts.last[1], "Esc, Numpad 0 or key 186: close")
 $player_ini.delete("key_emotes")
 $held = [:RIGHT]
-emotes.on_map
+emote_frame.call
 $held = []
 wheel.show(player)
 check("the emote pointed at is named", wheel.bitmap.texts[-2][1], "Question")

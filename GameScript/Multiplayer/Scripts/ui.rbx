@@ -1,8 +1,14 @@
-#----------------------------------------------------------------
+﻿#----------------------------------------------------------------
 #  ui.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Named the encodings of a text C# lays out, since the game has no Encoding constants
+#                            - Handed a font's name over as text where the game holds it as bytes
 #      Paulinchen  2026-10-24: Counted the confirm box's frames as the title screen does too
+#      Paulinchen  2026-10-23: Left the confirm box's keys and pick to C#, the answer handed over in the tick after
+#                            - Defined the fonts that fail the sum check in C# too, for the text boxes
+#                            - Cut and broke texts in C# by their characters' widths, measured once per font
+#                            - Handed the input of the interface models to C# in one tick a frame
 #      Paulinchen  2026-10-13: Added the single player settings' Mod Config group, MGQ Online SP
 #      Paulinchen  2026-10-12: Gave the tabs not picked the edge's color, darkened
 #                            - Added the scrollbar every scrolling box draws and its track color
@@ -442,6 +448,95 @@ module MGQ_MpUi
     MGQ_Multiplayer::Capture.trigger?(:B) | numpad_cancel?
   end
 
+  # The frame's tick to the interface's models in C# (MGQOnline.Game.Ui): each model's owner puts
+  # the model's input where it reads the keys today, and after Graphics.update the frame's inputs go
+  # over as one staged entry, in the batch the bridge sends that frame; the models answer with
+  # events in the frame's drain, which name what changed and the sounds to play (cues). A frame in
+  # which no model needs input stages nothing.
+  #
+  # The tick is staged in an after-hook of Graphics.update, which runs before Multiplayer.rb's, since
+  # that one registers once the scripts loaded: so the batch of the same frame carries it.
+  module Tick
+    # The topic of the frame's tick, UiHost.TickTopic in C#.
+    TOPIC = "ui.tick"
+
+    # The key of the sounds in a model's event, UiCue.Key in C#.
+    CUES_KEY = "cues"
+
+    # The game's system sound of each cue a model names, see UiCue in C#.
+    CUES = { "ok" => :play_ok, "cancel" => :play_cancel, "cursor" => :play_cursor, "buzzer" => :play_buzzer }
+
+    # The game's buttons in the order of their bits, UiButton in C#: one group of bits for the
+    # buttons that went down, one for those that went down or repeat, one for those held.
+    BUTTONS = [:C, :B, :UP, :DOWN, :LEFT, :RIGHT]
+
+    # The inputs put this frame, by model.
+    @inputs = {}
+
+    # What runs before the frame's inputs go over, see collect.
+    @collectors = []
+
+    # Puts a model's input for this frame; a second put for the same model replaces the first.
+    #
+    # @param model [String] The model's name, such as "layout".
+    # @param input [Object] A plain value, as the model reads it.
+    def self.put(model, input)
+      @inputs[model] = input
+    end
+
+    # Runs a block once a frame just before the frame's inputs go over, for a model whose input is
+    # read every frame rather than where its owner reads keys.
+    #
+    # @yield Puts the model's input, if it needs any this frame.
+    def self.collect(&block)
+      @collectors << block
+    end
+
+    # Stages the frame's inputs as one tick, after the collectors put theirs, and forgets them.
+    # Called after every Graphics.update.
+    def self.send_frame
+      @collectors.each do |collector|
+        begin
+          collector.call
+        rescue => e
+          MGQ_MpUi.log_once([:tick_collector, e.class], "a tick collector FAILED: #{e.class}: #{e.message}")
+        end
+      end
+      return if @inputs.empty?
+
+      MGQ_Multiplayer::Bridge.stage(TOPIC, @inputs)
+      @inputs = {}
+    end
+
+    # Plays the sounds a model's event names.
+    #
+    # @param event [Hash] The event, its cues under CUES_KEY.
+    def self.play(event)
+      Array(event[CUES_KEY]).each do |cue|
+        sound = CUES[cue]
+        Sound.send(sound) if sound
+      end
+    end
+
+    # Reads the game's buttons past the capture as the models take them, once a frame.
+    #
+    # @return [Integer] The bits, see BUTTONS.
+    def self.buttons
+      frame = MGQ_Multiplayer::Key.frame
+      return @buttons if @buttons_frame == frame
+
+      capture = MGQ_Multiplayer::Capture
+      bits = 0
+      BUTTONS.each_with_index do |button, place|
+        bits |= 1 << place if capture.trigger?(button)
+        bits |= 1 << (BUTTONS.size + place) if capture.repeat?(button)
+        bits |= 1 << (2 * BUTTONS.size + place) if capture.press?(button)
+      end
+      @buttons_frame = frame
+      @buttons = bits
+    end
+  end
+
   # Adds a row with values to the Mod Config whose value the mod keeps itself, in Player.ini, so it
   # holds in every save and stays the player's own in a world that sets everyone's options.
   #
@@ -535,7 +630,9 @@ module MGQ_MpUi
     whole < 0 ? "-#{digits}" : digits
   end
 
-  # Cuts a text at its end until it fits a width with ELLIPSIS and what follows it.
+  # Cuts a text at its end until it fits a width with ELLIPSIS and what follows it: in C# by the
+  # characters' widths (see Glyphs), else, while the bridge is closed or for a font whose widths do
+  # not add up, by measuring here (cut_measured).
   #
   # @param measure [Bitmap, Window_Base] What measures a text with the font it is drawn in.
   # @param text [String] The text.
@@ -543,6 +640,20 @@ module MGQ_MpUi
   # @param tail [String] What follows the text and stays whole, such as a count or a floor.
   # @return [String] The text with the tail when they fit, else the text's start, ELLIPSIS and the tail.
   def self.cut(measure, text, width, tail = "")
+    text = text.to_s
+    tail = tail.to_s
+    cut = Glyphs.ask(Glyphs::CUT, measure, text + tail) { |key| [key, width, text, tail] }
+    cut.is_a?(String) ? cut : cut_measured(measure, text, width, tail)
+  end
+
+  # Cuts a text as cut does, measuring each try with the measure.
+  #
+  # @param measure [Bitmap, Window_Base] What measures a text with the font it is drawn in.
+  # @param text [String] The text.
+  # @param width [Integer] The width in pixels.
+  # @param tail [String] What follows the text and stays whole.
+  # @return [String] The text cut, see cut.
+  def self.cut_measured(measure, text, width, tail = "")
     text = text.to_s
     return "#{text}#{tail}" if measure.text_size("#{text}#{tail}").width <= width
 
@@ -557,13 +668,25 @@ module MGQ_MpUi
   end
 
   # Breaks a text into lines that fit a width, at its spaces, and inside a word longer than the
-  # width.
+  # width: in C# by the characters' widths, else by measuring here (wrap_measured), see cut.
   #
   # @param measure [Bitmap, Window_Base] What measures a text with the font the lines are drawn in.
   # @param text [String] The text.
   # @param width [Integer] The width in pixels.
   # @return [Array<String>] The lines.
   def self.wrap(measure, text, width)
+    text = text.to_s
+    lines = Glyphs.ask(Glyphs::WRAP, measure, text) { |key| [key, width, text] }
+    lines.is_a?(Array) ? lines : wrap_measured(measure, text, width)
+  end
+
+  # Breaks a text into lines as wrap does, measuring each try with the measure.
+  #
+  # @param measure [Bitmap, Window_Base] What measures a text with the font the lines are drawn in.
+  # @param text [String] The text.
+  # @param width [Integer] The width in pixels.
+  # @return [Array<String>] The lines.
+  def self.wrap_measured(measure, text, width)
     lines = [""]
     text.split(" ").each do |word|
       candidate = lines.last.empty? ? word : "#{lines.last} #{word}"
@@ -579,6 +702,208 @@ module MGQ_MpUi
       end
     end
     lines
+  end
+
+  # The widths of the characters of each font the mod draws in, by which C# cuts and breaks texts
+  # (MGQOnline.Game's Ui/Text): RGSS measures a text in the game's font as the sum of its
+  # characters' widths, so each character is measured once per font, here, where Bitmap#text_size is.
+  #
+  # A font measures printable ASCII as it is first used and checks that a few sample texts measure
+  # as the sum of their characters; one that fails, such as a font with kerning that a translation
+  # or another mod sets, is cut and broken here, as is every font while the bridge is closed; a text
+  # box lays its text out in C# by it all the same, whose part shown may then be a pixel or two off.
+  module Glyphs
+    # Defines a font in C#, or adds characters to one, UiText.GlyphsTopic.
+    TOPIC = "ui.glyphs"
+
+    # Cuts a text, UiText.CutTopic.
+    CUT = "ui.text.cut"
+
+    # Breaks a text at words, UiText.WrapTopic.
+    WRAP = "ui.text.wrap"
+
+    # Breaks a text keeping each character's place, UiText.SpansTopic.
+    SPANS = "ui.text.spans"
+
+    # The event of characters a model met that its font never measured, UiText.WantedTopic.
+    WANTED = "ui.glyphs.wanted"
+
+    # The key of the font of cells, where every character is one cell wide, UiText.CellsKey.
+    CELLS = 0
+
+    # The encodings of a text C# lays out; any other is cut and broken here. Named, since the
+    # Encoding constants are missing in the game.
+    TEXT_ENCODINGS = [Encoding.find("UTF-8"), Encoding.find("US-ASCII")]
+
+    # The characters a font measures as it is first used: printable ASCII.
+    FIRST = (32..126)
+
+    # Texts every font must measure as the sum of their characters' widths: pairs that kern in a
+    # font that kerns, a sentence, names with numbers and a chat line.
+    SAMPLES = ["AV To Wa Yo Te LT VA ff fi Pa", "The quick brown fox jumps over the lazy dog.", "Luka, Alice & Ilias: 1,234 / 99.5%", "[Map] <Name>: hello there!"]
+
+    # The key of each font by its name, size and boldness.
+    @keys = {}
+
+    # The keys of the fonts that failed the sum check, true by key.
+    @inexact = {}
+
+    # The widths C# has, by font key and code point.
+    @widths = {}
+
+    # Each font's name, size and boldness by its key, for measuring what a model asks for.
+    @fonts = {}
+
+    # The last key handed out.
+    @last = CELLS
+
+    # Asks C# to lay out a text in the font a measure draws in, handing over the widths of the
+    # characters C# lacks.
+    #
+    # @param topic [String] CUT, WRAP or SPANS.
+    # @param measure [Bitmap, Window_Base, nil] What measures with the font, nil for the font of cells.
+    # @param text [String] Every character the layout measures.
+    # @yieldparam key [Integer] The font's key.
+    # @yieldreturn [Array] The request without the new widths.
+    # @return [Object, nil] C#'s answer; nil while the bridge is closed, for a font measured here,
+    #   for a text that is no UTF-8 and for an answer that failed, which the bridge logs.
+    def self.ask(topic, measure, text)
+      key = measure ? key_of(measure) : cells_key
+      return nil unless key && utf8?(text)
+
+      MGQ_Multiplayer::Bridge.call(topic, yield(key) + [new_widths(key, measure, text)])
+    end
+
+    # Finds the key of the font a measure draws in, defining the font in C# as it is first used.
+    #
+    # @param measure [Bitmap, Window_Base] What measures with the font.
+    # @return [Integer, nil] The key; nil while the bridge is closed, for a measure without a font
+    #   and for a font that failed the sum check.
+    def self.key_of(measure)
+      key = font_key(measure)
+      key && !@inexact[key] ? key : nil
+    end
+
+    # Finds the key of the font a measure draws in, as key_of does, also for a font that failed the
+    # sum check, for a text box, which C# lays out in it all the same.
+    #
+    # @param measure [Bitmap, Window_Base] What measures with the font.
+    # @return [Integer, nil] The key; nil while the bridge is closed and for a measure without a font.
+    def self.font_key(measure)
+      return nil unless MGQ_Multiplayer::Bridge.has?(TOPIC)
+
+      font = font_of(measure)
+      return nil unless font
+
+      id = [text_of(Array(font.respond_to?(:name) ? font.name : nil).join(",")), font.size.to_i, font.bold ? true : false]
+      @keys[id] ||= define(id, measure)
+    end
+
+    # Hands a font's name over as text, which C# takes, by its bytes where the game holds it as none.
+    #
+    # @param name [String] The name as the game holds it.
+    # @return [String] The name as text.
+    def self.text_of(name)
+      return name if utf8?(name)
+
+      text = name.dup.force_encoding("UTF-8")
+      text.valid_encoding? ? text : name.each_byte.map { |byte| byte < 128 ? byte.chr : "?" }.join
+    end
+
+    # Hands out the key of the font of cells while the bridge is open.
+    #
+    # @return [Integer, nil] CELLS, nil while the bridge is closed.
+    def self.cells_key
+      MGQ_Multiplayer::Bridge.has?(TOPIC) ? CELLS : nil
+    end
+
+    # Finds the font a measure draws in.
+    #
+    # @param measure [Bitmap, Window_Base] A picture, or a window, which draws on its contents.
+    # @return [Font, nil] The font, nil for a measure without one.
+    def self.font_of(measure)
+      return measure.contents.font if measure.respond_to?(:contents) && measure.contents
+
+      measure.respond_to?(:font) ? measure.font : nil
+    end
+
+    # Measures a font as it is first used, checks its sums and defines it in C#.
+    #
+    # @param id [Array] The font's name, size and boldness.
+    # @param measure [Bitmap, Window_Base] What measures with the font.
+    # @return [Integer] The font's key.
+    def self.define(id, measure)
+      widths = {}
+      FIRST.each { |code| widths[code] = measure.text_size(code.chr).width }
+      key = @last += 1
+      off = SAMPLES.find { |sample| measure.text_size(sample).width != sample.each_byte.inject(0) { |sum, code| sum + widths[code] } }
+      if off
+        @inexact[key] = true
+        MGQ_MpUi.log("text: the font #{id.inspect} measures \"#{off}\" otherwise than its characters add up to, so its texts are cut and broken here")
+      end
+
+      MGQ_Multiplayer::Bridge.call(TOPIC, "key" => key, "name" => id[0], "size" => id[1], "bold" => id[2], "widths" => widths)
+      @widths[key] = widths
+      @fonts[key] = id
+      key
+    end
+
+    # Measures the characters of a text whose widths C# lacks.
+    #
+    # @param key [Integer] The font's key.
+    # @param measure [Bitmap, Window_Base, nil] What measures with the font, nil for the font of cells.
+    # @param text [String] The text.
+    # @return [Hash{Integer => Integer}, nil] The new widths by code point, nil for none.
+    def self.new_widths(key, measure, text)
+      known = @widths[key]
+      return nil unless known
+
+      found = nil
+      text.each_char do |char|
+        code = char.ord
+        next if known.key?(code)
+
+        found ||= {}
+        known[code] = found[code] = measure.text_size(char).width
+      end
+      found
+    end
+
+    # Measures the characters a model asked for in the font it named, on a picture of that font,
+    # and hands them to C# with the frame's batch.
+    #
+    # @param event [Hash] The font's "key" and the "points" asked for.
+    def self.measure_wanted(event)
+      key = event["key"]
+      id = @fonts[key]
+      return unless id
+
+      widths = {}
+      bitmap = scratch(id)
+      Array(event["points"]).each { |code| widths[code] = @widths[key][code] = bitmap.text_size([code].pack("U")).width }
+      MGQ_Multiplayer::Bridge.stage(TOPIC, "key" => key, "widths" => widths)
+    end
+
+    # Hands out a small picture set to a font, for measuring.
+    #
+    # @param id [Array] The font's name, size and boldness.
+    # @return [Bitmap] The picture.
+    def self.scratch(id)
+      @scratch = Bitmap.new(1, 1) if @scratch.nil? || @scratch.disposed?
+      font = @scratch.font
+      font.name = id[0].split(",") unless id[0].empty?
+      font.size = id[1]
+      font.bold = id[2]
+      @scratch
+    end
+
+    # Tells whether a text crosses the bridge as text: valid UTF-8 or US-ASCII.
+    #
+    # @param text [String] The text.
+    # @return [Boolean] Whether it does.
+    def self.utf8?(text)
+      TEXT_ENCODINGS.include?(text.encoding) && text.valid_encoding?
+    end
   end
 
   # The motion of one sprite: a fade in and out of its opacity over Style::FADE_FRAMES and a slide
@@ -822,7 +1147,8 @@ module MGQ_MpUi
 
   # A yes or no question over any scene: the map, a menu, the trade screen, the World overview.
   # One box at a time; it takes the buttons under it and the hotkeys (see MGQ_MpHotkeys.pressed?)
-  # while open.
+  # while open. C# reads its keys and keeps its pick (ConfirmModel in MGQOnline.Game's Ui); the box
+  # draws, keeps its scene and the block, and finishes here.
   #
   # An answer finishes in the tick after the one that read it, since a press reads as pressed until
   # the next Input.update and would otherwise reach whatever lies under the box in the same frame.
@@ -842,6 +1168,18 @@ module MGQ_MpUi
 
     # Why a box was answered no once its tick failed.
     TICK_FAILED_REASON = "the tick failed"
+
+    # Opens the box in C#, ConfirmModel.AskTopic.
+    ASK = "ui.confirm.ask"
+
+    # Closes it there, ConfirmModel.CloseTopic.
+    CLOSE = "ui.confirm.close"
+
+    # The box's event, ConfirmModel.EventTopic.
+    EVENT = "ui.confirm"
+
+    # The box's name in the tick.
+    MODEL = "confirm"
 
     # Whether a box is open, see open?.
     @open = false
@@ -872,6 +1210,7 @@ module MGQ_MpUi
         return false
       end
 
+      @id = MGQ_Multiplayer::Bridge.call(ASK)
       @open = true
       @answer = nil
       @question = question.to_s
@@ -880,7 +1219,6 @@ module MGQ_MpUi
       @block = answer
       @scene = SceneManager.scene
       @picked = false
-      @asked_at = MGQ_Multiplayer::Key.frame
       MGQ_Multiplayer::Key.watch(MGQ_MpHotkeys.code(:accept), MGQ_MpHotkeys.code(:decline))
       MGQ_Multiplayer::Capture.start(SCREEN)
       @sprite = Sprite_MpConfirmBox.new
@@ -907,7 +1245,7 @@ module MGQ_MpUi
     #
     # @param reason [String] Why, for the log.
     def self.close(reason = CLOSED_REASON)
-      decide(false, reason, false) if open? && @answer.nil?
+      decide(false, reason) if open? && @answer.nil?
     end
 
     # Answers no and finishes at once as a scene starts, since a scene whose start waits in a loop
@@ -916,53 +1254,69 @@ module MGQ_MpUi
     def self.leave_scene
       return unless open?
 
-      decide(false, SCENE_CHANGED_REASON, false) if @answer.nil?
+      decide(false, SCENE_CHANGED_REASON) if @answer.nil?
       finish
     end
 
-    # Finishes an answer given in the tick before, else reads the keys: the scene ending answers
-    # no, none while the player types into a text box, none in the frame of ask. Called after
-    # every scene's update. A tick that fails answers no, so the box never holds the buttons and
-    # the hotkeys for good.
+    # Finishes an answer given in the tick before, else hands C# the frame's keys: the scene ending
+    # answers no, and no key reads while the player types into a text box. Called after every
+    # scene's update. A tick that fails answers no, so the box never holds the buttons and the
+    # hotkeys for good.
     def self.tick
       return unless open?
       return finish if @answer
-      return decide(false, SCENE_CHANGED_REASON, false) unless SceneManager.scene.equal?(@scene)
-      return if $mgq_text_input || MGQ_Multiplayer::Key.frame == @asked_at
+      return decide(false, SCENE_CHANGED_REASON) unless SceneManager.scene.equal?(@scene)
+      return if $mgq_text_input
 
-      read_keys
+      put_keys
     rescue => e
       MGQ_MpUi.log_once(:confirm_tick, "confirm box tick failed: #{e.class}: #{e.message}")
       @answer ||= [false, TICK_FAILED_REASON]
       drop_sprite
     end
 
-    # Reads the keys, all frame-level: the accept hotkey answers yes, the decline hotkey and
-    # cancel no, confirm takes the picked choice, left and right move the pick.
-    def self.read_keys
-      if MGQ_Multiplayer::Key.triggered?(MGQ_MpHotkeys.code(:accept))
-        decide(true, "the #{MGQ_MpHotkeys.label(:accept)} hotkey")
-      elsif MGQ_Multiplayer::Key.triggered?(MGQ_MpHotkeys.code(:decline))
-        decide(false, "the #{MGQ_MpHotkeys.label(:decline)} hotkey")
-      elsif MGQ_MpUi.cancel?
-        decide(false, "cancel")
-      elsif MGQ_Multiplayer::Capture.trigger?(:C)
-        decide(@picked, "confirm")
-      elsif MGQ_Multiplayer::Capture.repeat?(:LEFT) | MGQ_Multiplayer::Capture.repeat?(:RIGHT)
-        @picked = !@picked
-        Sound.play_cursor
-        @sprite.repick(@picked)
+    # Hands C# the frame's keys, all frame-level: the accept and decline hotkeys, cancel, confirm,
+    # and left or right.
+    def self.put_keys
+      capture = MGQ_Multiplayer::Capture
+      keys = MGQ_Multiplayer::Key
+      sideways = capture.repeat?(:LEFT) | capture.repeat?(:RIGHT)
+      MGQ_MpUi::Tick.put(MODEL, [@id, keys.triggered?(MGQ_MpHotkeys.code(:accept)), keys.triggered?(MGQ_MpHotkeys.code(:decline)),
+                                 MGQ_MpUi.cancel? ? true : false, capture.trigger?(:C) ? true : false, sideways ? true : false])
+    end
+
+    # Takes the box's event: the pick moved, or the player answered.
+    #
+    # @param event [Hash] The event, see ConfirmModel.EventTopic.
+    def self.take_event(event)
+      return unless open? && @answer.nil? && event["id"] == @id
+
+      MGQ_MpUi::Tick.play(event)
+      return decide(event["answer"], reason_of(event["by"])) if event.key?("answer")
+
+      @picked = event["picked"]
+      @sprite.repick(@picked) if @sprite
+    end
+
+    # Names what answered the box, for the log.
+    #
+    # @param by [String] What C# names: "accept", "decline", "cancel" or "confirm".
+    # @return [String] The reason.
+    def self.reason_of(by)
+      case by
+      when "accept" then "the #{MGQ_MpHotkeys.label(:accept)} hotkey"
+      when "decline" then "the #{MGQ_MpHotkeys.label(:decline)} hotkey"
+      else by.to_s
       end
     end
 
-    # Keeps an answer for the next tick, plays its sound and takes the box off the screen.
+    # Keeps an answer for the next tick and takes the box off the screen, here and in C#.
     #
     # @param answer [Boolean] true for yes.
     # @param reason [String] What answered, for the log.
-    # @param by_player [Boolean] Whether the player answered, which plays the choice's sound.
-    def self.decide(answer, reason, by_player = true)
+    def self.decide(answer, reason)
       @answer = [answer, reason]
-      (answer ? Sound.play_ok : Sound.play_cancel) if by_player
+      MGQ_Multiplayer::Bridge.call(CLOSE, [@id]) if @id
       MGQ_MpUi.log("confirm box answered #{answer ? @yes : @no} (#{reason}): #{@question}")
       drop_sprite
     end
@@ -979,7 +1333,8 @@ module MGQ_MpUi
       answer = @answer[0]
       block = @block
       @open = false
-      @answer = @block = @question = @yes = @no = @scene = nil
+      MGQ_Multiplayer::Bridge.call(CLOSE, [@id]) if @id
+      @answer = @block = @question = @yes = @no = @scene = @id = nil
       MGQ_Multiplayer::Capture.stop(SCREEN)
       block.call(answer) if block
     rescue => e
@@ -2015,12 +2370,19 @@ end
 begin
   MGQ_MpHooks.after(Scene_Base, :update, "ui") { MGQ_MpUi::Confirm.tick }
 
+  # What the confirm box in C# reports.
+  MGQ_Multiplayer::Bridge.on(MGQ_MpUi::Confirm::EVENT) { |event| MGQ_MpUi::Confirm.take_event(event) }
+
+  # The characters a model of the interface met that no font measured yet.
+  MGQ_Multiplayer::Bridge.on(MGQ_MpUi::Glyphs::WANTED) { |event| MGQ_MpUi::Glyphs.measure_wanted(event) }
+
   # After every frame, the message boxes and the confirm box follow the layout, which the player
-  # changes with Alt, before the layout's tick reads their places: the title screen's update never
-  # calls Scene_Base's.
+  # changes with Alt, before the frame's tick hands the layout their places: the title screen's
+  # update never calls Scene_Base's.
   MGQ_MpHooks.after(Graphics.singleton_class, :update, "ui") do
     Sprite_MpMessageBox.follow_layouts
     Sprite_MpConfirmBox.follow_layouts
+    MGQ_MpUi::Tick.send_frame
   end
 
   # After every scene's start, a confirm box still open answers no, before a start that waits in

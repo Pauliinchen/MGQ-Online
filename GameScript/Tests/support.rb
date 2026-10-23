@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Counted the key frames as the tests count the game's
+#      Paulinchen  2026-10-23: Loaded the bridge, closed, with the first script
 #      Paulinchen  2026-10-13: Named the mod folder as Multiplayer.rb does
 #      Paulinchen  2026-10-12: Collected the log lines a block writes
 #      Paulinchen  2026-10-08: Stood in for watching keys
@@ -118,11 +119,20 @@ def logged_lines
   lines
 end
 
+# Loads MGQ_Multiplayer::Bridge out of Multiplayer.rb, as the game has it, closed until a test opens
+# it with a FakeBridge (bridge_support.rb).
+def load_bridge
+  source = File.read(File.expand_path("../Multiplayer.rb", __dir__), :encoding => "UTF-8")
+  MGQ_Multiplayer.module_eval(source[/  module Bridge\n.*?\n  end\n/m])
+end
+
 # Loads one of the mod's scripts as Multiplayer.rb does, from GameScript/Multiplayer/Scripts, after
-# core_log.rbx, core_hooks.rbx and core_game_access.rbx, which every script builds on.
+# core_log.rbx, core_hooks.rbx and core_game_access.rbx, which every script builds on, and with the
+# bridge, closed.
 #
 # @param name [String] The script's name without its extension, such as "coop".
 def load_script(name)
+  load_bridge unless defined?(MGQ_Multiplayer::Bridge)
   load File.join(SCRIPTS_DIR, "core_log.rbx") unless defined?(MGQ_MpLog)
   load File.join(SCRIPTS_DIR, "core_hooks.rbx") unless defined?(MGQ_MpHooks) || name == "core_log"
   load File.join(SCRIPTS_DIR, "core_game_access.rbx") unless defined?(MGQ_MpGame) || name == "core_log"

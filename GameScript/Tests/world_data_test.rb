@@ -2,7 +2,9 @@
 #  world_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Answered the mod keys and the scripts in Patch through the bridge
+#      Paulinchen  2026-10-23: Widened the list box through Player.ini
+#                            - Drew a box being typed into from what C# shows, the editor's own checks gone to C#
+#                            - Answered the mod keys and the scripts in Patch through the bridge
 #                            - Gave the stand-in world list every field the DLL writes
 #      Paulinchen  2026-10-22: Checked a world read before entering while the list lacks its mods, and the mods measured against the relay's limit
 #      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number
@@ -136,8 +138,6 @@ module MGQ_Multiplayer
     def self.read(name, _size); $dll[name].to_s; end
     # Records in $typing whether the player types.
     def self.typing(on); $typing = on; end
-    # Hands out the text in $typed once, as typed since the last frame.
-    def self.take_typed; typed = $typed.to_s; $typed = nil; [typed, 0]; end
     # Reads a DLL answer: its name=value lines up to a blank line, and the rest as :payload.
     #
     # @param text [String] The answer.
@@ -638,49 +638,13 @@ module MGQ_Multiplayer
   # The capture: a button repeats while in $held and triggers as Input says.
   module Capture; def self.repeat?(button); $held.include?(button); end; def self.trigger?(button); Input.trigger?(button); end; end
   # Windows' keys: the one in $key_down is pressed and triggered.
-  module Key; def self.pressed?(code); $key_down == code; end; def self.triggered?(code); pressed?(code); end; end
+  module Key; def self.pressed?(code); $key_down == code; end; def self.triggered?(code); pressed?(code); end; def self.down?(code); pressed?(code); end; end
   # The mouse: its position from $mouse, a click from $click taken once, the wheel's notches from
   # $wheel.
   module Mouse; def self.position; $mouse; end; def self.clicked?; $click ? ($click = false; true) : false; end; def self.wheel; $wheel.to_i; end; end
   # Whether the game runs in the background, from $background.
   module Background; def self.running?; $background; end; end
 end
-editor = MGQ_MpUi::TextEdit.new("hello", :max_chars => 8, :allowed => /\A[a-z ]\z/)
-check("the editor starts with the cursor at the end of its text", [editor.text, editor.cursor, editor.cursor_shown?], ["hello", 5, true])
-check("typing goes in at the cursor", [editor.type("x"), editor.text, editor.cursor], [:edited, "hellox", 6])
-$held = [:LEFT]
-3.times { editor.update_keys }
-$held = []
-check("left moves the cursor", editor.cursor, 3)
-editor.type("y")
-check("where the next character goes in", [editor.text, editor.cursor], ["helylox", 4])
-check("backspace removes the character before the cursor", [editor.type("\b"), editor.text, editor.cursor], [:edited, "hellox", 3])
-$key_down = 0x2E
-editor.update_keys
-check("delete the one after it", [editor.text, editor.cursor], ["helox", 3])
-$key_down = 0x24
-editor.update_keys
-check("home goes to the start, where backspace does nothing", [editor.cursor, editor.type("\b"), editor.text], [0, nil, "helox"])
-$key_down = 0x23
-check("end goes to the end, and the editor says it moved", [editor.update_keys, editor.cursor], [true, 5])
-$key_down = nil
-check("a frame without keys changes nothing", editor.update_keys, false)
-check("a character the box does not take is refused", [editor.type("7"), editor.text], [:refused, "helox"])
-3.times { editor.type("a") }
-check("as is one past the longest text", [editor.type("a"), editor.text.size], [:refused, 8])
-check("enter and escape are left to the box's owner", [editor.type("\r"), editor.type("\e"), editor.text.size], [:enter, :escape, 8])
-MGQ_MpUi::TextEdit::BLINK_FRAMES.times { editor.update_keys }
-check("the cursor blinks, and shows again once it moves", [editor.cursor_shown?, (editor.move_to(2); editor.cursor_shown?)], [false, true])
-measure = Object.new
-measure.define_singleton_method(:text_size) { |text| Struct.new(:width).new(text.size * 10) }
-long = MGQ_MpUi::TextEdit.new("abcdefghijklmnopqrst")
-check("a box of one line shows the end of a long text while the cursor is there", long.visible(measure, 80), ["mnopqrst", 8])
-long.move_to(14)
-check("it stays put while the cursor moves inside what it shows", long.visible(measure, 80), ["mnopqrst", 2])
-long.move_to(5)
-check("and moves back once the cursor leaves it at the left", long.visible(measure, 80), ["fghijklm", 0])
-check("a password shows as many stars", MGQ_MpUi::TextEdit.new("abc").visible(measure, 80, "***"), ["***", 3])
-
 # Lines that keep each character's place.
 widths = lambda { |part| part.size * 10 }
 check("a text is broken before the word that does not fit, its spaces kept", MGQ_MpUi.wrap_spans("one two  three four", 100, &widths), [[0, 9], [9, 10]])
@@ -695,10 +659,12 @@ check("and is broken without String#chars, as Ruby 1.9 needs", spans_on_1_9, [[0
 spans = MGQ_MpUi.wrap_spans("one two three four", 80, &widths)
 check("a place in the text is on the line that starts at or before it", [spans, [0, 7, 8, 13, 18].map { |place| MGQ_MpUi.span_of(spans, place) }], [[[0, 8], [8, 6], [14, 4]], [0, 0, 1, 1, 2]])
 
-# The description as it is typed.
+# The description as it is typed: C# breaks it into lines and keeps the cursor (EditModel), and
+# the window draws the lines and the cursor C# says it shows.
+require_relative "bridge_support"
 drawn = []
 cursors = []
-font = Struct.new(:size, :color).new(18, "normal_color")
+font = Struct.new(:size, :color, :bold).new(18, "normal_color", false)
 canvas = Struct.new(:font).new(font)
 bars = []
 canvas.define_singleton_method(:fill_rect) do |*args|
@@ -714,58 +680,46 @@ window.define_singleton_method(:text_size) { |text| Struct.new(:width).new(text.
 window.define_singleton_method(:draw_text) { |*args| drawn << args[4] }
 window.define_singleton_method(:index) { form.fields.index(description) }
 window.instance_variable_set(:@form, form)
-window.instance_variable_set(:@widths, {})
 window.instance_variable_set(:@rects, rects)
 form[:description] = ""
 window.draw_area(key.call(:description), description)
 check("an empty description says what it is for", drawn, ["What the world is about"])
 drawn.clear
+text_fake = FakeBridge.new
+views = []
+shown = nil
+text_fake.answer(MGQ_MpUi::Glyphs::TOPIC) { |_request| nil }
+text_fake.answer(MGQ_MpUi::TextEdit::OPEN) { |_request| 1 }
+text_fake.answer(MGQ_MpUi::TextEdit::VIEW) { |request| views << request; { "id" => 1, "text" => form[:description], "cursor" => 49, "shown" => true, "view" => shown } }
+MGQ_Multiplayer::Bridge.open(text_fake)
 form[:description] = "A slow run through part one of the story with friends, with every side quest on the way."
 form.editing = :description
 form.edit = MGQ_MpUi::TextEdit.new(form[:description])
-window.draw_area(key.call(:description), description)
-check("a typed one shows whole, on several lines", drawn.map { |line| line.rstrip }, ["A slow run through part one of the story", "with friends, with every side quest on", "the way."])
 area = key.call(:description)
-check("with the cursor at its end, on the last line", cursors, [[area.x + 4 + 8 * 9, area.y + 1 + 2 * 16 + 2]])
-lines = window.current_area_spans(form[:description])
-last = form.edit.cursor
-form.edit.move_line(lines, 1)
-check("down from the last line leaves the cursor there", form.edit.cursor, last)
-form.edit.move_line(lines, -1)
-check("up moves the cursor a line up, as far into it", [form.edit.cursor, form[:description][41 + 8, 4]], [41 + 8, "ends"])
-form.edit.move_to(3)
-$held = [:DOWN]
-check("the down arrow goes from a short way into a line as far into the next", [form.edit.update_keys(lines), form.edit.cursor], [true, 41 + 3])
-$held = []
+shown = { "area" => [[[0, 41], [41, 39], [80, 8]], 1, 1, 72] }
+window.draw_area(area, description)
+check("a typed one tells C# where it is drawn: in the window's font, as wide as inside its box, its lines",
+      views.map { |view| [view["id"], view["font"], view["width"], view["rows"]] }, [[1, 1, area.width - 2 * Window_MpWorldForm::TEXT_INSET, (area.height - 2) / 16]])
+check("and draws the lines C# shows, from the first in sight", drawn.map { |line| line.rstrip }, ["with friends, with every side quest on", "the way."])
+check("with the cursor where C# puts it, on its line", cursors, [[area.x + Window_MpWorldForm::TEXT_INSET + 72, area.y + 1 + 2]])
 drawn.clear
-form[:description] = (%w[word] * 40).join(" ")
-form.edit = MGQ_MpUi::TextEdit.new(form[:description])
-window.draw_area(key.call(:description), description)
-check("one longer than the box shows the lines around the cursor while it is typed", [drawn.size, drawn.last.rstrip], [4, "word word word word word word word word"])
-form.edit.move_to(0)
-drawn.clear
-window.draw_area(key.call(:description), description)
-check("and follows the cursor back to its start", [drawn.size, drawn.first[0, 9], form.edit.first_line(window.current_area_spans(form[:description]), 4)], [4, "word word", 0])
-check("a scrollbar right of its text tells it holds more lines, at its first ones",
-      bars.last(2), [[area.x + area.width - MGQ_MpUi::Style::SCROLLBAR_WIDTH, area.y + 1]] * 2)
+views.clear
+window.draw_area(area, description)
+check("drawn again where it was, it asks C# nothing", [drawn.size, views], [2, []])
 { :x => 0, :y => 0, :padding => 12, :ox => 0, :oy => 0 }.each { |name, value| window.define_singleton_method(name) { value } }
-lines = window.current_area_spans(form[:description])
 $mouse = [12 + area.x + 5, 12 + area.y + 5]
 $wheel = -2
-check("the wheel turned down over it scrolls it as far as its last lines, the cursor moved along onto the first in sight",
-      [lines.size > 4, window.scroll_area_by_wheel(form.edit), form.edit.first_line(lines, 4), form.edit.cursor], [true, true, lines.size - 4, lines[lines.size - 4][0]])
-$wheel = 5
-check("turned up it scrolls back to the first line, the cursor staying while in sight",
-      [window.scroll_area_by_wheel(form.edit), form.edit.first_line(lines, 4), form.edit.cursor], [true, 0, lines[lines.size - 4][0]])
+check("the wheel turned down over it scrolls it down by its notches", window.wheel_lines, 2 * Window_MpWorldForm::AREA_WHEEL_LINES)
 $mouse = [600, 470]
-check("the wheel scrolls nothing while the mouse points elsewhere", window.scroll_area_by_wheel(form.edit), false)
+check("the wheel scrolls nothing while the mouse points elsewhere", window.wheel_lines, 0)
 $wheel = nil
 $mouse = nil
 form.editing = nil
 form.edit = nil
+form[:description] = (%w[word] * 40).join(" ")
 drawn.clear
-window.draw_area(key.call(:description), description)
-check("and its first lines, cut, once it is not", [drawn.size, drawn.first[0, 9], drawn.last[-2, 2]], [4, "word word", ".."])
+window.draw_area(area, description)
+check("and its first lines, cut, once it is not typed into", [drawn.size, drawn.first[0, 9], drawn.last[-2, 2]], [4, "word word", ".."])
 
 # A text box of one line as it is typed.
 drawn.clear
@@ -777,11 +731,15 @@ window.draw_box(key.call(:mods), mods_field, true)
 check("a text too long for its box is cut at its end while nobody types", drawn.last[-2, 2], "..")
 form.editing = :mods
 form.edit = MGQ_MpUi::TextEdit.new(form[:mods])
+shown = { "line" => [20, 33, 297] }
 drawn.clear
 window.draw_box(key.call(:mods), mods_field, true)
-check("while typed into, the box shows the text around the cursor, and the cursor after it", [form[:mods].end_with?(drawn.last), cursors.size], [true, 1])
+check("while typed into, the box shows the part of the text C# picked around the cursor, and the cursor where it says",
+      [drawn.last, cursors.size, cursors.last[0] - key.call(:mods).x], [form[:mods][20, 33], 1, Window_MpWorldForm::LABEL_WIDTH + Window_MpWorldForm::TEXT_INSET + 297])
 form.editing = nil
 form.edit = nil
+# The text box from here on types what $typed holds.
+open_fake_ui { typed = $typed.to_s; $typed = nil; [typed, 0] }
 check("a description may be 1000 characters long", MGQ_MpWorld::MAX_DESCRIPTION_CHARS, 1000)
 
 # The hints, which share two lines at the top of the world screen.
@@ -1072,10 +1030,12 @@ check("the whole description opens in the list box, broken into lines", [box.not
 kept = MGQ_MpUi::Layout.instance_variable_get(:@stored)
 before = box.lines.size
 box.selected = before - 1
-kept[:list_box] = Rect.new(0, 0, 640, 300)
+MGQ_Multiplayer::Player.define_singleton_method(:setting) { |key| key == "ui_list_box" ? "0,0,640,300" : nil }
+kept.delete(:list_box)
 scene.rewrap_description
 check("a list box the player widened breaks the description anew to its width, the pick kept on a line",
       [box.lines.map { |line| line[1] }.join(" "), [before, box.lines.size], box.selected], ["A slow run through part one of the story with friends.", [3, 2], 1])
+MGQ_Multiplayer::Player.define_singleton_method(:setting) { |_key| nil }
 kept.delete(:list_box)
 
 # The left side: the worlds above the commands.
@@ -1400,16 +1360,20 @@ Dir.mktmpdir do |folder|
     check("enter unlists an added mod, which stays in the list", [form[:mods], view.lines[7]], ["", [:item, "Data Pack", :grey, "unlisted", off]])
     view.pick(7)
     scene.update_mod_pick
+    ui_frame
     scene.update_mod_pick
+    ui_frame
     check("while it is picked, the hint names Delete", view.hint, Scene_MpWorlds::MOD_PICK_ADDED_HINT)
     $key_down = 0x2E
     scene.update_mod_pick
+    ui_frame
     $key_down = nil
     check("Delete removes it from the list, and the pick stays on an item", [view.lines.map { |line| line[1] }, view.lines[view.selected][0], view.hint],
           [["List all your mods", "Your mods (4)", "battle_dialogue", "Level_Cap", "Party Sheet", "Zeta", "Add a mod by name . . ."], :item, Scene_MpWorlds::MOD_PICK_HINT])
     view.pick(2)
     $key_down = 0x2E
     scene.update_mod_pick
+    ui_frame
     $key_down = nil
     check("Delete leaves an installed mod in place", view.lines.size, 7)
     view.pick(3)
@@ -1432,8 +1396,10 @@ Dir.mktmpdir do |folder|
     check("closing goes back to the form", [scene.instance_variable_get(:@mod_view), scene.instance_variable_get(:@resume_form), box.view], [nil, true, nil])
     scene.open_mod_pick
     scene.update_mod_pick
+    ui_frame
     $buttons = [:B]
     scene.update_mod_pick
+    ui_frame
     $buttons = nil
     check("cancel closes the picker without drawing it again", [scene.instance_variable_get(:@mod_view), box.view], [nil, nil])
 
@@ -1444,23 +1410,33 @@ Dir.mktmpdir do |folder|
     check("adding a mod by name turns its row into a text box typed on the keyboard", [$typing, view.lines.last[1], view.lines.last[5][1], $called], [true, "Name:", "", nil])
     $typed = "New Mod"
     scene.update_mod_pick
-    check("what is typed shows in the box", view.lines.last[5][1], "New Mod")
+    ui_frame
+    scene.update_mod_pick
+    ui_frame
+    check("what is typed shows in the box, from the frame after", view.lines.last[5][1], "New Mod")
     $typed = "\r"
+    scene.update_mod_pick
+    ui_frame
     scene.update_mod_pick
     check("Enter adds the mod, picked, and the keyboard goes back to the game", [form[:mods], view.lines[view.selected][1], $typing, view.lines.last[1]], ["New Mod", "New Mod", false, "Add a mod by name . . ."])
     $held = [:C]
     scene.update_mod_pick
+    ui_frame
     check("the Enter that added it does not act on the picker while held", [form[:mods], scene.instance_variable_get(:@mod_pick_hold)], ["New Mod", true])
     $held = []
     scene.update_mod_pick
+    ui_frame
     scene.act_on_mod(:add, 0)
     $typed = "Other\e"
+    scene.update_mod_pick
+    ui_frame
     scene.update_mod_pick
     check("Escape goes back without adding", [form[:mods], $typing], ["New Mod", false])
     scene.act_on_mod(:add, 0)
     $typed = "0"
     $key_down = 0x60
     scene.update_mod_pick
+    ui_frame
     $key_down = nil
     check("so does the numpad's 0, typing nothing", [form[:mods], $typing, scene.instance_variable_get(:@mod_edit)], ["New Mod", false, nil])
     scene.close_mod_pick
@@ -1469,19 +1445,26 @@ Dir.mktmpdir do |folder|
     scene.open_mod_pick
     view = scene.instance_variable_get(:@mod_view)
     scene.update_mod_pick
+    ui_frame
     view.pick(view.lines.size - 1)
     $buttons = [:C]
     scene.update_mod_pick
+    ui_frame
     $buttons = nil
     check("the typing hint stays while a mod's name is typed", [view.hint, $typing], [Scene_MpWorlds::TYPING_HINT, true])
     $typed = "\e"
     scene.update_mod_pick
+    ui_frame
     scene.update_mod_pick
+    scene.update_mod_pick
+    ui_frame
     $mouse = [140, 32 + 30 + 24 * 5 + 5]
     scene.update_mod_pick
+    ui_frame
     view.pick(2)
     $click = true
     scene.update_mod_pick
+    ui_frame
     $mouse = nil
     check("a click acts on the mod under the mouse, not on the one the arrows picked since", form[:mods], "Zeta")
     $background = false
@@ -1519,17 +1502,10 @@ class FakeForm < FakeChoice
   # Draws nothing.
   def redraw_current_item; end
 
-  # Breaks no text into lines.
-  #
-  # @param _text [String] The text.
-  # @return [nil] Nothing, as for a box of one line.
-  def current_area_spans(_text); nil; end
-
   # Scrolls nothing, as a box of one line.
   #
-  # @param _editor [MGQ_MpUi::TextEdit] The box's editor.
-  # @return [Boolean] false.
-  def scroll_area_by_wheel(_editor); false; end
+  # @return [Integer] 0.
+  def wheel_lines; 0; end
 end
 
 # The link's player id, always me.
@@ -1545,6 +1521,8 @@ form_window.form = scene.form
 scene.start_typing(scene.form.fields[0])
 $typed = "Bob\r"
 $returned = nil
+scene.update_typing
+ui_frame
 scene.update_typing
 check("Enter in the name's text box keeps the name and leaves the form, the screen still open", [named, scene.form, $returned, $typing], ["Bob", nil, nil, false])
 scene.instance_variable_get(:@forms)[:rename] = MGQ_MpWorld::Form.rename("")
@@ -1570,7 +1548,10 @@ check("a text box of digits leaves the numpad's 0 out of its hint", said(scene),
 $typed = "0"
 $key_down = 0x60
 scene.update_typing
+ui_frame
 $key_down = nil
+scene.update_typing
+ui_frame
 check("where the numpad's 0 types a 0", [create[:seats], create.editing], ["40", :seats])
 scene.stop_typing
 create[:name] = "  Spaced  "

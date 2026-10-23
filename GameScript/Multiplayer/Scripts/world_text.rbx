@@ -2,6 +2,7 @@
 #  world_text.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Typed into the text screen through the text box in C#, the game's letters too
 #      Paulinchen  2026-10-12: Scrolled a text longer than its box
 #                            - Scrolled the description with the mouse wheel and drew its scrollbar
 #                            - Broke the description over four lines at words in a taller box, showing its last lines
@@ -45,15 +46,16 @@ class Scene_MpText < Scene_MenuBase
     MGQ_MpWorld.log("text screen opened for #{@caption}, #{@input_window.visible ? 'with the letters for a gamepad' : 'typed on the keyboard'}")
   end
 
-  # Types what came from the keyboard and scrolls the box with the mouse wheel, then lets the
+  # Acts on what came from the keyboard and scrolls the box with the mouse wheel, then lets the
   # letters take a gamepad's buttons, showing them once a button is pressed that did not come from
   # the keyboard.
   #
   # A key that types also moves the game's own buttons, such as Z for OK, so the letters ignore
   # the buttons in a frame the keyboard was used.
   def update
-    text, keys = MGQ_Multiplayer::Link.take_typed
-    keyboard = keys > 0 || !text.empty?
+    editor = @edit_window.editor
+    taken = editor.take
+    keyboard = taken.keys > 0 || taken.chars > 0
     @input_window.keyboard_used = keyboard
 
     if !keyboard && !@input_window.visible && MGQ_MpWorld.gamepad_pressed?
@@ -63,22 +65,22 @@ class Scene_MpText < Scene_MenuBase
       @input_window.keyboard_used = true
     end
 
-    type_text(text)
+    type_text(taken.outcomes)
+    editor.follow(false)
     @edit_window.scroll_by_wheel unless scene_changing?
     super
   end
 
-  # Types a frame's characters, drawing the box once and playing one sound for all of them, so a
-  # pasted text costs one drawing instead of one per character.
+  # Acts on what a frame's typing did, after the box took the editor's text once, playing one
+  # sound for all of it, so a pasted text costs one drawing instead of one per character.
   #
-  # @param text [String] The characters typed this frame.
-  def type_text(text)
+  # @param outcomes [Array<Symbol>] What typing did, see MGQ_MpUi::TextEdit::Taken.
+  def type_text(outcomes)
+    @edit_window.follow_editor
     sounds = []
-    @edit_window.hold_refresh do
-      text.each_char do |char|
-        sounds << type(char)
-        break if scene_changing?
-      end
+    outcomes.each do |outcome|
+      sounds << type(outcome)
+      break if scene_changing?
     end
     play(sounds.include?(:buzzer) ? :buzzer : sounds.compact.last)
   end
@@ -99,26 +101,24 @@ class Scene_MpText < Scene_MenuBase
     @input_window.activate
   end
 
-  # Types one character: Enter confirms, Escape leaves, Backspace removes the last one.
+  # Acts on what typing one character did: Enter confirms, Escape leaves, Backspace removed the
+  # last one.
   #
-  # @param char [String] The character.
+  # @param outcome [Symbol] What typing did, see MGQ_MpUi::TextEdit::Taken.
   # @return [Symbol, nil] The sound it calls for: :cursor, :cancel or :buzzer, nil for none.
-  def type(char)
-    case char
-    when "\r"
+  def type(outcome)
+    case outcome
+    when :enter
       return :buzzer if @edit_window.name.empty?
 
       on_input_ok
       nil
-    when "\e"
+    when :escape
       on_input_cancel
       nil
-    when "\b"
-      @edit_window.back ? :cancel : nil
-    else
-      return nil if char =~ /[[:cntrl:]]/
-
-      @edit_window.add(char) ? :cursor : :buzzer
+    when :erased then :cancel
+    when :typed then :cursor
+    when :refused then :buzzer
     end
   end
 
@@ -136,6 +136,7 @@ class Scene_MpText < Scene_MenuBase
   # Stops taking what is typed.
   def terminate
     MGQ_Multiplayer::Link.typing(false)
+    @edit_window.editor.close
     super
   end
 
@@ -177,6 +178,10 @@ class Window_MpTextEdit < Window_NameEdit
   # Lines of a box of several lines one notch of the mouse wheel scrolls.
   WHEEL_LINES = 1
 
+  # The editor of the text, which C# keeps (see MGQ_MpUi::TextEdit): the keyboard types into it
+  # straight, the game's letters through add and back.
+  attr_reader :editor
+
   # Creates the window, taller for a box of several lines, which keeps it in the middle of the
   # screen with the game's letters below it.
   #
@@ -190,6 +195,7 @@ class Window_MpTextEdit < Window_NameEdit
     @rows = options[:area] ? AREA_ROWS : 1
     @scrolled_up = 0
     super(Holder.new(text.to_s), options[:max_chars])
+    @editor = MGQ_MpUi::TextEdit.new(@name, :max_chars => @max_char, :allowed => @allowed)
     return unless area?
 
     grown = fitting_height(@rows + FRAME_LINES) - height
@@ -199,24 +205,18 @@ class Window_MpTextEdit < Window_NameEdit
     refresh
   end
 
-  # Holds the drawing while a block types, then draws once if anything changed.
-  #
-  # @yield Types into the box.
-  def hold_refresh
-    @held = true
-    yield
-  ensure
-    @held = false
-    refresh if @stale
+  # Takes the editor's text and the cursor, drawing the box again once they changed.
+  def follow_editor
+    return if @name == @editor.text && @index == @editor.cursor
+
+    @name = @editor.text
+    @index = @editor.cursor
+    refresh
   end
 
   # Draws the caption, the underlines, the characters in sight and the cursor while its line is in
-  # sight, or only notes that it has to while the drawing is held. A changed text shows the
-  # cursor's line again.
+  # sight. A changed text shows the cursor's line again.
   def refresh
-    return @stale = true if @held
-
-    @stale = false
     @scrolled_up = 0 unless @name == @scrolled_text
     @scrolled_text = @name
     contents.clear
@@ -306,7 +306,7 @@ class Window_MpTextEdit < Window_NameEdit
     return @lines if @lines && @lines_text == @name
 
     width = line_chars
-    spans = MGQ_MpUi.wrap_spans(@name, width) { |part| part.length }
+    spans = MGQ_MpUi.spans(nil, @name, width)
     @lines_text = @name
     @lines = spans.map do |start, length|
       (0...[length, 1].max).step(width).map { |offset| [start + offset, [length - offset, width].min] }
@@ -418,14 +418,32 @@ class Window_MpTextEdit < Window_NameEdit
     change_color(normal_color)
   end
 
-  # Adds a character, if the text takes it and has room.
+  # Adds a character the game's letters picked, if the text takes it and has room.
   #
   # @param char [String] The character.
   # @return [Boolean] Whether it was added.
   def add(char)
-    return false if @allowed && char !~ @allowed
+    added = @editor.type_now(char).include?(:typed)
+    follow_editor
+    added
+  end
 
-    super
+  # Removes the last character, for the game's letters.
+  #
+  # @return [Boolean] Whether one was removed.
+  def back
+    erased = @editor.type_now("\b").include?(:erased)
+    follow_editor
+    erased
+  end
+
+  # Puts the text the box started with back, as the game's letters do when confirmed while empty.
+  #
+  # @return [Boolean] Whether that text holds anything.
+  def restore_default
+    @editor.edit(@default_name, @default_name.size)
+    follow_editor
+    !@name.empty?
   end
 
   # Leaves no room for a face, so the text sits in the middle.

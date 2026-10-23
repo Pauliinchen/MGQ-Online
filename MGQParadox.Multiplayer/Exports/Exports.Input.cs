@@ -2,6 +2,7 @@
 //  Exports.Input.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Dropped mp_take_typed, since the text box in C# takes what is typed
 //      Paulinchen  2026-10-12: Added mp_mouse_wheel
 //      Paulinchen  2026-10-06: Kept what was typed when the game script's buffer was too small
 //      Paulinchen  2026-09-30: Created
@@ -11,7 +12,6 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using MGQParadox.Multiplayer.Network.Transport;
 using MGQParadox.Multiplayer.Windows;
 
 namespace MGQParadox.Multiplayer;
@@ -75,35 +75,6 @@ internal static unsafe partial class Exports
         catch (Exception ex)
         {
             Log.Write($"mp_typing failed: {ex}");
-            return 0;
-        }
-    }
-
-    /// <summary>
-    /// Hands out what was typed since the last call, see <see cref="Keyboard.Take"/>.
-    /// </summary>
-    /// <param name="buffer">Receives <c>keys=</c> the number of keys that went down, then the typed characters, UTF-8 and null-terminated.</param>
-    /// <param name="size">The size of the buffer in bytes.</param>
-    /// <returns>The text's length, or its length negated when the buffer is too small, which keeps the text for the next call; 0 when it failed.</returns>
-    [UnmanagedCallersOnly(EntryPoint = "mp_take_typed", CallConvs = [typeof(CallConvStdcall)])]
-    public static int TakeTyped(byte* buffer, int size)
-    {
-        try
-        {
-            var (text, keys) = Keyboard.Take();
-            var length = Copy(new Message([new("keys", keys.ToString(System.Globalization.CultureInfo.InvariantCulture))], text).Encode(), buffer, size);
-
-            // The game script asks again with a larger buffer, which must find the same take.
-            if (length < 0)
-            {
-                Keyboard.GiveBack(text, keys);
-            }
-
-            return length;
-        }
-        catch (Exception ex)
-        {
-            Log.Write($"mp_take_typed failed: {ex}");
             return 0;
         }
     }

@@ -2,7 +2,8 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Read the lines sent through the DLL's chat.send, and the names the DLL numbers
+#      Paulinchen  2026-10-23: Acted on typing a frame after it, as the text box in C# reports it
+#                            - Read the lines sent through the DLL's chat.send, and the names the DLL numbers
 #                            - Read the lines sent here
 #                            - Checked that the live map behind a menu shows no chat log
 #      Paulinchen  2026-10-22: Checked the chat box and its log in a scene of menus such as a shop
@@ -42,13 +43,13 @@ $inbox << entry("seat", 0)
 $inbox << entry("message", friend_seat, told(friend))
 MGQ_MpOverworldSync.tick
 
-# Sends a line as typed into the chat box, in a frame of its own.
+# Sends a line as typed into the chat box: one frame types it, the next acts on its Enter.
 #
 # @param text [String] The line, commands included.
 def send_line(text)
   MGQ_MpChat.start_typing
   $typed = "#{text}\r"
-  map_frame
+  2.times { map_frame }
 end
 
 # Presses a key while the left Alt is held, in a frame of its own.
@@ -184,12 +185,12 @@ map_frame
 check("a paste lands in the box whole, the cursor after it", [chat.typed, chat.cursor], ["pasted from the clipboard", 25])
 $sounds.clear
 $typed = "x" * (MGQ_MpChat::MAX_LENGTH + 10)
-map_frame
-check("a paste longer than the box takes is cut and buzzes once", [chat.typed.size, $sounds], [MGQ_MpChat::MAX_LENGTH, ["buzzer"]])
+2.times { map_frame }
+check("a paste longer than the box takes is cut and buzzes once, as the frame after acts on it", [chat.typed.size, $sounds], [MGQ_MpChat::MAX_LENGTH, ["buzzer"]])
 MGQ_MpOverworldSync.tick
 $sounds.clear
 $typed = "y"
-map_frame
+2.times { map_frame }
 check("the next frame buzzes again", $sounds, ["buzzer"])
 chat.stop_typing
 

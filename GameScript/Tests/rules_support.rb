@@ -2,7 +2,8 @@
 #  rules_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Answered the mod catalog a test sets
+#      Paulinchen  2026-10-23: Kept the test's one stand-in bridge in $world_bridge
+#                            - Answered the mod catalog a test sets
 #                            - Added the answers to the world room's stand-in bridge when a test has one
 #                            - Stood in for the squad math, checked against its golden cases
 #                            - Answered the squad rules of a served battle and their defaults
@@ -363,13 +364,14 @@ def answer_random_ids(fake)
   fake.answer("id.random") { |request| stand_in_random_id(request) }
 end
 
-# Opens the scripts' bridge on a FakeBridge that answers the rule topics from the golden cases, or adds
-# those answers to the world room's stand-in bridge when the test loaded it.
+# Opens the scripts' bridge on the test's one FakeBridge, $world_bridge, made here unless the world
+# room's or the interface's stand-ins made it, adding the answers of the rule topics from the golden
+# cases.
 #
 # @return [FakeBridge] The bridge, for a test to add answers or read the calls.
 def open_rules_bridge
   load_bridge unless defined?(MGQ_Multiplayer::Bridge)
-  fake = $world_bridge || FakeBridge.new
+  fake = ($world_bridge ||= FakeBridge.new)
   answer_catchup(fake)
   answer_mod_keys(fake)
   answer_installed(fake)

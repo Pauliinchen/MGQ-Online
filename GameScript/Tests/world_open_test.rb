@@ -2,7 +2,8 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Answered the rules the DLL owns through the bridge from the golden cases
+#      Paulinchen  2026-10-23: Typed through the stand-in text box
+#                            - Answered the rules the DLL owns through the bridge from the golden cases
 #                            - Dropped the update offer under Wine and expected --version for a step back by hand
 #                            - Gave the stand-in world list every field the DLL writes
 #      Paulinchen  2026-10-22: Checked the update offer of a step back to an older release
@@ -170,6 +171,9 @@ module MGQ_Multiplayer
 
     # Answers whether a button is pressed, from $pressed.
     def self.trigger?(button); $pressed == button; end
+
+    # Answers whether a button repeats, as it is pressed.
+    def self.repeat?(button); trigger?(button); end
   end
 
   # Stands in for the mouse, never clicked.
@@ -356,9 +360,6 @@ module MGQ_Multiplayer
   module Link
     # Turns typing on or off.
     def self.typing(on); $typing = on; end
-
-    # Takes the text typed, with how many keys went down.
-    def self.take_typed; typed = $typed.to_s; $typed = nil; [typed, typed.size]; end
   end
 end
 
@@ -393,7 +394,12 @@ class FakeForm < FakeChoice
 
   # Draws nothing.
   def redraw_current_item; end
+  # Scrolls nothing, as a box of one line.
+  def wheel_lines; 0; end
 end
+
+# The text box types what $typed holds.
+open_fake_ui { typed = $typed.to_s; $typed = nil; [typed, typed.size] }
 
 # Builds the world screen with a form window and no forms yet.
 #
@@ -412,6 +418,8 @@ scene.on_enter
 check("a world with a password asks for it in a form typed in place", [$called, scene.form.title, scene.form.editing, $typing], [nil, "Enter Plain", :password, true])
 $calls.clear
 $typed = "secret\r"
+scene.update_typing
+ui_frame
 scene.update_typing
 check("Enter opens the world with it", [$calls.last[0], $calls.last[2], scene.instance_variable_get(:@busy), $typing], ["mp_dir_unlock", ["w1\0", "secret\0"], "unlock", false])
 
@@ -1151,6 +1159,8 @@ scene.start_typing(scene.form.fields.first)
 $calls.clear
 $typed = "#{'ab' * 16}\r"
 scene.update_typing
+ui_frame
+scene.update_typing
 check("Enter in the world id looks the world up", [scene.sends_on_enter?, $calls.last[0], $calls.last[2], scene.instance_variable_get(:@busy), $typing], [true, "mp_dir_find", ["#{'ab' * 16}\0"], "find", false])
 check("and the action holds the form's cursor, so its button cannot send it again meanwhile", [scene.instance_variable_get(:@resume_form), form_window.active], [false, false])
 scene.instance_variable_set(:@busy, nil)
@@ -1166,6 +1176,8 @@ form_window.select(0)
 scene.start_typing(two.fields.first)
 $calls.clear
 $typed = "x\r"
+scene.update_typing
+ui_frame
 scene.update_typing
 check("a form with two text boxes keeps the text with Enter and is sent from its button", [scene.sends_on_enter?, two[:first], two.editing, $calls, scene.instance_variable_get(:@busy)], [false, "x", nil, [], nil])
 scene.instance_variable_set(:@forms, {})

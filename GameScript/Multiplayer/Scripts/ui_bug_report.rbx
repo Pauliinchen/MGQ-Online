@@ -2,7 +2,9 @@
 #  ui_bug_report.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Handed the log's lines to the DLL before a report reads its log
+#      Paulinchen  2026-10-23: Walked to the screenshot's pixels in C#, handing it the Bitmap's address
+#                            - Typed into the form through the text box in C#
+#                            - Handed the log's lines to the DLL before a report reads its log
 #                            - Removed sending?, which only the tests read
 #      Paulinchen  2026-10-12: Kept the report's messages until the notification box shows
 #                            - Scrolled the description being typed with the mouse wheel
@@ -134,13 +136,6 @@ module MGQ_MpBugReport
   # Menus a report waits in until the player is back on the map, by their class's name, since they
   # cannot be left for the form and come back.
   WAITING_MENUS = ["Scene_MpStoryChoices"]
-
-  # The offsets from a Bitmap's Ruby object to its pixels, as RGSS3 keeps them: the object's data,
-  # then the bitmap's, then its pixels.
-  POINTER_STEPS = [16, 8, 16]
-
-  # Bytes per pixel of a bitmap's pixels: blue, green, red, alpha.
-  PIXEL_BYTES = 4
 
   # Largest side of a screenshot the DLL keeps.
   MAX_SIDE = 4096
@@ -672,9 +667,12 @@ module MGQ_MpBugReport
     $game_party.members.map { |actor| "#{actor.name} Lv #{actor.level}" }.join(", ")
   end
 
-  # The screenshot: the screen's pixels as RGSS3 keeps a Bitmap, handed to the DLL, which encodes
-  # them later, off the game's thread.
+  # The screenshot: the screen as RGSS3 keeps a Bitmap, whose pixels the DLL walks to in the game's
+  # process and keeps for the report, encoding them later, off the game's thread.
   module Screenshot
+    # Keeps a snapped Bitmap's pixels in the DLL, GameBridge.SnapTopic.
+    TOPIC = "ui.report.snap"
+
     # Takes the screenshot and hands it to the DLL.
     #
     # @return [Boolean] Whether the DLL kept it.
@@ -687,7 +685,8 @@ module MGQ_MpBugReport
         return false
       end
 
-      kept = MGQ_Multiplayer::Link.function('mp_report_snap').call(pixels_of(bitmap), width, height) == 1
+      # A Ruby 1.9 object's id is its address halved.
+      kept = MGQ_Multiplayer::Bridge.call(TOPIC, [bitmap.object_id * 2, width, height]) == true
       MGQ_MpBugReport.log(kept ? "took the screenshot, #{width} by #{height}" : "the DLL did not keep the screenshot")
       kept
     rescue => e
@@ -695,46 +694,6 @@ module MGQ_MpBugReport
       false
     ensure
       bitmap.dispose if bitmap && !bitmap.disposed?
-    end
-
-    # Copies a bitmap's pixels.
-    #
-    # @param bitmap [Bitmap] The bitmap.
-    # @return [String] Its width * height * PIXEL_BYTES bytes, rows bottom-up.
-    def self.pixels_of(bitmap)
-      address = POINTER_STEPS.inject(bitmap.object_id * 2) { |at, step| pointer_at(at + step) }
-      raise "the bitmap's pixels were not found" if address == 0
-
-      copy(address, bitmap.width * bitmap.height * PIXEL_BYTES)
-    end
-
-    # Reads a pointer.
-    #
-    # @param address [Integer] Where it lies.
-    # @return [Integer] Where it points.
-    def self.pointer_at(address)
-      raise "a pointer on the way to the bitmap's pixels is empty" if address < POINTER_STEPS.max
-
-      copy(address, 4).unpack('L')[0]
-    end
-
-    # Copies memory of the game's process into a string.
-    #
-    # @param address [Integer] Where it starts.
-    # @param length [Integer] How many bytes.
-    # @return [String] The bytes.
-    def self.copy(address, length)
-      buffer = "\0" * length
-      MGQ_Multiplayer::Windows.api('kernel32', 'RtlMoveMemory', 'pll', 'l').call(buffer, signed(address), length)
-      buffer
-    end
-
-    # Writes an address as the signed long Win32API passes.
-    #
-    # @param address [Integer] The address, 0 to 2**32 - 1.
-    # @return [Integer] The same 32 bits as a signed number.
-    def self.signed(address)
-      address >= 2**31 ? address - 2**32 : address
     end
   end
 end
@@ -844,43 +803,38 @@ class Scene_MpBugReport < Scene_MenuBase
     @form.editing = field.key
     @form.edit = MGQ_MpUi::TextEdit.new(@form[field.key], :max_chars => field.max_chars, :allowed => field.allowed)
     @typed_before = @form[field.key]
-    @cursor_shown = true
     MGQ_Multiplayer::Link.typing(true)
     @form_window.refresh
     say(Scene_MpWorlds::TYPING_HINT)
     MGQ_MpBugReport.log("typing into #{field.label}")
   end
 
-  # Takes what was typed and lets the editor follow the keys that move the cursor and the mouse
-  # wheel. The numpad's 0 leaves the box, as Escape does.
+  # Acts on what was typed and hands the editor the keys that move the cursor and the mouse wheel.
+  # The numpad's 0 leaves the box, as Escape does.
   def update_typing
     field = @form_window.field
-    text, _keys = MGQ_Multiplayer::Link.take_typed
-    return type(field, "\e") if MGQ_MpUi.numpad_cancel?
+    editor = @form.edit
+    taken = editor.take
+    return type(field, :escape) if MGQ_MpUi.numpad_cancel?
 
-    text.each_char do |char|
-      type(field, char)
+    taken.outcomes.each do |outcome|
+      type(field, outcome)
       # Enter or Escape may have ended the typing.
       return unless @form.editing
     end
 
-    editor = @form.edit
-    moved = editor.update_keys(field.kind == :area ? @form_window.current_area_spans(editor.text) : nil)
-    moved = @form_window.scroll_area_by_wheel(editor) || moved
+    editor.follow(true, @form_window.wheel_lines)
     @form[field.key] = editor.text
-    return unless moved || editor.cursor_shown? != @cursor_shown
-
-    @cursor_shown = editor.cursor_shown?
-    @form_window.redraw_current_item
+    @form_window.redraw_current_item if taken.changed
   end
 
-  # Types one character at the cursor: Enter keeps the text if it is accepted, Escape puts the text
-  # back as it was.
+  # Acts on what typing did: Enter keeps the text if it is accepted, Escape puts the text back as it
+  # was.
   #
   # @param field [MGQ_MpWorld::Form::Field] The box.
-  # @param char [String] The character.
-  def type(field, char)
-    case @form.edit.type(char)
+  # @param outcome [Symbol] What typing did, see MGQ_MpUi::TextEdit::Taken.
+  def type(field, outcome)
+    case outcome
     when :enter
       text, error = @form.check(field, @form.edit.text)
       if error
@@ -899,7 +853,7 @@ class Scene_MpBugReport < Scene_MenuBase
       return stop_typing
     when :refused
       Sound.play_buzzer
-    when :edited
+    when :typed, :erased
       Sound.play_cursor
     end
     @form[field.key] = @form.edit.text
@@ -909,6 +863,7 @@ class Scene_MpBugReport < Scene_MenuBase
   # Stops typing and hands the cursor back to the form.
   def stop_typing
     MGQ_Multiplayer::Link.typing(false)
+    @form.edit.close if @form.edit
     @form.editing = nil
     @form.edit = nil
     @form_window.refresh

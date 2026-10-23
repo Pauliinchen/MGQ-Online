@@ -2,6 +2,7 @@
 #  ui_leader_hud_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Kept the HUD in the corner through Player.ini, the drag gone to C#
 #      Paulinchen  2026-10-13: Expected the single player row from ui_single_player.rbx, not from the HUD
 #                            - Checked the HUD outside a world by its single player setting
 #      Paulinchen  2026-10-12: Checked the Small HUD at the screen edges and a refused size hotkey while typing
@@ -317,18 +318,12 @@ MGQ_MpUi.top_room = 0
 # Dragged into the bottom right corner in the Small size, the HUD stays on the screen in either size;
 # the preset's frame is thinner than at the start, when the layout learned the HUD's least size.
 hud.resize("Small")
-box.update
-$down = [layout::ALT_KEY, layout::LEFT_BUTTON]
-$mouse = [box.x + 10, box.y + 10]
-layout.tick
-$mouse = [2000, 2000]
-layout.tick
-$down = []
-layout.tick
-box.update
 small_height = box_class.height(small)
-check("the Small size dragged into the bottom right corner stays there, kept in Player.ini",
-      [offered.call, $player_ini["ui_leader_hud"]], [[640 - 170, 480 - small_height, 170, small_height], "470,#{480 - small_height},170,#{small_height}"])
+# A drag into the bottom right corner, which C# keeps (LayoutModel), leaves a place there.
+$player_ini["ui_leader_hud"] = "2000,2000,170,#{small_height}"
+layout.instance_variable_get(:@stored).clear
+box.update
+check("the Small size kept past the bottom right corner stays there, wholly on the screen", offered.call, [640 - 170, 480 - small_height, 170, small_height])
 hud.resize("Large")
 box.update
 check("the Large size from there stays wholly on the screen", offered.call, [640 - 240, 480 - large_height, 240, large_height])

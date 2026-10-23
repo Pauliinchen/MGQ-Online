@@ -8,7 +8,8 @@
 #                            - Loaded world_gates.rbx after world_difficulty.rbx
 #                            - Loaded ui_mod_browser.rbx after ui_bug_report.rbx and named the mp_mod_browser_* exports
 #                            - Stopped loading the removed battles_pvp_lobby.rbx
-#      Paulinchen  2026-10-23: Dropped mp_world_say, mp_world_receive and mp_world_status, since the world room goes through the bridge
+#      Paulinchen  2026-10-23: Dropped Link.take_typed and mp_take_typed, since the text box in C# takes what is typed
+#                            - Dropped mp_world_say, mp_world_receive and mp_world_status, since the world room goes through the bridge
 #                            - Told the bridge's frame
 #                            - Read and wrote Player.ini and the other ini files through the DLL, which keeps the player key
 #                            - Dropped mp_new_id and mp_set_player
@@ -697,7 +698,6 @@ module MGQ_Multiplayer
 
       # The keyboard, the clipboard and the mouse wheel.
       'mp_typing' => 'l',
-      'mp_take_typed' => READ_ARGUMENTS,
       'mp_copy_code' => 'v',
       'mp_copy_text' => 'p',
       'mp_mouse_wheel' => 'v',
@@ -869,18 +869,6 @@ module MGQ_Multiplayer
       Log.write(on ? "keyboard typing on" : "keyboard typing off") if on != $mgq_text_input
       $mgq_text_input = on
       function('mp_typing').call(on ? 1 : 0)
-    end
-
-    # Takes what the player typed since the last call.
-    #
-    # @return [Array] The typed characters, Enter, Backspace and Escape among them as "\r", "\b"
-    #   and "\e"; and how many keys went down.
-    def self.take_typed
-      text = read('mp_take_typed', 1024)
-      return ["", 0] if text.empty?
-
-      state = parse(text)
-      [state[:payload], state["keys"].to_i]
     end
 
     # Stops hosting or joining, closes the link, forgets what arrived, and turns down a waiting invite

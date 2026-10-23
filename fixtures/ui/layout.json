@@ -1,0 +1,783 @@
+{
+  "screen": [
+    640,
+    480
+  ],
+  "steps": [
+    {
+      "register": [
+        "test_box",
+        "Test box",
+        200,
+        100,
+        "both"
+      ],
+      "stored": null
+    },
+    {
+      "rect": [
+        "test_box",
+        20,
+        30,
+        300,
+        120
+      ],
+      "result": [
+        20,
+        30,
+        300,
+        120
+      ]
+    },
+    {
+      "rect": [
+        "test_box",
+        600,
+        -50,
+        100,
+        50
+      ],
+      "result": [
+        440,
+        0,
+        200,
+        100
+      ]
+    },
+    {
+      "offer": [
+        "test_box",
+        20,
+        30,
+        300,
+        120,
+        5
+      ]
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": true,
+        "mouse": [
+          50,
+          60
+        ]
+      },
+      "result": {
+        "kept": {
+        },
+        "forgot": [
+
+        ],
+        "dragging": true
+      }
+    },
+    {
+      "rect": [
+        "test_box",
+        20,
+        30,
+        300,
+        120
+      ],
+      "result": [
+        20,
+        30,
+        300,
+        120
+      ]
+    },
+    {
+      "offer": [
+        "test_box",
+        20,
+        30,
+        300,
+        120,
+        5
+      ]
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": true,
+        "mouse": [
+          100,
+          80
+        ]
+      },
+      "result": {
+        "kept": {
+        },
+        "forgot": [
+
+        ],
+        "dragging": true
+      }
+    },
+    {
+      "rect": [
+        "test_box",
+        20,
+        30,
+        300,
+        120
+      ],
+      "result": [
+        70,
+        50,
+        300,
+        120
+      ]
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": false,
+        "mouse": [
+          100,
+          80
+        ]
+      },
+      "result": {
+        "kept": {
+          "ui_test_box": "70,50,300,120"
+        },
+        "forgot": [
+
+        ],
+        "dragging": false
+      }
+    },
+    {
+      "rect": [
+        "test_box",
+        20,
+        30,
+        300,
+        120
+      ],
+      "result": [
+        70,
+        50,
+        300,
+        120
+      ]
+    },
+    {
+      "offer": [
+        "test_box",
+        70,
+        50,
+        300,
+        120,
+        5
+      ]
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": true,
+        "mouse": [
+          367,
+          167
+        ]
+      },
+      "result": {
+        "kept": {
+        },
+        "forgot": [
+
+        ],
+        "dragging": true
+      }
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": true,
+        "mouse": [
+          200,
+          100
+        ]
+      },
+      "result": {
+        "kept": {
+        },
+        "forgot": [
+
+        ],
+        "dragging": true
+      }
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": false,
+        "mouse": [
+          200,
+          100
+        ]
+      },
+      "result": {
+        "kept": {
+          "ui_test_box": "70,50,200,100"
+        },
+        "forgot": [
+
+        ],
+        "dragging": false
+      }
+    },
+    {
+      "rect": [
+        "test_box",
+        20,
+        30,
+        300,
+        120
+      ],
+      "result": [
+        70,
+        50,
+        200,
+        100
+      ]
+    },
+    {
+      "offer": [
+        "test_box",
+        70,
+        50,
+        200,
+        100,
+        5
+      ]
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": true,
+        "mouse": [
+          72,
+          60
+        ]
+      },
+      "result": {
+        "kept": {
+        },
+        "forgot": [
+
+        ],
+        "dragging": true
+      }
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": true,
+        "mouse": [
+          20,
+          60
+        ]
+      },
+      "result": {
+        "kept": {
+        },
+        "forgot": [
+
+        ],
+        "dragging": true
+      }
+    },
+    {
+      "rect": [
+        "test_box",
+        20,
+        30,
+        300,
+        120
+      ],
+      "result": [
+        18,
+        50,
+        252,
+        100
+      ]
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": true,
+        "mouse": [
+          -40,
+          60
+        ]
+      },
+      "result": {
+        "kept": {
+        },
+        "forgot": [
+
+        ],
+        "dragging": true
+      }
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": false,
+        "mouse": [
+          -40,
+          60
+        ]
+      },
+      "result": {
+        "kept": {
+          "ui_test_box": "0,50,270,100"
+        },
+        "forgot": [
+
+        ],
+        "dragging": false
+      }
+    },
+    {
+      "rect": [
+        "test_box",
+        20,
+        30,
+        300,
+        120
+      ],
+      "result": [
+        0,
+        50,
+        270,
+        100
+      ]
+    },
+    {
+      "register": [
+        "wide_box",
+        "Wide box",
+        150,
+        40,
+        "width"
+      ],
+      "stored": null
+    },
+    {
+      "rect": [
+        "wide_box",
+        10,
+        10,
+        200,
+        40
+      ],
+      "result": [
+        10,
+        10,
+        200,
+        40
+      ]
+    },
+    {
+      "offer": [
+        "wide_box",
+        10,
+        10,
+        200,
+        40,
+        9
+      ]
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": true,
+        "mouse": [
+          100,
+          11
+        ]
+      },
+      "result": {
+        "kept": {
+        },
+        "forgot": [
+
+        ],
+        "dragging": true
+      }
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": true,
+        "mouse": [
+          100,
+          51
+        ]
+      },
+      "result": {
+        "kept": {
+        },
+        "forgot": [
+
+        ],
+        "dragging": true
+      }
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": false,
+        "mouse": [
+          100,
+          51
+        ]
+      },
+      "result": {
+        "kept": {
+          "ui_wide_box": "10,50,200,40"
+        },
+        "forgot": [
+
+        ],
+        "dragging": false
+      }
+    },
+    {
+      "rect": [
+        "wide_box",
+        10,
+        10,
+        200,
+        40
+      ],
+      "result": [
+        10,
+        50,
+        200,
+        40
+      ]
+    },
+    {
+      "rect": [
+        "wide_box",
+        10,
+        10,
+        200,
+        64
+      ],
+      "result": [
+        10,
+        50,
+        200,
+        64
+      ]
+    },
+    {
+      "offer": [
+        "test_box",
+        0,
+        50,
+        270,
+        100,
+        5
+      ]
+    },
+    {
+      "offer": [
+        "wide_box",
+        10,
+        50,
+        200,
+        64,
+        9
+      ]
+    },
+    {
+      "tick": {
+        "alt": false,
+        "held": true,
+        "mouse": [
+          100,
+          60
+        ]
+      },
+      "result": {
+        "kept": {
+        },
+        "forgot": [
+
+        ],
+        "dragging": false
+      }
+    },
+    {
+      "tick": {
+        "alt": false,
+        "held": false,
+        "mouse": [
+          100,
+          60
+        ]
+      },
+      "result": {
+        "kept": {
+        },
+        "forgot": [
+
+        ],
+        "dragging": false
+      }
+    },
+    {
+      "offer": [
+        "test_box",
+        0,
+        50,
+        270,
+        100,
+        5
+      ]
+    },
+    {
+      "offer": [
+        "wide_box",
+        10,
+        50,
+        200,
+        64,
+        9
+      ]
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": true,
+        "mouse": [
+          100,
+          60
+        ]
+      },
+      "result": {
+        "kept": {
+        },
+        "forgot": [
+
+        ],
+        "dragging": true
+      }
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": false,
+        "mouse": [
+          100,
+          60
+        ]
+      },
+      "result": {
+        "kept": {
+        },
+        "forgot": [
+
+        ],
+        "dragging": false
+      }
+    },
+    {
+      "rect": [
+        "wide_box",
+        10,
+        10,
+        200,
+        64
+      ],
+      "result": [
+        10,
+        50,
+        200,
+        64
+      ]
+    },
+    {
+      "offer": [
+        "test_box",
+        0,
+        50,
+        270,
+        100,
+        5
+      ]
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": true,
+        "mouse": [
+          150,
+          120
+        ]
+      },
+      "result": {
+        "kept": {
+        },
+        "forgot": [
+
+        ],
+        "dragging": true
+      }
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": false,
+        "mouse": [
+          150,
+          120
+        ]
+      },
+      "result": {
+        "kept": {
+        },
+        "forgot": [
+
+        ],
+        "dragging": false
+      }
+    },
+    {
+      "offer": [
+        "test_box",
+        0,
+        50,
+        270,
+        100,
+        5
+      ]
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": true,
+        "mouse": [
+          152,
+          122
+        ]
+      },
+      "result": {
+        "kept": {
+        },
+        "forgot": [
+          "ui_test_box"
+        ],
+        "dragging": false
+      }
+    },
+    {
+      "tick": {
+        "alt": true,
+        "held": false,
+        "mouse": [
+          152,
+          122
+        ]
+      },
+      "result": {
+        "kept": {
+        },
+        "forgot": [
+
+        ],
+        "dragging": false
+      }
+    },
+    {
+      "rect": [
+        "test_box",
+        20,
+        30,
+        300,
+        120
+      ],
+      "result": [
+        20,
+        30,
+        300,
+        120
+      ]
+    },
+    {
+      "reset": "wide_box"
+    },
+    {
+      "rect": [
+        "wide_box",
+        10,
+        10,
+        200,
+        64
+      ],
+      "result": [
+        10,
+        10,
+        200,
+        64
+      ]
+    },
+    {
+      "register": [
+        "broken_box",
+        "Broken box",
+        10,
+        10,
+        "both"
+      ],
+      "stored": "1,2,three,4"
+    },
+    {
+      "rect": [
+        "broken_box",
+        20,
+        30,
+        300,
+        120
+      ],
+      "result": [
+        20,
+        30,
+        300,
+        120
+      ]
+    },
+    {
+      "register": [
+        "kept_box",
+        "Kept box",
+        50,
+        50,
+        "none"
+      ],
+      "stored": " 100, -20 ,10,10"
+    },
+    {
+      "rect": [
+        "kept_box",
+        5,
+        5,
+        80,
+        60
+      ],
+      "result": [
+        100,
+        0,
+        80,
+        60
+      ]
+    }
+  ]
+}

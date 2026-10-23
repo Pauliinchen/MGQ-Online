@@ -2,7 +2,9 @@
 #  bug_report_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Told a report being sent here
+#      Paulinchen  2026-10-23: Handed the screenshot to C# by the Bitmap's address, the walk to its pixels gone there
+#                            - Typed through the stand-in text box
+#                            - Told a report being sent here
 #                            - Stood in for handing the log's lines over
 #                            - Answered the rules the DLL owns through the bridge from the golden cases
 #      Paulinchen  2026-10-22: Stood in for the update message
@@ -17,7 +19,7 @@
 
 # Covers the in-game bug report, ui_bug_report.rbx: the hotkey and the wheel's choice, the
 # screenshot, when the form opens, the refusals, the facts and details, the form and its typing,
-# sending and the outcome. The DLL answers from $results and $state, the game's memory from $memory.
+# sending and the outcome. The DLL answers from $results and $state.
 
 require_relative "support"
 require_relative "rules_support"
@@ -82,8 +84,8 @@ class FakeBitmap
   def dispose; @disposed = true; end
   def disposed?; @disposed == true; end
 end
-# Stands in for the game's graphics; each snapshot is kept in $bitmaps and laid out in $memory, and
-# fails while $snap_fails holds.
+# Stands in for the game's graphics; each snapshot is kept in $bitmaps, and fails while $snap_fails
+# holds.
 module Graphics
   def self.width; 640; end
   def self.height; 480; end
@@ -91,27 +93,8 @@ module Graphics
     raise "no screen" if $snap_fails
 
     $bitmaps << FakeBitmap.new(4, 2)
-    lay_out($bitmaps.last)
     $bitmaps.last
   end
-end
-
-# The game's memory as RtlMoveMemory reads it: bytes by their address.
-$memory = {}
-
-# Where the pixels of the last bitmap laid out lie.
-PIXELS_AT = 0x3000
-
-# Lays a bitmap's pointers and pixels into the memory, as RGSS3 keeps them.
-#
-# @param bitmap [FakeBitmap] The bitmap.
-# @return [String] Its pixels.
-def lay_out(bitmap)
-  data, info = 0x1000, 0x2000
-  $memory[bitmap.object_id * 2 + 16] = [data].pack("L")
-  $memory[data + 8] = [info].pack("L")
-  $memory[info + 16] = [PIXELS_AT].pack("L")
-  $memory[PIXELS_AT] = (0...bitmap.width * bitmap.height * 4).map { |byte| (byte % 256).chr }.join
 end
 
 # A Windows function, recording its name in $windows; RtlMoveMemory copies from $memory.
@@ -180,8 +163,6 @@ module MGQ_Multiplayer
     def self.read(name, _size); name == "mp_report_state" ? $state.dup : ""; end
     def self.player_id; "0123abcd"; end
     def self.typing(on); $typing_on = on; end
-    # Hands out $typed once.
-    def self.take_typed; text = $typed; $typed = ""; [text, text.size]; end
     # Reads a message into its header fields, its body under :payload.
     def self.parse(text)
       head, payload = text.split("\n\n", 2)
@@ -335,28 +316,23 @@ $game_player = kept_player
 check("facts are lines of a label and a value, on one line, cut to the relay's lengths",
       report.lines([["A" * 40, "x\ty\nz"], ["Long", "v" * 200]], report::MAX_VALUE_CHARS), "#{'A' * 32}\tx y z\nLong\t#{'v' * 120}")
 
+# The screenshot goes to C#, which walks to its pixels (GameBridge.Snap, ScreenshotWalk): here a
+# FakeBridge keeps each Bitmap's address and size in $calls and keeps it unless $results says 0.
+snap_fake = FakeBridge.new
+snap_fake.answer(report::Screenshot::TOPIC) { |request| $calls << [report::Screenshot::TOPIC, request]; $results[report::Screenshot::TOPIC] != 0 }
+MGQ_Multiplayer::Bridge.open(snap_fake)
+
 # The hotkey on the map: the screenshot at the press, then the form from the map's update.
 reset
 $pressed = 0x72
 frame
-snap = $calls.find { |name, _| name == "mp_report_snap" }
-check("the hotkey hands the screen's pixels to the DLL, read through the bitmap's pointers, with its size",
-      snap && [snap[1][0] == $memory[PIXELS_AT], snap[1][0].bytesize, snap[1][1], snap[1][2]], [true, 32, 4, 2])
+snap = $calls.find { |name, _| name == report::Screenshot::TOPIC }
+check("the hotkey hands C# the screen's bitmap by its address, with its size", snap && snap[1], [$bitmaps.last.object_id * 2, 4, 2])
 check("and disposes the screen's bitmap", $bitmaps.last.disposed?, true)
 check("and the form opened on the free map", $called, [Scene_MpBugReport])
 opening = report.take_opening
 check("with the screenshot, the facts and the details", [opening[:snapped], opening[:facts].last, opening[:details].first],
       [true, ["Where", "Scene_Map, map 154"], ["Player", "Player A (0123abcd)"]])
-
-# The pixels, now that the memory holds them for the next bitmap.
-reset
-SceneManager.scene = Scene_Map.new
-bitmap = FakeBitmap.new(4, 2)
-pixels = lay_out(bitmap)
-check("the pixels are copied whole from where the pointers lead", report::Screenshot.pixels_of(bitmap), pixels)
-check("an address past 2**31 goes to Win32API as a signed long", [report::Screenshot.signed(0x80000000), report::Screenshot.signed(5)], [-0x80000000, 5])
-$memory.delete(bitmap.object_id * 2 + 16)
-check("an empty pointer fails instead of reading from nowhere", (report::Screenshot.pixels_of(bitmap) rescue :failed), :failed)
 
 # In a menu the form opens at once.
 reset
@@ -374,7 +350,7 @@ SceneManager.scene = Scene_Battle.new
 $pressed = 0x72
 frame
 check("in a battle the screenshot is taken at the press, the chat says the form opens after it",
-      [$calls.map(&:first), $chat, $called], [["mp_report_snap"], [report::BATTLE_TEXT], []])
+      [$calls.map(&:first), $chat, $called], [[report::Screenshot::TOPIC], [report::BATTLE_TEXT], []])
 $pressed = 0x72
 frame
 check("a second press while one waits is refused in the chat", $chat.last, report::WAITING_REFUSAL)
@@ -510,7 +486,7 @@ check("the screenshot waits for the wheel to fade out", $calls, [])
 (report.wheel_frames - 1).times { frame }
 check("still none a frame before it is gone", [$calls, $called], [[], []])
 frame
-check("then it is taken and the form opens", [$calls.map(&:first), $called], [["mp_report_snap"], [Scene_MpBugReport]])
+check("then it is taken and the form opens", [$calls.map(&:first), $called], [[report::Screenshot::TOPIC], [Scene_MpBugReport]])
 reset
 
 # A screenshot that fails leaves the report without one.
@@ -520,12 +496,12 @@ $pressed = 0x72
 frame
 check("a screenshot that fails opens the form without one", [$called, report.take_opening[:snapped]], [[Scene_MpBugReport], false])
 $snap_fails = false
-$results["mp_report_snap"] = 0
+$results[report::Screenshot::TOPIC] = 0
 SceneManager.scene = Scene_Menu.new
 $pressed = 0x72
 frame
 check("as does one the DLL did not keep", [report.take_opening[:snapped], $bitmaps.last.disposed?], [false, true])
-$results.delete("mp_report_snap")
+$results.delete(report::Screenshot::TOPIC)
 reset
 
 # The form.
@@ -601,8 +577,8 @@ check("without a name nothing is sent", report.send_report(done, "T", "X", true,
 $share = true
 reset
 
-# Stands in for the form's window, counting redraws; the wheel scrolls once after wheel_scrolls is
-# set.
+# Stands in for the form's window, counting redraws; the wheel scrolls a line once after
+# wheel_scrolls is set.
 class FakeForm
   attr_accessor :index, :active
   attr_reader :form, :redrawn
@@ -612,10 +588,11 @@ class FakeForm
   def activate; @active = true; end
   def refresh; end
   def redraw_current_item; @redrawn += 1; end
-  def current_area_spans(_text); [[0, 0]]; end
-  def scroll_area_by_wheel(_editor); scrolls = @wheel_scrolls == true; @wheel_scrolls = false; scrolls; end
+  def wheel_lines; scrolls = @wheel_scrolls == true; @wheel_scrolls = false; scrolls ? 1 : 0; end
   attr_writer :wheel_scrolls
 end
+# The text box types what $typed holds.
+_fake, fake_ui, _edit = open_fake_ui { text = $typed.to_s; $typed = ""; [text, text.size] }
 # Stands in for the lines above the form, keeping the lines shown.
 class FakeInfo
   attr_reader :lines
@@ -640,6 +617,7 @@ window = scene.instance_variable_get(:@form_window)
 info = scene.instance_variable_get(:@info_window)
 form = scene.instance_variable_get(:@form)
 scene.update
+ui_frame
 check("the lines above the form say who sees what, then the field's hint", info.lines, [report::HELP, report::TITLE_HINT])
 # The form window deactivates itself before it calls on_field, as the game's windows do.
 window.active = false
@@ -648,29 +626,39 @@ check("confirm on the title types into it in place", [$typing_on, form.editing, 
 $typed = "Formation stays shut\r"
 $held = [:C]
 scene.update
+ui_frame
+scene.update
 check("Enter keeps what was typed and stops the typing", [form[:title], form.editing, $typing_on], ["Formation stays shut", nil, false])
 scene.update
+ui_frame
 check("the form waits until the press that ended the typing is let go", window.active, false)
 $held = []
 scene.update
+ui_frame
 check("then takes the cursor again", window.active, true)
 scene.on_field
 $typed = "xx\e"
+scene.update
+ui_frame
 scene.update
 check("Escape puts the text back as it was", [form[:title], form.editing], ["Formation stays shut", nil])
 scene.on_field
 $typed = "yy"
 scene.update
-redrawn = window.redrawn
+ui_frame
 window.wheel_scrolls = true
 scene.update
-check("the wheel scrolling the box being typed into draws it anew", window.redrawn - redrawn, 1)
+ui_frame
+check("the wheel turned over the box being typed into scrolls it", fake_ui.ticks.last[MGQ_MpUi::TextEdit::MODEL][3], 1)
 $numpad = true
 scene.update
+ui_frame
 $numpad = false
 check("the numpad's 0 leaves the box as Escape does", [form[:title], form.editing], ["Formation stays shut", nil])
 scene.on_field
 $typed = "#{'z' * 120}\r"
+scene.update
+ui_frame
 scene.update
 check("the title takes 100 characters at most", form[:title].size, 100)
 form[:title] = "Formation stays shut"
@@ -696,12 +684,14 @@ scene = new_screen
 window = scene.instance_variable_get(:@form_window)
 $buttons = [:B]
 scene.update
+ui_frame
 scene.terminate
 check("cancel leaves the form and drops the screenshot", [$returned, $calls.map(&:first)], [returned + 1, ["mp_report_drop_snap"]])
 reset
 scene = new_screen
 $numpad = true
 scene.update
+ui_frame
 $numpad = false
 check("as does the numpad's 0", $returned, returned + 2)
 reset

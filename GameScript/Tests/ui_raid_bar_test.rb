@@ -2,7 +2,8 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Stood in for the ids coop.rbx makes up
+#      Paulinchen  2026-10-23: Placed the strip through the stand-in of the layout in C#
+#                            - Stood in for the ids coop.rbx makes up
 #                            - Showed the HUD over the map's sprites
 #      Paulinchen  2026-10-17: Checked the bars above the bosses' stand-ins of frozen fights
 #      Paulinchen  2026-10-13: Checked the bars of the raid bosses outside Raid Worlds and turning them off
@@ -298,6 +299,10 @@ load_script "battles_raid_tiers"
 REAL_TIERS = MGQ_MpRaidBosses::TIERS.dup
 MGQ_MpRaidBosses::TIERS.replace(REAL_TIERS.keys.each_with_object({}) { |tier, tiers| tiers[tier] = { :mhp => 7.5 } })
 load_script "ui_raid_bar"
+
+# The bridge to the fake models of the interface, which place the boxes in the layout.
+require_relative "bridge_support"
+open_fake_ui { ["", 0] }
 SceneManager.run
 
 bar = MGQ_MpRaidBar

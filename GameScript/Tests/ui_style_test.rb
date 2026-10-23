@@ -1,9 +1,15 @@
-#----------------------------------------------------------------
+﻿#----------------------------------------------------------------
 #  ui_style_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Checked a font named in bytes
 #      Paulinchen  2026-10-24: Checked that the confirm box opens on the title screen, where the game counts no frames
 #                            - Checked that the window color set in the options holds for every save
+#      Paulinchen  2026-10-23: Offered the confirm box to the layout before reading its place
+#                            - Checked the confirm box through the stand-in of C#
+#                            - Checked the text box that mirrors C#
+#                            - Checked cutting and breaking texts in C#
+#                            - Checked the tick of the interface models
 #      Paulinchen  2026-10-12: Checked the scrollbars and the list windows' wheel
 #      Paulinchen  2026-10-11: Checked the list, message and confirm boxes in the layout
 #                            - Checked that an outlined text is drawn without the font's own outline
@@ -157,6 +163,7 @@ $scene = Scene_Base.new
 
 load_script "core_hotkeys"
 load_script "ui"
+load_script "ui_text_box"
 load_script "ui_theme"
 load_script "ui_layout"
 
@@ -262,11 +269,18 @@ check("anyone else is plain text, whatever their id", [colors.of(peer), colors.o
       [style::TEXT, style::TEXT, style::TEXT, "plain", false])
 check("nobody reads as plain text, without raising", [colors.of(""), colors.of(Object.new), colors.of(nil), colors.label("")], [style::TEXT, style::TEXT, style::TEXT, "plain"])
 
-# The confirm box.
+# The confirm box: C# reads its keys and keeps its pick (ConfirmModel), here a FakeConfirm.
+require_relative "bridge_support"
+open_fake_ui { ["", 0] }
 confirm = MGQ_MpUi::Confirm
+# Ticks the box after a scene's update, then ends the frame, whose drain brings its event.
+confirm_tick = lambda do
+  confirm.tick
+  ui_frame
+end
 capture = MGQ_Multiplayer::Capture
 
-# Opens a box with the frame moved on, so its keys read.
+# Opens a box and ends the frame it opened in, which reads no key, so its keys read.
 #
 # @param confirm [Module] The confirm box.
 # @return [Array<Boolean>] Where the answers land.
@@ -276,6 +290,8 @@ def ask_box(confirm)
   $sounds.clear
   answers = []
   confirm.ask("Leave the party?", ["Leave", "Stay"]) { |yes| answers << yes }
+  confirm.tick
+  ui_frame
   $frame += 1
   answers
 end
@@ -295,87 +311,87 @@ check("a second ask while one is open is refused and logged", [confirm.ask("Agai
 
 # The guards: nothing reads in the frame of ask, nor while the player types.
 $buttons << :B
-confirm.tick
-check("a tick in the frame of ask reads no key", [confirm.open?, sprite.disposed?, $buttons], [true, false, [:B]])
+confirm_tick.call
+check("a tick in the frame of ask answers nothing", [confirm.open?, sprite.disposed?], [true, false])
 $frame += 1
 $buttons = []
 $mgq_text_input = true
 $keys_down = [0x4E]
-confirm.tick
+confirm_tick.call
 check("nor while the player types into a text box", [confirm.open?, sprite.disposed?], [true, false])
 $mgq_text_input = nil
 
 # An answer takes two ticks: the first reads it, the second hands it over.
-confirm.tick
+confirm_tick.call
 check("the decline key answers: the cancel sound plays and the box is gone, but the box is still open and holds the buttons",
       [$sounds.last, sprite.disposed?, confirm.open?, capture.on?, answers], ["cancel", true, true, true, []])
 check("a second ask between the two ticks is refused", confirm.ask("Again?", ["Yes", "No"]), false)
 $buttons = [:B]
-confirm.tick
+confirm_tick.call
 check("the next tick reads no key, gives the buttons back and calls the block once with no", [$buttons, confirm.open?, capture.on?, answers], [[:B], false, false, [false]])
 $buttons = []
 
 answers = ask_box(confirm)
 $keys_down = [0x59]
-confirm.tick
-confirm.tick
+confirm_tick.call
+confirm_tick.call
 check("the accept key answers yes with the ok sound", [answers, $sounds.last], [[true], "ok"])
 answers = ask_box(confirm)
 $buttons << :B
-confirm.tick
-confirm.tick
+confirm_tick.call
+confirm_tick.call
 check("cancel answers no", [answers, $sounds.last], [[false], "cancel"])
 answers = ask_box(confirm)
 $keys_down = [0x60]
-confirm.tick
-confirm.tick
+confirm_tick.call
+confirm_tick.call
 check("the numpad's 0 answers no", [answers, $sounds.last], [[false], "cancel"])
 answers = ask_box(confirm)
 $buttons << :RIGHT
-confirm.tick
+confirm_tick.call
 moved = confirm.instance_variable_get(:@sprite)
 check("right moves the pick to yes with the cursor sound, drawn on its plate at the left", [$sounds.last, moved.bitmap.fills.last[0]], ["cursor", style::PAD])
 $buttons << :C
-confirm.tick
-confirm.tick
+confirm_tick.call
+confirm_tick.call
 check("confirm then answers yes", [answers, $sounds.last], [[true], "ok"])
 answers = ask_box(confirm)
 $buttons << :C
-confirm.tick
-confirm.tick
+confirm_tick.call
+confirm_tick.call
 check("confirm alone answers no, which is picked first", [answers, $sounds.last], [[false], "cancel"])
 
 # A close from outside and a scene change answer no in the next tick.
 answers = ask_box(confirm)
 confirm.close("test")
 check("close takes the box off the screen at once", [confirm.instance_variable_get(:@sprite), confirm.open?, $log.last], [nil, true, "ui: confirm box answered Stay (test): Leave the party?"])
-confirm.tick
-confirm.tick
+confirm_tick.call
+confirm_tick.call
 check("and the block gets no once in the next tick, without a sound", [answers, $sounds], [[false], []])
 answers = ask_box(confirm)
 $scene = Scene_Base.new
-confirm.tick
+confirm_tick.call
 check("a scene change answers no", [confirm.instance_variable_get(:@sprite), $log.last], [nil, "ui: confirm box answered Stay (the scene changed): Leave the party?"])
-confirm.tick
+confirm_tick.call
 check("in the next tick", [answers, confirm.open?], [[false], false])
 answers = ask_box(confirm)
 $mgq_text_input = true
 $scene = Scene_Base.new
-confirm.tick
-confirm.tick
+confirm_tick.call
+confirm_tick.call
 $mgq_text_input = nil
 check("a scene change answers no while the player types too", [answers, confirm.open?], [[false], false])
 
 # A tick that fails answers no, so the box never holds the buttons for good.
 answers = ask_box(confirm)
-reading = confirm.method(:read_keys)
-confirm.define_singleton_method(:read_keys) { raise "boom" }
-confirm.tick
-confirm.define_singleton_method(:read_keys, reading)
+reading = confirm.method(:put_keys)
+confirm.define_singleton_method(:put_keys) { raise "boom" }
+confirm_tick.call
+confirm.define_singleton_method(:put_keys, reading)
 check("a tick that fails is logged, takes the box off the screen and keeps no",
       [$log.last, confirm.instance_variable_get(:@sprite), confirm.open?, confirm.instance_variable_get(:@answer)],
       ["ui: confirm box tick failed: RuntimeError: boom", nil, true, [false, "the tick failed"]])
-confirm.tick
+confirm_tick.call
 check("which the next tick hands over, giving the buttons back", [answers, confirm.open?, capture.on?], [[false], false, false])
 
 # The hook after every scene's update.
@@ -386,7 +402,9 @@ check("the box ticks after every scene's update, the boxes follow the layout aft
 answers = ask_box(confirm)
 $keys_down = [0x59]
 $scene.update
+ui_frame
 $scene.update
+ui_frame
 check("so a scene's update answers it", answers, [true])
 
 # A scene that starts while the box is open: a start may wait in a loop of its own before any
@@ -516,6 +534,7 @@ check("a freed message box no longer follows the layout", Sprite_MpMessageBox.bo
 place.call(:confirm_box, "10,20,500,0")
 answers = ask_box(confirm)
 sprite = confirm.instance_variable_get(:@sprite)
+Sprite_MpConfirmBox.follow_layouts
 check("a confirm box kept in Player.ini takes its width and place, its no choice on its plate at the right",
       [[sprite.x, sprite.y, sprite.bitmap.width], sprite.bitmap.fills.select { |f| f[4] == style::PICKED }.map { |f| f[0, 3] }, offered.call(:confirm_box)],
       [[10, 20, 500], [[500 / 2 + style::PAD, 6 + 24 + 6, 500 / 2 - 2 * style::PAD]], [10, 20, 500, sprite.bitmap.height]])
@@ -641,3 +660,174 @@ $game_system = GameSystem.new({ :tone_r => -34, :tone_g => 0, :tone_b => 68 }, T
 MGQ_MpUi::Theme.restore_window_color("the save loaded")
 check("another save shows the kept color", [$game_system.conf.values_at(:tone_r, :tone_g, :tone_b), $game_system.window_tone.to_a.first(3)], [[10, -20, 30], [10, -20, 30]])
 $game_system = nil
+
+# The frame's tick to the interface's models in C#: one staged entry a frame with every model's
+# input, none in a quiet frame, and the sounds the models' events name.
+require_relative "bridge_support"
+tick = MGQ_MpUi::Tick
+fake = FakeBridge.new
+fake.answer(tick::TOPIC) { |_request| nil }
+MGQ_Multiplayer::Bridge.open(fake)
+# The ticks the frames sent, each as the batch carried it.
+sent_ticks = lambda do
+  fake.calls.select { |topic, _| topic == MGQ_Multiplayer::Bridge::BATCH }.map { |_, bytes| Marshal.load(bytes) }
+end
+tick.send_frame
+MGQ_Multiplayer::Bridge.frame
+check("a frame in which no model put input stages nothing", sent_ticks.call, [])
+tick.put("layout", [1, 2])
+tick.put("wheel", 3)
+tick.put("wheel", 4)
+tick.send_frame
+MGQ_Multiplayer::Bridge.frame
+check("the inputs put in a frame go over as one tick in that frame's batch, a second put replacing the first",
+      sent_ticks.call, [[[tick::TOPIC, { "layout" => [1, 2], "wheel" => 4 }]]])
+tick.send_frame
+MGQ_Multiplayer::Bridge.frame
+check("and are forgotten once sent", sent_ticks.call.size, 1)
+tick.collect { raise "broken" }
+tick.collect { tick.put("confirm", 5) }
+$log.clear
+2.times do
+  tick.send_frame
+  MGQ_Multiplayer::Bridge.frame
+end
+check("a collector puts its input just before the tick goes, one that fails is logged once and the others still put",
+      [sent_ticks.call.last(2), $log], [[[[tick::TOPIC, { "confirm" => 5 }]]] * 2, ["ui: a tick collector FAILED: RuntimeError: broken"]])
+$sounds.clear
+tick.play("cues" => ["ok", "buzzer", "nothing"])
+tick.play("other" => 1)
+check("the cues of an event play their sounds in order, one the game lacks and an event without cues play none", $sounds, ["ok", "buzzer"])
+capture = MGQ_Multiplayer::Capture
+{ :trigger? => [:C], :repeat? => [:LEFT], :press? => [:UP, :LEFT] }.each do |method, held|
+  capture.define_singleton_method(method) { |button| held.include?(button) }
+end
+MGQ_Multiplayer::Key.define_singleton_method(:frame) { $frame }
+$frame = 40
+check("the buttons read in three groups: went down, went down or repeat, held", tick.buttons, 1 | (1 << 10) | (1 << 14) | (1 << 16))
+capture.define_singleton_method(:trigger?) { |_button| true }
+check("once a frame", tick.buttons, 1 | (1 << 10) | (1 << 14) | (1 << 16))
+MGQ_Multiplayer::Bridge.close
+
+# Cutting and breaking texts in C#: each font measured once, the widths handed over with the first
+# text and new characters with the texts that bring them; a font whose widths do not add up, and
+# every font while the bridge is closed, measured here.
+glyphs = MGQ_MpUi::Glyphs
+text_fake = FakeBridge.new
+asked = []
+text_fake.answer(glyphs::TOPIC) { |request| asked << [glyphs::TOPIC, request]; nil }
+text_fake.answer(glyphs::CUT) { |request| asked << [glyphs::CUT, request]; "cut by C#" }
+text_fake.answer(glyphs::WRAP) { |request| asked << [glyphs::WRAP, request]; ["wrapped", "by C#"] }
+text_fake.answer(glyphs::SPANS) { |request| asked << [glyphs::SPANS, request]; [[0, 2]] }
+MGQ_Multiplayer::Bridge.open(text_fake)
+measure = Bitmap.new(10, 10)
+measure.font.size = 16
+check("cut answers what C# cut", MGQ_MpUi.cut(measure, "Alice the Monster Lord", 60, " (2)"), "cut by C#")
+define = asked[0][1]
+check("the font's first text defines it by its size and boldness, with the width of every printable ASCII character",
+      [asked[0][0], define["key"], define["size"], define["bold"], define["widths"].keys.minmax, define["widths"].size, define["widths"].values.uniq], [glyphs::TOPIC, 1, 16, false, [32, 126], 95, [8]])
+check("then asks for the cut with nothing new to measure", asked[1], [glyphs::CUT, [1, 60, "Alice the Monster Lord", " (2)", nil]])
+asked.clear
+check("wrap answers C#'s lines", MGQ_MpUi.wrap(measure, "日本 b", 40), ["wrapped", "by C#"])
+check("handing over the characters C# lacks, measured once", asked, [[glyphs::WRAP, [1, 40, "日本 b", { 26085 => 8, 26412 => 8 }]]])
+asked.clear
+MGQ_MpUi.wrap(measure, "日本", 40)
+check("and never again", asked, [[glyphs::WRAP, [1, 40, "日本", nil]]])
+asked.clear
+check("spans of a box that counts characters ask in the font of cells", [MGQ_MpUi.spans(nil, "abc", 2), asked], [[[0, 2]], [[glyphs::SPANS, [glyphs::CELLS, 2, "abc", nil]]]])
+asked.clear
+bold = Bitmap.new(10, 10)
+bold.font.size = 16
+bold.font.bold = true
+MGQ_MpUi.cut(bold, "Luka", 50)
+check("another font is a key of its own", [asked.size, asked[0][1]["key"], asked[0][1]["bold"], asked[1][1][0]], [2, 2, true, 2])
+asked.clear
+# A picture whose texts measure a pixel wider than their characters, as a font with kerning would.
+class KernedBitmap < Bitmap
+  # Measures a text of several characters a pixel wider than its characters.
+  #
+  # @param text [String] The text.
+  # @return [Rect] Its size.
+  def text_size(text)
+    size = super
+    size.width += 1 if text.to_s.size > 1
+    size
+  end
+end
+kerned = KernedBitmap.new(10, 10)
+$log.clear
+check("a font that fails the sum check is cut here, logged once, and defined in C# for the text boxes alone",
+      [MGQ_MpUi.cut(kerned, "Alice the Monster Lord", 60), MGQ_MpUi.cut(kerned, "Luka", 50), asked.map(&:first), $log.size, glyphs.font_key(kerned)],
+      [MGQ_MpUi.cut_measured(kerned, "Alice the Monster Lord", 60), "Luka", [glyphs::TOPIC], 1, 3])
+asked.clear
+binary = "Luka".force_encoding("ASCII-8BIT")
+check("a text that is no UTF-8 is measured here", [MGQ_MpUi.cut(measure, binary, 50), asked], ["Luka", []])
+glyphs.measure_wanted("key" => 1, "points" => [0x3042])
+MGQ_Multiplayer::Bridge.frame
+batch = text_fake.calls.select { |topic, _| topic == MGQ_Multiplayer::Bridge::BATCH }.map { |_, bytes| Marshal.load(bytes) }.last
+check("characters a model asks for are measured in its font and staged for the frame's batch", batch, [[glyphs::TOPIC, { "key" => 1, "widths" => { 0x3042 => 8 } }]])
+asked.clear
+MGQ_MpUi.wrap(measure, "あ", 40)
+check("and are known from then on", asked, [[glyphs::WRAP, [1, 40, "あ", nil]]])
+MGQ_Multiplayer::Bridge.close
+check("while the bridge is closed every text is measured here", [MGQ_MpUi.cut(measure, "Alice the Monster Lord", 60), MGQ_MpUi.spans(nil, "ab cd", 3)],
+      [MGQ_MpUi.cut_measured(measure, "Alice the Monster Lord", 60), [[0, 3], [3, 2]]])
+
+# The text box being typed into: C# keeps the text, the box mirrors it from its events, hands over
+# the frame's keys and draws what C# says it shows.
+edit_fake = FakeBridge.new
+edit_ui = FakeUi.new(edit_fake)
+opened = []
+views = []
+closed = []
+edit_inputs = []
+edit = MGQ_MpUi::TextEdit
+edit_fake.answer(MGQ_MpUi::Glyphs::TOPIC) { |_request| nil }
+edit_fake.answer(edit::OPEN) { |request| opened << request; 7 }
+edit_fake.answer(edit::CLOSE) { |id| closed << id; nil }
+edit_fake.answer(edit::SET) { |_request| nil }
+edit_fake.answer(edit::TYPE) { |_request| { "outcomes" => ["typed", "refused"], "text" => "hellox", "cursor" => 6 } }
+edit_fake.answer(edit::VIEW) { |request| views << request; { "id" => 7, "text" => "hello", "cursor" => 4, "shown" => true, "view" => { "line" => [1, 3, 14] } } }
+edit_ui.model(edit::MODEL) { |input| edit_inputs << input }
+MGQ_Multiplayer::Bridge.open(edit_fake)
+editor = edit.new("hello", :max_chars => 8, :allowed => /\A[a-z]\z/i, :mask => "*")
+check("a box opens in C# with its text and its options", opened, [{ "text" => "hello", "max_chars" => 8, "allowed" => ["\\A[a-z]\\z", true], "mask" => "*" }])
+ui_frame
+check("and takes what is typed from the frame it opened in, without keys", edit_inputs, [[7, -1, 1, 0, 0]])
+{ :repeat? => [:LEFT], :trigger? => [], :press? => [] }.each do |method, held|
+  MGQ_Multiplayer::Capture.define_singleton_method(method) { |button| held.include?(button) }
+end
+$keys_down = [MGQ_MpUi::TextEdit::HOME_KEY]
+editor.follow(true, 2)
+ui_frame
+$keys_down = []
+check("follow hands over the frame's keys, left and Home, and the lines to scroll", edit_inputs.last, [7, 1 | 16, 1, 2, 0])
+edit_fake.post(edit::EVENT, "id" => 7, "text" => "hi", "cursor" => 1, "shown" => false, "view" => nil, "outcomes" => ["typed", "enter"], "keys" => 2, "chars" => 3)
+edit_fake.post(edit::EVENT, "id" => 9, "text" => "other", "cursor" => 0, "shown" => true, "view" => nil, "outcomes" => ["escape"], "keys" => 1, "chars" => 1)
+MGQ_Multiplayer::Bridge.frame
+taken = editor.take
+check("its event mirrors the text and the cursor, another box's is left out, and take hands out what typing did once",
+      [editor.text, editor.cursor, editor.cursor_shown?, taken.outcomes, taken.keys, taken.chars, taken.changed, editor.take.outcomes], ["hi", 1, false, [:typed, :enter], 2, 3, true, []])
+editor.edit("hello", 99)
+MGQ_Multiplayer::Bridge.frame
+sets = edit_fake.calls.select { |topic, _| topic == MGQ_Multiplayer::Bridge::BATCH }.map { |_, bytes| Marshal.load(bytes) }.last
+check("edit changes the text at once, the cursor kept inside it, and in C# with the frame's batch",
+      [editor.text, editor.cursor, sets], ["hello", 5, [[edit::SET, { "id" => 7, "text" => "hello", "cursor" => 5 }]]])
+check("the game's letters type at once", [editor.type_now("x!"), editor.text, editor.cursor], [[:typed, :refused], "hellox", 6])
+bitmap = Bitmap.new(200, 24)
+MGQ_MpUi::TextBox.draw_line(bitmap, Rect.new(10, 0, 100, 24), editor, "******")
+check("drawn on one line, it tells C# where once, as wide as its text may run",
+      views.map { |view| [view["id"], view["width"], view["rows"]] }, [[7, 100 - MGQ_MpUi::TextBox::CURSOR_WIDTH, 0]])
+check("and draws the part C# picked of what it shows, with the cursor where C# puts it",
+      [bitmap.texts.map { |text| [text[0], text[2]] }, bitmap.fills.map { |fill| fill[0, 3] }], [[[10, "***"]], [[10 + 14, MGQ_MpUi::TextBox::CURSOR_INSET, MGQ_MpUi::TextBox::CURSOR_WIDTH]]])
+MGQ_MpUi::TextBox.draw_line(bitmap, Rect.new(10, 0, 100, 24), editor, "******")
+check("drawn again where it was, it asks C# nothing", views.size, 1)
+editor.close
+edit_fake.post(edit::EVENT, "id" => 7, "text" => "late", "cursor" => 4, "shown" => true, "view" => nil, "outcomes" => ["typed"], "keys" => 1, "chars" => 1)
+MGQ_Multiplayer::Bridge.frame
+check("closing it closes it in C#, and an event that comes later is left out", [closed, editor.text, editor.take.outcomes], [[7], "hello", []])
+MGQ_Multiplayer::Bridge.close
+
+bytes = "VL Gothic".dup.force_encoding("ASCII-8BIT")
+odd = [0xFF].pack("C") + "Gothic"
+check("a font the game names in bytes is defined by its name as text, an odd byte as a question mark", [MGQ_MpUi::Glyphs.text_of(bytes), MGQ_MpUi::Glyphs.text_of(odd)], ["VL Gothic", "?Gothic"])

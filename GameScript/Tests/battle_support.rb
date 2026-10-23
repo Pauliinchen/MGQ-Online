@@ -2,7 +2,8 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Answered the rules' topics through the bridge, such as the squad math
+#      Paulinchen  2026-10-23: Opened the stand-in of the interface's models, which places the boxes
+#                            - Answered the rules' topics through the bridge, such as the squad math
 #                            - Stood in for the confirm box
 #                            - Stood in for the world's grace
 #                            - Stood in for finding a player by id and following presence
@@ -451,6 +452,9 @@ load_script "battles"
 load_script "battles_raid_bosses"
 load_script "battles_coop"
 load_script "battles_coop_hotjoin"
+
+# The fake models of the interface on the same bridge, which place the boxes in the layout.
+open_fake_ui { ["", 0] }
 %w[battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live].each { |name| load_script name }
 SceneManager.run
 MGQ_MpBattlesCoop.install

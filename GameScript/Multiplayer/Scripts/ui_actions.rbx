@@ -2,7 +2,8 @@
 #  ui_actions.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Kept the own line and the action wheel off the live map behind menus
+#      Paulinchen  2026-10-23: Left the action wheel's rules to C#, taking a choice in the frame after confirm
+#                            - Kept the own line and the action wheel off the live map behind menus
 #      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #                            - Read the map's viewports and character sprites through MGQ_MpGame
 #      Paulinchen  2026-10-11: Framed the wheel's boxes in the preset's colors
@@ -339,12 +340,14 @@ module MGQ_MpActions
   end
 
   # Opens, steers or closes the action wheel on the map, but leaves the keys to a screen that lies
-  # over it, such as the chat box. Called by the map every frame, so a press of the key is seen once.
+  # over it, such as the chat box, and takes the choice the wheel reported confirmed. Called by the
+  # map every frame, so a press of the key is seen once.
   def self.on_map
+    Wheel.take_pending
     wheel_key = MGQ_MpHotkeys.pressed?(:wheel)
     unless MGQ_MpOverworldSync.in_world? && MGQ_MpOverworldSync.map_quiet?
       MGQ_MpHotkeys.log_refusal(:wheel, MGQ_MpOverworldSync.in_world? ? 'an event runs or a message shows' : 'no world is open') if wheel_key
-      Wheel.close("an event started or a message shows")
+      Wheel.follow("an event started or a message shows", false)
       return
     end
     if @covers.any? { |open| open.call(wheel_key) }
@@ -352,29 +355,32 @@ module MGQ_MpActions
       return
     end
 
-    if Wheel.open?
-      Wheel.update(wheel_key)
-    elsif wheel_key
-      Wheel.open
-    end
+    Wheel.follow(true, wheel_key)
   rescue => e
     log("action wheel failed: #{e.class}: #{e.message}")
     Wheel.close("it failed")
   end
 
   # The action wheel: a ring of choices around the player and one over them, taken with the game's
-  # confirm button. It opens on the middle; the arrows held point at a choice, like a joystick, which
-  # stays picked once they are let go, and a direction without a choice picks the middle again. It
-  # holds the buttons while open, so the player stands still and the game's menu stays shut.
+  # confirm button, whose rules C# keeps (WheelModel "wheel"). It opens on the middle; the arrows
+  # held point at a choice, like a joystick, which stays picked once they are let go, and a
+  # direction without a choice picks the middle again. It holds the buttons while open, so the
+  # player stands still and the game's menu stays shut.
   module Wheel
     # The choice over the player.
     CENTER = :CENTER
+
+    # The wheel's name in the tick and its events.
+    NAME = "wheel"
 
     # Whether the wheel is open.
     @open = false
 
     # The direction whose choice is picked.
     @selected = CENTER
+
+    # The direction confirm took and the frame it did in, nil while none waits.
+    @take = nil
 
     # Reports whether the wheel is open.
     #
@@ -390,14 +396,42 @@ module MGQ_MpActions
       @selected
     end
 
-    # Opens the wheel on its middle choice.
-    def self.open
-      @selected = CENTER
-      @open = true
-      MGQ_MpWheel.reset
-      MGQ_Multiplayer::Capture.start(:wheel)
-      MGQ_MpActions.log("action wheel opened: #{choices_text}")
-      Sound.play_cursor
+    # Hands the wheel its frame: while the map leaves it free its hotkey and, while open, its
+    # buttons; else, while open, why it closes.
+    #
+    # @param free [Boolean, String] true, or why the wheel may not show.
+    # @param key [Boolean] Whether its hotkey went down.
+    def self.follow(free, key)
+      return unless @open || (free == true && key)
+
+      MGQ_MpWheel.put(NAME, free, key, MGQ_MpActions.wheel_places.size, @open)
+    end
+
+    # Takes the wheel's event: opened, closed, the pick moved or a choice taken.
+    #
+    # @param event [Hash] The event, see WheelModel.EventTopic.
+    def self.take_event(event)
+      was = @open
+      @open = event["open"] == true
+      @selected = MGQ_MpWheel.direction_of(event["selected"], CENTER) || CENTER
+      MGQ_MpUi::Tick.play(event)
+      if @open && !was
+        MGQ_Multiplayer::Capture.start(:wheel)
+        MGQ_MpActions.log("action wheel opened: #{choices_text}")
+      elsif was && !@open
+        MGQ_Multiplayer::Capture.stop(:wheel)
+        MGQ_MpActions.log("action wheel closed: #{event['reason']}")
+      end
+      @take = [@selected, MGQ_Multiplayer::Key.frame] if event.key?("take")
+    end
+
+    # Takes the choice confirm picked in the frame before, closing the wheel once it was taken.
+    def self.take_pending
+      direction, frame = @take
+      @take = nil
+      return unless direction && @open && frame >= MGQ_Multiplayer::Key.frame - 1
+
+      MGQ_MpActions.choose(MGQ_MpActions.wheel_options[direction]) { close("took the #{direction} choice") }
     end
 
     # Lists the wheel's choices for the log, those that cannot be taken marked.
@@ -411,7 +445,7 @@ module MGQ_MpActions
       "unreadable (#{e.class})"
     end
 
-    # Closes the wheel, if it is open, and gives the buttons back.
+    # Closes the wheel, if it is open, and gives the buttons back, here and in C#.
     #
     # @param reason [String, nil] Why, for the log.
     def self.close(reason = nil)
@@ -419,27 +453,8 @@ module MGQ_MpActions
 
       @open = false
       MGQ_Multiplayer::Capture.stop(:wheel)
+      MGQ_Multiplayer::Bridge.call(MGQ_MpWheel::CLOSE, [NAME])
       MGQ_MpActions.log("action wheel closed#{reason ? ": #{reason}" : ''}")
-    end
-
-    # Picks the choice the arrows held point to, the middle for a direction without one, keeps the
-    # pick while no arrow is held, takes the picked choice on confirm, and closes on cancel or the
-    # wheel key.
-    #
-    # @param pressed [Boolean] Whether the wheel key went down this frame.
-    def self.update(pressed)
-      if pressed || MGQ_MpUi.cancel?
-        close(pressed ? "its key" : "cancel")
-        Sound.play_cancel
-        return
-      end
-
-      held = MGQ_MpWheel.steady
-      pointed = held.nil? ? @selected : MGQ_MpActions.wheel_places.include?(held) ? held : CENTER
-      Sound.play_cursor if pointed != @selected
-      @selected = pointed
-
-      MGQ_MpActions.choose(MGQ_MpActions.wheel_options[@selected]) { close("took the #{@selected} choice") } if MGQ_Multiplayer::Capture.trigger?(:C)
     end
   end
 end
@@ -689,6 +704,8 @@ begin
   # After the map's update, the action wheel. The game checks its own keys there too, only while no
   # scene change is in the way.
   MGQ_MpHooks.after(Scene_Map, :update_scene, "ui_actions") { MGQ_MpActions.on_map unless scene_changing? }
+
+  MGQ_Multiplayer::Bridge.on(MGQ_MpWheel::EVENT) { |event| MGQ_MpActions::Wheel.take_event(event) if event["wheel"] == MGQ_MpActions::Wheel::NAME }
 
   # After the map's sprites, the line above the player's head and the action wheel.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_actions") do

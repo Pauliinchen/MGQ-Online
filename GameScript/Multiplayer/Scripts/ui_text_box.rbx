@@ -2,6 +2,8 @@
 #  ui_text_box.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Kept the text being typed in C#, which takes what is typed straight from the keyboard
+#                            - Broke texts keeping each character's place in C#
 #      Paulinchen  2026-10-12: Scrolled a box of several lines with the cursor kept in sight
 #                            - Drew a scrollbar beside a box of several lines that holds more than it shows
 #      Paulinchen  2026-10-04: Split a long word into its characters the way Ruby 1.9 can count
@@ -10,16 +12,36 @@
 #
 #----------------------------------------------------------------
 
-# The text boxes of the mod, such as the chat box and the boxes of the world screen's forms: the
-# editor of a text being typed, breaking it into lines that keep each character's place, and
-# drawing a box being typed into. It builds on ui.rbx.
+# The text boxes of the mod, such as the chat box, the boxes of the world screen's forms and the
+# text screen: the text being typed, kept by C# (EditModel in MGQOnline.Game's Ui/Text) with what is
+# typed taken straight from the DLL's keyboard, breaking a text into lines that keep each
+# character's place, and drawing a box being typed into. It builds on ui.rbx.
 module MGQ_MpUi
-  # A text being typed, as every text box of the mod edits it: the text, the cursor in it, and the
-  # keys that type, move the cursor and remove characters. Whoever owns the box feeds it what was
-  # typed, once a frame, and draws it through TextBox.
+  # A text being typed into a box: what C# keeps of it (the text, the cursor, the blinking and the
+  # part the box shows), mirrored from the box's events. One box is typed into at a time; opening
+  # one closes the one before. Its owner hands the frame's keys over with follow where it read the
+  # keys before, acts on what typing did with take a frame later, and draws it through TextBox.
   class TextEdit
-    # Frames the cursor stays shown, then hidden, while it blinks.
-    BLINK_FRAMES = 30
+    # Opens a box in C#, EditModel.OpenTopic.
+    OPEN = "ui.edit.open"
+
+    # Closes a box, EditModel.CloseTopic.
+    CLOSE = "ui.edit.close"
+
+    # Changes a box, EditModel.SetTopic.
+    SET = "ui.edit.set"
+
+    # Tells a box where it is drawn, EditModel.ViewTopic.
+    VIEW = "ui.edit.view"
+
+    # Types into a box at once, EditModel.TypeTopic.
+    TYPE = "ui.edit.type"
+
+    # The box's event, EditModel.EventTopic.
+    EVENT = "ui.edit"
+
+    # The box's name in the frame's tick.
+    MODEL = "edit"
 
     # Windows' code of the Home key, which moves the cursor to the start.
     HOME_KEY = 0x24
@@ -30,155 +52,228 @@ module MGQ_MpUi
     # Windows' code of the Delete key, which removes the character after the cursor.
     DELETE_KEY = 0x2E
 
+    # Windows' code of the left Alt, while which a box that drops Alt codes drops what is typed; the
+    # right Alt is AltGr, which types.
+    ALT_KEY = 0xA4
+
+    # The bits of the keys that type nothing, EditKeys in C#: left and right as the game's buttons
+    # that repeat while held, then Home, End and Delete from Windows.
+    ARROW_BITS = { :LEFT => 1, :RIGHT => 2 }
+
+    # The bits of up and down, which only a box of several lines reads, so a box of one line leaves
+    # them to its owner, such as the chat's list of names.
+    LINE_BITS = { :UP => 4, :DOWN => 8 }
+
+    # The bits of every arrow, which a box of several lines reads.
+    AREA_BITS = ARROW_BITS.merge(LINE_BITS)
+
+    # The bits of Home, End and Delete, by Windows' codes.
+    KEY_BITS = { HOME_KEY => 16, END_KEY => 32, DELETE_KEY => 64 }
+
+    # What typing did, as a box's event names it.
+    OUTCOMES = { "enter" => :enter, "escape" => :escape, "tab" => :tab, "typed" => :typed, "erased" => :erased, "refused" => :refused }
+
+    # What take hands out: what typing did since the last take, in order (:enter, :escape, :tab,
+    # :typed, :erased, :refused), how many keys went down and characters came, and whether the box
+    # changed.
+    Taken = Struct.new(:outcomes, :keys, :chars, :changed)
+
+    # The box open now, which takes the events.
+    @open = nil
+
     # The text.
     attr_reader :text
 
     # The characters before the cursor.
     attr_reader :cursor
 
-    # Starts editing a text, the cursor at its end.
+    # The box's id in C#, nil while the bridge is closed.
+    attr_reader :id
+
+    # Opens a box in C#, the cursor at the text's end.
     #
     # @param text [String] The text.
-    # @param options [Hash] Whichever of :max_chars, the most characters it takes, and :allowed, a pattern every typed character must match, apply.
+    # @param options [Hash] Whichever of :max_chars (the most characters it takes), :allowed (a
+    #   pattern of one character every typed character must match), :mask (the character shown for
+    #   each, such as "*"), :echo ([Windows' code of the key that opened it, frames], whose character
+    #   it leaves out once) and :alt_codes (frames after the left Alt in which typing is dropped) apply.
     def initialize(text = "", options = {})
       @text = text.to_s
-      @max_chars = options[:max_chars]
-      @allowed = options[:allowed]
       @cursor = @text.length
-      @blink = 0
-      @first = 0
-      @top = 0
+      @shown = true
+      @view = nil
+      @drawn = nil
+      @taken = Taken.new([], 0, 0, false)
+      @alt_codes = !options[:alt_codes].nil?
+      request = { "text" => @text }
+      request["max_chars"] = options[:max_chars] if options[:max_chars]
+      request["allowed"] = [options[:allowed].source, options[:allowed].casefold?] if options[:allowed]
+      { :mask => "mask", :echo => "echo", :alt_codes => "alt_codes" }.each { |option, key| request[key] = options[option] if options[option] }
+      @id = MGQ_Multiplayer::Bridge.call(OPEN, request)
+      TextEdit.open = self
+      # What is typed from now on reaches the box in this frame already.
+      follow(false)
     end
 
-    # Reports whether the blinking cursor shows this frame.
+    # Hands a box the events from now on.
+    #
+    # @param editor [TextEdit] The box opened.
+    def self.open=(editor)
+      @open = editor
+    end
+
+    # Stops handing a box the events once it closed, unless another opened since.
+    #
+    # @param editor [TextEdit] The box closed.
+    def self.release(editor)
+      @open = nil if @open.equal?(editor)
+    end
+
+    # Hands a box's event to the box open, unless it is of a box closed since.
+    #
+    # @param event [Hash] The event, see EditModel.EventTopic.
+    def self.take_event(event)
+      editor = @open
+      editor.take_event(event) if editor && editor.id == event["id"]
+    end
+
+    # Closes the box in C#, dropping what was typed and not taken.
+    def close
+      MGQ_Multiplayer::Bridge.call(CLOSE, @id) if @id
+      TextEdit.release(self)
+    end
+
+    # Reports whether the blinking cursor shows.
     #
     # @return [Boolean] Whether it does.
     def cursor_shown?
-      (@blink / BLINK_FRAMES).even?
+      @shown
     end
 
-    # Types one character at the cursor. Backspace removes the character before it.
+    # Hands C# the box's input of this frame, where its owner reads the keys: what was typed
+    # (taken straight from the keyboard), and the keys that type nothing unless the owner keeps
+    # them, such as while Alt picks the chat's tabs.
     #
-    # @param char [String] The character, "\r" for Enter, "\e" for Escape, "\b" for Backspace.
-    # @return [Symbol, nil] :enter or :escape, which the owner acts on, :edited when the text changed, :refused for a character the box does not take, nil when nothing happened.
-    def type(char)
-      case char
-      when "\r" then :enter
-      when "\e" then :escape
-      when "\b" then @cursor > 0 ? edit(@text[0, @cursor - 1] + @text[@cursor..-1], @cursor - 1) : nil
-      else
-        return nil if char =~ /[[:cntrl:]]/
-        return :refused if (@max_chars && @text.length >= @max_chars) || (@allowed && char !~ @allowed)
+    # @param keys [Boolean] Whether the arrows, Home, End and Delete reach the box.
+    # @param scroll [Integer] Lines to scroll a box of several lines, such as by the mouse wheel.
+    def follow(keys = true, scroll = 0)
+      return unless @id
 
-        edit(@text[0, @cursor] + char + @text[@cursor..-1], @cursor + 1)
-      end
+      held = @alt_codes && MGQ_Multiplayer::Key.down?(ALT_KEY) ? 1 : 0
+      Tick.put(MODEL, [@id, keys ? key_bits : -1, 1, scroll.to_i, held])
     end
 
-    # Follows a frame's keys that type nothing: left and right move the cursor, Home and End put
-    # it at the start or the end, Delete removes the character after it, and in a box of several
-    # lines up and down move it a line. The cursor blinks, and shows at once after anything moved
-    # it.
+    # Takes what typing did since the last take.
     #
-    # @param spans [Array<Array<Integer>>, nil] The lines of a box of several lines, see MGQ_MpUi.wrap_spans; nil for a box of one line.
-    # @return [Boolean] Whether the text or the cursor changed.
-    def update_keys(spans = nil)
-      @blink += 1
-      before = [@text, @cursor]
-      keys = MGQ_Multiplayer::Key
-      capture = MGQ_Multiplayer::Capture
-      move_to(@cursor - 1) if capture.repeat?(:LEFT)
-      move_to(@cursor + 1) if capture.repeat?(:RIGHT)
-      move_line(spans, (capture.repeat?(:DOWN) ? 1 : 0) - (capture.repeat?(:UP) ? 1 : 0)) if spans
-      move_to(0) if keys.pressed?(HOME_KEY)
-      move_to(@text.length) if keys.pressed?(END_KEY)
-      edit(@text[0, @cursor] + @text[@cursor + 1..-1].to_s, @cursor) if keys.pressed?(DELETE_KEY) && @cursor < @text.length
-      before != [@text, @cursor]
+    # @return [Taken] What typing did, the keys and characters that came, and whether the box changed.
+    def take
+      taken = @taken
+      @taken = Taken.new([], 0, 0, false)
+      taken
     end
 
-    # Changes the text and puts the cursor where it goes.
-    #
-    # The text is always a new string, never changed in place, so whoever draws it sees it changed.
+    # Replaces the text and puts the cursor at once, as the owner sees it, and in C# with the
+    # frame's batch, before what is typed next.
     #
     # @param text [String] The new text.
     # @param cursor [Integer] The cursor's new place.
-    # @return [Symbol] :edited.
     def edit(text, cursor)
-      @text = text
-      move_to(cursor)
-      :edited
-    end
-
-    # Moves the cursor, within the text, and shows it at once.
-    #
-    # @param cursor [Integer] The place.
-    def move_to(cursor)
+      @text = text.to_s
       @cursor = [[cursor, 0].max, @text.length].min
-      @blink = 0
+      @shown = true
+      MGQ_Multiplayer::Bridge.stage(SET, "id" => @id, "text" => @text, "cursor" => @cursor) if @id
     end
 
-    # Moves the cursor of a box of several lines a line up or down, as far into that line as it is
-    # into its own. It stays where it is at the first and the last line.
+    # Locks the box, which then takes no typing but Escape, or unlocks it.
     #
-    # @param spans [Array<Array<Integer>>] The lines, see MGQ_MpUi.wrap_spans.
-    # @param step [Integer] 1 for the line below, -1 for the one above, 0 for neither.
-    def move_line(spans, step)
-      line = MGQ_MpUi.span_of(spans, @cursor)
-      target = spans[line + step]
-      return if step == 0 || target.nil? || line + step < 0
-
-      # The place after the last character of a line that is not the last is the next line's
-      # start.
-      last = [target[1] - (line + step < spans.size - 1 ? 1 : 0), 0].max
-      move_to(target[0] + [@cursor - spans[line][0], last].min)
+    # @param locked [Boolean] Whether it is locked.
+    def lock(locked)
+      MGQ_Multiplayer::Bridge.stage(SET, "id" => @id, "locked" => locked) if @id
     end
 
-    # Picks the part of the text a box of one line shows: as much as fits, moved only as far as the
-    # cursor needs to stay in sight.
+    # Leaves out the character of a key once more, which arrives a frame or two after the key.
     #
-    # @param measure [Bitmap, Window_Base] What measures a text with the font the box draws in.
-    # @param width [Integer] The width of the box.
-    # @param display [String] What the box shows for the text, as long as it, such as stars for a password.
-    # @return [Array] The part shown, and the characters of it before the cursor.
-    def visible(measure, width, display = @text)
-      @first = @cursor if @cursor < @first
-      @first += 1 while @first < @cursor && measure.text_size(display[@first...@cursor]).width > width
-      last = display.length
-      last -= 1 while last > @cursor && measure.text_size(display[@first...last]).width > width
-      [display[@first...last], @cursor - @first]
+    # @param key [Integer] Windows' code of the key.
+    # @param frames [Integer] The frames its character may come in.
+    def echo(key, frames)
+      MGQ_Multiplayer::Bridge.stage(SET, "id" => @id, "echo" => [key, frames]) if @id
     end
 
-    # Picks the first line a box of several lines shows: moved only as far as the cursor's line
-    # needs to stay in sight.
+    # Types characters at once, for the game's letters a gamepad picks.
     #
-    # @param spans [Array<Array<Integer>>] The lines, see MGQ_MpUi.wrap_spans.
-    # @param rows [Integer] The lines the box shows at once.
-    # @return [Integer] The first line shown.
-    def first_line(spans, rows)
-      line = MGQ_MpUi.span_of(spans, @cursor)
-      @top = [[@top, line].min, line - rows + 1].max
+    # @param chars [String] The characters, "\b" for Backspace.
+    # @return [Array<Symbol>] What typing did, see Taken; none while the bridge is closed.
+    def type_now(chars)
+      answer = @id ? MGQ_Multiplayer::Bridge.call(TYPE, "id" => @id, "text" => chars.to_s) : nil
+      return [] unless answer
+
+      @text = answer["text"]
+      @cursor = answer["cursor"]
+      answer["outcomes"].map { |outcome| OUTCOMES[outcome] }.compact
     end
 
-    # Scrolls a box of several lines, within its lines, and moves the cursor along onto the nearest
-    # line in sight once it left them, as far into that line as it is into its own.
+    # Tells what the box shows where it is drawn, telling C# first when that changed.
     #
-    # @param spans [Array<Array<Integer>>] The lines, see MGQ_MpUi.wrap_spans.
-    # @param rows [Integer] The lines the box shows at once.
-    # @param step [Integer] Lines to scroll down, a negative number to scroll up.
-    # @return [Boolean] Whether it scrolled.
-    def scroll_lines(spans, rows, step)
-      top = [[first_line(spans, rows) + step, spans.size - rows].min, 0].max
-      return false if top == @top
+    # @param bitmap [Bitmap] The picture drawn on, in the font the box draws in.
+    # @param width [Integer] The width its text may take.
+    # @param rows [Integer] The lines a box of several lines shows, 0 for a box of one line.
+    # @return [Hash, nil] {"line" => [first, count, cursor x]} or {"area" => [spans, first line,
+    #   cursor's line, cursor x]}; nil while the bridge is closed or the font is measured here.
+    def view_for(bitmap, width, rows)
+      font = Glyphs.font_key(bitmap)
+      drawn = [font, width, rows]
+      return @view if drawn == @drawn
+      return nil unless @id && font
 
-      @top = top
-      line = MGQ_MpUi.span_of(spans, @cursor)
-      move_line(spans, [[line, top].max, top + rows - 1].min - line)
-      true
+      state = MGQ_Multiplayer::Bridge.call(VIEW, "id" => @id, "font" => font, "width" => width, "rows" => rows)
+      return nil unless state
+
+      apply(state)
+      @drawn = drawn
+      @view
+    end
+
+    # Takes the box's event: the text, the cursor and what the box shows, and what typing did.
+    #
+    # @param event [Hash] The event, see EditModel.EventTopic.
+    def take_event(event)
+      apply(event)
+      taken = @taken
+      Array(event["outcomes"]).each { |outcome| taken.outcomes << OUTCOMES[outcome] if OUTCOMES[outcome] }
+      taken.keys += event["keys"].to_i
+      taken.chars += event["chars"].to_i
+      taken.changed = true
+    end
+
+    # Reads the frame's keys that type nothing.
+    #
+    # @return [Integer] The bits, see ARROW_BITS, AREA_BITS and KEY_BITS.
+    def key_bits
+      capture = MGQ_Multiplayer::Capture
+      keys = MGQ_Multiplayer::Key
+      bits = 0
+      arrows = @drawn && @drawn[2] > 0 ? AREA_BITS : ARROW_BITS
+      arrows.each { |button, bit| bits |= bit if capture.repeat?(button) }
+      KEY_BITS.each { |code, bit| bits |= bit if keys.pressed?(code) }
+      bits
+    end
+
+    private
+
+    # Takes the box's state from C#.
+    #
+    # @param state [Hash] "text", "cursor", "shown" and "view".
+    def apply(state)
+      @text = state["text"]
+      @cursor = state["cursor"]
+      @shown = state["shown"]
+      @view = state["view"] if state["view"]
     end
   end
 
-  # Draws a text box being typed into: the text around the cursor, and the cursor, in the font and
-  # the color the picture is set to. Whoever owns the box draws its background, and what it shows
-  # while nobody types into it.
+  # Draws a text box being typed into: the part of the text C# picked around the cursor, and the
+  # cursor, in the font and the color the picture is set to. Whoever owns the box draws its
+  # background, and what it shows while nobody types into it.
   module TextBox
     # Width of the cursor.
     CURSOR_WIDTH = 2
@@ -196,11 +291,13 @@ module MGQ_MpUi
     # @param editor [TextEdit] The box's editor.
     # @param display [String] What the box shows for the text, as long as it, such as stars for a password.
     def self.draw_line(bitmap, rect, editor, display = editor.text)
-      shown, before = editor.visible(bitmap, rect.width - CURSOR_WIDTH, display)
-      bitmap.draw_text(rect.x, rect.y, rect.width, rect.height, shown)
-      return unless editor.cursor_shown?
+      view = editor.view_for(bitmap, rect.width - CURSOR_WIDTH, 0)
+      line = view && view["line"]
+      return bitmap.draw_text(rect.x, rect.y, rect.width, rect.height, display) unless line
 
-      draw_cursor(bitmap, rect.x + bitmap.text_size(shown[0, before]).width, rect.y + CURSOR_INSET, rect.height - CURSOR_INSET * 2)
+      first, count, x = line
+      bitmap.draw_text(rect.x, rect.y, rect.width, rect.height, display[first, count].to_s)
+      draw_cursor(bitmap, rect.x + x, rect.y + CURSOR_INSET, rect.height - CURSOR_INSET * 2) if editor.cursor_shown?
     end
 
     # Draws a box of several lines, and a scrollbar right of the text while it has more lines than
@@ -209,20 +306,18 @@ module MGQ_MpUi
     # @param bitmap [Bitmap] The picture drawn on.
     # @param rect [Rect] Where the text goes.
     # @param editor [TextEdit] The box's editor.
-    # @param spans [Array<Array<Integer>>] The text's lines, see MGQ_MpUi.wrap_spans.
     # @param line_height [Integer] The height of one line.
-    def self.draw_area(bitmap, rect, editor, spans, line_height)
+    def self.draw_area(bitmap, rect, editor, line_height)
       rows = rect.height / line_height
-      top = editor.first_line(spans, rows)
-      cursor_line = MGQ_MpUi.span_of(spans, editor.cursor)
+      view = editor.view_for(bitmap, rect.width, rows)
+      area = view && view["area"]
+      return bitmap.draw_text(rect.x, rect.y, rect.width, line_height, editor.text) unless area
 
+      spans, top, cursor_line, x = area
       spans[top, rows].each_with_index do |(start, length), row|
         y = rect.y + row * line_height
-        bitmap.draw_text(rect.x, y, rect.width, line_height, editor.text[start, length])
-        next unless top + row == cursor_line && editor.cursor_shown?
-
-        before = bitmap.text_size(editor.text[start, editor.cursor - start]).width
-        draw_cursor(bitmap, rect.x + before, y + LINE_CURSOR_INSET, line_height - LINE_CURSOR_INSET * 2)
+        bitmap.draw_text(rect.x, y, rect.width, line_height, editor.text[start, length].to_s)
+        draw_cursor(bitmap, rect.x + x, y + LINE_CURSOR_INSET, line_height - LINE_CURSOR_INSET * 2) if top + row == cursor_line && editor.cursor_shown?
       end
       Style.draw_scrollbar(bitmap, rect.x + rect.width, rect.y, rows * line_height, top, rows, spans.size)
     end
@@ -238,9 +333,26 @@ module MGQ_MpUi
     end
   end
 
+  # Breaks a text into lines that keep every character's place, as wrap_spans does: in C# by the
+  # characters' widths (see MGQ_MpUi::Glyphs), else, while the bridge is closed or for a font whose
+  # widths do not add up, measuring here.
+  #
+  # @param measure [Bitmap, Window_Base, nil] What measures a text with the font the lines are drawn
+  #   in, nil for a box that counts characters, each one cell wide.
+  # @param text [String] The text.
+  # @param width [Integer] The width in pixels, or in characters without a measure.
+  # @return [Array<Array<Integer>>] Each line's first character and length, one empty line for an empty text.
+  def self.spans(measure, text, width)
+    text = text.to_s
+    spans = Glyphs.ask(Glyphs::SPANS, measure, text) { |key| [key, width, text] }
+    return spans if spans.is_a?(Array)
+
+    measure ? wrap_spans(text, width) { |part| measure.text_size(part).width } : wrap_spans(text, width) { |part| part.length }
+  end
+
   # Breaks a text into lines that fit a width without changing a character of it, so a place in
   # the text is a place in a line: each line is a stretch of the text, broken before a word, and
-  # inside a word longer than the width.
+  # inside a word longer than the width, measuring each part with a block.
   #
   # @param text [String] The text.
   # @param width [Integer] The width in pixels.
@@ -288,4 +400,12 @@ module MGQ_MpUi
     line = spans.rindex { |start, _length| start <= place }
     line || 0
   end
+end
+
+# What the box being typed into reports, through the bridge.
+
+begin
+  MGQ_Multiplayer::Bridge.on(MGQ_MpUi::TextEdit::EVENT) { |event| MGQ_MpUi::TextEdit.take_event(event) }
+rescue => e
+  MGQ_MpUi.log("text box: registering FAILED: #{e.class}: #{e.message}")
 end

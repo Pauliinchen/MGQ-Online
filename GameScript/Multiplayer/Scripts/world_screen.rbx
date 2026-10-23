@@ -2,7 +2,8 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Asked the DLL for the default squad rules
+#      Paulinchen  2026-10-23: Typed into the forms and the mod picker through the text box in C#
+#                            - Asked the DLL for the default squad rules
 #                            - Dropped the restart by hand under Wine or Proton, where the game starts itself again now
 #      Paulinchen  2026-10-22: Opened the world the cursor is on, whose mods the list then carries, and read them before entering or editing it
 #      Paulinchen  2026-10-14: Named a Raid World's starting save in its details in every build
@@ -1307,57 +1308,52 @@ class Scene_MpWorlds < Scene_MenuBase
     return unless form
 
     form.editing = field.key
-    form.edit = MGQ_MpUi::TextEdit.new(form[field.key], :max_chars => field.max_chars, :allowed => field.allowed)
+    form.edit = MGQ_MpUi::TextEdit.new(form[field.key], :max_chars => field.max_chars, :allowed => field.allowed, :mask => field.kind == :password ? "*" : nil)
     @typed_before = form[field.key]
     @typing_frames = 0
-    @cursor_shown = true
     MGQ_Multiplayer::Link.typing(true)
     @form_window.refresh
     say(NUMBER_KINDS.include?(field.kind) ? NUMBER_TYPING_HINT : TYPING_HINT)
   end
 
-  # Takes what was typed into the text box and lets its editor follow the keys that move the
-  # cursor and the mouse wheel, or moves the typing to the text screen, whose letters a gamepad
-  # can pick, once a button is pressed that did not come from the keyboard.
+  # Acts on what was typed into the text box and hands its editor the keys that move the cursor
+  # and the mouse wheel, or moves the typing to the text screen, whose letters a gamepad can pick,
+  # once a button is pressed that did not come from the keyboard.
   def update_typing
     field = @form_window.field
-    text, keys = MGQ_Multiplayer::Link.take_typed
+    editor = form.edit
+    taken = editor.take
     @typing_frames += 1
 
     # The press that started the typing is still reported in its first frame.
-    if keys == 0 && text.empty? && @typing_frames > 1 && MGQ_MpWorld.gamepad_pressed?
+    if taken.keys == 0 && taken.chars == 0 && @typing_frames > 1 && MGQ_MpWorld.gamepad_pressed?
       stop_typing
       return ask_field(field, true)
     end
 
     # The numpad's 0 cancels everywhere else in the game, so it leaves the box instead of typing a
     # 0, unless the box takes only digits.
-    return type(field, "\e") if !NUMBER_KINDS.include?(field.kind) && MGQ_MpUi.numpad_cancel?
+    return type(field, :escape) if !NUMBER_KINDS.include?(field.kind) && MGQ_MpUi.numpad_cancel?
 
-    text.each_char do |char|
-      type(field, char)
+    taken.outcomes.each do |outcome|
+      type(field, outcome)
       # Enter may have sent the form, which leaves it.
       return unless form && form.editing
     end
 
-    editor = form.edit
-    moved = editor.update_keys(field.kind == :area ? @form_window.current_area_spans(editor.text) : nil)
-    moved = @form_window.scroll_area_by_wheel(editor) || moved
+    editor.follow(true, @form_window.wheel_lines)
     form[field.key] = editor.text
     # The blinking cursor is drawn again as it shows and hides.
-    return unless moved || editor.cursor_shown? != @cursor_shown
-
-    @cursor_shown = editor.cursor_shown?
-    @form_window.redraw_current_item
+    @form_window.redraw_current_item if taken.changed
   end
 
-  # Types one character into the text box at its cursor: Enter keeps the text if it is valid,
-  # Escape puts the text back as it was.
+  # Acts on what typing did in the text box: Enter keeps the text if it is valid, Escape puts the
+  # text back as it was.
   #
   # @param field [MGQ_MpWorld::Form::Field] The text box.
-  # @param char [String] The character.
-  def type(field, char)
-    case form.edit.type(char)
+  # @param outcome [Symbol] What typing did, see MGQ_MpUi::TextEdit::Taken.
+  def type(field, outcome)
+    case outcome
     when :enter
       text, error = form.check(field, form.edit.text)
       if error
@@ -1375,7 +1371,7 @@ class Scene_MpWorlds < Scene_MenuBase
       return stop_typing
     when :refused
       Sound.play_buzzer
-    when :edited
+    when :typed, :erased
       Sound.play_cursor
     end
     form[field.key] = form.edit.text
@@ -1400,6 +1396,7 @@ class Scene_MpWorlds < Scene_MenuBase
     MGQ_Multiplayer::Link.typing(false)
     return unless form
 
+    form.edit.close if form.edit
     form.editing = nil
     form.edit = nil
     @form_window.refresh
@@ -1613,16 +1610,17 @@ class Scene_MpWorlds < Scene_MenuBase
     ask_text(:mod_name, "The mod's name", "", :max_chars => MGQ_MpWorld::MAX_MODS_CHARS, :letters => letters)
   end
 
-  # Takes what was typed into the name's text box: Enter adds the mod, Escape or the numpad's 0 goes
-  # back to the picker, and a button that did not come from the keyboard moves the typing to the
-  # text screen, whose letters a gamepad can pick.
+  # Acts on what was typed into the name's text box: Enter adds the mod, Escape or the numpad's 0
+  # goes back to the picker, and a button that did not come from the keyboard moves the typing to
+  # the text screen, whose letters a gamepad can pick.
   def update_mod_typing
-    text, keys = MGQ_Multiplayer::Link.take_typed
+    taken = @mod_edit.take
     @mod_typing_frames += 1
 
     # The press that started the typing is still reported in its first frame.
-    if keys == 0 && text.empty? && @mod_typing_frames > 1 && MGQ_MpWorld.gamepad_pressed?
+    if taken.keys == 0 && taken.chars == 0 && @mod_typing_frames > 1 && MGQ_MpWorld.gamepad_pressed?
       MGQ_Multiplayer::Link.typing(false)
+      @mod_edit.close
       @mod_edit = nil
       show_mod_pick
       return ask_mod_name(true)
@@ -1631,16 +1629,16 @@ class Scene_MpWorlds < Scene_MenuBase
     # The numpad's 0 cancels everywhere else in the game, so it leaves the box instead of typing a 0.
     return finish_mod_typing(nil) if MGQ_MpUi.numpad_cancel?
 
-    text.each_char do |char|
-      case @mod_edit.type(char)
+    taken.outcomes.each do |outcome|
+      case outcome
       when :enter then return finish_mod_typing(@mod_edit.text)
       when :escape then return finish_mod_typing(nil)
       when :refused then Sound.play_buzzer
-      when :edited then Sound.play_cursor
+      when :typed, :erased then Sound.play_cursor
       end
     end
 
-    @mod_edit.update_keys
+    @mod_edit.follow
     show_mod_pick
     @list_box.show(@mod_view)
   end
@@ -1650,6 +1648,7 @@ class Scene_MpWorlds < Scene_MenuBase
   # @param name [String, nil] The name, nil when the player went back.
   def finish_mod_typing(name)
     MGQ_Multiplayer::Link.typing(false)
+    @mod_edit.close
     @mod_edit = nil
     @mod_pick_hold = true
     name ? add_mod(name) : Sound.play_cancel
@@ -3361,7 +3360,6 @@ class Window_MpWorldForm < Window_Selectable
   def initialize(x, y, width, height)
     @form = nil
     @rects = []
-    @widths = {}
     super
     self.visible = false
     deactivate
@@ -3552,8 +3550,9 @@ class Window_MpWorldForm < Window_Selectable
     inner = Rect.new(box.x + TEXT_INSET, box.y, box.width - TEXT_INSET * 2, box.height)
     return draw_text(inner.x, inner.y, inner.width, DESCRIPTION_LINE_HEIGHT, field.label) if text.empty? && !editing
 
+    return MGQ_MpUi::TextBox.draw_area(contents, inner, @form.edit, DESCRIPTION_LINE_HEIGHT) if editing
+
     spans = area_spans(text, inner.width)
-    return MGQ_MpUi::TextBox.draw_area(contents, inner, @form.edit, spans, DESCRIPTION_LINE_HEIGHT) if editing
 
     spans.first(field.lines).each_with_index do |(start, length), row|
       line = text[start, length]
@@ -3564,38 +3563,26 @@ class Window_MpWorldForm < Window_Selectable
 
   # Breaks the text of a box of several lines into lines, each a stretch of the text.
   #
-  # Words are measured once and their widths kept, since a text is broken again with every key.
-  #
   # @param text [String] The text.
   # @param width [Integer] The width a line may take.
-  # @return [Array<Array<Integer>>] Each line's first character and length, see MGQ_MpUi.wrap_spans.
+  # @return [Array<Array<Integer>>] Each line's first character and length, see MGQ_MpUi.spans.
   def area_spans(text, width)
-    @widths = {} if @widths.size > 2000
     contents.font.size = DESCRIPTION_SIZE
-    MGQ_MpUi.wrap_spans(text, width) { |part| @widths[part] ||= text_size(part).width }
+    MGQ_MpUi.spans(self, text, width)
   end
 
-  # Breaks a text into the lines the box of several lines the cursor is on draws it in.
+  # Tells how far the mouse wheel scrolls the box of several lines being typed into: by its
+  # notches while the mouse points at it.
   #
-  # @param text [String] The text.
-  # @return [Array<Array<Integer>>] Each line's first character and length, see MGQ_MpUi.wrap_spans.
-  def current_area_spans(text)
-    area_spans(text, item_rect(index).width - TEXT_INSET * 2)
-  end
-
-  # Scrolls the box of several lines being typed into by the mouse wheel's notches while the mouse
-  # points at it.
-  #
-  # @param editor [MGQ_MpUi::TextEdit] The box's editor.
-  # @return [Boolean] Whether it scrolled.
-  def scroll_area_by_wheel(editor)
+  # @return [Integer] Lines to scroll down, a negative number to scroll up, 0 for none.
+  def wheel_lines
     field = self.field
-    return false unless field && field.kind == :area && @form.editing == field.key
+    return 0 unless field && field.kind == :area && @form.editing == field.key
 
     notches = MGQ_Multiplayer::Mouse.wheel
-    return false if notches == 0 || !pointed_at_item?(index)
+    return 0 if notches == 0 || !pointed_at_item?(index)
 
-    editor.scroll_lines(current_area_spans(editor.text), field.lines, -notches * AREA_WHEEL_LINES)
+    -notches * AREA_WHEEL_LINES
   end
 
   # Tells whether the mouse points at a field.

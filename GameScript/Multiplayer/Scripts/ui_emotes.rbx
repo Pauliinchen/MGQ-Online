@@ -2,7 +2,8 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Kept the emote wheel off the live map behind menus
+#      Paulinchen  2026-10-23: Left the emote wheel's rules to C#, playing the emote in the frame after confirm
+#                            - Kept the emote wheel off the live map behind menus
 #      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #                            - Read the map's viewport and character sprites through MGQ_MpGame
 #      Paulinchen  2026-10-11: Framed the wheel's boxes in the preset's colors
@@ -45,11 +46,17 @@ module MGQ_MpEmotes
   # Frames between two emotes of the player, so nobody floods the others with them.
   COOLDOWN_FRAMES = 30
 
+  # The wheel's name in the tick and its events, whose rules C# keeps (WheelModel "emotes").
+  NAME = "emotes"
+
   # Whether the wheel is open.
   @open = false
 
   # The place in EMOTES of the emote pointed at, nil for none.
   @selected = nil
+
+  # The emote confirm took and the frame it did in, nil while none waits.
+  @take = nil
 
   # The frame count of the player's last emote, nil before the first.
   @last = nil
@@ -73,17 +80,7 @@ module MGQ_MpEmotes
     @selected
   end
 
-  # Opens the wheel, pointing at no emote, holding the buttons.
-  def self.open
-    @open = true
-    @selected = nil
-    MGQ_MpWheel.reset
-    MGQ_Multiplayer::Capture.start(:emotes)
-    log("emote wheel opened")
-    Sound.play_cursor
-  end
-
-  # Closes the wheel, if it is open, and gives the buttons back.
+  # Closes the wheel, if it is open, and gives the buttons back, here and in C#.
   #
   # @param reason [String, nil] Why, for the log.
   def self.close(reason = nil)
@@ -91,6 +88,7 @@ module MGQ_MpEmotes
 
     @open = false
     MGQ_Multiplayer::Capture.stop(:emotes)
+    MGQ_Multiplayer::Bridge.call(MGQ_MpWheel::CLOSE, [NAME])
     log("emote wheel closed#{reason ? ": #{reason}" : ''}")
   end
 
@@ -103,23 +101,67 @@ module MGQ_MpEmotes
       !MGQ_MpActions::Wheel.open? && !MGQ_MpChat.typing? && !(defined?(MGQ_MpWorldOverview) && MGQ_MpWorldOverview.open?)
   end
 
-  # Opens, steers or closes the wheel. Called by the map every frame, so a press of the hotkey is
-  # seen once.
+  # Opens, steers or closes the wheel, and plays the emote it reported confirmed. Called by the map
+  # every frame, so a press of the hotkey is seen once.
   def self.on_map
+    take_pending
     key = MGQ_MpHotkeys.pressed?(:emotes)
     unless free?
       MGQ_MpHotkeys.log_refusal(:emotes, busy_reason) if key
-      return close(busy_reason)
+      return @open ? follow(busy_reason, false) : nil
     end
 
-    if @open
-      update(key)
-    elsif key
-      open
-    end
+    follow(true, key)
   rescue => e
     log("emote wheel failed: #{e.class}: #{e.message}")
     close("it failed")
+  end
+
+  # Hands the wheel its frame: while the map leaves it free its hotkey and, while open, its
+  # buttons; else, while open, why it closes.
+  #
+  # @param free [Boolean, String] true, or why the wheel may not show.
+  # @param key [Boolean] Whether its hotkey went down.
+  def self.follow(free, key)
+    return unless @open || (free == true && key)
+
+    MGQ_MpWheel.put(NAME, free, key, EMOTES.size, @open)
+  end
+
+  # Takes the wheel's event: opened, closed, the pick moved, or confirm with the emote pointed at.
+  #
+  # @param event [Hash] The event, see WheelModel.EventTopic.
+  def self.take_event(event)
+    was = @open
+    @open = event["open"] == true
+    direction = MGQ_MpWheel.direction_of(event["selected"], nil)
+    @selected = direction && MGQ_MpWheel.places(EMOTES.size).index(direction)
+    MGQ_MpUi::Tick.play(event)
+    if @open && !was
+      MGQ_Multiplayer::Capture.start(:emotes)
+      log("emote wheel opened")
+    elsif was && !@open
+      MGQ_Multiplayer::Capture.stop(:emotes)
+      log("emote wheel closed: #{closed_reason(event)}")
+    end
+    @take = [@selected, MGQ_Multiplayer::Key.frame] if event.key?("take") && @selected
+  end
+
+  # Tells why the wheel closed, for the log.
+  #
+  # @param event [Hash] The event that closed it.
+  # @return [String] The reason.
+  def self.closed_reason(event)
+    return event["reason"].to_s unless event.key?("take")
+
+    @selected ? "chose #{EMOTES[@selected].name}" : "confirmed with no emote pointed at"
+  end
+
+  # Plays the emote confirm took in the frame before.
+  def self.take_pending
+    index, frame = @take
+    @take = nil
+    play_own(index) if index && frame >= MGQ_Multiplayer::Key.frame - 1
   end
 
   # Tells why the player may not play an emote now, for the log.
@@ -135,35 +177,6 @@ module MGQ_MpEmotes
     "the World overview is open"
   rescue
     "?"
-  end
-
-  # Points at the emote the arrows held point to, keeping the last one while no arrow is held, plays
-  # it on confirm, and closes on cancel or the wheel's hotkey. Confirm before any emote was pointed
-  # at closes the wheel without one.
-  #
-  # @param key [Boolean] Whether the wheel's hotkey went down this frame.
-  def self.update(key)
-    capture = MGQ_Multiplayer::Capture
-    if key || MGQ_MpUi.cancel?
-      close(key ? "its key" : "cancel")
-      return Sound.play_cancel
-    end
-
-    pointed = held_emote || @selected
-    Sound.play_cursor if pointed != @selected
-    @selected = pointed
-    return unless capture.trigger?(:C)
-
-    close(@selected ? "chose #{EMOTES[@selected].name}" : "confirmed with no emote pointed at")
-    @selected ? play_own(@selected) : Sound.play_cancel
-  end
-
-  # Finds the emote the arrows held point at.
-  #
-  # @return [Integer, nil] Its place in EMOTES, nil while no arrow is held or two opposite ones are.
-  def self.held_emote
-    direction = MGQ_MpWheel.steady
-    direction && MGQ_MpWheel.places(EMOTES.size).index(direction)
   end
 
   # Plays an emote on the player's character and tells the others, unless the last was too soon.
@@ -354,6 +367,9 @@ begin
   # After the map's update, the emote wheel. The game checks its own keys there too, only while no
   # scene change is in the way.
   MGQ_MpHooks.after(Scene_Map, :update_scene, "ui_emotes") { MGQ_MpEmotes.on_map unless scene_changing? }
+
+  # What the wheel in C# reports.
+  MGQ_Multiplayer::Bridge.on(MGQ_MpWheel::EVENT) { |event| MGQ_MpEmotes.take_event(event) if event["wheel"] == MGQ_MpEmotes::NAME }
 
   # After the map's sprites, the emote wheel around the player.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_emotes") do

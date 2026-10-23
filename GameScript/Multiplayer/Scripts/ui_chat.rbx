@@ -2,7 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Sent the lines of every chat through the DLL
+#      Paulinchen  2026-10-23: Acted on what was typed a frame later, as the text box in C# reports it
+#                            - Sent the lines of every chat through the DLL
 #                            - Removed history and log_lines, which only the tests read
 #                            - Kept the chat log off the live map behind menus
 #      Paulinchen  2026-10-22: Opened the chat box and showed its log in the shops, the casino and the trade screen
@@ -339,11 +340,12 @@ module MGQ_MpChat
   # The picked place in the list of fitting names, see pick.
   @pick = 0
 
-  # Frames in which what is typed is dropped as an Alt code, see without_alt_code.
-  @alt_frames = 0
-
   # The open menu of another player, see menu.
   @menu = nil
+
+  # Whether a menu showed in the frame before, whose typing the box takes now: its Enter and Escape
+  # were meant for the menu.
+  @menu_typed = false
 
   # Frames counted by tick, which end what suggestions and menu_options keep.
   @frame = 0
@@ -483,13 +485,17 @@ module MGQ_MpChat
     @tab = :help
     @scroll = 0
     @edit.edit("", 0)
+    @edit.lock(true)
     Sound.play_ok
     log("opened the help tab")
   end
 
   # Leaves the help tab for the tab it was opened from, as when the chat box closes.
   def self.leave_help
-    @tab = @before_help || :all if @tab == :help
+    return unless @tab == :help
+
+    @tab = @before_help || :all
+    @edit.lock(false) if @edit
   end
 
   # Chooses the chat for the lines after it. The log follows to its tab unless it shows all lines.
@@ -746,8 +752,7 @@ module MGQ_MpChat
   #
   # @param key [Integer, nil] Windows' code of the key that opened it, nil when the wheel did.
   def self.start_typing(key = nil)
-    @edit = MGQ_MpUi::TextEdit.new("", :max_chars => MAX_LENGTH)
-    @echo = key ? { :key => key, :frames => KEY_ECHO_FRAMES } : nil
+    @edit = MGQ_MpUi::TextEdit.new("", :max_chars => MAX_LENGTH, :echo => key ? [key, KEY_ECHO_FRAMES] : nil, :alt_codes => ALT_CODE_FRAMES)
     @scroll = 0
     @history_at = nil
     @draft = nil
@@ -756,28 +761,13 @@ module MGQ_MpChat
     log("chat box opened #{key ? 'with its key' : 'from the action wheel'} in #{SceneManager.scene.class.name}")
   end
 
-  # Leaves out the character of the key that opened the chat box.
-  #
-  # The key is seen going down before the game's window gets the character it types, which then
-  # reaches the box that just opened.
-  #
-  # @param text [String] What was typed since the last frame.
-  # @return [String] The same, without the key's own character.
-  def self.without_echo(text)
-    echo = @echo
-    return text unless echo
-
-    echo[:frames] -= 1
-    @echo = nil if echo[:frames] <= 0 || !text.empty?
-    !text.empty? && text[0, 1].upcase.ord == echo[:key] ? text[1..-1] : text
-  end
-
   # Closes the chat box, if it is open, and gives the buttons back.
   #
   # @param reason [String, nil] Why, for the log.
   def self.stop_typing(reason = nil)
     return unless typing?
 
+    @edit.close
     @edit = nil
     @scroll = 0
     @menu = nil
@@ -787,10 +777,16 @@ module MGQ_MpChat
     log("chat box closed#{reason ? ": #{reason}" : ''}")
   end
 
-  # Types what came from the keyboard since the last frame, then lets the editor follow the keys
-  # that type nothing, and scrolls the chat log. The numpad's 0 closes the open menu, else the box.
+  # Acts on what was typed into the chat box since the last frame, then hands the editor the keys
+  # that type nothing, unless Alt picks the tabs with them, and scrolls the chat log. The numpad's
+  # 0 closes the open menu, else the box.
+  #
+  # What the box takes leaves out the character of the key that opened it, which arrives after the
+  # box opened, and what is typed while the left Alt is held and just after it was let go, which
+  # the numpad types as an Alt code, such as a symbol for Alt with the numpad's 4, its left arrow
+  # (KEY_ECHO_FRAMES, ALT_CODE_FRAMES, kept by the editor).
   def self.update_typing
-    text, _keys = MGQ_Multiplayer::Link.take_typed
+    taken = @edit.take
     if MGQ_MpUi.numpad_cancel?
       unless @menu
         # Its 0 arrives as the number row's, so what came with it is dropped; a 0 coming later
@@ -803,32 +799,33 @@ module MGQ_MpChat
       Sound.play_cancel
       close_menu("Numpad 0")
       # Its 0 arrives as the number row's, in this frame or a later one, and the box stays open.
-      @echo = { :key => ZERO_KEY, :frames => KEY_ECHO_FRAMES }
+      @edit.echo(ZERO_KEY, KEY_ECHO_FRAMES)
     end
 
-    typed = without_alt_code(without_echo(text.to_s))
-    if @menu && !menu_peer
-      close_menu("its player left the world")
-      # Enter and Escape were meant for the menu, so they neither send the line nor close the box.
-      typed = typed.delete("\r\e")
-    end
+    outcomes = taken.outcomes
+    menu_shown = !@menu.nil?
+    close_menu("its player left the world") if @menu && !menu_peer
+    # Enter and Escape typed while a menu was open were meant for it, so once it closed they neither
+    # send the line nor close the box.
+    outcomes -= [:enter, :escape] if @menu_typed && !@menu
 
     tab_key = MGQ_Multiplayer::Key.pressed?(TAB_KEY)
-    typed.each_char do |char|
-      next tab_key = true if char == "\t"
+    edited = false
+    outcomes.each do |outcome|
+      next tab_key = true if outcome == :tab
+      next edited = true if outcome == :typed || outcome == :erased
 
-      if @menu && (char == "\r" || char == "\e")
-        menu_key(char)
-      else
-        type(char)
-        take_typed_command if typing?
-      end
+      take_typed_command if edited
+      edited = false
+      @menu && (outcome == :enter || outcome == :escape) ? menu_key(outcome) : type(outcome)
       return unless typing?
     end
+    take_typed_command if edited
     take_suggestion if tab_key
-    return if alt_keys
-
-    @edit.update_keys unless @tab == :help
+    alt = alt_keys
+    @menu_typed = menu_shown || !@menu.nil?
+    @edit.follow(!alt && @tab != :help)
+    return if alt
     return update_menu_pick if @menu
 
     suggestions.empty? ? update_scroll : update_pick
@@ -837,25 +834,12 @@ module MGQ_MpChat
   # Takes Enter or Escape while a player's menu is open: Enter takes the choice picked, Escape
   # closes the menu, not the chat box.
   #
-  # @param char [String] "\r" or "\e".
-  def self.menu_key(char)
-    return take_menu(@menu[:pick]) if char == "\r"
+  # @param outcome [Symbol] :enter or :escape.
+  def self.menu_key(outcome)
+    return take_menu(@menu[:pick]) if outcome == :enter
 
     Sound.play_cancel
     close_menu("Escape")
-  end
-
-  # Drops what was typed while the left Alt is held and just after it was let go, which the numpad
-  # types as an Alt code, such as a symbol for Alt with the numpad's 4, its left arrow.
-  #
-  # @param text [String] What was typed since the last frame.
-  # @return [String] The same, empty while Alt is or just was held.
-  def self.without_alt_code(text)
-    @alt_frames = MGQ_Multiplayer::Key.down?(ALT_KEY) ? ALT_CODE_FRAMES : [@alt_frames - 1, 0].max
-    return text if @alt_frames == 0 || text.empty?
-
-    log("dropped #{text.size} characters typed with Alt")
-    ""
   end
 
   # Takes a command as it is typed: /help and a space opens the help tab, a chat's command and a
@@ -935,15 +919,14 @@ module MGQ_MpChat
     @scroll = [[@scroll, most].min, 0].max
   end
 
-  # Types one character at the cursor: Enter takes the picked name of the list, opens the help
-  # tab or sends, Escape closes. The help tab only reads, so nothing but Escape types there. A
-  # character the box refuses buzzes once a frame, so a paste longer than the box takes buzzes once.
+  # Acts on what typing did in the chat box: Enter takes the picked name of the list, opens the
+  # help tab or sends, Escape closes. The help tab only reads, so its locked box takes nothing but
+  # Escape. A character the box refuses buzzes once a frame, so a paste longer than the box takes
+  # buzzes once.
   #
-  # @param char [String] The character.
-  def self.type(char)
-    return if @tab == :help && char != "\e"
-
-    case @edit.type(char)
+  # @param outcome [Symbol] What typing did, see MGQ_MpUi::TextEdit::Taken.
+  def self.type(outcome)
+    case outcome
     when :enter
       return if take_suggestion
       return open_help if @edit.text.strip =~ HELP_COMMAND

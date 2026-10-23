@@ -3,7 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Checked the pages of other mods with their tabs, controls, buttons and mouse
-#      Paulinchen  2026-10-23: Answered the catch-up through the bridge from the golden cases and found the part as the DLL does
+#      Paulinchen  2026-10-23: Answered the confirm box after the frame it opened in, through the stand-in
+#                            - Answered the catch-up through the bridge from the golden cases and found the part as the DLL does
 #                            - Played the party's view and checked the party's actions asked of the DLL
 #                            - Answered the catch-up through the bridge from the golden cases
 #      Paulinchen  2026-10-13: Checked that the Unlocks grid leaves out characters the catch-up does not count
@@ -1197,13 +1198,19 @@ MGQ_MpCoop::Offers.peer_option(member_peer).run.call
 check("removing a member asks first, naming them", [confirm.open?, confirm.instance_variable_get(:@question), confirm.instance_variable_get(:@yes), confirm.instance_variable_get(:@no)],
       [true, "Remove member from the party?", "Remove", "Keep"])
 $frame += 1
+# The frame the box opened in reads no key.
+confirm.tick
+ui_frame
 $pressed = MGQ_MpHotkeys.code(:decline)
-2.times { confirm.tick }
+2.times { confirm.tick; ui_frame }
 check("no keeps them", [confirm.open?, removed], [false, []])
 MGQ_MpCoop::Offers.peer_option(member_peer).run.call
 $frame += 1
+# The frame the box opened in reads no key.
+confirm.tick
+ui_frame
 $pressed = MGQ_MpHotkeys.code(:accept)
-2.times { confirm.tick }
+2.times { confirm.tick; ui_frame }
 check("yes removes them", removed, [3])
 MGQ_MpCoop::Party.define_singleton_method(:remove, remove)
 overview.turn_to(:players, "the test")
@@ -1222,8 +1229,11 @@ overview.on_map
 check("the overview reads no key while the box asks", [overview.open?, $buttons], [true, [:B]])
 $buttons.clear
 $frame += 1
+# The frame the box opened in reads no key.
+confirm.tick
+ui_frame
 $pressed = MGQ_MpHotkeys.code(:decline)
-2.times { confirm.tick }
+2.times { confirm.tick; ui_frame }
 check("no keeps the party", [confirm.open?, MGQ_MpCoop::Party.id.nil?], [false, false])
 leave_option = MGQ_MpCoop::Offers.party_options(true).first
 $buttons << :C
@@ -1231,17 +1241,23 @@ overview.on_map
 $buttons << :C
 overview.on_map
 $frame += 1
+# The frame the box opened in reads no key.
+confirm.tick
+ui_frame
 $pressed = MGQ_MpHotkeys.code(:accept)
 $party_answer = party_view(nil)
-2.times { confirm.tick }
+2.times { confirm.tick; ui_frame }
 $party_answer = nil
 check("yes leaves it through the DLL", [confirm.open?, $party_calls.last, MGQ_MpCoop::Party.id], [false, ["leave", nil], nil])
 overview.close
 leave_option.run.call
 notices = MGQ_MpOverworldSync::Status.lines.size
+# The frame the box opened in reads no key.
+confirm.tick
+ui_frame
 $pressed = MGQ_MpHotkeys.code(:accept)
 $frame += 1
-2.times { confirm.tick }
+2.times { confirm.tick; ui_frame }
 check("yes once the party dissolved under the box leaves nothing, so nothing says so", [confirm.open?, MGQ_MpOverworldSync::Status.lines.size], [false, notices])
 
 # Pages of other mods: a mod adds one to ModPages, which shows as a tab while it has something to

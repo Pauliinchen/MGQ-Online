@@ -4,7 +4,8 @@
 #  Changelog:
 #      Paulinchen  2026-10-24: Checked the Game's Default look and the game's windows wearing the look
 #                            - Checked turning the look on the game's windows off
-#      Paulinchen  2026-10-23: Told a dragged box here
+#      Paulinchen  2026-10-23: Checked what the script does with the layout in C#, its rules gone there
+#                            - Told a dragged box here
 #      Paulinchen  2026-10-12: Counted the scrollbar track among the preset colors
 #                            - Followed the settings to their own Mod Config group
 #      Paulinchen  2026-10-11: Created
@@ -170,7 +171,7 @@ ALT = layout::ALT_KEY
 # The layout's mouse button.
 BUTTON = layout::LEFT_BUTTON
 
-# Runs a frame: the tick after Graphics.update, with the mouse at a point, the left Alt and button
+# Runs a frame: the tick after Graphics.update and the bridge's batch and drain, with the mouse at a point, the left Alt and button
 # held or not.
 #
 # @param position [Array(Integer, Integer), nil] The mouse's place.
@@ -184,6 +185,7 @@ def frame(position, alt, held, offers = [])
   $keys_down << MGQ_MpUi::Layout::ALT_KEY if alt
   $keys_down << MGQ_MpUi::Layout::LEFT_BUTTON if held
   Graphics.update
+  MGQ_Multiplayer::Bridge.frame
 end
 
 # The presets.
@@ -265,82 +267,67 @@ check("both rows are added before Return, named for the mod, kept by the mod and
 look[:on_change].call("Monarch")
 check("the look row lists the presets, reads the one in use and picks one", [look[:values].call, look[:value].call, $player_ini["ui_preset"]], [["Monarch", "Legacy", "Game's Default"], "Monarch", "Monarch"])
 
-# The layout: a box at its default.
+# The layout: C# keeps its rules (LayoutModel, replayed against the script's own steps in
+# MGQOnline.Game.Tests); the script asks C# where a box lies once per default, hands it the frames
+# while Alt is held, keeps Player.ini as C# says and draws the overlay.
+require_relative "bridge_support"
+layout_fake = FakeBridge.new
+layout_ui = FakeUi.new(layout_fake)
+asked = []
+ticks = []
+layout_fake.answer(layout::REGISTER) { |request| asked << [:register, request]; request[5] == "1,2,3,4" }
+layout_fake.answer(layout::RECT) { |request| asked << [:rect, request]; [request[1] + 1, request[2], request[3], request[4], false] }
+layout_fake.answer(layout::RESET) { |request| asked << [:reset, request]; nil }
+layout_ui.model(layout::MODEL) { |input| ticks << input }
+MGQ_Multiplayer::Bridge.open(layout_fake)
+$player_ini["ui_test_box"] = "1,2,3,4"
 layout.register(:test_box, "Test box", 200, 100)
-layout.register(:wide_box, "Wide box", 150, 0, :width)
+check("a box registers in C# with its least size, how it resizes and its place in Player.ini, which says it was moved",
+      [asked.last, layout.moved?(:test_box)], [[:register, ["test_box", "Test box", 200, 100, "both", "1,2,3,4"]], true])
 default = Rect.new(20, 30, 300, 120)
-check("a box lies at its default until moved", [layout.rect(:test_box, default).to_a, layout.moved?(:test_box)], [[20, 30, 300, 120], false])
-check("a default smaller than the least size grows to it, and one off the screen comes back onto it",
-      [layout.rect(:test_box, Rect.new(-50, 460, 100, 50)).to_a], [[0, 380, 200, 100]])
+asked.clear
+check("it lies where C# answers", layout.rect(:test_box, default).to_a, [21, 30, 300, 120])
+layout.rect(:test_box, default)
+check("asked once per default and screen, with Player.ini's place", asked, [[:rect, ["test_box", 20, 30, 300, 120, 640, 480, "1,2,3,4"]]])
+layout.rect(:test_box, Rect.new(0, 0, 300, 120))
+check("and again for another default, which says C# has the place, and whether it was moved", [asked.last[1].last, layout.moved?(:test_box)], [false, false])
 
-# Moving: Alt held, the button goes down inside the box, away from its edges.
+# The frames go to C# only while Alt is held or a drag runs, and one more once they stop.
 offer = [:test_box, 20, 30, 300, 120, 10]
-frame([100, 80], true, false, [offer])
+frame([100, 80], false, false, [offer])
+check("a frame without Alt hands nothing over", ticks, [])
 frame([100, 80], true, true, [offer])
-check("Alt with the button down inside a box starts a drag that moves it", [layout.dragging?(:test_box), layout.arranging?], [true, true])
+check("with Alt it hands the button going down, the mouse, the screen and the boxes offered",
+      ticks.last, [true, true, true, 100, 80, 640, 480, [["test_box", 20, 30, 300, 120, 10]]])
+layout_fake.post(layout::EVENT, "dragging" => true, "hot" => "test_box", "rects" => { "test_box" => [70, 50, 300, 120] })
 frame([150, 100], true, true, [offer])
-check("while dragged, the box draws where the mouse took it", layout.rect(:test_box, default).to_a, [70, 50, 300, 120])
-frame([150, 100], true, false, [offer])
-check("letting go keeps the place in Player.ini", [layout.dragging?(:test_box), $player_ini["ui_test_box"], layout.rect(:test_box, default).to_a, layout.moved?(:test_box)],
-      [false, "70,50,300,120", [70, 50, 300, 120], true])
-check("and logs it", $log.last, "layout: moved Test box to 70,50 at 300x120")
-
-# Resizing from the bottom right corner, never below the least size.
-offer = [:test_box, 70, 50, 300, 120, 10]
-frame([365, 165], true, true, [offer])
-frame([100, 60], true, true, [offer])
-check("a drag on the corner resizes, never below the least size, its top left staying put", layout.rect(:test_box, default).to_a, [70, 50, 200, 100])
-frame([100, 60], true, false, [offer])
-offer = [:test_box, 70, 50, 200, 100, 10]
-frame([72, 100], true, true, [offer])
-frame([20, 100], true, true, [offer])
-check("a drag on the left edge widens it to the left, its right edge staying put", layout.rect(:test_box, default).to_a, [18, 50, 252, 100])
-frame([-500, 100], true, true, [offer])
-check("never past the screen's edge", layout.rect(:test_box, default).to_a, [0, 50, 270, 100])
-frame([-500, 100], true, false, [offer])
-
-# A box that resizes in width alone keeps its default's height and moves on its top and bottom edges.
-wide_default = Rect.new(10, 10, 200, 40)
-wide = [:wide_box, 10, 10, 200, 40, 5]
-frame([100, 12], true, true, [wide])
-frame([100, 52], true, true, [wide])
-check("a width-only box moves on its top edge", layout.rect(:wide_box, wide_default).to_a, [10, 50, 200, 40])
-frame([100, 52], true, false, [wide])
-check("and keeps its default's height once it is kept", layout.rect(:wide_box, Rect.new(10, 10, 200, 64)).to_a, [10, 50, 200, 64])
-
-# Clicks without Alt, and the topmost of two boxes.
-frame([30, 70], false, false)
-frame([30, 70], false, true, [[:test_box, 0, 50, 270, 100, 10]])
-check("a click without Alt drags nothing", [layout.dragging?(:test_box), layout.arranging?], [false, false])
-frame([30, 70], true, false, [[:test_box, 0, 50, 270, 100, 10], [:wide_box, 10, 50, 200, 64, 50]])
-frame([30, 70], true, true, [[:test_box, 0, 50, 270, 100, 10], [:wide_box, 10, 50, 200, 64, 50]])
-check("Alt with a click on two boxes takes the topmost", [layout.dragging?(:wide_box), layout.dragging?(:test_box)], [true, false])
-frame([30, 70], true, false)
-check("a click that never moved keeps nothing new", $player_ini["ui_wide_box"], "10,50,200,40")
-
-# Double click puts a box back.
-offer = [:test_box, 0, 50, 270, 100, 10]
-frame([100, 100], true, true, [offer])
-frame([100, 100], true, false, [offer])
-frame([101, 100], true, true, [offer])
-check("a double click with Alt puts the box back", [layout.moved?(:test_box), $player_ini.key?("ui_test_box"), layout.rect(:test_box, default).to_a, layout.dragging?(:test_box)],
-      [false, false, [20, 30, 300, 120], false])
-frame([101, 100], true, false, [offer])
-
-# The outlines while Alt is held.
-frame([100, 100], true, false, [[:test_box, 20, 30, 300, 120, 10]])
+check("a drag C# says runs arranges the boxes, which lie where it says, the button held not going down again",
+      [layout.arranging?, layout.rect(:test_box, Rect.new(0, 0, 300, 120)).to_a, ticks.last[2]], [true, [70, 50, 300, 120], false])
+frame([150, 100], true, true, [offer])
 overlay = layout.overlay
-check("Alt held shows the overlay above everything, the box outlined and washed under the mouse",
+check("Alt held shows the overlay above everything, the box outlined and washed where C# said the mouse was",
       [overlay.visible, overlay.z, overlay.bitmap.fills.include?([20, 30, 300, 120, layout::WASH.to_a]), overlay.bitmap.texts.map { |text| text[2] }.include?("Test box"),
        overlay.bitmap.texts.map { |text| text[2] }.include?(layout::HINT)], [true, MGQ_MpUi::Z[:layout], true, true, true])
-frame([100, 100], false, false, [[:test_box, 20, 30, 300, 120, 10]])
-check("letting go of Alt hides it", overlay.visible, false)
+$log.clear
+layout_fake.post(layout::EVENT, "dragging" => false, "hot" => nil, "store" => { "test_box" => "70,50,300,120" }, "log" => ["moved Test box to 70,50 at 300x120"])
+frame([150, 100], false, false, [offer])
+check("letting go keeps the place C# names in Player.ini, the box moved, logged", [layout.arranging?, $player_ini["ui_test_box"], layout.moved?(:test_box), $log.last],
+      [false, "70,50,300,120", true, "layout: moved Test box to 70,50 at 300x120"])
+ticks.clear
+frame([150, 100], false, false, [offer])
+frame([150, 100], false, false, [offer])
+check("and one frame more hands it over once, then none", ticks.size, 1)
+check("letting go of Alt hides the overlay", overlay.visible, false)
+layout_fake.post(layout::EVENT, "store" => { "test_box" => nil }, "log" => ["put Test box back (a double click with Alt)"])
+frame([150, 100], false, false)
+check("a box C# put back is forgotten in Player.ini", [$player_ini.key?("ui_test_box"), layout.moved?(:test_box)], [false, false])
 
 # The Mod Config row puts every box back.
+layout_fake.post(layout::EVENT, "store" => { "test_box" => "5,5,300,120" })
+frame([150, 100], false, false)
 check("the positions row says Moved while any box was moved, and offers Default", [positions[:value].call, positions[:values].call], ["Moved", ["Moved", "Default"]])
+asked.clear
 positions[:on_change].call("Default")
-check("Default puts every box back", [layout.any_moved?, $player_ini.keys.grep(/\Aui_/), positions[:value].call, positions[:values].call], [false, ["ui_preset", "ui_game_windows"], "Default", ["Default"]])
-
-# A place in Player.ini that cannot be read.
-$player_ini["ui_broken_box"] = "1,2,x,4"
-check("an unreadable place leaves the box at its default", layout.rect(:broken_box, default).to_a, [20, 30, 300, 120])
+check("Default puts every box back, here and in C#", [layout.any_moved?, $player_ini.keys.grep(/\Aui_/), positions[:value].call, asked], [false, ["ui_preset", "ui_game_windows"], "Default", [[:reset, ["test_box"]]]])
+MGQ_Multiplayer::Bridge.close
+check("while the bridge is closed a box lies at its default", layout.rect(:other_box, default).to_a, [20, 30, 300, 120])

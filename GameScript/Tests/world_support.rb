@@ -2,7 +2,9 @@
 #  world_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Played the world room's inbox into the scripts' mirror through world_room_support.rb
+#      Paulinchen  2026-10-23: Counted the frames ui_frame ended
+#                            - Typed through the stand-in text box at the end of each frame
+#                            - Played the world room's inbox into the scripts' mirror through world_room_support.rb
 #                            - Answered the rules' topics through the bridge, such as the ids coop.rbx makes up
 #                            - Read the chat log's lines here
 #                            - Showed the HUD over the map's spriteset
@@ -157,6 +159,8 @@ module MGQ_Multiplayer
     def self.down?(code); ($down || []).include?(code); end
     # Answers as pressed? does.
     def self.triggered?(code); pressed?(code); end
+    # Counts the frames ui_frame ended.
+    def self.frame; $ui_frames.to_i; end
   end
   # Stands in for the mouse: held while $mouse_held is true, at $mouse, its wheel's notches in $wheel.
   module Mouse; def self.held?; $mouse_held == true; end; def self.position; $mouse; end; def self.wheel; $wheel.to_i; end; end
@@ -191,15 +195,13 @@ module MGQ_Multiplayer
     # Hands out the notice in $player_ini_notice once.
     def self.take_notice; notice = $player_ini_notice; $player_ini_notice = nil; notice; end
   end
-  # Stands in for the DLL's link: the player's id is always me, whether the player types goes to
-  # $typing_on, and what they typed comes from $typed.
+  # Stands in for the DLL's link: the player's id is always me, and whether the player types goes
+  # to $typing_on.
   module Link
     # Answers the player's id.
     def self.player_id; "me"; end
     # Records whether the player types in $typing_on.
     def self.typing(on); $typing_on = on; end
-    # Hands out the text in $typed once, counting a key per character.
-    def self.take_typed; text = $typed; $typed = ""; [text, text.size]; end
     # Reads a description as the DLL writes it: key=value lines, an empty line, the payload.
     #
     # @param text [String] The description.
@@ -235,8 +237,12 @@ load_script "coop_squad"
 load_script "coop_gather"
 load_script "coop_teleport"
 
-# Runs one frame on the map: the wheel's keys, then the chat's.
-def map_frame; MGQ_MpActions.on_map; MGQ_MpChat.on_map; end
+# The bridge to the fake models of the interface, the text box typing what $typed holds.
+open_fake_ui { text = $typed.to_s; $typed = ""; [text, text.size] }
+
+# Runs one frame on the map: the wheel's keys, then the chat's, then the end of the frame, as
+# Graphics.update ends it, which types what $typed holds into an open text box.
+def map_frame; MGQ_MpActions.on_map; MGQ_MpChat.on_map; ui_frame; end
 
 # Stands in for the world room's link: the messages sent in $sent.
 module MGQ_MpOverworldSync::Link
