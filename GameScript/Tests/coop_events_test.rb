@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Checked that a talk ended early takes back what it changed
+#      Paulinchen  2026-10-23: Checked that a weapon's pedestal handing out a medal is a chest of each player's own
+#                            - Checked that a talk ended early takes back what it changed
 #                            - Checked that a dark screen fades in while a watched scene shows nothing for ten seconds
 #      Paulinchen  2026-10-17: Checked that a resumed raid boss fight's event starts as story
 #      Paulinchen  2026-10-15: Checked that a screen left dark with nothing running fades in
@@ -1944,6 +1945,11 @@ end
 tool = File.exist?(generator_file) ? Object.new.extend(generator) : nil
 if tool
   check("the generator counts a chest of gold alone as a chest", tool.send(:chest?, [ToolCommand.new(125, [0, 0, 50]), ToolCommand.new(123, ["A", 0])]), true)
+  check("the generator leaves a page a chest by the scripts this script lets a talk or travel run",
+        [generator::TALK_SCRIPTS.source, generator::TRAVEL_SCRIPTS.source], [MGQ_MpCoopEvents::TALK_SCRIPTS.source, MGQ_MpCoopEvents::TRAVEL_SCRIPTS.source])
+  pedestal = [[101, ["", 0, 0, 2]], [127, [4168, 0, 0, 1, false]], [123, ["A", 0]], [355, ["gain_medal(104)"]]]
+  check("so a weapon's pedestal that hands out a medal by script is a chest to both",
+        [tool.send(:chest?, pedestal.map { |code, params| ToolCommand.new(code, params) }), kind(pedestal.map { |code, params| c(code, *params) })], [true, :chest])
   flag_chest = [ToolCommand.new(126, [700, 0, 0, 1]), ToolCommand.new(123, ["A", 0]), ToolCommand.new(121, [2045, 2045, 0])]
   plain_page = ToolPage.new(ToolCondition.new(false, 0))
   $chest_flags = [2045]
@@ -1979,6 +1985,9 @@ rewards = table::MGQ_MpCoopStoryRewards
 check("the table holds Puruel (516) and Inuel (517), and the companions set_actors brings", [516, 517, 6, 33, 35].map { |id| rewards::ACTORS.include?(id) }, [true] * 5)
 check("the skills Luka learns on maps from 1000 on, and their chests",
       [rewards::SKILLS.include?(9799), rewards::CHESTS.any? { |key| key[0] >= 1000 }], [true, true])
+sealed_pedestal = [1457, 4, "A"]
+check("a pedestal of the Sealed Chamber the world's story emptied stays full for a player who never looted it",
+      MGQ_MpStoryState.mix([[], [], { sealed_pedestal => true }], [[], [], {}], rewards::CHESTS)[2].key?(sealed_pedestal), false)
 
 # The game's Library Flags, "Library Flag: ..." and the untranslated rest, which translations differ
 # in setting, so no event's marks may hold one.
