@@ -1,0 +1,15 @@
+{
+  "cases": [
+    {"name":"nothing","values":[],"line":""},
+    {"name":"scalars","values":[null,true,false,{"i":"0"},{"i":"-42"}],"line":"~\t+\t-\ti0\ti-42"},
+    {"name":"bignums","values":[{"i":"2147483648"},{"i":"1180591620717411303424"},{"i":"-18446744073709551617"}],"line":"i2147483648\ti1180591620717411303424\ti-18446744073709551617"},
+    {"name":"floats","values":[{"f":"3ff8000000000000"},{"f":"0000000000000000"},{"f":"8000000000000000"},{"f":"4059000000000000"},{"f":"4028800000000000"},{"f":"3fd5555555555555"},{"f":"3efa36e2eb1c432d"},{"f":"3f1a36e2eb1c432d"},{"f":"3f1a302cee759401"},{"f":"430c6bf52633ffff"},{"f":"430c6bf526340000"},{"f":"4341c37937e08000"},{"f":"437b69b4ba630f35"},{"f":"0000000000000001"},{"f":"7fefffffffffffff"}],"line":"f1.5\tf0.0\tf-0.0\tf100.0\tf12.25\tf0.3333333333333333\tf2.5e-05\tf0.0001\tf9.99e-05\tf999999999999999.9\tf1.0e+15\tf1.0e+16\tf1.2345678901234568e+17\tf5.0e-324\tf1.7976931348623157e+308"},
+    {"name":"float_specials","values":[{"f":"7ff0000000000000"},{"f":"fff0000000000000"},{"f":"7ff8000000000000"}],"line":"fInfinity\tf-Infinity\tfNaN"},
+    {"name":"texts","values":[{"s":""},{"s":"plain"},{"s":"tab\there"},{"s":"lines\n\r"},{"s":"back\\slash"},{"s":"\\t stays"},{"s":"日本語 and 😀"}],"line":"s\tsplain\tstab\\there\tslines\\n\\r\tsback\\\\slash\ts\\\\t stays\ts日本語 and 😀"},
+    {"name":"symbols","values":[{"sym":"count"},{"sym":"with space"},{"sym":"tab\tin"}],"line":":count\t:with space\t:tab\\tin"},
+    {"name":"game_values","values":[{"ref":"a0"},{"ref":"e3"},{"x":"count"},{"x":null},{"k":3},{"t":4},{"z":5},{"w":6},{"a":7},{"g":{"k":3}},{"g":null}],"line":"@a0\t@e3\txcount\tx\tk3\tt4\tz5\tw6\ta7\tgk3\tg~"},
+    {"name":"colors","values":[{"c":["406fe00000000000","4060166666666666","0000000000000000","406fe00000000000"]},{"n":["c06ff00000000000","0000000000000000","4024000000000000","bfeccccccccccccd"]}],"line":"c255,128,0,255\tn-255,0,10,0"},
+    {"name":"lists","values":[[{"i":"1"},[{"i":"2"},[null]]],[],{"s":"after"}],"line":"[\ti1\t[\ti2\t[\t~\t]\t]\t]\t[\t]\tsafter"},
+    {"name":"result","values":[{"result":[["hp_damage",{"i":"30"}],["critical",true],["added_states",[{"i":"1"},{"i":"2"}]],["battler",{"ref":"e1"}]]}],"line":"{\t:hp_damage\ti30\t:critical\t+\t:added_states\t[\ti1\ti2\t]\t:battler\t@e1\t}"}
+  ]
+}

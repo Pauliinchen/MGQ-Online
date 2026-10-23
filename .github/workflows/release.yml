@@ -50,6 +50,9 @@ jobs:
       - name: Test the bridge
         run: dotnet run --project MGQOnline.Bridge.Tests
 
+      - name: Test the game rules
+        run: dotnet run --project MGQOnline.Game.Tests
+
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'

@@ -86,6 +86,7 @@
     <File Path="GameScript/Tests/world_mods_test.rb" />
     <File Path="GameScript/Tests/world_open_test.rb" />
     <File Path="GameScript/Tests/world_overview_test.rb" />
+    <File Path="GameScript/Tests/wire_fixtures_test.rb" />
     <File Path="GameScript/Tests/world_support.rb" />
   </Folder>
   <Project Path="MGQOnline.Helper/MGQOnline.Helper.csproj" />
@@ -94,4 +95,6 @@
   <Project Path="MGQOnline.Bridge/MGQOnline.Bridge.csproj" />
   <Project Path="MGQOnline.Bridge.Native/MGQOnline.Bridge.Native.csproj" />
   <Project Path="MGQOnline.Bridge.Tests/MGQOnline.Bridge.Tests.csproj" />
+  <Project Path="MGQOnline.Game/MGQOnline.Game.csproj" />
+  <Project Path="MGQOnline.Game.Tests/MGQOnline.Game.Tests.csproj" />
 </Solution>
