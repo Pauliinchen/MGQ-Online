@@ -2,7 +2,8 @@
 //  Samples.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Added damage reduction effects and events
+//      Paulinchen  2026-10-23: Gave the boss its raid and a Hades refight
+//                            - Added damage reduction effects and events
 //                            - Gave the boss its event battle, enemy slots, a raid boss enemy and a reserve, and added fight change rules and events
 //                            - Added debris types, the standard start debris and a boss's start debris
 //      Paulinchen  2026-10-22: Added a hazard type, its sources, its effect and its events
@@ -336,7 +337,9 @@ internal static class Samples
         [new BattleMapRef(88, false), new BattleMapRef(723, true)],
         2,
         Reserve: [new ReserveEnemy(ReserveSlot, 302, new EnemyStats(2_500_000, 600, 380, 300, 410, 300, 140, 60), 7, true)],
-        StartDebris: new RandomDebris(5000, 1, 3, CrystalId));
+        StartDebris: new RandomDebris(5000, 1, 3, CrystalId),
+        Raid: new RuntimeRaid("m723e12p0c3", "Sample raid", 1, "Phase 2", 2),
+        AlsoAt: [new BattleUse(new BattleEventRef(9, 576, 14, 0), BattleUseKind.HadesRefight)]);
 
     /// <summary>
     /// Gets a custom skill.
@@ -517,7 +520,7 @@ internal static class Samples
             GameRules, GameRules.Grid, GameRules.Tiers[0], GameRules.Units, GameRules.Ap, GameRules.Ap.Cost, GameRules.Power, GameRules.Share,
             GameRules.Kinds, GameRules.CrowdControl, GameRules.Debris, GameRules.Presentation, GameRules.Presentation.Animation,
             GameRules.Presentation.Animation.Area, GameRules.Presentation.Danger, GameRules.Limits,
-            Tier, Tier.Stats, Boss.StartDebris!, Design.DebrisTypes![CrystalId], Traits, Traits.Entries[1], Traits.Features[0], Traits.Entries[1].LastStand!, Traits.StateRecipes[1], Counter,
+            Tier, Tier.Stats, Boss.StartDebris!, Boss.Raid!, Boss.AlsoAt![0], Design.DebrisTypes![CrystalId], Traits, Traits.Entries[1], Traits.Features[0], Traits.Entries[1].LastStand!, Traits.StateRecipes[1], Counter,
             Boss, Boss.Event, new BattleEventRef(0, CommonEvent: 40), Boss.Enemies[0], Boss.Reserve![0], Boss.Enemies[0].Stats, Boss.NormalAttack, Boss.BattleMaps[0], Boss.Actions[FirstSlot][0], Boss.Actions[FirstSlot][0].FollowUp!,
             CustomSkill, CustomSkill.Fields, CustomSkill.Fields.Damage, CustomSkill.Effects[0], CustomSkill.Stance!,
             AreaSkill, AreaSkill.Shape, AreaSkill.Targeting, AreaSkill.Targeting.Zone!, AreaSkill.Damage, Formula, AreaSkill.Spread, AreaSkill.Falloff,

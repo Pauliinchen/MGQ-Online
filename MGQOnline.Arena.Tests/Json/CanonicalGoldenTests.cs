@@ -2,7 +2,8 @@
 //  CanonicalGoldenTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Took the damage reductions in the goldens
+//      Paulinchen  2026-10-23: Took the boss's raid and refight in the design golden
+//                            - Took the damage reductions in the goldens
 //                            - Took the fight changes in the goldens
 //                            - Took the debris types in the design golden
 //      Paulinchen  2026-10-22: Took the hazards in the goldens
@@ -38,7 +39,7 @@ public sealed class CanonicalGoldenTests
     /// <summary>
     /// The SHA-256 of the design golden.
     /// </summary>
-    private const string DesignSha256 = "7aa238c1e773a206e198917bba65b3fe1739f49faf770bef968c80af5716b49b";
+    private const string DesignSha256 = "856265d3643fe9da586c74bdcae94f6471e5d3a38fa691c32c5075daabf946f1";
 
     /// <summary>
     /// The SHA-256 of the battle log golden.

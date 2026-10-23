@@ -2,7 +2,8 @@
 //  SimFixtures.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Fought the test boss in an event battle with one enemy slot and without a reserve
+//      Paulinchen  2026-10-23: Left the samples' raid and refight out
+//                            - Fought the test boss in an event battle with one enemy slot and without a reserve
 //                            - Left the samples' debris types and start debris out
 //      Paulinchen  2026-10-22: Left the samples' hazards out
 //                            - Gave the tier its normal attacks per turn
@@ -185,6 +186,8 @@ internal static class SimFixtures
             MarkReactions = [],
             Tier = TierNumber,
             StartDebris = null,
+            Raid = null,
+            AlsoAt = null,
         };
         GameRules gameRules = Samples.GameRules with
         {

@@ -2,7 +2,8 @@
 //  RuntimeBoss.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Fought one event battle with its starting enemies and a reserve in place of the troop phases
+//      Paulinchen  2026-10-23: Added the fight's raid and the other event battles that start it
+//                            - Fought one event battle with its starting enemies and a reserve in place of the troop phases
 //                            - Gave every enemy of a fight its own slot with its own action list
 //                            - Added the boss's start debris
 //      Paulinchen  2026-10-22: Added the boss's own normal attacks per turn
@@ -40,6 +41,8 @@ namespace MGQOnline.Arena.Model;
 /// <param name="NormalAttacks">The most normal attacks each enemy rolls per turn, or null for its tier's.</param>
 /// <param name="Reserve">The slots a rule may only bring in by a join or a transform, or null for none.</param>
 /// <param name="StartDebris">The random debris its battles start with, resolved over the game rule's, its type the boss's own; null for the game rule's.</param>
+/// <param name="Raid">The raid the fight is a tab of, or null for an older build's boss.</param>
+/// <param name="AlsoAt">The other event battles that start the fight, or null for none.</param>
 public sealed record RuntimeBoss(
     string Id,
     string Key,
@@ -61,7 +64,30 @@ public sealed record RuntimeBoss(
     int? Tier = null,
     int? NormalAttacks = null,
     IReadOnlyList<ReserveEnemy>? Reserve = null,
-    RandomDebris? StartDebris = null);
+    RandomDebris? StartDebris = null,
+    RuntimeRaid? Raid = null,
+    IReadOnlyList<BattleUse>? AlsoAt = null);
+
+/// <summary>
+/// The raid a fight belongs to: one character's fights, each a tab of the raid.
+/// </summary>
+/// <remarks>
+/// A raid's later tabs are fought far apart in the story, so a game shows a tab only once its
+/// battle was reached.
+/// </remarks>
+/// <param name="Key">The raid's key, the key of its first fight.</param>
+/// <param name="Name">The raid's name.</param>
+/// <param name="Tab">The fight's tab, counted from 0.</param>
+/// <param name="TabName">The tab's name, such as "Phase 2" or the place of an encounter.</param>
+/// <param name="Tabs">How many tabs the raid has.</param>
+public sealed record RuntimeRaid(string Key, string Name, int Tab, string TabName, int Tabs);
+
+/// <summary>
+/// Another event battle that starts a fight.
+/// </summary>
+/// <param name="Event">The event battle.</param>
+/// <param name="Kind">Why it starts the fight.</param>
+public sealed record BattleUse(BattleEventRef Event, BattleUseKind Kind);
 
 /// <summary>
 /// The event command that starts a boss's battle.

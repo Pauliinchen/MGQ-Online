@@ -2,6 +2,7 @@
 //  DesignEnums.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Added the kinds of event battles that start a fight besides its own
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -10,6 +11,28 @@ using System.Text.Json.Serialization;
 using MGQOnline.Arena.Json;
 
 namespace MGQOnline.Arena.Model;
+
+/// <summary>
+/// Why another event battle starts a fight.
+/// </summary>
+[JsonConverter(typeof(CamelCaseEnumConverter<BattleUseKind>))]
+public enum BattleUseKind
+{
+    /// <summary>
+    /// The same battle of the same encounter, such as the other route's or a later page's.
+    /// </summary>
+    Twin,
+
+    /// <summary>
+    /// A refight in Hades.
+    /// </summary>
+    HadesRefight,
+
+    /// <summary>
+    /// A refight in the Colosseum.
+    /// </summary>
+    ColosseumRefight,
+}
 
 /// <summary>
 /// Where a raid boss comes from.
