@@ -2,6 +2,7 @@
 //  story.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Kept the highest affection any write of a keyed story named
 //      Paulinchen  2026-10-21: Let an admin set switches, variables and self switches of a keyed story by id as a revision every game takes
 //                            - Let an admin pin keys of a keyed story at any value and take pins off again, reading the pins kept before as pins at off
 //                            - Took a write that changes pinned keys without them and told every game the pinned values in a revision of its own
@@ -100,6 +101,11 @@ export const LISTS = Object.freeze(["s", "sf", "v", "ss", "ssf", "a", "f"]);
  * semicolons, each its troop and its fight split by the first bar.
  */
 const FREEZES = "f";
+
+/**
+ * The list of the companions' affection, each of which only goes up.
+ */
+const AFFECTIONS = "a";
 
 /**
  * A companion's affection as the games write it: a whole number above 0.
@@ -886,7 +892,8 @@ export class WorldStory {
   /**
    * Takes a game's write of a keyed story, the keys it changed in the lists `set`: each one goes in
    * unless a write after the revision it built on changed it, which the first writer keeps; the end
-   * of a frozen raid boss fight always goes in and is never replaced. Keys an admin pinned stay
+   * of a frozen raid boss fight always goes in and is never replaced; a companion's affection goes
+   * in only above the world's, whichever write came first. Keys an admin pinned stay
    * out of the write, see pinOf. A write on a sealed story the game opened moves the world to keys,
    * the sealed story's revision its base; a story nobody wrote yet starts keyed.
    *
@@ -958,10 +965,14 @@ export class WorldStory {
         }
 
         const freeze = key.startsWith(FREEZES);
-
+        // A companion's affection is the highest any player reached, whichever write came first.
+        const affection = key.startsWith(AFFECTIONS);
+        const lower = affection && Number(value) < Number(keys.get(key) ?? 0);
         // The end of a frozen fight is final: no write brings the fight back, and an end goes in
         // over a fight another write froze since the base.
-        if ((freeze && keys.get(key) === FREEZE_ENDED) || (changed.has(key) && !(freeze && value === FREEZE_ENDED))) {
+        const lost = !affection && ((freeze && keys.get(key) === FREEZE_ENDED) || (changed.has(key) && !(freeze && value === FREEZE_ENDED)));
+
+        if (lower || lost) {
           kept.set(key, keys.get(key));
           continue;
         }

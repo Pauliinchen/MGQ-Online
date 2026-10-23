@@ -2,6 +2,7 @@
 //  story.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Covered the affection of a keyed story keeping the highest value written
 //      Paulinchen  2026-10-21: Covered the pins an older relay kept as rules
 //                            - Covered a write that changes pinned keys keeping its other keys
 //      Paulinchen  2026-10-17: Covered the frozen raid boss fights in a keyed story's lists and the end of one
@@ -610,6 +611,17 @@ test("of two writes on the same revision, the first keeps the keys both changed,
   assert.equal((await story.get()).body.keys.v, "1001:n10,50:n2,60:n4");
   const rebuilt = await wrote(story, BOB, 3, { v: "50:n3" }, { p: 10 });
   assert.equal(rebuilt.push.delta.v, "50:n3", "once the game built on the world's value it may change it");
+});
+
+test("a companion's affection keeps the highest value written, whichever write came first", async () => {
+  const { story } = makeStory();
+  await wrote(story, ALICE, 0, { v: "1001:n10" }, { p: 10 });
+  await wrote(story, ALICE, 1, { a: "5:10" }, { p: 10 });
+  const raised = await wrote(story, BOB, 1, { a: "5:20" }, { p: 10 });
+  assert.equal(raised.push.delta.a, "5:20", "a higher value goes in over a write since its base");
+  const lower = await wrote(story, ALICE, 3, { a: "5:15" }, { p: 10 });
+  assert.deepEqual([lower.body.kept.a, lower.push.delta.a], ["5:20", ""], "a lower value comes back as the world's");
+  assert.equal((await story.get()).body.keys.a, "5:20");
 });
 
 test("a frozen raid boss fight is one key of its troop, which the write that ends it replaces for every game", async () => {
