@@ -6,7 +6,10 @@
 #                            - Loaded world_gates.rbx after world_difficulty.rbx
 #                            - Loaded ui_mod_browser.rbx after ui_bug_report.rbx and named the mp_mod_browser_* exports
 #                            - Stopped loading the removed battles_pvp_lobby.rbx
-#      Paulinchen  2026-10-23: Stopped loading the deleted battles_pvp_mirror.rbx
+#      Paulinchen  2026-10-23: Added Bridge, the bridge to C# through mp_bridge_open, mp_call, mp_reply and mp_drain
+#                            - Turned the mod on only once the bridge opened
+#                            - Sent the staged bridge entries and took the bridge events once a frame
+#                            - Stopped loading the deleted battles_pvp_mirror.rbx
 #                            - Deleted the log rules of a game started for the options dump
 #                            - Named mp_memory_usage
 #      Paulinchen  2026-10-22: Named mp_dir_open and mp_dir_read
@@ -181,23 +184,28 @@ module MGQ_Multiplayer
 
   # Tells whether the mod can run.
   #
-  # @return [Boolean] Whether the mod is on and its DLL is in the mod folder.
+  # @return [Boolean] Whether the mod is on, its DLL is in the mod folder and the bridge to it
+  #   opened, which a stand-in DLL, an older one or one of another bridge version never lets happen.
   def self.available?
-    ENABLED && File.exist?(path(DLL))
+    @available == true
   end
 
-  # Starts the DLL and keeps the game running in the background, once per game session.
+  # Starts the DLL, opens the bridge to it and keeps the game running in the background, once per
+  # game session.
   def self.start
     return if @started
     @started = true
     Log.write("Monster Girl Quest! Online starting on Ruby #{RUBY_VERSION}, day log #{Log.file_name}")
     Log.prune
-    unless available?
+    unless ENABLED && File.exist?(path(DLL))
       Log.write(ENABLED ? "not started: #{path(DLL)} is missing" : "not started: the mod is turned off")
       return
     end
 
     Link.start
+    return unless Bridge.start(path(DLL))
+
+    @available = true
     Log.write("started #{path(DLL)}")
     Background.start
     UpdateCheck.start
@@ -1095,6 +1103,391 @@ module MGQ_Multiplayer
     end
   end
 
+  # The bridge to C# (MGQOnline.Bridge): named topics the DLL answers, with plain values crossing
+  # as Marshal through four exports. A script calls a topic for its value, stages what it hands
+  # over during a frame, and takes the DLL's events in the handlers it registered; once a frame the
+  # staged entries go over in one batch call and the events come back in one drain. Plain values
+  # are nil, true, false, Integer, String (UTF-8, US-ASCII or binary), Array and Hash with String
+  # or Integer keys; the DLL refuses anything else, such as a Symbol or a game object.
+  module Bridge
+    # The bridge version these scripts speak, BridgeHost.Version in C#; a DLL of another refuses
+    # the handshake.
+    VERSION = 1
+
+    # Bytes of the reply buffer at first; a larger reply grows it for good.
+    REPLY_SIZE = 4_096
+
+    # Bytes of the drain buffer at first; a larger drain grows it for good.
+    DRAIN_SIZE = 16_384
+
+    # The topic the DLL runs a frame's staged entries through, in order.
+    BATCH = "batch"
+
+    # The largest frame the drain passes, the most a Win32API long holds; the count starts again
+    # from 0 past it.
+    MAX_FRAME = 0x7fff_ffff
+
+    # What a call without a request hands over: an empty request, which C# reads as nil.
+    NO_REQUEST = ""
+
+    # What call! raises for a topic that answered an error, or while the bridge is closed.
+    class Error < StandardError; end
+
+    # Reaches the DLL through the game's Win32API.
+    class Win32Backend
+      # The four exports with their arguments in Win32API notation; each returns a long.
+      SIGNATURES = {
+        'mp_bridge_open' => 'lpl',
+        'mp_call' => 'lpplpl',
+        'mp_reply' => 'lpl',
+        'mp_drain' => 'llpl',
+      }
+
+      # Loads the four exports.
+      #
+      # @param path [String] The DLL's path, relative to the game's folder.
+      # @raise [RuntimeError] The DLL lacks one of them, as an older build does.
+      def initialize(path)
+        @functions = {}
+        SIGNATURES.each { |name, arguments| @functions[name] = Win32API.new(path, name, arguments, 'l') }
+      end
+
+      # Shakes hands (mp_bridge_open).
+      #
+      # @param version [Integer] The scripts' VERSION.
+      # @param reply [String] The reply buffer.
+      # @param size [Integer] Its size in bytes.
+      # @return [Integer] The reply's length, 0 for none, or the size needed negated.
+      def open(version, reply, size)
+        @functions['mp_bridge_open'].call(version, reply, size)
+      end
+
+      # Runs a topic (mp_call).
+      #
+      # @param context [Integer] The context from the handshake.
+      # @param topic [String] The topic, null-terminated.
+      # @param request [String] The request as Marshal, empty for nil.
+      # @param length [Integer] The request's length in bytes.
+      # @param reply [String] The reply buffer.
+      # @param size [Integer] Its size in bytes.
+      # @return [Integer] The reply's length, 0 for none, or the size needed negated.
+      def call(context, topic, request, length, reply, size)
+        @functions['mp_call'].call(context, topic, request, length, reply, size)
+      end
+
+      # Hands out a parked reply (mp_reply).
+      #
+      # @param context [Integer] The context from the handshake.
+      # @param reply [String] The reply buffer, now large enough.
+      # @param size [Integer] Its size in bytes.
+      # @return [Integer] The reply's length, 0 for none.
+      def reply(context, reply, size)
+        @functions['mp_reply'].call(context, reply, size)
+      end
+
+      # Takes the queued events (mp_drain).
+      #
+      # @param context [Integer] The context from the handshake.
+      # @param frame [Integer] The bridge's frame.
+      # @param buffer [String] The drain buffer.
+      # @param size [Integer] Its size in bytes.
+      # @return [Integer] The events' length, 0 for none, or the size needed negated.
+      def drain(context, frame, buffer, size)
+        @functions['mp_drain'].call(context, frame, buffer, size)
+      end
+    end
+
+    # The battle server's way to its core library through Fiddle, with the same four functions.
+    # Only the seam is here: until the battle server loads the library, every function answers 0,
+    # as a stand-in DLL does, so the bridge stays closed there.
+    class FiddleBackend
+      # Names the library.
+      #
+      # @param path [String] The core library's path.
+      def initialize(path)
+        @path = path
+      end
+
+      # Shakes hands (mp_bridge_open), see Win32Backend#open.
+      #
+      # @param _version [Integer] The scripts' VERSION.
+      # @param _reply [String] The reply buffer.
+      # @param _size [Integer] Its size in bytes.
+      # @return [Integer] 0, no handshake.
+      def open(_version, _reply, _size)
+        0
+      end
+
+      # Runs a topic (mp_call), see Win32Backend#call.
+      #
+      # @param _context [Integer] The context from the handshake.
+      # @param _topic [String] The topic, null-terminated.
+      # @param _request [String] The request as Marshal, empty for nil.
+      # @param _length [Integer] The request's length in bytes.
+      # @param _reply [String] The reply buffer.
+      # @param _size [Integer] Its size in bytes.
+      # @return [Integer] 0, no reply.
+      def call(_context, _topic, _request, _length, _reply, _size)
+        0
+      end
+
+      # Hands out a parked reply (mp_reply), see Win32Backend#reply.
+      #
+      # @param _context [Integer] The context from the handshake.
+      # @param _reply [String] The reply buffer.
+      # @param _size [Integer] Its size in bytes.
+      # @return [Integer] 0, no reply.
+      def reply(_context, _reply, _size)
+        0
+      end
+
+      # Takes the queued events (mp_drain), see Win32Backend#drain.
+      #
+      # @param _context [Integer] The context from the handshake.
+      # @param _frame [Integer] The bridge's frame.
+      # @param _buffer [String] The drain buffer.
+      # @param _size [Integer] Its size in bytes.
+      # @return [Integer] 0, no events.
+      def drain(_context, _frame, _buffer, _size)
+        0
+      end
+    end
+
+    # Opens the bridge to the DLL.
+    #
+    # @param path [String] The DLL's path, relative to the game's folder.
+    # @return [Boolean] Whether it opened; the log tells why not.
+    def self.start(path)
+      backend =
+        begin
+          Win32Backend.new(path)
+        rescue => e
+          return refuse("#{path} lacks the bridge's exports (#{e.class}: #{e.message}), so it is older than these scripts")
+        end
+      open(backend)
+    end
+
+    # Shakes hands with C# through a backend. Until one succeeds, every call answers nil and a
+    # frame does nothing.
+    #
+    # @param backend [#open, #call, #reply, #drain] The four exports, see Win32Backend.
+    # @return [Boolean] Whether the bridge opened; the log tells why not.
+    def self.open(backend)
+      close
+      @backend = backend
+      @reply = buffer(REPLY_SIZE)
+      length = backend.open(VERSION, @reply, @reply.bytesize)
+      if length < 0
+        # The DLL parked its answer, which the next handshake hands out.
+        @reply = buffer(-length)
+        length = backend.open(VERSION, @reply, @reply.bytesize)
+      end
+      return refuse("the DLL answered no handshake, as a stand-in DLL does") if length <= 0
+
+      answer = Marshal.load(@reply[0, length])
+      return refuse("the DLL refused the handshake: #{answer['text']}") unless answer["ok"]
+
+      value = answer["value"]
+      return refuse("the DLL speaks bridge version #{value['bridge']}, these scripts #{VERSION}") if value["bridge"] != VERSION
+
+      @topics = value["topics"]
+      @events = buffer(DRAIN_SIZE)
+      @frame = 0
+      @context = value["context"]
+      Log.write("bridge: opened context #{@context} with the DLL of build #{value['build']}, #{@topics.size} topic(s)")
+      true
+    rescue => e
+      refuse("the handshake failed: #{e.class}: #{e.message}")
+    end
+
+    # Closes the bridge and forgets what was staged and which failures were logged; the handlers
+    # stay.
+    def self.close
+      @context = nil
+      @staged = []
+      @failures = {}
+    end
+
+    # Tells whether the handshake succeeded.
+    #
+    # @return [Boolean] Whether the bridge is open.
+    def self.open?
+      !@context.nil?
+    end
+
+    # Tells whether the DLL answers a topic.
+    #
+    # @param topic [String] The topic.
+    # @return [Boolean] Whether the handshake named it.
+    def self.has?(topic)
+      open? && @topics.include?(topic)
+    end
+
+    # Calls a topic and takes its value. An error it answers is logged once per topic and code.
+    #
+    # @param topic [String] The topic, such as "story.mapping".
+    # @param request [Object] A plain value, nil for none.
+    # @return [Object, nil] The topic's value; nil for none, for an error and while the bridge is
+    #   closed.
+    def self.call(topic, request = nil)
+      answer = exchange(topic, request)
+      return nil if answer.nil?
+      return answer["value"] if answer["ok"]
+
+      failed(topic, answer["error"], answer["text"])
+      nil
+    rescue => e
+      failed(topic, "script", "#{e.class}: #{e.message}")
+      nil
+    end
+
+    # Calls a topic, for a caller that must know whether it answered.
+    #
+    # @param topic [String] The topic.
+    # @param request [Object] A plain value, nil for none.
+    # @return [Object, nil] The topic's value, nil for none.
+    # @raise [Error] The topic answered an error, or the bridge is closed.
+    def self.call!(topic, request = nil)
+      raise Error, "the bridge is closed, so #{topic} was not called" unless open?
+
+      answer = exchange(topic, request)
+      return nil if answer.nil?
+      return answer["value"] if answer["ok"]
+
+      raise Error, "#{topic} answered #{answer['error']}: #{answer['text']}"
+    end
+
+    # Stages what a script hands over during a frame, which the next frame sends in one batch with
+    # the rest, in order. Nothing is staged while the bridge is closed.
+    #
+    # @param topic [String] The topic, such as "story.write".
+    # @param payload [Object] A plain value.
+    def self.stage(topic, payload = nil)
+      @staged << [topic, payload] if @context
+      nil
+    end
+
+    # Registers a handler for a topic's events, which a frame's drain hands to every handler of
+    # the topic in order.
+    #
+    # @param topic [String] The topic, such as "story.push".
+    # @yieldparam payload [Object] The event's plain value.
+    def self.on(topic, &handler)
+      ((@handlers ||= {})[topic] ||= []) << handler
+    end
+
+    # Sends what was staged and takes the DLL's events, once a frame after Graphics.update.
+    #
+    # The bridge counts its own frames, which never go back as Graphics.frame_count does when a
+    # save loads, since C#'s timers run on them.
+    def self.frame
+      return unless @context
+
+      @frame = @frame >= MAX_FRAME ? 0 : @frame + 1
+      send_staged
+      drain
+    end
+
+    # Sends the staged entries as one batch and logs each entry that failed, once per topic and
+    # code.
+    def self.send_staged
+      return if @staged.empty?
+
+      failures = call(BATCH, @staged)
+      @staged.clear
+      failures.each { |entry| failed(entry["topic"], entry["error"], entry["text"]) } if failures.is_a?(Array)
+    end
+
+    # Takes the DLL's events and hands each to its topic's handlers.
+    def self.drain
+      length = @backend.drain(@context, @frame, @events, @events.bytesize)
+      if length < 0
+        # The DLL parked the events, which the next drain of the frame hands out.
+        @events = buffer(-length)
+        length = @backend.drain(@context, @frame, @events, @events.bytesize)
+      end
+      return if length <= 0
+
+      Marshal.load(@events[0, length]).each { |topic, payload| dispatch(topic, payload) }
+    rescue => e
+      failed("(drain)", "script", "#{e.class}: #{e.message}")
+    end
+
+    # Hands an event to its topic's handlers; one that fails is logged and the others still run.
+    #
+    # @param topic [String] The event's topic.
+    # @param payload [Object] The event's plain value.
+    def self.dispatch(topic, payload)
+      handlers = @handlers && @handlers[topic]
+      return failed(topic, "no_handler", "no script takes its events") unless handlers
+
+      handlers.each do |handler|
+        begin
+          handler.call(payload)
+        rescue => e
+          failed(topic, "handler", "#{e.class}: #{e.message}")
+        end
+      end
+    end
+
+    # Calls a topic through the backend: the request dumped, a parked reply taken into a grown
+    # buffer, and the reply loaded at once, since the next call writes into the same buffer.
+    #
+    # @param topic [String] The topic.
+    # @param request [Object] A plain value, nil for none.
+    # @return [Hash, nil] The reply's envelope, nil for no reply or while the bridge is closed.
+    def self.exchange(topic, request)
+      return nil unless @context
+
+      dump = request.nil? ? NO_REQUEST : Marshal.dump(request)
+      length = @backend.call(@context, name_of(topic), dump, dump.bytesize, @reply, @reply.bytesize)
+      if length < 0
+        @reply = buffer(-length)
+        length = @backend.reply(@context, @reply, @reply.bytesize)
+      end
+      length > 0 ? Marshal.load(@reply[0, length]) : nil
+    end
+
+    # Names a topic as the DLL reads it, made once per topic.
+    #
+    # @param topic [String] The topic.
+    # @return [String] The topic, null-terminated.
+    def self.name_of(topic)
+      (@names ||= {})[topic] ||= "#{topic}\0"
+    end
+
+    # Makes a buffer the DLL writes into.
+    #
+    # @param size [Integer] Its size in bytes.
+    # @return [String] The buffer, binary, so its length counts bytes.
+    def self.buffer(size)
+      ("\0" * size).force_encoding("ASCII-8BIT")
+    end
+
+    # Logs a failure, once per topic and code.
+    #
+    # @param topic [String] The topic.
+    # @param code [String] The error code, such as "bad_request", or what failed in the scripts.
+    # @param text [String] What went wrong.
+    def self.failed(topic, code, text)
+      key = "#{topic} #{code}"
+      return if @failures[key]
+
+      @failures[key] = true
+      Log.write("bridge: #{topic} failed with #{code}: #{text}")
+    end
+
+    # Keeps the bridge closed and logs why, which turns the mod off.
+    #
+    # @param reason [String] Why it did not open.
+    # @return [Boolean] false.
+    def self.refuse(reason)
+      close
+      Log.write("bridge: the mod stays off, #{reason}")
+      false
+    end
+  end
+
   # Asks the relay for the release to play, or GitHub for the latest release, once per game session,
   # on a thread of the DLL's own, see MGQ_Multiplayer.outdated?.
   module UpdateCheck
@@ -1651,11 +2044,13 @@ end
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # After every frame, counts it for the keys, tells the Discord mod how the connection stands,
-  # polls for an update and logs the hooks registered since the last frame. Graphics.update runs
-  # every frame in every scene, so all happen wherever the player is.
+  # After every frame, counts it for the keys, sends what the scripts staged for the bridge and
+  # takes its events, tells the Discord mod how the connection stands, polls for an update and logs
+  # the hooks registered since the last frame. Graphics.update runs every frame in every scene, so
+  # all happen wherever the player is.
   MGQ_MpHooks.after(Graphics.singleton_class, :update, "Multiplayer") do
     MGQ_Multiplayer::Key.next_frame
+    MGQ_Multiplayer::Bridge.frame
     MGQ_Multiplayer::Discord.tick
     MGQ_Multiplayer::UpdateCheck.tick
     MGQ_MpHooks.report

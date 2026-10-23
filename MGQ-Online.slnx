@@ -61,6 +61,8 @@
     <File Path="GameScript/Tests/battles_coop_test.rb" />
     <File Path="GameScript/Tests/battles_sync_test.rb" />
     <File Path="GameScript/Tests/battles_test.rb" />
+    <File Path="GameScript/Tests/bridge_support.rb" />
+    <File Path="GameScript/Tests/bridge_test.rb" />
     <File Path="GameScript/Tests/coop_events_test.rb" />
     <File Path="GameScript/Tests/coop_gather_test.rb" />
     <File Path="GameScript/Tests/coop_npcs_test.rb" />
