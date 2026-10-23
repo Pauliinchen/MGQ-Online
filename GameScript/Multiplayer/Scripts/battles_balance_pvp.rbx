@@ -2,6 +2,7 @@
 #  battles_balance_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Deleted the switch that never turned the balance off
 #      Paulinchen  2026-10-07: Logged the balance's changes per character, its lowered hits and its end
 #      Paulinchen  2026-10-06: Added unbalanced and dropped active?
 #      Paulinchen  2026-10-04: Renamed from mp_balance_pvp.rbx
@@ -21,9 +22,6 @@ module MGQ_MpBalancePvp
 
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "pvp balance"
-
-  # Turns the balance off without uninstalling it.
-  ENABLED = true
 
   # Whether a skill deals what it deals in a monster's hands. Most skills carry a second formula
   # for monsters, which the game balanced against a character's HP.
@@ -74,8 +72,6 @@ module MGQ_MpBalancePvp
   #
   # @param battlers [Array<Game_Battler>] The characters of both teams.
   def self.begin(battlers)
-    return unless ENABLED
-
     @active = true
     @taken = {}
     battlers.each { |battler| battler.hp = battler.mhp unless battler.dead? }

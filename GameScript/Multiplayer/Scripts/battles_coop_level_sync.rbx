@@ -2,6 +2,7 @@
 #  battles_coop_level_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Deleted the switch that never turned the level sync off
 #      Paulinchen  2026-10-08: Synced no level in a Raid World
 #      Paulinchen  2026-10-07: Logged the battle's level and each character's sync
 #      Paulinchen  2026-10-06: Dropped level
@@ -22,9 +23,6 @@ module MGQ_MpCoopLevelSync
 
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "level sync"
-
-  # Turns the level sync off without uninstalling it.
-  ENABLED = true
 
   # The share of what the level takes off a stat that the character's equipment loses too.
   EQUIPMENT_SHARE = 0.5
@@ -80,10 +78,10 @@ module MGQ_MpCoopLevelSync
   # @param level [Integer, nil] The battle's level, nil or 0 for none.
   def self.begin(level)
     finish
-    @level = ENABLED && level.is_a?(Integer) && level > 0 ? level : nil
+    @level = level.is_a?(Integer) && level > 0 ? level : nil
     return log("battle at level #{@level}, characters above it fight at it") if @level
 
-    log("no level sync this battle: #{ENABLED ? "no level (#{level.inspect})" : 'the level sync is off'}")
+    log("no level sync this battle: no level (#{level.inspect})")
   end
 
   # Syncs a character of the co-op party when it is above the battle's level, keeping its share of

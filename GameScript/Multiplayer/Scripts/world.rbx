@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-23: Offered the update under Wine or Proton too, and named the release to install by hand with --version
 #                            - Dropped the fallbacks for list fields the DLL always writes
 #                            - Left the details of the world list, a new world and an edit to the DLL log
+#                            - Deleted the switch that never turned worlds off
 #      Paulinchen  2026-10-22: Read the mods of the opened world on their own and let a world name mods up to the relay's new limit
 #                            - Offered a step back to an older release as the one to install
 #      Paulinchen  2026-10-15: Handed keywords on through the wrapped File and Dir methods
@@ -121,9 +122,6 @@
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorld
-  # Turns worlds off without uninstalling them.
-  ENABLED = true
-
   # The title screen's command that opens the world screen.
   COMMAND_NAME = "Multiplayer"
 
@@ -260,10 +258,9 @@ module MGQ_MpWorld
 
   # Tells whether worlds can be used.
   #
-  # @return [Boolean] Whether worlds are on, the mod's DLL is installed, and no newer
-  #   release is out.
+  # @return [Boolean] Whether the mod's DLL is installed and no newer release is out.
   def self.available?
-    ENABLED && MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated?
+    MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated?
   end
 
   extend MGQ_MpLog
@@ -955,7 +952,7 @@ module MGQ_MpWorld
     def self.on_title_update(scene)
       return unless @pending
 
-      if MGQ_MpWorld::ENABLED && MGQ_Multiplayer.available? && MGQ_Multiplayer.outdated?
+      if MGQ_Multiplayer.available? && MGQ_Multiplayer.outdated?
         MGQ_MpWorld.log("not opening the world screen for the invite into world #{MGQ_MpWorld.short(@pending[0])}: the mod is outdated")
         @pending = nil
         return MGQ_MpWorld.offer_update(scene)

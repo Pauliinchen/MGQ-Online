@@ -11,6 +11,7 @@
 #                            - Sent the staged bridge entries and took the bridge events once a frame
 #                            - Stopped loading the deleted battles_pvp_mirror.rbx
 #                            - Deleted the log rules of a game started for the options dump
+#                            - Deleted the switch that never turned the mod off
 #                            - Named mp_memory_usage
 #      Paulinchen  2026-10-22: Named mp_dir_open and mp_dir_read
 #                            - Named mp_update_rollback, told whether the release to install is a step back and said the version to play for one
@@ -132,9 +133,6 @@
 # keys the game's own Input does not know, and the Discord mod, when it is installed. It also loads
 # the mod's other scripts, see SCRIPTS.
 module MGQ_Multiplayer
-  # Turns the mod off without uninstalling it.
-  ENABLED = true
-
   # Folder inside the game's Patch folder that holds the DLL, the other scripts and everything the
   # mod writes but its logs.
   MOD_DIR = "Patch\\Multiplayer"
@@ -197,8 +195,8 @@ module MGQ_Multiplayer
     @started = true
     Log.write("Monster Girl Quest! Online starting on Ruby #{RUBY_VERSION}, day log #{Log.file_name}")
     Log.prune
-    unless ENABLED && File.exist?(path(DLL))
-      Log.write(ENABLED ? "not started: #{path(DLL)} is missing" : "not started: the mod is turned off")
+    unless File.exist?(path(DLL))
+      Log.write("not started: #{path(DLL)} is missing")
       return
     end
 

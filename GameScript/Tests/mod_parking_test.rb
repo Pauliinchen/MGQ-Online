@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-23: Checked putting the mods back and starting again into the world in place of the restart by hand under Wine
 #                            - Gave the stand-in world list every field the DLL writes
+#                            - Dropped the check of the deleted options dump
 #      Paulinchen  2026-10-22: Stood in for whether the version to install is a step back and for the update message
 #      Paulinchen  2026-10-14: Expected a Raid World's row of its Save in every build
 #      Paulinchen  2026-10-13: Expected the raid bosses of a Classic world in its edit form and after the squad rules in the DLL calls
@@ -888,12 +889,6 @@ Dir.mktmpdir do |folder|
     check("who closes the notice", [parking.title_busy?, $box], [false, nil])
     new_session
     $recover = 0
-    ENV["MGQMP_OPTIONS_DUMP"] = "dump.txt"
-    $calls.clear
-    Scene_Title.new.start
-    check("a game the World Admin tool started for the options touches nothing", $calls.map(&:first).grep(/mp_mods/), [])
-    ENV.delete("MGQMP_OPTIONS_DUMP")
-    new_session
 
     # The update.
     $parked = ["Patch/Invasions.rb"]

@@ -3,7 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Started the game again for downloaded mods under Wine or Proton too
-#                            - Deleted the options dump for the World Admin tool
+#                            - Deleted the options dump for the World Admin tool, its setting and its check
 #      Paulinchen  2026-10-22: Took a world's settings only once the list carries its mods, and as many settings and mod hashes as the relay's new limit
 #                            - Said the version to play for a step back when the entry after a restart is refused
 #      Paulinchen  2026-10-15: Listed the world's mods and their options this game runs for the battle server
@@ -120,10 +120,6 @@ module MGQ_MpWorldMods
   # Frames a reading of the world's settings on the relay counts as recent, ten seconds; a player
   # whose game holds other settings meanwhile is told the creator's without asking the relay again.
   CHECK_FRAMES = 600
-
-  # The environment variable through which the deprecated World Admin tool started the game to read
-  # its Mod Config options.
-  DUMP_SETTING = "MGQMP_OPTIONS_DUMP"
 
   # An option's name that opens its mod's group, "[Mod Name] Option", as Mod Config Remake reads it.
   MOD_NAME = /\A\s*\[([^\]]+)\]\s*/
@@ -823,15 +819,6 @@ module MGQ_MpWorldMods
     return one == other unless one.is_a?(Float) || other.is_a?(Float)
 
     (one.to_f - other.to_f).abs < 1e-6
-  rescue
-    false
-  end
-
-  # Tells whether the deprecated World Admin tool started the game to read its Mod Config options.
-  #
-  # @return [Boolean] Whether DUMP_SETTING names a file.
-  def self.dump_requested?
-    !ENV[DUMP_SETTING].to_s.empty?
   rescue
     false
   end

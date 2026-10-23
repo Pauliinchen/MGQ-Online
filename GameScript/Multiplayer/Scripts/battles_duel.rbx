@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Started duels without the deleted mirror match flag
+#                            - Asked no longer for the deleted PvP switch
 #      Paulinchen  2026-10-12: Took a non-numeric party_member_max as 0 and left a team duel whose sides did not read
 #      Paulinchen  2026-10-11: Drew the challenge in the color every request and offer shares
 #                            - Named the duel's waits in the line above the player's head with their seconds left
@@ -116,11 +117,11 @@ module MGQ_MpBattlesDuel
     sent
   end
 
-  # Reports whether duels can run: PvP battles are on and up to date, and a world is open.
+  # Reports whether duels can run: the mod is installed and up to date, and a world is open.
   #
   # @return [Boolean] Whether they can.
   def self.available?
-    MGQ_MpBattlesPvp::ENABLED && MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated? && MGQ_MpOverworldSync.in_world?
+    MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated? && MGQ_MpOverworldSync.in_world?
   end
 
   # Reports whether the player challenges to a duel now.

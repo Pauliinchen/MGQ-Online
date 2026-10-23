@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-23: Checked that only a handshake turns the mod on
 #                            - Created
+#                            - Stood in without the deleted mod switch
 #
 #----------------------------------------------------------------
 
@@ -52,7 +53,6 @@ end
 
 # The start: the mod is on only once the bridge opened, and off with one line otherwise.
 module MGQ_Multiplayer
-  ENABLED = true
   DLL = "Multiplayer.dll"
   # Builds a path in the mod folder.
   def self.path(name); "#{MOD_DIR}\\#{name}"; end

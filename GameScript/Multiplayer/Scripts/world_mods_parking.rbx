@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Started the game again with the mods parked under Wine or Proton too, dropping the restart by hand
+#                            - Deleted the check for the options dump
 #      Paulinchen  2026-10-22: Checked a world's mods again only once the list carries them
 #      Paulinchen  2026-10-10: Told the player on the title screen how many mods a restore sent to Parked mods/Conflicts
 #                            - Refused saving outside a world while the game runs without the player's other mods
@@ -171,19 +172,11 @@ module MGQ_MpModParking
 
   # Deciding which mods to park.
 
-  # Tells whether this game is one the World Admin tool started for the Mod Config options, which
-  # quits at once and must neither park nor restore.
-  #
-  # @return [Boolean] Whether it is.
-  def self.dump?
-    MGQ_MpWorldMods.dump_requested?
-  end
-
   # Tells whether the DLL can park and restore.
   #
-  # @return [Boolean] Whether the mod's DLL is installed and this is no options dump.
+  # @return [Boolean] Whether the mod's DLL is installed.
   def self.usable?
-    MGQ_Multiplayer.available? && !dump?
+    MGQ_Multiplayer.available?
   end
 
   # Reads what the DLL has parked.

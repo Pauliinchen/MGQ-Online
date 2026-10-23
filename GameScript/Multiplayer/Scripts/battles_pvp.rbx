@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-24: Removed the PvP battle screen's hotkey, its exchange and its Discord invites
 #      Paulinchen  2026-10-23: Deleted the mirror match
+#                            - Deleted the switch that never turned PvP battles off
 #                            - Left out a skill hit's message without a target in every battle
 #      Paulinchen  2026-10-22: Said the version to play on F11 for a step back to an older release
 #      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
@@ -58,9 +59,6 @@
 # commanding their own team, and the game is put back as it was once it ends. Only the Frontline
 # fights unless the host's battles have the Backline (battles_pvp_backline.rbx).
 module MGQ_MpBattlesPvp
-  # Turns PvP battles off without uninstalling them.
-  ENABLED = true
-
   extend MGQ_MpLog
 
   # What starts this script's lines in Multiplayer InGame.log.

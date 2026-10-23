@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Started the stand-in battle without the deleted mirror match flag
+#                            - Stood in without the deleted PvP switch
 #      Paulinchen  2026-10-12: Checked an odd party_member_max and a team duel start that does not read
 #                            - Read whole numbers of the stand-in wire back and gave it unreadable lines
 #      Paulinchen  2026-10-11: Checked the line above the player's head through a duel's steps
@@ -36,7 +37,6 @@ end
 module MGQ_MpBattles; def self.running?; false; end; end
 # Stands in for the PvP battles.
 module MGQ_MpBattlesPvp
-  ENABLED = true
   # The player's team, the game's fingerprint in $game_print and the Backline in $backline_wanted.
   module Team
     def self.game; $game_print; end
