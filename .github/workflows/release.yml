@@ -47,6 +47,9 @@ jobs:
           DOTNET_ROOT_X86: C:\Program Files (x86)\dotnet
         run: dotnet run --project MGQParadox.Multiplayer.Tests
 
+      - name: Test the bridge
+        run: dotnet run --project MGQOnline.Bridge.Tests
+
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'

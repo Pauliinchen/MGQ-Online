@@ -91,4 +91,7 @@
   </Folder>
   <Project Path="MGQParadox.Multiplayer/MGQParadox.Multiplayer.csproj" />
   <Project Path="MGQParadox.Multiplayer.Tests/MGQParadox.Multiplayer.Tests.csproj" />
+  <Project Path="MGQOnline.Bridge/MGQOnline.Bridge.csproj" />
+  <Project Path="MGQOnline.Bridge.Native/MGQOnline.Bridge.Native.csproj" />
+  <Project Path="MGQOnline.Bridge.Tests/MGQOnline.Bridge.Tests.csproj" />
 </Solution>

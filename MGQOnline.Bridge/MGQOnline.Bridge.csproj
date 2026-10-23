@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The bridge between the game scripts and C#: the plain Ruby Marshal codec, the dispatcher and
+       the event queue. It runs in the NativeAOT win-x86 mod DLL and the linux-x64 battle server
+       core, so it stays AOT-clean and uses only the BCL. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>MGQOnline.Bridge</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsTrimmable>true</IsTrimmable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MGQOnline.Bridge.Tests" />
+  </ItemGroup>
+
+</Project>

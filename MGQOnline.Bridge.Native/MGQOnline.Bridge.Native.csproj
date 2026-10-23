@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The four bridge exports over one host per process. A NativeAOT library exports them by naming
+       this assembly as an UnmanagedEntryPointsAssembly and installing its host, see "Bridge" in
+       docs/DEVELOPER.md: the win-x86 mod DLL and the linux-x64 battle server core alike. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>MGQOnline.Bridge.Native</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsTrimmable>true</IsTrimmable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MGQOnline.Bridge\MGQOnline.Bridge.csproj" />
+  </ItemGroup>
+
+</Project>

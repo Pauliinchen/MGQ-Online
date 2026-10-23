@@ -30,6 +30,13 @@
     <InternalsVisibleTo Include="MGQParadox.Multiplayer.Tests" />
   </ItemGroup>
 
+  <!-- The bridge's four exports live in MGQOnline.Bridge.Native, which NativeAOT exports from only
+       because it is named an UnmanagedEntryPointsAssembly here; GameBridge installs their host. -->
+  <ItemGroup>
+    <ProjectReference Include="..\MGQOnline.Bridge.Native\MGQOnline.Bridge.Native.csproj" />
+    <UnmanagedEntryPointsAssembly Include="MGQOnline.Bridge.Native" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- Multiplayer.rb goes into the Patch folder, where the mod loader finds it; everything else
          goes into Patch\Multiplayer, the other scripts into its Scripts folder, which

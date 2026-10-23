@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- An executable that runs its own tests of MGQOnline.Bridge and its exports, see "Tests" in docs/DEVELOPER.md. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <RootNamespace>MGQOnline.Bridge.Tests</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MGQOnline.Bridge\MGQOnline.Bridge.csproj" />
+    <ProjectReference Include="..\MGQOnline.Bridge.Native\MGQOnline.Bridge.Native.csproj" />
+  </ItemGroup>
+
+  <!-- The golden dumps Ruby wrote, shared with the Ruby side's tests. -->
+  <ItemGroup>
+    <None Include="..\fixtures\bridge\**\*.marshal" LinkBase="fixtures\bridge" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
