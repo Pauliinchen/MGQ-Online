@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Found the battle's players by the seats they held at its start
+#                            - Let the starter of a battle the server never started fight it as their own and named the server to its guests
 #                            - Sent a guest whose battle ended before its roster back to the map, told why
 #                            - Kept a guest's own enemies at the host's places when only their places differ
 #                            - Made rebuilt enemies of the kind the troop's battle needs
@@ -207,6 +208,9 @@ module MGQ_MpBattlesCoop
 
   # What a guest is told whom the host's party left out, with the host's name.
   LEFT_OUT_TEXT = "%s's battle went on without you."
+
+  # How the host of a battle on the battle server is named in what a guest is told.
+  SERVER_NAME = "The server"
 
   # The endings of a guest's wait for the roster after which the player never got the battle.
   MISSED_ENDINGS = [:gone, :broken, :forfeit]
@@ -1802,21 +1806,27 @@ module MGQ_MpBattlesCoop
   end
 
   # Ends the wait of a guest whose battle ended before its roster came: the player goes back to the
-  # map and is told, since they never got the battle.
+  # map and is told, since they never got the battle. The starter of a battle the server never
+  # started fights its own encounter as a battle of their own instead.
   #
   # @param ending [Symbol] How the wait ended, see MGQ_MpBattlesSync::Waiting.wait_for.
   # @return [Symbol] The ending the battle takes: :broken for a battle the player never got.
   def self.never_got(ending)
     return ending unless MISSED_ENDINGS.include?(ending)
+
+    if defined?(MGQ_MpBattlesServed) && MGQ_MpBattlesServed.starter?
+      log("the server never started battle #{MGQ_MpBattlesSync.battle_id}: the player fights their encounter as their own")
+      return ending
+    end
     MGQ_MpBattlesSync.miss(MGQ_MpBattlesSync.take_missed || MISSED_TEXT % host_name)
     :broken
   end
 
-  # Names the host a guest waits for in what the player is told.
+  # Names the host a guest waits for in what the player is told: the host's name, or the server.
   #
   # @return [String] The name.
   def self.host_name
-    MGQ_MpBattlesSync.player.to_s
+    MGQ_MpBattlesSync.served? ? SERVER_NAME : MGQ_MpBattlesSync.player.to_s
   end
 
   # Describes the troop's enemies as the guests rebuild them.

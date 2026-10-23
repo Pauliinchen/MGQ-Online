@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Checked that the server keeps a player who drops from the battle channel until gone
+#                            - Checked a served battle that ends before its roster
 #      Paulinchen  2026-10-15: Checked the starter as the front of its served battle and players who join it late
 #                            - Checked that the last player of the server's battle fights on there and a battle every player left ends
 #                            - Checked the world's mods and the starter's options of them in the setup
@@ -137,6 +138,7 @@ check("the setup names the troop, how the battle ends, the map and the level",
       [setup[:troop], setup[:escape], setup[:lose], setup[:map], setup[:level], setup[:raid]], [40, true, false, 5, 30, false])
 check("its fingerprints", [setup[:scripts], setup[:data]], ["0badf00d", "1:data"])
 check("its arranged players, the starter first", setup[:players].map { |player| [player.seat, player.name, player.builds] }, [[0, "Me", "1,2,3"], [2, "Friend", "7,8,9"]])
+check("the starter of a battle the server never started fights its encounter as its own", MGQ_MpBattlesCoop.never_got(:gone), :gone)
 check("and the switches and variables that are set, these among them", [setup[:switches].include?(12), setup[:switches] - (1..200).select { |id| $game_switches[id] == true }, setup[:variables]], [true, [], [[150, 3]]])
 serve = $sent.map { |seat, text| [seat, fields_of(text)] }.find { |_, fields| fields["battle"] == "serve" }
 check("the guests are told to follow it to the server", [serve[0], MGQ_MpBattlesSync::Wire.parse(serve[1][:payload])], [2, [bid]])
@@ -192,6 +194,10 @@ BattleManager.setup(40, true, false)
 $dll_opens = false
 MGQ_MpBattlesServed.follow(MGQ_MpBattlesSync::Wire.line([MGQ_MpBattlesSync.battle_id]))
 check("a channel the DLL does not open ends the battle for the guest", [MGQ_MpBattlesServed.channel, MGQ_MpBattlesServed.closed?], [:closed, true])
+$frames = 0
+ending = MGQ_MpBattlesCoop.join(scene)
+check("a guest whose served battle ends before its roster never fights it alone, but goes back to the map, told why",
+      [ending, MGQ_MpBattlesSync.take_missed], [:broken, "The server's battle ended before you could join."])
 $dll_opens = true
 MGQ_MpBattlesSync.finish
 MGQ_MpBattlesCoop.ended
