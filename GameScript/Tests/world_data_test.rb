@@ -2,7 +2,8 @@
 #  world_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Gave the stand-in world list every field the DLL writes
+#      Paulinchen  2026-10-23: Answered the mod keys and the scripts in Patch through the bridge
+#                            - Gave the stand-in world list every field the DLL writes
 #      Paulinchen  2026-10-22: Checked a world read before entering while the list lacks its mods, and the mods measured against the relay's limit
 #      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number
 #      Paulinchen  2026-10-14: Expected a Raid World's Shared save and Save in the new world's form
@@ -57,6 +58,7 @@ require "fileutils"
 require "tmpdir"
 
 require_relative "support"
+require_relative "rules_support"
 
 # Stand-ins for the game.
 
@@ -159,6 +161,7 @@ load_script "world_mods"
 load_script "world_mods_parking"
 load_script "world_text"
 load_script "world_screen"
+open_rules_bridge
 
 # A small window of the world screen: keeps the commands it opened with and whether it takes input.
 class FakeChoice
@@ -417,7 +420,7 @@ check("a Classic world shares no companions whatever the greyed-out switch shows
 strict_form[:type] = 1
 scene.create_world
 check("a Raid World goes with how it shares companions", $calls.last[2][10..11], ["raid\0", "all\0"])
-check("which the screen keeps for the world's folder with its difficulty and squad rules", scene.instance_variable_get(:@creating_kind), ["raid", "all", 0, MGQ_MpWorld::DEFAULT_SQUAD, false])
+check("which the screen keeps for the world's folder with its difficulty and squad rules", scene.instance_variable_get(:@creating_kind), ["raid", "all", 0, MGQ_MpWorld.default_squad, false])
 check("and sends with the squad rules", $calls.last[2][-2], "0 4 1 1\0")
 strict_form[:type] = 0
 strict_form[:share] = 0
@@ -923,7 +926,7 @@ check("a code without seats stays as it is", old.code, "mgqmp2;abcdefghjkmnpqrs;
 check("mods are split at each semicolon", MGQ_MpWorld.mods_of(" Mod A ;Mod B;; "), ["Mod A", "Mod B"])
 check("no mods give none", [MGQ_MpWorld.mods_of(""), MGQ_MpWorld.mods_of(nil)], [[], []])
 check("a mod written with an exclamation mark is required, one with a question mark essential, both named first without their mark", [MGQ_MpWorld.mods_of("Mod A; ?Mod D; !Mod B;! Mod C; !; ?"), MGQ_MpWorld.required_mods("Mod A; ?Mod D; !Mod B;! Mod C; !"), MGQ_MpWorld.essential_mods("Mod A; ?Mod D; !Mod B")], [["Mod B", "Mod C", "Mod D", "Mod A"], ["Mod B", "Mod C"], ["Mod D"]])
-MGQ_MpWorld.instance_variable_set(:@installed, ["modb", "maskofenvy"])
+MGQ_MpWorld.instance_variable_set(:@installed, [["modb", "Patch/Mod_B.rb", "Mod_B"], ["maskofenvy", "Patch/Mask_of_Envy.rb", "Mask_of_Envy"]])
 check("a mod's script is found by its name, whatever its case, spaces or underscores", ["Mod B", "mod_b.rb", "Mask of Envy", "Mask-Of-Envy", "Mod C"].map { |mod| MGQ_MpWorld.installed_mod?(mod) }, [true, true, true, true, false])
 essential_world = listed[1].dup
 essential_world.mods = "Mod A; ?Mod E; !Mod B; !Mod C"
@@ -980,7 +983,7 @@ Dir.mktmpdir do |folder|
     check("the Patch folder is read with its folders", ["Mask of Envy", "deep_mod", "Other"].map { |mod| MGQ_MpWorld.installed_mod?(mod) }, [true, true, false])
   end
 end
-MGQ_MpWorld.instance_variable_set(:@installed, ["modb"])
+MGQ_MpWorld.instance_variable_set(:@installed, [["modb", "Patch/Mod_B.rb", "Mod_B"]])
 modded_world = listed[1].dup
 modded_world.mods = "Mod A; Mod B"
 modded_world.members = [member.new("me", true, "Me"), member.new("a", false, "Ann")]
@@ -1364,6 +1367,7 @@ Dir.mktmpdir do |folder|
   File.write(File.join(folder, "Patch", "Sub", "Level Cap.rb"), "")
 
   Dir.chdir(folder) do
+    MGQ_MpWorld.forget_installed
     check("the picker lists each installed mod once by its file's name, sorted, without the loader, this mod and Mod Config Remake", MGQ_MpWorld.installed_mod_names,
           ["battle_dialogue", "Level_Cap", "Party Sheet", "Zeta"])
 

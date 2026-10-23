@@ -2,6 +2,7 @@
 //  RaidStory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Took the parts a checkpoint may be of from StoryParts of MGQOnline.Game
 //      Paulinchen  2026-10-15: Kept a Raid World's story key by key, wrote only the keys this game changed and laid the relay's pushes over it
 //                            - Moved a sealed story this game opened to keys
 //      Paulinchen  2026-10-12: Passed the level caps of the world's story to the game script
@@ -20,6 +21,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
+using MGQOnline.Game.Story;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
 
@@ -41,11 +43,6 @@ internal sealed class RaidStory
     /// Why a request failed when the relay could not be reached.
     /// </summary>
     private const string Unreachable = "The relay could not be reached. Check your internet connection.";
-
-    /// <summary>
-    /// The parts a checkpoint may be of.
-    /// </summary>
-    private static readonly string[] Parts = ["1", "2", "3", "ad", "mr", "chaos"];
 
     /// <summary>
     /// Guards every field below.
@@ -210,7 +207,7 @@ internal sealed class RaidStory
     /// <returns><see langword="false"/> while a checkpoint fetch runs, without a player, outside that world, or for another part.</returns>
     public bool FetchCheckpoint(string world, string part)
     {
-        if (!Parts.Contains(part))
+        if (!StoryParts.All.Contains(part))
         {
             Log.Write($"checkpoint of {Log.Short(world)} not fetched: there is no part '{part}'");
             return false;

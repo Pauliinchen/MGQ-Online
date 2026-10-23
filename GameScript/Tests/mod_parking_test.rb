@@ -2,7 +2,9 @@
 #  mod_parking_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Checked putting the mods back and starting again into the world in place of the restart by hand under Wine
+#      Paulinchen  2026-10-23: Answered the mod catalog through the bridge
+#                            - Answered the mod keys and the scripts in Patch through the bridge
+#                            - Checked putting the mods back and starting again into the world in place of the restart by hand under Wine
 #                            - Gave the stand-in world list every field the DLL writes
 #                            - Dropped the check of the deleted options dump
 #      Paulinchen  2026-10-22: Stood in for whether the version to install is a step back and for the update message
@@ -27,6 +29,7 @@ require "fileutils"
 require "tmpdir"
 
 require_relative "support"
+require_relative "rules_support"
 
 # Stand-ins for the game.
 
@@ -223,6 +226,7 @@ load_script "world_mods"
 load_script "world_mods_parking"
 load_script "world_text"
 load_script "world_screen"
+open_rules_bridge
 
 # Stands in for the title screen's box, keeping what it shows in $box.
 class Sprite_MpMessageBox
@@ -281,9 +285,9 @@ end
 
 # Hands the mods module a catalog and forgets what it read before.
 #
-# @param lines [Array<String>] The catalog's lines.
+# @param lines [Array<String>] The catalog's lines, see catalog_told.
 def catalog(*lines)
-  $dll["mp_mods_list"] = "state=ready\n\n" + lines.map { |line| line + "\n" }.join
+  catalog_told("ready", *lines)
   MGQ_MpWorldMods.forget_installed
 end
 
@@ -319,13 +323,13 @@ $dll["mp_dir_list"] = "state=ready\n\n" \
 _, _, listed, = MGQ_MpWorld::Directory.list
 check("the list reads whether a world turns other mods off", listed.map { |world| world.other_mods_off }, [true, false, true, false])
 
-$dll["mp_mods_list"] = "state=failed\nerror=down\n\n"
+catalog_told("failed")
 MGQ_MpWorldMods.forget_installed
 check("while the catalog is unknown, so are the personal mods", MGQ_MpWorldMods.personal_keys, nil)
 catalog("mod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb", "personal\tvictoryscreen\tVictory Screen", "personal\tnowplaying\tNow_Playing")
 check("the catalog's personal lines name the personal mods by key, those without a download too, which are no catalog mods",
       [MGQ_MpWorldMods.personal_keys, MGQ_MpWorldMods.catalog.map(&:key)], [["victoryscreen", "nowplaying"], ["levelcap"]])
-$dll["mp_mods_list"] = "state=loading\n\n"
+catalog_told("loading")
 MGQ_MpWorldMods.forget_installed
 check("and stay known while the list is fetched again", MGQ_MpWorldMods.personal_keys, ["victoryscreen", "nowplaying"])
 
@@ -370,7 +374,7 @@ Dir.mktmpdir do |folder|
     $scripts_text = nil
     new_session
     check("a world that allows other mods turns none off", parking.plan_for(world_of("", false)), [])
-    $dll["mp_mods_list"] = "state=failed\n\n"
+    catalog_told("failed")
     MGQ_MpWorldMods.forget_installed
     check("while the catalog is unknown the scripts to turn off are too", [parking.to_turn_off(""), parking.change_for(world_of(""))], [nil, :unknown])
     check("unless the world names every script anyway", parking.to_turn_off("Level Cap; Invasions; Sub; Luka Replacer; Victory Screen"), [])
@@ -475,7 +479,7 @@ Dir.mktmpdir do |folder|
     scene.define_singleton_method(:enter) { |*args| entered << args }
     scene.on_enter
     check("the start after the restart, with them parked, enters the world at once", [asked(scene), entered.size], [nil, 1])
-    $dll["mp_mods_list"] = "state=failed\n\n"
+    catalog_told("failed")
     MGQ_MpWorldMods.forget_installed
     check("and keeps them parked while the catalog is unknown, since they were parked with a known one", parking.change_for(strict), nil)
     catalog("personal\tvictoryscreen\tVictory Screen")
@@ -571,7 +575,7 @@ Dir.mktmpdir do |folder|
           [[], false, "Your other mods could not be turned off, so you cannot enter Strict now. See the log."])
     $park_fails = false
 
-    $dll["mp_mods_list"] = "state=failed\n\n"
+    catalog_told("failed")
     MGQ_MpWorldMods.forget_installed
     scene = new_scene
     scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w1", "Strict", strict, local, false, false))
@@ -645,7 +649,7 @@ Dir.mktmpdir do |folder|
           [["mp_mods_restart_parked"], 4, "", false, "The mods were installed. Close the game and start it again to enter Strict."])
     $restart_parked = 1
     $parked_for = "w9"
-    $dll["mp_mods_list"] = "state=failed\n\n"
+    catalog_told("failed")
     MGQ_MpWorldMods.forget_installed
     $calls.clear
     scene.restart_for_mods
@@ -941,7 +945,7 @@ Dir.mktmpdir do |folder|
 
     online = MGQ_MpWorld::World.new("abcdef", "code" => "x", "name" => "Strict", "world" => "w1")
     MGQ_MpWorld.instance_variable_set(:@world, online)
-    $dll["mp_mods_list"] = "state=failed\n\n"
+    catalog_told("failed")
     MGQ_MpWorldMods.forget_installed
     route.call(nil, MGQ_MpOverworldSync::MODS_RULE_FIELD => "1", "mods" => "Level Cap", :relay => true)
     check("while the catalog is unknown the player stays in the world", parking.instance_variable_get(:@kick), nil)

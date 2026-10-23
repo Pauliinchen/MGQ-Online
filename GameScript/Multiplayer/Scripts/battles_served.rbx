@@ -2,7 +2,8 @@
 #  battles_served.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Handed a player's drop from the battle channel to the presence of the players on the server
+#      Paulinchen  2026-10-23: Kept the squad rules of a Raid World that names none for the battle server itself
+#                            - Handed a player's drop from the battle channel to the presence of the players on the server
 #      Paulinchen  2026-10-15: Handed the battle server how the battle's boss fights, by pools or by tier
 #                            - Stood in for the battle server in the world's room as its starter, for players who join late
 #                            - Named the world's mods the starter runs and its options of them in the setup
@@ -40,6 +41,11 @@ module MGQ_MpBattlesServed
   # Frames the starter waits for the relay to start the battle on its server, five seconds; past
   # them it hosts the battle itself.
   SERVE_FRAMES = 300
+
+  # The squad rules of a Raid World that names none, kept here for the battle server, which cannot
+  # ask the DLL until its core library answers the squad topics: Luka fixed, a team of four and one
+  # character on the Frontline in regular fights and in raids.
+  SERVED_SQUAD = { :luka => false, :formation => 4, :front => 1, :raid_front => 1 }.freeze
 
   # Frames a player waits for the battle channel to open before the battle counts as gone.
   OPEN_FRAMES = 600
@@ -584,7 +590,7 @@ module MGQ_MpBattlesServed
     end.compact
   end
 
-  # Reads a Raid World's squad rules a setup carries, those of MGQ_MpWorld::DEFAULT_SQUAD's keys
+  # Reads a Raid World's squad rules a setup carries, those of SERVED_SQUAD's keys
   # alone.
   #
   # @param list [Object] The rules, as setup_text writes them.
@@ -592,10 +598,10 @@ module MGQ_MpBattlesServed
   def self.squad_of(list)
     rules = {}
     Array(list).each do |key, value|
-      symbol = MGQ_MpWorld::DEFAULT_SQUAD.keys.find { |known| known.to_s == key.to_s }
+      symbol = SERVED_SQUAD.keys.find { |known| known.to_s == key.to_s }
       rules[symbol] = value if symbol && (value.is_a?(Integer) || value == true || value == false)
     end
-    rules.empty? ? nil : MGQ_MpWorld::DEFAULT_SQUAD.merge(rules)
+    rules.empty? ? nil : SERVED_SQUAD.merge(rules)
   end
 
   # As the battle server, takes a battle to host: the game's state as the starter's for the troop's

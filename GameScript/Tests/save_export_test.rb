@@ -2,6 +2,7 @@
 #  save_export_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Answered the rules the DLL owns through the bridge from the golden cases
 #      Paulinchen  2026-10-12: Checked the menu taking input after the notice and a menu without commands
 #      Paulinchen  2026-10-09: Loaded world_mods_parking.rbx
 #      Paulinchen  2026-10-07: Checked the menu's handler once its commands are made
@@ -17,6 +18,7 @@
 # Save folder, and the game menu's command and notice.
 
 require_relative "support"
+require_relative "rules_support"
 require "fileutils"
 require "tmpdir"
 
@@ -102,6 +104,7 @@ load_script "world_mods"
 load_script "world_mods_parking"
 load_script "world_screen"
 load_script "world_save_export"
+open_rules_bridge
 
 Dir.mktmpdir do |root|
   Dir.chdir(root) do

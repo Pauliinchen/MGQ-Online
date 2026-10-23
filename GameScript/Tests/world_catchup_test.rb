@@ -7,7 +7,8 @@
 #                            - Checked that a join's persona waits behind a later change of the story
 #                            - Checked that a power-up carried past changes the character once at its level
 #                            - Checked that a companion of the roster takes the persona a join brings
-#      Paulinchen  2026-10-23: Checked that a found job item comes to every player at once
+#      Paulinchen  2026-10-23: Answered the rules the DLL owns through the bridge from the golden cases
+#                            - Checked that a found job item comes to every player at once
 #                            - Checked that the gate's notices name the cap of another mod below it
 #                            - Checked that the story sets a return point only on the map of its event
 #      Paulinchen  2026-10-17: Checked that the Unlocks page lists no companion the story took away
@@ -69,6 +70,7 @@
 # rewards and companions to vehicles and Makina, each once.
 
 require_relative "support"
+require_relative "rules_support"
 
 $logs = []
 # Stands in for the mod's log: records each line in $logs and prints it.
@@ -447,6 +449,7 @@ load_script "coop_choices"
 load_script "world_catchup_data"
 load_script "world_story"
 load_script "world_catchup"
+open_rules_bridge
 story = MGQ_MpWorldStory
 catchup = MGQ_MpWorldCatchup
 # The catch-up's tables, which the tests replace with rows of their own.

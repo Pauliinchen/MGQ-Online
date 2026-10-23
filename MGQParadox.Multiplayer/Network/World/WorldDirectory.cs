@@ -2,6 +2,7 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Handed the game script the mod catalog as it stands instead of as text
 //      Paulinchen  2026-10-22: Read the mods, mod hashes and settings of the opened world on their own, which the list leaves out for this version
 //      Paulinchen  2026-10-13: Made, changed and listed Classic worlds with their raid bosses
 //                            - Made, changed and listed Raid Worlds with their squad settings
@@ -504,39 +505,15 @@ internal sealed class WorldDirectory
     }
 
     /// <summary>
-    /// Describes the relay's mod catalog for the game script, as fetched with the list.
+    /// Tells how the relay's mod catalog stands, as fetched with the list, for the game script.
     /// </summary>
-    /// <returns><c>state</c> ("loading", "ready", "failed" or "idle") and <c>error</c>, then one line per mod and version: <c>mod</c>, key, name, kind ("link" for a script, "zip" for a zip of a release, "upload"), current version, then each current file's name or path and hash; <c>old</c>, key, version, then each of that version's files and hashes; <c>opts</c>, key, the version whose Mod Config options the relay keeps, for a mod that has any; <c>personal</c>, key, name, for every mod the catalog marks personal, installable or not; each separated by tabs.</returns>
-    public string DescribeMods()
+    /// <returns>The state ("loading" while the list is fetched, "ready", "failed" or "idle"), why the catalog could not be fetched while none is known, and the catalog last fetched, <see langword="null"/> before the first.</returns>
+    public (string State, string? Error, ModCatalog? Catalog) CatalogNow()
     {
         lock (_gate)
         {
             var state = _listing ? "loading" : _catalog != null ? "ready" : _catalogError != null ? "failed" : "idle";
-            var text = new StringBuilder();
-
-            foreach (var mod in _catalog?.Mods ?? [])
-            {
-                text.Append("mod\t").Append(mod.Key).Append('\t').Append(OnOneField(mod.Name)).Append('\t').Append(mod.ScriptKind).Append('\t').Append(OnOneField(mod.Version));
-                AppendFiles(text, mod.Files);
-
-                foreach (var version in mod.Versions)
-                {
-                    text.Append("old\t").Append(mod.Key).Append('\t').Append(OnOneField(version.Version));
-                    AppendFiles(text, version.Files);
-                }
-
-                if (mod.OptionsVersion.Length > 0)
-                {
-                    text.Append("opts\t").Append(mod.Key).Append('\t').Append(OnOneField(mod.OptionsVersion)).Append('\n');
-                }
-            }
-
-            foreach (var mod in _catalog?.Personal ?? [])
-            {
-                text.Append("personal\t").Append(OnOneField(mod.Key)).Append('\t').Append(OnOneField(mod.Name)).Append('\n');
-            }
-
-            return new Message([new(StateHeader, state), new(ErrorHeader, _catalog == null ? _catalogError : null)], text.ToString()).Encode();
+            return (state, _catalog == null ? _catalogError : null, _catalog);
         }
     }
 
@@ -634,21 +611,6 @@ internal sealed class WorldDirectory
     /// Downloads a link mod's script; tests replace it, since they cannot reach GitHub.
     /// </summary>
     public Func<string, byte[]> DownloadRelease { get; init; } = ReleaseDownload.Get;
-
-    /// <summary>
-    /// Writes files and their hashes as fields of a line, and ends the line.
-    /// </summary>
-    /// <param name="text">The line so far.</param>
-    /// <param name="files">Each file's hash by its name or path.</param>
-    private static void AppendFiles(StringBuilder text, IReadOnlyDictionary<string, string> files)
-    {
-        foreach (var (name, hash) in files)
-        {
-            text.Append('\t').Append(OnOneField(name)).Append('\t').Append(hash);
-        }
-
-        text.Append('\n');
-    }
 
     /// <summary>
     /// Makes a world: a new token, locked with the password, and the world in the directory, with

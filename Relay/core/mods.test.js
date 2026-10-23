@@ -2,6 +2,7 @@
 //  mods.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Checked modKey against the golden keys the game's ModKey passes too
 //      Paulinchen  2026-10-22: Covered a check whose link still leads to the same release
 //                            - Published a new release before holding the schedule's check, which reads only new ones
 //      Paulinchen  2026-10-12: Covered changes made while a link is checked and an upload listed until the link that replaces it is checked
@@ -19,6 +20,7 @@
 //
 //----------------------------------------------------------------
 
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { playerIdOf } from "./directory.js";
@@ -217,6 +219,14 @@ test("modKey compares names the way the games do", () => {
   assert.equal(modKey("Level_Cap.rb"), "levelcap");
   assert.equal(modKey("Level Cap"), "levelcap");
   assert.equal(modKey("Luka-Replacer"), "lukareplacer");
+});
+
+test("modKey still makes the golden keys, which the game's ModKey makes too", () => {
+  const cases = JSON.parse(readFileSync(new URL("../../fixtures/mods/keys.json", import.meta.url), "utf8")).keys;
+
+  for (const { name, key } of cases) {
+    assert.equal(modKey(name), key, JSON.stringify(name));
+  }
 });
 
 test("a script hashes the same with and without carriage returns, other files as they are", async () => {

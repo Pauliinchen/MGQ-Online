@@ -3,7 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Laid the pages of other mods out like the World page, with buttons and controls in the pane
-#      Paulinchen  2026-10-23: Labelled the objective with OBJECTIVE_LABEL
+#      Paulinchen  2026-10-23: Asked the catch-up for each member's factor as text
+#                            - Labelled the objective with OBJECTIVE_LABEL
 #      Paulinchen  2026-10-13: Left a story's temporary party and companions on a visit out of the Unlocks page's grid
 #      Paulinchen  2026-10-12: Created
 #
@@ -266,8 +267,7 @@ module MGQ_MpWorldOverview
   # @param target [Integer] The level characters catch up to.
   # @return [Array<String>] Their name, level and factor.
   def self.exp_cells(actor, target)
-    factor = MGQ_MpWorldCatchupExp.factor_for(actor.base_level, target)
-    [actor.name.to_s, LEVEL_SHORT % actor.base_level, MGQ_MpWorldCatchupExp.factor_text(factor)]
+    [actor.name.to_s, LEVEL_SHORT % actor.base_level, MGQ_MpWorldCatchupExp.factor_text(actor.base_level, target)]
   end
 
   # Tells what a list row shows of an entry.

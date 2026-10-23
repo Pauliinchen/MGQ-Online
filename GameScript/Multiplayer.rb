@@ -13,6 +13,7 @@
 #                            - Wrote the scripts' log into the DLL's log of the day through the bridge, and into that file directly while the mod stays off
 #                            - Wrote the log's last lines before the game's error box and as the game closes
 #                            - Loaded the battle server's core library through Fiddle in Bridge::FiddleBackend
+#                            - Dropped mp_mods_list, whose catalog world_mods.rbx takes through the bridge
 #                            - Added Bridge, the bridge to C# through mp_bridge_open, mp_call, mp_reply and mp_drain
 #                            - Turned the mod on only once the bridge opened
 #                            - Sent the staged bridge entries and took the bridge events once a frame
@@ -740,7 +741,6 @@ module MGQ_Multiplayer
       'mp_world_status' => READ_ARGUMENTS,
 
       # The mod catalog.
-      'mp_mods_list' => READ_ARGUMENTS,
       'mp_mod_hash' => 'ppl',
       'mp_mods_install' => 'p',
       'mp_mods_options' => 'ppp',

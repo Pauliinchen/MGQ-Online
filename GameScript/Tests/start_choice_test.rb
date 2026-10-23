@@ -2,6 +2,7 @@
 #  start_choice_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Answered the rules the DLL owns through the bridge from the golden cases
 #      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number
 #      Paulinchen  2026-10-13: Expected the longer call of mp_dir_create, with the raid bosses, and the rows of the squad rules' button
 #      Paulinchen  2026-10-12: Expected the warning before a new player takes the creator's starting save
@@ -31,6 +32,7 @@
 # new player to start at the beginning, from their own save or from the creator's.
 
 require_relative "support"
+require_relative "rules_support"
 require "fileutils"
 require "tmpdir"
 
@@ -127,6 +129,7 @@ load_script "world_mods"
 load_script "world_mods_parking"
 load_script "world_text"
 load_script "world_screen"
+open_rules_bridge
 
 $started = []
 $start_error = nil

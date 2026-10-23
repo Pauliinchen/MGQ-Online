@@ -2,7 +2,9 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Offered the update under Wine or Proton too, and named the release to install by hand with --version
+#      Paulinchen  2026-10-23: Asked the DLL for the seats, difficulties and squad rules a world may set, and for the seats its code tells
+#                            - Asked the DLL for the mod keys and the scripts in Patch
+#                            - Offered the update under Wine or Proton too, and named the release to install by hand with --version
 #                            - Dropped the fallbacks for list fields the DLL always writes
 #                            - Left the details of the world list, a new world and an edit to the DLL log
 #                            - Deleted the switch that never turned worlds off
@@ -146,15 +148,6 @@ module MGQ_MpWorld
   # Player.ini did, with what their settings start with there.
   OLD_LIST_FILES = { "Favourites.ini" => FAVOURITE_SETTING, "Added.ini" => ADDED_SETTING }
 
-  # Players a new world seats at most unless the player chooses otherwise.
-  DEFAULT_SEATS = 4
-
-  # Fewest players a world seats.
-  MIN_SEATS = 2
-
-  # Most players a world seats.
-  MAX_SEATS = 32
-
   # Longest name of a player or a world.
   MAX_NAME_CHARS = 16
 
@@ -171,6 +164,12 @@ module MGQ_MpWorld
   # Scripts every player of a world has, which the mod picker leaves out: the mod loader, this mod
   # and Mod Config Remake, which ships with it. Compared by mod_key.
   SHARED_SCRIPTS = %w[patch multiplayer 0modconfigremake]
+
+  # The topic that lists the scripts in the Patch folder with their keys.
+  INSTALLED_TOPIC = "mods.installed"
+
+  # The topic that makes the keys of mods' names.
+  KEYS_TOPIC = "mods.keys"
 
   # Lines of the description the create form shows at once.
   DESCRIPTION_LINES = 4
@@ -209,33 +208,21 @@ module MGQ_MpWorld
   # What the new world's form and the details call each way of sharing companions.
   SHARING_NAMES = ["Off", "Story companions", "Story + battle recruits"]
 
-  # The difficulties a Raid World may set for every player, the game's own values of its
-  # difficulty variable, in the order the forms offer them.
-  DIFFICULTIES = [-2, -1, 0, 1, 2, 3, 4]
+  # The topic that hands out the seats, difficulties, Formation sizes, Frontlines and squad rules a
+  # world may set, and their defaults.
+  RULES_TOPIC = "world.rules"
 
-  # The names of DIFFICULTIES, as the game's own difficulty choice shows them.
-  DIFFICULTY_NAMES = ["VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"]
+  # The topic that reads squad rules from their text.
+  SQUAD_READ_TOPIC = "squad.read"
 
-  # The difficulty the forms offer first, NORMAL.
-  DEFAULT_DIFFICULTY = 0
+  # The topic that writes squad rules as their text.
+  SQUAD_WRITE_TOPIC = "squad.write"
 
-  # The Formation size that keeps the game's own team size, in which nobody sits out.
-  ORIGINAL_FORMATION = 0
+  # The topic that tells and changes the seats in a world code.
+  CODE_TOPIC = "world.code"
 
-  # What the forms and the details call ORIGINAL_FORMATION.
-  ORIGINAL_FORMATION_NAME = "Original"
-
-  # The Formation sizes a Raid World may set, the team every player keeps, in the order the forms
-  # offer them.
-  FORMATIONS = [ORIGINAL_FORMATION, 4, 5, 6, 7, 8]
-
-  # The Frontline's places a Raid World may give each player's team, in regular fights and in raids,
-  # in the order the forms offer them.
-  FRONTS = [1, 2, 3, 4]
-
-  # The squad rules of a Raid World that names none: Luka fixed, a team of four and one character
-  # on the Frontline in regular fights and in raids.
-  DEFAULT_SQUAD = { :luka => false, :formation => 4, :front => 1, :raid_front => 1 }.freeze
+  # The names of a squad rule in the DLL's answers, by the rule's key in the scripts.
+  SQUAD_NAMES = { :luka => "luka", :formation => "formation", :front => "front", :raid_front => "raid_front" }
 
   # The export that tells a development build from a release.
   DEV_BUILD_EXPORT = 'mp_dev_build'
@@ -310,7 +297,7 @@ module MGQ_MpWorld
 
   # Tells the difficulty the open Raid World sets for every player.
   #
-  # @return [Integer, nil] One of DIFFICULTIES; nil outside Raid Worlds and for a Raid World that
+  # @return [Integer, nil] One of difficulties; nil outside Raid Worlds and for a Raid World that
   #   sets none, whose players keep their own.
   def self.difficulty
     raid? ? @world.difficulty : nil
@@ -322,7 +309,7 @@ module MGQ_MpWorld
   # @param value [Integer] The difficulty.
   # @return [Boolean] Whether the open world is a Raid World that took it.
   def self.take_difficulty(value)
-    return false unless raid? && DIFFICULTIES.include?(value)
+    return false unless raid? && difficulties.include?(value)
 
     @world.difficulty = value
     @world.write
@@ -334,26 +321,103 @@ module MGQ_MpWorld
   # @param value [Integer, nil] The difficulty.
   # @return [String, nil] The name, nil for no difficulty.
   def self.difficulty_name(value)
-    index = DIFFICULTIES.index(value)
-    index ? DIFFICULTY_NAMES[index] : nil
+    index = difficulties.index(value)
+    index ? difficulty_names[index] : nil
   end
 
   # Reads a difficulty as world.ini or the list writes it.
   #
   # @param text [String, nil] The text.
-  # @return [Integer, nil] One of DIFFICULTIES, nil for none or another text.
+  # @return [Integer, nil] One of difficulties, nil for none or another text.
   def self.difficulty_of(text)
     value = text.to_s =~ /\A-?\d\z/ ? text.to_i : nil
-    DIFFICULTIES.include?(value) ? value : nil
+    difficulties.include?(value) ? value : nil
+  end
+
+  # Reads one of the rules a world's settings follow, as the DLL owns them (WorldTopics in the
+  # DLL), asked once.
+  #
+  # @param name [String] The rule: "seats", "difficulties", "difficulty", "formations", "fronts" or
+  #   "squad".
+  # @return [Object, nil] The rule as the DLL tells it; nil while the DLL did not answer.
+  def self.rule(name)
+    @rules ||= MGQ_Multiplayer::Bridge.call(RULES_TOPIC)
+    @rules ? @rules[name] : nil
+  end
+
+  # Fewest players a world seats.
+  #
+  # @return [Integer] The seats.
+  def self.min_seats
+    (rule("seats") || {})["min"].to_i
+  end
+
+  # Most players a world seats.
+  #
+  # @return [Integer] The seats.
+  def self.max_seats
+    (rule("seats") || {})["max"].to_i
+  end
+
+  # Players a new world seats unless the player chooses otherwise.
+  #
+  # @return [Integer] The seats.
+  def self.default_seats
+    (rule("seats") || {})["default"].to_i
+  end
+
+  # Lists the difficulties a Raid World may set for every player, the game's own values of its
+  # difficulty variable, in the order the forms offer them.
+  #
+  # @return [Array<Integer>] The values.
+  def self.difficulties
+    Array(rule("difficulties")).map { |value, _| value }
+  end
+
+  # Lists the names of the difficulties, as the game's own difficulty choice shows them.
+  #
+  # @return [Array<String>] The names, in the order of difficulties.
+  def self.difficulty_names
+    Array(rule("difficulties")).map { |_, name| name }
+  end
+
+  # Tells the difficulty the forms offer first.
+  #
+  # @return [Integer, nil] The value.
+  def self.default_difficulty
+    rule("difficulty")
+  end
+
+  # Lists the Formation sizes a Raid World may set, the team every player keeps, in the order the
+  # forms offer them; 0 keeps the game's own team size.
+  #
+  # @return [Array<Integer>] The sizes.
+  def self.formations
+    Array(rule("formations")).map { |size, _| size }
+  end
+
+  # Lists the Frontline's places a Raid World may give each player's team, in regular fights and in
+  # raids, in the order the forms offer them.
+  #
+  # @return [Array<Integer>] The places.
+  def self.fronts
+    Array(rule("fronts"))
+  end
+
+  # Tells the squad rules of a Raid World that names none.
+  #
+  # @return [Hash, nil] The rules, see squad; nil while the DLL did not answer.
+  def self.default_squad
+    squad_from(rule("squad"))
   end
 
   # Tells the squad rules the open Raid World sets for every player's team.
   #
-  # @return [Hash, nil] :luka (whether Luka may leave the team), :formation (one of FORMATIONS),
+  # @return [Hash, nil] :luka (whether Luka may leave the team), :formation (one of formations),
   #   :front and :raid_front (the Frontline's places in regular fights and in raids, each one of
-  #   FRONTS); DEFAULT_SQUAD for a Raid World that names none; nil outside Raid Worlds.
+  #   fronts); default_squad for a Raid World that names none; nil outside Raid Worlds.
   def self.squad
-    raid? ? (@world.squad || DEFAULT_SQUAD).dup : nil
+    raid? ? (@world.squad || default_squad).dup : nil
   end
 
   # Takes the squad rules the open Raid World's creator or an admin changed, as the relay tells
@@ -378,29 +442,38 @@ module MGQ_MpWorld
   # @return [Hash, nil] The rules, as squad tells them; nil for an empty text or one with a value
   #   out of its range.
   def self.squad_of(text)
-    parts = text.to_s.split(" ")
-    return nil unless parts.size == 4 && parts.all? { |part| part =~ /\A\d+\z/ }
-
-    luka, formation, front, raid_front = parts.map { |part| part.to_i }
-    return nil unless luka <= 1 && FORMATIONS.include?(formation) && FRONTS.include?(front) && FRONTS.include?(raid_front)
-
-    { :luka => luka == 1, :formation => formation, :front => front, :raid_front => raid_front }
+    squad_from(MGQ_Multiplayer::Bridge.call(SQUAD_READ_TOPIC, text.to_s))
   end
 
   # Writes squad rules the way squad_of reads them.
   #
   # @param squad [Hash] The rules, as squad tells them.
-  # @return [String] The text, such as "0 4 1 1".
+  # @return [String] The text, such as "0 4 1 1"; empty for rules out of range.
   def self.squad_text(squad)
-    [squad[:luka] ? 1 : 0, squad[:formation].to_i, squad[:front].to_i, squad[:raid_front].to_i].join(" ")
+    request = { "luka" => squad[:luka] ? true : false }
+    [:formation, :front, :raid_front].each { |key| request[SQUAD_NAMES[key]] = squad[key].to_i }
+    MGQ_Multiplayer::Bridge.call(SQUAD_WRITE_TOPIC, request) || ""
   end
 
-  # Names a Formation size for texts.
+  # Turns squad rules as the DLL tells them into those the scripts keep.
   #
-  # @param value [Integer] One of FORMATIONS.
-  # @return [String] ORIGINAL_FORMATION_NAME, or the size as text.
+  # @param rules [Hash, nil] The rules by their names in SQUAD_NAMES.
+  # @return [Hash, nil] The rules, as squad tells them; nil for none.
+  def self.squad_from(rules)
+    return nil unless rules.is_a?(Hash)
+
+    squad = {}
+    SQUAD_NAMES.each { |key, name| squad[key] = rules[name] }
+    squad
+  end
+
+  # Names a Formation size for texts, as the DLL names it.
+  #
+  # @param value [Integer] One of formations.
+  # @return [String] "Original" for the game's own team size, else the size as text.
   def self.formation_name(value)
-    value.to_i == ORIGINAL_FORMATION ? ORIGINAL_FORMATION_NAME : value.to_i.to_s
+    found = Array(rule("formations")).find { |size, _| size == value.to_i }
+    found ? found[1] : value.to_i.to_s
   end
 
   # Tells squad rules in a few words, as the creator learns them after a change.
@@ -1109,7 +1182,7 @@ module MGQ_MpWorld
     # @!attribute settings [String] Its creator's settings of the mods it names, "key=type:value" pairs separated by semicolons.
     # @!attribute type [String] Its type, one of TYPES; CLASSIC when the list names none.
     # @!attribute share [String] How a Raid World shares companions, one of SHARING; "off" when the list names none.
-    # @!attribute difficulty [Integer, nil] The difficulty a Raid World sets for every player, one of DIFFICULTIES; nil when it sets none.
+    # @!attribute difficulty [Integer, nil] The difficulty a Raid World sets for every player, one of MGQ_MpWorld.difficulties; nil when it sets none.
     # @!attribute other_mods_off [Boolean] Whether it turns off every mod it does not name, see MGQ_MpModParking.
     # @!attribute squad [Hash, nil] The squad rules a Raid World sets for every player's team, see MGQ_MpWorld.squad; nil when it names none.
     # @!attribute raid_bosses [Boolean] Whether a Classic world's story bosses fight as raid bosses, see MGQ_MpWorld.raid_bosses?.
@@ -1221,8 +1294,8 @@ module MGQ_MpWorld
     # @param choose [Boolean] Whether each new player chooses where to start.
     # @param start [String] The starting save's files, see MGQ_MpSaveDistribution.text_of; empty for none.
     # @param about [Hash] Whichever of :description, :mods, :data (the creator's game data), :strict (true when only games with the same data may enter), :mod_hashes, :settings,
-    #   :type (one of TYPES, CLASSIC when left out), :share (one of SHARING, "off" when left out), :difficulty (one of DIFFICULTIES, NORMAL when left out),
-    #   :squad (the squad rules, see MGQ_MpWorld.squad, DEFAULT_SQUAD when left out), :raid_bosses (whether a Classic world fights raid bosses, false when left out) and
+    #   :type (one of TYPES, CLASSIC when left out), :share (one of SHARING, "off" when left out), :difficulty (one of MGQ_MpWorld.difficulties, the default when left out),
+    #   :squad (the squad rules, see MGQ_MpWorld.squad, the default when left out), :raid_bosses (whether a Classic world fights raid bosses, false when left out) and
     #   :other_mods_off (whether it turns off every mod it does not name, by its type when left out) apply;
     #   a Raid World takes no player's choice, but may take a starting save.
     # @return [Boolean] Whether the action started.
@@ -1231,8 +1304,8 @@ module MGQ_MpWorld
       type = about[:type] || CLASSIC
       raid = type == RAID
       share = raid ? about[:share] || SHARING[0] : SHARING[0]
-      difficulty = raid ? about[:difficulty] || DEFAULT_DIFFICULTY : DEFAULT_DIFFICULTY
-      squad = raid ? MGQ_MpWorld.squad_text(about[:squad] || DEFAULT_SQUAD) : ""
+      difficulty = (raid && about[:difficulty]) || MGQ_MpWorld.default_difficulty
+      squad = raid ? MGQ_MpWorld.squad_text(about[:squad] || MGQ_MpWorld.default_squad) : ""
       raid_bosses = !raid && about[:raid_bosses] ? true : false
       other_mods_off = about[:other_mods_off].nil? ? raid : about[:other_mods_off]
       choose = false if raid
@@ -1274,7 +1347,7 @@ module MGQ_MpWorld
     # @param description [String] What it is about, empty for nothing.
     # @param mods [String] The mods it needs, empty for none.
     # @param mod_hashes [String, nil] The creator's mod hashes, nil to leave them, as an admin must.
-    # @param difficulty [Integer, nil] A Raid World's difficulty, one of DIFFICULTIES; nil to leave it, as for every Classic world.
+    # @param difficulty [Integer, nil] A Raid World's difficulty, one of MGQ_MpWorld.difficulties; nil to leave it, as for every Classic world.
     # @param other_mods_off [Boolean, nil] Whether it turns off every mod it does not name; nil to leave it.
     # @param squad [Hash, nil] A Raid World's squad rules, see MGQ_MpWorld.squad; nil to leave them, as for every Classic world.
     # @param raid_bosses [Boolean, nil] Whether a Classic world fights raid bosses; nil to leave it, as for every Raid World.
@@ -1441,14 +1514,11 @@ module MGQ_MpWorld
   # @param name [String] The mod's name, with or without ".rb".
   # @return [Boolean] Whether it is; also when the folder cannot be read, so nobody is kept out by mistake.
   def self.installed_mod?(name)
-    unless @installed
-      @installed = Dir.glob("#{PATCH_DIR}/**/*.rb").map { |path| mod_key(File.basename(path)) }
-      log("the Patch folder holds #{@installed.size} script(s): #{@installed.join(', ')}")
-    end
-    @installed.include?(mod_key(name))
-  rescue => e
-    log("reading the Patch folder failed: #{e.class}: #{e.message}")
-    true
+    scripts = installed_scripts
+    return true unless scripts
+
+    key = mod_key(name)
+    scripts.any? { |script| script[0] == key }
   end
 
   # Finds a mod's script in the Patch folder, as installed_mod? does.
@@ -1456,11 +1526,9 @@ module MGQ_MpWorld
   # @param name [String] The mod's name, with or without ".rb".
   # @return [String, nil] Its path relative to the game's folder, nil when it is not installed or the folder cannot be read.
   def self.installed_path(name)
-    @installed_paths ||= Dir.glob("#{PATCH_DIR}/**/*.rb").each_with_object({}) { |path, paths| paths[mod_key(File.basename(path))] ||= path }
-    @installed_paths[mod_key(name)]
-  rescue => e
-    log("reading the Patch folder failed: #{e.class}: #{e.message}")
-    nil
+    key = mod_key(name)
+    found = (installed_scripts || []).find { |script| script[0] == key }
+    found && found[1]
   end
 
   # Lists the mods the Patch folder holds, for the mod picker: each script once, by its file's name,
@@ -1468,25 +1536,45 @@ module MGQ_MpWorld
   #
   # @return [Array<String>] The names, sorted whatever their case; none when the folder cannot be read.
   def self.installed_mod_names
-    names = Dir.glob("#{PATCH_DIR}/**/*.rb").map { |path| File.basename(path, ".rb") }
-    names.reject { |name| SHARED_SCRIPTS.include?(mod_key(name)) }.uniq { |name| mod_key(name) }.sort_by { |name| name.downcase }
-  rescue => e
-    log("reading the Patch folder failed: #{e.class}: #{e.message}")
-    []
+    scripts = (installed_scripts || []).reject { |script| SHARED_SCRIPTS.include?(script[0]) }
+    scripts.uniq { |script| script[0] }.map { |script| script[2] }.sort_by { |name| name.downcase }
+  end
+
+  # Lists the scripts the Patch folder holds, as the DLL reads them, since the game's Ruby reads file
+  # names in the system's code page.
+  #
+  # @return [Array<Array>, nil] Each script's key (see mod_key), path relative to the game's folder
+  #   and name without ".rb"; nil when the folder cannot be read.
+  def self.installed_scripts
+    return @installed if @installed
+
+    @installed = MGQ_Multiplayer::Bridge.call(INSTALLED_TOPIC)
+    return log_once(:installed, "reading the Patch folder failed, so every required mod counts as installed") unless @installed
+
+    log("the Patch folder holds #{@installed.size} script(s): #{@installed.map { |script| script[0] }.join(', ')}")
+    @installed
   end
 
   # Forgets which scripts the Patch folder holds, so the next look reads it anew.
   def self.forget_installed
     @installed = nil
-    @installed_paths = nil
   end
 
-  # Turns a mod's name or its script's file name into what the two are compared by.
+  # Turns a mod's name or its script's file name into what the two are compared by, as the DLL and
+  # the relay make it (ModKey in MGQOnline.Game), each name asked once.
   #
   # @param name [String] The name.
-  # @return [String] The name in lower case, without ".rb", spaces, underscores and hyphens.
+  # @return [String] The key: the name in lower case, without ".rb", white space, underscores and
+  #   hyphens; the name itself when the DLL did not answer.
   def self.mod_key(name)
-    name.to_s.downcase.sub(/\.rb\z/, "").gsub(/[\s_\-]/, "")
+    text = name.to_s
+    @mod_keys ||= {}
+    return @mod_keys[text] if @mod_keys.key?(text)
+
+    keys = MGQ_Multiplayer::Bridge.call(KEYS_TOPIC, [text])
+    return text unless keys.is_a?(Array) && keys[0].is_a?(String)
+
+    @mod_keys[text] = keys[0]
   end
 
   # The favourites and hidden worlds added that the files before Player.ini kept, moved into it once.
@@ -1705,7 +1793,7 @@ module MGQ_MpWorld
     # @param directory_id [String] The world's id in the directory.
     # @param type [String, nil] Its type, one of TYPES; nil to keep what world.ini says.
     # @param share [String, nil] How a Raid World shares companions, one of SHARING; nil to keep what world.ini says.
-    # @param difficulty [Integer, nil] A Raid World's difficulty, one of DIFFICULTIES; nil to keep what world.ini says.
+    # @param difficulty [Integer, nil] A Raid World's difficulty, one of MGQ_MpWorld.difficulties; nil to keep what world.ini says.
     # @param squad [Hash, nil] A Raid World's squad rules, see MGQ_MpWorld.squad; nil to keep what world.ini says.
     # @param raid_bosses [Boolean, nil] Whether a Classic world fights raid bosses; nil to keep what world.ini says.
     # @return [World, nil] The world, nil when the text is no world code, the folder could not be
@@ -1764,7 +1852,7 @@ module MGQ_MpWorld
     # How a Raid World shares companions, one of SHARING, nil when world.ini names none.
     attr_reader :share
 
-    # The difficulty a Raid World sets for every player, one of DIFFICULTIES, nil when world.ini names none.
+    # The difficulty a Raid World sets for every player, one of MGQ_MpWorld.difficulties, nil when world.ini names none.
     attr_accessor :difficulty
 
     # The squad rules a Raid World sets for every player's team, see MGQ_MpWorld.squad, nil when
@@ -1799,7 +1887,7 @@ module MGQ_MpWorld
     # @param seats [Integer, nil] How many players it seats now, which its creator may change; nil to keep what the code tells.
     # @param type [String, nil] Its type, one of TYPES; nil to keep what world.ini says.
     # @param share [String, nil] How a Raid World shares companions, one of SHARING; nil to keep what world.ini says.
-    # @param difficulty [Integer, nil] A Raid World's difficulty, one of DIFFICULTIES; nil to keep what world.ini says.
+    # @param difficulty [Integer, nil] A Raid World's difficulty, one of MGQ_MpWorld.difficulties; nil to keep what world.ini says.
     # @param squad [Hash, nil] A Raid World's squad rules, see MGQ_MpWorld.squad; nil to keep what world.ini says.
     # @param raid_bosses [Boolean, nil] Whether a Classic world fights raid bosses; nil to keep what world.ini says.
     def describe(name, directory_id, seats = nil, type = nil, share = nil, difficulty = nil, squad = nil, raid_bosses = nil)
@@ -1810,8 +1898,8 @@ module MGQ_MpWorld
       @difficulty = difficulty if difficulty
       @squad = squad if squad
       @raid_bosses = raid_bosses ? true : false unless raid_bosses.nil?
-      parts = @code.to_s.split(";")
-      @code = (parts[0...-1] + [seats.to_s]).join(";") if seats && parts.size > 3 && parts.last =~ /\A\d+\z/
+      read = seats ? MGQ_Multiplayer::Bridge.call(CODE_TOPIC, "code" => @code.to_s, "seats" => seats.to_i) : nil
+      @code = read["code"] if read
     end
 
     # The world's folder.
@@ -1835,11 +1923,15 @@ module MGQ_MpWorld
       raid? ? SHARING_SYMBOLS[@share] || :off : :off
     end
 
-    # How many players the world seats at once, which the last field of its code tells.
+    # How many players the world seats at once, which its code tells, as the DLL reads it.
     #
     # @return [Integer] The seats, 0 for a code that tells none.
     def seats
-      @code.to_s.split(";").last.to_i
+      return @seats[1] if @seats && @seats[0] == @code
+
+      read = MGQ_Multiplayer::Bridge.call(CODE_TOPIC, "code" => @code.to_s)
+      @seats = [@code, read ? read["seats"] : 0]
+      @seats[1]
     end
 
     # The folder of the world's saves, which the game's Save folder stands for while it is open.
@@ -2109,12 +2201,6 @@ module MGQ_MpWorld
     # What the lines at the top say on the Frontline in raids.
     RAID_FRONT_HINT = "In front in raid boss fights, the rest on the Backline. With more players, each one's first fights."
 
-    # The outcomes of the Formation size's switch, one per FORMATIONS.
-    FORMATION_NAMES = FORMATIONS.map { |value| MGQ_MpWorld.formation_name(value) }
-
-    # The outcomes of the Frontline's switches, one per FRONTS.
-    FRONT_NAMES = FRONTS.map { |value| value.to_s }
-
     # What the lines at the top say on a Raid World's Shared save.
     RAID_SAVE_HINT = "New players start from one of your saves, the world's story from its point. Fixed once created."
 
@@ -2240,7 +2326,7 @@ module MGQ_MpWorld
       fields = [
         Field.new(:name, :text, "Name", 0, "The name everyone sees in the list.", :max_chars => MAX_NAME_CHARS, :group => "World", :empty_text => "The world needs a name."),
         Field.new(:password, :password, "Password", 1, "Typed once to enter the world. Left empty, anyone may enter.", :max_chars => MAX_PASSWORD_CHARS, :side => :left, :group => "World"),
-        Field.new(:seats, :number, "Max Players", 1, "Players in the world at once, #{MIN_SEATS} to #{MAX_SEATS}.", :max_chars => MAX_SEATS.to_s.size, :allowed => /\A\d\z/, :side => :right, :group => "World"),
+        Field.new(:seats, :number, "Max Players", 1, "Players in the world at once, #{MGQ_MpWorld.min_seats} to #{MGQ_MpWorld.max_seats}.", :max_chars => MGQ_MpWorld.max_seats.to_s.size, :allowed => /\A\d\z/, :side => :right, :group => "World"),
         Field.new(:hidden, :check, "Hidden", 2, "Only its players see it in the list. Others add it with its id.", :side => :left, :group => "World"),
         Field.new(:type, :switch, "World type", 2, TYPE_HINT, :side => :right, :group => "World", :choices => ["Classic", "Raid"], :label_width => TYPE_LABEL_WIDTH),
         # Raid only and Classic only, each shown for its type, so the form keeps to one page.
@@ -2258,7 +2344,7 @@ module MGQ_MpWorld
         # its squad rules, whose row comes off the description, so the form keeps to one page.
         Field.new(:from_save, :check, "Shared save", 4, RAID_SAVE_HINT, :side => :left, :group => "World",
                   :shows => lambda { |form| form.type == RAID }),
-        Field.new(:difficulty, :switch, "Difficulty", 4, DIFFICULTY_HINT, :side => :right, :group => "World", :choices => DIFFICULTY_NAMES,
+        Field.new(:difficulty, :switch, "Difficulty", 4, DIFFICULTY_HINT, :side => :right, :group => "World", :choices => MGQ_MpWorld.difficulty_names,
                   :label_width => TYPE_LABEL_WIDTH, :shows => lambda { |form| form.type == RAID }),
         Field.new(:save, :save, "Save", 5, "The save every new player starts from.", :side => :left, :group => "World", :label_width => RAID_SAVE_LABEL_WIDTH,
                   :needs => lambda { |form| form.from_save? }, :shows => lambda { |form| form.type == RAID }),
@@ -2274,8 +2360,8 @@ module MGQ_MpWorld
                   :group => "Description", :shows => lambda { |form| form.type == RAID }),
         Field.new(:confirm, :button, "Create the world", 10, "Creates the world. You enter it from the list."),
       ]
-      new("Create a new world", fields, { :name => "", :password => "", :seats => DEFAULT_SEATS.to_s, :hidden => false, :type => 0, :share => 0, :from_save => false, :save => nil, :choose => false, :description => "", :mods => "",
-                                          :mismatch => false, :shared => false, :difficulty => DIFFICULTIES.index(DEFAULT_DIFFICULTY), :other_mods_off => false, :raid_bosses => false }.merge(squad_values(DEFAULT_SQUAD)))
+      new("Create a new world", fields, { :name => "", :password => "", :seats => MGQ_MpWorld.default_seats.to_s, :hidden => false, :type => 0, :share => 0, :from_save => false, :save => nil, :choose => false, :description => "", :mods => "",
+                                          :mismatch => false, :shared => false, :difficulty => MGQ_MpWorld.difficulties.index(MGQ_MpWorld.default_difficulty), :other_mods_off => false, :raid_bosses => false }.merge(squad_values(MGQ_MpWorld.default_squad)))
     end
 
     # The button of a Raid World's form that opens the form of its squad rules, see limits.
@@ -2295,9 +2381,9 @@ module MGQ_MpWorld
     def self.limits_fields
       [
         Field.new(:luka, :check, "Luka Replaceable", 0, LUKA_HINT, :side => :left, :group => "Team"),
-        Field.new(:formation, :switch, "Formation Size", 0, FORMATION_HINT, :side => :right, :group => "Team", :choices => FORMATION_NAMES, :label_width => SQUAD_LABEL_WIDTH),
-        Field.new(:front, :switch, "Frontline", 1, FRONT_HINT, :side => :left, :group => "Team", :choices => FRONT_NAMES, :label_width => SQUAD_LABEL_WIDTH),
-        Field.new(:raid_front, :switch, "Raid Frontline", 1, RAID_FRONT_HINT, :side => :right, :group => "Team", :choices => FRONT_NAMES, :label_width => SQUAD_LABEL_WIDTH),
+        Field.new(:formation, :switch, "Formation Size", 0, FORMATION_HINT, :side => :right, :group => "Team", :choices => MGQ_MpWorld.formations.map { |size| MGQ_MpWorld.formation_name(size) }, :label_width => SQUAD_LABEL_WIDTH),
+        Field.new(:front, :switch, "Frontline", 1, FRONT_HINT, :side => :left, :group => "Team", :choices => MGQ_MpWorld.fronts.map { |place| place.to_s }, :label_width => SQUAD_LABEL_WIDTH),
+        Field.new(:raid_front, :switch, "Raid Frontline", 1, RAID_FRONT_HINT, :side => :right, :group => "Team", :choices => MGQ_MpWorld.fronts.map { |place| place.to_s }, :label_width => SQUAD_LABEL_WIDTH),
         Field.new(:done, :button, "Done", 2, DONE_HINT),
       ]
     end
@@ -2307,8 +2393,8 @@ module MGQ_MpWorld
     # @param squad [Hash] The rules, see MGQ_MpWorld.squad.
     # @return [Hash] The values by the fields' keys.
     def self.squad_values(squad)
-      { :luka => squad[:luka] ? true : false, :formation => FORMATIONS.index(squad[:formation]).to_i, :front => FRONTS.index(squad[:front]).to_i,
-        :raid_front => FRONTS.index(squad[:raid_front]).to_i }
+      { :luka => squad[:luka] ? true : false, :formation => MGQ_MpWorld.formations.index(squad[:formation]).to_i, :front => MGQ_MpWorld.fronts.index(squad[:front]).to_i,
+        :raid_front => MGQ_MpWorld.fronts.index(squad[:raid_front]).to_i }
     end
 
     # The form that changes a world, for its creator or an admin: what may change after it was made.
@@ -2320,7 +2406,7 @@ module MGQ_MpWorld
     #   button of its squad rules below the seats, the difficulty first PER_PLAYER for one that sets none.
     def self.edit(listed, own = false)
       fields = [
-        Field.new(:seats, :number, "Max Players", 0, "Players in the world at once, #{MIN_SEATS} to #{MAX_SEATS}.", :max_chars => MAX_SEATS.to_s.size, :allowed => /\A\d\z/, :group => "World"),
+        Field.new(:seats, :number, "Max Players", 0, "Players in the world at once, #{MGQ_MpWorld.min_seats} to #{MGQ_MpWorld.max_seats}.", :max_chars => MGQ_MpWorld.max_seats.to_s.size, :allowed => /\A\d\z/, :group => "World"),
         Field.new(:mods, :mods, "Mods", 2, "The mods of the world: listed, required to enter or essential. Enter picks them.", :group => "Game data"),
         Field.new(:other_mods_off, :check, "Turn off other mods", 5, EDIT_OTHER_MODS_HINT, :group => "Game data"),
         Field.new(:description, :area, "What the world is about", 6, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description"),
@@ -2330,7 +2416,7 @@ module MGQ_MpWorld
         fields.insert(2, Field.new(:data, :button, "Update current data scan", 3, "Scans your game's data as it is now and makes it the world's, such as after a mod update.", :group => "Game data"),
                          Field.new(:shared, :check, "Shared Mod Settings", 4, SHARED_HINT, :group => "Game data"))
       end
-      choices = listed.difficulty.nil? ? [PER_PLAYER] + DIFFICULTY_NAMES : DIFFICULTY_NAMES
+      choices = listed.difficulty.nil? ? [PER_PLAYER] + MGQ_MpWorld.difficulty_names : MGQ_MpWorld.difficulty_names
       if listed.type == RAID
         fields.insert(1, Field.new(:difficulty, :switch, "Difficulty", 1, EDIT_DIFFICULTY_HINT, :side => :left, :group => "World", :choices => choices, :label_width => TYPE_LABEL_WIDTH),
                       limits_field(1, :right))
@@ -2339,7 +2425,7 @@ module MGQ_MpWorld
       end
       new("Edit #{listed.name}", fields, { :seats => listed.seats.to_s, :mods => listed.mods.to_s, :description => listed.description.to_s, :shared => MGQ_MpWorldMods.shared?(listed.settings),
                                            :difficulty => choices.index(MGQ_MpWorld.difficulty_name(listed.difficulty) || PER_PLAYER),
-                                           :other_mods_off => listed.other_mods_off ? true : false, :raid_bosses => listed.raid_bosses ? true : false }.merge(squad_values(listed.squad || DEFAULT_SQUAD)))
+                                           :other_mods_off => listed.other_mods_off ? true : false, :raid_bosses => listed.raid_bosses ? true : false }.merge(squad_values(listed.squad || MGQ_MpWorld.default_squad)))
     end
 
     # The form of the name the others see.
@@ -2449,14 +2535,14 @@ module MGQ_MpWorld
 
     # Tells the difficulty the form picks.
     #
-    # @return [Integer, nil] One of DIFFICULTIES; nil for PER_PLAYER.
+    # @return [Integer, nil] One of MGQ_MpWorld.difficulties; nil for PER_PLAYER.
     def difficulty
       field = @fields.find { |candidate| candidate.key == :difficulty }
       name = field ? field.choices[@values[:difficulty].to_i] : nil
-      index = DIFFICULTY_NAMES.index(name)
-      return DIFFICULTIES[index] if index
+      index = MGQ_MpWorld.difficulty_names.index(name)
+      return MGQ_MpWorld.difficulties[index] if index
 
-      name == PER_PLAYER ? nil : DEFAULT_DIFFICULTY
+      name == PER_PLAYER ? nil : MGQ_MpWorld.default_difficulty
     end
 
     # The form of the squad rules this form picks, which holds the same values, so whatever it
@@ -2471,8 +2557,9 @@ module MGQ_MpWorld
     #
     # @return [Hash] The rules, see MGQ_MpWorld.squad.
     def squad
-      { :luka => @values[:luka] == true, :formation => FORMATIONS[@values[:formation].to_i] || DEFAULT_SQUAD[:formation],
-        :front => FRONTS[@values[:front].to_i] || DEFAULT_SQUAD[:front], :raid_front => FRONTS[@values[:raid_front].to_i] || DEFAULT_SQUAD[:raid_front] }
+      default = MGQ_MpWorld.default_squad || {}
+      { :luka => @values[:luka] == true, :formation => MGQ_MpWorld.formations[@values[:formation].to_i] || default[:formation],
+        :front => MGQ_MpWorld.fronts[@values[:front].to_i] || default[:front], :raid_front => MGQ_MpWorld.fronts[@values[:raid_front].to_i] || default[:raid_front] }
     end
 
     # Tells whether the new world's form has new players start from one of the creator's saves, with
@@ -2543,7 +2630,7 @@ module MGQ_MpWorld
       case field.kind
       when :number
         seats = text =~ /\A\d+\z/ ? text.to_i : nil
-        return [text, "#{field.label} must be a number from #{MIN_SEATS} to #{MAX_SEATS}."] unless seats && seats.between?(MIN_SEATS, MAX_SEATS)
+        return [text, "#{field.label} must be a number from #{MGQ_MpWorld.min_seats} to #{MGQ_MpWorld.max_seats}."] unless seats && seats.between?(MGQ_MpWorld.min_seats, MGQ_MpWorld.max_seats)
 
         [seats.to_s, nil]
       when :id

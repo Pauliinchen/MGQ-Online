@@ -2,7 +2,9 @@
 //  ModParking.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Read the journal for the helper's watchdog and let it take the lock
+//      Paulinchen  2026-10-23: Made keys with ModKey of MGQOnline.Game, as the relay does
+//                            - Listed every script in Patch for the game script
+//                            - Read the journal for the helper's watchdog and let it take the lock
 //                            - Read the journal sharing it for writes and deletes
 //                            - Skipped a parked file whose path leads outside Patch
 //                            - Deleted the check of a game started for the options dump
@@ -23,6 +25,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
+using MGQOnline.Game.Mods;
 using MGQParadox.Multiplayer.Network.Transport;
 
 namespace MGQParadox.Multiplayer.Mods;
@@ -679,28 +682,48 @@ internal sealed class ModParking : IDisposable
     }
 
     /// <summary>
-    /// Tells a mod by its key, as the game script and the catalog do.
-    /// </summary>
-    /// <param name="name">The script's name, such as <c>0_ModConfigRemake.rb</c>.</param>
-    /// <returns>The name in lower case, without ".rb", spaces, underscores and hyphens.</returns>
-    public static string KeyOf(string name)
-    {
-        var lower = name.ToLowerInvariant();
-
-        if (lower.EndsWith(ScriptExtension, StringComparison.Ordinal))
-        {
-            lower = lower[..^ScriptExtension.Length];
-        }
-
-        return lower.Replace(" ", string.Empty, StringComparison.Ordinal).Replace("_", string.Empty, StringComparison.Ordinal).Replace("-", string.Empty, StringComparison.Ordinal);
-    }
-
-    /// <summary>
     /// Checks a script the game script names and writes it as the journal does.
     /// </summary>
     /// <param name="path">The path, relative to the game folder.</param>
     /// <returns>The path relative to the game folder with forward slashes; <see langword="null"/> for anything but a script inside Patch, one in this mod's folder or one that is never parked.</returns>
-    public string? Canonical(string path)
+    public string? Canonical(string path) => ScriptPathOf(path, false);
+
+    /// <summary>
+    /// Lists every script in Patch, those that are never parked too, for the game script, whose Ruby
+    /// cannot read file names outside the system's code page.
+    /// </summary>
+    /// <returns>Each script's path relative to the game folder with forward slashes, sorted; none in this mod's folder; <see langword="null"/> when a folder could not be read.</returns>
+    public IReadOnlyList<string>? Installed()
+    {
+        lock (_gate)
+        {
+            try
+            {
+                var found = new List<string>();
+
+                if (Directory.Exists(PatchFolder))
+                {
+                    CollectScripts(new DirectoryInfo(PatchFolder), found, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { PatchFolder }, true);
+                }
+
+                found.Sort(StringComparer.OrdinalIgnoreCase);
+                return found;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Log.Write($"the scripts in Patch could not be listed: {ex.Message}");
+                return null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Checks a script's path and writes it as the journal does.
+    /// </summary>
+    /// <param name="path">The path, relative to the game folder.</param>
+    /// <param name="everyScript">Whether a script that is never parked counts too.</param>
+    /// <returns>The path relative to the game folder with forward slashes; <see langword="null"/> for anything but a script inside Patch, one in this mod's folder or, unless every script counts, one that is never parked.</returns>
+    private string? ScriptPathOf(string path, bool everyScript)
     {
         var trimmed = path.Trim().Replace('\\', '/');
 
@@ -723,7 +746,7 @@ internal sealed class ModParking : IDisposable
         var inside = full.StartsWith(PatchFolder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
             && !full.StartsWith(OwnFolder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 
-        if (!inside || !full.EndsWith(ScriptExtension, StringComparison.OrdinalIgnoreCase) || NeverParked.Contains(KeyOf(Path.GetFileName(full))))
+        if (!inside || !full.EndsWith(ScriptExtension, StringComparison.OrdinalIgnoreCase) || (!everyScript && NeverParked.Contains(ModKey.Of(Path.GetFileName(full)))))
         {
             return null;
         }
@@ -795,7 +818,7 @@ internal sealed class ModParking : IDisposable
         if (Directory.Exists(PatchFolder))
         {
             var found = new List<string>();
-            CollectScripts(new DirectoryInfo(PatchFolder), found, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { PatchFolder });
+            CollectScripts(new DirectoryInfo(PatchFolder), found, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { PatchFolder }, false);
             var elsewhere = found.Where(relative => BehindLinkElsewhere(GamePathOf(relative))).ToList();
             elsewhere.Sort(StringComparer.OrdinalIgnoreCase);
             lines.AddRange(elsewhere.Select(relative => ScriptElsewhere + "\t" + relative));
@@ -819,7 +842,7 @@ internal sealed class ModParking : IDisposable
     }
 
     /// <summary>
-    /// Collects the scripts below a folder of Patch that <see cref="Canonical"/> takes, leaving out
+    /// Collects the scripts below a folder of Patch that <see cref="ScriptPathOf"/> takes, leaving out
     /// what starts with a dot, as the mod loader does.
     /// </summary>
     /// <remarks>
@@ -829,15 +852,16 @@ internal sealed class ModParking : IDisposable
     /// <param name="folder">The folder.</param>
     /// <param name="found">Receives each script's path relative to the game folder, with forward slashes.</param>
     /// <param name="visited">The folders listed already, by their full path or for a link by its final target, which ends a link that leads back up.</param>
+    /// <param name="everyScript">Whether scripts that are never parked are collected too.</param>
     /// <exception cref="IOException">A folder could not be listed.</exception>
     /// <exception cref="UnauthorizedAccessException">A folder may not be listed.</exception>
-    private void CollectScripts(DirectoryInfo folder, List<string> found, HashSet<string> visited)
+    private void CollectScripts(DirectoryInfo folder, List<string> found, HashSet<string> visited, bool everyScript)
     {
         foreach (var entry in folder.EnumerateFileSystemInfos().Where(entry => !entry.Name.StartsWith('.')).ToList())
         {
             if (entry is not DirectoryInfo directory)
             {
-                if (Canonical(Path.GetRelativePath(GameFolder, entry.FullName)) is { } relative)
+                if (ScriptPathOf(Path.GetRelativePath(GameFolder, entry.FullName), everyScript) is { } relative)
                 {
                     found.Add(relative);
                 }
@@ -860,7 +884,7 @@ internal sealed class ModParking : IDisposable
 
             if (visited.Add(real))
             {
-                CollectScripts(directory, found, visited);
+                CollectScripts(directory, found, visited, everyScript);
             }
             else
             {

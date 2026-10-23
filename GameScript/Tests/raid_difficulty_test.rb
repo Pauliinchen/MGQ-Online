@@ -2,6 +2,7 @@
 #  raid_difficulty_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Answered the rules the DLL owns through the bridge from the golden cases
 #      Paulinchen  2026-10-22: Stood in for whether the version to install is a step back and for the update message
 #      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number
 #      Paulinchen  2026-10-14: Checked a Raid World's Shared save in every build
@@ -23,6 +24,7 @@
 # values each Raid World player's own in the story (story_state.rbx).
 
 require_relative "support"
+require_relative "rules_support"
 
 # Stands in for the game's base scene.
 class Scene_Base; def return_scene; end; end
@@ -188,6 +190,7 @@ load_script "ui_text_box"
 load_script "world"
 load_script "story_state"
 load_script "world_difficulty"
+open_rules_bridge
 
 difficulty = MGQ_MpWorldDifficulty
 # A release, unless a check says otherwise.
@@ -311,7 +314,7 @@ check("a Raid World's edit form has the button of its formation limits beside th
       [[field_of(squad_edit, :limits).row, field_of(squad_edit, :limits).side], squad_edit.limits.squad, squad_edit.squad],
       [[1, :right], { :luka => true, :formation => 8, :front => 4, :raid_front => 3 }, { :luka => true, :formation => 8, :front => 4, :raid_front => 3 }])
 squad_listed.squad = nil
-check("the defaults for one that names none", MGQ_MpWorld::Form.edit(squad_listed, true).squad, MGQ_MpWorld::DEFAULT_SQUAD)
+check("the defaults for one that names none", MGQ_MpWorld::Form.edit(squad_listed, true).squad, MGQ_MpWorld.default_squad)
 squad_listed.type = "classic"
 check("and a Classic world's edit form has no button", field_of(MGQ_MpWorld::Form.edit(squad_listed, true), :limits), nil)
 

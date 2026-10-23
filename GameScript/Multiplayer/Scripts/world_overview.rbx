@@ -5,7 +5,8 @@
 #      Paulinchen  2026-10-24: Listed the pages of other mods after the own pages and made room for two of their tabs
 #                            - Placed the menu of a page with a head, a list and a pane over the pane or under its buttons
 #                            - Opened the overview outside a world too, as Single player with the Quests page
-#      Paulinchen  2026-10-23: Removed the unused EXP_VALUE, BOSSES_HEADING and World page labels, and the repeated page hints
+#      Paulinchen  2026-10-23: Asked the world story for the part the player is in
+#                            - Removed the unused EXP_VALUE, BOSSES_HEADING and World page labels, and the repeated page hints
 #                            - Kept the overview off the live map behind menus
 #      Paulinchen  2026-10-13: Removed the unused YOUR_LEVEL
 #      Paulinchen  2026-10-12: Moved the World, Quests and Unlocks pages into world_overview_pages.rbx
@@ -82,11 +83,6 @@ module MGQ_MpWorldOverview
 
   # The story's progress variable, by its name in the translation and in the untranslated game.
   PROGRESS = ["Overall Events Progress", "総合イベント進行度"]
-
-  # First progress of each part, latest first, as MGQ_MpWorldStory.part_of and the relay count them:
-  # Part 2 from Tartarus Escape, Part 3 from the Middle Chapter's epilogue, so the Great Decision
-  # lies in Part 3.
-  PART_STARTS = [[3, MGQ_MpWorldStory::PART_THREE], [2, MGQ_MpWorldStory::PART_TWO], [1, 0]]
 
   # The side chosen, by the switch that records the choice, in the translation and in the
   # untranslated game.
@@ -719,9 +715,8 @@ module MGQ_MpWorldOverview
   #
   # @return [String] "part", "part:side" or "part:route", such as "2:alice" or "3:destroyer".
   def self.story_code
-    progress = variable(PROGRESS)
-    part = PART_STARTS.find { |_, start| progress >= start }[0]
-    route = ROUTES.keys.find { |key| variable(ROUTES[key]) > 0 } if part == 3
+    part = MGQ_MpWorldStory.part_of("p" => variable(PROGRESS))
+    route = ROUTES.keys.find { |key| variable(ROUTES[key]) > 0 } if part == MGQ_MpWorldStory::DECISION_PART
     side = SIDES.keys.find { |key| switch?(SIDES[key]) }
     chosen = route || side
     chosen ? "#{part}:#{chosen}" : part.to_s

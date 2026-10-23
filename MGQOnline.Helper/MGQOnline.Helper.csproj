@@ -36,4 +36,9 @@
     <Compile Include="..\MGQParadox.Multiplayer\Network\Transport\Message.cs" Link="Linked\Network\Transport\Message.cs" />
   </ItemGroup>
 
+  <!-- The game's rules the linked DLL code asks, such as the mod key. -->
+  <ItemGroup>
+    <ProjectReference Include="..\MGQOnline.Game\MGQOnline.Game.csproj" />
+  </ItemGroup>
+
 </Project>

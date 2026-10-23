@@ -2,7 +2,8 @@
 //  Exports.Mods.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Started the game again through the helper, under Wine too
+//      Paulinchen  2026-10-23: Dropped mp_mods_list, whose catalog the scripts take through the bridge
+//                            - Started the game again through the helper, under Wine too
 //      Paulinchen  2026-10-08: Answered mp_restart_game with 2 under Wine
 //      Paulinchen  2026-10-06: Sent the Mod Config options an admin's game reads for the catalog
 //                            - Created
@@ -20,32 +21,12 @@ using MGQParadox.Multiplayer.Network.World;
 namespace MGQParadox.Multiplayer;
 
 /// <summary>
-/// The functions of a world's mods: the relay's mod catalog, the hashes of installed mods,
-/// installing a world's mods, starting the game again so they load, and the Mod Config options an
-/// admin's game reads for the catalog.
+/// The functions of a world's mods: the hashes of installed mods, installing a world's mods,
+/// starting the game again so they load, and the Mod Config options an admin's game reads for the
+/// catalog.
 /// </summary>
 internal static unsafe partial class Exports
 {
-    /// <summary>
-    /// Hands out the relay's mod catalog as fetched with the world list, see <see cref="WorldDirectory.DescribeMods"/>.
-    /// </summary>
-    /// <param name="buffer">Receives the catalog, UTF-8 and null-terminated.</param>
-    /// <param name="size">The size of the buffer in bytes.</param>
-    /// <returns>The catalog's length, or its length negated when the buffer is too small, 0 when it failed.</returns>
-    [UnmanagedCallersOnly(EntryPoint = "mp_mods_list", CallConvs = [typeof(CallConvStdcall)])]
-    public static int ModsList(byte* buffer, int size)
-    {
-        try
-        {
-            return Copy(WorldDirectory.Current.DescribeMods(), buffer, size);
-        }
-        catch (Exception ex)
-        {
-            Log.Write($"mp_mods_list failed: {ex}");
-            return 0;
-        }
-    }
-
     /// <summary>
     /// Hashes an installed mod's file the way the mod catalog does, see <see cref="ModHash"/>.
     /// </summary>

@@ -2,6 +2,7 @@
 //  WorldModsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Checked the catalog as the game script takes it through the bridge, a link not read yet left out
 //      Paulinchen  2026-10-22: Covered the list without the worlds' mods, which carries those of the world opened or read
 //      Paulinchen  2026-10-13: Expected the raid bosses setting of a Classic world at the end of its line
 //                            - Expected the empty squad settings of a Classic world at the end of its line
@@ -23,10 +24,12 @@ using System.Linq;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading;
+using MGQOnline.Bridge.Ruby;
 using MGQParadox.Multiplayer.Mods;
 using MGQParadox.Multiplayer.Network.Transport;
 using MGQParadox.Multiplayer.Network.World;
 using MGQParadox.Multiplayer.Tests.Mods;
+using MGQParadox.Multiplayer.Topics;
 using static MGQParadox.Multiplayer.Tests.Network.World.WorldDirectoryTests;
 
 namespace MGQParadox.Multiplayer.Tests.Network.World;
@@ -43,7 +46,8 @@ public sealed class WorldModsTests
     private static readonly byte[] Script = Encoding.UTF8.GetBytes("# Level Cap\n");
 
     /// <summary>
-    /// Asserts that the catalog comes with the list, every version with its files.
+    /// Asserts that the catalog comes with the list, every version with its files, as the game
+    /// script takes it.
     /// </summary>
     [Fact]
     public void Refresh_FetchesTheCatalog()
@@ -53,12 +57,34 @@ public sealed class WorldModsTests
         var player = NewDirectory(relay, CreatorKey, "Player");
 
         ListState(player);
-        var mods = Message.Decode(player.DescribeMods());
+        RubyHash catalog = ModTopics.CatalogOf(player);
 
-        Assert.Equal("ready", mods["state"]);
+        Assert.Equal(RubyString.Utf8("ready"), catalog["state"]);
         Assert.Equal(
-            ["mod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb", "old\tlevelcap\t1.4.0\tLevel_Cap.rb\tbb", "old\tlevelcap\t1.3.5\tLevel_Cap.rb\taa"],
-            mods.Team.Split('\n', System.StringSplitOptions.RemoveEmptyEntries));
+            new RubyHash
+            {
+                { "key", "levelcap" }, { "name", "Level Cap" }, { "kind", "link" }, { "version", "1.4.0" }, { "files", Files("bb") },
+                { "versions", new RubyArray([new RubyArray(["1.4.0", Files("bb")]), new RubyArray(["1.3.5", Files("aa")])]) }, { "options_version", RubyNil.Value },
+            },
+            Assert.Single(catalog["mods"].AsArray()));
+    }
+
+    /// <summary>
+    /// Asserts that a link the relay could not read yet, without a version or files, is left out,
+    /// so a world checks it as a mod outside the catalog.
+    /// </summary>
+    [Fact]
+    public void Refresh_LeavesOutALinkNotReadYet()
+    {
+        using var relay = new TestRelay();
+        var entry = LinkEntry(string.Empty, "bb");
+        entry["files"] = new JsonObject();
+        relay.CatalogMods.Add(entry);
+        var player = NewDirectory(relay, CreatorKey, "Player");
+
+        ListState(player);
+
+        Assert.Empty(ModTopics.CatalogOf(player)["mods"].AsArray());
     }
 
     /// <summary>
@@ -75,7 +101,7 @@ public sealed class WorldModsTests
 
         ListState(player);
 
-        Assert.StartsWith("mod\tlevelcap\tLevel Cap\tzip\t1.4.0\t", Message.Decode(player.DescribeMods()).Team);
+        Assert.Equal(RubyString.Utf8("zip"), ModTopics.CatalogOf(player)["mods"].AsArray()[0].AsHash()["kind"]);
     }
 
     /// <summary>
@@ -92,12 +118,12 @@ public sealed class WorldModsTests
 
         ListState(player);
 
-        Assert.Contains("opts\tlevelcap\t1.3.5", Message.Decode(player.DescribeMods()).Team.Split('\n'));
+        Assert.Equal(RubyString.Utf8("1.3.5"), ModTopics.CatalogOf(player)["mods"].AsArray()[0].AsHash()["options_version"]);
     }
 
     /// <summary>
-    /// Asserts that the game script is told every mod the catalog marks personal, an entry of a name
-    /// alone too, which is no mod to install.
+    /// Asserts that the game script is told the keys of every mod the catalog marks personal and of
+    /// their names, an entry of a name alone too, which is no mod to install.
     /// </summary>
     [Fact]
     public void Refresh_TellsThePersonalMods()
@@ -114,11 +140,10 @@ public sealed class WorldModsTests
         var player = NewDirectory(relay, CreatorKey, "Player");
 
         ListState(player);
-        var lines = Message.Decode(player.DescribeMods()).Team.Split('\n', System.StringSplitOptions.RemoveEmptyEntries);
+        RubyHash catalog = ModTopics.CatalogOf(player);
 
-        Assert.Equal(["personal\tlevelcap\tLevel Cap", "personal\tvictoryscreen\tVictory_Screen"], lines.Where(line => line.StartsWith("personal\t", System.StringComparison.Ordinal)));
-        Assert.DoesNotContain(lines, line => line.StartsWith("mod\tvictoryscreen\t", System.StringComparison.Ordinal));
-        Assert.Contains(lines, line => line.StartsWith("mod\tlevelcap\t", System.StringComparison.Ordinal));
+        Assert.Equal(new RubyArray(["levelcap", "victoryscreen"]), catalog["personal"]);
+        Assert.Equal(["levelcap"], catalog["mods"].AsArray().Select(mod => mod.AsHash()["key"].AsText()));
     }
 
     /// <summary>
@@ -309,6 +334,13 @@ public sealed class WorldModsTests
         Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\tkey=i:2\tclassic\toff\t\t0\t\t0"));
         Assert.Equal("failed", Act(guest, directory => directory.SetSettings(made["world"], "key=i:3"))["state"]);
     }
+
+    /// <summary>
+    /// Writes a script's hash as the game script is told it.
+    /// </summary>
+    /// <param name="hash">The hash.</param>
+    /// <returns>The hash by the script's name.</returns>
+    private static RubyHash Files(string hash) => new() { { "Level_Cap.rb", hash } };
 
     /// <summary>
     /// Writes a link mod as the relay lists it.

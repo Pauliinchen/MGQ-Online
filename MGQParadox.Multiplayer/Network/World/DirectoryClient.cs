@@ -2,6 +2,7 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Named the default difficulty, the difficulties' names, the default squad settings and the formation sizes for the game script
 //      Paulinchen  2026-10-22: Read one world with its mods, mod hashes and settings, which the list leaves out for this version
 //      Paulinchen  2026-10-15: Named the Raid World stories kept key by key in the X-MGQ-Features header
 //      Paulinchen  2026-10-14: Dropped the dev feature, as every game may give a Raid World a starting save
@@ -46,6 +47,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -1029,6 +1031,17 @@ internal static class WorldDifficulty
     public const int Max = 4;
 
     /// <summary>
+    /// The difficulty the forms offer first, NORMAL.
+    /// </summary>
+    public const int Default = 0;
+
+    /// <summary>
+    /// The names of the difficulties from <see cref="Min"/> to <see cref="Max"/>, as the game's own
+    /// difficulty choice shows them.
+    /// </summary>
+    public static readonly IReadOnlyList<string> Names = ["VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"];
+
+    /// <summary>
     /// Tells whether a value is one of the game's difficulties.
     /// </summary>
     /// <param name="value">The value.</param>
@@ -1055,6 +1068,17 @@ internal static class RaidSquad
     public const int OriginalFormation = 0;
 
     /// <summary>
+    /// What the forms and the details call <see cref="OriginalFormation"/>.
+    /// </summary>
+    public const string OriginalFormationName = "Original";
+
+    /// <summary>
+    /// The settings of a Raid World that names none: Luka fixed, a team of four and one character
+    /// in the frontline of regular fights and of raids.
+    /// </summary>
+    public const string Default = "0 4 1 1";
+
+    /// <summary>
     /// The smallest formation size besides the game's own.
     /// </summary>
     public const int MinFormation = 4;
@@ -1078,6 +1102,17 @@ internal static class RaidSquad
     /// How many numbers the text holds.
     /// </summary>
     private const int Count = 4;
+
+    /// <summary>
+    /// The formation sizes a Raid World may set, in the order the forms offer them: the game's own,
+    /// then from <see cref="MinFormation"/> to <see cref="MaxFormation"/>.
+    /// </summary>
+    public static IEnumerable<int> Formations => [OriginalFormation, .. Enumerable.Range(MinFormation, MaxFormation - MinFormation + 1)];
+
+    /// <summary>
+    /// The frontline sizes a Raid World may set, in the order the forms offer them.
+    /// </summary>
+    public static IEnumerable<int> Fronts => Enumerable.Range(MinFront, MaxFront - MinFront + 1);
 
     /// <summary>
     /// Tells whether a text holds valid settings.
@@ -1141,7 +1176,7 @@ internal static class RaidSquad
     /// <param name="front">How many characters fight in the frontline of regular fights.</param>
     /// <param name="raidFront">How many characters fight in the frontline of raids.</param>
     /// <returns>Whether the text holds valid settings.</returns>
-    private static bool TryParse(string text, out bool luka, out int formation, out int front, out int raidFront)
+    public static bool TryParse(string text, out bool luka, out int formation, out int front, out int raidFront)
     {
         var words = text.Split(' ');
         var numbers = new int[Count];
@@ -1195,7 +1230,7 @@ internal static class RaidSquad
     /// <param name="front">How many characters fight in the frontline of regular fights.</param>
     /// <param name="raidFront">How many characters fight in the frontline of raids.</param>
     /// <returns>The text.</returns>
-    private static string TextOf(bool luka, int formation, int front, int raidFront) =>
+    public static string TextOf(bool luka, int formation, int front, int raidFront) =>
         string.Create(CultureInfo.InvariantCulture, $"{(luka ? 1 : 0)} {formation} {front} {raidFront}");
 }
 

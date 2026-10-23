@@ -2,6 +2,7 @@
 #  ui_party_box_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Stood in for the part the Great Decision lies in, not the parts' starts
 #      Paulinchen  2026-10-12: Checked the size hotkey pressed while the player types
 #                            - Stood in for the parts of the world's story
 #      Paulinchen  2026-10-11: Called the small box with the party and the others apart
@@ -77,10 +78,8 @@ module MGQ_MpWorld
 end
 # Stands in for the world's story, which the overview reads the parts' starts from.
 module MGQ_MpWorldStory
-  # The story progress Part 2 starts at.
-  PART_TWO = 19
-  # The story progress Part 3 starts at.
-  PART_THREE = 34
+  # The part the Great Decision lies in.
+  DECISION_PART = "3"
 end
 # Stands in for duels, which offer nothing.
 module MGQ_MpBattlesDuel

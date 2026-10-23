@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Checked the pages of other mods with their tabs, controls, buttons and mouse
+#      Paulinchen  2026-10-23: Answered the catch-up through the bridge from the golden cases and found the part as the DLL does
+#                            - Answered the catch-up through the bridge from the golden cases
 #      Paulinchen  2026-10-13: Checked that the Unlocks grid leaves out characters the catch-up does not count
 #      Paulinchen  2026-10-12: Checked the World, Quests and Unlocks pages with a head, a list and a pane
 #                            - Checked the Quests page and the catch-up experience on the Levels page
@@ -47,6 +49,7 @@
 # box before leaving the party or removing a member.
 
 require_relative "world_support"
+require_relative "rules_support"
 
 # Reopens the stand-ins of Multiplayer.rb.
 module MGQ_Multiplayer
@@ -79,10 +82,8 @@ end
 module MGQ_MpWorldDifficulty; def self.value; $difficulty; end; end
 # Stands in for the world's story as the relay told it, in $world_story, kept in a Raid World.
 module MGQ_MpWorldStory
-  # The story progress Part 2 starts at.
-  PART_TWO = 19
-  # The story progress Part 3 starts at.
-  PART_THREE = 34
+  # The part the Great Decision lies in.
+  DECISION_PART = "3"
   # The routes' keys in the world's story.
   ROUTES = %w(ad mr chaos)
   # The variables that count each route's progress, in the order of ROUTES.
@@ -91,8 +92,8 @@ module MGQ_MpWorldStory
   def self.world; $world_story; end
   # Answers whether the world keeps a story, as a Raid World does.
   def self.active?; $raid; end
-  # Reads the part from a story's counters.
-  def self.part_of(counters); counters["part"]; end
+  # Reads the part from a story's counters, or finds it from variable 1001 and the routes as the DLL does.
+  def self.part_of(counters); counters.key?("part") ? counters["part"] : stand_in_part("p" => counters["p"].to_i, "routes" => ROUTE_VARIABLES.map { |id| counters["r#{id}"].to_i }); end
 end
 # Stands in for the catch-up: its list of what it hands out by level in $unlocks, and the level it
 # counts in $counted_level.
@@ -191,6 +192,7 @@ load_script "world_overview_mods"
 # Stands in for the emote wheel, shut until a test opens it.
 module MGQ_MpEmotes; def self.open?; false; end; end
 load_script "ui_party_box"
+open_rules_bridge
 
 overview = MGQ_MpWorldOverview
 

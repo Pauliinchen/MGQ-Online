@@ -2,7 +2,9 @@
 #  world_mods_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Dropped the restart by hand under Wine
+#      Paulinchen  2026-10-23: Answered the mod catalog through the bridge
+#                            - Answered the mod keys and the scripts in Patch through the bridge
+#                            - Dropped the restart by hand under Wine
 #                            - Dropped the checks of the deleted options dump
 #      Paulinchen  2026-10-22: Measured the settings and the creator's hashes against the relay's limits as the script names them
 #                            - Stood in for the update message
@@ -40,6 +42,7 @@ require "fileutils"
 require "tmpdir"
 
 require_relative "support"
+require_relative "rules_support"
 
 # Stand-ins for the game.
 
@@ -289,6 +292,7 @@ load_script "world_mods"
 load_script "world_mods_parking"
 load_script "world_text"
 load_script "world_screen"
+open_rules_bridge
 # GameData.ini, which the title screen writes, is world_data_test.rb's; this game has no database to read.
 MGQ_MpWorld::GameData.instance_variable_set(:@written, true)
 
@@ -341,9 +345,9 @@ end
 
 # Hands the mods module a catalog and forgets what it read before.
 #
-# @param lines [Array<String>] The catalog's lines.
+# @param lines [Array<String>] The catalog's lines, see catalog_told.
 def catalog(*lines)
-  $dll["mp_mods_list"] = "state=ready\n\n" + lines.map { |line| line + "\n" }.join
+  catalog_told("ready", *lines)
   MGQ_MpWorldMods.forget_installed
 end
 
@@ -356,17 +360,15 @@ catalog("mod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb", "old\tlevelca
 known = mods.catalog
 check("the catalog reads each mod with its files and versions", [known.map(&:key), known[0].files, known[0].versions.map(&:first), known[1].files.keys], [["levelcap", "pack"], { "Level_Cap.rb" => "bb" }, ["1.4.0", "1.3.5"], ["Pack/a.luka", "Pack/b.luka"]])
 check("a mod is found by its name as a world writes it", [mods.mod_named("Level_Cap").name, mods.mod_named("level cap").key, mods.mod_named("Other")], ["Level Cap", "levelcap", nil])
-$dll["mp_mods_list"] = "state=failed\nerror=down\n\n"
+catalog_told("failed")
 mods.forget_installed
 check("a catalog that could not be fetched is unknown", mods.catalog, nil)
-catalog("mod\tbroken\tBroken\tlink\t", "old\tbroken\t")
-check("a link the relay could not read yet is left out, so a world checks it as a mod outside the catalog", mods.catalog, [])
 catalog("mod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb")
 mods.catalog
-$dll["mp_mods_list"] = "state=loading\n\nmod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb\n"
+catalog_told("loading", "mod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb")
 mods.forget_installed
 check("while the list is fetched again, the catalog the DLL still hands out counts", mods.catalog.map(&:key), ["levelcap"])
-$dll["mp_mods_list"] = "state=loading\n\n"
+catalog_told("loading")
 mods.forget_installed
 check("and without one, the catalog read before stays", mods.catalog.map(&:key), ["levelcap"])
 

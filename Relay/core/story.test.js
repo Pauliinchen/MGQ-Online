@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-23: Covered the affection of a keyed story keeping the highest value written
+//                            - Checked partOf against the golden parts the game's StoryParts passes too
 //      Paulinchen  2026-10-21: Covered the pins an older relay kept as rules
 //                            - Covered a write that changes pinned keys keeping its other keys
 //      Paulinchen  2026-10-17: Covered the frozen raid boss fights in a keyed story's lists and the end of one
@@ -20,6 +21,7 @@
 //
 //----------------------------------------------------------------
 
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -120,6 +122,14 @@ test("the parts follow variable 1001 up to the Great Decision, then the route ch
   assert.equal(partOf(counters({ p: 40, r1142: 81 })), PART.mr);
   assert.equal(partOf(counters({ p: 40, r1143: 25, clear: ["ad", "mr", "chaos"] })), PART.chaos);
   assert.equal(partOf(counters({ p: 39, clear: ["ad"] })), PART.three);
+});
+
+test("partOf still finds the golden parts, which the game's StoryParts finds too", () => {
+  const cases = JSON.parse(readFileSync(new URL("../../fixtures/story/parts.json", import.meta.url), "utf8")).parts;
+
+  for (const { part, ...found } of cases) {
+    assert.equal(partOf(found), part, JSON.stringify(found));
+  }
 });
 
 test("the story's order grows through a route, its finish and the return to the Great Decision", () => {

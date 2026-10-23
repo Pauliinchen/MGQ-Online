@@ -3,7 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Kept on the unlocks the player holds that the world's story lacks, as the second accessory slot
-#      Paulinchen  2026-10-23: Took the player out of their own scene before the return to the Great Decision and the end of a cleared collab
+#      Paulinchen  2026-10-23: Asked the DLL for the part a story is in
+#                            - Took the player out of their own scene before the return to the Great Decision and the end of a cleared collab
 #                            - Told whether event commands may move the world's story on and read the values that do
 #                            - Wrote the story's waiting changes at once as the game saves, goes to the title screen, resets or closes
 #                            - Kept in the save the world's story the player built on and took a loaded save's changes to it as their own
@@ -149,11 +150,8 @@ module MGQ_MpWorldStory
   # How many common events deep progress_ahead? follows the calls of the commands it reads.
   PROGRESS_CALL_DEPTH = 3
 
-  # The main story's progress from which Part 2 runs, set by Tartarus Escape.
-  PART_TWO = 19
-
-  # The main story's progress from which Part 3 runs, set by the Middle Chapter's epilogue.
-  PART_THREE = 34
+  # The topic that finds the part a story is in.
+  PART_TOPIC = "story.part"
 
   # The main story's progress the Great Decision sets.
   GREAT_DECISION = 40
@@ -1935,17 +1933,18 @@ module MGQ_MpWorldStory
     ROUTE_VARIABLES.index { |id| counters["r#{id}"].to_i > 0 }
   end
 
-  # Finds the part a story is in, as the relay does: the route under way, else Part 1 before
-  # Tartarus Escape, Part 2 before the Middle Chapter's epilogue, else Part 3.
+  # Finds the part a story is in, as the DLL and the relay count it (StoryParts in MGQOnline.Game):
+  # the route under way, else Part 1 before Tartarus Escape, Part 2 before the Middle Chapter's
+  # epilogue, else Part 3. Each place in the story is asked once.
   #
-  # @param counters [Hash] The counters.
-  # @return [String] "1", "2", "3", "ad", "mr" or "chaos".
+  # @param counters [Hash] The counters; those of the routes may be left out.
+  # @return [String] "1", "2", "3", "ad", "mr" or "chaos"; empty when the DLL did not answer.
   def self.part_of(counters)
-    route = route_index(counters)
-    return ROUTES[route] if route
-    return "1" if counters["p"] < PART_TWO
-
-    counters["p"] < PART_THREE ? "2" : "3"
+    request = { "p" => counters["p"].to_i, "routes" => ROUTE_VARIABLES.map { |id| counters["r#{id}"].to_i } }
+    key = [request["p"]] + request["routes"]
+    @parts ||= {}
+    @parts[key] ||= MGQ_Multiplayer::Bridge.call(PART_TOPIC, request)
+    @parts[key] || ""
   end
 
   # Orders stories as the relay does: the routes returned from, the main story, the step of the

@@ -2,7 +2,8 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Dropped the update offer under Wine and expected --version for a step back by hand
+#      Paulinchen  2026-10-23: Answered the rules the DLL owns through the bridge from the golden cases
+#                            - Dropped the update offer under Wine and expected --version for a step back by hand
 #                            - Gave the stand-in world list every field the DLL writes
 #      Paulinchen  2026-10-22: Checked the update offer of a step back to an older release
 #      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number
@@ -46,6 +47,7 @@
 # invites, a world's new game, and an outdated game kept out and offered the update.
 
 require_relative "support"
+require_relative "rules_support"
 require "tmpdir"
 
 # Stands in for the game's scenes: returning notes $returned.
@@ -209,6 +211,7 @@ load_script "world_mods"
 load_script "world_mods_parking"
 load_script "world_text"
 load_script "world_screen"
+open_rules_bridge
 
 # A small window of the world screen: keeps the commands it opened with and whether it takes input.
 class FakeChoice
@@ -594,21 +597,21 @@ check("the difficulties carry the game's own names", [MGQ_MpWorld.difficulty_nam
 MGQ_MpWorld.instance_variable_set(:@world, nil)
 
 # A Raid World's squad rules: read and written as text, and what every script asks of the open world.
-check("squad rules read from their text", [MGQ_MpWorld.squad_of("0 4 1 1"), MGQ_MpWorld.squad_of("1 0 4 3"), MGQ_MpWorld.squad_of(" 1  8 2 2 ")],
+check("squad rules read from their text", [MGQ_MpWorld.squad_of("0 4 1 1"), MGQ_MpWorld.squad_of("1 0 4 3"), MGQ_MpWorld.squad_of("1 8 2 2")],
       [{ :luka => false, :formation => 4, :front => 1, :raid_front => 1 }, { :luka => true, :formation => 0, :front => 4, :raid_front => 3 },
        { :luka => true, :formation => 8, :front => 2, :raid_front => 2 }])
 check("and written back the same", ["0 4 1 1", "1 0 4 3", "1 8 2 2"].map { |text| MGQ_MpWorld.squad_text(MGQ_MpWorld.squad_of(text)) }, ["0 4 1 1", "1 0 4 3", "1 8 2 2"])
-check("an empty text or a value out of its range is none",
-      [nil, "", "0 4 1", "0 4 1 1 1", "2 4 1 1", "0 3 1 1", "0 9 1 1", "0 4 0 1", "0 4 1 5", "0 4 -1 1", "a 4 1 1", "0 4.0 1 1"].map { |text| MGQ_MpWorld.squad_of(text) },
-      [nil] * 12)
+check("an empty text, one spaced otherwise or a value out of its range is none",
+      [nil, "", " 1  8 2 2 ", "0 4 1", "0 4 1 1 1", "2 4 1 1", "0 3 1 1", "0 9 1 1", "0 4 0 1", "0 4 1 5", "0 4 -1 1", "a 4 1 1", "0 4.0 1 1"].map { |text| MGQ_MpWorld.squad_of(text) },
+      [nil] * 13)
 check("Formation sizes are named for texts", [MGQ_MpWorld.formation_name(0), MGQ_MpWorld.formation_name(4), MGQ_MpWorld.formation_name(8)], ["Original", "4", "8"])
 check("outside a world there are no squad rules", MGQ_MpWorld.squad, nil)
 MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "type" => "classic", "squad" => "1 6 2 2"))
-check("nor in a Classic world, whatever its world.ini says, which takes none", [MGQ_MpWorld.squad, MGQ_MpWorld.take_squad(MGQ_MpWorld::DEFAULT_SQUAD)], [nil, false])
+check("nor in a Classic world, whatever its world.ini says, which takes none", [MGQ_MpWorld.squad, MGQ_MpWorld.take_squad(MGQ_MpWorld.default_squad)], [nil, false])
 MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "type" => "raid"))
 check("a Raid World that names none plays with the defaults", MGQ_MpWorld.squad, { :luka => false, :formation => 4, :front => 1, :raid_front => 1 })
 MGQ_MpWorld.squad[:formation] = 8
-check("which no caller changes", MGQ_MpWorld::DEFAULT_SQUAD[:formation], 4)
+check("which no caller changes", MGQ_MpWorld.default_squad[:formation], 4)
 MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "type" => "raid", "squad" => "1 6 2 3"))
 check("a Raid World tells its squad rules", MGQ_MpWorld.squad, { :luka => true, :formation => 6, :front => 2, :raid_front => 3 })
 check("and takes new ones the relay tells, keeping them in world.ini",
@@ -617,7 +620,7 @@ check("and takes new ones the relay tells, keeping them in world.ini",
 check("but none out of range, nor nothing", [MGQ_MpWorld.take_squad({ :luka => false, :formation => 3, :front => 1, :raid_front => 1 }), MGQ_MpWorld.take_squad(nil), MGQ_MpWorld.squad[:formation]],
       [false, false, 0])
 MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("abcdef012345", "code" => "x", "type" => "raid", "squad" => "lots"))
-check("a world.ini's squad rules this game cannot read are the defaults", MGQ_MpWorld.squad, MGQ_MpWorld::DEFAULT_SQUAD)
+check("a world.ini's squad rules this game cannot read are the defaults", MGQ_MpWorld.squad, MGQ_MpWorld.default_squad)
 MGQ_MpWorld.instance_variable_set(:@world, nil)
 
 # A Classic world's raid bosses: the list, the details, world.ini and what every script asks of the

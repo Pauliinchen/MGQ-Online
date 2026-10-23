@@ -2,7 +2,8 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Started the game again for downloaded mods under Wine or Proton too
+#      Paulinchen  2026-10-23: Took the mod catalog from the DLL as plain values instead of parsing its text
+#                            - Started the game again for downloaded mods under Wine or Proton too
 #                            - Deleted the options dump for the World Admin tool, its setting and its check
 #      Paulinchen  2026-10-22: Took a world's settings only once the list carries its mods, and as many settings and mod hashes as the relay's new limit
 #                            - Said the version to play for a step back when the entry after a restart is refused
@@ -70,8 +71,8 @@ module MGQ_MpWorldMods
   # What starts this script's lines in the log.
   LOG_TAG = "world mods"
 
-  # Bytes the DLL may write the catalog into at first. A larger catalog asks for a larger buffer.
-  CATALOG_SIZE = 65_536
+  # The topic that hands out the relay's mod catalog.
+  CATALOG_TOPIC = "mods.catalog"
 
   # Seconds between two readings of the catalog.
   CATALOG_SECONDS = 1.0
@@ -274,28 +275,23 @@ module MGQ_MpWorldMods
     return @catalog if @catalog_read && Time.now - @catalog_read < CATALOG_SECONDS
 
     @catalog_read = Time.now
-    text = MGQ_Multiplayer::Link.read('mp_mods_list', CATALOG_SIZE)
-    return @catalog if text == @catalog_text
+    told = MGQ_Multiplayer::Bridge.call(CATALOG_TOPIC)
+    return @catalog if told == @catalog_told
 
-    @catalog_text = text
-    state = MGQ_Multiplayer::Link.parse(text)
-    payload = state[:payload].to_s
-
-    case state["state"]
-    when "ready"
-      @catalog = parse(payload)
-      @personal = personal_of(payload)
-    when "loading"
+    @catalog_told = told
+    state = told ? told["state"] : "failed"
+    case state
+    when "ready", "loading"
       # The DLL hands out the catalog it had while it fetches the list again.
-      unless payload.empty?
-        @catalog = parse(payload)
-        @personal = personal_of(payload)
+      unless state == "loading" && told["mods"].empty? && told["personal"].empty?
+        @catalog = told["mods"].map { |mod| mod_of(mod) }
+        @personal = told["personal"]
       end
     else
       @catalog = nil
       @personal = nil
     end
-    log_catalog(state["state"])
+    log_catalog(state)
     @catalog
   rescue => e
     log_once(:catalog, "reading the mod catalog failed: #{e.class}: #{e.message}")
@@ -316,63 +312,20 @@ module MGQ_MpWorldMods
     log("mod catalog (list #{state}): #{@catalog.size} mod(s)#{mods.empty? ? '' : ': ' + mods.join(', ')}")
   end
 
-  # Reads the catalog's lines.
+  # Makes a mod of the catalog from what the DLL tells of it.
   #
-  # @param text [String] One line per mod and version, see WorldDirectory.DescribeMods in the DLL.
-  # @return [Array<Mod>] The mods, without those the relay could not read yet, which have no
-  #   version and so count as mods outside the catalog.
-  def self.parse(text)
-    mods = []
-
-    text.split("\n").each do |line|
-      fields = line.split("\t", -1)
-
-      case fields[0]
-      when "mod"
-        mod = Mod.new(fields[1], fields[2].to_s, fields[3].to_s, fields[4].to_s, files_of(fields[5..-1]), [])
-        mods.push(mod) unless mod.version.empty? || mod.files.empty?
-      when "old"
-        mod = mods.find { |known| known.key == fields[1] }
-        mod.versions.push([fields[2].to_s, files_of(fields[3..-1])]) if mod
-      when "opts"
-        mod = mods.find { |known| known.key == fields[1] }
-        mod.options_version = fields[2].to_s if mod
-      end
-    end
-
-    mods
-  end
-
-  # Reads the catalog's personal mods, which a world that turns other mods off leaves on.
-  #
-  # The catalog names every personal mod on a line of its own, those without a download too, which
-  # parse leaves out.
-  #
-  # @param text [String] The catalog's lines, "personal", the key and the name for each.
-  # @return [Array<String>] The mods' keys, and the keys of their names, as MGQ_MpWorld.mod_key makes them.
-  def self.personal_of(text)
-    keys = text.split("\n").map do |line|
-      fields = line.split("\t", -1)
-      fields[0] == "personal" ? [MGQ_MpWorld.mod_key(fields[1]), MGQ_MpWorld.mod_key(fields[2])] : []
-    end
-    keys.flatten.reject { |key| key.empty? }.uniq
+  # @param told [Hash] The mod, see ModTopics.CatalogOf in the DLL.
+  # @return [Mod] The mod.
+  def self.mod_of(told)
+    Mod.new(told["key"], told["name"], told["kind"], told["version"], told["files"], told["versions"], told["options_version"])
   end
 
   # Lists the personal mods of the catalog.
   #
-  # @return [Array<String>, nil] Their keys, see personal_of; nil while the catalog is unknown.
+  # @return [Array<String>, nil] Their keys and the keys of their names, as MGQ_MpWorld.mod_key makes
+  #   them; nil while the catalog is unknown.
   def self.personal_keys
     catalog ? @personal || [] : nil
-  end
-
-  # Reads files and their hashes from a line's fields.
-  #
-  # @param fields [Array<String>] Each file's name or path, then its hash.
-  # @return [Hash] The hashes by name or path.
-  def self.files_of(fields)
-    files = {}
-    fields.to_a.each_slice(2) { |name, hash| files[name] = hash if name && hash }
-    files
   end
 
   # Finds the catalog's mod for a name as a world writes it.

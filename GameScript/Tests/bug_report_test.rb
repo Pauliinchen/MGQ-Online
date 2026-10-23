@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-23: Told a report being sent here
 #                            - Stood in for handing the log's lines over
+#                            - Answered the rules the DLL owns through the bridge from the golden cases
 #      Paulinchen  2026-10-22: Stood in for the update message
 #      Paulinchen  2026-10-12: Checked when what the notification box says waits, shows or is dropped
 #                            - Checked that the wheel scrolling the box being typed into draws it anew
@@ -19,6 +20,7 @@
 # sending and the outcome. The DLL answers from $results and $state, the game's memory from $memory.
 
 require_relative "support"
+require_relative "rules_support"
 
 # Stands in for the game's base scene, counting return_scene in $returned.
 class Scene_Base
@@ -216,6 +218,7 @@ load_script "world_mods"
 load_script "world_mods_parking"
 load_script "world_text"
 load_script "world_screen"
+open_rules_bridge
 
 # The registries and boxes the report takes part in, which keep what it hands them.
 $ticks = []

@@ -42,6 +42,11 @@
     <UnmanagedEntryPointsAssembly Include="MGQOnline.Bridge.Native" />
   </ItemGroup>
 
+  <!-- The game's rules that left the scripts, which the bridge topics answer with. -->
+  <ItemGroup>
+    <ProjectReference Include="..\MGQOnline.Game\MGQOnline.Game.csproj" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- Multiplayer.rb goes into the Patch folder, where the mod loader finds it; everything else
          goes into Patch\Multiplayer, the other scripts into its Scripts folder, which

@@ -3,7 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Checked that an unlock the player holds stays on under a world's story that lacks it
-#      Paulinchen  2026-10-23: Checked that the return to the Great Decision takes the player out of their own scene first
+#      Paulinchen  2026-10-23: Answered the rules the DLL owns through the bridge from the golden cases
+#                            - Checked that the return to the Great Decision takes the player out of their own scene first
 #                            - Checked which event commands may move the world's story on
 #                            - Checked that a change saved before its write goes out at once and stays after a load
 #      Paulinchen  2026-10-18: Checked the Sonya scene's step in the world's story
@@ -49,6 +50,7 @@
 # own, the companions' affection, and the frozen raid boss fights.
 
 require_relative "support"
+require_relative "rules_support"
 
 # Stands in for the mod's log: prints each line.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
@@ -387,6 +389,7 @@ load_script "coop_story"
 load_script "coop_choices"
 load_script "world_story"
 load_script "world_affection"
+open_rules_bridge
 story = MGQ_MpWorldStory
 choices = MGQ_MpCoopChoices
 

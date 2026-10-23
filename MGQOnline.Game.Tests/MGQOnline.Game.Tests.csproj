@@ -27,6 +27,9 @@
   <!-- The golden cases Ruby wrote, shared with the Ruby side's tests. -->
   <ItemGroup>
     <None Include="..\fixtures\wire\*.json" LinkBase="fixtures\wire" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\catchup\*.json" LinkBase="fixtures\catchup" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\mods\*.json" LinkBase="fixtures\mods" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\story\*.json" LinkBase="fixtures\story" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

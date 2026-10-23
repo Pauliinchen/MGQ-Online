@@ -2,25 +2,25 @@
 #  world_catchup_exp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Asked the DLL for the target, the factor and the grown experience
 #      Paulinchen  2026-10-13: Grew the experience of no story companion on a visit nor of a story's temporary party
 #      Paulinchen  2026-10-12: Created
 #
 #----------------------------------------------------------------
 
 # Catch-up experience in a Raid World: characters below the cap the world's story unlocked before
-# its latest one gain more base, job and race experience the further below it they are.
-#
-# The latest cap is left out, so players who just reached the world's story do not race past the
-# others.
+# its latest one gain more base, job and race experience the further below it they are. The DLL
+# owns the rule (CatchupExperience in MGQOnline.Game); this script hands it the levels and the
+# experience and gives what comes back.
 module MGQ_MpWorldCatchupExp
-  # The cap every story starts with, before its first milestone.
-  BASE_CAP = 5
+  # The topic that finds the level characters catch up to from the world story's caps.
+  TARGET_TOPIC = "catchup.target"
 
-  # The most the experience grows.
-  MAX_FACTOR = 10.0
+  # The topic that grows a battle's experience for a character below the target.
+  GROW_TOPIC = "catchup.grow"
 
-  # The share of the levels up to the target, counted from level 0, that gains the most.
-  FULL_SHARE = 0.25
+  # The topic that writes a character's factor as the Unlocks page shows it.
+  FACTOR_TOPIC = "catchup.factor"
 
   extend MGQ_MpLog
 
@@ -34,57 +34,38 @@ module MGQ_MpWorldCatchupExp
   def self.target
     return nil unless MGQ_MpWorldStory.active? && MGQ_MpWorldStory.world
 
-    caps = ([BASE_CAP] + Array(MGQ_MpWorldStory.world["caps"])).uniq.sort
-    caps.size >= 2 ? caps[-2] : nil
+    MGQ_Multiplayer::Bridge.call(TARGET_TOPIC, Array(MGQ_MpWorldStory.world["caps"]))
   end
 
-  # Works out the factor a character's experience grows by.
+  # Writes the factor a character's experience grows by, as the World overview's Unlocks page
+  # shows it.
   #
   # @param level [Integer] The character's base level.
   # @param target [Integer, nil] The level up to which characters catch up, see target.
-  # @return [Float] The factor: MAX_FACTOR up to FULL_SHARE of the target, falling evenly to 1.0 at
-  #   the target and above.
-  def self.factor_for(level, target)
-    return 1.0 unless target && level < target
-
-    fade = (1.0 - FULL_SHARE) * target
-    [1.0 + (MAX_FACTOR - 1.0) * (target - level) / fade, MAX_FACTOR].min
+  # @return [String] Such as "x3.5" or "x10"; empty when the DLL did not answer.
+  def self.factor_text(level, target)
+    MGQ_Multiplayer::Bridge.call(FACTOR_TOPIC, "target" => target, "level" => level) || ""
   end
 
-  # Works out the factor a character's experience grows by now: none for one the catch-up does not
-  # count (see MGQ_MpWorldCatchup.counts?).
-  #
-  # @param actor [Game_Actor] The character.
-  # @return [Float] The factor.
-  def self.factor(actor)
-    MGQ_MpWorldCatchup.counts?(actor) ? factor_for(actor.base_level, target) : 1.0
-  end
-
-  # Grows the experience a character gains from a battle by its factor.
+  # Grows the experience a character gains from a battle: not for one the catch-up does not count
+  # (see MGQ_MpWorldCatchup.counts?).
   #
   # @param actor [Game_Actor] The character.
   # @param exp [Integer] The base experience.
   # @param cexp [Integer] The job and race experience.
   # @return [Array<Integer>] The experience to gain.
   def self.grown(actor, exp, cexp)
-    factor = factor(actor)
-    return [exp, cexp] if factor <= 1.0
+    target = MGQ_MpWorldCatchup.counts?(actor) ? self.target : nil
+    return [exp, cexp] unless target
 
-    grown = [(exp * factor).round, (cexp * factor).round]
-    log("#{actor.name} (level #{actor.base_level}, catching up to #{target}): #{factor_text(factor)} EXP, #{exp} -> #{grown[0]}, job and race #{cexp} -> #{grown[1]}")
-    grown
+    grown = MGQ_Multiplayer::Bridge.call(GROW_TOPIC, "target" => target, "level" => actor.base_level, "exp" => exp, "cexp" => cexp)
+    return [exp, cexp] unless grown
+
+    log("#{actor.name} (level #{actor.base_level}, catching up to #{target}): #{grown['factor']} EXP, #{exp} -> #{grown['exp']}, job and race #{cexp} -> #{grown['cexp']}")
+    [grown["exp"], grown["cexp"]]
   rescue => e
     log_once(:grown, "growing the experience failed: #{e.class}: #{e.message}")
     [exp, cexp]
-  end
-
-  # Writes a factor as the World overview's Unlocks page shows it.
-  #
-  # @param factor [Float] The factor.
-  # @return [String] Such as "x3.5" or "x10".
-  def self.factor_text(factor)
-    shown = factor.round(2)
-    "x#{shown == shown.round ? shown.round : shown}"
   end
 end
 

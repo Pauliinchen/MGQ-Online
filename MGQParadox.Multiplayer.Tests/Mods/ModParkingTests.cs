@@ -2,7 +2,8 @@
 //  ModParkingTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Dropped the check of the deleted options dump
+//      Paulinchen  2026-10-23: Covered the list of every script for the game script and dropped the check of the keys, which ModKey has
+//                            - Dropped the check of the deleted options dump
 //      Paulinchen  2026-10-13: Used a placeholder hero key
 //      Paulinchen  2026-10-10: Covered other volumes, changed parked files, recover conflicts and unreadable journals
 //                            - Covered read-only scripts and failed descriptions
@@ -695,11 +696,23 @@ public sealed class ModParkingTests : IDisposable
     }
 
     /// <summary>
-    /// Asserts that mods are told apart by their keys as the game script and the catalog do.
+    /// Asserts that the game script gets every script in Patch, those never parked too, but none of
+    /// this mod's folder or hidden ones.
     /// </summary>
     [Fact]
-    public void KeyOf_DropsCaseExtensionAndSeparators() =>
-        Assert.Equal(["0modconfigremake", "victoryscreen", "patch"], new[] { "0_Mod Config-Remake.rb", "Victory_Screen.RB", "Patch" }.Select(ModParking.KeyOf));
+    public void Installed_ListsEveryScriptInPatch()
+    {
+        WriteMod("Patch/Ünïcode 模组/Main.RB", "# Main\n");
+        WriteMod("Patch/B.rb", "# B\n");
+
+        foreach (var path in new[] { "Patch/0_ModConfigRemake.rb", "Patch/Multiplayer.rb", "Patch/Multiplayer/Helper.rb", "Patch/.Hidden.rb", "Patch/Extra/readme.txt" })
+        {
+            WriteMod(path, "# script\n");
+        }
+
+        using var parking = Parking();
+        Assert.Equal(["Patch/0_ModConfigRemake.rb", "Patch/B.rb", "Patch/Multiplayer.rb", "Patch/Ünïcode 模组/Main.RB"], parking.Installed());
+    }
 
     /// <inheritdoc />
     public void Dispose()

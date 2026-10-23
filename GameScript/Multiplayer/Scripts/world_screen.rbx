@@ -2,7 +2,8 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Dropped the restart by hand under Wine or Proton, where the game starts itself again now
+#      Paulinchen  2026-10-23: Asked the DLL for the default squad rules
+#                            - Dropped the restart by hand under Wine or Proton, where the game starts itself again now
 #      Paulinchen  2026-10-22: Opened the world the cursor is on, whose mods the list then carries, and read them before entering or editing it
 #      Paulinchen  2026-10-14: Named a Raid World's starting save in its details in every build
 #      Paulinchen  2026-10-13: Sent a Classic world's raid bosses with the new world and the edits, and showed them in the details
@@ -1777,7 +1778,7 @@ class Scene_MpWorlds < Scene_MenuBase
     difficulty = @entry.listed.raid? ? values.difficulty : nil
     @edited_difficulty = difficulty && difficulty != @entry.listed.difficulty ? difficulty : nil
     squad = @entry.listed.raid? ? values.squad : nil
-    @edited_squad = squad && squad != (@entry.listed.squad || MGQ_MpWorld::DEFAULT_SQUAD) ? squad : nil
+    @edited_squad = squad && squad != (@entry.listed.squad || MGQ_MpWorld.default_squad) ? squad : nil
     @edited_raid_bosses = @entry.listed.raid? || values.raid_bosses? == (@entry.listed.raid_bosses ? true : false) ? nil : values.raid_bosses?
     @edited_other_mods = values.other_mods_off? == (@entry.listed.other_mods_off ? true : false) ? nil : values.other_mods_off?
     start_action("edit") do
@@ -3095,7 +3096,7 @@ class Window_MpWorldDetail < Window_Base
   # @param listed [MGQ_MpWorld::Directory::ListedWorld] The Raid World in the directory.
   # @return [Array<Array<Cell>>] The two rows.
   def squad_rows(listed)
-    squad = listed.squad || MGQ_MpWorld::DEFAULT_SQUAD
+    squad = listed.squad || MGQ_MpWorld.default_squad
     [[Cell.new("Luka", squad[:luka] ? "Replaceable" : "Fixed", :normal), Cell.new("Formation", MGQ_MpWorld.formation_name(squad[:formation]), :normal)],
      [Cell.new("Frontline", "#{squad[:front]} | #{squad[:raid_front]}  (regular | raids)", :normal)]]
   end

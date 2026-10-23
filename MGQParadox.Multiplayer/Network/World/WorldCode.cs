@@ -2,6 +2,7 @@
 //  WorldCode.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Named the seats a new world has unless its creator chooses otherwise
 //      Paulinchen  2026-10-06: Wrote hexadecimal in lowercase at once
 //      Paulinchen  2026-09-29: Created
 //
@@ -37,6 +38,11 @@ internal sealed record WorldCode(string Token, string Relay, int Seats)
     /// Most seats a world has, as many as a relay's world room takes.
     /// </summary>
     public const int MaxSeats = 32;
+
+    /// <summary>
+    /// Seats a new world has unless its creator chooses otherwise.
+    /// </summary>
+    public const int DefaultSeats = 4;
 
     /// <summary>
     /// Separates the prefix, token, relay and seats.
