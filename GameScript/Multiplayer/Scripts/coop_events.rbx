@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Took back what a talk or story event changed once it ends early
+#                            - Noted the values that move the world's story on as a telling starts
 #                            - Faded the screen in once it stayed dark for ten seconds while nothing of a watched scene reached it
 #      Paulinchen  2026-10-17: Sorted a resumed raid boss fight's event as story
 #      Paulinchen  2026-10-15: Faded the screen in once it stayed dark with nothing running that could fade it in
@@ -672,6 +673,7 @@ module MGQ_MpCoopEvents
     @told_at = @told_page = nil unless @pending_say
     @told_markers = MGQ_MpCoop::Scope.raid? && defined?(MGQ_MpCoopStory) ? MGQ_MpCoopStory.own_markers : nil
     MGQ_MpCoopGather.forget_taken_along if defined?(MGQ_MpCoopGather)
+    MGQ_MpCoopGather.note_story_progress if defined?(MGQ_MpCoopGather)
   rescue => e
     @told_markers = nil
     log("noting the story's progress failed: #{e.class}: #{e.message}")

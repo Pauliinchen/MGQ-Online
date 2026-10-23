@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Took the player out of their own scene before the return to the Great Decision and the end of a cleared collab
+#                            - Told whether event commands may move the world's story on and read the values that do
 #                            - Wrote the story's waiting changes at once as the game saves, goes to the title screen, resets or closes
 #                            - Kept in the save the world's story the player built on and took a loaded save's changes to it as their own
 #      Paulinchen  2026-10-18: Shared the Sonya scene's step as its start while none of its fights is frozen or over
@@ -143,6 +144,9 @@ module MGQ_MpWorldStory
   # Switches whose change moves the story on: the bosses of the Monster Lord's Castle and the route
   # clears.
   PROGRESS_SWITCHES = [2485, 2486, 2487] + CLEAR_SWITCHES
+
+  # How many common events deep progress_ahead? follows the calls of the commands it reads.
+  PROGRESS_CALL_DEPTH = 3
 
   # The main story's progress from which Part 2 runs, set by Tartarus Escape.
   PART_TWO = 19
@@ -2003,6 +2007,48 @@ module MGQ_MpWorldStory
   # @return [Boolean] Whether it does.
   def self.marker?(kind, key)
     (kind == 0 && PROGRESS_SWITCHES.include?(key)) || (kind == 1 && PROGRESS_VARIABLES.include?(key))
+  end
+
+  # Reports whether a switch or variable moves the world's story on as it changes: one that tells
+  # how far the story is (see marker?) or a one-way variable (see one_way?).
+  #
+  # @param kind [Integer] 0 for a switch, 1 for a variable.
+  # @param id [Integer] Its id.
+  # @return [Boolean] Whether it does.
+  def self.moves_on?(kind, id)
+    marker?(kind, id) || (kind == 1 && one_way?(id))
+  end
+
+  # Reads the values of the switches and variables that move the world's story on, see moves_on?.
+  #
+  # @return [Array] Their values, in an order that stays the same.
+  def self.progress_now
+    variables = MGQ_MpStoryState.data_of($game_variables)
+    switches = MGQ_MpStoryState.data_of($game_switches)
+    one_way = defined?(MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES) ? MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES.select { |id| one_way?(id) } : []
+    (PROGRESS_VARIABLES | one_way).map { |id| variables[id].to_i } + PROGRESS_SWITCHES.map { |id| switches[id] ? true : false }
+  end
+
+  # Reports whether event commands from a place on may move the world's story on: they set a
+  # switch or variable that does (see moves_on?), themselves or in a common event they call, up to
+  # PROGRESS_CALL_DEPTH deep, behind a branch taken or not.
+  #
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @param from [Integer] The place to read from.
+  # @param depth [Integer] How many common events deep the list is.
+  # @return [Boolean] Whether they may.
+  def self.progress_ahead?(list, from, depth = 0)
+    list[from..-1].to_a.any? do |entry|
+      params = entry.parameters
+      case entry.code
+      when 121 then (params[0]..params[1]).any? { |id| moves_on?(0, id) }
+      when 122 then (params[0]..params[1]).any? { |id| moves_on?(1, id) }
+      when 117
+        common = depth < PROGRESS_CALL_DEPTH && $data_common_events[params[0]]
+        common ? progress_ahead?(common.list || [], 0, depth + 1) : false
+      else false
+      end
+    end
   end
 
   # Names a switch, variable or self switch for the log.

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Took the player out of their own scene before a call, follow or teleport moves them
+#                            - Pulled a Raid World viewer along at once only when the telling moves the world's story on
 #      Paulinchen  2026-10-12: Let a player in a Classic world move while the teller fights the story's battle
 #                            - Told whether a battle invite comes from the player whose story calls
 #      Paulinchen  2026-10-11: Showed the player's followers again after a call, follow or teleport
@@ -92,6 +93,9 @@ module MGQ_MpCoopGather
   @gather = nil
   # The offers to follow a Raid World's teller, by the teller's id, see follow_offer.
   @follow_offers = {}
+  # The values that move the world's story on as the player's telling started, see
+  # note_story_progress; nil outside a Raid World.
+  @told_progress = nil
 
   extend MGQ_MpLog
 
@@ -176,7 +180,8 @@ module MGQ_MpCoopGather
 
   # Takes a message about gathering in a Raid World, which gathers nobody: only the story's call
   # to follow where it moved its teller, sent to everyone who was on the teller's map. The player
-  # follows at once only while they watch the teller's story, else it is offered, see offer_follow.
+  # follows at once only while they watch the teller's story and it moves the world's story on,
+  # else it is offered, see offer_follow.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
   # @param message [Hash] The message's fields.
@@ -185,18 +190,25 @@ module MGQ_MpCoopGather
 
     place = [message["map"].to_i, message["x"].to_i, message["y"].to_i, message["d"].to_i]
     warp_ban = message["warp_ban"] == "1"
-    reason = follow_refusal(peer)
+    reason = follow_refusal(peer, message)
     reason ? offer_follow(peer, place, warp_ban, reason) : followed(peer, place, warp_ban)
   end
 
   # Tells why the player does not follow a Raid World's teller at once where their story moved
-  # them: only a player who watches that teller's story and is not behind the world's does.
+  # them: only a player who watches that teller's story and is not behind the world's does, and
+  # only when the telling moves the world's story on (see moves_story?).
+  #
+  # A talk that sets values of its own and moves its teller, as a minigame does, is sorted as story
+  # too, which would pull every player watching along.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
+  # @param message [Hash] The call's fields, "moves" 0 for a telling that does not move the world's
+  #   story on; a call without it, from an earlier build, is followed at once as before.
   # @return [String, nil] The reason, nil when the player follows at once.
-  def self.follow_refusal(peer)
+  def self.follow_refusal(peer, message)
     return "the player's story is behind the world's" if MGQ_MpCoopEvents.behind?
     return "the player's story is not where #{MGQ_MpOverworldSync.who(peer)}'s is" unless MGQ_MpCoop::Scope.watches?(peer)
+    return "#{MGQ_MpOverworldSync.who(peer)}'s telling does not move the world's story on" if message["moves"] == "0"
 
     nil
   end
@@ -470,7 +482,8 @@ module MGQ_MpCoopGather
 
   # As leader, takes along the members who stood near when the story moved the player elsewhere,
   # such as a theater show's stage or a story's own teleport; in a Raid World calls everyone who was
-  # on the map, whose games decide whether they follow at once (see take_raid). Called after
+  # on the map, saying whether the telling moves the world's story on (see moves_story?), and their
+  # games decide whether they follow at once (see take_raid). Called after
   # Game_Player#perform_transfer.
   def self.after_transfer
     from = @transfer_from
@@ -483,16 +496,42 @@ module MGQ_MpCoopGather
     return log("took nobody along to map #{$game_map.map_id}: nobody stood near") if along.empty?
 
     fields = place_fields
-    # In a Raid World the map's gate takes the call only for the map the others are on.
-    fields["mmap"] = from[0] if raid
     if raid
+      # The map's gate takes the call only for the map the others are on.
+      fields["mmap"] = from[0]
+      fields["moves"] = moves_story? ? 1 : 0
       MGQ_MpCoopEvents.tell_each(along, "follow", fields)
     else
       along.each { |peer| tell(peer.seat, "follow", fields) }
     end
-    log("took #{along.map { |peer| peer.state['name'] }.join(', ')} along to map #{$game_map.map_id} #{$game_player.x},#{$game_player.y}")
+    offered = raid && fields["moves"] == 0 ? ", as an offer: the telling does not move the world's story on" : ""
+    log("took #{along.map { |peer| peer.state['name'] }.join(', ')} along to map #{$game_map.map_id} #{$game_player.x},#{$game_player.y}#{offered}")
   rescue => e
     log("taking the party along failed: #{e.class}: #{e.message}")
+  end
+
+  # As teller in a Raid World, notes the values that move the world's story on as the telling
+  # starts, see moves_story?. Called by coop_events.rbx as a new telling starts.
+  def self.note_story_progress
+    @told_progress = MGQ_MpCoop::Scope.raid? && defined?(MGQ_MpWorldStory) ? MGQ_MpWorldStory.progress_now : nil
+  rescue => e
+    @told_progress = nil
+    log("noting the story's progress failed: #{e.class}: #{e.message}")
+  end
+
+  # As teller in a Raid World, reports whether the telling moves the world's story on: it changed
+  # a value that does since it started (see note_story_progress), or the commands the map's
+  # interpreter has yet to run may change one, as a scene that moves its teller before it sets its
+  # progress does (see MGQ_MpWorldStory.progress_ahead?).
+  #
+  # @return [Boolean] Whether it does.
+  def self.moves_story?
+    return false unless defined?(MGQ_MpWorldStory)
+    return true if @told_progress && MGQ_MpWorldStory.progress_now != @told_progress
+
+    interpreter = $game_map.interpreter
+    list = MGQ_MpGame.get(interpreter, :list)
+    list ? MGQ_MpWorldStory.progress_ahead?(list, MGQ_MpGame.get(interpreter, :index).to_i) : false
   end
 
   # As teller in a Raid World, lists the players the story took along who are not on the player's

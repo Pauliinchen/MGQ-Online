@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Checked that the return to the Great Decision takes the player out of their own scene first
+#                            - Checked which event commands may move the world's story on
 #                            - Checked that a change saved before its write goes out at once and stays after a load
 #      Paulinchen  2026-10-18: Checked the Sonya scene's step in the world's story
 #                            - Checked that a story lists no switch or variable 0
@@ -1043,6 +1044,16 @@ check("whose own half plays once the player is free: the Final Chapter's reset, 
       ($setups.last || []).map { |entry| [entry.code, entry.parameters] }, [[117, [154]], [122, [1002, 1002, 0, 0, 112]], [122, [57, 57, 0, 0, 407]], [201, [0, 544, 25, 25, 8, 2]], [0, []]])
 check("after taking the player wholly out of a scene of their own, such as their route's ending walked in a temporary party",
       $left, [[true, $setups.size - 1]])
+
+# Event commands may move the world's story on when they set a value that tells how far it is or a
+# one-way variable, themselves or in a common event they call.
+$data_common_events[390] = RPG::CommonEvent.new([c(122, [1144, 1144, 0, 0, 2])])
+minigame = [c(122, [845, 845, 0, 0, 1]), c(201, [0, 1886, 55, 11, 2, 0]), c(121, [96, 96, 0])]
+scene = [c(201, [0, 430, 5, 5, 2, 0]), c(117, [390])]
+check("a scene that moves its teller first and moves the story on in a common event after may move it on, a minigame setting values of its own does not",
+      [story.progress_ahead?(scene, 0), story.progress_ahead?(minigame, 0)], [true, false])
+check("nor does a scene whose progress lies behind the place read from", story.progress_ahead?([c(122, [1001, 1001, 0, 0, 40]), c(201, [0, 430, 5, 5, 2, 0])], 1), false)
+$data_common_events[390] = nil
 check("the Great Decision then offers the route left", choices.labels(:decision), ["Side with the Goddess Ilias (Judgement)"])
 
 # The choices each player keeps their own in a Raid World.
