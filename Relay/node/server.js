@@ -5,6 +5,7 @@
 //      Paulinchen  2026-10-23: Kept a battle on the battle server from the moment the server took it
 //                            - Told a player who comes onto a battle that just ended how it ended
 //                            - Kept a world room connection for up to a day, and past that while its player is in a battle on the battle server
+//                            - Closed every connection as a service restart when it stops, and logged its start and the close codes it sends
 //      Paulinchen  2026-10-22: Checked the mod catalog's links half a minute after a start and every five minutes
 //                            - Cleared the current release once the watch saw a newer one published after it was set
 //                            - Listed the worlds without their mods for games from 0.6.8 and sent released games to update at a world whose mods they cannot hold
@@ -141,6 +142,18 @@ const MAX_VERSION_LENGTH = 40;
  * What the admins' stats count a world room's game under when it named no version.
  */
 const NO_VERSION = "unknown";
+
+/**
+ * The close code and reason every connection gets when the relay stops, WebSocket's own for a
+ * restart: released games connect to their world room again on any close but the removal and
+ * deletion codes.
+ */
+const SERVICE_RESTART = Object.freeze({ code: 1012, reason: "service restart" });
+
+/**
+ * How long a stopping relay waits for its connections to finish closing before it cuts them.
+ */
+const STOP_WAIT_MS = 2000;
 
 /**
  * The limits the Node relay keeps: the core's, but a world room connection lasts up to a day
@@ -1099,6 +1112,7 @@ export function createRelay({
     }
 
     battleLinks.delete(key);
+    log.info(`${new Date().toISOString()} battle ${battle} of world ${world} closed for ${link.players.size} player(s) on its channel: ${CLOSE.normal} ${end}`);
 
     for (const player of link.players.values()) {
       player.socket.send(battleClosedText(end));
@@ -1393,6 +1407,10 @@ export function createRelay({
 
     if (peers.length === 0) {
       worlds.delete(roomId);
+    }
+
+    if (peer.socket.readyState === peer.socket.OPEN) {
+      log.info(`${new Date().toISOString()} world ${roomId} seat ${peer.record.seat} closed by the relay: ${code} ${reason}`);
     }
 
     peer.socket.close(code, reason);
@@ -1790,11 +1808,13 @@ export function createRelay({
   releaseTimer?.unref();
 
   /**
-   * Closes every connection and the server.
+   * Closes every connection and the server: ends the battles on the battle server, closes every
+   * other connection as a service restart, so the games connect again, and cuts what has not
+   * closed within STOP_WAIT_MS.
    *
    * @returns {Promise<void>} Resolves once the server stopped.
    */
-  function stop() {
+  async function stop() {
     clearInterval(timer);
     clearInterval(sweepTimer);
     clearTimeout(firstModCheck);
@@ -1805,6 +1825,21 @@ export function createRelay({
     for (const link of [...battleLinks.values()]) {
       endBattle(link.world, link.battle, BATTLE_END.server);
     }
+
+    const open = [...sockets.clients].filter((socket) => socket.readyState === socket.OPEN);
+    log.info(`${new Date().toISOString()} relay stopping after ${Math.round((clock() - started) / 1000)} s, started ${new Date(started).toISOString()}: `
+      + `closing ${open.length} connection(s) with ${SERVICE_RESTART.code} ${SERVICE_RESTART.reason}`);
+
+    for (const socket of open) {
+      socket.close(SERVICE_RESTART.code, SERVICE_RESTART.reason);
+    }
+
+    let waited;
+    await Promise.race([
+      Promise.all([...sockets.clients].map((socket) => new Promise((resolve) => socket.once("close", resolve)))),
+      new Promise((resolve) => { waited = setTimeout(resolve, STOP_WAIT_MS); }),
+    ]);
+    clearTimeout(waited);
 
     for (const socket of sockets.clients) {
       socket.terminate();
@@ -1877,7 +1912,8 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   relay.server.listen(port, host, () => console.log(`${new Date().toISOString()} relay listening on ${host}:${port}, ${database ? `database ${database}` : "everything in memory"}, ${battleServer ? `battle server ${battleServer.host}:${battleServer.port}` : "no battle server"}, ${offline} world(s) with players online marked empty`));
 
   for (const signal of ["SIGINT", "SIGTERM"]) {
-    process.on(signal, async () => {
+    // A second signal while the relay stops ends it at once.
+    process.once(signal, async () => {
       await relay.stop();
       stores.close();
       process.exit(0);
