@@ -2,6 +2,7 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Won a refight of a boss the world's story beat already at once
 #      Paulinchen  2026-10-20: Counted a boss HP above its max as the max, so a lowered max heals no pool
 #      Paulinchen  2026-10-17: Withheld the rewards of a resumed fight whose side battle gave them
 #                            - Added in_map?, retrying? and set_up_kind
@@ -322,6 +323,7 @@ module MGQ_MpRaidPool
     @at_command = false
     @retrying = false
     @set_up_kind = nil
+    @story_won = nil
     @fetched = nil
     @tried = nil
     @tried_at = 0
@@ -450,10 +452,28 @@ module MGQ_MpRaidPool
     return (@lost.side ? :side : :event) if retry_of?(troop)
     return :side if @side == troop
     return :guest if @invited && @invited[0] == troop
-    return nil unless @at_command && @in_map && active? && MGQ_MpRaidBosses.boss?(troop)
-    return nil unless $game_map.interpreter.event_id > 0
+    return nil unless story_battle?(troop)
 
     refusal(troop) ? nil : :event
+  end
+
+  # Reports whether a battle about to be set up, or just set up, is a story boss battle an event's
+  # battle command starts on the map of a player who plays the world's story.
+  #
+  # @param troop [Integer] The battle's troop.
+  # @return [Boolean] Whether it is.
+  def self.story_battle?(troop)
+    @at_command && @in_map && active? && MGQ_MpRaidBosses.boss?(troop) && $game_map.interpreter.event_id > 0 ? true : false
+  end
+
+  # Reports whether a story boss battle about to be set up, or just set up, refights a boss the
+  # world's story beat already, which it wins at once as one whose pools are all empty.
+  #
+  # @param troop_id [Integer, String] The battle's troop.
+  # @return [Boolean] Whether it does.
+  def self.story_won?(troop_id)
+    troop = troop_id.to_i
+    story_battle?(troop) && beaten?(MGQ_MpRaidBosses.at(troop)) && pool_refusal(troop).nil?
   end
 
   # Reports whether a battle about to be set up is the game's retry of the lost battle that fought a
@@ -474,14 +494,18 @@ module MGQ_MpRaidPool
     return retried if @retrying
 
     kind = kind_of(troop_id)
+    won = !kind && story_won?(troop_id)
     invited = @invited
     explain = @at_command && @in_map && MGQ_MpRaidBosses.boss?(troop_id) && active?
+    @story_won = nil
     @at_command = false
     @invited = nil
     @side = nil
     @fight = nil
     @lost = nil
     @scaled = []
+    return win_at_once(troop_id.to_i) if won
+
     unless kind
       reason = explain ? refusal(troop_id.to_i) || ($game_map.interpreter.event_id > 0 ? nil : "a common event of its own started it") : nil
       return reason ? log("troop #{troop_id} fights no pool: #{reason}") : nil
@@ -532,14 +556,34 @@ module MGQ_MpRaidPool
   # @param troop_id [Integer] The troop.
   # @return [String, nil] Why, nil when it fights one.
   def self.refusal(troop_id)
+    reason = pool_refusal(troop_id)
+    return reason if reason
+
     boss = MGQ_MpRaidBosses.at(troop_id)
+    beaten?(boss) ? "the story beat #{boss.milestone} already" : nil
+  end
+
+  # Finds why a story boss battle fights no pool whether or not the story beat its boss.
+  #
+  # @param troop_id [Integer] The troop.
+  # @return [String, nil] Why, nil when it would fight one.
+  def self.pool_refusal(troop_id)
     return "an earlier phase of its fight" unless MGQ_MpRaidBosses.last_phase?(troop_id)
     return UNPOOLED[troop_id] if UNPOOLED[troop_id]
     return "a Hades rematch" if hades?
     return "a Colosseum battle" if $game_switches[COLOSSEUM_SWITCH]
-    return "the story beat #{boss.milestone} already" if beaten?(boss)
 
     key_of(troop_id) ? nil : "its key is none the relay takes"
+  end
+
+  # Fights a refight of a boss the world's story beat already as won at once, see story_won?: the
+  # troop's own enemies start dead as against empty pools, and its first command phase wins it.
+  #
+  # @param troop [Integer] The troop.
+  def self.win_at_once(troop)
+    @story_won = troop
+    own_enemies(own_count(troop)).each { |enemy| enemy.hp = 0 }
+    log("troop #{troop} fights no pool: the story beat #{MGQ_MpRaidBosses.at(troop).milestone} already, so it is won at once")
   end
 
   # Reports whether the player is at a Hades rematch: its switch is on, or the player stands in the
@@ -852,11 +896,14 @@ module MGQ_MpRaidPool
   # Reports what the battle dealt since the last command phase and takes the pools' HP as a command
   # phase opens, before battles_sync_live.rbx tells it the guests: the battle's host or a player
   # alone reports, gives the enemies their pools' HP, and wins once every enemy is dead; a guest
-  # keeps the HP its host sent. Called before Scene_Battle#start_party_command_selection.
+  # keeps the HP its host sent. A battle won at once (see win_at_once) wins there too. Called before
+  # Scene_Battle#start_party_command_selection.
   #
   # The report waits for the command phase, since the game's turn end and battle start deal damage
   # of their own (slip damage, auto skills, troop events) that a sync before it would undo.
   def self.command_phase
+    return BattleManager.judge_win_loss if @story_won && $game_troop.all_dead?
+
     fight = @fight
     return unless fight
 
@@ -934,6 +981,7 @@ module MGQ_MpRaidPool
   #
   # @param result [Integer] The game's result: 0 won, 1 escaped, 2 lost.
   def self.battle_ended(result)
+    @story_won = nil
     fight = @fight
     @fight = nil
     return unless fight
@@ -1048,13 +1096,14 @@ module MGQ_MpRaidPool
     {}
   end
 
-  # Reports whether a battle just set up fights pools that are all empty already, which it then
-  # wins at once without inviting anyone.
+  # Reports whether a battle just set up fights pools that are all empty already, or refights a boss
+  # the world's story beat already (see story_won?), which it then wins at once without inviting
+  # anyone.
   #
   # @param troop_id [Integer] The troop.
   # @return [Boolean] Whether it does.
   def self.won_already?(troop_id)
-    kind_of(troop_id) && defeated?(troop_id) ? true : false
+    (kind_of(troop_id) ? defeated?(troop_id) : story_won?(troop_id)) ? true : false
   rescue
     false
   end
