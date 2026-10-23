@@ -2,6 +2,7 @@
 //  SimulationVector.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Took the hazard reference battle's hash of the battlefield arena
 //      Paulinchen  2026-10-22: Played the hazard reference battle too
 //                            - Took the seats of rule fires in the log hash
 //                            - Took the main target in the log hash
@@ -36,7 +37,7 @@ internal static class SimulationVector
     /// <summary>
     /// The SHA-256 of the hazard reference battle's log, as the arena tests hold it.
     /// </summary>
-    public const string HazardLogSha256 = "3008288c6b077081788bac20b2b1a4f9215a38364507885fe95f233fc2eacfe4";
+    public const string HazardLogSha256 = "3e4c903c63fa36f5b1b44d50b86a07b54dc375bf718c3d3d034d045193504c47";
 
     /// <summary>
     /// The embedded reference design, the arena tests' fixture.
