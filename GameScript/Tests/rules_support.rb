@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Answered the mod catalog a test sets
+#                            - Added the answers to the world room's stand-in bridge when a test has one
 #                            - Answered the story parts
 #                            - Answered the world rules, squad rules and world codes
 #                            - Answered the mod keys and the scripts in Patch
@@ -222,12 +223,13 @@ def catalog_told(state, *lines)
   $catalog = { "state" => state, "error" => state == "failed" ? "down" : nil, "mods" => mods, "personal" => personal }
 end
 
-# Opens the scripts' bridge on a FakeBridge that answers the rule topics from the golden cases.
+# Opens the scripts' bridge on a FakeBridge that answers the rule topics from the golden cases, or adds
+# those answers to the world room's stand-in bridge when the test loaded it.
 #
 # @return [FakeBridge] The bridge, for a test to add answers or read the calls.
 def open_rules_bridge
   load_bridge unless defined?(MGQ_Multiplayer::Bridge)
-  fake = FakeBridge.new
+  fake = $world_bridge || FakeBridge.new
   answer_catchup(fake)
   answer_mod_keys(fake)
   answer_installed(fake)

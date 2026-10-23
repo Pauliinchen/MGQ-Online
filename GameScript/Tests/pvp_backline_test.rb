@@ -2,6 +2,7 @@
 #  pvp_backline_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Stood in for the bridge, whose events coop.rbx registers for
 #      Paulinchen  2026-10-12: Stood in for the Mod Config settings group
 #      Paulinchen  2026-10-07: Loaded coop.rbx and stood in for the live battle's list of names
 #      Paulinchen  2026-10-04: Followed the scripts to their new names
@@ -24,6 +25,8 @@ module MGQ_Multiplayer
   module Link; def self.player_id; "me-id-000"; end; end
   # Stands in for Discord, which is not running.
   module Discord; def self.available?; false; end; end
+  # Stands in for the bridge to the DLL, whose events coop.rbx registers for, ignoring them.
+  module Bridge; def self.on(*); end; end
 end
 # Stands in for the world's sync, as far as coop.rbx, through which the option registers, asks it.
 module MGQ_MpOverworldSync

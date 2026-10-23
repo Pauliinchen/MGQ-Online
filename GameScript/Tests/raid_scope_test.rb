@@ -2,6 +2,7 @@
 #  raid_scope_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Left the map's gate to the DLL, checking only the route it registers
 #      Paulinchen  2026-10-12: Checked the messages of a Classic world to several members and to a lone member
 #      Paulinchen  2026-10-09: Checked messages to the whole map or several players going out once
 #                            - Checked tellers whose connection is down and the teller who took the player along
@@ -10,13 +11,15 @@
 #----------------------------------------------------------------
 
 # Covers coop_scope.rbx: whom the player shares the map and the story with, the party in a Classic
-# world and everyone on the map in a Raid World, the map's gate and the sends to the seats on the map.
+# world and everyone on the map in a Raid World, the map's routes and the sends to the seats on the
+# map.
 
 require_relative "support"
 
 # The mod's log, printed with the checks.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
 $routes = {}
+$gates = {}
 $told = []
 # The open world: the other players from $peers, the player's own map entry from $since, and the
 # routes and sends recorded in $routes and $told.
@@ -39,8 +42,8 @@ module MGQ_MpOverworldSync
   def self.in_world?; true; end
   # Names a player for the log.
   def self.who(peer); peer == :me ? "the player" : (peer ? peer.state["name"].to_s : "an unknown player"); end
-  # Keeps a field's handler in $routes.
-  def self.route(field, &handler); $routes[field] = handler; end
+  # Keeps a field's handler in $routes and its gate in $gates.
+  def self.route(field, gate = nil, &handler); $routes[field] = handler; $gates[field] = gate; end
   # Records a send in $told.
   def self.tell(seat, fields); $told << [seat, fields]; true; end
 end
@@ -181,22 +184,11 @@ check("a message to one seat goes there, and may name the map it is for", $told,
 
 taken = []
 MGQ_MpCoop.route_map("npcs") { |peer, message| taken << [peer.state["id"], message["npcs"]] }
-check("the map's gate listens on its own field", $routes.keys, ["map_npcs"])
+check("the map's route listens on its own field, behind the DLL's map gate", [$routes.keys, $gates["map_npcs"]], [["map_npcs"], "map"])
 $routes["map_npcs"].call(stranger, { "map_npcs" => "5", "mmap" => "5" })
-$routes["map_npcs"].call(elsewhere, { "map_npcs" => "8", "mmap" => "8" })
-$routes["map_npcs"].call(nil, { "map_npcs" => "5", "mmap" => "5" })
-$routes["map_npcs"].call(elsewhere, { "map_npcs" => "5", "mmap" => "5" })
-check("it takes a message from a player on the map, or one for the player's map, and hands it on under its field",
-      taken, [["k", "5"], ["e", "5"]])
+check("and hands a message on under its field", taken, [["k", "5"]])
 # The map the story takes the player to, as coop_gather.rbx tells it.
 module MGQ_MpCoopGather; def self.story_map?(map_id); map_id == $game_map.map_id || map_id == 8; end; end
-taken.clear
-$routes["map_npcs"].call(elsewhere, { "map_npcs" => "8", "mmap" => "8" })
-check("and one for the map the story takes the player to", taken, [["e", "8"]])
-taken.clear
-$routes["map_npcs"].call(stranger, { "map_npcs" => "5", "mmap" => "5", "mto" => "m,k" })
-$routes["map_npcs"].call(stranger, { "map_npcs" => "6", "mmap" => "5", "mto" => "k,me" })
-check("but none that names other players", taken, [["k", "6"]])
 
 # Tellers whose connection is down, and the one whose story took the player along.
 member.state.merge!("telling" => "1", "since" => "3000")

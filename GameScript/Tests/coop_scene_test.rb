@@ -3,7 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Checked that a viewer takes the warp and escape bans of the teller's scene
-#      Paulinchen  2026-10-23: Checked what an event ended early and the return to the Great Decision take back
+#      Paulinchen  2026-10-23: Handed the map's scenes to the route past the DLL's map gate
+#                            - Checked what an event ended early and the return to the Great Decision take back
 #                            - Checked that a viewer the story brought to another map comes back shown and without a tint
 #      Paulinchen  2026-10-12: Checked missing pictures and picture and screen changes with bad arguments
 #                            - Checked that a frame's changes go out at its end in one message, also while skipping
@@ -178,8 +179,12 @@ end
 module SceneManager; class << self; attr_accessor :scene; end; end
 # Stands in for the data manager.
 module DataManager; def self.extract_save_contents(contents); end; def self.setup_new_game; end; end
-# Stands in for the world room's players, each a Peer of seat and state.
-module MGQ_MpOverworldSync; module Peers; Peer = Struct.new(:seat, :state); end; end
+# Stands in for the world room's players, each a Peer of seat and state, and its routes, which keep
+# each field's handler in $routes.
+module MGQ_MpOverworldSync
+  module Peers; Peer = Struct.new(:seat, :state); end
+  def self.route(field, _gate = nil, &handler); ($routes ||= {})[field] = handler; end
+end
 # Stands in for coop.rbx: routes in $routes, tells in $sent and the leader in $leader.
 module MGQ_MpCoop
   def self.route(field, &handler); ($routes ||= {})[field] = handler; end
@@ -209,6 +214,15 @@ module MGQ_MpCoopGather; def self.story_map?(map_id); map_id == $game_map.map_id
 load_script "battles_sync_wire"
 load_script "coop_scope"
 load_script "coop_scene"
+
+# Hands a message to a map route, as the DLL does once it passed the map's gate.
+#
+# @param field [String] The field the script registered.
+# @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
+# @param message [Hash] The message's fields.
+def take_map(field, peer, message)
+  $routes[MGQ_MpCoop::MAP_PREFIX + field].call(peer, message)
+end
 
 $game_map = Game_Map.new
 $game_player = Game_Player.new
@@ -522,7 +536,7 @@ $game_map = Game_Map.new
 teller = MGQ_MpOverworldSync::Peers::Peer.new(2, { "name" => "Teller", "id" => "t", "map" => "7", "telling" => "1", "tsm" => "12,0,0,0", "sm" => "13,0,0,0", "since" => "1000" })
 $peers = [teller, matching]
 show = lambda do |sender, number|
-  MGQ_MpCoop.take_map("pscene", sender, { "map_pscene" => "picture.show", "mmap" => "7", "map" => "7", "args" => wire.line([number, "story_cg", 0, 0, 0, 100, 100, 255, 0]) })
+  take_map("pscene", sender, { "map_pscene" => "picture.show", "mmap" => "7", "map" => "7", "args" => wire.line([number, "story_cg", 0, 0, 0, 100, 100, 255, 0]) })
 end
 show.call(teller, 3)
 check("a player whose story is where the teller's was as the telling started sees the scene, though the teller's moved on",
@@ -656,7 +670,7 @@ $game_variables = Game_Variables.new
 $game_self_switches = Game_SelfSwitches.new
 $mirrored = []
 scene = lambda do |kind, args, map = "7"|
-  MGQ_MpCoop.take_map("pscene", teller, { "map_pscene" => kind, "mmap" => "7", "map" => map, "args" => wire.line(args) })
+  take_map("pscene", teller, { "map_pscene" => kind, "mmap" => "7", "map" => map, "args" => wire.line(args) })
 end
 scene.call("story.values", [[0, 40, true], [0, 4, true], [1, 1001, 41], [0, 2029, true], [2, [7, 12, "A"], true], [1, 9999, 3], [2, [7, 12, "Z"], true]])
 check("a viewer takes the teller's story values, never what is their own or names nothing of this game, but the scene switches",

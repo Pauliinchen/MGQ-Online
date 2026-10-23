@@ -2,7 +2,8 @@
 #  world_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Read the chat log's lines here
+#      Paulinchen  2026-10-23: Played the world room's inbox into the scripts' mirror through world_room_support.rb
+#                            - Read the chat log's lines here
 #                            - Showed the HUD over the map's spriteset
 #      Paulinchen  2026-10-22: Gave the scenes' base its basics and its end
 #      Paulinchen  2026-10-12: Stood in for the notice of an unreadable Player.ini
@@ -129,7 +130,6 @@ class Scene_Library_H; end
 class Scene_Slot; end
 
 $sent = []
-$inbox = []
 $in_front = true
 $pressed = false
 $buttons = []
@@ -215,6 +215,9 @@ end
 module MGQ_MpWorld; def self.open?; $open; end; def self.new_game_pending?; $new_game_pending; end; end
 $player_ini = {}
 
+require_relative "world_room_support"
+$inbox = WorldInbox.new
+
 load_script "core_hotkeys"
 load_script "ui"
 load_script "ui_theme"
@@ -234,18 +237,10 @@ load_script "coop_teleport"
 # Runs one frame on the map: the wheel's keys, then the chat's.
 def map_frame; MGQ_MpActions.on_map; MGQ_MpChat.on_map; end
 
-$said = []
-# Stands in for the world room's link: the inbox in $inbox, the messages sent in $sent, the chat
-# lines mirrored in $said, and an open connection.
+# Stands in for the world room's link: the messages sent in $sent.
 module MGQ_MpOverworldSync::Link
-  # Hands out the oldest entry of $inbox.
-  def self.next_entry; $inbox.shift; end
   # Records a message in $sent, which always goes out.
   def self.send_to(target, text); $sent << [target, text]; true; end
-  # Records a mirrored chat line in $said and answers $say_result, 1 (the relay got it) by default.
-  def self.say(text); $said << text; $say_result || 1; end
-  # Answers an open connection with the ping in $status_ping.
-  def self.status; { "state" => "open", "ping" => $status_ping }; end
 end
 
 # Lets the tests read the line at the bottom left of the map.

@@ -2,7 +2,9 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Checked a player away whose seat another player took
+#      Paulinchen  2026-10-23: Played the DLL's events in place of the inbox and left the rules it keeps to its own tests
+#                            - Checked the player's frame and the routes handed to the DLL, and the chat and party actions asked of it
+#                            - Checked a player away whose seat another player took
 #      Paulinchen  2026-10-17: Checked the teleport to the story on the action wheel
 #      Paulinchen  2026-10-13: Checked that the relay's push of a Raid World's squad rules goes to its route
 #      Paulinchen  2026-10-12: Checked that the players already in a world the player enters come without a notice
@@ -79,8 +81,9 @@
 #----------------------------------------------------------------
 
 # Covers the open world as overworld_sync.rbx, ui_actions.rbx, ui_chat.rbx, overworld.rbx,
-# coop.rbx and coop_squad.rbx play it together: states, other players, their ghosts and their
-# followers, the action wheel and parties, chat, pings, and the gate of the party's messages.
+# coop.rbx and coop_squad.rbx play it together over the DLL's world room: the player's frame handed
+# to it, the other players it tells of, their ghosts and their followers, the action wheel and the
+# party's view, chat, pings and routes. The room's own rules are MGQOnline.Game.Tests'.
 
 # Stands in for the game's save loading and new game, which overworld_sync.rbx hooks as it loads.
 module DataManager; def self.load_game_without_rescue(index); true; end; def self.setup_new_game; end; end
@@ -103,42 +106,30 @@ end
 # The script read Luka's sprite as it loaded, before the data file above stood in.
 MGQ_MpOverworld.read_stand_in
 
-# A new seat tells everyone everything.
-$inbox << entry("seat", 0)
-MGQ_MpOverworldSync.tick
-check("told everyone on the seat", $sent.map { |t, _| t }, [-1])
-check("told the position", $sent[0][1].include?("x=3\ny=4"), true)
-$sent.clear
-
-# Nothing changed, nothing sent; a step is sent once.
-MGQ_MpOverworldSync.tick
-check("quiet while nothing changes", $sent.size, 0)
+# The DLL is handed the routes once, and the player's frame as text, only once it changed.
+world_frame
+routes = $staged_world.select { |topic, _| topic == "world.routes" }
+frames = $staged_world.select { |topic, _| topic == "world.me" }
+check("the routes go to the DLL once, each with its gate", [routes.size, routes[0][1].include?(["pchat", "party"]), routes[0][1].include?(["chat", nil])], [1, true, true])
+check("the player's frame goes to the DLL, the state as text", [frames.size, frames[0][1]["in_world"], frames[0][1]["state"].values_at("map", "x", "y")], [1, true, %w[5 3 4]])
+check("without the fields the DLL adds", frames[0][1]["state"].keys & %w[id name since ping party], [])
+$staged_world.clear
+world_frame
+check("quiet while nothing changes", $staged_world, [])
 $game_player.x = 4
-MGQ_MpOverworldSync.tick
-MGQ_MpOverworldSync.tick
-check("a step is sent once", $sent.size, 1)
-$sent.clear
+world_frame
+world_frame
+check("a step is handed over once", $staged_world.map { |_, frame| frame["state"]["x"] }, ["4"])
+$staged_world.clear
 
-# A newcomer is told everything, to its seat only.
-$inbox << entry("in", 2)
-MGQ_MpOverworldSync.tick
-check("told the newcomer only", $sent.map { |t, _| t }, [2])
-$sent.clear
-
-# The newcomer's state makes a peer, a notice and a ghost on the same map.
+# The DLL's events of a player make a peer and a ghost on the same map; the notices are the DLL's.
 friend = { "id" => "friend", "name" => "Friend", "sprite" => "Actor2", "index" => 3, "map" => 5, "x" => 10, "y" => 10, "d" => 4, "speed" => 4, "hidden" => 0, "scene" => "map" }
 peers = MGQ_MpOverworldSync::Peers
-peers.instance_variable_set(:@in_world, 0)
-$inbox << entry("message", 2, told(friend))
-MGQ_MpOverworldSync.tick
-check("a player already in the world the player enters comes without a notice", [MGQ_MpOverworldSync::Status.lines, !peers.at(2).nil?], [[], true])
-ghost = peers.at(2).ghost
-ghost.dispose if ghost && ghost.respond_to?(:dispose)
-peers.instance_variable_get(:@peers).delete(2)
-peers.instance_variable_set(:@in_world, peers::SETTLE_FRAMES + 1)
-$inbox << entry("message", 2, told(friend))
-MGQ_MpOverworldSync.tick
-check("joined notice", MGQ_MpOverworldSync::Status.lines, ["Friend joined the world."])
+$world_bridge.post("world.peer", { "seat" => 2, "state" => plain_state(friend), "member" => false })
+$world_bridge.post("world.labels", { 2 => "Friend" })
+$world_bridge.post("world.notice", "Friend joined the world.")
+world_frame
+check("the DLL's peer, its name and its notice reach the mirror", [!peers.at(2).nil?, peers.label_of(peers.at(2)), MGQ_MpOverworldSync::Status.lines], [true, "Friend", ["Friend joined the world."]])
 MGQ_MpOverworld.update_ghosts
 peer = MGQ_MpOverworld.ghosts.first
 ghost, state = peer.ghost, peer.state
@@ -154,9 +145,10 @@ MGQ_MpOverworld.update_ghosts
 check("and the friend's own again once they show one this game has", [ghost.character_name, ghost.character_index], ["Actor2", 3])
 check("and a ghost is never only an outline", ghost.respond_to?(:outline), false)
 
-# A name two players share is numbered above the second one's head as in the chat, and the tag is
-# drawn anew once the other left.
+# A name two players share is numbered above the second one's head as the DLL numbers it, and the
+# tag is drawn anew once the other left.
 $inbox << entry("message", 9, told(friend.merge("id" => "aa-other")))
+MGQ_MpOverworldSync::Peers.take_labels(9 => "Friend", 2 => "Friend (2)")
 MGQ_MpOverworldSync.tick
 other = MGQ_MpOverworldSync::Peers.at(9)
 written = []
@@ -172,8 +164,9 @@ tag.define_singleton_method(:visible) { true }
 %w[x= y= visible=].each { |setter| tag.define_singleton_method(setter) { |_| } }
 shown = Struct.new(:x, :y, :height, :visible, :opacity).new(0, 0, 32, true, 255)
 tag.show(shown, peer)
-check("a name two players share is numbered for the second by id, as in the chat", [MGQ_MpOverworld.name_tag(other), written], ["Friend", ["Friend (2)"]])
+check("a name two players share shows as the DLL numbers it", [MGQ_MpOverworld.name_tag(other), written], ["Friend", ["Friend (2)"]])
 MGQ_MpOverworldSync::Peers.remove(9)
+MGQ_MpOverworldSync::Peers.take_labels(2 => "Friend")
 tag.show(shown, peer)
 check("and the tag is drawn anew with the plain name once the other left", written, ["Friend"])
 
@@ -342,12 +335,12 @@ check("and see-through again in a Classic world", ghost.opacity, MGQ_MpOverworld
 $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 21, "y" => 22)))
 MGQ_MpOverworldSync.tick
 check("someone near: invite first", option(PARTY), ["Invite to a party", true])
-$sent.clear
+my_party = "mep1"
+$party_answer = party_view(my_party, [], -1, "inviting" => true, "invite_ends" => MGQ_Multiplayer::Bridge.frame_number + MGQ_MpCoop::INVITE_FRAMES)
 wheel(:UP, :C)
-check("inviting", [MGQ_MpCoop::Party.inviting?, MGQ_MpActions::Wheel.open?], [true, false])
-check("the invite tells the frames it stands for still, one counted down by the tick that took the choice", MGQ_MpCoop::Party.instance_variable_get(:@invite).frames_left, MGQ_MpCoop::INVITE_FRAMES - 1)
-my_party = MGQ_MpCoop::Party.id
-check("the invite is told", $sent.last[1].include?("invite=1") && $sent.last[1].include?("party=#{my_party}"), true)
+$party_answer = nil
+check("inviting asks the DLL and takes the view it answers", [$party_calls.last, MGQ_MpCoop::Party.inviting?, MGQ_MpActions::Wheel.open?], [["invite", nil], true, false])
+check("the invite tells the frames it stands for still, by the frame the DLL says it ends at", MGQ_MpCoop::Party.invite_frames_left, MGQ_MpCoop::INVITE_FRAMES)
 check("line above the own head, with the invite's seconds left", MGQ_MpActions.own_line, "Inviting to a party (15 s) . . .")
 
 # The doings join with their seconds left; a lapse that is no Time counts as none, and a doing
@@ -460,21 +453,20 @@ check("until it is gone", [wheel_sprite.visible, wheel_sprite.opacity], [false, 
 check("an invite can be stopped", option(LEAVE), ["Stop inviting", true])
 
 $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 21, "y" => 22, "party" => my_party)))
+take_party(my_party, [MGQ_MpOverworldSync::Peers.at(2)], 2)
 MGQ_MpOverworldSync.tick
-check("the friend joined", MGQ_MpOverworldSync::Status.lines.last, "Friend joined your party.")
-check("inviting stops once one joined", MGQ_MpCoop::Party.inviting?, false)
-check("and the invite has no frames left", MGQ_MpCoop::Party.instance_variable_get(:@invite).frames_left, 0)
+check("once the DLL counts the friend in, the invite has no frames left", [MGQ_MpCoop::Party.inviting?, MGQ_MpCoop::Party.invite_frames_left], [false, 0])
 check("members", MGQ_MpCoop::Party.members.map { |peer| peer.state["name"] }, ["Friend"])
 MGQ_MpOverworld.update_ghosts
 check("a member is solid", ghost.opacity, 255)
 check("the label knows the member", MGQ_MpOverworld.ghosts.first.member, true)
 tag.show(shown, peer)
 check("and names them green, with the party's size after the name in green too", [color_of.call("Friend").equal?(MGQ_MpUi::Style::MEMBER), colors.last], [true, ["2 / 4", MGQ_MpUi::Style::MEMBER]])
-# The test's short ids make Friend the party's leader, whom the player stands near already.
+# The view makes Friend the party's leader, whom the player stands near already.
 check("a member is not invited again, the wheel offers the teleport to the leader instead", option(PARTY), ["Teleport to Friend", false])
 
 # A member's ghost has the followers they show, which step where the one before stood.
-check("followers are told only once shown", [$sent.last[1].include?("trail=\n"), $sent.last[1].include?("follow=0")], [true, true])
+check("followers are told only once shown", MGQ_MpOverworldSync::Me.current.values_at("trail", "follow"), ["", 0])
 [21, 22, 23, 24].each do |x|
   $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => x, "y" => 22, "party" => my_party, "trail" => "Actor5*1|Actor6*2")))
   MGQ_MpOverworldSync.tick
@@ -495,10 +487,12 @@ MGQ_MpOverworldSync.tick
 MGQ_MpOverworld.update_ghosts
 check("a jump gathers the followers, as many as told", ghost.followers.map { |f| [f.x, f.y] }, [[24, 40]])
 
+$party_answer = party_view(nil)
 wheel(LEAVE, :C)
+$party_answer = nil
 MGQ_MpOverworld.update_ghosts
 check("a stranger's ghost has no followers", ghost.followers, [])
-check("left", [MGQ_MpCoop::Party.id, MGQ_MpOverworldSync::Status.lines.last], [nil, "You left the party."])
+check("leaving asks the DLL", [$party_calls.last, MGQ_MpCoop::Party.id], [["leave", nil], nil])
 check("no party to leave", option(LEAVE), ["Leave the party", false])
 
 $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 20, "y" => 21, "party" => "theirs", "invite" => 1)))
@@ -512,12 +506,13 @@ $inbox << entry("message", 2, "chat=hello\n\n")
 MGQ_MpOverworldSync.tick
 check("a chat line goes to the chat", taken, [[2, "hello"]])
 MGQ_MpChat.singleton_class.send(:alias_method, :receive, :harness_receive)
+$party_answer = party_view("theirs", [MGQ_MpOverworldSync::Peers.at(2)], 2)
 wheel(:UP, :C)
-check("accepting an invite takes their party", MGQ_MpCoop::Party.id, "theirs")
-check("joined notice", MGQ_MpOverworldSync::Status.lines.last, "You joined Friend's party.")
+$party_answer = nil
+check("accepting an invite asks the DLL to join the inviter and takes their party", [$party_calls.last, MGQ_MpCoop::Party.id], [["join", 2], "theirs"])
 $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 20, "y" => 21, "party" => "", "invite" => 0)))
+take_party("theirs")
 MGQ_MpOverworldSync.tick
-check("the friend leaving is noticed", MGQ_MpOverworldSync::Status.lines.last, "Friend left your party.")
 
 $pressed = true
 map_frame
@@ -527,7 +522,8 @@ check("leaving the map closes the wheel", [MGQ_MpActions::Wheel.open?, MGQ_Multi
 SceneManager.scene = Scene_Map.new
 $open = false
 MGQ_MpOverworldSync.tick
-check("closing the world leaves the party", MGQ_MpCoop::Party.id, nil)
+check("closing the world forgets the players", MGQ_MpOverworldSync::Peers.empty?, true)
+take_party(nil)
 $open = true
 $inbox << entry("message", 2, told(friend))
 MGQ_MpOverworldSync.tick
@@ -587,32 +583,31 @@ check("the cursor shows right after a change", chat.cursor_shown?, true)
 MGQ_MpUi::TextEdit::BLINK_FRAMES.times { map_frame }
 check("then blinks", chat.cursor_shown?, false)
 chat.choose(:map)
-$sent.clear
+$chats.clear
 $typed = "\r"
 map_frame
 check("enter sends and closes", [chat.typing?, $typing_on, MGQ_Multiplayer::Capture.on?], [false, false, false])
-check("the line goes to the map chat, told once to everyone with the player's map, marked say for earlier releases", [$sent.map(&:first), $sent.last[1].include?("chat=hi there"), $sent.last[1].include?("ch=say"), $sent.last[1].include?("map=5")],
-      [[-1], true, true, true])
+check("the line goes to the DLL for the map chat, with the player's map", $chats, [{ "channel" => "map", "text" => "hi there", "map" => 5 }])
 check("own line in the log and bubble", [chat.log_lines.last, chat.bubble(:me)], ["[Map] Me: hi there", "hi there"])
 check("the map chat is not mirrored to the relay", $said, [])
 
-$sent.clear
+$chats.clear
 chat.start_typing
 $typed = "/g hi all\r"
 map_frame
-check("/g sends to everyone, untagged, and mirrors the line to the relay for the world's admins",
-      [$sent.map(&:first), $sent.last[1].include?("ch="), chat.log_lines.last, $said, chat.channel], [[-1], false, "Me: hi all", ["hi all"], :global])
+check("/g sends to the global chat, which the DLL mirrors to the relay for the world's admins",
+      [$chats.map { |line| line["channel"] }, chat.log_lines.last, $said, chat.channel], [["global"], "Me: hi all", ["hi all"], :global])
 chat.start_typing
 $typed = "/gx still global\r"
 map_frame
-check("the chosen chat holds for the lines after it, and an unknown command is just text", [$sent.last[0], chat.log_lines.last], [-1, "Me: /gx still global"])
+check("the chosen chat holds for the lines after it, and an unknown command is just text", [$chats.last["channel"], chat.log_lines.last], ["global", "Me: /gx still global"])
 chat.start_typing
 $typed = "/m "
 map_frame
 check("a command and a space choose the chat at once, leaving the box empty", [chat.channel, chat.typed, chat.cursor], [:map, "", 0])
 $typed = "\r"
 map_frame
-$sent.clear
+$chats.clear
 $said.clear
 
 $inbox << entry("message", 2, "chat=hello\x01 you\nch=say\nmap=5\nname=Friend\n\n")
@@ -624,41 +619,21 @@ check("a global line before the first state names the sender", chat.log_lines.la
 $inbox << entry("message", 7, "chat=far away\nch=say\nmap=9\nname=Stranger\n\n")
 MGQ_MpOverworldSync.tick
 check("a map line said on another map is dropped", chat.log_lines.last, "Stranger: who am i")
-$inbox << { "kind" => "chat", "seat" => "0", "name" => "Global", :payload => "welcome\x01 all" }
-MGQ_MpOverworldSync.tick
 $inbox << entry("message", 7, "chat=I am the admin\nname=Admin\nrelay=1\n\n")
 MGQ_MpOverworldSync.tick
 check("a player's message marked like the relay's is an ordinary line", [chat.log_lines.last, chat.log_entries.last.who], ["Admin: I am the admin", :other])
-$inbox << { "kind" => "chat", "seat" => "0", "name" => "Global", :payload => "welcome\x01 all" }
+message_from(nil, { "chat" => "welcome\x01 all", "name" => "Global" }, "", true)
 MGQ_MpOverworldSync.tick
 check("an admin's line from the relay shows tagged as the admin's, without a bubble",
       [chat.log_lines.last, chat.log_entries.last.who, chat.senders.include?(nil)], ["[Admin] Global: welcome all", :admin, false])
 $pushes = []
 MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::STORY_FIELD) { |peer, message| $pushes << [peer, message[MGQ_MpOverworldSync::STORY_FIELD], message[:relay]] }
-$inbox << { "kind" => "story", "rev" => "7" }
-MGQ_MpOverworldSync.tick
-check("the relay's push of a Raid World's story goes to its route without a sender, marked as the relay's", $pushes, [[nil, "7", true]])
-MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::BOSS_FIELD) do |peer, message|
-  $pushes << [peer, message[MGQ_MpOverworldSync::BOSS_FIELD], message["left"], message["max"], message["defeated"], message["by"], message[:relay]]
-end
-$inbox << { "kind" => "boss", "key" => "Metatronne and Sandalphone#1", "left" => "0.682576", "max" => "5000000", "defeated" => "0" }
-MGQ_MpOverworldSync.tick
-check("the relay's push of a boss pool goes to its route with its key, share left, max and defeat, marked as the relay's",
-      $pushes.last, [nil, "Metatronne and Sandalphone#1", "0.682576", "5000000", "0", "", true])
-MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::DIFFICULTY_FIELD) { |peer, message| $pushes << [peer, message[MGQ_MpOverworldSync::DIFFICULTY_FIELD], message[:relay]] }
-$inbox << { "kind" => "difficulty", "value" => "-2" }
-MGQ_MpOverworldSync.tick
-check("the relay's push of a Raid World's difficulty goes to its route with the value, marked as the relay's", $pushes.last, [nil, "-2", true])
-MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::SQUAD_FIELD) { |peer, message| $pushes << [peer, message[MGQ_MpOverworldSync::SQUAD_FIELD], message[:relay]] }
-$inbox << { "kind" => "squad", "value" => "1 0 2 1" }
-MGQ_MpOverworldSync.tick
-check("the relay's push of a Raid World's squad rules goes to its route with their text, marked as the relay's", $pushes.last, [nil, "1 0 2 1", true])
+$world_bridge.post("world.route", { "field" => MGQ_MpOverworldSync::STORY_FIELD, "seat" => nil, "fields" => { MGQ_MpOverworldSync::STORY_FIELD => "7" }, "body" => "", "relay" => true })
+world_frame
+check("the relay's push the DLL routes goes to its route without a sender, marked as the relay's", $pushes, [[nil, "7", true]])
 MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::MODS_RULE_FIELD) { |peer, message| $pushes << [peer, message[MGQ_MpOverworldSync::MODS_RULE_FIELD], message["mods"], message[:relay]] }
-$inbox << { "kind" => "mods_rule", "value" => "1", "mods" => "!Level Cap; Party Sheet" }
-$inbox << { "kind" => "mods_rule", "value" => "0" }
-MGQ_MpOverworldSync.tick
-check("the relay's push of a world's rule on other mods goes to its route with the value and the mods, none when it names none, marked as the relay's",
-      $pushes.last(2), [[nil, "1", "!Level Cap; Party Sheet", true], [nil, "0", "", true]])
+message_from(nil, { MGQ_MpOverworldSync::MODS_RULE_FIELD => "1", "mods" => "!Level Cap; Party Sheet" }, "", true)
+check("with every field the push carries", $pushes.last, [nil, "1", "!Level Cap; Party Sheet", true])
 
 wheel(CHAT, :C)
 check("the wheel opens the chat box", [chat.typing?, MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [true, false, true])
@@ -684,11 +659,11 @@ chat.stop_typing
 
 (MGQ_MpChat::BUBBLE_FRAMES + 1).times { MGQ_MpOverworldSync.tick }
 check("bubbles run out", chat.senders, [])
-check("log lines stay a while longer", chat.log_lines.size, 8)
+check("log lines stay a while longer", chat.log_lines.size, 7)
 (MGQ_MpChat::LOG_FRAMES).times { MGQ_MpOverworldSync.tick }
 check("then the log goes quiet", chat.log_lines, [])
 chat.start_typing
-check("but shows again while typing", chat.log_lines.size, 8)
+check("but shows again while typing", chat.log_lines.size, 7)
 battle = Scene_Battle.new
 SceneManager.scene = battle
 MGQ_MpOverworldSync.tick
@@ -759,32 +734,28 @@ class FakeBitmap; def text_size(text); Struct.new(:width).new(text.size * 10); e
 check("wrapping at spaces", MGQ_MpUi.wrap(FakeBitmap.new, "aaa bbb ccc", 70), ["aaa bbb", "ccc"])
 check("wrapping a long word", MGQ_MpUi.wrap(FakeBitmap.new, "abcdefghij", 40), ["abcd", "efgh", "ij"])
 
-# Pings.
+# Pings and the connection, as the DLL tells them.
 ping = MGQ_MpOverworldSync::Ping
 
-# Has the world connection report a ping, and lets the frames pass until the game looks at it.
+# Plays the DLL telling how the connection stands.
 #
-# @param value [String, nil] The milliseconds, nil for no connection.
-def status_ping(value); $status_ping = value; (MGQ_MpOverworldSync::STATUS_FRAMES + 2).times { MGQ_MpOverworldSync.tick }; end
-check("no ping before the first pong", [ping.measured, ping.told, MGQ_MpOverworld.ping_label(ping.told)], [nil, "", nil])
-$sent.clear
-status_ping("40")
-check("the first ping is taken and told", [ping.measured, ping.told], [40, "40"])
-check("the others hear the ping", $sent.last[1][/ping=(\d*)/, 1], "40")
-$sent.clear
-status_ping("52")
-check("a small change is only shown", [ping.measured, ping.told, $sent.size], [52, "40", 0])
-status_ping("65")
-check("a big change is told", [ping.told, $sent.size], ["65", 1])
-status_ping("300")
-status_ping("330")
-check("the step grows with the ping", ping.told, "300")
+# @param ping [Integer, nil] The milliseconds, nil for no connection.
+# @param problem [String, nil] What the line says of the connection, nil while it stands.
+def status_of(ping, problem = nil)
+  $world_bridge.post("world.status", { "seat" => 0, "problem" => problem, "ping" => ping, "map" => 5, "since" => 1_000 })
+  world_frame
+end
+check("no ping before the first pong", [ping.measured, MGQ_MpOverworld.ping_label(ping.measured)], [nil, nil])
+status_of(40, "Reconnecting . . .")
+check("the ping the DLL tells is taken, and its problem shows first", [ping.measured, MGQ_MpOverworldSync::Status.lines.first], [40, "Reconnecting . . ."])
+status_of(40)
+check("and goes once the connection stands", MGQ_MpOverworldSync::Status.lines.include?("Reconnecting . . ."), false)
 check("colors by quality", [MGQ_MpOverworld.ping_label(50)[0], MGQ_MpOverworld.ping_label(50)[1].equal?(MGQ_MpOverworld::PING_COLORS[0][1]),
                             MGQ_MpOverworld.ping_label(150)[1].equal?(MGQ_MpOverworld::PING_COLORS[1][1]), MGQ_MpOverworld.ping_label(999)[1].equal?(MGQ_MpOverworld::PING_COLORS[2][1])],
       ["50 ms", true, true, true])
 check("a ping past 999 ms shows as 999+ ms, red", [MGQ_MpOverworld.ping_label(1234)[0], MGQ_MpOverworld.ping_label(1234)[1].equal?(MGQ_MpUi::Style::BAD), MGQ_MpOverworld.ping_label(999)[0]], ["999+ ms", true, "999 ms"])
-status_ping(nil)
-check("no connection, no ping shown", ping.measured, nil)
+status_of(nil)
+check("no connection, no ping shown", [ping.measured, MGQ_MpOverworld.ping_label(ping.measured)], [nil, nil])
 
 # Scripts' messages that name a map are not states.
 
@@ -835,20 +806,20 @@ check("a message with a map but no marker is no state", MGQ_MpOverworldSync::Pee
 # Leaving, and closing the world.
 $inbox << entry("out", 2)
 MGQ_MpOverworldSync.tick
-check("a player whose connection dropped is kept for a while, unseen",
-      [MGQ_MpOverworldSync::Peers.at(2).away.nil?, MGQ_MpOverworldSync::Status.lines.include?("Friend left the world.")], [false, false])
+check("a player whose connection dropped is kept, unseen", MGQ_MpOverworldSync::Peers.at(2).away.nil?, false)
 MGQ_MpOverworld.update_ghosts
 check("without their ghost", MGQ_MpOverworldSync::Peers.at(2).ghost, nil)
-$inbox << entry("message", 6, told(friend))
-MGQ_MpOverworldSync.tick
-check("and is the same player once they tell again, on any seat",
-      [MGQ_MpOverworldSync::Peers.at(2), MGQ_MpOverworldSync::Peers.at(6).away, MGQ_MpOverworldSync::Peers.all.size, MGQ_MpOverworldSync::Status.lines.grep(/joined the world/).size], [nil, nil, 1, 0])
-$inbox << entry("seat", 0)
-MGQ_MpOverworldSync.tick
-check("the player's own new connection keeps the others for as long", MGQ_MpOverworldSync::Peers.at(6).away.nil?, false)
-(MGQ_MpOverworldSync::REJOIN_FRAMES + 1).times { MGQ_MpOverworldSync.tick }
-check("left notice", MGQ_MpOverworldSync::Status.lines.last, "Friend left the world.")
-check("no peers left", MGQ_MpOverworldSync::Peers.empty?, true)
+kept = MGQ_MpOverworldSync::Peers.at(2)
+$world_bridge.post("world.peer_moved", { "seat" => 6, "from" => 2 })
+$world_bridge.post("world.peer", { "seat" => 6, "state" => plain_state(friend), "member" => false })
+world_frame
+check("a player the DLL moves to another seat is the same player there, back",
+      [MGQ_MpOverworldSync::Peers.at(2), MGQ_MpOverworldSync::Peers.at(6).equal?(kept), MGQ_MpOverworldSync::Peers.at(6).away, MGQ_MpOverworldSync::Peers.all.size], [nil, true, nil, 1])
+left = []
+MGQ_MpOverworldSync.on_leave { |peer| left << peer.seat }
+$world_bridge.post("world.peer_left", { "seat" => 6 })
+world_frame
+check("a player the DLL forgets leaves the mirror, and the scripts hear of it", [MGQ_MpOverworldSync::Peers.empty?, left], [true, [6]])
 $inbox << entry("message", 3, told(friend.merge("seat" => 3)))
 MGQ_MpOverworldSync.tick
 $open = false
@@ -860,39 +831,25 @@ $open = true
 (MGQ_MpOverworldSync::NOTICE_FRAMES + 1).times { MGQ_MpOverworldSync.tick }
 check("notices ran out", MGQ_MpOverworldSync::Status.lines, [])
 
-# The party gate: messages of another party are dropped, those of the own party handed on.
+# The party's routes, which the DLL's gate passes.
 $gate = []
 MGQ_MpCoop.route("gtest") { |peer, message| $gate << [peer.seat, message["gtest"]] }
 $open = true
 $inbox << entry("message", 4, told(friend.merge("x" => 50, "y" => 50)))
 MGQ_MpOverworldSync.tick
-$sent.clear
+$chats.clear
 chat.start_typing
 $typed = "/p anyone?\r"
 map_frame
 check("outside a party the party chat sends nothing and says why",
-      [$sent, MGQ_MpOverworldSync::Status.lines.last, chat.typing?], [[], "You are in no party, so nobody hears the party chat.", false])
-MGQ_MpCoop::Party.invite
-mine = MGQ_MpCoop::Party.id
+      [$chats, MGQ_MpOverworldSync::Status.lines.last, chat.typing?], [[], "You are not in a party.", false])
+mine = "me-p1"
 MGQ_MpOverworldSync::Peers.at(4).state["party"] = mine
-$inbox << entry("message", 4, "gtest=uninvited\nparty=#{mine}\n\n")
+take_party(mine, [MGQ_MpOverworldSync::Peers.at(4)])
+check("a party route is registered with the party's gate", MGQ_MpOverworldSync.instance_variable_get(:@gates)["gtest"], "party")
+$inbox << entry("message", 4, "gtest=mine\nparty=#{mine}\n\n")
 MGQ_MpOverworldSync.tick
-check("a player the leader did not admit is not heard, though they name the party", $gate, [])
-MGQ_MpCoop::Party.admitted << "friend"
-$inbox << entry("message", 4, "gtest=theirs
-party=other
-
-")
-$inbox << entry("message", 4, "gtest=mine
-party=#{mine}
-
-")
-$inbox << entry("message", 9, "gtest=unknown
-party=#{mine}
-
-")
-MGQ_MpOverworldSync.tick
-check("the gate hands on only the own party from a known player", $gate, [[4, "mine"]])
+check("a message the gate passed reaches its script", $gate, [[4, "mine"]])
 $sent.clear
 MGQ_MpCoop.tell(4, "gtest", "hello", "extra" => 1)
 check("tell adds the party id", [$sent.last[0], $sent.last[1].include?("gtest=hello
@@ -900,14 +857,12 @@ party=#{mine}
 extra=1")], [4, true])
 
 # The party chat, and the senders' colors.
-$sent.clear
+$chats.clear
 mirrored_before = $said.size
 chat.start_typing
 $typed = "/p meet at the inn\r"
 map_frame
-party_line = $sent.last && $sent.last[1]
-check("a line starting with /p goes to the party only", [party_line.include?("pchat=meet at the inn\n"), party_line.include?("party=#{mine}"), party_line =~ /^chat=/ ? true : false],
-      [true, true, false])
+check("a line starting with /p goes to the DLL for the party chat", $chats.map { |line| line.values_at("channel", "text") }, [["party", "meet at the inn"]])
 check("and shows tagged in the player's own log", [chat.log_lines.last, chat.log_entries.last.who], ["[Party] Me: meet at the inn", :me])
 check("the party chat never reaches the relay", $said.size, mirrored_before)
 $inbox << entry("message", 4, "pchat=on my way\nname=Friend\nparty=#{mine}\n\n")
@@ -915,9 +870,6 @@ $inbox << entry("message", 4, "chat=hello all\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
 check("a member's party line and world line show, their name in the member's color",
       chat.log_entries.last(2).map { |line| [line.to_s, line.who] }, [["[Party] Friend: on my way", :member], ["Friend: hello all", :member]])
-$inbox << entry("message", 4, "pchat=sneaky\nname=Friend\nparty=other\n\n")
-MGQ_MpOverworldSync.tick
-check("another party's line is never heard", chat.log_lines.last, "Friend: hello all")
 parts = []
 font = Struct.new(:color, :size, :outline, :bold, :out_color).new
 canvas = Object.new
@@ -1113,12 +1065,12 @@ check("/w and the start of a name offer the names that fit", [chat.suggestions.i
 $typed = "\t"
 map_frame
 check("Tab takes the picked name for the whisper chat and empties the box, showing the Whisper tab", [chat.whisper_to, chat.channel, chat.typed, chat.suggestions, chat.tabs.last], ["Friend", :whisper, "", [], :whisper])
-$sent.clear
+$chats.clear
 $typed = "psst\r"
 map_frame
 friend_seat = MGQ_MpOverworldSync::Peers.all.find { |peer| peer.state["name"] == "Friend" }.seat
-check("a whisper goes to that player alone, and shows whom it went to", [$sent.map(&:first), $sent.last[1].include?("whisper=psst"), chat.log_lines.last],
-      [[friend_seat], true, "[To Friend] Me: psst"])
+check("a whisper goes to the DLL for that player alone, and shows whom it went to", [$chats.map { |line| line.values_at("channel", "text", "seat") }, chat.log_lines.last],
+      [[["whisper", "psst", friend_seat]], "[To Friend] Me: psst"])
 check("the bubble carries the whisper's color", chat.bubble_channel(:me), :whisper)
 chat.start_typing
 $typed = "/w nobody here\r"
@@ -1220,21 +1172,26 @@ check("the All tab takes every line as seen", chat.unread_tabs, [])
 
 # Two players of the same name, and the map a map line was said on.
 peers = MGQ_MpOverworldSync::Peers
+# Names the twins as the DLL numbers them, which every state the tests play names plainly again.
+twin_labels = lambda { peers.take_labels(friend_seat => "Friend", 8 => "Friend (2)") }
 $inbox << entry("message", 8, told(friend.merge("id" => "zz-twin")))
+twin_labels.call
 MGQ_MpOverworldSync.tick
-check("a name that two players share is numbered for the second, so each can be whispered to",
+check("a name the DLL numbers can be whispered to by it, each player apart",
       [chat.names.include?("Friend (2)"), peers.named("Friend").seat, peers.named("Friend (2)").seat, peers.label_of(peers.at(8))], [true, friend_seat, 8, "Friend (2)"])
 check("nobody is found by a missing id or name", [peers.with_id(nil), peers.with_id(""), peers.named(nil)], [nil, nil, nil])
-$sent.clear
+$chats.clear
 chat.start_typing
 $typed = "/w Friend (2) hi twin\r"
 map_frame
-check("/w and a numbered name whisper to that player", [$sent.map(&:first), chat.log_lines.last], [[8], "[To Friend (2)] Me: hi twin"])
+check("/w and a numbered name whisper to that player", [$chats.map { |line| line["seat"] }, chat.log_lines.last], [[8], "[To Friend (2)] Me: hi twin"])
 $inbox << entry("message", 8, told(friend.merge("id" => "zz-twin", "map" => 6)))
+twin_labels.call
 $inbox << entry("message", 8, "chat=just arrived\nch=say\nmap=5\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
 check("a map line said on the player's map shows, under the numbered name, though the sender's last state names another", chat.log_lines.last, "[Map] Friend (2): just arrived")
 $inbox << entry("message", 8, told(friend.merge("id" => "zz-twin", "map" => 5)))
+twin_labels.call
 $inbox << entry("message", 8, "chat=just left\nch=say\nmap=6\nname=Friend\n\n")
 $inbox << entry("message", friend_seat, "chat=first of us\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
@@ -1250,12 +1207,11 @@ chat.stop_typing
 
 # A global line too fast for the relay.
 $say_result = MGQ_MpChat::TOO_FAST
-$sent.clear
 chat.start_typing
 $typed = "/g spam\r"
 map_frame
-check("a global line coming too fast is turned down and goes to nobody",
-      [$sent, MGQ_MpOverworldSync::Status.lines.last, chat.log_lines.include?("Me: spam")], [[], "You are sending too fast. Wait a moment, then send the line again.", false])
+check("a global line the DLL finds too fast is turned down",
+      [MGQ_MpOverworldSync::Status.lines.last, chat.log_lines.include?("Me: spam")], ["You are sending too fast. Wait a moment, then send the line again.", false])
 $say_result = nil
 
 # A line broken right after the name.
@@ -1299,162 +1255,71 @@ before = MGQ_MpActions.wheel_places.size
 check("a ring holds eight choices at most", MGQ_MpActions.wheel_places.size, MGQ_MpWheel::DIRECTIONS.size)
 MGQ_MpActions.instance_variable_get(:@choices).reject! { |order, _, _| order >= 100 }
 
-# Invites that name a player reach them anywhere.
+# Invites the DLL finds reaching the player, and the player's own, which the DLL keeps.
 far = MGQ_MpOverworldSync::Peers.at(4)
-far.state.merge!("party" => "far-p", "invite" => "1", "invite_to" => "other-id", "map" => "9")
-check("an invite naming someone else does not reach the player from afar", MGQ_MpCoop::Party.invited_by?(far), false)
-far.state["invite_to"] = "other-id,me"
-check("one naming the player does", MGQ_MpCoop::Party.invited_by?(far), true)
-check("but not in the wheel, which needs the inviter near", MGQ_MpCoop::Party.invited_by?(far, false), false)
-MGQ_MpCoop::Party.stop_inviting
+far.state.merge!("party" => "far-p", "invite" => "1", "invite_to" => "other-id,me", "map" => "9")
+take_party(nil, [], -1, "inviters" => [4], "parties" => { "far-p" => [1, 4] })
+check("an invite the DLL finds reaching the player is offered in the overview", [MGQ_MpCoop::Party.invited_by?(far), MGQ_MpCoop::Offers.peer_option(far).text], [true, "Accept party invite"])
+take_party(nil, [], -1, "inviters" => [4], "parties" => { "far-p" => [4, 4] })
+check("but closed while their party is full", [MGQ_MpCoop::Offers.peer_option(far).run, MGQ_MpCoop::Offers.notice_of(far)], [nil, nil])
+MGQ_MpCoop::Party.decline(far)
 MGQ_MpCoop::Party.invite("friend")
-check("the player's invite names its target", [MGQ_MpOverworldSync::Me.current["invite_to"], MGQ_MpCoop::Party.targets], ["friend", ["friend"]])
-MGQ_MpCoop::Party.invite
-check("a wheel invite keeps the targets of the standing invite", MGQ_MpCoop::Party.targets, ["friend"])
-(MGQ_MpCoop::INVITE_FRAMES + 1).times { MGQ_MpCoop::Party.count_down }
-check("an invite naming a player stands longer than one to those near", MGQ_MpCoop::Party.targets, ["friend"])
-(MGQ_MpCoop::NAMED_INVITE_FRAMES - MGQ_MpCoop::INVITE_FRAMES).times { MGQ_MpCoop::Party.count_down }
-check("the targets run out with the invite", MGQ_MpCoop::Party.targets, [])
-MGQ_MpCoop::Party.invite(far.state["id"])
-$inbox << entry("message", 4, "party_decline=1\n\n")
-MGQ_MpOverworldSync.tick
-check("a player who declines is no longer named, and the inviter hears it", [MGQ_MpCoop::Party.targets, MGQ_MpOverworldSync::Status.lines.last.to_s.end_with?("declined your party invite.")],
-      [[], true])
 MGQ_MpCoop::Party.stop_inviting
+check("declining and the player's own invites ask the DLL", $party_calls.last(3), [["decline", 4], ["invite", "friend"], ["stop_inviting", nil]])
 
-# The size and leader of a party.
-MGQ_MpCoop::Party.invite
-far.state.merge!("party" => MGQ_MpCoop::Party.id, "invite" => "0")
-MGQ_MpCoop::Party.admitted << far.state["id"]
+# The size and leader of a party, as the view tells them.
+far.state.merge!("party" => "me-p2", "invite" => "0")
+take_party("me-p2", [far])
 badges = [MGQ_MpOverworld.party_badge(:me), MGQ_MpOverworld.party_badge(far)]
 check("a party of two shows its size on both, and one of them leads", [badges.map { |b| b[0] }, badges.count { |b| b[1] }], [["2 / 4", "2 / 4"], 1])
-check("the leader is the one the party's id names, else the lowest id", MGQ_MpCoop.leads?(far), true)
+check("the leader is the one the view names", [MGQ_MpCoop.leads?(:me), MGQ_MpCoop.leads?(far)], [true, false])
 far.state["party"] = "theirs"
+take_party("me-p2")
 check("a player alone shows no size", [MGQ_MpOverworld.party_badge(:me), MGQ_MpOverworld.party_badge(far)], [nil, nil])
 
 # Only the party's leader invites and removes members.
-MGQ_MpCoop::Party.reset
-MGQ_MpCoop::Party.invite
-far.state.merge!("party" => MGQ_MpCoop::Party.id, "invite" => "0", "id" => "zz-far")
-MGQ_MpCoop::Party.admitted << "zz-far"
+far.state["party"] = "me-p2"
+take_party("me-p2", [far])
 check("the leader may invite more", MGQ_MpCoop::Party.may_invite?, true)
-$sent.clear
 MGQ_MpCoop::Party.remove(far)
-check("and removes a member by telling their game", [$sent.last[0], $sent.last[1].include?("kick=1"), MGQ_MpCoop::Party.members], [4, true, []])
-far.state["id"] = "aa-far"
-MGQ_MpCoop::Party.admitted << "aa-far"
+check("and removes a member through the DLL", $party_calls.last, ["remove", 4])
+take_party("me-p2", [far], 4)
 check("a member may not invite, and teleports to the leader with the wheel's party choice instead",
       [MGQ_MpCoop::Party.may_invite?, MGQ_MpCoop::Offers.invite_refusal("full"), MGQ_MpActions.wheel_options[PARTY].text.start_with?("Teleport to ")],
       [false, "Only the party's leader invites.", true])
-MGQ_MpCoop::Party.remove(far)
-check("nor remove", $sent.size, 1)
-$inbox << entry("message", 4, "kick=1\nparty=#{MGQ_MpCoop::Party.id}\n\n")
-MGQ_MpOverworldSync.tick
-check("the leader's removal makes the member's game leave", [MGQ_MpCoop::Party.id, MGQ_MpOverworldSync::Status.lines.last], [nil, "Friend removed you from the party."])
+take_party(nil)
 
-# A party past its size: the leader turns away whoever joins one too many, and nobody joins a full one.
-MGQ_MpCoop::Party.reset
-(10..13).each { |seat| MGQ_MpCoop::Party.invite("zz-m#{seat}") }
-full = MGQ_MpCoop::Party.id
-(10..13).each { |seat| $inbox << entry("message", seat, told(friend.merge("id" => "zz-m#{seat}", "name" => "M#{seat}", "party" => full))) }
-$sent.clear
-MGQ_MpOverworldSync.tick
-check("the leader turns away the fifth player", [$sent.select { |_, text| text.include?("kick=full") }.map(&:first), MGQ_MpOverworldSync::Status.lines.last],
-      [[13], "M13 could not join, the party is full."])
-
-# A player the invite did not reach names the party: the leader turns them away, and they are no member.
-MGQ_MpCoop::Party.reset
-MGQ_MpCoop::Party.invite("zz-m10")
-$inbox << entry("message", 10, told(friend.merge("id" => "zz-m10", "name" => "M10", "party" => MGQ_MpCoop::Party.id)))
-$inbox << entry("message", 11, told(friend.merge("id" => "zz-m11", "name" => "M11", "party" => MGQ_MpCoop::Party.id, "x" => 40)))
-(MGQ_MpCoop::LATE_FRAMES + 1).times { MGQ_MpCoop::Party.count_down }
-$sent.clear
-MGQ_MpOverworldSync.tick
-check("the leader admits whom the invite reached, and turns away who only names the party",
-      [MGQ_MpCoop::Party.members.map(&:seat), MGQ_MpCoop::Party.admitted, $sent.select { |_, text| text.include?("kick=late") }.map(&:first)], [[10], ["zz-m10"], [11]])
-check("and tells whom it admitted", MGQ_MpOverworldSync::Me.current["party_members"], "zz-m10")
-$inbox << entry("message", 11, told(friend.merge("id" => "zz-m11", "name" => "M11", "party" => MGQ_MpCoop::Party.id, "x" => 41)))
-$sent.clear
-MGQ_MpOverworldSync.tick
-check("once", $sent.select { |_, text| text.include?("kick=") }, [])
-
-# A member takes the leader's word on who is in the party.
-MGQ_MpCoop::Party.reset
-leader = MGQ_MpOverworldSync::Peers.at(10)
-leader.state.merge!("party" => "zz-m10", "invite" => "1", "party_members" => "zz-m12")
-(11..12).each { |seat| MGQ_MpOverworldSync::Peers.at(seat).state["party"] = "zz-m10" }
-MGQ_MpCoop::Party.join(leader)
-check("a member counts the leader and whom the leader admitted", MGQ_MpCoop::Party.members.map(&:seat), [10, 12])
-$inbox << entry("message", 10, told(leader.state.merge("party_members" => "zz-m12,zz-m11,me")))
-MGQ_MpOverworldSync.tick
-check("and whom the leader admits later", MGQ_MpCoop::Party.members.map(&:seat), [10, 11, 12])
-$inbox << entry("out", 10)
-(MGQ_MpOverworldSync::REJOIN_FRAMES + 1).times { MGQ_MpOverworldSync.tick }
-check("the party outlasts its leader, and the lowest id leads", [MGQ_MpCoop::Party.members.map(&:seat), MGQ_MpCoop::Party.leader == :me], [[11, 12], true])
-(10..13).each { |seat| $inbox << entry("message", seat, told(friend.merge("id" => "zz-m#{seat}", "name" => "M#{seat}", "party" => full))) }
-MGQ_MpOverworldSync.tick
-
-MGQ_MpCoop::Party.reset
-MGQ_MpCoop::Party.join(MGQ_MpOverworldSync::Peers.at(10))
-check("a full party cannot be joined", [MGQ_MpCoop::Party.id, MGQ_MpOverworldSync::Status.lines.last], [nil, "M10's party is full."])
-
-# A player who joins counts for the party's leader only once admitted, so being turned away reaches
-# them even when their id is the lowest and the party's maker is gone.
-MGQ_MpCoop::Party.reset
-lead = MGQ_MpOverworldSync::Peers.at(11)
-lead.state.merge!("party" => "gone-p1", "invite" => "1", "party_members" => "zz-m11,zz-m12")
-MGQ_MpOverworldSync::Peers.at(12).state["party"] = "gone-p1"
-MGQ_MpCoop::Party.join(lead)
-check("a player who just joined does not lead, though their id is the lowest", MGQ_MpCoop::Party.leader.equal?(lead), true)
-$inbox << entry("message", 11, "kick=late\nparty=gone-p1\n\n")
-MGQ_MpOverworldSync.tick
-check("so the leader turning them away makes them leave", [MGQ_MpCoop::Party.id, MGQ_MpOverworldSync::Status.lines.last], [nil, "M11's invite is over."])
-MGQ_MpCoop::Party.join(lead)
-$inbox << entry("message", 11, told(lead.state.merge("party_members" => "zz-m11,zz-m12,me")))
-MGQ_MpOverworldSync.tick
-check("once admitted, the lowest id leads", MGQ_MpCoop::Party.leader, :me)
-MGQ_MpCoop::Party.reset
-
-# A player who tells from a new seat while the relay still holds their old one is moved there, and
-# the old seat's end tells nobody they left.
-MGQ_MpOverworldSync::Peers.clear
-$left = []
-MGQ_MpOverworldSync.on_leave { |peer| $left << peer.seat }
-$inbox << entry("message", 2, told(friend))
-MGQ_MpOverworldSync.tick
-$inbox << entry("message", 7, told(friend))
-MGQ_MpOverworldSync.tick
-check("a player telling from a new seat while the old one stands moves there",
-      [MGQ_MpOverworldSync::Peers.at(2), MGQ_MpOverworldSync::Peers.at(7).state["id"], MGQ_MpOverworldSync::Peers.all.size,
-       MGQ_MpOverworldSync::Status.lines.grep(/joined the world/).size], [nil, "friend", 1, 1])
-$inbox << entry("out", 2)
-(MGQ_MpOverworldSync::REJOIN_FRAMES + 1).times { MGQ_MpOverworldSync.tick }
-check("and the old seat's end tells nobody they left", [$left, MGQ_MpOverworldSync::Peers.all.size], [[], 1])
-
-# The relay dealing the seats anew: a player who takes the seat of one away leaves them kept, the
-# same player once they tell from another seat, and gone only once they stay away past the grace.
+# The relay dealing the seats anew, as the DLL's events tell it: a player who takes the seat of one
+# away leaves them kept aside, the same player once they tell from another seat, and gone only once
+# the DLL forgets them; each change of their presence reaches the scripts.
 MGQ_MpOverworldSync::Peers.clear
 $left = []
 $presence = []
+MGQ_MpOverworldSync.on_leave { |peer| $left << peer.seat }
 MGQ_MpOverworldSync.on_presence { |peer, change| $presence << change if peer.state["id"] == "friend" }
 other = friend.merge("id" => "zz-other", "name" => "Other")
-$inbox << entry("message", 2, told(friend))
-$inbox << entry("seat", 0)
-$inbox << entry("message", 2, told(other))
-MGQ_MpOverworldSync.tick
+$world_bridge.post("world.peer", { "seat" => 2, "state" => plain_state(friend), "member" => false })
+$world_bridge.post("world.peer_away", { "seat" => 2 })
+$world_bridge.post("world.peer_displaced", { "seat" => 2 })
+$world_bridge.post("world.peer", { "seat" => 2, "state" => plain_state(other), "member" => false })
+world_frame
 kept = MGQ_MpOverworldSync::Peers.kept_with_id("friend")
-check("a player telling from the seat of one away leaves them kept, unseen",
-      [$left, MGQ_MpOverworldSync::Peers.at(2).state["id"], kept && kept.away.nil?, MGQ_MpOverworldSync::Peers.all.map { |peer| peer.state["id"] }],
-      [[], "zz-other", false, ["zz-other"]])
-$inbox << entry("message", 4, told(friend))
-MGQ_MpOverworldSync.tick
+check("a player telling from the seat of one away leaves them kept aside, unseen",
+      [$left, MGQ_MpOverworldSync::Peers.at(2).state["id"], kept && kept.away, MGQ_MpOverworldSync::Peers.all.map { |peer| peer.state["id"] }, MGQ_MpOverworldSync::Peers.empty?],
+      [[], "zz-other", true, ["zz-other"], false])
+$world_bridge.post("world.peer_moved", { "seat" => 4, "from" => 2, "id" => "friend" })
+$world_bridge.post("world.peer", { "seat" => 4, "state" => plain_state(friend), "member" => false })
+world_frame
 check("who come back on another seat as the same player, told away, moved and back",
-      [MGQ_MpOverworldSync::Peers.at(4).equal?(kept), kept.away, $left, $presence], [true, nil, [], [:away, :moved, :back]])
-$inbox << entry("seat", 0)
-$inbox << entry("message", 4, told(other))
-MGQ_MpOverworldSync.tick
-MGQ_MpOverworldSync::REJOIN_FRAMES.times { MGQ_MpOverworldSync.tick }
-check("and gone once they stay away past the grace", [$left, $presence.last, MGQ_MpOverworldSync::Peers.kept_with_id("friend")], [[4], :gone, nil])
+      [MGQ_MpOverworldSync::Peers.at(4).equal?(kept), kept.away, MGQ_MpOverworldSync::Peers.at(2).state["id"], $left, $presence], [true, nil, "zz-other", [], [:away, :moved, :back]])
+$world_bridge.post("world.peer_away", { "seat" => 4 })
+$world_bridge.post("world.peer_displaced", { "seat" => 4 })
+$world_bridge.post("world.peer_moved", { "seat" => 4, "from" => 2, "id" => "zz-other" })
+$world_bridge.post("world.peer", { "seat" => 4, "state" => plain_state(other), "member" => false })
+$world_bridge.post("world.peer_left", { "seat" => 4, "id" => "friend" })
+world_frame
+check("and gone once the DLL forgets them, the player now on their old seat kept",
+      [$left, $presence.last, MGQ_MpOverworldSync::Peers.kept_with_id("friend"), MGQ_MpOverworldSync::Peers.at(4).state["id"]], [[4], :gone, nil, "zz-other"])
 
 # Discord hears of the open world: its name, its players, its seats and the code its invites carry.
 valley = Struct.new(:name, :id, :seats, :code, :directory_id).new("Valley", "w1", 8, "mgqmp2;abcdefghjkmnpqrs;r1;8", "d1")
@@ -1533,65 +1398,41 @@ stored.clear
 MGQ_MpOverworldSync::Status.instance_variable_set(:@notices, kept_notices)
 Bitmap.define_singleton_method(:new, handed_out)
 
-# The player's seat: asked of the DLL only while none was told, kept from the inbox and the
-# status, and forgotten once the world closes.
-$status_calls = 0
-$status_seat = "2"
-MGQ_MpOverworldSync::Link.define_singleton_method(:status) { $status_calls += 1; { "state" => "open", "seat" => $status_seat, "ping" => $status_ping } }
+# The player's seat and when they entered their map, as the DLL tells them, and the seat forgotten
+# once the world closes.
 me = MGQ_MpOverworldSync::Me
-me.forget_seat
-check("the seat is asked of the DLL the first time", [me.seat, $status_calls], [2, 1])
-check("and kept after that", [me.seat, me.seat, $status_calls], [2, 2, 1])
-$inbox << entry("seat", 5)
-MGQ_MpOverworldSync::Status.instance_variable_set(:@frames, 0)
-MGQ_MpOverworldSync.tick
-check("a new connection's seat replaces it", me.seat, 5)
-$status_seat = "6"
-(MGQ_MpOverworldSync::STATUS_FRAMES + 2).times { MGQ_MpOverworldSync.tick }
-check("so does the status when it looks", me.seat, 6)
-$status_seat = ""
-(MGQ_MpOverworldSync::STATUS_FRAMES + 2).times { MGQ_MpOverworldSync.tick }
-$status_calls = 0
-check("a status without a seat has the DLL asked again, which answers none", [me.seat, me.seat, $status_calls], [-1, -1, 2])
-$status_seat = "7"
-MGQ_MpOverworldSync::Status.look
+$world_bridge.post("world.status", { "seat" => 5, "problem" => nil, "ping" => nil, "map" => 5, "since" => 1_234 })
+world_frame
+check("the seat and the time the player entered their map are the DLL's", [me.seat, me.map_since], [5, 1_234])
+$game_map.map_id = 6
+$map_since = 5_678
+check("on a map the DLL has not seen the player on yet, it is asked at once", me.map_since, 5_678)
+$game_map.map_id = 5
+$map_since = nil
 $open = false
 MGQ_MpOverworldSync.tick
-$status_calls = 0
-check("the world closing forgets the seat", [me.seat, $status_calls], [7, 1])
+check("the world closing forgets the seat", me.seat, -1)
 $open = true
 
-# The time the player entered their map, which decides the Map Owner: kept across a reconnect, set
-# anew once they left the world, loaded a save or started a new game.
-me.map_since
-me.instance_variable_set(:@since, 1)
-$inbox << entry("seat", 0)
-MGQ_MpOverworldSync.tick
-check("a reconnect keeps the time the player entered their map", me.map_since, 1)
-$open = false
-MGQ_MpOverworldSync.tick
-$open = true
-check("leaving the world sets it anew on the same map", [$game_map.map_id, me.map_since == 1], [5, false])
-me.instance_variable_set(:@since, 1)
+# A loaded save or a new game enter their map anew, which the DLL is told.
+$staged_world.clear
 DataManager.load_game_without_rescue(0)
-check("so does a loaded save", me.map_since == 1, false)
-me.instance_variable_set(:@since, 1)
 DataManager.setup_new_game
-check("and a new game", me.map_since == 1, false)
+world_frame
+check("a loaded save and a new game have the DLL forget when the player entered their map",
+      $staged_world.count { |topic, _| topic == "world.reset_since" }, 2)
 
-# The title screen keeps the previous game's map, which nobody is told.
-MGQ_MpOverworldSync.tick
-$sent.clear
+# The title screen keeps the previous game's map, which the DLL is not handed.
+$staged_world.clear
 SceneManager.scene = Scene_Title.new
 $game_player.x += 1
-$inbox << entry("in", 3)
-MGQ_MpOverworldSync.tick
-check("on the title screen nobody is told a state, nor a newcomer", [$sent, me.current], [[], nil])
+world_frame
+check("on the title screen the DLL is handed no state", [$staged_world.map { |_, frame| frame["state"] }, me.current], [[nil], nil])
 SceneManager.scene = Scene_Base.new
 $new_game_pending = true
-MGQ_MpOverworldSync.tick
-check("nor while a world's new game waits there, as through the world screen's fade-out", [$sent, me.current], [[], nil])
+world_frame
+check("nor while a world's new game waits there, as through the world screen's fade-out", me.current, nil)
 $new_game_pending = false
 SceneManager.scene = Scene_Map.new
-MGQ_MpOverworldSync.tick
-check("once the map starts everyone is told the state", [$sent.map(&:first), $sent.last[1].include?("x=#{$game_player.x}")], [[-1], true])
+world_frame
+check("once the map starts the DLL is handed the state", $staged_world.last[1]["state"]["x"], $game_player.x.to_s)

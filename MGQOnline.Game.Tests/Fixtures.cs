@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-23: Read the golden files of any area
+//                            - Read the world room's cases
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -36,4 +37,10 @@ internal static class Fixtures
         using JsonDocument document = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fixtures", area, name)));
         return document.RootElement.Clone();
     }
+
+    /// <summary>
+    /// Reads the world room's cases that fixtures/peers/make_fixtures.rb wrote.
+    /// </summary>
+    /// <returns>The routes and the scenarios.</returns>
+    public static JsonElement Peers() => Read("peers", "cases.json");
 }

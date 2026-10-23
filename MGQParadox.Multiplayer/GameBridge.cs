@@ -2,7 +2,8 @@
 //  GameBridge.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Registered the topics of Player.ini and the other settings files
+//      Paulinchen  2026-10-23: Registered the topics of the open world
+//                            - Registered the topics of Player.ini and the other settings files
 //                            - Registered the topics of the scripts' log
 //                            - Registered the topics of a world's rules
 //                            - Registered the topics of the game's mods
@@ -45,6 +46,7 @@ internal static class GameBridge
         RuleTopics.Register(context);
         ModTopics.Register(context, () => ModParking.Current, () => WorldDirectory.Current);
         WorldTopics.Register(context);
+        WorldRoomTopics.Register(context);
     }
 
     /// <summary>

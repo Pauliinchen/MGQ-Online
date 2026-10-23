@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Let a teller's telling hold the player no longer once nothing of it came for thirty seconds
+#      Paulinchen  2026-10-23: Left the map's message gate to the DLL
 #      Paulinchen  2026-10-12: Sent a Classic world's message for several members as one party message
 #      Paulinchen  2026-10-11: Kept a viewer watching a Raid telling after taking its story values
 #      Paulinchen  2026-10-10: Kept the followed teller while their state briefly tells nothing
@@ -17,8 +18,9 @@
 # map in a Raid World. coop_npcs.rbx, coop_castle.rbx, coop_events.rbx, coop_gather.rbx and
 # coop_scene.rbx ask MGQ_MpCoop::Scope instead of the party, and send their messages through it:
 # through the party's gate (MGQ_MpCoop.route) in a Classic world, through the map's gate
-# (MGQ_MpCoop.route_map) in a Raid World. The party chat, removing a member, invites and duels keep
-# the party's gate in both; co-op battles use the map's gate in a Raid World (see battles_coop.rbx).
+# (MGQ_MpCoop.route_map) in a Raid World; both gates are the DLL's (MGQOnline.Game's WorldRoom).
+# The party chat, removing a member, invites and duels keep the party's gate in both; co-op battles
+# use the map's gate in a Raid World (see battles_coop.rbx).
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoop
@@ -30,49 +32,15 @@ module MGQ_MpCoop
   # separated; a message without it is for everyone on its map.
   TO_FIELD = "mto"
 
-  # The handlers of the map's gate, by the field their scripts registered.
-  @map_routes = {}
-
-  # Hands the messages marked by a field to a script, once they come from another player on the
-  # player's map, or on the map the story takes the player to.
+  # Hands the messages marked by a field to a script, once the DLL's map gate let them pass: from
+  # another player on the player's map, or for it or the map the story takes the player to, and
+  # naming the player in TO_FIELD when the message names anyone.
   #
   # @param field [String] The field, such as "npcs".
   # @yieldparam peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
   # @yieldparam message [Hash] The message's fields, the field's value under the field itself.
   def self.route_map(field, &handler)
-    @map_routes[field] = handler
-    MGQ_MpOverworldSync.route(MAP_PREFIX + field) { |peer, message| take_map(field, peer, message) }
-  end
-
-  # Takes a message for the map's gate, dropping one from a player elsewhere or not known yet.
-  #
-  # @param field [String] The field the script registered.
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
-  # @param message [Hash] The message's fields.
-  def self.take_map(field, peer, message)
-    reason = map_drop_reason(peer, message)
-    if reason
-      sender = peer ? peer.state["id"] : nil
-      Scope.log_once([:dropped, field, reason, sender], "dropped a #{field} message from #{MGQ_MpOverworldSync.who(peer)}: #{reason}")
-      return
-    end
-
-    @map_routes[field].call(peer, message.merge(field => message[MAP_PREFIX + field]))
-  end
-
-  # Tells why the map's gate drops a message.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
-  # @param message [Hash] The message's fields; "mmap" names the map it is for, TO_FIELD the
-  #   players.
-  # @return [String, nil] The reason, nil when the gate takes it.
-  def self.map_drop_reason(peer, message)
-    return "the sender has not told their state yet" unless peer
-    return "no map is set up" unless $game_map
-    return "it is for other players" if message[TO_FIELD] && !message[TO_FIELD].to_s.split(",").include?(MGQ_MpOverworldSync::Me.id.to_s)
-    return nil if MGQ_MpOverworldSync::Peers.on_this_map?(peer) || Scope.story_map?(message["mmap"].to_i)
-
-    "it is for map #{message['mmap']}, from a player on map #{peer.state['map']}, and the player is on map #{$game_map.map_id}"
+    MGQ_MpOverworldSync.route(MAP_PREFIX + field, "map") { |peer, message| handler.call(peer, message.merge(field => message[MAP_PREFIX + field])) }
   end
 
   # Sends a message through the map's gate to one player, or to everyone on the player's map.

@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-24: Checked the pages of other mods with their tabs, controls, buttons and mouse
 #      Paulinchen  2026-10-23: Answered the catch-up through the bridge from the golden cases and found the part as the DLL does
+#                            - Played the party's view and checked the party's actions asked of the DLL
 #                            - Answered the catch-up through the bridge from the golden cases
 #      Paulinchen  2026-10-13: Checked that the Unlocks grid leaves out characters the catch-up does not count
 #      Paulinchen  2026-10-12: Checked the World, Quests and Unlocks pages with a head, a list and a pane
@@ -274,8 +275,10 @@ overview.on_map
 check("confirm opens the player's menu", overview.view[:menu].map(&:text), ["Invite to party", "Duel"])
 check("duels are greyed without PvP battles", overview.view[:menu][1].run, nil)
 $buttons << :C
+$party_answer = party_view("me-p", [], -1, "inviting" => true, "invite_ends" => 900, "targets" => ["friend"])
 overview.on_map
-check("inviting names the player, wherever they are", [MGQ_MpCoop::Party.targets, overview.instance_variable_get(:@menu)], [["friend"], nil])
+$party_answer = nil
+check("inviting names the player, wherever they are", [$party_calls.last, MGQ_MpCoop::Party.targets, overview.instance_variable_get(:@menu)], [["invite", "friend"], ["friend"], nil])
 $buttons << :C
 overview.on_map
 check("the menu then says the invite stands", overview.view[:menu][0].text, "Invited to party")
@@ -317,6 +320,7 @@ MGQ_MpActions.offers.concat(registered)
 
 # An invite from a player elsewhere shows on their row and is accepted from the overview.
 $inbox << entry("message", 2, told(friend.merge("party" => "friend-p", "invite" => 1, "invite_to" => "me")))
+take_party("me-p", [], -1, "inviting" => true, "invite_ends" => 900, "targets" => ["friend"], "inviters" => [2], "parties" => { "me-p" => [1, -1], "friend-p" => [1, 2] })
 MGQ_MpOverworldSync.tick
 check("an invite naming the player is accepted from the overview", MGQ_MpCoop::Offers.peer_option(MGQ_MpOverworldSync::Peers.at(2)).text, "Accept party invite")
 check("and shows on the inviter's row in place of the story", overview.row_of(MGQ_MpOverworldSync::Peers.at(2)).call[0], "Invites you to a party")
@@ -337,8 +341,10 @@ check("a click opens their menu", overview.view[:menu].map(&:text), ["Accept par
 left, top = Sprite_MpWorldOverview.menu_origin(overview.view)
 $mouse = [box.x + left + 10, box.y + top + 5]
 $click = true
+$party_answer = party_view("friend-p", [MGQ_MpOverworldSync::Peers.at(2)], 2, "admitted_me" => false)
 overview.on_map
-check("a click on a choice takes it", MGQ_MpCoop::Party.id, "friend-p")
+$party_answer = nil
+check("a click on a choice takes it", [$party_calls.last, MGQ_MpCoop::Party.id], [["join", 2], "friend-p"])
 check("in a party the player's own row is green", overview.rows.first.member, true)
 check("the party box lists the party, its leader first, with levels", overview.party_rows.map { |row| [row.name, row.level, row.badge[1]] },
       [["Friend", "Lv 30", true], ["Me", "Lv 55", false]])
@@ -410,9 +416,9 @@ friend_peer = MGQ_MpOverworldSync::Peers.at(2)
 member_peer = MGQ_MpOverworldSync::Peers.at(3)
 check("a member may teleport to their leader", MGQ_MpActions.peer_options(friend_peer).map(&:text), ["Teleport to Friend", "Duel"])
 check("and may not invite", [MGQ_MpCoop::Offers.peer_option(member_peer).run, MGQ_MpCoop::Offers.peer_option(member_peer).refusal], [nil, "Only the party's leader invites."])
-MGQ_MpCoop::Party.reset
-MGQ_MpCoop::Party.invite("zz-member")
-$inbox << entry("message", 3, told(other.merge("party" => MGQ_MpCoop::Party.id, "id" => "zz-member")))
+$inbox << entry("message", 3, told(other.merge("party" => "me-p2", "id" => "zz-member")))
+# Friend's invite from afar still names the player, who is outside Friend's party now.
+take_party("me-p2", [member_peer], -1, "inviters" => [2])
 MGQ_MpOverworldSync.tick
 check("the leader may remove a member", MGQ_MpCoop::Offers.peer_option(member_peer).text, "Remove from party")
 
@@ -1030,6 +1036,7 @@ check("the hint names Left and Right, picking, reading on and the numpad's 0", s
 gold_marks = lambda { sprite.bitmap.drawn.count { |kind, args| kind == :fill && args[4].equal?(style::GOLD) } }
 check("the invite from afar still waits on the Players page, which marks its tab in gold while the World page shows", [overview.view[:calls], gold_marks.call], [true, 1])
 $inbox << entry("message", 2, told(friend.merge("party" => "friend-p", "invite" => 0)))
+take_party("me-p2", [member_peer])
 MGQ_MpOverworldSync.tick
 sprite.draw(overview.view)
 check("without a call the tab has no mark", [overview.view[:calls], gold_marks.call], [false, 0])
@@ -1225,8 +1232,10 @@ $buttons << :C
 overview.on_map
 $frame += 1
 $pressed = MGQ_MpHotkeys.code(:accept)
+$party_answer = party_view(nil)
 2.times { confirm.tick }
-check("yes leaves it", [confirm.open?, MGQ_MpCoop::Party.id], [false, nil])
+$party_answer = nil
+check("yes leaves it through the DLL", [confirm.open?, $party_calls.last, MGQ_MpCoop::Party.id], [false, ["leave", nil], nil])
 overview.close
 leave_option.run.call
 notices = MGQ_MpOverworldSync::Status.lines.size

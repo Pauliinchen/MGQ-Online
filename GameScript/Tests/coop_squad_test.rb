@@ -2,6 +2,7 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Set the parties up through the party's view the DLL posts
 #      Paulinchen  2026-10-13: Checked a Raid World's squad rules, their changes and Luka leaving the team
 #                            - Checked that Luka is never swapped to the front and Give Up waits for him to lead
 #      Paulinchen  2026-10-12: Stood in for the settings' group of the Mod Config
@@ -208,7 +209,7 @@ module MGQ_MpOverworldSync
   SQUAD_FIELD = "squad_value"
   def self.in_world?; $open; end
   # Keeps each route's block by its field.
-  def self.route(field, &block); (@routes ||= {})[field] = block; end
+  def self.route(field, _gate = nil, &block); (@routes ||= {})[field] = block; end
   def self.routes; @routes; end
   def self.on_tick(&block); @ticks << block; end
   def self.state_fields(&block); @fields << block; end
@@ -227,12 +228,18 @@ module MGQ_MpOverworldSync
     Peer = Struct.new(:seat, :state, :ghost, :member)
     @all = []
     def self.all; @all; end
+    # Finds a player by their seat.
+    def self.at(seat); @all.find { |peer| peer.seat == seat }; end
+    # Takes whom the party's view counts as members.
+    def self.take_members(seats); @all.each { |peer| peer.member = seats.include?(peer.seat) }; end
   end
   # Stands in for the own player's id and name.
   module Me; def self.identity; ["me-id-000", "Me"]; end; def self.id; identity[0]; end; end
   # Stands in for the status line, keeping the last notice in $notice.
   module Status; def self.notice(text); $notice = text; end; end
 end
+# The DLL's world room, whose party view sets the parties up here.
+require_relative "world_room_support"
 
 # Stands in for the action wheel's registries.
 module MGQ_MpActions
@@ -278,10 +285,9 @@ check("nobody is cut", squad.place_of(actors[7]), nil)
 check("no trail is told", squad.state_fields["trail"], "")
 
 # A party of two, the player leading.
-party.invite
-friend = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "friend-id", "name" => "Friend", "party" => party.id }, nil, true)
+friend = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "friend-id", "name" => "Friend", "party" => "me-id-0p1" }, nil, true)
 MGQ_MpOverworldSync::Peers.all << friend
-party.admitted << "friend-id"
+take_party("me-id-0p1", [friend])
 check("two players: two in front and two behind", squad.own_share, [2, 2])
 check("places in the squad", actors.first(6).map { |a| squad.place_of(a) }, [:front, :front, :bench, :bench, :cut, :cut])
 $game_player.refreshed = 0
@@ -302,7 +308,7 @@ $game_system.conf[squad::FOLLOWERS] = squad::ACTIVE_FRONTLINE
 # The player joins the friend's party instead: the friend leads.
 friend.state["party"] = "friend-p"
 friend.state["invite"] = "1"
-party.join(friend)
+take_party("friend-p", [friend], 2)
 friend.state["follow"] = "1"
 check("a member takes the leader's choice", squad.mode, squad::LEADERS_ONLY)
 check("and tells it on", squad.state_fields["follow"], 1)
@@ -310,7 +316,7 @@ check("a member may not choose", NWConst::Config::MOD_CONTENTS.find { |e| e[:key
 friend.state["follow"] = "0"
 other = MGQ_MpOverworldSync::Peers::Peer.new(3, { "id" => "a-other", "name" => "Other", "party" => "friend-p" }, nil, true)
 MGQ_MpOverworldSync::Peers.all << other
-party.admitted << "a-other"
+take_party("friend-p", [friend, other], 2)
 check("of three, a member who does not lead has one and one", squad.own_share, [1, 1])
 MGQ_MpOverworldSync.tick(true)
 check("and so walks alone", $game_player.followers.map { |f| f.visible? }, [false, false, false])
@@ -335,7 +341,7 @@ check("with a line above the first cut row only", edit.contents.fills.map { |f| 
 check("three players are no full party", party.full?, false)
 fourth = MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "z-fourth", "name" => "Fourth", "party" => "friend-p" }, nil, true)
 MGQ_MpOverworldSync::Peers.all << fourth
-party.admitted << "z-fourth"
+take_party("friend-p", [friend, other, fourth], 2)
 check("four are", party.full?, true)
 check("so is another party of four seen from outside", party.full?("friend-p"), true)
 
@@ -391,7 +397,7 @@ edit = Foo::PTEdit::Window_PartyMember.new(actors.first(4).map(&:id))
 (0...4).each { |row| edit.draw_item(row) }
 check("so does the party edit screen", [edit.rows.map { |color, _| color }, edit.contents.fills.map { |f| f[1] }],
       [[[255, 255, 255], [132, 170, 255], [132, 170, 255], [168, 168, 168]], [30]])
-party.leave
+take_party(nil)
 check("outside a party the same", [MGQ_MpCoop.in_party?, squad.own_share, squad.place_of(actors[3])], [false, [1, 2], :cut])
 check("and a battle of two players brings one and two each, as alone", [squad.battle_share(0, 2, 8), squad.battle_share(1, 2, 8), squad.share(0, 2, 8)], [[1, 2], [1, 2], [2, 2]])
 

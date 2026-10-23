@@ -2,6 +2,7 @@
 #  duel_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Set up the parties through the party's view, as the DLL keeps them
 #      Paulinchen  2026-10-23: Started the stand-in battle without the deleted mirror match flag
 #                            - Stood in without the deleted PvP switch
 #      Paulinchen  2026-10-12: Checked an odd party_member_max and a team duel start that does not read
@@ -256,8 +257,8 @@ $inbox << entry("seat", 0) << entry("in", 2) << entry("message", 2, told(friend)
 pal = { "id" => "pal", "name" => "Pal", "map" => 5, "x" => 30, "y" => 30, "d" => 2, "scene" => "map" }
 $inbox << entry("message", 3, told(pal))
 MGQ_MpOverworldSync.tick
-MGQ_MpCoop::Party.invite("pal")
-$inbox << entry("message", 3, told(pal.merge("party" => MGQ_MpCoop::Party.id)))
+take_party("me-p", [MGQ_MpOverworldSync::Peers.at(3)])
+$inbox << entry("message", 3, told(pal.merge("party" => "me-p")))
 MGQ_MpOverworldSync.tick
 check("the player leads a party of two", MGQ_MpCoop.leads?(:me), true)
 duel.invite
@@ -410,10 +411,9 @@ frame
 check("a call-off before the start drops the duel", [$joined.size - joined, MGQ_MpOverworldSync::Status.lines.last], [0, "Friend called the duel off."])
 
 # A party's member is called through their leader, never by the challenger alone.
-MGQ_MpCoop::Party.reset
 lead = MGQ_MpOverworldSync::Peers.at(2)
 lead.state.merge!("party" => "friend", "invite" => "1")
-MGQ_MpCoop::Party.join(lead)
+take_party("friend", [lead], 2)
 $sent.clear
 $inbox << entry("message", 3, "duel=team\nbid=g20\n\n")
 MGQ_MpOverworldSync.tick

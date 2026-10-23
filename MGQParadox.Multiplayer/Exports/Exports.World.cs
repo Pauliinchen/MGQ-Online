@@ -2,7 +2,8 @@
 //  Exports.World.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Dropped mp_new_id and mp_set_player, since the DLL keeps Player.ini
+//      Paulinchen  2026-10-23: Dropped mp_world_say, mp_world_receive and mp_world_status, since the world room goes through the bridge
+//                            - Dropped mp_new_id and mp_set_player, since the DLL keeps Player.ini
 //      Paulinchen  2026-10-08: Answered mp_world_say with 2 for a dropped chat line
 //      Paulinchen  2026-10-07: Added mp_world_say
 //      Paulinchen  2026-10-06: Wrote hexadecimal in lowercase at once
@@ -126,26 +127,6 @@ internal static unsafe partial class Exports
     }
 
     /// <summary>
-    /// Hands out how the world connection stands: <c>state</c>, and whichever of <c>seat</c>, <c>others</c> and <c>error</c> apply.
-    /// </summary>
-    /// <param name="buffer">Receives the state, UTF-8 and null-terminated.</param>
-    /// <param name="size">The size of the buffer in bytes.</param>
-    /// <returns>The length of the state, or its length negated when the buffer is too small, 0 when it failed.</returns>
-    [UnmanagedCallersOnly(EntryPoint = "mp_world_status", CallConvs = [typeof(CallConvStdcall)])]
-    public static int WorldStatus(byte* buffer, int size)
-    {
-        try
-        {
-            return Copy(WorldSession.Current.Describe(), buffer, size);
-        }
-        catch (Exception ex)
-        {
-            Log.Write($"mp_world_status failed: {ex}");
-            return 0;
-        }
-    }
-
-    /// <summary>
     /// Sends a message to one game of the world or to all others. Returns at once.
     /// </summary>
     /// <param name="target">The seat, or -1 for every other game.</param>
@@ -161,58 +142,6 @@ internal static unsafe partial class Exports
         catch (Exception ex)
         {
             Log.Write($"mp_world_send failed: {ex}");
-            return 0;
-        }
-    }
-
-    /// <summary>
-    /// Mirrors a line of the world's chat to the relay, which keeps it for the world's admins and
-    /// passes it to no other game. Returns at once.
-    /// </summary>
-    /// <param name="text">The line, UTF-8 and null-terminated.</param>
-    /// <returns>1 when it goes out, 0 without a seat or for an empty line, 2 when it came faster than the relay keeps lines and was dropped.</returns>
-    [UnmanagedCallersOnly(EntryPoint = "mp_world_say", CallConvs = [typeof(CallConvStdcall)])]
-    public static int WorldSay(byte* text)
-    {
-        try
-        {
-            return (int)WorldSession.Current.Say(Text(text));
-        }
-        catch (Exception ex)
-        {
-            Log.Write($"mp_world_say failed: {ex}");
-            return 0;
-        }
-    }
-
-    /// <summary>
-    /// Hands out the oldest entry of the world's inbox and takes it, unless the buffer is too small for it.
-    /// </summary>
-    /// <param name="buffer">Receives the entry, UTF-8 and null-terminated: a <c>kind</c> header (seat, in, out, message, chat, story, boss, difficulty, squad, raid_bosses or mods_rule) and the headers of that kind, then a message's or the chat line's text.</param>
-    /// <param name="size">The size of the buffer in bytes.</param>
-    /// <returns>The entry's length, or its length negated when the buffer is too small, 0 while none waits.</returns>
-    [UnmanagedCallersOnly(EntryPoint = "mp_world_receive", CallConvs = [typeof(CallConvStdcall)])]
-    public static int WorldReceive(byte* buffer, int size)
-    {
-        try
-        {
-            if (WorldSession.Current.PeekMessage() is not { } entry)
-            {
-                return 0;
-            }
-
-            var length = Copy(entry, buffer, size);
-
-            if (length >= 0)
-            {
-                WorldSession.Current.TakeMessage(entry);
-            }
-
-            return length;
-        }
-        catch (Exception ex)
-        {
-            Log.Write($"mp_world_receive failed: {ex}");
             return 0;
         }
     }

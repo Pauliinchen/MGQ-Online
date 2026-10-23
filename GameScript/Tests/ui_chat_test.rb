@@ -2,7 +2,8 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Read the lines sent here
+#      Paulinchen  2026-10-23: Read the lines sent through the DLL's chat.send, and the names the DLL numbers
+#                            - Read the lines sent here
 #                            - Checked that the live map behind a menu shows no chat log
 #      Paulinchen  2026-10-22: Checked the chat box and its log in a scene of menus such as a shop
 #                            - Checked that a mod loaded later keeps its hook in a shop
@@ -133,11 +134,11 @@ MGQ_MpOverworldSync.tick
 check("one that arrives while the box is open plays nothing", $sounds, [])
 chat.stop_typing
 chat.choose(:map)
-$sent.clear
+$chats.clear
 send_line("/r back at you")
 check("/r whispers to them and chooses the whisper chat to them for the lines after it",
-      [$sent.map(&:first), $sent.last[1].include?("whisper=back at you"), chat.channel, chat.whisper_to, chat.log_lines.last],
-      [[friend_seat], true, :whisper, "Friend", "[To Friend] Me: back at you"])
+      [$chats.map { |request| request.values_at("channel", "seat", "text") }, chat.channel, chat.whisper_to, chat.log_lines.last],
+      [[["whisper", friend_seat, "back at you"]], :whisper, "Friend", "[To Friend] Me: back at you"])
 chat.choose(:map)
 send_line("/r")
 check("/r alone chooses the whisper chat to them", [chat.channel, chat.whisper_to, chat.typing?], [:whisper, "Friend", false])
@@ -151,20 +152,23 @@ $inbox << entry("out", friend_seat)
 MGQ_MpOverworldSync.tick
 send_line("/r")
 check("/r alone once they left is refused and leaves the chat as it was", [MGQ_MpOverworldSync::Status.lines.last, chat.channel], ["Friend is not in the world.", :map])
-$sent.clear
+$chats.clear
 send_line("/r still there?")
-check("/r with a line once they left is refused too, nothing sent", [MGQ_MpOverworldSync::Status.lines.last, $sent, chat.channel], ["Friend is not in the world.", [], :map])
+check("/r with a line once they left is refused too, nothing sent", [MGQ_MpOverworldSync::Status.lines.last, $chats, chat.channel], ["Friend is not in the world.", [], :map])
 newcomer_seat = 3
 $inbox << entry("message", newcomer_seat, told(friend.merge("id" => "other")))
 MGQ_MpOverworldSync.tick
 send_line("/r secret")
-check("/r never goes to another player who took the name of the one who whispered", [MGQ_MpOverworldSync::Status.lines.last, $sent, chat.channel],
+check("/r never goes to another player who took the name of the one who whispered", [MGQ_MpOverworldSync::Status.lines.last, $chats, chat.channel],
       ["Friend is not in the world.", [], :map])
 $inbox << entry("message", friend_seat, told(friend))
+# The DLL numbers a name two players share by their ids.
+MGQ_MpOverworldSync::Peers.take_labels(friend_seat => "Friend", newcomer_seat => "Friend (2)")
 $inbox << entry("message", newcomer_seat, "whisper=from the second\nname=Friend\n\n")
 MGQ_MpOverworldSync.tick
 check("a whisper from the second player of a name is theirs to answer", chat.reply_to, "Friend (2)")
 $inbox << entry("out", friend_seat)
+MGQ_MpOverworldSync::Peers.take_labels(newcomer_seat => "Friend")
 MGQ_MpOverworldSync.tick
 send_line("/r")
 check("/r names them as the whisper list does now, not as the log showed them", [chat.channel, chat.whisper_to], [:whisper, "Friend"])
@@ -356,17 +360,17 @@ $inbox << entry("message", friend_seat, told(friend))
 MGQ_MpOverworldSync.tick
 
 # The chats' commands, tags and colors, and the Whisper tab coming back.
-$sent.clear
+$chats.clear
 chat.choose(:global)
 send_line("/m over here")
-check("/m chooses the map chat, whose line is tagged and goes out marked say, as released games read it",
-      [chat.channel, chat.log_lines.last, $sent.last[1].include?("ch=say"), $sent.last[1].include?("map=5")], [:map, "[Map] Me: over here", true, true])
+check("/m chooses the map chat, whose line is tagged and goes out for the player's map",
+      [chat.channel, chat.log_lines.last, $chats.last.values_at("channel", "map")], [:map, "[Map] Me: over here", ["map", 5]])
 send_line("/map still here")
 check("as does /map", [chat.channel, chat.log_lines.last], [:map, "[Map] Me: still here"])
 chat.choose(:global)
-$sent.clear
+$chats.clear
 send_line("/s hi")
-check("/s is no command any more, just text in the chat chosen", [chat.channel, chat.log_lines.last, $sent.last[1].include?("ch=")], [:global, "Me: /s hi", false])
+check("/s is no command any more, just text in the chat chosen", [chat.channel, chat.log_lines.last, $chats.last["channel"]], [:global, "Me: /s hi", "global"])
 send_line("/say hi")
 check("nor is /say", [chat.channel, chat.log_lines.last], [:global, "Me: /say hi"])
 $inbox << entry("message", friend_seat, "chat=hello world\nname=Friend\n\n")

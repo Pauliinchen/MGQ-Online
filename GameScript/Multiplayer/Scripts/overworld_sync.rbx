@@ -2,7 +2,11 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Kept a player away whose seat another player took, and told each change of a player's presence
+#      Paulinchen  2026-10-23: Left the other players, the inbox, the player's state, ping and status to the DLL, keeping a mirror of the players
+#                            - Handed the DLL the player's frame and the routes with their gates
+#                            - Asked the DLL when the player entered a map they just arrived on
+#                            - Dropped say, since the chat sends through the DLL
+#                            - Kept a player away whose seat another player took, and told each change of a player's presence
 #      Paulinchen  2026-10-13: Handed the relay's raid bosses push to the script registered for it
 #                            - Handed the relay's squad push to the script registered for it
 #      Paulinchen  2026-10-12: Announced only the players who join after the player
@@ -38,13 +42,13 @@
 #
 #----------------------------------------------------------------
 
-# The open world's messages: each game tells the others where its player stands, how they look and
-# whether they are on the map, in a battle, a menu or an event, takes what the others told, and
-# hands every other message to the script that registered for the field that marks it. What the
-# player sees of it is overworld.rbx's. Scripts that load after this one take part through its
-# registry: route for their messages, state_fields and busy_scene for the player's state, on_tick,
-# on_observe, on_leave and on_presence to follow the others, and label_line for the line above a
-# ghost's name.
+# The open world's messages, as the scripts take part in them. The DLL keeps the world room (the
+# other players, their settle and away windows, the player's state told to them, the inbox, the
+# ping, the party and the gates; MGQOnline.Game's WorldRoom): this script hands it what the player
+# does each frame and keeps a mirror of the other players its events tell. Scripts that load after
+# this one take part through its registry: route for their messages, state_fields and busy_scene
+# for the player's state, on_tick, on_observe, on_leave and on_presence to follow the others, and
+# label_line for the line above a ghost's name. What the player sees of it is overworld.rbx's.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpOverworldSync
@@ -61,22 +65,9 @@ module MGQ_MpOverworldSync
   # Frames a notice stays at the bottom left, four seconds at 60 frames per second.
   NOTICE_FRAMES = 240
 
-  # Frames between two looks at the connection.
-  STATUS_FRAMES = 30
-
-  # Frames a player whose connection dropped is kept, fifteen seconds, since the relay ends every
-  # connection after a while and the games connect again at once.
+  # Frames a player whose connection dropped is kept, fifteen seconds, as the DLL keeps them
+  # (WorldRoom.RejoinFrames); trade.rbx waits for a partner as long.
   REJOIN_FRAMES = 900
-
-  # Bytes the DLL may write an inbox entry into at first.
-  ENTRY_SIZE = 4096
-
-  # Milliseconds a ping must differ from the one the others know before they are told again.
-  PING_STEP = 20
-
-  # Share of the ping the others know that a new ping must differ by, too, before they are told
-  # again.
-  PING_SHARE = 0.25
 
   # The field that marks a message as a player's state, which no route may be named like.
   STATE_FIELD = "state"
@@ -108,8 +99,17 @@ module MGQ_MpOverworldSync
   # registers its route for.
   MODS_RULE_FIELD = "mods_rule_value"
 
+  # The bridge topic the player's frame goes to the DLL by, see before_frame.
+  ME_TOPIC = "world.me"
+
+  # The bridge topic the routes go to the DLL by, see tell_routes.
+  ROUTES_TOPIC = "world.routes"
+
   # The scripts' message handlers, by the field that marks their messages, see route.
   @routes = {}
+
+  # The gate each route's messages pass in the DLL, by field: "party", "map" or nil for none.
+  @gates = {}
 
   # The blocks the scripts registered, by kind: :tick, :state_fields, :busy_scene, :observe, :leave,
   # :presence and :label_line.
@@ -119,10 +119,6 @@ module MGQ_MpOverworldSync
 
   # What starts this script's lines in the log.
   LOG_TAG = "overworld sync"
-
-  # Fields of a player's state whose changes the log follows; the others, such as where they
-  # stand, change with every step.
-  LOGGED_FIELDS = %w[name map scene hidden party]
 
   # Names a player for the log: their name and seat.
   #
@@ -135,21 +131,6 @@ module MGQ_MpOverworldSync
     "#{peer.state['name']} (seat #{peer.seat})"
   rescue
     "?"
-  end
-
-  # Writes what changed between two states of a player, for the log.
-  #
-  # @param before [Hash, nil] The earlier state.
-  # @param after [Hash] The later state.
-  # @return [String] Each changed field of LOGGED_FIELDS as "map 5 -> 7", empty when none changed.
-  def self.changes(before, after)
-    return "" unless before
-
-    LOGGED_FIELDS.reject { |field| before[field].to_s == after[field].to_s }.map do |field|
-      "#{field} #{before[field].to_s.empty? ? '-' : before[field]} -> #{after[field].to_s.empty? ? '-' : after[field]}"
-    end.join(", ")
-  rescue
-    ""
   end
 
   # Reports whether a world is open.
@@ -206,16 +187,6 @@ module MGQ_MpOverworldSync
     Link.send_to(seat, Me.encode(fields) + body)
   end
 
-  # Mirrors a line of the world's chat to the relay, which keeps the last lines of every world for
-  # its admins and passes it to nobody; the line itself goes to the others through tell.
-  #
-  # @param text [String] The line.
-  # @return [Integer] 1 when the relay got it, 0 when it did not, 2 when the DLL dropped it for
-  #   coming too fast.
-  def self.say(text)
-    Link.say(text)
-  end
-
   # The fields the Discord mod publishes about the open world, which Discord shows as its name and
   # its players, such as "(3 of 8)", and whose code its invites carry.
   #
@@ -230,14 +201,20 @@ module MGQ_MpOverworldSync
     fields
   end
 
-  # Hands every message marked by a field to a script. The first field registered wins when a
-  # message carries several.
+  # Hands every message marked by a field to a script, once it passed the field's gate in the DLL.
+  # The first field registered wins when a message carries several.
   #
   # @param field [String] The field, such as "chat".
-  # @yieldparam peer [Peers::Peer, nil] Who sent it, nil before their first state.
-  # @yieldparam message [Hash] The message's fields, and its body under :payload.
-  def self.route(field, &handler)
+  # @param gate [String, nil] "party" for the party's gate (MGQ_MpCoop.route), "map" for the map's
+  #   (MGQ_MpCoop.route_map), nil for none.
+  # @yieldparam peer [Peers::Peer, nil] Who sent it, nil before their first state and for the
+  #   relay's push.
+  # @yieldparam message [Hash] The message's fields, its body under :payload, and :relay for the
+  #   relay's push.
+  def self.route(field, gate = nil, &handler)
     @routes[field] = handler
+    @gates[field] = gate
+    @routes_told = false
   end
 
   # Lets a script follow the frames. Called every frame in every scene.
@@ -317,25 +294,77 @@ module MGQ_MpOverworldSync
     end
   end
 
-  # Takes what the others sent and tells them what changed here. Called every frame in every scene.
+  # Hands the DLL what it needs of the player this frame, once it changed: whether a world is open,
+  # the player's state, the world's type and the map the story takes the player to. Called before
+  # every frame's Graphics.update, so the frame's batch carries it to the DLL before its drain.
+  def self.before_frame
+    return unless MGQ_Multiplayer::Bridge.has?(ME_TOPIC)
+
+    tell_routes unless @routes_told
+    in_world = in_world?
+    state = in_world ? Me.current : nil
+    # As text, as the message carries it, so no script's Float or Symbol stops the frame's batch.
+    state = Hash[state.map { |key, value| [key.to_s, value.to_s] }] if state
+    frame = { "in_world" => in_world, "state" => state, "raid" => raid?, "story_map" => in_world ? story_map : nil }
+    return if frame == @staged
+
+    @staged = frame
+    MGQ_Multiplayer::Bridge.stage(ME_TOPIC, frame)
+  rescue => e
+    log_once(:before_frame, "handing the DLL the player's frame failed: #{e.class}: #{e.message}")
+  end
+
+  # Hands the DLL every route with its gate, in the order the scripts registered them.
+  def self.tell_routes
+    @routes_told = true
+    MGQ_Multiplayer::Bridge.stage(ROUTES_TOPIC, @routes.keys.map { |field| [field, @gates[field]] })
+  end
+
+  # Reports whether a Raid World is open, through world.rbx.
+  #
+  # @return [Boolean] Whether one is.
+  def self.raid?
+    defined?(MGQ_MpWorld) && MGQ_MpWorld.respond_to?(:raid?) && MGQ_MpWorld.raid? ? true : false
+  rescue
+    false
+  end
+
+  # Finds the map the story takes the player to besides their own, see MGQ_MpCoopGather.follow_taken.
+  #
+  # @return [Integer, nil] The map, nil for none.
+  def self.story_map
+    return nil unless defined?(MGQ_MpCoopGather) && MGQ_MpCoopGather.respond_to?(:follow_taken)
+
+    follow = MGQ_MpCoopGather.follow_taken
+    follow ? follow[:place][0].to_i : nil
+  end
+
+  # Follows the frames: forgets the mirror once no world is open, lets the scripts follow, and lets
+  # notices run out. Called every frame in every scene, after the bridge's drain.
   def self.tick
     unless in_world?
       Peers.clear unless Peers.empty?
-      Peers.left_world
       Me.forget_seat
-      Me.reset_map_since
-      Status.look_closed
+      Status.forget_problem
       ask(:tick, false)
       return
     end
 
-    Inbox.take_all
-    Peers.tick
     ask(:tick, true)
-    Me.tell_changes
     Status.look
   rescue => e
     log_once(:tick, "tick failed: #{e.class}: #{e.message}")
+  end
+
+  # Hands a message the DLL routed to the script registered for its field.
+  #
+  # @param event [Hash] "field", "seat" (nil for the relay), "fields", "body" and "relay".
+  def self.take_route(event)
+    message = event["fields"]
+    message[:payload] = event["body"].to_s
+    # A Symbol key, which no player's message carries, since those are parsed into strings.
+    message[:relay] = true if event["relay"]
+    hand_over(event["seat"] && Peers.at(event["seat"]), message)
   end
 
   # Hands a message to the script registered for its field.
@@ -346,7 +375,7 @@ module MGQ_MpOverworldSync
   def self.hand_over(peer, message)
     field, handler = @routes.find { |key, _| message[key] }
     unless field
-      fields = message.keys.reject { |key| key == :payload }.first(4).join(", ")
+      fields = message.keys.reject { |key| key.is_a?(Symbol) }.first(4).join(", ")
       log_once([:unrouted, fields], "dropped a message from #{who(peer)} that no script takes (fields #{fields})")
       return false
     end
@@ -358,20 +387,8 @@ module MGQ_MpOverworldSync
     true
   end
 
-  # Patch/Multiplayer/Multiplayer.dll's world room: the inbox and sending.
+  # Patch/Multiplayer/Multiplayer.dll's world room: sending.
   module Link
-    # Hands out the oldest inbox entry.
-    #
-    # @return [Hash, nil] "kind" ("seat", "in", "out", "message", "chat", "story", "boss",
-    #   "difficulty", "squad", "raid_bosses" or "mods_rule"), "seat", "others", "name" for a chat
-    #   entry, "rev" for a story entry, "key", "left", "max", "defeated" and "by" for a boss entry,
-    #   "value" for a difficulty, squad, raid bosses or mods rule entry, "mods" for a mods rule entry
-    #   that names any, and the message's or the chat line's text under :payload; nil while none waits.
-    def self.next_entry
-      text = MGQ_Multiplayer::Link.read('mp_world_receive', ENTRY_SIZE)
-      text.empty? ? nil : MGQ_Multiplayer::Link.parse(text)
-    end
-
     # Sends a message to one seat or to every other game.
     #
     # @param target [Integer] The seat, -1 for everyone.
@@ -380,63 +397,16 @@ module MGQ_MpOverworldSync
     def self.send_to(target, text)
       MGQ_Multiplayer::Link.function('mp_world_send').call(target, text + "\0") == 1
     end
-
-    # Mirrors a line of the world's chat to the relay, which keeps it for the world's admins.
-    #
-    # @param text [String] The line.
-    # @return [Integer] 1 when the relay got it, 0 when it did not, 2 when the DLL dropped it for
-    #   coming too fast.
-    def self.say(text)
-      MGQ_Multiplayer::Link.function('mp_world_say').call(text + "\0")
-    end
-
-    # Reads how the connection stands.
-    #
-    # @return [Hash] "state" ("idle", "connecting", "open", "reconnecting" or "failed"), "seat",
-    #   "others" and "error".
-    def self.status
-      text = MGQ_Multiplayer::Link.read('mp_world_status', 1024)
-      text.empty? ? { "state" => "idle" } : MGQ_Multiplayer::Link.parse(text)
-    end
   end
 
-  # What this game tells the others about its player.
+  # What this game tells the others about its player; the DLL adds their id and name, when they
+  # entered their map, the ping and the party.
   module Me
-    # Tells every other game what changed, if anything did.
-    def self.tell_changes
-      state = current
-      return if state.nil? || state == @told
+    # The bridge topic that forgets when the player entered their map.
+    RESET_SINCE_TOPIC = "world.reset_since"
 
-      sent = Link.send_to(-1, encode(state))
-      log_sending(sent)
-      return unless sent
-
-      changed = @told ? MGQ_MpOverworldSync.changes(@told, state) : "the first state, on map #{state['map']} as #{state['name']}"
-      MGQ_MpOverworldSync.log("told the others: #{changed}") unless changed.empty?
-      @told = state
-    end
-
-    # Logs when telling the others starts or stops failing, once each time.
-    #
-    # @param sent [Boolean] Whether the state went out.
-    def self.log_sending(sent)
-      return if sent == !@failing
-
-      @failing = !sent
-      MGQ_MpOverworldSync.log(sent ? "telling the others works again" : "telling the others failed, trying again every frame")
-    end
-
-    # Tells one game everything, as a newcomer needs.
-    #
-    # @param seat [Integer] The newcomer's seat, -1 for everyone, which also reads the player's
-    #   id and name again, since a new connection may follow a new name.
-    def self.tell_all(seat)
-      @identity = nil if seat < 0
-      state = current
-      sent = state ? Link.send_to(seat, encode(state)) : false
-      MGQ_MpOverworldSync.log("told #{seat < 0 ? 'everyone' : "seat #{seat}"} everything#{state ? " (map #{state['map']})" : ', but the player is on no map yet'}#{sent || !state ? '' : ', which failed'}")
-      @told = state if seat < 0
-    end
+    # The bridge topic that tells when the player entered a map.
+    SINCE_TOPIC = "world.since"
 
     # Reads what the others need to know about the player.
     #
@@ -448,25 +418,21 @@ module MGQ_MpOverworldSync
       looks = $game_player.vehicle || $game_player
       state = {
         STATE_FIELD => 1,
-        "id" => identity[0],
-        "name" => identity[1],
         "sprite" => looks.character_name.to_s,
         "index" => looks.character_index,
         "map" => $game_map.map_id,
-        "since" => map_since,
         "x" => $game_player.x,
         "y" => $game_player.y,
         "d" => $game_player.direction,
         "speed" => $game_player.real_move_speed,
         "hidden" => $game_player.transparent ? 1 : 0,
         "scene" => scene,
-        "ping" => Ping.told,
       }
       MGQ_MpOverworldSync.ask(:state_fields).compact.each { |fields| state.merge!(fields) }
       state
     end
 
-    # The player's id and name, read once per connection, since the state is compared every frame.
+    # The player's id and name, read once per connection.
     #
     # @return [Array<String>] The id and the name.
     def self.identity
@@ -480,21 +446,22 @@ module MGQ_MpOverworldSync
       identity[0].to_s
     end
 
-    # The seat of the player's game in the world's room, as the DLL last told it: the inbox tells
-    # it on every connection and Status every STATUS_FRAMES; the DLL is asked only while none was
-    # told.
+    # The seat of the player's game in the world's room, as the DLL last told it.
     #
     # @return [Integer] The seat, -1 while the game holds none.
     def self.seat
-      @seat || take_seat(Link.status["seat"])
+      @seat || -1
     end
 
-    # Keeps the seat the DLL told.
+    # Keeps the seat the DLL told, reading the player's id and name again on a new one, since a new
+    # connection may follow a new name.
     #
     # @param seat [String, Integer, nil] The seat, empty or nil while the game holds none.
     # @return [Integer] The seat, -1 while the game holds none.
     def self.take_seat(seat)
-      @seat = seat.to_s.empty? ? nil : seat.to_i
+      taken = seat.to_s.empty? ? nil : seat.to_i
+      @identity = nil if taken && taken != @seat
+      @seat = taken
       @seat || -1
     end
 
@@ -503,23 +470,34 @@ module MGQ_MpOverworldSync
       @seat = nil
     end
 
+    # Keeps when the player entered their map, as the DLL told it.
+    #
+    # @param map [Integer] The map.
+    # @param since [Integer, nil] Milliseconds since 1970, nil before the player entered one.
+    def self.take_since(map, since)
+      @since_map = since ? map : nil
+      @since = since
+    end
+
     # Forgets when the player entered their map, so a returning player or a loaded save enters it
     # anew. A reconnect keeps it.
     def self.reset_map_since
       @since_map = nil
       @since = nil
+      MGQ_Multiplayer::Bridge.stage(RESET_SINCE_TOPIC)
     end
 
     # Tells when the player entered the map they are on, which decides who of a party on a map is
-    # its Map Owner.
+    # its Map Owner; on a map the DLL has not seen them on yet, it stamps the arrival now.
     #
-    # @return [Integer] Milliseconds since 1970 by this computer's clock.
+    # @return [Integer] Milliseconds since 1970 by this computer's clock, 0 without the DLL.
     def self.map_since
-      if @since_map != $game_map.map_id
-        @since_map = $game_map.map_id
-        @since = (Time.now.to_f * 1000).to_i
-      end
-      @since
+      map = $game_map.map_id
+      return @since if @since && @since_map == map
+
+      answer = MGQ_Multiplayer::Bridge.call(SINCE_TOPIC, map)
+      take_since(map, answer["since"]) if answer.is_a?(Hash)
+      @since_map == map ? @since.to_i : 0
     end
 
     # Tells what the player does: walk the map, travel by boat or airship, fight, watch an event,
@@ -551,7 +529,8 @@ module MGQ_MpOverworldSync
     end
   end
 
-  # The other games of the world, by seat, as their last messages said.
+  # The other games of the world, by seat, mirrored from the DLL's events: the scripts read these
+  # every frame, and the battle server fills it itself (battles_served.rbx).
   module Peers
     # Another player: their seat, what they last told, and their ghost while on this map.
     #
@@ -560,88 +539,77 @@ module MGQ_MpOverworldSync
     #   "d", "speed", "hidden", "scene".
     # @!attribute ghost [Game_MpGhost, nil] Their ghost, while they are on this map.
     # @!attribute member [Boolean] Whether they were in the player's party at their last message.
-    # @!attribute away [Integer, nil] The frames they are still kept for while their connection is
-    #   down, nil while it stands.
+    # @!attribute away [Boolean, Integer, nil] True while their connection is down and the DLL keeps
+    #   them, nil while it stands; on the battle server, which sits in no world's room, the frames
+    #   left of the grace the battle channel's players are kept for, see wait_for.
     Peer = Struct.new(:seat, :state, :ghost, :member, :away)
-
-    # Frames after entering a world in which a game that tells its first state is one already
-    # there, as every game tells a newcomer at once, and joins without a notice.
-    SETTLE_FRAMES = 300
 
     # The other games, by seat.
     @peers = {}
 
     # The players away whose seat another player took, kept until they come back on another seat or
-    # stay away for REJOIN_FRAMES.
+    # the DLL forgets them.
     @displaced = []
 
-    # Frames since the player entered the world, see SETTLE_FRAMES.
-    @in_world = 0
+    # The names that tell the players apart, by seat, see labeled.
+    @labels = {}
 
-    # Takes what a game told. A player who tells from another seat, away or not, is the same player
-    # as before.
+    # Takes what a game told, and lets the scripts follow it. A player who was away is back.
     #
     # @param seat [Integer] The game's seat.
     # @param state [Hash] What it told.
-    def self.take(seat, state)
-      peer = @peers[seat]
-      # Another player took the seat of one who is away, as when the relay deals the seats anew.
-      displace(peer, state) if peer && peer.away && peer.state["id"] != state["id"]
-      peer = @peers[seat] || moved(seat, state)
-
-      if peer
-        changed = MGQ_MpOverworldSync.changes(peer.state, state)
-        back = peer.away
-        MGQ_MpOverworldSync.log("#{MGQ_MpOverworldSync.who(peer)} is back, after #{(REJOIN_FRAMES - peer.away) / 60} s away") if back
-        MGQ_MpOverworldSync.log("#{MGQ_MpOverworldSync.who(peer)}: #{changed}") unless changed.empty?
-        peer.state = state
-        peer.away = nil
-        changed_presence(peer, :back) if back
-      else
-        peer = @peers[seat] = Peer.new(seat, state, nil, false, nil)
-        settled = @in_world > SETTLE_FRAMES
-        MGQ_MpOverworldSync.log("#{state['name']} #{settled ? 'joined' : 'is in'} the world on seat #{seat} (id #{state['id'].to_s[0, 8]}), on map #{state['map']}")
-        Status.notice("#{state['name']} joined the world.") if settled
-      end
-
+    # @param member [Boolean] Whether its player is in the player's party.
+    def self.take(seat, state, member = false)
+      peer = @peers[seat] ||= Peer.new(seat, state, nil, false, nil)
+      back = !peer.away.nil?
+      peer.state = state
+      peer.member = member ? true : false
+      peer.away = nil
+      changed_presence(peer, :back) if back
       MGQ_MpOverworldSync.ask(:observe, peer)
     end
 
-    # Finds the player who now tells from another seat, and moves them there, forgetting the old seat
-    # without telling anyone they left.
+    # Notes that a game's connection dropped; the DLL keeps it a while.
     #
-    # The game connects again as soon as it thinks its connection broke, which the relay may notice
-    # only later, so the old seat may still stand.
-    #
-    # @param seat [Integer] The seat they tell from.
-    # @param state [Hash] What they told.
-    # @return [Peer, nil] The player, nil when nobody else has their id.
-    def self.moved(seat, state)
-      peer = (@peers.values + @displaced).find { |other| !state["id"].to_s.empty? && other.state["id"] == state["id"] }
-      return nil unless peer
+    # @param seat [Integer] Its seat.
+    def self.away(seat)
+      peer = @peers[seat]
+      return unless peer && peer.away.nil?
 
-      MGQ_MpOverworldSync.log("#{peer.state['name']} moved from seat #{peer.seat} to seat #{seat}#{peer.away ? '' : ', the old seat still standing'}")
-      @peers.delete(peer.seat) if @peers[peer.seat].equal?(peer)
+      peer.away = true
+      changed_presence(peer, :away)
+    end
+
+    # Moves a player who now tells from another seat there, one kept aside included.
+    #
+    # @param seat [Integer] The new seat.
+    # @param from [Integer] The old seat.
+    # @param id [String, nil] Their player id, which tells a player kept aside from the one now on
+    #   their old seat.
+    def self.moved(seat, from, id = nil)
+      peer = kept_aside(id) || @peers.delete(from)
+      return unless peer
+
       @displaced.delete(peer)
       peer.seat = seat
       @peers[seat] = peer
       changed_presence(peer, :moved)
-      peer
     end
 
-    # Keeps a player who is away aside once another player tells from their seat, so they stay the
-    # same player when they come back on another seat.
+    # Keeps a player who is away aside once another player tells from their seat, as the DLL does,
+    # so they stay the same player when they come back on another seat.
     #
-    # @param peer [Peer] The player away.
-    # @param state [Hash] What the player now on the seat told.
-    def self.displace(peer, state)
-      @peers.delete(peer.seat)
+    # @param seat [Integer] The seat another player took.
+    def self.displace(seat)
+      peer = @peers.delete(seat)
+      return unless peer
+
       peer.ghost = nil
       @displaced << peer
-      MGQ_MpOverworldSync.log("#{state['name']} took the seat of #{MGQ_MpOverworldSync.who(peer)} while they are away, who stays kept")
     end
 
-    # Keeps a game whose connection dropped for REJOIN_FRAMES, in which it may come back.
+    # Keeps a game whose connection dropped for REJOIN_FRAMES, in which it may come back. Called on
+    # the battle server, where the battle channel tells the players' presence.
     #
     # @param seat [Integer] Its seat.
     def self.wait_for(seat)
@@ -653,17 +621,29 @@ module MGQ_MpOverworldSync
       changed_presence(peer, :away)
     end
 
-    # Takes back a game kept away whose connection came back without a new state, as a battle
-    # channel tells the battle server, which sits in no world's room.
+    # Takes back a game kept away whose connection came back without a new state, as the battle
+    # channel tells the battle server.
     #
     # @param seat [Integer] Its seat.
     def self.come_back(seat)
       peer = @peers[seat]
       return unless peer && peer.away
 
-      MGQ_MpOverworldSync.log("#{MGQ_MpOverworldSync.who(peer)} is back, after #{(REJOIN_FRAMES - peer.away) / 60} s away")
+      after = peer.away.is_a?(Integer) ? ", after #{(REJOIN_FRAMES - peer.away) / 60} s away" : ""
+      MGQ_MpOverworldSync.log("#{MGQ_MpOverworldSync.who(peer)} is back#{after}")
       peer.away = nil
       changed_presence(peer, :back)
+    end
+
+    # Forgets the games that stayed away past the grace wait_for gave them. Called every frame on
+    # the battle server; the DLL counts the grace in a world.
+    def self.tick
+      @peers.values.each do |peer|
+        next unless peer.away.is_a?(Integer)
+
+        peer.away -= 1
+        remove(peer.seat, "away for #{REJOIN_FRAMES / 60} s") if peer.away <= 0
+      end
     end
 
     # Tells the scripts that follow presence of a player's change, see MGQ_MpOverworldSync.on_presence.
@@ -674,28 +654,18 @@ module MGQ_MpOverworldSync
       MGQ_MpOverworldSync.ask(:presence, peer, change)
     end
 
-    # Keeps every game for REJOIN_FRAMES after the player's own connection came back, in which
-    # each tells its state again.
-    def self.wait_for_all
-      @peers.each_key { |seat| wait_for(seat) }
+    # Takes whom of the players the party counts, as the party's view tells.
+    #
+    # @param seats [Array<Integer>] The members' seats.
+    def self.take_members(seats)
+      @peers.each_value { |peer| peer.member = seats.include?(peer.seat) }
     end
 
-    # Forgets the games that stayed away. Called every frame.
-    def self.tick
-      @in_world += 1
-      @peers.values.each do |peer|
-        next unless peer.away
-
-        peer.away -= 1
-        remove(peer.seat, "away for #{REJOIN_FRAMES / 60} s") if peer.away <= 0
-      end
-      @displaced.dup.each do |peer|
-        peer.away -= 1
-        next if peer.away > 0
-
-        @displaced.delete(peer)
-        forget(peer, "away for #{REJOIN_FRAMES / 60} s")
-      end
+    # Takes the names that tell the players apart.
+    #
+    # @param labels [Hash{Integer => String}] The names by seat, in the DLL's order.
+    def self.take_labels(labels)
+      @labels = labels
     end
 
     # Finds a game by its seat.
@@ -706,36 +676,28 @@ module MGQ_MpOverworldSync
       @peers[seat]
     end
 
-    # Forgets a game that left.
+    # Forgets a game that left, one kept aside included, and lets the scripts follow.
     #
     # @param seat [Integer] Its seat.
     # @param reason [String] Why, for the log.
-    def self.remove(seat, reason = "left")
-      peer = @peers.delete(seat)
-      forget(peer, reason) if peer
-    end
+    # @param id [String, nil] Its player id, which tells a player kept aside from the one now on
+    #   their old seat.
+    def self.remove(seat, reason = "left", id = nil)
+      peer = kept_aside(id)
+      peer = @peers.delete(seat) unless peer
+      return unless peer
 
-    # Tells everyone a player left the world, once they are no longer kept.
-    #
-    # @param peer [Peer] The player.
-    # @param reason [String] Why, for the log.
-    def self.forget(peer, reason)
-      MGQ_MpOverworldSync.log("#{MGQ_MpOverworldSync.who(peer)} left the world: #{reason}")
-      Status.notice("#{peer.state['name']} left the world.")
+      @displaced.delete(peer)
+      MGQ_MpOverworldSync.log("forgot #{MGQ_MpOverworldSync.who(peer)}: #{reason}")
       MGQ_MpOverworldSync.ask(:leave, peer)
       changed_presence(peer, :gone)
     end
 
     # Forgets every game, as once the world closed.
     def self.clear
-      MGQ_MpOverworldSync.log("no world open: forgot #{@peers.size + @displaced.size} player(s)") unless empty?
       @peers.clear
       @displaced.clear
-    end
-
-    # Notes that the player is in no world, so the next one they enter starts its settling anew.
-    def self.left_world
-      @in_world = 0
+      @labels = {}
     end
 
     # Reports whether no other game is known.
@@ -759,19 +721,12 @@ module MGQ_MpOverworldSync
       all.select { |peer| peer.away.nil? }
     end
 
-    # Lists the players whose connection stands by the names that tell them apart: a name that
-    # several share, whatever its case, is numbered from the second of them on by their ids, such
-    # as "Name (2)". Nameless players are left out.
+    # Lists the players whose connection stands by the names that tell them apart, as the DLL
+    # numbers a name several share, such as "Name (2)". Nameless players are left out.
     #
     # @return [Array<Array(String, Peer)>] Each name with its player.
     def self.labeled
-      named = present.reject { |peer| peer.state["name"].to_s.empty? }
-      named.group_by { |peer| peer.state["name"].to_s.downcase }.values.map do |sharing|
-        sharing.sort_by { |peer| peer.state["id"].to_s }.each_with_index.map do |peer, index|
-          name = peer.state["name"].to_s
-          [index == 0 ? name : "#{name} (#{index + 1})", peer]
-        end
-      end.flatten(1)
+      @labels.map { |seat, label| [label, @peers[seat]] }.select { |_, peer| peer && peer.away.nil? }
     end
 
     # Tells the name that tells a player apart, see labeled.
@@ -779,8 +734,7 @@ module MGQ_MpOverworldSync
     # @param peer [Peer] The player.
     # @return [String, nil] The name, nil once their connection is down or for a nameless player.
     def self.label_of(peer)
-      pair = labeled.find { |_, other| other.equal?(peer) }
-      pair && pair[0]
+      peer.away.nil? ? @labels[peer.seat] : nil
     end
 
     # Finds a player whose connection stands by the name that tells them apart, see labeled.
@@ -815,6 +769,16 @@ module MGQ_MpOverworldSync
       (@peers.values + @displaced).find { |peer| peer.state["id"].to_s == id.to_s }
     end
 
+    # Finds a player kept aside by their player id.
+    #
+    # @param id [String, nil] The id.
+    # @return [Peer, nil] The player, nil when nobody kept aside has that id, or for none.
+    def self.kept_aside(id)
+      return nil if id.to_s.empty?
+
+      @displaced.find { |peer| peer.state["id"].to_s == id.to_s }
+    end
+
     # Reports whether another player's connection stands and they are on the player's map, as their
     # last state tells.
     #
@@ -825,89 +789,9 @@ module MGQ_MpOverworldSync
     end
   end
 
-  # Reads the world room's inbox.
-  module Inbox
-    # Most entries read per frame, so a flood never stalls a frame.
-    MAX_PER_FRAME = 64
-
-    # Takes every waiting entry.
-    def self.take_all
-      MAX_PER_FRAME.times do
-        entry = Link.next_entry
-        break unless entry
-
-        take(entry)
-      end
-    end
-
-    # Takes one entry.
-    #
-    # @param entry [Hash] The entry, see Link.next_entry.
-    def self.take(entry)
-      seat = entry["seat"].to_i
-
-      case entry["kind"]
-      when "seat"
-        # A new connection: every other game is told everything, and tells everything back.
-        Me.take_seat(entry["seat"])
-        MGQ_MpOverworldSync.log("connected on seat #{seat}, #{entry['others'].to_i} other game(s) in the room")
-        Peers.wait_for_all
-        Me.tell_all(-1)
-      when "in"
-        MGQ_MpOverworldSync.log("a game came in on seat #{seat}")
-        Me.tell_all(seat)
-      when "out"
-        MGQ_MpOverworldSync.log("the game on seat #{seat} went out#{Peers.at(seat) ? '' : ', which never told its state'}")
-        Peers.wait_for(seat)
-      when "chat"
-        # An admin's line, said in the World Admin tool: no seat said it, so the chat takes it
-        # without a sender's state.
-        name = entry["name"].to_s
-        MGQ_MpOverworldSync.log("chat line from the relay for #{name}")
-        # A Symbol key, which no player's message carries, since those are parsed into strings.
-        MGQ_MpOverworldSync.hand_over(nil, { "chat" => entry[:payload].to_s, "name" => name, :relay => true })
-      when "story"
-        # The relay tells the Raid World's story changed: no seat said it, so its route takes it
-        # without a sender's state, marked as the relay's like an admin's line.
-        MGQ_MpOverworldSync.log("the relay tells the world's story is at revision #{entry['rev']}")
-        MGQ_MpOverworldSync.hand_over(nil, { STORY_FIELD => entry["rev"].to_s, :relay => true })
-      when "boss"
-        MGQ_MpOverworldSync.log("the relay tells the boss pool #{entry['key']} holds #{entry['left']} of #{entry['max']}#{entry['defeated'] == '1' ? ', defeated' : ''}")
-        MGQ_MpOverworldSync.hand_over(nil, { BOSS_FIELD => entry["key"].to_s, "left" => entry["left"].to_s, "max" => entry["max"].to_s,
-                                             "defeated" => entry["defeated"].to_s, "by" => entry["by"].to_s, :relay => true })
-      when "difficulty"
-        MGQ_MpOverworldSync.log("the relay tells the world's difficulty is #{entry['value']} now")
-        MGQ_MpOverworldSync.hand_over(nil, { DIFFICULTY_FIELD => entry["value"].to_s, :relay => true })
-      when "squad"
-        MGQ_MpOverworldSync.log("the relay tells the world's squad rules are \"#{entry['value']}\" now")
-        MGQ_MpOverworldSync.hand_over(nil, { SQUAD_FIELD => entry["value"].to_s, :relay => true })
-      when "raid_bosses"
-        MGQ_MpOverworldSync.log("the relay tells the world's raid bosses are #{entry['value'] == '1' ? 'on' : 'off'} now")
-        MGQ_MpOverworldSync.hand_over(nil, { RAID_BOSSES_FIELD => entry["value"].to_s, :relay => true })
-      when "mods_rule"
-        mods = entry["mods"].to_s
-        MGQ_MpOverworldSync.log("the relay tells the world #{entry['value'] == '1' ? 'turns other mods off' : 'allows other mods'} now, with mods \"#{mods}\"")
-        MGQ_MpOverworldSync.hand_over(nil, { MODS_RULE_FIELD => entry["value"].to_s, "mods" => mods, :relay => true })
-      when "message"
-        message = MGQ_Multiplayer::Link.parse(entry[:payload].dup)
-        # A state may carry a field named like a route, and a script's message may name a map, so
-        # only STATE_FIELD tells them apart.
-        if message[STATE_FIELD]
-          message.delete(:payload)
-          Peers.take(seat, message)
-        else
-          MGQ_MpOverworldSync.hand_over(Peers.at(seat), message)
-        end
-      end
-    end
-  end
-
   # What the line at the bottom left of the map shows: who came and went, and when the connection
   # is down.
   module Status
-    # Frames since the connection was last looked at, see STATUS_FRAMES.
-    @frames = 0
-
     # The notices shown: each one's text, frames left and icon.
     @notices = []
 
@@ -917,59 +801,38 @@ module MGQ_MpOverworldSync
     # @param icon [Integer, nil] An icon of the game's iconset before it, such as an item's.
     def self.notice(text, icon = nil)
       MGQ_MpOverworldSync.log("notice: #{text}")
+      show(text, icon)
+    end
+
+    # Shows a notice for a few seconds without logging it, as for the DLL's, which logs its own.
+    #
+    # @param text [String] The notice.
+    # @param icon [Integer, nil] An icon of the game's iconset before it.
+    def self.show(text, icon = nil)
       @notices.push([text, NOTICE_FRAMES, icon])
       @notices.shift while @notices.size > 3
     end
 
-    # Looks at the connection every STATUS_FRAMES, and lets notices run out.
+    # Takes how the connection stands, as the DLL tells it: the seat, its problem, the ping and when
+    # the player entered their map.
+    #
+    # @param status [Hash] "seat", "problem", "ping", "map" and "since".
+    def self.take(status)
+      Me.take_seat(status["seat"])
+      Me.take_since(status["map"], status["since"])
+      @problem = status["problem"]
+      Ping.take(status["ping"])
+    end
+
+    # Forgets the connection's problem, as the world closes.
+    def self.forget_problem
+      @problem = nil
+    end
+
+    # Lets notices run out. Called every frame in a world.
     def self.look
       @notices.each { |notice| notice[1] -= 1 }
       @notices.reject! { |_, left| left <= 0 }
-      @frames += 1
-      return if @frames < STATUS_FRAMES
-
-      @frames = 0
-      state = Link.status
-      Me.take_seat(state["seat"])
-      log_connection(state)
-      Ping.take(state["ping"])
-      @problem =
-        case state["state"]
-        when "reconnecting" then "Reconnecting . . ."
-        when "connecting" then state["error"] || "Connecting . . ."
-        when "failed" then "Not connected: #{state['error']}"
-        end
-    end
-
-    # Follows the connection outside a world every STATUS_FRAMES until it reads idle, so how it
-    # closed or failed reaches the log too. Called every frame while no world is open.
-    def self.look_closed
-      return if @logged_connection.nil? || @logged_connection["state"] == "idle"
-
-      @frames += 1
-      return if @frames < STATUS_FRAMES
-
-      @frames = 0
-      log_connection(Link.status)
-    end
-
-    # Logs the world connection's status once it changed: its state, seat, the other seats, its
-    # error and whatever else the DLL tells, such as how the relay closed it. The ping is left out.
-    #
-    # @param state [Hash] The status, see Link.status.
-    def self.log_connection(state)
-      fields = state.reject { |key, _| key == "ping" || key == :payload }
-      return if fields == @logged_connection
-
-      @logged_connection = fields
-      others = fields["others"].to_s.split(/[,;\s]+/).reject(&:empty?)
-      parts = [fields["seat"].to_s.empty? ? nil : "seat #{fields['seat']}",
-               fields.key?("others") ? "#{others.size} other game(s) in the room" : nil,
-               fields["error"].to_s.empty? ? nil : "error: #{fields['error']}"]
-      extra = fields.reject { |key, _| %w[state seat others error].include?(key) }.map { |key, value| "#{key} #{value}" }
-      MGQ_MpOverworldSync.log("world connection #{fields['state']}#{(parts.compact + extra).empty? ? '' : ', ' + (parts.compact + extra).join(', ')}")
-    rescue => e
-      MGQ_MpOverworldSync.log_once(:log_connection, "logging the connection failed: #{e.class}: #{e.message}")
     end
 
     # Tells what the line shows now, with each notice's icon.
@@ -981,28 +844,17 @@ module MGQ_MpOverworldSync
     end
   end
 
-  # The player's ping: the round trip to the relay, which the DLL times every few seconds. The
-  # player sees each new one; the others are told only once it moved noticeably, since every
-  # message counts against the relay's free plan.
+  # The player's ping: the round trip to the relay, which the DLL times every few seconds and tells
+  # the others once it moved noticeably.
   module Ping
     # The last ping measured in milliseconds, nil while there is no connection.
     @measured = nil
 
-    # The ping the others are told, empty before the first.
-    @told = ""
-
-    # Takes the ping the connection's status tells.
+    # Takes the ping the DLL tells.
     #
-    # @param text [String, nil] The milliseconds, nil or empty while there is no connection.
-    def self.take(text)
-      @measured = text.to_s.empty? ? nil : text.to_i
-      return if @measured.nil?
-
-      told = @told.empty? ? nil : @told.to_i
-      return unless told.nil? || (@measured - told).abs >= [PING_STEP, told * PING_SHARE].max
-
-      MGQ_MpOverworldSync.log("ping #{told ? "#{told} -> " : ''}#{@measured} ms, told the others")
-      @told = @measured.to_s
+    # @param ping [Integer, nil] The milliseconds, nil while there is no connection.
+    def self.take(ping)
+      @measured = ping
     end
 
     # The last ping measured.
@@ -1011,22 +863,34 @@ module MGQ_MpOverworldSync
     def self.measured
       @measured
     end
-
-    # The ping the others are told.
-    #
-    # @return [String] The milliseconds, empty before the first.
-    def self.told
-      @told
-    end
   end
+end
+
+# The DLL's events of the world room, through the bridge's drain.
+
+begin
+  bridge = MGQ_Multiplayer::Bridge
+  sync = MGQ_MpOverworldSync
+  bridge.on("world.peer") { |event| sync::Peers.take(event["seat"], event["state"], event["member"]) }
+  bridge.on("world.peer_away") { |event| sync::Peers.away(event["seat"]) }
+  bridge.on("world.peer_moved") { |event| sync::Peers.moved(event["seat"], event["from"], event["id"]) }
+  bridge.on("world.peer_displaced") { |event| sync::Peers.displace(event["seat"]) }
+  bridge.on("world.peer_left") { |event| sync::Peers.remove(event["seat"], "left", event["id"]) }
+  bridge.on("world.labels") { |labels| sync::Peers.take_labels(labels) }
+  bridge.on("world.route") { |event| sync.take_route(event) }
+  bridge.on("world.notice") { |text| sync::Status.show(text) }
+  bridge.on("world.status") { |status| sync::Status.take(status) }
+rescue => e
+  MGQ_MpOverworldSync.log("bridge events FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks, through core_hooks.rbx.
 
 begin
-  # After every frame, takes the others' messages and tells them what changed here. Graphics.update
-  # runs every frame in every scene, so the others hear of a battle or a menu and nothing piles up
-  # meanwhile.
+  # Before every frame, hands the DLL the player's frame, which the frame's batch carries before
+  # the drain; after it, follows the frames. Graphics.update runs every frame in every scene, so
+  # the others hear of a battle or a menu and nothing piles up meanwhile.
+  MGQ_MpHooks.before(Graphics.singleton_class, :update, "overworld_sync") { MGQ_MpOverworldSync.before_frame }
   MGQ_MpHooks.after(Graphics.singleton_class, :update, "overworld_sync") { MGQ_MpOverworldSync.tick }
 rescue => e
   MGQ_MpOverworldSync.log("Graphics hook FAILED: #{e.class}: #{e.message}")

@@ -2,7 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Removed history and log_lines, which only the tests read
+#      Paulinchen  2026-10-23: Sent the lines of every chat through the DLL
+#                            - Removed history and log_lines, which only the tests read
 #                            - Kept the chat log off the live map behind menus
 #      Paulinchen  2026-10-22: Opened the chat box and showed its log in the shops, the casino and the trade screen
 #                            - Kept the hooks of mods loaded later in the shops, the casino and the trade screen
@@ -127,11 +128,14 @@ module MGQ_MpChat
   # Windows' code of the number row's 0, as which the numpad's 0 types with Num Lock on.
   ZERO_KEY = 0x30
 
-  # What mp_world_say answers for a line of the global chat the DLL dropped for coming too fast.
+  # What the DLL's chat.send says of a line of the global chat it dropped for coming too fast.
   TOO_FAST = 2
 
-  # What mp_world_say answers for a line of the global chat the relay got.
+  # What the DLL's chat.send says of a line of the global chat the relay got.
   SAID = 1
+
+  # The bridge topic that sends a line of a chat.
+  SEND_TOPIC = "chat.send"
 
   # What a player's or an admin's line loses: control characters and the line and paragraph
   # separators, which would break the line in the log.
@@ -990,17 +994,9 @@ module MGQ_MpChat
     return refuse("You are in no party, so nobody hears the party chat.") if channel == :party && !(defined?(MGQ_MpCoop) && MGQ_MpCoop.in_party?)
     return refuse("Type /w and a name to choose whom to whisper to.") if channel == :whisper && !@whisper_to
 
-    # Only the global chat's lines reach the relay, whose limit drops those that come too fast.
-    return if channel == :global && !mirror(text)
-
     name = MGQ_Multiplayer::Player.name.to_s
-    sent = case channel
-           when :party then MGQ_MpCoop.tell(-1, "pchat", text, "name" => name)
-           when :global then tell("chat" => text, "name" => name)
-           when :whisper then tell_whisper("whisper" => text, "name" => name)
-           # A map line goes out marked say, the map chat's name before, which released games read.
-           else tell_map("chat" => text, "name" => name, "ch" => "say")
-           end
+    sent = send_line(channel, text)
+    return if sent.nil?
     return refuse(channel == :whisper ? "#{@whisper_to} is not in the world." : "The message could not be sent.") unless sent
 
     @sent += 1
@@ -1008,20 +1004,30 @@ module MGQ_MpChat
     add(:me, name, text, channel, false, false, channel == :whisper ? @whisper_to : nil)
   end
 
-  # Mirrors a line of the global chat to the relay for the world's admins, before it goes to the
-  # others, and turns it down when it comes too fast.
+  # Sends a line to a chat through the DLL, which mirrors a line of the global chat to the relay
+  # for the world's admins first and turns it down when it comes too fast.
   #
+  # @param channel [Symbol] The chat: :global, :map, :party or :whisper.
   # @param text [String] The line.
-  # @return [Boolean] Whether the line may go to the others, false when it came too fast.
-  def self.mirror(text)
-    said = MGQ_MpOverworldSync.say(text)
-    if said == TOO_FAST
+  # @return [Boolean, nil] Whether it went out, nil when it came too fast and was turned down.
+  def self.send_line(channel, text)
+    request = { "channel" => channel.to_s, "text" => text, "map" => $game_map.map_id }
+    if channel == :whisper
+      peer = whisper_peer
+      return false unless peer
+
+      request["seat"] = peer.seat
+    end
+    log("#{MGQ_MpOverworldSync::Peers.all.count { |other| MGQ_MpOverworldSync::Peers.on_this_map?(other) }} other players on map #{$game_map.map_id} hear the map chat") if channel == :map
+    answer = MGQ_Multiplayer::Bridge.call(SEND_TOPIC, request)
+    return false unless answer.is_a?(Hash)
+    if answer["said"] == TOO_FAST
       refuse("You are sending too fast. Wait a moment, then send the line again.")
-      return false
+      return nil
     end
 
-    log("the relay did not take the line for the world's chat") unless said == SAID
-    true
+    log("the relay did not take the line for the world's chat") if channel == :global && answer["said"] != SAID
+    answer["sent"] ? true : false
   end
 
   # Writes a line for the log, leaving a whisper's text out.
@@ -1033,17 +1039,15 @@ module MGQ_MpChat
     channel == :whisper ? "(#{text.size} characters, not logged)" : MGQ_MpLog.short(text)
   end
 
-  # Tells the player the whisper chat goes to something, through overworld_sync.rbx, and names them
-  # as the whisper list does now.
+  # Finds the player the whisper chat goes to, and names them as the whisper list does now.
   #
-  # @param fields [Hash] The message's fields.
-  # @return [Boolean] Whether it went out, false when they are not in the world.
-  def self.tell_whisper(fields)
+  # @return [MGQ_MpOverworldSync::Peers::Peer, nil] The player, nil once they left the world.
+  def self.whisper_peer
     peer = player_of(@whisper_to, @whisper_id)
-    return false unless peer
+    return nil unless peer
 
     @whisper_to = MGQ_MpOverworldSync::Peers.label_of(peer) || @whisper_to
-    MGQ_MpOverworldSync.tell(peer.seat, fields)
+    peer
   end
 
   # Finds a player by their id, or by their name for one who had no state yet when they were
@@ -1055,19 +1059,6 @@ module MGQ_MpChat
   def self.player_of(name, id)
     peers = MGQ_MpOverworldSync::Peers
     id.to_s.empty? ? peers.named(name) : peers.with_id(id)
-  end
-
-  # Tells every other game a line of the map chat, with the player's map, on which the others hear
-  # it, through overworld_sync.rbx.
-  #
-  # One message to all, since one to each player on the map could fail for some of them only.
-  #
-  # @param fields [Hash] The message's fields.
-  # @return [Boolean] Whether it went out.
-  def self.tell_map(fields)
-    here = MGQ_MpOverworldSync::Peers.all.count { |peer| MGQ_MpOverworldSync::Peers.on_this_map?(peer) }
-    log("#{here} other players on map #{$game_map.map_id} hear the map chat")
-    tell(fields.merge("map" => $game_map.map_id))
   end
 
   # Turns a line down that cannot be sent.

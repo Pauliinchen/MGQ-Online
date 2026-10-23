@@ -8,7 +8,9 @@
 #                            - Loaded world_gates.rbx after world_difficulty.rbx
 #                            - Loaded ui_mod_browser.rbx after ui_bug_report.rbx and named the mp_mod_browser_* exports
 #                            - Stopped loading the removed battles_pvp_lobby.rbx
-#      Paulinchen  2026-10-23: Read and wrote Player.ini and the other ini files through the DLL, which keeps the player key
+#      Paulinchen  2026-10-23: Dropped mp_world_say, mp_world_receive and mp_world_status, since the world room goes through the bridge
+#                            - Told the bridge's frame
+#                            - Read and wrote Player.ini and the other ini files through the DLL, which keeps the player key
 #                            - Dropped mp_new_id and mp_set_player
 #                            - Wrote the scripts' log into the DLL's log of the day through the bridge, and into that file directly while the mod stays off
 #                            - Wrote the log's last lines before the game's error box and as the game closes
@@ -736,9 +738,6 @@ module MGQ_Multiplayer
       'mp_world_open' => 'p',
       'mp_world_close' => 'v',
       'mp_world_send' => 'lp',
-      'mp_world_say' => 'p',
-      'mp_world_receive' => READ_ARGUMENTS,
-      'mp_world_status' => READ_ARGUMENTS,
 
       # The mod catalog.
       'mp_mod_hash' => 'ppl',
@@ -1231,6 +1230,13 @@ module MGQ_Multiplayer
       @frame = @frame >= MAX_FRAME ? 0 : @frame + 1
       send_staged
       drain
+    end
+
+    # Tells the bridge's frame, the one the last drain passed, which C#'s timers count by.
+    #
+    # @return [Integer] The frame, 0 before the first.
+    def self.frame_number
+      @frame.to_i
     end
 
     # Sends what was staged at once, outside the frame, such as the log's last lines as the game

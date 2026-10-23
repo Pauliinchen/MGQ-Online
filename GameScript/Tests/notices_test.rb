@@ -2,6 +2,7 @@
 #  notices_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Told the invites that reach the player and the party's actions through the DLL's party view
 #      Paulinchen  2026-10-22: Checked the relay's announcement in the box's rows, in place of the one before
 #      Paulinchen  2026-10-12: Checked that the box at its default lies 4 pixels below the Leader HUD
 #                            - Checked the log of the accept hotkey while typing and when refused
@@ -95,6 +96,8 @@ shown = lambda { showing.call ? box.call.bitmap.texts : [] }
 fading = lambda { showing.call ? box.call.bitmap.fading : [] }
 accept = lambda { $pressed = 0x59; notices.tick(true) }
 decline = lambda { $pressed = 0x4E; notices.tick(true) }
+# Plays the DLL telling whose party invites reach the player, outside a party.
+reaching = lambda { |*seats| take_party(nil, [], nil, "inviters" => seats) }
 
 # Nothing to tell.
 $inbox << entry("seat", 0)
@@ -105,6 +108,7 @@ check("with nothing to tell, no box", shown.call, [])
 bea = { "id" => "bea", "name" => "Bea", "map" => 9, "x" => 1, "y" => 1, "d" => 2, "scene" => "map", "party" => "bea-p1", "invite" => 1, "invite_to" => "me" }
 cid = { "id" => "cid", "name" => "Cid", "map" => 7, "x" => 1, "y" => 1, "d" => 2, "scene" => "map", "challenge" => 1, "challenge_to" => "me" }
 $inbox << entry("in", 2) << entry("message", 2, told(bea)) << entry("in", 3) << entry("message", 3, told(cid))
+reaching.call(2)
 MGQ_MpOverworldSync.tick
 check("an invite and a challenge from afar show, the keys on the first", shown.call,
       ["Bea invites you to a party", "Y: Accept   N: Decline", "Cid challenges you to a duel"])
@@ -134,6 +138,7 @@ check("and goes after a moment", shown.call.include?("Bea is in a battle!"), fal
 notices.message(:alone, "A message alone")
 notices.tick(true)
 $inbox << entry("message", 2, told(bea.merge("invite" => 0))) << entry("message", 3, told(cid.merge("challenge" => 0)))
+reaching.call
 MGQ_MpOverworldSync.tick
 $sounds.clear
 accept.call
@@ -142,11 +147,11 @@ notices.drop(:alone)
 
 # Declining.
 $inbox << entry("message", 2, told(bea)) << entry("message", 3, told(cid))
+reaching.call(2)
 MGQ_MpOverworldSync.tick
-$sent.clear
+$party_calls.clear
 decline.call
-check("the decline key declines the first invite and tells the inviter", [$sent.map { |seat, text| [seat, text.include?("party_decline=1")] }, $sounds],
-      [[[2, true]], ["cancel"]])
+check("the decline key declines the first invite through the DLL", [$party_calls, $sounds], [[["decline", 2]], ["cancel"]])
 notices.tick(true)
 check("which stays away while it stands", shown.call, ["Cid challenges you to a duel", "Y: Accept   N: Decline"])
 $inbox << entry("message", 2, told(bea.merge("party" => "bea-p2")))
@@ -155,8 +160,11 @@ check("a new invite of the same player shows again", shown.call.first, "Bea invi
 
 # Accepting.
 $sounds.clear
+$party_calls.clear
+$party_answer = party_view("bea-p2", [MGQ_MpOverworldSync::Peers.at(2)], 2, "admitted_me" => false)
 accept.call
-check("the accept key accepts the first invite", [MGQ_MpCoop::Party.id, $sounds], ["bea-p2", ["ok"]])
+$party_answer = nil
+check("the accept key accepts the first invite through the DLL, taking the party it answers", [$party_calls, MGQ_MpCoop::Party.id, $sounds], [[["join", 2]], "bea-p2", ["ok"]])
 check("which fades away below the others, taking no key", [fading.call.uniq, shown.call.first], [["Bea invites you to a party"], "Cid challenges you to a duel"])
 MGQ_MpUi::Style::FADE_FRAMES.times { notices.tick(true) }
 check("and is gone after FADE_FRAMES", fading.call, [])
