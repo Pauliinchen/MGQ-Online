@@ -1,7 +1,7 @@
 {
   "id": "skillDefault:3038",
   "kind": "skillDefault",
-  "schema": 1,
+  "schema": 2,
   "rev": 300,
   "body": {
     "kind": "area",
@@ -13,7 +13,7 @@
     "spread": { "mode": "splash", "percent": 30, "shape": { "type": "diamond", "radius": 1 }, "rings": [100, 60] },
     "falloff": { "metric": "manhattan", "rings": [100, 70] },
     "presentation": { "cellFlash": { "color": [255, 200, 120, 128], "frames": 8 }, "danger": [255, 120, 40, 160] },
-    "debris": { "where": "hitCells", "turns": 2, "hits": 1, "look": { "kind": "picture", "picture": "Crater" } },
+    "debris": { "where": "hitCells", "turns": 2, "hits": 1, "type": "debris:5e6f708192a3b4c5d6e7f8091a2b3c4d" },
     "marks": { "leaves": [ { "id": "3e4f5061", "state": 40, "chance": 50, "landsOn": "mainTarget", "until": "turns", "turns": 2 } ] },
     "hazard": {},
     "unstoppable": true

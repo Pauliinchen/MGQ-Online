@@ -1,7 +1,7 @@
 {
   "id": "boss:1b0a822614f83839e33ac1cbaa895e36",
   "kind": "boss",
-  "schema": 1,
+  "schema": 2,
   "rev": 418,
   "body": {
     "key": "Morrigan",
@@ -42,7 +42,7 @@
           "danger": [120, 60, 255, 160],
           "animation": { "placement": "oncePerWave", "screen": "fitArea", "opacity": 80, "flash": 40 }
         },
-        "debris": { "where": "hitCells", "turns": 3, "hits": 2, "look": { "kind": "tile", "tile": { "sheet": "A5", "tileId": 1544 } } },
+        "debris": { "where": "hitCells", "turns": 3, "hits": 2, "type": "debris:5e6f708192a3b4c5d6e7f8091a2b3c4d" },
         "marks": { "leaves": [ { "id": "1c2d3e4f", "state": 301, "chance": 100, "landsOn": "everyoneHit",
                                  "until": "nextScheduledCast", "minTurns": 1 } ] }
       },
