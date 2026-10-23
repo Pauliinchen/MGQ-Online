@@ -2,7 +2,8 @@
 //  CastResolverTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Tested the manual cells of each pulse
+//      Paulinchen  2026-10-23: Tested the preview's click of a later pulse
+//                            - Tested the manual cells of each pulse
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -43,6 +44,22 @@ public sealed class CastResolverTests
 
         Assert.Equal(9, telegraph.Pulses[0].Cells.Count);
         Assert.Equal([1], outcome.HitSeats);
+    }
+
+    /// <summary>
+    /// The preview's click of one later pulse aims that pulse of a skill that aims anew each pulse.
+    /// </summary>
+    [Fact]
+    public void AimsALaterPulseAtItsOwnClick()
+    {
+        RuntimeSkill skill = CastSamples.Strikes(3);
+        IReadOnlyList<GridUnit> units = [CastSamples.Unit(1, 2, 1), CastSamples.Unit(2, 11, 4)];
+
+        foreach (GridCell clicked in new[] { new GridCell(2, 1), new GridCell(11, 4) })
+        {
+            CastTelegraph telegraph = CastResolver.Telegraph(Request(skill, units, 9) with { PulseClicks = new Dictionary<int, GridCell> { [1] = clicked } });
+            Assert.Equal(clicked, telegraph.Pulses[1].Choice.Anchor);
+        }
     }
 
     /// <summary>

@@ -2,7 +2,8 @@
 //  TargetChooser.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Aimed the manual mode at the pulse's cell
+//      Paulinchen  2026-10-23: Took the preview's own click of a later pulse
+//                            - Aimed the manual mode at the pulse's cell
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -40,9 +41,15 @@ public sealed record TargetRequest(GridSize Grid, IReadOnlyList<GridUnit> Units,
     public GridCell? Aim { get; init; }
 
     /// <summary>
-    /// Gets the pulse, 0 the first; a click counts only for the first pulse of a skill that aims anew each pulse.
+    /// Gets the pulse, 0 the first; a click counts only for the first pulse of a skill that aims anew each
+    /// pulse, unless it is that pulse's own click.
     /// </summary>
     public int Pulse { get; init; }
+
+    /// <summary>
+    /// Gets whether <see cref="Click"/> is the preview's click of this very pulse, which counts for any pulse.
+    /// </summary>
+    public bool ClickOfPulse { get; init; }
 }
 
 /// <summary>
@@ -83,7 +90,7 @@ public static class TargetChooser
 
         TargetSpec targeting = skill.Targeting;
         GridCell? click = request.Click;
-        GridCell? usableClick = targeting.NewTargetEachPulse && request.Pulse > 0 ? null : click;
+        GridCell? usableClick = targeting.NewTargetEachPulse && request.Pulse > 0 && !request.ClickOfPulse ? null : click;
         DebrisField field = request.Debris;
         HashSet<GridCell> inZone = [.. zone];
         List<GridCell> open = zone.Where(cell => !field.Contains(cell)).ToList();

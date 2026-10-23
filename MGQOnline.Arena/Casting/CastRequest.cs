@@ -2,7 +2,8 @@
 //  CastRequest.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Carried the style of the skill's debris
+//      Paulinchen  2026-10-23: Carried the preview's clicks of single pulses
+//                            - Carried the style of the skill's debris
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -51,6 +52,12 @@ public sealed record CastRequest(GameRules Rules, GridSize Grid, IReadOnlyList<G
     /// Gets the cell the designer clicked in the preview, null in a battle.
     /// </summary>
     public GridCell? Click { get; init; }
+
+    /// <summary>
+    /// Gets the cells the designer clicked in the preview for single pulses of a skill that aims anew
+    /// each pulse, by pulse from 0; null in a battle. A pulse's own click wins over <see cref="Click"/>.
+    /// </summary>
+    public IReadOnlyDictionary<int, GridCell>? PulseClicks { get; init; }
 
     /// <summary>
     /// Gets the style of the debris the skill leaves, resolved over its battle map and the game rule;

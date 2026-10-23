@@ -2,7 +2,8 @@
 //  CastResolver.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Aimed every pulse of a manual skill at its own cell
+//      Paulinchen  2026-10-23: Aimed a pulse at the preview's own click of it
+//                            - Aimed every pulse of a manual skill at its own cell
 //                            - Placed the skill's debris in its debris style
 //      Paulinchen  2026-10-21: Created
 //
@@ -61,8 +62,9 @@ public static class CastResolver
         TargetChoice? shared = null;
         for (int pulse = 0; pulse < pulses; pulse++)
         {
+            GridCell? pulseClick = request.PulseClicks?.TryGetValue(pulse, out GridCell clicked) == true ? clicked : null;
             TargetChoice choice = skill.Targeting.NewTargetEachPulse || skill.Targeting.Mode == TargetMode.Manual
-                ? TargetChooser.Choose(target with { Pulse = pulse }, targeting)
+                ? TargetChooser.Choose(pulseClick is GridCell own ? target with { Pulse = pulse, Click = own, ClickOfPulse = true } : target with { Pulse = pulse }, targeting)
                 : (shared ??= TargetChooser.Choose(target, targeting));
             AddChoiceWarnings(request, choice, pulse, warnings);
             IReadOnlyList<GridCell> cells = choice.Anchor is GridCell anchor ? TelegraphedCells(request.Grid, skill, anchor, limits, zone) : [];
