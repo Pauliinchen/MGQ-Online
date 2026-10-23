@@ -4,6 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-10-23: Kept a battle on the battle server from the moment the server took it
 //                            - Told a player who comes onto a battle that just ended how it ended
+//                            - Kept a world room connection for up to a day, and past that while its player is in a battle on the battle server
 //      Paulinchen  2026-10-22: Checked the mod catalog's links half a minute after a start and every five minutes
 //                            - Cleared the current release once the watch saw a newer one published after it was set
 //                            - Listed the worlds without their mods for games from 0.6.8 and sent released games to update at a world whose mods they cannot hold
@@ -140,6 +141,12 @@ const MAX_VERSION_LENGTH = 40;
  * What the admins' stats count a world room's game under when it named no version.
  */
 const NO_VERSION = "unknown";
+
+/**
+ * The limits the Node relay keeps: the core's, but a world room connection lasts up to a day
+ * instead of two hours, so a long session never drops in the middle of play.
+ */
+export const NODE_LIMITS = Object.freeze({ ...LIMITS, worldConnectionMs: 24 * 60 * 60 * 1000 });
 
 /**
  * Longest request body the directory and the mod catalog read as text, in bytes: the longest JSON
@@ -539,7 +546,7 @@ function headerOf(request, name) {
  * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, check: () => void, sweep: () => Promise<void>, checkRelease: () => Promise<{version: string | null, worlds: number}>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, a world's story, a world's boss pools, a look at the deadlines, a sweep of what is kept too long, a check of the mod's releases, and a way to stop everything.
  */
 export function createRelay({
-  limits = LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, directory = new Directory(memoryStore(), { clock }),
+  limits = NODE_LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, directory = new Directory(memoryStore(), { clock }),
   mods = new ModCatalog(memoryModStore(), { clock }), trades = new TradeBook(memoryTradeStore(), (id) => directory.store.get(id), { clock }), stories = memoryStoryStores(),
   storyLimits = STORY_LIMITS, bosses = memoryBossStores(), bossLimits = BOSS_LIMITS, log = consoleLog, reports = new ReportDesk(reportSettingsOf({}), { clock, log: stamped(log) }),
   minVersion = DEFAULT_MIN_VERSION, release = new ReleaseControl(memoryReleaseStore(), { envMin: minVersion, clock }), releases = null, battleServer = null, battleLimits = BATTLE_LIMITS,
@@ -1600,7 +1607,8 @@ export function createRelay({
   }
 
   /**
-   * Closes the peers whose time is up, in every room and world room.
+   * Closes the peers whose time is up, in every room and world room; a world room's game whose
+   * player plays in a battle on the battle server stays until the battle ended.
    */
   function check() {
     for (const [roomId, peers] of [...rooms]) {
@@ -1617,7 +1625,8 @@ export function createRelay({
     }
 
     for (const [roomId, peers] of [...worlds]) {
-      const closed = worldOverdue(peers.map((peer) => peer.record), clock(), limits).map(({ index, code, reason }) => ({ peer: peers[index], code, reason }));
+      const closed = worldOverdue(peers.map((peer) => peer.record), clock(), limits).map(({ index, code, reason }) => ({ peer: peers[index], code, reason }))
+        .filter(({ peer }) => !battles.playing(roomId, peer.record.player));
 
       for (const { peer, code, reason } of closed) {
         unseat(roomId, peer, code, reason);

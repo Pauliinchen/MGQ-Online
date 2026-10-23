@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-23: Covered a battle the battle server ends in the same breath as it takes it
+//                            - Covered how long a world connection lasts, in a battle and out of one
 //      Paulinchen  2026-10-21: Covered the battle server's ping in the admins' stats
 //      Paulinchen  2026-10-15: Covered the battle server's boss reports and the pool changes it hears of
 //                            - Covered the players the battle server takes in late
@@ -19,8 +20,8 @@ import net from "node:net";
 import WebSocketClient from "ws";
 import { BATTLE_LIMITS, SERVER_SEAT } from "../core/battles.js";
 import { Directory, playerIdOf, sha256Hex } from "../core/directory.js";
-import { AUTH_HEADER, CLOSE, FEATURES_HEADER, PLAYER_HEADER, REFUSAL_HEADER } from "../core/relay.js";
-import { battleServerOf, createRelay, memoryStore } from "./server.js";
+import { AUTH_HEADER, CLOSE, FEATURES_HEADER, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER } from "../core/relay.js";
+import { NODE_LIMITS, battleServerOf, createRelay, memoryStore } from "./server.js";
 
 /**
  * The world's auth key.
@@ -485,6 +486,26 @@ test("a player the battle server takes in late comes onto the battle's channel, 
   server.send({ op: "end", result: "victory" });
   first.connection.socket.close();
   late.connection.socket.close();
+});
+
+test("a world connection lasts a day, and longer while its player is in a battle on the battle server", async () => {
+  serverAnswers = "serving";
+  const world = worldId(11);
+  await makeWorld(world);
+  const player = await sit(world, 5);
+  assert.equal((await startBattle(httpBase, world, 5, { battle: "j1", seats: [player.seat], setup: SETUP })).status, 201);
+  const server = served.at(-1);
+  await nextLine(server);
+
+  now += NODE_LIMITS.worldConnectionMs;
+  relay.check();
+  player.connection.socket.send(PING);
+  assert.equal(await Promise.race([nextText(player.connection, PONG), player.connection.closed.then(() => "closed")]), PONG);
+
+  server.send({ op: "end", result: "victory" });
+  await until(() => relay.battles.get(world, "j1") === null);
+  relay.check();
+  assert.equal((await player.connection.closed).code, CLOSE.connectionExpired);
 });
 
 test("the admins' stats hold the battle server's answer to a ping, and null for a server out of reach", async () => {

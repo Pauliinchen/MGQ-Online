@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-23: Covered how a battle that just ended answers a player who comes onto it
+//                            - Covered whether a player plays in a battle
 //      Paulinchen  2026-10-15: Covered the battle server's boss reports and pool lines
 //                            - Covered the players the battle server takes in late
 //                            - Created
@@ -89,6 +90,16 @@ test("a player who comes onto a battle that just ended learns how it ended, for 
   clock.add(BATTLE_LIMITS.arriveMs);
   table.overdue(clock.now());
   assert.equal(table.admit(WORLD, "k3x9", STARTER).body.code, undefined);
+});
+
+test("a player plays in a battle of a world from its start to its end", () => {
+  const table = new BattleTable();
+  table.open(WORLD, "k3x9", new Map([[STARTER, 0]]), STARTER);
+  assert.equal(table.playing(WORLD, STARTER), true);
+  assert.equal(table.playing(WORLD, GUEST), false);
+  assert.equal(table.playing("cd".repeat(16), STARTER), false);
+  table.close(WORLD, "k3x9");
+  assert.equal(table.playing(WORLD, STARTER), false);
 });
 
 test("a battle id runs once per world, and a world runs a limited number of server battles", () => {

@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-23: Told a player who comes onto a battle that just ended how it ended
+//                            - Told whether a player plays in a running battle of a world
 //      Paulinchen  2026-10-15: Read the battle server's boss reports and wrote the pools' lines for it
 //                            - Added the players the battle server takes in late
 //                            - Created
@@ -264,6 +265,23 @@ export class BattleTable {
     if (this.battles.delete(key)) {
       this.ended.set(key, { end, at: this.clock() });
     }
+  }
+
+  /**
+   * Tells whether a player plays in a running battle of a world.
+   *
+   * @param {string} world The world.
+   * @param {string} player The player's id.
+   * @returns {boolean} Whether they do, whether or not they came onto its channel yet.
+   */
+  playing(world, player) {
+    for (const entry of this.battles.values()) {
+      if (entry.world === world && entry.players.has(player)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
