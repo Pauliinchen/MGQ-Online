@@ -1,0 +1,12 @@
+{
+  "id": "debris:5e6f708192a3b4c5d6e7f8091a2b3c4d",
+  "kind": "debris",
+  "schema": 1,
+  "rev": 431,
+  "body": {
+    "name": "Rubble",
+    "look": { "kind": "tile", "tile": { "sheet": "A5", "tileId": 1544 } },
+    "hits": 2,
+    "cover": false
+  }
+}

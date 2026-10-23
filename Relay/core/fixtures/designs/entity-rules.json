@@ -1,7 +1,7 @@
 {
   "id": "rules",
   "kind": "rules",
-  "schema": 1,
+  "schema": 2,
   "rev": 1,
   "body": {
     "grid": { "min": [15, 6], "max": [16, 10], "noTier": [15, 6], "growRatio": 1.5 },
@@ -44,7 +44,7 @@
       "freeCellsPerCharacter": 2,
       "fallbackFloor": ["A5", 1536],
       "fallbackDebris": ["A5", 0],
-      "random": { "chance": 10, "min": 1, "max": 2, "hits": 1 }
+      "start": { "type": "debris:5e6f708192a3b4c5d6e7f8091a2b3c4d", "chance": 10, "min": 1, "max": 2 }
     },
     "presentation": {
       "ringDelay": 6, "pulseGap": 20,
