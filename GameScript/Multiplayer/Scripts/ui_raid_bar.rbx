@@ -2,6 +2,7 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Kept the bars off the live map behind menus
 #      Paulinchen  2026-10-17: Showed the bars above the bosses' stand-ins of frozen fights
 #      Paulinchen  2026-10-15: Showed no bars over the Colosseum receptionist
 #      Paulinchen  2026-10-13: Showed the bars of the raid bosses in Classic worlds and single player, each turned on and off in the Mod Config
@@ -1167,6 +1168,8 @@ begin
 
   # After the map's sprites, the bosses' bars, also above the stand-ins of frozen fights.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_raid_bar") do
+    next unless mgq_mp_hud?
+
     @mgq_mp_raid_bars ||= MGQ_MpRaidBar::MapBars.new(MGQ_MpGame.get(self, :viewport1), MGQ_MpGame.get(self, :viewport3))
     standins = defined?(MGQ_MpRaidFreezeUi) ? MGQ_MpRaidFreezeUi.sprites_of(self) : []
     @mgq_mp_raid_bars.update(MGQ_MpGame.get(self, :character_sprites) + standins)

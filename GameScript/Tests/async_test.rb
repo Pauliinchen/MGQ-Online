@@ -2,6 +2,7 @@
 #  async_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that the live map shows none of the HUD the map shows
 #      Paulinchen  2026-10-06: Checked that a live map that fails is freed and the menu's picture shows again
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-09-30: Created
@@ -218,6 +219,7 @@ live = menu.instance_variable_get(:@mgq_mp_live_map)
 check("a menu shows the live map", live.is_a?(Spriteset_MpLiveMap), true)
 check("in place of its picture", menu.background_sprite.visible, false)
 check("below the menu", [live.viewport1.z, live.viewport2.z, live.viewport3.z].all? { |z| z < 0 }, true)
+check("without the HUD the map shows", [live.mgq_mp_hud?, Spriteset_Map.new.mgq_mp_hud?], [false, true])
 menu.update_basic
 check("the live map moves every frame", live.updates, 1)
 menu.dispose_background

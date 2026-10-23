@@ -2,6 +2,7 @@
 #  ui_actions.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Kept the own line and the action wheel off the live map behind menus
 #      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #                            - Read the map's viewports and character sprites through MGQ_MpGame
 #      Paulinchen  2026-10-11: Framed the wheel's boxes in the preset's colors
@@ -689,7 +690,10 @@ begin
   # scene change is in the way.
   MGQ_MpHooks.after(Scene_Map, :update_scene, "ui_actions") { MGQ_MpActions.on_map unless scene_changing? }
 
+  # After the map's sprites, the line above the player's head and the action wheel.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_actions") do
+    next unless mgq_mp_hud?
+
     @mgq_mp_own_line ||= Sprite_MpOwnLine.new(MGQ_MpGame.get(self, :viewport1))
     @mgq_mp_wheel ||= Sprite_MpActionWheel.new(MGQ_MpGame.get(self, :viewport3))
     player = MGQ_MpGame.get(self, :character_sprites).find { |sprite| sprite.character.equal?($game_player) }

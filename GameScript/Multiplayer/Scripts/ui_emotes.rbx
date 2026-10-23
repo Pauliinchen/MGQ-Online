@@ -2,6 +2,7 @@
 #  ui_emotes.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Kept the emote wheel off the live map behind menus
 #      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #                            - Read the map's viewport and character sprites through MGQ_MpGame
 #      Paulinchen  2026-10-11: Framed the wheel's boxes in the preset's colors
@@ -356,6 +357,8 @@ begin
 
   # After the map's sprites, the emote wheel around the player.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_emotes") do
+    next unless mgq_mp_hud?
+
     @mgq_mp_emotes ||= Sprite_MpEmoteWheel.new(MGQ_MpGame.get(self, :viewport3))
     @mgq_mp_emotes.show(MGQ_MpGame.get(self, :character_sprites).find { |sprite| sprite.character.equal?($game_player) })
   end

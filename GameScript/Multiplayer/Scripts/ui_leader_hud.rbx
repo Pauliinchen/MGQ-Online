@@ -2,6 +2,7 @@
 #  ui_leader_hud.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Kept the HUD off the live map behind menus
 #      Paulinchen  2026-10-13: Turned the HUD on and off in single player by a row of its own in MGQ Online SP
 #      Paulinchen  2026-10-12: Let other boxes draw a face or a map sprite as the HUD does
 #                            - Held the Small HUD to its own least size at the edges of the screen
@@ -651,6 +652,8 @@ begin
 
   # After the map's sprites, the HUD and the windows it moves below itself.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_leader_hud") do
+    next unless mgq_mp_hud?
+
     (@mgq_mp_leader_hud ||= Sprite_MpLeaderHud.new(MGQ_MpGame.get(self, :viewport3))).update
     MGQ_MpLeaderHud.lower_windows
   end

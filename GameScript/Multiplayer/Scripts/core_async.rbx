@@ -2,6 +2,7 @@
 #  core_async.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Kept the mod's HUD off the live map behind menus
 #      Paulinchen  2026-10-12: Read the live map's viewports through MGQ_MpGame
 #      Paulinchen  2026-10-07: Read an interpreter's event and map through MGQ_MpGame
 #                            - Logged the world behind screens, held commands, waiting refreshes and the live map
@@ -231,6 +232,17 @@ module MGQ_MpAsync
   end
 end
 
+# The map's sprites, which tell the scripts whether to draw the mod's HUD over them.
+class Spriteset_Map
+  # Reports whether the mod's HUD shows over the map's sprites: its boxes, logs, wheels, prompts and
+  # bars. Players and characters on the map show either way.
+  #
+  # @return [Boolean] Whether it shows, true on the map itself.
+  def mgq_mp_hud?
+    true
+  end
+end
+
 # The live map behind a menu: the map's sprites, below everything the menu draws and dimmed as the
 # menu's picture of the map is.
 class Spriteset_MpLiveMap < Spriteset_Map
@@ -256,6 +268,13 @@ class Spriteset_MpLiveMap < Spriteset_Map
       viewport = MGQ_MpGame.get(self, field)
       viewport.z = depth if viewport
     end
+  end
+
+  # Reports that the mod's HUD does not show behind a menu, which shows only the map's world.
+  #
+  # @return [Boolean] false.
+  def mgq_mp_hud?
+    false
   end
 
   # Frees the dimming, then the map's sprites.

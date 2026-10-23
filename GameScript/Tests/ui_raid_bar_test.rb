@@ -2,6 +2,7 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Showed the HUD over the map's sprites
 #      Paulinchen  2026-10-17: Checked the bars above the bosses' stand-ins of frozen fights
 #      Paulinchen  2026-10-13: Checked the bars of the raid bosses outside Raid Worlds and turning them off
 #      Paulinchen  2026-10-12: Checked that common events calling each other keep every troop
@@ -248,6 +249,8 @@ class Spriteset_Map
   def update; end
   # Frees nothing.
   def dispose; end
+  # Shows the HUD, as the map does.
+  def mgq_mp_hud?; true; end
 end
 # A battler's sprite with the game's own boss bar.
 class Sprite_Battler
