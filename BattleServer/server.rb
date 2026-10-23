@@ -2,7 +2,8 @@
 #  server.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Let a co-op battle use CPU time for as long as the relay keeps it and ended it as failed past that
+#      Paulinchen  2026-10-23: Answered a battle whose sandbox could not drop root as one that could not be sandboxed
+#                            - Let a co-op battle use CPU time for as long as the relay keeps it and ended it as failed past that
 #                            - Logged how each child ended, with its battle
 #      Paulinchen  2026-10-15: Refused battles by request while it hosts MGQ Online's battles
 #                            - Hosted the co-op battles the relay hands over
@@ -135,13 +136,7 @@ module BattleServer
           # the cache.
           first = client.gets(MAX_REQUEST)
           mods = mods_for(first)
-          begin
-            Sandbox.enter(Boot::GAME_DIR) if Sandbox.available?
-          rescue StandardError => e
-            # A child the sandbox could not close in never plays.
-            client.puts(JSON.generate(ok: false, error: "the battle could not be sandboxed: #{e.message}"))
-            Process.exit!(1)
-          end
+          Process.exit!(1) unless enter_child(client)
           serve(client, first, mods)
           # The game's scripts never get to run exit handlers meant for Game.exe.
           Process.exit!(0)
@@ -198,6 +193,19 @@ module BattleServer
     # @return [String] Such as "exit 0" or "killed by SIGXCPU".
     def ended(status)
       status.signaled? ? "killed by SIG#{Signal.signame(status.termsig)}" : "exit #{status.exitstatus}"
+    end
+
+    # Closes a battle's child in before it plays, where the system can.
+    #
+    # @param client [TCPSocket] The child's client, which hears why when it cannot be closed in.
+    # @return [Boolean] Whether the child may play; a child the sandbox could not close in never
+    #   plays.
+    def enter_child(client)
+      Sandbox.enter(Boot::GAME_DIR) if Sandbox.available?
+      true
+    rescue StandardError, SecurityError => e
+      client.puts(JSON.generate(ok: false, error: "the battle could not be sandboxed: #{e.message}"))
+      false
     end
 
     # Copies a child's output into the server's log, each line marked with the child, up to
