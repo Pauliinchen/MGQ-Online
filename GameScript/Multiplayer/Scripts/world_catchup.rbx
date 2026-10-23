@@ -2,7 +2,8 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Set the game over's return point of the story only on the map of the event that sets it
+#      Paulinchen  2026-10-23: Gave job and race items another player found to every player of the world at once
+#                            - Set the game over's return point of the story only on the map of the event that sets it
 #      Paulinchen  2026-10-17: Listed no companion on the Unlocks page whom a removal of the story took away
 #                            - Held the catch-up while a lost raid boss battle's defeat runs
 #                            - Ordered the key items one event gives and takes back by their rows, which no longer fails the catch-up
@@ -1930,64 +1931,27 @@ module MGQ_MpWorldCatchup
     item.is_a?(RPG::Item) && item.description.to_s =~ UNLOCK_ITEM_TAG ? true : false
   end
 
-  # Hands out every item unlocking a job or a race the world found that the player lacks once the
-  # player's story or the world's reached where the story gives it (source_reached?), and takes back
-  # copies beyond the first, as a chest of one gives a second.
+  # Hands out every item unlocking a job or a race a player of the world found that the player
+  # lacks, at once, wherever their story is, and takes back copies beyond the first, as a chest of
+  # one gives a second.
   def self.check_found_items
-    story = nil
-    MGQ_MpStoryState.data_of($game_self_switches).each do |key, on|
-      next unless on && key[0] == FOUND_MAP && key[2] == FOUND_LETTER
-
-      item = MGQ_MpGame.item("i", key[1])
+    found_ids.each do |id|
+      item = MGQ_MpGame.item("i", id)
       next unless item && !makina?(item) && !trim_copies(item) && $game_party.item_number(item) == 0
 
-      story ||= story_now
-      give("i", key[1], 1, "found:#{key[1]}") if source_reached?(key[1], story, @world_told)
+      give("i", id, 1, "found:#{id}")
     end
   end
 
-  # Reports whether the player's story or the world's reached a place the story gives an item at:
-  # a reward row it is past or a chest of the world it opened. An item the story gives nowhere
-  # counts as reached once a player holds it.
+  # Lists the items the world found: those noted in the player's story and in the world's, which a
+  # player behind it does not play.
   #
-  # @param id [Integer] The item.
-  # @param story [Array] The player's story.
-  # @param told [Array, nil] The world's story, nil before it came.
-  # @return [Boolean] Whether one did.
-  def self.source_reached?(id, story, told)
-    rows = story_sources[id]
-    return true unless rows
-
-    rows.any? do |row|
-      next passed_any?(unsided(row), story, told) unless row.is_a?(DATA::Chest)
-
-      story[2][row.key] || (told && told[2][row.key]) ? true : false
-    end
-  end
-
-  # A reward row without its side, as a found item reaches the other side too once a story is past
-  # its place.
-  #
-  # @param row [MGQ_MpWorldCatchupData::Reward] The row.
-  # @return [MGQ_MpWorldCatchupData::Reward] The row, or a copy without its side.
-  def self.unsided(row)
-    return row unless row.side
-
-    copy = row.dup
-    copy.side = nil
-    copy
-  end
-
-  # The reward rows and the world's chests that give each item, by item.
-  #
-  # @return [Hash{Integer => Array<Struct>}] The rows.
-  def self.story_sources
-    @story_sources ||= begin
-      sources = {}
-      DATA::REWARDS.each { |row| (sources[row.id] ||= []) << row if row.kind == :i }
-      DATA::CHESTS.each { |row| row.items.each { |id| (sources[id] ||= []) << row } }
-      sources
-    end
+  # @return [Array<Integer>] The items.
+  def self.found_ids
+    stories = [MGQ_MpStoryState.data_of($game_self_switches)]
+    stories << @world_told[2] if @world_told
+    keys = stories.flat_map { |selfs| selfs.keys.select { |key| selfs[key] && key[0] == FOUND_MAP && key[2] == FOUND_LETTER } }
+    keys.map { |key| key[1] }.uniq
   end
 
   # Turns on the chest flags a world-wide chest turns on, which are each player's own: the Chaos
