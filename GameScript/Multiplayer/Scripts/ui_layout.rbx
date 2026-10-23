@@ -2,6 +2,7 @@
 #  ui_layout.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Removed dragging?, which only the tests read
 #      Paulinchen  2026-10-11: Created
 #
 #----------------------------------------------------------------
@@ -134,14 +135,6 @@ module MGQ_MpUi
     # @return [Boolean] Whether it does.
     def self.moved?(id)
       !stored(id).nil?
-    end
-
-    # Tells whether a box is being dragged.
-    #
-    # @param id [Symbol] The box.
-    # @return [Boolean] Whether it is.
-    def self.dragging?(id)
-      @drag && @drag.id == id ? true : false
     end
 
     # Tells whether the player is arranging the boxes: the left Alt is held, so the mouse moves and

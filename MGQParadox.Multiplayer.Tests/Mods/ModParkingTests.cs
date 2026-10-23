@@ -2,6 +2,7 @@
 //  ModParkingTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Dropped the check of the deleted options dump
 //      Paulinchen  2026-10-13: Used a placeholder hero key
 //      Paulinchen  2026-10-10: Covered other volumes, changed parked files, recover conflicts and unreadable journals
 //                            - Covered read-only scripts and failed descriptions
@@ -174,7 +175,6 @@ public sealed class ModParkingTests : IDisposable
         var far = Path.Combine("Dev", "Far");
         using var parking = new ModParking(_game.Path)
         {
-            InOptionsDump = () => false,
             IsElsewhere = target => Path.TrimEndingDirectorySeparator(target).EndsWith(far, StringComparison.OrdinalIgnoreCase),
         };
 
@@ -233,7 +233,7 @@ public sealed class ModParkingTests : IDisposable
         WriteMod("Patch/B.rb", "# B 1.0\n");
         File.SetAttributes(GamePath("Patch/A.rb"), FileAttributes.ReadOnly);
         File.SetAttributes(GamePath("Patch/B.rb"), FileAttributes.ReadOnly);
-        using var parking = new ModParking(_game.Path) { InOptionsDump = () => false, Clock = () => new DateTime(2026, 10, 10, 9, 45, 0) };
+        using var parking = new ModParking(_game.Path) { Clock = () => new DateTime(2026, 10, 10, 9, 45, 0) };
 
         Assert.Equal(2, parking.Park(["Patch/A.rb", "Patch/B.rb"], World));
         Assert.True(File.GetAttributes(GamePath("Parked mods/Patch/A.rb")).HasFlag(FileAttributes.ReadOnly));
@@ -269,7 +269,7 @@ public sealed class ModParkingTests : IDisposable
     {
         WriteMod("Patch/A.rb", "# A\n");
         WriteMod("Patch/B.rb", "# B\n");
-        using var parking = new ModParking(_game.Path) { InOptionsDump = () => false, Clock = () => new DateTime(2026, 10, 10, 9, 30, 0) };
+        using var parking = new ModParking(_game.Path) { Clock = () => new DateTime(2026, 10, 10, 9, 30, 0) };
         parking.Park(["Patch/A.rb", "Patch/B.rb"], World);
         WriteMod("Parked mods/Patch/A.rb", "# Something else\n");
 
@@ -400,7 +400,7 @@ public sealed class ModParkingTests : IDisposable
     {
         WriteMod("Patch/Invasions.rb", "# Invasions 1.0\n");
         WriteMod("Patch/Same.rb", "# Same\n");
-        using var parking = new ModParking(_game.Path) { InOptionsDump = () => false, Clock = () => new DateTime(2026, 10, 9, 20, 15, 30) };
+        using var parking = new ModParking(_game.Path) { Clock = () => new DateTime(2026, 10, 9, 20, 15, 30) };
         parking.Park(["Patch/Invasions.rb", "Patch/Same.rb"], World);
         WriteMod("Patch/Invasions.rb", "# Invasions 2.0\n");
         WriteMod("Patch/Same.rb", "# Same\r\n");
@@ -601,7 +601,7 @@ public sealed class ModParkingTests : IDisposable
     public void Park_AModPutBackWhileParked_ParksTheNewCopy()
     {
         WriteMod("Patch/A.rb", "# A 1.0\n");
-        using var parking = new ModParking(_game.Path) { InOptionsDump = () => false, Clock = () => new DateTime(2026, 10, 9, 21, 0, 0) };
+        using var parking = new ModParking(_game.Path) { Clock = () => new DateTime(2026, 10, 9, 21, 0, 0) };
         parking.Park(["Patch/A.rb"], World);
         WriteMod("Patch/A.rb", "# A 2.0\n");
 
@@ -655,22 +655,6 @@ public sealed class ModParkingTests : IDisposable
 
         Assert.Equal(0, second.Restore(true));
         Assert.Equal(0, second.Recover(string.Empty));
-    }
-
-    /// <summary>
-    /// Asserts that a game started for the options dump never parks, nor recovers.
-    /// </summary>
-    [Fact]
-    public void OptionsDump_NeverParks()
-    {
-        WriteMod("Patch/A.rb", "# A\n");
-        using var parking = new ModParking(_game.Path) { InOptionsDump = () => true };
-
-        Assert.Equal(0, parking.Park(["Patch/A.rb"], World));
-        Assert.Equal(0, parking.Recover(string.Empty));
-        Assert.True(File.Exists(GamePath("Patch/A.rb")));
-        Assert.False(File.Exists(parking.LockPath));
-        Assert.False(Directory.Exists(GamePath("Parked mods")));
     }
 
     /// <summary>
@@ -742,10 +726,10 @@ public sealed class ModParkingTests : IDisposable
     }
 
     /// <summary>
-    /// Makes the parking of the test's game folder, outside the options dump.
+    /// Makes the parking of the test's game folder.
     /// </summary>
     /// <returns>The parking, which the test disposes to let its lock go.</returns>
-    private ModParking Parking() => new(_game.Path) { InOptionsDump = () => false };
+    private ModParking Parking() => new(_game.Path);
 
     /// <summary>
     /// Runs a step while another thread holds a file open for reading without delete sharing, as

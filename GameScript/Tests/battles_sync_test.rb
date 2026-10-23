@@ -2,7 +2,8 @@
 #  battles_sync_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Checked that Cancel during a wait goes back or asks before leaving
+#      Paulinchen  2026-10-23: Dropped the check of the battle end kept on file
+#                            - Checked that Cancel during a wait goes back or asks before leaving
 #                            - Checked that messages lost over a reconnect come again, once and in order
 #                            - Checked that a battle keeps its players through seats dealt anew and while away
 #      Paulinchen  2026-10-15: Checked that a co-op enemy the host defeats counts as fallen on the guest for its recruit
@@ -249,14 +250,6 @@ check("the guest takes them", [target.hp, MGQ_MpGame.get(target, :states), MGQ_M
 check("with the counters the game keeps per state, which a turn's end on the map reads", [target.instance_variable_get(:@state_turn_counts), target.instance_variable_get(:@state_steps)], [{ 4 => 0 }, { 4 => 0 }])
 check("with the barriers", target.instance_variable_get(:@cnt)[:defense_wall], [true, true])
 
-# The battle's end stays on file.
-recorder.start(:link)
-recorder.event("battle_end", 0)
-check("the battle's end is no guest's to play", recorder.instance_variable_get(:@events), [])
-recorder.event("turn", 1)
-check("a turn is", recorder.instance_variable_get(:@events).size, 1)
-recorder.stop
-
 # The host's HP above this game's own maximum, which the game's refresh holds a character below.
 
 # An actor whose refresh holds its HP at its maximum of 100, as the game's does.
@@ -284,7 +277,7 @@ $my_seat = 0
 sync.join_world(:host, "r1", [2], "the party")
 sync.battle_started
 $sent.clear
-recorder.start(:link)
+recorder.start
 recorder.values
 foe.result = Game_ActionResult.new
 foe.result.hp_damage = 25

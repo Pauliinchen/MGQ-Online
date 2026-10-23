@@ -2,6 +2,7 @@
 #  battles_duel.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Started duels without the deleted mirror match flag
 #      Paulinchen  2026-10-12: Took a non-numeric party_member_max as 0 and left a team duel whose sides did not read
 #      Paulinchen  2026-10-11: Drew the challenge in the color every request and offer shares
 #                            - Named the duel's waits in the line above the player's head with their seconds left
@@ -648,7 +649,7 @@ module MGQ_MpBattlesDuel
       MGQ_MpBattlesSync.join_world(:host, pending.battle_id, pending.seats - [MGQ_MpOverworldSync::Me.seat], "the duel", :pvp, true)
     end
     MGQ_MpBattlesTeam.prepare(pending.own, pending.other, pending.same_side)
-    MGQ_MpBattlesPvp::Battle.start(MGQ_MpBattlesTeam.opponent_name, [], false) { MGQ_MpBattlesTeam.opponents }
+    MGQ_MpBattlesPvp::Battle.start(MGQ_MpBattlesTeam.opponent_name, []) { MGQ_MpBattlesTeam.opponents }
     log("team duel #{pending.battle_id} as #{host ? 'guest' : 'host'}, #{pending.own.size} against #{pending.other.size}")
   end
 
@@ -718,7 +719,7 @@ module MGQ_MpBattlesDuel
     role, battle_id, peer, members = pending.role, pending.battle_id, pending.peer, pending.members
     name = peer.state["name"].to_s
     MGQ_MpBattlesSync.join_world(role, battle_id, [peer.seat], name, :pvp)
-    MGQ_MpBattlesPvp::Battle.start(name, members, false, pending.backline)
+    MGQ_MpBattlesPvp::Battle.start(name, members, pending.backline)
     log("duel #{battle_id} with #{name} as #{role}#{' with the Backline' if pending.backline}")
   end
 

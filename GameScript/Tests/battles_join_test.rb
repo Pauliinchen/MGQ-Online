@@ -2,6 +2,7 @@
 #  battles_join_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Told a side battle through the pools' side_battle?
 #      Paulinchen  2026-10-17: Covered the frozen fight the prompt offers near its boss's stand-in
 #      Paulinchen  2026-10-11: Checked that a running battle takes an encounter with as many players as fit
 #                            - Checked the prompt in the style's small font and solid outline
@@ -552,7 +553,7 @@ module MGQ_MpRaidPool
   # Keeps the side battle started in $side_started and starts it while $side_ok is set.
   def self.start_side(troop, rates); $side_started = [troop, rates]; $side_ok; end
   # Takes the troop in $side_troop for a side battle.
-  def self.kind_of(troop); troop.to_i == $side_troop ? :side : nil; end
+  def self.side_battle?(troop); troop.to_i == $side_troop; end
   def self.won_already?(_troop); false; end
   def self.invite_fields(_troop = nil); {}; end
   def self.note_invite(_message); end

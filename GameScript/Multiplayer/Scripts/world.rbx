@@ -2,6 +2,8 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Dropped the fallbacks for list fields the DLL always writes
+#                            - Left the details of the world list, a new world and an edit to the DLL log
 #      Paulinchen  2026-10-22: Read the mods of the opened world on their own and let a world name mods up to the relay's new limit
 #                            - Offered a step back to an older release as the one to install
 #      Paulinchen  2026-10-15: Handed keywords on through the wrapped File and Dir methods
@@ -1208,9 +1210,9 @@ module MGQ_MpWorld
 
         case fields[0]
         when "world"
-          worlds.push(ListedWorld.new(fields[1], fields[2].to_i, fields[3].to_i, fields[4], fields[5].to_i, fields[6].to_s, fields[7].to_s, fields[8] || "none", [], fields[9] == "1", fields[10] == "1", fields[11] == "1", fields[12] == "1", fields[13] == "1", fields[14].to_s, fields[15].to_s, fields[16].to_s, fields[17].to_s, fields[18].to_s,
-                                     fields[19].to_s.empty? ? CLASSIC : fields[19], fields[20].to_s.empty? ? SHARING[0] : fields[20], fields[19] == RAID ? MGQ_MpWorld.difficulty_of(fields[21]) : nil,
-                                     fields[22].to_s.empty? ? fields[19] == RAID : fields[22] == "1", fields[19] == RAID ? MGQ_MpWorld.squad_of(fields[23]) : nil,
+          worlds.push(ListedWorld.new(fields[1], fields[2].to_i, fields[3].to_i, fields[4], fields[5].to_i, fields[6], fields[7], fields[8], [], fields[9] == "1", fields[10] == "1", fields[11] == "1", fields[12] == "1", fields[13] == "1", fields[14], fields[15], fields[16], fields[17], fields[18],
+                                     fields[19], fields[20], fields[19] == RAID ? MGQ_MpWorld.difficulty_of(fields[21]) : nil,
+                                     fields[22] == "1", fields[19] == RAID ? MGQ_MpWorld.squad_of(fields[23]) : nil,
                                      fields[19] != RAID && fields[24] == "1"))
         when "member"
           worlds.last.members.push(Member.new(fields[1], fields[2] == "1", fields[3].to_s)) if worlds.last
@@ -1219,26 +1221,7 @@ module MGQ_MpWorld
         end
       end
 
-      result = [state["state"] || "idle", state["error"], worlds, state["admin"] == "1"]
-      log_list(result)
-      result
-    end
-
-    # Logs how the list stands whenever that changed.
-    #
-    # @param result [Array] What list returns.
-    def self.log_list(result)
-      state, error, worlds, admin = result
-      # The list is fetched again every few seconds, which is no news.
-      return if state == "loading" && @logged_list
-
-      seen = [state, error, worlds.map { |world| [world.id, world.name, world.online, world.seats, world.members.size] }, admin]
-      return if seen == @logged_list
-
-      @logged_list = seen
-      described = worlds.map { |world| "#{world.name} (#{MGQ_MpWorld.short(world.id)}, #{world.online}/#{world.seats} online)" }
-      MGQ_MpWorld.log("list #{state}#{error ? " (#{error})" : ''}#{admin ? ', as an admin' : ''}: #{worlds.size} world(s)#{described.empty? ? '' : ': ' + described.join(', ')}")
-    rescue
+      [state["state"] || "idle", state["error"], worlds, state["admin"] == "1"]
     end
 
     # Makes a world, locked with its password, with the starting save new players get, if there is one.
@@ -1270,13 +1253,7 @@ module MGQ_MpWorld
                                                                                   about[:description].to_s + "\0", about[:mods].to_s + "\0", about[:data].to_s + "\0",
                                                                                   about[:mod_hashes].to_s + "\0", about[:settings].to_s + "\0", type + "\0", share + "\0", difficulty,
                                                                                   other_mods_off ? 1 : 0, squad + "\0", raid ? -1 : (raid_bosses ? 1 : 0)) == 1
-      files = start.empty? ? "no starting save" : "a starting save of #{start.split("\n").size} file(s)"
-      started(sent, "create #{name}: #{raid ? "raid, sharing #{share}, difficulty #{MGQ_MpWorld.difficulty_name(difficulty)}, squad \"#{squad}\"" : "classic#{raid_bosses ? ', raid bosses' : ''}"}, " \
-                    "#{other_mods_off ? 'other mods off' : 'other mods allowed'}, " \
-                    "#{seats} seats, #{password.empty? ? 'no password' : 'a password'}, #{hidden ? 'hidden' : 'public'}, " \
-                    "#{choose ? "player's choice" : 'no choice'}, #{files}, mods \"#{about[:mods]}\", #{about[:strict] ? 'strict' : 'mismatch allowed'}, " \
-                    "data #{about[:data].to_s.empty? ? 'unknown' : about[:data]}, description of #{about[:description].to_s.size} chars, creator hashes \"#{about[:mod_hashes]}\", " \
-                    "#{about[:settings].to_s.empty? ? "each player's own mod settings" : "mod settings \"#{about[:settings]}\""}")
+      started(sent, "create #{name}")
     end
 
     # Opens a world's lock with its password; the action tells the world's name, its starting save,
@@ -1320,9 +1297,7 @@ module MGQ_MpWorld
       sent = MGQ_Multiplayer::Link.function('mp_dir_edit').call(id + "\0", seats, description + "\0", mods + "\0", mod_hashes.to_s + "\0", mod_hashes ? 1 : 0,
                                                                                 difficulty.to_i, difficulty ? 1 : 0, other_mods_off ? 1 : 0, other_mods_off.nil? ? 0 : 1, squad_text + "\0",
                                                                                 raid_bosses.nil? ? -1 : (raid_bosses ? 1 : 0)) == 1
-      started(sent, "edit world #{MGQ_MpWorld.short(id)}: #{seats} seats, mods \"#{mods}\", description of #{description.size} chars, creator hashes #{mod_hashes ? "\"#{mod_hashes}\"" : 'kept'}" \
-                    "#{difficulty ? ", difficulty #{MGQ_MpWorld.difficulty_name(difficulty)}" : ''}#{squad ? ", squad \"#{squad_text}\"" : ''}" \
-                    "#{raid_bosses.nil? ? '' : ", raid bosses #{raid_bosses ? 'on' : 'off'}"}#{other_mods_off.nil? ? '' : ", other mods #{other_mods_off ? 'off' : 'allowed'}"}")
+      started(sent, "edit world #{MGQ_MpWorld.short(id)}")
     end
 
     # Replaces a world's mod settings, which its creator or an admin may.

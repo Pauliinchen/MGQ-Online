@@ -2,6 +2,7 @@
 #  battles_sync_recorder.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Deleted the recording on file of the mirror match
 #      Paulinchen  2026-10-09: Let the battle's mode act right before each send of the stream
 #      Paulinchen  2026-10-07: Logged the recording's start and end and what each turn streamed
 #      Paulinchen  2026-10-06: Recorded state turns and barriers with the battlers' values, without maximum HP and MP
@@ -17,19 +18,15 @@
 #----------------------------------------------------------------
 
 # The host's side of a live battle's stream: what the host's battle shows, recorded as events
-# for the guests or for a mirror match's file. It builds on battles_sync.rbx.
+# for the guests. It builds on battles_sync.rbx.
 
 module MGQ_MpBattlesSync
   # Everything the host's battle shows, in the order it shows it: battle log lines, popups,
   # messages, pictures, screen effects, sounds, animations, sprite effects and waits, with the
-  # battlers' values after every action. A live battle streams it to the guest, a mirror match
-  # writes it to RECORDING_FILE.
+  # battlers' values after every action, streamed to the guests.
   module Recorder
-    # Events kept before a mirror match writes them to the file.
+    # Events kept before they are sent at once.
     FLUSH_EVENTS = 200
-
-    # The events only the recording on file keeps, which no guest plays.
-    FILE_ONLY = ["action", "turn_end", "battle_end"]
 
     # Seeds a call's random choices are drawn from.
     SEED_RANGE = 1 << 30
@@ -42,32 +39,25 @@ module MGQ_MpBattlesSync
     end
 
     # Starts recording a battle.
-    #
-    # @param sink [Symbol] :link to stream it to the guest, :file to write it over the last
-    #   mirror match's recording.
-    def self.start(sink)
+    def self.start
       @active = true
-      @sink = sink
       @command_phase = false
       @frame = 0
       @events = []
       @values = {}
-      @file_mode = "wb"
       @counts = [0, 0]
       @totals = [0, 0]
-      MGQ_MpBattlesSync.log(sink == :file ? "recording the battle into #{RECORDING_FILE}" : "recording the battle for the guests' stream")
-      event("battle", "settings", display_settings) if sink == :file
+      MGQ_MpBattlesSync.log("recording the battle for the guests' stream")
     rescue => e
       stop_after(e)
     end
 
-    # Ends the recording and sends or writes what is left.
+    # Ends the recording and sends what is left.
     #
     # @param result [Integer] The game's battle result.
     def self.finish(result)
       return unless active?
 
-      event("battle_end", result)
       flush
       @active = false
       totals = @totals || [0, 0]
@@ -81,7 +71,7 @@ module MGQ_MpBattlesSync
       return unless active?
 
       @frame += 1
-      flush if @sink == :link && @frame % SEND_FRAMES == 0
+      flush if @frame % SEND_FRAMES == 0
     end
 
     # Records an event, unless a call that the guest makes itself is running.
@@ -90,10 +80,8 @@ module MGQ_MpBattlesSync
     # @param fields [Array] Its values, see Wire.line.
     def self.event(kind, *fields)
       return unless active? && !muted?
-      return if @sink == :link && FILE_ONLY.include?(kind)
 
-      line = Wire.line([kind] + fields)
-      @events << (@sink == :file ? "#{@frame.to_s.rjust(6)}\t#{line}" : line)
+      @events << Wire.line([kind] + fields)
       (@counts ||= [0, 0])[0] += 1
       flush if @events.size >= FLUSH_EVENTS
     rescue => e
@@ -136,7 +124,7 @@ module MGQ_MpBattlesSync
       flush
       turn = MGQ_MpBattlesSync.turn
       counts = @counts || [0, 0]
-      MGQ_MpBattlesSync.log("#{@sink == :file ? 'recorded' : 'streamed'} #{turn == 0 ? "the battle's start" : "turn #{turn}"}: " \
+      MGQ_MpBattlesSync.log("streamed #{turn == 0 ? "the battle's start" : "turn #{turn}"}: " \
                             "#{counts[0]} events in #{counts[1]} sends, every battler's values anew")
       @counts = [0, 0]
     rescue => e
@@ -276,29 +264,17 @@ module MGQ_MpBattlesSync
       troop ? "e#{troop}" : (MGQ_MpBattlesSync.mode.reserve_ref(battler) || "?")
     end
 
-    # Sends or writes the kept events. A send first lets the battle's mode tell the guests what
-    # its events may name, see MGQ_MpBattles::Mode#before_send.
+    # Sends the kept events, first letting the battle's mode tell the guests what its events may
+    # name, see MGQ_MpBattles::Mode#before_send.
     def self.flush
       return if @events.empty?
 
       (@counts ||= [0, 0])[1] += 1
       (@totals ||= [0, 0])[0] += @events.size
       @totals[1] += 1
-      if @sink == :link
-        MGQ_MpBattlesSync.mode.before_send
-        Channel.post("events", @events.join("\n"))
-      else
-        File.open(MGQ_Multiplayer.log_path(RECORDING_FILE), @file_mode) { |file| file.write(@events.join("\n") + "\n") }
-        @file_mode = "ab"
-      end
+      MGQ_MpBattlesSync.mode.before_send
+      Channel.post("events", @events.join("\n"))
       @events = []
-    end
-
-    # Reads the host's display settings.
-    #
-    # @return [Array] The host's settings that leave parts of a battle unshown.
-    def self.display_settings
-      (SKIP_SETTINGS + [:bt_wait]).map { |key| "#{key}=#{$game_system.conf[key].inspect}" }
     end
 
     # Lists the battlers of the battle.
@@ -322,21 +298,21 @@ module MGQ_MpBattlesSync
        Array(MGQ_MpGame.get(battler, :buffs)).map(&:to_i), walls]
     end
 
-    # Stops recording without sending or writing what is left, such as after a reset.
+    # Stops recording without sending what is left, such as after a reset.
     def self.stop
       MGQ_MpBattlesSync.log("recording stopped, #{Array(@events).size} events left unsent") if active?
       @active = false
       @events = []
     end
 
-    # Stops recording after an error, which stays in Multiplayer InGame.log, and breaks a live battle
-    # off, since the guest sees nothing but the stream.
+    # Stops recording after an error, which stays in Multiplayer InGame.log, and breaks the live
+    # battle off, since the guest sees nothing but the stream.
     #
     # @param error [Exception] The error.
     def self.stop_after(error)
       @active = false
       MGQ_MpBattlesSync.log("recording stopped: #{error.class}: #{error.message}")
-      MGQ_MpBattlesSync.break_off("the host's recording stopped") if @sink == :link
+      MGQ_MpBattlesSync.break_off("the host's recording stopped")
     end
   end
 end

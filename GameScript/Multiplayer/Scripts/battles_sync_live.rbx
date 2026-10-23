@@ -2,7 +2,8 @@
 #  battles_sync_live.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Went back to the host's own commands on Cancel during the wait for the guests' commands
+#      Paulinchen  2026-10-23: Deleted the action and turn end events only the recording on file kept
+#                            - Went back to the host's own commands on Cancel during the wait for the guests' commands
 #                            - Told a guest who never got into the battle why instead of the battle breaking off
 #                            - Named the player by their seat in the battle
 #      Paulinchen  2026-10-17: Set the party's battle counters at a guest's start, so a guest's characters gain EXP
@@ -194,8 +195,6 @@ module MGQ_MpBattlesSync
         Recorder.showing_animation { original.call }
       end
 
-      record_before(Scene_Battle, :turn_end) { |_scene, _args| ["turn_end"] }
-
       # The game also comes back here after a party change or a menu in the same phase, which
       # Recorder.command_phase records only once.
       MGQ_MpHooks.around(Scene_Battle, :start_party_command_selection, "battles_sync_live course") do |scene, _args, original|
@@ -214,13 +213,8 @@ module MGQ_MpBattlesSync
         result
       end
 
-      MGQ_MpHooks.around(Scene_Battle, :use_item, "battles_sync_live course") do |scene, _args, original|
+      MGQ_MpHooks.around(Scene_Battle, :use_item, "battles_sync_live course") do |_scene, _args, original|
         Recorder.values
-        if Recorder.active?
-          subject = MGQ_MpGame.get(scene, :subject)
-          action = subject && subject.current_action
-          Recorder.event("action", subject, action && action.item, action && action.target_index, action && action.symbol)
-        end
         result = original.call
         Recorder.values
         result
@@ -272,7 +266,6 @@ module MGQ_MpBattlesSync
         elsif MGQ_MpBattlesSync.host? && !Live.host_start(scene)
           nil
         else
-          Recorder.start(:file) if MGQ_MpBattlesSync.take_file_recording
           Recorder.values
           original.call
         end
@@ -537,7 +530,7 @@ module MGQ_MpBattlesSync
       return end_early(scene, ready) if ready.is_a?(Symbol)
 
       MGQ_MpBattlesSync.log("every guest is ready, the host's battle starts and streams")
-      Recorder.start(:link)
+      Recorder.start
       true
     end
 

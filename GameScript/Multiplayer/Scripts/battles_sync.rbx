@@ -2,7 +2,9 @@
 #  battles_sync.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Asked the player before they leave the battle from a wait
+#      Paulinchen  2026-10-23: Deleted the recording on file of the mirror match
+#                            - Deleted the unused DROPOUT switch
+#                            - Asked the player before they leave the battle from a wait
 #                            - Told a guest who never got into the battle why, on the map, instead of the battle breaking off
 #                            - Numbered the battle's messages and sent those lost over a reconnect again
 #                            - Kept the battle's players by the seats they held at its start, taking one out only once gone
@@ -83,14 +85,6 @@
 # Each game sees its own team as the party, so the two would draw their random numbers in a
 # different order if both computed.
 module MGQ_MpBattlesSync
-  # File inside the game folder's Logs folder that a recorded battle writes into.
-  RECORDING_FILE = "Battle Recording.log"
-
-  # What happens when the friend leaves or the connection drops: :win ends the battle as won,
-  # :computer lets the computer play the friend's team on, which only the host can do, since only
-  # its game computes the battle.
-  DROPOUT = :win
-
   # Frames a battle message stays before it moves on by itself, so neither player holds the
   # battle up for the other.
   MESSAGE_FRAMES = 90
@@ -485,27 +479,12 @@ module MGQ_MpBattlesSync
     @battle_running = true if @role
   end
 
-  # Has the next battle write what it shows into RECORDING_FILE, such as a mirror match.
-  def self.record_to_file
-    @record_next = true
-  end
-
-  # Takes the request to record the battle starting now.
-  #
-  # @return [Boolean] Whether the battle starting now is to be recorded, asked once per battle.
-  def self.take_file_recording
-    recording = @record_next ? true : false
-    @record_next = false
-    recording
-  end
-
   # Ends the live battle and closes the link, stops a recording and puts the host's settings back
   # when the battle's end has not, such as after a reset or an early end. Called by the mode when it
   # puts the game back, and after a reset.
   def self.finish
     Recorder.stop
     Live.end_phase
-    @record_next = false
     restore_settings
     return unless @role
 
@@ -669,7 +648,8 @@ module MGQ_MpBattlesSync
     MGQ_MpOverworldSync.tell(seat, fields, body)
   end
 
-  # Ends the battle once the friend is gone: won, or played on by the computer on the host.
+  # Ends the battle once the friend is gone: won, or in a co-op battle played on by the computer on
+  # the host.
   #
   # @param scene [Scene_Battle] The battle.
   # @return [Boolean] true when the battle goes on with the computer.
@@ -679,7 +659,7 @@ module MGQ_MpBattlesSync
     # A co-op battle plays on on the host once every guest is gone, the host's own full team again
     # from the next command phase (see MGQ_MpBattlesCoop.settle); a guest whose host is gone fights on
     # alone.
-    if host? && (DROPOUT == :computer || coop?)
+    if host? && coop?
       @solo = true
       Recorder.stop
       log("the host plays on alone, the computer playing for the guests who left, streaming stopped")

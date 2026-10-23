@@ -11,7 +11,6 @@
     <File Path="GameScript/Multiplayer/Scripts/battles_pvp.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/battles_pvp_backline.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/battles_pvp_lobby.rbx" />
-    <File Path="GameScript/Multiplayer/Scripts/battles_pvp_mirror.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/battles_sync.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/battles_sync_live.rbx" />
     <File Path="GameScript/Multiplayer/Scripts/battles_sync_playback.rbx" />

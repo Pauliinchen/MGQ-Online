@@ -2,6 +2,7 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Dropped the check of the log rules of the deleted options dump
 #      Paulinchen  2026-10-17: Checked the load order of the raid boss freeze scripts
 #      Paulinchen  2026-10-15: Checked that every export takes at most 16 arguments
 #                            - Checked the log of each day and that starting a game deletes those of earlier days
@@ -156,8 +157,8 @@ Dir.mktmpdir do |game|
 end
 
 # Starting a game deletes every log of this mod but the day's: those of earlier days, the session
-# logs older builds wrote and the unstamped ones of the oldest, while a game started for the options
-# dump deletes nothing and only the logs actually deleted are counted.
+# logs older builds wrote and the unstamped ones of the oldest, and only the logs actually deleted
+# are counted.
 Dir.mktmpdir do |game|
   Dir.chdir(game) do
     Dir.mkdir("Logs")
@@ -169,11 +170,6 @@ Dir.mktmpdir do |game|
     (kept + gone).each { |name| File.write(File.join("Logs", name), "x") }
     # A folder cannot be deleted as a file is.
     Dir.mkdir(File.join("Logs", "Multiplayer InGame 2026-01-02.log"))
-    before = logs.call
-    ENV["MGQMP_OPTIONS_DUMP"] = "options.txt"
-    MGQ_Multiplayer::Log.prune
-    check("a game started for the options dump deletes no log", logs.call, before)
-    ENV.delete("MGQMP_OPTIONS_DUMP")
     MGQ_Multiplayer::Log.write("pruning")
     MGQ_Multiplayer::Log.prune
     own = MGQ_Multiplayer::Log.file_name

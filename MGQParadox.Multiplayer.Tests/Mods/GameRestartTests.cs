@@ -2,6 +2,7 @@
 //  GameRestartTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Made the parking without the deleted options dump check
 //      Paulinchen  2026-10-22: Covered the release passed to the updater
 //      Paulinchen  2026-10-09: Covered when the parked mods' watchdog does not start
 //      Paulinchen  2026-10-08: Created
@@ -78,7 +79,7 @@ public sealed class GameRestartTests : IDisposable
         var modFolder = Path.Combine(game, "Patch", "Multiplayer");
         Directory.CreateDirectory(modFolder);
         File.WriteAllText(Path.Combine(game, "Patch", "A.rb"), "# A\n");
-        using var parking = new ModParking(game) { InOptionsDump = () => false };
+        using var parking = new ModParking(game);
         parking.Park(["Patch/A.rb"], "world");
         var journal = File.ReadAllText(parking.JournalPath);
 

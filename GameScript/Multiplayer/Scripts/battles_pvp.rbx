@@ -3,7 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Removed the PvP battle screen's hotkey, its exchange and its Discord invites
-#      Paulinchen  2026-10-23: Left out a skill hit's message without a target in every battle
+#      Paulinchen  2026-10-23: Deleted the mirror match
+#                            - Left out a skill hit's message without a target in every battle
 #      Paulinchen  2026-10-22: Said the version to play on F11 for a step back to an older release
 #      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #      Paulinchen  2026-10-08: Left out a skill hit's message without a target in co-op and live battles too
@@ -55,26 +56,15 @@
 
 # PvP battles: two games swap their teams' builds, then fight the same battle live, each player
 # commanding their own team, and the game is put back as it was once it ends. Only the Frontline
-# fights unless the host's battles have the Backline (battles_pvp_backline.rbx). A mirror match
-# fights the player's own team, played by the computer.
+# fights unless the host's battles have the Backline (battles_pvp_backline.rbx).
 module MGQ_MpBattlesPvp
   # Turns PvP battles off without uninstalling them.
   ENABLED = true
-
-  # Who the player's own team belongs to in a mirror match.
-  MIRROR_NAME = "Mirror"
 
   extend MGQ_MpLog
 
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "pvp battle"
-
-  # Starts a mirror match: the player's own team, sent through the same build as a friend's would
-  # be, so it fights exactly as a friend would meet it.
-  def self.begin_mirror
-    team = Team.build
-    Battle.start(MIRROR_NAME, Team.parse(team), true, Team.backline?(team))
-  end
 
   # The fields the Discord mod publishes about PvP battles, through its bridge.
   #
@@ -85,7 +75,7 @@ module MGQ_MpBattlesPvp
   def self.status_fields(scene)
     return {} unless Battle.running? && scene == "battle"
 
-    Battle.mirror? ? { "pvp_battle" => "mirror" } : { "pvp_battle_with" => Battle.opponent }
+    { "pvp_battle_with" => Battle.opponent }
   end
 
   # Installs the hooks on methods the game's plugins may define anew. Called once the first scene
@@ -96,7 +86,6 @@ module MGQ_MpBattlesPvp
     @installed = true
     install_targetless
     install_untargeted_messages
-    install_turns
   end
 
   # Leaves out the message of a skill's next hit that finds no target any more in every battle.
@@ -142,13 +131,6 @@ module MGQ_MpBattlesPvp
     end
   rescue => e
     log("use_item hook FAILED: #{e.class}: #{e.message}")
-  end
-
-  # Adds to a mirror match's report how both teams look as each turn starts.
-  def self.install_turns
-    MGQ_MpHooks.after(BattleManager.singleton_class, :turn_start, "battles_pvp") { MGQ_MpBattlesPvp::MirrorReport.turn_started if MGQ_MpBattlesPvp::Battle.running? }
-  rescue => e
-    log("turn hook FAILED: #{e.class}: #{e.message}")
   end
 
   # The team two games swap: the builds of the Frontline and the Backline, see MGQ_MpActors::Builds,
@@ -702,13 +684,6 @@ module MGQ_MpBattlesPvp
     # What the map says after a live battle broke off without a winner.
     BROKEN = "The PvP battle against %s's team broke off, Logs\\Multiplayer InGame.log says why."
 
-    # What the map says after a mirror match, by the game's battle result.
-    MIRROR_RESULTS = {
-      0 => "You beat your own team!",
-      1 => "You left the mirror match.",
-      2 => "Your own team won.",
-    }
-
     # Actions of the friend's characters logged per battle, so the log stays short.
     LOGGED_ACTIONS = 12
 
@@ -729,22 +704,14 @@ module MGQ_MpBattlesPvp
       @snapshot ? true : false
     end
 
-    # Tells whether the running battle is a mirror match.
-    #
-    # @return [Boolean] Whether the running battle is a mirror match.
-    def self.mirror?
-      @mirror ? true : false
-    end
-
     # Starts the battle from the map.
     #
     # @param opponent [String] The friend's name.
     # @param members [Array<MGQ_MpActors::Builds::Member>] The friend's team, the Frontline first.
-    # @param mirror [Boolean] Whether it is the player's own team.
     # @param backline [Boolean] Whether both players swap their Backline in, which a team duel never has.
     # @yieldreturn [Array<Opponent>] The characters of the other side, rebuilt by a team duel; without
     #   a block, the friend's team is rebuilt.
-    def self.start(opponent, members, mirror, backline = false)
+    def self.start(opponent, members, backline = false)
       # A team duel rebuilds the other side itself, and never has the Backline.
       team_duel = block_given?
       backline = false if team_duel
@@ -754,7 +721,6 @@ module MGQ_MpBattlesPvp
       @globals = Marshal.dump(globals)
       @medals = Array(MGQ_MpGame.get($game_temp, :gain_medals)).dup
       @opponent = opponent
-      @mirror = mirror
       @failed = false
       @result = nil
       @logged_actions = 0
@@ -775,12 +741,10 @@ module MGQ_MpBattlesPvp
       BattleManager.make_escape_ratio if BattleManager.respond_to?(:make_escape_ratio)
       check(everyone)
       MGQ_MpBalancePvp.begin(own + everyone)
-      MirrorReport.start(opponents) if mirror
       BattleManager.event_proc = Proc.new { |result| MGQ_MpBattlesPvp::Battle.finished(result) }
-      MGQ_MpBattlesSync.record_to_file if mirror
       MGQ_MpBattlesSync.battle_started
       SceneManager.call(Scene_Battle)
-      MGQ_MpBattlesPvp.log("started #{mirror ? 'a mirror match' : 'a PvP battle'} against #{opponent}'s team of #{opponents.size}, " \
+      MGQ_MpBattlesPvp.log("started a PvP battle against #{opponent}'s team of #{opponents.size}, " \
                            "#{everyone.size - opponents.size} more on the Backline, with #{own.size} of the player's own " \
                            "(#{backline ? 'with' : 'without'} the Backline): #{MGQ_MpBattlesSync.named_list(opponents)}")
     rescue => e
@@ -922,7 +886,6 @@ module MGQ_MpBattlesPvp
     def self.result_text
       return FAILED if @failed
       return format(BROKEN, @opponent) if @broken
-      return MIRROR_RESULTS.fetch(@result, "The mirror match ended.") if @mirror
 
       format(RESULTS.fetch(@result, "The PvP battle against %s's team ended."), @opponent)
     end

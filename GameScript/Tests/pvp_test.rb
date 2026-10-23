@@ -2,7 +2,8 @@
 #  pvp_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Checked hit messages left out without a target outside multiplayer battles too
+#      Paulinchen  2026-10-23: Dropped the checks of the deleted mirror match
+#                            - Checked hit messages left out without a target outside multiplayer battles too
 #      Paulinchen  2026-10-08: Checked messages shown as the game shows them and a missing picture not tried again
 #                            - Checked that a duel in a Raid World takes only the squad's Frontline
 #                            - Checked hit messages left out once no target is left
@@ -10,10 +11,10 @@
 #
 #----------------------------------------------------------------
 
-# Covers the PvP battle, battles_pvp.rbx with battles_pvp_mirror.rbx: the snapshot taken as the
-# battle starts, which every save written meanwhile gets instead of the battle, the game put back as
-# the map starts again without the game's Retry, the troop's totals other mods read, actions and
-# messages without a target, the mirror match's report, a reset and a Raid World duel.
+# Covers the PvP battle, battles_pvp.rbx: the snapshot taken as the battle starts, which every save
+# written meanwhile gets instead of the battle, the game put back as the map starts again without
+# the game's Retry, the troop's totals other mods read, actions and messages without a target, a
+# reset and a Raid World duel.
 
 require_relative "support"
 
@@ -168,7 +169,7 @@ module DataManager
   # Notes the autosave in $saves_written, with the Library.
   def self.auto_save_game_without_rescue; $saves_written << [:auto, make_save_contents, $game_library.dup]; end
 end
-# Stands in for the game's battle manager, noting each setup in $setup and each turn in $turns.
+# Stands in for the game's battle manager, noting each setup in $setup.
 module BattleManager
   # The handler the battle's result goes to.
   class << self; attr_accessor :event_proc; end
@@ -178,8 +179,6 @@ module BattleManager
   def self._auto_skill_per(skills, battler); :original; end
   # Stands in for queuing the automatic skills.
   def self.set_auto_skill(&skills); @action_game_masters = [:queued]; end
-  # Counts the turn in $turns.
-  def self.turn_start; $turns += 1; end
 end
 # Stands in for the battles' rules, noting each begin and finish in $rules.
 module MGQ_MpBattles
@@ -211,8 +210,6 @@ module MGQ_MpBattlesPvp
 end
 # Stands in for the live battle.
 module MGQ_MpBattlesSync
-  # Notes in $recording that the battle is recorded.
-  def self.record_to_file; $recording = true; end
   # Notes in $battle_started that the battle started.
   def self.battle_started; $battle_started = true; end
   # Notes in $sync_finished that it finished.
@@ -232,15 +229,8 @@ $rules = []
 $recovered = []
 $saves_written = []
 $system_written = []
-$turns = 0
 
 load_script "battles_pvp"
-load_script "battles_pvp_mirror"
-# The mirror report, whose sections go into $reports instead of a file.
-module MGQ_MpBattlesPvp::MirrorReport
-  # Notes a section in $reports.
-  def self.write(mode, title); ($reports ||= []) << [mode, title]; end
-end
 SceneManager.run
 
 pvp = MGQ_MpBattlesPvp
@@ -259,9 +249,9 @@ $game_global_system = "affection before"
 
 # The battle starts with a snapshot of the game.
 check("outside a battle the troop's totals are the game's", [$game_troop.exp_total, $game_troop.make_drop_items], [500, [:drop]])
-battle.start("Friend", [member.new(7), member.new(8), member.new(9)], false, false)
-check("a PvP battle runs, its troop the friend's Frontline rebuilt, stood side by side", [battle.running?, battle.mirror?, $game_troop.members.map(&:name), $game_troop.members.map(&:screen_x)],
-      [true, false, ["Actor7 (Friend)", "Actor8 (Friend)", "Actor9 (Friend)"], [106, 320, 533]])
+battle.start("Friend", [member.new(7), member.new(8), member.new(9)], false)
+check("a PvP battle runs, its troop the friend's Frontline rebuilt, stood side by side", [battle.running?, $game_troop.members.map(&:name), $game_troop.members.map(&:screen_x)],
+      [true, ["Actor7 (Friend)", "Actor8 (Friend)", "Actor9 (Friend)"], [106, 320, 533]])
 check("in a troop of its own, in the game's battle replay mode with the PvP rules", [$data_troops.size, $data_troops.last.name, $setup.last, $game_temp.in_memory_battle, $rules.last],
       [4, "PvP battle", [3, true, true], true, [:pvp, false]])
 check("the player's Frontline recovered and balanced with the other side", [$recovered, $balanced], [[1, 2], 5])
@@ -356,16 +346,8 @@ check("the troop's totals are the game's again", [$game_troop.exp_total, $game_t
 scene.subject = Targetless.new(Aimed.new(true, false))
 check("and an action without a target runs as the game runs it", scene.use_item, :used)
 
-# A mirror match writes its report once the first turn starts.
-$reports = []
-pvp.begin_mirror
-check("a mirror match fights the player's own whole team, recorded, and starts its report", [battle.mirror?, $game_troop.members.map(&:name), $recording, $reports.map(&:first)],
-      [true, ["Actor1 (Mirror)", "Actor2 (Mirror)", "Actor3 (Mirror)"], true, ["wb"]])
-BattleManager.turn_start
-BattleManager.turn_start
-check("the first turn adds to the report once, since the hook is in once the game runs", [$turns, $reports.map(&:first)], [2, ["wb", "ab"]])
-
 # A reset drops the battle and puts the shared data back.
+battle.start("Friend", [member.new(7)], false)
 $game_library = "library changed"
 Scene_Title.new.start
 check("a reset drops the battle, the shared data put back", [battle.running?, $game_library, $game_temp.in_memory_battle], [false, "library before", false])
@@ -374,8 +356,8 @@ check("a reset drops the battle, the shared data put back", [battle.running?, $g
 $raid = true
 $recovered = []
 $game_party.battle_members = (1..4).map { |id| Game_Actor.new(id) }
-pvp.begin_mirror
-check("a duel in a Raid World without the Backline fights the squad's Frontline alone", [$game_troop.members.map(&:name), $recovered], [["Actor1 (Mirror)"], [1]])
+battle.start("Friend", (1..4).map { |id| member.new(id) }, false)
+check("a duel in a Raid World without the Backline fights the squad's Frontline alone", [$game_troop.members.map(&:name), $recovered], [["Actor1 (Friend)"], [1]])
 Scene_Title.new.start
 $raid = false
 check("nothing failed", $log.grep(/FAILED|could not/).size, 0)

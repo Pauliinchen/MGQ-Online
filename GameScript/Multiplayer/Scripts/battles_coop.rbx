@@ -2,7 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Found the battle's players by the seats they held at its start
+#      Paulinchen  2026-10-23: Removed the unused ROSTER_FRAMES and the side battle check of older pool scripts
+#                            - Found the battle's players by the seats they held at its start
 #                            - Let the starter of a battle the server never started fight it as their own and named the server to its guests
 #                            - Sent a guest whose battle ended before its roster back to the map, told why
 #                            - Kept a guest's own enemies at the host's places when only their places differ
@@ -157,10 +158,6 @@ module MGQ_MpBattlesCoop
 
   # Frames a guest waits for the host's party beyond the host's wait for the players to join.
   ROSTER_MARGIN_FRAMES = 240
-
-  # Frames a guest waits for the host's party, ten seconds: longer than the host waits for the
-  # players to join after it sent the invite.
-  ROSTER_FRAMES = JOIN_FRAMES + ROSTER_MARGIN_FRAMES
 
   # Players of a battle in a Raid World at most, the host included: as many as the Frontline has
   # places, each player's first character on it.
@@ -574,10 +571,7 @@ module MGQ_MpBattlesCoop
   # @param troop_id [Integer] The battle's troop.
   # @return [Boolean] Whether it is.
   def self.side_battle?(troop_id)
-    return false unless defined?(MGQ_MpRaidPool)
-    return MGQ_MpRaidPool.side_battle?(troop_id) ? true : false if MGQ_MpRaidPool.respond_to?(:side_battle?)
-
-    MGQ_MpRaidPool.respond_to?(:kind_of) && MGQ_MpRaidPool.kind_of(troop_id) == :side
+    defined?(MGQ_MpRaidPool) && MGQ_MpRaidPool.respond_to?(:side_battle?) && MGQ_MpRaidPool.side_battle?(troop_id) ? true : false
   end
 
   # Adds the host of an invite that waits for the player to the players a battle in a Raid World

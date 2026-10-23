@@ -2,6 +2,7 @@
 #  duel_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Started the stand-in battle without the deleted mirror match flag
 #      Paulinchen  2026-10-12: Checked an odd party_member_max and a team duel start that does not read
 #                            - Read whole numbers of the stand-in wire back and gave it unreadable lines
 #      Paulinchen  2026-10-11: Checked the line above the player's head through a duel's steps
@@ -50,10 +51,10 @@ module MGQ_MpBattlesPvp
   module Battle
     # Runs from its start until the first look at it, so the next duel finds the player free.
     def self.running?; running = @started; @started = false; running; end
-    def self.start(name, members, mirror, backline = false)
+    def self.start(name, members, backline = false)
       @started = !$start_fails
       $backlines << backline
-      $started << [name, members, mirror, block_given? ? yield : nil]
+      $started << [name, members, block_given? ? yield : nil]
     end
   end
 end
@@ -166,7 +167,7 @@ check("counting them down", doing_shown, "Waiting for Friend's duel (4 s)")
 $inbox << entry("message", 2, "duel=start\nbid=b1\n\ngame-1\tteam-friend")
 MGQ_MpOverworldSync.tick
 frame
-check("the challenger's answer starts the duel as guest", [$joined.last, $started.last], [[:guest, "b1", [2], "Friend", :pvp], ["Friend", ["team-friend"], false, nil]])
+check("the challenger's answer starts the duel as guest", [$joined.last, $started.last], [[:guest, "b1", [2], "Friend", :pvp], ["Friend", ["team-friend"], nil]])
 check("which ends the wait above the player's head", duel.own_doing, nil)
 
 # Challenged from afar, through the World overview.
@@ -279,7 +280,7 @@ check("once all are ready, everyone hears both sides", [starts.map(&:first).sort
 check("and the challenger's line gets nothing ready any more", duel.own_doing, nil)
 check("with no share of the Backline", $arranged.last(2), [false, false])
 frame
-check("then the host starts the team duel", [$joined.last, $prepared[2], $started.last.values_at(0, 3)], [[:host, bid, [3, 2], "the duel", :pvp, true], true, ["Side leader", [:opponents]]])
+check("then the host starts the team duel", [$joined.last, $prepared[2], $started.last.values_at(0, 2)], [[:host, bid, [3, 2], "the duel", :pvp, true], true, ["Side leader", [:opponents]]])
 
 # A player not ready in ten seconds is left out.
 duel.invite

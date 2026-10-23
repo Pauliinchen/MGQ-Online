@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-24: Checked the Game's Default look and the game's windows wearing the look
 #                            - Checked turning the look on the game's windows off
+#      Paulinchen  2026-10-23: Told a dragged box here
 #      Paulinchen  2026-10-12: Counted the scrollbar track among the preset colors
 #                            - Followed the settings to their own Mod Config group
 #      Paulinchen  2026-10-11: Created
@@ -155,6 +156,11 @@ load_script "core_hotkeys"
 load_script "ui"
 load_script "ui_theme"
 load_script "ui_layout"
+# Lets the tests tell whether a box is being dragged.
+module MGQ_MpUi::Layout
+  # Tells whether the box is being dragged.
+  def self.dragging?(id); @drag && @drag.id == id ? true : false; end
+end
 
 style = MGQ_MpUi::Style
 theme = MGQ_MpUi::Theme

@@ -2,6 +2,7 @@
 #  ui_bug_report.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Removed sending?, which only the tests read
 #      Paulinchen  2026-10-12: Kept the report's messages until the notification box shows
 #                            - Scrolled the description being typed with the mouse wheel
 #                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
@@ -548,13 +549,6 @@ module MGQ_MpBugReport
 
     MGQ_MpNotices.message(NOTICE_KEY, @outcome, NOTICE_FRAMES)
     @outcome = nil
-  end
-
-  # Tells whether a report is being sent.
-  #
-  # @return [Boolean] Whether one is.
-  def self.sending?
-    @sending
   end
 
   # Lists the public facts of a report, as the report is asked for.

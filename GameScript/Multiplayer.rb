@@ -6,7 +6,9 @@
 #                            - Loaded world_gates.rbx after world_difficulty.rbx
 #                            - Loaded ui_mod_browser.rbx after ui_bug_report.rbx and named the mp_mod_browser_* exports
 #                            - Stopped loading the removed battles_pvp_lobby.rbx
-#      Paulinchen  2026-10-23: Named mp_memory_usage
+#      Paulinchen  2026-10-23: Stopped loading the deleted battles_pvp_mirror.rbx
+#                            - Deleted the log rules of a game started for the options dump
+#                            - Named mp_memory_usage
 #      Paulinchen  2026-10-22: Named mp_dir_open and mp_dir_read
 #                            - Named mp_update_rollback, told whether the release to install is a step back and said the version to play for one
 #      Paulinchen  2026-10-17: Loaded battles_raid_freeze_data.rbx, battles_raid_freeze.rbx and world_freeze.rbx after battles_raid_pool.rbx
@@ -153,7 +155,7 @@ module MGQ_Multiplayer
     world world_mods world_mods_parking world_catchup_data world_story world_catchup world_catchup_exp world_affection world_opening world_difficulty world_gates world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_raid_freeze_data battles_raid_freeze world_freeze battles_raid_tiers battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live battles_served
-    battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_duel battles_team
+    battles_balance_pvp battles_pvp battles_pvp_backline battles_duel battles_team
     trade ui_trade
     world_overview world_overview_pages world_overview_mods ui_party_box ui_edge_arrows ui_raid_bar ui_raid_freeze ui_leader_hud ui_single_player ui_notices ui_bug_report ui_mod_browser
   ]
@@ -318,20 +320,13 @@ module MGQ_Multiplayer
     # when the game closes first.
     REPEAT_REPORTS = [10, 100, 1000, 10_000]
 
-    # A log of this mod, the scripts', the DLL's or an options dump's, named after a day, after a
-    # session's start as older builds named them, or without a stamp as the oldest did.
+    # A log of this mod, the scripts' or the DLL's, named after a day, after a session's start as
+    # older builds named them, or without a stamp as the oldest did, also the options dump's log
+    # older builds wrote.
     OWN_LOG = /\AMultiplayer(?: InGame)?(?: \d{4}-\d{2}-\d{2}(?: \d{2}-\d{2}-\d{2})?)?(?: options dump)?\.log\z/
 
     # A log of this mod named after a day, and that day in its name.
     DAY_LOG = /\AMultiplayer(?: InGame)? (\d{4}-\d{2}-\d{2})(?: options dump)?\.log\z/
-
-    # What ends the name of the scripts' log of a game the World Admin tool started for the options
-    # dump, which quits at once and so is no session the player played.
-    DUMP_SUFFIX = " options dump"
-
-    # The environment variable through which the World Admin tool asks for the options dump, as
-    # world_mods.rbx's MGQ_MpWorldMods::DUMP_SETTING names it.
-    DUMP_SETTING = "MGQMP_OPTIONS_DUMP"
 
     # Bytes a day's log may reach before its oldest lines are cut.
     MAX_BYTES = 4 * 1024 * 1024
@@ -410,10 +405,9 @@ module MGQ_Multiplayer
     end
 
     # Deletes every log of this mod but those of the day the game started on, the scripts', the
-    # DLL's and those of options dumps, since nothing else ever removes them. A game started for the
-    # options dump deletes nothing.
+    # DLL's and the options dump's of older builds, since nothing else ever removes them.
     def self.prune
-      return if dump_run? || !File.directory?(LOG_DIR)
+      return unless File.directory?(LOG_DIR)
 
       today = session_stamp
       gone = Dir.entries(LOG_DIR).select { |name| name =~ OWN_LOG && name[DAY_LOG, 1] != today }
@@ -424,23 +418,12 @@ module MGQ_Multiplayer
       write("deleting old logs failed: #{e.class}: #{e.message}")
     end
 
-    # Tells whether the World Admin tool started the game for the options dump, see
-    # MGQ_MpWorldMods.dump_requested?.
-    #
-    # @return [Boolean] Whether it did.
-    def self.dump_run?
-      !ENV[DUMP_SETTING].to_s.empty?
-    rescue
-      false
-    end
-
     # Names the log after the day the game started on, read once, so a session that goes past
     # midnight stays in one log.
     #
-    # @return [String] The file name, such as "Multiplayer InGame 2026-10-07.log", with
-    #   DUMP_SUFFIX before ".log" for a game started for the options dump.
+    # @return [String] The file name, such as "Multiplayer InGame 2026-10-07.log".
     def self.file_name
-      @file_name ||= "#{NAME} #{session_stamp}#{dump_run? ? DUMP_SUFFIX : ''}.log"
+      @file_name ||= "#{NAME} #{session_stamp}.log"
     end
 
     # Writes the day the game started on, in local time, as the log's name shows it.

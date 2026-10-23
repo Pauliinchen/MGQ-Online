@@ -2,6 +2,7 @@
 #  world_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Gave the stand-in world list every field the DLL writes
 #      Paulinchen  2026-10-22: Checked a world read before entering while the list lacks its mods, and the mods measured against the relay's limit
 #      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number
 #      Paulinchen  2026-10-14: Expected a Raid World's Shared save and Save in the new world's form
@@ -434,10 +435,10 @@ check("create hands the description, the mods, the game data and the rule to the
 MGQ_MpWorld::Directory.create("W", "p", 4, false, false, "")
 check("or nothing", $calls.last[2][5..7] + [($calls.last[2][3] & MGQ_MpWorld::Directory::STRICT_OPTION) > 0], ["\0", "\0", "\0", false])
 $dll["mp_dir_list"] = "state=ready\n\n" \
-  "world\tw1\t4\t0\tc\t0\tC\tStrict\tnone\t0\t0\t1\t0\t1\t#{plain}\tNo mods\tUnmodded only.\n" \
-  "world\tw2\t4\t0\tc\t0\tC\tLoose\tnone\t0\t0\t1\t0\t0\t#{plain}\tSome Mod\tA slow run through part one of the story with friends.\n" \
-  "world\tw3\t4\t0\tc\t0\tC\tSame\tnone\t0\t0\t1\t0\t1\t#{modded}\t\t\n" \
-  "world\tw4\t4\t0\tc\t0\tC\tOld\tnone\t0\t0\t1\t0\n"
+  "world\tw1\t4\t0\tc\t0\tC\tStrict\tnone\t0\t0\t1\t0\t1\t#{plain}\tNo mods\tUnmodded only.\t\t\tclassic\toff\t\t0\t\t0\n" \
+  "world\tw2\t4\t0\tc\t0\tC\tLoose\tnone\t0\t0\t1\t0\t0\t#{plain}\tSome Mod\tA slow run through part one of the story with friends.\t\t\tclassic\toff\t\t0\t\t0\n" \
+  "world\tw3\t4\t0\tc\t0\tC\tSame\tnone\t0\t0\t1\t0\t1\t#{modded}\t\t\t\t\tclassic\toff\t\t0\t\t0\n" \
+  "world\tw4\t4\t0\tc\t0\tC\tOld\tnone\t0\t0\t1\t0\t\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n"
 _, _, listed, = MGQ_MpWorld::Directory.list
 check("the list reads which worlds take the same data only", listed.map { |world| world.strict }, [true, false, true, false])
 check("their creators' game data", listed.map { |world| world.data }, [plain, plain, modded, ""])

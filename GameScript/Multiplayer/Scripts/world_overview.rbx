@@ -5,7 +5,8 @@
 #      Paulinchen  2026-10-24: Listed the pages of other mods after the own pages and made room for two of their tabs
 #                            - Placed the menu of a page with a head, a list and a pane over the pane or under its buttons
 #                            - Opened the overview outside a world too, as Single player with the Quests page
-#      Paulinchen  2026-10-23: Kept the overview off the live map behind menus
+#      Paulinchen  2026-10-23: Removed the unused EXP_VALUE, BOSSES_HEADING and World page labels, and the repeated page hints
+#                            - Kept the overview off the live map behind menus
 #      Paulinchen  2026-10-13: Removed the unused YOUR_LEVEL
 #      Paulinchen  2026-10-12: Moved the World, Quests and Unlocks pages into world_overview_pages.rbx
 #                            - Renamed the Levels page Unlocks
@@ -140,9 +141,6 @@ module MGQ_MpWorldOverview
   # How the Unlocks page heads the formation's catch-up experience without a level it holds up to.
   EXP_HEADING_NONE = "Catch-up EXP"
 
-  # What the Unlocks page says of a formation member's catch-up experience.
-  EXP_VALUE = "Level %d, %s EXP"
-
   # What the Unlocks page says while the world's story has not raised the level cap yet.
   NO_CATCH_UP = "Starts once the world's story raises the level cap."
 
@@ -171,8 +169,8 @@ module MGQ_MpWorldOverview
   # What the World page says of the world's story before the relay told it.
   STORY_UNTOLD = "Not told yet"
 
-  # The labels of the World page's rows.
-  WORLD_LABELS = { :name => "World", :type => "Type", :difficulty => "Difficulty", :players => "Players", :story => "Story", :objective => "Objective" }
+  # The label of the World page's story objective.
+  OBJECTIVE_LABEL = "Objective"
 
   # The common event of Amira the Informant, whose words on the information asked for name the
   # story's current objective (see main_quest).
@@ -287,10 +285,6 @@ module MGQ_MpWorldOverview
 
   # How the World page writes the players online and the world's seats.
   PLAYERS_OF = "%d / %d"
-
-  # How the World page heads the raid bosses of a section of the story, see
-  # MGQ_MpRaidBosses.sections.
-  BOSSES_HEADING = "Raid bosses: %s"
 
   # The section the World page lists the pools under whose bosses the tables lack.
   OTHER_SECTION = "Other"
@@ -1240,13 +1234,11 @@ class Sprite_MpWorldOverview < Sprite
   MIN_HEIGHT = [LIST_TOP + MIN_ROWS * ROW + MARGIN + HINT_HEIGHT, LIST_TOP + MGQ_MpUi::Style::GAP + PORTRAIT + SPLIT_GAP + SPLIT_ROWS * ROW + MARGIN + HINT_HEIGHT,
                 MENU_ROWS * ROW + HINT_HEIGHT].max
 
-  # The hint at the bottom of each page, with the overview's hotkey.
-  HINTS = {
-    :players => ["Left or right: page", "Enter: invite, duel or trade", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP),
-    :world => ["Left or right: page", "Up or down: pick", "Page Up or Down: read on", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP),
-    :quests => ["Left or right: page", "Up or down: pick", "Page Up or Down: read on", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP),
-    :unlocks => ["Left or right: page", "Up or down: pick", "Page Up or Down: read on", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP),
-  }
+  # The hint at the bottom of the Players page, with the overview's hotkey.
+  PLAYERS_HINT = ["Left or right: page", "Enter: invite, duel or trade", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP)
+
+  # The hint at the bottom of every other page, with the overview's hotkey.
+  PAGE_HINT = ["Left or right: page", "Up or down: pick", "Page Up or Down: read on", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP)
 
   # The hint at the bottom of another mod's page.
   MOD_HINT = ["Left or right: page", "Up or down: pick", "Enter: select", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP)
@@ -1442,8 +1434,23 @@ class Sprite_MpWorldOverview < Sprite
       lines.each_with_index { |line, index| draw_line(line, LIST_TOP + index * ROW, view[:scroll] + index == view[:selected]) }
       style.draw_scrollbar(bitmap, width - MARGIN + (MARGIN - style::SCROLLBAR_WIDTH) / 2, LIST_TOP, rows * ROW, view[:scroll], rows, view[:lines].size)
     end
-    style.draw_hint(bitmap, MARGIN, height - HINT_HEIGHT, width - 2 * MARGIN, HINT_HEIGHT, view[:focused] ? MOD_PANE_HINT : HINTS.fetch(view[:page], MOD_HINT) % MGQ_MpHotkeys.label(:overview))
+    style.draw_hint(bitmap, MARGIN, height - HINT_HEIGHT, width - 2 * MARGIN, HINT_HEIGHT, hint_of(view))
     draw_menu(view) if view[:menu]
+  end
+
+  # Words the hint at the bottom: the Players page's, every other own page's, another mod's page's,
+  # or the one of its pane while the cursor is in it.
+  #
+  # @param view [Hash] The view drawn, see MGQ_MpWorldOverview.page_view.
+  # @return [String] The hint, with the overview's hotkey.
+  def hint_of(view)
+    return MOD_PANE_HINT if view[:focused]
+
+    hint = if view[:page] == :players then PLAYERS_HINT
+           elsif MGQ_MpWorldOverview::PAGES.assoc(view[:page]) then PAGE_HINT
+           else MOD_HINT
+           end
+    hint % MGQ_MpHotkeys.label(:overview)
   end
 
   # Draws the world's name with its type and difficulty, the name cut before the player's party,

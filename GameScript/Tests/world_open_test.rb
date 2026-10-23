@@ -2,6 +2,7 @@
 #  world_open_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Gave the stand-in world list every field the DLL writes
 #      Paulinchen  2026-10-22: Checked the update offer of a step back to an older release
 #      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number
 #      Paulinchen  2026-10-14: Expected a Raid World's starting save in its details and its Save in every build
@@ -276,9 +277,9 @@ check("an empty password goes to the DLL as it is", $calls.last[2][1], "\0")
 
 # The directory.
 $dll["mp_dir_list"] = "state=ready\n\n" \
-  "world\tw1\t4\t0\tc\t0\tC\tPlain\tnone\t0\t0\t0\t0\n" \
-  "world\tw2\t4\t0\tc\t0\tGlobal\tGolden\tnone\t0\t0\t1\t1\n" \
-  "world\tw3\t4\t0\tc\t0\tC\tOld\tnone\t0\t0\n"
+  "world\tw1\t4\t0\tc\t0\tC\tPlain\tnone\t0\t0\t0\t0\t\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n" \
+  "world\tw2\t4\t0\tc\t0\tGlobal\tGolden\tnone\t0\t0\t1\t1\t\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n" \
+  "world\tw3\t4\t0\tc\t0\tC\tOld\tnone\t0\t0\t\t\t\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n"
 _, _, listed, = MGQ_MpWorld::Directory.list
 check("the list reads which worlds have no password", listed.map { |world| world.open }, [false, true, false])
 check("and which are featured", listed.map { |world| world.featured }, [false, true, false])
@@ -485,12 +486,12 @@ check("a code without them tells none", MGQ_MpWorld::World.new("abcdef012345", {
 # Raid Worlds: the type and companion sharing the list reads, their place and colour, the details,
 # world.ini, what every script asks of the open world, and the new world's form.
 $dll["mp_dir_list"] = "state=ready\n\n" \
-  "world\tr1\t4\t0\tc\t0\tC\tRaid Night\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\traid\tstory\t1\t\t1 6 2 1\n" \
-  "world\tr2\t4\t0\tc\t0\tGlobal\tRaid Gold\tnone\t0\t0\t1\t1\t0\t\t\t\t\t\traid\tall\t\t\t\n" \
-  "world\tw1\t4\t0\tc\t0\tC\tPlain\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t3\t\t0 4 1 1\n" \
-  "world\tw3\t4\t0\tc\t0\tC\tOld\tnone\t0\t0\n"
+  "world\tr1\t4\t0\tc\t0\tC\tRaid Night\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\traid\tstory\t1\t1\t1 6 2 1\t0\n" \
+  "world\tr2\t4\t0\tc\t0\tGlobal\tRaid Gold\tnone\t0\t0\t1\t1\t0\t\t\t\t\t\traid\tall\t\t1\t\t0\n" \
+  "world\tw1\t4\t0\tc\t0\tC\tPlain\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t3\t0\t0 4 1 1\t0\n" \
+  "world\tw3\t4\t0\tc\t0\tC\tOld\tnone\t0\t0\t\t\t\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n"
 _, _, typed, = MGQ_MpWorld::Directory.list
-check("the list reads each world's type and companion sharing, Classic sharing none without them",
+check("the list reads each world's type and companion sharing",
       typed.map { |world| [world.type, world.share, world.raid?] }, [["raid", "story", true], ["raid", "all", true], ["classic", "off", false], ["classic", "off", false]])
 check("and a Raid World's difficulty, none for one without it and for every Classic world", typed.map { |world| world.difficulty }, [1, nil, nil, nil])
 check("and a Raid World's squad rules, none for one without them and for every Classic world", typed.map { |world| world.squad },
@@ -621,10 +622,10 @@ MGQ_MpWorld.instance_variable_set(:@world, nil)
 # A Classic world's raid bosses: the list, the details, world.ini and what every script asks of the
 # open world.
 $dll["mp_dir_list"] = "state=ready\n\n" \
-  "world\tw1\t4\t0\tc\t0\tC\tPlain\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t\t\t1\n" \
-  "world\tw2\t4\t0\tc\t0\tC\tCalm\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t\t\t0\n" \
-  "world\tr1\t4\t0\tc\t0\tC\tRaid Night\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\traid\tstory\t1\t\t1 6 2 1\t1\n" \
-  "world\tw3\t4\t0\tc\t0\tC\tOld\tnone\t0\t0\n"
+  "world\tw1\t4\t0\tc\t0\tC\tPlain\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t\t1\n" \
+  "world\tw2\t4\t0\tc\t0\tC\tCalm\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n" \
+  "world\tr1\t4\t0\tc\t0\tC\tRaid Night\tnone\t0\t0\t0\t0\t0\t\t\t\t\t\traid\tstory\t1\t1\t1 6 2 1\t1\n" \
+  "world\tw3\t4\t0\tc\t0\tC\tOld\tnone\t0\t0\t\t\t\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n"
 _, _, bossed, = MGQ_MpWorld::Directory.list
 check("the list reads a Classic world's raid bosses, never a Raid World's, none for a world without them", bossed.map { |world| world.raid_bosses }, [true, false, false, false])
 bossed_panels = detail.panels(MGQ_MpWorld::Entry.new("w1", "Plain", bossed[0], nil, false, false), "me")

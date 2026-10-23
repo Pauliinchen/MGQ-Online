@@ -2,6 +2,7 @@
 //  ModParkingWatchdogTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Made the parking without the deleted options dump check
 //      Paulinchen  2026-10-10: Covered read-only and changed parked files, unreadable journals and long paths
 //                            - Covered read-only scripts, unreadable journals on a rejoin and giving up on them
 //      Paulinchen  2026-10-09: Created
@@ -74,7 +75,7 @@ public sealed class ModParkingWatchdogTests : IDisposable
     {
         WriteFile("Patch/A.rb", "# A\n");
         var watch = Park(["Patch/A.rb"]);
-        var game = new ModParking(_game.Path) { InOptionsDump = () => false };
+        var game = new ModParking(_game.Path);
         game.Begin();
         using var watchdog = StartWatchdog("title", watch);
 
@@ -249,7 +250,7 @@ public sealed class ModParkingWatchdogTests : IDisposable
     private string Park(string[] paths)
     {
         WriteFile("Game.exe", string.Empty);
-        using var parking = new ModParking(_game.Path) { InOptionsDump = () => false };
+        using var parking = new ModParking(_game.Path);
         Assert.Equal(paths.Length, parking.Park(paths, World));
         return parking.PrepareWatch(World, rejoin: true)!;
     }

@@ -2,7 +2,8 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Checked that a refight of a boss the story beat is won at once
+#      Paulinchen  2026-10-23: Dropped the check of the removed retrying?
+#                            - Checked that a refight of a boss the story beat is won at once
 #                            - Checked that a boss built anew at full HP heals no pool
 #      Paulinchen  2026-10-20: Checked that a max HP lowered under the boss's HP heals no pool
 #      Paulinchen  2026-10-17: Checked in_map?, retrying? and set_up_kind, and the rewards of a resumed frozen fight
@@ -759,7 +760,6 @@ BattleManager.battle_end(2)
 check("a lost battle reports what it dealt", reports.last[2], "1\t0.5000000000\t6000\t0")
 BattleManager.retry_battle
 check("the retry fights the pool as a battle of its own", [pool.fight && pool.fight.battle != first, enemy.mhp, pool.set_up_kind], [true, 6000, :event])
-check("the game's retry runs inside retrying only", [pool.retrying?, pool.retrying { pool.retrying? }, pool.retrying?], [false, true, false])
 check("the map's interpreter runs its commands inside in_map only", [pool.in_map?, pool.in_map { pool.in_map? }, pool.in_map?], [false, true, false])
 check("with the HP the pool has left", enemy.hp, 3000)
 

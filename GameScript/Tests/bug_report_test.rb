@@ -2,6 +2,7 @@
 #  bug_report_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Told a report being sent here
 #      Paulinchen  2026-10-22: Stood in for the update message
 #      Paulinchen  2026-10-12: Checked when what the notification box says waits, shows or is dropped
 #                            - Checked that the wheel scrolling the box being typed into draws it anew
@@ -248,6 +249,8 @@ module MGQ_MpChat; def self.system(text); $chat << text; end; end
 module MGQ_MpWorldOverview; PROGRESS = ["Overall Events Progress", "総合イベント進行度"]; end
 
 load_script "ui_bug_report"
+# Lets the tests tell whether a report is being sent.
+def MGQ_MpBugReport.sending?; @sending; end
 
 report = MGQ_MpBugReport
 

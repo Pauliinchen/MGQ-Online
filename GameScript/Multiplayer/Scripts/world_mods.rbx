@@ -2,6 +2,7 @@
 #  world_mods.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Deleted the options dump for the World Admin tool
 #      Paulinchen  2026-10-22: Took a world's settings only once the list carries its mods, and as many settings and mod hashes as the relay's new limit
 #                            - Said the version to play for a step back when the entry after a restart is refused
 #      Paulinchen  2026-10-15: Listed the world's mods and their options this game runs for the battle server
@@ -119,11 +120,9 @@ module MGQ_MpWorldMods
   # whose game holds other settings meanwhile is told the creator's without asking the relay again.
   CHECK_FRAMES = 600
 
-  # The environment variable that names the file the World Admin tool reads the options from.
+  # The environment variable through which the deprecated World Admin tool started the game to read
+  # its Mod Config options.
   DUMP_SETTING = "MGQMP_OPTIONS_DUMP"
-
-  # The options dump's first line, its format.
-  DUMP_HEADER = "mgqmp-options\t1"
 
   # An option's name that opens its mod's group, "[Mod Name] Option", as Mod Config Remake reads it.
   MOD_NAME = /\A\s*\[([^\]]+)\]\s*/
@@ -616,15 +615,12 @@ module MGQ_MpWorldMods
     id
   end
 
-  # Writes the options dump when the World Admin tool asked for it, forgets a world the player backed
-  # out of before its new game, and opens the world screen to enter a world again after a restart,
-  # or offers the update once a newer release is out, first putting back mods parked for the world.
-  # Called by the title screen every frame.
+  # Forgets a world the player backed out of before its new game, and opens the world screen to
+  # enter a world again after a restart, or offers the update once a newer release is out, first
+  # putting back mods parked for the world. Called by the title screen every frame.
   #
   # @param scene [Scene_Title] The title screen.
   def self.on_title_update(scene)
-    return dump_and_quit if dump_requested?
-
     forget_world if @world && !MGQ_MpWorld.open?
     return if @rejoining || scene.scene_changing?
     # The title screen first starts the game again or tells why the mods came back.
@@ -836,131 +832,13 @@ module MGQ_MpWorldMods
     false
   end
 
-  # Options dump.
-
-  # Tells whether the World Admin tool started the game to read its Mod Config options.
+  # Tells whether the deprecated World Admin tool started the game to read its Mod Config options.
   #
   # @return [Boolean] Whether DUMP_SETTING names a file.
   def self.dump_requested?
     !ENV[DUMP_SETTING].to_s.empty?
   rescue
     false
-  end
-
-  # Writes every mod's Mod Config options into the file DUMP_SETTING names, then quits the game.
-  # Called by the title screen's first update, once every mod and plugin has added its options.
-  def self.dump_and_quit
-    return if @dumped
-
-    @dumped = true
-    path = dump_path
-    lines = begin
-              dump_lines
-            rescue => e
-              log("reading the Mod Config options for the dump failed: #{e.class}: #{e.message}")
-              ["error\t#{dump_field("#{e.class}: #{e.message}")}"]
-            end
-    write_dump(path, [DUMP_HEADER] + lines + ["end"])
-    log("wrote #{lines.count { |line| line.start_with?('mod') }} mod(s) with #{lines.count { |line| line.start_with?('opt') }} option(s) to #{path}, quitting")
-  rescue => e
-    log("the options dump failed: #{e.class}: #{e.message}, quitting")
-  ensure
-    SceneManager.exit
-  end
-
-  # Names the file DUMP_SETTING names as RGSS can open it: by its name alone when it lies in the
-  # game's folder, where the World Admin tool starts the game, and otherwise in UTF-8.
-  #
-  # RGSS opens only UTF-8 paths, and an absolute one outside ASCII, such as a profile folder with
-  # the user's name, fails in any other encoding, which ENV hands out.
-  #
-  # @return [String] The path.
-  def self.dump_path
-    path = ENV[DUMP_SETTING].to_s
-    same_folder?(File.dirname(path), Dir.pwd) ? File.basename(path) : utf8_path(path)
-  end
-
-  # Tells whether two folders are the same, whatever their slashes and case.
-  #
-  # @param one [String] A folder.
-  # @param other [String] The other folder.
-  # @return [Boolean] Whether they are.
-  def self.same_folder?(one, other)
-    plain = lambda { |folder| folder.to_s.dup.force_encoding("ASCII-8BIT").tr("\\", "/").downcase.chomp("/") }
-    plain.call(one) == plain.call(other)
-  rescue
-    false
-  end
-
-  # Writes a path in UTF-8.
-  #
-  # @param path [String] The path, as ENV hands it out.
-  # @return [String] The path in UTF-8, as it was when it cannot be converted.
-  def self.utf8_path(path)
-    return path if path.encoding == Encoding::UTF_8 && path.valid_encoding?
-
-    source = path.encoding == Encoding::ASCII_8BIT || !path.valid_encoding? ? Encoding.find("locale") : path.encoding
-    path.dup.force_encoding(source).encode("UTF-8")
-  rescue
-    path
-  end
-
-  # Tells whether a group of Mod Config is one of the mod's own, its settings, its single player
-  # settings and its hotkeys, which the options dump leaves out.
-  #
-  # @param name [String] The group's name.
-  # @return [Boolean] Whether it is.
-  def self.online_group?(name)
-    [MGQ_MpUi::OPTION_PREFIX, MGQ_MpUi::SP_PREFIX, MGQ_MpHotkeys::GROUP].any? { |prefix| MGQ_MpWorld.mod_key(prefix[/\[(.+)\]/, 1]) == MGQ_MpWorld.mod_key(name) }
-  end
-
-  # Writes the dump's lines of every mod's group but Monster Girl Quest! Online's own: a "mod" line,
-  # then an "opt" line per option a world may set and a "skip" line with why per other option.
-  #
-  # A game without Mod Config raises, so the tool never takes its empty groups for mods without
-  # options.
-  #
-  # @return [Array<String>] The lines.
-  def self.dump_lines
-    raise "Mod Config Remake is not loaded" unless defined?(NWConst::Config::MOD_CONTENTS)
-
-    lines = []
-    menu_groups.each do |name, entries|
-      next if online_group?(name)
-
-      lines << "mod\t#{dump_field(MGQ_MpWorld.mod_key(name))}\t#{dump_field(name)}"
-      entries.each do |entry|
-        line = dump_line(entry)
-        lines << line if line
-      end
-    end
-    lines
-  end
-
-  # Writes the dump's line of one option.
-  #
-  # @param entry [Hash] The option's entry in MOD_CONTENTS.
-  # @return [String, nil] "opt" with option_line's fields, or "skip" with the key and why; nil for
-  #   an entry without a key.
-  def self.dump_line(entry)
-    key = entry[:key]
-    return nil if key.nil?
-
-    why = skip_reason(entry)
-    line = why ? nil : (option_line(entry) rescue nil)
-    line ? "opt\t#{line}" : "skip\t#{dump_field(key)}\t#{why || 'type'}"
-  end
-
-  # Writes the dump next to its file, then puts it in the file's place, so the tool never reads a
-  # file half written.
-  #
-  # @param path [String] The file.
-  # @param lines [Array<String>] The lines.
-  def self.write_dump(path, lines)
-    temporary = "#{path}.tmp"
-    File.open(temporary, "wb") { |file| file.write(lines.map { |line| line.dup.force_encoding("ASCII-8BIT") }.join("\n") + "\n") }
-    File.delete(path) if File.exist?(path)
-    File.rename(temporary, path)
   end
 
   # Lists the mods of the open world the player's game runs, which the battle server runs too for a
@@ -1999,8 +1877,7 @@ begin
   # As the title screen starts, Mod Config Remake stops showing a world's settings.
   MGQ_MpHooks.before(Scene_Title, :start, "world_mods") { MGQ_MpWorldMods.on_title_start }
 
-  # The title screen writes the options dump for the World Admin tool, and opens the world screen to
-  # enter a world again after a restart for its mods.
+  # The title screen opens the world screen to enter a world again after a restart for its mods.
   MGQ_MpHooks.after(Scene_Title, :update, "world_mods") { MGQ_MpWorldMods.on_title_update(self) }
 
   # Every scene follows the settings on their way, the options screen above all.

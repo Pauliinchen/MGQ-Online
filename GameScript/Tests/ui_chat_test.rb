@@ -2,7 +2,8 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Checked that the live map behind a menu shows no chat log
+#      Paulinchen  2026-10-23: Read the lines sent here
+#                            - Checked that the live map behind a menu shows no chat log
 #      Paulinchen  2026-10-22: Checked the chat box and its log in a scene of menus such as a shop
 #                            - Checked that a mod loaded later keeps its hook in a shop
 #                            - Checked the relay's notice handed to the notification box
@@ -30,6 +31,8 @@ require_relative "world_support"
 
 # The whisper's sound, which world_support.rb's Sound lacks.
 def Sound.play_recovery; $sounds << "recovery"; end
+# Lets the tests read the lines the player sent, oldest first.
+def MGQ_MpChat.history; @history; end
 
 chat = MGQ_MpChat
 friend = { "id" => "friend", "name" => "Friend", "sprite" => "Actor2", "index" => 3, "map" => 5, "x" => 10, "y" => 10, "d" => 4, "speed" => 4, "hidden" => 0, "scene" => "map" }

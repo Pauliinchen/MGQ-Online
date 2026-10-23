@@ -2,7 +2,9 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Sent nothing to a player gone from the world
+#      Paulinchen  2026-10-23: Started the recorder without the deleted file sink
+#                            - Took the wait for the host party from roster_frames
+#                            - Sent nothing to a player gone from the world
 #                            - Checked that a Challenge Battle's enemies keep their kind on the battle server
 #      Paulinchen  2026-10-20: Checked the skills a guest chains after an action
 #      Paulinchen  2026-10-17: Checked that a guest's start sets the party's battle counters
@@ -198,7 +200,7 @@ check("strangers and wrong battles are not heard", MGQ_MpBattlesSync.seats, [2])
 
 # Another mod adds an enemy mid-battle: the host tells the guest the troop once, before its stream.
 recorder = MGQ_MpBattlesSync::Recorder
-recorder.start(:link)
+recorder.start
 $sent.clear
 recorder.event("turn", 2)
 recorder.flush
@@ -1092,7 +1094,7 @@ MGQ_MpBattlesSync.finish
 MGQ_MpBattlesSync.join_world(:guest, "late2", [2], "Friend")
 MGQ_MpBattlesSync.battle_started
 $frames = 0
-check("so does one whose host's party never comes", [MGQ_MpBattlesCoop.join(scene), $frames], [:broken, MGQ_MpBattlesCoop::ROSTER_FRAMES - 1])
+check("so does one whose host's party never comes", [MGQ_MpBattlesCoop.join(scene), $frames], [:broken, MGQ_MpBattlesCoop.roster_frames - 1])
 MGQ_MpBattlesSync.finish
 
 # Invites and requests the player cannot take are turned down at once.

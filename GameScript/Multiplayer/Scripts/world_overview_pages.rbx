@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Laid the pages of other mods out like the World page, with buttons and controls in the pane
+#      Paulinchen  2026-10-23: Labelled the objective with OBJECTIVE_LABEL
 #      Paulinchen  2026-10-13: Left a story's temporary party and companions on a visit out of the Unlocks page's grid
 #      Paulinchen  2026-10-12: Created
 #
@@ -175,7 +176,7 @@ module MGQ_MpWorldOverview
     head = Head.new(nil, WORLD_ICON, world_name, note, lines, nil, nil)
     list = []
     main = main_quest
-    list << [:entry, Note.new(WORLD_LABELS[:objective], main.texts)] if main
+    list << [:entry, Note.new(OBJECTIVE_LABEL, main.texts)] if main
     sections = raid ? boss_sections : []
     sections.each do |section, bosses|
       add_group(list, :world, section, BOSS_SECTION % [section, bosses.size], true, bosses.map { |boss| BossEntry.new(boss, section) })

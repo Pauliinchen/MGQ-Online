@@ -2,6 +2,7 @@
 //  ModParking.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Deleted the check of a game started for the options dump
 //      Paulinchen  2026-10-10: Never parked scripts behind a link to another volume and listed them as elsewhere
 //                            - Cleared a parked file's read-only attribute for a move or delete and set it again
 //                            - Sent a parked file whose hash differs from the journal's to the conflicts folder
@@ -61,11 +62,6 @@ internal sealed class ModParking : IDisposable
     /// The folder in <see cref="FolderName"/> a parked mod goes to when its place in Patch is taken again, since a restore never overwrites.
     /// </summary>
     public const string ConflictsName = "Conflicts";
-
-    /// <summary>
-    /// The environment variable through which the World Admin tool asks for the options dump, as GameScript/Multiplayer.rb names it.
-    /// </summary>
-    public const string DumpSetting = "MGQMP_OPTIONS_DUMP";
 
     /// <summary>
     /// What the journal's <c>after</c> line says when the game goes on as it is once the mods are back.
@@ -207,11 +203,6 @@ internal sealed class ModParking : IDisposable
     private string OwnFolder { get; }
 
     /// <summary>
-    /// Tells whether the World Admin tool started the game for the options dump, which never parks; tests set another.
-    /// </summary>
-    public Func<bool> InOptionsDump { get; init; } = () => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(DumpSetting));
-
-    /// <summary>
     /// Reads the local time a restore or park names its conflicts folder after; tests set another.
     /// </summary>
     public Func<DateTime> Clock { get; init; } = () => DateTime.Now;
@@ -229,15 +220,10 @@ internal sealed class ModParking : IDisposable
     public int LastConflicts { get; private set; }
 
     /// <summary>
-    /// Takes the lock as the game starts, unless it runs for the options dump, and logs whether parked mods wait.
+    /// Takes the lock as the game starts, and logs whether parked mods wait.
     /// </summary>
     public void Begin()
     {
-        if (InOptionsDump())
-        {
-            return;
-        }
-
         lock (_gate)
         {
             if (TakeLock() && File.Exists(JournalPath))
@@ -259,12 +245,6 @@ internal sealed class ModParking : IDisposable
     {
         lock (_gate)
         {
-            if (InOptionsDump())
-            {
-                Log.Write("mods not parked: the game runs for the options dump");
-                return 0;
-            }
-
             if (!TakeLock())
             {
                 Log.Write("mods not parked: another game of this folder runs");
@@ -574,11 +554,6 @@ internal sealed class ModParking : IDisposable
     {
         lock (_gate)
         {
-            if (InOptionsDump())
-            {
-                return 0;
-            }
-
             Journal? journal;
 
             try

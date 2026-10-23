@@ -2,7 +2,8 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Won a refight of a boss the world's story beat already at once
+#      Paulinchen  2026-10-23: Removed retrying?, which only the tests read
+#                            - Won a refight of a boss the world's story beat already at once
 #                            - Reported nothing for an enemy built anew since its HP was last taken, and took its pool's HP
 #      Paulinchen  2026-10-20: Counted a boss HP above its max as the max, so a lowered max heals no pool
 #      Paulinchen  2026-10-17: Withheld the rewards of a resumed fight whose side battle gave them
@@ -408,13 +409,6 @@ module MGQ_MpRaidPool
   # @return [Boolean] Whether it does.
   def self.in_map?
     @in_map ? true : false
-  end
-
-  # Reports whether the game's retry of a lost battle runs, see retrying.
-  #
-  # @return [Boolean] Whether it does.
-  def self.retrying?
-    @retrying ? true : false
   end
 
   # Tells how the battle set up last fights a pool, as set_up decided.

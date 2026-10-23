@@ -2,7 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Kept the chat log off the live map behind menus
+#      Paulinchen  2026-10-23: Removed history and log_lines, which only the tests read
+#                            - Kept the chat log off the live map behind menus
 #      Paulinchen  2026-10-22: Opened the chat box and showed its log in the shops, the casino and the trade screen
 #                            - Kept the hooks of mods loaded later in the shops, the casino and the trade screen
 #                            - Showed the relay's own notices in the notification box too
@@ -386,13 +387,6 @@ module MGQ_MpChat
   # @return [String, nil] Their name as the log showed it, nil before anyone whispered.
   def self.reply_to
     @reply_to && @reply_to[0]
-  end
-
-  # Lists the lines the player sent, which Alt with up and down bring back.
-  #
-  # @return [Array<String>] The lines as typed, commands included, oldest first, HISTORY_SIZE at most.
-  def self.history
-    @history
   end
 
   # Keeps a line the player sent for Alt with up and down, unless it repeats the last one, and
@@ -1246,13 +1240,6 @@ module MGQ_MpChat
     return @log.select { |line| line.shown_in?(@tab) } if typing?
 
     @log.select { |line| line.left > 0 && (line.shown_in?(@tab) || line.channel == :whisper) }
-  end
-
-  # Writes the log's lines to show as text.
-  #
-  # @return [Array<String>] The lines, oldest first.
-  def self.log_lines
-    log_entries.map(&:to_s)
   end
 
   # Tells what a sender's bubble says.

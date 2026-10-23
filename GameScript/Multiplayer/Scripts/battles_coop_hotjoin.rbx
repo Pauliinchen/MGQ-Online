@@ -2,7 +2,8 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Sent to and found the battle's players by the seats they held at its start
+#      Paulinchen  2026-10-23: Started the recording without the deleted file sink
+#                            - Sent to and found the battle's players by the seats they held at its start
 #                            - Told the players taken in why their joining was called off
 #                            - Numbered the messages to the players taken in
 #                            - Made added enemies of the kind the troop's battle needs
@@ -1135,7 +1136,7 @@ module MGQ_MpBattlesHotjoin
     sync.show_everything
     coop.form(scene, coop.arrange([[MGQ_MpBattlesSync.own_seat, MGQ_Multiplayer::Player.name.to_s] + coop.own_build]))
     coop.note_troop
-    sync::Recorder.start(:link)
+    sync::Recorder.start
     log("battle #{sync.battle_id} turns live for the players who join it, the player hosting")
   end
 

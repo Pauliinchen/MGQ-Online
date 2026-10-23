@@ -2,6 +2,7 @@
 #  world_mods_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Dropped the checks of the deleted options dump
 #      Paulinchen  2026-10-22: Measured the settings and the creator's hashes against the relay's limits as the script names them
 #                            - Stood in for the update message
 #      Paulinchen  2026-10-15: Checked the world's mods and options this game hands the battle server
@@ -886,46 +887,6 @@ check("the edit form changes the settings the relay took last, not the older lis
 $world_open = false
 $dll["mp_dir_action"] = ""
 $dll["mp_dir_list"] = ""
-
-# The options dump the World Admin tool reads.
-Dir.mktmpdir do |folder|
-  target = File.join(folder, "options.txt")
-  ENV["MGQMP_OPTIONS_DUMP"] = target
-  $ini["rejoin"] = "w9"
-  $exited = false
-  mods.on_title_update(Scene_Title.new)
-  check("a game started for the dump writes every mod's options, without Global ones and Monster Girl Quest! Online's own settings and hotkeys, ends with end and quits at once",
-        [File.open(target, "rb") { |file| file.read }.force_encoding("UTF-8").split("\n"), $exited, $ini["rejoin"], File.exist?("#{target}.tmp")],
-        [["mgqmp-options\t1",
-          "mod\tlevelcap\tLevel Cap", "opt\tmod_level_cap\tLevel Cap\ti\t1\t1\tOn\t0\tOff", "opt\tmod_level_cap_limits\tJob and Race Limits\ti\t1", "skip\tmod_level_cap_look\tpersonal",
-          "mod\tpartysheet\tParty Sheet", "skip\tmod_party_sheet_hotkey\tkeybind", "skip\tmod_party_sheet_theme\ttype", "skip\tmod_party_sheet_write\tbutton", "opt\tmod_party_sheet_size\tSize\ti\t2\t2\t2\t4\t4",
-          "mod\ttabmod\tTab Mod", "opt\ttab_opt\tOpt ion\ti\t1\t1\t1\t2\t2",
-          "end"], true, "w9", false])
-  contents = NWConst::Config.send(:remove_const, :MOD_CONTENTS)
-  mods.instance_variable_set(:@dumped, nil)
-  $exited = false
-  mods.on_title_update(Scene_Title.new)
-  NWConst::Config.const_set(:MOD_CONTENTS, contents)
-  check("one without Mod Config Remake says so rather than listing no mod", [File.read(target).split("\n"), $exited],
-        [["mgqmp-options\t1", "error\tRuntimeError: Mod Config Remake is not loaded", "end"], true])
-  mods.instance_variable_set(:@dumped, nil)
-  mods.define_singleton_method(:dump_lines) { raise "broken entry" }
-  $exited = false
-  mods.on_title_update(Scene_Title.new)
-  check("one that fails still ends the file and quits", [File.read(target).split("\n"), $exited], [["mgqmp-options\t1", "error\tRuntimeError: broken entry", "end"], true])
-  sandbox = File.join(folder, "Sandbox \u00fc")
-  FileUtils.mkdir_p(sandbox)
-  Dir.chdir(sandbox) do
-    ENV["MGQMP_OPTIONS_DUMP"] = File.join(sandbox, "options.txt").tr("/", "\\")
-    mods.instance_variable_set(:@dumped, nil)
-    $exited = false
-    mods.on_title_update(Scene_Title.new)
-    check("a dump into the game's folder is written by its file's name alone, which RGSS opens even under a path outside ASCII",
-          [mods.dump_path, File.exist?(File.join(sandbox, "options.txt")), $exited], ["options.txt", true, true])
-  end
-  ENV.delete("MGQMP_OPTIONS_DUMP")
-  $ini["rejoin"] = ""
-end
 
 # The Mod Config options an admin's game sends for the catalog.
 Dir.mktmpdir do |folder|

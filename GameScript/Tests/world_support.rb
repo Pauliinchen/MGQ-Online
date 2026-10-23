@@ -2,7 +2,8 @@
 #  world_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Showed the HUD over the map's spriteset
+#      Paulinchen  2026-10-23: Read the chat log's lines here
+#                            - Showed the HUD over the map's spriteset
 #      Paulinchen  2026-10-22: Gave the scenes' base its basics and its end
 #      Paulinchen  2026-10-12: Stood in for the notice of an unreadable Player.ini
 #                            - Told the mouse wheel's notches from $wheel
@@ -251,6 +252,12 @@ end
 module MGQ_MpOverworldSync::Status
   # Tells the texts the line shows, without their icons.
   def self.lines; shown.map(&:first); end
+end
+
+# Lets the tests read the chat log's lines.
+module MGQ_MpChat
+  # Writes the log's lines to show as text, oldest first.
+  def self.log_lines; log_entries.map(&:to_s); end
 end
 
 # An entry of the world room's inbox, as the DLL hands it out.

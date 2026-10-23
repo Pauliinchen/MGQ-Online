@@ -2,6 +2,7 @@
 #  mod_parking_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Gave the stand-in world list every field the DLL writes
 #      Paulinchen  2026-10-22: Stood in for whether the version to install is a step back and for the update message
 #      Paulinchen  2026-10-14: Expected a Raid World's row of its Save in every build
 #      Paulinchen  2026-10-13: Expected the raid bosses of a Classic world in its edit form and after the squad rules in the DLL calls
@@ -309,12 +310,12 @@ parking = MGQ_MpModParking
 
 # The list and the catalog.
 $dll["mp_dir_list"] = "state=ready\n\n" \
-  "world\tw1\t4\t0\tc\t0\tCreator\tStrict\tnone\t0\t0\t1\t0\t0\t\t\t\t\t\tclassic\toff\t\t1\n" \
-  "world\tw2\t4\t0\tc\t0\tCreator\tLoose\tnone\t0\t0\t1\t0\t0\t\t\t\t\t\traid\tstory\t1\t0\n" \
-  "world\tw3\t4\t0\tc\t0\tCreator\tOld raid\tnone\t0\t0\t1\t0\t0\t\t\t\t\t\traid\tstory\t1\n" \
-  "world\tw4\t4\t0\tc\t0\tCreator\tOld\tnone\t0\t0\t1\t0\t0\t\t\t\t\t\t\t\t\n"
+  "world\tw1\t4\t0\tc\t0\tCreator\tStrict\tnone\t0\t0\t1\t0\t0\t\t\t\t\t\tclassic\toff\t\t1\t\t0\n" \
+  "world\tw2\t4\t0\tc\t0\tCreator\tLoose\tnone\t0\t0\t1\t0\t0\t\t\t\t\t\traid\tstory\t1\t0\t\t0\n" \
+  "world\tw3\t4\t0\tc\t0\tCreator\tOld raid\tnone\t0\t0\t1\t0\t0\t\t\t\t\t\traid\tstory\t1\t1\t\t0\n" \
+  "world\tw4\t4\t0\tc\t0\tCreator\tOld\tnone\t0\t0\t1\t0\t0\t\t\t\t\t\tclassic\toff\t\t0\t\t0\n"
 _, _, listed, = MGQ_MpWorld::Directory.list
-check("the list reads whether a world turns other mods off, by its type when the relay does not tell", listed.map { |world| world.other_mods_off }, [true, false, true, false])
+check("the list reads whether a world turns other mods off", listed.map { |world| world.other_mods_off }, [true, false, true, false])
 
 $dll["mp_mods_list"] = "state=failed\nerror=down\n\n"
 MGQ_MpWorldMods.forget_installed
