@@ -2,6 +2,7 @@
 //  BugReports.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Told in a public fact where the newest error of errors.txt was raised
 //      Paulinchen  2026-10-11: Created
 //
 //----------------------------------------------------------------
@@ -379,6 +380,32 @@ internal sealed class BugReports
     }
 
     /// <summary>
+    /// Adds the public fact of where the newest error of <c>errors.txt</c> was raised, for a report
+    /// that attaches the file.
+    /// </summary>
+    /// <remarks>
+    /// Players report errors of other mods here, which the trace tells apart from the mod's own.
+    /// </remarks>
+    /// <param name="report">The report.</param>
+    /// <param name="gameFolder">The game folder.</param>
+    /// <param name="since">The file counts when written at or after it, in UTC.</param>
+    /// <returns>The report with the fact last, as it fits the facts' count and the header; the report as it was without a fact or room for it.</returns>
+    private static BugReport WithLastError(BugReport report, string gameFolder, DateTime since)
+    {
+        try
+        {
+            return LastError.FactOf(gameFolder, since) is { } fact && report.Facts.Count < MaxFacts && FitHeader(report with { Facts = [.. report.Facts, fact] }) is { } fitted
+                ? fitted
+                : report;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"bug report could not tell where the last error was raised: {ex.GetType().Name}: {ex.Message}");
+            return report;
+        }
+    }
+
+    /// <summary>
     /// Leaves facts out from the end until the header fits the relay's limit with the page and the screenshot at their longest.
     /// </summary>
     /// <param name="report">The report.</param>
@@ -464,10 +491,11 @@ internal sealed class BugReports
 
             var start = SessionStart();
             var since = start > DateTime.MinValue + LogSlack ? start - LogSlack : DateTime.MinValue;
-            var page = new ReportPage(job.Report, job.Details, Now(), Version, DevelopmentBuild, screenshotNote);
+            var report = job.Logs ? WithLastError(job.Report, GameFolder(), since) : job.Report;
+            var page = new ReportPage(report, job.Details, Now(), Version, DevelopmentBuild, screenshotNote);
             var files = ReportFiles.Build(page, png, job.Logs ? GameFolder() : null, since);
 
-            var answer = client.SendReport(playerKey, job.Report, files);
+            var answer = client.SendReport(playerKey, report, files);
             state = $"sent\t{answer.Issue.ToString(CultureInfo.InvariantCulture)}\t{answer.Url}";
             Log.Write($"bug report sent as issue #{answer.Issue}, report {answer.Id}");
         }
