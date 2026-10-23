@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-23: Kept the mod's HUD off the live map behind menus
 #                            - Kept the save and load screens on their picture of the map
+#                            - Logged every switch of screens with the memory and handles the game uses
 #      Paulinchen  2026-10-12: Read the live map's viewports through MGQ_MpGame
 #      Paulinchen  2026-10-07: Read an interpreter's event and map through MGQ_MpGame
 #                            - Logged the world behind screens, held commands, waiting refreshes and the live map
@@ -42,6 +43,12 @@ module MGQ_MpAsync
   # They build a window and a thumbnail per save file, and the game closed while saving with the
   # live map behind them.
   PICTURE_SCENES = [:Scene_File]
+
+  # The export that describes the memory and the handles the game uses.
+  MEMORY_USAGE_EXPORT = 'mp_memory_usage'
+
+  # Bytes the description of the memory and the handles fits in at first.
+  MEMORY_USAGE_SIZE = 256
 
   # Whether tick runs the map now, the only time event commands are held.
   @ticking = false
@@ -172,7 +179,8 @@ module MGQ_MpAsync
     to.is_a?(Scene_Map) || map_waiting?
   end
 
-  # Leaves a screen, skipping the freeze of the screen when the next one comes in at once.
+  # Leaves a screen, skipping the freeze of the screen when the next one comes in at once, and logs
+  # the switch with the memory and the handles the game uses.
   #
   # The engine's transition from a frozen screen takes about seven frames even when it lasts none,
   # during which nothing moves.
@@ -181,10 +189,24 @@ module MGQ_MpAsync
   # @yield The screen's own leaving, which freezes the screen.
   def self.leave(from)
     @skip_freeze = instant_switch?(from, SceneManager.scene)
-    log("switching from #{from.class.name} to #{SceneManager.scene.class.name} at once, without freezing the screen") if @skip_freeze
+    log("switching from #{from.class.name} to #{SceneManager.scene.class.name}#{@skip_freeze ? ' at once, without freezing the screen' : ''}#{memory_usage}")
     yield
   ensure
     @skip_freeze = false
+  end
+
+  # Describes the memory and the handles the game uses, for the log of a switch of screens.
+  #
+  # A crash in the game's native code ends it unlogged, so the log keeps what it used before.
+  #
+  # @return [String] The description after a semicolon, "" when the DLL cannot tell.
+  def self.memory_usage
+    usage = MGQ_Multiplayer::Link.read(MEMORY_USAGE_EXPORT, MEMORY_USAGE_SIZE)
+    usage.empty? ? "" : "; #{usage}"
+  rescue => e
+    log("asking the DLL for the memory the game uses failed: #{e.class}: #{e.message}") unless @memory_usage_failed
+    @memory_usage_failed = true
+    ""
   end
 
   # Reports whether to skip a freeze of the screen, and remembers it was skipped. Called by
