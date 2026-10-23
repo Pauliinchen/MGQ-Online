@@ -2,7 +2,8 @@
 //  GameBridge.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Registered the topics of the scripts' log
+//      Paulinchen  2026-10-23: Registered the topics of Player.ini and the other settings files
+//                            - Registered the topics of the scripts' log
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -34,6 +35,7 @@ internal static class GameBridge
     private static void RegisterTopics(BridgeContext context)
     {
         ScriptLog.Register(context);
+        SettingsTopics.Register(context);
     }
 
     /// <summary>

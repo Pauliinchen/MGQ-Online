@@ -8,7 +8,9 @@
 #                            - Loaded world_gates.rbx after world_difficulty.rbx
 #                            - Loaded ui_mod_browser.rbx after ui_bug_report.rbx and named the mp_mod_browser_* exports
 #                            - Stopped loading the removed battles_pvp_lobby.rbx
-#      Paulinchen  2026-10-23: Wrote the scripts' log into the DLL's log of the day through the bridge, and into that file directly while the mod stays off
+#      Paulinchen  2026-10-23: Read and wrote Player.ini and the other ini files through the DLL, which keeps the player key
+#                            - Dropped mp_new_id and mp_set_player
+#                            - Wrote the scripts' log into the DLL's log of the day through the bridge, and into that file directly while the mod stays off
 #                            - Wrote the log's last lines before the game's error box and as the game closes
 #                            - Loaded the battle server's core library through Fiddle in Bridge::FiddleBackend
 #                            - Added Bridge, the bridge to C# through mp_bridge_open, mp_call, mp_reply and mp_drain
@@ -460,23 +462,18 @@ module MGQ_Multiplayer
     end
   end
 
-  # Files of key=value lines, such as Patch/Multiplayer/Player.ini.
+  # Files of key=value lines other than Player.ini, such as a world's world.ini, which the DLL reads
+  # and writes (IniFile.cs).
   module Ini
-    # The bytes a file saved as UTF-8 by Notepad starts with.
-    UTF8_BOM = [0xEF, 0xBB, 0xBF]
+    # The topic that reads a file.
+    READ_TOPIC = "ini.read"
 
-    # The bytes a file saved as UTF-16, little-endian, starts with.
-    UTF16LE_BOM = [0xFF, 0xFE]
-
-    # The bytes a file saved as UTF-16, big-endian, starts with.
-    UTF16BE_BOM = [0xFE, 0xFF]
-
-    # What a file is written to first, next to it, before it replaces the file.
-    TEMP_SUFFIX = ".tmp"
+    # The topic that writes a file.
+    WRITE_TOPIC = "ini.write"
 
     # Reads a file.
     #
-    # @param path [String] The file.
+    # @param path [String] The file, relative to the game's folder.
     # @return [Hash] The values by key, empty when the file is missing or unreadable.
     def self.read(path)
       load(path) || {}
@@ -484,155 +481,73 @@ module MGQ_Multiplayer
 
     # Reads a file, telling one that could not be read from one that is missing.
     #
-    # @param path [String] The file.
+    # @param path [String] The file, relative to the game's folder.
     # @param quiet [Boolean] Whether a file that could not be read goes unlogged, as when it failed
     #   just before.
     # @return [Hash, nil] The values by key, empty when the file is missing; nil when it exists but
-    #   could not be read.
+    #   could not be read, or while the bridge is closed.
     def self.load(path, quiet = false)
-      return {} unless File.exist?(path)
-
-      values = {}
-      text_of(File.open(path, "rb") { |file| file.read }).split(/\r?\n/).each do |line|
-        key, value = line.split("=", 2)
-        values[key.strip] = value.strip if value
-      end
-      values
-    rescue => e
-      Log.write("could not read #{path}: #{e.class}: #{e.message}") unless quiet
-      nil
+      values = Bridge.call(READ_TOPIC, "path" => path.to_s, "quiet" => quiet ? true : false)
+      values.is_a?(Hash) ? values : nil
     end
 
-    # Turns a file's bytes into UTF-8 text: UTF-16 by its byte order mark, UTF-8 without its byte
-    # order mark, and anything else as Latin-1, such as a file Notepad saved as ANSI.
+    # Writes a file, replacing it in one step, so a crash or a full disk never leaves it half
+    # written.
     #
-    # @param bytes [String] The bytes.
-    # @return [String] The text.
-    def self.text_of(bytes)
-      head = bytes.unpack("C3")
-      return utf16(bytes[2..-1].unpack("v*")) if head[0, 2] == UTF16LE_BOM
-      return utf16(bytes[2..-1].unpack("n*")) if head[0, 2] == UTF16BE_BOM
-
-      bytes = bytes[3..-1] if head == UTF8_BOM
-      text = bytes.dup.force_encoding("UTF-8")
-      text.valid_encoding? ? text : bytes.unpack("C*").pack("U*")
-    end
-
-    # Turns UTF-16 code units into UTF-8 text, joining surrogate pairs.
-    #
-    # @param units [Array<Integer>] The code units.
-    # @return [String] The text, a lone surrogate replaced by U+FFFD.
-    def self.utf16(units)
-      points = []
-      units.each do |unit|
-        if unit.between?(0xDC00, 0xDFFF) && points.last.to_i.between?(0xD800, 0xDBFF)
-          points[-1] = 0x10000 + ((points.last - 0xD800) << 10) + (unit - 0xDC00)
-        else
-          points << unit
-        end
-      end
-      points.map { |point| point.between?(0xD800, 0xDFFF) ? 0xFFFD : point }.pack("U*")
-    end
-
-    # Writes a file, replacing it in one step: the values go to a file next to it first, which then
-    # takes its place, so a crash or a full disk never leaves it half written.
-    #
-    # @param path [String] The file.
+    # @param path [String] The file, relative to the game's folder.
     # @param values [Hash] The values by key, each kept on its line.
     # @return [Boolean] Whether the file was written.
     def self.write(path, values)
-      lines = values.map { |key, value| "#{key}=#{value.to_s.gsub(/[\r\n]/, ' ')}\n" }
-      temp = "#{path}#{TEMP_SUFFIX}"
-      File.open(temp, "wb") do |file|
-        file.write(lines.join)
-        file.flush
-        sync(file)
-      end
-      # Deleting the file first would leave none behind a crash between the two steps, so the
-      # rename replaces it.
-      File.rename(temp, path)
-      true
-    rescue => e
-      begin
-        File.delete(temp) if temp && File.exist?(temp)
-      rescue
-        nil
-      end
-      Log.write("could not write #{path}: #{e.class}: #{e.message}")
-      false
-    end
-
-    # Puts a file written onto the disk, so it survives a power loss right after.
-    #
-    # @param file [File] The file.
-    def self.sync(file)
-      file.fsync
-    rescue NotImplementedError
-      # A Ruby without fsync raises an error that a plain rescue lets through.
-      nil
+      lines = {}
+      values.each { |key, value| lines[key.to_s] = value.to_s }
+      Bridge.call(WRITE_TOPIC, "path" => path.to_s, "values" => lines) == true
     end
   end
 
-  # Who plays this game: an id that tells it from every other player's, kept in
-  # Patch/Multiplayer/Player.ini, and the name the others see.
+  # Who plays this game, kept in Patch/Multiplayer/Player.ini with every setting of the scripts,
+  # which only the DLL reads and writes (PlayerIni.cs); the player key never leaves it. This keeps
+  # the settings as the DLL last answered them, since some are read every frame.
   module Player
-    # File that keeps the id and the chosen name, inside the mod folder.
-    FILE = "Player.ini"
+    # Seconds before the settings are asked again while Player.ini cannot be read, which a lock by
+    # an antivirus or a cloud sync is usually gone after.
+    RETRY_SECONDS = 1
 
     # Setting that keeps the last name Discord told.
     DISCORD_NAME = "discord_name"
 
-    # Seconds before a Player.ini that could not be read is read again, which a lock by an
-    # antivirus or a cloud sync is usually gone after.
-    RETRY_SECONDS = 1
+    # The topic that answers the settings as they stand.
+    STATE_TOPIC = "player.state"
 
-    # What the settings read while Player.ini exists but cannot be read: none.
-    UNREADABLE = {}.freeze
+    # The topic that keeps and removes settings.
+    CHANGE_TOPIC = "player.change"
 
-    # What the notification box tells once a session while Player.ini exists but cannot be read.
-    UNREADABLE_NOTICE = "Player.ini could not be read; close programs that hold it. Settings are not saved until then."
+    # The topic that takes the name Discord tells.
+    DISCORD_TOPIC = "player.discord"
 
-    # Reads the player's id, making one the first time.
-    #
-    # @return [String] The id, "" when none could be made or Player.ini cannot be read.
-    def self.id
-      values = writable
-      return "" unless values
+    # The topic that takes the name the player chose.
+    NAME_TOPIC = "player.name"
 
-      if values["id"].to_s.empty?
-        values["id"] = Link.new_id
-        Ini.write(MGQ_Multiplayer.path(FILE), values) unless values["id"].empty?
-        Log.write(values["id"].empty? ? "could not make a player key: the DLL gave none" : "made a new player key and kept it in #{FILE}")
-      end
-      values["id"].to_s
-    end
+    # The topic that tells the worlds who plays.
+    SHARE_TOPIC = "player.share"
+
+    # What the settings are while the DLL has not answered: none, and Player.ini not read.
+    NONE = { "values" => {}.freeze, "readable" => false, "notice" => nil, "name" => nil }.freeze
 
     # Reads the name the others see: the one the player chose for Multiplayer, or else their name on
     # Discord, or the last one Discord told while it has not told one yet.
     #
     # @return [String, nil] The name, nil while the player chose none and Discord never told one.
     def self.name
-      chosen = load["name"].to_s
-      return MGQ_Multiplayer.clean(chosen) unless chosen.empty?
-
-      discord = Discord.player_name.to_s
-      if discord.empty?
-        discord = load[DISCORD_NAME].to_s
-      elsif load[DISCORD_NAME] != discord
-        Log.write("kept the name Discord told: #{discord}") if store(DISCORD_NAME, discord)
-      end
-      discord.empty? ? nil : MGQ_Multiplayer.clean(discord)
+      tell_discord_name
+      state["name"]
     end
 
     # Keeps the name the player chose, which replaces their name on Discord; an empty one forgets
-    # the chosen name, so the name on Discord stands again.
+    # the chosen name, so the name on Discord stands again. The worlds are told who plays then.
     #
     # @param name [String] The name.
     def self.name=(name)
-      chosen = MGQ_Multiplayer.clean(name, "")
-      chosen.empty? ? forget("name") : store("name", chosen)
-      Log.write(chosen.empty? ? "cleared the chosen name, the name on Discord stands: #{self.name.inspect}" : "chose the name #{chosen}")
-      share
+      take(Bridge.call(NAME_TOPIC, name.to_s))
     end
 
     # Reads a setting of Player.ini, such as a key the player bound.
@@ -640,7 +555,7 @@ module MGQ_Multiplayer
     # @param key [String] The setting.
     # @return [String, nil] Its value, nil while it is not set.
     def self.setting(key)
-      load[key]
+      state["values"][key]
     end
 
     # Lists the settings whose keys start with a prefix, such as the favourite worlds.
@@ -649,7 +564,7 @@ module MGQ_Multiplayer
     # @return [Array<String>] The rest of each key after the prefix, in the order Player.ini keeps
     #   them.
     def self.keys_under(prefix)
-      load.keys.select { |key| key.start_with?(prefix) }.map { |key| key[prefix.size..-1] }
+      state["values"].keys.select { |key| key.start_with?(prefix) }.map { |key| key[prefix.size..-1] }
     end
 
     # Keeps a setting in Player.ini.
@@ -672,28 +587,20 @@ module MGQ_Multiplayer
     # Keeps and removes settings of Player.ini in one write. A setting kept moves to the end of the
     # file, so a list such as the hidden worlds added reads back the oldest first.
     #
-    # A setting that could not be written still holds for the session, unless Player.ini could not
-    # be read.
-    #
     # @param changes [Hash] The values by setting, nil for one to remove.
     # @return [Boolean] Whether Player.ini was written.
     def self.change(changes)
-      values = writable
-      return false unless values
-
-      changes.each do |key, value|
-        values.delete(key)
-        values[key] = value.to_s unless value.nil?
-      end
-      Ini.write(MGQ_Multiplayer.path(FILE), values)
+      plain = {}
+      changes.each { |key, value| plain[key.to_s] = value.nil? ? nil : value.to_s }
+      answer = take(Bridge.call(CHANGE_TOPIC, plain))
+      answer ? answer["written"] == true : false
     end
 
     # Tells whether Player.ini was read, or is missing, so its settings are known.
     #
     # @return [Boolean] Whether they are.
     def self.readable?
-      load
-      !@values.nil?
+      state["readable"] == true
     end
 
     # Takes the notice that Player.ini cannot be read, once a session and only while a write was
@@ -701,62 +608,51 @@ module MGQ_Multiplayer
     #
     # @return [String, nil] The notice, nil when there is none to show.
     def self.take_notice
-      return nil if @noticed || !@refused
+      notice = state["notice"]
+      return nil if @noticed || notice.nil?
 
       @noticed = true
-      UNREADABLE_NOTICE
+      notice
     end
 
-    # Tells the DLL who plays, once the player has a name.
+    # Tells the worlds who plays, once the player has a name.
     #
     # @return [Boolean] Whether the DLL knows who plays.
     def self.share
-      name = self.name
-      key = id
-      shared = name && !key.empty? ? Link.set_player(key, name) : false
-      told = [name, shared]
-      if told != @told
-        @told = told
-        Log.write(shared ? "told the DLL who plays: #{name}" : "could not tell the DLL who plays: #{name.nil? ? 'no name yet' : key.empty? ? 'no player key' : 'it refused'}")
-      end
-      shared
-    rescue => e
-      Log.write("could not tell the DLL who plays: #{e.class}: #{e.message}")
-      false
+      answer = take(Bridge.call(SHARE_TOPIC))
+      answer ? answer["shared"] == true : false
     end
 
-    # Reads Player.ini once, and again at most every RETRY_SECONDS while it cannot be read.
-    #
-    # @return [Hash] The values by key, UNREADABLE while Player.ini exists but cannot be read.
-    def self.load
-      return @values if @values
-      return UNREADABLE if @unreadable_at && Time.now - @unreadable_at < RETRY_SECONDS
+    # Hands the DLL the name Discord tells, when it changed.
+    def self.tell_discord_name
+      discord = Discord.player_name.to_s
+      return if discord.empty? || discord == @discord_name
 
-      values = Ini.load(MGQ_Multiplayer.path(FILE), !@unreadable_at.nil?)
-      unless values
-        @unreadable_at = Time.now
-        return UNREADABLE
-      end
-
-      Log.write("read #{FILE} again") if @unreadable_at
-      @unreadable_at = nil
-      @refused = false
-      @values = values
+      @discord_name = discord
+      take(Bridge.call(DISCORD_TOPIC, discord))
     end
 
-    # Gives the settings to change, unless Player.ini exists but cannot be read: writing it then
-    # would lose the player key and every setting.
+    # Gives the settings as the DLL last answered them, asking it the first time and again at most
+    # every RETRY_SECONDS while Player.ini cannot be read.
     #
-    # @return [Hash, nil] The values by key, nil while Player.ini cannot be read.
-    def self.writable
-      values = load
-      return values if @values
+    # @return [Hash] "values", "readable", "notice" and "name", see PlayerIni.cs; NONE while the DLL
+    #   has not answered.
+    def self.state
+      return @state if @state && @state["readable"]
+      return @state || NONE if @asked_at && Time.now - @asked_at < RETRY_SECONDS
 
-      unless @refused
-        @refused = true
-        Log.write("#{FILE} exists but could not be read; not writing it, so the player key and settings are kept")
-      end
-      nil
+      @asked_at = Time.now
+      take(Bridge.call(STATE_TOPIC))
+      @state || NONE
+    end
+
+    # Keeps what a topic answered as the settings.
+    #
+    # @param answer [Hash, nil] The answer, nil while the bridge is closed.
+    # @return [Hash, nil] The answer.
+    def self.take(answer)
+      @state = answer if answer.is_a?(Hash)
+      answer
     end
   end
 
@@ -788,8 +684,6 @@ module MGQ_Multiplayer
       'mp_keep_running' => 'v',
       'mp_check_for_update' => 'v',
       'mp_newer_version' => READ_ARGUMENTS,
-      'mp_new_id' => READ_ARGUMENTS,
-      'mp_set_player' => 'pp',
       'mp_set_player_name' => 'p',
       'mp_player_id' => READ_ARGUMENTS,
       'mp_restart_game' => 'v',
@@ -958,22 +852,6 @@ module MGQ_Multiplayer
     # @param name [String] The name.
     def self.set_player_name(name)
       function('mp_set_player_name').call(name + "\0")
-    end
-
-    # Makes an id nobody else has.
-    #
-    # @return [String] 32 lowercase hexadecimal characters, "" when it failed.
-    def self.new_id
-      read('mp_new_id', 64)
-    end
-
-    # Tells the DLL who plays in worlds.
-    #
-    # @param key [String] The player's key.
-    # @param name [String] The player's name.
-    # @return [Boolean] Whether the DLL took them.
-    def self.set_player(key, name)
-      function('mp_set_player').call(key + "\0", name + "\0") == 1
     end
 
     # Reads the id everyone sees for the player, as the world directory lists it.

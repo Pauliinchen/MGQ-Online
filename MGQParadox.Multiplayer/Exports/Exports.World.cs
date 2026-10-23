@@ -2,6 +2,7 @@
 //  Exports.World.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Dropped mp_new_id and mp_set_player, since the DLL keeps Player.ini
 //      Paulinchen  2026-10-08: Answered mp_world_say with 2 for a dropped chat line
 //      Paulinchen  2026-10-07: Added mp_world_say
 //      Paulinchen  2026-10-06: Wrote hexadecimal in lowercase at once
@@ -14,7 +15,6 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.World;
 
@@ -25,51 +25,6 @@ namespace MGQParadox.Multiplayer;
 /// </summary>
 internal static unsafe partial class Exports
 {
-    /// <summary>
-    /// Size of an id from <see cref="NewId"/> before it is written as hexadecimal.
-    /// </summary>
-    private const int IdBytes = 16;
-
-    /// <summary>
-    /// Makes an id nobody else has, such as the one that tells a player's game from the others in a world.
-    /// </summary>
-    /// <param name="buffer">Receives 32 lowercase hexadecimal characters, UTF-8 and null-terminated.</param>
-    /// <param name="size">The size of the buffer in bytes.</param>
-    /// <returns>The id's length, or its length negated when the buffer is too small, 0 when it failed.</returns>
-    [UnmanagedCallersOnly(EntryPoint = "mp_new_id", CallConvs = [typeof(CallConvStdcall)])]
-    public static int NewId(byte* buffer, int size)
-    {
-        try
-        {
-            return Copy(Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(IdBytes)), buffer, size);
-        }
-        catch (Exception ex)
-        {
-            Log.Write($"mp_new_id failed: {ex}");
-            return 0;
-        }
-    }
-
-    /// <summary>
-    /// Takes who plays in worlds: the key from Patch/Multiplayer/Player.ini and the name the others see.
-    /// </summary>
-    /// <param name="key">The player's key, 32 lowercase hexadecimal characters, UTF-8 and null-terminated.</param>
-    /// <param name="name">The player's name, UTF-8 and null-terminated.</param>
-    /// <returns>1 when taken, 0 when the key or name is not as it must be or it failed.</returns>
-    [UnmanagedCallersOnly(EntryPoint = "mp_set_player", CallConvs = [typeof(CallConvStdcall)])]
-    public static int SetPlayer(byte* key, byte* name)
-    {
-        try
-        {
-            return Player.Set(Text(key), Text(name)) ? 1 : 0;
-        }
-        catch (Exception ex)
-        {
-            Log.Write($"mp_set_player failed: {ex}");
-            return 0;
-        }
-    }
-
     /// <summary>
     /// Hands out the id everyone sees for the player, as the world directory lists it.
     /// </summary>

@@ -2,40 +2,33 @@
 #  player_ini_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked the settings the DLL answers instead of the file, whose reading and writing its tests cover
 #      Paulinchen  2026-10-12: Created
 #
 #----------------------------------------------------------------
 
-# Covers Player.ini (Multiplayer.rb's Ini and Player) and the world lists world.rbx keeps in it:
-# reading it in any encoding Notepad saves, writing it in one step, leaving one that cannot be read
-# as it is, and moving Favourites.ini and Added.ini into it.
+# Covers Player.ini as the scripts see it (Multiplayer.rb's Player and Ini, which ask the DLL
+# through the bridge) and the world lists world.rbx keeps in it: the settings kept as the DLL last
+# answered them, asked again only while Player.ini cannot be read, and moving Favourites.ini and
+# Added.ini into it. Reading and writing the files is the DLL's (PlayerIniTests, IniFileTests).
 
-require_relative "support"
+require_relative "bridge_support"
 require "tmpdir"
 
 source = File.read(File.expand_path("../Multiplayer.rb", __dir__), encoding: "UTF-8").gsub("\r\n", "\n")
 world_source = File.read(File.join(SCRIPTS_DIR, "world.rbx"), encoding: "UTF-8").gsub("\r\n", "\n")
 
 $log = []
-$new_ids = 0
-# Stands in for Multiplayer.rb, around the Ini and Player modules taken from it.
+# Stands in for Multiplayer.rb, around the Bridge, Ini and Player modules taken from it.
 module MGQ_Multiplayer
-  # Answers the file name as it is, so files land in the current folder.
+  # Answers the file name as it is.
   def self.path(name); name; end
-  # Answers the name as it is.
-  def self.clean(name, _fallback = nil); name; end
   # Stands in for the mod's log: records each line in $log.
   module Log; def self.write(message); $log << message; end; end
   # Stands in for the Discord bridge: the player's name on Discord is $discord_name.
   module Discord; def self.player_name; $discord_name; end; end
-  # Stands in for the DLL link.
-  module Link
-    # Counts the call in $new_ids and answers the key "newkey".
-    def self.new_id; $new_ids += 1; "newkey"; end
-    # Takes any key and name.
-    def self.set_player(_key, _name); true; end
-  end
 end
+load_bridge
 MGQ_Multiplayer.module_eval(source[/  module Ini\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  module Player\n.*?\n  end\n/m])
 
@@ -53,121 +46,117 @@ end
   MGQ_MpWorld.module_eval(world_source[/  module #{name}\n.*?\n  end\n/m])
 end
 
-player = MGQ_Multiplayer::Player
-ini = MGQ_Multiplayer::Ini
-
-# Starts Player and the old lists afresh, as a new session does, and clears the log.
-fresh = lambda do
-  [:@values, :@unreadable_at, :@refused, :@noticed].each { |name| player.instance_variable_set(name, nil) }
-  [:@merged, :@tried_at].each { |name| MGQ_MpWorld::OldLists.instance_variable_set(name, nil) }
-  $log.clear
-  $new_ids = 0
+# The DLL's side: Player.ini's settings in $ini, which it cannot read while $unreadable, the other
+# files in $files (:unreadable for one that cannot be read), and how often the settings were asked.
+fake = FakeBridge.new
+state = lambda do
+  { "values" => $unreadable ? {} : $ini.dup, "readable" => !$unreadable, "notice" => $refused ? "Player.ini could not be read." : nil, "name" => $ini["name"] || $told.last }
 end
-# Reads a file's bytes.
-#
-# @param path [String] The file.
-# @return [String] Its bytes.
-bytes = lambda { |path| File.open(path, "rb") { |file| file.read } }
-# Counts the log lines that hold a text.
-#
-# @param text [String] The text.
-# @return [Integer] How many lines hold it.
-logged = lambda { |text| $log.count { |line| line.include?(text) } }
+fake.answer("player.state") { |_request| $asked += 1; state.call }
+fake.answer("player.change") do |changes|
+  $refused = true if $unreadable
+  changes.each { |key, value| $ini.delete(key); $ini[key] = value unless value.nil? } unless $unreadable
+  state.call.merge("written" => !$unreadable)
+end
+fake.answer("player.discord") { |name| $told << name; state.call }
+fake.answer("ini.read") { |request| $files[request["path"]] == :unreadable ? nil : ($files[request["path"]] || {}) }
+MGQ_Multiplayer::Bridge.open(fake)
 
+player = MGQ_Multiplayer::Player
+
+# Starts Player and the old lists afresh, as a new session does.
+fresh = lambda do
+  [:@state, :@asked_at, :@noticed, :@discord_name].each { |name| player.instance_variable_set(name, nil) }
+  [:@merged, :@tried_at].each { |name| MGQ_MpWorld::OldLists.instance_variable_set(name, nil) }
+  $ini = {}
+  $files = {}
+  $unreadable = false
+  $refused = false
+  $told = []
+  $asked = 0
+  $log.clear
+end
+# Reads the request of the last call of a topic, as it crossed.
+#
+# @param topic [String] The topic.
+# @return [Object] The request.
+sent = lambda { |topic| Marshal.load(fake.calls.reverse.find { |name, _bytes| name == topic }[1]) }
+
+fresh.call
+$ini = { "name" => "X", "p.b" => "1", "p.a" => "2" }
+check("the settings are asked once and then read from the copy", [player.setting("name"), player.setting("name"), player.keys_under("p."), $asked], ["X", "X", ["b", "a"], 1])
+check("a change answers them anew, so the setting reads at once without asking",
+      [player.store("k", 5), player.setting("k"), $asked], [true, "5", 1])
+player.change("z" => 1, "k" => nil)
+check("a change hands its values over as text, nil for a setting to remove", sent.call("player.change"), { "z" => "1", "k" => nil })
+
+fresh.call
+$unreadable = true
+check("while Player.ini cannot be read no setting holds and nothing is written",
+      [player.setting("name"), player.readable?, player.store("k", "v"), player.setting("k")], [nil, false, false, nil])
+player.setting("name")
+check("and it is not asked again within a second", $asked, 1)
+check("the notice of a write turned down is taken once a session", [player.take_notice, player.take_notice], ["Player.ini could not be read.", nil])
+$unreadable = false
+$ini = { "name" => "X" }
+player.instance_variable_set(:@asked_at, Time.now - 2)
+check("after it, it is asked again and holds", [player.setting("name"), player.readable?, $asked], ["X", true, 2])
+
+fresh.call
+$discord_name = "Disco"
+3.times { player.name }
+check("the name Discord tells is handed over once, and the name follows it", [$told, player.name], [["Disco"], "Disco"])
+$discord_name = "Disco 2"
+check("and again once it changes", [player.name, $told], ["Disco 2", ["Disco", "Disco 2"]])
+$discord_name = nil
+
+# Favourites.ini and Added.ini move into Player.ini.
+fresh.call
+$ini = { "favourite.w1" => "1" }
+$files = { "Favourites.ini" => { "w1" => "1", "w2" => "1" }, "Added.ini" => { "a1" => "1", "a2" => "1" } }
 Dir.mktmpdir do |root|
   Dir.chdir(root) do
-    # A byte order mark is skipped.
-    fresh.call
-    File.binwrite("Player.ini", "\xEF\xBB\xBFid=abc\r\nname=X\r\n")
-    check("a Player.ini with a byte order mark keeps its key and makes no new one", [player.id, player.setting("name"), $new_ids], ["abc", "X", 0])
-
-    # Notepad's other encodings read too.
-    fresh.call
-    File.binwrite("Player.ini", "id=abc\nname=J\xF6rg\n")
-    check("one saved as ANSI reads as Latin-1, so the key and the name with an umlaut stay", [player.id, player.setting("name"), $new_ids], ["abc", "Jörg", 0])
-    fresh.call
-    File.binwrite("Player.ini", "\xFF\xFE".b + "id=abc\r\nname=Jö😀\r\n".encode("UTF-16LE").b)
-    check("one saved as UTF-16 keeps its key and its name, an emoji too", [player.id, player.setting("name")], ["abc", "Jö😀"])
-    fresh.call
-    File.binwrite("Player.ini", "\xFE\xFF".b + "id=abc\n".encode("UTF-16BE").b)
-    check("big-endian too", player.id, "abc")
-    player.store("k", "v")
-    check("and the next write saves it as UTF-8", bytes.call("Player.ini"), "id=abc\nk=v\n")
-
-    # A Player.ini that exists but cannot be read is left as it is.
-    fresh.call
-    File.delete("Player.ini")
-    Dir.mkdir("Player.ini")
-    $discord_name = "Disco"
-    results = [player.id, player.store("k", "v"), player.forget("k"), player.change("a" => "1"), player.id]
-    check("one that cannot be read gets no new key and takes no setting", [results, $new_ids], [["", false, false, false, ""], 0])
-    check("it stays as it is, with no file left next to it", [File.directory?("Player.ini"), File.exist?("Player.ini.tmp")], [true, false])
-    3.times { player.name }
-    check("the name on Discord stands, and is not logged as kept", [player.name, logged.call("kept the name Discord told")], ["Disco", 0])
-    check("the failed read and the refusal are logged once", [logged.call("could not read Player.ini"), logged.call("not writing it")], [1, 1])
-    check("the notice is taken once a session", [player.take_notice, player.take_notice], [MGQ_Multiplayer::Player::UNREADABLE_NOTICE, nil])
-    Dir.rmdir("Player.ini")
-    File.binwrite("Player.ini", "id=abc\n")
-    check("within a second it is not read again", [player.id, player.readable?], ["", false])
-    player.instance_variable_set(:@unreadable_at, Time.now - 2)
-    check("after it, it is read again and its key holds", [player.id, $new_ids, logged.call("read Player.ini again")], ["abc", 0, 1])
-
-    # Writing replaces the file in one step.
-    check("a setting kept leaves the key and no file next to it", [player.store("k", "v"), bytes.call("Player.ini"), File.exist?("Player.ini.tmp")],
-          [true, "id=abc\nk=v\n", false])
-    player.change("z" => "1", "k" => "w", "gone" => nil)
-    check("several settings change in one write, a setting kept moving to the end", bytes.call("Player.ini"), "id=abc\nz=1\nk=w\n")
-    check("a prefix lists its settings in the file's order", [player.store("p.b", 1), player.store("p.a", 2), player.keys_under("p.")], [true, true, ["b", "a"]])
-    Dir.mkdir("Blocked")
-    check("a write that cannot replace its file fails and leaves no file next to it",
-          [ini.write("Blocked", "a" => "1"), File.directory?("Blocked"), File.exist?("Blocked.tmp")], [false, true, false])
-    fresh.call
-    File.delete("Player.ini")
-    check("a missing Player.ini gets a new key", [player.id, bytes.call("Player.ini"), $new_ids], ["newkey", "id=newkey\n", 1])
-
-    # Favourites.ini and Added.ini move into Player.ini.
-    fresh.call
-    File.binwrite("Player.ini", "id=abc\nfavourite.w1=1\n")
-    File.binwrite("Favourites.ini", "w1=1\nw2=1\n")
-    File.binwrite("Added.ini", "a1=1\na2=1\n")
+    $files.keys.each { |file| File.write(file, "") }
     check("the old files move into Player.ini, which keeps what it held", [MGQ_MpWorld::Favourites.all, MGQ_MpWorld::Added.all], [["w1", "w2"], ["a1", "a2"]])
-    check("and are deleted", [bytes.call("Player.ini"), File.exist?("Favourites.ini"), File.exist?("Added.ini")],
-          ["id=abc\nfavourite.w1=1\nfavourite.w2=1\nadded.a1=1\nadded.a2=1\n", false, false])
+    check("and are deleted", [$ini.keys, File.exist?("Favourites.ini"), File.exist?("Added.ini")],
+          [["favourite.w1", "favourite.w2", "added.a1", "added.a2"], false, false])
 
     fresh.call
-    File.binwrite("Player.ini", "id=abc\n")
-    Dir.mkdir("Favourites.ini")
-    File.binwrite("Added.ini", "a1=1\n")
-    check("while one old file cannot be read, nothing moves and nothing is deleted",
-          [MGQ_MpWorld::Added.all, bytes.call("Player.ini"), File.exist?("Added.ini")], [[], "id=abc\n", true])
-    Dir.rmdir("Favourites.ini")
-    File.binwrite("Favourites.ini", "w1=1\n")
+    $files = { "Favourites.ini" => :unreadable, "Added.ini" => { "a1" => "1" } }
+    $files.keys.each { |file| File.write(file, "") }
+    check("while one old file cannot be read, nothing moves and nothing is deleted", [MGQ_MpWorld::Added.all, $ini, File.exist?("Added.ini")], [[], {}, true])
+    $files["Favourites.ini"] = { "w1" => "1" }
     MGQ_MpWorld::Added.all
     check("nor within a second after", File.exist?("Added.ini"), true)
     MGQ_MpWorld::OldLists.instance_variable_set(:@tried_at, Time.now - 2)
     check("then it is tried again", [MGQ_MpWorld::Favourites.all, MGQ_MpWorld::Added.all, File.exist?("Added.ini")], [["w1"], ["a1"], false])
 
     fresh.call
-    File.delete("Player.ini")
-    Dir.mkdir("Player.ini")
-    File.binwrite("Favourites.ini", "w9=1\n")
+    $unreadable = true
+    $files = { "Favourites.ini" => { "w9" => "1" } }
+    File.write("Favourites.ini", "")
     check("while Player.ini cannot be read, nothing moves, and a world stays as it was",
-          [MGQ_MpWorld::Favourites.all, MGQ_MpWorld::Favourites.toggle("w9"), File.exist?("Favourites.ini"), File.directory?("Player.ini")], [[], nil, true, true])
-    Dir.rmdir("Player.ini")
+          [MGQ_MpWorld::Favourites.all, MGQ_MpWorld::Favourites.toggle("w9"), File.exist?("Favourites.ini")], [[], nil, true])
     File.delete("Favourites.ini")
-
-    # The favourites and hidden worlds kept in Player.ini.
-    fresh.call
-    File.binwrite("Player.ini", "id=abc\n")
-    check("a world marked is a favourite, and no longer once unmarked",
-          [MGQ_MpWorld::Favourites.toggle("w1"), MGQ_MpWorld::Favourites.all, MGQ_MpWorld::Favourites.toggle("w1"), MGQ_MpWorld::Favourites.all], [true, ["w1"], false, []])
-    (1..MGQ_MpWorld::Added::MAX).each { |n| MGQ_MpWorld::Added.add("h#{n}") }
-    MGQ_MpWorld::Added.add("h1")
-    MGQ_MpWorld::Added.add("new")
-    check("a hidden world added again moves to the end, and the oldest goes beyond the limit",
-          [MGQ_MpWorld::Added.all.size, MGQ_MpWorld::Added.all.first, MGQ_MpWorld::Added.all.last(2), MGQ_MpWorld::Added.all.include?("h2")],
-          [MGQ_MpWorld::Added::MAX, "h3", ["h1", "new"], false])
-    MGQ_MpWorld::Added.remove("new")
-    check("and one removed is gone", MGQ_MpWorld::Added.all.include?("new"), false)
   end
 end
+
+# The favourites and hidden worlds kept in Player.ini.
+fresh.call
+check("a world marked is a favourite, and no longer once unmarked",
+      [MGQ_MpWorld::Favourites.toggle("w1"), MGQ_MpWorld::Favourites.all, MGQ_MpWorld::Favourites.toggle("w1"), MGQ_MpWorld::Favourites.all], [true, ["w1"], false, []])
+(1..MGQ_MpWorld::Added::MAX).each { |n| MGQ_MpWorld::Added.add("h#{n}") }
+MGQ_MpWorld::Added.add("h1")
+MGQ_MpWorld::Added.add("new")
+check("a hidden world added again moves to the end, and the oldest goes beyond the limit",
+      [MGQ_MpWorld::Added.all.size, MGQ_MpWorld::Added.all.first, MGQ_MpWorld::Added.all.last(2), MGQ_MpWorld::Added.all.include?("h2")],
+      [MGQ_MpWorld::Added::MAX, "h3", ["h1", "new"], false])
+MGQ_MpWorld::Added.remove("new")
+check("and one removed is gone", MGQ_MpWorld::Added.all.include?("new"), false)
+
+# The other ini files cross as text, and one that cannot be read reads as nil.
+$files = { "world.ini" => :unreadable }
+check("another ini file that cannot be read loads as nil and reads as empty", [MGQ_Multiplayer::Ini.load("world.ini"), MGQ_Multiplayer::Ini.read("world.ini")], [nil, {}])
+fake.answer("ini.write") { |_request| true }
+MGQ_Multiplayer::Ini.write("world.ini", "written" => 12, :name => "Plain")
+check("and a write hands its values over as text", sent.call("ini.write"), { "path" => "world.ini", "values" => { "written" => "12", "name" => "Plain" } })

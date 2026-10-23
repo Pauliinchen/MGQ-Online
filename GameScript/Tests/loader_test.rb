@@ -7,6 +7,7 @@
 #      Paulinchen  2026-10-23: Checked that the log's lines wait for the bridge, cross it with the frame and go into the day's file while the mod stays off
 #                            - Checked that an error the error box shows is written once
 #                            - Dropped the checks of the day's file, the repeats, the cut and the old logs, which the DLL's tests cover
+#                            - Dropped the checks of the chosen name, which the DLL keeps now
 #                            - Dropped the check of the log rules of the deleted options dump
 #      Paulinchen  2026-10-17: Checked the load order of the raid boss freeze scripts
 #      Paulinchen  2026-10-15: Checked that every export takes at most 16 arguments
@@ -329,36 +330,10 @@ lines = logged_lines { [error, error, nil].each { |ended| MGQ_Multiplayer.closin
 check("an error the game's error box shows is written once, though the game's end names it again",
       lines.map { |line| line[/\A[^:]*/] }, ["the game closes after an error", "the game closes"])
 
-# The player's name: a chosen one replaces the name on Discord, and clearing it brings that back.
+# A name someone else chose: nothing left of it reads as the fallback.
 MGQ_Multiplayer.const_set(:MAX_NAME_LENGTH, 32) unless defined?(MGQ_Multiplayer::MAX_NAME_LENGTH)
 MGQ_Multiplayer.module_eval(source[/  def self\.clean\(name.*?\n  end\n/m])
-# Stands in for the paths, Player.ini, the name on Discord and the link that Player uses.
-module MGQ_Multiplayer
-  # Takes a file's name as its path.
-  def self.path(name); name; end
-  # Stands in for Ini, keeping the values written in $player_ini_written.
-  module Ini
-    def self.read(_path); {}; end
-    def self.load(_path, _quiet = false); {}; end
-    def self.write(_path, values); $player_ini_written = values.dup; true; end
-  end
-  # Stands in for the name on Discord, kept in $discord_name.
-  module Discord; def self.player_name; $discord_name; end; end
-  # Stands in for the link, keeping the name shared in $shared_name.
-  module Link
-    def self.new_id; "key"; end
-    def self.set_player(_key, name); $shared_name = name; true; end
-  end
-end
-MGQ_Multiplayer.module_eval(source[/  module Player\n.*?\n  end\n/m])
-player = MGQ_Multiplayer::Player
-$discord_name = "Discord Me"
 check("a name someone else chose that is empty still reads A friend", MGQ_Multiplayer.clean("  "), "A friend")
-player.name = "Chosen"
-check("a chosen name replaces the name on Discord", [player.name, $player_ini_written["name"]], ["Chosen", "Chosen"])
-player.name = "   "
-check("clearing it keeps no name in Player.ini and brings the name on Discord back",
-      [player.name, $player_ini_written.key?("name"), $shared_name], ["Discord Me", false, "Discord Me"])
 
 # Reading a text from the DLL: one that grew between asking its size and copying it is asked for
 # again with the size it needs then, READ_TRIES times at most.
