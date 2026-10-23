@@ -2,6 +2,7 @@
 //  battles.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Covered how a battle that just ended answers a player who comes onto it
 //      Paulinchen  2026-10-15: Covered the battle server's boss reports and pool lines
 //                            - Covered the players the battle server takes in late
 //                            - Created
@@ -77,6 +78,17 @@ test("only the battle's players come onto its channel, each as their world seat"
   assert.equal(table.admit(WORLD, "k3x9", STRANGER).status, 403);
   assert.equal(table.admit(WORLD, "other", GUEST).status, 404);
   assert.equal(table.admit("cd".repeat(16), "k3x9", GUEST).status, 404);
+});
+
+test("a player who comes onto a battle that just ended learns how it ended, for as long as players may take to come", () => {
+  const clock = handClock();
+  const table = new BattleTable({ clock: clock.now });
+  table.open(WORLD, "k3x9", new Map([[STARTER, 0]]), STARTER);
+  table.close(WORLD, "k3x9", BATTLE_END.server);
+  assert.deepEqual(table.admit(WORLD, "k3x9", STARTER), { status: 404, body: { error: "the battle ended: server", code: BATTLE_END.server } });
+  clock.add(BATTLE_LIMITS.arriveMs);
+  table.overdue(clock.now());
+  assert.equal(table.admit(WORLD, "k3x9", STARTER).body.code, undefined);
 });
 
 test("a battle id runs once per world, and a world runs a limited number of server battles", () => {

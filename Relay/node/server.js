@@ -2,6 +2,8 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Kept a battle on the battle server from the moment the server took it
+//                            - Told a player who comes onto a battle that just ended how it ended
 //      Paulinchen  2026-10-22: Checked the mod catalog's links half a minute after a start and every five minutes
 //                            - Cleared the current release once the watch saw a newer one published after it was set
 //                            - Listed the worlds without their mods for games from 0.6.8 and sent released games to update at a world whose mods they cannot hold
@@ -879,18 +881,19 @@ export function createRelay({
         return refusal;
       }
 
-      const served = await serveBattle(route.id, open.battle, open.setup);
+      const served = await serveBattle(route.id, open.battle, open.setup, (server) => {
+        battles.open(route.id, open.battle, players, access.player);
+        battleLinks.set(`${route.id}/${open.battle}`, {
+          world: route.id, battle: open.battle, server, players: new Map(),
+          starter: access.player, starterName: access.name ?? null, raid: access.type === WORLD_TYPE.raid,
+        });
+        log.info(`${new Date().toISOString()} battle ${open.battle} of world ${route.id} on the battle server for ${players.size} players`);
+      });
 
       if (served.refusal) {
         return { status: 503, body: { error: served.refusal.error, code: served.refusal.code } };
       }
 
-      battles.open(route.id, open.battle, players, access.player);
-      battleLinks.set(`${route.id}/${open.battle}`, {
-        world: route.id, battle: open.battle, server: served.socket, players: new Map(),
-        starter: access.player, starterName: access.name ?? null, raid: access.type === WORLD_TYPE.raid,
-      });
-      log.info(`${new Date().toISOString()} battle ${open.battle} of world ${route.id} on the battle server for ${players.size} players`);
       return { status: 201, body: { battle: open.battle, seat: SERVER_SEAT } };
     });
   }
@@ -902,9 +905,11 @@ export function createRelay({
    * @param {string} world The world.
    * @param {string} battle The battle's id.
    * @param {string} setup The setup in base64.
+   * @param {(server: net.Socket) => void} keep Keeps the battle once the server took it, before the
+   *   server's next line is read, since the same chunk may already carry its end.
    * @returns {Promise<{socket: net.Socket, refusal: null} | {refusal: {code: string, error: string}}>} The connection, or why not.
    */
-  function serveBattle(world, battle, setup) {
+  function serveBattle(world, battle, setup, keep) {
     return new Promise((resolve) => {
       const socket = net.connect(battleServer.port, battleServer.host);
       let pending = "";
@@ -933,6 +938,7 @@ export function createRelay({
 
           if (!answered) {
             if (line?.op === "serving") {
+              keep(socket);
               answer({ socket, refusal: null });
             } else {
               socket.destroy();
@@ -1079,7 +1085,7 @@ export function createRelay({
   function endBattle(world, battle, end) {
     const key = `${world}/${battle}`;
     const link = battleLinks.get(key);
-    battles.close(world, battle);
+    battles.close(world, battle, end);
 
     if (!link) {
       return;
