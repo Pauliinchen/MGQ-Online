@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-23: Covered the story mapping, its rows' changes and its index kept over a restart, and a batch that fails kept not at all
+//                            - Covered a Raid World's story tracks kept over a restart, a dropped track and a removed world
 //      Paulinchen  2026-10-22: Covered the release control kept over a restart beside the newest release seen
 //      Paulinchen  2026-10-12: Covered a trade's sealed offers kept beside it over a restart
 //      Paulinchen  2026-10-10: Covered boss pools that keep the share of a raid max HP left over a restart
@@ -23,6 +24,7 @@ import { Directory, playerIdOf, sha256Hex } from "../core/directory.js";
 import { ModCatalog, zipHashes } from "../core/mods.js";
 import { WorldStory } from "../core/story.js";
 import { MAPPING_LIMITS, StoryMapping } from "../core/story_mapping.js";
+import { StoryTracks } from "../core/story_tracks.js";
 import { makeUpload, makeZip } from "../core/test_zip.js";
 import { TradeBook } from "../core/trades.js";
 import { openStores } from "./server.js";
@@ -236,6 +238,40 @@ test("the release control outlasts a restart beside the newest release seen", as
   const second = openSqliteStores(path);
   assert.equal(await second.releases.getRelease(), "0.6.7.7");
   assert.deepEqual(await second.releases.getControl(), { current: "0.6.8", min: "0.6.7", updatedAt: 5000, updatedBy: "ad".repeat(16) });
+  second.close();
+});
+
+test("a Raid World's story tracks outlast a restart, a player's track goes with them once dropped, and each world keeps its own until removed", async () => {
+  const mapping = async () => ({ rev: 1, tables: { keys: [{ key: "v1001", kind: "one_way" }, { key: "v50", kind: "shared" }], parts: [{ id: "1", gate: 25 }] }, index: null });
+  const heard = [];
+  const tracksOver = (stores) => new StoryTracks(stores.tracks(WORLD), { mapping, send: (player, text) => heard.push(JSON.parse(text.slice(6))) });
+  const [alice, bob] = ["a1".repeat(16), "b2".repeat(16)];
+  const first = openSqliteStores(path);
+  const tracks = tracksOver(first);
+  await tracks.enter(alice, 0);
+  await tracks.frame(alice, `track ${JSON.stringify({ t: "sync", level: { best: 9, cap: null }, seed: { v1001: "n10" } })}`);
+  await tracks.frame(alice, `track ${JSON.stringify({ t: "write", seq: 1, track: "world", writes: [["v50", "n1", "map:7:39:1"], ["v1001", "n19", "map:7:39:1"]] })}`);
+  await tracks.enter(bob, 1);
+  await tracks.frame(bob, `track ${JSON.stringify({ t: "sync", level: { best: 3, cap: null }, seed: { v1001: "n2" } })}`);
+  first.close();
+
+  const second = openSqliteStores(path);
+  const store = second.tracks(WORLD);
+  assert.deepEqual(await store.getMeta(), { rev: 2, part: "2", route: "none", done: [], checkpoints: ["1"], next: 2 });
+  assert.deepEqual(new Map(await store.getKeys("world")), new Map([["v1001", "n19"], ["v50", "n1"]]));
+  assert.deepEqual([(await store.getPlayer(bob)).track, (await store.getPlayer(alice)).seq], [{ id: "t1", part: "1", rev: 1 }, 1]);
+  assert.deepEqual(await store.getKeys("t1"), [["v1001", "n10"]]);
+  assert.deepEqual(await store.getCheckpoint("1"), [["v1001", "n10"]]);
+  assert.deepEqual(await second.tracks("f".repeat(32)).getMeta(), undefined, "another world has tracks of its own");
+
+  const reopened = tracksOver(second);
+  await reopened.enter(bob, 1);
+  await reopened.frame(bob, `track ${JSON.stringify({ t: "sync", level: { best: 30, cap: null } })}`);
+  assert.deepEqual([heard.at(-1).why, heard.at(-1).track], ["moved", "world"]);
+  assert.deepEqual(await store.getKeys("t1"), [], "the track's keys went with it");
+
+  await reopened.remove();
+  assert.deepEqual([await store.getMeta(), await store.getKeys("world"), await store.getPlayer(alice), await store.getCheckpoint("1")], [undefined, [], undefined, undefined]);
   second.close();
 });
 

@@ -24,6 +24,8 @@ core/story_mapping.js  the story mapping every Raid World shares: its rows, revi
 core/story_mapping.test.js tests of the story mapping
 core/story_catchup.js  the catch-up's tables beside the story mapping, in the same engine
 core/story_catchup.test.js tests of the catch-up's tables
+core/story_tracks.js   a Raid World's story as the relay's own on tracks: requests by the mapping's kinds, pushes, telling locks, players behind
+core/story_tracks.test.js tests of the story tracks
 core/releases.js       the mod's own releases: the update notice and the release control the admins set
 core/releases.test.js  tests of the update notice and the release control
 core/migration.js      everything a relay keeps, handed to its admins for another relay to take over
@@ -43,7 +45,7 @@ cloudflare/worker.test.js tests of the Worker and the Durable Objects against st
 cloudflare/wrangler.toml
 node/server.js         the relay as a plain Node server, for a rented machine
 node/server.test.js    tests of the Node server over real WebSockets
-node/sqlite_store.js   the directory's, the catalog's, the trades', the stories', the boss pools' and the story mapping's stores over one SQLite database, for the Node server
+node/sqlite_store.js   the directory's, the catalog's, the trades', the stories', the boss pools', the story mapping's and the story tracks' stores over one SQLite database, for the Node server
 node/sqlite_store.test.js tests of the SQLite stores
 node/migrate.js        copies everything a relay keeps into a new SQLite database and checks the copy
 node/migrate.test.js   tests of the copy from one relay to a new database
@@ -163,13 +165,13 @@ One story mapping every Raid World shares, which the relay's admins keep by hand
 | Kind | Fits | What it means | Options |
 |---|---|---|---|
 | `personal` | switches, variables | each player's own, as a key without a row; a row only carries an option or a reviewed decision | `defeatWrite` |
-| `shared` | switches, variables | the world's story shares it | `defeatWrite`; variables also `routeReturnClears`, `defeatReturns`, `battleScene`, `localSteps` |
+| `shared` | switches, variables | the world's story shares it | `defeatWrite`, `wholeWorld`; variables also `routeReturnClears`, `defeatReturns`, `battleScene`, `localSteps` |
 | `one_way` | variables | shared, and only goes up (the story variables that only rise, the companions' affection) | as `shared` |
 | `scene` | switches | on only while a scene runs: mirrored to viewers, never kept in the world's story | `defeatWrite` |
 | `chest` | switches | turned on by chests only, each player's own as the chest is | `defeatWrite` |
 | `count` | variables | how many switches of a range are on, which the relay counts | `counts` (needed) |
 
-Options, each left out when off: `defeatWrite: true` (the post-defeat processing writes it, and a frozen fight's undo leaves it as the defeat set it); `routeReturnClears: true` (the route return, common event 154, clears it, so a one-way key may go down then); `defeatReturns` (`{"<step>": <value>}`: steps a story event sets before a battle it cannot lose, which the world keeps as the value its defeat sets); `battleScene` (`{steps, start, mainStep, troops}`: steps a story event sets before raid boss battles of its own, which the world keeps as `start` while variable 1001 is at `mainStep` and no fight of the troops is frozen or over); `localSteps` (`{steps, sharedAs, places}`: steps that stay each player's own while they stand in one of the `places`, each `{map, fromX}`, and that the world keeps as `sharedAs`); `counts` (`{from, to}`: the switches counted, at most 1000).
+Options, each left out when off: `defeatWrite: true` (the post-defeat processing writes it, and a frozen fight's undo leaves it as the defeat set it); `wholeWorld: true` (the whole world keeps it, players behind included, as the companions' affection, see Story tracks); `routeReturnClears: true` (the route return, common event 154, clears it, so a one-way key may go down then); `defeatReturns` (`{"<step>": <value>}`: steps a story event sets before a battle it cannot lose, which the world keeps as the value its defeat sets); `battleScene` (`{steps, start, mainStep, troops}`: steps a story event sets before raid boss battles of its own, which the world keeps as `start` while variable 1001 is at `mainStep` and no fight of the troops is frozen or over); `localSteps` (`{steps, sharedAs, places}`: steps that stay each player's own while they stand in one of the `places`, each `{map, fromX}`, and that the world keeps as `sharedAs`); `counts` (`{from, to}`: the switches counted, at most 1000).
 
 **`events`** rows: `key`, the self switches of a map event (`ss<map>.<event>.<letter>`, `*` for every event or every letter: `ss231.*.*` for every self switch of map 231, `ss0.*.F` for the found items' self switches on map 0, which has no events) or those a common event writes (`ce<id>.<letter>`); `share` (`shared` or `personal`, against what the derived index says); `chest: true` for a chest's self switches, with `share` `personal` only.
 
@@ -192,6 +194,60 @@ Options, each left out when off: `defeatWrite: true` (the post-defeat processing
 | `companion_values` | `COMPANION_VALUES` | `<actor>:<variable>` | `actor`, `variable`, `atLeast` |
 | `event_rewards` | `coop_story_rewards.rbx` `SKILLS`, `ACTORS`, `ITEMS`, `SIDED`, `ROUTE`, `FINAL` | `<kind>:<id>` | `kind` (`skill`, `companion`, `item`, `weapon`, `armor`), `id`, `most` (items only), `sided`, `route` (sided ones only), `final` |
 | `side_events` | `coop_story_rewards.rbx` `GROUPS` | `site` | `site` (`map:<map>:<event>` or `ce:<id>`), `alice` and `ilias` (each `{skills, companions}`), `choice`, `marks` (one list of marks per page) |
+
+### Story tracks
+
+A Raid World's story as the relay's own, key by key (story plan phase 2), on **tracks**: the world's track `world`, which every player who keeps up with the world plays, and a track of their own, `t<n>`, for each player behind the world. Games send the keys their own events write as requests; the relay applies them by the story mapping (see Story mapping) in the order they arrive, pushes what changed to every game on the track, and answers each request it did not keep as written with its own value. Only the Node relay keeps tracks, in the SQLite tables `track_meta` (each world's summary), `track_keys` (one row per key of a track), `track_players` (each player's track, last place, chest flags and last batch) and `track_checkpoints`; telling locks and levels live in memory, so a restart ends them. Unused until the game side (story plan phase 3); the keyed story above stays for the migration window, a world plays one of the two, and phase 6 moves keyed stories onto tracks.
+
+Games that name `tracks` in `X-MGQ-Features` play it over their world room in a Raid World, both ways as text frames `track <JSON>`, each one JSON object whose `t` names it. The world room's limits hold for them (512 KB a message, 60 a second). A game that names no `tracks`, or plays a Classic world, is closed for such a frame as for any other text.
+
+**Keys and values.** A key is `s<id>` (switch), `v<id>` (variable), `ss<map>.<event>.<letter>` (self switch; map 0 for found items) or `f<troop>` (a frozen raid boss fight), ids without leading zeros. Values travel and are kept as text, never as numbers: a switch or self switch `1` or `0`; a variable as `story_state.rbx` `encode_value` writes it (`n<whole number>` of any length, compared exactly; `f<decimal>`, `s<base64>`, `T`, `F`), at most 4096 characters; a frozen fight as `world_freeze.rbx` writes it, `0` once it ended, at most 65,536. A key nobody wrote is `0` or `n0`.
+
+**What a request does**, by the key's kind at the relay's current mapping revision (each answer names it in `mapping`):
+
+| Kind | Kept | A request |
+|---|---|---|
+| no row, `personal` | nowhere | answered `personal` without a value: the game keeps its own |
+| `scene` | nowhere | answered `scene` without a value |
+| `chest` | with the player | kept for the player alone, never pushed |
+| `shared` | on the player's track | goes in |
+| `one_way` | on the player's track | goes in, but a whole number below the kept one is answered `one_way` with the kept value, unless the row has `routeReturnClears` and the write comes from `ce:154` (the route return) |
+| `count` | on the player's track | answered `count` with the count: after every batch the relay counts the switches of `counts` that are on in the track |
+| `f<troop>` | on the world's track | goes in for the whole world, also from a player behind; once `0` it is answered `ended` with `0` |
+
+- **`wholeWorld`**: the key is kept on the world's track for every player, players behind included, so a player behind writes it to the world's track and reads it from there (the companions' affection, `one_way`, is the highest any player of the world reached).
+- **Steps the world never shares**, in this order: `localSteps` (a step of `steps` is kept as `sharedAs`), `battleScene` (a step of `steps` while the track's 1001 is at `mainStep` and no `f<troop>` of `troops` is on the world's track is kept as `start`), `defeatReturns` (a step named is kept as its value). Answered `step` with the value kept: the writing game keeps its own value until its event ended, as it takes pushes only once it is free (open question B2). `defeatWrite` changes nothing on the relay.
+- **Self switches** by the most fitting `events` row: the key's own, its event's (`ss<map>.<event>.*`), the common event's that wrote it when the site is `ce:<id>` (`ce<id>.<letter>`, then `ce<id>.*`), its map's letter's (`ss<map>.*.<letter>`), its map's (`ss<map>.*.*`); without a row `shared` when the derived index names the event, else personal. A `chest` row makes it a chest flag.
+- **Pins**: a key an admin pinned (the Raid World admin's pins, kept with the keyed story) is answered `pinned` with the pinned value on every track; a change of the pins sets every kept pinned key and pushes it.
+- **Routes** (the world's track): a route variable (1141, 1142, 1143) above 0 is answered `route` while 1001 is below 40 or another route is under way; with no route locked, the first such write locks its route, or is answered `finished` or `closed` as the route frame is; while one is locked, another route's variable and the clear switch (7096, 7097, 7039) of a route the world did not finish are answered `route`. The lock ends with the batch after which the locked route is finished and none is under way, once the route was under way or was finished in that batch.
+- **The hold for players behind** (a track of their own): a write of 1001, 1141, 1142 or 1143 that would move the track out of its part is answered `held` with the track's value; everything else goes in, so only what moves their story past the end of their part waits for their level gate.
+
+**Frames a game sends:**
+
+| `t` | Fields | Answer |
+|---|---|---|
+| `sync` | `level` (`{best, cap}`: the highest base level among the player's characters and the highest level the game lets that character reach, `null` without a cap; 1 to 99,999), `seed` (the game's story: each key the mapping keeps or a chest flag to its value; at most 40,000 keys) when the relay asks or with `fresh: true` (a new game or a story from elsewhere, which places the player anew) | `state`, or `need` (`{what: "seed"}`) for a player the relay does not know yet |
+| `write` | `seq` (whole number above the player's last batch), `track` (the one the game plays on), `writes` (1 to 4000, each `[key, value, site]`; site `map:<map>:<event>:<page>` with pages from 1, `ce:<id>`, or `game` / `game:<what>` for a write outside events, such as `game:affection`) | `answer`, then a `push` per track it changed |
+| `level` | `best`, `cap` | `state` with `why` `moved` when the gate opened |
+| `tell` | `telling` (the game's id, 1 to 32 of `A-Za-z0-9_-`), `map`, `event` (the site that started it) | `telling` to the other games on the track, then `tell` |
+| `told` | `telling` | `told` to every game on the track |
+| `watch` | `teller` (seat), `telling` | `watch` |
+| `route` | `route` (`ad`, `mr`, `chaos`) | `route`, and a `push` with the world's summary when it locked |
+
+**Frames the relay sends:**
+
+- `state`: the whole track, which the game lays over its story's kept keys: `why` (`started`: the seed started the world's story; `sync`; `behind`; `moved`), `track`, `rev`, `part`, `gate` (the level gate of the track's part, `null` on the world's track), `move` when the player moved on (`{from, to, gate, by}`, `to` a part or `world`, `by` `level` or `cap`), `world` (the world's summary: `rev`, `part`, `route`, `done`, `checkpoints`), `mapping`, `seq` (the last batch taken), `keys` (each key the track keeps; on a track of one's own with the world's `wholeWorld` keys and frozen fights), `chests` (the player's chest flags) and `tellings` (`[{telling, teller, map, event}]` on the track).
+- `answer`: `seq`, `revs` (`{"world": <rev>, "<own track>": <rev>}`, the revisions after the batch), `mapping` and `keys`: each key of the batch not kept as written, `{code, value}` (no `value` for `personal` and `scene`), a key written twice answering for its last write. Or a whole batch refused with `code` alone, nothing applied: `sync` (sync first), `seen` (with `revs`: the relay took this `seq` already, as after a reconnect), `track` (with `track`, the one the player is on: sync anew), `bad` (with `error` and the write's `index`).
+- `push`: `track`, `rev`, `prev` (the revision before), `keys` (what changed, with the values kept), and `world` (the summary) when it changed. A game on the world's track hears every revision, its own writes' too, so a gap means it missed one and syncs anew. A player behind hears every revision of their own track, and of the world's only those that change `wholeWorld` keys, frozen fights or the summary.
+- `telling` (`telling`, `teller` seat, `map`, `event`, `track`), `told` (`telling`, `teller`, `map`, `track`, `rev`: the track's revision as the telling ended, the one of the teller's last write; `why`: `ended`, `left` or `moved`), `tell` (`telling`, `granted`, `track`; refused with `code` `taken` and the holder's `teller`, `holding` and `event`, `many` past 4 locks of one player, `sync` or `bad`), `watch` (`teller`, `telling`, `watching`), `route` (`route`, `granted`, `code` when refused: `route`, `finished`, `closed`, `track` for a player behind, `sync`, `bad`), `mapping` (`rev`, after an admin changed the story mapping: read it anew), `need`, `error` (`code` `bad`, `error`).
+
+**Order.** A world's frames run one at a time, in the order they arrive; a batch's writes in their order, each by the track as the writes before it left it; each batch is one revision of each track it changed. The writer's `answer` comes before the batch's pushes, pushes come in revision order, and the other games on a track hear `telling` before the teller hears its grant, so they know the teller before its first page.
+
+**Placing players.** The world's track starts with the first `sync`'s seed (the keys the mapping keeps). A player the relay does not know, or one syncing `fresh`, is placed by their seed: a story in an earlier part than the world's (another part, and earlier in the story's order of today's keyed story) gets a track of its own at that part's checkpoint, or the seed's kept keys when the world keeps none of that part; any other plays the world's track, the seed's values dropped. The chest flags come from the seed. A player known on the world's track who left in a part the world has left since is behind at that part's checkpoint on their next `sync`. While a batch moves the world's track out of a part, every synced game on it, but the writer's and those that `watch` the writer's telling, whose level does not open that part's gate falls behind to a track at its checkpoint (`state` with `why` `behind`).
+
+**Moving on.** A part's gate is its `gate` in the `parts` table; it opens when `best` reaches it, or when `cap` is below it and `best` reaches `cap` (another mod's level cap, `by` `cap`). On every `sync` and `level`, while the gate of a track's part is open, the player moves on: to the next of the parts the world played (1, 2, 3, the routes it finished, the route under way) that has a checkpoint, the routes skipped, as a new track at that checkpoint; or, at the world's part or with none left, to the world's track, which ends their own. A track does not end because the world came back to its part. Without `parts` rows nobody falls behind; a part without a row has no gate. A part's checkpoint is kept the first time the world's track leaves it: the world as it stood when the writer's telling on the world's track started, else before the batch.
+
+**Telling locks**, one per map and track: the first game to `tell` on a map tells there for its track; another game on that track and map is refused `taken`, a game on another track is not. A `tell` with the same `telling` on another map moves the lock there (its viewers and start go along); another telling of the same game on the same map replaces its earlier one, which ends. A lock ends with `told`, with the teller's game leaving the world room (`left`) and with the teller's track changing (`moved`). `watch` notes a viewer of a telling on the viewer's own track.
 
 ### Mod catalog
 
@@ -299,7 +355,7 @@ Between the relay and the battle server one TCP connection per battle carries JS
 
 ### Both
 
-- The text `ping` is answered with `pong`, for keeping an idle connection open; any other text than `ping` and a world room's `chat` closes the connection. On Node a `ping` counts against the message limits; Cloudflare answers it without waking the room, so there it does not. A `chat` text counts on both.
+- The text `ping` is answered with `pong`, for keeping an idle connection open; any other text than `ping`, a world room's `chat` and, from a game playing a Raid World on tracks, `track` (see Story tracks) closes the connection. On Node a `ping` counts against the message limits; Cloudflare answers it without waking the room, so there it does not. A `chat` text counts on both.
 - At most 512 KB per message and 60 messages per second over time (bursts of 240), per connection.
 - **Close codes:** 1012 the Node relay stops (reason `service restart`), 4000 bad request, 4001 role taken, 4002 message too large, 4003 too many messages, 4004 nobody joined in time, 4005 the room lasted too long, 4006 the other side left, 4007 the world is full, 4008 the connection lasted too long, 4009 the creator removed the player, or the player entered from elsewhere (reason `replaced`), 4010 the world was deleted.
 

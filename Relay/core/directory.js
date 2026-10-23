@@ -2,6 +2,7 @@
 //  directory.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Named the world's type to the world room that admits a game
 //      Paulinchen  2026-10-22: Sent a released game to update at a world whose mod hashes or settings are longer than it holds
 //                            - Took a world's mods up to 16000 characters and its mod hashes and settings up to 64000 each
 //                            - Listed the worlds without their mods, mod hashes and settings for games that read them from the world's own route
@@ -623,7 +624,7 @@ export class Directory {
    * @param {string | null} [address] The game's address, whose entering a rate limit counts; null for none.
    * @param {string[]} [features] What the game names in FEATURES_HEADER; released games name nothing.
    * @param {boolean} [released] Whether the game is a released one before 0.6.8, which holds no longer mods, mod hashes and settings than RELEASED_MOD_LIMITS.
-   * @returns {Promise<{status: number, body: object, seats?: number, player?: string}>} The world's seats and the player's id, or why not.
+   * @returns {Promise<{status: number, body: object, seats?: number, player?: string, type?: string}>} The world's seats, the player's id and the world's type, or why not.
    */
   async admit(id, key, auth, address = null, features = [], released = false) {
     if (!this.rates.joins.take(address)) {
@@ -651,7 +652,7 @@ export class Directory {
       return { status: 409, body: { error: "the world's starting save is still being uploaded", code: REFUSAL.pending } };
     }
 
-    return { status: 200, body: { seats: entry.seats, player }, seats: entry.seats, player };
+    return { status: 200, body: { seats: entry.seats, player }, seats: entry.seats, player, type: entry.type ?? WORLD_TYPE.classic };
   }
 
   /**

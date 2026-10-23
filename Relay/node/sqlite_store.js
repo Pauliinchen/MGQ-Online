@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-23: Kept the story mapping, its revision, each row's last changes and the derived index
+//                            - Kept each Raid World's story tracks: its summary, each track's keys, each player's record and each part's checkpoint
 //      Paulinchen  2026-10-22: Kept the release control the relay's admins set
 //      Paulinchen  2026-10-12: Kept the newest release of the mod the relay has seen
 //                            - Kept each trade's sealed offers in a table of their own beside the trade
@@ -13,9 +14,9 @@
 //
 //----------------------------------------------------------------
 
-// The Node relay's stores over one SQLite database, so worlds, mods, trades, stories, boss pools and
-// the story mapping outlast a restart. Records are kept as JSON, starting saves and uploaded mods'
-// zips as blobs.
+// The Node relay's stores over one SQLite database, so worlds, mods, trades, stories, boss pools,
+// the story mapping and the story tracks outlast a restart. Records are kept as JSON, starting saves
+// and uploaded mods' zips as blobs, the tracks' keys one row each.
 
 import { DatabaseSync } from "node:sqlite";
 
@@ -23,7 +24,7 @@ import { DatabaseSync } from "node:sqlite";
  * Opens the stores over a SQLite database, making its tables when they are missing.
  *
  * @param {string} path The database file's path, made when it is missing.
- * @returns {{path: string, directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, releases: import("../core/releases.js").ReleaseStore, mapping: import("../core/story_mapping.js").StoryMappingStore, close: () => void}} The stores, and a way to close the database.
+ * @returns {{path: string, directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, releases: import("../core/releases.js").ReleaseStore, mapping: import("../core/story_mapping.js").StoryMappingStore, tracks: (id: string) => import("../core/story_tracks.js").TrackStore, close: () => void}} The stores, and a way to close the database.
  */
 export function openSqliteStores(path) {
   const db = new DatabaseSync(path);
@@ -45,6 +46,7 @@ export function openSqliteStores(path) {
   const worldPoolsRemove = db.prepare("DELETE FROM boss_pools WHERE id LIKE ?");
   const releases = jsonTable(db, "releases");
   const mapping = mappingStore(db);
+  const tracks = trackStores(db);
 
   return {
     path,
@@ -126,6 +128,7 @@ export function openSqliteStores(path) {
       putControl: async (record) => releases.put("control", record),
     },
     mapping,
+    tracks,
     close: () => db.close(),
   };
 }
@@ -191,6 +194,59 @@ function mappingStore(db) {
     },
     getIndex: async () => meta.get("index"),
   };
+}
+
+/**
+ * The stores of the Raid Worlds' story tracks: each world's summary, each player's record and each
+ * part's checkpoint as JSON, each track's keys one row each, so a write changes only its own keys.
+ *
+ * @param {DatabaseSync} db The database.
+ * @returns {(id: string) => import("../core/story_tracks.js").TrackStore} Makes the store of a world's tracks.
+ */
+function trackStores(db) {
+  const meta = jsonTable(db, "track_meta");
+  const players = jsonTable(db, "track_players");
+  const checkpoints = jsonTable(db, "track_checkpoints");
+  db.exec("CREATE TABLE IF NOT EXISTS track_keys (world TEXT NOT NULL, track TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (world, track, key))");
+  const keysOf = db.prepare("SELECT key, value FROM track_keys WHERE world = ? AND track = ?");
+  const putKey = db.prepare("INSERT OR REPLACE INTO track_keys (world, track, key, value) VALUES (?, ?, ?, ?)");
+  const dropTrack = db.prepare("DELETE FROM track_keys WHERE world = ? AND track = ?");
+  const dropWorld = db.prepare("DELETE FROM track_keys WHERE world = ?");
+  // A world id is hexadecimal, so its prefix holds none of the characters LIKE reads.
+  const dropPlayers = db.prepare("DELETE FROM track_players WHERE id LIKE ?");
+  const dropCheckpoints = db.prepare("DELETE FROM track_checkpoints WHERE id LIKE ?");
+
+  return (id) => ({
+    getMeta: async () => meta.get(id),
+    getKeys: async (track) => keysOf.all(id, track).map((row) => [row.key, row.value]),
+    getPlayer: async (player) => players.get(`${id}:${player}`),
+    getCheckpoint: async (part) => checkpoints.get(`${id}:${part}`),
+    commit: async ({ meta: summary, keys = [], players: records = [], checkpoint }) => transaction(db, () => {
+      if (summary) {
+        meta.put(id, summary);
+      }
+
+      for (const { track, drop, set } of keys) {
+        if (drop) {
+          dropTrack.run(id, track);
+        }
+
+        set.forEach(([key, value]) => putKey.run(id, track, key, value));
+      }
+
+      records.forEach((record) => players.put(`${id}:${record.player}`, record));
+
+      if (checkpoint) {
+        checkpoints.put(`${id}:${checkpoint.part}`, checkpoint.keys);
+      }
+    }),
+    remove: async () => transaction(db, () => {
+      meta.remove(id);
+      dropWorld.run(id);
+      dropPlayers.run(`${id}:%`);
+      dropCheckpoints.run(`${id}:%`);
+    }),
+  });
 }
 
 /**

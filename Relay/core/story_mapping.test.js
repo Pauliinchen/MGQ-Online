@@ -2,7 +2,8 @@
 //  story_mapping.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Created
+//      Paulinchen  2026-10-23: Covered the keys the whole world keeps
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -90,6 +91,7 @@ test("a key's kind must fit a switch or a variable and take the options it names
   assert.equal(await refused({ key: "v0", kind: "shared" }), MAPPING_REFUSAL.field);
   assert.equal(await refused({ key: "v1001", kind: "shared", sharde: true }), MAPPING_REFUSAL.field);
   assert.equal(await refused({ key: "s2045", kind: "chest", defeatWrite: false }), MAPPING_REFUSAL.field);
+  assert.equal(await refused({ key: "v1354", kind: "count", counts: { from: 3101, to: 3180 }, wholeWorld: true }), MAPPING_REFUSAL.option, "only shared and one-way keys are the whole world's");
 
   const taken = await ask("POST", "/edit", {
     edits: [
@@ -97,10 +99,11 @@ test("a key's kind must fit a switch or a variable and take the options it names
       add("keys", { key: "v1075", kind: "one_way", battleScene: { steps: [15, 16], start: 14, mainStep: 33, troops: [868, 869] } }),
       add("keys", { key: "v1354", kind: "count", counts: { from: 3101, to: 3180 } }),
       add("keys", { key: "s22", kind: "personal", defeatWrite: true }),
+      add("keys", { key: "v3005", kind: "one_way", wholeWorld: true }),
     ],
   });
   assert.equal(taken.status, 200);
-  assert.deepEqual(taken.body.changed.map((change) => change.id), ["v1052", "v1075", "v1354", "s22"]);
+  assert.deepEqual(taken.body.changed.map((change) => change.id), ["v1052", "v1075", "v1354", "s22", "v3005"]);
 });
 
 test("an event's self switches name a map's events and letters, a chest's only as personal", async () => {

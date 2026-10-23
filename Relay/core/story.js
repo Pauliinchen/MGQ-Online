@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-23: Kept the highest affection any write of a keyed story named
+//                            - Shared the value patterns, the first counters and the clear switches with the story tracks
 //      Paulinchen  2026-10-21: Let an admin set switches, variables and self switches of a keyed story by id as a revision every game takes
 //                            - Let an admin pin keys of a keyed story at any value and take pins off again, reading the pins kept before as pins at off
 //                            - Took a write that changes pinned keys without them and told every game the pinned values in a revision of its own
@@ -116,18 +117,18 @@ const AFFECTION = /^[1-9]\d{0,8}$/;
  * A frozen raid boss fight as the games write it: its fields with every free text escaped, or "0"
  * once it ended, which replaces the fight for every game.
  */
-const FREEZE = /^(0|[A-Za-z0-9_$!%:,.|~-]+)$/;
+export const FREEZE = /^(0|[A-Za-z0-9_$!%:,.|~-]+)$/;
 
 /**
  * What a frozen raid boss fight's key holds once the fight ended, for good.
  */
-const FREEZE_ENDED = "0";
+export const FREEZE_ENDED = "0";
 
 /**
  * A variable's value as the games write it: a whole number, a decimal, a text in base64, true or
  * false (story_state.rbx `encode_value`).
  */
-const VALUE = /^(n-?\d+|f-?\d+(\.\d+)?(e[-+]?\d+)?|s[A-Za-z0-9+/=]*|T|F)$/;
+export const VALUE = /^(n-?\d+|f-?\d+(\.\d+)?(e[-+]?\d+)?|s[A-Za-z0-9+/=]*|T|F)$/;
 
 /**
  * A self switch's key: its map, its event and its letter.
@@ -604,12 +605,12 @@ function readEnd(end, limits) {
 /**
  * The counters of a world whose story nobody wrote yet.
  */
-const FIRST_COUNTERS = Object.freeze({ p: 0, r1141: 0, r1142: 0, r1143: 0, clear: Object.freeze([]) });
+export const FIRST_COUNTERS = Object.freeze({ p: 0, r1141: 0, r1142: 0, r1143: 0, clear: Object.freeze([]) });
 
 /**
  * The switch each route's finish turns on: 7096 Angelic Dominion, 7097 Monster Realm, 7039 Chaos.
  */
-const CLEAR_SWITCHES = Object.freeze({ ad: 7096, mr: 7097, chaos: 7039 });
+export const CLEAR_SWITCHES = Object.freeze({ ad: 7096, mr: 7097, chaos: 7039 });
 
 /**
  * Reads a keyed story's lists into its keys: `s<id>` and `ss<map>.<event>.<letter>` to "1" or "0",

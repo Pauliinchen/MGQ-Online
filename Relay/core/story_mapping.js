@@ -2,7 +2,8 @@
 //  story_mapping.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Created
+//      Paulinchen  2026-10-23: Let shared and one-way keys be the whole world's, players behind included
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -340,8 +341,8 @@ const ORDER = whole(0, 1_000_000_000);
  */
 export const KEY_KINDS = Object.freeze({
   personal: Object.freeze({ switches: true, variables: true, options: ["defeatWrite"] }),
-  shared: Object.freeze({ switches: true, variables: true, options: ["defeatWrite", "routeReturnClears", "defeatReturns", "battleScene", "localSteps"] }),
-  one_way: Object.freeze({ switches: false, variables: true, options: ["defeatWrite", "routeReturnClears", "defeatReturns", "battleScene", "localSteps"] }),
+  shared: Object.freeze({ switches: true, variables: true, options: ["defeatWrite", "wholeWorld", "routeReturnClears", "defeatReturns", "battleScene", "localSteps"] }),
+  one_way: Object.freeze({ switches: false, variables: true, options: ["defeatWrite", "wholeWorld", "routeReturnClears", "defeatReturns", "battleScene", "localSteps"] }),
   scene: Object.freeze({ switches: true, variables: false, options: ["defeatWrite"] }),
   chest: Object.freeze({ switches: true, variables: false, options: ["defeatWrite"] }),
   count: Object.freeze({ switches: false, variables: true, options: ["counts"], needs: "counts" }),
@@ -379,6 +380,9 @@ const KEY_FIELDS = Object.freeze({
   // The game's post-defeat processing (common event 3000) writes it, and a frozen fight's undo
   // leaves it as the defeat set it (battles_raid_freeze_data.rbx DEFEAT_WRITES).
   defeatWrite: optional(ON),
+  // Players behind the world share it with the world too, as the companions' affection, which is
+  // the highest any player of the world reached (story_tracks.js).
+  wholeWorld: optional(ON),
   // The route return (common event 154) clears it, so a one-way key may go down then
   // (world_catchup_data.rbx RETURN_CLEARED).
   routeReturnClears: optional(ON),

@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-23: Tested the story mapping's admin routes, their log and the games' read of the mapping
+//                            - Tested a Raid World's story tracks over the world room: sync, writes, pushes, telling locks, the mapping's revision
 //                            - Tested that a stopping relay closes every connection as a service restart and logs it
 //                            - Tested that the relay logs a world connection it closes
 //      Paulinchen  2026-10-22: Tested that the watch clears a rolled back current release once a newer release is out
@@ -929,6 +930,64 @@ test("a keyed Raid World's games hear what each write changed, and games that ke
   assert.deepEqual(pushes.map((push) => [push.rev, push.prev, push.delta.s, push.delta.sf]), [[3, 2, "6", ""], [4, 3, "", "5"]], "every game hears the write without the pinned key, then the pinned value");
   watcher.socket.close();
   newer.socket.close();
+});
+
+test("games that name tracks play a Raid World's story over the world room: writes reach every game, a teller who leaves frees the map, and the mapping's revision reaches them", async () => {
+  const room = roomId(191);
+  const created = await gameFetch(directoryBase, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: playerKey(70) },
+    body: JSON.stringify({ id: room, name: "Raid Tracks", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, type: "raid" }),
+  });
+  assert.equal(created.status, 201);
+  const mapped = await fetch(`${directoryBase.replace("/worlds", "")}/admin/story/edit`, { method: "POST", headers: { [PLAYER_HEADER]: ADMIN }, body: JSON.stringify({ edits: [{ table: "keys", op: "add", row: { key: "v1001", kind: "one_way" } }, { table: "keys", op: "add", row: { key: "v77", kind: "shared" } }] }) });
+  assert.equal(mapped.status, 200);
+
+  const game = async (number) => {
+    const opened = await openWithHeaders(`${worldBase}${room}?name=Player${number}&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(number), [FEATURES_HEADER]: "raid,keys,tracks" });
+    const heard = [];
+    opened.socket.on("message", (data) => data.toString().startsWith("track ") && heard.push(JSON.parse(data.toString().slice(6))));
+    await opened.first;
+    const say = (frame) => opened.socket.send(`track ${JSON.stringify(frame)}`);
+    const hears = async (match) => {
+      await until(async () => heard.some(match));
+      return heard.splice(heard.findIndex(match), 1)[0];
+    };
+    return { socket: opened.socket, say, hears };
+  };
+  const teller = await game(71);
+  const viewer = await game(72);
+
+  teller.say({ t: "sync", level: { best: 9, cap: null }, seed: { v1001: "n3", v77: "n1", s5: "1" } });
+  assert.deepEqual(await teller.hears((frame) => frame.t === "state").then((state) => [state.why, state.keys]), ["started", { v1001: "n3", v77: "n1" }]);
+  viewer.say({ t: "sync", level: { best: 9, cap: null }, seed: { v1001: "n3" } });
+  assert.equal((await viewer.hears((frame) => frame.t === "state")).track, "world");
+
+  teller.say({ t: "write", seq: 1, track: "world", writes: [["v77", "n2", "map:7:39:1"], ["v1001", "n1", "map:7:39:1"]] });
+  assert.deepEqual((await teller.hears((frame) => frame.t === "answer")).keys, { v1001: { code: "one_way", value: "n3" } });
+  assert.deepEqual(await viewer.hears((frame) => frame.t === "push").then((push) => [push.rev, push.prev, push.keys]), [2, 1, { v77: "n2" }]);
+
+  teller.say({ t: "tell", telling: "e1", map: 7, event: "map:7:39:1" });
+  assert.equal((await viewer.hears((frame) => frame.t === "telling")).teller, 0);
+  assert.equal((await teller.hears((frame) => frame.t === "tell")).granted, true);
+  viewer.say({ t: "tell", telling: "v1", map: 7, event: "map:7:39:1" });
+  assert.equal((await viewer.hears((frame) => frame.t === "tell")).code, "taken");
+
+  const remapped = await fetch(`${directoryBase.replace("/worlds", "")}/admin/story/edit`, { method: "POST", headers: { [PLAYER_HEADER]: ADMIN }, body: JSON.stringify({ edits: [{ table: "keys", op: "remove", id: "v77" }] }) });
+  const { rev } = await remapped.json();
+  assert.equal((await viewer.hears((frame) => frame.t === "mapping")).rev, rev);
+
+  teller.socket.close();
+  assert.deepEqual(await viewer.hears((frame) => frame.t === "told").then((told) => [told.telling, told.why]), ["e1", "left"]);
+  viewer.say({ t: "tell", telling: "v2", map: 7, event: "map:7:39:1" });
+  assert.equal((await viewer.hears((frame) => frame.t === "tell")).granted, true);
+
+  const plain = await openWithHeaders(`${worldBase}${room}?name=Plain&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(73), [FEATURES_HEADER]: "raid,keys" });
+  await plain.first;
+  const closed = new Promise((resolve) => plain.socket.on("close", (code) => resolve(code)));
+  plain.socket.send(`track ${JSON.stringify({ t: "sync" })}`);
+  assert.equal(await closed, CLOSE.badRequest, "a game that names no tracks sends no track frames");
+  viewer.socket.close();
 });
 
 test("a story write whose body comes after the world was deleted leaves no story behind", async () => {
