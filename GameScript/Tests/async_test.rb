@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Checked that the live map shows none of the HUD the map shows
+#                            - Checked that the save and load screens keep their picture of the map
 #      Paulinchen  2026-10-06: Checked that a live map that fails is freed and the menu's picture shows again
 #      Paulinchen  2026-10-04: Followed the scripts to their new names, without mp_
 #      Paulinchen  2026-09-30: Created
@@ -81,6 +82,10 @@ class Scene_MenuBase < Scene_Base
 end
 # Stands in for the main menu.
 class Scene_Menu < Scene_MenuBase; end
+# Stands in for the save and load screens' base.
+class Scene_File < Scene_MenuBase; end
+# Stands in for the save screen.
+class Scene_Save < Scene_File; end
 # Stands in for a menu with a background of its own.
 class Scene_Poker < Scene_MenuBase
   def create_background; @background_sprite = Sprite.new; @background_sprite.bitmap = Bitmap.new; end
@@ -233,6 +238,9 @@ menu.dispose_background
 poker = Scene_Poker.new
 poker.create_background
 check("a menu with its own background keeps it", [poker.instance_variable_get(:@mgq_mp_live_map), poker.background_sprite.visible], [nil, true])
+save = Scene_Save.new
+save.create_background
+check("the save screen keeps its picture of the map (issue 42)", [save.instance_variable_get(:@mgq_mp_live_map), save.background_sprite.visible], [nil, true])
 SceneManager.instance_variable_set(:@stack, [])
 title_menu = Scene_Menu.new
 title_menu.create_background

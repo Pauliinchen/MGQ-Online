@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Kept the mod's HUD off the live map behind menus
+#                            - Kept the save and load screens on their picture of the map
 #      Paulinchen  2026-10-12: Read the live map's viewports through MGQ_MpGame
 #      Paulinchen  2026-10-07: Read an interpreter's event and map through MGQ_MpGame
 #                            - Logged the world behind screens, held commands, waiting refreshes and the live map
@@ -35,6 +36,13 @@ module MGQ_MpAsync
   # Screens the world does not run behind, since they leave it.
   LEAVING_SCENES = [:Scene_Title, :Scene_Gameover]
 
+  # Menus that keep their picture of the map instead of the live map: the save and load screens,
+  # with their subclasses.
+  #
+  # They build a window and a thumbnail per save file, and the game closed while saving with the
+  # live map behind them.
+  PICTURE_SCENES = [:Scene_File]
+
   # Whether tick runs the map now, the only time event commands are held.
   @ticking = false
 
@@ -49,11 +57,21 @@ module MGQ_MpAsync
   # @param scene [Scene_Base] The screen in front.
   # @return [Boolean] Whether it runs.
   def self.behind?(scene)
-    return false if scene.is_a?(Scene_Map) || LEAVING_SCENES.any? { |name| Object.const_defined?(name) && scene.is_a?(Object.const_get(name)) }
+    return false if scene.is_a?(Scene_Map) || one_of?(scene, LEAVING_SCENES)
     return false unless defined?(MGQ_MpWorld) && MGQ_MpWorld.open?
     return false unless $game_map && $game_map.map_id > 0
 
     map_waiting?
+  end
+
+  # Reports whether a screen is one of the named screens or of their subclasses. A game without one
+  # of them leaves it out.
+  #
+  # @param scene [Scene_Base] The screen.
+  # @param names [Array<Symbol>] The screens' class names.
+  # @return [Boolean] Whether it is one of them.
+  def self.one_of?(scene, names)
+    names.any? { |name| Object.const_defined?(name) && scene.is_a?(Object.const_get(name)) }
   end
 
   # Reports whether a map waits for the player to come back, as it does below a screen it called.
@@ -189,13 +207,15 @@ module MGQ_MpAsync
   end
 
   # Makes the live map a menu shows in place of its picture of the map, for menus whose background
-  # is that picture while the world runs; menus with a background of their own keep it.
+  # is that picture while the world runs; menus with a background of their own keep it, and so do
+  # the menus of PICTURE_SCENES.
   #
   # @param scene [Scene_MenuBase] The menu.
   # @param background [Sprite, nil] The menu's background.
   # @return [Spriteset_MpLiveMap, nil] The live map, nil where the menu keeps its background.
   def self.live_map_for(scene, background)
     return nil unless background && background.bitmap.equal?(SceneManager.background_bitmap)
+    return nil if one_of?(scene, PICTURE_SCENES)
     return nil unless behind?(scene)
 
     live_map = Spriteset_MpLiveMap.new
