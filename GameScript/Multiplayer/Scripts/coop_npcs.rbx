@@ -2,6 +2,7 @@
 #  coop_npcs.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Left the events to the player's own game while it runs an event the player plays, then placed them
 #      Paulinchen  2026-10-17: Left the events to the player's own game while a frozen raid boss fight resumes
 #      Paulinchen  2026-10-12: Sent a newcomer the whole map again until it went out
 #      Paulinchen  2026-10-11: Started anew on every map and moved no event before the whole map came
@@ -67,6 +68,8 @@ module MGQ_MpCoopNpcs
   @map_id = nil
   # The map whose whole the follower took, before which no part of it is followed.
   @whole_map = nil
+  # Whether the follower's own event ran on the last frame, see playing?.
+  @playing = false
 
   extend MGQ_MpLog
 
@@ -75,11 +78,21 @@ module MGQ_MpCoopNpcs
 
   # Reports whether another player's game moves this map's events: never while the player resumes
   # a frozen raid boss fight, whose scene put the events where they stood at its battle (see
-  # battles_raid_freeze.rbx).
+  # battles_raid_freeze.rbx), nor while an event the player plays runs (see playing?).
   #
   # @return [Boolean] Whether it does.
   def self.following?
-    @role == :follower && !resuming?
+    @role == :follower && !resuming? && !@playing
+  end
+
+  # Reports whether the map's interpreter runs an event the player plays in their own game, such
+  # as their own story or an autorun, and not another player's story they watch.
+  #
+  # Its move routes wait for events the Map Owner's places would hold elsewhere for good.
+  #
+  # @return [Boolean] Whether it does.
+  def self.playing?
+    $game_map.interpreter.running? && !(defined?(MGQ_MpCoopScene) && MGQ_MpCoopScene.watching?)
   end
 
   # Reports whether the player resumes a frozen raid boss fight, see MGQ_MpRaidFreeze.resuming?.
@@ -145,6 +158,7 @@ module MGQ_MpCoopNpcs
     @failed = {}
     @targets = {}
     @stuck = {}
+    @playing = false
     @frames = SEND_FRAMES
   end
 
@@ -259,7 +273,7 @@ module MGQ_MpCoopNpcs
   # @param message [Hash] The message's fields.
   def self.take(peer, message)
     map = message["npcs"].to_i
-    return log_once([:not_following, map, peer.state["id"]], "ignored NPCs of map #{map} from #{MGQ_MpOverworldSync.who(peer)}: the player's game moves its own (#{@role || 'no part'})") unless following?
+    return log_once([:not_following, map, peer.state["id"]], "ignored NPCs of map #{map} from #{MGQ_MpOverworldSync.who(peer)}: the player's game moves its own (#{@role || 'no part'})") unless @role == :follower
     return log_once([:other_map, map, $game_map.map_id], "ignored NPCs of map #{map}: the player is on map #{$game_map.map_id}") unless map == $game_map.map_id
     return log_once([:not_owner, map, peer.state["id"]], "ignored NPCs of map #{map} from #{MGQ_MpOverworldSync.who(peer)}: not the Map Owner") unless owner(peers_here).equal?(peer)
 
@@ -274,7 +288,7 @@ module MGQ_MpCoopNpcs
       @targets[id.to_i] = state.to_s.split(",").map(&:to_i)
     end
     @updates = @updates.to_i + 1
-    return unless full
+    return unless full && following?
 
     log("took all #{@targets.size} event(s) of map #{map} from #{MGQ_MpOverworldSync.who(peer)}, placing them")
     @targets.each { |id, state| place($game_map.events[id], state) }
@@ -299,11 +313,26 @@ module MGQ_MpCoopNpcs
   end
 
   # Walks every event toward where the Map Owner's stands, unless the player resumes a frozen raid
-  # boss fight.
+  # boss fight or an event the player plays runs (see playing?), after which every event moves to
+  # its place at once.
   def self.follow
     return log_once([:resuming, $game_map.map_id], "left the events of map #{$game_map.map_id} where they are: the player resumes a frozen raid boss fight") if resuming?
 
+    if playing?
+      @playing = true
+      event_id = $game_map.interpreter.event_id
+      return log_once([:playing, $game_map.map_id, event_id], "left the events of map #{$game_map.map_id} to the player's own game: it runs event #{event_id}")
+    end
+    return snap if @playing
+
     @targets.each { |id, state| walk($game_map.events[id], id, state) }
+  end
+
+  # Moves every event to where the Map Owner's stands at once, as the event the player played ended.
+  def self.snap
+    @playing = false
+    log("the player's own event on map #{$game_map.map_id} ended: moved #{@targets.size} event(s) to the Map Owner's places")
+    @targets.each { |id, state| place($game_map.events[id], state) }
   end
 
   # Walks an event a step toward its place, or moves it there at once when it is far or stuck.
