@@ -2,7 +2,8 @@
 #  server.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Answered a battle whose sandbox could not drop root as one that could not be sandboxed
+#      Paulinchen  2026-10-23: Loaded MGQ Online's core library in each battle child before its sandbox and shook hands after it
+#                            - Answered a battle whose sandbox could not drop root as one that could not be sandboxed
 #                            - Let a co-op battle use CPU time for as long as the relay keeps it and ended it as failed past that
 #                            - Logged how each child ended, with its battle
 #      Paulinchen  2026-10-15: Refused battles by request while it hosts MGQ Online's battles
@@ -21,6 +22,7 @@ require_relative "lib/sandbox"
 require_relative "lib/served"
 require_relative "lib/relay_bridge"
 require_relative "lib/mods"
+require_relative "lib/core"
 
 # The battle server: it loads the game once and then plays battles for its clients over TCP, one
 # JSON object per line each way. Requests:
@@ -76,6 +78,9 @@ module BattleServer
       # server plays the battles its requests describe. Their hooks never meet in one process.
       @served = defined?(MGQ_Multiplayer::Link) ? true : false
       @served ? ServedBattle.install : HeadlessBattle.install
+      @core_library = @served ? Core.library : nil
+      # Forked children each load the core themselves; it must never run before a fork.
+      Core.open(Core.load(@core_library)) unless forking?
       @boot_seconds = boot_seconds
       port = (ENV["BATTLE_PORT"] || DEFAULT_PORT).to_i
       server = TCPServer.new("127.0.0.1", port)
@@ -195,17 +200,24 @@ module BattleServer
       status.signaled? ? "killed by SIG#{Signal.signame(status.termsig)}" : "exit #{status.exitstatus}"
     end
 
-    # Closes a battle's child in before it plays, where the system can.
+    # Prepares a battle's child before it plays: loads MGQ Online's core library, closes the child
+    # in where the system can, then shakes hands with the core. The sandbox's chroot hides the
+    # library's path, so it loads before; its runtime starts at the first call, after, under the
+    # sandbox's limits.
     #
     # @param client [TCPSocket] The child's client, which hears why when it cannot be closed in.
     # @return [Boolean] Whether the child may play; a child the sandbox could not close in never
     #   plays.
     def enter_child(client)
-      Sandbox.enter(Boot::GAME_DIR) if Sandbox.available?
+      core = Core.load(@core_library)
+      begin
+        Sandbox.enter(Boot::GAME_DIR) if Sandbox.available?
+      rescue StandardError, SecurityError => e
+        client.puts(JSON.generate(ok: false, error: "the battle could not be sandboxed: #{e.message}"))
+        return false
+      end
+      Core.open(core)
       true
-    rescue StandardError, SecurityError => e
-      client.puts(JSON.generate(ok: false, error: "the battle could not be sandboxed: #{e.message}"))
-      false
     end
 
     # Copies a child's output into the server's log, each line marked with the child, up to

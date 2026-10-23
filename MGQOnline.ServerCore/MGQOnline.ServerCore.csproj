@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The battle server's C# core: a NativeAOT shared library with the four bridge exports, which
+       the battle server loads through Fiddle in each battle's child. build.ps1 builds the
+       linux-x64 .so in Docker; a win-x64 build (dotnet publish -r win-x64) serves a battle server
+       on Windows. See "The battle server's core" in docs/DEVELOPER.md. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>MGQOnline.ServerCore</RootNamespace>
+    <AssemblyName>MGQOnline.ServerCore</AssemblyName>
+    <Product>Monster Girl Quest! Online</Product>
+    <Version>0.0.0-dev</Version>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- NativeAOT cannot build across operating systems: the linux-x64 library builds on Linux. -->
+    <PublishAot>true</PublishAot>
+    <NativeLib>Shared</NativeLib>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+
+    <!-- One GC thread less: no background GC, and the sandbox's NPROC counts every thread of
+         nobody across all battles. -->
+    <ServerGarbageCollector>false</ServerGarbageCollector>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+
+    <!-- The GC heap limit baked in, 256 MB: the GC reserves about five times its limit, which
+         must fit the sandbox's 6 GB address space beside the game the child shares. The
+         environment's DOTNET_GCHeapHardLimit still overrides it. -->
+    <HeapHardLimit>268435456</HeapHardLimit>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.GC.HeapHardLimit" Value="$(HeapHardLimit)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MGQOnline.ServerCore.Tests" />
+  </ItemGroup>
+
+  <!-- The bridge's four exports live in MGQOnline.Bridge.Native, which NativeAOT exports from only
+       because it is named an UnmanagedEntryPointsAssembly here; ServerBridge installs their host.
+       NativeAOT runs a module initializer only for an assembly it compiled code of, and nothing
+       but the initializer reaches this one, so it is rooted. -->
+  <ItemGroup>
+    <TrimmerRootAssembly Include="MGQOnline.ServerCore" />
+    <ProjectReference Include="..\MGQOnline.Bridge\MGQOnline.Bridge.csproj" />
+    <ProjectReference Include="..\MGQOnline.Bridge.Native\MGQOnline.Bridge.Native.csproj" />
+    <ProjectReference Include="..\MGQOnline.Game\MGQOnline.Game.csproj" />
+    <UnmanagedEntryPointsAssembly Include="MGQOnline.Bridge.Native" />
+  </ItemGroup>
+
+</Project>

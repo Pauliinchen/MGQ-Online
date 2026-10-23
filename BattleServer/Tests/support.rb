@@ -2,6 +2,7 @@
 #  support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Loaded MGQ Online's bridge to C# out of Multiplayer.rb for the core's tests
 #      Paulinchen  2026-10-15: Created
 #
 #----------------------------------------------------------------
@@ -14,6 +15,9 @@ LIB_DIR = File.expand_path("../lib", __dir__)
 
 # The recorded data the tests compare with.
 FIXTURES_DIR = File.expand_path("fixtures", __dir__)
+
+# MGQ Online's script that holds its bridge to C#.
+MULTIPLAYER_RB = File.expand_path("../../GameScript/Multiplayer.rb", __dir__)
 
 # Counts a test file's checks and reports them once the file ends.
 module Checks
@@ -81,6 +85,21 @@ end
 def game_dir
   dir = ENV["BATTLE_GAME_DIR"]
   dir && File.directory?(File.join(dir, "Data")) ? dir : nil
+end
+
+# Loads MGQ_Multiplayer::Bridge out of Multiplayer.rb, as the game folder's MGQ Online has it, with
+# a log that keeps its lines.
+#
+# @return [Array<String>] The lines MGQ Online's log takes from now on.
+def load_mgq_bridge
+  lines = []
+  log = Module.new
+  log.define_singleton_method(:write) { |line| lines << line }
+  Object.const_set(:MGQ_Multiplayer, Module.new) unless defined?(MGQ_Multiplayer)
+  MGQ_Multiplayer.const_set(:Log, log)
+  source = File.read(MULTIPLAYER_RB, encoding: "UTF-8")
+  MGQ_Multiplayer.module_eval(source[/  module Bridge\n.*?\n  end\n/m])
+  lines
 end
 
 at_exit { Checks.finish($!) }

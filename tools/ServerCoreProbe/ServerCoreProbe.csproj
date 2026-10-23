@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A throwaway linux-x64 NativeAOT shared library that proves the battle server can load a
+       library of ours through Fiddle in a sandboxed child; build.ps1 builds it in Docker, see
+       README.md. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>ServerCoreProbe</AssemblyName>
+    <RootNamespace>MGQOnline.ServerCoreProbe</RootNamespace>
+
+    <!-- NativeAOT cannot build across operating systems, so this publishes on Linux only. -->
+    <PublishAot>true</PublishAot>
+    <NativeLib>Shared</NativeLib>
+    <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+
+    <!-- One GC thread less: no background GC, and NPROC counts every thread of nobody. -->
+    <ServerGarbageCollector>false</ServerGarbageCollector>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+  </PropertyGroup>
+
+  <!-- -p:BakedHeapHardLimit=<bytes> bakes a GC heap limit into the library, so the battle server
+       needs no DOTNET_GCHeapHardLimit. -->
+  <ItemGroup Condition="'$(BakedHeapHardLimit)' != ''">
+    <RuntimeHostConfigurationOption Include="System.GC.HeapHardLimit" Value="$(BakedHeapHardLimit)" />
+  </ItemGroup>
+
+</Project>

@@ -6,7 +6,8 @@
 #                            - Loaded world_gates.rbx after world_difficulty.rbx
 #                            - Loaded ui_mod_browser.rbx after ui_bug_report.rbx and named the mp_mod_browser_* exports
 #                            - Stopped loading the removed battles_pvp_lobby.rbx
-#      Paulinchen  2026-10-23: Added Bridge, the bridge to C# through mp_bridge_open, mp_call, mp_reply and mp_drain
+#      Paulinchen  2026-10-23: Loaded the battle server's core library through Fiddle in Bridge::FiddleBackend
+#                            - Added Bridge, the bridge to C# through mp_bridge_open, mp_call, mp_reply and mp_drain
 #                            - Turned the mod on only once the bridge opened
 #                            - Sent the staged bridge entries and took the bridge events once a frame
 #                            - Stopped loading the deleted battles_pvp_mirror.rbx
@@ -1195,59 +1196,27 @@ module MGQ_Multiplayer
       end
     end
 
-    # The battle server's way to its core library through Fiddle, with the same four functions.
-    # Only the seam is here: until the battle server loads the library, every function answers 0,
-    # as a stand-in DLL does, so the bridge stays closed there.
-    class FiddleBackend
-      # Names the library.
+    # The battle server's way to its core library (MGQOnline.ServerCore) through Fiddle, with the
+    # same four functions, called as Win32Backend calls them. The game never makes one: RGSS3 has
+    # no Fiddle.
+    class FiddleBackend < Win32Backend
+      # Fiddle's type for each letter of SIGNATURES.
+      TYPES = { 'l' => :TYPE_INT, 'p' => :TYPE_VOIDP }
+
+      # Loads the library and binds the four functions without calling one, since the core's
+      # runtime starts at the first call.
       #
       # @param path [String] The core library's path.
+      # @raise [Fiddle::DLError] The library cannot be loaded or lacks one of the functions.
       def initialize(path)
-        @path = path
-      end
-
-      # Shakes hands (mp_bridge_open), see Win32Backend#open.
-      #
-      # @param _version [Integer] The scripts' VERSION.
-      # @param _reply [String] The reply buffer.
-      # @param _size [Integer] Its size in bytes.
-      # @return [Integer] 0, no handshake.
-      def open(_version, _reply, _size)
-        0
-      end
-
-      # Runs a topic (mp_call), see Win32Backend#call.
-      #
-      # @param _context [Integer] The context from the handshake.
-      # @param _topic [String] The topic, null-terminated.
-      # @param _request [String] The request as Marshal, empty for nil.
-      # @param _length [Integer] The request's length in bytes.
-      # @param _reply [String] The reply buffer.
-      # @param _size [Integer] Its size in bytes.
-      # @return [Integer] 0, no reply.
-      def call(_context, _topic, _request, _length, _reply, _size)
-        0
-      end
-
-      # Hands out a parked reply (mp_reply), see Win32Backend#reply.
-      #
-      # @param _context [Integer] The context from the handshake.
-      # @param _reply [String] The reply buffer.
-      # @param _size [Integer] Its size in bytes.
-      # @return [Integer] 0, no reply.
-      def reply(_context, _reply, _size)
-        0
-      end
-
-      # Takes the queued events (mp_drain), see Win32Backend#drain.
-      #
-      # @param _context [Integer] The context from the handshake.
-      # @param _frame [Integer] The bridge's frame.
-      # @param _buffer [String] The drain buffer.
-      # @param _size [Integer] Its size in bytes.
-      # @return [Integer] 0, no events.
-      def drain(_context, _frame, _buffer, _size)
-        0
+        require 'fiddle'
+        # Kept, so the library stays loaded while the functions live.
+        @library = Fiddle.dlopen(path)
+        @functions = {}
+        SIGNATURES.each do |name, arguments|
+          types = arguments.chars.map { |letter| Fiddle.const_get(TYPES[letter]) }
+          @functions[name] = Fiddle::Function.new(@library[name], types, Fiddle::TYPE_INT)
+        end
       end
     end
 

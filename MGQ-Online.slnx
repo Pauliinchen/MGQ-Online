@@ -99,4 +99,6 @@
   <Project Path="MGQOnline.Bridge.Tests/MGQOnline.Bridge.Tests.csproj" />
   <Project Path="MGQOnline.Game/MGQOnline.Game.csproj" />
   <Project Path="MGQOnline.Game.Tests/MGQOnline.Game.Tests.csproj" />
+  <Project Path="MGQOnline.ServerCore/MGQOnline.ServerCore.csproj" />
+  <Project Path="MGQOnline.ServerCore.Tests/MGQOnline.ServerCore.Tests.csproj" />
 </Solution>

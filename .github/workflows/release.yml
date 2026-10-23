@@ -1,5 +1,7 @@
 # Publishing a release on GitHub (tag e.g. v1.0.0) builds the mod and attaches
-# MGQ-Online-<version>.zip to that release. Nothing to upload by hand.
+# MGQ-Online-<version>.zip to that release, and the battle server's core MGQOnline.ServerCore.so
+# beside it, which the battle server deploy takes; the mod zip does not hold it. Nothing to upload
+# by hand.
 #
 # Run it by hand from the Actions tab with a release's tag to build and attach the zip again, for
 # example after a failed run. It builds the code at that tag with this workflow from main, so the
@@ -53,6 +55,9 @@ jobs:
       - name: Test the game rules
         run: dotnet run --project MGQOnline.Game.Tests
 
+      - name: Test the battle server core
+        run: dotnet run --project MGQOnline.ServerCore.Tests
+
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
@@ -81,3 +86,30 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload $env:TAG (Get-ChildItem MGQParadox.Multiplayer/bin/Release/*.zip).FullName --clobber
+
+  # The battle server's core, a linux-x64 NativeAOT library, built in the pinned SDK container as
+  # on a developer's PC (MGQOnline.ServerCore/build.ps1), then loaded into sandboxed battle
+  # children the way the battle server loads it (BattleServer/tools/core_check.ps1) before it is
+  # attached.
+  server-core:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Build the battle server core
+        shell: pwsh
+        run: ./MGQOnline.ServerCore/build.ps1 -Version ($env:TAG.TrimStart("v"))
+
+      - name: Check it in sandboxed battle children
+        shell: pwsh
+        run: ./BattleServer/tools/core_check.ps1
+
+      - name: Attach the core to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" MGQOnline.ServerCore/bin/linux-x64/MGQOnline.ServerCore.so --clobber
