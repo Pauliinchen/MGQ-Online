@@ -2,6 +2,7 @@
 #  world_story_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that a change saved before its write goes out at once and stays after a load
 #      Paulinchen  2026-10-18: Checked the Sonya scene's step in the world's story
 #                            - Checked that a story lists no switch or variable 0
 #      Paulinchen  2026-10-17: Checked that the story waits while a lost raid boss battle's defeat runs
@@ -239,6 +240,10 @@ class Window_MpWorldForm; def initialize(*); end; end
 class Scene_MenuBase; end
 # Stands in for the map scene.
 class Scene_Map; end
+# Stands in for the title screen, which starts with nothing to show.
+class Scene_Title; def start; end; end
+# Stands in for the game's system data, which a save keeps.
+class Game_System; end
 
 # Stands in for the scene manager: the checks set the scene, and scenes called go into $scenes.
 module SceneManager
@@ -440,6 +445,7 @@ def lists_of(text); MGQ_MpStoryState.unpack(text.chomp("\0")); end
 $game_map = Game_Map.new
 $game_player = Game_Player.new
 $game_party = Game_Party.new
+$game_system = Game_System.new
 $game_system_switches = {}
 SceneManager.scene = Scene_Map.new
 $telling = false
@@ -1267,6 +1273,56 @@ relay({ "rev" => 6, "wrev" => 6, "p" => 30, "part" => "2", "fetch" => "done" })
 frames(400)
 check("a player behind whose story the world cannot read writes theirs, built on nothing they stood on behind",
       [stood_on.nil?, story.mode, story.base.nil? || !stood_on.equal?(story.base)], [false, :world, true])
+
+# A change the player saves within the seconds a write waits for the story to rest, as a scene's
+# last self switch: the save writes it at once, and a load keeps it as the player's own though the
+# relay never got it.
+$calls.clear
+new_story({ 1001 => 30 })
+story.loaded(:load)
+frames(1)
+relay({ "rev" => 7, "wrev" => 7, "p" => 30, "part" => "2", "fetch" => "done" }, packed({ 1001 => 30 }))
+frames(16)
+$calls.clear
+$game_self_switches[[110, 28, "A"]] = true
+frames(60)
+check("a change waits for the story to rest", calls_of("mp_raid_story_post"), [])
+DataManager.make_save_contents
+check("saving writes it at once", calls_of("mp_raid_story_post").map { |args| args[1] }, [7])
+relay("rev" => 7, "wrev" => 7, "p" => 30, "part" => "2", "post" => "failed", "post_error" => "offline")
+frames(16)
+save = Marshal.dump($game_system)
+# Loads the save made above, its story with the scene's self switch on.
+def load_save(save)
+  new_story({ 1001 => 30 }, [], { [110, 28, "A"] => true })
+  $game_system = Marshal.load(save)
+  DataManager.load_game_without_rescue(0)
+end
+$calls.clear
+load_save(save)
+frames(1)
+relay({ "rev" => 8, "wrev" => 8, "p" => 30, "part" => "2", "fetch" => "done" }, packed({ 1001 => 30 }))
+frames(16)
+check("a load keeps the change the world's story lacks", $game_self_switches[[110, 28, "A"]], true)
+frames(400)
+post = calls_of("mp_raid_story_post").last
+check("and writes it", post && [post[1], lists_of(post[3])["ss"]], [8, "110.28.A"])
+relay("rev" => 9, "wrev" => 9, "p" => 30, "part" => "2", "post" => "accepted", "post_rev" => 9)
+frames(16)
+MGQ_MpGame.get($game_system, :world_story)["world"] = "w9"
+save = Marshal.dump($game_system)
+load_save(save)
+frames(1)
+relay({ "rev" => 10, "wrev" => 10, "p" => 30, "part" => "2", "fetch" => "done" }, packed({ 1001 => 30 }))
+frames(16)
+check("a save that noted another world's story takes the world's as before", $game_self_switches[[110, 28, "A"]], false)
+$calls.clear
+$game_switches[330] = true
+frames(60)
+Scene_Title.new.start
+check("going back to the title screen writes a waiting change at once", calls_of("mp_raid_story_post").map { |args| lists_of(args[3])["s"] }, ["330"])
+relay("rev" => 11, "wrev" => 11, "p" => 30, "part" => "2", "post" => "accepted", "post_rev" => 11)
+frames(16)
 
 # Closing the world forgets its story.
 MGQ_MpWorld.world = nil
