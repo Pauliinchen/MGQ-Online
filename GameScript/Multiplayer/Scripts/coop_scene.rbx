@@ -2,6 +2,8 @@
 #  coop_scene.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Took back what an event of the player's own changed once the mod ends it early or moves the player away
+#                            - Showed a viewer's character without a tint once the story ended on another map
 #      Paulinchen  2026-10-12: Left out picture and screen changes this game cannot take
 #                            - Told the viewers a frame's changes in one message, less often while skipping
 #                            - Took a message of several changes, each through the gates of a single one
@@ -37,7 +39,9 @@
 # member on the leader's map sees it in their own game. Once the story ends, or the leader or the
 # member leaves the map, the member's screen is put back as it was. The dialogue itself goes
 # through coop_events.rbx. In a Raid World the player telling the story on the map shows it to
-# everyone there whose story matches theirs, see MGQ_MpCoop::Scope.
+# everyone there whose story matches theirs, see MGQ_MpCoop::Scope. The player's own scenes are
+# followed too (Own), so the mod takes back what it left of one it ends early or moves them away
+# from.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopScene
@@ -85,6 +89,9 @@ module MGQ_MpCoopScene
 
   # Frames the member's screen takes to come back once the story ended.
   RESTORE_FRAMES = 30
+
+  # The red, green, blue and gray of a screen without a tint.
+  NO_TONE = [0, 0, 0, 0]
 
   # Frames a change of the leader's scene stays before the leader's state says the story plays,
   # two seconds, since the leader's state and the changes travel apart.
@@ -1100,7 +1107,10 @@ module MGQ_MpCoopScene
 
   # Erases the pictures the leader's story showed, brings the screen back, the map's zoom and the
   # player's own character as they were: the tint and the character's visibility the player's map
-  # had, or the story's last on a map the story brought them to.
+  # had, or no tint and the character shown on a map the story brought them to.
+  #
+  # The teller's story may go on in their own game after it brought the viewer elsewhere, as an
+  # ending does, so its last tint or hidden character there is no state to keep.
   #
   # @param reason [String] Why, for the log.
   def self.restore(reason = "the story ended")
@@ -1114,7 +1124,8 @@ module MGQ_MpCoopScene
         screen.start_tone_change(@screen[:tone], RESTORE_FRAMES)
         done << "tone back to #{describe([@screen[:tone]])}"
       else
-        done << "kept the story's tone, on map #{$game_map.map_id} instead of #{@screen[:map]}"
+        screen.start_tone_change(Tone.new(*NO_TONE), RESTORE_FRAMES)
+        done << "tone back to none, on map #{$game_map.map_id} instead of #{@screen[:map]}"
       end
       if screen.brightness < 255
         screen.start_fadein(RESTORE_FRAMES)
@@ -1134,7 +1145,8 @@ module MGQ_MpCoopScene
         $game_player.transparent = @transparent
         done << "character #{@transparent ? 'hidden' : 'shown'} again"
       else
-        done << "kept the story's #{$game_player.transparent ? 'hidden' : 'shown'} character, on map #{$game_map.map_id} instead of #{@transparent_map}"
+        $game_player.transparent = false
+        done << "character shown, on map #{$game_map.map_id} instead of #{@transparent_map}"
       end
     end
     unless @scene_switches.empty?
@@ -1186,6 +1198,214 @@ module MGQ_MpCoopScene
     @scene_switches = {}
     @player_route = false
   end
+
+  # The player's own scene: what the events this game's map interpreter runs change of the screen,
+  # the player's character and the party, kept from the first event until the player stands free
+  # with nothing of it left, so the mod can take it back where it ends such a scene early (cut) or
+  # moves the player away from it (leave). A scene that leaves the player hidden, without followers
+  # or in a temporary party, as an ending's walk does, stays open while they walk.
+  module Own
+    # The player's own scene, nil while none runs or stands: :start, its state as it began, see
+    # state_now; :run, the state as its latest event began; :pictures, the numbers of the pictures
+    # its events showed and have not erased.
+    @scene = nil
+
+    extend MGQ_MpLog
+
+    # What starts this script's lines in Multiplayer InGame.log.
+    LOG_TAG = "own scene"
+
+    # Notes the state an event of the map's interpreter starts from, opening the player's own scene
+    # with it unless one runs already. Called after an interpreter's setup.
+    #
+    # @param interpreter [Game_Interpreter] The interpreter.
+    def self.started(interpreter)
+      return unless $game_map && interpreter.equal?($game_map.interpreter)
+
+      now = state_now
+      @scene ||= { :start => now, :pictures => [] }
+      @scene[:run] = now
+    rescue => e
+      log_once(:started, "noting the player's own scene failed: #{e.class}: #{e.message}")
+    end
+
+    # Notes a picture the player's own scene shows or erases on the map's screen. Called after a
+    # picture's show and erase.
+    #
+    # @param picture [Game_Picture] The picture.
+    # @param name [Symbol] :show or :erase.
+    def self.picture(picture, name)
+      return unless @scene && MGQ_MpCoopScene.map_turn? && $game_map.screen.pictures[picture.number].equal?(picture)
+
+      if name == :show
+        @scene[:pictures] |= [picture.number]
+      else
+        @scene[:pictures].delete(picture.number)
+      end
+    rescue => e
+      log_once(:picture, "noting a picture of the player's own scene failed: #{e.class}: #{e.message}")
+    end
+
+    # Closes the player's own scene once no event of it runs and nothing it changed stands, see
+    # standing?; the pictures of an event that ran to its end are its to keep. Called after the
+    # map's update.
+    def self.update
+      return unless @scene && !$game_map.interpreter.running?
+
+      @scene[:pictures] = []
+      @scene = nil unless standing?
+    rescue => e
+      log_once(:update, "following the player's own scene failed: #{e.class}: #{e.message}")
+    end
+
+    # Reports whether the player's own scene is under way: an event of it runs, or it left the
+    # player hidden, without followers or in a temporary party.
+    #
+    # @return [Boolean] Whether it is.
+    def self.open?
+      @scene ? true : false
+    end
+
+    # Reports whether something the player's own scene changed still stands: the player's character
+    # hidden, the followers hidden or a temporary party, each only when it was not so as it began.
+    #
+    # @return [Boolean] Whether it does.
+    def self.standing?
+      start = @scene[:start]
+      now = state_now
+      (now[:party] && !start[:party]) || (now[:hidden] && !start[:hidden]) || (!now[:followers] && start[:followers])
+    end
+
+    # Reads the state of the screen, the player's character and the party an event may change.
+    #
+    # @return [Hash] :party, whether a temporary party plays; :hidden, whether the player's
+    #   character is; :followers, whether the followers show; :tone, the screen's tint; :music, the
+    #   music's file, volume and pitch, nil for none.
+    def self.state_now
+      last = RPG::BGM.respond_to?(:last) ? RPG::BGM.last : nil
+      { :party => temp_party?, :hidden => $game_player.transparent ? true : false,
+        :followers => $game_player.followers.visible ? true : false,
+        :tone => MGQ_MpCoopScene.copy_tone($game_map.screen.tone),
+        :music => last ? [last.name.to_s, last.volume.to_i, last.pitch.to_i] : nil }
+    end
+
+    # Reports whether a story's temporary party plays, the game's set_temp_actors.
+    #
+    # @return [Boolean] Whether one does.
+    def self.temp_party?
+      $game_party.respond_to?(:temp_actors_use?) && $game_party.temp_actors_use? ? true : false
+    end
+
+    # Takes back what the event of the player's own scene that the mod ends early changed: the
+    # pictures its scene showed, and the temporary party, the character's and the followers'
+    # visibility, the tint and the music as they were when that event began; a dark screen fades in.
+    # The scene itself stays open, as what came before that event still stands.
+    #
+    # @param reason [String] Why the event ends, for the log.
+    def self.cut(reason)
+      return unless @scene
+
+      run = @scene[:run]
+      done = []
+      erase_pictures(done)
+      release_party(done) if temp_party? && !run[:party]
+      put_back(run, done)
+      log("took back what the player's own event changed, since #{reason}: #{done.empty? ? 'nothing' : done.join(', ')}")
+    rescue => e
+      log("taking back the player's own event failed: #{e.class}: #{e.message}")
+    end
+
+    # Takes the player out of their own scene as the mod moves them away from it: its pictures are
+    # erased, the character and the followers shown, a dark screen fades in, and the temporary
+    # party it set goes, as do the tint and the music it changed.
+    #
+    # @param reason [String] Why the player leaves it, for the log.
+    # @param whole [Boolean] Whether every temporary party goes, the one the scene began with too,
+    #   and the character and followers show even with no scene noted, as when the world's story
+    #   returns the player to a point where none plays.
+    def self.leave(reason, whole = false)
+      return unless @scene || whole
+
+      start = @scene ? @scene[:start] : nil
+      done = []
+      erase_pictures(done) if @scene
+      release_party(done) if temp_party? && (whole || !start[:party])
+      put_back({ :hidden => false, :followers => true, :tone => start && start[:tone], :music => start && start[:music] }, done)
+      @scene = nil
+      log("took the player out of their own scene, since #{reason}: #{done.empty? ? 'nothing to take back' : done.join(', ')}")
+    rescue => e
+      @scene = nil
+      log("taking the player out of their own scene failed: #{e.class}: #{e.message}")
+    end
+
+    # Erases the pictures the player's own scene showed.
+    #
+    # @param done [Array<String>] What was done, for the log, which takes it.
+    def self.erase_pictures(done)
+      numbers = @scene[:pictures]
+      return if numbers.empty?
+
+      numbers.each { |number| $game_map.screen.pictures[number].erase }
+      done << "erased picture(s) #{numbers.sort.join(', ')}"
+      @scene[:pictures] = []
+    end
+
+    # Ends the story's temporary party, as the game's release_temp_actors does.
+    #
+    # @param done [Array<String>] What was done, for the log, which takes it.
+    def self.release_party(done)
+      $game_party.release_temp_actors
+      $game_player.refresh
+      done << "ended the temporary party"
+    end
+
+    # Puts the player's character, the followers, the tint and the music back as a state has them,
+    # and fades a dark screen in.
+    #
+    # @param state [Hash] The state, see state_now; a nil tint or music is left as it is.
+    # @param done [Array<String>] What was done, for the log, which takes it.
+    def self.put_back(state, done)
+      unless ($game_player.transparent ? true : false) == state[:hidden]
+        $game_player.transparent = state[:hidden]
+        done << "character #{state[:hidden] ? 'hidden' : 'shown'}"
+      end
+      followers = $game_player.followers
+      unless (followers.visible ? true : false) == state[:followers]
+        followers.visible = state[:followers]
+        $game_player.refresh
+        done << "followers #{state[:followers] ? 'shown' : 'hidden'}"
+      end
+      screen = $game_map.screen
+      tone = state[:tone]
+      if tone && tone_values(screen.tone) != tone_values(tone)
+        screen.start_tone_change(tone, MGQ_MpCoopScene::RESTORE_FRAMES)
+        done << "tone back to #{MGQ_MpCoopScene.describe([tone])}"
+      end
+      if screen.brightness < 255
+        screen.start_fadein(MGQ_MpCoopScene::RESTORE_FRAMES)
+        done << "faded in"
+      end
+      music = state[:music]
+      return unless music && state_now[:music] != music
+
+      RPG::BGM.new(*music).play
+      done << "music back to '#{music[0]}'"
+    end
+
+    # Reads a tint's values, which compare where the tints themselves may not.
+    #
+    # @param tone [Tone] The tint.
+    # @return [Array<Float>] Its red, green, blue and gray.
+    def self.tone_values(tone)
+      [tone.red, tone.green, tone.blue, tone.gray]
+    end
+
+    # Forgets the player's own scene, as when a save is loaded or a new game starts, which bring
+    # their own state.
+    def self.forget
+      @scene = nil
+    end
+  end
 end
 
 # What this script takes part in of the party's messages, through coop.rbx, and of the map's in a
@@ -1212,10 +1432,18 @@ begin
   end
   MGQ_MpHooks.after(Game_Player, :transparent=, "coop_scene") { |hidden| MGQ_MpCoopScene.transparency(self, hidden) }
 
-  MGQ_MpHooks.after(Game_Map, :update, "coop_scene") { MGQ_MpCoopScene.update }
+  MGQ_MpHooks.after(Game_Map, :update, "coop_scene") do
+    MGQ_MpCoopScene.update
+    MGQ_MpCoopScene::Own.update
+  end
 
-  # A loaded save brings its own screen, so nothing of the leader's scene is put back.
-  MGQ_MpHooks.after(DataManager.singleton_class, :extract_save_contents, "coop_scene") { |_contents| MGQ_MpCoopScene.forget("a save was loaded") }
+  # A loaded save brings its own screen, so nothing of the leader's scene is put back, and its own
+  # state, so nothing of the player's own scene either.
+  MGQ_MpHooks.after(DataManager.singleton_class, :extract_save_contents, "coop_scene") do |_contents|
+    MGQ_MpCoopScene.forget("a save was loaded")
+    MGQ_MpCoopScene::Own.forget
+  end
+  MGQ_MpHooks.after(DataManager.singleton_class, :setup_new_game, "coop_scene") { MGQ_MpCoopScene::Own.forget }
 rescue => e
   MGQ_MpCoopScene.log("hooks FAILED: #{e.class}: #{e.message}")
 end
@@ -1230,6 +1458,17 @@ begin
   MGQ_MpHooks.after(Game_Event, :erase, "coop_scene") { MGQ_MpCoopScene.erased(self) }
 rescue => e
   MGQ_MpCoopScene.log("event hooks FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  # The player's own scene notes the state each event of the map's interpreter starts from and the
+  # pictures it shows. A common event passes the list alone, so the arguments are not spread.
+  MGQ_MpHooks.after(Game_Interpreter, :setup, "coop_scene") { |*_args| MGQ_MpCoopScene::Own.started(self) }
+  [:show, :erase].each do |name|
+    MGQ_MpHooks.after(Game_Picture, name, "coop_scene") { |*_args| MGQ_MpCoopScene::Own.picture(self, name) }
+  end
+rescue => e
+  MGQ_MpCoopScene.log("own scene hooks FAILED: #{e.class}: #{e.message}")
 end
 
 begin

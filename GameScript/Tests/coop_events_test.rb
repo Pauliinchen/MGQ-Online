@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Checked that a dark screen fades in while a watched scene shows nothing for ten seconds
+#      Paulinchen  2026-10-23: Checked that a talk ended early takes back what it changed
+#                            - Checked that a dark screen fades in while a watched scene shows nothing for ten seconds
 #      Paulinchen  2026-10-17: Checked that a resumed raid boss fight's event starts as story
 #      Paulinchen  2026-10-15: Checked that a screen left dark with nothing running fades in
 #                            - Checked that the Pocket Castle's tour is travel in a Raid World and story in a Classic world
@@ -1100,8 +1101,17 @@ $leader = leader
 $members = [leader]
 interpreter.setup(trader, 0)
 interpreter.instance_variable_set(:@index, 7)
+# Stands in for the player's own scene of coop_scene.rbx, noting in $cuts why an event of theirs
+# ended early, with nothing to take back as the player leaves it.
+module MGQ_MpCoopScene
+  module Own
+    def self.cut(reason); ($cuts ||= []) << reason; end
+    def self.leave(_reason, _whole = false); end
+  end
+end
 MGQ_MpCoopEvents.guard(interpreter)
 check("a member's talk ends where it would move the story on", [interpreter.instance_variable_get(:@index), $notices.last], [trader.size - 1, "Only Leader can move the story on."])
+check("taking back what the talk showed, such as a companion's portrait", $cuts, ["a talk ended where it would move the story on"])
 interpreter.busy = false
 $leader = :me
 $members = [friend]

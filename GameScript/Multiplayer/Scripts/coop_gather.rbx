@@ -2,6 +2,7 @@
 #  coop_gather.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Took the player out of their own scene before a call, follow or teleport moves them
 #      Paulinchen  2026-10-12: Let a player in a Classic world move while the teller fights the story's battle
 #                            - Told whether a battle invite comes from the player whose story calls
 #      Paulinchen  2026-10-11: Showed the player's followers again after a call, follow or teleport
@@ -815,8 +816,9 @@ module MGQ_MpCoopGather
   end
 
   # Moves the player to the leader once a story scene's GATHER_FRAMES passed, once the player is
-  # free: on the map, with no event, message, transfer or battle of their own in the way. Called
-  # after the map's update.
+  # free: on the map, with no event, message, transfer or battle of their own in the way. What a
+  # scene of the player's own left under way, such as an ending's walk, is taken back first (see
+  # MGQ_MpCoopScene::Own.leave). Called after the map's update.
   def self.update
     place = come?
     return note_busy unless place && MGQ_MpOverworldSync.map_free?
@@ -835,6 +837,7 @@ module MGQ_MpCoopGather
     log("#{gather[:follow] ? 'followed' : 'came to'} #{gather[:name]} on map #{map_id} #{x},#{y}, from map #{$game_map.map_id} #{$game_player.x},#{$game_player.y}: #{reason}")
     @taken_follow = { :id => gather[:id], :name => gather[:name], :place => place, :since => Graphics.frame_count } if gather[:follow] && MGQ_MpCoop::Scope.raid?
     MGQ_MpCoopCastle.arriving(map_id) if defined?(MGQ_MpCoopCastle)
+    MGQ_MpCoopScene::Own.leave("the player went to #{gather[:name]}: #{reason}") if defined?(MGQ_MpCoopScene::Own)
     warp_ban = gather[:warp_ban]
     elsewhere = map_id != $game_map.map_id
     if elsewhere

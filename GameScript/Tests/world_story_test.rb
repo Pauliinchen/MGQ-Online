@@ -2,7 +2,8 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Checked that a change saved before its write goes out at once and stays after a load
+#      Paulinchen  2026-10-23: Checked that the return to the Great Decision takes the player out of their own scene first
+#                            - Checked that a change saved before its write goes out at once and stays after a load
 #      Paulinchen  2026-10-18: Checked the Sonya scene's step in the world's story
 #                            - Checked that a story lists no switch or variable 0
 #      Paulinchen  2026-10-17: Checked that the story waits while a lost raid boss battle's defeat runs
@@ -1023,6 +1024,13 @@ check("never the Final Chapter's reset, the route's progress or the transfer",
 choices.forget("next check")
 
 # The world going back to the Great Decision.
+# Stands in for the co-op scene: nothing of a teller's scene waits to be put back while
+# $scene_pending is unset, and each time the player is taken out of their own scene, whether wholly
+# and how many lists were set up by then, is noted in $left.
+module MGQ_MpCoopScene
+  def self.pending?; $scene_pending; end
+  module Own; def self.leave(_reason, whole = false); ($left ||= []) << [whole, $setups.size]; end; end
+end
 $notices.clear
 $setups = []
 story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "33", :relay => true)
@@ -1033,6 +1041,8 @@ check("the world's return to the Great Decision reaches the player", [$game_vari
 check("and says so", $notices, ["The world's story went back to the Great Decision."])
 check("whose own half plays once the player is free: the Final Chapter's reset, where a game over returns them and the transfer to the Great Decision",
       ($setups.last || []).map { |entry| [entry.code, entry.parameters] }, [[117, [154]], [122, [1002, 1002, 0, 0, 112]], [122, [57, 57, 0, 0, 407]], [201, [0, 544, 25, 25, 8, 2]], [0, []]])
+check("after taking the player wholly out of a scene of their own, such as their route's ending walked in a temporary party",
+      $left, [[true, $setups.size - 1]])
 check("the Great Decision then offers the route left", choices.labels(:decision), ["Side with the Goddess Ilias (Judgement)"])
 
 # The choices each player keeps their own in a Raid World.

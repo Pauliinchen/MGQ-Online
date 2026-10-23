@@ -2,7 +2,8 @@
 #  world_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Wrote the story's waiting changes at once as the game saves, goes to the title screen, resets or closes
+#      Paulinchen  2026-10-23: Took the player out of their own scene before the return to the Great Decision and the end of a cleared collab
+#                            - Wrote the story's waiting changes at once as the game saves, goes to the title screen, resets or closes
 #                            - Kept in the save the world's story the player built on and took a loaded save's changes to it as their own
 #      Paulinchen  2026-10-18: Shared the Sonya scene's step as its start while none of its fights is frozen or over
 #                            - Ended the collab scenario the world's story cleared and gave back its stored items
@@ -1152,7 +1153,8 @@ module MGQ_MpWorldStory
 
   # Ends the Pocket Castle's collab scenario for a player still on its maps once the world's story
   # cleared its progress, as its own exit does: the collab party goes, the items and equipment its
-  # start stored come back, its switches go off and the player returns to the castle.
+  # start stored come back, its switches go off and the player returns to the castle, out of the
+  # scenario's scene (see MGQ_MpCoopScene::Own.leave).
   #
   # @return [Boolean] Whether it ended it.
   def self.leave_cleared_collab
@@ -1161,6 +1163,7 @@ module MGQ_MpWorldStory
 
     interpreter = $game_map.interpreter
     interpreter.release_temp_actors if $game_party.respond_to?(:temp_actors_use?) && $game_party.temp_actors_use?
+    MGQ_MpCoopScene::Own.leave("the world's story cleared the collab scenario", true) if defined?(MGQ_MpCoopScene::Own)
     interpreter.take_all_item
     COLLAB_SWITCHES.each { |id| $game_switches[id] = false }
     $game_player.reserve_transfer(*COLLAB_RETURN)
@@ -1450,12 +1453,18 @@ module MGQ_MpWorldStory
     MGQ_MpOverworldSync.notice("The world's story went back to the Great Decision.")
   end
 
-  # Plays the commands that wait, once the player is free on the map.
+  # Plays the commands that wait, once the player is free on the map, taking the player out of a
+  # scene of their own first (see MGQ_MpCoopScene::Own.leave), such as their route's ending walked
+  # in a temporary party, whose own end the return would cut off.
+  #
+  # The return plays whether or not such a scene runs: nothing tells an ending's walk from a long
+  # part played in a temporary party, so waiting for it might keep the player off the world's story.
   def self.play_queued
     return unless @queued && MGQ_MpOverworldSync.map_free?
 
     commands = @queued
     @queued = nil
+    MGQ_MpCoopScene::Own.leave("the world went back to the Great Decision", true) if defined?(MGQ_MpCoopScene::Own)
     log("playing #{commands.map { |entry| entry.code }.join(' ')} now")
     $game_map.interpreter.setup(commands, 0)
   end

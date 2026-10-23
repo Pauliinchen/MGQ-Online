@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Faded the screen in once it stayed dark for ten seconds while nothing of a watched scene reached it
+#      Paulinchen  2026-10-23: Took back what a talk or story event changed once it ends early
+#                            - Faded the screen in once it stayed dark for ten seconds while nothing of a watched scene reached it
 #      Paulinchen  2026-10-17: Sorted a resumed raid boss fight's event as story
 #      Paulinchen  2026-10-15: Faded the screen in once it stayed dark with nothing running that could fade it in
 #      Paulinchen  2026-10-12: Faded the screen in once per arrival on a map whose self-running story another game runs
@@ -814,15 +815,13 @@ module MGQ_MpCoopEvents
     @may_tell = false
     lead = MGQ_MpCoop::Scope.teller
     if behind?
-      # The list ends with an empty command, which ends the event as its last.
-      MGQ_MpGame.set(interpreter, :index, list.size - 1)
-      MGQ_MpOverworldSync.notice(MGQ_MpWorldCatchup.refusal_text)
       log("ended a talk where it would move the story on (command #{list[index].code}): the player's story is behind the world's")
+      end_event(interpreter, list, "a talk ended where it would move the story on")
+      MGQ_MpOverworldSync.notice(MGQ_MpWorldCatchup.refusal_text)
     elsif lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && following?
-      # The list ends with an empty command, which ends the event as its last.
-      MGQ_MpGame.set(interpreter, :index, list.size - 1)
-      MGQ_MpOverworldSync.notice(refusal_text(lead))
       log("ended a talk where it would move the story on (command #{list[index].code})")
+      end_event(interpreter, list, "a talk ended where it would move the story on")
+      MGQ_MpOverworldSync.notice(refusal_text(lead))
     elsif leading_story?
       @telling = true
       note_telling_start
@@ -851,13 +850,24 @@ module MGQ_MpCoopEvents
     return unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
 
     list = MGQ_MpGame.get(interpreter, :list)
-    # The list ends with an empty command, which ends the event as its last.
-    MGQ_MpGame.set(interpreter, :index, list.size - 1) if list
     @telling = false
     log("stopped the player's story event: #{MGQ_MpOverworldSync.who(lead)} started telling the story on map #{lead.state['map']} at the same moment, having entered it first")
+    end_event(interpreter, list, "another player tells the story here") if list
     MGQ_MpOverworldSync.notice(refusal_text(lead))
   rescue => e
     log("stopping a story event told twice failed: #{e.class}: #{e.message}")
+  end
+
+  # Ends the event an interpreter runs before its next command, and takes back what the event
+  # changed of the screen, the player's character and the party, see MGQ_MpCoopScene::Own.cut.
+  #
+  # @param interpreter [Game_Interpreter] The map's interpreter.
+  # @param list [Array<RPG::EventCommand>] The commands it runs.
+  # @param reason [String] Why, for the log.
+  def self.end_event(interpreter, list, reason)
+    # The list ends with an empty command, which ends the event as its last.
+    MGQ_MpGame.set(interpreter, :index, list.size - 1)
+    MGQ_MpCoopScene::Own.cut(reason) if defined?(MGQ_MpCoopScene::Own)
   end
 
   # Tells the player that another player's story keeps theirs from moving on.
