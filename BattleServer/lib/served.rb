@@ -2,7 +2,8 @@
 #  served.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Took the default squad rules from battles_served.rbx
+#      Paulinchen  2026-10-23: Took the default squad rules from the core through battles_served.rbx
+#                            - Took the default squad rules from battles_served.rbx
 #                            - Updated the windows and sprites on every sixth frame while the battle waits for its players
 #                            - Counted down the grace of the players kept away
 #      Paulinchen  2026-10-15: Left recruiting to the players' games
@@ -116,7 +117,7 @@ module ServedBattle
       wrap.around(MGQ_MpWorld.singleton_class, :squad, :served) do |_world, original, args, _block|
         next original.call(*args) if ServedBattle.raid.nil?
 
-        ServedBattle.raid ? (ServedBattle.squad || MGQ_MpBattlesServed::SERVED_SQUAD).dup : nil
+        ServedBattle.raid ? (ServedBattle.squad || MGQ_MpBattlesServed.default_squad).dup : nil
       end
       # Outside a world the tick forgets every player and the seat, which the server holds for the
       # players its starter passed on and the battle channel.

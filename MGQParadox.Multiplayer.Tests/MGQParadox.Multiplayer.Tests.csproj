@@ -34,6 +34,7 @@
   <!-- The golden answers of the topics, shared with the script tests. -->
   <ItemGroup>
     <None Include="..\fixtures\world\*.json" LinkBase="fixtures\world" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\squad\*.json" LinkBase="fixtures\squad" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

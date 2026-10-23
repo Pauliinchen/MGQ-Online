@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Left the party, its invites and its message gate to the DLL, reading its view each frame
+#                            - Made up ids through the DLL instead of the game's rand
 #      Paulinchen  2026-10-17: Offered the teleport to the story on the action wheel
 #      Paulinchen  2026-10-11: Told the frames an invite has left
 #                            - Counted the invite's seconds down above the player's head
@@ -118,12 +119,18 @@ module MGQ_MpCoop
     ""
   end
 
+  # The topic that makes up ids, from randomness of the DLL's own.
+  RANDOM_ID_TOPIC = "id.random"
+
   # Makes up an id of random digits and letters, such as a party's or a battle's.
   #
-  # @param length [Integer] How many characters at most.
-  # @return [String] The id.
-  def self.random_id(length)
-    rand(36**length).to_s(36)
+  # The game's rand drives the replay seeds of battles, so an id drawn from it would shift them.
+  #
+  # @param length [Integer] How many characters.
+  # @param radix [Integer] The base the id is written in, 36 for digits and letters.
+  # @return [String] The id, empty while the DLL does not answer.
+  def self.random_id(length, radix = 36)
+    MGQ_Multiplayer::Bridge.call(RANDOM_ID_TOPIC, { "length" => length, "radix" => radix }).to_s
   end
 
   # Adds an option with a few values to the Mod Config Remake's menu, or to the game's options

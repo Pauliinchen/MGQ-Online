@@ -2,7 +2,8 @@
 //  ServerBridge.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Created
+//      Paulinchen  2026-10-23: Registered the topics both hosts answer
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -14,6 +15,7 @@ using System.Runtime.CompilerServices;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Native;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Topics;
 
 namespace MGQOnline.ServerCore;
 
@@ -55,6 +57,7 @@ internal static class ServerBridge
     {
         log.Attach(context);
         context.Register(RuntimeTopic, (_, _) => DescribeRuntime());
+        SharedTopics.Register(context);
     }
 
     /// <summary>

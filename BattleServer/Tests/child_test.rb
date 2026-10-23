@@ -2,14 +2,16 @@
 #  child_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Covered which core library a child loads and the order it loads, closes in and shakes hands
+#      Paulinchen  2026-10-23: Covered the battle a child without the core refuses
+#                            - Covered which core library a child loads and the order it loads, closes in and shakes hands
 #                            - Created
 #
 #----------------------------------------------------------------
 
 # Tests of how server.rb prepares a battle's child before it plays, with stand-ins for the sandbox
 # and the core library: which library it loads, that it loads it before the sandbox and shakes
-# hands after it, what the client hears when the child cannot be closed in, and the core's log.
+# hands after it, what the client hears when the child cannot be closed in, the core's log, and the
+# relay's refusal of a battle while the core does not answer.
 
 require "fileutils"
 require "json"
@@ -135,5 +137,24 @@ $sandbox_error = nil
 
 check("a file that is no library is not loaded, and the child plays without the core",
       [enter_child(library, real_backend), $steps, MGQ_Multiplayer::Bridge.open?], [[true, ""], [:sandbox], false])
+
+# Hosts a co-op battle as server.rb does when the relay hands one over, over a socket pair.
+#
+# @return [Array<Hash>] What the relay heard, line by line.
+def host_battle
+  relay, server = UNIXSocket.pair rescue Socket.pair(:INET, :STREAM, 0)
+  BattleServer.instance_variable_set(:@served, true)
+  BattleServer.send(:host, server, { "op" => "serve", "bid" => "b1", "setup" => "" })
+  relay.read.to_s.lines.map { |line| JSON.parse(line) }
+ensure
+  relay&.close
+end
+
+heard = host_battle
+check("a child without the core refuses MGQ Online's battle, telling the relay why",
+      [heard.size, heard[0]["op"], heard[0]["code"], heard[0]["error"].start_with?("the battle server's C# core library is missing or did not load: the core library")],
+      [1, "refused", "core", true])
+enter_child(library)
+check("with the core the battle gets past that refusal", host_battle.map { |line| line["code"] }.include?("core"), false)
 
 FileUtils.rm_rf(dir)

@@ -2,7 +2,8 @@
 #  core_library_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Created
+#      Paulinchen  2026-10-23: Checked the ids the core makes up
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -28,6 +29,7 @@ backend = Core.load(path)
 check("the library loads", backend.nil?, false)
 check("and shakes hands", Core.open(backend), true)
 check("naming the batch and core.runtime", %w[batch core.runtime].all? { |topic| bridge.has?(topic) }, true)
+check("and makes up the ids of the battle server's scripts", bridge.call("id.random", { "length" => 8, "radix" => 36 }).to_s =~ /\A[0-9a-z]{8}\z/ ? true : false, true)
 check("its GC runs with the baked heap limit of 256 MB, workstation and not concurrent",
       bridge.call("core.runtime"), { "heap_limit" => 256 * 1024**2, "server_gc" => false, "latency" => "Batch" })
 check("a batch runs each entry and answers the ones that failed",
@@ -37,4 +39,4 @@ check("a batch runs each entry and answers the ones that failed",
 mgq_log.clear
 bridge.frame
 check("the core's log lines come out of the next frame's drain into MGQ Online's log",
-      mgq_log, ["core: Bridge 1 opened context 1 with 2 topics.", "core: Bridge topic core.missing answered unknown_topic: There is no topic core.missing."])
+      mgq_log, ["core: Bridge 1 opened context 1 with #{bridge.instance_variable_get(:@topics).size} topics.","core: Bridge topic core.missing answered unknown_topic: There is no topic core.missing."])

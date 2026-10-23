@@ -2,6 +2,7 @@
 #  raid_tiers_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Stood in for the ids coop.rbx makes up
 #      Paulinchen  2026-10-13: Created
 #
 #----------------------------------------------------------------
@@ -100,8 +101,12 @@ module MGQ_MpUi
     true
   end
 end
-# Stands in for the co-op scope, in a Raid World while $raid is set.
-module MGQ_MpCoop; module Scope; def self.raid?; $raid; end; end; end
+# Stands in for coop.rbx: its scope, in a Raid World while $raid is set, and the ids it makes up.
+module MGQ_MpCoop
+  module Scope; def self.raid?; $raid; end; end
+  # Makes up an id as the DLL does, its digits counted up.
+  def self.random_id(length, radix = 36); ($ids = $ids.to_i + 1).to_s(radix).rjust(length, "0"); end
+end
 # Stands in for the story of world w1, active while $raid is set.
 module MGQ_MpWorldStory
   # Answers whether the world's story is active: $raid.

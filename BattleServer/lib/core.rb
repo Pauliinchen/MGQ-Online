@@ -2,7 +2,8 @@
 #  core.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Created
+#      Paulinchen  2026-10-23: Kept why the core is missing, for the battles the server refuses without it
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -11,12 +12,18 @@
 # BATTLE_CORE_LIBRARY. Where battles run in forked children, each child loads it after the fork
 # and before its sandbox and shakes hands after the sandbox closed; nothing calls it before a
 # fork, since a child of a process whose core already ran hangs at its first garbage collection.
+#
+# MGQ Online's scripts ask the core for rules they share with the game, such as the squad math and
+# the ids they make up, so the server refuses MGQ Online's battles without it (see ready?).
 module Core
   # The environment setting that names the library's path.
   LIBRARY_SETTING = "BATTLE_CORE_LIBRARY"
 
   # The topic of the core's log lines, which the drain hands over as events.
   LOG_TOPIC = "log"
+
+  # What the server says once it starts without the core.
+  REFUSING = "the server refuses MGQ Online's battles"
 
   class << self
     # The library the environment names, checked once as the server starts and logged: a library
@@ -27,22 +34,16 @@ module Core
     # @return [String, nil] The library's full path, nil for none.
     def library(log = $stderr, env = ENV)
       path = env[LIBRARY_SETTING].to_s
-      if path.empty?
-        log.puts("no core library (#{LIBRARY_SETTING} is not set): MGQ Online's battles run without the C# core")
-        return nil
-      end
+      return missing(log, "no core library (#{LIBRARY_SETTING} is not set)", false) if path.empty?
 
       path = File.expand_path(path)
-      unless File.file?(path)
-        log.puts("warning: the core library #{path} (#{LIBRARY_SETTING}) does not exist: MGQ Online's battles run without the C# core")
-        return nil
-      end
+      return missing(log, "the core library #{path} (#{LIBRARY_SETTING}) does not exist") unless File.file?(path)
       unless defined?(MGQ_Multiplayer::Bridge::FiddleBackend)
-        log.puts("warning: the game folder's MGQ Online has no bridge to C#, so it is older than the core library #{path}: " \
-                 "MGQ Online's battles run without the C# core")
-        return nil
+        return missing(log, "the game folder's MGQ Online has no bridge to C#, so it is older than the core library #{path}")
       end
+
       log.puts("core library: #{path}")
+      @missing = nil
       path
     end
 
@@ -57,7 +58,8 @@ module Core
 
       MGQ_Multiplayer::Bridge::FiddleBackend.new(path)
     rescue StandardError => e
-      log.puts("the core library #{path} could not be loaded: #{e.class}: #{e.message}")
+      @missing = "the core library #{path} could not be loaded: #{e.class}: #{e.message}"
+      log.puts(@missing)
       nil
     end
 
@@ -73,11 +75,38 @@ module Core
       take_log_lines
       return true if MGQ_Multiplayer::Bridge.open(backend)
 
-      log.puts("the core library did not shake hands: MGQ Online's battles run without the C# core")
+      @missing = "the core library did not shake hands"
+      log.puts("#{@missing}: #{REFUSING}")
       false
     end
 
+    # Tells whether the core answers, which MGQ Online's battles need.
+    #
+    # @return [Boolean] Whether the bridge to it is open in this process.
+    def ready?
+      defined?(MGQ_Multiplayer::Bridge) && MGQ_Multiplayer::Bridge.open? ? true : false
+    end
+
+    # Tells why the core does not answer, for the relay and the battle's starter.
+    #
+    # @return [String] Why, such as that the library does not exist.
+    def why_missing
+      "the battle server's C# core library is missing or did not load: #{@missing || 'its bridge is closed'}"
+    end
+
     private
+
+    # Notes and logs why the server has no core.
+    #
+    # @param log [IO] Where the server's log goes.
+    # @param why [String] Why.
+    # @param warn [Boolean] Whether the line is a warning, as for a setting that names no library.
+    # @return [nil] Nothing.
+    def missing(log, why, warn = true)
+      @missing = why
+      log.puts("#{warn ? 'warning: ' : ''}#{why}: #{REFUSING}")
+      nil
+    end
 
     # Hands the core's log lines in each drain to MGQ Online's log, once per process.
     def take_log_lines

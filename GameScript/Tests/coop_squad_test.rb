@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Set the parties up through the party's view the DLL posts
+#                            - Left the squad math to the golden cases and checked that the hooks ask for a squad once
+#                            - Answered the ids coop.rbx makes up through the bridge
 #      Paulinchen  2026-10-13: Checked a Raid World's squad rules, their changes and Luka leaving the team
 #                            - Checked that Luka is never swapped to the front and Give Up waits for him to lead
 #      Paulinchen  2026-10-12: Stood in for the settings' group of the Mod Config
@@ -29,7 +31,7 @@
 # followers and the leader's choice of them, the formation screens' cut, the cap of four players,
 # and a Raid World's squads, team and battles of the player's own by its squad rules, and Luka in it.
 
-require_relative "support"
+require_relative "rules_support"
 
 # Stands in for the game's colors.
 class Color
@@ -254,6 +256,7 @@ end
 module MGQ_MpUi; module Style; BAD = Color.new(255, 96, 96); end; end
 # The first words of the mod's settings in the Mod Config, as ui.rbx names them.
 module MGQ_MpUi; OPTION_PREFIX = "[MGQ Online Settings] " unless const_defined?(:OPTION_PREFIX); end
+rules_bridge = open_rules_bridge
 load_script "coop"
 load_script "coop_scope"
 load_script "coop_squad"
@@ -356,7 +359,7 @@ check("nor told to Discord", MGQ_MpCoop.status_fields, {})
 # $squad names, the defaults while it names none.
 module MGQ_MpWorld
   def self.raid?; $open && $raid; end
-  def self.squad; raid? ? $squad || MGQ_MpCoopSquad::DEFAULT_RULES : nil; end
+  def self.squad; raid? ? $squad || MGQ_MpCoopSquad.default_rules : nil; end
   def self.squad_of(text)
     luka, formation, front, raid_front = text.to_s.split(" ").map(&:to_i)
     raid_front ? { :luka => luka == 1, :formation => formation, :front => front, :raid_front => raid_front } : nil
@@ -399,7 +402,6 @@ check("so does the party edit screen", [edit.rows.map { |color, _| color }, edit
       [[[255, 255, 255], [132, 170, 255], [132, 170, 255], [168, 168, 168]], [30]])
 take_party(nil)
 check("outside a party the same", [MGQ_MpCoop.in_party?, squad.own_share, squad.place_of(actors[3])], [false, [1, 2], :cut])
-check("and a battle of two players brings one and two each, as alone", [squad.battle_share(0, 2, 8), squad.battle_share(1, 2, 8), squad.share(0, 2, 8)], [[1, 2], [1, 2], [2, 2]])
 
 $game_party.in_battle = true
 check("a battle of the player's own fights with the squad", [$game_party.max_battle_members, $game_party.battle_members.map(&:id), $game_party.bench_members.map(&:id)], [1, [1], [2, 3]])
@@ -457,15 +459,12 @@ MGQ_MpOverworldSync.tick(true)
 
 # A Raid World's squad rules: the team's size, the Frontline in regular fights and in raids, and
 # whether Luka may leave the team.
-check("layouts: the cut place only while one is left, none with the game's own size",
-      [squad.layout(1, 4, false), squad.layout(3, 4, false), squad.layout(4, 4, false), squad.layout(2, 6, false), squad.layout(1, 9, true), squad.layout(4, 9, true)],
-      [[1, 2], [3, 0], [4, 0], [2, 3], [1, 8], [4, 5]])
 whole = Game_Party.new
 whole.all_members = actors.first(10)
 whole.party_member_max = 10
 $game_party = whole
 squad.pushed({ "squad_value" => "0 6 2 1" })
-check("a squad rules push not from the relay is ignored", MGQ_MpWorld.squad, squad::DEFAULT_RULES)
+check("a squad rules push not from the relay is ignored", MGQ_MpWorld.squad, { :luka => false, :formation => 4, :front => 1, :raid_front => 1 })
 MGQ_MpOverworldSync.routes["squad_value"].call(nil, { "squad_value" => "0 6 2 1", :relay => true })
 check("the relay's push takes the rules and tells the player", [MGQ_MpWorld.squad, $notice],
       [{ :luka => false, :formation => 6, :front => 2, :raid_front => 1 }, "The world's team rules changed: Formation 6, Frontline 2 | 1."])
@@ -476,10 +475,10 @@ whole.in_battle = true
 check("a regular fight of the player's own takes two in front and three behind", [whole.max_battle_members, whole.battle_members.map(&:id), whole.bench_members.map(&:id)], [2, [1, 2], [3, 4, 5]])
 $game_troop.troop_id = 900
 check("a raid takes the raid's Frontline, the rest of the squad behind", [whole.max_battle_members, whole.battle_members.map(&:id), whole.bench_members.map(&:id)], [1, [1], [2, 3, 4, 5]])
-check("a co-op raid gives each player one in front however many play", (0..2).map { |at| squad.battle_share(at, 3, 6) }, [[1, 4], [1, 4], [1, 4]])
+asked = rules_bridge.calls.size
+5.times { whole.battle_members }
+check("the game's hooks ask the DLL for a squad once, however often they run", rules_bridge.calls.size, asked)
 $game_troop.troop_id = 1
-check("a co-op battle gives the first players two in front while the four places last", (0..2).map { |at| squad.battle_share(at, 3, 6) }, [[2, 3], [1, 4], [1, 4]])
-check("and with four players everyone one, the rest behind", (0..3).map { |at| squad.battle_share(at, 4, 6) }, [[1, 4]] * 4)
 check("a co-op battle's build holds the larger squad of both fights", squad.largest_squad(6), 5)
 whole.in_battle = false
 $squad = { :luka => false, :formation => 4, :front => 4, :raid_front => 4 }

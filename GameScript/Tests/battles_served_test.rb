@@ -2,7 +2,8 @@
 #  battles_served_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Checked that the server keeps a player who drops from the battle channel until gone
+#      Paulinchen  2026-10-23: Checked the squad rules a setup carries and their defaults
+#                            - Checked that the server keeps a player who drops from the battle channel until gone
 #                            - Checked a served battle that ends before its roster
 #      Paulinchen  2026-10-15: Checked the starter as the front of its served battle and players who join it late
 #                            - Checked that the last player of the server's battle fights on there and a battle every player left ends
@@ -18,6 +19,7 @@
 # and end, through a stand-in for the DLL's mp_battle_* exports.
 
 require_relative "battle_support"
+require_relative "rules_support"
 
 # Stands in for the DLL's mp_battle_* exports: the calls are kept in $dll_calls, the battle's state
 # is $dll_state, and the entries waiting on the channel are $dll_entries.
@@ -42,9 +44,11 @@ end
 module MGQ_MpWorld
   World = Struct.new(:directory_id)
   def self.world; World.new("world-1"); end
-  def self.squad; nil; end
+  def self.squad; $squad; end
+  def self.squad_from(rules); rules.is_a?(Hash) ? { :luka => rules["luka"], :formation => rules["formation"], :front => rules["front"], :raid_front => rules["raid_front"] } : nil; end
   module GameData; def self.fingerprint; "1:data"; end; end
 end
+open_rules_bridge
 # The game's switches and variables as the game keeps them, in lists.
 class Game_Switches; def initialize; @data = []; end; def [](i); @data[i] || false; end; def []=(i, v); @data[i] = v; end; end
 class Game_Variables; def initialize; @data = []; end; def [](i); @data[i] || 0; end; def []=(i, v); @data[i] = v; end; end
@@ -376,6 +380,13 @@ BattleManager.setup(40, true, false)
 setup = MGQ_MpBattlesServed.read_setup(MGQ_MpBattlesServed.setup_text([MGQ_MpBattlesCoop::Player.new(0, "Me", "1,2,3", [], 8)], nil))
 check("the setup names the world's mods the starter runs, with their files' hashes, and its options of them",
       [setup[:mods], setup[:settings]], [[["teamboostfix", "upload", "1.0", { "Team_Boost_Fix.rb" => "a" * 64 }], ["ownmod", "", "", {}]], "mod_rate=i:2"])
+check("a Classic world's setup carries no squad rules", setup[:squad], nil)
+$squad = { :luka => false, :formation => 0, :front => 4, :raid_front => 3 }
+setup = MGQ_MpBattlesServed.read_setup(MGQ_MpBattlesServed.setup_text([MGQ_MpBattlesCoop::Player.new(0, "Me", "1,2,3", [], 8)], nil))
+check("a Raid World's carries the world's", setup[:squad], $squad)
+$squad = nil
+check("and the server plays one whose setup carries none by the defaults",
+      MGQ_MpBattlesServed.default_squad, { :luka => false, :formation => 4, :front => 1, :raid_front => 1 })
 MGQ_MpBattlesSync.finish
 MGQ_MpBattlesCoop.ended
 

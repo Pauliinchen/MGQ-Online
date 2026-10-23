@@ -2,7 +2,8 @@
 #  server.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Loaded MGQ Online's core library in each battle child before its sandbox and shook hands after it
+#      Paulinchen  2026-10-23: Refused MGQ Online's battles without the core library, telling the relay why
+#                            - Loaded MGQ Online's core library in each battle child before its sandbox and shook hands after it
 #                            - Answered a battle whose sandbox could not drop root as one that could not be sandboxed
 #                            - Let a co-op battle use CPU time for as long as the relay keeps it and ended it as failed past that
 #                            - Logged how each child ended, with its battle
@@ -277,7 +278,8 @@ module BattleServer
 
     # Hosts a co-op battle MGQ Online's starter handed to the relay, over the relay's connection
     # (see RelayBridge): {"op":"serve","bid":"<battle id>","setup":"<base64>"}. Answers serving
-    # once the battle is set up, refused when it cannot be, and end once it is over.
+    # once the battle is set up, refused when it cannot be, such as without the core library (see
+    # Core.ready?), and end once it is over.
     #
     # @param client [TCPSocket] The relay's connection.
     # @param request [Hash] The serve.
@@ -290,6 +292,7 @@ module BattleServer
         $stderr.puts("refused battle #{request['bid'].to_s[0, 32]}: #{code}: #{error}")
       end
       return refused.call("no_mgq_online", "this battle server hosts no MGQ Online battles") unless @served
+      return refused.call("core", Core.why_missing) unless Core.ready?
 
       slotted = !forking? && take_slot
       return refused.call("busy", "another battle runs on this server") unless forking? || slotted

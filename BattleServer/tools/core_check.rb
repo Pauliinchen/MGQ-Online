@@ -2,13 +2,15 @@
 #  core_check.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Created
+#      Paulinchen  2026-10-23: Made up an id inside the sandbox
+#                            - Created
 #
 #----------------------------------------------------------------
 
 # Checks the core library the way the battle server loads it, without the game: forks battle
 # children as server.rb does, prepares each with server.rb's own enter_child (the library loaded
-# before the sandbox, the handshake after it), then calls core.runtime, runs a batch and drains the
+# before the sandbox, the handshake after it), then calls core.runtime, makes up an id inside the
+# sandbox (the core's own randomness, which reads no file there), runs a batch and drains the
 # core's log lines, and prints what each child took. The parent reads each child's memory from
 # /proc, since a sandboxed child sees none. Run it as root on Linux (core_check.ps1 runs it in
 # Docker):
@@ -169,6 +171,9 @@ module CoreCheck
 
       bridge = MGQ_Multiplayer::Bridge
       runtime = bridge.call("core.runtime")
+      id = bridge.call("id.random", { "length" => 8, "radix" => 36 })
+      return { error: "the core made up no id: #{id.inspect}" } unless id.to_s =~ /\A[0-9a-z]{8}\z/
+
       batch_ms = timed { bridge.call!("batch", Array.new(BATCH_ENTRIES) { ["core.runtime", nil] }) }
       drain_ms = timed { bridge.frame }
       CoreTimes::TIMES.merge(batch_ms: batch_ms, drain_ms: drain_ms, log_lines: MGQ_Multiplayer::Log.core_lines, heap_limit: runtime && runtime["heap_limit"])

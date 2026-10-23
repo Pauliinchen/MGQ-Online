@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Played the world room's inbox into the scripts' mirror through world_room_support.rb
+#                            - Answered the rules' topics through the bridge, such as the ids coop.rbx makes up
 #                            - Read the chat log's lines here
 #                            - Showed the HUD over the map's spriteset
 #      Paulinchen  2026-10-22: Gave the scenes' base its basics and its end
@@ -34,7 +35,7 @@
 # of them builds on, helpers that feed the world room, and a player standing on map 5 of an open
 # world.
 
-require_relative "support"
+require_relative "rules_support"
 
 # Stands in for the game's sprite, taking any arguments.
 class Sprite; def initialize(*); end; end
@@ -279,3 +280,6 @@ $game_map = Game_Map.new; $game_map.map_id = 5; $game_map.interpreter = Interpre
 $game_message = Game_Message.new
 $game_player = Player.new(3, 4, 2, "Actor1", 0, 4, false, nil)
 SceneManager.scene = Scene_Map.new
+
+# The DLL's side of the bridge, answering the rules' topics, such as the ids coop.rbx makes up.
+open_rules_bridge

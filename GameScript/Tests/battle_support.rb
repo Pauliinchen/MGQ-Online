@@ -2,7 +2,8 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Stood in for the confirm box
+#      Paulinchen  2026-10-23: Answered the rules' topics through the bridge, such as the squad math
+#                            - Stood in for the confirm box
 #                            - Stood in for the world's grace
 #                            - Stood in for finding a player by id and following presence
 #      Paulinchen  2026-10-20: Stood in for skills chained after an action
@@ -46,7 +47,7 @@
 # party, the scripts every one of them builds on (coop_squad.rbx, battles.rbx,
 # battles_coop.rbx and battles_sync.rbx), fields_of, and the game's objects on map 5.
 
-require_relative "support"
+require_relative "rules_support"
 
 
 $sent = []
@@ -432,6 +433,8 @@ module MGQ_MpOverworldSync
   def self.on_presence(*); end
   def self.label_line(*); end
 end
+# The DLL's side of the bridge, answering the rules' topics, such as the squad math.
+open_rules_bridge
 load_script "ui"
 load_script "ui_layout"
 # Stands in for the confirm box: each question lands in $asked, and $confirm answers the open one

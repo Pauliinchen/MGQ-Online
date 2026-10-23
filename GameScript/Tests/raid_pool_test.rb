@@ -2,7 +2,8 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Dropped the check of the removed retrying?
+#      Paulinchen  2026-10-23: Stood in for the ids coop.rbx makes up
+#                            - Dropped the check of the removed retrying?
 #                            - Checked that a refight of a boss the story beat is won at once
 #                            - Checked that a boss built anew at full HP heals no pool
 #      Paulinchen  2026-10-20: Checked that a max HP lowered under the boss's HP heals no pool
@@ -108,8 +109,12 @@ module MGQ_MpOverworldSync
   # Keeps a block of the player's state fields in $state_fields.
   def self.state_fields(&block); $state_fields << block; end
 end
-# Stands in for the co-op scope, in a Raid World while $raid is set.
-module MGQ_MpCoop; module Scope; def self.raid?; $raid; end; end; end
+# Stands in for coop.rbx: its scope, in a Raid World while $raid is set, and the ids it makes up.
+module MGQ_MpCoop
+  module Scope; def self.raid?; $raid; end; end
+  # Makes up an id as the DLL does, its digits counted up.
+  def self.random_id(length, radix = 36); ($ids = $ids.to_i + 1).to_s(radix).rjust(length, "0"); end
+end
 # Stands in for the story of world w1, active while $raid is set.
 module MGQ_MpWorldStory
   # Answers whether the world's story is active: $raid.

@@ -2,7 +2,8 @@
 //  WorldTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Created
+//      Paulinchen  2026-10-23: Left reading and writing squad settings to the topics both hosts answer
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -10,13 +11,16 @@ using System.Globalization;
 using System.Linq;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Squads;
+using MGQOnline.Game.Topics;
 using MGQParadox.Multiplayer.Network.World;
 
 namespace MGQParadox.Multiplayer.Topics;
 
 /// <summary>
 /// The bridge topics through which the scripts ask the rules of a world: its seats, difficulties,
-/// squad settings and the seats its code tells.
+/// squad settings and the seats its code tells. Reading and writing squad settings is
+/// <see cref="SquadTopics"/>'s, which the battle server answers too.
 /// </summary>
 internal static class WorldTopics
 {
@@ -24,21 +28,9 @@ internal static class WorldTopics
     /// Hands out the limits and defaults of a world's settings: nothing in; <c>seats</c> (<c>min</c>,
     /// <c>max</c>, <c>default</c>), <c>difficulties</c> ([value, name] each), <c>difficulty</c> (the
     /// default), <c>formations</c> ([size, name] each), <c>fronts</c> and <c>squad</c> (the default
-    /// squad settings, as <see cref="SquadRead"/> answers them) out.
+    /// squad settings, as <see cref="SquadTopics.Read"/> answers them) out.
     /// </summary>
     public const string Rules = "world.rules";
-
-    /// <summary>
-    /// Reads squad settings from their text, see <see cref="RaidSquad"/>: the text in; <c>luka</c>,
-    /// <c>formation</c>, <c>front</c> and <c>raid_front</c> out, nil for a text of no valid settings.
-    /// </summary>
-    public const string SquadRead = "squad.read";
-
-    /// <summary>
-    /// Writes squad settings as their text: the settings as <see cref="SquadRead"/> answers them in;
-    /// the text out, nil for settings out of range.
-    /// </summary>
-    public const string SquadWrite = "squad.write";
 
     /// <summary>
     /// Reads a world code, see <see cref="WorldCode"/>: <c>code</c> and, to change them, <c>seats</c>
@@ -54,8 +46,6 @@ internal static class WorldTopics
     public static void Register(BridgeContext context)
     {
         context.Register(Rules, (_, _) => RulesValue());
-        context.Register(SquadRead, (_, request) => SquadOf(request.AsText()));
-        context.Register(SquadWrite, (_, request) => SquadText(request.AsHash()));
         context.Register(Code, (_, request) => CodeOf(request.AsHash()));
     }
 
@@ -70,7 +60,7 @@ internal static class WorldTopics
         { "difficulty", WorldDifficulty.Default },
         { "formations", new RubyArray(RaidSquad.Formations.Select(size => (RubyValue)new RubyArray([size, FormationName(size)]))) },
         { "fronts", new RubyArray(RaidSquad.Fronts.Select(size => (RubyValue)size)) },
-        { "squad", SquadOf(RaidSquad.Default)! },
+        { "squad", SquadTopics.ValueOf(RaidSquad.Default)! },
     };
 
     /// <summary>
@@ -80,27 +70,6 @@ internal static class WorldTopics
     /// <returns><see cref="RaidSquad.OriginalFormationName"/>, or the size as text.</returns>
     private static string FormationName(int size) =>
         size == RaidSquad.OriginalFormation ? RaidSquad.OriginalFormationName : size.ToString(CultureInfo.InvariantCulture);
-
-    /// <summary>
-    /// Answers <see cref="SquadRead"/>.
-    /// </summary>
-    /// <param name="text">The settings' text.</param>
-    /// <returns>The settings, <see langword="null"/> for a text of no valid settings.</returns>
-    private static RubyHash? SquadOf(string text) =>
-        RaidSquad.TryParse(text, out bool luka, out int formation, out int front, out int raidFront)
-            ? new RubyHash { { "luka", luka }, { "formation", formation }, { "front", front }, { "raid_front", raidFront } }
-            : null;
-
-    /// <summary>
-    /// Answers <see cref="SquadWrite"/>.
-    /// </summary>
-    /// <param name="squad">The settings.</param>
-    /// <returns>Their text, <see langword="null"/> for settings out of range.</returns>
-    private static RubyValue? SquadText(RubyHash squad)
-    {
-        string text = RaidSquad.TextOf(squad["luka"].AsBool(), squad["formation"].AsInt(), squad["front"].AsInt(), squad["raid_front"].AsInt());
-        return RaidSquad.IsValid(text) ? text : null;
-    }
 
     /// <summary>
     /// Answers <see cref="Code"/>.

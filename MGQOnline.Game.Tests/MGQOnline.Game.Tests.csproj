@@ -31,6 +31,7 @@
     <None Include="..\fixtures\mods\*.json" LinkBase="fixtures\mods" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\story\*.json" LinkBase="fixtures\story" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\peers\*.json" LinkBase="fixtures\peers" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\squad\*.json" LinkBase="fixtures\squad" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

@@ -2,7 +2,7 @@
 
   <!-- The game-side rules that move out of the scripts, one folder per area. It runs in the
        NativeAOT win-x86 mod DLL and the linux-x64 battle server core, so it stays AOT-clean, uses
-       only the BCL and keeps no state in statics. -->
+       only the BCL and the bridge (for the topics both hosts answer) and keeps no state in statics. -->
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -17,6 +17,10 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="MGQOnline.Game.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MGQOnline.Bridge\MGQOnline.Bridge.csproj" />
   </ItemGroup>
 
 </Project>

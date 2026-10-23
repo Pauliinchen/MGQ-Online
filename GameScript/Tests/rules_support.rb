@@ -4,6 +4,10 @@
 #  Changelog:
 #      Paulinchen  2026-10-23: Answered the mod catalog a test sets
 #                            - Added the answers to the world room's stand-in bridge when a test has one
+#                            - Stood in for the squad math, checked against its golden cases
+#                            - Answered the squad rules of a served battle and their defaults
+#                            - Answered the ids coop.rbx makes up
+#                            - Answered the squad rules of a served battle and their defaults
 #                            - Answered the story parts
 #                            - Answered the world rules, squad rules and world codes
 #                            - Answered the mod keys and the scripts in Patch
@@ -223,6 +227,142 @@ def catalog_told(state, *lines)
   $catalog = { "state" => state, "error" => state == "failed" ? "down" : nil, "mods" => mods, "personal" => personal }
 end
 
+# The golden cases of the squad rules and their math, recorded from the scripts before they left.
+SQUAD_CASES = rule_cases("squad", "squad.json")
+
+# Stands in for the squad math as the golden cases show it, checked against every case below.
+module SquadStandIn
+  # Splits places between players, one more each for the first ones while some are left over.
+  #
+  # @param total [Integer] The places.
+  # @param count [Integer] The players.
+  # @return [Array<Integer>] Each player's places.
+  def self.split(total, count)
+    return [] if count < 1
+
+    total = [total, 0].max
+    (0...count).map { |position| total / count + (position < total % count ? 1 : 0) }
+  end
+
+  # Splits a party's places between its players.
+  #
+  # @param count [Integer] The players.
+  # @param max [Integer] The party_member_max.
+  # @return [Array<Array>] Each player's [front, bench].
+  def self.shares(count, max)
+    split(4, count).zip(split(max - 4, count))
+  end
+
+  # Sizes a Raid World's squad for a fight, the last place cut unless the team keeps the game's size.
+  #
+  # @param rules [Hash] The rules by their names in the topics.
+  # @param max [Integer] The party_member_max.
+  # @param raid [Boolean] Whether the fight is a raid.
+  # @return [Array<Integer>] [front, bench].
+  def self.raid_share(rules, max, raid)
+    original = rules["formation"] == 0
+    size = original ? max : [max, rules["formation"]].min
+    front = [[raid ? rules["raid_front"] : rules["front"], size].min, 1].max
+    [front, original ? size - front : [size - front - 1, 0].max]
+  end
+
+  # Sizes a Raid World's squad for both fights.
+  #
+  # @param rules [Hash, nil] The rules by their names in the topics, nil for the defaults.
+  # @param max [Integer] The party_member_max.
+  # @return [Hash] "regular", "raid" and "largest".
+  def self.raid(rules, max)
+    rules ||= WORLD_RULES["rules"]["squad"]
+    regular, raid = raid_share(rules, max, false), raid_share(rules, max, true)
+    { "regular" => regular, "raid" => raid, "largest" => [regular.inject(:+), raid.inject(:+)].max }
+  end
+
+  # Orders players, the first one first, then by id.
+  #
+  # @param players [Array<Array>] Each player's id and whether they come first.
+  # @return [Array<Integer>] Their places in the list given, in order.
+  def self.ranked(players)
+    (0...players.size).sort_by { |index| [players[index][1] ? 0 : 1, players[index][0], index] }
+  end
+
+  # Arranges a battle's players.
+  #
+  # @param request [Hash] The request of squad.arrange.
+  # @return [Array<Array>] [index, front, bench] per player, in order.
+  def self.arrange(request)
+    players = request["players"]
+    ranked(players).each_with_index.map do |index, position|
+      _, _, max, count = players[index]
+      front, bench =
+        if !request["backline"] || request["rules"].nil?
+          shares(players.size, max)[position]
+        else
+          squad = raid_share(request["rules"], max, request["raid"])
+          fighting = [squad[0], [split(4, players.size)[position], 1].max].min
+          [fighting, squad.inject(:+) - fighting]
+        end
+      front = [front, count].min
+      [index, front, request["backline"] ? [bench, count - front].min : 0]
+    end
+  end
+
+  # Picks the companions a team past its cap leaves out.
+  #
+  # @param request [Hash] The request of squad.past_cap.
+  # @return [Array<Integer>] The ids left out.
+  def self.past_cap(request)
+    team, size = request["team"], request["cap"]
+    kept = request["keep_luka"] ? team.select { |id| request["luka"].include?(id) }.first(size) : []
+    team.each { |id| kept << id if kept.size < size && !kept.include?(id) }
+    team - kept
+  end
+end
+
+SQUAD_CASES["split"].each { |entry| raise "the split stand-in differs at #{entry.inspect}" unless SquadStandIn.split(entry["total"], entry["count"]) == entry["places"] }
+SQUAD_CASES["share"].each { |entry| raise "the share stand-in differs at #{entry.inspect}" unless SquadStandIn.shares(entry["count"], entry["max"])[entry["position"]] == entry["share"] }
+SQUAD_CASES["raid"].each do |entry|
+  answer = SquadStandIn.raid(entry["rules"], entry["max"])
+  raise "the raid stand-in differs at #{entry.inspect}" unless [answer["regular"], answer["raid"], answer["largest"]] == [entry["regular"], entry["raid"], entry["largest"]]
+end
+SQUAD_CASES["rank"].each { |entry| raise "the rank stand-in differs at #{entry.inspect}" unless SquadStandIn.ranked(entry["players"]).map { |index| entry["players"][index][0] } == entry["order"] }
+SQUAD_CASES["arrange"].each { |entry| raise "the arrange stand-in differs at #{entry.inspect}" unless SquadStandIn.arrange(entry) == entry["arranged"] }
+SQUAD_CASES["past_cap"].each { |entry| raise "the past_cap stand-in differs at #{entry.inspect}" unless SquadStandIn.past_cap(entry) == entry["standby"] }
+
+# Answers the squad topics both hosts answer from the golden cases: the rules of a served battle's
+# setup by looking its case up, the defaults as the world's rules name them, and the math by
+# SquadStandIn.
+#
+# @param fake [FakeBridge] The bridge.
+def answer_squads(fake)
+  fake.answer("squad.default") { WORLD_RULES["rules"]["squad"] }
+  fake.answer("squad.served") do |pairs|
+    found = SQUAD_CASES["served"].find { |entry| entry["list"] == pairs } or raise "no golden served squad for #{pairs.inspect}"
+    found["squad"]
+  end
+  fake.answer("squad.shares") { |request| SquadStandIn.shares(request["count"], request["max"]) }
+  fake.answer("squad.rank") { |players| SquadStandIn.ranked(players).map { |index| players[index][0] } }
+  fake.answer("squad.raid") { |request| SquadStandIn.raid(request["rules"], request["max"]) }
+  fake.answer("squad.arrange") { |request| SquadStandIn.arrange(request) }
+  fake.answer("squad.past_cap") { |request| SquadStandIn.past_cap(request) }
+end
+
+# Makes up an id as the DLL does, its digits counted up instead of drawn, so a test can tell ids
+# apart: exactly the length asked for, in the base asked for.
+#
+# @param request [Hash] "length" and "radix".
+# @return [String] The id.
+def stand_in_random_id(request)
+  $random_ids = $random_ids.to_i + 1
+  $random_ids.to_s(request["radix"] || 36).rjust(request["length"], "0")[-request["length"], request["length"]]
+end
+
+# Answers the topic of random ids with stand_in_random_id.
+#
+# @param fake [FakeBridge] The bridge.
+def answer_random_ids(fake)
+  fake.answer("id.random") { |request| stand_in_random_id(request) }
+end
+
 # Opens the scripts' bridge on a FakeBridge that answers the rule topics from the golden cases, or adds
 # those answers to the world room's stand-in bridge when the test loaded it.
 #
@@ -236,6 +376,8 @@ def open_rules_bridge
   answer_world_rules(fake)
   fake.answer("mods.catalog") { $catalog }
   answer_story_parts(fake)
+  answer_random_ids(fake)
+  answer_squads(fake)
   MGQ_Multiplayer::Bridge.open(fake)
   fake
 end

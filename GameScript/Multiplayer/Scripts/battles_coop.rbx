@@ -2,7 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Removed the unused ROSTER_FRAMES and the side battle check of older pool scripts
+#      Paulinchen  2026-10-23: Arranged the battle's players through the DLL or the core library
+#                            - Removed the unused ROSTER_FRAMES and the side battle check of older pool scripts
 #                            - Found the battle's players by the seats they held at its start
 #                            - Let the starter of a battle the server never started fight it as their own and named the server to its guests
 #                            - Sent a guest whose battle ended before its roster back to the map, told why
@@ -236,6 +237,10 @@ module MGQ_MpBattlesCoop
 
   # Characters a player's builds hold at most, the game's largest party.
   MOST_CHARACTERS = 14
+
+  # The topic that orders a battle's players and tells their places, which the DLL answers in the
+  # game and the core library on the battle server.
+  ARRANGE_TOPIC = "squad.arrange"
 
   # The variables of the enemies' strength the game reads as their parameters are asked: the rates
   # of their HP, attack, defense, agility, instant death resistance and MP, which the difficulty, a
@@ -2005,7 +2010,7 @@ module MGQ_MpBattlesCoop
       @own_squad = squad.own_order(size)
       limit = "a squad of #{size}"
     else
-      front, bench = squad.battle_share(0, FEWEST_PLAYERS, max)
+      front, bench = squad.share(0, FEWEST_PLAYERS, max)
       @own_squad = squad.own_order.first(front + bench)
       limit = "#{front} + #{bench}"
     end
@@ -2038,28 +2043,28 @@ module MGQ_MpBattlesCoop
   # Orders the battle's players as their party does, the leader first, and tells each player's
   # share of the Frontline and of the Backline in the battle, and the order of their places. A
   # co-op battle in a Raid World puts its host first, whose game calls this, and gives every player
-  # their squad by the world's rules, with the Frontline's places split between them (see
-  # MGQ_MpCoopSquad.battle_share); a team duel's shares are split as in a Classic world.
+  # their squad by the world's rules, with the Frontline's places split between them, but always
+  # their first character; a team duel's shares are split as in a Classic world. No player gets more
+  # places than the characters they bring.
   #
   # @param players [Array<Player, Array>] The players, or their fields: at least each one's seat,
   #   name, builds, HP and MP and party_member_max.
   # @param backline [Boolean] Whether the players bring a share of the Backline, which a team duel's
   #   do not.
   # @return [Array<Player>] The players in the party's order, each with the order of their places
-  #   and their shares of the Frontline and of the Backline.
+  #   and their shares of the Frontline and of the Backline; none while the DLL does not answer.
   def self.arrange(players, backline = true)
     players = Player.read_all(players)
     hosted = backline && raid?
-    first = lambda { |seat| hosted ? seat == MGQ_MpBattlesSync.own_seat : leads?(seat) }
-    ranked = MGQ_MpCoopSquad.ranked(players.map { |player| [player_id(player.seat), first.call(player.seat)] })
-    players = players.sort_by { |player| ranked.index(player_id(player.seat)) }
-    players.each_with_index.map do |player, position|
-      count = MGQ_MpActors::Builds.parse(player.builds.to_s, MOST_CHARACTERS).size
-      squad = MGQ_MpCoopSquad
-      front, bench = backline ? squad.battle_share(position, players.size, player.max.to_i) : squad.share(position, players.size, player.max.to_i)
-      front = [front, count].min
-      bench = backline ? [bench, count - front].min : 0
-      Player.new(player.seat, player.name, player.builds, player.vitals, player.max, valid_order(player.order, count), front, bench)
+    squad = MGQ_MpCoopSquad
+    counts = players.map { |player| MGQ_MpActors::Builds.parse(player.builds.to_s, MOST_CHARACTERS).size }
+    fields = players.each_with_index.map do |player, index|
+      [player_id(player.seat), hosted ? player.seat == MGQ_MpBattlesSync.own_seat : leads?(player.seat), player.max.to_i, counts[index]]
+    end
+    request = { "rules" => raid? ? squad.rules_request(squad.rules) : nil, "raid" => squad.raid_fight? ? true : false, "backline" => backline ? true : false, "players" => fields }
+    Array(MGQ_Multiplayer::Bridge.call(ARRANGE_TOPIC, request)).map do |index, front, bench|
+      player = players[index]
+      Player.new(player.seat, player.name, player.builds, player.vitals, player.max, valid_order(player.order, counts[index]), front, bench)
     end
   end
 

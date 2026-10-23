@@ -2,7 +2,8 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Handed the game script the mod catalog as it stands instead of as text
+//      Paulinchen  2026-10-23: Took the squad settings from MGQOnline.Game
+//                            - Handed the game script the mod catalog as it stands instead of as text
 //      Paulinchen  2026-10-22: Read the mods, mod hashes and settings of the opened world on their own, which the list leaves out for this version
 //      Paulinchen  2026-10-13: Made, changed and listed Classic worlds with their raid bosses
 //                            - Made, changed and listed Raid Worlds with their squad settings
@@ -46,6 +47,7 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading;
+using MGQOnline.Game.Squads;
 using MGQParadox.Multiplayer.Mods;
 using MGQParadox.Multiplayer.Network.Pvp;
 using MGQParadox.Multiplayer.Network.Relay;

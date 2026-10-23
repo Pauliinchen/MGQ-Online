@@ -2,7 +2,8 @@
 #  trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Named the one log of the day where a trade not applied in full tells why
+#      Paulinchen  2026-10-23: Made up a trade's id through coop.rbx
+#                            - Named the one log of the day where a trade not applied in full tells why
 #      Paulinchen  2026-10-12: Sent the offer and confirmation again on the relay's beat after a failed send
 #                            - Sent the offer and confirmation again once the other player is back
 #                            - Answered a message of a trade the game no longer has with a cancel
@@ -613,7 +614,7 @@ module MGQ_MpTrade
     return decline(peer, "busy", nil, busy) if busy
 
     stop
-    id = Array.new(24) { rand(16).to_s(16) }.join
+    id = MGQ_MpCoop.random_id(24, 16)
     send_message(peer, { "trade" => "open", "tid" => id })
     begin_session(id, peer)
   end

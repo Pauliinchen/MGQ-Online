@@ -2,7 +2,8 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Removed retrying?, which only the tests read
+#      Paulinchen  2026-10-23: Made up a battle's id through coop.rbx
+#                            - Removed retrying?, which only the tests read
 #                            - Won a refight of a boss the world's story beat already at once
 #                            - Reported nothing for an enemy built anew since its HP was last taken, and took its pool's HP
 #      Paulinchen  2026-10-20: Counted a boss HP above its max as the max, so a lowered max heals no pool
@@ -734,7 +735,7 @@ module MGQ_MpRaidPool
   #
   # @return [String] The id.
   def self.new_battle_id
-    "rp#{Time.now.to_i.to_s(36)}#{rand(36**8).to_s(36)}"
+    "rp#{Time.now.to_i.to_s(36)}#{MGQ_MpCoop.random_id(8)}"
   end
 
   # Readies a battle's own enemies to fight their pools: their tier's stats, keeping the share of

@@ -9,7 +9,9 @@ Ruby 3.3, and hosts MGQ Online's co-op battles the relay hands over (see
 
 MGQ Online's C# core on the server is `MGQOnline.ServerCore`, a native library each battle's child
 loads through Fiddle (see "The battle server's core" in [docs/DEVELOPER.md](../docs/DEVELOPER.md)).
-Without it the server runs MGQ Online's battles as before and says so once as it starts.
+MGQ Online's scripts ask it for rules they share with the game, so without it the server refuses MGQ
+Online's battles (code `core`, with why) and says so once as it starts; their starters then host
+them.
 
 **Build.** The Release workflow attaches `MGQOnline.ServerCore.so` (linux-x64) to every release,
 after checking it in sandboxed battle children. To build it on this PC (Docker running):
@@ -35,6 +37,7 @@ BATTLE_CORE_LIBRARY=/opt/mgq-battle/core/MGQOnline.ServerCore.so
 Then restart the server. Its log says `core library: <path>` as it starts, each battle's child
 `[mgq] bridge: opened context 1 ...` and the core's own lines as `[mgq] core: ...`. A path that
 does not exist, game scripts older than the bridge, or a library a child cannot load or that does
-not shake hands is logged, and those battles run without the core. The library carries its GC heap
+not shake hands is logged, and those battles are refused. The library carries its GC heap
 limit (256 MB); leave `DOTNET_GCHeapHardLimit` unset unless a larger one is needed (hexadecimal
-without `0x`). Removing the setting and restarting turns the core off again.
+without `0x`). Removing the setting and restarting turns the core off again, and with it MGQ Online's battles on
+this server.

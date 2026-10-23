@@ -2,7 +2,9 @@
 #  battles_served.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Kept the squad rules of a Raid World that names none for the battle server itself
+#      Paulinchen  2026-10-23: Asked no battle server again in a session once one lacked its core library
+#                            - Read a setup's squad rules and their defaults through the DLL or the core library
+#                            - Kept the squad rules of a Raid World that names none for the battle server itself
 #                            - Handed a player's drop from the battle channel to the presence of the players on the server
 #      Paulinchen  2026-10-15: Handed the battle server how the battle's boss fights, by pools or by tier
 #                            - Stood in for the battle server in the world's room as its starter, for players who join late
@@ -42,10 +44,12 @@ module MGQ_MpBattlesServed
   # them it hosts the battle itself.
   SERVE_FRAMES = 300
 
-  # The squad rules of a Raid World that names none, kept here for the battle server, which cannot
-  # ask the DLL until its core library answers the squad topics: Luka fixed, a team of four and one
-  # character on the Frontline in regular fights and in raids.
-  SERVED_SQUAD = { :luka => false, :formation => 4, :front => 1, :raid_front => 1 }.freeze
+  # The topic that reads the squad rules a setup carries, with the defaults for those it lacks;
+  # the DLL answers it in the game, the core library on the battle server.
+  SQUAD_SERVED_TOPIC = "squad.served"
+
+  # The topic that tells the squad rules of a Raid World that names none.
+  SQUAD_DEFAULT_TOPIC = "squad.default"
 
   # Frames a player waits for the battle channel to open before the battle counts as gone.
   OPEN_FRAMES = 600
@@ -61,9 +65,10 @@ module MGQ_MpBattlesServed
   STATE_SIZE = 1_024
 
   # The relay's answers that end every later try in this game session: it has no battle server,
-  # serves no battles of this mod's version, or its server's MGQ Online or game data differ from
-  # this game's. Others, such as a busy server, end only this try.
-  LASTING_REFUSALS = %w(no_server update unsupported scripts data)
+  # serves no battles of this mod's version, its server's MGQ Online or game data differ from
+  # this game's, or its server lacks its core library. Others, such as a busy server, end only this
+  # try.
+  LASTING_REFUSALS = %w(no_server update unsupported scripts data core)
 
   # The co-op messages the starter of a served battle passes on to the battle server, being its
   # front in the world's room: other players' requests to join the battle with an encounter (hot)
@@ -590,18 +595,26 @@ module MGQ_MpBattlesServed
     end.compact
   end
 
-  # Reads a Raid World's squad rules a setup carries, those of SERVED_SQUAD's keys
-  # alone.
+  # Reads a Raid World's squad rules a setup carries, the defaults for those it lacks (see
+  # default_squad).
   #
   # @param list [Object] The rules, as setup_text writes them.
-  # @return [Hash, nil] The rules, nil for none.
+  # @return [Hash, nil] The rules, as MGQ_MpWorld.squad tells them; nil for none, for rules out of
+  #   range and while the bridge is closed, as on the battle server before its child's sandbox.
   def self.squad_of(list)
-    rules = {}
-    Array(list).each do |key, value|
-      symbol = SERVED_SQUAD.keys.find { |known| known.to_s == key.to_s }
-      rules[symbol] = value if symbol && (value.is_a?(Integer) || value == true || value == false)
+    pairs = Array(list).select do |pair|
+      pair.is_a?(Array) && pair.size == 2 && pair[0].is_a?(String) && (pair[1].is_a?(Integer) || pair[1] == true || pair[1] == false)
     end
-    rules.empty? ? nil : SERVED_SQUAD.merge(rules)
+    MGQ_MpWorld.squad_from(MGQ_Multiplayer::Bridge.call(SQUAD_SERVED_TOPIC, pairs))
+  end
+
+  # Tells the squad rules of a Raid World that names none, which the battle server plays a Raid
+  # World's battle by whose setup carries no rules.
+  #
+  # @return [Hash, nil] The rules, as MGQ_MpWorld.squad tells them; nil while the bridge does not
+  #   answer.
+  def self.default_squad
+    MGQ_MpWorld.squad_from(MGQ_Multiplayer::Bridge.call(SQUAD_DEFAULT_TOPIC))
   end
 
   # As the battle server, takes a battle to host: the game's state as the starter's for the troop's

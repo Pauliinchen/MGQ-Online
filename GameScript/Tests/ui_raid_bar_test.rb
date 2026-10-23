@@ -2,7 +2,8 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Showed the HUD over the map's sprites
+#      Paulinchen  2026-10-23: Stood in for the ids coop.rbx makes up
+#                            - Showed the HUD over the map's sprites
 #      Paulinchen  2026-10-17: Checked the bars above the bosses' stand-ins of frozen fights
 #      Paulinchen  2026-10-13: Checked the bars of the raid bosses outside Raid Worlds and turning them off
 #      Paulinchen  2026-10-12: Checked that common events calling each other keep every troop
@@ -140,8 +141,12 @@ module MGQ_MpOverworldSync
 end
 # The open world, a Classic world with raid bosses while $raid_bosses.
 module MGQ_MpWorld; def self.raid_bosses?; $raid_bosses; end; end
-# The scope, a Raid World while $raid.
-module MGQ_MpCoop; module Scope; def self.raid?; $raid; end; end; end
+# Stands in for coop.rbx: its scope, a Raid World while $raid, and the ids it makes up.
+module MGQ_MpCoop
+  module Scope; def self.raid?; $raid; end; end
+  # Makes up an id as the DLL does, its digits counted up.
+  def self.random_id(length, radix = 36); ($ids = $ids.to_i + 1).to_s(radix).rjust(length, "0"); end
+end
 # The world's story of world w1, active in a Raid World.
 module MGQ_MpWorldStory
   # Whether the world's story is active.

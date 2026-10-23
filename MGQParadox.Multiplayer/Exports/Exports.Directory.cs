@@ -2,6 +2,7 @@
 //  Exports.Directory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Took the squad settings from MGQOnline.Game
 //      Paulinchen  2026-10-22: Added mp_dir_open and mp_dir_read
 //      Paulinchen  2026-10-15: Took the options of mp_dir_create in one number
 //      Paulinchen  2026-10-13: Took a Classic world's raid bosses setting in mp_dir_create and mp_dir_edit
@@ -26,6 +27,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using MGQOnline.Game.Squads;
 using MGQParadox.Multiplayer.Network.World;
 
 namespace MGQParadox.Multiplayer;

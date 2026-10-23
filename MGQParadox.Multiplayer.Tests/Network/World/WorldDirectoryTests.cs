@@ -2,6 +2,7 @@
 //  WorldDirectoryTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Took the squad settings from MGQOnline.Game
 //      Paulinchen  2026-10-15: Expected the keyed Raid World stories among the features
 //      Paulinchen  2026-10-14: Covered a Raid World with a starting save from every build
 //      Paulinchen  2026-10-13: Covered a Classic world's raid bosses setting and expected it at the end of its line
@@ -37,6 +38,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
+using MGQOnline.Game.Squads;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
 using MGQParadox.Multiplayer.Network.World;

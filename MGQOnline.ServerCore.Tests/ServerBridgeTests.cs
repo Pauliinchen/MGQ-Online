@@ -2,7 +2,10 @@
 //  ServerBridgeTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Created
+//      Paulinchen  2026-10-23: Covered a battle's players arranged by the core
+//                            - Covered the squad rules the core answers
+//                            - Covered the topics both hosts answer
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -11,6 +14,7 @@ using System.Text;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Native;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Topics;
 
 namespace MGQOnline.ServerCore.Tests;
 
@@ -64,7 +68,7 @@ public sealed unsafe class ServerBridgeTests
 
         Assert.Equal("0.0.0-dev", handshake["build"].AsText());
         Assert.Contains((RubyValue)ServerBridge.RuntimeTopic, handshake["topics"].AsArray());
-        Assert.Equal(new RubyArray { new RubyArray { EventLog.Topic, $"Bridge {BridgeHost.Version} opened context {context} with 2 topics." } }, Drain(context));
+        Assert.Equal(new RubyArray { new RubyArray { EventLog.Topic, $"Bridge {BridgeHost.Version} opened context {context} with {handshake["topics"].AsArray().Count} topics." } }, Drain(context));
     }
 
     /// <summary>
@@ -91,19 +95,38 @@ public sealed unsafe class ServerBridgeTests
     public void Call_DescribesTheRuntime()
     {
         int context = Open(BridgeHost.Version).AsHash()["value"].AsHash()["context"].AsInt();
-        byte[] reply = new byte[BufferSize];
-        byte[] topic = Encoding.UTF8.GetBytes(ServerBridge.RuntimeTopic + "\0");
-        int written;
-        fixed (byte* topicPointer = topic, replyPointer = reply)
-        {
-            written = CallExport(context, topicPointer, null, 0, replyPointer, reply.Length);
-        }
 
-        RubyHash runtime = RubyMarshal.Read(reply.AsSpan(0, written)).AsHash()["value"].AsHash();
+        RubyHash runtime = Call(context, ServerBridge.RuntimeTopic, null).AsHash()["value"].AsHash();
 
         Assert.True(runtime["heap_limit"].AsLong() > 0);
         Assert.False(runtime["server_gc"].AsBool());
         Assert.NotEmpty(runtime["latency"].AsText());
+    }
+
+    /// <summary>
+    /// Asserts that the core answers the topics both hosts answer, such as the ids the battle
+    /// server's scripts make up, the squad rules and a battle's players arranged.
+    /// </summary>
+    [Fact]
+    public void Call_AnswersTheSharedTopics()
+    {
+        int context = Open(BridgeHost.Version).AsHash()["value"].AsHash()["context"].AsInt();
+
+        RubyValue id = Call(context, SharedTopics.RandomIdTopic, new RubyHash { { "length", 8L }, { "radix", 36L } }).AsHash()["value"];
+
+        RubyValue squad = Call(context, SquadTopics.Default, null).AsHash()["value"];
+        RubyHash arrange = new()
+        {
+            { "rules", squad },
+            { "raid", false },
+            { "backline", true },
+            { "players", new RubyArray { new RubyArray { "b", false, 4L, 3L }, new RubyArray { "a", true, 4L, 3L } } },
+        };
+        RubyValue arranged = Call(context, SquadTopics.Arrange, arrange).AsHash()["value"];
+
+        Assert.Matches("^[0-9a-z]{8}$", id.AsText());
+        Assert.Equal(4, squad.AsHash()["formation"].AsInt());
+        Assert.Equal(new RubyArray { new RubyArray { 1L, 1L, 2L }, new RubyArray { 0L, 1L, 2L } }, arranged);
     }
 
     /// <summary>
@@ -118,6 +141,27 @@ public sealed unsafe class ServerBridgeTests
         fixed (byte* buffer = reply)
         {
             written = OpenExport(version, buffer, reply.Length);
+        }
+
+        return RubyMarshal.Read(reply.AsSpan(0, written));
+    }
+
+    /// <summary>
+    /// Calls a topic through mp_call.
+    /// </summary>
+    /// <param name="context">The context's id.</param>
+    /// <param name="topic">The topic.</param>
+    /// <param name="request">The request, <see langword="null"/> for none.</param>
+    /// <returns>The reply's envelope.</returns>
+    private static RubyValue Call(int context, string topic, RubyValue? request)
+    {
+        byte[] reply = new byte[BufferSize];
+        byte[] name = Encoding.UTF8.GetBytes(topic + "\0");
+        byte[] dump = request == null ? [] : RubyMarshal.Write(request);
+        int written;
+        fixed (byte* namePointer = name, dumpPointer = dump, replyPointer = reply)
+        {
+            written = CallExport(context, namePointer, dumpPointer, dump.Length, replyPointer, reply.Length);
         }
 
         return RubyMarshal.Read(reply.AsSpan(0, written));

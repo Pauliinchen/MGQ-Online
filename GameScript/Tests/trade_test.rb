@@ -2,6 +2,7 @@
 #  trade_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that a trade's id leaves the game's rand as it was
 #      Paulinchen  2026-10-17: Checked the trade's place on the wheel next to the teleport to the story
 #      Paulinchen  2026-10-12: Checked the offer and confirmation going out again once a failed message does
 #                            - Checked the offer and confirmation going out again once the other player is back
@@ -252,9 +253,13 @@ MGQ_MpOverworldSync.tick
 # The other player accepts, and both open the trade.
 $sent.clear
 $inbox << entry("message", 2, "trade=accept\n\n")
+srand(7)
+unmoved = rand
+srand(7)
 MGQ_MpOverworldSync.tick
 opened = trade_sent.last
 check("an accepted offer opens the trade with an id", [opened[1]["trade"], opened[1]["tid"].to_s =~ /\A[0-9a-f]{24}\z/ ? true : false, trade.inviting?, trade.own_doing], ["open", true, false, nil])
+check("which the DLL made up, leaving the game's rand, which drives the battles' replay seeds, where it was", rand, unmoved)
 tid = opened[1]["tid"]
 trade.on_map
 check("the map opens the trade screen", $called, [Scene_MpTrade])

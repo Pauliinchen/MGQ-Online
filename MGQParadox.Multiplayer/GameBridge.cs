@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-23: Registered the topics of the open world
+//                            - Registered the topics both hosts answer
 //                            - Registered the topics of Player.ini and the other settings files
 //                            - Registered the topics of the scripts' log
 //                            - Registered the topics of a world's rules
@@ -16,6 +17,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Native;
+using MGQOnline.Game.Topics;
 using MGQParadox.Multiplayer.Mods;
 using MGQParadox.Multiplayer.Network.World;
 using MGQParadox.Multiplayer.Topics;
@@ -44,6 +46,7 @@ internal static class GameBridge
         ScriptLog.Register(context);
         SettingsTopics.Register(context);
         RuleTopics.Register(context);
+        SharedTopics.Register(context);
         ModTopics.Register(context, () => ModParking.Current, () => WorldDirectory.Current);
         WorldTopics.Register(context);
         WorldRoomTopics.Register(context);

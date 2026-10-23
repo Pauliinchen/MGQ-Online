@@ -2,6 +2,7 @@
 #  coop_squad.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Asked the DLL or the core library for the squad math, the team fit and the default squad rules
 #      Paulinchen  2026-10-13: Sized a Raid World's team and squads by the world's squad rules
 #                            - Let a Raid World's Luka leave the team when its rules allow it
 #                            - Kept the event command of followers from swapping Luka to the front
@@ -49,9 +50,26 @@ module MGQ_MpCoopSquad
   # The Formation size of a Raid World's rules that keeps the game's own team size.
   ORIGINAL = 0
 
-  # The squad rules of a Raid World that names none: Luka stays, a team of four, and one character
-  # on the Frontline in regular fights and in raids, which leaves two on the Backline and one cut.
-  DEFAULT_RULES = { :luka => false, :formation => 4, :front => 1, :raid_front => 1 }
+  # The topic that tells the squad rules of a Raid World that names none.
+  DEFAULT_TOPIC = "squad.default"
+
+  # The topic that splits a party's places between its players.
+  SHARES_TOPIC = "squad.shares"
+
+  # The topic that orders players as every member's game does.
+  RANK_TOPIC = "squad.rank"
+
+  # The topic that sizes a Raid World's squad for both fights.
+  RAID_TOPIC = "squad.raid"
+
+  # The topic that picks the companions a team past its cap leaves out.
+  PAST_CAP_TOPIC = "squad.past_cap"
+
+  # The names of a squad rule in the topics' answers, by the rule's key in the scripts.
+  RULE_NAMES = { :luka => "luka", :formation => "formation", :front => "front", :raid_front => "raid_front" }
+
+  # Answers kept at most, see ask.
+  KEPT_ANSWERS = 64
 
   # The option of followers in a party, its key in $game_system.conf.
   FOLLOWERS = :mp_party_followers
@@ -103,48 +121,51 @@ module MGQ_MpCoopSquad
   # followers runs in a Raid World.
   @holding_order = false
 
+  # The squad topics' answers by topic and request, see ask.
+  @answers = {}
+
   extend MGQ_MpLog
 
   # What starts this script's lines in the log.
   LOG_TAG = "co-op squad"
 
-  # Splits places between players, one more each for the first ones while some are left over.
+  # Asks the DLL a squad topic, once per request while the answer is kept: the game's hooks ask
+  # for the squad many times a frame.
   #
-  # @param total [Integer] The places.
-  # @param count [Integer] The players.
-  # @return [Array<Integer>] Each player's places, in the players' order.
-  def self.split(total, count)
-    return [] if count < 1
+  # @param topic [String] The topic.
+  # @param request [Object] The request.
+  # @return [Object, nil] The answer, nil while the DLL does not answer.
+  def self.ask(topic, request)
+    key = [topic, request]
+    return @answers[key] if @answers.key?(key)
 
-    total = [total, 0].max
-    (0...count).map { |position| total / count + (position < total % count ? 1 : 0) }
+    answer = MGQ_Multiplayer::Bridge.call(topic, request)
+    return nil if answer.nil?
+
+    @answers.clear if @answers.size >= KEPT_ANSWERS
+    @answers[key] = answer
   end
 
-  # Tells a player's squad: their share of the Frontline and of the Backline.
+  # Writes squad rules as the squad topics read them.
+  #
+  # @param rules [Hash] The rules, see rules.
+  # @return [Hash] The rules by their names in RULE_NAMES.
+  def self.rules_request(rules)
+    request = {}
+    RULE_NAMES.each { |key, name| request[name] = key == :luka ? (rules[key] ? true : false) : rules[key].to_i }
+    request
+  end
+
+  # Tells a player's squad: their share of the Frontline and of the Backline, the party's places
+  # split between its players, one more each for the first ones while some are left over.
   #
   # @param position [Integer] The player's place among the players, the leader first.
   # @param count [Integer] The players.
   # @param max [Integer] The player's party_member_max, Frontline and Backline together.
   # @return [Array<Integer>] The Frontline's and the Backline's share.
   def self.share(position, count, max)
-    [split(FRONTLINE, count)[position].to_i, split(max - FRONTLINE, count)[position].to_i]
-  end
-
-  # Tells a player's squad in a co-op battle: in a Raid World their squad for the fight (see
-  # raid_share), with as much of its Frontline as the battle's places split between the players
-  # leave them, but always their first character, and the rest of the squad on the Backline; else
-  # as share splits it.
-  #
-  # @param position [Integer] The player's place among the players, the leader first.
-  # @param count [Integer] The players.
-  # @param max [Integer] The player's party_member_max, Frontline and Backline together.
-  # @return [Array<Integer>] The Frontline's and the Backline's share.
-  def self.battle_share(position, count, max)
-    return share(position, count, max) unless raid?
-
-    front, bench = raid_share(max)
-    fighting = [front, [split(FRONTLINE, count)[position].to_i, 1].max].min
-    [fighting, front + bench - fighting]
+    shares = ask(SHARES_TOPIC, { "count" => count.to_i, "max" => max.to_i }) || []
+    (shares[position] || [0, 0]).dup
   end
 
   # Tells the places of the Frontline in a PvP battle between two players: the squad's in a Raid
@@ -176,10 +197,20 @@ module MGQ_MpCoopSquad
   #
   # @return [Hash] :luka (whether Luka may leave the team), :formation (the team's size, ORIGINAL
   #   for the game's own), :front and :raid_front (the Frontline's places in regular fights and in
-  #   raids); DEFAULT_RULES when the world names none.
+  #   raids); default_rules when the world names none.
   def self.rules
     world = defined?(MGQ_MpWorld) && MGQ_MpWorld.respond_to?(:squad) ? MGQ_MpWorld.squad : nil
-    world || DEFAULT_RULES
+    world || default_rules
+  end
+
+  # Reads the squad rules of a Raid World that names none.
+  #
+  # @return [Hash] The rules, see rules; formation 0 and no Frontline while the DLL does not answer.
+  def self.default_rules
+    names = ask(DEFAULT_TOPIC, nil) || {}
+    rules = {}
+    RULE_NAMES.each { |key, name| rules[key] = key == :luka ? (names[name] ? true : false) : names[name].to_i }
+    rules
   end
 
   # Reports whether Luka may leave the team: in a Raid World whose rules allow it.
@@ -206,30 +237,24 @@ module MGQ_MpCoopSquad
     MGQ_MpRaidBosses.boss?(MGQ_MpGame.get($game_troop, :troop_id))
   end
 
-  # Splits a team into its Frontline, its Backline and the cut place: the Frontline as large as it
-  # may be, the Backline what is left but the last place, which is cut while a place is left over;
-  # with the game's own size nothing is cut.
+  # Sizes the player's squad in a Raid World for both fights by the world's rules.
   #
-  # @param front [Integer] The Frontline's places the rules give.
-  # @param size [Integer] The team's size.
-  # @param original [Boolean] Whether the team keeps the game's own size.
-  # @return [Array<Integer>] The Frontline's and the Backline's places.
-  def self.layout(front, size, original)
-    front = [[front, size].min, 1].max
-    [front, original ? size - front : [size - front - 1, 0].max]
+  # @param max [Integer] The player's party_member_max.
+  # @return [Hash] "regular" and "raid" (each the Frontline's and the Backline's places) and
+  #   "largest" (the larger squad's characters); none of them while the DLL does not answer.
+  def self.raid_sizes(max)
+    ask(RAID_TOPIC, { "rules" => rules_request(rules), "max" => max.to_i }) || {}
   end
 
   # Tells the player's squad in a Raid World for a fight: the Frontline the world's rules give for
-  # it and the Backline the team leaves.
+  # it and the Backline the team leaves, the last place cut unless the team keeps the game's own
+  # size.
   #
   # @param max [Integer] The player's party_member_max.
   # @param raid [Boolean] Whether the fight is a raid.
   # @return [Array<Integer>] The Frontline's and the Backline's places.
   def self.raid_share(max = $game_party.party_member_max, raid = raid_fight?)
-    current = rules
-    original = current[:formation].to_i == ORIGINAL
-    size = original ? max : [max, current[:formation].to_i].min
-    layout((raid ? current[:raid_front] : current[:front]).to_i, size, original)
+    (raid_sizes(max)[raid ? "raid" : "regular"] || [0, 0]).dup
   end
 
   # Tells how many characters a player's squad in a Raid World holds at most, in a regular fight or
@@ -238,7 +263,7 @@ module MGQ_MpCoopSquad
   # @param max [Integer] The player's party_member_max.
   # @return [Integer] The characters.
   def self.largest_squad(max)
-    [false, true].map { |raid| raid_share(max, raid).inject(:+) }.max
+    raid_sizes(max)["largest"].to_i
   end
 
   # Reports whether Luka leads the player's team, its first character.
@@ -260,9 +285,9 @@ module MGQ_MpCoopSquad
   # Orders players as every member's game does: the leader first, then by their ids.
   #
   # @param players [Array<Array>] Each player's id and whether they lead.
-  # @return [Array<String>] The ids in order.
+  # @return [Array<String>] The ids in order, none while the DLL does not answer.
   def self.ranked(players)
-    players.sort_by { |id, leads| [leads ? 0 : 1, id.to_s] }.map { |id, _| id.to_s }
+    (ask(RANK_TOPIC, players.map { |id, leads| [id.to_s, leads ? true : false] }) || []).dup
   end
 
   # Tells the player's squad: in a Raid World as its rules size it (see raid_share), else their
@@ -279,7 +304,8 @@ module MGQ_MpCoopSquad
     own_id = MGQ_MpOverworldSync::Me.id
     players = [[own_id, leader == :me]] + party.members.map { |peer| [peer.state["id"].to_s, peer.equal?(leader)] }
     order = ranked(players)
-    share(order.index(own_id), order.size, $game_party.party_member_max)
+    position = order.index(own_id.to_s)
+    position ? share(position, order.size, $game_party.party_member_max) : nil
   end
 
   # Lists the player's characters in the order their squad takes them; in a Raid World only those
@@ -491,11 +517,10 @@ module MGQ_MpCoopSquad
   # @param ids [Array<Integer>] The team's character ids in order.
   # @param size [Integer] The team's size.
   # @param keep_luka [Boolean] Whether Luka stays in the team.
-  # @return [Array<Integer>] The ids left out, in order.
+  # @return [Array<Integer>] The ids left out, in order; none while the DLL does not answer.
   def self.past_cap(ids, size, keep_luka = true)
-    kept = keep_luka ? ids.select { |id| luka?(id) }.first(size) : []
-    ids.each { |id| kept << id if kept.size < size && !kept.include?(id) }
-    ids - kept
+    request = { "team" => ids, "luka" => ids.select { |id| luka?(id) }, "cap" => size, "keep_luka" => keep_luka ? true : false }
+    MGQ_Multiplayer::Bridge.call(PAST_CAP_TOPIC, request) || []
   end
 
   # Brings Luka back from standby into the team, which he left while a Raid World's rules let him.
