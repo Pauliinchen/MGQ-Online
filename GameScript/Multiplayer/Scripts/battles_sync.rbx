@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Asked the player before they leave the battle from a wait
+#                            - Told a guest who never got into the battle why, on the map, instead of the battle breaking off
 #                            - Numbered the battle's messages and sent those lost over a reconnect again
 #                            - Kept the battle's players by the seats they held at its start, taking one out only once gone
 #      Paulinchen  2026-10-20: Sent the skills a guest chains after an action and chained them on the host
@@ -188,6 +189,7 @@ module MGQ_MpBattlesSync
     @battle_id = battle_id
     @solo = false
     @broken = false
+    @missed = nil
     @battle_running = false
     @served = false
     Seats.pin_room
@@ -537,6 +539,24 @@ module MGQ_MpBattlesSync
     Channel.post("broken") if tell_friend
   rescue => e
     log("break-off failed: #{e.class}: #{e.message}")
+  end
+
+  # Ends the live battle of a guest who never got into it, such as one that ended before its roster
+  # came: it breaks off, and the player is told why on the map instead of the battle breaking off.
+  #
+  # @param text [String] What the player is told, such as "Name's battle ended before you could join."
+  def self.miss(text)
+    @missed = text
+    break_off("the player never got into it: #{text}", false)
+  end
+
+  # Takes what the player is told of a live battle they never got into, see miss.
+  #
+  # @return [String, nil] The text, nil when the battle broke off otherwise.
+  def self.take_missed
+    text = @missed
+    @missed = nil
+    text
   end
 
   # Tells whether the live battle broke off.
@@ -1498,7 +1518,19 @@ module MGQ_MpBattlesSync
       tell(peer, "#{peer.state['name']} left the battle.")
     end
 
-    # Tells that a player of the battle left the world. Called by overworld_sync.rbx.
+    # Tells the player something of the battle at once, in the battle's popup and in a notice on the
+  # map, such as why they never got into a battle.
+  #
+  # @param text [String] What the player sees.
+  def self.say(text)
+    MGQ_MpBattlesSync.log("told the player: #{text}")
+    popup(text, [POPUP_MARK, :said])
+    MGQ_MpOverworldSync.notice(text)
+  rescue => e
+    MGQ_MpBattlesSync.log("telling the player failed: #{e.class}: #{e.message}")
+  end
+
+  # Tells that a player of the battle left the world. Called by overworld_sync.rbx.
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
     def self.gone(peer)

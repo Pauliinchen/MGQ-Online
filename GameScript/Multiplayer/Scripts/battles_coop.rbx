@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Found the battle's players by the seats they held at its start
+#                            - Sent a guest whose battle ended before its roster back to the map, told why
 #                            - Kept a guest's own enemies at the host's places when only their places differ
 #                            - Made rebuilt enemies of the kind the troop's battle needs
 #      Paulinchen  2026-10-17: Started another player's character in battle at the HP it came with
@@ -193,6 +194,22 @@ module MGQ_MpBattlesCoop
   # What starts the waiting box's names line of a player who joins a running battle at its next
   # turn, which names no player: how long the wait may last.
   UP_TO_PREFIX = "Up to "
+
+  # The field of a running battle's "off" that tells the player why it called their joining off,
+  # see MGQ_MpBattlesHotjoin::OFF_OVER; games of 0.6.8 and before send none and ignore it.
+  OFF_WHY_FIELD = "why"
+
+  # What a guest is told whose battle ended before they got into it, with its host's name.
+  MISSED_TEXT = "%s's battle ended before you could join."
+
+  # What a guest is told whom a running battle could not take in, with its host's name.
+  CLOSED_TEXT = "%s's battle could not take you in."
+
+  # What a guest is told whom the host's party left out, with the host's name.
+  LEFT_OUT_TEXT = "%s's battle went on without you."
+
+  # The endings of a guest's wait for the roster after which the player never got the battle.
+  MISSED_ENDINGS = [:gone, :broken, :forfeit]
 
   # The share either way by which the steps to a party's next random encounter vary around the
   # stretched draw, so the players' steps never fall into step.
@@ -1341,10 +1358,26 @@ module MGQ_MpBattlesCoop
       return log("forgot #{MGQ_MpOverworldSync.who(peer)}'s rival battle #{bid}: it is off, the player's own goes on")
     end
     return unless MGQ_MpBattlesSync.role == :guest && MGQ_MpBattlesSync.battle_id == bid && !active?
-    return MGQ_MpBattlesHotjoin.call_off_own if MGQ_MpBattlesHotjoin.own_troop?
+
+    text = off_text(peer, message)
+    return MGQ_MpBattlesHotjoin.call_off_own(text) if MGQ_MpBattlesHotjoin.own_troop?
     return follow if @invite
+    return MGQ_MpBattlesSync.miss(text) if text
 
     MGQ_MpBattlesSync.break_off("#{MGQ_MpOverworldSync.who(peer)} gave battle #{bid} up for another", false)
+  end
+
+  # Tells the player why a running battle called their joining off, as its host's "off" says.
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The host.
+  # @param message [Hash] The "off", its reason under OFF_WHY_FIELD.
+  # @return [String, nil] What the player is told, nil for an "off" without a reason, as hosts of
+  #   0.6.8 and before send, and for one that gave the battle up for another.
+  def self.off_text(peer, message)
+    why = message[OFF_WHY_FIELD].to_s
+    return nil if why.empty?
+
+    (why == MGQ_MpBattlesHotjoin::OFF_OVER ? MISSED_TEXT : CLOSED_TEXT) % peer.state["name"].to_s
   end
 
   # The guest's side.
@@ -1716,7 +1749,11 @@ module MGQ_MpBattlesCoop
       end
       MGQ_MpBattlesSync::Channel.take("roster") || (frames >= limit ? :late : nil)
     end
-    return hotjoin.fight_own("the host called it off") if roster == :called_off
+    if roster == :called_off
+      text = hotjoin.take_off_text
+      MGQ_MpBattlesSync::Departures.say(text) if text
+      return hotjoin.fight_own("the host called it off")
+    end
     if roster == :moved
       @moved = false
       return join(scene)
@@ -1726,7 +1763,7 @@ module MGQ_MpBattlesCoop
     return left_out("the host's party never came") if roster == :late
     if roster.is_a?(Symbol)
       log("no roster for battle #{MGQ_MpBattlesSync.battle_id}: the wait ended with #{roster.inspect}")
-      return roster
+      return never_got(roster)
     end
 
     enemies, players, level, turn = MGQ_MpBattlesSync::Wire.parse(roster.to_s)
@@ -1760,8 +1797,26 @@ module MGQ_MpBattlesCoop
   # @return [Symbol] :broken, which ends the battle.
   def self.left_out(reason)
     log("left out of battle #{MGQ_MpBattlesSync.battle_id}: #{reason}")
-    MGQ_MpBattlesSync.break_off(reason, false)
+    MGQ_MpBattlesSync.miss(LEFT_OUT_TEXT % host_name)
     :broken
+  end
+
+  # Ends the wait of a guest whose battle ended before its roster came: the player goes back to the
+  # map and is told, since they never got the battle.
+  #
+  # @param ending [Symbol] How the wait ended, see MGQ_MpBattlesSync::Waiting.wait_for.
+  # @return [Symbol] The ending the battle takes: :broken for a battle the player never got.
+  def self.never_got(ending)
+    return ending unless MISSED_ENDINGS.include?(ending)
+    MGQ_MpBattlesSync.miss(MGQ_MpBattlesSync.take_missed || MISSED_TEXT % host_name)
+    :broken
+  end
+
+  # Names the host a guest waits for in what the player is told.
+  #
+  # @return [String] The name.
+  def self.host_name
+    MGQ_MpBattlesSync.player.to_s
   end
 
   # Describes the troop's enemies as the guests rebuild them.
@@ -2333,7 +2388,7 @@ module MGQ_MpBattlesCoop
   #
   # @param scene [Scene_Battle] The battle.
   def self.stand_alone(scene)
-    MGQ_MpBattlesHotjoin.call_off("the battle goes on alone")
+    MGQ_MpBattlesHotjoin.call_off("the battle goes on alone", MGQ_MpBattlesHotjoin::OFF_CLOSED)
     forget
     MGQ_MpBattlesSync.finish
     MGQ_MpBattles.finish

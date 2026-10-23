@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Sent to and found the battle's players by the seats they held at its start
+#                            - Told the players taken in why their joining was called off
 #                            - Numbered the messages to the players taken in
 #                            - Made added enemies of the kind the troop's battle needs
 #      Paulinchen  2026-10-15: Joined a battle the battle server hosts late through its starter and its channel
@@ -50,6 +51,12 @@
 # who meets enemies knows whom to ask. It must never interrupt the game, so every entry point
 # rescues.
 module MGQ_MpBattlesHotjoin
+  # The reason of an "off" whose battle is over, see MGQ_MpBattlesCoop::OFF_WHY_FIELD.
+  OFF_OVER = "over"
+
+  # The reason of an "off" whose battle takes no more players, such as one going on alone.
+  OFF_CLOSED = "closed"
+
   # Frames the player whose encounter asks to join a running battle waits for its host's answer,
   # three seconds.
   ANSWER_FRAMES = 180
@@ -706,9 +713,21 @@ module MGQ_MpBattlesHotjoin
 
   # Takes the host's word that it called off the player's joining before its roster came, see
   # MGQ_MpBattlesCoop.join, which then lets the encounter start on its own.
-  def self.call_off_own
+  #
+  # @param text [String, nil] What the player is told why, nil when the host told no reason.
+  def self.call_off_own(text = nil)
     @called_off = true
+    @off_text = text
     log("#{MGQ_MpBattlesSync.player} called the player's joining off before its roster came")
+  end
+
+  # Takes what the player is told of why the host called their joining off, see call_off_own.
+  #
+  # @return [String, nil] The text, nil when the host told no reason.
+  def self.take_off_text
+    text = @off_text
+    @off_text = nil
+    text
   end
 
   # Reports whether the host called the player's joining off, see call_off_own.
@@ -1132,7 +1151,7 @@ module MGQ_MpBattlesHotjoin
 
     forget_ready
     return if @pending.empty?
-    return call_off("the computer plays on for those who left") if sync.solo?
+    return call_off("the computer plays on for those who left", OFF_CLOSED) if sync.solo?
 
     # Players kept waiting too long have given up on the roster, even when their join came in time.
     expire
@@ -1351,13 +1370,13 @@ module MGQ_MpBattlesHotjoin
   # Tells every player taken in who has not joined that it is off, and forgets them.
   #
   # @param reason [String] Why, for Multiplayer InGame.log.
-  def self.call_off(reason)
+  def self.call_off(reason, why = OFF_CLOSED)
     seats = pending_seats
     @pending = []
     return if seats.empty?
 
     MGQ_MpBattlesSync.unexpect(seats)
-    MGQ_MpBattlesCoop.tell_map(seats, "off", "bid" => MGQ_MpBattlesSync.battle_id.to_s)
+    MGQ_MpBattlesCoop.tell_map(seats, "off", "bid" => MGQ_MpBattlesSync.battle_id.to_s, MGQ_MpBattlesCoop::OFF_WHY_FIELD => why)
     log("called joining battle #{MGQ_MpBattlesSync.battle_id} off for #{seats.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}: #{reason}")
   end
 
@@ -1473,7 +1492,7 @@ module MGQ_MpBattlesHotjoin
   # Ends hotjoining with the battle: tells the players taken in who have not joined that it is off,
   # and forgets the player's own battle and a late join. Called once the battle's scene ended.
   def self.ended
-    call_off("the battle is over") unless @pending.empty?
+    call_off("the battle is over", OFF_OVER) unless @pending.empty?
     forget
   rescue => e
     forget

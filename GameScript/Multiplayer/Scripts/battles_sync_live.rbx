@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Went back to the host's own commands on Cancel during the wait for the guests' commands
+#                            - Told a guest who never got into the battle why instead of the battle breaking off
 #                            - Named the player by their seat in the battle
 #      Paulinchen  2026-10-17: Set the party's battle counters at a guest's start, so a guest's characters gain EXP
 #      Paulinchen  2026-10-12: Took the host's defeat scene and enemy only when valid here
@@ -972,7 +973,8 @@ module MGQ_MpBattlesSync
         # On the host's side of a team duel, the host's forfeit is the side's.
         MGQ_MpBattlesSync.team? && MGQ_MpBattlesSync.same_side? ? BattleManager.process_defeat : BattleManager.process_victory
       when :broken
-        $game_message.add("The live battle broke off.")
+        missed = MGQ_MpBattlesSync.take_missed
+        missed ? Departures.say(missed) : $game_message.add("The live battle broke off.")
         BattleManager.process_abort
       else
         return MGQ_MpBattlesSync.friend_gone(scene)
