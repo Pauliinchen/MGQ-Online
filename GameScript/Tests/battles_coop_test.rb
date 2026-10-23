@@ -2,6 +2,7 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that a Challenge Battle's enemies keep their kind on the battle server
 #      Paulinchen  2026-10-20: Checked the skills a guest chains after an action
 #      Paulinchen  2026-10-17: Checked that a guest's start sets the party's battle counters
 #                            - Checked that a rebuilt character starts the battle at the HP sent
@@ -382,6 +383,21 @@ database = $data_enemies
 $data_enemies = [nil, Object.new]
 check("an id the database lacks, too large for an index among them, is no enemy of this game", [1, 2, -1, 2**70].map { |id| MGQ_MpBattlesCoop.known_enemy?(id) }, [true, false, false, false])
 $data_enemies = database
+
+# A Challenge Battle's enemies take damage without falling; the battle server, without pictures,
+# places them elsewhere than the player who started the battle (issue #47).
+class ChallengeEnemy < Game_Enemy; end
+def $game_troop.enemy_class; ChallengeEnemy; end
+challenge = [ChallengeEnemy.new(0, 31)]
+$game_troop.members = challenge
+MGQ_MpBattlesCoop.take_troop(troop_scene, [[31, 320, 480, 0]])
+check("a troop that holds the host's enemies at other places keeps them, at the host's places",
+      [$game_troop.members[0].equal?(challenge[0]), challenge[0].screen_x, challenge[0].screen_y], [true, 320, 480])
+MGQ_MpBattlesCoop.take_troop(troop_scene, [[31, 320, 480, 1]])
+check("one the host hides is rebuilt", [$game_troop.members[0].equal?(challenge[0]), $game_troop.members[0].hidden?], [false, true])
+MGQ_MpBattlesCoop.take_troop(troop_scene, [[31, 320, 480, 0], [32, 100, 300, 0]])
+check("a rebuilt troop makes its enemies of the kind its battle needs", $game_troop.members.map(&:class), [ChallengeEnemy, ChallengeEnemy])
+class << $game_troop; remove_method :enemy_class; end
 $game_troop.members = own_enemies
 
 # A player with their window in the background.

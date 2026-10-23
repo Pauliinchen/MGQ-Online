@@ -2,6 +2,7 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Made added enemies of the kind the troop's battle needs
 #      Paulinchen  2026-10-15: Joined a battle the battle server hosts late through its starter and its channel
 #      Paulinchen  2026-10-12: Took a joining player's party_member_max only as a number
 #                            - Dropped an enemy of the host's changed troop whose id, place or mark is no number
@@ -1231,7 +1232,7 @@ module MGQ_MpBattlesHotjoin
 
       entry[:added] = true
       place_anew(entry[:enemies]).each do |id, x, y, _hidden|
-        enemy = Game_Enemy.new(enemies.size, id)
+        enemy = MGQ_MpBattlesCoop.new_enemy(enemies.size, id)
         enemy.screen_x = x
         enemy.screen_y = y
         enemies << enemy
@@ -1440,7 +1441,7 @@ module MGQ_MpBattlesHotjoin
   def self.grow_troop(scene, entries)
     enemies = MGQ_MpGame.get($game_troop, :enemies)
     added = entries.map do |id, x, y, hidden|
-      enemy = Game_Enemy.new(enemies.size, id.to_i)
+      enemy = MGQ_MpBattlesCoop.new_enemy(enemies.size, id.to_i)
       enemy.screen_x = x.to_i
       enemy.screen_y = y.to_i
       enemy.hide if hidden.to_i == 1

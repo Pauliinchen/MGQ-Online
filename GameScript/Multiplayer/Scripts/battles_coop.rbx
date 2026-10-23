@@ -2,6 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Kept a guest's own enemies at the host's places when only their places differ
+#                            - Made rebuilt enemies of the kind the troop's battle needs
 #      Paulinchen  2026-10-17: Started another player's character in battle at the HP it came with
 #      Paulinchen  2026-10-15: Handed a gathered battle to the battle server and followed one there as guest
 #                            - Passed requests to join a served battle on to the battle server and joined one late on its channel
@@ -1858,17 +1860,18 @@ module MGQ_MpBattlesCoop
 
   # As guest, fights the host's enemies in place of the player's own, which mods of either game
   # may have changed, such as one that doubles them: the host names every enemy by its place.
-  # Keeps the player's own when one of them is no enemy this game has (see repaired_enemies).
+  # Keeps the player's own when one of them is no enemy this game has (see repaired_enemies), and
+  # moves them to the host's places when they are the host's enemies (see same_enemies?).
   #
   # @param scene [Scene_Battle] The battle.
   # @param enemies [Array<Array>] The host's enemies, see troop_entries.
   def self.take_troop(scene, enemies)
     enemies = repaired_enemies(enemies)
     return if enemies.nil? || enemies.empty?
-    return log("the host's troop of #{enemies.size} enemies matches this game's own") if enemies == troop_entries
+    return keep_troop(enemies) if same_enemies?(enemies)
 
     rebuilt = enemies.each_with_index.map do |(id, x, y, hidden), index|
-      enemy = Game_Enemy.new(index, id.to_i)
+      enemy = new_enemy(index, id.to_i)
       enemy.screen_x = x.to_i
       enemy.screen_y = y.to_i
       enemy.hide if hidden.to_i == 1
@@ -1892,6 +1895,40 @@ module MGQ_MpBattlesCoop
     log("took the host's troop of #{rebuilt.size} enemies in place of this game's own: #{rebuilt.map { |enemy| "#{enemy.enemy_id} #{enemy.name}#{' (hidden)' if enemy.hidden?}#{' (fallen)' if enemy.dead?}" }.join(', ')}")
   rescue => e
     log("taking the host's troop failed: #{e.class}: #{e.message}")
+  end
+
+  # Reports whether the host's troop holds this game's enemies, each at its place and as shown or
+  # hidden, where only the screen places may differ.
+  #
+  # The places differ wherever the game corrects a large picture's place by its size, which the
+  # battle server, without pictures, never does.
+  #
+  # @param enemies [Array<Array>] The host's enemies, see repaired_enemies.
+  # @return [Boolean] Whether the troops hold the same enemies.
+  def self.same_enemies?(enemies)
+    enemies.map { |id, _, _, mark| [id, mark] } == troop_entries.map { |id, _, _, hidden| [id, hidden] }
+  end
+
+  # Moves this game's own enemies to the host's places, see same_enemies?.
+  #
+  # @param enemies [Array<Array>] The host's enemies, see repaired_enemies.
+  def self.keep_troop(enemies)
+    $game_troop.members.zip(enemies) do |enemy, (_, x, y)|
+      enemy.screen_x = x
+      enemy.screen_y = y
+    end
+    log("the host's troop of #{enemies.size} enemies matches this game's own")
+  end
+
+  # Makes an enemy of the troop as the game's troop setup makes it, of the kind the troop's battle
+  # needs, such as a Challenge Battle's enemy that takes damage without falling.
+  #
+  # @param index [Integer] The enemy's place in the troop.
+  # @param enemy_id [Integer] The enemy's id.
+  # @return [Game_Enemy] The enemy.
+  def self.new_enemy(index, enemy_id)
+    kind = $game_troop.respond_to?(:enemy_class) ? $game_troop.enemy_class : Game_Enemy
+    kind.new(index, enemy_id)
   end
 
   # Both sides.
