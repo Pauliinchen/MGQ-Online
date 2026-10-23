@@ -2,6 +2,9 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Stood in for the confirm box
+#                            - Stood in for the world's grace
+#                            - Stood in for finding a player by id and following presence
 #      Paulinchen  2026-10-20: Stood in for skills chained after an action
 #      Paulinchen  2026-10-12: Stood in for the battle log's popup
 #                            - Stood in for a troop whose enemies all fell and for a battle that ended
@@ -59,17 +62,20 @@ module MGQ_MpOverworld; def self.graphic?(_folder, name); name != "MissingFace";
 # Stands in for the world room: its players, the own state and the link, keeping what is sent in
 # $sent.
 module MGQ_MpOverworldSync
+  # The grace a player away is kept for, as overworld_sync.rbx has it.
+  REJOIN_FRAMES = 900
   def self.in_world?; true; end
   def self.notice(text); Status.notice(text); end
   def self.tell(seat, fields, body = ""); Link.send_to(seat, Me.encode(fields) + body); end
   def self.who(peer); peer == :me ? "the player" : (peer ? "#{peer.state['name']} (seat #{peer.seat})" : "an unknown player"); end
   module Peers
     # A player in the room.
-    Peer = Struct.new(:seat, :state, :ghost, :member)
+    Peer = Struct.new(:seat, :state, :ghost, :member, :away)
     @all = []
     def self.all; @all; end
     def self.at(seat); @all.find { |p| p.seat == seat }; end
     def self.present; @all; end
+    def self.kept_with_id(id); @all.find { |p| p.state["id"].to_s == id.to_s }; end
     def self.on_this_map?(peer); peer.state["map"].to_i == $game_map.map_id; end
   end
   module Me
@@ -423,10 +429,19 @@ module MGQ_MpOverworldSync
   def self.busy_scene(*); end
   def self.on_observe(*); end
   def self.on_leave(*); end
+  def self.on_presence(*); end
   def self.label_line(*); end
 end
 load_script "ui"
 load_script "ui_layout"
+# Stands in for the confirm box: each question lands in $asked, and $confirm answers the open one
+# in a tick, true for yes, false for no, nil to keep it open.
+module MGQ_MpUi::Confirm
+  def self.ask(question, choices, &answer); ($asked ||= []) << [question, choices]; @block = answer; true; end
+  def self.open?; !@block.nil?; end
+  def self.tick; return if @block.nil? || $confirm.nil?; block = @block; @block = nil; block.call($confirm); end
+  def self.close(_reason = nil); block = @block; @block = nil; block.call(false) if block; end
+end
 load_script "coop_scope"
 load_script "coop_squad"
 load_script "battles"

@@ -2,6 +2,7 @@
 #  coop_npcs_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that a follower whose own event runs follows no Map Owner meanwhile
 #      Paulinchen  2026-10-17: Checked that a player resuming a frozen raid boss fight follows no Map Owner
 #      Paulinchen  2026-10-12: Checked that a whole map that failed to reach a newcomer is sent again
 #      Paulinchen  2026-10-11: Checked that a follower on another map forgets the last map's events
@@ -99,7 +100,10 @@ elsewhere.state.update("id" => "e", "name" => "Elsewhere", "since" => "500")
 stranger.ghost = Ghost.new(6, 6)
 $peers = [connected, dropped, stranger, elsewhere]
 npc = Struct.new(:mgq_mp_npc_state).new([2, 3, 2, 0])
-$game_map = Struct.new(:map_id, :events).new(5, { 1 => npc })
+# Stands in for the map's interpreter, running an event while $running is.
+MapInterpreter = Struct.new(:event_id) { def running?; $running; end }
+$running = false
+$game_map = Struct.new(:map_id, :events, :interpreter).new(5, { 1 => npc }, MapInterpreter.new(12))
 check("in a Raid World everyone on the map shares it, but not who is elsewhere or away", MGQ_MpCoopNpcs.peers_here, [connected, stranger])
 check("its Map Owner is whoever entered it first, party or not", MGQ_MpCoopNpcs.owner(MGQ_MpCoopNpcs.peers_here), stranger)
 MGQ_MpCoopNpcs.update
@@ -172,3 +176,39 @@ check("and walks no event toward the Map Owner's places, saying so once", [$game
       [[2, 3, 2, 0], 1])
 $resuming = false
 check("once the resume ended, the follower follows again", MGQ_MpCoopNpcs.following?, true)
+
+# A follower's own event, such as their own story or an autorun, moves the map's events in their
+# own game while it runs, since its move routes may wait for them; once it ended they stand where
+# the Map Owner's do (issue #57). Another player's story the follower watches leaves them followed.
+# Stands in for coop_scene.rbx, the player watching another player's story while $watching is.
+module MGQ_MpCoopScene; def self.watching?; $watching; end; end
+# Stands in for overworld.rbx's tiles beyond which an event moves to its place at once.
+module MGQ_MpOverworld; CATCH_UP_TILES = 8; end
+# An event that stands, faces, walks and shows its first page.
+class StandingEvent
+  attr_reader :x, :y, :direction
+  def initialize(x, y); @x = x; @y = y; @direction = 2; end
+  def mgq_mp_npc_free?; true; end
+  def mgq_mp_page; 0; end
+  def moving?; false; end
+  def moveto(x, y); @x = x; @y = y; end
+  def mgq_mp_npc_face(direction); @direction = direction; end
+  def move_straight(direction); @x += { 4 => -1, 6 => 1 }.fetch(direction, 0); @y += { 2 => 1, 8 => -1 }.fetch(direction, 0); end
+end
+standing = StandingEvent.new(2, 3)
+$game_map.events[1] = standing
+MGQ_MpCoopNpcs.instance_variable_set(:@targets, { 1 => [5, 3, 4, 0] })
+$watching = true
+$running = true
+MGQ_MpCoopNpcs.follow
+check("a follower who watches another player's story follows the Map Owner", [MGQ_MpCoopNpcs.following?, standing.x], [true, 3])
+$watching = false
+$npc_log.clear
+MGQ_MpCoopNpcs.follow
+MGQ_MpCoopNpcs.follow
+check("one whose own event runs follows nobody meanwhile, saying so once",
+      [MGQ_MpCoopNpcs.following?, standing.x, $npc_log.grep(/left the events of map 5 to the player's own game: it runs event 12/).size], [false, 3, 1])
+MGQ_MpCoopNpcs.targets[1] = [9, 9, 8, 0]
+$running = false
+MGQ_MpCoopNpcs.follow
+check("once it ended, the events stand where the Map Owner's do at once", [MGQ_MpCoopNpcs.following?, standing.x, standing.y, standing.direction], [true, 9, 9, 8])

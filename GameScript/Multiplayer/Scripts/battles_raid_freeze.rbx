@@ -2,6 +2,7 @@
 #  battles_raid_freeze.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Resumed a frozen fight from a vehicle, putting the vehicles back as at the battle
 #      Paulinchen  2026-10-17: Created
 #
 #----------------------------------------------------------------
@@ -66,6 +67,9 @@ module MGQ_MpRaidFreeze
 
   # What the log names the kinds of story values by.
   KIND_LETTERS = ["s", "v", "self switch "]
+
+  # The game's vehicles, as Game_Map#vehicle names them.
+  VEHICLE_TYPES = [:boat, :ship, :airship]
 
   # Where the frame stack of the common events the map's event runs, the battle command and the
   # rest stand; see forget.
@@ -530,7 +534,7 @@ module MGQ_MpRaidFreeze
       "resume" => preamble_start(chain[:inner_list], at[1], at[2]), "indent" => at[2], "event_id" => chain[:event_id], "map" => map,
       "player" => player_row, "followers" => followers_row, "camera" => [$game_map.display_x, $game_map.display_y],
       "screen" => dumped($game_map.screen, "the screen"), "look" => look_row, "audio" => audio_row, "events" => event_rows,
-      "party" => party_dump,
+      "party" => party_dump, "vehicles" => vehicles_row,
       "start" => start, "pre" => pre, "at" => Time.now.to_i,
     }
     field["records"][troop] = record
@@ -797,6 +801,16 @@ module MGQ_MpRaidFreeze
      player.move_speed, (MGQ_MpGame.get(player, :vehicle_type) || :walk).to_s]
   end
 
+  # Writes where each of the game's vehicles stands.
+  #
+  # @return [Array<Array>] Each vehicle's type, map, x, y and direction.
+  def self.vehicles_row
+    VEHICLE_TYPES.map do |type|
+      vehicle = $game_map.vehicle(type)
+      [type.to_s, MGQ_MpGame.get(vehicle, :map_id).to_i, vehicle.x, vehicle.y, vehicle.direction]
+    end
+  end
+
   # Writes whether the followers show and where each stands.
   #
   # @return [Array] Whether they show, and each one's x, y and direction.
@@ -1007,14 +1021,15 @@ module MGQ_MpRaidFreeze
     log_once(:hold_starts, "holding the map's events during a resume failed: #{e.class}: #{e.message}")
   end
 
-  # Readies the resume once the player arrived on its map, before any other event of the map can
-  # start. Called after Game_Player#perform_transfer.
+  # Readies the resume once the player arrived on its map, off any vehicle, before any other event
+  # of the map can start. Called after Game_Player#perform_transfer.
   def self.transferred
     resume = @resume
     return unless resume && resume[:stage] == :transfer && $game_map.map_id == resume[:target]
 
     resume[:stage] = :arrived
     log("the resume of troop #{resume[:troop]} arrived on map #{$game_map.map_id}")
+    leave_vehicle(resume)
     resume[:record] ? restore_and_start(resume) : start_fresh_here(resume)
   rescue => e
     fail_resume(resume, "readying it on arrival failed: #{e.class}: #{e.message}")
@@ -1031,6 +1046,7 @@ module MGQ_MpRaidFreeze
     $game_map.refresh
     restore_events(record["events"])
     restore_player(record)
+    place_vehicles(record["vehicles"], $game_map.map_id)
     restore_screen(record["screen"])
     restore_look(record["look"])
     restore_audio(record["audio"])
@@ -1214,12 +1230,13 @@ module MGQ_MpRaidFreeze
     values = Array(record ? record["pre"] : nil).map { |kind, key, _value| [kind, key, read_value(kind, key)] }
     { "values" => values, "party" => party_dump, "player" => player_row, "followers" => followers_row,
       "camera" => [$game_map.display_x, $game_map.display_y], "screen" => dumped($game_map.screen, "the screen"), "look" => look_row,
-      "audio" => audio_row, "events" => event_rows }
+      "audio" => audio_row, "events" => event_rows, "vehicles" => vehicles_row }
   end
 
   # Puts back what a resume given up before its battle changed, from its snapshot: the story values,
   # the party, the screen and the music; the events and the map's look on the map it started on;
-  # and the player goes back to where they pressed once the map is free (see return_player).
+  # the vehicles; and the player goes back to where they pressed, on the vehicle they drove then,
+  # once the map is free (see return_player).
   #
   # @param resume [Hash] The resume.
   def self.roll_back(resume)
@@ -1236,6 +1253,8 @@ module MGQ_MpRaidFreeze
       restore_look(snapshot["look"])
     end
     restore_player(snapshot)
+    place_vehicles(snapshot["vehicles"])
+    board(snapshot["player"][7])
     log("put back what the resume of troop #{resume[:troop]} changed: #{snapshot['values'].size} story value(s), the party, the screen and the music" \
         "#{here ? ", the map's events and look" : ''}")
     return if here && $game_player.x == spot[1] && $game_player.y == spot[2]
@@ -1285,8 +1304,6 @@ module MGQ_MpRaidFreeze
     return ["Cannot fight #{name} now.", "the lost battle's story is still being put back"] if holding_writes?
     return ["Cannot fight #{name} now.", "the player goes back from a fight given up"] if @return_to
 
-    vehicle = MGQ_MpGame.get($game_player, :vehicle_type)
-    return ["Get off the #{vehicle} first.", "the player drives a vehicle (#{vehicle})"] if vehicle && vehicle.to_sym != :walk
     return ["Cannot fight #{name} now.", "the player is not free on the map"] unless map_free?
 
     teller = teller_name
@@ -1767,12 +1784,11 @@ module MGQ_MpRaidFreeze
   #
   # @param record [Hash] The record.
   def self.restore_player(record)
-    _map, _x, _y, _direction, transparent, through, speed, vehicle = record["player"]
+    _map, _x, _y, _direction, transparent, through, speed = record["player"]
     player = $game_player
     player.transparent = transparent
     MGQ_MpGame.set(player, :through, through)
     MGQ_MpGame.set(player, :move_speed, speed)
-    log("the record had the player on a vehicle (#{vehicle}), which stays as it is") unless vehicle.to_s == "walk"
     visible, places = record["followers"]
     followers = []
     player.followers.each { |follower| followers << follower }
@@ -1784,6 +1800,50 @@ module MGQ_MpRaidFreeze
       followers[index].set_direction(direction)
     end
     $game_map.set_display_pos(*record["camera"]) if record["camera"]
+  end
+
+  # Gets the player off the vehicle they drove to a resume, which goes back to where they pressed.
+  #
+  # The resume runs the event on from right before its battle command, past the commands that got
+  # the player off and parked the vehicle on the way there.
+  #
+  # @param resume [Hash] The resume.
+  def self.leave_vehicle(resume)
+    type = MGQ_MpGame.get($game_player, :vehicle_type)
+    return if type.nil? || type.to_sym == :walk
+
+    $game_player.forced_get_off_vehicle
+    place_vehicles(resume[:snapshot]["vehicles"]) if resume[:snapshot]
+    log("got the player off the #{type} for the resume of troop #{resume[:troop]}, the #{type} back where they pressed")
+  end
+
+  # Puts vehicles back where a record or snapshot has them.
+  #
+  # @param rows [Array<Array>, nil] The vehicles, see vehicles_row; nil for a record taken before
+  #   vehicles were recorded.
+  # @param map [Integer, nil] Only those that stood on this map; nil for all.
+  def self.place_vehicles(rows, map = nil)
+    Array(rows).each do |type, map_id, x, y, direction|
+      vehicle = $game_map.vehicle(type.to_s.to_sym)
+      next unless vehicle && (map.nil? || map_id == map)
+
+      vehicle.set_location(map_id, x, y)
+      vehicle.set_direction(direction)
+    end
+  end
+
+  # Puts the player back on the vehicle they drove as they pressed, see leave_vehicle, without
+  # starting its music anew.
+  #
+  # @param type [String, nil] The vehicle, see player_row: "walk" or nil for none.
+  def self.board(type)
+    vehicle = $game_map.vehicle(type.to_s.to_sym)
+    return unless vehicle && MGQ_MpGame.get($game_player, :vehicle_type).to_s == "walk"
+
+    MGQ_MpGame.set($game_player, :vehicle_type, type.to_sym)
+    MGQ_MpGame.set(vehicle, :driving, true)
+    vehicle.refresh
+    log("put the player back on the #{type}")
   end
 
   # Puts the screen back as at the battle: tone, weather, flashes and pictures, copied into the live

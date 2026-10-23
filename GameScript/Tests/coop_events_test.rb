@@ -2,6 +2,9 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that a weapon's pedestal handing out a medal is a chest of each player's own
+#                            - Checked that a talk ended early takes back what it changed
+#                            - Checked that a dark screen fades in while a watched scene shows nothing for ten seconds
 #      Paulinchen  2026-10-17: Checked that a resumed raid boss fight's event starts as story
 #      Paulinchen  2026-10-15: Checked that a screen left dark with nothing running fades in
 #                            - Checked that the Pocket Castle's tour is travel in a Raid World and story in a Classic world
@@ -1099,8 +1102,17 @@ $leader = leader
 $members = [leader]
 interpreter.setup(trader, 0)
 interpreter.instance_variable_set(:@index, 7)
+# Stands in for the player's own scene of coop_scene.rbx, noting in $cuts why an event of theirs
+# ended early, with nothing to take back as the player leaves it.
+module MGQ_MpCoopScene
+  module Own
+    def self.cut(reason); ($cuts ||= []) << reason; end
+    def self.leave(_reason, _whole = false); end
+  end
+end
 MGQ_MpCoopEvents.guard(interpreter)
 check("a member's talk ends where it would move the story on", [interpreter.instance_variable_get(:@index), $notices.last], [trader.size - 1, "Only Leader can move the story on."])
+check("taking back what the talk showed, such as a companion's portrait", $cuts, ["a talk ended where it would move the story on"])
 interpreter.busy = false
 $leader = :me
 $members = [friend]
@@ -1933,6 +1945,11 @@ end
 tool = File.exist?(generator_file) ? Object.new.extend(generator) : nil
 if tool
   check("the generator counts a chest of gold alone as a chest", tool.send(:chest?, [ToolCommand.new(125, [0, 0, 50]), ToolCommand.new(123, ["A", 0])]), true)
+  check("the generator leaves a page a chest by the scripts this script lets a talk or travel run",
+        [generator::TALK_SCRIPTS.source, generator::TRAVEL_SCRIPTS.source], [MGQ_MpCoopEvents::TALK_SCRIPTS.source, MGQ_MpCoopEvents::TRAVEL_SCRIPTS.source])
+  pedestal = [[101, ["", 0, 0, 2]], [127, [4168, 0, 0, 1, false]], [123, ["A", 0]], [355, ["gain_medal(104)"]]]
+  check("so a weapon's pedestal that hands out a medal by script is a chest to both",
+        [tool.send(:chest?, pedestal.map { |code, params| ToolCommand.new(code, params) }), kind(pedestal.map { |code, params| c(code, *params) })], [true, :chest])
   flag_chest = [ToolCommand.new(126, [700, 0, 0, 1]), ToolCommand.new(123, ["A", 0]), ToolCommand.new(121, [2045, 2045, 0])]
   plain_page = ToolPage.new(ToolCondition.new(false, 0))
   $chest_flags = [2045]
@@ -1968,6 +1985,9 @@ rewards = table::MGQ_MpCoopStoryRewards
 check("the table holds Puruel (516) and Inuel (517), and the companions set_actors brings", [516, 517, 6, 33, 35].map { |id| rewards::ACTORS.include?(id) }, [true] * 5)
 check("the skills Luka learns on maps from 1000 on, and their chests",
       [rewards::SKILLS.include?(9799), rewards::CHESTS.any? { |key| key[0] >= 1000 }], [true, true])
+sealed_pedestal = [1457, 4, "A"]
+check("a pedestal of the Sealed Chamber the world's story emptied stays full for a player who never looted it",
+      MGQ_MpStoryState.mix([[], [], { sealed_pedestal => true }], [[], [], {}], rewards::CHESTS)[2].key?(sealed_pedestal), false)
 
 # The game's Library Flags, "Library Flag: ..." and the untranslated rest, which translations differ
 # in setting, so no event's marks may hold one.
@@ -2530,7 +2550,7 @@ $leader = nil
 $members = []
 
 # A screen left dark with nothing running that could fade it in.
-module MGQ_MpCoopScene; def self.watching?; $watching; end; end
+module MGQ_MpCoopScene; def self.watching?; $watching; end; def self.just_changed?; $scene_changed; end; end
 class Game_Map; def parallel_common_events; []; end; end
 SceneManager.scene = Scene_Map.new
 $game_map.events = { 30 => Game_Event.new(30, [RPG::Page.new([c(201, 0, 2, 5, 5, 2), c(0)])], 3) }
@@ -2540,8 +2560,16 @@ $game_message.busy = false
 $game_player = Game_Player.new
 $game_map.screen = LateScreen.new
 $watching = true
-MGQ_MpCoopEvents::DARK_SCREEN_FRAMES.times { MGQ_MpCoopEvents.update }
-check("a dark screen stays while another player's scene plays here", $game_map.screen.fadein, nil)
+$scene_changed = true
+MGQ_MpCoopEvents::WATCHED_DARK_FRAMES.times { MGQ_MpCoopEvents.update }
+check("a dark screen stays while another player's scene plays here and reaches the screen", $game_map.screen.fadein, nil)
+$scene_changed = false
+(MGQ_MpCoopEvents::WATCHED_DARK_FRAMES - 1).times { MGQ_MpCoopEvents.update }
+check("and a while after the scene last reached it", $game_map.screen.fadein, nil)
+MGQ_MpCoopEvents.update
+check("then fades in, as a scene the player cannot follow leaves it dark for good",
+      [$game_map.screen.fadein, $log.grep(/faded the screen in on map \d+: it stayed dark for 600 frames .*nothing of the scene/).size], [MGQ_MpCoopEvents::LATE_FADEIN_FRAMES, 1])
+$game_map.screen = LateScreen.new
 $watching = false
 $game_map.events[31] = Game_Event.new(31, [RPG::Page.new([c(230, 60), c(222), c(0)])], 4)
 MGQ_MpCoopEvents::DARK_SCREEN_FRAMES.times { MGQ_MpCoopEvents.update }

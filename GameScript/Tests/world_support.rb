@@ -2,6 +2,7 @@
 #  world_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Showed the HUD over the map's spriteset
 #      Paulinchen  2026-10-22: Gave the scenes' base its basics and its end
 #      Paulinchen  2026-10-12: Stood in for the notice of an unreadable Player.ini
 #                            - Told the mouse wheel's notches from $wheel
@@ -39,8 +40,8 @@ class Sprite; def initialize(*); end; end
 class Sprite_Character < Sprite; end
 # Stands in for the screen: 640 by 480, its frame count read from $frame.
 module Graphics; def self.update; end; def self.width; 640; end; def self.height; 480; end; def self.frame_count; $frame.to_i; end; end
-# Stands in for the map's spriteset.
-class Spriteset_Map; def update; end; def dispose; end; end
+# Stands in for the map's spriteset, which shows the HUD.
+class Spriteset_Map; def update; end; def dispose; end; def mgq_mp_hud?; true; end; end
 # Stands in for the scenes' base.
 class Scene_Base; def update; end; def update_basic; end; def start; end; def terminate; end; end
 # Stands in for the title screen.

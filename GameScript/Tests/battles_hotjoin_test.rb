@@ -2,6 +2,7 @@
 #  battles_hotjoin_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that a late guest whose battle ended before its roster goes back to the map, told why
 #      Paulinchen  2026-10-12: Read who joined the battle from its popup instead of the chat
 #                            - Checked that a live host has its skip settings back as the battle ends
 #                            - Checked that a guest drops a host's enemy whose fields are no numbers
@@ -191,8 +192,10 @@ check("taken in, it joins as a guest with the host's escape and lose and no firs
       [sync.role, hotjoin.own_troop?, MGQ_MpGame.get(BattleManager, :can_escape), MGQ_MpGame.get(BattleManager, :can_lose), MGQ_MpGame.get(BattleManager, :preemptive)],
       [:guest, true, false, true, false])
 $sent.clear
-$inject = lambda { |frame| coop.take(host, { "coop" => "off", "bid" => "hb1" }) if frame == 3 }
-check("the host calling it off before the roster starts the encounter on its own", coop.join(scene), :gone)
+$notices = []
+$inject = lambda { |frame| coop.take(host, { "coop" => "off", "bid" => "hb1", "why" => "over" }) if frame == 3 }
+check("the host calling it off before the roster starts the encounter on its own, telling the player why",
+      [coop.join(scene), $notices], [:gone, ["P5's battle ended before you could join."]])
 check("with its own escape and lose back", [MGQ_MpGame.get(BattleManager, :can_escape), MGQ_MpGame.get(BattleManager, :can_lose)], [true, false])
 check("having waited for the roster as a late guest", battle_sent("join").map(&:first), [5])
 reset
@@ -567,6 +570,29 @@ sync.battle_started
 $inject = lambda { |frame| coop.take(host, { "coop" => "off", "bid" => "lt2" }) if frame == 2 }
 check("an invited late guest whose host calls it off breaks off", [coop.join(scene), sync.broken?], [:broken, true])
 reset
+
+# A late guest whose host's battle is over before the roster came goes back to the map, told why,
+# instead of the battle breaking off; one whose host is gone the same, never fighting it alone.
+missed = lambda do |inject|
+  hotjoin.note_invite({ "hot" => "1" })
+  sync.join_world(:guest, "lt3", [5], "P5")
+  sync.battle_started
+  $aborted = false
+  $notices = []
+  $game_message_texts = []
+  $inject = inject
+  ending = coop.join(scene)
+  $inject = nil
+  sync::Live.end_early(scene, ending)
+  result = [ending, $aborted, $notices, $game_message_texts]
+  reset
+  result
+end
+told = "P5's battle ended before you could join."
+check("a late guest whose host's battle is over goes back to the map, told why",
+      missed.call(lambda { |frame| coop.take(host, { "coop" => "off", "bid" => "lt3", "why" => "over" }) if frame == 2 }), [:broken, true, [told], []])
+check("as does one whose host is gone before the roster came",
+      missed.call(lambda { |frame| sync::Seats.presence(host, :gone) if frame == 2 }), [:broken, true, [told], []])
 invite = { "coop" => "invite", "bid" => "rv9", "troop" => "90", "escape" => "1", "lose" => "0", "seats" => "0", "map" => "5", "hot" => "1" }
 $encounter_troop = 85
 $scene_now = Scene_Map.new
@@ -588,7 +614,7 @@ scene.terminate
 check("a battle that calls the Library or Config ends nothing", [map_sent("off"), hotjoin.state_fields["rb"], sync.role], [[], "own8", :host])
 SceneManager.instance_variable_set(:@stack, [Scene_Map.new])
 coop.ended
-check("the end of the battle calls joining off", map_sent("off").map { |seat, f| [seat, f["bid"]] }, [[8, "own8"], [9, "own8"]])
+check("the end of the battle calls joining off, saying it is over", map_sent("off").map { |seat, f| [seat, f["bid"], f["why"]] }, [[8, "own8", "over"], [9, "own8", "over"]])
 check("and forgets the player's own battle", [hotjoin.state_fields, sync.role], [{ "rb" => "", "rbh" => "" }, nil])
 reset
 

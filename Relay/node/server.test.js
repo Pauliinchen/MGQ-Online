@@ -2,6 +2,8 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Tested that a stopping relay closes every connection as a service restart and logs it
+//                            - Tested that the relay logs a world connection it closes
 //      Paulinchen  2026-10-22: Tested that the watch clears a rolled back current release once a newer release is out
 //                            - Tested the world list per game version, one world by its id, and released games kept out of a world with longer mods and from a longer mods rule
 //                            - Tested the release control's routes and the gate taking the lowest release an admin set at once
@@ -452,6 +454,7 @@ test("a world connection that lasted too long is closed, and the others see its 
   now += TEST_LIMITS.worldConnectionMs - 1000;
   relay.check();
   assert.equal((await first.closed).code, CLOSE.connectionExpired);
+  assert.ok(logged.info.some((line) => line.endsWith(`world ${roomId(106)} seat 0 closed by the relay: ${CLOSE.connectionExpired} the connection lasted too long`)));
   assert.equal(await second.next(), "out 0");
   second.socket.close();
 });
@@ -700,6 +703,16 @@ function openWithHeaders(address, headers) {
     socket.on("error", () => {});
   });
 }
+
+test("a stopping relay closes every connection as a service restart, so the games connect again, and logs it", async () => {
+  const stopping = createRelay({ clock: () => now, checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, log: LOG });
+  await new Promise((resolve) => stopping.server.listen(0, "127.0.0.1", resolve));
+  const host = await open(`ws://127.0.0.1:${stopping.server.address().port}/v1/room/${roomId(211)}?role=host`, {});
+
+  await stopping.stop();
+  assert.deepEqual(await host.closed, { code: 1012, reason: "service restart" });
+  assert.ok(logged.info.some((line) => line.includes("relay stopping") && line.endsWith("closing 1 connection(s) with 1012 service restart")));
+});
 
 test("a guest that waited alone too long is closed too", async () => {
   const guest = await connect(roomId(7), "guest");

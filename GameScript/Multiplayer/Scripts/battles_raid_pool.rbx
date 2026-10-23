@@ -2,6 +2,8 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Won a refight of a boss the world's story beat already at once
+#                            - Reported nothing for an enemy built anew since its HP was last taken, and took its pool's HP
 #      Paulinchen  2026-10-20: Counted a boss HP above its max as the max, so a lowered max heals no pool
 #      Paulinchen  2026-10-17: Withheld the rewards of a resumed fight whose side battle gave them
 #                            - Added in_map?, retrying? and set_up_kind
@@ -300,7 +302,8 @@ module MGQ_MpRaidPool
   # @!attribute killed [Boolean] Whether its death was reported.
   # @!attribute held [Boolean] Whether the DLL refused its last report, so its HP waits for the next
   #   instead of taking the pool's.
-  Member = Struct.new(:key, :index, :base, :killed, :held)
+  # @!attribute enemy [Game_Enemy, nil] The enemy whose HP the base is, nil before.
+  Member = Struct.new(:key, :index, :base, :killed, :held, :enemy)
 
   # A pool as the player's game knows it.
   #
@@ -322,6 +325,7 @@ module MGQ_MpRaidPool
     @at_command = false
     @retrying = false
     @set_up_kind = nil
+    @story_won = nil
     @fetched = nil
     @tried = nil
     @tried_at = 0
@@ -450,10 +454,28 @@ module MGQ_MpRaidPool
     return (@lost.side ? :side : :event) if retry_of?(troop)
     return :side if @side == troop
     return :guest if @invited && @invited[0] == troop
-    return nil unless @at_command && @in_map && active? && MGQ_MpRaidBosses.boss?(troop)
-    return nil unless $game_map.interpreter.event_id > 0
+    return nil unless story_battle?(troop)
 
     refusal(troop) ? nil : :event
+  end
+
+  # Reports whether a battle about to be set up, or just set up, is a story boss battle an event's
+  # battle command starts on the map of a player who plays the world's story.
+  #
+  # @param troop [Integer] The battle's troop.
+  # @return [Boolean] Whether it is.
+  def self.story_battle?(troop)
+    @at_command && @in_map && active? && MGQ_MpRaidBosses.boss?(troop) && $game_map.interpreter.event_id > 0 ? true : false
+  end
+
+  # Reports whether a story boss battle about to be set up, or just set up, refights a boss the
+  # world's story beat already, which it wins at once as one whose pools are all empty.
+  #
+  # @param troop_id [Integer, String] The battle's troop.
+  # @return [Boolean] Whether it does.
+  def self.story_won?(troop_id)
+    troop = troop_id.to_i
+    story_battle?(troop) && beaten?(MGQ_MpRaidBosses.at(troop)) && pool_refusal(troop).nil?
   end
 
   # Reports whether a battle about to be set up is the game's retry of the lost battle that fought a
@@ -474,14 +496,18 @@ module MGQ_MpRaidPool
     return retried if @retrying
 
     kind = kind_of(troop_id)
+    won = !kind && story_won?(troop_id)
     invited = @invited
     explain = @at_command && @in_map && MGQ_MpRaidBosses.boss?(troop_id) && active?
+    @story_won = nil
     @at_command = false
     @invited = nil
     @side = nil
     @fight = nil
     @lost = nil
     @scaled = []
+    return win_at_once(troop_id.to_i) if won
+
     unless kind
       reason = explain ? refusal(troop_id.to_i) || ($game_map.interpreter.event_id > 0 ? nil : "a common event of its own started it") : nil
       return reason ? log("troop #{troop_id} fights no pool: #{reason}") : nil
@@ -532,14 +558,34 @@ module MGQ_MpRaidPool
   # @param troop_id [Integer] The troop.
   # @return [String, nil] Why, nil when it fights one.
   def self.refusal(troop_id)
+    reason = pool_refusal(troop_id)
+    return reason if reason
+
     boss = MGQ_MpRaidBosses.at(troop_id)
+    beaten?(boss) ? "the story beat #{boss.milestone} already" : nil
+  end
+
+  # Finds why a story boss battle fights no pool whether or not the story beat its boss.
+  #
+  # @param troop_id [Integer] The troop.
+  # @return [String, nil] Why, nil when it would fight one.
+  def self.pool_refusal(troop_id)
     return "an earlier phase of its fight" unless MGQ_MpRaidBosses.last_phase?(troop_id)
     return UNPOOLED[troop_id] if UNPOOLED[troop_id]
     return "a Hades rematch" if hades?
     return "a Colosseum battle" if $game_switches[COLOSSEUM_SWITCH]
-    return "the story beat #{boss.milestone} already" if beaten?(boss)
 
     key_of(troop_id) ? nil : "its key is none the relay takes"
+  end
+
+  # Fights a refight of a boss the world's story beat already as won at once, see story_won?: the
+  # troop's own enemies start dead as against empty pools, and its first command phase wins it.
+  #
+  # @param troop [Integer] The troop.
+  def self.win_at_once(troop)
+    @story_won = troop
+    own_enemies(own_count(troop)).each { |enemy| enemy.hp = 0 }
+    log("troop #{troop} fights no pool: the story beat #{MGQ_MpRaidBosses.at(troop).milestone} already, so it is won at once")
   end
 
   # Reports whether the player is at a Hades rematch: its switch is on, or the player stands in the
@@ -721,11 +767,15 @@ module MGQ_MpRaidPool
   end
 
   # Gives the enemies of a troop built anew in the battle that fights a pool their tier's stats
-  # before the host's HP reaches them, which their own max HP would cut. Called by
-  # MGQ_MpBattlesCoop.take_troop and MGQ_MpBattlesHotjoin.take_troop.
+  # before the host's HP reaches them, which their own max HP would cut, and where this game
+  # reports, their pools' HP. Called by MGQ_MpBattlesCoop.take_troop and
+  # MGQ_MpBattlesHotjoin.take_troop.
   def self.rescale
     fight = @fight
-    scale_enemies(fight) if fight
+    return unless fight
+
+    scale_enemies(fight)
+    sync(fight) unless fight.guest
   rescue => e
     log("raising the max HP of the troop built anew failed: #{e.class}: #{e.message}")
   end
@@ -783,7 +833,7 @@ module MGQ_MpRaidPool
       pool = @pools[member.key]
       unless pool && !enemy.dead?
         # Set only once, since a later base would swallow what the battle dealt since its last report.
-        member.base = enemy.hp if member.base.nil? && !only_kill
+        rebase(member, enemy) if member.base.nil? && !only_kill
         next
       end
 
@@ -799,9 +849,19 @@ module MGQ_MpRaidPool
       elsif enemy.hp != target
         enemy.hp = target
       end
-      member.base = enemy.hp
+      rebase(member, enemy)
     end
     killed
+  end
+
+  # Takes an enemy's HP as the base its next report counts from.
+  #
+  # @param member [Member] The enemy's place in the battle.
+  # @param enemy [Game_Enemy] The enemy at the place.
+  # @param hp [Integer] The HP.
+  def self.rebase(member, enemy, hp = enemy.hp)
+    member.base = hp
+    member.enemy = enemy
   end
 
   # Reports whether the player's game reports the battle's pools now, noting whether a host's stream
@@ -821,7 +881,7 @@ module MGQ_MpRaidPool
     fight.guest = false
     fight.members.each do |member|
       enemy = $game_troop.members[member.index]
-      member.base = enemy.hp if enemy
+      rebase(member, enemy) if enemy
       member.held = false
     end
     log("battle #{fight.battle} is the player's to report from here: #{fight.members.map { |member| enemy_text(member) }.join(', ')}")
@@ -852,11 +912,14 @@ module MGQ_MpRaidPool
   # Reports what the battle dealt since the last command phase and takes the pools' HP as a command
   # phase opens, before battles_sync_live.rbx tells it the guests: the battle's host or a player
   # alone reports, gives the enemies their pools' HP, and wins once every enemy is dead; a guest
-  # keeps the HP its host sent. Called before Scene_Battle#start_party_command_selection.
+  # keeps the HP its host sent. A battle won at once (see win_at_once) wins there too. Called before
+  # Scene_Battle#start_party_command_selection.
   #
   # The report waits for the command phase, since the game's turn end and battle start deal damage
   # of their own (slip damage, auto skills, troop events) that a sync before it would undo.
   def self.command_phase
+    return BattleManager.judge_win_loss if @story_won && $game_troop.all_dead?
+
     fight = @fight
     return unless fight
 
@@ -934,6 +997,7 @@ module MGQ_MpRaidPool
   #
   # @param result [Integer] The game's result: 0 won, 1 escaped, 2 lost.
   def self.battle_ended(result)
+    @story_won = nil
     fight = @fight
     @fight = nil
     return unless fight
@@ -959,6 +1023,7 @@ module MGQ_MpRaidPool
     fight.members.each do |member|
       enemy = enemies[member.index]
       next if member.killed || enemy.nil?
+      next if rebuilt?(member, enemy)
 
       max = enemy.mhp.to_i
       next unless max > 0
@@ -981,7 +1046,7 @@ module MGQ_MpRaidPool
       end
 
       fight.seq = seq
-      member.base = hp
+      rebase(member, enemy, hp)
       member.killed = dead
       member.held = false
       @pending << member.key
@@ -989,6 +1054,21 @@ module MGQ_MpRaidPool
       note_own(member.key, delta, max, dead)
       log("battle #{fight.battle} reports #{member.key} ##{seq}: #{format('%.6f', delta)} of #{max}#{dead ? ', killed' : ''}")
     end
+  end
+
+  # Reports whether an enemy was built anew since its HP was last taken, such as a troop rebuilt
+  # from its host's, and takes its HP as the base then, so its full HP never counts as healing the
+  # pool; the next sync gives it the pool's.
+  #
+  # @param member [Member] The enemy's place in the battle.
+  # @param enemy [Game_Enemy] The enemy at the place now.
+  # @return [Boolean] Whether it was.
+  def self.rebuilt?(member, enemy)
+    return false if member.enemy.nil? || member.enemy.equal?(enemy)
+
+    rebase(member, enemy)
+    log("#{enemy.name} at place #{member.index} was built anew since its HP was last taken: it reports nothing until it takes its pool's HP")
+    true
   end
 
   # Counts the player's own report in the pool as the player's game knows it, so a command phase
@@ -1048,13 +1128,14 @@ module MGQ_MpRaidPool
     {}
   end
 
-  # Reports whether a battle just set up fights pools that are all empty already, which it then
-  # wins at once without inviting anyone.
+  # Reports whether a battle just set up fights pools that are all empty already, or refights a boss
+  # the world's story beat already (see story_won?), which it then wins at once without inviting
+  # anyone.
   #
   # @param troop_id [Integer] The troop.
   # @return [Boolean] Whether it does.
   def self.won_already?(troop_id)
-    kind_of(troop_id) && defeated?(troop_id) ? true : false
+    (kind_of(troop_id) ? defeated?(troop_id) : story_won?(troop_id)) ? true : false
   rescue
     false
   end

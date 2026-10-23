@@ -2,6 +2,7 @@
 //  BugReportsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Checked the public fact of where the last error was raised
 //      Paulinchen  2026-10-11: Created
 //
 //----------------------------------------------------------------
@@ -92,6 +93,29 @@ public sealed class BugReportsTests : IDisposable
         var (_, again) = Parse(relay.Requests[1].Body);
         Assert.Equal(["report.md"], again.Keys);
         Assert.Contains("## Screenshot\nNo screenshot attached.\n\n## Files\nLogs not attached.\n", ReportFilesTests.Unpack(again["report.md"]));
+    }
+
+    /// <summary>
+    /// Asserts that a report with the logs tells in a public fact where the newest error of the
+    /// session's errors.txt was raised, and one without the logs does not.
+    /// </summary>
+    [Fact]
+    public void Send_WithLogsAndAnError_TellsWhereTheLastErrorWasRaised()
+    {
+        using var relay = new ReportRelay();
+        var reports = NewReports(relay);
+        var errors = Path.Combine(_game, "errors.txt");
+        File.WriteAllText(errors, "*Error - v3.06.00 - 2026-10-11 12:05:00 (Sunday)\nException : NameError\nundefined method\ntrace:\n[\"(eval):807:in `auto_battle_actions'\"]\n");
+        File.SetLastWriteTimeUtc(errors, Started.AddMinutes(5));
+
+        Assert.True(reports.Send("Battle stops", "It stops.", "World\tRaid\n", string.Empty, BugReports.AttachLogs));
+        AwaitEnd(reports);
+        Assert.True(reports.Send("Battle stops", "It stops.", "World\tRaid\n", string.Empty, 0));
+        AwaitEnd(reports);
+
+        var facts = relay.Requests.Select(request => Parse(request.Body).Header.GetProperty("facts").EnumerateArray().Select(fact => $"{fact[0].GetString()}: {fact[1].GetString()}").ToList()).ToList();
+        Assert.Equal(["Mod: 0.6.3", "World: Raid", "Last error: raised in a Patch folder script, such as another mod"], facts[0]);
+        Assert.Equal(["Mod: 0.6.3", "World: Raid"], facts[1]);
     }
 
     /// <summary>

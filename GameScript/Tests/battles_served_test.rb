@@ -2,6 +2,8 @@
 #  battles_served_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that the server keeps a player who drops from the battle channel until gone
+#                            - Checked a served battle that ends before its roster
 #      Paulinchen  2026-10-15: Checked the starter as the front of its served battle and players who join it late
 #                            - Checked that the last player of the server's battle fights on there and a battle every player left ends
 #                            - Checked the world's mods and the starter's options of them in the setup
@@ -136,6 +138,7 @@ check("the setup names the troop, how the battle ends, the map and the level",
       [setup[:troop], setup[:escape], setup[:lose], setup[:map], setup[:level], setup[:raid]], [40, true, false, 5, 30, false])
 check("its fingerprints", [setup[:scripts], setup[:data]], ["0badf00d", "1:data"])
 check("its arranged players, the starter first", setup[:players].map { |player| [player.seat, player.name, player.builds] }, [[0, "Me", "1,2,3"], [2, "Friend", "7,8,9"]])
+check("the starter of a battle the server never started fights its encounter as its own", MGQ_MpBattlesCoop.never_got(:gone), :gone)
 check("and the switches and variables that are set, these among them", [setup[:switches].include?(12), setup[:switches] - (1..200).select { |id| $game_switches[id] == true }, setup[:variables]], [true, [], [[150, 3]]])
 serve = $sent.map { |seat, text| [seat, fields_of(text)] }.find { |_, fields| fields["battle"] == "serve" }
 check("the guests are told to follow it to the server", [serve[0], MGQ_MpBattlesSync::Wire.parse(serve[1][:payload])], [2, [bid]])
@@ -191,6 +194,10 @@ BattleManager.setup(40, true, false)
 $dll_opens = false
 MGQ_MpBattlesServed.follow(MGQ_MpBattlesSync::Wire.line([MGQ_MpBattlesSync.battle_id]))
 check("a channel the DLL does not open ends the battle for the guest", [MGQ_MpBattlesServed.channel, MGQ_MpBattlesServed.closed?], [:closed, true])
+$frames = 0
+ending = MGQ_MpBattlesCoop.join(scene)
+check("a guest whose served battle ends before its roster never fights it alone, but goes back to the map, told why",
+      [ending, MGQ_MpBattlesSync.take_missed], [:broken, "The server's battle ended before you could join."])
 $dll_opens = true
 MGQ_MpBattlesSync.finish
 MGQ_MpBattlesCoop.ended
@@ -330,6 +337,32 @@ MGQ_MpBattlesCoop.settle(scene)
 check("a battle every player left ends", [formed.size, aborted], [1, [true]])
 MGQ_MpBattlesCoop.define_singleton_method(:form, form)
 BattleManager.define_singleton_method(:process_abort, abort)
+MGQ_MpBattlesServed.instance_variable_set(:@server, nil)
+MGQ_MpBattlesSync.finish
+MGQ_MpBattlesCoop.ended
+
+# On the server a player's drop from the battle channel is a pause: the presence of the players
+# keeps them away for the world's grace, and only its word that they are gone takes them out.
+module MGQ_MpOverworldSync
+  module Peers
+    def self.wait_for(seat); $presence_calls << [:away, seat]; end
+    def self.come_back(seat); $presence_calls << [:back, seat]; end
+  end
+end
+BattleManager.setup(40, true, false)
+bid = MGQ_MpBattlesSync.battle_id
+MGQ_MpBattlesServed.instance_variable_set(:@server, true)
+MGQ_MpBattlesSync.serve_over_channel(:host, bid, [1, 2], "the players")
+MGQ_MpBattlesServed.instance_variable_set(:@channel, :open)
+MGQ_MpBattlesServed.instance_variable_set(:@in, [1, 2])
+$presence_calls = []
+$dll_entries << "kind=out\nseat=1\n\n" << "kind=in\nseat=1\n\n"
+MGQ_MpBattlesServed.drain
+check("the server hands a player's drop from the battle channel and their return to the presence of the players",
+      $presence_calls, [[:away, 1], [:back, 1]])
+check("and keeps them in the battle meanwhile", [MGQ_MpBattlesSync::Channel.served_gone?, MGQ_MpBattlesSync.guests_in], [false, [1, 2]])
+MGQ_MpBattlesSync::Seats.presence(MGQ_MpOverworldSync::Peers::Peer.new(1, { "name" => "Me" }, nil, false), :gone)
+check("until the presence tells they are gone", [MGQ_MpBattlesSync::Channel.served_gone?, MGQ_MpBattlesSync.guests_in], [false, [2]])
 MGQ_MpBattlesServed.instance_variable_set(:@server, nil)
 MGQ_MpBattlesSync.finish
 MGQ_MpBattlesCoop.ended

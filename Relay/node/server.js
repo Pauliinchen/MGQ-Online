@@ -2,6 +2,10 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Kept a battle on the battle server from the moment the server took it
+//                            - Told a player who comes onto a battle that just ended how it ended
+//                            - Kept a world room connection for up to a day, and past that while its player is in a battle on the battle server
+//                            - Closed every connection as a service restart when it stops, and logged its start and the close codes it sends
 //      Paulinchen  2026-10-22: Greeted designers with the design epoch and logged a new epoch after a restore
 //                            - Checked the mod catalog's links half a minute after a start and every five minutes
 //                            - Cleared the current release once the watch saw a newer one published after it was set
@@ -153,6 +157,24 @@ const MAX_VERSION_LENGTH = 40;
  * What the admins' stats count a world room's game under when it named no version.
  */
 const NO_VERSION = "unknown";
+
+/**
+ * The close code and reason every connection gets when the relay stops, WebSocket's own for a
+ * restart: released games connect to their world room again on any close but the removal and
+ * deletion codes.
+ */
+const SERVICE_RESTART = Object.freeze({ code: 1012, reason: "service restart" });
+
+/**
+ * How long a stopping relay waits for its connections to finish closing before it cuts them.
+ */
+const STOP_WAIT_MS = 2000;
+
+/**
+ * The limits the Node relay keeps: the core's, but a world room connection lasts up to a day
+ * instead of two hours, so a long session never drops in the middle of play.
+ */
+export const NODE_LIMITS = Object.freeze({ ...LIMITS, worldConnectionMs: 24 * 60 * 60 * 1000 });
 
 /**
  * Longest request body the directory and the mod catalog read as text, in bytes: the longest JSON
@@ -582,7 +604,7 @@ function designerClientOf(request) {
  * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, designs: DesignBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, check: () => void, sweep: () => Promise<void>, checkRelease: () => Promise<{version: string | null, worlds: number}>, checkDesignerRelease: () => Promise<string | null>, pingDesigners: () => void, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, the Raid designs, a world's story, a world's boss pools, a look at the deadlines, a sweep of what is kept too long, a check of the mod's releases, a check of the designer releases, a ping of the designer sockets, and a way to stop everything.
  */
 export function createRelay({
-  limits = LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, directory = new Directory(memoryStore(), { clock }),
+  limits = NODE_LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, directory = new Directory(memoryStore(), { clock }),
   mods = new ModCatalog(memoryModStore(), { clock }), trades = new TradeBook(memoryTradeStore(), (id) => directory.store.get(id), { clock }), stories = memoryStoryStores(),
   storyLimits = STORY_LIMITS, bosses = memoryBossStores(), bossLimits = BOSS_LIMITS, log = consoleLog, reports = new ReportDesk(reportSettingsOf({}), { clock, log: stamped(log) }),
   minVersion = DEFAULT_MIN_VERSION, release = new ReleaseControl(memoryReleaseStore(), { envMin: minVersion, clock }), releases = null, battleServer = null, battleLimits = BATTLE_LIMITS,
@@ -1126,18 +1148,19 @@ export function createRelay({
         return refusal;
       }
 
-      const served = await serveBattle(route.id, open.battle, open.setup);
+      const served = await serveBattle(route.id, open.battle, open.setup, (server) => {
+        battles.open(route.id, open.battle, players, access.player);
+        battleLinks.set(`${route.id}/${open.battle}`, {
+          world: route.id, battle: open.battle, server, players: new Map(),
+          starter: access.player, starterName: access.name ?? null, raid: access.type === WORLD_TYPE.raid,
+        });
+        log.info(`${new Date().toISOString()} battle ${open.battle} of world ${route.id} on the battle server for ${players.size} players`);
+      });
 
       if (served.refusal) {
         return { status: 503, body: { error: served.refusal.error, code: served.refusal.code } };
       }
 
-      battles.open(route.id, open.battle, players, access.player);
-      battleLinks.set(`${route.id}/${open.battle}`, {
-        world: route.id, battle: open.battle, server: served.socket, players: new Map(),
-        starter: access.player, starterName: access.name ?? null, raid: access.type === WORLD_TYPE.raid,
-      });
-      log.info(`${new Date().toISOString()} battle ${open.battle} of world ${route.id} on the battle server for ${players.size} players`);
       return { status: 201, body: { battle: open.battle, seat: SERVER_SEAT } };
     });
   }
@@ -1149,9 +1172,11 @@ export function createRelay({
    * @param {string} world The world.
    * @param {string} battle The battle's id.
    * @param {string} setup The setup in base64.
+   * @param {(server: net.Socket) => void} keep Keeps the battle once the server took it, before the
+   *   server's next line is read, since the same chunk may already carry its end.
    * @returns {Promise<{socket: net.Socket, refusal: null} | {refusal: {code: string, error: string}}>} The connection, or why not.
    */
-  function serveBattle(world, battle, setup) {
+  function serveBattle(world, battle, setup, keep) {
     return new Promise((resolve) => {
       const socket = net.connect(battleServer.port, battleServer.host);
       let pending = "";
@@ -1180,6 +1205,7 @@ export function createRelay({
 
           if (!answered) {
             if (line?.op === "serving") {
+              keep(socket);
               answer({ socket, refusal: null });
             } else {
               socket.destroy();
@@ -1326,13 +1352,14 @@ export function createRelay({
   function endBattle(world, battle, end) {
     const key = `${world}/${battle}`;
     const link = battleLinks.get(key);
-    battles.close(world, battle);
+    battles.close(world, battle, end);
 
     if (!link) {
       return;
     }
 
     battleLinks.delete(key);
+    log.info(`${new Date().toISOString()} battle ${battle} of world ${world} closed for ${link.players.size} player(s) on its channel: ${CLOSE.normal} ${end}`);
 
     for (const player of link.players.values()) {
       player.socket.send(battleClosedText(end));
@@ -1629,6 +1656,10 @@ export function createRelay({
       worlds.delete(roomId);
     }
 
+    if (peer.socket.readyState === peer.socket.OPEN) {
+      log.info(`${new Date().toISOString()} world ${roomId} seat ${peer.record.seat} closed by the relay: ${code} ${reason}`);
+    }
+
     peer.socket.close(code, reason);
     report(roomId, peers);
   }
@@ -1841,7 +1872,8 @@ export function createRelay({
   }
 
   /**
-   * Closes the peers whose time is up, in every room and world room.
+   * Closes the peers whose time is up, in every room and world room; a world room's game whose
+   * player plays in a battle on the battle server stays until the battle ended.
    */
   function check() {
     for (const [roomId, peers] of [...rooms]) {
@@ -1858,7 +1890,8 @@ export function createRelay({
     }
 
     for (const [roomId, peers] of [...worlds]) {
-      const closed = worldOverdue(peers.map((peer) => peer.record), clock(), limits).map(({ index, code, reason }) => ({ peer: peers[index], code, reason }));
+      const closed = worldOverdue(peers.map((peer) => peer.record), clock(), limits).map(({ index, code, reason }) => ({ peer: peers[index], code, reason }))
+        .filter(({ peer }) => !battles.playing(roomId, peer.record.player));
 
       for (const { peer, code, reason } of closed) {
         unseat(roomId, peer, code, reason);
@@ -2033,11 +2066,13 @@ export function createRelay({
   designerReleaseTimer?.unref();
 
   /**
-   * Closes every connection and the server.
+   * Closes every connection and the server: ends the battles on the battle server, closes every
+   * other connection as a service restart, so the games connect again, and cuts what has not
+   * closed within STOP_WAIT_MS.
    *
    * @returns {Promise<void>} Resolves once the server stopped.
    */
-  function stop() {
+  async function stop() {
     clearInterval(timer);
     clearInterval(sweepTimer);
     clearTimeout(firstModCheck);
@@ -2052,7 +2087,23 @@ export function createRelay({
       endBattle(link.world, link.battle, BATTLE_END.server);
     }
 
-    for (const socket of [...sockets.clients, ...designerSockets.clients]) {
+    const all = [...sockets.clients, ...designerSockets.clients];
+    const open = all.filter((socket) => socket.readyState === socket.OPEN);
+    log.info(`${new Date().toISOString()} relay stopping after ${Math.round((clock() - started) / 1000)} s, started ${new Date(started).toISOString()}: `
+      + `closing ${open.length} connection(s) with ${SERVICE_RESTART.code} ${SERVICE_RESTART.reason}`);
+
+    for (const socket of open) {
+      socket.close(SERVICE_RESTART.code, SERVICE_RESTART.reason);
+    }
+
+    let waited;
+    await Promise.race([
+      Promise.all(all.map((socket) => new Promise((resolve) => socket.once("close", resolve)))),
+      new Promise((resolve) => { waited = setTimeout(resolve, STOP_WAIT_MS); }),
+    ]);
+    clearTimeout(waited);
+
+    for (const socket of all) {
       socket.terminate();
     }
 
@@ -2156,7 +2207,8 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   relay.server.listen(port, host, () => console.log(`${new Date().toISOString()} relay listening on ${host}:${port}, ${database ? `database ${database}` : "everything in memory"}, ${battleServer ? `battle server ${battleServer.host}:${battleServer.port}` : "no battle server"}, ${offline} world(s) with players online marked empty`));
 
   for (const signal of ["SIGINT", "SIGTERM"]) {
-    process.on(signal, async () => {
+    // A second signal while the relay stops ends it at once.
+    process.once(signal, async () => {
       await relay.stop();
       stores.close();
       process.exit(0);

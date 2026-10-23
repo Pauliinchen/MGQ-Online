@@ -2,6 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked a player away whose seat another player took
 #      Paulinchen  2026-10-17: Checked the teleport to the story on the action wheel
 #      Paulinchen  2026-10-13: Checked that the relay's push of a Raid World's squad rules goes to its route
 #      Paulinchen  2026-10-12: Checked that the players already in a world the player enters come without a notice
@@ -1429,6 +1430,31 @@ check("a player telling from a new seat while the old one stands moves there",
 $inbox << entry("out", 2)
 (MGQ_MpOverworldSync::REJOIN_FRAMES + 1).times { MGQ_MpOverworldSync.tick }
 check("and the old seat's end tells nobody they left", [$left, MGQ_MpOverworldSync::Peers.all.size], [[], 1])
+
+# The relay dealing the seats anew: a player who takes the seat of one away leaves them kept, the
+# same player once they tell from another seat, and gone only once they stay away past the grace.
+MGQ_MpOverworldSync::Peers.clear
+$left = []
+$presence = []
+MGQ_MpOverworldSync.on_presence { |peer, change| $presence << change if peer.state["id"] == "friend" }
+other = friend.merge("id" => "zz-other", "name" => "Other")
+$inbox << entry("message", 2, told(friend))
+$inbox << entry("seat", 0)
+$inbox << entry("message", 2, told(other))
+MGQ_MpOverworldSync.tick
+kept = MGQ_MpOverworldSync::Peers.kept_with_id("friend")
+check("a player telling from the seat of one away leaves them kept, unseen",
+      [$left, MGQ_MpOverworldSync::Peers.at(2).state["id"], kept && kept.away.nil?, MGQ_MpOverworldSync::Peers.all.map { |peer| peer.state["id"] }],
+      [[], "zz-other", false, ["zz-other"]])
+$inbox << entry("message", 4, told(friend))
+MGQ_MpOverworldSync.tick
+check("who come back on another seat as the same player, told away, moved and back",
+      [MGQ_MpOverworldSync::Peers.at(4).equal?(kept), kept.away, $left, $presence], [true, nil, [], [:away, :moved, :back]])
+$inbox << entry("seat", 0)
+$inbox << entry("message", 4, told(other))
+MGQ_MpOverworldSync.tick
+MGQ_MpOverworldSync::REJOIN_FRAMES.times { MGQ_MpOverworldSync.tick }
+check("and gone once they stay away past the grace", [$left, $presence.last, MGQ_MpOverworldSync::Peers.kept_with_id("friend")], [[4], :gone, nil])
 
 # Discord hears of the open world: its name, its players, its seats and the code its invites carry.
 valley = Struct.new(:name, :id, :seats, :code, :directory_id).new("Valley", "w1", 8, "mgqmp2;abcdefghjkmnpqrs;r1;8", "d1")

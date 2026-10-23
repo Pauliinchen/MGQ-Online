@@ -2,6 +2,8 @@
 #  served.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Updated the windows and sprites on every sixth frame while the battle waits for its players
+#                            - Counted down the grace of the players kept away
 #      Paulinchen  2026-10-15: Left recruiting to the players' games
 #                            - Read the boss pools the relay told and forgot the last battle's boss fight
 #                            - Hosted a Raid World's battle as one, took players in late and told the starter the battle's state
@@ -29,6 +31,10 @@ module ServedBattle
   # Frames between two reads of the boss pools the relay told, as the game reads the DLL's.
   POOL_FRAMES = 10
 
+  # Frames of a wait for the players in which the battle's windows and sprites update once: nobody
+  # sees the server's screen, and they take most of a waiting frame's time.
+  WAIT_DRAW_FRAMES = 6
+
   # MGQ Online's scripts that keep a battle's boss fight from one battle to the next, which a
   # battle on a server that hosts one after another must forget first.
   BOSS_SCRIPTS = %i[MGQ_MpRaidPool MGQ_MpRaidTiers].freeze
@@ -53,8 +59,8 @@ module ServedBattle
     attr_accessor :paced
 
     # Puts the server's battle hosting in place, once the game and MGQ Online loaded: the message
-    # skip key held, the first of every choice, how the battle ended, and each frame lasting
-    # FRAME_SECONDS. MGQ Online's live host takes the players' commands and keeps the battle's
+    # skip key held, the first of every choice, how the battle ended, each frame lasting
+    # FRAME_SECONDS, and the windows and sprites updated less while the battle waits for its players. MGQ Online's live host takes the players' commands and keeps the battle's
     # course. Wrapped as MGQ Online's hooks are (see Boot::Wrap), since they wrap the same methods.
     #
     # @param log [IO] Where MGQ Online's log goes.
@@ -92,10 +98,16 @@ module ServedBattle
       end
       wrap.around(Graphics.singleton_class, :update, :served) do |_graphics, original, args, _block|
         original.call(*args)
+        ServedBattle.count_waiting
         ServedBattle.read_pools
         ServedBattle.tell_front
         ServedBattle.pace
+        # The world sync tick is left out below, so the players kept away count down their grace here.
+        MGQ_MpOverworldSync::Peers.tick if MGQ_MpBattlesServed.server?
       end
+      # The battle's course runs every frame; only what it shows waits for the next drawn frame.
+      wrap.around(Scene_Base, :update_all_windows, :served) { |_scene, original, args, _block| original.call(*args) if ServedBattle.drawing? }
+      wrap.around(Spriteset_Battle, :update, :served) { |_spriteset, original, args, _block| original.call(*args) if ServedBattle.drawing? }
       # The server sits in no world, so the battle's world type comes with its setup.
       wrap.around(MGQ_MpWorld.singleton_class, :raid?, :served) do |_world, original, args, _block|
         ServedBattle.raid.nil? ? original.call(*args) : ServedBattle.raid
@@ -156,6 +168,7 @@ module ServedBattle
       # The map saves its music before a battle, and the battle's end plays it again.
       BattleManager.save_bgm_and_bgs
       Graphics.frame_count = 0
+      @waiting_frames = 0
       @next_frame = clock
       SceneManager.instance_variable_set(:@stack, [])
       SceneManager.instance_variable_set(:@scene, Scene_Battle.new)
@@ -220,6 +233,19 @@ module ServedBattle
       MGQ_MpRaidPool.read_state
     end
 
+    # Counts the frames of the wait for the players that is open now, see drawing?.
+    def count_waiting
+      @waiting_frames = waiting? ? @waiting_frames.to_i + 1 : 0
+    end
+
+    # Tells whether the battle's windows and sprites update this frame: on every frame, except while
+    # the battle waits for its players, on every WAIT_DRAW_FRAMES-th.
+    #
+    # @return [Boolean] Whether they do.
+    def drawing?
+      (@waiting_frames.to_i % WAIT_DRAW_FRAMES).zero?
+    end
+
     # Waits out the rest of a frame's time while a battle is hosted.
     def pace
       return unless @paced && @next_frame
@@ -235,6 +261,14 @@ module ServedBattle
     end
 
     private
+
+    # Tells whether the battle waits for its players, see MGQ_MpBattlesSync::Waiting.active?.
+    #
+    # @return [Boolean] Whether it does; false for an MGQ Online without such waits.
+    def waiting?
+      waits = defined?(MGQ_MpBattlesSync::Waiting) && MGQ_MpBattlesSync::Waiting
+      waits && waits.respond_to?(:active?) && waits.active? ? true : false
+    end
 
     # The time in seconds.
     #

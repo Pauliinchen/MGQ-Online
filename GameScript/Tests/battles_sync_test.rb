@@ -2,6 +2,9 @@
 #  battles_sync_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that Cancel during a wait goes back or asks before leaving
+#                            - Checked that messages lost over a reconnect come again, once and in order
+#                            - Checked that a battle keeps its players through seats dealt anew and while away
 #      Paulinchen  2026-10-15: Checked that a co-op enemy the host defeats counts as fallen on the guest for its recruit
 #      Paulinchen  2026-10-12: Checked that the wire reads hostile lines safely
 #                            - Checked failing names, stream lines and mode messages, and a time stop without a battler
@@ -371,17 +374,26 @@ $frames = 0
 $log.clear
 turns = 0
 seen = []
+$asked = []
+$confirm = nil
+offer_turn = waiting::LEAVE_FRAMES + 2
 answer = waiting.wait_for(scene, "Slow") do
   turns += 1
-  seen << $windows.last.contents.lines[2] if [2, 61, 62, 122, waiting::LEAVE_FRAMES + 2].include?(turns)
-  $leave = true if turns == waiting::LEAVE_FRAMES + 2
+  seen << $windows.last.contents.lines[2] if [2, 61, 62, 122, offer_turn].include?(turns)
+  # Cancel before the offer, then at the offer answered "Stay", then again answered "Leave".
+  $leave = [5, offer_turn, offer_turn + 3].include?(turns)
+  $confirm = { offer_turn + 2 => false, offer_turn + 4 => true }[turns]
   nil
 end
-check("the seconds are drawn once a second until the leave offer takes the line, and cancel then leaves",
-      [answer, seen, $windows.last.contents.draws[2]], [:left, ["0 s", "0 s", "1 s", "2 s", waiting::LEAVE_TEXT], waiting::LEAVE_FRAMES / MGQ_MpUi::FRAMES_PER_SECOND + 1])
-check("the offer and the leave are logged once",
-      [$log.grep(/still waiting after 10 s \(Slow\), Cancel now leaves the battle/).size, $log.grep(/the player left the battle during the wait \(Slow\)/).size], [1, 1])
+check("the seconds are drawn once a second until the leave offer takes the line, and only a confirmed leave leaves",
+      [answer, seen, $windows.last.contents.draws[2], $asked],
+      [:left, ["0 s", "0 s", "1 s", "2 s", waiting::LEAVE_TEXT], waiting::LEAVE_FRAMES / MGQ_MpUi::FRAMES_PER_SECOND + 1,
+       [[waiting::LEAVE_QUESTION, waiting::LEAVE_CHOICES]] * 2])
+check("the offer, the question, staying and the leave are logged",
+      [$log.grep(/still waiting after 10 s \(Slow\), Cancel now asks whether to leave the battle/).size, $log.grep(/asked the player whether to leave/).size,
+       $log.grep(/the player stays in the battle/).size, $log.grep(/the player left the battle during the wait \(Slow\)/).size], [1, 2, 1, 1])
 $leave = false
+$confirm = nil
 
 sync::Channel.receive(2, "forfeit", "")
 check("a battle's ending ends the wait and closes the box", [waiting.wait_for(scene, "Ending") { nil }, $windows.last.disposed?], [:forfeit, true])
@@ -416,7 +428,7 @@ stored = layout.instance_variable_get(:@stored)
 registered = lambda { layout.instance_variable_get(:@boxes)[:waiting_box].to_a }
 offered = lambda { (offer = layout.instance_variable_get(:@offers).find { |o| o.id == :waiting_box }) && offer.rect.to_a }
 place = lambda { |text| $player_ini = text ? { "ui_waiting_box" => text } : {}; stored.delete(:waiting_box) }
-leave_width = waiting::LEAVE_TEXT.size * 8 + 2 * waiting::PADDING
+leave_width = waiting::BACK_TEXT.size * 8 + 2 * waiting::PADDING
 box = waiting.open("Now")
 check("the waiting box is known to the layout by its name, resized in width alone, as wide at least as its leave offer needs",
       [registered.call, offered.call], [["Waiting box", leave_width, waiting::HEIGHT, :width], [140, 120, 360, 96]])
@@ -433,16 +445,78 @@ window = box.window
 check("a waiting box kept in Player.ini opens there at its width, draws its lines and offers itself to the layout",
       [[window.x, window.y, window.width, window.height], window.contents.lines, offered.call],
       [[10, 300, 500, 96], { 0 => "Waiting for Host...", 1 => "Still choosing: Player A, Player B", 2 => "0 s" }, [10, 300, 500, 96]])
-place.call("10,300,250,0")
+place.call("10,300,280,0")
 waiting.refresh(box, 1)
 lines = window.contents.lines
 check("a new width makes new contents with every line drawn anew, the names cut to it",
-      [window.width, window.contents.width, lines[0], lines[1].start_with?("Still choosing: ") && lines[1].end_with?(MGQ_MpUi::ELLIPSIS), lines[2]], [250, 226, "Waiting for Host...", true, "0 s"])
+      [window.width, window.contents.width, lines[0], lines[1].start_with?("Still choosing: ") && lines[1].end_with?(MGQ_MpUi::ELLIPSIS), lines[2]], [280, 256, "Waiting for Host...", true, "0 s"])
 place.call("10,300,100,0")
 waiting.refresh(box, 2)
 check("never narrower than its text and the leave offer need whole", [window.width, window.contents.lines[2]], [leave_width, "0 s"])
 waiting.close(box)
 place.call(nil)
+
+# A reconnect that deals the world's seats anew keeps the battle: the guest who comes back on the
+# host's old seat is the same guest, the host keeps its own seat in the battle, a guest away is
+# waited for, and only the world's word that they are gone takes them out.
+peers.all.replace([peers::Peer.new(2, { "id" => "id-a", "name" => "Player A" }, nil, false)])
+$my_seat = 0
+sync.join_world(:host, "w9", [2], "the party")
+sync.battle_started
+guest = peers.all.first
+$my_seat = 2
+guest.seat = 0
+$sent.clear
+sync::Channel.post("ready")
+sync.take(guest, { "battle" => "commands", "bid" => "w9", :payload => "c1" })
+check("after the seats were dealt anew the host sends to the guest's new seat and takes their messages as before",
+      [$sent.map(&:first), sync::Channel.take_from("commands", 2), sync.own_seat, sync.player_seats], [[0], "c1", 0, [2]])
+check("and the battle goes on with them", [sync::Channel.world_gone?, sync.guests_in], [false, [2]])
+guest.away = 900
+$sent.clear
+sync::Channel.post("ready")
+check("a guest away is sent nothing and stays in the battle", [$sent, sync::Channel.world_gone?, sync.guests_in], [[], false, [2]])
+guest.away = nil
+sync::Seats.presence(guest, :gone)
+peers.all.clear
+check("the world telling they are gone takes them out", [sync::Channel.world_gone?, sync.guests_in], [true, []])
+sync.finish
+check("and the battle's seats are forgotten as it finishes", sync.own_seat, 2)
+$my_seat = 0
+
+# Messages lost over a reconnect come again: each carries its number, whoever sees a player come
+# back asks for what came after the last number taken, and each number is taken once and in order.
+peers.all.replace([peers::Peer.new(2, { "id" => "id-a", "name" => "Player A" }, nil, false)])
+sync.join_world(:host, "w10", [2], "the party")
+sync.battle_started
+guest = peers.all.first
+numbered = lambda { |number, kind, body| sync.take(guest, { "battle" => kind, "bid" => "w10", "sq" => number.to_s, :payload => body }) }
+numbered.call(1, "ready", "")
+numbered.call(3, "commands", "c3")
+numbered.call(2, "commands", "c2")
+numbered.call(2, "commands", "c2")
+check("numbered messages are taken once and in order",
+      [sync::Channel.take_from("ready", 2), (1..3).map { sync::Channel.take_from("commands", 2) }], ["", ["c2", "c3", nil]])
+guest.away = 900
+$sent.clear
+sync::Channel.post("waiting", "0")
+sync::Channel.post("events", "e1")
+guest.away = nil
+guest.seat = 5
+sync::Sequence.presence(guest, :back)
+asked = $sent.map { |seat, text| [seat, fields_of(text)["battle"], fields_of(text)[:payload]] }
+check("messages to a guest away wait, and the guest back is asked for what they sent after the last taken",
+      asked, [[5, "resync", "3"]])
+$sent.clear
+sync.take(guest, { "battle" => "resync", "bid" => "w10", :payload => "0" })
+check("a guest who asks again gets the messages after the last they took, numbered as before",
+      $sent.map { |seat, text| [seat, fields_of(text)["battle"], fields_of(text)["sq"]] }, [[5, "waiting", "1"], [5, "events", "2"]])
+$frames = 0
+numbered.call(5, "commands", "c5")
+check("a message after one that never came is held", sync::Channel.take_from("commands", 2), nil)
+$frames = 900
+check("until the world's grace ran out, then taken", sync::Channel.take_from("commands", 2), "c5")
+sync.finish
 
 # The host's wait for the commands names who still chooses, and tells the guests, whose boxes
 # name them too.
@@ -468,6 +542,49 @@ check("the host's wait for the commands names who still chooses", [answer, seen]
 check("and tells the guests whom it waits for as that changes, nobody once answered",
       $sent.map { |seat, text| [seat, fields_of(text)] }.select { |_, f| f["battle"] == "waiting" }.map { |seat, f| [seat, f[:payload]] },
       [[2, "2,3"], [3, "2,3"], [2, "3"], [3, "3"], [2, ""], [3, ""]])
+sync.finish
+
+# Cancel while the host waits for the commands goes back to the host's own commands, keeping the
+# commands that came, as players press it to choose again; only a confirmed leave leaves.
+sync.join_world(:host, "w4e", [2, 3], "the party")
+sync.battle_started
+live.instance_variable_set(:@answered, [])
+live.forget_waiting
+$sent.clear
+$frames = 0
+$commands_phase = false
+$actor_cleared = false
+$inject = lambda do |frame|
+  sync::Channel.receive(2, "commands", commands) if frame == 1
+  $leave = frame == 3
+end
+answer = live.host_guests_commands(scene)
+$inject = nil
+$leave = false
+told = $sent.map { |seat, text| [seat, fields_of(text)] }.select { |seat, f| seat == 2 && f["battle"] == "waiting" }.map { |_, f| f[:payload] }
+check("a single Cancel while the host waits for the commands goes back to the host's own, keeping those that came",
+      [answer, $commands_phase, $actor_cleared, live.instance_variable_get(:@answered)], [false, true, true, [2]])
+check("and leaves nothing, the guests seeing the host choose again",
+      [$sent.any? { |_, text| %w(leave forfeit).include?(fields_of(text)["battle"]) }, told.last], [false, "0,3"])
+sync.finish
+
+sync.join_world(:host, "w4f", [2], "the party")
+wait_back = lambda do |leave|
+  $asked = []
+  $frames = 0
+  $inject = lambda do |frame|
+    $leave = frame == waiting::LEAVE_FRAMES + 2
+    $confirm = leave if frame == waiting::LEAVE_FRAMES + 4
+  end
+  answer = waiting.wait_for(scene, "Waiting for the party's commands...", nil, waiting::WAITING_PREFIX, true) { nil }
+  $inject = nil
+  $leave = false
+  $confirm = nil
+  [answer, $asked, $windows.last.contents.lines[2]]
+end
+check("past the offer Cancel asks first, and choosing again goes back",
+      wait_back.call(false), [:back, [[waiting::LEAVE_QUESTION, waiting::BACK_CHOICES]], waiting::BACK_TEXT])
+check("while a confirmed leave leaves", wait_back.call(true)[0], :left)
 sync.finish
 
 # Enemies that fall while the host waits for the commands, as a Raid World's pools kill them, win
@@ -526,15 +643,19 @@ sync::Channel.receive(0, "waiting", "0,3")
 $frames = 0
 $leave = false
 seen = nil
+$asked = []
 $inject = lambda do |frame|
   seen = $windows.last.contents.lines.dup if frame == sync::QUIET_FRAMES + 2
-  $leave = true if frame == sync::QUIET_FRAMES + waiting::LEAVE_FRAMES + 2
+  $leave = frame == sync::QUIET_FRAMES + waiting::LEAVE_FRAMES + 2
+  $confirm = true if $leave
 end
 outcome = playback.run(scene)
 $inject = nil
 $leave = false
+$confirm = nil
 check("the guest's box while the host's stream stalls names whom the host waits for, with the seconds",
       [outcome, seen, sync::Channel.pending("waiting")], [[:left], { 0 => "Waiting for Host...", 1 => "Still choosing: Host, Player B", 2 => "0 s" }, 0])
+check("and the guest leaves only once it confirmed leaving", $asked, [[waiting::LEAVE_QUESTION, waiting::LEAVE_CHOICES]])
 sync.finish
 
 # A hostile line on the wire reads as nil or as unknown values, never raising or making a symbol.

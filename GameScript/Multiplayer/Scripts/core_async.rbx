@@ -2,6 +2,9 @@
 #  core_async.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Kept the mod's HUD off the live map behind menus
+#                            - Kept the save and load screens on their picture of the map
+#                            - Logged every switch of screens with the memory and handles the game uses
 #      Paulinchen  2026-10-12: Read the live map's viewports through MGQ_MpGame
 #      Paulinchen  2026-10-07: Read an interpreter's event and map through MGQ_MpGame
 #                            - Logged the world behind screens, held commands, waiting refreshes and the live map
@@ -34,6 +37,19 @@ module MGQ_MpAsync
   # Screens the world does not run behind, since they leave it.
   LEAVING_SCENES = [:Scene_Title, :Scene_Gameover]
 
+  # Menus that keep their picture of the map instead of the live map: the save and load screens,
+  # with their subclasses.
+  #
+  # They build a window and a thumbnail per save file, and the game closed while saving with the
+  # live map behind them.
+  PICTURE_SCENES = [:Scene_File]
+
+  # The export that describes the memory and the handles the game uses.
+  MEMORY_USAGE_EXPORT = 'mp_memory_usage'
+
+  # Bytes the description of the memory and the handles fits in at first.
+  MEMORY_USAGE_SIZE = 256
+
   # Whether tick runs the map now, the only time event commands are held.
   @ticking = false
 
@@ -48,11 +64,21 @@ module MGQ_MpAsync
   # @param scene [Scene_Base] The screen in front.
   # @return [Boolean] Whether it runs.
   def self.behind?(scene)
-    return false if scene.is_a?(Scene_Map) || LEAVING_SCENES.any? { |name| Object.const_defined?(name) && scene.is_a?(Object.const_get(name)) }
+    return false if scene.is_a?(Scene_Map) || one_of?(scene, LEAVING_SCENES)
     return false unless defined?(MGQ_MpWorld) && MGQ_MpWorld.open?
     return false unless $game_map && $game_map.map_id > 0
 
     map_waiting?
+  end
+
+  # Reports whether a screen is one of the named screens or of their subclasses. A game without one
+  # of them leaves it out.
+  #
+  # @param scene [Scene_Base] The screen.
+  # @param names [Array<Symbol>] The screens' class names.
+  # @return [Boolean] Whether it is one of them.
+  def self.one_of?(scene, names)
+    names.any? { |name| Object.const_defined?(name) && scene.is_a?(Object.const_get(name)) }
   end
 
   # Reports whether a map waits for the player to come back, as it does below a screen it called.
@@ -153,7 +179,8 @@ module MGQ_MpAsync
     to.is_a?(Scene_Map) || map_waiting?
   end
 
-  # Leaves a screen, skipping the freeze of the screen when the next one comes in at once.
+  # Leaves a screen, skipping the freeze of the screen when the next one comes in at once, and logs
+  # the switch with the memory and the handles the game uses.
   #
   # The engine's transition from a frozen screen takes about seven frames even when it lasts none,
   # during which nothing moves.
@@ -162,10 +189,24 @@ module MGQ_MpAsync
   # @yield The screen's own leaving, which freezes the screen.
   def self.leave(from)
     @skip_freeze = instant_switch?(from, SceneManager.scene)
-    log("switching from #{from.class.name} to #{SceneManager.scene.class.name} at once, without freezing the screen") if @skip_freeze
+    log("switching from #{from.class.name} to #{SceneManager.scene.class.name}#{@skip_freeze ? ' at once, without freezing the screen' : ''}#{memory_usage}")
     yield
   ensure
     @skip_freeze = false
+  end
+
+  # Describes the memory and the handles the game uses, for the log of a switch of screens.
+  #
+  # A crash in the game's native code ends it unlogged, so the log keeps what it used before.
+  #
+  # @return [String] The description after a semicolon, "" when the DLL cannot tell.
+  def self.memory_usage
+    usage = MGQ_Multiplayer::Link.read(MEMORY_USAGE_EXPORT, MEMORY_USAGE_SIZE)
+    usage.empty? ? "" : "; #{usage}"
+  rescue => e
+    log("asking the DLL for the memory the game uses failed: #{e.class}: #{e.message}") unless @memory_usage_failed
+    @memory_usage_failed = true
+    ""
   end
 
   # Reports whether to skip a freeze of the screen, and remembers it was skipped. Called by
@@ -188,13 +229,15 @@ module MGQ_MpAsync
   end
 
   # Makes the live map a menu shows in place of its picture of the map, for menus whose background
-  # is that picture while the world runs; menus with a background of their own keep it.
+  # is that picture while the world runs; menus with a background of their own keep it, and so do
+  # the menus of PICTURE_SCENES.
   #
   # @param scene [Scene_MenuBase] The menu.
   # @param background [Sprite, nil] The menu's background.
   # @return [Spriteset_MpLiveMap, nil] The live map, nil where the menu keeps its background.
   def self.live_map_for(scene, background)
     return nil unless background && background.bitmap.equal?(SceneManager.background_bitmap)
+    return nil if one_of?(scene, PICTURE_SCENES)
     return nil unless behind?(scene)
 
     live_map = Spriteset_MpLiveMap.new
@@ -231,6 +274,17 @@ module MGQ_MpAsync
   end
 end
 
+# The map's sprites, which tell the scripts whether to draw the mod's HUD over them.
+class Spriteset_Map
+  # Reports whether the mod's HUD shows over the map's sprites: its boxes, logs, wheels, prompts and
+  # bars. Players and characters on the map show either way.
+  #
+  # @return [Boolean] Whether it shows, true on the map itself.
+  def mgq_mp_hud?
+    true
+  end
+end
+
 # The live map behind a menu: the map's sprites, below everything the menu draws and dimmed as the
 # menu's picture of the map is.
 class Spriteset_MpLiveMap < Spriteset_Map
@@ -256,6 +310,13 @@ class Spriteset_MpLiveMap < Spriteset_Map
       viewport = MGQ_MpGame.get(self, field)
       viewport.z = depth if viewport
     end
+  end
+
+  # Reports that the mod's HUD does not show behind a menu, which shows only the map's world.
+  #
+  # @return [Boolean] false.
+  def mgq_mp_hud?
+    false
   end
 
   # Frees the dimming, then the map's sprites.

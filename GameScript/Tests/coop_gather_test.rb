@@ -2,6 +2,7 @@
 #  coop_gather_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that a Raid World viewer follows at once only a telling that moves the world's story on
 #      Paulinchen  2026-10-12: Checked which battles belong to a leader's call
 #      Paulinchen  2026-10-11: Checked that a follow to another map shows the followers the map left behind hidden
 #                            - Stood in for the player's followers
@@ -240,7 +241,8 @@ check("and stands still again once the story goes on", gather.blocked?, true)
 gather.take(teller, { "pevent" => "gather", "map" => "3", "x" => "5", "y" => "5" })
 check("a call to gather is ignored", gather.coming?, false)
 gather.take(teller, { "pevent" => "follow", "map" => "8", "x" => "1", "y" => "2", "d" => "2" })
-check("but the story moving its teller elsewhere takes the player along", [gather.coming?, gather.story_map?(8)], [true, true])
+check("but the story moving its teller elsewhere takes the player along, also from an earlier build that does not say whether it moves the world's story on",
+      [gather.coming?, gather.story_map?(8)], [true, true])
 check("whose teller the player follows", gather.followed_id, "t")
 $map_free = false
 $frame_count += 20 * 60
@@ -303,6 +305,10 @@ $behind = true
 gather.take(teller, follow)
 check("a player behind the world's story is offered to follow too, though their story matches", [gather.coming?, $offers.notice_of(teller).nil?], [false, false])
 $behind = false
+gather.decline_follow(teller)
+gather.take(teller, follow.merge("moves" => "0"))
+check("a player watching is only offered to follow a telling that does not move the world's story on, as a minigame's that moves its teller",
+      [gather.coming?, $offers.notice_of(teller).nil?], [false, false])
 gather.forget_story_place
 check("the world closing forgets the offers", $offers.notice_of(teller), nil)
 teller.state["map"] = "3"
@@ -320,6 +326,32 @@ gather.after_transfer
 check("the player telling the story takes everyone on the map along, even one whose story differs",
       $told.map { |seat, fields| [seat, fields["map_pevent"], fields["mmap"], fields["map"]] }, [[-1, "follow", 3, 8]])
 check("in one message that names them", $told.last[1]["mto"], "b,t")
+check("saying that the telling does not move the world's story on while no story of the world runs", $told.last[1]["moves"], 0)
+
+# Stands in for the world's story: the values that move it on are $progress, and a list moves it on
+# ahead of a place when it holds :progress there.
+module MGQ_MpWorldStory
+  def self.endpoint; $relay_end; end
+  def self.progress_now; $progress.dup; end
+  def self.progress_ahead?(list, from); list[from..-1].include?(:progress); end
+end
+# Gives the map stand-in its interpreter.
+class Game_Map; attr_accessor :interpreter; end
+$game_map.interpreter = Game_Interpreter.new
+moves = lambda do |list, progressed|
+  $progress = [12, 0]
+  gather.note_story_progress
+  $progress = [13, 0] if progressed
+  $game_map.interpreter.instance_variable_set(:@list, list)
+  $game_map.interpreter.instance_variable_set(:@index, 1)
+  $game_player.transfer = true
+  gather.before_transfer($game_player)
+  $game_player.transfer = false
+  gather.after_transfer
+  $told.last[1]["moves"]
+end
+check("a telling that moved the world's story on calls the others to follow at once, one that will after the transfer too, and one that sets only values of its own does not",
+      [moves.call([:talk, :transfer], true), moves.call([:talk, :transfer, :progress], false), moves.call([:progress, :transfer], false)], [1, 1, 0])
 check("and keeps telling them the story on their way", gather.taken_along, [behind, teller])
 $telling = false
 check("none outside a telling", gather.taken_along, [])

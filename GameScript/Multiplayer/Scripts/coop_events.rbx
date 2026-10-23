@@ -2,6 +2,9 @@
 #  coop_events.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Took back what a talk or story event changed once it ends early
+#                            - Noted the values that move the world's story on as a telling starts
+#                            - Faded the screen in once it stayed dark for ten seconds while nothing of a watched scene reached it
 #      Paulinchen  2026-10-17: Sorted a resumed raid boss fight's event as story
 #      Paulinchen  2026-10-15: Faded the screen in once it stayed dark with nothing running that could fade it in
 #      Paulinchen  2026-10-12: Faded the screen in once per arrival on a map whose self-running story another game runs
@@ -155,6 +158,10 @@ module MGQ_MpCoopEvents
 
   # Frames the screen may stay dark while nothing runs that could fade it in, five seconds.
   DARK_SCREEN_FRAMES = 300
+
+  # Frames the screen may stay dark while the player watches another player's scene on the map and
+  # nothing of it reaches the player's screen, ten seconds.
+  WATCHED_DARK_FRAMES = 600
 
   # The trigger of an event that runs alongside the map, and the command that fades the screen in.
   PARALLEL_TRIGGER = 4
@@ -666,6 +673,7 @@ module MGQ_MpCoopEvents
     @told_at = @told_page = nil unless @pending_say
     @told_markers = MGQ_MpCoop::Scope.raid? && defined?(MGQ_MpCoopStory) ? MGQ_MpCoopStory.own_markers : nil
     MGQ_MpCoopGather.forget_taken_along if defined?(MGQ_MpCoopGather)
+    MGQ_MpCoopGather.note_story_progress if defined?(MGQ_MpCoopGather)
   rescue => e
     @told_markers = nil
     log("noting the story's progress failed: #{e.class}: #{e.message}")
@@ -809,15 +817,13 @@ module MGQ_MpCoopEvents
     @may_tell = false
     lead = MGQ_MpCoop::Scope.teller
     if behind?
-      # The list ends with an empty command, which ends the event as its last.
-      MGQ_MpGame.set(interpreter, :index, list.size - 1)
-      MGQ_MpOverworldSync.notice(MGQ_MpWorldCatchup.refusal_text)
       log("ended a talk where it would move the story on (command #{list[index].code}): the player's story is behind the world's")
+      end_event(interpreter, list, "a talk ended where it would move the story on")
+      MGQ_MpOverworldSync.notice(MGQ_MpWorldCatchup.refusal_text)
     elsif lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && following?
-      # The list ends with an empty command, which ends the event as its last.
-      MGQ_MpGame.set(interpreter, :index, list.size - 1)
-      MGQ_MpOverworldSync.notice(refusal_text(lead))
       log("ended a talk where it would move the story on (command #{list[index].code})")
+      end_event(interpreter, list, "a talk ended where it would move the story on")
+      MGQ_MpOverworldSync.notice(refusal_text(lead))
     elsif leading_story?
       @telling = true
       note_telling_start
@@ -846,13 +852,24 @@ module MGQ_MpCoopEvents
     return unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
 
     list = MGQ_MpGame.get(interpreter, :list)
-    # The list ends with an empty command, which ends the event as its last.
-    MGQ_MpGame.set(interpreter, :index, list.size - 1) if list
     @telling = false
     log("stopped the player's story event: #{MGQ_MpOverworldSync.who(lead)} started telling the story on map #{lead.state['map']} at the same moment, having entered it first")
+    end_event(interpreter, list, "another player tells the story here") if list
     MGQ_MpOverworldSync.notice(refusal_text(lead))
   rescue => e
     log("stopping a story event told twice failed: #{e.class}: #{e.message}")
+  end
+
+  # Ends the event an interpreter runs before its next command, and takes back what the event
+  # changed of the screen, the player's character and the party, see MGQ_MpCoopScene::Own.cut.
+  #
+  # @param interpreter [Game_Interpreter] The map's interpreter.
+  # @param list [Array<RPG::EventCommand>] The commands it runs.
+  # @param reason [String] Why, for the log.
+  def self.end_event(interpreter, list, reason)
+    # The list ends with an empty command, which ends the event as its last.
+    MGQ_MpGame.set(interpreter, :index, list.size - 1)
+    MGQ_MpCoopScene::Own.cut(reason) if defined?(MGQ_MpCoopScene::Own)
   end
 
   # Tells the player that another player's story keeps theirs from moving on.
@@ -1066,33 +1083,37 @@ module MGQ_MpCoopEvents
     log("fading the screen in for a story under way failed: #{e.class}: #{e.message}")
   end
 
-  # Fades the screen in once it stayed dark for DARK_SCREEN_FRAMES while nothing could fade it in.
+  # Fades the screen in once it stayed dark for DARK_SCREEN_FRAMES while nothing could fade it in,
+  # or for WATCHED_DARK_FRAMES while the player watches another player's scene that shows nothing.
   #
   # A story event whose fade-in another game's story already ran, as an arrival after a game over
   # returned the player to an earlier point, leaves the screen black for good.
   def self.lift_dark_screen
     return @dark_frames = 0 unless stuck_dark?
 
+    watching = MGQ_MpCoopScene.watching?
+    limit = watching ? WATCHED_DARK_FRAMES : DARK_SCREEN_FRAMES
     @dark_frames = @dark_frames.to_i + 1
-    return if @dark_frames < DARK_SCREEN_FRAMES
+    return if @dark_frames < limit
 
     @dark_frames = 0
     $game_map.screen.start_fadein(LATE_FADEIN_FRAMES)
-    log("faded the screen in on map #{$game_map.map_id}: it stayed dark for #{DARK_SCREEN_FRAMES} frames with no event running that could fade it in")
+    log("faded the screen in on map #{$game_map.map_id}: it stayed dark for #{limit} frames with no event running that could fade it in" \
+        "#{watching ? ", and nothing of the scene the player watches reached the screen" : ''}")
   rescue => e
     log_once(:dark_screen, "fading in a screen left dark failed: #{e.class}: #{e.message}")
   end
 
   # Reports whether the screen is dark in a world while the player stands free on the map: no
-  # event runs or starts, no message shows, no transfer waits, no other player's scene plays here
-  # and no opening's setup runs.
+  # event runs or starts, no message shows, no transfer waits, no change of another player's scene
+  # the player watches reached the screen a moment ago and no opening's setup runs.
   #
   # @return [Boolean] Whether it is.
   def self.stuck_dark?
     return false unless MGQ_MpOverworldSync.in_world? && SceneManager.scene_is?(Scene_Map) && $game_map.screen.brightness == 0
     return false if $game_map.interpreter.running? || $game_message.busy? || $game_player.transfer?
     return false if $game_map.events.values.any? { |event| event.starting }
-    return false if MGQ_MpCoopScene.watching? || (defined?(MGQ_MpWorldOpening) && MGQ_MpWorldOpening.running?)
+    return false if (MGQ_MpCoopScene.watching? && MGQ_MpCoopScene.just_changed?) || (defined?(MGQ_MpWorldOpening) && MGQ_MpWorldOpening.running?)
 
     !parallel_fade_in?
   end

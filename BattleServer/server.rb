@@ -2,6 +2,8 @@
 #  server.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Let a co-op battle use CPU time for as long as the relay keeps it and ended it as failed past that
+#                            - Logged how each child ended, with its battle
 #      Paulinchen  2026-10-15: Refused battles by request while it hosts MGQ Online's battles
 #                            - Hosted the co-op battles the relay hands over
 #                            - Kept up to 1 MB of a child's output
@@ -46,6 +48,17 @@ module BattleServer
 
   # CPU seconds a child may use, so a battle caught in a loop ends instead of taking a core.
   CHILD_CPU_SECONDS = 120
+
+  # CPU seconds a child that hosts an MGQ Online co-op battle may use: as long as the relay keeps
+  # such a battle (BATTLE_LIMITS.lifetimeMs in Relay/core/battles.js), since it runs at the game's
+  # pace while its players choose.
+  SERVED_CPU_SECONDS = 2 * 60 * 60
+
+  # CPU seconds past its limit a child has to end its battle before the system kills it.
+  CPU_GRACE_SECONDS = 10
+
+  # The line of a child's output that names its battle, see host.
+  CHILD_BATTLE = /\Abattle ([0-9a-z]{1,32}) started\z/
 
   # Bytes of a child's output the server's log takes: MGQ Online logs a co-op battle in detail.
   CHILD_OUTPUT = 1024 * 1024
@@ -117,7 +130,7 @@ module BattleServer
           # through a pipe the parent copies into the log.
           $stdout.reopen(child_output)
           $stderr.reopen(child_output)
-          Process.setrlimit(:CPU, CHILD_CPU_SECONDS)
+          limit_cpu(@served ? SERVED_CPU_SECONDS : CHILD_CPU_SECONDS)
           # A co-op battle's mods come before the sandbox, which reaches neither the network nor
           # the cache.
           first = client.gets(MAX_REQUEST)
@@ -134,10 +147,57 @@ module BattleServer
           Process.exit!(0)
         end
         child_output.close
-        copy_output(output, pid)
-        children << Process.detach(pid)
+        children << watch_child(pid, copy_output(output, pid))
         client.close
       end
+    end
+
+    # Limits the CPU time of the calling child. Past the limit the child ends its battle as failed,
+    # see end_out_of_cpu, and the system kills it CPU_GRACE_SECONDS later.
+    #
+    # @param seconds [Integer] The CPU seconds it may use.
+    def limit_cpu(seconds)
+      Process.setrlimit(:CPU, seconds, seconds + CPU_GRACE_SECONDS)
+      # A game script takes Kernel's trap away. A trap handler may lock no mutex, which the
+      # relay's connection needs, and the system repeats the signal every second past the limit.
+      Signal.trap("XCPU") { @out_of_cpu ||= Thread.new { end_out_of_cpu(seconds) } }
+    end
+
+    # Ends the child once it used up its CPU time: tells the relay its battle failed, so its
+    # players learn it ended, and exits.
+    #
+    # @param seconds [Integer] The CPU seconds it had.
+    def end_out_of_cpu(seconds)
+      $stderr.puts("battle #{@battle_id || 'none'} used up its #{seconds} CPU seconds and ends")
+      @bridge&.tell(op: "end", result: "failed", error: "the battle used up its #{seconds} CPU seconds")
+    ensure
+      Process.exit!(1)
+    end
+
+    # Logs how a child ended, with its battle, once it did.
+    #
+    # @param pid [Integer] The child.
+    # @param copier [Thread] The thread that copies its output, see copy_output.
+    # @return [Thread] The thread that waits for the child, alive while it runs.
+    def watch_child(pid, copier)
+      started = clock
+      Thread.new do
+        _, status = Process.wait2(pid)
+        battle = begin
+          copier.value
+        rescue StandardError
+          nil
+        end
+        $stderr.puts(format("[%d] ended after %.0f s, battle %s: %s", pid, clock - started, battle || "none", ended(status)))
+      end
+    end
+
+    # Tells how a process ended.
+    #
+    # @param status [Process::Status] Its status.
+    # @return [String] Such as "exit 0" or "killed by SIGXCPU".
+    def ended(status)
+      status.signaled? ? "killed by SIG#{Signal.signame(status.termsig)}" : "exit #{status.exitstatus}"
     end
 
     # Copies a child's output into the server's log, each line marked with the child, up to
@@ -145,16 +205,22 @@ module BattleServer
     #
     # @param output [IO] The pipe's end the child's output comes out of.
     # @param pid [Integer] The child.
+    # @return [Thread] The copying thread, whose value is the id of the battle the child named, see
+    #   CHILD_BATTLE, nil for none.
     def copy_output(output, pid)
       Thread.new do
+        battle = nil
         left = CHILD_OUTPUT
         output.each_line do |line|
+          # As bytes, since a line need not be valid UTF-8.
+          battle ||= line.b.chomp[CHILD_BATTLE, 1]
           next if left <= 0
 
           left -= line.bytesize
           $stderr.write("[#{pid}] #{line}")
           $stderr.write("[#{pid}] output past #{CHILD_OUTPUT} bytes is dropped\n") if left <= 0
         end
+        battle
       ensure
         output.close
       end
@@ -219,8 +285,11 @@ module BattleServer
       @battles += 1
       started = clock
       bridge.tell(op: "serving")
+      @battle_id = battle_id
+      @bridge = bridge
+      $stderr.puts("battle #{battle_id} started")
       outcome = ServedBattle.run(bridge, battle_id, setup, mods)
-      $stderr.puts(format("battle %s: %s after %d turns, %.0f s", battle_id, outcome[:result], outcome[:turns], clock - started))
+      $stderr.puts(format("battle %s: %s after %d turns, %.0f s, %.0f CPU s", battle_id, outcome[:result], outcome[:turns], clock - started, cpu_seconds))
       bridge.tell(op: "end", result: outcome[:result].to_s, turns: outcome[:turns])
     rescue ServedBattle::Refused => e
       refused.call(e.code, e.message)
@@ -269,6 +338,14 @@ module BattleServer
     # @return [Float] The time.
     def clock
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
+
+    # The CPU time the process used so far, which a child's limit counts.
+    #
+    # @return [Float] The seconds.
+    def cpu_seconds
+      times = Process.times
+      times.utime + times.stime
     end
 
     # Answers one request.

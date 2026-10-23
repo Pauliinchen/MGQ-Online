@@ -2,6 +2,7 @@
 #  pvp_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked hit messages left out without a target outside multiplayer battles too
 #      Paulinchen  2026-10-08: Checked messages shown as the game shows them and a missing picture not tried again
 #                            - Checked that a duel in a Raid World takes only the squad's Frontline
 #                            - Checked hit messages left out once no target is left
@@ -299,7 +300,7 @@ BattleManager.set_auto_skill { |member| [] }
 check("the queued skills are ordered by speed without failing", [BattleManager.instance_variable_get(:@action_game_masters), $log.grep(/ordering the automatic skills failed/).size], [[:queued], 1])
 
 # An action without a target is left out in a PvP battle, a hit's message without one in any
-# multiplayer battle.
+# battle.
 scene = Scene_Battle.new
 scene.log_window = BattleLog.new
 # A battler whose action of an item finds no target.
@@ -329,13 +330,13 @@ $rules << :finished
 scene.display_use_item(Struct.new(:target_index).new(0), named)
 $rules << [:coop, true]
 scene.display_use_item(Struct.new(:target_index).new(0), named)
-check("outside a multiplayer battle the message shows as the game shows it, in a co-op battle it is left out too",
-      $shown_messages, ["Sword of Heaven's Army", "Plain", "Sword of Heaven's Army"])
+check("outside a multiplayer battle, such as a Raid World battle of the player's own whose squad cut the Frontline (issue #41), and in a co-op battle it is left out too",
+      $shown_messages, ["Sword of Heaven's Army", "Plain"])
 battle_module = MGQ_MpBattlesPvp::Battle
 battle_module.singleton_class.send(:alias_method, :checked_message_without_target?, :message_without_target?)
 battle_module.define_singleton_method(:message_without_target?) { |*_| raise ArgumentError, "other arguments" }
 scene.display_use_item(Struct.new(:target_index).new(0), named)
-check("a failing check shows the message as the game does", [$shown_messages.size, $log.grep(/message target check failed, the message shows: ArgumentError/).size], [4, 1])
+check("a failing check shows the message as the game does", [$shown_messages.size, $log.grep(/message target check failed, the message shows: ArgumentError/).size], [3, 1])
 battle_module.singleton_class.send(:alias_method, :message_without_target?, :checked_message_without_target?)
 $targets = [:foe]
 $rules << [:pvp, false]

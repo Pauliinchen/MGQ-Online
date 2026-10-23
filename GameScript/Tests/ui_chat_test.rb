@@ -2,6 +2,7 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked that the live map behind a menu shows no chat log
 #      Paulinchen  2026-10-22: Checked the chat box and its log in a scene of menus such as a shop
 #                            - Checked that a mod loaded later keeps its hook in a shop
 #                            - Checked the relay's notice handed to the notification box
@@ -623,3 +624,15 @@ shop.update_basic
 check("a mod loaded later that wraps every scene's basics still runs in a shop", $later_mod, true)
 shop.terminate
 check("the log goes with the shop", shop.instance_variable_get(:@mgq_mp_chat_log), nil)
+
+# The map's sprites show the chat log, and the live map behind a menu shows none, so a shop shows
+# only its own log (issue 56). The other scripts' sprites need more of the game than these stand-ins
+# give, so their failing hooks stay out of the output.
+class Spriteset_Map; attr_writer :hud; def mgq_mp_hud?; @hud != false; end; end
+map = Spriteset_Map.new
+map.instance_variable_set(:@viewport3, Viewport.new.tap { |viewport| viewport.z = 200 })
+live_map = Spriteset_Map.new
+live_map.hud = false
+logged_lines { [map, live_map].each { |spriteset| spriteset.update } }
+check("the map shows the chat log, the live map behind a menu does not",
+      [map.instance_variable_get(:@mgq_mp_chat_log).class, live_map.instance_variable_get(:@mgq_mp_chat_log)], [Sprite_MpChatLog, nil])
