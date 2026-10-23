@@ -2,6 +2,7 @@
 //  RuntimeSkill.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Added the cells of the manual target mode
 //      Paulinchen  2026-10-22: Added the hazards a skill leaves
 //                            - Added the cycle
 //                            - Added the opener flag
@@ -116,7 +117,20 @@ public sealed record ShapeSpec(
 /// <param name="NewTargetEachPulse">Whether every pulse aims anew.</param>
 /// <param name="Pick">The pick of the picked character mode, null otherwise.</param>
 /// <param name="Zone">The cells the anchor must lie in, null for the whole grid.</param>
-public sealed record TargetSpec(TargetMode Mode, bool NewTargetEachPulse, TargetPick? Pick = null, ZoneSpec? Zone = null);
+/// <param name="Manual">The cells of the manual mode, null otherwise.</param>
+public sealed record TargetSpec(TargetMode Mode, bool NewTargetEachPulse, TargetPick? Pick = null, ZoneSpec? Zone = null, ManualTarget? Manual = null);
+
+/// <summary>
+/// The cells the manual mode aims at, one per pulse in pulse order.
+/// </summary>
+/// <remarks>
+/// The cells keep their place relative to the grid they were set on, so a cast on another grid size
+/// aims at the cell in the same relative place (see <c>ManualTargets.CellOn</c>).
+/// </remarks>
+/// <param name="Cells">The cell of each pulse; a pulse past the last cell aims at the last.</param>
+/// <param name="SetOn">The grid the cells were set on.</param>
+/// <param name="Offset">How many cells a pulse may land away from its cell, in every direction; 0 hits it exactly.</param>
+public sealed record ManualTarget(IReadOnlyList<GridCell> Cells, GridSize SetOn, int Offset = 0);
 
 /// <summary>
 /// The cells an anchor must lie in; every limit set narrows it.

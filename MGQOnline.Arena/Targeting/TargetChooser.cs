@@ -2,6 +2,7 @@
 //  TargetChooser.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Aimed the manual mode at the pulse's cell
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -99,6 +100,10 @@ public static class TargetChooser
                 return picked.Count > 0
                     ? new TargetChoice(picked[0].Cell, AnchorOrigin.Picked, zone, picked.Select(unit => unit.Cell).ToList(), false, click is not null)
                     : Fallback(zone, living, skill, usableClick, random, false);
+            case TargetMode.Manual:
+                return targeting.Manual is { } manual && ManualTargets.CellOf(manual, request.Pulse, request.Grid, random) is GridCell set
+                    ? new TargetChoice(set, AnchorOrigin.Manual, zone, [set], false, click is not null)
+                    : Fallback(zone, living, skill, usableClick, random, true);
             case TargetMode.MostHit:
                 List<GridCell> best = MostHit(request, open);
                 return best.Count > 0

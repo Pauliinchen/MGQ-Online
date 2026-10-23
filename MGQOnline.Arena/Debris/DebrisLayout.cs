@@ -2,7 +2,8 @@
 //  DebrisLayout.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Took in the random debris amount from the model
+//      Paulinchen  2026-10-23: Rolled the battlefield debris without a chance roll
+//                            - Took in the random debris amount from the model
 //                            - Rolled the debris in a debris style
 //      Paulinchen  2026-10-21: Created
 //
@@ -62,6 +63,25 @@ public static class DebrisLayout
         }
 
         return DebrisField.Of(free.Take(count).Select(cell => DebrisCell.Of(cell, DebrisOrigin.Map, null, kind, 0)));
+    }
+
+    /// <summary>
+    /// Rolls the debris a raid's battlefield starts a battle with: the cells its density covers,
+    /// without a chance roll, so a preview and a battle on the same seed and cells place the same debris.
+    /// </summary>
+    /// <param name="grid">The grid.</param>
+    /// <param name="partySize">The units, which the cap keeps room for.</param>
+    /// <param name="debris">The battlefield's debris.</param>
+    /// <param name="random">The debris stream.</param>
+    /// <param name="freeCellsPerCharacter">The free cells the game rule keeps per unit.</param>
+    /// <param name="avoid">Cells that stay free, such as the party's.</param>
+    /// <param name="style">The debris' style, or null for the plain one.</param>
+    /// <returns>The debris, lasting the whole battle; none for a density that covers no cell.</returns>
+    public static DebrisField RollBattlefield(GridSize grid, int partySize, BattlefieldDebris debris, ArenaRandom random, int freeCellsPerCharacter, IEnumerable<GridCell>? avoid = null, DebrisStyle? style = null)
+    {
+        ArgumentNullException.ThrowIfNull(debris);
+        int cells = Battlefield.CellsOf(grid, debris.DensityBasisPoints);
+        return cells > 0 ? Roll(grid, partySize, cells, cells, random, freeCellsPerCharacter, avoid, style) : DebrisField.Empty;
     }
 
     /// <summary>

@@ -2,7 +2,8 @@
 //  Samples.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Gave the sample boss a battlefield instead of start debris
+//      Paulinchen  2026-10-23: Added the manual cells of a skill's targeting
+//                            - Gave the sample boss a battlefield instead of start debris
 //                            - Gave the boss its raid and a Hades refight
 //                            - Added damage reduction effects and events
 //                            - Gave the boss its event battle, enemy slots, a raid boss enemy and a reserve, and added fight change rules and events
@@ -520,7 +521,7 @@ internal static class Samples
             Tier, Tier.Stats, Boss.Battlefield!, Boss.Battlefield!.Debris!, Boss.Battlefield!.Hazards!, Boss.Raid!, Boss.AlsoAt![0], Design.DebrisTypes![CrystalId], Traits, Traits.Entries[1], Traits.Features[0], Traits.Entries[1].LastStand!, Traits.StateRecipes[1], Counter,
             Boss, Boss.Event, new BattleEventRef(0, CommonEvent: 40), Boss.Enemies[0], Boss.Reserve![0], Boss.Enemies[0].Stats, Boss.NormalAttack, Boss.BattleMaps[0], Boss.Actions[FirstSlot][0], Boss.Actions[FirstSlot][0].FollowUp!,
             CustomSkill, CustomSkill.Fields, CustomSkill.Fields.Damage, CustomSkill.Effects[0], CustomSkill.Stance!,
-            AreaSkill, AreaSkill.Shape, AreaSkill.Targeting, AreaSkill.Targeting.Zone!, AreaSkill.Damage, Formula, AreaSkill.Spread, AreaSkill.Falloff,
+            AreaSkill, AreaSkill.Shape, AreaSkill.Targeting, AreaSkill.Targeting.Zone!, new ManualTarget([new GridCell(2, 1), new GridCell(7, 3)], new GridSize(15, 6), 1), AreaSkill.Damage, Formula, AreaSkill.Spread, AreaSkill.Falloff,
             AreaSkill.Presentation, AreaSkill.Presentation.CellAnimation!, AreaSkill.Presentation.CellFlash!, AreaSkill.Presentation.Animation,
             AreaSkill.Debris!, Design.DebrisTypes![CrystalId].Look!, AreaSkill.Marks!, AreaSkill.Marks!.Leaves[0], AreaSkill.Payload, AreaSkill.Payload.TargetEffects[0],
             AreaSkill.Payload.Restorations[0], AreaSkill.Payload.Recoveries[0], AreaSkill.Payload.Hit, SupportSkill.Support!, AreaSkill.Facts, AreaSkill.Facts.Filter, AreaSkill.Cycle!,

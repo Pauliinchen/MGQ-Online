@@ -2,6 +2,7 @@
 //  TargetChoice.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Added the manual anchor
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -45,6 +46,11 @@ public enum AnchorOrigin
     /// A rule aimed the cast at a unit's cell.
     /// </summary>
     Aimed,
+
+    /// <summary>
+    /// The cell the design sets for the pulse, moved by its random offset.
+    /// </summary>
+    Manual,
 }
 
 /// <summary>

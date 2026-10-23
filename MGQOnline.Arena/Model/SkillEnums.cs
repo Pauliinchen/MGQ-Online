@@ -2,6 +2,7 @@
 //  SkillEnums.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Added the manual target mode
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -191,6 +192,11 @@ public enum TargetMode
     /// The zone cell whose shape hits the most characters.
     /// </summary>
     MostHit,
+
+    /// <summary>
+    /// The cell the design sets for each pulse, moved by its random offset.
+    /// </summary>
+    Manual,
 }
 
 /// <summary>

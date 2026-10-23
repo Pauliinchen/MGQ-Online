@@ -2,6 +2,7 @@
 //  CastResolverTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Tested the manual cells of each pulse
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -64,6 +65,23 @@ public sealed class CastResolverTests
         Assert.Equal(outcome.Pulses.Count(pulse => pulse.Fizzled), outcome.Warnings.Count(warning => warning.Code == CastWarningCode.NoTarget));
         Assert.Contains(outcome.Pulses, pulse => pulse.Fizzled);
         Assert.Contains(outcome.Pulses, pulse => !pulse.Fizzled);
+    }
+
+    /// <summary>
+    /// A manual skill telegraphs each pulse on its own cell, and a pulse past the last cell on the last.
+    /// </summary>
+    [Fact]
+    public void TelegraphsEveryManualPulseOnItsOwnCell()
+    {
+        RuntimeSkill skill = CastSamples.Area(new ShapeSpec(ShapeType.Square, ShapeFit.Clip, Size: 1), pulses: 3) with
+        {
+            Targeting = new TargetSpec(TargetMode.Manual, false, Manual: new ManualTarget([new GridCell(1, 1), new GridCell(5, 3)], Board)),
+        };
+
+        CastTelegraph telegraph = CastResolver.Telegraph(Request(skill, [CastSamples.Unit(1, 9, 4)]));
+
+        Assert.Equal([new GridCell(1, 1), new GridCell(5, 3), new GridCell(5, 3)], telegraph.Pulses.Select(pulse => pulse.Choice.Anchor));
+        Assert.All(telegraph.Pulses, pulse => Assert.Equal(AnchorOrigin.Manual, pulse.Choice.Origin));
     }
 
     /// <summary>

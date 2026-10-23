@@ -2,7 +2,8 @@
 //  ArenaCasts.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Took a debris type from the fight's battlefield
+//      Paulinchen  2026-10-23: Rolled the battlefield debris without a chance roll
+//                            - Took a debris type from the fight's battlefield
 //                            - Placed debris in the style of its debris type
 //      Paulinchen  2026-10-22: Gave the landing of each pulse to the hazards
 //                            - Floored the formula of a hit at 0
@@ -87,11 +88,11 @@ public sealed class ArenaCasts : ICastResolver
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<DebrisCell> PlaceRandomDebris(BattleState state, RandomDebris debris)
+    public IReadOnlyList<DebrisCell> PlaceBattlefieldDebris(BattleState state, BattlefieldDebris debris)
     {
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(debris);
-        DebrisField field = DebrisLayout.Roll(
+        DebrisField field = DebrisLayout.RollBattlefield(
             state.Grid,
             state.Units.Count,
             debris,

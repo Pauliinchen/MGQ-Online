@@ -2,6 +2,7 @@
 //  Fakes.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Placed no battlefield debris in the casting fake
 //      Paulinchen  2026-10-21: Took the concrete casting seam and dropped the fake rule engine for the real one
 //                            - Created
 //
@@ -66,7 +67,7 @@ internal sealed class FakeCasts : ICastResolver
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<DebrisCell> PlaceRandomDebris(BattleState state, RandomDebris debris) => [];
+    public IReadOnlyList<DebrisCell> PlaceBattlefieldDebris(BattleState state, BattlefieldDebris debris) => [];
 
     /// <inheritdoc />
     public DebrisPlacement PlaceDebris(BattleState state, SkillDebrisSpec debris, PlannedCast? cast) => DebrisPlacement.None;

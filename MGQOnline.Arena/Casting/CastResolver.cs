@@ -2,7 +2,8 @@
 //  CastResolver.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Placed the skill's debris in its debris style
+//      Paulinchen  2026-10-23: Aimed every pulse of a manual skill at its own cell
+//                            - Placed the skill's debris in its debris style
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -60,7 +61,7 @@ public static class CastResolver
         TargetChoice? shared = null;
         for (int pulse = 0; pulse < pulses; pulse++)
         {
-            TargetChoice choice = skill.Targeting.NewTargetEachPulse
+            TargetChoice choice = skill.Targeting.NewTargetEachPulse || skill.Targeting.Mode == TargetMode.Manual
                 ? TargetChooser.Choose(target with { Pulse = pulse }, targeting)
                 : (shared ??= TargetChooser.Choose(target, targeting));
             AddChoiceWarnings(request, choice, pulse, warnings);

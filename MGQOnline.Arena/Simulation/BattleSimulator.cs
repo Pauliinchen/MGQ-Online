@@ -2,7 +2,7 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Placed the raid's battlefield debris at battle start
+//      Paulinchen  2026-10-23: Placed the raid's battlefield debris at battle start without a chance roll
 //                            - Logged the damage dealt after the damage reduction and ended the reductions' turns
 //                            - Fought the boss's starting line-up and raised the falls of the enemies the party felled
 //                            - Read each enemy's actions from its slot
@@ -221,8 +221,7 @@ public sealed partial class BattleSimulator
 
         if (boss.Battlefield?.Debris is { DensityBasisPoints: > 0 } debris)
         {
-            int cells = Battlefield.CellsOf(state.Grid, debris.DensityBasisPoints);
-            AddDebris(state, _casts.PlaceRandomDebris(state, new RandomDebris(BasisPoints.Whole, cells, cells, debris.Type)), null);
+            AddDebris(state, _casts.PlaceBattlefieldDebris(state, debris), null);
         }
 
         PlaceStartHazards(state);

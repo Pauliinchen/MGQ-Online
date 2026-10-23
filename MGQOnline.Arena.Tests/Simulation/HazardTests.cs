@@ -2,7 +2,8 @@
 //  HazardTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Tested the battlefield hazards and put test hazards on cells after the start
+//      Paulinchen  2026-10-23: Tested that a battle starts with the debris a preview rolls
+//                            - Tested the battlefield hazards and put test hazards on cells after the start
 //                            - Keyed the actions by enemy slot
 //                            - Took the random debris from the game rule
 //      Paulinchen  2026-10-22: Created
@@ -11,10 +12,12 @@
 
 using System.Collections.Generic;
 using System.Linq;
+using MGQOnline.Arena.Debris;
 using MGQOnline.Arena.Events;
 using MGQOnline.Arena.Grids;
 using MGQOnline.Arena.Hazards;
 using MGQOnline.Arena.Model;
+using MGQOnline.Arena.Randomness;
 using MGQOnline.Arena.Simulation;
 
 namespace MGQOnline.Arena.Tests.Simulation;
@@ -34,6 +37,22 @@ public sealed class HazardTests
     /// A second hazard id.
     /// </summary>
     private const string IceId = "ice";
+
+    /// <summary>
+    /// A battle starts with the battlefield debris a preview rolls on the same seed and party cells.
+    /// </summary>
+    [Fact]
+    public void StartsWithTheDebrisAPreviewRolls()
+    {
+        BattlefieldDebris debris = new(1500);
+        RuntimeDesign design = Design(Hazard(FireId, [HazardTrigger.StepsOnto]), battlefield: new Battlefield(debris));
+        BattleState state = new BattleSimulator(design).Start(SimFixtures.Setup(4, seed: 7));
+
+        DebrisField rolled = DebrisLayout.RollBattlefield(state.Grid, state.Units.Count, debris, new RandomStreams(7).Get(RandomStream.Debris), design.Rules.Debris.FreeCellsPerCharacter, state.Units.Select(unit => unit.Cell));
+
+        Assert.NotEmpty(rolled.Cells);
+        Assert.Equal(rolled.Cells.Select(cell => cell.Cell), state.Debris.Cells.Select(cell => cell.Cell));
+    }
 
     /// <summary>
     /// A battle starts with its raid's battlefield hazards: the cells of the density split evenly
