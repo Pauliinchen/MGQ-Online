@@ -5,6 +5,8 @@
 #      Paulinchen  2026-10-24: Shared the second accessory slot (445) as a Raid World's story
 #                            - Gave the characters the second accessory slot once a story written past the game turned it on
 #                            - Listed the bans of the place a player stands in
+#      Paulinchen  2026-10-23: Read what is each player's own from the story's table of the DLL, the Raid World's story mapping or the Classic party's
+#                            - Dropped the Raid personal lists, which the story mapping replaces, and the leader's whole-story delta
 #      Paulinchen  2026-10-18: Kept switch and variable 0 out of the world's story
 #                            - Kept the collab's key item switch each Raid World player's own
 #      Paulinchen  2026-10-15: Kept the refusal of recruits each Raid World player's own
@@ -54,59 +56,15 @@ module MGQ_MpStoryState
   # side anew with the route the party takes.
   SIDE_SWITCHES = [ALICE_CHOSEN, ILIAS_CHOSEN]
 
-  # Switches that are the player's own: the flags the game toggles around its fights (22, which the
-  # events turn on around a story boss battle, 73 "Chaos Enemy Pause", 97 "Hades Rematch", which
-  # every battle page clears and the Chaos cave's events set), configuration mirrored in switches
-  # (95, 446, 447, 502), the warp and escape bans of the place they stand in, and the switches that
-  # tell whether a companion is in the party (1001-2000), and 0, which no switch is.
-  PERSONAL_SWITCHES = [0, 22, 73, ESCAPE_BAN, 95, 97, WARP_BAN, 446, 447, 502, 1001..2000]
-
   # The switch of the second accessory slot, which Fallen Micaela's blessing turns on for good. The
   # game's setter of the switch gives every character the slot.
   EXTRA_ACCESSORY_SLOT = defined?(NWConst::Sw::EXTRA_ACCESSORY_SLOT) ? NWConst::Sw::EXTRA_ACCESSORY_SLOT : 445
 
-  # Switches the game turns on for good and never off, which a story laid over the player's keeps
-  # on. Outside a Raid World they stay each player's own: a party's member borrows the leader's
-  # story and gets their own back, and the slot coming and going would move their equipment.
+  # Switches the game turns on for good and never off, which a track written over the player's
+  # story keeps on (see MGQ_MpWorldStory.kept_unlock?). Outside a Raid World they stay each player's
+  # own by the Classic party's table: a party's member borrows the leader's story and gets their own
+  # back, and the slot coming and going would move their equipment.
   UNLOCK_SWITCHES = [EXTRA_ACCESSORY_SLOT]
-
-  # Switches that are each Raid World player's own, as the game sets them for the fights with values
-  # of their own: a special boss's NORMAL (23), the Colosseum and its match under way (28, 87), the
-  # Labyrinth of Chaos (41) and the final battles' fixed NORMAL (507), the Pocket Castle's tour on
-  # each player's first visit (2013, 2015), and the refusal of every recruit (3), on until Lime joins
-  # and during the castle's collab scenario. Laid over another player's game, one player's Labyrinth
-  # or Colosseum would put everyone on its values, one player's castle tour would be told to
-  # everyone as the story, taking them along into the castle, and one player's collab would keep
-  # everyone from recruiting. The collab's start also hides the key items (504), which would hide
-  # everyone's the same way.
-  RAID_PERSONAL_SWITCHES = [3, 23, 28, 41, 87, 504, 507, 2013, 2015]
-
-  # First switch that tells whether a companion awakened, one per companion.
-  AWAKENING_SWITCHES = 6000
-
-  # Last switch that tells whether a companion awakened. The switches from 7000 tell which story
-  # bosses the player defeated, such as "Eden Defeated", and belong to the story.
-  AWAKENING_LAST = 6999
-
-  # Variables that are the player's own: the last choice's answer (9), which an event of their own
-  # reads, where the Pocket Castle's way out returns them (21-23, the map, x and y where they used
-  # the castle's item), the enemies' experience, gold and MP corrections (46-48) and the rarity of
-  # enchanted drops (150), which the events of each area set for the battles there, the small and
-  # large medals they handed to the Medal Queen and King (55, 59), whose prizes go by them, the
-  # places their party has beyond eight (56), since the game cuts a party down to its places, the
-  # map a transfer goes on to (57), where a game over returns them (1002), the counts of their
-  # enchanted weapons and armors (200-201), the variant of an event the game picks right before it
-  # calls it ("Event Selection", 129, which a trader's talk sets as a story value would) and
-  # monsters' friendliness (2000-2999), and 0, which no variable is.
-  PERSONAL_VARIABLES = [0, 9, 21..23, 46..48, 55..57, 59, 129, 150, 200..201, 1002, 2000...3000]
-
-  # Variables that are each Raid World player's own, beside PERSONAL_VARIABLES: the enemies' rates
-  # the difficulty sets (41-45, 49), the Ruler Ruler's own rates (92-99), the Labyrinth of Chaos's
-  # floors, area, level and tier (121, 123, 149, 151), the difficulty (902), the highest one cleared
-  # and its check (903, 906), and the difficulty a special boss or the Colosseum keeps while it sets
-  # its own (908). The world sets the difficulty for every player through world_difficulty.rbx, and
-  # each game keeps the values its own Labyrinth or Colosseum set.
-  RAID_PERSONAL_VARIABLES = [41..45, 49, 92..99, 121, 123, 149, 151, 902, 903, 906, 908]
 
   # First variable that holds a companion's affection, one per companion.
   AFFECTION_VARIABLES = 3000
@@ -219,19 +177,15 @@ module MGQ_MpStoryState
     [switches, variables, self_switches]
   end
 
-  # Reports whether a switch is the player's own. The side is until the Great Decision, and always
-  # in a Raid World, where everyone keeps the side they chose; a scene switch is in a Raid World,
-  # whose story a game may write while one of its scenes runs.
+  # Reports whether a switch is the player's own, by the open world's table (MGQ_MpStoryKeys): a
+  # Raid World's story mapping, a Classic party's table, whose side switches are the player's own
+  # until the Great Decision; in a Classic party also the outcomes of the member's own choices.
   #
   # @param id [Integer] The switch.
   # @param variables [Array, nil] The variables of the story it belongs to, nil for the one played.
   # @return [Boolean] Whether it is.
   def self.personal_switch?(id, variables = nil)
-    return MGQ_MpCoop::Scope.raid? || sides_differ?(variables) if SIDE_SWITCHES.include?(id)
-    return MGQ_MpCoop::Scope.raid? if RAID_PERSONAL_SWITCHES.include?(id) || scene_switch?(id)
-    return !MGQ_MpCoop::Scope.raid? if UNLOCK_SWITCHES.include?(id)
-
-    PERSONAL_SWITCHES.any? { |range| range === id } || id.between?(AWAKENING_SWITCHES, AWAKENING_LAST) || choice_key?(:s, id) || chest_flag?(id)
+    !MGQ_MpStoryKeys.shared?(0, id, variables) || (!MGQ_MpCoop::Scope.raid? && choice_key?(:s, id))
   end
 
   # Reports whether a switch is a chest flag, which only chests turn on.
@@ -250,12 +204,12 @@ module MGQ_MpStoryState
   end
 
   # Reports whether a switch only stays on while a scene runs, such as "White Rabbit Emerged" (2029),
-  # see MGQ_MpWorldCatchupData::SCENE_SWITCHES.
+  # by the open world's table.
   #
   # @param id [Integer] The switch.
   # @return [Boolean] Whether it does.
   def self.scene_switch?(id)
-    defined?(MGQ_MpWorldCatchupData::SCENE_SWITCHES) && MGQ_MpWorldCatchupData::SCENE_SWITCHES.include?(id) ? true : false
+    MGQ_MpStoryKeys.bit?(0, id, MGQ_MpStoryKeys::SCENE)
   end
 
   # Reports whether a switch or a variable is the outcome of a story's choice the player made,
@@ -268,29 +222,39 @@ module MGQ_MpStoryState
     defined?(MGQ_MpCoopChoices) && MGQ_MpCoopChoices.personal?(kind, id) ? true : false
   end
 
-  # Reports whether a variable is the player's own.
+  # Reports whether a variable is the player's own, by the open world's table; in a Classic party
+  # also the outcomes of the member's own choices.
   #
   # @param id [Integer] The variable.
   # @return [Boolean] Whether it is.
   def self.personal_variable?(id)
-    PERSONAL_VARIABLES.any? { |range| range === id } || (id >= AFFECTION_VARIABLES && id < AFFECTION_VARIABLES + companions) || choice_key?(:v, id) ||
-      (RAID_PERSONAL_VARIABLES.any? { |range| range === id } && MGQ_MpCoop::Scope.raid?)
+    !MGQ_MpStoryKeys.shared?(1, id) || (!MGQ_MpCoop::Scope.raid? && choice_key?(:v, id))
   end
 
-  # Counts the game's companions, one affection variable each.
-  #
-  # @return [Integer] How many.
-  def self.companions
-    $data_actors ? $data_actors.size : 1000
-  end
-
-  # Reports whether a self switch is the player's own: a chest's on the map, through
-  # coop_events.rbx, or one of a choice's lines, through coop_choices.rbx.
+  # Reports whether a self switch is the player's own, by the open world's table; in a Classic
+  # party also a chest's on the map, through coop_events.rbx, and one of a choice's lines, through
+  # coop_choices.rbx.
   #
   # @param key [Array] The self switch: map, event and letter.
   # @return [Boolean] Whether it is.
   def self.personal_self_switch?(key)
+    return true unless MGQ_MpStoryKeys.shared?(2, key)
+    return false if MGQ_MpCoop::Scope.raid?
+
     ($game_map && MGQ_MpCoopEvents.chest_key?(key)) || choice_self_switch?(key) ? true : false
+  end
+
+  # Reports whether a switch, variable or self switch is the player's own.
+  #
+  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
+  # @param key [Integer, Array] Its id or key.
+  # @return [Boolean] Whether it is.
+  def self.personal_key?(kind, key)
+    case kind
+    when 0 then personal_switch?(key)
+    when 1 then personal_variable?(key)
+    else personal_self_switch?(key)
+    end
   end
 
   # Reports whether a self switch is the player's own as one of a choice's lines, see
@@ -345,22 +309,6 @@ module MGQ_MpStoryState
   def self.changed_keys(before, after)
     keys = before.is_a?(Hash) ? before.keys | after.keys : (0...[before.size, after.size].max).to_a
     keys.reject { |key| before[key] == after[key] }
-  end
-
-  # Lists what changed between two stories, leaving out what is the player's own.
-  #
-  # @param before [Array] The switches, variables and self switches before.
-  # @param after [Array] The same after.
-  # @return [Hash] Changed switches, variables and self switches by key, under "s", "v" and "ss".
-  def self.delta(before, after)
-    switches = changed_keys(before[0], after[0]).reject { |id| personal_switch?(id) }
-    variables = changed_keys(before[1], after[1]).reject { |id| personal_variable?(id) }
-    self_switches = changed_keys(before[2], after[2])
-    {
-      "s" => switches.map { |id| "#{id}:#{after[0][id] ? 1 : 0}" }.join(","),
-      "v" => variables.map { |id| "#{id}:#{encode_value(after[1][id])}" }.join(","),
-      "ss" => self_switches.map { |key| "#{key.join('.')}:#{after[2][key] ? 1 : 0}" }.join(","),
-    }
   end
 
   # Writes a whole story, leaving out what is the player's own. What the story turned off or set to

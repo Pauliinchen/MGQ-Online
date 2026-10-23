@@ -2,6 +2,7 @@
 #  world_opening_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Loaded story_keys.rbx, which the opening's setup writes through
 #      Paulinchen  2026-10-11: Dropped the checks of the random encounters
 #                            - Checked random encounters coming on again past the talk that turns them on
 #                            - Created
@@ -119,6 +120,7 @@ class Game_Interpreter
   end
 end
 
+load_script "story_keys"
 load_script "world_opening"
 
 # Builds an event command at the top indent.

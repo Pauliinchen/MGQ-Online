@@ -4,7 +4,9 @@
 #  Changelog:
 #      Paulinchen  2026-10-24: Gave the viewers the warp and escape bans the teller's scene sets
 #                            - Noted each change of a teller's scene that reached the player
-#      Paulinchen  2026-10-23: Took back what an event of the player's own changed once the mod ends it early or moves the player away
+#      Paulinchen  2026-10-23: Took the story's writes from the one hook of story_keys.rbx
+#                            - Wrote the teller's story values as the multiplayer's own, which never go to the relay as the player's
+#                            - Took back what an event of the player's own changed once the mod ends it early or moves the player away
 #                            - Showed a viewer's character without a tint once the story ended on another map
 #      Paulinchen  2026-10-12: Left out picture and screen changes this game cannot take
 #                            - Told the viewers a frame's changes in one message, less often while skipping
@@ -274,9 +276,9 @@ module MGQ_MpCoopScene
 
   # As teller in a Raid World, keeps a change the story makes to a switch, variable or self switch,
   # which send_values tells the viewers at the frame's end: their games show the scene's characters
-  # on the pages the story turns on, which the world's story brings only once the telling ended.
-  # What is each player's own, but a scene switch (MGQ_MpStoryState.scene_switch?) and the place's
-  # bans (place_ban?), and a variable that holds no whole number, stays out.
+  # on the pages the story turns on, whose requests reach the relay too. What is each player's own,
+  # but a scene switch (MGQ_MpStoryState.scene_switch?) and the place's bans (place_ban?), and a
+  # variable that holds no whole number, stays out. Called by story_keys.rbx for every write.
   #
   # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
   # @param key [Integer, Array] Its id, or a self switch's map, event and letter.
@@ -757,12 +759,12 @@ module MGQ_MpCoopScene
   end
 
   # Lays the teller's story values over the player's while they watch, see story_value: what is
-  # the player's own stays, and the world's story takes each as the world's
-  # (MGQ_MpWorldStory.mirrored), so none is written as the player's own change. A scene switch is
+  # the player's own stays, and each is the multiplayer's own write (MGQ_MpStoryKeys.applying), so
+  # none goes to the relay as the player's: the teller's own requests carry them. A scene switch is
   # taken too, with its value before noted for restore, and a ban of the place for good, since the
   # player stands where the teller does. The catch-up keeps the player's story from before
-  # (MGQ_MpWorldCatchup.watched) to follow the values as a story laid over theirs. A Classic party's
-  # members get the leader's values through coop_story.rbx instead.
+  # (MGQ_MpWorldCatchup.watched) to follow the values as a story laid over theirs. A Classic
+  # party's members get the leader's values through coop_story.rbx instead.
   #
   # @param entries [Array<Array>] Each value's kind, key and value.
   # @param map [Integer] The teller's map they changed on.
@@ -775,21 +777,18 @@ module MGQ_MpCoopScene
     if defined?(MGQ_MpWorldCatchup) && taken.any? { |kind, key, _value| !scene_value?(kind, key) && !place_ban?(kind, key) }
       MGQ_MpWorldCatchup.watched { MGQ_MpStoryState.deep_copy(MGQ_MpWorldCatchup.story_now) }
     end
-    taken.each do |kind, key, value|
-      value = kind == 1 ? value : (value ? true : false)
-      next take_place_ban(key, value, map) if place_ban?(kind, key)
+    MGQ_MpStoryKeys.applying do
+      taken.each do |kind, key, value|
+        value = kind == 1 ? value : (value ? true : false)
+        next take_place_ban(key, value, map) if place_ban?(kind, key)
 
-      if scene_value?(kind, key)
-        @scene_switches[key] = $game_switches[key] ? true : false unless @scene_switches.key?(key)
-        $game_switches[key] = value
-        next
+        @scene_switches[key] = $game_switches[key] ? true : false if scene_value?(kind, key) && !@scene_switches.key?(key)
+        case kind
+        when 0 then $game_switches[key] = value
+        when 1 then $game_variables[key] = value
+        else $game_self_switches[key] = value
+        end
       end
-      case kind
-      when 0 then $game_switches[key] = value
-      when 1 then $game_variables[key] = value
-      else $game_self_switches[key] = value
-      end
-      MGQ_MpWorldStory.mirrored(kind, key, value)
     end
     log("applied the teller's #{taken.size} of #{entries.size} story value(s): " \
         "#{taken.first(6).map { |kind, key, value| "#{VALUE_KINDS[kind]} #{Array(key).join('.')}=#{value}" }.join(', ')}#{taken.size > 6 ? ', ...' : ''}")
@@ -1483,9 +1482,6 @@ rescue => e
 end
 
 begin
-  MGQ_MpHooks.after(Game_Switches, :[]=, "coop_scene") { |id, value| MGQ_MpCoopScene.story_value(0, id, value) }
-  MGQ_MpHooks.after(Game_Variables, :[]=, "coop_scene") { |id, value| MGQ_MpCoopScene.story_value(1, id, value) }
-  MGQ_MpHooks.after(Game_SelfSwitches, :[]=, "coop_scene") { |key, value| MGQ_MpCoopScene.story_value(2, key, value) }
   MGQ_MpHooks.after(Game_Character, :force_move_route, "coop_scene") { |route| MGQ_MpCoopScene.route(self, route) }
   MGQ_MpHooks.after(Game_CharacterBase, :animation_id=, "coop_scene") { |id| MGQ_MpCoopScene.effect(self, "animation", id) }
   MGQ_MpHooks.after(Game_CharacterBase, :balloon_id=, "coop_scene") { |id| MGQ_MpCoopScene.effect(self, "balloon", id) }

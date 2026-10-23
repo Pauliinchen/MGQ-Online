@@ -2,6 +2,7 @@
 //  WorldRoomTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Registered the topic that waits for the world room's sends as the game closes
 //      Paulinchen  2026-10-23: Posted a game kept aside and the ids of a player moved or gone
 //                            - Created
 //
@@ -23,8 +24,8 @@ namespace MGQParadox.Multiplayer;
 
 /// <summary>
 /// The bridge topics of the open world (<see cref="WorldRoom"/>): what the scripts tell of the
-/// player each frame, the party's actions and the chat's lines in, and the whole world room's
-/// inbox out as drained events, once a frame.
+/// player each frame, the party's actions and the chat's lines in, the wait for the room's last
+/// sends as the game closes, and the whole world room's inbox out as drained events, once a frame.
 /// </summary>
 /// <remarks>
 /// Every event is posted after the views it depends on (the party, the players' names, the
@@ -38,6 +39,12 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     /// map), "raid", "story_map"}.
     /// </summary>
     public const string MeTopic = "world.me";
+
+    /// <summary>
+    /// The topic the scripts call as the game closes: waits until the world room sent what was
+    /// queued, <see cref="WorldSession.CloseWait"/> at most, so the story's last writes reach the relay.
+    /// </summary>
+    public const string DrainTopic = "world.drain";
 
     /// <summary>
     /// The topic the scripts stage their routes with: [[field, gate ("party", "map" or nil)], ...].
@@ -199,6 +206,11 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
             return null;
         });
         context.Register(SinceTopic, (_, request) => topics.SinceOf(request.AsLong()));
+        context.Register(DrainTopic, (_, _) =>
+        {
+            topics._session.Drain();
+            return null;
+        });
         context.Register(ChatTopic, (_, request) => topics.Chat(request.AsHash()));
         context.Register(InviteTopic, (_, request) => topics.Act(() => topics._room.Party.Invite(request.IsNil ? null : request.AsText())));
         context.Register(StopInvitingTopic, (_, _) => topics.Act(topics._room.Party.StopInviting));

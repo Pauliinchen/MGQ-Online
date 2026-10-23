@@ -2,6 +2,7 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Kept the story tracks' frames games send
 //      Paulinchen  2026-10-22: Listed worlds without their mods for newer games once a test says so, and handed out one world with them
 //      Paulinchen  2026-10-17: Told a world's new game the seats that left or came during its handshake
 //                            - Kept the frozen raid boss fights among a keyed story's keys
@@ -328,6 +329,25 @@ internal sealed partial class TestRelay : IDisposable
     /// The chat lines games mirrored as text frames, each with the sender's player id. Guarded by <see cref="_gate"/>.
     /// </summary>
     private readonly List<(string Player, string Text)> _chatLines = [];
+
+    /// <summary>
+    /// The story tracks' frames games sent, each with the sender's player id. Guarded by <see cref="_gate"/>.
+    /// </summary>
+    private readonly List<(string Player, string Json)> _trackFrames = [];
+
+    /// <summary>
+    /// The story tracks' frames games sent so far, each with the sender's player id and the frame's JSON.
+    /// </summary>
+    public (string Player, string Json)[] TrackFrames
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _trackFrames];
+            }
+        }
+    }
 
     /// <summary>
     /// The chat lines games mirrored as text frames so far, each with the sender's player id.
@@ -1592,6 +1612,16 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
                         lock (_gate)
                         {
                             _chatLines.Add((playerId, text[5..]));
+                        }
+
+                        continue;
+                    }
+
+                    if (text.StartsWith("track ", StringComparison.Ordinal))
+                    {
+                        lock (_gate)
+                        {
+                            _trackFrames.Add((playerId, text[6..]));
                         }
 
                         continue;

@@ -2,6 +2,7 @@
 #  world_difficulty.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Worked the enemies' rates out as the multiplayer's own writes, which never go to the relay as the player's
 #      Paulinchen  2026-10-09: Created
 #
 #----------------------------------------------------------------
@@ -102,7 +103,8 @@ module MGQ_MpWorldDifficulty
   end
 
   # Runs the game's own common event that works the enemies' rates out from the difficulty, as its
-  # own difficulty choice does right after setting it.
+  # own difficulty choice does right after setting it; what it writes is the multiplayer's own
+  # (MGQ_MpStoryKeys.applying), as every game of the world works its rates out itself.
   def self.work_out_rates
     event = $data_common_events && $data_common_events[APPLY_EVENT]
     return unless event
@@ -110,10 +112,19 @@ module MGQ_MpWorldDifficulty
     interpreter = Game_Interpreter.new
     interpreter.setup(event.list)
     steps = 0
-    while interpreter.running? && steps < MAX_STEPS
-      interpreter.update
-      steps += 1
+    applying do
+      while interpreter.running? && steps < MAX_STEPS
+        interpreter.update
+        steps += 1
+      end
     end
+  end
+
+  # Runs a block as the multiplayer's own writes, see MGQ_MpStoryKeys.applying.
+  #
+  # @yield The writes.
+  def self.applying
+    defined?(MGQ_MpStoryKeys) ? MGQ_MpStoryKeys.applying { yield } : yield
   end
 
   # Puts the game on the world's difficulty after a save was loaded or a new game started, which

@@ -2,6 +2,7 @@
 #  world_opening.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Ran the opening's setup as the multiplayer's own writes, which never go to the relay as the player's
 #      Paulinchen  2026-10-15: Told whether the opening's setup runs
 #      Paulinchen  2026-10-11: Left the random encounters to world_catchup.rbx
 #                            - Turned random encounters on again as the world's story is laid over
@@ -53,7 +54,7 @@ module MGQ_MpWorldOpening
   # ran, so the story it set up is where the player's own changes start; else nothing. Called by
   # world_story.rbx before it lays the world's story over the player's.
   #
-  # @param world [Hash] The world's counters, see MGQ_MpWorldStory.counters_of.
+  # @param world [Hash] "p", the main story's progress of the track the relay handed.
   # @return [Symbol, nil] :wait while the world's story waits, :opened right after the setup ran,
   #   nil for nothing to do.
   def self.before_take(world)
@@ -134,12 +135,13 @@ module MGQ_MpWorldOpening
     @state == :running
   end
 
-  # Runs the opening's setup on, which is done once its commands ended. Called after the map's
-  # update.
+  # Runs the opening's setup on, which is done once its commands ended; what it writes is the
+  # multiplayer's own (MGQ_MpStoryKeys.applying), as the world's story is written over it. Called
+  # after the map's update.
   def self.tick
     return unless @state == :running
 
-    @interpreter.update
+    MGQ_MpStoryKeys.applying { @interpreter.update }
     return if @interpreter.running?
 
     @interpreter = nil

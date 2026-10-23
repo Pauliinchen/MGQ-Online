@@ -4,6 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-10-23: Moved the squad settings into MGQOnline.Game
 //                            - Named the default difficulty, the difficulties' names, the default squad settings and the formation sizes for the game script
+//                            - Named the Raid World stories played on tracks in the X-MGQ-Features header and kept the story mapping's address
 //      Paulinchen  2026-10-22: Read one world with its mods, mod hashes and settings, which the list leaves out for this version
 //      Paulinchen  2026-10-15: Named the Raid World stories kept key by key in the X-MGQ-Features header
 //      Paulinchen  2026-10-14: Dropped the dev feature, as every game may give a Raid World a starting save
@@ -91,15 +92,21 @@ internal sealed partial class DirectoryClient
     public const string VersionHeader = "X-MGQ-Version";
 
     /// <summary>
-    /// What this game keeps a Raid World's story as, which it names in <see cref="FeaturesHeader"/>:
-    /// key by key, see <see cref="StoryLists"/>.
+    /// What this game names in <see cref="FeaturesHeader"/> for a Raid World's story kept key by
+    /// key, which the relay asks of every game in a world whose keyed story it keeps.
     /// </summary>
     public const string KeyedStories = "keys";
 
     /// <summary>
+    /// What this game names in <see cref="FeaturesHeader"/> for a Raid World's story played on the
+    /// relay's tracks, see <see cref="StoryTopics"/>.
+    /// </summary>
+    public const string StoryTracks = "tracks";
+
+    /// <summary>
     /// What this game names in <see cref="FeaturesHeader"/>, separated by commas.
     /// </summary>
-    public const string Features = WorldType.Raid + "," + KeyedStories;
+    public const string Features = WorldType.Raid + "," + KeyedStories + "," + StoryTracks;
 
     /// <summary>
     /// How many outcomes last logged are kept; once full they are forgotten, which only has a repeated request log once more.
@@ -157,6 +164,11 @@ internal sealed partial class DirectoryClient
     private readonly Uri _trades;
 
     /// <summary>
+    /// The story mapping's address, /v1/story-mapping at the relay.
+    /// </summary>
+    private readonly Uri _mapping;
+
+    /// <summary>
     /// Creates a client for a relay's directory.
     /// </summary>
     /// <param name="relay">The relay's address, wss:// or ws://, as <see cref="Relays"/> names it.</param>
@@ -168,6 +180,8 @@ internal sealed partial class DirectoryClient
         _mods = web.Uri;
         web.Path = "/v1/trades";
         _trades = web.Uri;
+        web.Path = "/v1/story-mapping";
+        _mapping = web.Uri;
     }
 
     /// <summary>

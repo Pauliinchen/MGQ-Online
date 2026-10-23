@@ -7,7 +7,8 @@
 #                            - Counted Alice's Power-up from the switches of its steps
 #                            - Ran what the power-ups of the story change of the characters for a player a story carried past them
 #                            - Turned a companion of the roster into the persona a join of theirs brings, unless a later change of the story set another
-#      Paulinchen  2026-10-23: Gave job and race items another player found to every player of the world at once
+#      Paulinchen  2026-10-23: Followed the relay's tracks, which put a player behind on their part's checkpoint and move them on by their level, in place of fetching and laying over checkpoints
+#                            - Gave job and race items another player found to every player of the world at once
 #                            - Told the level a cap of another mod opens the gate at in the gate's notices
 #                            - Set the game over's return point of the story only on the map of the event that sets it
 #      Paulinchen  2026-10-17: Listed no companion on the Unlocks page whom a removal of the story took away
@@ -64,11 +65,11 @@
 # A Raid World's catch-up, on the story of world_story.rbx and the tables of world_catchup_data.rbx.
 #
 # A player whose story is in an earlier part than the world's is behind (MGQ_MpWorldStory.mode
-# :behind): they get the checkpoint the relay keeps of their part, the world as it was right before
-# that part's ending, laid over their own values, and play no story while behind (coop_events.rbx
+# :behind): the relay puts them on a track of their own at the checkpoint of their part, the world
+# as it was right before that part's ending, and they play no story while behind (coop_events.rbx
 # asks holds_story?). Once the highest base level of their characters reaches their part's gate,
-# they move straight into the next part: its checkpoint while the world is past it, else the
-# world's own story. A player whom another mod caps below the gate is moved on once at that cap.
+# the relay moves them straight into the next part: its checkpoint while the world is past it, else
+# the world's own story. A player whom another mod caps below the gate is moved on once at that cap.
 #
 # What the story gives goes by its place in the story, never by what another player holds. A
 # row of the tables counts once the player's story is past it (passed?), and once per save, which
@@ -124,7 +125,8 @@ module MGQ_MpWorldCatchup
   # characters (check_growth), five seconds, as the tables hold thousands of rows.
   GROWTH_CHECKS = 10
 
-  # Frames between two reads of the DLL's state while a request runs, a quarter of a second.
+  # Frames between two reads of the DLL's state while an addition of shared companions runs, a
+  # quarter of a second.
   STATE_FRAMES = 15
 
   # Frames before a request that failed is tried again, thirty seconds.
@@ -139,9 +141,6 @@ module MGQ_MpWorldCatchup
 
   # Shared companions one addition names at most, as the relay takes them.
   SHARE_BATCH = 500
-
-  # Bytes the DLL may write a checkpoint into at first; a larger one asks for a larger buffer.
-  STATE_SIZE = 4096
 
   # Frames a notice of the catch-up shows, five seconds.
   NOTICE_FRAMES = 300
@@ -260,11 +259,6 @@ module MGQ_MpWorldCatchup
   # noted. The notes in the save stay.
   def self.forget
     @world_id = nil
-    @want = nil
-    @fetching = nil
-    @fetch_at = 0
-    @ready = nil
-    @joins_world = false
     @world_told = nil
     @known_roster = nil
     @growth_count = 0
@@ -318,25 +312,6 @@ module MGQ_MpWorldCatchup
     !noted.nil? && noted == own_part
   end
 
-  # Reports whether a player behind stays behind though the world's story is in their part again,
-  # as after the world's return from a route to the Great Decision: their level has not reached
-  # their part's gate yet. Called by world_story.rbx.
-  #
-  # @return [Boolean] Whether they do.
-  def self.keeps_behind?
-    holds_story? && !@joins_world && !gate_reached?
-  rescue
-    false
-  end
-
-  # Reports whether the player moves into the world's own story, which world_story.rbx then lays
-  # over theirs whatever its part.
-  #
-  # @return [Boolean] Whether they do.
-  def self.joins_world?
-    @joins_world ? true : false
-  end
-
   # Reports whether a lost raid boss battle's defeat runs, which takes items its undo gives back (see
   # battles_raid_freeze.rbx): a restock meanwhile would give them twice. Logs once as a hold starts
   # and as it ends.
@@ -362,32 +337,28 @@ module MGQ_MpWorldCatchup
 
   # Tells the player they are behind the world's story.
   #
-  # @param own [Hash] The player's counters, see MGQ_MpWorldStory.local_counters.
+  # @param part [String] The part of their track.
   # @return [String] The notice.
-  def self.behind_text(own)
-    part = MGQ_MpWorldStory.part_of(own)
+  def self.behind_text(part)
     "The world's story is further than yours. You see the world as it was before the end of #{part_name(part)}; reach level #{level_to_reach(part)} to move on."
   end
 
-  # Follows the catch-up for one frame: the relay's answers, the checkpoint and the orbs' event that
-  # wait, then every CHECK_FRAMES while the player is free the rewards waiting for their gate, the
-  # story's rows, the level gate, the shared companions, the orbs and the Makina, a warp ban left
-  # where warping is free (lift_warp_ban), and the vehicles after a story laid over the player's. Called after the map's update. Nothing goes on while a
-  # lost raid boss battle's defeat runs (see holding?).
+  # Follows the catch-up for one frame: the relay's answer to shared companions and the orbs' event
+  # that waits, then every CHECK_FRAMES while the player is free the rewards waiting for their gate,
+  # the story's rows, the shared companions, the orbs and the Makina, a warp ban left where warping
+  # is free (lift_warp_ban), and the vehicles after a story written into the player's. Called after
+  # the map's update. Nothing goes on while a lost raid boss battle's defeat runs (see holding?).
   def self.tick
     @clock += 1
     return close unless active?
     return if holding?
 
     note_world
-    read_requests if (@fetching || @adding) && @clock - @state_read >= STATE_FRAMES
-    start_fetch if @want && !@fetching && !@ready && @clock >= @fetch_at
+    read_shared if @adding && @clock - @state_read >= STATE_FRAMES
     play_orb_event if @orbs_due
     return if @clock - @checked < CHECK_FRAMES || !MGQ_MpWorldStory.quiet?
 
     @checked = @clock
-    # The personal half of a return to the Great Decision plays first, since it clears the route.
-    return (MGQ_MpWorldStory.queued? ? nil : take_checkpoint) if @ready
     return if MGQ_MpWorldStory.mode.nil?
 
     carry_watched
@@ -402,7 +373,6 @@ module MGQ_MpWorldCatchup
       review(story_now, false)
       guarded(:side) { ask_side }
       guarded(:growth) { check_growth }
-      guarded(:move_on) { move_on if MGQ_MpWorldStory.mode == :behind && !@want && !@joins_world && gate_reached? }
       guarded(:roster) { note_roster }
       guarded(:orbs) { check_orbs }
       guarded(:makina) { check_makina }
@@ -534,155 +504,47 @@ module MGQ_MpWorldCatchup
     entry ? entry.name : "Part #{id}"
   end
 
-  # Takes the player behind the world's story, in an earlier part (see world_story.rbx): their
-  # part's checkpoint is fetched unless their save holds it already, and the world's story is kept
-  # for its key items and chests. A player on a route the world never took moves on into the
-  # world's story at once. Called by world_story.rbx.
+  # Takes the player behind the world's story, on a track of their own at the checkpoint of their
+  # part, which the relay put them on (see world_story.rbx): the save notes it, see noted_behind?.
   #
-  # @param world [Hash] The world's counters, see MGQ_MpWorldStory.counters_of.
-  # @param own [Hash] The player's counters.
-  # @param told [Array] The world's story: switches, variables and self switches.
-  def self.behind(world, own, told)
-    @world_told = told
-    part = MGQ_MpWorldStory.part_of(own)
-    return if @want || @joins_world
-    # A route the world never took has no checkpoint, and the world's route goes on without it.
-    return join_world unless world_parts(world).include?(part)
-    return if ledger["checkpoint"] == part
-
-    if world["checkpoints"].to_a.include?(part)
-      want(part, "the player's story is behind the world's, in #{part_name(part)}")
-    else
-      log_once([:no_checkpoint, part], "the world keeps no checkpoint of #{part_name(part)}: the player keeps their own story there until their level moves them on")
-    end
+  # @param part [String] The part of their track.
+  # @param gate [Integer, nil] The level gate of that part, as the relay tells it.
+  def self.behind(part, gate)
+    ledger["checkpoint"] = part
+    log("the player plays a track of their own in #{part_name(part)} until level #{gate || gate_of(part)} moves them on")
   end
 
-  # Notes the world's story laid over the player's, for the key items and chests it gave, and clears
-  # the save's note that the player is behind, see noted_behind?. Called by world_story.rbx.
+  # Notes the world's story written into the player's, for the key items and chests it gave, and
+  # clears the save's note that the player is behind, see noted_behind?. Called by world_story.rbx.
   #
-  # @param told [Array] The world's story.
+  # @param told [Array, nil] The world's story, nil while the player plays a track of their own,
+  #   whose game the relay tells the world's story only of the keys the whole world keeps.
   def self.world_told(told)
     @world_told = told
-    ledger["checkpoint"] = nil if active?
+    ledger["checkpoint"] = nil if told && active?
   end
 
-  # Asks for a part's checkpoint.
+  # Follows the relay moving the player on from their part by their level: the notice, the rewards
+  # that wait while only a cap of another mod opened the gate (see note_capped), and the personal
+  # half of the world's return to the Great Decision when they leave a route the world finished.
+  # Called by world_story.rbx before the track the move led to is followed.
   #
-  # @param part [String] The part.
-  # @param reason [String] Why, for the log.
-  def self.want(part, reason)
-    @want = part
-    @fetch_at = @clock
-    log("#{reason}: fetching the checkpoint of #{part_name(part)}")
+  # @param move [Hash] "from", "to" (a part or "world"), "gate" and "by" ("level" or "cap").
+  # @param world [Hash, nil] The world's summary, see MGQ_MpWorldStory.world.
+  def self.moved(move, world)
+    from = move["from"].to_s
+    to = move["to"].to_s
+    gate = (move["gate"] || gate_of(from)).to_i
+    name = to == MGQ_MpWorldStory::WORLD_TRACK ? "the world's story" : part_name(to)
+    log("level #{gate} reached in #{part_name(from)}#{move['by'] == 'cap' ? ' by the level cap' : ''}: the relay moved the player on to #{name}")
+    notice(:gate, "Level #{move['by'] == 'cap' ? level_to_reach(from) : gate} reached: catching up to #{name}.")
+    note_capped(gate)
+    return_from_route(from, world) if world
   end
 
-  # Starts fetching the checkpoint asked for.
-  def self.start_fetch
-    unless Relay.fetch(MGQ_MpWorldStory.world_id, @want)
-      @fetch_at = @clock + START_FRAMES
-      return log_once([:fetch_start, @want], "the DLL did not start fetching the checkpoint of #{part_name(@want)}, trying again")
-    end
-
-    @fetching = @want
-  end
-
-  # Reads how the checkpoint fetch and the addition of shared companions stand.
-  def self.read_requests
-    @state_read = @clock
-    read_checkpoint if @fetching
-    read_shared if @adding
-  end
-
-  # Takes the checkpoint fetch once it ended: kept for the next quiet moment when done, else the
-  # player moves on without it or tries again. A failed fetch may name no part, or the last one
-  # fetched, as the DLL names it only once the relay answered.
-  def self.read_checkpoint
-    state = Relay.state
-    return if state.empty? || state["state"] == "busy"
-    return if state["state"] != "failed" && state["part"] != @fetching
-
-    part = @fetching
-    @fetching = nil
-    case state["state"]
-    when "done"
-      @ready = { :part => part, :text => state[:payload].to_s, :wrev => state["wrev"].to_i }
-      log("fetched the checkpoint of #{part_name(part)} (revision #{state['wrev']}, #{state[:payload].to_s.size} characters)")
-    when "none"
-      without_checkpoint(part, "the world keeps no checkpoint of #{part_name(part)} after all")
-    else
-      @fetch_at = @clock + RETRY_FRAMES
-      log("fetching the checkpoint of #{part_name(part)} failed: #{state['error']}; trying again later")
-    end
-  end
-
-  # Goes on without a part's checkpoint: a player in that part keeps their own story there, one
-  # moving on to it moves on to the world's story.
-  #
-  # @param part [String] The part.
-  # @param reason [String] Why, for the log.
-  def self.without_checkpoint(part, reason)
-    @want = nil
-    if part == own_part
-      ledger["checkpoint"] = part
-      return log("#{reason}: the player keeps their own story there")
-    end
-
-    log("#{reason}: moving on to the world's story")
-    join_world
-  end
-
-  # Lays the checkpoint fetched over the player's story, keeping their own values (see
-  # MGQ_MpStoryState.mix) and what they changed while behind where the checkpoint did not change it
-  # (see MGQ_MpWorldStory.keep_own): the world as it was right before that part's ending, which is
-  # the story they stand on from then. Only a player still behind takes it.
-  def self.take_checkpoint
-    ready = @ready
-    @ready = nil
-    @want = nil
-    return log("dropped the checkpoint of #{part_name(ready[:part])}: the player is no longer behind") unless MGQ_MpWorldStory.mode == :behind
-
-    local = MGQ_MpStoryState.raw_state
-    own = MGQ_MpWorldStory.local_counters(local)
-    told = read_story(ready[:text])
-    return without_checkpoint(ready[:part], "the checkpoint of #{part_name(ready[:part])} holds no story this game can read") unless told
-
-    applied = MGQ_MpStoryState.mix(told, local, MGQ_MpWorldStory.chest_list)
-    MGQ_MpWorldStory.keep_unsent(applied, told, local)
-    base = MGQ_MpStoryState.deep_copy(applied)
-    kept, dropped = MGQ_MpWorldStory.keep_own(applied, told, local, MGQ_MpWorldStory.base, false)
-    MGQ_MpWorldStory.keep_open_chests(applied, local)
-    MGQ_MpStoryState.set_raw(*applied)
-    MGQ_MpWorldStory.stand_on(base)
-    ledger["checkpoint"] = ready[:part]
-    after = MGQ_MpWorldStory.local_counters(applied)
-    log("took the checkpoint of #{part_name(ready[:part])} (revision #{ready[:wrev]}): #{MGQ_MpWorldStory.counters_text(own)} -> #{MGQ_MpWorldStory.counters_text(after)}; " \
-        "kept #{kept.size} own changes, dropped #{dropped.size}")
-    carried(local)
-    ledger["capped"] = nil
-    MGQ_MpWorldStory.followed(own, after)
-  rescue => e
-    @want = ready[:part] if ready && ledger["checkpoint"] != ready[:part]
-    @fetch_at = @clock + RETRY_FRAMES
-    log("taking the checkpoint failed: #{e.class}: #{e.message}; trying again later")
-  end
-
-  # Reads a story the relay keeps, packed.
-  #
-  # @param text [String] The story.
-  # @return [Array, nil] The switches, variables and self switches, nil when this game cannot read
-  #   it.
-  def self.read_story(text)
-    return nil if text.empty?
-
-    MGQ_MpStoryState.decode_full(MGQ_MpStoryState.unpack(text))
-  rescue => e
-    log("reading a checkpoint failed: #{e.class}: #{e.message}")
-    nil
-  end
-
-  # Follows a story laid over the player's: what their own game played before counts as theirs,
+  # Follows a story written into the player's: what their own game played before counts as theirs,
   # then what the story carried them past gives what it gives, and the next check looks at the
-  # vehicles (check_vehicles). Called by world_story.rbx and after a checkpoint.
+  # vehicles (check_vehicles). Called by world_story.rbx.
   #
   # The first story laid over a player no longer behind is the one a move on at a level cap led to,
   # even when its checkpoint was dropped, so its rewards still wait (see note_capped); later ones
@@ -703,12 +565,6 @@ module MGQ_MpWorldCatchup
       review(story_now, true)
     end
     drop_capped("the story the move led to is laid over the player's") unless MGQ_MpWorldStory.mode == :behind
-    return unless @joins_world
-
-    @joins_world = false
-    ledger["checkpoint"] = nil
-    ledger["capped"] = nil
-    log("the player plays the world's story now")
   rescue => e
     log("following a story laid over the player's failed: #{e.class}: #{e.message}")
   end
@@ -811,26 +667,9 @@ module MGQ_MpWorldCatchup
     @roster_view = nil
   end
 
-  # Moves the player on from their part, see the module: into the next part's checkpoint while the
-  # world is past that part, else into the world's own story.
-  def self.move_on
-    world = MGQ_MpWorldStory.world
-    return unless world
-
-    from = own_part
-    target = next_part(from, world)
-    gate = gate_of(from)
-    name = target == :world ? "the world's story" : part_name(target)
-    log("level #{gate} reached in #{part_name(from)}: moving on to #{name}")
-    notice(:gate, "Level #{level_to_reach(from)} reached: catching up to #{name}.")
-    note_capped(gate)
-    return_from_route(from, world)
-    target == :world ? join_world : want(target, "moving on from #{part_name(from)}")
-  end
-
   # Notes the gate the player moves on at while only a cap of another mod opened it, so the story's
   # rewards the move carries them past wait for their real level (see rewards_wait?). The story the
-  # move lays over theirs clears it, see carried, drop_capped and take_checkpoint.
+  # move lays over theirs clears it, see carried and drop_capped.
   #
   # @param gate [Integer] The gate.
   def self.note_capped(gate)
@@ -883,13 +722,6 @@ module MGQ_MpWorldCatchup
   # @return [Symbol, String] :skill, or the item's kind.
   def self.reward_kind(row)
     row.kind == :skill ? :skill : row.kind.to_s
-  end
-
-  # Moves the player into the world's own story, which world_story.rbx fetches and lays over
-  # theirs whatever its part.
-  def self.join_world
-    @joins_world = true
-    MGQ_MpWorldStory.refetch(:caught_up)
   end
 
   # Gives a player on a route the world finished the personal half of the world's return to the
@@ -2653,32 +2485,8 @@ module MGQ_MpWorldCatchup
     MGQ_MpOverworldSync.notice(text)
   end
 
-  # Patch/Multiplayer/Multiplayer.dll's checkpoints and shared companions of the world at the relay.
+  # Patch/Multiplayer/Multiplayer.dll's shared companions of the world at the relay.
   module Relay
-    # Starts fetching a part's checkpoint.
-    #
-    # @param world [String] The world's id.
-    # @param part [String] The part.
-    # @return [Boolean] Whether it started.
-    def self.fetch(world, part)
-      MGQ_Multiplayer::Link.function('mp_raid_checkpoint_fetch').call(world + "\0", part + "\0") == 1
-    rescue => e
-      MGQ_MpWorldCatchup.log("fetching a checkpoint failed: #{e.class}: #{e.message}")
-      false
-    end
-
-    # Reads the last checkpoint fetched and how its fetch stands.
-    #
-    # @return [Hash] The headers (see docs/DEVELOPER.md), the story under :payload; empty before
-    #   any fetch.
-    def self.state
-      text = MGQ_Multiplayer::Link.read('mp_raid_checkpoint_state', STATE_SIZE)
-      text.empty? ? {} : MGQ_Multiplayer::Link.parse(text)
-    rescue => e
-      MGQ_MpWorldCatchup.log_once([:state, e.class], "reading the checkpoint failed: #{e.class}: #{e.message}")
-      {}
-    end
-
     # Starts adding companions to the world's shared list.
     #
     # @param world [String] The world's id.

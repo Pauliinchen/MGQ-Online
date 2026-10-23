@@ -6,6 +6,7 @@
 #                            - Placed the menu of a page with a head, a list and a pane over the pane or under its buttons
 #                            - Opened the overview outside a world too, as Single player with the Quests page
 #      Paulinchen  2026-10-23: Asked the world story for the part the player is in
+#                            - Read the world's part from the relay's summary of its story tracks
 #                            - Removed the unused EXP_VALUE, BOSSES_HEADING and World page labels, and the repeated page hints
 #                            - Kept the overview off the live map behind menus
 #      Paulinchen  2026-10-13: Removed the unused YOUR_LEVEL
@@ -569,7 +570,7 @@ module MGQ_MpWorldOverview
 
   # Reads the world's place in the story as the relay told it: its part, and on a route of the
   # final chapter the route, found through the variable that counts it (see ROUTES), since the
-  # world's story names routes as the relay does. The side is each player's own, so the world
+  # relay's summary names routes as the relay does. The side is each player's own, so the world
   # has none.
   #
   # @return [String] "part" or "part:route", see story_code; empty before the relay told the story.
@@ -577,7 +578,7 @@ module MGQ_MpWorldOverview
     counters = MGQ_MpWorldStory.world
     return "" unless counters
 
-    part = MGQ_MpWorldStory.part_of(counters)
+    part = counters["part"].to_s
     index = MGQ_MpWorldStory::ROUTES.index(part)
     return part.to_s unless index
 

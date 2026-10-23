@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-28: Gave the closing its world room drain topic
+#                            - Checked that the scenes ending on a quit or the window closing write the closing line, and the end once
 #                            - Checked that no script names an Encoding constant
 #      Paulinchen  2026-10-23: Checked that the log's lines wait for the bridge, cross it with the frame and go into the day's file while the mod stays off
 #                            - Checked that an error the error box shows is written once
@@ -325,9 +326,25 @@ end
 check("the log's last line tells a game that ended from one quit and one an error ended",
       [MGQ_Multiplayer.closing_text(nil), MGQ_Multiplayer.closing_text(SystemExit.new(0)), MGQ_Multiplayer.closing_text(error)[/\A.*bad at /]],
       ["the game closes", "the game closes: it was quit (exit status 0)", "the game closes after an error: ArgumentError: bad at "])
+MGQ_Multiplayer.const_set(:ROOM_DRAIN_TOPIC, "world.drain") unless defined?(MGQ_Multiplayer::ROOM_DRAIN_TOPIC)
 MGQ_Multiplayer.module_eval(source[/  def self\.closing\(error\)\n.*?\n  end\n/m])
-lines = logged_lines { [error, error, nil].each { |ended| MGQ_Multiplayer.closing(ended) } }
-check("an error the game's error box shows is written once, though the game's end names it again",
+MGQ_Multiplayer.module_eval(source[/  def self\.reset\?\(error\)\n.*?\n  end\n/m])
+MGQ_Multiplayer.module_eval(source[/  def self\.run_game\(original\)\n.*?\n  end\n/m])
+lines = logged_lines { MGQ_Multiplayer.run_game(lambda { :ran }) }
+check("the scenes returning, as a quit ends them, write the closing line while the game still runs, since its end runs no at_exit",
+      lines, ["the game closes"])
+ended = nil
+lines = logged_lines do
+  begin
+    MGQ_Multiplayer.run_game(lambda { raise SystemExit.new(0) })
+  rescue SystemExit => e
+    ended = e
+  end
+end
+check("the window closing, a SystemExit out of the scenes, writes it too and lets the game end",
+      [lines, ended.class], [["the game closes: it was quit (exit status 0)"], SystemExit])
+lines = logged_lines { [error, error, nil, nil].each { |ended| MGQ_Multiplayer.closing(ended) } }
+check("an error the game's error box shows is written once, though the game's end names it again, and the end itself once",
       lines.map { |line| line[/\A[^:]*/] }, ["the game closes after an error", "the game closes"])
 
 # A name someone else chose: nothing left of it reads as the fallback.

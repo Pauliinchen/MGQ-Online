@@ -2,6 +2,7 @@
 #  world_freeze.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Sent and took each frozen fight as a key of the relay's story tracks instead of a list beside the whole story
 #      Paulinchen  2026-10-17: Created
 #
 #----------------------------------------------------------------
@@ -9,19 +10,16 @@
 # A Raid World's frozen boss fights: a player who lost a raid boss's story battle keeps the story at
 # that battle (see battles_raid_freeze.rbx), and the world's story keeps it there for every player
 # until the boss's pools are defeated or its BEATEN marker is met, its own or that of the fight the
-# other side plays in its stead. Each frozen fight is an entry of
-# a list the world's story carries beside the story (LIST), merged as a union by troop; the DLL and
-# the relay keep each entry as one key of its troop (f<troop>), and a fight that ended as ENDED, which
-# replaces it for every game. An end is final for the world: the boss dies once, so no game freezes
-# that troop or the one the other side fights in its stead again. An entry's held keys are the switches, variables and self switches the
-# world's story shares at their value from before the fight's event ran (see
-# MGQ_MpWorldStory.shared_value), so nobody's story moves past the fight while it is frozen.
+# other side plays in its stead. Each frozen fight is one key of the relay's story tracks by its
+# troop (f<troop>), which the whole world keeps, players behind included, merged here as a union by
+# troop; a fight that ended is ENDED, which replaces it for every game. An end is final for the
+# world: the boss dies once, so no game freezes that troop or the one the other side fights in its
+# stead again. An entry's held keys are the switches, variables and self switches the world's story
+# shares at their value from before the fight's event ran (see MGQ_MpWorldStory.held_value), so
+# nobody's story moves past the fight while it is frozen.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorldFreeze
-  # The list of the story's text that holds the frozen fights.
-  LIST = "f"
-
   # Frozen fights the list holds at most.
   MAX_ENTRIES = 32
 
@@ -43,8 +41,7 @@ module MGQ_MpWorldFreeze
   # Fields of an entry in the list's text.
   ENTRY_FIELDS = 9
 
-  # What an entry's fields after its troop are once the fight ended: the list's text carries
-  # "<troop>|0", which the relay keeps in place of the fight.
+  # What a fight's key holds once the fight ended, which the relay keeps in place of the fight.
   ENDED = "0"
 
   # The longest entry the relay keeps (maxFreezeLength of Relay/core/story.js), past which it would
@@ -90,7 +87,6 @@ module MGQ_MpWorldFreeze
     @held = []
     @told = nil
     @checked_at = nil
-    @unshared = false
     @ended = {}
   rescue => e
     log("forgetting the frozen fights failed: #{e.class}: #{e.message}")
@@ -189,8 +185,8 @@ module MGQ_MpWorldFreeze
     []
   end
 
-  # Notes the player's own frozen fight and asks for a write of their story, which carries it.
-  # Called by battles_raid_freeze.rbx once a lost fight's undo ran.
+  # Notes the player's own frozen fight and asks the relay to keep it for the world. Called by
+  # battles_raid_freeze.rbx once a lost fight's undo ran.
   #
   # @param entry [Hash] The entry, see battles_raid_freeze.rbx.
   # @return [Boolean] Whether the list holds the fight now.
@@ -213,9 +209,9 @@ module MGQ_MpWorldFreeze
     rebuild if merged
     return true unless merged
 
-    @unshared = true
-    asked = defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.request_post
-    log("the world's story carries the frozen fight against troop #{clean['troop']} #{asked ? 'with the next write' : 'once the player plays it'}")
+    text = encode_entry(clean)
+    asked = text && defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.write_freeze(clean["troop"], text.split("|", 2)[1])
+    log("the frozen fight against troop #{clean['troop']} #{asked ? 'goes to the world' : 'stays this game\'s own: no Raid World story takes it'}")
     true
   rescue => e
     log("noting a frozen fight failed: #{e.class}: #{e.message}")
@@ -235,52 +231,29 @@ module MGQ_MpWorldFreeze
     false
   end
 
-  # Adds the frozen fights to the lists of a story the player writes, and as ENDED every fight that
-  # ended for the world, which ends them for every game of the world.
+  # Takes the frozen fights of the world's story the relay handed: each fight's key by its troop,
+  # merged into the list, and the ends, for good, whatever the player's part.
   #
-  # @param lists [Hash{String => String}] The story's lists, see MGQ_MpStoryState.story_lists.
-  # @return [Hash{String => String}] The lists with LIST.
-  def self.add(lists)
+  # @param keys [Hash{Integer => String}] Each fight's key by troop: the fight as encode_entry writes
+  #   it after its troop, or ENDED.
+  def self.take_keys(keys)
     note_world
-    drop_ended
-    ended = @ended.keys.sort.map { |troop| "#{troop}|#{ENDED}" }
-    lists[LIST] = [encode(@entries), *ended].reject(&:empty?).join(";")
-    @unshared = false
-    lists
-  rescue => e
-    log_once(:add, "writing the frozen fights failed: #{e.class}: #{e.message}")
-    lists
-  end
-
-  # Merges the frozen fights a world's story came with, whatever the player's part, and drops those
-  # it carries as ended, for good.
-  #
-  # A story without LIST, as an earlier version writes it, takes nothing and marks nothing unshared,
-  # since a write cannot make it carry the list and every take would ask for another write.
-  #
-  # @param text [String] The world's story, packed.
-  def self.take(text)
-    note_world
-    lists = MGQ_MpStoryState.unpack(text)
-    unless lists.key?(LIST)
-      log_once([:no_list, @world_id], "the world's story carries no list of frozen fights: they stay this game's own")
-      return
-    end
-
-    list = lists[LIST].to_s
-    told = list.empty? ? [] : decode(list)
-    ended = list.split(";").map { |part| ended_troop(part) }.compact
+    ended = keys.select { |_troop, text| text == ENDED }.keys
     changed = take_ended(ended)
-    told.each do |entry|
+    keys.each do |troop, text|
+      next if text == ENDED
+
+      entry = decode_entry("#{troop}|#{text}")
+      next log_once([:unread, troop], "dropped the world's frozen fight against troop #{troop}: this game cannot read it") unless entry
+
       reason = end_reason(entry)
       next note_ended(entry, reason) if reason
 
       changed = true if merge(entry, "the world's")
     end
     rebuild if changed
-    @unshared = true if lacks?(told, ended)
   rescue => e
-    log_once(:take, "taking the world's frozen fights failed: #{e.class}: #{e.message}")
+    log_once(:take_keys, "taking the world's frozen fights failed: #{e.class}: #{e.message}")
   end
 
   # Notes the fights a world's story carries as ended, with the fights the other side plays in their
@@ -310,30 +283,6 @@ module MGQ_MpWorldFreeze
     added = ([troop] + alternatives(troop)).reject { |other| @ended[other] }
     added.each { |other| @ended[other] = true }
     added
-  end
-
-  # Reports whether the player knows a frozen fight, a held key or the end of a fight the world's
-  # story lacks, which the player's next write must carry: set by note, by an end this game saw and
-  # by a take of a story that lacks one, cleared once a write carried the list. Called by
-  # world_story.rbx after a take.
-  #
-  # @return [Boolean] Whether they do.
-  def self.unshared?
-    @unshared && !(@entries.empty? && @ended.empty?) ? true : false
-  end
-
-  # Reports whether the frozen fights of a world's story lack one the player knows, a held key of
-  # one, or the end of one this game saw.
-  #
-  # @param told [Array<Hash>] The world's entries.
-  # @param ended [Array<Integer>] The troops of the fights the world's story carries as ended.
-  # @return [Boolean] Whether they do.
-  def self.lacks?(told, ended = [])
-    keys = {}
-    told.each { |entry| entry["held"].each { |kind, key, _| keys[[entry["troop"], kind, key]] = true } }
-    return true if @ended.keys.any? { |troop| !ended.include?(troop) }
-
-    @entries.any? { |entry| entry["held"].any? { |kind, key, _| !keys[[entry["troop"], kind, key]] } || told.none? { |other| other["troop"] == entry["troop"] } }
   end
 
   # Keeps the world's story laid over the player's last, for the end rule, and ends the fights it
@@ -430,8 +379,8 @@ module MGQ_MpWorldFreeze
   end
 
   # Notes that a frozen fight ended, for good: it is never written again but as ENDED, with the
-  # fights the other side plays in its stead, and a write is asked for that ends them for every game
-  # of the world.
+  # fights the other side plays in its stead, which the relay is asked to end for every game of the
+  # world.
   #
   # @param entry [Hash] The entry.
   # @param reason [String] Why it ended.
@@ -441,9 +390,8 @@ module MGQ_MpWorldFreeze
     added = mark_ended(troop)
     return if added.empty?
 
-    @unshared = true
-    asked = defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.request_post
-    log("the world's story ends the fight against troop #{added.join(' and ')} for good #{asked ? 'with the next write' : 'once the player plays it'}")
+    asked = defined?(MGQ_MpWorldStory) && added.map { |each| MGQ_MpWorldStory.write_freeze(each, ENDED) }.all?
+    log("the world's story ends the fight against troop #{added.join(' and ')} for good#{asked ? '' : ', in this game alone'}")
   end
 
   # Merges a frozen fight into the list: a fight already known keeps its fields and gains the held
@@ -517,25 +465,6 @@ module MGQ_MpWorldFreeze
 
     text = encode_entry(entry)
     text ? decode_entry(text) : nil
-  end
-
-  # Writes frozen fights as the list's text: the entries split by ";", each entry's fields by "|".
-  #
-  # @param entries [Array<Hash>] The entries.
-  # @return [String] The text.
-  def self.encode(entries)
-    entries.map { |entry| encode_entry(entry) }.compact.join(";")
-  end
-
-  # Reads the troop of an entry of the list's text that tells its fight ended, see ENDED.
-  #
-  # @param text [String] The entry.
-  # @return [Integer, nil] The troop, nil for an entry that tells no end.
-  def self.ended_troop(text)
-    return nil unless text =~ /\A(\d{1,10})\|#{ENDED}\z/
-
-    troop = read_integer($1)
-    troop && troop > 0 ? troop : nil
   end
 
   # Writes one frozen fight: troop, site, outer site, scene, the tableau's map, rows and blocked
@@ -623,29 +552,6 @@ module MGQ_MpWorldFreeze
 
     plain = text.dup.force_encoding("ASCII-8BIT").gsub(/%([0-9A-Fa-f]{2})/n) { [$1.hex].pack("C") }.force_encoding("UTF-8")
     plain.valid_encoding? ? plain : nil
-  end
-
-  # Reads frozen fights of the list's text, see encode, dropping and logging those it cannot read
-  # and those past MAX_ENTRIES, and leaving out those that ended (see ended_troop).
-  #
-  # @param text [String] The text.
-  # @return [Array<Hash>] The entries.
-  def self.decode(text)
-    entries = []
-    text.to_s.split(";").each do |part|
-      next if ended_troop(part)
-
-      if entries.size >= MAX_ENTRIES
-        log_once([:too_many, part[0, 40]], "dropped the frozen fights past the first #{MAX_ENTRIES} the world's story carries")
-        break
-      end
-
-      entry = decode_entry(part)
-      next entries << entry if entry
-
-      log_once([:broken, part.hash], "dropped a frozen fight the world's story carries that this game cannot read: #{MGQ_MpLog.short(part, 120)}")
-    end
-    entries
   end
 
   # Reads one frozen fight, see encode_entry.

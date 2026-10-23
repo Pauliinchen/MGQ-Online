@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-28: Handed the story's last writes over and waited for the world room to send them as the game closes
+#                            - Wrote how the game closes once its scenes end, since its Main section ends the process before at_exit
 #                            - Named the text encodings, since the game has no Encoding constants
 #      Paulinchen  2026-10-24: Loaded world_overview_mods.rbx after world_overview_pages.rbx
 #                            - Loaded world_gates.rbx after world_difficulty.rbx
@@ -10,6 +11,8 @@
 #                            - Stopped loading the removed battles_pvp_lobby.rbx
 #      Paulinchen  2026-10-23: Dropped Link.take_typed and mp_take_typed, since the text box in C# takes what is typed
 #                            - Dropped mp_world_say, mp_world_receive and mp_world_status, since the world room goes through the bridge
+#                            - Loaded story_keys.rbx after story_state.rbx, and no longer world_affection.rbx, whose affection the story tracks keep
+#                            - Dropped the Raid World story's write, state, checkpoints and route lock, which play on the story tracks
 #                            - Told the bridge's frame
 #                            - Read and wrote Player.ini and the other ini files through the DLL, which keeps the player key
 #                            - Dropped mp_new_id and mp_set_player
@@ -163,8 +166,8 @@ module MGQ_Multiplayer
   # each other.
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_theme ui_layout ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
-    coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs coop_story_rewards story_state coop_story coop_castle
-    world world_mods world_mods_parking world_catchup_data world_story world_catchup world_catchup_exp world_affection world_opening world_difficulty world_gates world_save_distribution world_text world_screen world_save_export coop_choices
+    coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs coop_story_rewards story_state story_keys coop_story coop_castle
+    world world_mods world_mods_parking world_catchup_data world_story world_catchup world_catchup_exp world_opening world_difficulty world_gates world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_raid_freeze_data battles_raid_freeze world_freeze battles_raid_tiers battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live battles_served
     battles_balance_pvp battles_pvp battles_pvp_backline battles_duel battles_team
@@ -190,6 +193,10 @@ module MGQ_Multiplayer
   # What the game says there instead once the release to play is older than this one, its version
   # filled in.
   ROLLBACK_MESSAGE = "Monster Girl Quest! Online %s is the version to play now. Pick Multiplayer on the title screen to install it."
+
+  # The bridge topic that waits until the world room sent what the scripts handed it, as the game
+  # closes (WorldRoomTopics in the DLL).
+  ROOM_DRAIN_TOPIC = "world.drain"
 
   # Tells whether the mod can run.
   #
@@ -235,14 +242,35 @@ module MGQ_Multiplayer
     false
   end
 
-  # Writes how the game closes, once per error, and has the DLL write every line at once, so
-  # neither the game's error box nor its end loses the last ones.
+  # Writes how the game closes, once per ending, hands the story's last writes over and waits for
+  # the world room to send them, and has the DLL write every line at once, so neither the game's
+  # error box nor its end loses the last ones.
   #
   # @param error [Exception, nil] What ends the game, nil when it ends without one.
   def self.closing(error)
-    Log.write(closing_text(error)) unless error && error.equal?(@closed_by)
-    @closed_by = error
+    Log.write(closing_text(error)) unless @closed_by && @closed_by[0].equal?(error)
+    @closed_by = [error]
+    MGQ_MpStoryKeys.flush if defined?(MGQ_MpStoryKeys)
+    Log.hand_over
+    Bridge.call(ROOM_DRAIN_TOPIC)
     Log.flush
+  end
+
+  # Runs the game's scenes to their end and writes how the game closes while it still runs: on a
+  # quit the scenes return, the window closing or an error throws out of them, and after each the
+  # game's Main section (the WF-RGSS Exit-EX plugin) ends the process through ExitProcess, which
+  # runs no at_exit.
+  #
+  # @param original [Proc] Runs SceneManager.run.
+  # @return [Object] What it returns.
+  def self.run_game(original)
+    result = original.call
+  rescue Exception => e
+    closing(e) unless reset?(e)
+    raise
+  else
+    closing(nil)
+    result
   end
 
   # Tells whether an error is the game's reset by F12, which starts its scenes again and ends
@@ -767,14 +795,9 @@ module MGQ_Multiplayer
       'mp_trade_pending' => 'p',
       'mp_trade_pending_list' => READ_ARGUMENTS,
 
-      # A Raid World's story at the relay.
+      # A Raid World's shared companions at the relay.
       'mp_raid_story_fetch' => 'p',
-      'mp_raid_story_post' => 'plpp',
-      'mp_raid_story_state' => READ_ARGUMENTS,
       'mp_raid_story_headers' => READ_ARGUMENTS,
-      'mp_raid_checkpoint_fetch' => 'pp',
-      'mp_raid_checkpoint_state' => READ_ARGUMENTS,
-      'mp_raid_route_lock' => 'pp',
       'mp_raid_companions_add' => 'pp',
 
       # A Raid World's boss pools at the relay.
@@ -1880,7 +1903,8 @@ end
 
 MGQ_Multiplayer.start
 MGQ_Multiplayer.load_scripts
-# When the game closes, the log writes how it closes and every line left.
+# The last resort for a game whose Main section lets Ruby end: the log writes how it closes and
+# every line left. The game's own Main section never gets here, see MGQ_Multiplayer.run_game.
 at_exit { MGQ_Multiplayer.closing($!) }
 
 # Game hooks, through core_hooks.rbx.
@@ -1905,16 +1929,9 @@ begin
     MGQ_Multiplayer::Background.guard_input
   end
 
-  # An error that ends the game shows the game's error box before the game closes, so the log
-  # writes it and every line left first.
-  MGQ_MpHooks.around(SceneManager.singleton_class, :run, "Multiplayer") do |_manager, _args, original|
-    begin
-      original.call
-    rescue Exception => e
-      MGQ_Multiplayer.closing(e) unless MGQ_Multiplayer.reset?(e)
-      raise
-    end
-  end
+  # The scenes ending, as a quit, the window closing or an error ends them, write how the game
+  # closes and every line left while the game still runs, before its error box or its end.
+  MGQ_MpHooks.around(SceneManager.singleton_class, :run, "Multiplayer") { |_manager, _args, original| MGQ_Multiplayer.run_game(original) }
 rescue => e
   MGQ_Multiplayer::Log.write("hooks FAILED: #{e.class}: #{e.message}")
 end

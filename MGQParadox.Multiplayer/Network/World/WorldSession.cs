@@ -2,7 +2,10 @@
 //  WorldSession.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Waited for the writer to send what was queued as the world closes and as the game ends
 //      Paulinchen  2026-10-23: Took the squad settings from MGQOnline.Game
+//                            - Kept the story tracks' frames apart for the DLL's story, sent its frames and counted the connections
+//                            - Handed the relay's push of a keyed story's change to the game script without laying it over a story held
 //      Paulinchen  2026-10-22: Took a mods rule as long as the relay's mods now may be
 //      Paulinchen  2026-10-15: Laid the relay's push of what a write changed of a keyed Raid World story over the story held
 //      Paulinchen  2026-10-13: Handed a changed Classic world raid bosses setting to the game script as a raid_bosses entry
@@ -131,9 +134,19 @@ internal sealed class WorldSession
 
     /// <summary>
     /// The word that starts the relay's text frame of what a write changed of a Raid World's story
-    /// kept key by key, see <see cref="RaidStory.TakePush"/>.
+    /// kept key by key, which this game takes as a <see cref="StoryKind"/> entry.
     /// </summary>
     public const string StoryDeltaText = "storyd";
+
+    /// <summary>
+    /// The word that starts the story tracks' text frames both ways, as Relay/README.md names it.
+    /// </summary>
+    public const string TrackText = "track";
+
+    /// <summary>
+    /// The story tracks' frames kept at most while the DLL's story takes none, past which the oldest go.
+    /// </summary>
+    private const int MaxTrackFrames = 1024;
 
     /// <summary>
     /// The kind of an inbox entry that tells a Raid World's boss pool changed at the relay, and the
@@ -347,6 +360,12 @@ internal sealed class WorldSession
     private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(10);
 
     /// <summary>
+    /// How long a close, or the game's end, waits for the writer to send what was queued, so the
+    /// story's last writes reach the relay.
+    /// </summary>
+    public static readonly TimeSpan CloseWait = TimeSpan.FromSeconds(3);
+
+    /// <summary>
     /// Guards every field below.
     /// </summary>
     private readonly object _gate = new();
@@ -355,6 +374,11 @@ internal sealed class WorldSession
     /// The entries for the game script: seats, comings and goings, and the other games' messages.
     /// </summary>
     private readonly ConcurrentQueue<string> _inbox = new();
+
+    /// <summary>
+    /// The story tracks' frames of the relay, each a JSON object, for the DLL's story (<see cref="StoryTopics"/>).
+    /// </summary>
+    private readonly ConcurrentQueue<string> _tracks = new();
 
     /// <summary>
     /// The seats of the other games in the room.
@@ -477,9 +501,10 @@ internal sealed class WorldSession
     public RaidBosses Bosses { get; init; } = RaidBosses.Current;
 
     /// <summary>
-    /// The Raid World story that takes the changes the world room pushes; tests hand out their own.
+    /// Gets how many connections the world room opened since the game started, one more with each
+    /// seat the relay gave, so the DLL's story knows a new connection must sync again.
     /// </summary>
-    public RaidStory Story { get; init; } = RaidStory.Current;
+    public int Connections { get; private set; }
 
     /// <summary>
     /// How often the connection pings the relay, which times the round trip and keeps it open.
@@ -557,7 +582,8 @@ internal sealed class WorldSession
     }
 
     /// <summary>
-    /// Leaves the world and forgets what arrived.
+    /// Leaves the world and forgets what arrived, once the connection sent what was queued
+    /// (<see cref="CloseWait"/> at most).
     /// </summary>
     public void Close()
     {
@@ -577,7 +603,25 @@ internal sealed class WorldSession
             Log.Write($"left world {Log.Short(Relays.WorldRoomOf(left.Token))}");
         }
 
+        previous.Connection?.Drain(CloseWait);
         previous.End();
+    }
+
+    /// <summary>
+    /// Waits until the connection sent what was queued, <see cref="CloseWait"/> at most, as the game
+    /// closes: the story's last writes are handed to the writer by then, and the process ending
+    /// would lose them.
+    /// </summary>
+    public void Drain()
+    {
+        Connection? connection;
+
+        lock (_gate)
+        {
+            connection = _connection;
+        }
+
+        connection?.Drain(CloseWait);
     }
 
     /// <summary>
@@ -944,6 +988,12 @@ internal sealed class WorldSession
             return;
         }
 
+        if (text.StartsWith($"{TrackText} ", StringComparison.Ordinal))
+        {
+            TakeTrack(generation, connection, text[(TrackText.Length + 1)..]);
+            return;
+        }
+
         if (text.StartsWith($"{BossKind} ", StringComparison.Ordinal))
         {
             TakeBoss(generation, connection, text[(BossKind.Length + 1)..]);
@@ -999,6 +1049,7 @@ internal sealed class WorldSession
                     _others.UnionWith(seats.Skip(1));
                     _state = WorldState.Open;
                     _error = null;
+                    Connections++;
                     Enqueue(Entry(SeatKind, _seat, SeatList(_others)));
                     Log.Write($"world seat {_seat}, {_others.Count} other game(s) in the room");
                     break;
@@ -1051,13 +1102,12 @@ internal sealed class WorldSession
     }
 
     /// <summary>
-    /// Lays what a write changed of a Raid World's story kept key by key over the story this game
-    /// holds, and tells the game script the story changed, as a <see cref="StoryKind"/> entry, which
-    /// it then fetches from what this game holds.
+    /// Tells the game script that a Raid World's story kept key by key changed, as a
+    /// <see cref="StoryKind"/> entry with its revision, as the relay's push of a write's change says.
     /// </summary>
     /// <param name="generation">The open this belongs to.</param>
     /// <param name="connection">The connection it came over.</param>
-    /// <param name="json">The push, see <see cref="RaidStory.TakePush"/>.</param>
+    /// <param name="json">The push: <c>rev</c>, <c>prev</c>, <c>delta</c> and <c>state</c>.</param>
     private void TakeStoryDelta(int generation, Connection connection, string json)
     {
         long rev;
@@ -1065,7 +1115,7 @@ internal sealed class WorldSession
         try
         {
             using var document = JsonDocument.Parse(json);
-            rev = document.RootElement.TryGetProperty("rev", out var value) && value.TryGetInt64(out var number) ? number : -1;
+            rev = document.RootElement.TryGetProperty("rev", out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var number) ? number : -1;
         }
         catch (JsonException)
         {
@@ -1078,20 +1128,6 @@ internal sealed class WorldSession
             return;
         }
 
-        string world;
-
-        lock (_gate)
-        {
-            if (generation != _generation || connection != _connection || _world is not { } open)
-            {
-                return;
-            }
-
-            world = Relays.WorldRoomOf(open.Token);
-        }
-
-        var laid = Story.TakePush(world, json);
-
         lock (_gate)
         {
             if (generation != _generation || connection != _connection)
@@ -1102,7 +1138,63 @@ internal sealed class WorldSession
             Enqueue(new Message([new(Message.Kind, StoryKind), new(RevHeader, rev.ToString(CultureInfo.InvariantCulture))]).Encode());
         }
 
-        Log.Write($"world story changed at the relay, rev {rev}{(laid ? ", laid over the story held" : ", to fetch")}");
+        Log.Write($"world story changed at the relay, rev {rev}");
+    }
+
+    /// <summary>
+    /// Keeps a frame of the story tracks for the DLL's story, dropping the oldest once too many wait.
+    /// </summary>
+    /// <param name="generation">The open this belongs to.</param>
+    /// <param name="connection">The connection it came over.</param>
+    /// <param name="json">The frame's JSON object.</param>
+    private void TakeTrack(int generation, Connection connection, string json)
+    {
+        lock (_gate)
+        {
+            if (generation != _generation || connection != _connection)
+            {
+                return;
+            }
+
+            if (_tracks.Count >= MaxTrackFrames)
+            {
+                _tracks.TryDequeue(out _);
+                Log.Write($"world story tracks: {MaxTrackFrames} frames wait, dropping the oldest");
+            }
+
+            _tracks.Enqueue(json);
+        }
+    }
+
+    /// <summary>
+    /// Takes the oldest frame of the story tracks the relay sent.
+    /// </summary>
+    /// <returns>The frame's JSON object, <see langword="null"/> while none waits.</returns>
+    public string? TakeTrackFrame() => _tracks.TryDequeue(out var json) ? json : null;
+
+    /// <summary>
+    /// Sends a frame of the story tracks to the relay, as the text <c>track &lt;JSON&gt;</c>.
+    /// </summary>
+    /// <param name="json">The frame's JSON object.</param>
+    /// <returns>Whether it went out: <see langword="false"/> while the world room is not open.</returns>
+    public bool SendTrack(string json)
+    {
+        lock (_gate)
+        {
+            return _state == WorldState.Open && _connection != null && _connection.QueueText($"{TrackText} {json}");
+        }
+    }
+
+    /// <summary>
+    /// Tells whether the world room is open now.
+    /// </summary>
+    /// <returns>Whether it is.</returns>
+    public bool IsOpen()
+    {
+        lock (_gate)
+        {
+            return _state == WorldState.Open && _connection != null;
+        }
     }
 
     /// <summary>
@@ -1454,15 +1546,32 @@ internal sealed class WorldSession
     }
 
     /// <summary>
-    /// Has a session log the traffic it counted as the process exits, or as a thread throws out and ends it.
+    /// Has a session send what was queued and log the traffic it counted as the process exits, or as a thread throws out and ends it.
     /// </summary>
     /// <param name="session">The session.</param>
     /// <returns>The session.</returns>
     private static WorldSession FlushedOnExit(WorldSession session)
     {
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => session.FlushTraffic();
-        AppDomain.CurrentDomain.UnhandledException += (_, _) => session.FlushTraffic();
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => session.FlushAtExit();
+        AppDomain.CurrentDomain.UnhandledException += (_, _) => session.FlushAtExit();
         return session;
+    }
+
+    /// <summary>
+    /// Waits for the writer's last sends, then logs the traffic counted so far and writes the log at once, since the process is about to end.
+    /// </summary>
+    private void FlushAtExit()
+    {
+        try
+        {
+            Drain();
+        }
+        catch
+        {
+            // The process ends anyway, and the wait must not make it end worse.
+        }
+
+        FlushTraffic();
     }
 
     /// <summary>
@@ -1503,6 +1612,7 @@ internal sealed class WorldSession
         _seat = -1;
         _others.Clear();
         _inbox.Clear();
+        _tracks.Clear();
         _dropped = 0;
         _chatAllowance = ChatBurst;
         _chatRefilledAt = DateTime.MinValue;
@@ -1597,6 +1707,21 @@ internal sealed class WorldSession
         /// frames for the relay itself.
         /// </summary>
         private readonly BlockingCollection<Outgoing> _outbox = new();
+
+        /// <summary>
+        /// How many messages were queued, counted before each goes into the outbox.
+        /// </summary>
+        private long _queued;
+
+        /// <summary>
+        /// How many messages the writer sent.
+        /// </summary>
+        private long _sent;
+
+        /// <summary>
+        /// 1 once the writer ended, after which nothing queued goes out any more.
+        /// </summary>
+        private int _ended;
 
         /// <summary>
         /// Delays the writer's messages so the connection never sends more than the relay keeps.
@@ -1707,13 +1832,44 @@ internal sealed class WorldSession
         /// <returns><see langword="false"/> once the connection stopped.</returns>
         private bool Queue(Outgoing outgoing)
         {
+            Interlocked.Increment(ref _queued);
+
             try
             {
-                return _outbox.TryAdd(outgoing);
+                if (_outbox.TryAdd(outgoing))
+                {
+                    return true;
+                }
             }
             catch (InvalidOperationException)
             {
-                return false;
+            }
+
+            Interlocked.Decrement(ref _queued);
+            return false;
+        }
+
+        /// <summary>
+        /// Waits until the writer sent everything queued, so a close or the game's end loses none of
+        /// the story's last writes.
+        /// </summary>
+        /// <remarks>
+        /// The wait is bounded, since the relay may be gone or the game's end may have ended the writer already.
+        /// </remarks>
+        /// <param name="wait">How long at most.</param>
+        public void Drain(TimeSpan wait)
+        {
+            var started = Stopwatch.GetTimestamp();
+
+            while (Volatile.Read(ref _ended) == 0 && Interlocked.Read(ref _sent) < Interlocked.Read(ref _queued))
+            {
+                if (Stopwatch.GetElapsedTime(started) >= wait)
+                {
+                    Log.Write($"world writer: {Interlocked.Read(ref _queued) - Interlocked.Read(ref _sent)} message(s) still queued after {wait.TotalSeconds:0} s");
+                    return;
+                }
+
+                Thread.Sleep(5);
             }
         }
 
@@ -1770,6 +1926,8 @@ internal sealed class WorldSession
                             {
                                 Channel.Send(outgoing.Target, Cipher.Seal(Seat, outgoing.Target, outgoing.Plain!), SendTimeout);
                             }
+
+                            Interlocked.Increment(ref _sent);
                         }
 
                         continue;
@@ -1793,6 +1951,7 @@ internal sealed class WorldSession
             finally
             {
                 _pace.Drained();
+                Volatile.Write(ref _ended, 1);
             }
         }
     }

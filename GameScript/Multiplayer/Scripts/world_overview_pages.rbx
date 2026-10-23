@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-24: Laid the pages of other mods out like the World page, with buttons and controls in the pane
 #      Paulinchen  2026-10-23: Asked the catch-up for each member's factor as text
+#                            - Read the world's part from the relay's summary of its story tracks
 #                            - Labelled the objective with OBJECTIVE_LABEL
 #      Paulinchen  2026-10-13: Left a story's temporary party and companions on a visit out of the Unlocks page's grid
 #      Paulinchen  2026-10-12: Created
@@ -889,7 +890,7 @@ module MGQ_MpWorldOverview
     return false unless counters
 
     reach = SECTION_REACH[section]
-    reach.nil? || !(reach & ([MGQ_MpWorldStory.part_of(counters).to_s] + Array(counters["done"]))).empty?
+    reach.nil? || !(reach & ([counters["part"].to_s] + Array(counters["done"]))).empty?
   rescue => e
     log_once(:boss_sections, "reading the world's story for the raid bosses failed: #{e.class}: #{e.message}")
     false

@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-24: Checked that a viewer takes the warp and escape bans of the teller's scene
 #      Paulinchen  2026-10-23: Handed the map's scenes to the route past the DLL's map gate
+#                            - Checked that the teller's values a viewer takes never go to the relay as theirs, through the hook of story_keys.rbx
 #                            - Checked what an event ended early and the return to the Great Decision take back
 #                            - Checked that a viewer the story brought to another map comes back shown and without a tint
 #      Paulinchen  2026-10-12: Checked missing pictures and picture and screen changes with bad arguments
@@ -214,6 +215,7 @@ module MGQ_MpCoopGather; def self.story_map?(map_id); map_id == $game_map.map_id
 load_script "battles_sync_wire"
 load_script "coop_scope"
 load_script "coop_scene"
+load_script "story_keys"
 
 # Hands a message to a map route, as the DLL does once it passed the map's gate.
 #
@@ -551,11 +553,11 @@ $raid = false
 # In a Raid World the teller's story values, the move routes it gives the map's events and the
 # effects it shows on them reach the viewers, and the viewers' games take the values as the world's.
 
-# Stands in for world_story.rbx: switches 4 and 2029 are each player's own, and the values taken as
-# the world's are noted in $mirrored.
+# Stands in for world_story.rbx: switches 4 and 2029 are each player's own, and no frozen fight
+# holds a key.
 module MGQ_MpWorldStory
   def self.personal?(kind, key); kind == 0 && [4, 94, 100, 2029].include?(key); end
-  def self.mirrored(kind, key, value); ($mirrored ||= []) << [kind, key, value]; end
+  def self.held_value(_kind, _key, value); value; end
 end
 # Stands in for story_state.rbx: ids below 5000 are known and switch 2029 is a scene switch.
 module MGQ_MpStoryState; PLACE_BANS = [100, 94]; def self.known_id?(_kind, id); id < 5000; end; def self.scene_switch?(id); id == 2029; end; end
@@ -668,7 +670,9 @@ $game_map.events = { 12 => viewed }
 $game_switches = Game_Switches.new
 $game_variables = Game_Variables.new
 $game_self_switches = Game_SelfSwitches.new
-$mirrored = []
+# A Raid World's story that records the player's writes of every key.
+MGQ_MpStoryKeys.instance_variable_set(:@raid, MGQ_MpStoryKeys.table_of(story_table_hash([[0, 9999, 1]], [[0, 9999, 1]], 1, "rev" => 1)))
+MGQ_MpStoryKeys.recording = :raid
 scene = lambda do |kind, args, map = "7"|
   take_map("pscene", teller, { "map_pscene" => kind, "mmap" => "7", "map" => map, "args" => wire.line(args) })
 end
@@ -676,12 +680,11 @@ scene.call("story.values", [[0, 40, true], [0, 4, true], [1, 1001, 41], [0, 2029
 check("a viewer takes the teller's story values, never what is their own or names nothing of this game, but the scene switches",
       [$game_switches[40], $game_switches[4], $game_variables[1001], $game_switches[2029], $game_self_switches[[7, 12, "A"]], $game_variables[9999], $game_self_switches[[7, 12, "Z"]]],
       [true, nil, 41, true, true, nil, nil])
-check("as the world's, so they are not written as the viewer's own", $mirrored, [[0, 40, true], [1, 1001, 41], [2, [7, 12, "A"], true]])
+check("as the multiplayer's own, so none goes to the relay as the viewer's", MGQ_MpStoryKeys.instance_variable_get(:@batch), [])
+MGQ_MpStoryKeys.recording = nil
 $game_switches[100] = true
-$mirrored = []
 scene.call("story.values", [[0, 100, false], [0, 94, true]])
-check("a viewer takes the warp and escape bans the teller's scene sets where they both stand, as their own",
-      [$game_switches[100], $game_switches[94], $mirrored], [false, true, []])
+check("a viewer takes the warp and escape bans the teller's scene sets where they both stand", [$game_switches[100], $game_switches[94]], [false, true])
 $following = 8
 scene.call("story.values", [[0, 100, true]], "8")
 $following = nil

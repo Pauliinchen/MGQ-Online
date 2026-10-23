@@ -8,6 +8,7 @@
 #                            - Checked that a power-up carried past changes the character once at its level
 #                            - Checked that a companion of the roster takes the persona a join brings
 #      Paulinchen  2026-10-23: Answered the rules the DLL owns through the bridge from the golden cases
+#                            - Followed the relay's tracks through the DLL's story topics: a player behind on their part's checkpoint and moved on by the relay
 #                            - Checked that a found job item comes to every player at once
 #                            - Checked that the gate's notices name the cap of another mod below it
 #                            - Checked that the story sets a return point only on the map of its event
@@ -64,20 +65,20 @@
 #
 #----------------------------------------------------------------
 
-# Covers world_catchup.rbx with world_story.rbx, story_state.rbx, coop_story.rbx and
-# coop_choices.rbx: a player behind a Raid World's story, held on their part's checkpoint until the
-# level gate moves them on, and what a story laid over the player's gives, takes and sets, from
-# rewards and companions to vehicles and Makina, each once.
+# Covers world_catchup.rbx with world_story.rbx, story_keys.rbx, story_state.rbx, coop_story.rbx
+# and coop_choices.rbx on a stand-in of the DLL's story topics (story_support.rb): a player behind a
+# Raid World's story, whom the relay puts on their part's checkpoint and moves on by their level,
+# and what a story written into the player's gives, takes and sets, from rewards and companions to
+# vehicles and Makina, each once.
 
 require_relative "support"
-require_relative "rules_support"
+require_relative "story_support"
 
 $logs = []
 # Stands in for the mod's log: records each line in $logs and prints it.
 module MGQ_Multiplayer; module Log; def self.write(m); $logs << m; puts "  log: #{m}"; end; end; end
 $calls = []
 $state = ""
-$checkpoint = ""
 $notices = []
 $messages = []
 $raid = true
@@ -86,16 +87,15 @@ $telling = false
 
 # Stands in for Multiplayer.rb around the DLL link.
 module MGQ_Multiplayer
-  # Stands in for the DLL link: each call is noted and starts, the story's state is what $state
-  # holds and the last checkpoint's what $checkpoint holds.
+  # Stands in for the DLL link of the shared companions: each call is noted and starts, and the
+  # state is what $state holds.
   module Link
-    # The requests of the story's exports, whose header says busy once one starts, as the DLL's does.
-    KINDS = { "mp_raid_story_fetch" => "fetch", "mp_raid_story_post" => "post", "mp_raid_route_lock" => "lock", "mp_raid_companions_add" => "companions" }
+    # The requests of the exports, whose header says busy once one starts, as the DLL's does.
+    KINDS = { "mp_raid_story_fetch" => "fetch", "mp_raid_companions_add" => "companions" }
 
     # A function of the DLL, which notes its calls.
     Function = Struct.new(:name) do
-      # Notes the call, marks its request busy in $state or the checkpoint fetch in $checkpoint, and
-      # answers that it started.
+      # Notes the call, marks its request busy in $state, and answers that it started.
       #
       # @param args [Array] The arguments of the call.
       # @return [Integer] 1.
@@ -104,13 +104,12 @@ module MGQ_Multiplayer
         $calls << [name, args]
         kind = KINDS[name]
         $state = "#{kind}=busy\n" + $state.gsub(/^#{kind}(_\w+)?=.*\n/, "") if kind
-        $checkpoint = "state=busy\npart=#{args[1].chomp("\0")}\n\n" if name == "mp_raid_checkpoint_fetch"
         1
       end
     end
     # Answers a function of the DLL that notes its calls.
     def self.function(name); Function.new(name); end
-    # Reads the story's state, its headers or the checkpoint's state, as the DLL hands them over.
+    # Reads the shared companions' state as the DLL hands it over.
     #
     # @param name [String] The export.
     # @param size [Integer] The buffer's size.
@@ -118,8 +117,7 @@ module MGQ_Multiplayer
     def self.read(name, size)
       check_dll_call(name, ["", size])
       head = $state.split("\n\n", 2)[0].to_s
-      text = { "mp_raid_story_state" => $state, "mp_raid_story_headers" => head.empty? ? "" : head + "\n\n", "mp_raid_checkpoint_state" => $checkpoint }[name].to_s
-      text.dup.force_encoding("ASCII-8BIT")
+      (head.empty? ? "" : head + "\n\n").dup.force_encoding("ASCII-8BIT")
     end
     # Reads a state the DLL describes, as Link.parse does.
     #
@@ -443,13 +441,17 @@ module DataManager
   def self.setup_new_game; end
 end
 
+$fake = open_rules_bridge
+answer_story($fake)
 load_script "story_state"
 load_script "coop_story"
 load_script "coop_choices"
 load_script "world_catchup_data"
 load_script "world_story"
 load_script "world_catchup"
-open_rules_bridge
+# The world's story mapping: what the Raid personal lists of earlier builds shared, the chest flags
+# each player's own.
+$classes = listed_raid_table_hash("switches" => 8000, "variables" => 4000, "companions" => 1000, "chest_flags" => MGQ_MpStoryState.chest_flags)
 story = MGQ_MpWorldStory
 catchup = MGQ_MpWorldCatchup
 # The catch-up's tables, which the tests replace with rows of their own.
@@ -473,8 +475,7 @@ def tables(tables = {})
     DATA.send(:remove_const, name)
     DATA.const_set(name, tables[name] || [])
   end
-  [:@joins_by_actor, :@story_joins, :@taking_back, :@visits, :@makina_ids, :@unlock_items, :@unlock_rows].each { |name| MGQ_MpWorldCatchup.instance_variable_set(name, nil) }
-  MGQ_MpWorldStory.instance_variable_set(:@world_chests, nil)
+  [:@joins_by_actor, :@story_joins, :@taking_back, :@visits, :@makina_ids, :@unlock_items, :@unlock_rows, :@story_sources].each { |name| MGQ_MpWorldCatchup.instance_variable_set(name, nil) }
 end
 
 # Starts a game: a new story with some values, a party of Luka at a level and the save's notes, with
@@ -503,42 +504,81 @@ def new_game(variables = {}, switches = [], level = 10)
   MGQ_MpWorldCatchup.loaded
 end
 
-# Packs a story the way a game writes it to the relay.
+# Writes a story's keys as the relay's tracks keep them.
 #
 # @param variables [Hash] Variables by id.
 # @param switches [Array<Integer>] Switches on.
 # @param selfs [Hash] Self switches by key.
-# @return [String] The packed story.
+# @return [Hash{String => String}] The keys and their values.
 def packed(variables = {}, switches = [], selfs = {})
-  s = []
-  v = []
-  switches.each { |id| s[id] = true }
-  variables.each { |id, value| v[id] = value }
-  MGQ_MpStoryState.pack(MGQ_MpStoryState.story_lists([s, v, selfs], true))
+  keys = {}
+  switches.each { |id| keys["s#{id}"] = "1" }
+  variables.each { |id, value| keys["v#{id}"] = MGQ_MpStoryState.encode_value(value) }
+  selfs.each { |key, value| keys["ss#{key.join('.')}"] = value ? "1" : "0" }
+  keys
 end
 
-# Sets what the DLL tells of the world's story.
+# Hands the game the world's track as the DLL does after the relay sent it, with the world's
+# summary, and the shared companions the DLL's state names.
 #
-# @param fields [Hash] The headers that differ from an empty story.
-# @param text [String] The story.
-def relay(fields, text = "")
-  head = { "world" => "w1", "rev" => 1, "wrev" => 1, "p" => 0, "r1141" => 0, "r1142" => 0, "r1143" => 0, "clear" => "", "part" => "1",
-           "route" => "none", "done" => "", "comps" => "", "checkpoints" => "", "fetch" => "done" }.merge(fields)
-  $state = head.map { |key, value| "#{key}=#{value}" }.join("\n") + "\n\n" + text
+# @param fields [Hash] The world's summary and companions that differ from an empty story: "rev",
+#   "part", "route", "done" and "checkpoints" (each separated by commas) and "comps".
+# @param keys [Hash{String => String}] The track's keys, see packed.
+def relay(fields, keys = {})
+  world = { "rev" => 1, "part" => "1", "route" => "none", "done" => "", "checkpoints" => "", "comps" => "" }.merge(fields)
+  hand_track(world, keys, "track" => "world", "part" => world["part"].to_s)
 end
 
-# Sets what the DLL tells of the last checkpoint fetched.
+# Hands the game the track of their own the relay put a player behind on: their part's checkpoint.
 #
-# @param part [String] Its part.
-# @param text [String] Its story.
-def checkpoint(part, text)
-  $checkpoint = "state=done\npart=#{part}\nrev=5\nwrev=5\n\n#{text}"
+# @param part [String] The part.
+# @param keys [Hash{String => String}] The checkpoint's keys, see packed.
+# @param fields [Hash] The world's summary, as relay takes it.
+def checkpoint(part, keys, fields = {})
+  world = { "rev" => 1, "part" => "2", "route" => "none", "done" => "", "checkpoints" => part, "comps" => "" }.merge(fields)
+  hand_track(world, keys, "why" => "behind", "track" => "t1", "part" => part, "gate" => MGQ_MpWorldCatchup.gate_of(part))
 end
 
-# Runs frames of the map.
+# Hands the game the track the relay moved a player behind on to by their level.
+#
+# @param from [String] The part they leave.
+# @param to [String] The part they move to, or "world".
+# @param keys [Hash{String => String}] The track's keys, see packed.
+# @param fields [Hash] The world's summary, as relay takes it.
+# @param by [String] "level", or "cap" when another mod's cap opened the gate.
+def moved(from, to, keys, fields = {}, by = "level")
+  world = { "rev" => 1, "part" => to == "world" ? "2" : to, "route" => "none", "done" => "", "checkpoints" => "", "comps" => "" }.merge(fields)
+  state = { "why" => "moved", "track" => to == "world" ? "world" : "t2", "part" => to == "world" ? world["part"].to_s : to,
+            "move" => { "from" => from, "to" => to, "gate" => MGQ_MpWorldCatchup.gate_of(from), "by" => by } }
+  state["gate"] = MGQ_MpWorldCatchup.gate_of(to) unless to == "world"
+  hand_track(world, keys, state)
+end
+
+# Hands the game a whole track and the world's summary, and names the world's shared companions.
+#
+# @param world [Hash] The summary and companions, see relay.
+# @param keys [Hash{String => String}] The track's keys.
+# @param state [Hash] The state's fields that differ, see track_take.
+def hand_track(world, keys, state)
+  list = lambda { |text| text.to_s.split(",") }
+  summary = { "rev" => world["rev"], "part" => world["part"].to_s, "route" => world["route"].to_s, "done" => list.call(world["done"]), "checkpoints" => list.call(world["checkpoints"]) }
+  $takes << track_take(keys, state, world["rev"])
+  $fake.post("story.status", story_status("track" => state["track"], "part" => state["part"], "gate" => state["gate"], "rev" => world["rev"], "world" => summary, "pending" => true))
+  $state = "world=w1\nrev=#{world['rev']}\ncomps=#{world['comps']}\nfetch=done#{world['companions'] ? "\ncompanions=#{world['companions']}" : ''}\n\n"
+end
+
+# Runs frames as the game does: the map's update, then the scripts' writes and the bridge's batch
+# and drain at the frame's Graphics.update.
 #
 # @param count [Integer] How many.
-def frames(count); count.times { MGQ_MpWorldStory.tick; MGQ_MpWorldCatchup.tick }; end
+def frames(count)
+  count.times do
+    MGQ_MpWorldStory.tick
+    MGQ_MpWorldCatchup.tick
+    MGQ_MpStoryKeys.flush
+    MGQ_Multiplayer::Bridge.frame
+  end
+end
 
 # Lists the DLL calls of one export since the game started.
 #
@@ -575,62 +615,58 @@ $game_party.add_actor(16)
 $game_party.add_actor(45)
 $game_party.gain_item($data_items[600], 2)
 frames(1)
-relay({ "p" => 25, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 25 }, [2300]))
-frames(16)
-check("a player whose story is in an earlier part than the world's is behind", story.mode, :behind)
-check("and fetches the checkpoint of their part", calls_of("mp_raid_checkpoint_fetch"), [["w1\0", "1\0"]])
+checkpoint("1", packed({ 1001 => 18, 1032 => 5 }, [2023, 2300, 500]))
+frames(70)
+check("a player the relay puts on a track of their own at their part's checkpoint is behind", story.mode, :behind)
 check("told so with the level that moves them on",
       $notices, ["The world's story is further than yours. You see the world as it was before the end of Part 1; reach level 25 to move on."])
 check("whose story events are held", [catchup.holds_story?, catchup.refusal_text], [true, "Reach level 25 to continue the story."])
-checkpoint("1", packed({ 1001 => 18, 1032 => 5 }, [2023, 2300, 500]))
-frames(70)
-check("the checkpoint is laid over the player's story, their own values kept",
+check("the checkpoint is written into the player's story, their own values kept",
       [$game_variables[1001], $game_variables[1032], $game_switches[500], $game_variables[3001], $game_switches[4]], [18, 5, true, 40, true])
-check("they write nothing", calls_of("mp_raid_story_post"), [])
 check("the rewards it carried them past come by story position, their own side's alone, not those their own game gave",
       [MGQ_MpStoryState.knows?($game_actors[1], 937), MGQ_MpStoryState.knows?($game_actors[1], 930), $game_party.items[600]], [true, false, 7])
 check("a removal for good it carried them past takes the companion, a temporary one does not", [roster.include?(16), roster.include?(45)], [false, true])
 check("its companions join once the player's level reaches each join's gate", [roster.include?(77), roster.include?(80)], [true, false])
 check("the save notes the checkpoint taken", $game_system.instance_variable_get(:@mgq_mp_catchup)["checkpoint"], "1")
 
-# The level gate moves the player on to the next part's checkpoint while the world is past it,
-# else into the world's story.
+# The relay moves the player on by the level their game tells it: into the next part's checkpoint
+# while the world is past it, else into the world's story.
 $game_actors[1].level = 20
 frames(40)
 check("at level 20 the waiting join of level 20 comes, raised to its level", [roster.include?(80), $game_actors[80].base_level], [true, 20])
-check("but the player stays behind", [story.mode, calls_of("mp_raid_story_fetch").size], [:behind, 1])
+check("but the player stays behind", story.mode, :behind)
 $game_actors[1].level = 25
 $messages.clear
 frames(40)
-check("at the gate's level the player moves on into the world's story, the world being in the next part",
-      [$messages, calls_of("mp_raid_story_fetch").size], [["Level 25 reached: catching up to the world's story."], 2])
-relay({ "rev" => 2, "wrev" => 2, "p" => 26, "part" => "2", "checkpoints" => "1", "fetch" => "done" }, packed({ 1001 => 26 }, [2300]))
+check("the relay hears the level that opens the gate", staged("story.level").last, { "best" => 25, "cap" => 9999 })
+moved("1", "world", packed({ 1001 => 26 }, [2300]), "rev" => 2)
 frames(40)
-check("which is laid over theirs: they play it now, never the part's ending", [story.mode, $game_variables[1001], catchup.holds_story?], [:world, 26, false])
+check("and moves them on into the world's story, which is written into theirs: they play it now, never the part's ending",
+      [$messages, story.mode, $game_variables[1001], catchup.holds_story?], [["Level 25 reached: catching up to the world's story."], :world, 26, false])
 check("the notes forget the checkpoint", $game_system.instance_variable_get(:@mgq_mp_catchup)["checkpoint"], nil)
 
 # A player far behind moves on a part per gate, Part 2's checkpoint first.
 tables
 new_game({ 1001 => 7 }, [], 30)
 frames(1)
-relay({ "rev" => 3, "wrev" => 3, "p" => 36, "part" => "3", "checkpoints" => "1,2" }, packed({ 1001 => 36 }))
-frames(16)
-checkpoint("1", packed({ 1001 => 18 }))
-frames(100)
-check("a player past their part's gate moves on to the next part's checkpoint while the world is past it",
-      [$game_variables[1001], calls_of("mp_raid_checkpoint_fetch").map { |args| args[1] }], [18, ["1\0", "2\0"]])
-checkpoint("2", packed({ 1001 => 33 }))
+checkpoint("1", packed({ 1001 => 18 }), "part" => "3", "checkpoints" => "1,2")
 frames(70)
-check("and stays there until that part's gate", [$game_variables[1001], story.mode, catchup.refusal_text], [33, :behind, "Reach level 55 to continue the story."])
+moved("1", "2", packed({ 1001 => 33 }), "part" => "3", "checkpoints" => "1,2")
+frames(70)
+check("moved on to the next part's checkpoint while the world is past it, the player stays there until that part's gate",
+      [$game_variables[1001], story.mode, catchup.refusal_text], [33, :behind, "Reach level 55 to continue the story."])
 
-# A cap of another mod below the gate holds nobody back, and the notices name the cap (issue #53).
+# A cap of another mod below the gate holds nobody back: the relay hears it with the level, and the
+# notices name the cap (issue #53).
 $game_actors[1].cap = 40
 check("a player capped below the gate is told to reach the cap",
-      [catchup.refusal_text, catchup.behind_text(MGQ_MpWorldStory.local_counters(catchup.story_now))],
+      [catchup.refusal_text, catchup.behind_text("2")],
       ["Reach level 40 to continue the story.", "The world's story is further than yours. You see the world as it was before the end of Part 2; reach level 40 to move on."])
 $game_actors[1].level = 40
 frames(40)
-check("a player capped below the gate is caught up once at their cap", calls_of("mp_raid_story_fetch").size, 2)
+check("a player capped below the gate tells the relay their cap", staged("story.level").last, { "best" => 40, "cap" => 40 })
+moved("2", "3", packed({ 1001 => 33 }), { "part" => "3", "checkpoints" => "1,2" }, "cap")
+frames(70)
 check("told the cap reached", $messages.last.to_s[/\ALevel \d+ reached/], "Level 40 reached")
 $game_actors[1].cap = 9999
 
@@ -639,27 +675,31 @@ $game_actors[1].cap = 9999
 tables(:REWARDS => [reward.new(:skill, 930, 1, "map:60:2:1", "2", 24, nil, [[:v, 1001, 24]], true),
                     reward.new(:i, 600, 1, "map:60:3:1", "2", 24, nil, [[:v, 1001, 24]], true),
                     reward.new(:skill, 937, 1, "map:61:1:1", "2", 28, nil, [[:v, 1001, 28]], true)])
+# Answers the catch-up's notes in the save.
+#
+# @return [Hash] The notes.
+notes = lambda { $game_system.instance_variable_get(:@mgq_mp_catchup) }
 new_game({ 1001 => 9 }, [], 10)
 frames(1)
-relay({ "rev" => 50, "wrev" => 50, "p" => 26, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 26 }))
-frames(16)
 checkpoint("1", packed({ 1001 => 18 }))
 frames(70)
 check("a player behind learns no skill of the world's story", [story.mode, MGQ_MpStoryState.knows?($game_actors[1], 930)], [:behind, false])
 $game_actors[1].cap = 20
 $game_actors[1].level = 20
 frames(40)
-relay({ "rev" => 51, "wrev" => 51, "p" => 26, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 26 }))
+moved("1", "world", packed({ 1001 => 26 }), { "rev" => 51 }, "cap")
 frames(40)
 MGQ_MpWorldCatchup.level_up
 frames(40)
 check("moved on at a cap below the gate, the skills and items the world's story carried them past wait",
-      [story.mode, MGQ_MpStoryState.knows?($game_actors[1], 930), $game_party.items[600].to_i], [:world, false, 0])
-story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "52", :relay => true)
-frames(1)
-relay({ "rev" => 52, "wrev" => 52, "p" => 29, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 29 }))
+      [story.mode, MGQ_MpStoryState.knows?($game_actors[1], 930), $game_party.items[600].to_i, notes.call["waits"].size], [:world, false, 0, 2])
+relay({ "rev" => 52, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 29 }))
 frames(40)
 check("but what the world's story carries them past later comes as usual", MGQ_MpStoryState.knows?($game_actors[1], 937), true)
+catchup.note_capped(99)
+relay({ "rev" => 53, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 29 }))
+frames(40)
+check("and a gate noted while the player plays the world's story holds nothing back", notes.call["capped"], nil)
 $game_actors[1].cap = 9999
 $game_actors[1].level = 25
 $messages.clear
@@ -667,59 +707,12 @@ $logs.clear
 MGQ_MpWorldStory.loaded(:load)
 MGQ_MpWorldCatchup.loaded
 frames(1)
-relay({ "rev" => 53, "wrev" => 53, "p" => 29, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 29 }))
+relay({ "rev" => 53, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 29 }))
 frames(80)
 check("and come once a load finds the real level at the gate",
       [MGQ_MpStoryState.knows?($game_actors[1], 930), $game_party.items[600].to_i, $logs.grep(/the story gave the player/).size], [true, 1, 1])
 frames(40)
 check("once", [$game_party.items[600].to_i, $logs.grep(/the story gave the player/).size], [1, 1])
-
-# A move on at a level cap whose checkpoint is dropped, as the player's story reached the world's
-# part before it came: the story laid over next still makes its rewards wait, later ones give as
-# usual.
-tables(:REWARDS => [reward.new(:i, 600, 1, "map:62:1:1", "1", 16, nil, [[:v, 1001, 16]], true),
-                    reward.new(:i, 600, 2, "map:62:2:1", "1", 17, nil, [[:v, 1001, 17]], true),
-                    reward.new(:i, 600, 4, "map:62:3:1", "1", 18, nil, [[:v, 1001, 18]], true)])
-# Answers the catch-up's notes in the save.
-#
-# @return [Hash] The notes.
-notes = lambda { $game_system.instance_variable_get(:@mgq_mp_catchup) }
-new_game({ 1001 => 9 }, [], 10)
-frames(1)
-relay({ "rev" => 60, "wrev" => 60, "p" => 36, "part" => "3", "checkpoints" => "1,2" }, packed({ 1001 => 36 }))
-frames(16)
-checkpoint("1", packed({ 1001 => 15 }))
-frames(70)
-$game_actors[1].cap = 20
-$game_actors[1].level = 20
-frames(40)
-check("moved on at a cap below the gate, the catch-up asks for the next part's checkpoint and notes the gate",
-      [calls_of("mp_raid_checkpoint_fetch").map { |args| args[1] }, notes.call["capped"]], [["1\0", "2\0"], 25])
-# The player's story reached the world's part, as check_progress finds it.
-story.instance_variable_set(:@mode, nil)
-story.refetch(:caught_up)
-frames(1)
-relay({ "rev" => 61, "wrev" => 61, "p" => 16, "part" => "1", "checkpoints" => "1,2" }, packed({ 1001 => 16 }))
-checkpoint("2", packed({ 1001 => 33 }))
-frames(80)
-check("the world's story is laid over theirs and the checkpoint dropped", [story.mode, $game_variables[1001]], [:world, 16])
-check("the rewards that story carried them past still wait for the gate, which then clears",
-      [$game_party.items[600].to_i, notes.call["waits"].size, notes.call["capped"]], [0, 1, nil])
-story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "62", :relay => true)
-frames(1)
-relay({ "rev" => 62, "wrev" => 62, "p" => 17, "part" => "1", "checkpoints" => "1,2" }, packed({ 1001 => 17 }))
-frames(40)
-check("a later story gives its rewards as usual, the first still waiting", [$game_party.items[600].to_i, notes.call["waits"].size], [2, 1])
-catchup.note_capped(99)
-story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "63", :relay => true)
-frames(1)
-relay({ "rev" => 63, "wrev" => 63, "p" => 18, "part" => "1", "checkpoints" => "1,2" }, packed({ 1001 => 18 }))
-frames(40)
-check("and a gate noted while the player plays the world's story holds nothing back", [$game_party.items[600].to_i, notes.call["capped"]], [6, nil])
-$game_actors[1].cap = 9999
-$game_actors[1].level = 25
-frames(40)
-check("what waited comes once the real level reaches the gate", [$game_party.items[600].to_i, notes.call["waits"].size], [7, 0])
 
 # Key items are everyone's, and so are the chests that hold them, opened once for the world.
 tables(:KEY_ITEMS => [key_item.new(502, 1, "map:6:33:1", "1", 5, nil, [[:v, 1001, 6]]),
@@ -728,12 +721,11 @@ tables(:KEY_ITEMS => [key_item.new(502, 1, "map:6:33:1", "1", 5, nil, [[:v, 1001
                       key_item.new(504, 1, "map:8:1:1", "2", 30, nil, [[:v, 1001, 30]])],
        :CHESTS => [chest.new([30, 4, "A"], [501], "2", 22, [7102])])
 new_game({ 1001 => 5 }, [], 5)
-check("a story chest is the world's: its self switch goes with the story, not kept as the player's",
-      [story.chest?([30, 4, "A"]), story.chest?([12, 3, "A"]), story.chest_list.include?([30, 4, "A"])], [false, true, false])
+check("a story chest is the world's: the mapping keeps its self switch", MGQ_MpStoryKeys.shared?(2, [30, 4, "A"]), true)
 frames(1)
 relay({ "rev" => 4, "wrev" => 4, "p" => 26, "part" => "2" }, packed({ 1001 => 26 }, [], { [30, 4, "A"] => true }))
 frames(40)
-check("a player behind gets every key item the world's story gave, and loses what it took",
+check("a player in the world's story gets every key item it gave, and loses what it took",
       [$game_party.items[502], $game_party.items[503], $game_party.items[504]], [1, 0, 0])
 check("and the story chests the world opened, which show open for them too", [$game_party.items[501], $game_self_switches[[30, 4, "A"]]], [1, true])
 check("with the chest flags they turn on, such as an ore the Chaos forge asks for", $game_switches[7102], true)
@@ -872,47 +864,31 @@ relay({ "rev" => 11, "wrev" => 11, "p" => 40, "r1142" => 5, "part" => "mr", "rou
 frames(40)
 check("with sharing off nobody joins from the list", [roster.include?(16), roster.include?(80)], [false, false])
 
-# A checkpoint fetch that failed before the relay answered names no part of its own.
-tables
-$sharing = :off
-new_game({ 1001 => 7 }, [], 5)
-frames(1)
-relay({ "rev" => 12, "wrev" => 12, "p" => 25, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 25 }))
-frames(16)
-$checkpoint = "state=failed\nerror=unreachable\n\n"
-frames(1830)
-check("a failed checkpoint fetch is tried again later, though it names no part", calls_of("mp_raid_checkpoint_fetch").size, 2)
-checkpoint("1", "")
-frames(200)
-check("a checkpoint this game cannot read leaves the player on their own story, fetched no more",
-      [story.mode, calls_of("mp_raid_checkpoint_fetch").size, $game_system.instance_variable_get(:@mgq_mp_catchup)["checkpoint"]], [:behind, 2, "1"])
-
-# A player behind in Part 3 stays behind when the world returns from a route to the Great Decision.
+# A player behind in Part 3 stays behind when the world returns from a route to the Great Decision,
+# until the relay moves them on.
 tables
 new_game({ 1001 => 36 }, [], 40)
 frames(1)
-relay({ "rev" => 13, "wrev" => 13, "p" => 40, "r1141" => 10, "part" => "ad", "route" => "ad", "checkpoints" => "1,2,3" }, packed({ 1001 => 40, 1141 => 10 }))
-frames(16)
-checkpoint("3", packed({ 1001 => 39 }))
+checkpoint("3", packed({ 1001 => 39 }), "part" => "ad", "route" => "ad", "checkpoints" => "1,2,3")
 frames(70)
-check("a Part 3 player behind the world's route takes Part 3's checkpoint", [story.mode, $game_variables[1001]], [:behind, 39])
-story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "14", :relay => true)
-frames(1)
-relay({ "rev" => 14, "wrev" => 14, "p" => 40, "part" => "3", "clear" => "ad", "done" => "ad", "checkpoints" => "1,2,3,ad" }, packed({ 1001 => 40 }, [7096]))
+check("a Part 3 player behind the world's route plays Part 3's checkpoint", [story.mode, $game_variables[1001]], [:behind, 39])
+$fake.post("story.status", story_status("track" => "t1", "part" => "3", "gate" => 65, "rev" => 14,
+                                        "world" => { "rev" => 14, "part" => "3", "route" => "none", "done" => ["ad"], "checkpoints" => %w(1 2 3 ad) }))
 frames(100)
 check("and stays behind below the gate once the world is back at the Great Decision", [story.mode, $game_variables[1001], $game_switches[7096]], [:behind, 39, false])
 story.loaded(:load)
 catchup.loaded
 frames(1)
-relay({ "rev" => 14, "wrev" => 14, "p" => 40, "part" => "3", "clear" => "ad", "done" => "ad", "checkpoints" => "1,2,3,ad" }, packed({ 1001 => 40 }, [7096]))
+check("also once the save noting them behind loaded again, before the relay handed their track", [story.mode, catchup.holds_story?], [nil, true])
+back = { "rev" => 14, "part" => "3", "done" => "ad", "checkpoints" => "1,2,3,ad" }
+checkpoint("3", packed({ 1001 => 39 }), back)
 frames(100)
-check("also once the save noting them behind loaded again and the world's story came",
-      [story.mode, $game_variables[1001], $game_switches[7096], calls_of("mp_raid_story_fetch").size > 2], [:behind, 39, false, true])
+check("and after", [story.mode, $game_variables[1001]], [:behind, 39])
 $game_actors[1].level = 65
 frames(40)
-relay({ "rev" => 14, "wrev" => 14, "p" => 40, "part" => "3", "clear" => "ad", "done" => "ad", "checkpoints" => "1,2,3,ad" }, packed({ 1001 => 40 }, [7096]))
+moved("3", "world", packed({ 1001 => 40 }, [7096]), back)
 frames(40)
-check("until the gate moves them on into the world's story", [story.mode, $game_variables[1001], $game_switches[7096]], [:world, 40, true])
+check("until the relay moves them on into the world's story", [story.mode, $game_variables[1001], $game_switches[7096]], [:world, 40, true])
 
 # Rows by what holds in the story: an optional event nobody played gives nothing, nor one only
 # there to play, and a finished route's rows count at the Great Decision.
@@ -956,9 +932,10 @@ $game_self_switches[[30, 4, "A"]] = true
 frames(1)
 relay({ "rev" => 18, "wrev" => 18, "p" => 24, "part" => "2" }, packed({ 1001 => 24 }))
 frames(40)
-check("a world chest the player opened stays open under the world's story", [story.mode, $game_self_switches[[30, 4, "A"]], $game_party.items[501]], [:world, true, 0])
-frames(600)
-check("and goes to the world's story with the next write", calls_of("mp_raid_story_post").size > 0, true)
+check("a world chest the player opened goes to the relay as the player's request", staged("story.writes").flatten(1).map(&:first).include?("ss30.4.A"), true)
+relay({ "rev" => 19, "part" => "2" }, packed({ 1001 => 24 }, [], { [30, 4, "A"] => true }))
+frames(40)
+check("and stays open under the world's story, which keeps it, giving nothing", [story.mode, $game_self_switches[[30, 4, "A"]], $game_party.items[501]], [:world, true, 0])
 
 # The Randolphs found follow the Randolph switches on, as two players finding one each at once kept
 # one addition.
@@ -1167,12 +1144,9 @@ $game_map.map_id = 3
 # A player behind keeps the return point of their own part.
 new_game({ 1001 => 7, 1002 => 2 }, [], 12)
 frames(1)
-relay({ "rev" => 60, "wrev" => 60, "p" => 25, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 25, 1050 => 9 }))
-frames(40)
-check("a player behind gets no return point of the world's later part", [story.mode, $game_variables[1002]], [:behind, 2])
-checkpoint("1", packed({ 1001 => 18 }))
+checkpoint("1", packed({ 1001 => 18, 1050 => 9 }))
 frames(70)
-check("nor once their part's checkpoint is laid over their story", [$game_variables[1001], $game_variables[1002]], [18, 2])
+check("a player behind keeps the return point of their own part under its checkpoint", [story.mode, $game_variables[1001], $game_variables[1002]], [:behind, 18, 2])
 
 # The parts of one look are kept by the story itself, and every audit looks anew.
 new_game({ 1001 => 10 }, [], 40)
@@ -1214,7 +1188,7 @@ check("Galda stays once the world's story is past the event that gives it", vehi
 new_game({ 1001 => 9 }, [], 12)
 $game_map.vehicle(:airship).set_location(2, 237, 239)
 frames(1)
-relay({ "rev" => 61, "wrev" => 61, "p" => 37, "part" => "3", "checkpoints" => "1,2" }, packed({ 1001 => 37 }))
+checkpoint("1", packed({ 1001 => 18 }), "rev" => 61, "part" => "3", "checkpoints" => "1,2")
 frames(40)
 check("but leaves for a player behind whose own story has not given it", [story.mode, vehicle_map.call(:airship)], [:behind, 0])
 
@@ -1223,15 +1197,11 @@ check("but leaves for a player behind whose own story has not given it", [story.
 tables(:VEHICLES => [DATA::Vehicle.new(2, "map:645:33:1", "3", 37, nil, [[:v, 1001, 37]], true),
                      DATA::Vehicle.new(0, "map:33:50:1", "2", 24, nil, [[:v, 1001, 24]], true)])
 new_game({ 1001 => 36 }, [], 40)
-$game_map.vehicle(:airship).set_location(2, 237, 239)
+$game_map.vehicle(:airship).set_location(0, 0, 0)
 frames(1)
-relay({ "rev" => 62, "wrev" => 62, "p" => 40, "r1141" => 10, "part" => "ad", "route" => "ad", "checkpoints" => "1,2,3" }, packed({ 1001 => 40, 1141 => 10 }))
-frames(16)
-frames(24)
-check("a player behind before the event that gives Galda loses the Galda parked on the field", [story.mode, vehicle_map.call(:airship)], [:behind, 0])
-checkpoint("3", packed({ 1001 => 39 }))
+checkpoint("3", packed({ 1001 => 39 }), "rev" => 62, "part" => "ad", "route" => "ad", "checkpoints" => "1,2,3")
 frames(70)
-check("and once a checkpoint past its event is laid over, Galda is back at its start on the field, the boat without one stays off",
+check("once a checkpoint past its event is written into the story of a player behind, Galda is back at its start on the field, the boat without one stays off",
       [story.mode, $game_variables[1001], $game_map.vehicle(:airship).spot, vehicle_map.call(:boat)], [:behind, 39, [2, 186, 1], 0])
 new_game({ 1001 => 34 }, [], 40)
 $game_map.vehicle(:airship).set_location(0, 0, 0)
@@ -1317,8 +1287,6 @@ tables
 new_game({ 1001 => 7 }, [], 5)
 check("a fresh game holds nothing before the world's story came", [story.mode, catchup.holds_story?], [nil, false])
 frames(1)
-relay({ "rev" => 24, "wrev" => 24, "p" => 25, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 25 }))
-frames(16)
 checkpoint("1", packed({ 1001 => 18 }))
 frames(70)
 story.loaded(:load)
@@ -1341,56 +1309,18 @@ tables(:REWARDS => [reward.new(:skill, 930, 1, "map:1697:7:2", "ad", 6, nil, [[:
        :JOINS => [join.new(80, 80, "map:1193:18:1", "ad", 6, nil, [[:v, 1141, 6]], 60, :floor, 3, true)])
 new_game({ 1001 => 36 }, [], 40)
 frames(1)
-relay({ "rev" => 40, "wrev" => 40, "p" => 40, "r1142" => 5, "part" => "mr", "route" => "mr", "clear" => "ad", "done" => "ad", "checkpoints" => "1,2,3,ad" },
-      packed({ 1001 => 40, 1142 => 5 }, [7096]))
-frames(16)
-checkpoint("3", packed({ 1001 => 39 }))
+on_mr = { "rev" => 40, "part" => "mr", "route" => "mr", "done" => "ad", "checkpoints" => "1,2,3,ad" }
+checkpoint("3", packed({ 1001 => 39 }), on_mr)
 frames(70)
 $game_actors[1].level = 65
 $messages.clear
 frames(40)
-check("at Part 3's gate the player moves on to the world's route, never the finished one's checkpoint",
-      [$messages.first, calls_of("mp_raid_checkpoint_fetch").map { |args| args[1] }], ["Level 65 reached: catching up to the world's story.", ["3\0"]])
-relay({ "rev" => 40, "wrev" => 40, "p" => 40, "r1142" => 5, "part" => "mr", "route" => "mr", "clear" => "ad", "done" => "ad", "checkpoints" => "1,2,3,ad" },
-      packed({ 1001 => 40, 1142 => 5 }, [7096]))
+moved("3", "world", packed({ 1001 => 40, 1142 => 5 }, [7096]), on_mr)
 frames(40)
-check("and plays the world's route", [story.mode, $game_variables[1142], $game_switches[7096]], [:world, 5, true])
+check("at Part 3's gate the relay moves the player on to the world's route, never the finished one's checkpoint",
+      [$messages.first, story.mode, $game_variables[1142], $game_switches[7096]], ["Level 65 reached: catching up to the world's story.", :world, 5, true])
 check("with the skill, the key item and the companion of the finished route",
       [MGQ_MpStoryState.knows?($game_actors[1], 930), $game_party.items[504], roster.include?(80), $game_actors[80].base_level], [true, 1, true, 60])
-
-# What a player changes while behind stays theirs under the checkpoint and the world's story, also
-# when a newer story of the world comes meanwhile.
-tables
-new_game({ 1001 => 7 }, [], 5)
-frames(1)
-relay({ "rev" => 41, "wrev" => 41, "p" => 25, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 25 }))
-frames(16)
-$game_self_switches[[40, 2, "A"]] = true
-checkpoint("1", packed({ 1001 => 18 }))
-frames(70)
-check("a self switch a player behind set before their checkpoint came stays under it",
-      [story.mode, $game_variables[1001], $game_self_switches[[40, 2, "A"]]], [:behind, 18, true])
-$game_self_switches[[40, 3, "A"]] = true
-story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "42", :relay => true)
-frames(1)
-relay({ "rev" => 42, "wrev" => 42, "p" => 26, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 26 }))
-frames(40)
-$game_actors[1].level = 25
-frames(40)
-relay({ "rev" => 42, "wrev" => 42, "p" => 26, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 26 }))
-frames(40)
-check("and what they set while behind stays under the world's story they move into",
-      [story.mode, $game_variables[1001], $game_self_switches[[40, 2, "A"]], $game_self_switches[[40, 3, "A"]]], [:world, 26, true, true])
-new_game({ 1001 => 7 }, [], 5)
-frames(1)
-relay({ "rev" => 43, "wrev" => 43, "p" => 25, "part" => "2" }, packed({ 1001 => 25 }))
-frames(40)
-$game_self_switches[[40, 4, "A"]] = true
-$game_actors[1].level = 25
-frames(40)
-relay({ "rev" => 43, "wrev" => 43, "p" => 25, "part" => "2" }, packed({ 1001 => 25 }))
-frames(40)
-check("also for a player behind without a checkpoint", [story.mode, $game_variables[1001], $game_self_switches[[40, 4, "A"]]], [:world, 25, true])
 
 # A Raid World started from a shared save: what the save's own
 # story played is the player's, so its rows give nothing, take no companion and hold nothing back,
@@ -1407,10 +1337,10 @@ from_save = lambda do
 end
 from_save.call
 frames(1)
-relay({ "rev" => 0, "wrev" => 0, "p" => 0, "part" => "1" })
+relay({ "rev" => 1, "part" => "2" }, packed({ 1001 => 25 }, [4]))
 frames(40)
 check("the first player from the save starts the world's story with it, held by nothing",
-      [story.mode, $game_variables[1001], catchup.holds_story?, calls_of("mp_raid_story_post").map { |args| args[2] }], [:world, 25, false, ["p=25;r1141=0;r1142=0;r1143=0;clear=\0"]])
+      [story.mode, $game_variables[1001], catchup.holds_story?], [:world, 25, false])
 check("and the rows the save played give nothing, take nobody and bring nobody back",
       [$game_party.items[600].to_i, roster, $logs.grep(/the story gave the player/)], [0, [1, 77, 80], []])
 from_save.call
@@ -1438,8 +1368,7 @@ watch = lambda do |value, before = nil|
   relay({ "rev" => 22, "wrev" => 22, "p" => 29, "part" => "2" }, packed({ 1001 => 29, 1011 => 3 }))
   frames(40)
   before.call if before
-  $game_variables[1011] = value
-  story.mirrored(1, 1011, value)
+  MGQ_MpStoryKeys.applying { $game_variables[1011] = value }
   frames(40)
   $game_party.items[600].to_i
 end
@@ -1518,11 +1447,9 @@ check("a found job item comes at once to a player who plays the world's story, a
       [story.mode, $game_party.items[616], $game_party.items[617], $game_party.items[701]], [:world, 1, 1, 0])
 new_game({ 1001 => 7 }, [], 10)
 frames(1)
-relay({ "rev" => 36, "wrev" => 36, "p" => 25, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 25 }, [], found))
-frames(16)
-checkpoint("1", packed({ 1001 => 18 }))
+checkpoint("1", packed({ 1001 => 18 }, [], found), "rev" => 36, "part" => "2", "checkpoints" => "1")
 frames(100)
-check("and to a player behind it, from the world's story they do not play",
+check("and to a player behind it, whose own track carries what the whole world found",
       [story.mode, $game_party.items[616], $game_party.items[617]], [:behind, 1, 1])
 
 # A job item an event gives once behind its own self switch comes by the world's story, though the
@@ -1620,8 +1547,7 @@ tables(:JOINS => [join.new(77, 77, "map:6:30:2", "1", 7, nil, [[:v, 1001, 7]], 7
 $sharing = :all
 new_game({ 1001 => 9 }, [], 10)
 frames(1)
-relay({ "rev" => 31, "wrev" => 31, "p" => 9, "part" => "1", "comps" => "80" }, packed({ 1001 => 9 }))
-$game_self_switches[[0, 700, "F"]] = true
+relay({ "rev" => 31, "part" => "1", "comps" => "80" }, packed({ 1001 => 9 }, [], { [0, 700, "F"] => true }))
 frames(40)
 check("the Levels page lists by level the Makina a player of the world got, the companions of joins the world's story got past and those it shares, never a join it has not reached",
       catchup.unlocks.map { |unlock| [unlock.level, unlock.kind, unlock.name, unlock.got, unlock.due] },
@@ -1629,7 +1555,7 @@ check("the Levels page lists by level the Makina a player of the world got, the 
 check("with the level the catch-up counts", catchup.counted_level, 10)
 new_game({ 1001 => 9 }, [], 10)
 frames(1)
-relay({ "rev" => 32, "wrev" => 32, "p" => 25, "part" => "2", "comps" => "80" }, packed({ 1001 => 25 }))
+checkpoint("1", packed({ 1001 => 18 }), "rev" => 32, "part" => "2", "comps" => "80")
 frames(40)
 check("a world past the player's part lists moving on from it at its gate",
       catchup.unlocks.select { |unlock| unlock.kind == :story }.map { |unlock| [unlock.level, unlock.name, unlock.got, unlock.due] }, [[25, "Part 1", false, false]])
@@ -1736,14 +1662,13 @@ module MGQ_MpRaidFreeze; def self.holding_writes?; $holding ? true : false; end;
 tables
 new_game({ 1001 => 7 }, [], 12)
 frames(1)
-relay({ "rev" => 40, "wrev" => 40, "p" => 25, "part" => "2", "checkpoints" => "1" }, packed({ 1001 => 25 }))
-16.times { MGQ_MpWorldStory.tick }
 $holding = true
-40.times { MGQ_MpWorldCatchup.tick }
-check("a player behind fetches no checkpoint while a lost raid boss battle's defeat runs", [story.mode, calls_of("mp_raid_checkpoint_fetch")], [:behind, []])
+checkpoint("1", packed({ 1001 => 18 }), "rev" => 40)
+frames(40)
+check("nothing the relay hands is written while a lost raid boss battle's defeat runs", [story.mode, $game_variables[1001]], [nil, 7])
 $holding = false
-frames(1)
-check("and does once it ended", calls_of("mp_raid_checkpoint_fetch"), [["w1\0", "1\0"]])
+frames(2)
+check("but once it ended", [story.mode, $game_variables[1001]], [:behind, 18])
 
 # A join's persona waits behind a later change of the story, as Granberia's return to 16 after the
 # join of 17 in common event 9106.
@@ -1768,4 +1693,4 @@ check("a prize another player claimed reaches the player, one they hold stays si
 $raid = false
 new_game({ 1001 => 3 }, [], 99)
 frames(40)
-check("a Classic world holds no story and fetches no checkpoint", [catchup.holds_story?, calls_of("mp_raid_checkpoint_fetch")], [false, []])
+check("a Classic world holds no story", catchup.holds_story?, false)

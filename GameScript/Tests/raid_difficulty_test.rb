@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Answered the rules the DLL owns through the bridge from the golden cases
+#                            - Checked a Raid World's own values by its story mapping instead of the Raid personal lists
 #      Paulinchen  2026-10-22: Stood in for whether the version to install is a step back and for the update message
 #      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number
 #      Paulinchen  2026-10-14: Checked a Raid World's Shared save in every build
@@ -505,14 +506,15 @@ interpreter.setup([RPG::EventCommand.new(122, 0, [902, 902, 0, 0, 0]), RPG::Even
 interpreter.update
 check("as does a Classic world", $game_variables[902], -2)
 
-# The story: the difficulty and the fights' own values are each Raid World player's own.
+# The story: the difficulty and the fights' own values are each Raid World player's own, as its
+# story mapping keeps no row of them.
 state = MGQ_MpStoryState
 MGQ_MpWorld.instance_variable_set(:@world, raid_world)
+MGQ_MpStoryKeys.instance_variable_set(:@raid, MGQ_MpStoryKeys.table_of(story_table_hash([[0, 505, 0], [506, 506, 1]], [[0, 151, 0], [152, 152, 1], [153, 1000, 0], [1001, 1001, 3]], 0, "rev" => 1)))
 check("in a Raid World the difficulty, the rates, the Ruler Ruler's, the records and the kept difficulty are each player's own",
       [902, 908, 41, 45, 49, 92, 99, 903, 906].map { |id| state.personal_variable?(id) }, [true] * 9)
-check("as are the Labyrinth's floors, area, level and tier", [121, 123, 149, 151].map { |id| state.personal_variable?(id) }, [true] * 4)
 check("and the switches of the Labyrinth, the Colosseum and its match, the special bosses and the final battles", [23, 28, 41, 87, 507].map { |id| state.personal_switch?(id) }, [true] * 5)
-check("while the story's eased scaling and its progress are the world's", [state.personal_switch?(506), state.personal_variable?(1001), state.personal_variable?(152)], [false, false, false])
+check("while the story's eased scaling and its progress, which the mapping shares, are the world's", [state.personal_switch?(506), state.personal_variable?(1001), state.personal_variable?(152)], [false, false, false])
 story = [[nil, false, false], [nil], {}]
 story[0][41] = true
 story[0][28] = true

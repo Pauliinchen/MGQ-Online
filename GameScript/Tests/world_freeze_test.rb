@@ -2,16 +2,18 @@
 #  world_freeze_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked each frozen fight as a key of the relay's story tracks instead of a list beside the whole story
 #      Paulinchen  2026-10-17: Created
 #
 #----------------------------------------------------------------
 
-# Covers world_freeze.rbx with battles_raid_bosses.rbx and battles_raid_freeze_data.rbx: the frozen
-# raid boss fights' text written and read back, broken texts dropped, the union by troop, the held
-# keys' index, a write asked for, and the end of a frozen fight by its defeated pools or its BEATEN
-# marker in the player's or the world's story, or by the end of the fight the other side plays in
-# its stead, and the end written into the world's story and read from it, final for the world: no
-# note, take or merge brings a fight back that ended, nor the fight the other side plays in its stead.
+# Covers world_freeze.rbx with battles_raid_bosses.rbx and battles_raid_freeze_data.rbx: a frozen
+# raid boss fight's text written and read back, broken texts dropped, the union by troop, the held
+# keys' index, the fight's key asked of the relay, and the end of a frozen fight by its defeated
+# pools or its BEATEN marker in the player's or the world's story, or by the end of the fight the
+# other side plays in its stead, and the end written as the fight's key and read from it, final for
+# the world: no note, take or merge brings a fight back that ended, nor the fight the other side
+# plays in its stead.
 
 require_relative "support"
 
@@ -30,24 +32,8 @@ class Game_Switches; def initialize; @data = []; end; def [](id); @data[id] || f
 # Stands in for the game's variables, 0 unless set.
 class Game_Variables; def initialize; @data = []; end; def [](id); @data[id] || 0; end; def []=(id, value); @data[id] = value; end; end
 
-# Stands in for story_state.rbx: packs the story's lists and writes and reads values as it does.
+# Stands in for story_state.rbx: writes and reads values as it does.
 module MGQ_MpStoryState
-  # Packs the story's lists.
-  #
-  # @param lists [Hash{String => String}] The lists.
-  # @return [String] The packed text.
-  def self.pack(lists)
-    [Zlib::Deflate.deflate(lists.map { |name, list| "#{name}=#{list}" }.join("\n"))].pack("m0")
-  end
-
-  # Unpacks the story's lists, see pack.
-  #
-  # @param text [String] The packed text.
-  # @return [Hash{String => String}] The lists.
-  def self.unpack(text)
-    Zlib::Inflate.inflate(text.unpack("m0")[0]).force_encoding("UTF-8").split("\n").map { |line| line.split("=", 2) }.each_with_object({}) { |(name, list), lists| lists[name] = list.to_s }
-  end
-
   # Writes a variable's value as story_state.rbx does.
   #
   # @param value [Object] The value.
@@ -78,22 +64,25 @@ module MGQ_MpStoryState
   end
 end
 
-# Stands in for the world's story: the open world's id and the writes asked for.
+# Stands in for the world's story: the open world's id and the fights' keys asked of the relay, each
+# troop and value in $written.
 module MGQ_MpWorldStory
   class << self
-    attr_accessor :world_id, :requests
+    attr_accessor :world_id
   end
 
-  # Counts a write asked for.
+  # Notes a fight's key asked of the relay.
   #
-  # @return [Boolean] Whether a write follows, always.
-  def self.request_post
-    @requests += 1
+  # @param troop [Integer] The troop.
+  # @param text [String] The value.
+  # @return [Boolean] Whether it goes to the relay, always.
+  def self.write_freeze(troop, text)
+    $written << [troop, text]
     true
   end
 end
 MGQ_MpWorldStory.world_id = "w1"
-MGQ_MpWorldStory.requests = 0
+$written = []
 
 # Stands in for the raid pools: each troop's pool keys from $keys, the pools from $pools, and the
 # BEATEN markers of the Sonya fights read as battles_raid_pool.rbx reads them.
@@ -149,29 +138,27 @@ def entry_of(troop, held, name = "$Sonya")
     "spot" => [138, 30, 10, 8], "held" => held }
 end
 
-# Packs a world's story with a frozen fights' list.
+# Writes a fight's key as the relay keeps it: the entry's text after its troop.
 #
-# @param list [String, nil] The list, nil for a story without one.
-# @return [String] The packed story.
-def story_with(list)
-  lists = { "v" => "1001:n33" }
-  lists["f"] = list if list
-  MGQ_MpStoryState.pack(lists)
+# @param entry [Hash] The entry.
+# @return [String] The value.
+def key_of(entry)
+  MGQ_MpWorldFreeze.encode_entry(entry).split("|", 2)[1]
 end
 
-# Text: every free text escaped, so separators inside names and values never break the list.
+# Text: every free text escaped, so separators inside names and values never break the key.
 odd = entry_of(868, [[1, 1075, 14], [1, 2001, "a|b;c,d:e%f~g=h.i ü"], [1, 2002, 1.5], [1, 2003, -7], [0, 31, false], [0, 32, true],
                      [2, [138, 13, "A"], false], [2, [138, 14, "B|;"], true]], "$Sonya!|;,:%~=.ソニア")
-text = freeze.encode([odd])
-check("a frozen fight's text holds none of the list's separators inside its free texts",
+text = freeze.encode_entry(odd)
+check("a frozen fight's text holds no separator inside its free texts",
       [text.count(";"), text.count("|"), text.include?("ソ"), text.include?("~g")], [0, 8, false, false])
-read = freeze.decode(text)
-check("and reads back as written: UTF-8, $ and ! names, self switch keys, string and float values", read, [odd])
-check("its names come back as UTF-8", read[0]["tableau"][1][0][5].encoding, Encoding::UTF_8)
+read = freeze.decode_entry(text)
+check("and reads back as written: UTF-8, $ and ! names, self switch keys, string and float values", read, odd)
+check("its names come back as UTF-8", read["tableau"][1][0][5].encoding, Encoding::UTF_8)
 check("an escaped text has only the plain bytes and %XX", freeze.escape("a-b_c$d!e f.g"), "a-b_c$d!e%20f%2Eg")
 
-# Broken texts and unknown troops are dropped, the rest read.
-good = freeze.encode([entry_of(870, [[1, 1075, 16]])])
+# Broken texts and unknown troops are dropped.
+good = freeze.encode_entry(entry_of(870, [[1, 1075, 16]]))
 broken = [
   "garbage",
   good.sub("870|", "5|"),
@@ -182,45 +169,33 @@ broken = [
   good.sub("|138.30.10.8|", "|138.30.10|"),
   good.sub("870|", "99999999999|"),
   good + "|extra",
+  good.sub("255:0:1:1:1,", "255:0:1:0:1,"),
 ]
-check("broken entries and troops that are no boss are dropped, the good one read",
-      freeze.decode((broken + [good]).join(";")).map { |entry| entry["troop"] }, [870])
-check("a list carries at most MAX_ENTRIES fights", freeze.decode(([good] * 40).join(";")).size, MGQ_MpWorldFreeze::MAX_ENTRIES)
-check("a tableau needs exactly one boss row", freeze.decode(good.sub("255:0:1:1:1,", "255:0:1:0:1,")), [])
+check("broken texts, troops that are no boss and tableaus without exactly one boss row are dropped, the good one read",
+      [broken.map { |each| freeze.decode_entry(each) }.compact, freeze.decode_entry(good)["troop"]], [[], 870])
 
-# The player's own frozen fight: noted, indexed, and a write asked for.
+# The player's own frozen fight: noted, indexed, and its key asked of the relay.
 noted = freeze.note(entry_of(868, [[1, 1075, 14], [0, 31, false], [2, [138, 13, "A"], false], [1, 2004, [1, 2]]]).merge("state" => "frozen", "frames" => []))
-check("noting the player's frozen fight asks for a write", [noted, MGQ_MpWorldStory.requests], [true, 1])
-check("and marks it unshared until a write carries it", freeze.unshared?, true)
+check("noting the player's frozen fight asks the relay to keep its key for the world",
+      [noted, $written], [true, [[868, key_of(entry_of(868, [[1, 1075, 14], [0, 31, false], [2, [138, 13, "A"], false]]))]]])
 check("whose entry leaves the record's own fields and a list value the story cannot carry out",
       [freeze.entry(868).keys.sort, freeze.held.map { |kind, key, _| [kind, key] }], [%w(held outer scene site spot tableau troop), [[1, 1075], [0, 31], [2, [138, 13, "A"]]]])
 check("its held keys are indexed by kind and key",
       [freeze.held_value(1, 1075), freeze.held_value(0, 31), freeze.held_value(2, [138, 13, "A"]), freeze.held_value(1, 1076), freeze.held_value(0, 1075)],
       [[true, 14], [true, false], [true, false], nil, nil])
-check("a note that is no entry is refused without a write", [freeze.note("map:1"), freeze.note(entry_of(868, []).merge("site" => "x")), MGQ_MpWorldStory.requests], [false, false, 1])
+$written.clear
+check("a note that is no entry is refused without a key", [freeze.note("map:1"), freeze.note(entry_of(868, []).merge("site" => "x")), $written], [false, false, []])
 
 # Union by troop: a known fight keeps its fields and gains the keys it lacks, its own value winning.
 world = entry_of(868, [[1, 1075, 16], [1, 1076, 3]])
 world["spot"] = [138, 1, 1, 2]
 other = entry_of(870, [[1, 1075, 18], [0, 33, true]])
 other["site"] = "map:728:12:1"
-freeze.take(story_with(freeze.encode([world, other])))
-check("the world's entry of a known fight adds its new keys, the known value winning",
+freeze.take_keys(868 => key_of(world), 870 => key_of(other), 999 => "garbage")
+check("the world's key of a known fight adds its new keys, the known value winning",
       [freeze.held_value(1, 1075), freeze.held_value(1, 1076), freeze.entry(868)["spot"]], [[true, 14], [true, 3], [138, 30, 10, 8]])
-check("a fight the player did not know joins the list after the known ones", freeze.entries.map { |entry| entry["troop"] }, [868, 870])
+check("a fight the player did not know joins the list after the known ones, one this game cannot read is dropped", freeze.entries.map { |entry| entry["troop"] }, [868, 870])
 check("the oldest fight's value wins a key two fights hold", [freeze.held_value(1, 1075), freeze.held_value(0, 33)], [[true, 14], [true, true]])
-before = freeze.entries
-freeze.take(story_with(nil))
-freeze.take(story_with(""))
-check("a world's story without the list, as an earlier version writes it, changes nothing", freeze.entries, before)
-lists = freeze.add("v" => "1001:n33")
-check("a story written carries the list", freeze.decode(lists["f"]).map { |entry| entry["troop"] }, [868, 870])
-check("which leaves nothing unshared", freeze.unshared?, false)
-freeze.take(story_with(nil))
-check("nor does a world's story without the list, as the relay's keyed story comes back, since no write could fix it", freeze.unshared?, false)
-freeze.take(story_with(freeze.encode([world])))
-check("a world's story that lacks a known fight or held key marks the list unshared again", freeze.unshared?, true)
-freeze.add({})
 
 # The end of a frozen fight: its pools defeated, its marker met in the player's story or the world's.
 $pools["Sonya Mazda"] = MGQ_MpRaidPool::Pool.new(0.0, 100, false)
@@ -230,10 +205,11 @@ $pools["Sonya Mazda"] = MGQ_MpRaidPool::Pool.new(0.0, 100, true)
 $frame = 130
 check("its defeat is looked at once a second", freeze.entries.size, 2)
 $frame = 161
+$written.clear
 check("then ends the fight", [freeze.entries.map { |entry| entry["troop"] }, freeze.ended?(entry_of(868, []))], [[870], true])
 check("whose keys the next fight takes over or lets go", [freeze.held_value(1, 1075), freeze.held_value(1, 1076), freeze.held_value(0, 31)], [[true, 18], nil, nil])
-check("and which is never written again", freeze.decode(freeze.add({})["f"]).map { |entry| entry["troop"] }, [870])
-freeze.take(story_with(freeze.encode([entry_of(868, [[1, 1075, 14]])])))
+check("and whose end goes to the relay for the world, with the end of the other side's fight", $written, [[868, "0"], [869, "0"]])
+freeze.take_keys(868 => key_of(entry_of(868, [[1, 1075, 14]])))
 check("nor taken again from a world's story that still carries it", freeze.entries.map { |entry| entry["troop"] }, [870])
 check("nor noted again", [freeze.note(entry_of(868, [[1, 1075, 14]])), freeze.entries.size], [false, 1])
 $pools.clear
@@ -272,54 +248,42 @@ check("a fight not won holds its keys", freeze.held, [[1, 1075, 14]])
 $won << 868
 check("a won one lets them go at once", [freeze.held, freeze.entries, freeze.ended?(entry_of(868, []))], [[], [], true])
 
-# The end of a fight travels as "<troop>|0", which the DLL and the relay keep in place of the
-# fight's key, so it reaches every game, also those that only read.
-check("the end of a fight this game saw goes into every write, with the end of the other side's fight",
-      [freeze.add({})["f"], freeze.add({})["f"]], ["868|0;869|0", "868|0;869|0"])
+# The end of a fight travels as its key's "0", which the relay keeps in place of the fight, so it
+# reaches every game, also those that only read.
 $won.clear
 Scene_Title.new.start
-asked = MGQ_MpWorldStory.requests
-freeze.take(story_with(freeze.encode([entry_of(870, [[1, 1075, 16]])])))
+$written.clear
+freeze.take_keys(870 => key_of(entry_of(870, [[1, 1075, 16]])))
 check("a game that only reads takes the world's fight", freeze.entries.map { |entry| entry["troop"] }, [870])
-freeze.take(story_with("870|0;" + freeze.encode([entry_of(868, [[1, 1076, 2]])])))
+freeze.take_keys(870 => "0", 868 => key_of(entry_of(868, [[1, 1076, 2]])))
 check("and drops it once the world's story carries its end, taking the other fights", freeze.entries.map { |entry| entry["troop"] }, [868])
-written = freeze.add({})["f"]
-check("without a write, since the world's story ends it already, though every write still carries the end",
-      [MGQ_MpWorldStory.requests - asked, freeze.unshared?, freeze.decode(written).map { |entry| entry["troop"] }, written.end_with?(";870|0")], [0, false, [868], true])
+check("without asking the relay, since the world's story ends it already", $written, [])
 check("the player's own fight against a troop the world ended is refused, for good",
-      [freeze.note(entry_of(870, [[1, 1075, 18]])), freeze.final?(870), freeze.entries.map { |entry| entry["troop"] }, MGQ_MpWorldStory.requests - asked], [false, true, [868], 0])
-freeze.take(story_with(freeze.encode([entry_of(870, [[1, 1075, 18]]), entry_of(868, [[1, 1076, 2]])])))
-check("as is the world's entry of it, which a racing write brought back", freeze.entries.map { |entry| entry["troop"] }, [868])
-check("whose story lacks the end then", freeze.unshared?, true)
-freeze.add({})
-asked = MGQ_MpWorldStory.requests
+      [freeze.note(entry_of(870, [[1, 1075, 18]])), freeze.final?(870), freeze.entries.map { |entry| entry["troop"] }, $written], [false, true, [868], []])
+freeze.take_keys(870 => key_of(entry_of(870, [[1, 1075, 18]])), 868 => key_of(entry_of(868, [[1, 1076, 2]])))
+check("as is the world's key of it, which a racing write brought back", freeze.entries.map { |entry| entry["troop"] }, [868])
 freeze.world_told([[nil] * 7009 + [true], [], {}])
-check("an end this game saw asks for a write that carries it, with the other side's",
-      [freeze.entries, MGQ_MpWorldStory.requests - asked, freeze.unshared?, freeze.add({})["f"]], [[], 1, true, "868|0;869|0;870|0"])
-freeze.take(story_with(freeze.encode([entry_of(868, [[1, 1076, 2]])])))
-check("a world's story that still carries the fight lacks its end", [freeze.entries, freeze.unshared?], [[], true])
+check("an end this game saw goes to the relay with the other side's", [freeze.entries, $written], [[], [[868, "0"], [869, "0"]]])
 freeze.world_told([[], [], {}])
-freeze.take(story_with(freeze.encode([entry_of(868, [[1, 1076, 2]])])))
-check("one whose marker the world's story no longer meets stays ended for good, its end still written",
-      [freeze.entries, freeze.final?(868), freeze.final?(869), freeze.add({})["f"]], [[], true, true, "868|0;869|0;870|0"])
+freeze.take_keys(868 => key_of(entry_of(868, [[1, 1076, 2]])))
+check("one whose marker the world's story no longer meets stays ended for good",
+      [freeze.entries, freeze.final?(868), freeze.final?(869)], [[], true, true])
 
-# The player's own fight that no write carried yet ends with the end the world's story carries, and a
-# world's end of one side's fight ends the other side's too, which this game then writes.
+# The player's own fight ends with the end the world's story carries, and a world's end of one side's
+# fight ends the other side's too.
 Scene_Title.new.start
 freeze.note(entry_of(870, [[1, 1075, 18]]))
-freeze.take(story_with("870|0"))
-check("the player's own fight that no write carried yet ends with the world's end of it",
+freeze.take_keys(870 => "0")
+check("the player's own fight ends with the world's end of it",
       [freeze.entries, freeze.held, freeze.note(entry_of(870, [[1, 1075, 18]]))], [[], [], false])
 check("a fight not ended is no final one", [freeze.final?(868), freeze.final?(869)], [false, false])
-freeze.add({})
-freeze.take(story_with("868|0;870|0"))
-check("the world's end of Sonya Mazda ends Mainyu too", [freeze.final?(869), freeze.note(entry_of(869, [[1, 1075, 15]])), freeze.entries], [true, false, []])
-check("which the world's story lacks, so the next write carries it", [freeze.unshared?, freeze.add({})["f"]], [true, "868|0;869|0;870|0"])
-freeze.take(story_with("868|0;869|0;870|0"))
-check("and a world's story with every end lacks nothing", freeze.unshared?, false)
-check("an end of no troop is no end", [freeze.ended_troop("0|0"), freeze.ended_troop("12|00"), freeze.ended_troop("12|0")], [nil, nil, 12])
+$written.clear
+freeze.take_keys(868 => "0")
+check("the world's end of Sonya Mazda ends Mainyu too, without asking the relay", [freeze.final?(869), freeze.note(entry_of(869, [[1, 1075, 15]])), freeze.entries, $written], [true, false, [], []])
 long = entry_of(870, (1..300).map { |id| [1, 2000 + id, "x" * 200] })
-check("a fight longer than the relay keeps is never written", [freeze.encode([long]), freeze.note(long)], ["", false])
+Scene_Title.new.start
+$written.clear
+check("a fight longer than the relay keeps is never written", [freeze.encode_entry(long), freeze.note(long), $written], [nil, false, []])
 
 # A fight only one side plays also ends with the fight the other side plays in its stead, so a player
 # of the other side past it is never held back: Sonya Mazda (868) on Alice's, Mainyu (869) on Ilias's.
@@ -329,14 +293,15 @@ Scene_Title.new.start
 freeze.note(entry_of(868, [[1, 1075, 14], [0, 2307, true]]))
 check("a fight whose other side's fight has not ended holds its keys", freeze.held, [[1, 1075, 14], [0, 2307, true]])
 $won << 869
-check("an Ilias-side win over Mainyu ends the frozen fight against Mazda at once",
-      [freeze.held, freeze.entries, freeze.ended?(entry_of(868, [])), freeze.add({})["f"]], [[], [], true, "868|0;869|0"])
+$written.clear
+check("an Ilias-side win over Mainyu ends the frozen fight against Mazda at once, both ends going to the relay",
+      [freeze.held, freeze.entries, freeze.ended?(entry_of(868, [])), $written], [[], [], true, [[868, "0"], [869, "0"]]])
 check("nor is Mazda noted again", freeze.note(entry_of(868, [[1, 1075, 14]])), false)
 $won.clear
 Scene_Title.new.start
 freeze.note(entry_of(868, [[1, 1075, 14]]))
 freeze.world_told([[nil] * 7010 + [true], [], {}])
-check("the world's story meeting Mainyu's marker ends it too", [freeze.entries, freeze.add({})["f"]], [[], "868|0;869|0"])
+check("the world's story meeting Mainyu's marker ends it too", freeze.entries, [])
 freeze.world_told([[], [], {}])
 check("for good, Mainyu's fight with it", [freeze.note(entry_of(869, [[1, 1075, 15]])), freeze.entries], [false, []])
 Scene_Title.new.start

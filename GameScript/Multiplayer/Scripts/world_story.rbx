@@ -2,12 +2,14 @@
 #  world_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-24: Kept on the unlocks the player holds that the world's story lacks, as the second accessory slot
+#      Paulinchen  2026-10-28: Sent the frame's writes to the DLL ahead of the world's close
+#      Paulinchen  2026-10-24: Kept on the unlocks the player holds that the relay hands off, as the second accessory slot
 #      Paulinchen  2026-10-23: Asked the DLL for the part a story is in
+#                            - Played the world's story on the relay's tracks: the player's own writes as requests, the relay's values written straight into the story
+#                            - Dropped the story's fetches, whole-story writes, merges, scans and holds, which the relay's tracks replace
+#                            - Told the relay the player's tellings, the teller they watch and their level
 #                            - Took the player out of their own scene before the return to the Great Decision and the end of a cleared collab
 #                            - Told whether event commands may move the world's story on and read the values that do
-#                            - Wrote the story's waiting changes at once as the game saves, goes to the title screen, resets or closes
-#                            - Kept in the save the world's story the player built on and took a loaded save's changes to it as their own
 #      Paulinchen  2026-10-18: Shared the Sonya scene's step as its start while none of its fights is frozen or over
 #                            - Ended the collab scenario the world's story cleared and gave back its stored items
 #                            - Turned the collab scenario's start off in Raid Worlds
@@ -52,76 +54,71 @@
 #
 #----------------------------------------------------------------
 
-# A Raid World's story, which the relay keeps for the whole world (see Relay/core/story.js). Every
-# game fetches it as the world opens, after a save loaded or a new game, whenever the relay tells
-# a newer revision, and once a minute, and lays it over the player's own values (the state model of
-# story_state.rbx, `mix`), as long as the player's story is in the world's current part; a player in
-# an earlier part is behind, and world_catchup.rbx keeps them on their part's checkpoint until their
-# level moves them on. A game whose story moved on writes it back: its counters, which the relay
-# reads, and the rest sealed, with the revision it built on. A refused write takes the world's story
-# and drops the step that conflicts with it. Chests, the choices' outcomes and the side are each
-# player's own, except the chests that hold the story's key items, which are the world's.
+# A Raid World's story, which the relay keeps for the whole world on its tracks (Relay/README.md,
+# "Story tracks"): the world's track, and a track of their own for a player behind the world. The
+# DLL plays the tracks' protocol (StoryTopics); this script hands it what it needs of the game and
+# writes what comes back into the game's story.
 #
-# The Great Decision: the first route that reaches the relay is the world's; the game's own choice
-# offers only the routes the world may still take, and a player the world's story carries past the
+# Every write the game makes of a key the story mapping keeps goes to the relay as a request
+# (story_keys.rbx), applied in the player's own game at once so the event that wrote it reads it.
+# What the relay hands back, a whole track as the player enters or moves between tracks, the
+# pushes of other games' writes and its own value of a request it did not keep as written, is
+# written straight into the game's story once the player is free: no event of their own, battle or
+# transfer runs. Nothing is merged; the keys the mapping keeps no row of are the player's own.
+#
+# The Great Decision: the first route a write takes is the world's; the game's own choice offers
+# only the routes the world may still take, and a player the world's story carries past the
 # decision picks it on the screen of coop_choices.rbx. A finished route takes the world back to the
 # Great Decision in place of the Reaper's reset menu (common event 265), which would drop companions;
 # called anywhere else, the menu is left out, since one player must not take the whole world back.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorldStory
-  # Frames between two fetches while the relay tells nothing, a minute, in case a push was lost.
+  # Frames between two fetches of the world's shared companions while the relay tells nothing, a
+  # minute, in case a push was lost.
   POLL_FRAMES = 3600
 
-  # Frames between two reads of the DLL's state while a request runs, a quarter of a second.
+  # Frames between two reads of the DLL's state of the shared companions while a request runs.
   STATE_FRAMES = 15
 
-  # Frames between two looks at the story's progress, half a second.
+  # Frames between two looks at the player's level and what the world's story left.
   CHECK_FRAMES = 30
 
-  # Frames between two comparisons of the whole story while it may have changed, a second.
-  SCAN_FRAMES = 60
-
-  # Frames between two comparisons of the whole story while nothing points to a change, ten
-  # seconds, for what parallel events change.
-  IDLE_SCAN_FRAMES = 600
-
   # Frames a story event waits at most after a player on the map stopped telling the story, for
-  # the world's story they wrote, ten seconds.
+  # the world's story of their telling, ten seconds.
   AWAIT_TELLER_FRAMES = 600
 
   # Frames the player's story events wait at most for the world's story after the world opened, a
   # save loaded or a new game started, ten seconds, in case the relay does not answer.
   AWAIT_WORLD_FRAMES = 600
 
-  # Frames a write waits after the story's progress moved, so the changes of one step go together.
-  SETTLE_FRAMES = 30
+  # Frames before the player's story is handed again while the relay still asks for it, a second.
+  SEED_FRAMES = 60
 
-  # Frames a write waits after the last other change of the story, five seconds, so a scene's
-  # changes go in one write: the relay is on Cloudflare's free plan.
-  DEBOUNCE_FRAMES = 300
-
-  # Frames a change of the story waits at most while more keep coming, thirty seconds.
-  LONGEST_WAIT_FRAMES = 1800
-
-  # Frames before a request that failed is tried again, thirty seconds.
-  RETRY_FRAMES = 1800
-
-  # Frames before a write the relay refused for coming too often is tried again, five seconds.
-  RATE_FRAMES = 300
-
-  # Frames before a request the DLL did not start is tried again, a second.
-  START_FRAMES = 60
-
-  # Seconds the closing game waits at most for the relay to answer the write of the story's waiting
-  # changes, since the DLL's request ends with the game.
-  CLOSE_WAIT_SECONDS = 3
-
-  # Seconds between two looks at that write while the closing game waits.
-  CLOSE_POLL_SECONDS = 0.05
-
-  # Bytes the DLL may write the story's state into at first; a larger story asks for a larger buffer.
+  # Bytes the DLL may write the shared companions' state into at first; a larger one asks for more.
   STATE_SIZE = 4096
+
+  # The highest level the relay's gates take.
+  MAX_LEVEL = 99_999
+
+  # The topics of the story on tracks, see StoryTopics in the DLL.
+  ENTER_TOPIC = "story.enter"
+  CLOSE_TOPIC = "story.close"
+  LEVEL_TOPIC = "story.level"
+  SEED_TOPIC = "story.seed"
+  TELL_TOPIC = "story.tell"
+  WATCH_TOPIC = "story.watch"
+  TAKE_TOPIC = "story.take"
+
+  # The events of the story on tracks.
+  STATUS_EVENT = "story.status"
+  REFUSED_EVENT = "story.refused"
+
+  # The world's own track.
+  WORLD_TRACK = "world"
+
+  # The codes of a route variable's request the relay refused as another route is the world's.
+  ROUTE_CODES = %w(route finished closed)
 
   # The routes as the relay names them, in the order of their variables and of the Great
   # Decision's outcomes.
@@ -139,8 +136,8 @@ module MGQ_MpWorldStory
   # The switches that tell a route was cleared, by route.
   CLEAR_SWITCHES = [7096, 7097, 7039]
 
-  # Variables whose change moves the story on, written soon after: the main story, the routes, the
-  # Great Decision's progress and the areas' progress the parts are ordered by.
+  # Variables whose change moves the story on: the main story, the routes, the Great Decision's
+  # progress and the areas' progress the parts are ordered by.
   PROGRESS_VARIABLES = [MAIN_PROGRESS] + ROUTE_VARIABLES + [1140, 1003, 1011, 1019, 1021, 1032, 1052, 1063, 1075, 1076, 1136, 1137, 1138, 1139]
 
   # Switches whose change moves the story on: the bosses of the Monster Lord's Castle and the route
@@ -162,9 +159,6 @@ module MGQ_MpWorldStory
   # The main story's progress a return to the Great Decision sets.
   BEFORE_DECISION = 39
 
-  # Highest counter the relay takes.
-  MAX_COUNTER = 1_000_000
-
   # The common event of the Great Decision, whose choice of the routes the world filters.
   DECISION_EVENT = 380
 
@@ -185,32 +179,6 @@ module MGQ_MpWorldStory
 
   # The variable where a game over returns the player.
   GAME_OVER_RETURN = 1002
-
-  # The Queen's Cup's progress at Grand Noah, whose steps from the sign-up to the final (CUP_STEPS)
-  # hold only where the tournament plays (CUP_PLACES): the world's story keeps them as CUP_OPEN, so
-  # no other player is stuck with a step only the closed waiting room's events go on from.
-  CUP_VARIABLE = 1052
-
-  # The Queen's Cup's steps while the tournament runs: signed up, past the quarterfinal and past the
-  # semifinal.
-  CUP_STEPS = 3..5
-
-  # The Queen's Cup's progress before the sign-up, at which the Colosseum's official signs players up.
-  CUP_OPEN = 2
-
-  # Where the Queen's Cup plays, by map, with the x its part of the map starts at: the Colosseum's
-  # waiting room east of its lobby, the Arena, and Hades, whose game over after a lost match returns
-  # the player to the waiting room.
-  CUP_PLACES = { 484 => 30, 483 => 0, 154 => 0 }
-
-  # A story event that sets a step before raid boss battles of its own and keeps it as its last
-  # value once they are won: the variable, the steps it sets, the step its page starts at again,
-  # the main story's step it plays in and the troops it fights.
-  BattleScene = Struct.new(:variable, :steps, :start, :main_step, :troops)
-
-  # The battle scenes: Part 2's return to the Ilias Temple Ruins (map 138, event 13), which sets
-  # v1075 to 15 and 16 before Sonya Mazda and Sonya Mainyu, whose defeats set it back to 12.
-  BATTLE_SCENES = [BattleScene.new(1075, [15, 16], 14, 33, [868, 869])]
 
   # The variable a transfer to TRANSFER_RELAY_MAP goes on from, as the game's own returns use it.
   TRANSFER_MAP = 57
@@ -257,148 +225,52 @@ module MGQ_MpWorldStory
   # the world's clear switches stand for in a Raid World.
   SYSTEM_ENDINGS = { :ed1 => 7096, :ed2 => 7097 }
 
-  # Codes of a refused write or route whose own step the game drops: its progress is not the world's.
-  DROP_CODES = %w(behind route finished closed)
-
-  # Code of a write the relay refused as behind the world's story, whose raises of the one-way
-  # variables stay, see keep_own.
-  BEHIND_REFUSAL = "behind"
-
-  # Code of a write the relay refused as another route was locked first.
-  ROUTE_REFUSAL = "route"
-
   extend MGQ_MpLog
 
   # What starts this script's lines in the log.
   LOG_TAG = "world story"
 
-  # Forgets the world's story, as when the world closes, a save is loaded or a new game starts,
-  # which bring their own story.
+  # Forgets what this session knew of the world's story, as when the world closes, a save is loaded
+  # or a new game starts, which bring their own story.
   #
-  # @param reason [Symbol, nil] Why the story is fetched next, nil when none is.
+  # @param reason [Symbol, nil] Why the story starts anew, nil when the world closed.
   def self.forget(reason = nil)
     @mode = nil
-    @base = nil
-    @wrev = 0
-    @seen_wrev = nil
-    @known_rev = 0
-    @world = nil
-    @pending = nil
-    @busy = {}
-    @need_fetch = reason
-    @force_post = false
-    @marker_at = nil
-    @change_at = nil
-    @first_change_at = nil
-    @change_signature = nil
-    @watch = false
-    @end_local = nil
-    @was_telling = false
+    @waiting = nil
+    @telling = nil
+    @watching = nil
+    @teller = nil
+    @level_sent = nil
+    @seeded_at = nil
     @queued = nil
     @returned_route = nil
-    @after_take = nil
-    @pushed_rev = nil
-    @teller = nil
+    @route_refused = false
     @decision_roster = nil
-    @was_running = false
-    @saved_base = nil unless reason
-    @entry_story = reason ? entry_story : nil
-    @retry_at = 0
-    @fetch_at = 0
+    @world = nil
+    @caps = nil
     @clock ||= 0
     @awaited_since = reason ? @clock : nil
-    @polled = @clock
     @checked = @clock
-    @scanned = @clock
-    @state_read = @clock
-  end
-
-  # Copies the story the player brings into the world, a save's or a new game's, which their changes
-  # before the world's story first came are told by: where a loaded save noted the world's story
-  # it built on (see note_save), with that story's values.
-  #
-  # @return [Array, nil] The switches, variables and self switches, nil before the game's exist.
-  def self.entry_story
-    return nil unless $game_switches && $game_variables && $game_self_switches
-
-    based_on_save(MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state))
-  rescue
-    nil
-  end
-
-  # Puts the values of the world's story a loaded save built on back where the save's differ from
-  # them, so a load counts what the player changed before saving as their own changes, which the
-  # world's story may lack: the write waits a few seconds and a closing game sends nothing.
-  #
-  # @param story [Array] The switches, variables and self switches the save brings, changed in place.
-  # @return [Array] The story.
-  def self.based_on_save(story)
-    note = @saved_base
-    return story unless note && note["world"] == world_id
-
-    count = 0
-    note["base"].each_with_index do |values, kind|
-      next unless kind < 3 && values.is_a?(Hash)
-
-      values.each do |key, value|
-        if kind == 2 && value.nil?
-          story[2].delete(key)
-        else
-          story[kind][key] = value
-        end
-        count += 1
-      end
-    end
-    log("the loaded save differs in #{count} value(s) from the world's story it built on: they count as the player's own changes") if count > 0
-    story
-  end
-
-  # Reads what a loaded save noted of the world's story it built on, see note_save.
-  #
-  # @return [Hash, nil] "world", the world's id, and "base", the story's values where the save's
-  #   differ, as three hashes by kind; nil for a save that noted none.
-  def self.saved_base
-    note = $game_system ? MGQ_MpGame.get($game_system, :world_story) : nil
-    note.is_a?(Hash) && note["base"].is_a?(Array) ? note : nil
-  end
-
-  # Notes in the save the world's story the player built on, where their story differs from it (see
-  # based_on_save); a save outside a Raid World notes none. Called before the game makes a save.
-  def self.note_save
-    return unless $game_system
-
-    base = active? ? @base || @entry_story : nil
-    MGQ_MpGame.set($game_system, :world_story, base ? { "world" => world_id, "base" => differences(base) } : nil)
-  end
-
-  # Lists the values of a story where the player's differs from it, as the world shares them.
-  #
-  # @param base [Array] The story: switches, variables and self switches.
-  # @return [Array<Hash>] The story's values by key, by kind.
-  def self.differences(base)
-    local = MGQ_MpStoryState.raw_state
-    (0...3).map do |kind|
-      found = {}
-      changes(kind, base[kind], local[kind]).each { |key| found[key] = base[kind][key] }
-      found
-    end
-  end
-
-  # Forgets the story the player brought into the world and what a loaded save noted of the world's
-  # it built on, once another story is the base of the player's changes.
-  def self.drop_entry_story
-    @entry_story = nil
-    @saved_base = nil
   end
 
   forget
 
-  # Forgets the world's story once the world closed or is no Raid World.
+  # Forgets the world's story once the world closed or is no Raid World, after the frame's writes
+  # went to the DLL ahead of the close: a world left for the title screen closes its room before
+  # the frame ends, so its last writes must be on their way by then.
   def self.close
     return unless @world_id
 
     log("the Raid World closed: forgetting its story")
+    MGQ_MpStoryKeys.flush
+    MGQ_Multiplayer::Bridge.stage(CLOSE_TOPIC)
+    MGQ_Multiplayer::Bridge.flush
+    MGQ_MpStoryKeys.recording = nil
+    MGQ_MpStoryKeys.forget_raid
     @world_id = nil
+    @status = nil
+    @comps = nil
+    @busy = nil
     forget
   end
 
@@ -409,7 +281,7 @@ module MGQ_MpWorldStory
     MGQ_MpCoop::Scope.raid? && MGQ_MpOverworldSync.in_world? && !world_id.empty?
   end
 
-  # The open world's id, which the DLL's story exports name the world by.
+  # The open world's id, which the DLL's story names the world by.
   #
   # @return [String] The id, empty outside a world or for a world the directory does not know.
   def self.world_id
@@ -420,7 +292,7 @@ module MGQ_MpWorldStory
 
   # Reports whether the player's story events wait for the world's story, which has not come since
   # the world opened, a save loaded or a new game started: the player's own story would play
-  # before the world's was laid over it. AWAIT_WORLD_FRAMES at most. Called by coop_events.rbx.
+  # before the world's was written into it. AWAIT_WORLD_FRAMES at most. Called by coop_events.rbx.
   #
   # @return [Boolean] Whether they wait.
   def self.awaits_world?
@@ -434,37 +306,55 @@ module MGQ_MpWorldStory
 
   # How the player plays the world's story.
   #
-  # @return [Symbol, nil] :world while they play it, :behind while their story is in an earlier
-  #   part (see world_catchup.rbx), nil before the world's story came.
+  # @return [Symbol, nil] :world while they play the world's track, :behind while they play a track
+  #   of their own (see world_catchup.rbx), nil before the relay handed them one.
   def self.mode
     @mode
   end
 
-  # The counters of the world's story as the relay told them last.
+  # The world's story as the relay tells it, for the catch-up and the World overview.
   #
-  # @return [Hash, nil] See counters_of, nil before the relay told any.
+  # @return [Hash, nil] "rev", "part", "route" ("none" for none), "done" and "checkpoints" as the
+  #   relay's summary tells them, "comps" (the companions the world shares) and "caps" (the level
+  #   caps the player's story unlocked); nil before the relay told any.
   def self.world
-    @world
+    summary = @status && @status["world"]
+    return nil unless summary
+
+    @world ||= {
+      "rev" => summary["rev"].to_i, "part" => summary["part"].to_s, "route" => summary["route"].to_s,
+      "done" => summary["done"].to_a, "checkpoints" => summary["checkpoints"].to_a, "comps" => @comps.to_a, "caps" => caps,
+    }
   end
 
-  # Finds where a teleport to the story goes: the story's endpoint the relay keeps.
+  # Lists the level caps of the Level Cap milestones the player's story beat, which the catch-up
+  # experience reads, worked out once per story written into theirs.
   #
-  # @return [Array<Integer>, nil] The map, x, y and the direction to face, nil while the relay keeps none.
-  def self.endpoint
-    return nil unless active? && @world && !@world["end"].to_s.empty?
+  # @return [Array<Integer>] The caps, lowest first.
+  def self.caps
+    @caps ||= defined?(MGQ_MpRaidPool) ? MGQ_MpRaidPool.beaten_caps([MGQ_MpStoryState.data_of($game_switches), MGQ_MpStoryState.data_of($game_variables)]) : []
+  rescue => e
+    log_once(:caps, "listing the level caps the story unlocked failed: #{e.class}: #{e.message}")
+    @caps = []
+  end
 
-    map, x, y = @world["end"].split(",").map { |value| value.to_i }
-    map && map > 0 ? [map, x.to_i, y.to_i, 2] : nil
+  # Finds where a teleport to the story goes. The relay's tracks keep no endpoint of the story, so
+  # MGQ_MpCoopGather goes where this game last saw the story told.
+  #
+  # @return [nil] Always nil.
+  def self.endpoint
+    nil
   end
 
   # Lists the routes the world may still take at the Great Decision, see open_routes.
   #
   # @return [Array<Integer>, nil] The routes' places in ROUTES, nil outside a Raid World, before
-  #   the relay told the world's story or when none is open.
+  #   the relay told the world's summary or when none is open.
   def self.decision_routes
-    return nil unless active? && @world
+    world = active? ? self.world : nil
+    return nil unless world
 
-    routes = open_routes(@world)
+    routes = open_routes(world)
     routes.empty? ? nil : routes
   end
 
@@ -472,7 +362,7 @@ module MGQ_MpWorldStory
   # locked one alone while the world has not returned from it, else those not finished, the third
   # way once both others are, and every route once the world finished all of them.
   #
-  # @param world [Hash] The world's counters.
+  # @param world [Hash] The world's summary.
   # @return [Array<Integer>] The routes' places in ROUTES.
   def self.open_routes(world)
     done = world["done"]
@@ -495,75 +385,83 @@ module MGQ_MpWorldStory
     (ROUTES - done).empty?
   end
 
-  # Reports whether the player's story took a route at the Great Decision the world's story stands
-  # at, one the world may take: that first step is further than the decision, though its key ranks
-  # below it once the world finished every route (see key_of), as the relay takes it too.
+  # Takes how the story on tracks stands, which the DLL posts whenever it changed.
   #
-  # @param own [Hash] The player's counters.
-  # @param world [Hash] The world's.
-  # @return [Boolean] Whether it did.
-  def self.decision_step?(own, world)
-    route = route_index(own)
-    return false unless route && route_index(world).nil? && part_of(world) == DECISION_PART
-
-    world["route"] == ROUTES[route] || (world["route"] == "none" && open_routes(world).include?(route)) ? true : false
+  # @param status [Hash] The status, see StoryTopics.StatusOf in the DLL.
+  def self.status=(status)
+    @status = status
+    @world = nil
   end
 
-  # Takes the relay's push that the world's story changed: fetches it when its revision is newer
-  # than the newest this game knows, once the player's own write or lock answered, since the push
-  # of the player's own change comes about as fast as the answer. Called by overworld_sync.rbx.
+  # Takes the requests of the player the relay did not keep as written: a route variable another
+  # route keeps, refused, brings back the companions of the player's own decision once the world's
+  # value is written into their story.
+  #
+  # @param refusals [Array<Array>] Each key, code and the relay's value, nil for none.
+  def self.refused(refusals)
+    refusals.each do |key, code, value|
+      log_once([:refused, key, code], "the relay did not keep #{key} as written (#{code})#{value ? ", it keeps #{value}" : ''}")
+      @route_refused = true if ROUTE_CODES.include?(code) && ROUTE_VARIABLES.any? { |id| key == "v#{id}" }
+    end
+  rescue => e
+    log("taking the relay's refusals failed: #{e.class}: #{e.message}")
+  end
+
+  # Takes the relay's push that the world's shared companions changed, which this game fetches.
+  # Called by overworld_sync.rbx.
   #
   # @param message [Hash] The push: MGQ_MpOverworldSync::STORY_FIELD with the revision, and
   #   :relay, which no player's message carries.
   def self.pushed(message)
     return log("ignored a story push not from the relay") unless message[:relay]
 
-    rev = message[MGQ_MpOverworldSync::STORY_FIELD].to_i
-    return unless active? && rev > @known_rev
-    return @pushed_rev = [@pushed_rev.to_i, rev].max if @busy[:post] || @busy[:lock]
-
-    log("the relay tells revision #{rev} of the world's story, this game knows #{@known_rev}: fetching it")
-    @need_fetch ||= :push
+    @fetch_due = true if active?
   rescue => e
     log("taking the relay's push failed: #{e.class}: #{e.message}")
   end
 
-  # Forgets the story this game played, as a loaded save or a new game bring their own, and
-  # fetches the world's to lay over it; reads what a loaded save noted of the world's story it built
-  # on (see note_save).
+  # Starts the player's story anew on the relay's tracks, as a loaded save or a new game bring their
+  # own: a new game is placed anew by its story.
   #
   # @param reason [Symbol] :load or :new_game.
   def self.loaded(reason)
-    @saved_base = reason == :load ? saved_base : nil
     return unless active?
 
-    log("#{reason == :load ? 'a save was loaded' : 'a new game started'}: fetching the world's story to lay over it")
+    log("#{reason == :load ? 'a save was loaded' : 'a new game started'}: the relay places the player on a track again")
+    MGQ_MpStoryKeys.drop
     forget(reason)
+    @fetch_due = true
+    enter(reason == :new_game)
   rescue => e
     log("following a #{reason} failed: #{e.class}: #{e.message}")
   end
 
-  # Follows the world's story for one frame: the relay's answers, the fetches, laying the world's
-  # story over the player's, and the writes. Called after the map's update.
+  # Follows the world's story for one frame: the mapping, the story the relay asks for, the
+  # player's telling, the teller they watch and their level, and what the relay handed back once
+  # the player is free. Called after the map's update.
   def self.tick
     @clock += 1
     return close unless active?
 
     note_world
-    read_state if !@busy.empty? && @clock - @state_read >= STATE_FRAMES
-    start_fetch
+    MGQ_MpStoryKeys.recording = :raid
+    load_classes
+    send_seed
     note_telling
     note_teller
-    take_pending if @pending && quiet?
+    take_pending if quiet?
     play_queued
-    check_progress if @clock - @checked >= CHECK_FRAMES
-    scan if scan_due?
-    send_post if post_due?
+    if @clock - @checked >= CHECK_FRAMES
+      @checked = @clock
+      send_level
+      restore if quiet?
+    end
+    follow_comps
   rescue => e
     log_once(:tick, "following the world's story failed: #{e.class}: #{e.message}")
   end
 
-  # Notes the open world, fetching its story when it is another than the last.
+  # Notes the open world, starting its story when it is another than the last.
   def self.note_world
     id = world_id
     return if id == @world_id
@@ -572,27 +470,67 @@ module MGQ_MpWorldStory
     @world_id = id
     @greeted = false
     @behind_told = false
-    log("a Raid World is open (#{id[0, 12]}): fetching its story")
+    @comps = nil
+    @fetch_due = true
+    log("a Raid World is open (#{id[0, 12]}): the relay places the player on a track")
+    enter(false)
   end
 
-  # Starts a fetch when one is due: asked for, or once a minute.
-  def self.start_fetch
-    @need_fetch ||= :poll if @clock - @polled >= POLL_FRAMES
-    return unless @need_fetch && !@busy[:fetch] && @clock >= @fetch_at
+  # Starts the player's story on the relay's tracks.
+  #
+  # @param fresh [Boolean] Whether the relay places the player anew by their story, as a new game.
+  def self.enter(fresh)
+    MGQ_Multiplayer::Bridge.stage(ENTER_TOPIC, "world" => world_id, "fresh" => fresh, "level" => level_now)
+  end
 
-    unless Relay.fetch(world_id)
-      @fetch_at = @clock + START_FRAMES
-      return log_once([:fetch_start, @world_id], "the DLL did not start a fetch of the world's story, trying again")
+  # Takes the story mapping's table once the DLL holds another revision than this script.
+  def self.load_classes
+    rev = @status && @status["classes"]
+    table = MGQ_MpStoryKeys.raid_table
+    return if rev.nil? || (table && table.rev == rev)
+
+    MGQ_MpStoryKeys.load_raid
+  end
+
+  # Hands the relay the player's story it asks for to place them by: every key the mapping keeps
+  # and every chest flag, at its value, those never set left out.
+  def self.send_seed
+    return unless @status && @status["need_seed"]
+    return if @seeded_at && @clock - @seeded_at < SEED_FRAMES
+
+    seed = seed_of(MGQ_MpStoryKeys.raid_table)
+    return unless seed
+
+    @seeded_at = @clock
+    MGQ_Multiplayer::Bridge.stage(SEED_TOPIC, seed)
+    log("handed the relay the player's story to place them by: #{seed.size} key(s)")
+  end
+
+  # Lists the player's story as a seed: each key the mapping keeps or a chest's, at its value.
+  #
+  # @param table [MGQ_MpStoryKeys::Table, nil] The story mapping's table.
+  # @return [Hash{String => String}, nil] The keys and their values, nil before the table came.
+  def self.seed_of(table)
+    return nil unless table
+
+    seed = {}
+    switches = MGQ_MpStoryState.data_of($game_switches)
+    variables = MGQ_MpStoryState.data_of($game_variables)
+    switches.each_with_index do |value, id|
+      seed["s#{id}"] = "1" if value && MGQ_MpStoryKeys.class_of(0, id, nil, table) & MGQ_MpStoryKeys::REQUESTED != 0
     end
-
-    log("fetching the world's story (#{@need_fetch})") unless @need_fetch == :poll
-    @busy[:fetch] = true
-    @need_fetch = nil
-    @polled = @clock
+    table.kept_variables.each do |id|
+      text = MGQ_MpStoryKeys.text_of(1, variables[id])
+      seed["v#{id}"] = text if text && text != "n0"
+    end
+    MGQ_MpStoryState.data_of($game_self_switches).each do |key, value|
+      seed[MGQ_MpStoryKeys.key_text(2, key)] = "1" if value && MGQ_MpStoryKeys.class_of(2, key, nil, table) & MGQ_MpStoryKeys::REQUESTED != 0
+    end
+    seed
   end
 
-  # Reports whether the world's story may be laid over the player's now: on the map or behind a
-  # menu, with no event of the player's own running, outside battles and transfers.
+  # Reports whether what the relay handed may be written into the player's story now: on the map or
+  # behind a menu, with no event of the player's own running, outside battles and transfers.
   #
   # @return [Boolean] Whether it may.
   def self.quiet?
@@ -602,548 +540,309 @@ module MGQ_MpWorldStory
     !$game_map.interpreter.running?
   end
 
-  # Reads how the requests stand and takes those that ended, with the story's text only once one did.
-  def self.read_state
-    @state_read = @clock
-    state = Relay.headers
-    state = Relay.state if [:post, :lock, :fetch].any? { |kind| @busy[kind] && ended?(state[kind.to_s]) }
-    return if state.empty?
-    return other_world(state) if state["world"] && state["world"] != world_id
-
-    rev = state["rev"].to_i
-    @known_rev = rev if rev > @known_rev
-    note_counters(state) if state["rev"]
-    text = state[:payload].to_s
-    # The player's own write comes first, so a fetch that ended with it takes it as known.
-    took_post(state, text) if @busy[:post] && ended?(state["post"])
-    took_lock(state, text) if @busy[:lock] && ended?(state["lock"])
-    took_fetch(state, text) if @busy[:fetch] && ended?(state["fetch"])
-    return unless @pushed_rev && !@busy[:post] && !@busy[:lock]
-
-    @need_fetch ||= :push if @pushed_rev > @known_rev
-    @pushed_rev = nil
-  end
-
-  # Reports whether a request the DLL tells of ended.
-  #
-  # @param outcome [String, nil] Its header in the state: "busy", how it ended, or nil while the DLL
-  #   tells none.
-  # @return [Boolean] Whether it ended.
-  def self.ended?(outcome)
-    !outcome.nil? && outcome != "busy"
-  end
-
-  # Takes the requests that ended while the DLL tells another world's story, which a request of the
-  # world before may leave: nothing of it is this world's, so each is asked again.
-  #
-  # @param state [Hash] The DLL's state.
-  def self.other_world(state)
-    ended = [:fetch, :post, :lock].select { |kind| @busy[kind] && ended?(state[kind.to_s]) }
-    return if ended.empty?
-
-    log("the DLL tells the story of another world (#{state['world'].to_s[0, 12]}): asking again")
-    ended.each { |kind| @busy.delete(kind) }
-    @need_fetch ||= :retry if ended.include?(:fetch)
-    @force_post = true if ended.include?(:post)
-  end
-
-  # Keeps the world's counters the relay told, the newest revision alone.
-  #
-  # @param state [Hash] The DLL's state.
-  def self.note_counters(state)
-    counters = counters_of(state)
-    @world = counters if @world.nil? || counters["rev"] >= @world["rev"]
-  end
-
-  # Takes a fetch that ended.
-  #
-  # @param state [Hash] The DLL's state.
-  # @param text [String] The world's story.
-  def self.took_fetch(state, text)
-    @busy.delete(:fetch)
-    return offer(state, text, false, "fetched") if state["fetch"] == "done"
-
-    log("fetching the world's story failed (#{state['fetch_code']}): #{state['fetch_error']}; trying again later")
-    @fetch_at = @clock + RETRY_FRAMES
-    @need_fetch ||= :retry
-  end
-
-  # Takes a write that ended: accepted, it is the story this game builds on; refused, the world's
-  # story comes instead, as after a refused route lock when another route was locked first; failed,
-  # it goes again later. An accepted write raises the revision a watched teller's story is waited
-  # past, so only another game's story ends that wait early (see awaits_teller?).
-  #
-  # @param state [Hash] The DLL's state.
-  # @param text [String] The world's story, or the one written once accepted.
-  def self.took_post(state, text)
-    post = @busy.delete(:post)
-    case state["post"]
-    when "accepted"
-      @wrev = state["post_rev"].to_i
-      @seen_wrev = @wrev if @seen_wrev.nil? || @wrev > @seen_wrev
-      @teller[:wrev] = @wrev if @teller && @wrev > @teller[:wrev].to_i
-      @base = post[:story]
-      @mode = :world
-      @end_local = nil if post[:end] && post[:end] == @end_local
-      # What changed while the write was under way goes out with the next one.
-      @watch = true
-      log("the relay took the story as revision #{@wrev} (#{post[:counters]})")
-      offer(state, text, false, "newer than the write") if state["wrev"].to_i > @wrev
-    when "conflict"
-      code = state["post_code"].to_s
-      log("the relay refused the story written on revision #{post[:base]} (#{code}): taking the world's at revision #{state['wrev']}" \
-          "#{DROP_CODES.include?(code) ? ', dropping the own step' : ', keeping the own changes it lacks'}")
-      offer(state, text, DROP_CODES.include?(code), "refused write (#{code})", true, code == BEHIND_REFUSAL)
-      # The world locked another route after the player's Great Decision offered theirs.
-      @after_take = :route_taken if code == ROUTE_REFUSAL
-    else
-      code = state["post_code"].to_s
-      @retry_at = @clock + (code == "rate" ? RATE_FRAMES : RETRY_FRAMES)
-      @force_post = true
-      log("writing the story failed (#{code}): #{state['post_error']}; trying again in #{(@retry_at - @clock) / 60} s")
-    end
-  end
-
-  # Takes a route lock that ended: locked, the write follows; taken, the world's story comes instead.
-  #
-  # @param state [Hash] The DLL's state.
-  # @param text [String] The world's story.
-  def self.took_lock(state, text)
-    route = @busy.delete(:lock)
-    case state["lock"]
-    when "locked"
-      @decision_roster = nil
-      log("the world's route is the #{ROUTE_NAMES[ROUTES.index(route).to_i]} route now")
-    when "taken"
-      log("the relay refused the #{route} route (#{state['lock_code']}): the world's route is #{state['route']}, taking the world's story")
-      offer(state, text, true, "route refused (#{state['lock_code']})", true)
-      @after_take = :route_taken
-    else
-      @retry_at = @clock + RETRY_FRAMES
-      log("locking the route failed: #{state['lock_error']}; trying again later")
-    end
-  end
-
-  # Keeps a story the relay told to lay over the player's once quiet: a newer one than the last
-  # taken, or any after a refused step.
-  #
-  # @param state [Hash] The DLL's state.
-  # @param text [String] The story.
-  # @param drop [Boolean] Whether the player's own progress since the last story goes.
-  # @param reason [String] Why, for the log.
-  # @param force [Boolean] Whether it is taken however old.
-  # @param behind [Boolean] Whether the relay refused the player's step as behind, see keep_own.
-  def self.offer(state, text, drop, reason, force = false, behind = false)
-    wrev = state["wrev"].to_i
-    return unless force || @seen_wrev.nil? || wrev > @seen_wrev
-
-    behind ||= @pending && @pending[:behind]
-    drop ||= @pending && @pending[:drop]
-    @pending = { :state => state, :text => text, :drop => drop, :behind => behind, :reason => reason }
-  end
-
-  # Lays the world's story that waits over the player's, or keeps the player's own, see the module.
-  # A step the relay refused (pending[:drop]) is never written again as it was. A new game's opening
-  # that the world's story is past runs its setup first (world_opening.rbx); the story it set up is
-  # the one the player's own changes count from. Nothing is taken while a lost raid boss battle's
-  # defeat runs (see holding?).
+  # Writes what the relay handed into the player's story once the story mapping's table came: a new
+  # game's opening that the world's story is past runs its setup first (world_opening.rbx). Nothing
+  # is written while a lost raid boss battle's defeat runs (see holding?).
   def self.take_pending
+    return unless MGQ_MpStoryKeys.raid_table
     return if holding?
 
-    opening = defined?(MGQ_MpWorldOpening) ? MGQ_MpWorldOpening.before_take(counters_of(@pending[:state])) : nil
-    return if opening == :wait
+    take = @status && @status["pending"] ? MGQ_Multiplayer::Bridge.call(TAKE_TOPIC) : nil
+    @waiting = merge_takes(@waiting, take) if take
+    return unless @waiting
 
-    @entry_story = entry_story if opening == :opened
-    @awaited_since = nil
-    pending = @pending
-    state = pending[:state]
-    world = counters_of(state)
-    # Raised before the player's story is read, so laying the world's over it keeps the raise.
-    MGQ_MpWorldAffection.take(pending[:text].to_s) if defined?(MGQ_MpWorldAffection) && !pending[:text].to_s.empty?
-    MGQ_MpWorldFreeze.take(pending[:text].to_s) if defined?(MGQ_MpWorldFreeze) && !pending[:text].to_s.empty?
-    local = MGQ_MpStoryState.raw_state
-    own = local_counters(local)
-    return if wait_for_return(own, world)
-
-    @pending = nil
-    @world = world if @world.nil? || world["rev"] >= @world["rev"]
-    @seen_wrev = world["wrev"]
-    text = pending[:text].to_s
-
-    # A story that did not open with the world's token comes without its text, and is written over.
-    if world["wrev"] == 0 || text.empty?
-      return if @mode == :world && @base && world["wrev"] == 0
-      return wait_for_world(world, own) if pending[:drop] || !continues?(own, world)
-
-      # The story a player behind stood on is no base of the player's own story as the world's.
-      @base = nil unless @mode == :world
-      @mode = :world
-      @wrev = world["wrev"]
-      @force_post = true
-      drop_entry_story
-      return log("the world has #{world['wrev'] == 0 ? 'no story yet' : "no story this game can read at revision #{world['wrev']}"}: writing the player's (#{counters_text(own)})")
-    end
-    # A player the catch-up moves on into the world's story takes it whatever their part.
-    if (@mode != :world || @base.nil?) && !(defined?(MGQ_MpWorldCatchup) && MGQ_MpWorldCatchup.joins_world?)
-      order = decision_step?(own, world) ? 1 : compare(key_of(own), key_of(world))
-      return start_ahead(world, own) if order > 0 && !pending[:drop] && continues?(own, world)
-      return fall_behind(world, own, text) if order < 0 && (part_of(own) != part_of(world) || kept_behind?)
+    state = @waiting["state"]
+    if state && defined?(MGQ_MpWorldOpening)
+      return if MGQ_MpWorldOpening.before_take("p" => MGQ_MpStoryState.decode_value(state["keys"]["v#{MAIN_PROGRESS}"] || "n0").to_i) == :wait
     end
 
-    # A route refused before the world had a story waits for the take of the world's first one.
-    after_take = @after_take
-    @after_take = nil
-    take_world(world, local, own, text, pending, after_take)
+    waiting = @waiting
+    @waiting = nil
+    apply(waiting)
   rescue => e
-    log("taking the world's story failed: #{e.class}: #{e.message}")
+    log("writing the world's story into the player's failed: #{e.class}: #{e.message}")
   end
 
-  # Reports whether the relay would take the player's story as the next of the world's: no route is
-  # locked, or the player's story is on it or returned from it, or has no route under way while the
-  # world's story has not started the locked one, and finishes no other route the world did not play
-  # (as refusalOf in Relay/core/story.js).
+  # Joins a take with the one that waits: a whole track replaces everything before it, keys follow.
   #
-  # @param own [Hash] The player's counters.
-  # @param world [Hash] The world's.
-  # @return [Boolean] Whether it would.
-  def self.continues?(own, world)
-    locked = world["route"]
-    return true if locked == "none"
+  # @param waiting [Hash, nil] The take that waits.
+  # @param take [Hash] The new take, see StoryTopics.TakeOf in the DLL.
+  # @return [Hash] The joined take.
+  def self.merge_takes(waiting, take)
+    return take if waiting.nil? || take["state"]
 
-    route = route_index(own)
-    started = route_index(world) == ROUTES.index(locked)
-    on_it = route ? ROUTES[route] == locked : own["clear"].include?(locked) || !started
-    on_it && (own["clear"] - world["done"] - [locked]).empty?
+    waiting.merge("keys" => waiting["keys"] + take["keys"], "rev" => take["rev"])
   end
 
-  # Waits for the world's next story, as the world has none yet and the player's cannot start it:
-  # another route is locked, or the relay refused the player's step.
+  # Writes what the relay handed into the player's story: a whole track over every key the mapping
+  # keeps, then the keys pushed or answered; then follows what it brought: the player's track, the
+  # frozen fights, the scene switches left on, the catch-up, the choices and routes it carried them
+  # past.
   #
-  # @param world [Hash] The world's counters.
-  # @param own [Hash] The player's.
-  def self.wait_for_world(world, own)
-    @mode = nil
-    @base = nil
-    @force_post = false
-    log("the world has no story yet, and the player's (#{counters_text(own)}) cannot start it on the #{world['route']} route: waiting for the world's")
-  end
-
-  # Gives the player the personal half of the world's return to the Great Decision before the
-  # world's story is laid over theirs, when the world finished the route the player is on and left
-  # it since the story this game built on (see returned); the world's story waits until it played.
-  #
-  # A route the player started themselves since that story is no return, as a starting save that
-  # cleared every route makes done and clear name every route from the first write on.
-  #
-  # @param own [Hash] The player's counters.
-  # @param world [Hash] The world's.
-  # @return [Boolean] Whether the world's story waits.
-  def self.wait_for_return(own, world)
-    return true if @queued
-    return false unless @mode == :world && @base
-
-    left = route_index(own)
-    return false unless left && left != @returned_route && left != route_index(world)
-    return false unless route_index(local_counters(@base)) == left
-    return false unless world["done"].include?(ROUTES[left]) || world["clear"].include?(ROUTES[left])
-
-    @returned_route = left
-    returned(own)
-    true
-  end
-
-  # Starts the world's story from the player's, which is further than the world's: the furthest
-  # story wins.
-  #
-  # @param world [Hash] The world's counters.
-  # @param own [Hash] The player's.
-  def self.start_ahead(world, own)
-    @mode = :world
-    @wrev = world["wrev"]
-    @base = nil
-    @force_post = true
-    drop_entry_story
-    log("the player's story (#{counters_text(own)}) is further than the world's (#{counters_text(world)}): writing it as the world's")
-  end
-
-  # Keeps the player behind the world's story, as theirs is in an earlier part: they write nothing,
-  # and world_catchup.rbx gives them their part's checkpoint and moves them on by their level. The
-  # story they stood on as they fell behind is the base of what they change while behind, which
-  # keep_own keeps once a checkpoint or the world's story is laid over theirs.
-  #
-  # @param world [Hash] The world's counters.
-  # @param own [Hash] The player's.
-  # @param text [String] The world's story, packed.
-  def self.fall_behind(world, own, text)
-    # A later fetch while behind keeps the base, or it would take in what the player changed since.
-    @base ||= @entry_story || MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state)
-    @mode = :behind
-    drop_entry_story
-    log_once([:behind, part_of(own), world["wrev"]], "the player's story (part #{part_of(own)}, #{counters_text(own)}) is in an earlier part than the world's (part #{part_of(world)}, #{counters_text(world)}): the player is behind")
-    catch_up = defined?(MGQ_MpWorldCatchup)
-    MGQ_MpWorldCatchup.behind(world, own, frozen_told(text)) if catch_up
-    return if @behind_told
-
-    @behind_told = true
-    MGQ_MpOverworldSync.notice(catch_up ? MGQ_MpWorldCatchup.behind_text(own) : "The world's story is further than yours.")
-  end
-
-  # Reports whether a player behind stays behind though the world's story is in their part again,
-  # see MGQ_MpWorldCatchup.keeps_behind?, also after a load or a new entry into the world, when the
-  # save notes them behind before the world's story came.
-  #
-  # @return [Boolean] Whether they do.
-  def self.kept_behind?
-    defined?(MGQ_MpWorldCatchup) && MGQ_MpWorldCatchup.keeps_behind? ? true : false
-  end
-
-  # The story the player built on: the world's last taken or written, or the one a player behind
-  # stood on, see fall_behind.
-  #
-  # @return [Array, nil] The switches, variables and self switches, nil for none.
-  def self.base
-    @base
-  end
-
-  # Takes a checkpoint laid over the story of a player behind as the story they stand on, the base
-  # of what they change from then. Called by world_catchup.rbx once the checkpoint is in place.
-  #
-  # @param story [Array] The checkpoint as laid over theirs, before their own changes were kept.
-  def self.stand_on(story)
-    @base = story if @mode == :behind
-  end
-
-  # Fetches the world's story to lay over the player's whatever its revision, as when the catch-up
-  # moves a player behind on into it.
-  #
-  # @param reason [Symbol] Why, for the log.
-  def self.refetch(reason)
-    @seen_wrev = nil
-    @need_fetch ||= reason
-  end
-
-  # Reports whether commands wait to play once the player is free, as the personal half of a
-  # return to the Great Decision.
-  #
-  # @return [Boolean] Whether they do.
-  def self.queued?
-    @queued ? true : false
-  end
-
-  # Lays the world's story over the player's: what is the player's own stays, and what they changed
-  # since the story they built on stays too where the world's did not change it, unless their step
-  # is dropped.
-  #
-  # @param world [Hash] The world's counters.
-  # @param local [Array] The player's story: switches, variables and self switches.
-  # @param own [Hash] The player's counters.
-  # @param text [String] The world's story, packed.
-  # @param pending [Hash] How it came, see offer.
-  # @param after_take [Symbol, nil] :route_taken when the world took another route than the player's.
-  def self.take_world(world, local, own, text, pending, after_take = nil)
-    first = @mode != :world
-    told = MGQ_MpStoryState.decode_full(MGQ_MpStoryState.unpack(text))
-    # The frozen fights' end rule reads the world's story before its held keys are put.
-    MGQ_MpWorldFreeze.world_told(told) if defined?(MGQ_MpWorldFreeze)
-    steps = share_steps(told)
-    reopened = reopened?(steps)
-    frozen = hold_freezes(told)
-    routes = hold_routes(told)
-    log("read the world's #{routes_text(routes)}: a route under way before the Great Decision") unless routes.empty?
-    log("read the world's #{steps_text(steps)}: steps the world never shares, which an older build wrote") unless steps.empty?
-    log("read the world's #{freezes_text(frozen)}: keys a frozen raid boss fight holds") unless frozen.empty?
-    applied = MGQ_MpStoryState.mix(told, local, chest_list)
-    keep_unsent(applied, told, local)
-    base = MGQ_MpStoryState.deep_copy(applied)
-    kept, dropped = keep_own(applied, told, local, @base || @entry_story, pending[:drop], !pending[:drop] || pending[:behind])
-    opened = keep_open_chests(applied, local)
-    kept.concat(opened.map { |key| [2, key] })
-    keep_steps(applied, local)
-    frozen = hold_freezes(applied)
-    log("put #{freezes_text(frozen)}: keys a frozen raid boss fight holds") unless frozen.empty?
-    routes = hold_routes(applied)
-    log("put #{routes_text(routes)}: a route under way before the Great Decision") unless routes.empty?
-    MGQ_MpStoryState.set_raw(*applied)
+  # @param take [Hash] The take, see StoryTopics.TakeOf in the DLL.
+  def self.apply(take)
+    state = take["state"]
+    before = MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state)
+    own = local_counters(before)
+    first = @mode.nil?
+    freezes = {}
+    written = 0
+    MGQ_MpStoryKeys.applying do
+      written += lay_over(state, freezes) if state
+      take["keys"].each { |key, value| written += 1 if put_key(key, value, freezes) }
+    end
+    MGQ_MpWorldFreeze.take_keys(freezes) if defined?(MGQ_MpWorldFreeze) && !freezes.empty?
+    $game_map.need_refresh = true if written > 0
+    @caps = nil
+    @world = nil
+    after = local_counters(MGQ_MpStoryState.raw_state)
+    log("wrote the relay's #{state ? "#{state['track']} track (#{state['why']}) and " : ''}#{take['keys'].size} key(s) at revision #{take['rev']}: " \
+        "#{written} changed, #{counters_text(own)} -> #{counters_text(after)}")
+    # The catch-up follows a move on and what the story carried the player past while the mode
+    # is still the one they came from, as a move at a level cap holds that story's rewards back.
+    MGQ_MpWorldCatchup.moved(state["move"], world) if state && state["move"] && defined?(MGQ_MpWorldCatchup)
+    follow_catchup(before, written > 0 || state, state ? mode_of(state) : @mode)
+    took_state(state) if state
     end_left_scenes
-    if defined?(MGQ_MpWorldCatchup)
-      MGQ_MpWorldCatchup.world_told(told)
-      MGQ_MpWorldCatchup.carried(local)
-    end
-    @base = base
-    drop_entry_story
-    @end_local = nil if pending[:drop]
-    @wrev = world["wrev"]
-    @mode = :world
-    # What waited to be written is what the player kept now, if anything, the world's counters the
-    # relay must hear again (see counters_of), frozen fights the world's story lacks, or a battle
-    # scene's step the world's story holds (see open_scene).
-    @force_post = world["out_of_order"] || frozen_unshared? || reopened ? true : false
-    @marker_at = @change_at = @first_change_at = @change_signature = nil
-    unless kept.empty?
-      @watch = true
-      @change_at = @first_change_at = @clock
-      @marker_at = @clock if kept.any? { |kind, key| marker?(kind, key) }
-    end
-    after = local_counters(applied)
-    log("took the world's story at revision #{@wrev} (#{pending[:reason]}): #{counters_text(own)} -> #{counters_text(after)}; " \
-        "kept #{kept.size} own changes, dropped #{dropped.size}#{dropped.empty? ? '' : " (#{dropped.first(10).map { |kind, key| label(kind, key) }.join(', ')})"}")
-    if first && !@greeted
-      @greeted = true
-      MGQ_MpOverworldSync.notice("You play the world's story.")
-    end
-    followed(own, after, first)
+    followed(own, after, first && state ? true : false, state && state["move"] ? true : false)
     @returned_route = nil
-    route_taken if after_take == :route_taken
+    route_taken if @route_refused
   end
 
-  # Turns off the scene switches (MGQ_MpStoryState.scene_switch?) still on while no scene runs, as a
-  # world's story written mid-scene may carry them. Called while the player is quiet (quiet?), unless
-  # they watch a teller's scene, which shows them.
-  def self.end_left_scenes
-    return unless defined?(MGQ_MpWorldCatchupData::SCENE_SWITCHES)
-    return if defined?(MGQ_MpCoopScene) && MGQ_MpCoopScene.pending?
-
-    left = MGQ_MpWorldCatchupData::SCENE_SWITCHES.select { |id| $game_switches[id] }
-    return if left.empty?
-
-    left.each { |id| $game_switches[id] = false }
-    log("turned off scene switch(es) #{left.join(', ')}, which no scene runs for")
-  end
-
-  # Keeps the variables of the player's whose values no story carries, such as lists, where the
-  # world's story has none.
+  # Writes a whole track into the player's story: every key the mapping keeps at the track's value,
+  # one the track never wrote off, but those the player's own unanswered requests wrote, and the
+  # player's chest flags.
   #
-  # @param applied [Array] The story laid over the player's.
-  # @param told [Array] The world's story.
-  # @param local [Array] The player's.
-  def self.keep_unsent(applied, told, local)
-    local[1].each_with_index do |value, id|
-      applied[1][id] = value if told[1][id].nil? && !value.nil? && MGQ_MpStoryState.encode_value(value).empty?
+  # @param state [Hash] The track, see StoryTopics.TakeOf in the DLL.
+  # @param freezes [Hash{Integer => String}] Takes the frozen fights by troop.
+  # @return [Integer] How many keys changed.
+  def self.lay_over(state, freezes)
+    table = MGQ_MpStoryKeys.raid_table
+    keys = state["keys"]
+    held = {}
+    state["held"].each { |key| held[key] = true }
+    written = 0
+    table.kept_switches.each do |id|
+      key = "s#{id}"
+      written += 1 if !held[key] && put_key(key, keys[key] || "0", freezes)
     end
-  end
-
-  # Keeps what the player changed since the story they built on, where the world's story did not
-  # change it: the rest of the step they were writing, unless the relay refused that step. A one-way
-  # variable (see one_way?) never goes below the world's value, and its raise stays wherever raises
-  # do, even where the world changed it too or the relay refused the step as behind, since the
-  # world's story never got that far there.
-  #
-  # @param applied [Array] The story laid over the player's, which takes them.
-  # @param told [Array] The world's story.
-  # @param local [Array] The player's.
-  # @param base [Array, nil] The story they built on: the world's last taken or written, else the
-  #   one they brought into the world, see entry_story.
-  # @param drop [Boolean] Whether the player's step goes, see DROP_CODES.
-  # @param raises [Boolean] Whether the raises of one-way variables stay.
-  # @return [Array<Array>] The kept and the dropped changes, each as [kind, key].
-  def self.keep_own(applied, told, local, base, drop, raises = !drop)
-    unlocked = keep_unlocks(applied, local)
-    return [unlocked, []] unless base
-
-    kept = unlocked.dup
-    dropped = []
-    returning = returning?(local, told)
-    3.times do |kind|
-      theirs = {}
-      changes(kind, base[kind], told[kind]).each { |key| theirs[key] = true }
-      changes(kind, base[kind], local[kind]).each do |key|
-        next if unlocked.include?([kind, key])
-
-        way = kind == 1 && one_way?(key) && !(returning && return_cleared?(key)) ? local[1][key].to_i <=> told[1][key].to_i : nil
-        if way == -1 || ((theirs[key] || drop) && !(raises && way == 1))
-          dropped << [kind, key]
-        else
-          applied[kind][key] = local[kind][key]
-          kept << [kind, key]
-        end
-      end
+    table.kept_variables.each do |id|
+      key = "v#{id}"
+      written += 1 if !held[key] && put_key(key, keys[key] || "n0", freezes)
     end
-    [kept, dropped]
-  end
+    selves = MGQ_MpStoryState.data_of($game_self_switches).keys.map { |key| MGQ_MpStoryKeys.key_text(2, key) } | keys.keys.select { |key| key.start_with?("ss") }
+    selves.each do |key|
+      kind, self_key = MGQ_MpStoryKeys.key_of(key)
+      next unless kind == 2 && !held[key] && MGQ_MpStoryKeys.class_of(2, self_key, nil, table) & MGQ_MpStoryKeys::KEPT != 0
 
-  # Keeps on the unlocks the player's story holds and the story laid over it lacks
-  # (MGQ_MpStoryState::UNLOCK_SWITCHES), such as the second accessory slot, which the game never
-  # takes back: an earlier build kept it each player's own and never wrote it for the world.
-  #
-  # @param applied [Array] The story laid over the player's, which takes them.
-  # @param local [Array] The player's.
-  # @return [Array<Array>] The kept unlocks, each as [kind, key].
-  def self.keep_unlocks(applied, local)
-    MGQ_MpStoryState::UNLOCK_SWITCHES.select { |id| local[0][id] && !applied[0][id] }.map do |id|
-      applied[0][id] = true
-      [0, id]
+      written += 1 if put_key(key, keys[key] || "0", freezes)
     end
+    keys.each { |key, value| freezes[key[1..-1].to_i] = value if key.start_with?("f") }
+    state["chests"].each { |key, value| written += 1 if put_key(key, value, freezes) }
+    written
   end
 
-  # Reports whether a story variable only ever goes up in the world's story (see
-  # MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES), as a boss beaten or a quest's step: a player's own
-  # save that replays an old scene, or a game over that returns them to an earlier point, never
-  # takes it back for the world.
+  # Writes one key the relay handed into the player's story: a switch or self switch past the
+  # game's own handling, a variable through it (the game keeps some in its global system); a frozen
+  # fight goes to world_freeze.rbx. A key a frozen raid boss fight holds takes its held value; a
+  # local step the player plays where it stays theirs, a value below the player's own of a key the
+  # whole world keeps going only up, such as affection, and an unlock the player holds, such as the
+  # second accessory slot, stay the player's (the latter two asked of the relay again).
   #
-  # @param id [Integer] The variable.
-  # @return [Boolean] Whether it does.
-  def self.one_way?(id)
-    @one_way ||= defined?(MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES) ? Hash[MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES.map { |key| [key, true] }] : {}
-    @one_way[id] && !MGQ_MpStoryState.personal_variable?(id) ? true : false
+  # @param key [String] The key, see MGQ_MpStoryKeys.key_of.
+  # @param text [String] Its value as the tracks keep it.
+  # @param freezes [Hash{Integer => String}] Takes the frozen fights by troop.
+  # @return [Boolean] Whether the player's story changed.
+  def self.put_key(key, text, freezes)
+    kind, id = MGQ_MpStoryKeys.key_of(key)
+    return false unless kind
+    return (freezes[id] = text) && false if kind == 3
+
+    value = kind == 1 ? MGQ_MpStoryState.decode_value(text) : text == "1"
+    held = defined?(MGQ_MpWorldFreeze) ? MGQ_MpWorldFreeze.held_value(kind, id) : nil
+    value = held[1] if held
+    return false if kind == 1 && (local_step?(id) || kept_higher?(id, value))
+    return false if kind == 0 && kept_unlock?(id, value)
+
+    put(kind, id, value)
   end
 
-  # Lists the one-way variables a story holds below the world's story it built on, those the
-  # player's own return to the Great Decision clears aside (see returning?), the Queen's Cup step
-  # of a player in its tournament (see own_steps) and those a frozen raid boss fight holds (see
-  # hold_freezes).
-  #
-  # @param story [Array] The story: switches and variables.
-  # @param floor [Array] The world's story it built on.
-  # @return [Array<Integer>] The variables.
-  def self.rewound(story, floor)
-    returning = returning?(story, floor)
-    ids = defined?(MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES) ? MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES : []
-    ids.select do |id|
-      one_way?(id) && story[1][id].to_i < floor[1][id].to_i && !(returning && return_cleared?(id)) && !own_steps(story).include?(id) && !frozen?(1, id)
-    end
-  end
-
-  # Reports whether a frozen raid boss fight holds a key, see world_freeze.rbx.
+  # Writes a value into the player's story when it differs.
   #
   # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
   # @param key [Integer, Array] Its id or key.
-  # @return [Boolean] Whether one does.
-  def self.frozen?(kind, key)
-    defined?(MGQ_MpWorldFreeze) && MGQ_MpWorldFreeze.held_value(kind, key) ? true : false
+  # @param value [Object] The value.
+  # @return [Boolean] Whether it changed.
+  def self.put(kind, key, value)
+    if kind == 1
+      return false if same?(1, $game_variables[key], value)
+
+      $game_variables[key] = value
+      return true
+    end
+
+    data = MGQ_MpStoryState.data_of(kind == 0 ? $game_switches : $game_self_switches)
+    return false if same?(kind, data[key], value)
+
+    data[key] = value ? true : false
+    true
   end
 
-  # Reports whether a story left a route the world's story was on, as the game's return to the
-  # Great Decision does, which clears the route's variables on purpose.
-  #
-  # @param story [Array] The story: switches and variables.
-  # @param floor [Array] The world's story it built on.
-  # @return [Boolean] Whether it did.
-  def self.returning?(story, floor)
-    ROUTE_VARIABLES.all? { |id| story[1][id].to_i == 0 } && ROUTE_VARIABLES.any? { |id| floor[1][id].to_i > 0 }
-  end
-
-  # Reports whether the return to the Great Decision clears a variable, see
-  # MGQ_MpWorldCatchupData::RETURN_CLEARED.
+  # Reports whether a variable's step stays the player's own where they stand, as the Queen's Cup's
+  # tournament steps where it plays (the story mapping's local steps).
   #
   # @param id [Integer] The variable.
   # @return [Boolean] Whether it does.
-  def self.return_cleared?(id)
-    ranges = defined?(MGQ_MpWorldCatchupData::RETURN_CLEARED) ? MGQ_MpWorldCatchupData::RETURN_CLEARED : []
-    ranges.any? { |range| range.include?(id) }
+  def self.local_step?(id)
+    steps, _shared_as, places = MGQ_MpStoryKeys.raid_table.local_steps[id]
+    return false unless steps && steps.include?($game_variables[id].to_i) && $game_player
+
+    places.any? { |map, from_x| $game_map.map_id == map && $game_player.x >= from_x }
   end
 
-  # Puts the one-way variables a story lowered below the world's story it built on back to the
-  # world's values, see rewound.
+  # Reports whether a variable the whole world keeps going only up, such as affection, holds a
+  # higher value in the player's story than the relay handed, which stays and is asked of the relay
+  # again: the relay keeps the highest.
   #
-  # @param story [Array] The story: switches and variables, changed in place.
-  # @param floor [Array] The world's story it built on.
-  # @return [Array<Array>] Each variable held, with the value it had.
-  def self.hold_one_way(story, floor)
-    rewound(story, floor).map do |id|
-      lowered = story[1][id].to_i
-      story[1][id] = floor[1][id]
-      [id, lowered]
+  # @param id [Integer] The variable.
+  # @param value [Object] The value the relay handed.
+  # @return [Boolean] Whether it does.
+  def self.kept_higher?(id, value)
+    found = MGQ_MpStoryKeys.class_of(1, id, nil, MGQ_MpStoryKeys.raid_table)
+    whole_one_way = MGQ_MpStoryKeys::ONE_WAY | MGQ_MpStoryKeys::WHOLE_WORLD
+    own = $game_variables[id]
+    return false unless found & whole_one_way == whole_one_way && own.is_a?(Integer) && value.is_a?(Integer) && own > value
+
+    MGQ_MpStoryKeys.request("v#{id}", MGQ_MpStoryKeys.text_of(1, own), "game")
+    true
+  end
+
+  # Reports whether a switch the game turns on for good and never off, such as the second accessory
+  # slot (MGQ_MpStoryState::UNLOCK_SWITCHES), is on in the player's story while the relay handed it
+  # off, which stays and goes to the relay: an earlier build kept it each player's own and never
+  # wrote it for the world.
+  #
+  # @param id [Integer] The switch.
+  # @param value [Boolean] The value the relay handed.
+  # @return [Boolean] Whether it does.
+  def self.kept_unlock?(id, value)
+    return false if value || !MGQ_MpStoryState::UNLOCK_SWITCHES.include?(id) || !$game_switches[id]
+
+    MGQ_MpStoryKeys.request("s#{id}", "1", "game")
+    true
+  end
+
+  # Tells how the player plays the track the relay handed whole.
+  #
+  # @param state [Hash] The track.
+  # @return [Symbol] :world on the world's track, :behind on a track of their own.
+  def self.mode_of(state)
+    state["track"] == WORLD_TRACK ? :world : :behind
+  end
+
+  # Follows the track the relay handed whole: the player plays the world's or their own, and the
+  # catch-up hears of a fall behind.
+  #
+  # @param state [Hash] The track.
+  def self.took_state(state)
+    was = @mode
+    @mode = mode_of(state)
+    @awaited_since = nil
+    if @mode == :world && !@greeted
+      @greeted = true
+      MGQ_MpOverworldSync.notice("You play the world's story.")
     end
+    return unless defined?(MGQ_MpWorldCatchup)
+    return unless @mode == :behind && (was != :behind || state["why"] == "behind")
+
+    MGQ_MpWorldCatchup.behind(state["part"].to_s, state["gate"])
+    return if @behind_told
+
+    @behind_told = true
+    MGQ_MpOverworldSync.notice(MGQ_MpWorldCatchup.behind_text(state["part"].to_s))
+  end
+
+  # Hands the catch-up the story written into the player's: the world's while they play it, and what
+  # it carried them past.
+  #
+  # @param before [Array] The player's story before.
+  # @param changed [Boolean] Whether it changed.
+  # @param mode [Symbol, nil] How the player plays the story now, see mode.
+  def self.follow_catchup(before, changed, mode)
+    return unless defined?(MGQ_MpWorldCatchup) && changed
+
+    MGQ_MpWorldCatchup.world_told(mode == :world ? MGQ_MpStoryState.raw_state : nil)
+    MGQ_MpWorldCatchup.carried(before)
+  end
+
+  # Turns off the scene switches still on while no scene runs, as a story written mid-scene may
+  # carry them: the story mapping's scene switches. Not while the player watches a teller's scene,
+  # which shows them.
+  def self.end_left_scenes
+    return if defined?(MGQ_MpCoopScene) && MGQ_MpCoopScene.pending?
+
+    table = MGQ_MpStoryKeys.raid_table
+    return unless table
+
+    left = (0...table.switches.bytesize).select { |id| table.switches.getbyte(id) & MGQ_MpStoryKeys::SCENE != 0 && $game_switches[id] }
+    return if left.empty?
+
+    MGQ_MpStoryKeys.applying { left.each { |id| $game_switches[id] = false } }
+    log("turned off scene switch(es) #{left.join(', ')}, which no scene runs for")
+  end
+
+  # Reads the value a frozen raid boss fight holds a key at, which the player's writes of it carry
+  # instead (see world_freeze.rbx). Called by story_keys.rbx for each write.
+  #
+  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
+  # @param key [Integer, Array] Its id or key.
+  # @param value [Object] The value written.
+  # @return [Object] The value the write carries.
+  def self.held_value(kind, key, value)
+    held = defined?(MGQ_MpWorldFreeze) ? MGQ_MpWorldFreeze.held_value(kind, key) : nil
+    held ? held[1] : value
+  end
+
+  # Writes a frozen raid boss fight as the player's request, or "0" once it ended, for the whole
+  # world. Called by world_freeze.rbx.
+  #
+  # @param troop [Integer] The fight's troop.
+  # @param text [String] The fight as world_freeze.rbx writes it after its troop, or "0".
+  # @return [Boolean] Whether it goes to the relay: false unless the world's story applies.
+  def self.write_freeze(troop, text)
+    return false unless active?
+
+    MGQ_MpStoryKeys.request("f#{troop}", text, "game:freeze")
+  end
+
+  # Reports whether the world's story waits while a lost raid boss battle's defeat runs, which sets
+  # back what the battle's undo puts again (see battles_raid_freeze.rbx). Logs once as a hold starts
+  # and as it ends.
+  #
+  # @return [Boolean] Whether it waits.
+  def self.holding?
+    holding = defined?(MGQ_MpRaidFreeze) && MGQ_MpRaidFreeze.holding_writes? ? true : false
+    if holding != (@holding ? true : false)
+      log(holding ? "a lost raid boss battle's defeat runs: the world's story waits until its undo ran" : "the lost raid boss battle's defeat ended: the world's story goes on")
+    end
+    @holding = holding
+  rescue => e
+    log_once(:holding, "looking whether a lost raid boss battle holds the story failed: #{e.class}: #{e.message}")
+    false
+  end
+
+  # Turns off the refusal of recruits the world's story once handed over and ends a collab the
+  # world's story cleared, once no event of the player's runs.
+  def self.restore
+    return if holding?
+
+    lifted = lift_ally_rejection
+    left = leave_cleared_collab
+    return unless lifted || left
+
+    $game_map.need_refresh = true
+    log("turned Ally Rejection (switch #{ALLY_REJECTION}) off: the player recruited Lime and plays with their own party") if lifted
+    log("left the collab scenario the world's story cleared: gave back the stored items and equipment and returned to the Pocket Castle") if left
   end
 
   # Turns off the refusal of every recruit that the world's story handed over before it was each
@@ -1190,267 +889,24 @@ module MGQ_MpWorldStory
     true
   end
 
-  # Puts the one-way variables the player's story lowered back to the world's values, and the steps
-  # the world never shares that the player is not on to the values it shares (see share_steps)
-  # and a route under way before the Great Decision to none (see hold_routes), and the keys a frozen
-  # raid boss fight holds to their held values (see hold_freezes), once no event of theirs runs,
-  # which may still read the lowered value or the step, and no lost raid boss battle's defeat runs.
-  def self.restore_one_way
-    return unless @mode == :world && @base && !$game_map.interpreter.running?
-    return if holding?
-
-    variables = MGQ_MpStoryState.data_of($game_variables)
-    settled = share_steps([nil, variables], own_steps([nil, variables]))
-    frozen = hold_freezes([MGQ_MpStoryState.data_of($game_switches), variables, MGQ_MpStoryState.data_of($game_self_switches)])
-    routes = hold_routes([nil, variables])
-    held = hold_one_way([nil, variables], @base)
-    lifted = lift_ally_rejection
-    log("left the collab scenario the world's story cleared: gave back the stored items and equipment and returned to the Pocket Castle") if leave_cleared_collab
-    return if held.empty? && settled.empty? && frozen.empty? && routes.empty? && !lifted
-
-    $game_map.need_refresh = true
-    log("turned Ally Rejection (switch #{ALLY_REJECTION}) off: the player recruited Lime and plays with their own party, so the world's story had handed it over") if lifted
-    log("put #{steps_text(settled)}: steps the world never shares, which the player is not on") unless settled.empty?
-    log("put #{freezes_text(frozen)}: keys a frozen raid boss fight holds") unless frozen.empty?
-    log("put #{routes_text(routes)}: a route under way before the Great Decision") unless routes.empty?
-    return if held.empty?
-
-    log("put #{held.map { |id, lowered| "v#{id} back from #{lowered} to #{@base[1][id]}" }.join(', ')}: the world's story only goes up there, " \
-        "as when an old scene or a game over set it back")
-  end
-
-  # Reads a story value as the world's story shares it: a key a frozen raid boss fight holds as its
-  # held value (see world_freeze.rbx), a step of the Queen's Cup's tournament as its sign-up still
-  # open (see CUP_VARIABLE), a battle scene's step as the step its event starts at (see
-  # open_scene), and a step a story event sets before a battle it cannot lose as the value its
-  # defeat sets (see MGQ_MpWorldCatchupData::DEFEAT_RETURNS).
-  #
-  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
-  # @param key [Integer, Array] Its id or key.
-  # @param value [Object] Its value.
-  # @param main [Integer, nil] The main story's step of the story it is in, nil for the player's.
-  # @return [Object] The value shared.
-  def self.shared_value(kind, key, value, main = nil)
-    held = defined?(MGQ_MpWorldFreeze) ? MGQ_MpWorldFreeze.held_value(kind, key) : nil
-    return held[1] if held
-    return value unless kind == 1
-    return CUP_OPEN if key == CUP_VARIABLE && CUP_STEPS.include?(value.to_i)
-
-    scene = open_scene(key, value, main)
-    return scene.start if scene
-
-    returns = defeat_returns[key]
-    returns && returns.key?(value) ? returns[value] : value
-  end
-
-  # Lists the steps story events set before a battle they cannot lose with the value each one's
-  # defeat sets, by variable, see MGQ_MpWorldCatchupData::DEFEAT_RETURNS.
-  #
-  # @return [Hash{Integer => Hash{Integer => Integer}}] The values by step, by variable.
-  def self.defeat_returns
-    @defeat_returns ||= defined?(MGQ_MpWorldCatchupData::DEFEAT_RETURNS) ? MGQ_MpWorldCatchupData::DEFEAT_RETURNS : {}
-  end
-
-  # Puts the steps of a story the world never shares to the values it shares, see shared_value.
-  #
-  # @param story [Array] The story: switches and variables, changed in place.
-  # @param own [Array<Integer>] The variables left as they are, see own_steps.
-  # @return [Array<Array>] Each variable put, with the step it held.
-  def self.share_steps(story, own = [])
-    main = story[1][MAIN_PROGRESS]
-    ([CUP_VARIABLE] + BATTLE_SCENES.map(&:variable) + defeat_returns.keys - own).map do |id|
-      step = story[1][id]
-      shared = shared_value(1, id, step, main)
-      next if shared == step
-
-      story[1][id] = shared
-      [id, step]
-    end.compact
-  end
-
-  # Finds the battle scene (see BATTLE_SCENES) whose step a variable holds while no fight of the
-  # scene is frozen or over for the world.
-  #
-  # A teller cut off in the scene, or a defeat no freeze kept, leaves such a step in the world's
-  # story, whose pages hide the event and those before it, as Ilias in the Ilias Temple Ruins.
-  #
-  # @param key [Integer] The variable.
-  # @param value [Object] Its value.
-  # @param main [Integer, nil] The main story's step of the story it is in, nil for the player's.
-  # @return [BattleScene, nil] The scene, nil for a value no scene holds open.
-  def self.open_scene(key, value, main = nil)
-    scene = BATTLE_SCENES.find { |each| each.variable == key && each.steps.include?(value.to_i) }
-    return nil unless scene
-
-    main ||= MGQ_MpStoryState.data_of($game_variables)[MAIN_PROGRESS]
-    return nil unless main.to_i == scene.main_step
-
-    scene.troops.any? { |troop| fight_known?(troop) } ? nil : scene
-  rescue => e
-    log_once(:open_scene, "looking for a battle scene's step failed: #{e.class}: #{e.message}")
-    nil
-  end
-
-  # Reports whether share_steps put a battle scene's step of the world's story, which hides the
-  # scene's event from everyone until a write takes it back.
-  #
-  # @param steps [Array<Array>] Each variable share_steps put, with the step it held.
-  # @return [Boolean] Whether it did.
-  def self.reopened?(steps)
-    steps.any? { |id, _| BATTLE_SCENES.any? { |scene| scene.variable == id } }
-  end
-
-  # Reports whether the world knows a fight against a troop as frozen or over (world_freeze.rbx).
-  #
-  # @param troop [Integer] The troop.
-  # @return [Boolean] Whether it does.
-  def self.fight_known?(troop)
-    return false unless defined?(MGQ_MpWorldFreeze)
-
-    MGQ_MpWorldFreeze.entry(troop) || MGQ_MpWorldFreeze.final?(troop) ? true : false
-  end
-
-  # Puts the keys a frozen raid boss fight holds (see world_freeze.rbx) to their held values in a
-  # story, for each kind the story has.
-  #
-  # @param story [Array] The story: switches, variables and self switches, nil for a kind it lacks;
-  #   changed in place.
-  # @return [Array<Array>] Each key put, as kind, key and the value it had.
-  def self.hold_freezes(story)
-    return [] unless defined?(MGQ_MpWorldFreeze)
-
-    MGQ_MpWorldFreeze.held.map do |kind, key, value|
-      values = story[kind]
-      next unless values
-
-      was = values[key]
-      next if same?(kind, was, value)
-
-      values[key] = value
-      [kind, key, was]
-    end.compact
-  end
-
-  # Names the keys hold_freezes put for the log.
-  #
-  # @param frozen [Array<Array>] Each key put, as kind, key and the value it had.
-  # @return [String] Such as "v1075 from 16 to 14", at most ten.
-  def self.freezes_text(frozen)
-    names = frozen.first(10).map do |kind, key, was|
-      held = defined?(MGQ_MpWorldFreeze) ? MGQ_MpWorldFreeze.held_value(kind, key) : nil
-      "#{label(kind, key)} from #{was.inspect} to #{held ? held[1].inspect : '?'}"
-    end
-    names.join(", ") + (frozen.size > 10 ? ", ..." : "")
-  end
-
-  # Reports whether the player knows frozen raid boss fights the world's story lacks, which their
-  # next write carries, see MGQ_MpWorldFreeze.unshared?.
-  #
-  # @return [Boolean] Whether they do.
-  def self.frozen_unshared?
-    defined?(MGQ_MpWorldFreeze) && MGQ_MpWorldFreeze.unshared? ? true : false
-  end
-
-  # Reads the world's story a player behind gets, its frozen raid boss fights' keys held, so the
-  # catch-up gives nothing past a frozen fight.
-  #
-  # @param text [String] The world's story, packed.
-  # @return [Array] The switches, variables and self switches.
-  def self.frozen_told(text)
-    told = MGQ_MpStoryState.decode_full(MGQ_MpStoryState.unpack(text))
-    MGQ_MpWorldFreeze.world_told(told) if defined?(MGQ_MpWorldFreeze)
-    frozen = hold_freezes(told)
-    log("read the world's #{freezes_text(frozen)}: keys a frozen raid boss fight holds") unless frozen.empty?
-    told
-  end
-
-  # Reports whether the world's story waits while a lost raid boss battle's defeat runs, which sets
-  # back what the battle's undo puts again (see battles_raid_freeze.rbx): no take, comparison or
-  # write meanwhile. Logs once as a hold starts and as it ends.
-  #
-  # @return [Boolean] Whether it waits.
-  def self.holding?
-    holding = defined?(MGQ_MpRaidFreeze) && MGQ_MpRaidFreeze.holding_writes? ? true : false
-    if holding != (@holding ? true : false)
-      log(holding ? "a lost raid boss battle's defeat runs: the world's story waits until its undo ran" : "the lost raid boss battle's defeat ended: the world's story goes on")
-    end
-    @holding = holding
-  rescue => e
-    log_once(:holding, "looking whether a lost raid boss battle holds the story failed: #{e.class}: #{e.message}")
-    false
-  end
-
-  # Lists the variables whose step the world never shares that are the player's own to keep: the
-  # Queen's Cup's while they play its tournament where it plays. A step before a battle never is
-  # once no event runs: the event that set it ended or was cut off.
-  #
-  # @param story [Array] The story: switches and variables.
-  # @return [Array<Integer>] The variables.
-  def self.own_steps(story)
-    CUP_STEPS.include?(story[1][CUP_VARIABLE].to_i) && in_cup? ? [CUP_VARIABLE] : []
-  end
-
-  # Names the steps share_steps put for the log.
-  #
-  # @param steps [Array<Array>] Each variable put, with the step it held.
-  # @return [String] Such as "v1062 from 4 to 3".
-  def self.steps_text(steps)
-    steps.map { |id, step| "v#{id} from #{step} to #{shared_value(1, id, step)}" }.join(", ")
-  end
-
-  # Puts the route variables of a story whose main progress is before the Great Decision back to 0:
-  # every event that takes a route moves the main story to the decision too, so a route under way
-  # before it is no story the game tells, and the relay would rank and checkpoint it as a route.
-  #
-  # @param story [Array] The story: switches and variables, changed in place.
-  # @return [Array<Array>] Each route variable put back, with the value it held.
-  def self.hold_routes(story)
-    return [] if story[1][MAIN_PROGRESS].to_i >= GREAT_DECISION
-
-    ROUTE_VARIABLES.select { |id| story[1][id].to_i > 0 }.map do |id|
-      step = story[1][id]
-      story[1][id] = 0
-      [id, step]
-    end
-  end
-
-  # Names the route variables hold_routes put back for the log.
-  #
-  # @param held [Array<Array>] Each route variable put back, with the value it held.
-  # @return [String] Such as "v1141 from 1 to 0".
-  def self.routes_text(held)
-    held.map { |id, step| "v#{id} from #{step} to 0" }.join(", ")
-  end
-
-  # Reports whether the player stands where the Queen's Cup plays, see CUP_PLACES.
-  #
-  # @return [Boolean] Whether they do.
-  def self.in_cup?
-    start = CUP_PLACES[$game_map.map_id]
-    start && $game_player && $game_player.x >= start ? true : false
-  end
-
-  # Lays the steps the world never shares over the player's: their own where they are on one (see
-  # own_steps), else the world's, which never holds a step.
-  #
-  # @param applied [Array] The story laid over the player's, which takes them.
-  # @param local [Array] The player's.
-  def self.keep_steps(applied, local)
-    own = own_steps(local)
-    own.each { |id| applied[1][id] = local[1][id] }
-    shared = share_steps(applied, own)
-    log("put #{steps_text(shared)}: steps the world never shares, which the player is not on") unless shared.empty?
-  end
-
   # Follows what the world's story brought: the choices it carried the player past and the Great
-  # Decision's route, both when one story carries them past earlier choices onto a route. The first
-  # story after entering, a load or a new game also asks the choices a later build added that the
-  # player's save is past without having made them, see MGQ_MpCoopChoices.missed.
+  # Decision's route, both when one story carries them past earlier choices onto a route; and the
+  # personal half of the world's return to the Great Decision when the world left the route the
+  # player was on. The first track handed after entering, a load or a new game also asks the choices
+  # a later build added that the player's save is past without having made them, see
+  # MGQ_MpCoopChoices.missed.
   #
   # @param before [Hash] The player's counters before.
-  # @param after [Hash] The counters of the story laid over theirs.
-  # @param first [Boolean] Whether it is the first story since entering, a load or a new game.
-  def self.followed(before, after, first = false)
+  # @param after [Hash] The counters of the story written into theirs.
+  # @param first [Boolean] Whether it is the first track since entering, a load or a new game.
+  # @param moved [Boolean] Whether the relay moved a player behind on, whose return the catch-up plays.
+  def self.followed(before, after, first = false, moved = false)
+    left = route_index(before)
+    done = world ? world["done"] : []
+    if left && left != route_index(after) && left != @returned_route && !first && !moved && done.include?(ROUTES[left])
+      @returned_route = left
+      returned(before)
+    end
     return unless defined?(MGQ_MpCoopChoices)
 
     MGQ_MpCoopChoices.missed(after["p"]) if first
@@ -1473,6 +929,14 @@ module MGQ_MpWorldStory
     MGQ_MpOverworldSync.notice("The world's story went back to the Great Decision.")
   end
 
+  # Reports whether commands wait to play once the player is free, as the personal half of a
+  # return to the Great Decision.
+  #
+  # @return [Boolean] Whether they do.
+  def self.queued?
+    @queued ? true : false
+  end
+
   # Plays the commands that wait, once the player is free on the map, taking the player out of a
   # scene of their own first (see MGQ_MpCoopScene::Own.leave), such as their route's ending walked
   # in a temporary party, whose own end the return would cut off.
@@ -1492,10 +956,12 @@ module MGQ_MpWorldStory
   # Tells the player that the world took another route before theirs reached the relay, and takes
   # them to the story.
   def self.route_taken
+    @route_refused = false
     restore_roster
-    route = ROUTES.index(@world && @world["route"])
+    world = self.world
+    route = ROUTES.index(world && world["route"])
     MGQ_MpOverworldSync.notice(route ? "The world took the #{ROUTE_NAMES[route]} route first." : "The world's story goes on without your route.")
-    MGQ_MpCoopGather.join_story if defined?(MGQ_MpCoopGather) && endpoint
+    MGQ_MpCoopGather.join_story if defined?(MGQ_MpCoopGather)
   end
 
   # Brings back the companions the player's own branch of the Great Decision took away, once the
@@ -1511,49 +977,55 @@ module MGQ_MpWorldStory
     missing.each { |id| MGQ_MpStoryState.bring(id) }
   end
 
-  # Notes the player's telling, where it ended is the story's endpoint, and the end of any event of
-  # the player's own, whose changes are compared soon. A telling that moved the player onto another
-  # map ends only once its next event there can no longer go on with it, see
-  # MGQ_MpCoopEvents.telling_or_moved?.
+  # Tells the relay the player's telling as it starts, goes on on another map and ends, which its
+  # telling lock and the players behind the world follow.
   def self.note_telling
-    telling = MGQ_MpCoopEvents.telling_or_moved?
-    running = $game_map.interpreter.running?
-    @watch = true if @was_running && !running
-    told if @was_telling && !telling && @mode == :world
-    @was_telling = telling
-    @was_running = running
+    unless MGQ_MpCoopEvents.telling_or_moved?
+      return unless @telling
+
+      @telling = nil
+      return MGQ_Multiplayer::Bridge.stage(TELL_TOPIC, nil)
+    end
+
+    map = $game_map.map_id
+    return if @telling && @telling[:map] == map
+
+    site = @telling ? @telling[:site] : MGQ_MpStoryKeys.site_of($game_map.interpreter)
+    return log_once([:telling_site, map], "told the relay no telling on map #{map}: no event of the map or common event tells it (#{site})") if site.start_with?("game")
+
+    @telling = { :map => map, :site => site }
+    MGQ_Multiplayer::Bridge.stage(TELL_TOPIC, "site" => site, "map" => map)
   end
 
-  # Ends the player's telling: where it ended is the story's endpoint, and what it changed goes out
-  # soon, in one write.
-  def self.told
-    @end_local = place
-    @watch = true
-    scan
-    @marker_at ||= @clock if @change_at
-  end
-
-  # Notes a player telling the story on the map whose scene the player watches, and when they stop,
-  # see awaits_teller?.
+  # Notes a player telling the story on the map whose scene the player watches, which the relay
+  # hears, and when they stop, see awaits_teller?.
   def self.note_teller
     teller = MGQ_MpCoop::Scope.teller
-    if teller.is_a?(MGQ_MpOverworldSync::Peers::Peer)
-      if (@teller.nil? || @teller[:stopped]) && @mode == :world && MGQ_MpCoop::Scope.watches?(teller)
-        @teller = { :wrev => @seen_wrev.to_i, :name => teller.state["name"].to_s }
-      end
-      return
+    seat = nil
+    if teller.is_a?(MGQ_MpOverworldSync::Peers::Peer) && @mode && MGQ_MpCoop::Scope.watches?(teller)
+      seat = teller.seat
+      @teller = { :seat => seat, :name => teller.state["name"].to_s } if @teller.nil? || @teller[:stopped] || @teller[:seat] != seat
+    elsif @teller && !@teller[:stopped]
+      @teller[:stopped] = @clock
     end
-    @teller[:stopped] = @clock if @teller && !@teller[:stopped]
+    return if seat == @watching
+
+    @watching = seat
+    MGQ_Multiplayer::Bridge.stage(WATCH_TOPIC, seat)
   end
 
   # Reports whether the player's story events wait for the world's story of a telling they watched
-  # on the map that just ended: the teller's write takes seconds to arrive, and the player's game
-  # would play the scene again before it did. Called by coop_events.rbx.
+  # on the map that just ended, until the player's story holds the track's revision the telling
+  # ended at, AWAIT_TELLER_FRAMES at most: the player's game would play the scene again before.
+  # Called by coop_events.rbx.
   #
   # @return [Boolean] Whether they wait.
   def self.awaits_teller?
     return false unless @teller && @teller[:stopped]
-    return true if active? && @clock - @teller[:stopped] < AWAIT_TELLER_FRAMES && @seen_wrev.to_i <= @teller[:wrev]
+
+    told = @status && @status["told"] ? @status["told"][@teller[:seat]] : nil
+    taken = @status ? @status["taken"].to_i : 0
+    return true if active? && @clock - @teller[:stopped] < AWAIT_TELLER_FRAMES && (told.nil? || taken < told)
 
     @teller = nil
     false
@@ -1568,361 +1040,82 @@ module MGQ_MpWorldStory
     name && !name.empty? ? name : nil
   end
 
-  # Notes where the player's own telling moved them, the story's endpoint, written soon. Called
-  # after the player's transfer.
-  def self.story_transfer
-    return unless active? && @mode == :world && MGQ_MpCoopEvents.telling?
+  # Tells the relay the player's level once it changed, which its level gates read.
+  def self.send_level
+    level = level_now
+    return if level.nil? || level == @level_sent
 
-    @end_local = place
-    @marker_at ||= @clock
-    log("the story moved the player to map #{@end_local.join(',')}, the story's endpoint")
-  rescue => e
-    log("noting the story's endpoint failed: #{e.class}: #{e.message}")
+    @level_sent = level
+    MGQ_Multiplayer::Bridge.stage(LEVEL_TOPIC, level)
   end
 
-  # Where the player stands.
+  # Reads the player's level as the relay's gates read it: the highest base level among their
+  # characters, and the highest level the game lets that character reach.
   #
-  # @return [Array<Integer>] The map, x and y.
-  def self.place
-    [$game_map.map_id, $game_player.x, $game_player.y]
-  end
+  # @return [Hash, nil] "best" and "cap" (nil without one), nil before the party has members.
+  def self.level_now
+    best = MGQ_MpStoryState.roster.max_by { |actor| actor.base_level }
+    return nil unless best
 
-  # Looks whether the story's progress moved, which is written soon; a player behind whose story
-  # reached the world's part fetches it again.
-  def self.check_progress
-    @checked = @clock
-    return if @busy[:post]
-
-    variables = MGQ_MpStoryState.data_of($game_variables)
-    switches = MGQ_MpStoryState.data_of($game_switches)
-    if @mode == :behind
-      own = local_counters([switches, variables, {}])
-      if @world && ((part_of(own) == part_of(@world) && !kept_behind?) || compare(key_of(own), key_of(@world)) >= 0 || decision_step?(own, @world))
-        log("the player's story reached the world's part (#{counters_text(own)}): fetching the world's")
-        @seen_wrev = nil
-        @mode = nil
-        @need_fetch ||= :caught_up
-      end
-      return
-    end
-    return unless @mode == :world && @base
-
-    own = own_steps([switches, variables])
-    moved = PROGRESS_VARIABLES.any? { |id| !own.include?(id) && !same?(1, @base[1][id], shared_value(1, id, variables[id])) } ||
-            PROGRESS_SWITCHES.any? { |id| !same?(0, @base[0][id], switches[id]) }
-    return unless moved && @marker_at.nil?
-
-    @marker_at = @clock
-    @watch = true
-  end
-
-  # Reports whether the whole story is compared now: every SCAN_FRAMES while it may have changed,
-  # else every IDLE_SCAN_FRAMES while no event of the player's runs; never during the player's
-  # telling, whose changes are compared once it ended.
-  #
-  # @return [Boolean] Whether it is.
-  def self.scan_due?
-    return false if MGQ_MpCoopEvents.telling_or_moved?
-    return @clock - @scanned >= SCAN_FRAMES if @watch
-
-    @clock - @scanned >= IDLE_SCAN_FRAMES && !$game_map.interpreter.running?
-  end
-
-  # Compares the whole story with the one the player built on, for the changes a write takes; not
-  # while a lost raid boss battle's defeat runs (see holding?).
-  def self.scan
-    @scanned = @clock
-    return unless @mode == :world && @base && !@busy[:post]
-    return if holding?
-
-    restore_one_way
-    local = MGQ_MpStoryState.raw_state
-    # A one-way variable an event still holds below the world's value is no change to write.
-    lowered = rewound(local, @base)
-    # Nor is a step of the player's own the world never takes, see own_steps.
-    lowered.concat(own_steps(local))
-    found = []
-    3.times { |kind| changes(kind, @base[kind], local[kind]).each { |key| found << [kind, key, local[kind][key]] unless kind == 1 && lowered.include?(key) } }
-    if found.empty?
-      @marker_at = nil unless end_moved?
-      @change_at = @first_change_at = @change_signature = nil
-      @watch = false
-      return
-    end
-
-    signature = found.hash
-    return if signature == @change_signature
-
-    @change_signature = signature
-    @first_change_at ||= @clock
-    @change_at = @clock
-  end
-
-  # Reports whether a write is due: the player's story moved on, another change rested for
-  # DEBOUNCE_FRAMES or waited LONGEST_WAIT_FRAMES, or a write must go again. While the player tells
-  # the story, the moment between its events on another map included, only the route lock goes,
-  # since others would take the scene's state half done. Nothing goes while a novel scene or a lost
-  # raid boss battle's defeat runs.
-  #
-  # @return [Boolean] Whether it is.
-  def self.post_due?
-    return false unless @mode == :world && @pending.nil? && !@busy[:post] && !@busy[:lock] && @clock >= @retry_at
-    return false if MGQ_MpCoopEvents.pvp_running? || novel_running? || holding?
-
-    settled = @marker_at && @clock - @marker_at >= SETTLE_FRAMES
-    return (settled || @force_post) && lock_route ? true : false if MGQ_MpCoopEvents.telling_or_moved?
-    return true if @force_post || settled
-
-    @change_at && (@clock - @change_at >= DEBOUNCE_FRAMES || @clock - @first_change_at >= LONGEST_WAIT_FRAMES) ? true : false
-  end
-
-  # Reports whether a novel scene runs, such as the defeat scene after a lost story battle, which
-  # ends the story event's telling while it still sets back what the event set before the battle,
-  # as Gnosis's defeat at Esta sets v1062 back from 4 to 3 so she can be fought again.
-  #
-  # @return [Boolean] Whether one does.
-  def self.novel_running?
-    defined?(Scene_Novel) && SceneManager.scene.is_a?(Scene_Novel) ? true : false
-  end
-
-  # Finds the route the player's story took at the Great Decision that the world has not taken yet
-  # and the relay would lock, see open_routes.
-  #
-  # @return [String, nil] The route, see ROUTES; nil for none.
-  def self.lock_route
-    route = route_index(local_counters([MGQ_MpStoryState.data_of($game_switches), MGQ_MpStoryState.data_of($game_variables)]))
-    return nil unless route && @world && @world["route"] == "none"
-
-    open_routes(@world).include?(route) ? ROUTES[route] : nil
-  end
-
-  # Writes the player's story as the world's, with the revision it built on; a route the world has
-  # not taken yet is locked first.
-  def self.send_post
-    route = lock_route
-    return lock(route) if route
-
-    story = MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state)
-    # Shared first, so a shared step never takes the world's story below a later value.
-    share_steps(story)
-    frozen = hold_freezes(story)
-    log("writing #{freezes_text(frozen)}: keys a frozen raid boss fight holds") unless frozen.empty?
-    routes = hold_routes(story)
-    log("writing #{routes_text(routes)}: a route under way before the Great Decision") unless routes.empty?
-    held = @base ? hold_one_way(story, @base) : []
-    log("writing #{held.map { |id, lowered| "v#{id} as #{story[1][id]}, not #{lowered}" }.join(', ')}: the world's story only goes up there") unless held.empty?
-    counters = counters_text(local_counters(story), true) + caps_text(story)
-    text = story_text(story)
-    @force_post = false
-    @marker_at = @change_at = @first_change_at = @change_signature = nil
-    unless text
-      @retry_at = @clock + RETRY_FRAMES
-      return
-    end
-
-    unless Relay.post(world_id, @wrev, counters, text)
-      @retry_at = @clock + START_FRAMES
-      @force_post = true
-      return log_once([:post_start, counters], "the DLL did not start writing the story (#{counters}), trying again")
-    end
-
-    @busy[:post] = { :story => story, :counters => counters, :base => @wrev, :end => end_moved? ? @end_local : nil }
-    @watch = false
-    log("writing the story on revision #{@wrev}: #{counters}, #{text.size} characters")
-  rescue => e
-    log("writing the story failed: #{e.class}: #{e.message}")
-  end
-
-  # Locks the route the player's story took at the Great Decision, before its first write.
-  #
-  # @param route [String] The route, see ROUTES.
-  def self.lock(route)
-    unless Relay.lock(world_id, route)
-      @retry_at = @clock + START_FRAMES
-      return log_once([:lock_start, route], "the DLL did not start locking the #{route} route, trying again")
-    end
-
-    @busy[:lock] = route
-    log("the player's story took the #{ROUTE_NAMES[ROUTES.index(route)]} route at the Great Decision: locking it for the world")
-  end
-
-  # Packs the part of a story the world shares: the player's own switches, variables and chests
-  # left out (see MGQ_MpStoryState.story_lists).
-  #
-  # @param story [Array] The switches, variables and self switches.
-  # @return [String, nil] The packed text, nil when it is too large even without what the story turned off.
-  def self.story_text(story)
-    shared = [story[0], story[1], story[2].reject { |key, _| chest?(key) }]
-    text = MGQ_MpStoryState.pack(with_freezes(with_affection(MGQ_MpStoryState.story_lists(shared, true))))
-    return text if text.size <= MGQ_MpStoryState::MAX_FULL_BYTES
-
-    log_once(:story_size, "the story took #{text.size} characters, so it leaves out what the story turned off")
-    text = MGQ_MpStoryState.pack(with_freezes(with_affection(MGQ_MpStoryState.story_lists(shared, false))))
-    return text if text.size <= MGQ_MpStoryState::MAX_FULL_BYTES
-
-    log_once(:story_too_large, "the story took #{text.size} characters even without what it turned off, more than the relay keeps: not written")
+    cap = best.respond_to?(:max_level) ? best.max_level(:base) : nil
+    { "best" => bounded_level(best.base_level), "cap" => cap.is_a?(Integer) ? bounded_level(cap) : nil }
+  rescue
     nil
   end
 
-  # Adds the companions' affection to a story's lists, see world_affection.rbx.
+  # Bounds a level to what the relay's gates take.
   #
-  # @param lists [Hash{String => String}] The lists.
-  # @return [Hash{String => String}] The lists.
-  def self.with_affection(lists)
-    defined?(MGQ_MpWorldAffection) ? MGQ_MpWorldAffection.add(lists) : lists
+  # @param level [Integer] The level.
+  # @return [Integer] The level, 1 to MAX_LEVEL.
+  def self.bounded_level(level)
+    [[level.to_i, 1].max, MAX_LEVEL].min
   end
 
-  # Adds the frozen raid boss fights to a story's lists, see world_freeze.rbx.
-  #
-  # @param lists [Hash{String => String}] The lists.
-  # @return [Hash{String => String}] The lists.
-  def self.with_freezes(lists)
-    defined?(MGQ_MpWorldFreeze) ? MGQ_MpWorldFreeze.add(lists) : lists
+  # Fetches the world's shared companions when due: on entering the world, once a minute and on the
+  # relay's push; and takes them once a fetch ended.
+  def self.follow_comps
+    if @busy
+      return unless @clock - @busy >= STATE_FRAMES
+
+      @busy = @clock
+      state = Relay.headers
+      return if state["fetch"].nil? || state["fetch"] == "busy"
+
+      @busy = nil
+      return unless state["world"] == world_id && state["fetch"] == "done"
+
+      @comps = state["comps"].to_s.split(",").map { |id| id.to_i }
+      @world = nil
+      return
+    end
+    @fetch_due = true if @polled.nil? || @clock - @polled >= POLL_FRAMES
+    return unless @fetch_due
+
+    @fetch_due = false
+    @polled = @clock
+    @busy = @clock if Relay.fetch(world_id)
   end
 
-  # Asks for a write of the player's story soon, for a value its text carries beside the story,
-  # such as the companions' affection (see world_affection.rbx).
-  #
-  # @return [Boolean] Whether a write follows: false unless the player plays the world's story.
-  def self.request_post
-    return false unless @mode == :world && @base
-
-    @force_post = true
-  end
-
-  # Writes the story's waiting changes at once, without the wait for the story to rest, as the game
-  # saves or leaves the world, after which this game may write nothing. Not while the player tells
-  # the story, nor while a write or a take waits or post_due? holds every write back.
-  #
-  # @param reason [String] Why, for the log.
-  # @return [Boolean] Whether a request to the relay started.
-  def self.flush(reason)
-    return false unless @mode == :world && @base && @pending.nil? && !@busy[:post] && !@busy[:lock] && active?
-    return false if MGQ_MpCoopEvents.telling_or_moved? || MGQ_MpCoopEvents.pvp_running? || novel_running? || holding?
-
-    scan
-    return false unless @force_post || @marker_at || @change_at
-
-    log("#{reason}: writing the story's waiting changes at once")
-    send_post
-    @busy[:post] || @busy[:lock] ? true : false
-  rescue => e
-    log("writing the story's waiting changes at once failed: #{e.class}: #{e.message}")
-    false
-  end
-
-  # Notes the story the player built on in the save and writes the story's waiting changes at once.
-  # Called before the game makes a save's contents.
-  def self.saving
-    note_save
-    flush("the game saves")
-  rescue => e
-    log("noting the story in the save failed: #{e.class}: #{e.message}")
-  end
-
-  # Writes the story's waiting changes as the game closes, waiting CLOSE_WAIT_SECONDS at most for
-  # the relay's answer, since the DLL's request ends with the game.
-  def self.game_closes
-    return unless flush("the game closes")
-
-    give_up_at = Time.now + CLOSE_WAIT_SECONDS
-    sleep(CLOSE_POLL_SECONDS) while writing? && Time.now < give_up_at
-    log(writing? ? "the game closes before the relay answered the write" : "the relay answered the write before the game closed")
-  rescue => e
-    log("writing the story as the game closes failed: #{e.class}: #{e.message}")
-  end
-
-  # Reports whether the DLL still writes the story or locks a route for this game.
-  #
-  # @return [Boolean] Whether it does.
-  def self.writing?
-    state = Relay.headers
-    state["post"] == "busy" || state["lock"] == "busy"
-  end
-
-  # Writes counters for the relay: the main story, the route under way alone, the routes cleared,
-  # and the endpoint when it moved.
-  #
-  # @param counters [Hash] The counters, see local_counters.
-  # @param with_end [Boolean] Whether the endpoint goes along.
-  # @return [String] Such as "p=40;r1141=12;r1142=0;r1143=0;clear=mr;end=1650,30,51".
-  def self.counters_text(counters, with_end = false)
-    text = "p=#{counters['p']};r1141=#{counters['r1141']};r1142=#{counters['r1142']};r1143=#{counters['r1143']};clear=#{counters['clear'].join(',')}"
-    text += ";end=#{@end_local.join(',')}" if with_end && end_moved?
-    text
-  end
-
-  # Writes the level caps a story unlocked for the relay, which keeps them for the catch-up
-  # experience (see world_catchup_exp.rbx).
-  #
-  # @param story [Array] The switches and variables.
-  # @return [String] Such as ";caps=10,15,18", empty without caps.
-  def self.caps_text(story)
-    caps = defined?(MGQ_MpRaidPool) ? MGQ_MpRaidPool.beaten_caps(story) : []
-    caps.empty? ? "" : ";caps=#{caps.join(',')}"
-  rescue => e
-    log_once(:caps, "listing the level caps the story unlocked failed: #{e.class}: #{e.message}")
-    ""
-  end
-
-  # Reports whether the story's endpoint moved from the one the relay keeps.
-  #
-  # @return [Boolean] Whether it did.
-  def self.end_moved?
-    @end_local && (@world.nil? || @world["end"].to_s != @end_local.join(",")) ? true : false
-  end
-
-  # Reads the counters of a story as the relay reads them: the main story, the route under way
-  # alone (the first whose variable is above 0), and the routes cleared.
+  # Reads the counters of a story: the main story, the route under way alone (the first whose
+  # variable is above 0), and the routes cleared.
   #
   # @param story [Array] The switches and variables.
   # @return [Hash] "p", "r1141", "r1142", "r1143" and "clear".
   def self.local_counters(story)
     variables = story[1]
-    counters = { "p" => bounded(variables[MAIN_PROGRESS]) }
+    counters = { "p" => [variables[MAIN_PROGRESS].to_i, 0].max }
     route = ROUTE_VARIABLES.index { |id| variables[id].to_i > 0 }
-    ROUTE_VARIABLES.each_with_index { |id, index| counters["r#{id}"] = index == route ? bounded(variables[id]) : 0 }
+    ROUTE_VARIABLES.each_with_index { |id, index| counters["r#{id}"] = index == route ? variables[id].to_i : 0 }
     counters["clear"] = ROUTES.select { |name| story[0][CLEAR_SWITCHES[ROUTES.index(name)]] }
     counters
   end
 
-  # Bounds a counter to what the relay takes.
+  # Writes counters for the log.
   #
-  # @param value [Object] The variable's value.
-  # @return [Integer] The counter.
-  def self.bounded(value)
-    [[value.to_i, 0].max, MAX_COUNTER].min
-  end
-
-  # Reads the world's counters from the DLL's state.
-  #
-  # @param state [Hash] The state's headers.
-  # @return [Hash] As local_counters, with "rev", "wrev", "route", "done", "end", "part",
-  #   "checkpoints" (the parts the relay keeps a checkpoint of), "comps" (the shared companions'
-  #   actor ids), "caps" (the level caps the world's story unlocked, lowest first) and
-  #   "out_of_order" (a route under way before the Great Decision, read as none).
-  def self.counters_of(state)
-    counters = { "rev" => state["rev"].to_i, "wrev" => state["wrev"].to_i, "p" => state["p"].to_i }
-    ROUTE_VARIABLES.each { |id| counters["r#{id}"] = state["r#{id}"].to_i }
-    counters["clear"] = state["clear"].to_s.split(",")
-    counters["done"] = state["done"].to_s.split(",")
-    counters["route"] = state["route"].to_s.empty? ? "none" : state["route"].to_s
-    counters["end"] = state["end"].to_s
-    counters["part"] = state["part"].to_s
-    counters["checkpoints"] = state["checkpoints"].to_s.split(",")
-    counters["comps"] = state["comps"].to_s.split(",").map { |id| id.to_i }
-    counters["caps"] = state["caps"].to_s.split(",").map { |cap| cap.to_i }
-    route = route_index(counters)
-    return counters unless route && counters["p"] < GREAT_DECISION
-
-    # A route under way before the Great Decision, which an older build wrote: read as none, and
-    # written again as such, which the relay takes in its place.
-    ROUTE_VARIABLES.each { |id| counters["r#{id}"] = 0 }
-    counters["part"] = part_of(counters)
-    counters["route"] = "none" if counters["route"] == ROUTES[route]
-    counters["out_of_order"] = ROUTES[route]
-    log_once([:out_of_order, counters["wrev"]], "the world's story names the #{ROUTE_NAMES[route]} route before the Great Decision: read as none")
-    counters
+  # @param counters [Hash] The counters, see local_counters.
+  # @return [String] Such as "p=40;r1141=12;r1142=0;r1143=0;clear=mr".
+  def self.counters_text(counters)
+    "p=#{counters['p']};r1141=#{counters['r1141']};r1142=#{counters['r1142']};r1143=#{counters['r1143']};clear=#{counters['clear'].join(',')}"
   end
 
   # Finds the route under way.
@@ -1947,39 +1140,6 @@ module MGQ_MpWorldStory
     @parts[key] || ""
   end
 
-  # Orders stories as the relay does: the routes returned from, the main story, the step of the
-  # route under way, the routes cleared.
-  #
-  # @param counters [Hash] The counters.
-  # @return [Array<Integer>] The key, compared left to right.
-  def self.key_of(counters)
-    route = route_index(counters)
-    clear = counters["clear"]
-    returned = clear.count { |name| route.nil? || name != ROUTES[route] }
-    [returned, counters["p"], route ? counters["r#{ROUTE_VARIABLES[route]}"] : 0, clear.size]
-  end
-
-  # Compares two keys of key_of.
-  #
-  # @param one [Array<Integer>] The one.
-  # @param other [Array<Integer>] The other.
-  # @return [Integer] Below 0, 0 or above 0.
-  def self.compare(one, other)
-    one <=> other
-  end
-
-  # Lists what differs between two stories as the world shares them (see shared_value), leaving out
-  # what is the player's own.
-  #
-  # @param kind [Integer] 0 for switches, 1 for variables, 2 for self switches.
-  # @param before [Array, Hash] The one story's.
-  # @param after [Array, Hash] The other's.
-  # @return [Array] The keys that differ.
-  def self.changes(kind, before, after)
-    keys = kind == 2 ? before.keys | after.keys : (0...[before.size, after.size].max).to_a
-    keys.reject { |key| same?(kind, shared_value(kind, key, before[key]), shared_value(kind, key, after[key])) || personal?(kind, key) }
-  end
-
   # Compares two values of a story, a switch or self switch never set as off and a variable never
   # set as 0, as the game reads them.
   #
@@ -1993,47 +1153,26 @@ module MGQ_MpWorldStory
     (one ? true : false) == (other ? true : false)
   end
 
-  # Reports whether a switch, variable or self switch is the player's own.
+  # Reports whether a switch, variable or self switch is the player's own, by the story mapping.
   #
   # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
   # @param key [Integer, Array] Its id or key.
   # @return [Boolean] Whether it is.
   def self.personal?(kind, key)
-    case kind
-    when 0 then MGQ_MpStoryState.personal_switch?(key)
-    when 1 then MGQ_MpStoryState.personal_variable?(key)
-    else chest?(key)
-    end
-  end
-
-  # Takes a story value a teller's scene laid over the player's while they watched as the world's
-  # (see MGQ_MpCoopScene.apply_values), so it is no change of the player's own to write: the
-  # teller writes it once their telling ended.
-  #
-  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
-  # @param key [Integer, Array] Its id or key.
-  # @param value [Object] Its value.
-  def self.mirrored(kind, key, value)
-    @base[kind][key] = value if @mode == :world && @base
-  end
-
-  # Reports whether a switch or variable tells how far the story is, see PROGRESS_VARIABLES.
-  #
-  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
-  # @param key [Integer, Array] Its id or key.
-  # @return [Boolean] Whether it does.
-  def self.marker?(kind, key)
-    (kind == 0 && PROGRESS_SWITCHES.include?(key)) || (kind == 1 && PROGRESS_VARIABLES.include?(key))
+    !MGQ_MpStoryKeys.shared?(kind, key)
   end
 
   # Reports whether a switch or variable moves the world's story on as it changes: one that tells
-  # how far the story is (see marker?) or a one-way variable (see one_way?).
+  # how far the story is (PROGRESS_SWITCHES, PROGRESS_VARIABLES) or a variable the story mapping
+  # keeps going only up, as a boss beaten or a quest's step.
   #
   # @param kind [Integer] 0 for a switch, 1 for a variable.
   # @param id [Integer] Its id.
   # @return [Boolean] Whether it does.
   def self.moves_on?(kind, id)
-    marker?(kind, id) || (kind == 1 && one_way?(id))
+    return PROGRESS_SWITCHES.include?(id) if kind == 0
+
+    PROGRESS_VARIABLES.include?(id) || MGQ_MpStoryKeys.bit?(1, id, MGQ_MpStoryKeys::ONE_WAY)
   end
 
   # Reads the values of the switches and variables that move the world's story on, see moves_on?.
@@ -2042,7 +1181,8 @@ module MGQ_MpWorldStory
   def self.progress_now
     variables = MGQ_MpStoryState.data_of($game_variables)
     switches = MGQ_MpStoryState.data_of($game_switches)
-    one_way = defined?(MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES) ? MGQ_MpWorldCatchupData::ONE_WAY_VARIABLES.select { |id| one_way?(id) } : []
+    table = MGQ_MpStoryKeys.raid_table
+    one_way = table ? table.kept_variables.select { |id| MGQ_MpStoryKeys.class_of(1, id, nil, table) & MGQ_MpStoryKeys::ONE_WAY != 0 } : []
     (PROGRESS_VARIABLES | one_way).map { |id| variables[id].to_i } + PROGRESS_SWITCHES.map { |id| switches[id] ? true : false }
   end
 
@@ -2066,67 +1206,6 @@ module MGQ_MpWorldStory
       else false
       end
     end
-  end
-
-  # Names a switch, variable or self switch for the log.
-  #
-  # @param kind [Integer] 0 for a switch, 1 for a variable, 2 for a self switch.
-  # @param key [Integer, Array] Its id or key.
-  # @return [String] Such as "v1001".
-  def self.label(kind, key)
-    kind == 2 ? "ss#{key.join('.')}" : "#{kind == 0 ? 's' : 'v'}#{key}"
-  end
-
-  # Reports whether a self switch is a chest's, each player's own: of the game's chests (see
-  # MGQ_MpCoopStoryRewards::CHESTS), or of the map's; never one that holds the story's key items.
-  #
-  # @param key [Array] The self switch: map, event and letter.
-  # @return [Boolean] Whether it is.
-  def self.chest?(key)
-    unless @chests
-      @chests = {}
-      MGQ_MpStoryState.all_chest_keys.each { |chest| @chests[chest] = true }
-    end
-    return false if world_chest?(key)
-
-    @chests[key] || MGQ_MpStoryState.personal_self_switch?(key) ? true : false
-  end
-
-  # Reports whether a chest holds the story's key items, which opens once for the whole world (see
-  # MGQ_MpWorldCatchupData::CHESTS).
-  #
-  # @param key [Array] Its self switch: map, event and letter.
-  # @return [Boolean] Whether it does.
-  def self.world_chest?(key)
-    world_chests[key] ? true : false
-  end
-
-  # The chests that hold the story's key items, see world_chest?.
-  #
-  # @return [Hash{Array => Boolean}] Their keys to true.
-  def self.world_chests
-    unless @world_chests
-      @world_chests = {}
-      MGQ_MpWorldCatchupData::CHESTS.each { |chest| @world_chests[chest.key] = true } if defined?(MGQ_MpWorldCatchupData)
-    end
-    @world_chests
-  end
-
-  # Keeps the world's chests the player opened open in a story laid over theirs, as each opens once
-  # for the world and the catch-up gave its items already.
-  #
-  # @param applied [Array] The story laid over the player's, which takes them.
-  # @param local [Array] The player's.
-  # @return [Array<Array>] The chests it opened, by their keys.
-  def self.keep_open_chests(applied, local)
-    world_chests.keys.select { |key| local[2][key] && !applied[2][key] }.each { |key| applied[2][key] = true }
-  end
-
-  # Lists the chests whose self switches stay the player's own when a story is laid over theirs.
-  #
-  # @return [Array<Array>] Their keys.
-  def self.chest_list
-    (MGQ_MpStoryState.all_chest_keys + MGQ_MpStoryState.chest_keys).uniq.reject { |key| world_chest?(key) }
   end
 
   # Makes an event command.
@@ -2301,75 +1380,40 @@ module MGQ_MpWorldStory
     nil
   end
 
-  # Patch/Multiplayer/Multiplayer.dll's story of the world at the relay.
+  # Patch/Multiplayer/Multiplayer.dll's state of the world's shared companions at the relay.
   module Relay
-    # Starts fetching the world's story.
+    # Starts fetching the world's state with its shared companions.
     #
     # @param world [String] The world's id.
     # @return [Boolean] Whether it started.
     def self.fetch(world)
       MGQ_Multiplayer::Link.function('mp_raid_story_fetch').call(world + "\0") == 1
     rescue => e
-      MGQ_MpWorldStory.log("fetching failed: #{e.class}: #{e.message}")
+      MGQ_MpWorldStory.log("fetching the shared companions failed: #{e.class}: #{e.message}")
       false
     end
 
-    # Starts writing the world's story.
+    # Reads how each request stands and the newest state, with the shared companions.
     #
-    # @param world [String] The world's id.
-    # @param base [Integer] The revision it built on.
-    # @param counters [String] The counters, see MGQ_MpWorldStory.counters_text.
-    # @param text [String] The story, see MGQ_MpWorldStory.story_text.
-    # @return [Boolean] Whether it started.
-    def self.post(world, base, counters, text)
-      MGQ_Multiplayer::Link.function('mp_raid_story_post').call(world + "\0", base, counters + "\0", text + "\0") == 1
-    rescue => e
-      MGQ_MpWorldStory.log("writing failed: #{e.class}: #{e.message}")
-      false
-    end
-
-    # Starts locking the world's route.
-    #
-    # @param world [String] The world's id.
-    # @param route [String] The route, see ROUTES.
-    # @return [Boolean] Whether it started.
-    def self.lock(world, route)
-      MGQ_Multiplayer::Link.function('mp_raid_route_lock').call(world + "\0", route + "\0") == 1
-    rescue => e
-      MGQ_MpWorldStory.log("locking failed: #{e.class}: #{e.message}")
-      false
-    end
-
-    # Reads how each request stands and the newest story's headers, without its text.
-    #
-    # @return [Hash] The headers, see state; empty before any request.
+    # @return [Hash] The headers, see docs/DEVELOPER.md; empty before any request.
     def self.headers
       text = MGQ_Multiplayer::Link.read('mp_raid_story_headers', STATE_SIZE)
       text.empty? ? {} : MGQ_Multiplayer::Link.parse(text)
     rescue => e
-      MGQ_MpWorldStory.log_once([:headers, e.class], "reading the story's headers failed: #{e.class}: #{e.message}")
-      {}
-    end
-
-    # Reads the newest story the relay told and how each request stands.
-    #
-    # @return [Hash] The headers (see docs/DEVELOPER.md), the story under :payload; empty before
-    #   any request.
-    def self.state
-      text = MGQ_Multiplayer::Link.read('mp_raid_story_state', STATE_SIZE)
-      text.empty? ? {} : MGQ_Multiplayer::Link.parse(text)
-    rescue => e
-      MGQ_MpWorldStory.log_once([:state, e.class], "reading the story's state failed: #{e.class}: #{e.message}")
+      MGQ_MpWorldStory.log_once([:headers, e.class], "reading the shared companions failed: #{e.class}: #{e.message}")
       {}
     end
   end
 end
 
-# What this script takes part in of the world, through overworld_sync.rbx.
+# What this script takes part in of the world, through overworld_sync.rbx, and of the DLL's story
+# on tracks, through the bridge.
 
 begin
   MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::STORY_FIELD) { |_peer, message| MGQ_MpWorldStory.pushed(message) }
   MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpWorldStory.close unless in_world }
+  MGQ_Multiplayer::Bridge.on(MGQ_MpWorldStory::STATUS_EVENT) { |status| MGQ_MpWorldStory.status = status }
+  MGQ_Multiplayer::Bridge.on(MGQ_MpWorldStory::REFUSED_EVENT) { |refusals| MGQ_MpWorldStory.refused(refusals) }
 rescue => e
   MGQ_MpWorldStory.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end
@@ -2385,31 +1429,12 @@ begin
   # Before an event command runs, the Great Decision's choice and the Reaper's reset menu follow the world.
   MGQ_MpHooks.before(Game_Interpreter, :execute_command, "world_story") { MGQ_MpWorldStory.before_command(self) }
 
-  # After the player's transfer, a story's transfer is the story's endpoint.
-  MGQ_MpHooks.after(Game_Player, :perform_transfer, "world_story") { MGQ_MpWorldStory.story_transfer }
-
-  # A loaded save or a new game bring their own story, over which the world's is laid. Not after
+  # A loaded save or a new game bring their own story, over which the world's is written. Not after
   # extract_save_contents, which a duel's end calls too to put the game back.
   MGQ_MpHooks.after(DataManager.singleton_class, :load_game_without_rescue, "world_story") { |_index| MGQ_MpWorldStory.loaded(:load) }
   MGQ_MpHooks.after(DataManager.singleton_class, :setup_new_game, "world_story") { MGQ_MpWorldStory.loaded(:new_game) }
 rescue => e
   MGQ_MpWorldStory.log("hooks FAILED: #{e.class}: #{e.message}")
-end
-
-begin
-  # Before a save is made, the save notes the story the player built on, and the story's waiting
-  # changes go out at once.
-  MGQ_MpHooks.before(DataManager.singleton_class, :make_save_contents, "world_story") { MGQ_MpWorldStory.saving }
-
-  # Before the title screen closes the world, and before F12 starts the game's scenes anew, the
-  # story's waiting changes go out at once.
-  MGQ_MpHooks.before(Scene_Title, :start, "world_story") { MGQ_MpWorldStory.flush("the game goes back to the title screen") } if defined?(Scene_Title)
-  MGQ_MpHooks.before(SceneManager.singleton_class, :run, "world_story") { MGQ_MpWorldStory.flush("F12 reset the game") }
-
-  # As the game closes, the story's waiting changes go out too.
-  at_exit { MGQ_MpWorldStory.game_closes }
-rescue => e
-  MGQ_MpWorldStory.log("leaving hooks FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks of this script alone, through core_hooks.rbx.

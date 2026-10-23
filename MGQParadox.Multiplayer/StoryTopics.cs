@@ -1,0 +1,591 @@
+//----------------------------------------------------------------
+//  StoryTopics.cs
+//
+//  Changelog:
+//      Paulinchen  2026-10-23: Created
+//
+//----------------------------------------------------------------
+
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Text.Json;
+using MGQOnline.Bridge;
+using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Story;
+using MGQParadox.Multiplayer.Network.Relay;
+using MGQParadox.Multiplayer.Network.World;
+
+namespace MGQParadox.Multiplayer;
+
+/// <summary>
+/// The bridge topics of a Raid World's story on the relay's tracks (<see cref="StoryTrack"/>) and
+/// of the tables the scripts look each story write up in: the story mapping, fetched as the story
+/// starts and again on its new revision, and a Classic party's table.
+/// </summary>
+internal sealed class StoryTopics : IStoryTrackHost
+{
+    /// <summary>
+    /// The topic that starts the player's story on tracks: {"world" (the directory's id), "fresh", "level" ({"best", "cap"} or nil)}.
+    /// </summary>
+    public const string EnterTopic = "story.enter";
+
+    /// <summary>
+    /// The topic that ends it, as the world closed.
+    /// </summary>
+    public const string CloseTopic = "story.close";
+
+    /// <summary>
+    /// The topic the scripts stage a frame's writes with: [[key, value, site], ...].
+    /// </summary>
+    public const string WritesTopic = "story.writes";
+
+    /// <summary>
+    /// The topic the scripts stage the player's level with: {"best", "cap"}.
+    /// </summary>
+    public const string LevelTopic = "story.level";
+
+    /// <summary>
+    /// The topic that hands the player's story the relay asked for: {key => value}.
+    /// </summary>
+    public const string SeedTopic = "story.seed";
+
+    /// <summary>
+    /// The topic the scripts stage the player's telling with: {"site", "map"}, nil once it ended.
+    /// </summary>
+    public const string TellTopic = "story.tell";
+
+    /// <summary>
+    /// The topic the scripts stage the seat of the teller the player watches with, nil for none.
+    /// </summary>
+    public const string WatchTopic = "story.watch";
+
+    /// <summary>
+    /// The topic that takes what waits to be written into the game's story, see <see cref="TakeOf"/>.
+    /// </summary>
+    public const string TakeTopic = "story.take";
+
+    /// <summary>
+    /// The topic that hands out the story mapping's table, see <see cref="TableOf"/>; nil before it came.
+    /// </summary>
+    public const string ClassesTopic = "story.classes";
+
+    /// <summary>
+    /// The topic that builds a Classic party's table: {"switches", "variables", "companions", "chest_flags"}.
+    /// </summary>
+    public const string ClassicTopic = "story.classic_table";
+
+    /// <summary>
+    /// The event of how the story on tracks stands, see <see cref="StatusOf"/>.
+    /// </summary>
+    public const string StatusEvent = "story.status";
+
+    /// <summary>
+    /// The event of the requests the relay did not keep as written: [[key, code, value or nil], ...].
+    /// </summary>
+    public const string RefusedEvent = "story.refused";
+
+    /// <summary>
+    /// The letters a telling's id is made of.
+    /// </summary>
+    private const string TellingLetters = "abcdefghijklmnopqrstuvwxyz0123456789";
+
+    /// <summary>
+    /// Bridge frames before a failed fetch of the mapping is tried again, by try.
+    /// </summary>
+    private static readonly int[] FetchRetryFrames = [120, 300, 600, 1800];
+
+    /// <summary>
+    /// The context the events go to.
+    /// </summary>
+    private readonly BridgeContext _context;
+
+    /// <summary>
+    /// The world connection.
+    /// </summary>
+    private readonly WorldSession _session;
+
+    /// <summary>
+    /// The player's story on tracks.
+    /// </summary>
+    private readonly StoryTrack _track;
+
+    /// <summary>
+    /// Guards the mapping a fetch hands over.
+    /// </summary>
+    private readonly object _gate = new();
+
+    /// <summary>
+    /// The status posted last, so it goes out only once it changed.
+    /// </summary>
+    private RubyValue? _posted;
+
+    /// <summary>
+    /// The story mapping's table, <see langword="null"/> before it came.
+    /// </summary>
+    private StoryTable? _table;
+
+    /// <summary>
+    /// A table a fetch read and the frame step has not taken yet. Guarded by <see cref="_gate"/>.
+    /// </summary>
+    private StoryTable? _fetched;
+
+    /// <summary>
+    /// Whether a fetch of the mapping runs. Guarded by <see cref="_gate"/>.
+    /// </summary>
+    private bool _fetching;
+
+    /// <summary>
+    /// How many fetches failed in a row. Guarded by <see cref="_gate"/>.
+    /// </summary>
+    private int _failures;
+
+    /// <summary>
+    /// The bridge frames the last fetch asks the next one to wait, which the frame step turns into
+    /// <see cref="_fetchAfter"/>; <see langword="null"/> once taken. Guarded by <see cref="_gate"/>.
+    /// </summary>
+    private int? _fetchDelay;
+
+    /// <summary>
+    /// The bridge frame before which no fetch starts.
+    /// </summary>
+    private long _fetchAfter;
+
+    /// <summary>
+    /// The relay of the world whose story the player plays, <see langword="null"/> outside one.
+    /// </summary>
+    private Uri? _relay;
+
+    /// <summary>
+    /// The world connections counted when the story last looked, see <see cref="WorldSession.Connections"/>.
+    /// </summary>
+    private int _connections;
+
+    /// <summary>
+    /// Initializes the story of a context.
+    /// </summary>
+    /// <param name="context">The context the handshake opened.</param>
+    /// <param name="session">The world connection.</param>
+    private StoryTopics(BridgeContext context, WorldSession session)
+    {
+        _context = context;
+        _session = session;
+        _track = new StoryTrack(this, () => RandomNumberGenerator.GetString(TellingLetters, 12));
+        RelayOf = id => session.OpenWorld(id) is { } code ? Relays.AddressOf(code.Relay) : null;
+        context.Events.Coalesce(StatusEvent);
+    }
+
+    /// <summary>
+    /// Gets or sets how the story mapping is fetched from a relay, given the revision held; tests hand
+    /// out their own.
+    /// </summary>
+    internal Func<Uri, long?, JsonDocument> FetchMapping { get; set; } = (relay, known) => new DirectoryClient(relay).GetStoryMapping(known);
+
+    /// <summary>
+    /// Gets or sets how the relay of the open world is found by the world's id, <see langword="null"/>
+    /// for none; tests hand out their own.
+    /// </summary>
+    internal Func<string, Uri?> RelayOf { get; set; }
+
+    /// <summary>
+    /// Gets or sets how a fetch runs; tests run it at once.
+    /// </summary>
+    internal Action<Action> Run { get; set; } = work => Threads.Start("MultiplayerStoryMapping", work);
+
+    /// <summary>
+    /// Registers the topics and the frame step on a context, over the game's world connection.
+    /// </summary>
+    /// <param name="context">The context the handshake opened.</param>
+    public static void Register(BridgeContext context) => Register(context, WorldSession.Current);
+
+    /// <summary>
+    /// Registers the topics and the frame step on a context.
+    /// </summary>
+    /// <param name="context">The context the handshake opened.</param>
+    /// <param name="session">The world connection.</param>
+    /// <returns>The story's topics, for tests.</returns>
+    internal static StoryTopics Register(BridgeContext context, WorldSession session)
+    {
+        var topics = new StoryTopics(context, session);
+        context.Register(EnterTopic, (_, request) => topics.Enter(request.AsHash()));
+        context.Register(CloseTopic, (_, _) => topics.Close());
+        context.Register(WritesTopic, (_, request) => topics.Writes(request.AsArray()));
+        context.Register(LevelTopic, (_, request) =>
+        {
+            topics._track.TakeLevel(LevelOf(request));
+            return null;
+        });
+        context.Register(SeedTopic, (_, request) =>
+        {
+            topics._track.Seed(SeedOf(request.AsHash()));
+            return null;
+        });
+        context.Register(TellTopic, (_, request) =>
+        {
+            if (request.IsNil)
+            {
+                topics._track.Tell(null, 0);
+            }
+            else
+            {
+                RubyHash telling = request.AsHash();
+                topics._track.Tell(telling["site"].AsText(), telling["map"].AsInt());
+            }
+
+            return null;
+        });
+        context.Register(WatchTopic, (_, request) =>
+        {
+            topics._track.Watch(request.IsNil ? null : request.AsInt());
+            return null;
+        });
+        context.Register(TakeTopic, (_, _) => topics._track.Take() is { } take ? TakeOf(take) : null);
+        context.Register(ClassesTopic, (_, _) => topics._table is { } table ? TableOf(table) : null);
+        context.Register(ClassicTopic, (_, request) => ClassicOf(request.AsHash()));
+        context.EveryFrame(_ => topics.Step());
+        return topics;
+    }
+
+    /// <inheritdoc />
+    public bool Send(string json) => _session.SendTrack(json);
+
+    /// <inheritdoc />
+    void IStoryTrackHost.Log(string line) => Log.Write(line);
+
+    /// <summary>
+    /// Writes a story table as the scripts look keys up in it.
+    /// </summary>
+    /// <param name="table">The table.</param>
+    /// <returns>{"rev", "switches" and "variables" (a byte per id, binary), "self" (rule => class), "index" (each event as map * 1,000,000 + event), "local_steps" ([variable, steps, shared as, [[map, from x], ...]]), "gates" (part => level), "self_default"}.</returns>
+    internal static RubyHash TableOf(StoryTable table)
+    {
+        var self = new RubyHash();
+        foreach ((string key, StoryClass found) in table.SelfRules.OrderBy(rule => rule.Key, StringComparer.Ordinal))
+        {
+            self.Add(key, (long)found);
+        }
+
+        var gates = new RubyHash();
+        foreach ((string part, int gate) in table.Gates.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+        {
+            gates.Add(part, gate);
+        }
+
+        return new RubyHash
+        {
+            { "rev", table.Rev },
+            { "switches", RubyString.Binary(table.Switches) },
+            { "variables", RubyString.Binary(table.Variables) },
+            { "self", self },
+            { "index", new RubyArray(table.Index.Order().Select(code => (RubyValue)code)) },
+            { "local_steps", new RubyArray(table.LocalSteps.Select(steps => (RubyValue)new RubyArray
+                {
+                    steps.Variable,
+                    new RubyArray(steps.Steps.Select(step => (RubyValue)step)),
+                    steps.SharedAs,
+                    new RubyArray(steps.Places.Select(place => (RubyValue)new RubyArray { place.Map, place.FromX })),
+                })) },
+            { "gates", gates },
+            { "self_default", (long)table.SelfDefault },
+        };
+    }
+
+    /// <summary>
+    /// Writes what waits to be written into the game's story as the scripts apply it.
+    /// </summary>
+    /// <param name="take">The take.</param>
+    /// <returns>{"state" (nil, or {"why", "track", "part", "gate", "move" ({"from", "to", "gate", "by"} or nil), "keys" and "chests" (key => value), "held" ([key, ...])}), "keys" ([[key, value], ...] in order), "rev"}.</returns>
+    internal static RubyHash TakeOf(StoryTake take)
+    {
+        RubyValue state = RubyNil.Value;
+        if (take.State is { } whole)
+        {
+            state = new RubyHash
+            {
+                { "why", whole.Why },
+                { "track", whole.Track },
+                { "part", whole.Part },
+                { "gate", whole.Gate is { } gate ? gate : RubyNil.Value },
+                { "move", whole.Move is { } move ? new RubyHash { { "from", move.From }, { "to", move.To }, { "gate", move.Gate is { } level ? level : RubyNil.Value }, { "by", move.By } } : RubyNil.Value },
+                { "keys", HashOf(whole.Keys) },
+                { "chests", HashOf(whole.Chests) },
+                { "held", new RubyArray(whole.Held.Order(StringComparer.Ordinal).Select(key => (RubyValue)key)) },
+            };
+        }
+
+        return new RubyHash
+        {
+            { "state", state },
+            { "keys", new RubyArray(take.Keys.Select(pair => (RubyValue)new RubyArray { pair.Key, pair.Value })) },
+            { "rev", take.Rev },
+        };
+    }
+
+    /// <summary>
+    /// Builds a Classic party's table.
+    /// </summary>
+    /// <param name="request">{"switches", "variables", "companions", "chest_flags"}.</param>
+    /// <returns>The table, see <see cref="TableOf"/>.</returns>
+    private static RubyHash ClassicOf(RubyHash request) => TableOf(ClassicStoryTable.Build(
+        request["switches"].AsInt(), request["variables"].AsInt(), request["companions"].AsInt(), request["chest_flags"].AsArray().Select(flag => flag.AsInt()).ToList()));
+
+    /// <summary>
+    /// Reads the player's level.
+    /// </summary>
+    /// <param name="request">{"best", "cap"}, the cap nil without one.</param>
+    /// <returns>The level.</returns>
+    private static StoryLevel LevelOf(RubyValue request)
+    {
+        RubyHash level = request.AsHash();
+        return new StoryLevel(level["best"].AsInt(), level["cap"].IsNil ? null : level["cap"].AsInt());
+    }
+
+    /// <summary>
+    /// Reads a seed.
+    /// </summary>
+    /// <param name="request">{key => value}.</param>
+    /// <returns>The keys and their values.</returns>
+    private static Dictionary<string, string> SeedOf(RubyHash request)
+    {
+        var seed = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (KeyValuePair<RubyValue, RubyValue> pair in request)
+        {
+            seed[pair.Key.AsText()] = pair.Value.AsText();
+        }
+
+        return seed;
+    }
+
+    /// <summary>
+    /// Writes texts by key as a Hash.
+    /// </summary>
+    /// <param name="values">The texts.</param>
+    /// <returns>The Hash.</returns>
+    private static RubyHash HashOf(IReadOnlyDictionary<string, string> values)
+    {
+        var hash = new RubyHash();
+        foreach ((string key, string value) in values)
+        {
+            hash.Add(key, value);
+        }
+
+        return hash;
+    }
+
+    /// <summary>
+    /// Starts the player's story on tracks in the open world.
+    /// </summary>
+    /// <param name="request">{"world", "fresh", "level"}.</param>
+    /// <returns><see langword="null"/>, no reply.</returns>
+    private RubyValue? Enter(RubyHash request)
+    {
+        _relay = RelayOf(request["world"].AsText());
+        if (_relay is null)
+        {
+            Log.Write($"story track: the open world is no world {Log.Short(request["world"].AsText())} of a known relay, so its story does not start");
+            return null;
+        }
+
+        _track.Enter(request["fresh"] is RubyBool { Flag: true }, request["level"].IsNil ? null : LevelOf(request["level"]));
+        _connections = _session.Connections;
+        _track.Connection(_session.IsOpen());
+        return null;
+    }
+
+    /// <summary>
+    /// Ends the player's story on tracks.
+    /// </summary>
+    /// <returns><see langword="null"/>, no reply.</returns>
+    private RubyValue? Close()
+    {
+        _relay = null;
+        _track.Leave();
+        _track.Connection(false);
+        return null;
+    }
+
+    /// <summary>
+    /// Takes the writes of a frame.
+    /// </summary>
+    /// <param name="request">[[key, value, site], ...].</param>
+    /// <returns><see langword="null"/>, no reply.</returns>
+    /// <exception cref="BridgeRequestException">A write is no three texts.</exception>
+    private RubyValue? Writes(RubyArray request)
+    {
+        var writes = new List<StoryWrite>(request.Count);
+        foreach (RubyValue entry in request)
+        {
+            RubyArray write = entry.AsArray();
+            if (write.Count != 3)
+            {
+                throw new BridgeRequestException("A story write is [key, value, site].");
+            }
+
+            writes.Add(new StoryWrite(write[0].AsText(), write[1].AsText(), write[2].AsText()));
+        }
+
+        _track.Write(writes);
+        return null;
+    }
+
+    /// <summary>
+    /// Runs the story's frame: the connection, the relay's frames, the mapping, and the status and
+    /// refusals the scripts read.
+    /// </summary>
+    private void Step()
+    {
+        if (_relay is not null)
+        {
+            int connections = _session.Connections;
+            if (connections != _connections)
+            {
+                // A new connection: the relay knows nothing of the player on it before they sync.
+                _connections = connections;
+                _track.Connection(false);
+            }
+
+            _track.Connection(_session.IsOpen());
+            while (_session.TakeTrackFrame() is { } frame)
+            {
+                _track.Receive(frame);
+            }
+
+            FollowMapping();
+        }
+
+        if (_track.TakeRefusals() is { Count: > 0 } refusals)
+        {
+            _context.Events.Post(RefusedEvent, new RubyArray(refusals.Select(refusal => (RubyValue)new RubyArray
+            {
+                refusal.Key, refusal.Code, refusal.Value is { } value ? value : RubyNil.Value,
+            })));
+        }
+
+        RubyHash status = StatusOf();
+        if (_posted is null || !_posted.Equals(status))
+        {
+            _posted = status;
+            _context.Events.Post(StatusEvent, status);
+        }
+    }
+
+    /// <summary>
+    /// Takes a mapping a fetch read, and starts a fetch while none came yet or the relay reads
+    /// requests by a newer revision than the one held.
+    /// </summary>
+    private void FollowMapping()
+    {
+        Uri relay = _relay!;
+        long? known;
+        lock (_gate)
+        {
+            if (_fetched is { } fetched)
+            {
+                _table = fetched;
+                _fetched = null;
+                Log.Write($"story track: read the story mapping at revision {fetched.Rev}");
+            }
+
+            if (_fetchDelay is { } delay)
+            {
+                _fetchAfter = _context.Frame + delay;
+                _fetchDelay = null;
+            }
+
+            if (_fetching || _context.Frame < _fetchAfter || (_table is { } held && held.Rev >= _track.MappingRev))
+            {
+                return;
+            }
+
+            _fetching = true;
+            known = _table?.Rev;
+        }
+
+        Run(() => FetchFrom(relay, known));
+    }
+
+    /// <summary>
+    /// Fetches the mapping and hands its table to the next frame, or times the next try.
+    /// </summary>
+    /// <param name="relay">The relay.</param>
+    /// <param name="known">The revision held, <see langword="null"/> for none.</param>
+    private void FetchFrom(Uri relay, long? known)
+    {
+        StoryTable? table = null;
+        bool failed = false;
+        try
+        {
+            using JsonDocument document = FetchMapping(relay, known);
+            (long rev, bool same) = StoryMapping.RevisionOf(document.RootElement);
+            table = same ? null : StoryMapping.Read(document.RootElement);
+            if (same)
+            {
+                Log.Write($"story track: the story mapping stayed at revision {rev}");
+            }
+        }
+        catch (Exception ex) when (ex is DirectoryException or JsonException or InvalidOperationException)
+        {
+            failed = true;
+            Log.Write($"story track: fetching the story mapping failed: {ex.Message}");
+        }
+
+        lock (_gate)
+        {
+            _fetching = false;
+            _fetched = table ?? _fetched;
+            _failures = failed ? _failures + 1 : 0;
+            // A mapping that stayed or failed waits, so a relay telling a newer revision is not asked every frame.
+            _fetchDelay = failed ? FetchRetryFrames[Math.Min(_failures, FetchRetryFrames.Length) - 1] : table is null ? FetchRetryFrames[^1] : 0;
+        }
+    }
+
+    /// <summary>
+    /// Describes how the story on tracks stands, as the scripts read it each frame.
+    /// </summary>
+    /// <returns>{"synced", "track", "part", "gate", "rev", "taken", "world" ({"rev", "part", "route", "done", "checkpoints"} or nil), "pending", "need_seed", "classes" (the mapping's revision held, nil before), "tellings" (seat => [telling, map, site]), "told" (seat => revision), "telling" (true, false or nil), "holder", "unanswered"}.</returns>
+    private RubyHash StatusOf()
+    {
+        var tellings = new RubyHash();
+        foreach ((int seat, StoryTelling telling) in _track.Tellings.OrderBy(entry => entry.Key))
+        {
+            tellings.Add(seat, new RubyArray { telling.Telling, telling.Map, telling.Site });
+        }
+
+        var told = new RubyHash();
+        foreach ((int seat, long rev) in _track.Told.OrderBy(entry => entry.Key))
+        {
+            told.Add(seat, rev);
+        }
+
+        RubyValue world = _track.World is { } summary
+            ? new RubyHash
+            {
+                { "rev", summary.Rev },
+                { "part", summary.Part },
+                { "route", summary.Route },
+                { "done", new RubyArray(summary.Done.Select(route => (RubyValue)route)) },
+                { "checkpoints", new RubyArray(summary.Checkpoints.Select(part => (RubyValue)part)) },
+            }
+            : RubyNil.Value;
+        return new RubyHash
+        {
+            { "synced", _track.Synced },
+            { "track", _track.Track },
+            { "part", _track.Part },
+            { "gate", _track.Gate is { } gate ? gate : RubyNil.Value },
+            { "rev", _track.TrackRev },
+            { "taken", _track.TakenRev },
+            { "world", world },
+            { "pending", _track.Pending },
+            { "need_seed", _track.NeedsSeed },
+            { "classes", _table is { } table ? table.Rev : RubyNil.Value },
+            { "tellings", tellings },
+            { "told", told },
+            { "telling", _track.TellingGranted is { } granted ? granted : RubyNil.Value },
+            { "holder", _track.TellingHolder is { } holder ? holder : RubyNil.Value },
+            { "unanswered", _track.Unanswered },
+        };
+    }
+}

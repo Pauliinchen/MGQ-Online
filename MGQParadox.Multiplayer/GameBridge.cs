@@ -4,6 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-10-23: Kept the bug report's screenshot by walking to its pixels here
 //                            - Registered the interface's models with the keyboard
+//                            - Registered the topics of the story tracks and the story tables
 //                            - Registered the topics of the open world
 //                            - Registered the topics both hosts answer
 //                            - Registered the topics of the event sorter
@@ -60,6 +61,7 @@ internal static unsafe class GameBridge
         EventTopics.Register(context, () => EventTopics.Current);
         WorldTopics.Register(context);
         WorldRoomTopics.Register(context);
+        StoryTopics.Register(context);
         UiTopics.Register(context, new TypedText());
         context.Register(SnapTopic, (_, request) => Snap(request.AsArray()));
     }

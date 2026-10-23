@@ -2,6 +2,7 @@
 #  coop_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Told the members the story's writes the leader's game made, recorded by story_keys.rbx, instead of a comparison of the whole story every quarter second
 #      Paulinchen  2026-10-09: Moved the story's state model into story_state.rbx
 #      Paulinchen  2026-10-08: Kept the leader's story to Classic worlds
 #                            - Kept the side each player's own in a Raid World
@@ -104,8 +105,9 @@ module MGQ_MpCoopStory
   # The id of the leader whose story the player asked for or follows, nil for none.
   @leader_id = nil
 
-  # The story as the player last sent it to the members as leader, nil before the first.
-  @sent = nil
+  # As leader, the story's writes the player's game made since the members were last told, the
+  # last value by key; nil while no member follows the player's story.
+  @writes = nil
 
   # Frames since the leader last told what changed, see SEND_FRAMES.
   @frames = 0
@@ -151,7 +153,8 @@ module MGQ_MpCoopStory
       lead
       note_followers
     else
-      @sent = nil
+      MGQ_MpStoryKeys.recording = nil unless MGQ_MpCoop::Scope.raid?
+      @writes = nil
       @sent_held = nil
       @followers = nil
       follow(leader) if leader && @synced
@@ -374,25 +377,29 @@ module MGQ_MpCoopStory
     @followers.keep_if { |id, _| now.key?(id) } if @followers
   end
 
-  # As leader, tells the members what of the story changed since the last time.
+  # As leader, tells the members what of the story the player's game wrote since the last time,
+  # as story_keys.rbx records the writes of what the party shares.
   def self.lead
     if synced_members.empty?
-      @sent = nil
+      MGQ_MpStoryKeys.recording = nil
+      @writes = nil
       @sent_keys = nil
       @sent_held = nil
       return
     end
 
+    MGQ_MpStoryKeys.recording = :classic
+    @writes ||= {}
     @frames += 1
     return if @frames < SEND_FRAMES
 
     @frames = 0
-    now = MGQ_MpStoryState.raw_state
-    changes = @sent ? MGQ_MpStoryState.delta(@sent, now) : nil
-    if changes && !changes.values.all?(&:empty?)
-      log("the story changed: #{changes.map { |key, list| "#{key} #{list.split(',').size}" }.join(', ')} (#{changes.values.join(',')[0, 200]}), now #{MGQ_MpStoryState.progress_text(now[1])}")
+    unless @writes.empty?
+      changes = delta_of(@writes)
+      log("the story changed: #{changes.map { |key, list| "#{key} #{list.split(',').size}" }.join(', ')} (#{changes.values.join(',')[0, 200]}), " \
+          "now #{MGQ_MpStoryState.progress_text(MGQ_MpStoryState.data_of($game_variables))}")
+      @writes = {} if tell(-1, "delta", changes)
     end
-    @sent = now if changes.nil? || changes.values.all?(&:empty?) || tell(-1, "delta", changes)
     keys = key_items
     if keys != @sent_keys
       log("the leader's key items changed: #{keys.map { |id, count| "#{MGQ_MpStoryState.item_label("i#{id}")} x#{count}" }.join(', ')}")
@@ -403,6 +410,36 @@ module MGQ_MpCoopStory
       log("the leader's story rewards changed: skills #{held['sk']}; companions #{held['ac']}; items #{held['it']}; side #{held['side']}")
       @sent_held = held if tell(-1, "hold", held)
     end
+  end
+
+  # As leader, takes the story's writes the player's game made in a frame, the last value of each
+  # key kept. Called by story_keys.rbx.
+  #
+  # @param batch [Array<Array>] Each write's key, value and site, see MGQ_MpStoryKeys.key_text.
+  def self.recorded(batch)
+    return unless @writes
+
+    batch.each do |key, value, _site|
+      @writes.delete(key)
+      @writes[key] = value
+    end
+  end
+
+  # Writes the story's writes as the members read them, see MGQ_MpStoryState.decode_delta.
+  #
+  # @param writes [Hash{String => String}] Each key's last value, as story_keys.rbx writes them.
+  # @return [Hash] The changed switches, variables and self switches under "s", "v" and "ss".
+  def self.delta_of(writes)
+    lists = { "s" => [], "v" => [], "ss" => [] }
+    writes.each do |key, value|
+      kind, id = MGQ_MpStoryKeys.key_of(key)
+      case kind
+      when 0 then lists["s"] << "#{id}:#{value}"
+      when 1 then lists["v"] << "#{id}:#{value}"
+      when 2 then lists["ss"] << "#{id.join('.')}:#{value}"
+      end
+    end
+    Hash[lists.map { |name, list| [name, list.join(",")] }]
   end
 
   # As member, asks the leader for their story until it came, again whenever the leader changes.

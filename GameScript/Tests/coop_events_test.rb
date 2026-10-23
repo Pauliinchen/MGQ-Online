@@ -5,6 +5,9 @@
 #      Paulinchen  2026-10-24: Set the unlocks aside in the generator's switches of each player's own
 #                            - Checked that the player's game notes whose scene that runs by itself it keeps from starting
 #      Paulinchen  2026-10-23: Left the sorting checks to MGQOnline.Game.Tests and answered the sorts from its golden cases
+#                            - Sorted a Raid World's events by a story mapping that keeps what the Raid personal lists kept
+#                            - Checked that the leader tells the party the story's writes their game made
+#                            - Compared the generator's lists within the game's switches and variables
 #                            - Checked that a weapon's pedestal handing out a medal is a chest of each player's own
 #                            - Checked that a talk ended early takes back what it changed
 #                            - Checked that a dark screen fades in while a watched scene shows nothing for ten seconds
@@ -474,6 +477,19 @@ $sent.clear
 $game_map.interpreter.setup(chest_page.list, 5)
 $game_map.interpreter.run
 check("opening a chest tells the party what was in it, and its sound", $sent.map { |seat, f| [seat, f["chest"], f["gains"], f["se"]] }, [[-1, "3.5.A", "i1x2", "Chest,80,100"]])
+# The leader tells the party the story's writes their game made, as story_keys.rbx records them.
+MGQ_MpCoopStory.update
+$sent.clear
+$game_switches[2280] = true
+$game_variables[1050] = 31
+$game_variables[3001] = 9
+$game_variables[1050] = 32
+MGQ_MpStoryKeys.flush
+MGQ_MpCoopStory::SEND_FRAMES.times { MGQ_MpCoopStory.update }
+check("as leader, the party hears the story's writes the player's game made in one change, the last of each, each player's own left out",
+      $sent.select { |_, f| f["story"] == "delta" }.map { |seat, f| [seat, f["s"], f["v"], f["ss"]] }, [[-1, "2280:1", "1050:n32", ""]])
+MGQ_MpCoopStory::SEND_FRAMES.times { MGQ_MpCoopStory.update }
+check("and nothing more while their game wrote nothing", $sent.count { |_, f| f["story"] == "delta" }, 1)
 $sent.clear
 other = Game_Interpreter.new
 other.setup(talk_page.list, 6)
@@ -1804,13 +1820,17 @@ if File.exist?(generator_file)
   load(generator_file, generator)
   own_switches = generator::PERSONAL_SWITCHES.flat_map { |ids| Array(ids) }
   own_variables = Object.new.extend(generator).send(:personal_variables, $data_actors.size).flat_map { |ids| Array(ids) }
+  # The DLL builds the party's table from the game's database as it stands now.
+  MGQ_MpStoryKeys.instance_variable_set(:@classic, nil)
   # The chest flags are each player's own too, but only chests set them, which no marks come from;
   # the unlocks are outside a Raid World, but the story's one event turns them on for good, which
   # the generator refuses among each player's own.
   check("the generator's switches of each player's own are this script's, the chest flags and the unlocks aside",
         [own_switches.all? { |id| MGQ_MpStoryState.personal_switch?(id, []) },
-         (1..8000).select { |id| MGQ_MpStoryState.personal_switch?(id, []) } - own_switches - CHEST_FLAGS - MGQ_MpStoryState::UNLOCK_SWITCHES], [true, []])
-  check("and so are its variables", [own_variables.all? { |id| MGQ_MpStoryState.personal_variable?(id) }, (1..8000).select { |id| MGQ_MpStoryState.personal_variable?(id) } - own_variables], [true, []])
+         (1...$data_system.switches.size).select { |id| MGQ_MpStoryState.personal_switch?(id, []) } - own_switches - CHEST_FLAGS - MGQ_MpStoryState::UNLOCK_SWITCHES], [true, []])
+  check("and so are its variables",
+        [own_variables.all? { |id| MGQ_MpStoryState.personal_variable?(id) }, (1...$data_system.variables.size).select { |id| MGQ_MpStoryState.personal_variable?(id) } - own_variables],
+        [true, []])
 else
   puts "skipped the generator's lists: #{generator_file} is missing"
 end
@@ -2087,6 +2107,7 @@ module MGQ_MpOverworldSync
   end
 end
 $raid = true
+use_listed_raid_table
 check("in a Raid World it is each player's own travel, never a story told to everyone and taking them into the castle", kind(castle_tour), :travel)
 $party = "p1"
 $leader = leader

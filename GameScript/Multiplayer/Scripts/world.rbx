@@ -2,6 +2,7 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Closed the world's story before its room, so a world left for the title screen keeps its last writes
 #      Paulinchen  2026-10-23: Asked the DLL for the seats, difficulties and squad rules a world may set, and for the seats its code tells
 #                            - Asked the DLL for the mod keys and the scripts in Patch
 #                            - Offered the update under Wine or Proton too, and named the release to install by hand with --version
@@ -610,12 +611,14 @@ module MGQ_MpWorld
     log("entered world #{world.id} (#{world.name}, directory #{short(world.directory_id)}, #{world.seats} seats)")
   end
 
-  # Closes the open world, leaving its room and putting the player's own system save back.
+  # Closes the open world, leaving its room and putting the player's own system save back. The
+  # story closes first, so its last writes reach the room before it closes.
   #
   # @param reason [String] Why, for the log.
   def self.leave(reason = "closed")
     return unless @world
 
+    MGQ_MpWorldStory.close if defined?(MGQ_MpWorldStory)
     Link.close
     System.leave
     log("left world #{@world.id} (#{@world.name}): #{reason}")

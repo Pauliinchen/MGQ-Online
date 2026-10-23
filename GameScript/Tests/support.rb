@@ -4,6 +4,8 @@
 #  Changelog:
 #      Paulinchen  2026-10-24: Counted the key frames as the tests count the game's
 #      Paulinchen  2026-10-23: Loaded the bridge, closed, with the first script
+#                            - Loaded story_keys.rbx after story_state.rbx, with the Classic party's table the DLL builds
+#                            - Stood in for a Raid World's story mapping with a table of the earlier Raid personal lists
 #      Paulinchen  2026-10-13: Named the mod folder as Multiplayer.rb does
 #      Paulinchen  2026-10-12: Collected the log lines a block writes
 #      Paulinchen  2026-10-08: Stood in for watching keys
@@ -24,6 +26,7 @@
 
 # RGSS has Zlib built in, which the scripts use as it is.
 require "zlib"
+require "json"
 
 # Folder of the mod's scripts in the repository.
 SCRIPTS_DIR = File.expand_path("../Multiplayer/Scripts", __dir__)
@@ -137,6 +140,109 @@ def load_script(name)
   load File.join(SCRIPTS_DIR, "core_hooks.rbx") unless defined?(MGQ_MpHooks) || name == "core_log"
   load File.join(SCRIPTS_DIR, "core_game_access.rbx") unless defined?(MGQ_MpGame) || name == "core_log"
   load File.join(SCRIPTS_DIR, "#{name}.rbx")
+  load_story_keys if name == "story_state"
+end
+
+# Folder of the story's golden cases, which MGQOnline.Game.Tests checks too.
+STORY_FIXTURES = File.expand_path("../../fixtures/story", __dir__)
+
+# Loads story_keys.rbx, which Multiplayer.rb loads right after story_state.rbx, with a stand-in for
+# the DLL's Classic party's table (see classic_table_hash), so no test needs the DLL to tell what a
+# party shares.
+def load_story_keys
+  load File.join(SCRIPTS_DIR, "story_keys.rbx")
+  MGQ_MpStoryKeys.define_singleton_method(:classic_table) { @classic ||= table_of(classic_table_hash(classic_request)) }
+end
+
+# The request of the topic story.classic_table the scripts make, for the game's sizes as a test
+# stands in for them, 10,000 switches and 5,000 variables without a database.
+#
+# @return [Hash] The request.
+def classic_request
+  { "switches" => $data_system ? $data_system.switches.size : 10_000, "variables" => $data_system ? $data_system.variables.size : 5000,
+    "companions" => $data_actors ? $data_actors.size : 1000, "chest_flags" => MGQ_MpStoryState.chest_flags }
+end
+
+# The switches a Classic party keeps each player's own, as ClassicStoryTable.PersonalSwitches.
+CLASSIC_PERSONAL_SWITCHES = [[0, 0], [22, 22], [73, 73], [94, 94], [95, 95], [97, 97], [100, 100], [445, 447], [502, 502], [1001, 2000], [6000, 6999]]
+
+# The variables alike, as ClassicStoryTable.PersonalVariables.
+CLASSIC_PERSONAL_VARIABLES = [[0, 0], [9, 9], [21, 23], [46, 48], [55, 57], [59, 59], [129, 129], [150, 150], [200, 201], [1002, 1002], [2000, 2999]]
+
+# Builds a Classic party's table as the DLL's ClassicStoryTable.Build does for a request of the
+# topic story.classic_table: every switch and variable shared, a side switch shared as a side's, but
+# the lists each player keeps, the affection of each companion and the chest flags. It is checked
+# against fixtures/story/classic.json, which MGQOnline.Game.Tests checks the C# against, as this
+# file loads, so it cannot drift from what the DLL builds.
+#
+# @param request [Hash] "switches", "variables", "companions" and "chest_flags".
+# @return [Hash] The table, see story_table_hash.
+def classic_table_hash(request)
+  switches = Array.new(request["switches"], 1)
+  variables = Array.new(request["variables"], 1)
+  clear = lambda { |classes, ranges| ranges.each { |from, to| (from..[to, classes.size - 1].min).each { |id| classes[id] = 0 } } }
+  clear.call(switches, CLASSIC_PERSONAL_SWITCHES)
+  clear.call(variables, CLASSIC_PERSONAL_VARIABLES + [[3000, 3000 + [request["companions"], 1].max - 1]])
+  request["chest_flags"].each { |id| switches[id] = 8 if id < switches.size }
+  [4, 5].each { |id| switches[id] = 129 if id < switches.size }
+  { "rev" => 0, "switches" => switches.pack("C*"), "variables" => variables.pack("C*"), "self" => {}, "index" => [], "local_steps" => [], "gates" => {}, "self_default" => 1 }
+end
+
+
+# Builds a story table as the DLL hands it (StoryTopics.TableOf).
+#
+# @param switches [Array<Array>] The switches' classes as runs, each [from, to, class].
+# @param variables [Array<Array>] The variables' classes alike.
+# @param self_default [Integer] The class of a self switch no rule names.
+# @param rest [Hash] The table's other fields, such as "self", "index" or "rev".
+# @return [Hash] The table.
+def story_table_hash(switches, variables, self_default = 0, rest = {})
+  bytes = lambda do |runs|
+    text = "".force_encoding("ASCII-8BIT")
+    runs.each { |from, to, found| text << ([found].pack("C") * (to - from + 1)) }
+    text
+  end
+  { "rev" => 0, "switches" => bytes.call(switches), "variables" => bytes.call(variables), "self" => {}, "index" => [], "local_steps" => [], "gates" => {},
+    "self_default" => self_default }.merge(rest)
 end
 
 at_exit { Checks.finish($!) }
+
+# The switches the Raid personal lists of earlier builds kept each player's own, beside a Classic
+# party's: the refusal of recruits, a special boss's NORMAL, the Colosseum and its match, the
+# Labyrinth, the collab's hidden key items, the final battles' NORMAL and the castle's tour.
+LISTED_RAID_SWITCHES = [3, 23, 28, 41, 87, 504, 507, 2013, 2015]
+
+# The variables alike: the difficulty's rates, the Ruler Ruler's, the Labyrinth's, the difficulty
+# and its records.
+LISTED_RAID_VARIABLES = [[41, 45], [49, 49], [92, 99], [121, 121], [123, 123], [149, 149], [151, 151], [902, 903], [906, 906], [908, 908]]
+
+# Builds a story mapping's table that keeps what the Raid personal lists of earlier builds shared,
+# for the checks of a Raid World whose events must still sort as story: a Classic party's table
+# with the side switches, LISTED_RAID_SWITCHES and LISTED_RAID_VARIABLES each player's own.
+#
+# @param request [Hash] As classic_table_hash takes it.
+# @param scene [Array<Integer>] The scene switches.
+# @return [Hash] The table, see story_table_hash.
+def listed_raid_table_hash(request, scene = [])
+  table = classic_table_hash(request)
+  switches = table["switches"].unpack("C*")
+  variables = table["variables"].unpack("C*")
+  ([4, 5] + LISTED_RAID_SWITCHES).each { |id| switches[id] = 0 if id < switches.size }
+  scene.each { |id| switches[id] = 4 if id < switches.size }
+  LISTED_RAID_VARIABLES.each { |from, to| (from..to).each { |id| variables[id] = 0 if id < variables.size } }
+  table.merge("rev" => 1, "switches" => switches.pack("C*"), "variables" => variables.pack("C*"))
+end
+
+# Gives story_keys.rbx a Raid World's story mapping, see listed_raid_table_hash.
+#
+# @param scene [Array<Integer>] The scene switches.
+def use_listed_raid_table(scene = [])
+  MGQ_MpStoryKeys.instance_variable_set(:@raid, MGQ_MpStoryKeys.table_of(listed_raid_table_hash(classic_request, scene)))
+end
+
+classic_fixture = JSON.parse(File.read(File.join(STORY_FIXTURES, "classic.json")))
+classic_built = classic_table_hash(classic_fixture["request"])
+unless classic_built == story_table_hash(classic_fixture["switches"], classic_fixture["variables"], classic_fixture["self_default"])
+  raise "the stand-in of the Classic party's table differs from fixtures/story/classic.json"
+end
