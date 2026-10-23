@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Checked that Cancel during a wait goes back or asks before leaving
+#                            - Checked that messages lost over a reconnect come again, once and in order
 #                            - Checked that a battle keeps its players through seats dealt anew and while away
 #      Paulinchen  2026-10-15: Checked that a co-op enemy the host defeats counts as fallen on the guest for its recruit
 #      Paulinchen  2026-10-12: Checked that the wire reads hostile lines safely
@@ -482,6 +483,40 @@ check("the world telling they are gone takes them out", [sync::Channel.world_gon
 sync.finish
 check("and the battle's seats are forgotten as it finishes", sync.own_seat, 2)
 $my_seat = 0
+
+# Messages lost over a reconnect come again: each carries its number, whoever sees a player come
+# back asks for what came after the last number taken, and each number is taken once and in order.
+peers.all.replace([peers::Peer.new(2, { "id" => "id-a", "name" => "Player A" }, nil, false)])
+sync.join_world(:host, "w10", [2], "the party")
+sync.battle_started
+guest = peers.all.first
+numbered = lambda { |number, kind, body| sync.take(guest, { "battle" => kind, "bid" => "w10", "sq" => number.to_s, :payload => body }) }
+numbered.call(1, "ready", "")
+numbered.call(3, "commands", "c3")
+numbered.call(2, "commands", "c2")
+numbered.call(2, "commands", "c2")
+check("numbered messages are taken once and in order",
+      [sync::Channel.take_from("ready", 2), (1..3).map { sync::Channel.take_from("commands", 2) }], ["", ["c2", "c3", nil]])
+guest.away = 900
+$sent.clear
+sync::Channel.post("waiting", "0")
+sync::Channel.post("events", "e1")
+guest.away = nil
+guest.seat = 5
+sync::Sequence.presence(guest, :back)
+asked = $sent.map { |seat, text| [seat, fields_of(text)["battle"], fields_of(text)[:payload]] }
+check("messages to a guest away wait, and the guest back is asked for what they sent after the last taken",
+      asked, [[5, "resync", "3"]])
+$sent.clear
+sync.take(guest, { "battle" => "resync", "bid" => "w10", :payload => "0" })
+check("a guest who asks again gets the messages after the last they took, numbered as before",
+      $sent.map { |seat, text| [seat, fields_of(text)["battle"], fields_of(text)["sq"]] }, [[5, "waiting", "1"], [5, "events", "2"]])
+$frames = 0
+numbered.call(5, "commands", "c5")
+check("a message after one that never came is held", sync::Channel.take_from("commands", 2), nil)
+$frames = 900
+check("until the world's grace ran out, then taken", sync::Channel.take_from("commands", 2), "c5")
+sync.finish
 
 # The host's wait for the commands names who still chooses, and tells the guests, whose boxes
 # name them too.

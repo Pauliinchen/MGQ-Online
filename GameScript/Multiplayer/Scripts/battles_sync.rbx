@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Asked the player before they leave the battle from a wait
+#                            - Numbered the battle's messages and sent those lost over a reconnect again
 #                            - Kept the battle's players by the seats they held at its start, taking one out only once gone
 #      Paulinchen  2026-10-20: Sent the skills a guest chains after an action and chained them on the host
 #      Paulinchen  2026-10-15: Carried a battle the battle server hosts over its battle channel
@@ -449,7 +450,12 @@ module MGQ_MpBattlesSync
 
     # Every player of the battle hears of one who leaves, not only the host who takes them out.
     Departures.left(peer) if kind == "leave"
-    Channel.receive(seat, kind, message[:payload].to_s)
+    return Sequence.resend(seat, message[:payload].to_s) if kind == Sequence::RESYNC_KIND
+
+    number = message[Sequence::NUMBER_FIELD].to_s
+    return Channel.receive(seat, kind, message[:payload].to_s) unless number =~ /\A\d{1,9}\z/
+
+    Sequence.take(seat, number.to_i, kind, message[:payload].to_s)
   end
 
   # Logs a battle message from the world's room that is left untaken, once per kind, reason and
@@ -631,13 +637,16 @@ module MGQ_MpBattlesSync
   # @param kind [String] What it is.
   # @param battle_id [String] The battle's id.
   # @param body [String] The rest.
+  # @param number [Integer, nil] The message's number to that game, see Sequence; nil for none.
   # @return [Boolean] Whether it went out.
-  def self.tell(seat, kind, battle_id, body = "")
+  def self.tell(seat, kind, battle_id, body = "", number = nil)
     if served? && battle_id.to_s == @battle_id.to_s
       return !MGQ_MpBattlesServed.post([host? ? seat : MGQ_MpBattlesServed::SERVER_SEAT], kind, body).empty?
     end
 
-    MGQ_MpOverworldSync.tell(seat, { "battle" => kind, "bid" => battle_id }, body)
+    fields = { "battle" => kind, "bid" => battle_id }
+    fields[Sequence::NUMBER_FIELD] = number if number
+    MGQ_MpOverworldSync.tell(seat, fields, body)
   end
 
   # Ends the battle once the friend is gone: won, or played on by the computer on the host.
@@ -686,6 +695,7 @@ module MGQ_MpBattlesSync
       @messages = []
       @checked = 0
       @gone = false
+      Sequence.reset
     end
 
     # Sends a message: over the world's room to each of the battle's other players, see
@@ -707,11 +717,18 @@ module MGQ_MpBattlesSync
         return !reached.empty?
       end
 
-      # A player away is sent nothing, since their old world seat may be another player's by now.
-      reached = MGQ_MpBattlesSync.player_seats.select do |seat|
-        world = MGQ_MpBattlesSync.world_seat_of(seat)
-        world && MGQ_MpBattlesSync.tell(world, kind, MGQ_MpBattlesSync.battle_id, body)
-      end
+      post_to(MGQ_MpBattlesSync.player_seats, kind, body)
+    end
+
+    # Sends a message over the world's room to some players of the battle, numbered for each (see
+    # Sequence), so a player away gets it once they are back.
+    #
+    # @param seats [Array<Integer>] The seats the battle knows them by.
+    # @param kind [String] What it is.
+    # @param body [String] The rest.
+    # @return [Boolean] Whether it went out to anyone now.
+    def self.post_to(seats, kind, body = "")
+      reached = seats.select { |seat| Sequence.deliver(seat, kind, body) }
       noted_post(kind, body, reached.empty? ? nil : "to #{reached.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
       !reached.empty?
     end
@@ -871,7 +888,7 @@ module MGQ_MpBattlesSync
     def self.poll
       @messages ||= []
       MGQ_MpBattlesServed.drain if MGQ_MpBattlesSync.served?
-      return if MGQ_MpBattlesSync.world?
+      return Sequence.let_gaps_go if MGQ_MpBattlesSync.world?
 
       while (text = MGQ_Multiplayer::Link.next_message)
         kind, body = text.split("\n", 2)
@@ -1194,6 +1211,148 @@ module MGQ_MpBattlesSync
     # @param battler [Game_Battler, nil] The guest's battler of the same place.
     def self.add(name, battler)
       @swaps[name] = battler.name if name.is_a?(String) && !name.empty? && battler && name != battler.name
+    end
+  end
+
+  # Carries a live battle's messages over the world's room across a reconnect, in which messages
+  # may be lost and the relay keeps none. Each message to a player carries its number to them; the
+  # sender keeps the last KEPT_SENDS it sent each player; whoever sees a player of the battle come
+  # back asks them for what came after the last number taken (RESYNC_KIND); the receiver takes
+  # each number once and in order.
+  #
+  # Games of 0.6.8 and before number nothing and ignore the number, so the battle asks no game
+  # again before one of its messages came numbered.
+  module Sequence
+    # The message's field that carries its number.
+    NUMBER_FIELD = "sq"
+
+    # The message that asks a player for what they sent after a number, as its body.
+    RESYNC_KIND = "resync"
+
+    # Messages kept per player to send again, about fifty seconds of the host's stream.
+    KEPT_SENDS = 300
+
+    # Forgets the numbers of an earlier battle.
+    def self.reset
+      @sent = {}
+      @taken = {}
+      @held = {}
+      @held_since = {}
+      @numbering = []
+    end
+
+    # Numbers a message to a player, keeps it, and sends it unless the player is away.
+    #
+    # @param seat [Integer] The seat the battle knows them by.
+    # @param kind [String] What it is.
+    # @param body [String] The rest.
+    # @return [Boolean] Whether it went out now.
+    def self.deliver(seat, kind, body)
+      reset unless @sent
+      counter = @sent[seat] ||= [0, []]
+      counter[0] += 1
+      entry = [counter[0], kind, body]
+      counter[1] << entry
+      counter[1].shift while counter[1].size > KEPT_SENDS
+      transmit(seat, entry)
+    end
+
+    # Sends a kept message to the world seat its player holds now.
+    #
+    # @param seat [Integer] The seat the battle knows them by.
+    # @param entry [Array] The message's number, kind and body.
+    # @return [Boolean] Whether it went out.
+    def self.transmit(seat, entry)
+      world = MGQ_MpBattlesSync.world_seat_of(seat)
+      world ? MGQ_MpBattlesSync.tell(world, entry[1], MGQ_MpBattlesSync.battle_id, entry[2], entry[0]) : false
+    end
+
+    # Takes a numbered message: the next one at once with those held after it, a later one held
+    # until the ones before came, one taken before left out.
+    #
+    # @param seat [Integer] The seat the battle knows the sender by.
+    # @param number [Integer] Its number.
+    # @param kind [String] What it is.
+    # @param body [String] The rest.
+    def self.take(seat, number, kind, body)
+      reset unless @taken
+      @numbering << seat unless @numbering.include?(seat)
+      last = @taken[seat]
+      if last && number <= last
+        return MGQ_MpBattlesSync.log_once([:taken_before, seat, MGQ_MpBattlesSync.battle_id], "left out #{kind[0, 40]} from #{MGQ_MpBattlesSync.who(seat)}, taken before")
+      end
+      if last && number > last + 1
+        (@held[seat] ||= {})[number] = [kind, body]
+        @held_since[seat] ||= Graphics.frame_count
+        return MGQ_MpBattlesSync.log_once([:held, seat, last, MGQ_MpBattlesSync.battle_id], "holds #{kind[0, 40]} from #{MGQ_MpBattlesSync.who(seat)} until those after #{last} came")
+      end
+
+      @taken[seat] = number
+      Channel.receive(seat, kind, body)
+      release(seat)
+    end
+
+    # Hands on the held messages that follow the last one taken from a player.
+    #
+    # @param seat [Integer] The seat the battle knows the sender by.
+    def self.release(seat)
+      held = @held[seat]
+      return unless held
+
+      while (entry = held.delete(@taken[seat] + 1))
+        @taken[seat] += 1
+        Channel.receive(seat, *entry)
+      end
+      @held_since.delete(seat) if held.empty?
+    end
+
+    # Hands on the held messages of a player whose missing ones never came within the world's
+    # grace, so the battle goes on without them.
+    def self.let_gaps_go
+      return unless @held_since
+
+      @held_since.keys.each do |seat|
+        next if Graphics.frame_count - @held_since[seat] < MGQ_MpOverworldSync::REJOIN_FRAMES
+
+        first = @held[seat].keys.min
+        MGQ_MpBattlesSync.log("messages #{@taken[seat] + 1} to #{first - 1} from #{MGQ_MpBattlesSync.who(seat)} never came, going on without them")
+        @taken[seat] = first - 1
+        @held_since.delete(seat)
+        release(seat)
+      end
+    end
+
+    # Asks a player of the battle who came back for what they sent after the last message taken.
+    # Called by overworld_sync.rbx for each change of a player's presence.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
+    # @param change [Symbol] :away, :back, :moved or :gone.
+    def self.presence(peer, change)
+      return unless [:back, :moved].include?(change) && peer.away.nil?
+      return unless MGQ_MpBattlesSync.role && MGQ_MpBattlesSync.world? && !MGQ_MpBattlesSync.served?
+
+      seat = Seats.of_kept(peer)
+      return unless seat && Array(@numbering).include?(seat)
+
+      last = @taken[seat].to_i
+      MGQ_MpBattlesSync.tell(peer.seat, RESYNC_KIND, MGQ_MpBattlesSync.battle_id, last.to_s)
+      MGQ_MpBattlesSync.log("#{MGQ_MpBattlesSync.who(seat)} is back: asked for what they sent after message #{last}")
+    end
+
+    # Sends a player who came back the kept messages after the last one they took, forgetting
+    # those before.
+    #
+    # @param seat [Integer] The seat the battle knows them by.
+    # @param body [String] The number of the last message they took.
+    def self.resend(seat, body)
+      return unless (MGQ_MpBattlesSync.player_seats | MGQ_MpBattlesSync.expected).include?(seat)
+
+      counter = (@sent || {})[seat]
+      return MGQ_MpBattlesSync.log("#{MGQ_MpBattlesSync.who(seat)} asked for messages again, none kept for them") unless counter
+
+      counter[1].reject! { |entry| entry[0] <= body.to_i }
+      sent = counter[1].select { |entry| transmit(seat, entry) }
+      MGQ_MpBattlesSync.log("#{MGQ_MpBattlesSync.who(seat)} asked for what came after message #{body.to_i}: sent #{sent.size} of #{counter[1].size} again")
     end
   end
 
@@ -1795,7 +1954,10 @@ end
 begin
   MGQ_MpOverworldSync.route("battle") { |peer, message| MGQ_MpBattlesSync.take(peer, message) }
   MGQ_MpOverworldSync.on_leave { |peer| MGQ_MpBattlesSync::Departures.gone(peer) }
-  MGQ_MpOverworldSync.on_presence { |peer, change| MGQ_MpBattlesSync::Seats.presence(peer, change) }
+  MGQ_MpOverworldSync.on_presence do |peer, change|
+    MGQ_MpBattlesSync::Seats.presence(peer, change)
+    MGQ_MpBattlesSync::Sequence.presence(peer, change)
+  end
 rescue => e
   MGQ_MpBattlesSync.log("overworld sync FAILED: #{e.class}: #{e.message}")
 end

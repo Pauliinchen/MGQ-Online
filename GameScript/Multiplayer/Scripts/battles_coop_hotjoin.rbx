@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Sent to and found the battle's players by the seats they held at its start
+#                            - Numbered the messages to the players taken in
 #                            - Made added enemies of the kind the troop's battle needs
 #      Paulinchen  2026-10-15: Joined a battle the battle server hosts late through its starter and its channel
 #      Paulinchen  2026-10-12: Took a joining player's party_member_max only as a number
@@ -1335,17 +1336,16 @@ module MGQ_MpBattlesHotjoin
     log("laying a fallen enemy down failed: #{e.class}: #{e.message}")
   end
 
-  # Sends a battle message to some of the battle's players alone.
+  # Sends a battle message to some of the battle's players alone, numbered for each as every message
+  # of the battle (see MGQ_MpBattlesSync::Sequence).
   #
-  # @param seats [Array<Integer>] Their world seats.
+  # @param seats [Array<Integer>] The seats the battle knows them by.
   # @param kind [String] What it is.
   # @param body [String] The rest.
   def self.send_to(seats, kind, body)
     return if seats.empty?
 
-    sync = MGQ_MpBattlesSync
-    seats.each { |seat| (world = sync.world_seat_of(seat)) && sync.tell(world, kind, sync.battle_id, body) }
-    log("sent #{kind} (#{body.size} bytes) to #{seats.map { |seat| sync.who(seat) }.join(', ')}")
+    MGQ_MpBattlesSync::Channel.post_to(seats, kind, body)
   end
 
   # Tells every player taken in who has not joined that it is off, and forgets them.

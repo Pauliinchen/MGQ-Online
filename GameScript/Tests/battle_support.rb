@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Stood in for the confirm box
+#                            - Stood in for the world's grace
 #                            - Stood in for finding a player by id and following presence
 #      Paulinchen  2026-10-20: Stood in for skills chained after an action
 #      Paulinchen  2026-10-12: Stood in for the battle log's popup
@@ -61,6 +62,8 @@ module MGQ_MpOverworld; def self.graphic?(_folder, name); name != "MissingFace";
 # Stands in for the world room: its players, the own state and the link, keeping what is sent in
 # $sent.
 module MGQ_MpOverworldSync
+  # The grace a player away is kept for, as overworld_sync.rbx has it.
+  REJOIN_FRAMES = 900
   def self.in_world?; true; end
   def self.notice(text); Status.notice(text); end
   def self.tell(seat, fields, body = ""); Link.send_to(seat, Me.encode(fields) + body); end
