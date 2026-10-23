@@ -2,7 +2,8 @@
 //  DebrisTypeTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Created
+//      Paulinchen  2026-10-23: Tested the battlefield debris and its type
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -29,11 +30,6 @@ public sealed class DebrisTypeTests
     /// The id of a breakable debris type without cover.
     /// </summary>
     private const string CrystalId = "debris:00000000000000000000000000000002";
-
-    /// <summary>
-    /// The map every test setup fights on.
-    /// </summary>
-    private const int MapId = 88;
 
     /// <summary>
     /// Gets the look of the crystal type.
@@ -72,42 +68,41 @@ public sealed class DebrisTypeTests
     }
 
     /// <summary>
-    /// A battle starts with the game rule's start debris in the standard type, unless its boss has
-    /// start debris of its own, which comes in the boss's type.
+    /// A battle starts with no debris until its raid's battlefield turns it on; then the density
+    /// gives the cells, in the battlefield's debris type.
     /// </summary>
     [Fact]
-    public void BossStartDebrisReplacesTheGameRules()
+    public void StartsWithTheBattlefieldDebris()
     {
-        RuntimeDesign ruled = Design();
-        ruled = ruled with { Rules = ruled.Rules with { Debris = ruled.Rules.Debris with { Start = new RandomDebris(10000, 2, 2, CrystalId) } } };
-        RuntimeBoss boss = ruled.Bosses[SimFixtures.BossKey];
-        RuntimeDesign own = ruled with
+        RuntimeDesign none = Design();
+        RuntimeBoss boss = none.Bosses[SimFixtures.BossKey];
+        RuntimeDesign on = none with
         {
-            Bosses = new Dictionary<string, RuntimeBoss> { [SimFixtures.BossKey] = boss with { StartDebris = new RandomDebris(10000, 5, 5, CrystalId) } },
+            Bosses = new Dictionary<string, RuntimeBoss> { [SimFixtures.BossKey] = boss with { Battlefield = new Battlefield(new BattlefieldDebris(500, CrystalId)) } },
         };
 
-        BattleState ruledBattle = new BattleSimulator(ruled).Start(SimFixtures.Setup());
-        BattleState ownBattle = new BattleSimulator(own).Start(SimFixtures.Setup());
+        BattleState plain = new BattleSimulator(none).Start(SimFixtures.Setup());
+        BattleState placed = new BattleSimulator(on).Start(SimFixtures.Setup());
 
-        Assert.Equal(2, ruledBattle.Debris.Count);
-        Assert.All(ruledBattle.Debris.Cells, debris => Assert.Equal((RockId, true), (debris.Type, debris.Cover)));
-        Assert.Equal(5, ownBattle.Debris.Count);
-        Assert.All(ownBattle.Debris.Cells, debris => Assert.Equal((CrystalId, 3, false), (debris.Type, debris.Hits, debris.Cover)));
+        Assert.Equal(0, plain.Debris.Count);
+        Assert.Equal(5, placed.Debris.Count);
+        Assert.All(placed.Debris.Cells, debris => Assert.Equal((CrystalId, 3, false), (debris.Type, debris.Hits, debris.Cover)));
     }
 
     /// <summary>
-    /// The battle map's type replaces the standard one, and an own type wins over both.
+    /// Debris without a type of its own takes the raid's battlefield type, else the map's own debris.
     /// </summary>
     [Fact]
-    public void MapTypeReplacesTheStandard()
+    public void TakesTheBattlefieldType()
     {
         RuntimeDesign design = Design();
-        RuntimeDesign mapped = design with { Maps = new Dictionary<int, RuntimeMap>(design.Maps) { [MapId] = design.Maps[MapId] with { DebrisType = CrystalId } } };
+        RuntimeBoss boss = design.Bosses[SimFixtures.BossKey];
+        RuntimeBoss typed = boss with { Battlefield = new Battlefield(new BattlefieldDebris(0, CrystalId)) };
 
-        Assert.Equal(RockId, DebrisTypes.For(design, MapId).Type);
-        Assert.Equal(CrystalId, DebrisTypes.For(mapped, MapId).Type);
-        Assert.Equal(RockId, DebrisTypes.For(mapped, MapId, RockId).Type);
-        Assert.Equal(DebrisStyle.Plain, DebrisTypes.For(mapped, MapId, "debris:unknown"));
+        Assert.Equal(DebrisStyle.Plain, DebrisTypes.For(design, boss));
+        Assert.Equal(CrystalId, DebrisTypes.For(design, typed).Type);
+        Assert.Equal(RockId, DebrisTypes.For(design, typed, RockId).Type);
+        Assert.Equal(DebrisStyle.Plain, DebrisTypes.For(design, typed, "debris:unknown"));
     }
 
     /// <summary>
@@ -134,7 +129,6 @@ public sealed class DebrisTypeTests
         RuntimeDesign design = SimFixtures.Design([SimFixtures.Action("strike", SimFixtures.Strike)], [SimFixtures.Skill(SimFixtures.Strike)]);
         return design with
         {
-            Rules = design.Rules with { Debris = design.Rules.Debris with { Standard = RockId } },
             DebrisTypes = new Dictionary<string, RuntimeDebrisType>
             {
                 [RockId] = new("Rock", 0),

@@ -2,7 +2,8 @@
 //  DebrisLayout.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Rolled the debris in a debris style
+//      Paulinchen  2026-10-23: Took in the random debris amount from the model
+//                            - Rolled the debris in a debris style
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -96,4 +97,19 @@ public static class DebrisLayout
         ArgumentNullException.ThrowIfNull(amount);
         return amount.ChanceBasisPoints <= 0 || (amount.Max <= 0 && amount.Min <= 0);
     }
+}
+
+/// <summary>
+/// An amount of random debris to place: a chance, the fewest and most cells, and the type.
+/// </summary>
+/// <param name="ChanceBasisPoints">The chance out of 10,000.</param>
+/// <param name="Min">The fewest debris cells.</param>
+/// <param name="Max">The most debris cells.</param>
+/// <param name="Type">The debris type id, or null for the fight's battlefield type or the map's own debris.</param>
+public sealed record RandomDebris(int ChanceBasisPoints, int Min, int Max, string? Type = null)
+{
+    /// <summary>
+    /// Gets random debris that never comes.
+    /// </summary>
+    public static RandomDebris None { get; } = new(0, 0, 0);
 }

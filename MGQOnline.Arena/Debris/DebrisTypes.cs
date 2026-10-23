@@ -2,7 +2,8 @@
 //  DebrisTypes.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Created
+//      Paulinchen  2026-10-23: Took the raid's battlefield debris type in place of the map's and the standard one
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -35,21 +36,22 @@ public sealed record DebrisStyle(string? Type, int Hits, bool Cover, DebrisLook?
 }
 
 /// <summary>
-/// Resolves which debris type new debris takes: its own, else its battle map's, else the game rule's standard one.
+/// Resolves which debris type new debris takes: its own, else its raid's battlefield debris type,
+/// else the battle map's own debris.
 /// </summary>
 public static class DebrisTypes
 {
     /// <summary>
-    /// Resolves the style of debris on a battle map.
+    /// Resolves the style of debris in a fight.
     /// </summary>
     /// <param name="design">The design.</param>
-    /// <param name="mapId">The battle map's id.</param>
-    /// <param name="own">The skill's, effect's or boss's own type id, or null.</param>
+    /// <param name="boss">The fight, whose battlefield names its raid's debris type; null for none.</param>
+    /// <param name="own">The skill's or effect's own type id, or null.</param>
     /// <returns>The style; the plain one for an unknown or missing type.</returns>
-    public static DebrisStyle For(RuntimeDesign design, int mapId, string? own = null)
+    public static DebrisStyle For(RuntimeDesign design, RuntimeBoss? boss, string? own = null)
     {
         ArgumentNullException.ThrowIfNull(design);
-        return Resolve(design.DebrisTypes, own, design.Maps.GetValueOrDefault(mapId)?.DebrisType, design.Rules.Debris.Standard);
+        return Resolve(design.DebrisTypes, own, boss?.Battlefield?.Debris?.Type);
     }
 
     /// <summary>
@@ -57,12 +59,11 @@ public static class DebrisTypes
     /// </summary>
     /// <param name="types">The design's debris types, or null for none.</param>
     /// <param name="own">The own type id, or null.</param>
-    /// <param name="map">The battle map's type id, or null.</param>
-    /// <param name="standard">The game rule's standard type id, or null.</param>
+    /// <param name="battlefield">The raid's battlefield debris type id, or null.</param>
     /// <returns>The style; the plain one when the id that applies is unknown or none is set.</returns>
-    public static DebrisStyle Resolve(IReadOnlyDictionary<string, RuntimeDebrisType>? types, string? own, string? map, string? standard)
+    public static DebrisStyle Resolve(IReadOnlyDictionary<string, RuntimeDebrisType>? types, string? own, string? battlefield)
     {
-        string? id = own ?? map ?? standard;
+        string? id = own ?? battlefield;
         return id is not null && types?.GetValueOrDefault(id) is RuntimeDebrisType type
             ? new DebrisStyle(id, Math.Max(type.Hits, 0), type.Cover, type.Look)
             : DebrisStyle.Plain;

@@ -2,7 +2,8 @@
 //  RuntimeTier.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Moved the random debris to the game rule and the bosses and gave it a debris type
+//      Paulinchen  2026-10-23: Dropped the tier's start hazards
+//                            - Moved the random debris to the game rule and the bosses and gave it a debris type
 //      Paulinchen  2026-10-22: Added the random hazards
 //                            - Added the normal attacks per turn
 //      Paulinchen  2026-10-21: Created
@@ -25,7 +26,6 @@ namespace MGQOnline.Arena.Model;
 /// <param name="Traits">Its own traits, for reference; each boss's block already holds them merged.</param>
 /// <param name="Tier">The tier, or null for bosses without one.</param>
 /// <param name="NormalAttacks">The most normal attacks each enemy rolls per turn; the points left are banked.</param>
-/// <param name="Hazards">The hazards its battles may start with at random, or null for none.</param>
 public sealed record RuntimeTier(
     GridSize Grid,
     StatFactors Stats,
@@ -35,8 +35,7 @@ public sealed record RuntimeTier(
     IReadOnlyDictionary<int, double> StateRates,
     TraitBlock Traits,
     int? Tier = null,
-    int NormalAttacks = 1,
-    IReadOnlyList<RandomHazards>? Hazards = null);
+    int NormalAttacks = 1);
 
 /// <summary>
 /// The factors on an enemy's stats.
@@ -57,17 +56,3 @@ public sealed record StatFactors(double Mhp, double Mmp, double Atk, double Def,
     public static StatFactors One { get; } = new(1, 1, 1, 1, 1, 1, 1, 1);
 }
 
-/// <summary>
-/// The random debris a battle may start with.
-/// </summary>
-/// <param name="ChanceBasisPoints">The chance per battle out of 10,000.</param>
-/// <param name="Min">The fewest debris cells.</param>
-/// <param name="Max">The most debris cells.</param>
-/// <param name="Type">The debris type id, or null for the battle map's or the standard one.</param>
-public sealed record RandomDebris(int ChanceBasisPoints, int Min, int Max, string? Type = null)
-{
-    /// <summary>
-    /// Gets random debris that never comes.
-    /// </summary>
-    public static RandomDebris None { get; } = new(0, 0, 0);
-}

@@ -2,7 +2,8 @@
 //  RuntimeDesign.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Dropped the troops of the catalog and the boss fight overrides
+//      Paulinchen  2026-10-23: Dropped the battle map's debris type and start hazards
+//                            - Dropped the troops of the catalog and the boss fight overrides
 //                            - Added the debris types and the debris type of a map
 //      Paulinchen  2026-10-22: Added the hazard types and the hazards of a map
 //      Paulinchen  2026-10-21: Created
@@ -97,19 +98,13 @@ public sealed record RuntimeState(
 /// <param name="Tileset">The battle tileset, or null when unknown.</param>
 /// <param name="Floor">The floor tile, or null when unknown.</param>
 /// <param name="DebrisTile">The debris tile, or null when unknown.</param>
-/// <param name="DebrisType">The debris type of the debris on it, or null for the game rule's standard type.</param>
-/// <param name="Hazards">The hazards every battle on it starts with on fixed cells, or null for none.</param>
-/// <param name="RandomHazards">The hazards its battles may start with at random, after the tier's; null for none.</param>
 public sealed record RuntimeMap(
     bool FloorIsFallback,
     bool DebrisTileIsFallback,
     IReadOnlyList<string> Bosses,
     int? Tileset = null,
     TileRef? Floor = null,
-    TileRef? DebrisTile = null,
-    string? DebrisType = null,
-    IReadOnlyList<FixedHazard>? Hazards = null,
-    IReadOnlyList<RandomHazards>? RandomHazards = null);
+    TileRef? DebrisTile = null);
 
 /// <summary>
 /// A debris type: how its debris breaks, whether it gives cover, and how it looks.

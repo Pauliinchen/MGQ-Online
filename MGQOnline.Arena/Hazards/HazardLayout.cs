@@ -2,6 +2,7 @@
 //  HazardLayout.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Took in the random hazards amount from the model
 //      Paulinchen  2026-10-22: Created
 //
 //----------------------------------------------------------------
@@ -140,3 +141,12 @@ public static class HazardLayout
         }
     }
 }
+
+/// <summary>
+/// An amount of random hazards to place: a chance and the fewest and most cells of one type.
+/// </summary>
+/// <param name="Hazard">The hazard id.</param>
+/// <param name="ChanceBasisPoints">The chance out of 10,000.</param>
+/// <param name="Min">The fewest cells.</param>
+/// <param name="Max">The most cells.</param>
+public sealed record RandomHazards(string Hazard, int ChanceBasisPoints, int Min, int Max);

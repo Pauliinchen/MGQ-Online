@@ -2,7 +2,8 @@
 //  RuntimeBoss.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Added the fight's raid and the other event battles that start it
+//      Paulinchen  2026-10-23: Replaced the start debris with the raid's battlefield
+//                            - Added the fight's raid and the other event battles that start it
 //                            - Fought one event battle with its starting enemies and a reserve in place of the troop phases
 //                            - Gave every enemy of a fight its own slot with its own action list
 //                            - Added the boss's start debris
@@ -40,7 +41,7 @@ namespace MGQOnline.Arena.Model;
 /// <param name="Tier">The tier, or null for none.</param>
 /// <param name="NormalAttacks">The most normal attacks each enemy rolls per turn, or null for its tier's.</param>
 /// <param name="Reserve">The slots a rule may only bring in by a join or a transform, or null for none.</param>
-/// <param name="StartDebris">The random debris its battles start with, resolved over the game rule's, its type the boss's own; null for the game rule's.</param>
+/// <param name="Battlefield">The debris and hazards its battles start with, its raid's; null for none.</param>
 /// <param name="Raid">The raid the fight is a tab of, or null for an older build's boss.</param>
 /// <param name="AlsoAt">The other event battles that start the fight, or null for none.</param>
 public sealed record RuntimeBoss(
@@ -64,7 +65,7 @@ public sealed record RuntimeBoss(
     int? Tier = null,
     int? NormalAttacks = null,
     IReadOnlyList<ReserveEnemy>? Reserve = null,
-    RandomDebris? StartDebris = null,
+    Battlefield? Battlefield = null,
     RuntimeRaid? Raid = null,
     IReadOnlyList<BattleUse>? AlsoAt = null);
 

@@ -2,7 +2,8 @@
 //  BattleSimulator.Hazards.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Left out the hazard effects that change the boss's damage reductions
+//      Paulinchen  2026-10-23: Placed the raid's battlefield hazards at battle start
+//                            - Left out the hazard effects that change the boss's damage reductions
 //                            - Left out the hazard effects that change the fight's enemies
 //      Paulinchen  2026-10-22: Created
 //
@@ -17,6 +18,7 @@ using MGQOnline.Arena.Events;
 using MGQOnline.Arena.Grids;
 using MGQOnline.Arena.Hazards;
 using MGQOnline.Arena.Model;
+using MGQOnline.Arena.Numerics;
 using MGQOnline.Arena.Randomness;
 
 namespace MGQOnline.Arena.Simulation;
@@ -48,20 +50,22 @@ public sealed partial class BattleSimulator
     private IReadOnlyList<DebrisPulse> _resolvingLanding = [];
 
     /// <summary>
-    /// Places the hazards a battle starts with: the map's fixed cells, then the tier's random hazards,
-    /// then the map's; random hazards keep off the units, the debris and older hazards.
+    /// Places the hazards a battle starts with: its raid's battlefield hazards, the cells of the
+    /// density split evenly between the types, each type on random cells off the units, the debris
+    /// and the hazards placed before it.
     /// </summary>
-    /// <param name="state">The battle, its units and random debris placed.</param>
+    /// <param name="state">The battle, its units and start debris placed.</param>
     private void PlaceStartHazards(BattleState state)
     {
-        RuntimeMap? map = Design.Maps.GetValueOrDefault(state.Setup.MapId);
-        foreach (IGrouping<string, FixedHazard> group in (map?.Hazards ?? []).GroupBy(placed => placed.Hazard, StringComparer.Ordinal))
+        if (state.Boss.Battlefield?.Hazards is not { DensityBasisPoints: > 0, Types.Count: > 0 } hazards)
         {
-            PlaceHazardCells(state, group.Key, [.. group.Select(placed => placed.Cell)], null, null, null, null);
+            return;
         }
 
-        foreach (RandomHazards amount in (state.Tier.Hazards ?? []).Concat(map?.RandomHazards ?? []))
+        IReadOnlyList<int> shares = Battlefield.Split(Battlefield.CellsOf(state.Grid, hazards.DensityBasisPoints), hazards.Types.Count);
+        for (int index = 0; index < hazards.Types.Count; index++)
         {
+            RandomHazards amount = new(hazards.Types[index], BasisPoints.Whole, shares[index], shares[index]);
             if (HazardLayout.IsNone(amount))
             {
                 continue;

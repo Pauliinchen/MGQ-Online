@@ -2,6 +2,7 @@
 //  HazardReferenceTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Started the reference battle with battlefield hazards instead of the tier's and the map's
 //      Paulinchen  2026-10-22: Created
 //
 //----------------------------------------------------------------
@@ -28,7 +29,7 @@ public sealed class HazardReferenceTests
     /// <summary>
     /// The golden hash of the hazard reference battle's log.
     /// </summary>
-    private const string GoldenLogSha256 = "3008288c6b077081788bac20b2b1a4f9215a38364507885fe95f233fc2eacfe4";
+    private const string GoldenLogSha256 = "3e4c903c63fa36f5b1b44d50b86a07b54dc375bf718c3d3d034d045193504c47";
 
     /// <summary>
     /// The burning hazard's id.
@@ -126,13 +127,9 @@ public sealed class HazardReferenceTests
             "ice-trail",
             new CastResolvedTrigger(SimFixtures.Stigmata),
             [new PlaceHazardEffect(new HazardPlacement(IceId, 2500, HazardPlace.HitCells, Turns: 2))]);
-        RuntimeTier tier = reference.Tiers[SimFixtures.TierNumber];
-        RuntimeMap map = reference.Maps[88];
         return reference with
         {
             Hazards = new Dictionary<string, RuntimeHazard> { [FireId] = fire, [IceId] = ice },
-            Tiers = new Dictionary<int, RuntimeTier> { [SimFixtures.TierNumber] = tier with { Hazards = [new RandomHazards(IceId, 10000, 2, 4)] } },
-            Maps = new Dictionary<int, RuntimeMap>(reference.Maps) { [88] = map with { Hazards = [new FixedHazard(FireId, new GridCell(7, 2))] } },
             Bosses = new Dictionary<string, RuntimeBoss>
             {
                 [SimFixtures.BossKey] = boss with
@@ -142,6 +139,7 @@ public sealed class HazardReferenceTests
                         [SimFixtures.Strike.Key] = boss.Skills[SimFixtures.Strike.Key] with { Hazard = new HazardPlacement(FireId, 7500, HazardPlace.RandomInArea, 2) },
                     },
                     Rules = [.. boss.Rules, leavesIce],
+                    Battlefield = new Battlefield(Hazards: new BattlefieldHazards(500, [FireId, IceId])),
                 },
             },
         };

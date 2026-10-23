@@ -2,7 +2,8 @@
 //  GameRules.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Named the standard start debris and the standard debris type
+//      Paulinchen  2026-10-23: Dropped the start debris and the standard debris type
+//                            - Named the standard start debris and the standard debris type
 //      Paulinchen  2026-10-22: Added the switch that lets a full bank pay to skip a rest
 //                            - Added the game rule's normal attacks per turn
 //      Paulinchen  2026-10-21: Created
@@ -161,9 +162,7 @@ public sealed record CrowdControlRules(
 /// <param name="FreeCellsPerCharacter">The free cells kept per character.</param>
 /// <param name="FallbackFloor">The floor tile without one of the map's.</param>
 /// <param name="FallbackDebris">The debris tile without one of the map's.</param>
-/// <param name="Start">The random debris a battle starts with where its boss sets none; its type is not read.</param>
-/// <param name="Standard">The debris type id of debris without its own type or its map's, or null for plain debris.</param>
-public sealed record DebrisRules(int FreeCellsPerCharacter, TileRef FallbackFloor, TileRef FallbackDebris, RandomDebris Start, string? Standard = null);
+public sealed record DebrisRules(int FreeCellsPerCharacter, TileRef FallbackFloor, TileRef FallbackDebris);
 
 /// <summary>
 /// The presentation defaults.

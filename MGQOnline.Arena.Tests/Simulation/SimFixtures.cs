@@ -2,7 +2,8 @@
 //  SimFixtures.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Left the samples' raid and refight out
+//      Paulinchen  2026-10-23: Left the battlefield empty
+//                            - Left the samples' raid and refight out
 //                            - Fought the test boss in an event battle with one enemy slot and without a reserve
 //                            - Left the samples' debris types and start debris out
 //      Paulinchen  2026-10-22: Left the samples' hazards out
@@ -170,7 +171,6 @@ internal static class SimFixtures
             Traits = TraitBlock.Empty,
             Tier = TierNumber,
             NormalAttacks = normalAttacks,
-            Hazards = null,
         };
         RuntimeBoss boss = Samples.Boss with
         {
@@ -185,19 +185,18 @@ internal static class SimFixtures
             Rules = rules ?? [],
             MarkReactions = [],
             Tier = TierNumber,
-            StartDebris = null,
+            Battlefield = null,
             Raid = null,
             AlsoAt = null,
         };
         GameRules gameRules = Samples.GameRules with
         {
             Ap = Samples.GameRules.Ap with { BankTurns = bankTurns, NormalAttackWeight = attackWeight },
-            Debris = Samples.GameRules.Debris with { Start = RandomDebris.None, Standard = null },
         };
         return Samples.Design with
         {
             Rules = gameRules,
-            Maps = Samples.Design.Maps.ToDictionary(map => map.Key, map => map.Value with { Hazards = null, RandomHazards = null, DebrisType = null }),
+            Maps = Samples.Design.Maps,
             Hazards = null,
             DebrisTypes = null,
             Tiers = new Dictionary<int, RuntimeTier> { [TierNumber] = tier },

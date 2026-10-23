@@ -2,7 +2,8 @@
 //  HazardTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Keyed the actions by enemy slot
+//      Paulinchen  2026-10-23: Tested the battlefield hazards and put test hazards on cells after the start
+//                            - Keyed the actions by enemy slot
 //                            - Took the random debris from the game rule
 //      Paulinchen  2026-10-22: Created
 //
@@ -12,6 +13,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MGQOnline.Arena.Events;
 using MGQOnline.Arena.Grids;
+using MGQOnline.Arena.Hazards;
 using MGQOnline.Arena.Model;
 using MGQOnline.Arena.Simulation;
 
@@ -34,31 +36,22 @@ public sealed class HazardTests
     private const string IceId = "ice";
 
     /// <summary>
-    /// The map every test setup fights on.
-    /// </summary>
-    private const int MapId = 88;
-
-    /// <summary>
-    /// A battle starts with the map's fixed hazards, then the tier's and the map's random hazards, the
-    /// random ones off the units and older hazards.
+    /// A battle starts with its raid's battlefield hazards: the cells of the density split evenly
+    /// between the types, the first type taking the one left over, off the units and the debris.
     /// </summary>
     [Fact]
-    public void StartsWithTheFixedAndRandomHazards()
+    public void StartsWithTheBattlefieldHazards()
     {
-        RuntimeDesign design = Design(Hazard(FireId, [HazardTrigger.StepsOnto]), [new FixedHazard(FireId, new GridCell(7, 2))]);
-        design = design with
-        {
-            Tiers = new Dictionary<int, RuntimeTier> { [SimFixtures.TierNumber] = design.Tiers[SimFixtures.TierNumber] with { Hazards = [new RandomHazards(FireId, 10000, 3, 3)] } },
-            Maps = new Dictionary<int, RuntimeMap> { [MapId] = design.Maps[MapId] with { RandomHazards = [new RandomHazards(FireId, 10000, 2, 2)] } },
-        };
+        RuntimeDesign design = Design(Hazard(FireId, [HazardTrigger.StepsOnto]), battlefield: new Battlefield(new BattlefieldDebris(1000), new BattlefieldHazards(1000, [FireId, IceId])));
+        design = design with { Hazards = new Dictionary<string, RuntimeHazard>(design.Hazards!) { [IceId] = Hazard(IceId, [HazardTrigger.StepsOnto]) } };
 
-        BattleState state = SimFixtures.Simulator(design).Start(SimFixtures.Setup());
+        BattleState state = new BattleSimulator(design).Start(SimFixtures.Setup());
 
         List<HazardPlacedEvent> placed = [.. state.Log.OfType<HazardPlacedEvent>()];
-        Assert.Equal([1, 3, 2], placed.Select(each => each.Cells.Count));
-        Assert.Equal(new GridCell(7, 2), placed[0].Cells.Single());
-        Assert.Equal(6, state.Hazards.Count);
+        Assert.Equal([(FireId, 5), (IceId, 4)], placed.Select(each => (each.Hazard, each.Cells.Count)));
+        Assert.Equal(9, state.Debris.Cells.Count);
         Assert.DoesNotContain(state.Units, unit => state.Hazards.Contains(unit.Cell));
+        Assert.DoesNotContain(state.Hazards.Cells, hazard => state.DebrisAt(hazard.Cell));
         Assert.True(state.Log.IndexOf(placed[^1]) < state.Log.FindIndex(battleEvent => battleEvent is BattleStartEvent));
     }
 
@@ -69,8 +62,8 @@ public sealed class HazardTests
     [Fact]
     public void FiresAStepOnceATurnPerHazardType()
     {
-        BattleSimulator simulator = SimFixtures.Simulator(Design(Hazard(FireId, [HazardTrigger.StepsOnto]), [new FixedHazard(FireId, new GridCell(1, 1)), new FixedHazard(FireId, new GridCell(2, 1))]));
-        BattleState state = simulator.Start(SimFixtures.Setup(1));
+        BattleSimulator simulator = SimFixtures.Simulator(Design(Hazard(FireId, [HazardTrigger.StepsOnto])));
+        BattleState state = Start(simulator, SimFixtures.Setup(1), (FireId, new GridCell(1, 1)), (FireId, new GridCell(2, 1)));
 
         simulator.Plan(state);
         TurnResult first = simulator.Resolve(state, new PartyTurn([new UnitMove(0, new GridCell(1, 1)), new UnitMove(0, new GridCell(2, 1))], []));
@@ -91,8 +84,8 @@ public sealed class HazardTests
     [Fact]
     public void FiresAtTheTurnStartAndEnd()
     {
-        BattleSimulator simulator = SimFixtures.Simulator(Design(Hazard(FireId, [HazardTrigger.StartsTurnOn, HazardTrigger.EndsTurnOn]), [new FixedHazard(FireId, new GridCell(0, 0))]));
-        BattleState state = simulator.Start(SimFixtures.Setup(2));
+        BattleSimulator simulator = SimFixtures.Simulator(Design(Hazard(FireId, [HazardTrigger.StartsTurnOn, HazardTrigger.EndsTurnOn])));
+        BattleState state = Start(simulator, SimFixtures.Setup(2), (FireId, new GridCell(0, 0)));
 
         simulator.Plan(state);
         Assert.Equal(900, state.Units[0].Hp);
@@ -109,8 +102,8 @@ public sealed class HazardTests
     [Fact]
     public void GoesAfterItsFires()
     {
-        BattleSimulator simulator = SimFixtures.Simulator(Design(Hazard(FireId, [HazardTrigger.StartsTurnOn], fires: 2), [new FixedHazard(FireId, new GridCell(0, 0))]));
-        BattleState state = simulator.Start(SimFixtures.Setup(1));
+        BattleSimulator simulator = SimFixtures.Simulator(Design(Hazard(FireId, [HazardTrigger.StartsTurnOn], fires: 2)));
+        BattleState state = Start(simulator, SimFixtures.Setup(1), (FireId, new GridCell(0, 0)));
 
         List<TurnResult> turns = SimFixtures.Play(simulator, state, 3);
 
@@ -127,11 +120,10 @@ public sealed class HazardTests
     [Fact]
     public void GoesWhenItsTurnsRunOut()
     {
-        RuntimeDesign design = Design(Hazard(FireId, [HazardTrigger.StepsOnto], turns: 2), [new FixedHazard(FireId, new GridCell(5, 5))]);
+        RuntimeDesign design = Design(Hazard(FireId, [HazardTrigger.StepsOnto], turns: 2));
         design = design with { Hazards = new Dictionary<string, RuntimeHazard>(design.Hazards!) { [IceId] = Hazard(IceId, [HazardTrigger.StepsOnto]) } };
-        design = design with { Maps = new Dictionary<int, RuntimeMap> { [MapId] = design.Maps[MapId] with { Hazards = [new FixedHazard(FireId, new GridCell(5, 5)), new FixedHazard(IceId, new GridCell(6, 5))] } } };
         BattleSimulator simulator = SimFixtures.Simulator(design);
-        BattleState state = simulator.Start(SimFixtures.Setup(1));
+        BattleState state = Start(simulator, SimFixtures.Setup(1), (FireId, new GridCell(5, 5)), (IceId, new GridCell(6, 5)));
 
         List<TurnResult> turns = SimFixtures.Play(simulator, state, 3);
 
@@ -174,10 +166,10 @@ public sealed class HazardTests
     public void PlacesByARuleAndReplacesTheOlderHazard()
     {
         RuleSpec rule = SimFixtures.Rule("spread", PresetKind.Advanced, "spread", new TurnStartTrigger(), [new PlaceHazardEffect(new HazardPlacement(IceId, 10000, HazardPlace.RandomInArea, 90))]);
-        RuntimeDesign design = Design(Hazard(FireId, [HazardTrigger.StepsOnto]), [new FixedHazard(FireId, new GridCell(3, 3))], [rule]);
+        RuntimeDesign design = Design(Hazard(FireId, [HazardTrigger.StepsOnto]), [rule]);
         design = design with { Hazards = new Dictionary<string, RuntimeHazard>(design.Hazards!) { [IceId] = Hazard(IceId, [HazardTrigger.StepsOnto]) } };
         BattleSimulator simulator = SimFixtures.Simulator(design);
-        BattleState state = simulator.Start(SimFixtures.Setup(1));
+        BattleState state = Start(simulator, SimFixtures.Setup(1), (FireId, new GridCell(3, 3)));
 
         simulator.Plan(state);
 
@@ -189,17 +181,16 @@ public sealed class HazardTests
     }
 
     /// <summary>
-    /// Hazards never lie on debris: the start's fixed hazards skip the random debris, and debris a
-    /// skill leaves takes the hazards off its cells.
+    /// Hazards never lie on debris: the battle start's hazards skip its debris, and debris a skill
+    /// leaves takes the hazards off its cells.
     /// </summary>
     [Fact]
     public void NeverLiesOnDebris()
     {
         RuntimeSkill strike = SimFixtures.Skill(SimFixtures.Strike) with { Debris = new SkillDebrisSpec(DebrisPlace.HitCells, 0) };
-        RuntimeDesign design = Design(Hazard(FireId, [HazardTrigger.StepsOnto]), [.. Grid.AllCells(new GridSize(15, 6)).Select(cell => new FixedHazard(FireId, cell))]);
+        RuntimeDesign design = Design(Hazard(FireId, [HazardTrigger.StepsOnto]), battlefield: new Battlefield(new BattlefieldDebris(1000)));
         design = design with
         {
-            Rules = design.Rules with { Debris = design.Rules.Debris with { Start = new RandomDebris(10000, 10, 10) } },
             Bosses = new Dictionary<string, RuntimeBoss>
             {
                 [SimFixtures.BossKey] = design.Bosses[SimFixtures.BossKey] with
@@ -210,9 +201,9 @@ public sealed class HazardTests
             },
         };
         BattleSimulator simulator = new(design);
-        BattleState state = simulator.Start(SimFixtures.Setup(1));
+        BattleState state = Start(simulator, SimFixtures.Setup(1), [.. Grid.AllCells(new GridSize(15, 6)).Select(cell => (FireId, cell))]);
 
-        Assert.Equal(80, state.Hazards.Count);
+        Assert.Equal(81, state.Hazards.Count);
         Assert.DoesNotContain(state.Hazards.Cells, hazard => state.DebrisAt(hazard.Cell));
         TurnResult turn = SimFixtures.Play(simulator, state, 1).Single();
 
@@ -232,8 +223,8 @@ public sealed class HazardTests
         {
             Effects = [new DamageEffect(RuleTarget.Boss, 50), new ApDeltaEffect(3, ApTurn.This), new DamageEffect(RuleTarget.TriggerUnit, 10)],
         };
-        BattleSimulator simulator = SimFixtures.Simulator(Design(hazard, [new FixedHazard(FireId, new GridCell(0, 0))]));
-        BattleState state = simulator.Start(SimFixtures.Setup(1));
+        BattleSimulator simulator = SimFixtures.Simulator(Design(hazard));
+        BattleState state = Start(simulator, SimFixtures.Setup(1), (FireId, new GridCell(0, 0)));
 
         simulator.Plan(state);
 
@@ -253,7 +244,7 @@ public sealed class HazardTests
         {
             Effects = [new UseSkillEffect(SimFixtures.Strike, true, false, CastTiming.PlanNow, CastSide.Own, CastAim.TriggerUnit)],
         };
-        RuntimeDesign design = Design(hazard, [new FixedHazard(FireId, new GridCell(2, 0))]);
+        RuntimeDesign design = Design(hazard);
         design = design with
         {
             Bosses = new Dictionary<string, RuntimeBoss>
@@ -265,7 +256,7 @@ public sealed class HazardTests
             },
         };
         BattleSimulator simulator = SimFixtures.Simulator(design);
-        BattleState state = simulator.Start(SimFixtures.Setup(3));
+        BattleState state = Start(simulator, SimFixtures.Setup(3), (FireId, new GridCell(2, 0)));
 
         TurnPlan plan = simulator.Plan(state);
 
@@ -274,21 +265,20 @@ public sealed class HazardTests
     }
 
     /// <summary>
-    /// Hazards that fell the last unit at the turn start end the battle with an empty plan, and the
-    /// turn resolves to that.
+    /// Hazards that fell the last unit at the turn start end the battle with an empty plan.
     /// </summary>
     [Fact]
     public void EndsTheBattleAtTheTurnStart()
     {
         RuntimeHazard hazard = Hazard(FireId, [HazardTrigger.StartsTurnOn]) with { Effects = [new DamageEffect(RuleTarget.TriggerUnit, 100)] };
-        BattleSimulator simulator = SimFixtures.Simulator(Design(hazard, [new FixedHazard(FireId, new GridCell(0, 0))]));
+        BattleSimulator simulator = SimFixtures.Simulator(Design(hazard));
+        BattleState state = Start(simulator, SimFixtures.Setup(1), (FireId, new GridCell(0, 0)));
 
-        SimulationReport report = SimulationRunner.Run(simulator, SimFixtures.Setup(1), 3, PartyPolicies.Stay);
+        TurnPlan plan = simulator.Plan(state);
 
-        Assert.Equal(BattlePhase.Lost, report.Outcome);
-        TurnReport turn = Assert.Single(report.Turns);
-        Assert.Empty(turn.Plan);
-        Assert.Contains(report.Log, battleEvent => battleEvent is UnitFellEvent { Seat: 0 });
+        Assert.Equal(BattlePhase.Lost, state.Phase);
+        Assert.Empty(plan.Entries);
+        Assert.Contains(state.Log, battleEvent => battleEvent is UnitFellEvent { Seat: 0 });
     }
 
     /// <summary>
@@ -297,11 +287,7 @@ public sealed class HazardTests
     [Fact]
     public void PlaysTheSameHazardsForTheSameSeed()
     {
-        RuntimeDesign design = Design(Hazard(FireId, [HazardTrigger.StepsOnto, HazardTrigger.EndsTurnOn]), []);
-        design = design with
-        {
-            Tiers = new Dictionary<int, RuntimeTier> { [SimFixtures.TierNumber] = design.Tiers[SimFixtures.TierNumber] with { Hazards = [new RandomHazards(FireId, 10000, 10, 20)] } },
-        };
+        RuntimeDesign design = Design(Hazard(FireId, [HazardTrigger.StepsOnto, HazardTrigger.EndsTurnOn]), battlefield: new Battlefield(Hazards: new BattlefieldHazards(2000, [FireId])));
 
         string first = Run(design, 42);
 
@@ -330,19 +316,35 @@ public sealed class HazardTests
         new(id, id, triggers, [new DamageEffect(RuleTarget.TriggerUnit, 10)], turns, new HazardLook(255), fires);
 
     /// <summary>
-    /// Makes a design whose boss never acts, with one hazard type and the map's fixed hazards.
+    /// Makes a design whose boss never acts, with one hazard type and the boss's battlefield.
     /// </summary>
     /// <param name="hazard">The hazard type.</param>
-    /// <param name="fixedCells">The map's fixed hazards.</param>
     /// <param name="rules">The boss's rules, or null for none.</param>
+    /// <param name="battlefield">The boss's battlefield, or null for none.</param>
     /// <returns>The design.</returns>
-    private static RuntimeDesign Design(RuntimeHazard hazard, IReadOnlyList<FixedHazard> fixedCells, IReadOnlyList<RuleSpec>? rules = null)
+    private static RuntimeDesign Design(RuntimeHazard hazard, IReadOnlyList<RuleSpec>? rules = null, Battlefield? battlefield = null)
     {
         RuntimeDesign design = SimFixtures.Design([], [], rules, attackWeight: 0);
         return design with
         {
             Hazards = new Dictionary<string, RuntimeHazard> { [hazard.Id] = hazard },
-            Maps = new Dictionary<int, RuntimeMap> { [MapId] = design.Maps[MapId] with { Hazards = fixedCells } },
+            Bosses = new Dictionary<string, RuntimeBoss> { [SimFixtures.BossKey] = design.Bosses[SimFixtures.BossKey] with { Battlefield = battlefield } },
         };
+    }
+
+    /// <summary>
+    /// Starts a battle and puts hazards on cells off its debris, as if it had started with them.
+    /// </summary>
+    /// <param name="simulator">The simulator.</param>
+    /// <param name="setup">The setup.</param>
+    /// <param name="cells">The hazards and their cells.</param>
+    /// <returns>The battle.</returns>
+    private static BattleState Start(BattleSimulator simulator, BattleSetup setup, params (string Hazard, GridCell Cell)[] cells)
+    {
+        BattleState state = simulator.Start(setup);
+        state.Hazards = state.Hazards.With(cells
+            .Where(placed => !state.DebrisAt(placed.Cell))
+            .Select(placed => new HazardCell(placed.Cell, placed.Hazard, simulator.Design.Hazards![placed.Hazard].Turns, simulator.Design.Hazards[placed.Hazard].Fires, 0)));
+        return state;
     }
 }

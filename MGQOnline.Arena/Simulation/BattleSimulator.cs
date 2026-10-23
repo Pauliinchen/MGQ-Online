@@ -2,7 +2,8 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Logged the damage dealt after the damage reduction and ended the reductions' turns
+//      Paulinchen  2026-10-23: Placed the raid's battlefield debris at battle start
+//                            - Logged the damage dealt after the damage reduction and ended the reductions' turns
 //                            - Fought the boss's starting line-up and raised the falls of the enemies the party felled
 //                            - Read each enemy's actions from its slot
 //                            - Rolled the start debris of the boss or the game rule
@@ -28,6 +29,7 @@ using MGQOnline.Arena.Debris;
 using MGQOnline.Arena.Engine;
 using MGQOnline.Arena.Events;
 using MGQOnline.Arena.Model;
+using MGQOnline.Arena.Numerics;
 using MGQOnline.Arena.Randomness;
 using MGQOnline.Arena.Targeting;
 
@@ -217,10 +219,10 @@ public sealed partial class BattleSimulator
             RestAtStart(state, enemy);
         }
 
-        RandomDebris start = boss.StartDebris ?? Design.Rules.Debris.Start with { Type = null };
-        if (!DebrisLayout.IsNone(start))
+        if (boss.Battlefield?.Debris is { DensityBasisPoints: > 0 } debris)
         {
-            AddDebris(state, _casts.PlaceRandomDebris(state, start), null);
+            int cells = Battlefield.CellsOf(state.Grid, debris.DensityBasisPoints);
+            AddDebris(state, _casts.PlaceRandomDebris(state, new RandomDebris(BasisPoints.Whole, cells, cells, debris.Type)), null);
         }
 
         PlaceStartHazards(state);

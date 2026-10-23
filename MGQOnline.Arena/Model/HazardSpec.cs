@@ -2,6 +2,7 @@
 //  HazardSpec.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Dropped the fixed hazards of a map
 //      Paulinchen  2026-10-22: Created
 //
 //----------------------------------------------------------------
@@ -48,19 +49,3 @@ public sealed record HazardLook(int Opacity, TileRef? Tile = null, int? Animatio
 /// <param name="Count">How many cells with <see cref="HazardPlace.RandomInArea"/>, null for one.</param>
 /// <param name="Turns">The turn ends it lasts in place of the hazard's own, 0 the rest of the battle; null for the hazard's own.</param>
 public sealed record HazardPlacement(string Hazard, int ChanceBasisPoints, HazardPlace Where, int? Count = null, int? Turns = null);
-
-/// <summary>
-/// Hazards a battle may start with at random.
-/// </summary>
-/// <param name="Hazard">The hazard id.</param>
-/// <param name="ChanceBasisPoints">The chance per battle, out of 10,000.</param>
-/// <param name="Min">The fewest cells.</param>
-/// <param name="Max">The most cells.</param>
-public sealed record RandomHazards(string Hazard, int ChanceBasisPoints, int Min, int Max);
-
-/// <summary>
-/// A hazard every battle on a map starts with on a fixed cell.
-/// </summary>
-/// <param name="Hazard">The hazard id.</param>
-/// <param name="Cell">The cell.</param>
-public sealed record FixedHazard(string Hazard, GridCell Cell);
