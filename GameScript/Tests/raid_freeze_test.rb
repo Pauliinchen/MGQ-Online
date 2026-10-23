@@ -2,6 +2,7 @@
 #  raid_freeze_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Checked a resume from a boat in place of its refusal
 #      Paulinchen  2026-10-17: Created
 #
 #----------------------------------------------------------------
@@ -242,9 +243,37 @@ class Game_Followers
   # Runs a block for each follower.
   def each(&block); @data.each(&block); end
 end
+# A vehicle, which follows the player while driven and stands where it was left otherwise, as the
+# game's does.
+class Game_Vehicle < Game_Character
+  attr_reader :driving
+  # Makes the vehicle, on no map.
+  def initialize; super; @map_id = 0; @driving = false; end
+  # Places the vehicle.
+  def set_location(map_id, x, y); @map_id = map_id; @x = x; @y = y; refresh; end
+  # Follows the player while driven.
+  def refresh
+    return unless @driving
+
+    @map_id = $game_map.map_id
+    @x = $game_player.x; @y = $game_player.y; @direction = $game_player.direction
+  end
+  # Lets the player off, facing left.
+  def get_off; @driving = false; @direction = 4; end
+end
 # The player, whose transfer works as the game's.
 class Game_Player < Game_Character
   attr_reader :followers
+  # Answers the vehicle the player drives, nil on foot.
+  def vehicle; $game_map.vehicle(@vehicle_type); end
+  # Gets off the vehicle where the player stands, as the game's does.
+  def forced_get_off_vehicle
+    return unless vehicle
+
+    vehicle.get_off
+    @vehicle_type = :walk
+    @transparent = false
+  end
   # Makes the player on foot.
   def initialize; super; @followers = Game_Followers.new; @vehicle_type = :walk; @transferring = false; @new_map_id = 0; end
   # Reserves a transfer.
@@ -258,6 +287,7 @@ class Game_Player < Game_Character
     set_direction(@new_direction)
     $game_map.setup(@new_map_id) if @new_map_id != $game_map.map_id
     moveto(@new_x, @new_y)
+    vehicle.refresh if vehicle
     @transferring = false
   end
   # Counts the player's refreshes in $refreshes.
@@ -273,7 +303,10 @@ class Game_Map
     @map_id = 0; @events = {}; @interpreter = Game_Interpreter.new; @screen = Game_Screen.new; @display_x = 0; @display_y = 0
     @tileset_id = 1; @parallax_name = ""; @parallax_loop_x = false; @parallax_loop_y = false; @parallax_sx = 0; @parallax_sy = 0
     @battleback1_name = ""; @battleback2_name = ""
+    @vehicles = { :boat => Game_Vehicle.new, :ship => Game_Vehicle.new, :airship => Game_Vehicle.new }
   end
+  # Answers a vehicle by its type, nil for none.
+  def vehicle(type); @vehicles[type]; end
   # Sets a map up, its events anew from $maps.
   #
   # @param map_id [Integer] The map.
@@ -1302,13 +1335,34 @@ check("the player goes back to where they pressed", [$game_map.map_id, $game_pla
 check("each step is logged", [$log.grep(/put back what the resume of troop 868 changed: 3 story value\(s\), the party, the screen and the music\z/).size,
                               $log.grep(/brought the player back to map 154 at 5,5, where they started the fight against troop 868/).size], [1, 1])
 
-# Nobody starts a frozen fight from a vehicle.
-reset
-$game_variables[1075] = 14
-$entries[868] = { "troop" => 868, "outer" => "map:138:13:1", "scene" => false }
-$game_player.instance_variable_set(:@vehicle_type, :airship)
-check("refused while the player drives a vehicle", [freeze.resume(868), $notices.last, $log.grep(/refused the fight against troop 868: the player drives a vehicle \(airship\)/).size],
-      [false, "Get off the airship first.", 1])
+# A fight whose event parked the boat before its battle resumes from the boat (issue #50): the
+# player gets off and the boat goes back where the event parked it; given up, the player is back on
+# the boat where they pressed. A record taken before vehicles were recorded leaves the boat there.
+[true, false].each do |recorded|
+  reset
+  $game_switches[4] = true
+  $game_variables[1075] = 14
+  boat = $game_map.vehicle(:boat)
+  boat.set_location(138, 40, 9)
+  boat.set_direction(6)
+  fight_event(13)
+  lose(SONYA_DEFEAT)
+  freeze.record_for(868).delete("vehicles") unless recorded
+  boat.set_location(154, 5, 5)
+  boat.instance_variable_set(:@driving, true)
+  $game_player.instance_variable_set(:@vehicle_type, :boat)
+  check("a frozen fight resumes from a boat#{recorded ? '' : ', also with a record without vehicles'}", freeze.resume(868), true)
+  frames(1)
+  parked = recorded ? [138, 40, 9, 6] : [154, 5, 5, 6]
+  check("the player is off the boat on the battle's spot, the boat #{recorded ? 'where the event parked it' : 'where they pressed'}",
+        [$game_player.instance_variable_get(:@vehicle_type), $game_map.map_id, boat.driving, boat.instance_variable_get(:@map_id), boat.x, boat.y, boat.direction],
+        [:walk, 138, false] + parked)
+  MGQ_MpGame.set($game_map.interpreter, :index, SONYA_PAGE.list.size)
+  frames(3)
+  check("given up before its battle, the player is back on the boat where they pressed",
+        [$game_map.map_id, $game_player.x, $game_player.y, $game_player.instance_variable_get(:@vehicle_type), boat.driving, boat.instance_variable_get(:@map_id), boat.x, boat.y],
+        [154, 5, 5, :boat, true, 154, 5, 5])
+end
 
 # A joiner with a frozen record of their own of the same boss goes onto the starter's spot after a
 # won joined battle, else onto their record's, and the record goes.

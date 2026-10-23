@@ -2,6 +2,7 @@
 #  core_game_access.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Named whether a vehicle is driven
 #      Paulinchen  2026-10-17: Named what a frozen raid boss fight keeps and puts back
 #      Paulinchen  2026-10-13: Named a window's cursor check and handler call
 #      Paulinchen  2026-10-12: Named an event's page that applies now
@@ -158,8 +159,9 @@ module MGQ_MpGame
 
     # A frozen raid boss fight (battles_raid_freeze.rbx): the fights $game_system keeps, a field of
     # the mod's own; an interpreter's branches, indent and common event; how an event, the player
-    # or a follower shows and moves; where the player's transfer goes and their vehicle; the party's
-    # temporary members and split parties; and the map's tileset and parallax.
+    # or a follower shows and moves; where the player's transfer goes and their vehicle, and whether a
+    # vehicle is driven; the party's temporary members and split parties; and the map's tileset and
+    # parallax.
     :raid_freeze => :@mgq_mp_raid_freeze,
     :branch => :@branch,
     :indent => :@indent,
@@ -178,6 +180,7 @@ module MGQ_MpGame
     :move_speed => :@move_speed,
     :new_map_id => :@new_map_id,
     :vehicle_type => :@vehicle_type,
+    :driving => :@driving,
     :temp_actors => :@temp_actors,
     :multi_party_flag => :@multi_party_flag,
     :multi_party => :@multi_party,
