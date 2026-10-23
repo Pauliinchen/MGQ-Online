@@ -132,7 +132,7 @@ module MGQ_MpStoryState
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log, the same as coop_story.rbx's.
+  # What starts this script's lines in the log, the same as coop_story.rbx's.
   LOG_TAG = "co-op story"
 
   # Reads the story as the game keeps it, past the game's own handling of single switches and

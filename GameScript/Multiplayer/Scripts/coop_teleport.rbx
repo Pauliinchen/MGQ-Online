@@ -36,7 +36,7 @@ module MGQ_MpCoopTeleport
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "co-op teleport"
 
   # Reports whether a member is the party's leader, whom every member may teleport to without

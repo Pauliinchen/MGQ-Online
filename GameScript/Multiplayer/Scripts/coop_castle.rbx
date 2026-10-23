@@ -48,7 +48,7 @@ module MGQ_MpCoopCastle
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "co-op castle"
 
   # Reports whether a page on the Pocket Castle's maps is one of its residents: a companion, a

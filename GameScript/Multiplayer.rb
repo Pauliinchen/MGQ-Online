@@ -1,12 +1,16 @@
-#----------------------------------------------------------------
+﻿#----------------------------------------------------------------
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Handed the story's last writes over and waited for the world room to send them as the game closes
+#                            - Named the text encodings, since the game has no Encoding constants
 #      Paulinchen  2026-10-24: Loaded world_overview_mods.rbx after world_overview_pages.rbx
 #                            - Loaded world_gates.rbx after world_difficulty.rbx
 #                            - Loaded ui_mod_browser.rbx after ui_bug_report.rbx and named the mp_mod_browser_* exports
 #                            - Stopped loading the removed battles_pvp_lobby.rbx
-#      Paulinchen  2026-10-23: Loaded the battle server's core library through Fiddle in Bridge::FiddleBackend
+#      Paulinchen  2026-10-23: Wrote the scripts' log into the DLL's log of the day through the bridge, and into that file directly while the mod stays off
+#                            - Wrote the log's last lines before the game's error box and as the game closes
+#                            - Loaded the battle server's core library through Fiddle in Bridge::FiddleBackend
 #                            - Added Bridge, the bridge to C# through mp_bridge_open, mp_call, mp_reply and mp_drain
 #                            - Turned the mod on only once the bridge opened
 #                            - Sent the staged bridge entries and took the bridge events once a frame
@@ -194,22 +198,54 @@ module MGQ_Multiplayer
   def self.start
     return if @started
     @started = true
-    Log.write("Monster Girl Quest! Online starting on Ruby #{RUBY_VERSION}, day log #{Log.file_name}")
-    Log.prune
-    unless File.exist?(path(DLL))
-      Log.write("not started: #{path(DLL)} is missing")
-      return
-    end
+    Log.write("Monster Girl Quest! Online starting on Ruby #{RUBY_VERSION}")
+    @available = open_dll
+    Log.settle(@available)
+    return unless @available
 
-    Link.start
-    return unless Bridge.start(path(DLL))
-
-    @available = true
-    Log.write("started #{path(DLL)}")
     Background.start
     UpdateCheck.start
   rescue => e
     Log.write("start failed: #{e.class}: #{e.message}")
+    Log.settle(available?)
+  end
+
+  # Starts the DLL and opens the bridge to it.
+  #
+  # @return [Boolean] Whether the bridge opened; the log tells why not.
+  def self.open_dll
+    unless File.exist?(path(DLL))
+      Log.write("not started: #{path(DLL)} is missing")
+      return false
+    end
+
+    Link.start
+    return false unless Bridge.start(path(DLL))
+
+    Log.write("started #{path(DLL)}")
+    true
+  rescue => e
+    Log.write("start failed: #{e.class}: #{e.message}")
+    false
+  end
+
+  # Writes how the game closes, once per error, and has the DLL write every line at once, so
+  # neither the game's error box nor its end loses the last ones.
+  #
+  # @param error [Exception, nil] What ends the game, nil when it ends without one.
+  def self.closing(error)
+    Log.write(closing_text(error)) unless error && error.equal?(@closed_by)
+    @closed_by = error
+    Log.flush
+  end
+
+  # Tells whether an error is the game's reset by F12, which starts its scenes again and ends
+  # nothing.
+  #
+  # @param error [Exception] The error.
+  # @return [Boolean] Whether it is.
+  def self.reset?(error)
+    defined?(RGSSReset) && error.is_a?(RGSSReset) ? true : false
   end
 
   # Tells whether another release of the mod is the one to play, a newer one or a step back the
@@ -313,150 +349,114 @@ module MGQ_Multiplayer
     fallback
   end
 
-  # The scripts' log in the game folder's Logs folder, one file per day, such as
-  # Logs/Multiplayer InGame 2026-10-07.log, named after the day the game started on, as the DLL
-  # names its Multiplayer log of the same day. Past MAX_BYTES it keeps its newest lines.
+  # The scripts' log: each line goes to the DLL's log of the day, Logs/Multiplayer <day>.log, which
+  # holds the DLL's lines too, through the bridge, staged with the rest of the frame. Lines written
+  # before the bridge opens wait for it; while the mod stays off, the scripts write them into that
+  # file themselves, so the reason shows.
   module Log
-    # The start of the log's file name, which the day the game started on and ".log" follow.
-    NAME = "Multiplayer InGame"
+    # The topic of one line, [time of day, line], see ScriptLog.cs.
+    TOPIC = "log.write"
 
-    # How the day the game started on shows in the file name.
+    # The topic that writes every line handed over at once.
+    FLUSH_TOPIC = "log.flush"
+
+    # How the time of day starts each line.
+    TIME = "%H:%M:%S"
+
+    # The most lines kept while the bridge has not opened yet.
+    EARLY_LINES = 1000
+
+    # The file the scripts write while the mod stays off, named after the day as the DLL names it.
+    OWN_FILE = "Multiplayer %s.log"
+
+    # How the day shows in OWN_FILE.
     STAMP = "%Y-%m-%d"
 
-    # How often a line repeats before the log says so while it still repeats, so a flood shows even
-    # when the game closes first.
-    REPEAT_REPORTS = [10, 100, 1000, 10_000]
+    # What starts each line in OWN_FILE, as the DLL starts the scripts' lines (ScriptLog.Mark).
+    MARK = "[script] "
 
-    # A log of this mod, the scripts' or the DLL's, named after a day, after a session's start as
-    # older builds named them, or without a stamp as the oldest did, also the options dump's log
-    # older builds wrote.
-    OWN_LOG = /\AMultiplayer(?: InGame)?(?: \d{4}-\d{2}-\d{2}(?: \d{2}-\d{2}-\d{2})?)?(?: options dump)?\.log\z/
+    # The encodings a line crosses the bridge in as text; any other crosses as its bytes.
+    # Named, since the Encoding constants are missing in the game.
+    TEXT_ENCODINGS = [Encoding.find("UTF-8"), Encoding.find("US-ASCII")]
 
-    # A log of this mod named after a day, and that day in its name.
-    DAY_LOG = /\AMultiplayer(?: InGame)? (\d{4}-\d{2}-\d{2})(?: options dump)?\.log\z/
+    # The lines written before the bridge opened, each [time, line]; nil once handed over.
+    @early = []
 
-    # Bytes a day's log may reach before its oldest lines are cut.
-    MAX_BYTES = 4 * 1024 * 1024
+    # The path of OWN_FILE once the mod stays off, nil while the lines go to the DLL.
+    @own_file = nil
 
-    # Bytes of its newest lines a log keeps when it is cut, so it is cut again only after as many
-    # more were written.
-    KEPT_BYTES = 2 * 1024 * 1024
-
-    # The line a cut log starts with.
-    CUT_LINE = "(earlier lines were cut, the log keeps its newest lines only)"
-
-    # When this script loaded, which stands in for the game's start when Windows cannot tell it.
-    @loaded = Time.now
-
-    # The last line written, whose repeats are only counted.
-    @last = nil
-
-    # How often the last line repeated so far.
-    @streak = 0
-
-    # The repeats of the last line the log already told of.
-    @reported = 0
-
-    # The log's size in bytes, nil until the first line is appended.
-    @size = nil
-
-    # Appends a line, prefixed with the time. A line the same as the one before is only counted;
-    # the count is written once the streak ends, and at REPEAT_REPORTS while it goes on.
+    # Appends a line, stamped with the time of day.
     #
     # @param message [String] The line to append.
     def self.write(message)
-      if message == @last
-        @streak += 1
-        append("(the line above repeated #{@streak} times so far)") if REPEAT_REPORTS.include?(@streak)
-        @reported = @streak if REPEAT_REPORTS.include?(@streak)
-        return
+      line = [Time.now.strftime(TIME), plain(message.to_s)]
+      if @early
+        @early << line if @early.size < EARLY_LINES
+      elsif @own_file
+        append(line)
+      else
+        Bridge.stage(TOPIC, line)
       end
-
-      flush
-      @last = message
-      append(message)
-    rescue
-    end
-
-    # Writes how often the last line repeated, unless the log said so already. Called when another
-    # line comes and when the game closes.
-    def self.flush
-      append("(the line above repeated #{@streak} times in all)") if @streak > @reported
-      @streak = 0
-      @reported = 0
-    rescue
-    end
-
-    # Appends one line, prefixed with the time.
-    #
-    # @param text [String] The line.
-    def self.append(text)
-      path = MGQ_Multiplayer.log_path(file_name)
-      line = "#{Time.now}  #{text}\n"
-      File.open(path, "ab") { |file| file.write(line) }
-      @size = (@size || File.size(path)) + line.bytesize
-      cut(path) if @size > MAX_BYTES
-    end
-
-    # Cuts a log down to its newest KEPT_BYTES, from a whole line on, behind CUT_LINE.
-    #
-    # A bug report sends the newest lines, so the oldest are the ones to lose.
-    #
-    # @param path [String] The log.
-    def self.cut(path)
-      text = File.open(path, "rb") { |file| file.read }
-      kept = text[-KEPT_BYTES, KEPT_BYTES] || text
-      kept = kept[(kept.index("\n") || -1) + 1..-1].to_s
-      File.open(path, "wb") { |file| file.write("#{Time.now}  #{CUT_LINE}\n#{kept}") }
-      @size = File.size(path)
-    end
-
-    # Deletes every log of this mod but those of the day the game started on, the scripts', the
-    # DLL's and the options dump's of older builds, since nothing else ever removes them.
-    def self.prune
-      return unless File.directory?(LOG_DIR)
-
-      today = session_stamp
-      gone = Dir.entries(LOG_DIR).select { |name| name =~ OWN_LOG && name[DAY_LOG, 1] != today }
-      deleted = gone.count { |name| (File.delete("#{LOG_DIR}\\#{name}") rescue 0) == 1 }
-      write("deleted #{deleted} log(s) of earlier days") if deleted > 0
-      write("could not delete #{gone.size - deleted} old log(s)") if deleted < gone.size
-    rescue => e
-      write("deleting old logs failed: #{e.class}: #{e.message}")
-    end
-
-    # Names the log after the day the game started on, read once, so a session that goes past
-    # midnight stays in one log.
-    #
-    # @return [String] The file name, such as "Multiplayer InGame 2026-10-07.log".
-    def self.file_name
-      @file_name ||= "#{NAME} #{session_stamp}.log"
-    end
-
-    # Writes the day the game started on, in local time, as the log's name shows it.
-    #
-    # @return [String] The day, such as "2026-10-07".
-    def self.session_stamp
-      (process_start || @loaded).strftime(STAMP)
-    end
-
-    # Asks Windows when the game's process started.
-    #
-    # @return [Time, nil] The start in local time, to the second; nil when Windows cannot tell.
-    def self.process_start
-      times = Array.new(4) { [0, 0].pack("L2") }
-      process = Windows.api("kernel32", "GetCurrentProcess", "v", "l").call
-      return nil if Windows.api("kernel32", "GetProcessTimes", "lpppp", "i").call(process, *times) == 0
-
-      local = [0, 0].pack("L2")
-      system = ([0] * 8).pack("S8")
-      return nil if Windows.api("kernel32", "FileTimeToLocalFileTime", "pp", "i").call(times[0], local) == 0
-      return nil if Windows.api("kernel32", "FileTimeToSystemTime", "pp", "i").call(local, system) == 0
-
-      year, month, _weekday, day, hour, minute, second = system.unpack("S8")
-      Time.local(year, month, day, hour, minute, second)
+      nil
     rescue
       nil
+    end
+
+    # Hands the lines written so far over once the start decided: to the DLL when the bridge
+    # opened, else into OWN_FILE, where every later line goes too. Only the first call acts.
+    #
+    # @param open [Boolean] Whether the bridge opened.
+    def self.settle(open)
+      lines = @early
+      return unless lines
+
+      @early = nil
+      if open
+        lines.each { |line| Bridge.stage(TOPIC, line) }
+      else
+        @own_file = MGQ_Multiplayer.log_path(format(OWN_FILE, Time.now.strftime(STAMP)))
+        lines.each { |line| append(line) }
+      end
+    rescue
+      nil
+    end
+
+    # Hands every line over at once and has the DLL write them, with how often the last line
+    # repeated, as the game closes or stops on an error.
+    def self.flush
+      return settle(false) if @early
+      return if @own_file
+
+      hand_over
+      Bridge.call(FLUSH_TOPIC)
+      nil
+    rescue
+      nil
+    end
+
+    # Hands the lines written so far to the DLL at once instead of with the frame, such as before
+    # a bug report reads the log.
+    def self.hand_over
+      Bridge.flush unless @early || @own_file
+      nil
+    rescue
+      nil
+    end
+
+    # Appends a line to OWN_FILE.
+    #
+    # @param line [Array<String>] The time and the line.
+    def self.append(line)
+      File.open(@own_file, "ab") { |file| file.write("#{line[0]}  #{MARK}#{line[1]}\r\n") }
+    end
+
+    # Makes a line one that crosses the bridge.
+    #
+    # @param text [String] The line.
+    # @return [String] The line, or its bytes when it is no valid text, such as one built from bytes
+    #   the DLL handed over.
+    def self.plain(text)
+      TEXT_ENCODINGS.include?(text.encoding) && text.valid_encoding? ? text : text.dup.force_encoding("ASCII-8BIT")
     end
   end
 
@@ -1355,6 +1355,12 @@ module MGQ_Multiplayer
       drain
     end
 
+    # Sends what was staged at once, outside the frame, such as the log's last lines as the game
+    # closes.
+    def self.flush
+      send_staged if @context
+    end
+
     # Sends the staged entries as one batch and logs each entry that failed, once per topic and
     # code.
     def self.send_staged
@@ -1469,7 +1475,7 @@ module MGQ_Multiplayer
       return unless MGQ_Multiplayer.available?
 
       Link.function('mp_check_for_update').call
-      Log.write("asked the DLL for the release to play; Multiplayer.log tells its answer")
+      Log.write("asked the DLL for the release to play; its answer follows in its own lines")
     end
 
     # Polls the DLL for the release to install. Called every frame, acts every CHECK_FRAMES, and
@@ -2002,11 +2008,8 @@ end
 
 MGQ_Multiplayer.start
 MGQ_Multiplayer.load_scripts
-# When the game closes, the log writes how often its last line repeated, then how the game closes.
-at_exit do
-  MGQ_Multiplayer::Log.flush
-  MGQ_Multiplayer::Log.write(MGQ_Multiplayer.closing_text($!))
-end
+# When the game closes, the log writes how it closes and every line left.
+at_exit { MGQ_Multiplayer.closing($!) }
 
 # Game hooks, through core_hooks.rbx.
 
@@ -2028,6 +2031,17 @@ begin
   MGQ_MpHooks.before(SceneManager.singleton_class, :run, "Multiplayer") do
     MGQ_Multiplayer.note_run
     MGQ_Multiplayer::Background.guard_input
+  end
+
+  # An error that ends the game shows the game's error box before the game closes, so the log
+  # writes it and every line left first.
+  MGQ_MpHooks.around(SceneManager.singleton_class, :run, "Multiplayer") do |_manager, _args, original|
+    begin
+      original.call
+    rescue Exception => e
+      MGQ_Multiplayer.closing(e) unless MGQ_Multiplayer.reset?(e)
+      raise
+    end
   end
 rescue => e
   MGQ_Multiplayer::Log.write("hooks FAILED: #{e.class}: #{e.message}")

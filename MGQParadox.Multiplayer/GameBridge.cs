@@ -2,7 +2,8 @@
 //  GameBridge.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Created
+//      Paulinchen  2026-10-23: Registered the topics of the scripts' log
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -32,6 +33,7 @@ internal static class GameBridge
     /// <param name="context">The context the handshake opened.</param>
     private static void RegisterTopics(BridgeContext context)
     {
+        ScriptLog.Register(context);
     }
 
     /// <summary>

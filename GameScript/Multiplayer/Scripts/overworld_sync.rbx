@@ -117,7 +117,7 @@ module MGQ_MpOverworldSync
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "overworld sync"
 
   # Fields of a player's state whose changes the log follows; the others, such as where they

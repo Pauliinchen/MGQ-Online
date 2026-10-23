@@ -134,7 +134,7 @@ module MGQ_MpBattlesSync
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "battle sync"
 
   # Makes the next battle live, when the link to the friend stands. The mode calls battle_started
@@ -231,7 +231,7 @@ module MGQ_MpBattlesSync
     Channel.receive(seat, kind, message[:payload].to_s)
   end
 
-  # Names a player of the world by their seat for Multiplayer InGame.log.
+  # Names a player of the world by their seat for the log.
   #
   # @param seat [Integer, nil] Their world seat, nil for the friend over the link.
   # @return [String] Their name and seat, such as "Name (seat 2)", "the player (seat 0)" for the
@@ -301,7 +301,7 @@ module MGQ_MpBattlesSync
     Seats.world(seat)
   end
 
-  # Names a battler with its id for Multiplayer InGame.log.
+  # Names a battler with its id for the log.
   #
   # @param battler [Game_Battler, nil] The battler.
   # @return [String] Its name and actor or monster id, such as "Alice (2)".
@@ -314,7 +314,7 @@ module MGQ_MpBattlesSync
     "?"
   end
 
-  # Names battlers with their ids for Multiplayer InGame.log, see named.
+  # Names battlers with their ids for the log, see named.
   #
   # @param battlers [Array<Game_Battler>] The battlers.
   # @return [String] Their names and ids, "nobody" for none.
@@ -324,7 +324,7 @@ module MGQ_MpBattlesSync
     "?"
   end
 
-  # Reads the battle's turn count for Multiplayer InGame.log.
+  # Reads the battle's turn count for the log.
   #
   # @return [Integer] The turns that started, 0 before the first.
   def self.turn
@@ -508,7 +508,7 @@ module MGQ_MpBattlesSync
 
   # Breaks the live battle off without a winner, once something went wrong on either side.
   #
-  # @param reason [String] What went wrong, for Multiplayer InGame.log.
+  # @param reason [String] What went wrong, for the log.
   # @param tell_friend [Boolean] Whether the friend's game still has to hear of it.
   def self.break_off(reason, tell_friend = true)
     return if @broken || !@role
@@ -599,7 +599,7 @@ module MGQ_MpBattlesSync
     log("putting the skip settings back failed: #{e.class}: #{e.message}")
   end
 
-  # Writes settings for Multiplayer InGame.log.
+  # Writes settings for the log.
   #
   # @param settings [Hash] The settings by their key.
   # @return [String] Each key with its value, "none" without any.
@@ -949,14 +949,14 @@ module MGQ_MpBattlesSync
       [action.item.is_a?(RPG::Item) ? "item" : "skill", action.item.id, action.target_index]
     end
 
-    # Sums up the commands build wrote last, for Multiplayer InGame.log.
+    # Sums up the commands build wrote last, for the log.
     #
     # @return [String] Each own character with its commands, and the order of places.
     def self.built
       @built.to_s
     end
 
-    # Sums up commands for Multiplayer InGame.log.
+    # Sums up commands for the log.
     #
     # @param battlers [Array<Game_Battler>] The characters, by place.
     # @param commands [Array<Array, nil>] The commands of each, nil for one commanded elsewhere.
@@ -972,7 +972,7 @@ module MGQ_MpBattlesSync
       lines.empty? ? "no characters" : lines.join("; ")
     end
 
-    # Writes a command for Multiplayer InGame.log.
+    # Writes a command for the log.
     #
     # @param command [Array] "skill" or "item", the id and the target's index, then its chain's commands.
     # @return [String] Its kind, id and name, and the target's index, then each chained command after ">".

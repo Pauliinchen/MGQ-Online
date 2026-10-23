@@ -125,18 +125,15 @@ The guide's troubleshooting section explains the game's messages:
 
    https://github.com/Pauliinchen/MGQ-Online/blob/main/docs/GUIDE.md#troubleshooting
 
-Both logs are in the Logs folder of your game folder, a pair per time
-you played, named after when the game started, such as
-"Multiplayer InGame 2026-10-07 18-30-05.log" and
-"Multiplayer 2026-10-07 18-30-05.log". The Multiplayer InGame log tells
-what the mod did inside the game; the Multiplayer log tells what the
-connection did. The quickest way to report a bug is F3 in the game,
-which sends the logs of this session and a screenshot to the developer.
-Otherwise please attach both logs of the session that went wrong to a
-bug report.
+The log is in the Logs folder of your game folder, one per day you
+played, named after the day, such as "Multiplayer 2026-10-07.log". It
+tells what the mod did inside the game and what the connection did.
+The quickest way to report a bug is F3 in the game, which sends
+today's log and a screenshot to the developer. Otherwise please attach
+the log of the day that went wrong to a bug report.
 
-The folder keeps the logs of your last five game starts and deletes
-older ones, so send them soon after something went wrong.
+Starting the game deletes the logs of earlier days, so send it on the
+day something went wrong.
 
 
 CREDITS

@@ -26,7 +26,7 @@
 module MGQ_MpModParking
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "mod parking"
 
   # Bytes the DLL may write the parked files into at first. More asks for a larger buffer.

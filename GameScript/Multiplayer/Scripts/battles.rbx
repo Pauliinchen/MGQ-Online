@@ -43,7 +43,7 @@ module MGQ_MpBattles
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "battle"
 
   # What a kind of live battle does differently from a duel between two players, such as a co-op
@@ -280,7 +280,7 @@ module MGQ_MpBattles
     @kind = nil
   end
 
-  # Describes the switches a battle's rules set, for Multiplayer InGame.log.
+  # Describes the switches a battle's rules set, for the log.
   #
   # @param kept [Hash{Integer => Boolean}] Each switch's value before the battle.
   # @param starting [Boolean] Whether the rules start, which shows each switch as before -> during;

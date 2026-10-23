@@ -116,7 +116,7 @@ module MGQ_MpCoop
   module Scope
     extend MGQ_MpLog
 
-    # What starts this script's lines in Multiplayer InGame.log.
+    # What starts this script's lines in the log.
     LOG_TAG = "co-op scope"
 
     # Frames a teller's telling may hold the player while nothing of it reaches them, thirty

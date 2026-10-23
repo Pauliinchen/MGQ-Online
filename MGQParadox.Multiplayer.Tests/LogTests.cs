@@ -2,6 +2,7 @@
 //  LogTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-23: Checked a flood told while it goes on, the scripts' lines and the logs of earlier days deleted
 //      Paulinchen  2026-10-15: Checked the log named after the day the game started on
 //      Paulinchen  2026-10-11: Checked cutting a log down to its newest lines
 //      Paulinchen  2026-10-07: Created
@@ -10,17 +11,20 @@
 
 using System;
 using System.IO;
+using System.Linq;
 using System.Text;
+using MGQOnline.Bridge;
+using MGQOnline.Bridge.Ruby;
 
 namespace MGQParadox.Multiplayer.Tests;
 
 /// <summary>
-/// Covers the DLL's log: the file of each day, the lines repeated, and the writer thread that keeps callers off the disk.
+/// Covers the log: the file of each day, the lines repeated, the scripts' lines, the logs of earlier days, and the writer thread that keeps callers off the disk.
 /// </summary>
 public sealed class LogTests
 {
     /// <summary>
-    /// Asserts that the log is named after the day the game started on, as the game script's log of the same day is.
+    /// Asserts that the log is named after the day the game started on.
     /// </summary>
     [Fact]
     public void FileNameOf_NamesTheLogAfterTheDayTheGameStartedOn()
@@ -39,9 +43,25 @@ public sealed class LogTests
         Assert.Equal("10:00:00  first\r\n", repeats.Take("10:00:00", "first"));
         Assert.Null(repeats.Take("10:00:01", "first"));
         Assert.Null(repeats.Take("10:00:02", "first"));
-        Assert.Equal("10:00:03  (the line above came 2 more times)\r\n10:00:03  second\r\n", repeats.Take("10:00:03", "second"));
+        Assert.Equal("10:00:03  (the line above repeated 2 times in all)\r\n10:00:03  second\r\n", repeats.Take("10:00:03", "second"));
         Assert.Null(repeats.Take("10:00:04", "second"));
-        Assert.Equal("10:00:05  (the line above came 1 more time)\r\n10:00:05  first\r\n", repeats.Take("10:00:05", "first"));
+        Assert.Equal("10:00:05  (the line above repeated 1 time in all)\r\n10:00:05  first\r\n", repeats.Take("10:00:05", "first"));
+    }
+
+    /// <summary>
+    /// Asserts that a line that keeps repeating says so while it goes on, and how often in all when the game closes.
+    /// </summary>
+    [Fact]
+    public void Repeats_TellsAFloodWhileItGoesOnAndInAllAtTheEnd()
+    {
+        var repeats = new Log.Repeats();
+        repeats.Take("10:00:00", "flood");
+
+        var told = Enumerable.Range(1, 11).Select(_ => repeats.Take("10:00:01", "flood")).Where(text => text is not null).ToList();
+
+        Assert.Equal(["10:00:01  (the line above repeated 10 times so far)\r\n"], told);
+        Assert.Equal("10:00:02  (the line above repeated 11 times in all)\r\n", repeats.Finish("10:00:02"));
+        Assert.Null(repeats.Finish("10:00:03"));
     }
 
     /// <summary>
@@ -85,7 +105,54 @@ public sealed class LogTests
         Assert.True(atThird > atSecond, "the third line does not follow the second");
 
         var between = text[atSecond..atThird];
-        Assert.True(between.Contains("(the line above came 1 more time)\r\n", StringComparison.Ordinal) || between.LastIndexOf(second, StringComparison.Ordinal) > 0, "the repeated line was neither counted nor written again");
+        Assert.True(between.Contains("(the line above repeated 1 time in all)\r\n", StringComparison.Ordinal) || between.LastIndexOf(second, StringComparison.Ordinal) > 0, "the repeated line was neither counted nor written again");
+    }
+
+    /// <summary>
+    /// Asserts that a line the scripts hand over lands in the same file, marked as theirs, with the time they wrote it at, its bytes read as UTF-8.
+    /// </summary>
+    [Fact]
+    public void ScriptLog_WritesTheScriptsLineMarkedWithItsTime()
+    {
+        var mark = Guid.NewGuid().ToString("N");
+        var bytes = Encoding.UTF8.GetBytes($"world: joined {mark} ルカ").Concat(new byte[] { 0xFF }).ToArray();
+
+        ScriptLog.Write(new RubyArray([RubyString.Utf8("01:02:03"), RubyString.Binary(bytes)]));
+        Log.Flush();
+
+        Assert.Contains($"01:02:03  [script] world: joined {mark} ルカ�\r\n", ReadLog(), StringComparison.Ordinal);
+        Assert.Throws<BridgeRequestException>(() => ScriptLog.Write(new RubyArray([RubyString.Utf8("01:02:03")])));
+    }
+
+    /// <summary>
+    /// Asserts that every log of the mod but the day's goes, older builds' scripts' logs and unstamped ones too, while other mods' logs stay and
+    /// a folder of a log's name counts as one that could not be deleted.
+    /// </summary>
+    [Fact]
+    public void DeleteOtherDays_KeepsTheDaysLogsAndOtherModsLogs()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), $"log test {Guid.NewGuid():N}");
+        Directory.CreateDirectory(folder);
+
+        try
+        {
+            string[] kept = ["Multiplayer 2026-10-07.log", "Multiplayer InGame 2026-10-07.log", "Multiplayer Parking.log", "DiscordPresence 2026-01-01.log"];
+            string[] gone = ["Multiplayer 2026-01-01.log", "Multiplayer InGame 2026-01-01.log", "Multiplayer InGame 2026-01-01 options dump.log", "Multiplayer 2026-10-07 10-00-00.log", "Multiplayer.log", "Multiplayer InGame.log"];
+
+            foreach (var name in kept.Concat(gone))
+            {
+                File.WriteAllText(Path.Combine(folder, name), "x");
+            }
+
+            Directory.CreateDirectory(Path.Combine(folder, "Multiplayer InGame 2026-01-02.log"));
+
+            Assert.Equal((gone.Length, 1), Log.DeleteOtherDays(folder, "2026-10-07"));
+            Assert.Equal(kept.Append("Multiplayer InGame 2026-01-02.log").Order(StringComparer.Ordinal), Directory.EnumerateFileSystemEntries(folder).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(folder, true);
+        }
     }
 
     /// <summary>

@@ -10,7 +10,7 @@
 #
 #----------------------------------------------------------------
 
-# Writes the scripts' lines to Multiplayer InGame.log. A script's module extends this and starts
+# Writes the scripts' lines to the log of the day, Logs/Multiplayer <day>.log. A script's module extends this and starts
 # each of its lines with its LOG_TAG, such as "co-op".
 #
 # Writing a line never raises, since the log must never interrupt the game.
@@ -77,7 +77,7 @@ module MGQ_MpLog
     "?"
   end
 
-  # Writes a line to Multiplayer InGame.log, after the script's LOG_TAG.
+  # Writes a line to the log, after the script's LOG_TAG.
   #
   # Many methods give nothing through `return log(...)`, so a log must never hand back what writing
   # the file returned, such as its byte count.

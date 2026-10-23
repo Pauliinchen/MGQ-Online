@@ -24,7 +24,7 @@
 module MGQ_MpBattlesServed
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "served battle"
 
   # The battle server's seat on a battle channel, which no world seat reaches.

@@ -152,7 +152,7 @@ module MGQ_MpRaidBar
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "raid bar"
 
   # Reports whether the player wants a bar of the raid bosses outside Raid Worlds, as Player.ini

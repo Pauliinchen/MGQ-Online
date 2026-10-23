@@ -158,7 +158,7 @@ module MGQ_MpOverworld
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "overworld"
 
   # Writes a ping as it shows, such as "80 ms" or "999+ ms", with the color that says how good it

@@ -42,7 +42,7 @@ module MGQ_MpWorldDifficulty
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "world difficulty"
 
   # Frames since the last look whether the game plays on the world's difficulty.

@@ -2,7 +2,8 @@
 #  bridge_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Checked that only a handshake turns the mod on
+#      Paulinchen  2026-10-23: Stood in for the log's hand-over once the start decided
+#                            - Checked that only a handshake turns the mod on
 #                            - Created
 #                            - Stood in without the deleted mod switch
 #
@@ -56,8 +57,8 @@ module MGQ_Multiplayer
   DLL = "Multiplayer.dll"
   # Builds a path in the mod folder.
   def self.path(name); "#{MOD_DIR}\\#{name}"; end
-  # Stands in for the log's day and pruning.
-  module Log; def self.file_name; "test.log"; end; def self.prune; end; end
+  # Stands in for the log's hand-over once the start decided.
+  module Log; def self.settle(_open); end; end
   # Stands in for the DLL's start, noted in $steps.
   module Link; def self.start; $steps << :mp_start; 1; end; end
   # Stands in for keeping the game running in the background, noted in $steps.
@@ -67,6 +68,7 @@ module MGQ_Multiplayer
 end
 MGQ_Multiplayer.module_eval(source[/  def self\.available\?\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  def self\.start\n.*?\n  end\n/m])
+MGQ_Multiplayer.module_eval(source[/  def self\.open_dll\n.*?\n  end\n/m])
 
 # Starts the mod as the game does, once per session.
 #

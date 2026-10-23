@@ -102,7 +102,7 @@ module MGQ_MpCoopGather
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "co-op gather"
 
   # Counts the frames left until some frames after a moment have passed.

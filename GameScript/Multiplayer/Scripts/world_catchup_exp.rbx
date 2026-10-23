@@ -24,7 +24,7 @@ module MGQ_MpWorldCatchupExp
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "catch-up exp"
 
   # Finds the level up to which characters catch up: the cap the world's story unlocked before its

@@ -108,7 +108,7 @@ module MGQ_MpBattlesHotjoin
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "hotjoin"
 
   # Reports whether a Raid World is open, whose battles may join each other.
@@ -178,7 +178,7 @@ module MGQ_MpBattlesHotjoin
     log("the player's battle #{@own_bid} goes on as their own, which other players' encounters may join")
   end
 
-  # Names a player for Multiplayer InGame.log.
+  # Names a player for the log.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] The player.
   # @return [String] Their name and seat.
@@ -741,7 +741,7 @@ module MGQ_MpBattlesHotjoin
   # Starts the player's own encounter alone, since the running battle never took them in: its own
   # escape, lose and enemy rates back, from its start (see MGQ_MpBattlesCoop.take_over).
   #
-  # @param reason [String] Why, for Multiplayer InGame.log.
+  # @param reason [String] Why, for the log.
   # @return [Symbol] :gone, after which the battle goes on as the player's own.
   def self.fight_own(reason)
     own_flags_back
@@ -886,7 +886,7 @@ module MGQ_MpBattlesHotjoin
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who asked.
   # @param message [Hash] The request.
-  # @param reason [String] Why, for Multiplayer InGame.log.
+  # @param reason [String] Why, for the log.
   def self.refuse(peer, message, reason)
     MGQ_MpBattlesCoop.tell_map([peer.seat], "hot_no", "bid" => message["bid"].to_s)
     log("refused #{who(peer)}'s encounter with troop #{message['troop']} for battle #{message['bid']}: #{reason}")
@@ -1206,7 +1206,7 @@ module MGQ_MpBattlesHotjoin
   #
   # @param entry [Hash] The encounter they came with.
   # @param seat [Integer] Their seat.
-  # @param reason [String] Why, for Multiplayer InGame.log.
+  # @param reason [String] Why, for the log.
   def self.drop_seat(entry, seat, reason)
     entry[:seats].delete(seat)
     entry[:enemies] = [] if seat == entry[:requester]
@@ -1370,7 +1370,7 @@ module MGQ_MpBattlesHotjoin
 
   # Tells every player taken in who has not joined that it is off, and forgets them.
   #
-  # @param reason [String] Why, for Multiplayer InGame.log.
+  # @param reason [String] Why, for the log.
   def self.call_off(reason, why = OFF_CLOSED)
     seats = pending_seats
     @pending = []

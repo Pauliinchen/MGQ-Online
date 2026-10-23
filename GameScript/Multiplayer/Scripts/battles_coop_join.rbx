@@ -50,7 +50,7 @@ module MGQ_MpBattlesJoin
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "join battle"
 
   # Reports whether a Raid World is open, whose battles players may join by choice.
@@ -91,7 +91,7 @@ module MGQ_MpBattlesJoin
   # Tells why the player's battle takes nobody in now.
   #
   # @return [Array<String>, nil] The reason the player who asks reads (see REFUSALS) and the one
-  #   for Multiplayer InGame.log, nil when it takes players in.
+  #   for the log, nil when it takes players in.
   def self.closed_reason
     sync = MGQ_MpBattlesSync
     return ["pvp", "a PvP battle runs"] if MGQ_MpBattles.kind == :pvp || (defined?(MGQ_MpBattlesPvp) && MGQ_MpBattlesPvp::Battle.running?)
@@ -127,8 +127,8 @@ module MGQ_MpBattlesJoin
   #
   # @param seat [Integer] The asking player's seat.
   # @param message [Hash] The request.
-  # @return [Array<String>, nil] The reason the player who asks reads and the one for Multiplayer
-  #   InGame.log, nil when it can.
+  # @return [Array<String>, nil] The reason the player who asks reads and the one for the
+  #   log, nil when it can.
   def self.refusal(seat, message)
     closed = closed_reason
     return closed if closed
@@ -148,7 +148,7 @@ module MGQ_MpBattlesJoin
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who asked.
   # @param message [Hash] The request.
   # @param code [String] The reason they read, see REFUSALS.
-  # @param reason [String] The reason for Multiplayer InGame.log.
+  # @param reason [String] The reason for the log.
   def self.refuse(peer, message, code, reason)
     MGQ_MpBattlesCoop.tell_map([peer.seat], "pick_no", "bid" => message["bid"].to_s, "why" => code)
     log("refused #{who(peer)}'s request to join battle #{message['bid']}: #{reason}")
@@ -421,7 +421,7 @@ module MGQ_MpBattlesJoin
     MGQ_MpNotices.message(NOTICE_KEY, text, frames) if defined?(MGQ_MpNotices)
   end
 
-  # Names a player for Multiplayer InGame.log.
+  # Names a player for the log.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] The player.
   # @return [String] Their name and seat.

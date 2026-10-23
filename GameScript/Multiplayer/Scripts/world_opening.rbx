@@ -33,7 +33,7 @@ module MGQ_MpWorldOpening
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "world opening"
 
   # Notes a new game, whose opening waits for the world's story to tell whether it plays.

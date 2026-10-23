@@ -77,7 +77,7 @@ module MGQ_MpRaidFreeze
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "raid freeze"
 
   # Forgets the run, the frame stack, the pending snapshots and the resume, as at the title screen.

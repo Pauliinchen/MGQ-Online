@@ -46,7 +46,7 @@ module MGQ_MpRaidTiers
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "raid tiers"
 
   # Forgets every battle, as at the title screen.

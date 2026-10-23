@@ -148,7 +148,7 @@ module MGQ_MpCoopChoices
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "co-op choices"
 
   # Finds a choice by its name.

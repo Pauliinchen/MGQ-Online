@@ -21,7 +21,7 @@
 module MGQ_MpCoopLevelSync
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "level sync"
 
   # The share of what the level takes off a stat that the character's equipment loses too.
@@ -130,7 +130,7 @@ module MGQ_MpCoopLevelSync
     log("#{label(actor)} #{reason}")
   end
 
-  # Names a character by its id and name, for Multiplayer InGame.log.
+  # Names a character by its id and name, for the log.
   #
   # @param actor [Game_Actor] The character.
   # @return [String] Its id and name.
@@ -138,7 +138,7 @@ module MGQ_MpCoopLevelSync
     "#{actor.id rescue '?'} #{actor.name rescue '?'}"
   end
 
-  # Describes a character's max HP, HP and MP, for Multiplayer InGame.log.
+  # Describes a character's max HP, HP and MP, for the log.
   #
   # @param actor [Game_Actor] The character.
   # @return [String] Its max HP, HP and MP.

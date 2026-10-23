@@ -1,8 +1,13 @@
-#----------------------------------------------------------------
+﻿#----------------------------------------------------------------
 #  loader_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Dropped the check of the log rules of the deleted options dump
+#      Paulinchen  2026-10-28: Gave the closing its world room drain topic
+#                            - Checked that no script names an Encoding constant
+#      Paulinchen  2026-10-23: Checked that the log's lines wait for the bridge, cross it with the frame and go into the day's file while the mod stays off
+#                            - Checked that an error the error box shows is written once
+#                            - Dropped the checks of the day's file, the repeats, the cut and the old logs, which the DLL's tests cover
+#                            - Dropped the check of the log rules of the deleted options dump
 #      Paulinchen  2026-10-17: Checked the load order of the raid boss freeze scripts
 #      Paulinchen  2026-10-15: Checked that every export takes at most 16 arguments
 #                            - Checked the log of each day and that starting a game deletes those of earlier days
@@ -39,7 +44,7 @@
 # GameScript/Multiplayer/Scripts, and load_scripts runs them at the top level, in order, logging one
 # that fails or is missing while the others still load.
 
-require_relative "support"
+require_relative "bridge_support"
 require "tmpdir"
 
 source = File.read(File.expand_path("../Multiplayer.rb", __dir__), encoding: "UTF-8")
@@ -49,6 +54,8 @@ files = Dir[File.join(SCRIPTS_DIR, "*.rbx")].map { |file| File.basename(file, ".
 check("every script in SCRIPTS is a file", scripts - files, [])
 check("every file is in SCRIPTS", files - scripts, [])
 check("no script is in SCRIPTS twice", scripts.select { |name| scripts.count(name) > 1 }.uniq, [])
+naming = (Dir[File.join(SCRIPTS_DIR, "*.rbx")] + [File.join(SCRIPTS_DIR, "..", "..", "Multiplayer.rb")]).select { |file| File.read(file, :encoding => "BOM|UTF-8") =~ /Encoding::[A-Z]/ }
+check("no script names an Encoding constant, which the game's Ruby lacks", naming.map { |file| File.basename(file) }, [])
 check("core_log and core_hooks load first, since every script logs and registers its hooks with them", scripts.first(2), %w[core_log core_hooks])
 check("core_actors loads before the scripts whose classes build on Game_MpActor",
       %w[battles_coop battles_pvp].all? { |name| scripts.index("core_actors") < scripts.index(name) }, true)
@@ -122,85 +129,52 @@ check("a script that does not parse is logged by name", log.any? { |line| line.s
 check("a missing script is logged by name", log.any? { |line| line.start_with?("missing.rbx did not load: Errno::ENOENT") }, true)
 check("the log counts the scripts loaded and names those that did not", log.last, "loaded 2 of 4 scripts, not broken, missing")
 
-# The in-game log: a file per day, named after the day the game started on, without a line limit,
-# cut to its newest lines past MAX_BYTES, and a line repeated is counted.
-module MGQ_Multiplayer; end
+# The log: lines wait for the bridge, then cross it with the frame's batch, each with its time of
+# day; while the mod stays off, the scripts write them into the day's file themselves.
 MGQ_Multiplayer.const_set(:LOG_DIR, "Logs")
 MGQ_Multiplayer.module_eval(source[/  def self\.log_path\(name\)\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  module Log\n.*?\n  end\n/m])
+load_bridge
+log = MGQ_Multiplayer::Log
+crossed = []
+flushes = [0]
+fake = FakeBridge.new
+fake.answer("log.write") { |line| crossed << line; nil }
+fake.answer("log.flush") { |_request| flushes[0] += 1; nil }
+log.write("starting")
+MGQ_Multiplayer::Bridge.open(fake)
+log.write("Lukaルカ")
+log.write("bytes \xFF".dup.force_encoding("UTF-8"))
+MGQ_Multiplayer::Bridge.frame
+check("the lines wait while the start has not decided", crossed, [])
+log.settle(true)
+MGQ_Multiplayer::Bridge.frame
+check("then cross in order with the next frame, the bridge's opening among them",
+      crossed.map { |_time, line| line.sub(/ with the DLL .*/, "") }, ["starting", "bridge: opened context 1", "Lukaルカ", "bytes \xFF".b])
+check("each with the time of day it was written at, a line that is no valid text as its bytes",
+      [crossed.all? { |time, _line| time =~ /\A\d\d:\d\d:\d\d\z/ }, crossed.last.last.encoding], [true, Encoding::ASCII_8BIT])
+crossed.clear
+log.write("the game closes")
+log.flush
+check("a flush hands a line over at once and has the DLL write every line", [crossed.map(&:last), flushes[0]], [["the game closes"], 1])
+MGQ_Multiplayer::Bridge.close
+
 Dir.mktmpdir do |game|
   Dir.chdir(game) do
-    3.times { MGQ_Multiplayer::Log.write("same") }
-    MGQ_Multiplayer::Log.write("other")
-    files = Dir[File.join("Logs", "*")].map { |file| File.basename(file) }
-    check("the log is named after the day the game started on, the load standing in while Windows cannot tell it",
-          files, ["Multiplayer InGame #{MGQ_Multiplayer::Log.instance_variable_get(:@loaded).strftime('%Y-%m-%d')}.log"])
-    path = File.join("Logs", files.first.to_s)
-    lines = File.read(path).lines.map { |line| line.split("  ", 2)[1].to_s.chomp }
-    check("a line repeated is written once, with how often it repeated before the next one", lines, ["same", "(the line above repeated 2 times in all)", "other"])
-    12.times { MGQ_Multiplayer::Log.write("flood") }
-    MGQ_Multiplayer::Log.flush
-    lines = File.read(path).lines.map { |line| line.split("  ", 2)[1].to_s.chomp }
-    check("a line that keeps repeating says so while it goes on, and in all when the game closes", lines.last(3),
-          ["flood", "(the line above repeated 10 times so far)", "(the line above repeated 11 times in all)"])
-    3100.times { |index| MGQ_Multiplayer::Log.write("line #{index}") }
-    check("the log has no line limit", File.read(path).lines.last.split("  ", 2)[1].chomp, "line 3099")
-    File.open(path, "ab") { |file| 100_000.times { |index| file.write("2026-10-11 20:00:00 +0200  old line #{index}\n") } }
-    MGQ_Multiplayer::Log.instance_variable_set(:@size, nil)
-    MGQ_Multiplayer::Log.write("newest")
-    lines = File.read(path).lines
-    check("a log past MAX_BYTES keeps its newest lines from a whole line on, behind a line that says so",
-          [lines.first.split("  ", 2)[1].chomp, lines[1] =~ /\A2026-10-11 20:00:00 \+0200  old line \d+\n\z/ ? true : false,
-           lines.last.split("  ", 2)[1].chomp, File.size(path) <= MGQ_Multiplayer::Log::KEPT_BYTES + 200],
-          [MGQ_Multiplayer::Log::CUT_LINE, true, "newest", true])
+    log.instance_variable_set(:@early, [])
+    log.write("starting")
+    log.write("not started: the mod is turned off")
+    log.settle(false)
+    log.settle(true)
+    log.write("loaded 70 of 70 scripts")
+    log.flush
+    file = File.join("Logs", "Multiplayer #{Time.now.strftime('%Y-%m-%d')}.log")
+    lines = File.binread(file).split("\r\n").map { |line| line.split("  ", 2)[1] }
+    check("while the mod stays off, the lines and the reason go into the day's file directly, marked as the scripts'",
+          [lines, flushes[0]], [["[script] starting", "[script] not started: the mod is turned off", "[script] loaded 70 of 70 scripts"], 1])
   end
 end
 
-# Starting a game deletes every log of this mod but the day's: those of earlier days, the session
-# logs older builds wrote and the unstamped ones of the oldest, and only the logs actually deleted
-# are counted.
-Dir.mktmpdir do |game|
-  Dir.chdir(game) do
-    Dir.mkdir("Logs")
-    logs = lambda { Dir.entries("Logs").reject { |name| name.start_with?(".") }.sort }
-    today = MGQ_Multiplayer::Log.session_stamp
-    kept = ["Multiplayer #{today}.log", "Multiplayer InGame #{today} options dump.log", "Multiplayer Parking.log", "DiscordPresence 2026-01-01.log"]
-    gone = ["Multiplayer 2026-01-01.log", "Multiplayer InGame 2026-01-01.log", "Multiplayer InGame 2026-01-01 options dump.log",
-            "Multiplayer #{today} 10-00-00.log", "Multiplayer InGame 2026-01-05 12-00-00 options dump.log", "Multiplayer.log", "Multiplayer InGame.log"]
-    (kept + gone).each { |name| File.write(File.join("Logs", name), "x") }
-    # A folder cannot be deleted as a file is.
-    Dir.mkdir(File.join("Logs", "Multiplayer InGame 2026-01-02.log"))
-    MGQ_Multiplayer::Log.write("pruning")
-    MGQ_Multiplayer::Log.prune
-    own = MGQ_Multiplayer::Log.file_name
-    check("the day's logs and other mods' logs stay", logs.call, (kept + ["Multiplayer InGame 2026-01-02.log", own]).sort)
-    lines = File.read(File.join("Logs", own)).lines.map { |line| line.split("  ", 2)[1].to_s.chomp }
-    check("the log counts the logs deleted and those that could not be", lines.last(2), ["deleted #{gone.size} log(s) of earlier days", "could not delete 1 old log(s)"])
-  end
-end
-
-# The session's start as Windows tells it: the process's creation time, made local.
-# Stands in for the Windows functions the session's start is read through.
-module MGQ_Multiplayer
-  module Windows
-    # A stand-in for a kernel32 function, filling its output buffers as Windows would.
-    Function = Struct.new(:name) do
-      def call(*args)
-        case name
-        when "GetCurrentProcess" then -1
-        when "GetProcessTimes" then args[1].replace([1, 2].pack("L2"))
-        when "FileTimeToLocalFileTime" then args[1].replace(args[0])
-        when "FileTimeToSystemTime" then args[1].replace([2026, 10, 3, 7, 18, 30, 5, 0].pack("S8"))
-        end
-        1
-      end
-    end
-
-    # Hands out the stand-in of a kernel32 function by its name.
-    def self.api(_library, name, _arguments, _result); Function.new(name); end
-  end
-end
-check("the log's day comes from the game's process", MGQ_Multiplayer::Log.session_stamp, "2026-10-07")
 # The rest of this file writes no log.
 MGQ_Multiplayer::Log.define_singleton_method(:write) { |_message| }
 
@@ -350,6 +324,10 @@ end
 check("the log's last line tells a game that ended from one quit and one an error ended",
       [MGQ_Multiplayer.closing_text(nil), MGQ_Multiplayer.closing_text(SystemExit.new(0)), MGQ_Multiplayer.closing_text(error)[/\A.*bad at /]],
       ["the game closes", "the game closes: it was quit (exit status 0)", "the game closes after an error: ArgumentError: bad at "])
+MGQ_Multiplayer.module_eval(source[/  def self\.closing\(error\)\n.*?\n  end\n/m])
+lines = logged_lines { [error, error, nil].each { |ended| MGQ_Multiplayer.closing(ended) } }
+check("an error the game's error box shows is written once, though the game's end names it again",
+      lines.map { |line| line[/\A[^:]*/] }, ["the game closes after an error", "the game closes"])
 
 # The player's name: a chosen one replaces the name on Discord, and clearing it brings that back.
 MGQ_Multiplayer.const_set(:MAX_NAME_LENGTH, 32) unless defined?(MGQ_Multiplayer::MAX_NAME_LENGTH)

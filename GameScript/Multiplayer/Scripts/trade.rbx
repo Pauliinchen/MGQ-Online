@@ -2,6 +2,7 @@
 #  trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Named the one log of the day where a trade not applied in full tells why
 #      Paulinchen  2026-10-12: Sent the offer and confirmation again on the relay's beat after a failed send
 #                            - Sent the offer and confirmation again once the other player is back
 #                            - Answered a message of a trade the game no longer has with a cancel
@@ -193,7 +194,7 @@ module MGQ_MpTrade
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "trade"
 
   # Reports whether the mod's DLL is installed and up to date, which trades need.
@@ -987,7 +988,7 @@ module MGQ_MpTrade
     session.stage = :closed
     id = session.relay_id
     unless Recovery.apply_once(id, session.mine, session.theirs)
-      return close("The trade with #{session.name} could not be applied in full, see Multiplayer InGame.log.")
+      return close("The trade with #{session.name} could not be applied in full, see Logs\\Multiplayer.log.")
     end
 
     saved = Recovery.finish
@@ -1512,7 +1513,7 @@ module MGQ_MpTrade
       return MGQ_MpTrade.log("recovery skipped trade #{MGQ_MpTrade.short(id)}: it does not name this player") unless sides.key?(me) && partner
       MGQ_MpTrade.log("recovering trade #{MGQ_MpTrade.short(id)} with #{MGQ_MpTrade.name_of(partner)}")
       applied = apply_once(id, Items.read_offer(sides[me]), Items.read_offer(sides[partner]))
-      return MGQ_MpOverworldSync.notice("A trade that was cut off could not be applied in full, see Multiplayer InGame.log.") unless applied
+      return MGQ_MpOverworldSync.notice("A trade that was cut off did not complete in full.") unless applied
 
       saved = finish
       MGQ_MpOverworldSync.notice(saved ? "A trade that was cut off completed, game saved." : "A trade that was cut off completed. Save your game.")

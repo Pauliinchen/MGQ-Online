@@ -113,7 +113,7 @@ module MGQ_MpActions
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "actions"
 
   # Takes a choice of the wheel or the World overview, or tells why it cannot be taken.

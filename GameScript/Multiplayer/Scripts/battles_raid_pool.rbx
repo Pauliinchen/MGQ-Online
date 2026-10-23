@@ -278,7 +278,7 @@ module MGQ_MpRaidPool
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "raid pool"
 
   # A battle that fights a boss's pools.
@@ -1080,7 +1080,7 @@ module MGQ_MpRaidPool
     @pools[key] = Pool.new(empty ? 0.0 : [left, 1.0].min, pool && pool.max > 0 ? pool.max : max, empty ? true : false, pool && pool.by, now)
   end
 
-  # Describes an enemy of the battle for Multiplayer InGame.log.
+  # Describes an enemy of the battle for the log.
   #
   # @param member [Member] The enemy.
   # @return [String] Such as "Queen Harpy 812/6000".

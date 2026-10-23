@@ -2,7 +2,8 @@
 #  ui_bug_report.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Removed sending?, which only the tests read
+#      Paulinchen  2026-10-23: Handed the log's lines to the DLL before a report reads its log
+#                            - Removed sending?, which only the tests read
 #      Paulinchen  2026-10-12: Kept the report's messages until the notification box shows
 #                            - Scrolled the description being typed with the mouse wheel
 #                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
@@ -171,7 +172,7 @@ module MGQ_MpBugReport
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "bug report"
 
   # Reads the hotkey, takes the screenshot the wheel asked for, forgets a waiting report once the
@@ -440,6 +441,7 @@ module MGQ_MpBugReport
     flags = (screenshot && report[:snapped] ? ATTACH_SCREENSHOT : 0) | (logs ? ATTACH_LOGS : 0)
     facts = lines(report[:facts].first(MAX_FACTS), MAX_VALUE_CHARS)
     details = lines(report[:details], MAX_DETAIL_CHARS)
+    MGQ_Multiplayer::Log.hand_over
     started = MGQ_Multiplayer::Link.function('mp_report_send').call("#{title}\0", "#{text}\0", "#{facts}\0", "#{details}\0", flags) == 1
     attached = "#{flags & ATTACH_SCREENSHOT != 0 ? 'with' : 'without'} the screenshot, #{flags & ATTACH_LOGS != 0 ? 'with' : 'without'} the logs"
     unless started

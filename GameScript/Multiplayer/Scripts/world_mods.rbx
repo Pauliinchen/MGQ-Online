@@ -67,7 +67,7 @@
 module MGQ_MpWorldMods
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "world mods"
 
   # Bytes the DLL may write the catalog into at first. A larger catalog asks for a larger buffer.

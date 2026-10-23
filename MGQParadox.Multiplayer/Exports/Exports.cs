@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-23: Started the updater under Wine too
+//                            - Deleted the logs of earlier days as the DLL starts
 //                            - Logged the crashes Windows recorded since the previous start and added mp_memory_usage
 //      Paulinchen  2026-10-22: Handed out the release the relay names, an older one too, added mp_update_rollback and passed the release to the updater
 //      Paulinchen  2026-10-10: Added mp_dev_build
@@ -45,7 +46,7 @@ namespace MGQParadox.Multiplayer;
 internal static unsafe partial class Exports
 {
     /// <summary>
-    /// Finds the mod folder and starts the log. Calling it again does nothing harmful.
+    /// Finds the mod folder, starts the log and deletes the logs of earlier days. Calling it again does nothing harmful.
     /// </summary>
     /// <returns>1 when started, 0 when it failed.</returns>
     [UnmanagedCallersOnly(EntryPoint = "mp_start", CallConvs = [typeof(CallConvStdcall)])]
@@ -60,6 +61,7 @@ internal static unsafe partial class Exports
 
             var version = typeof(Exports).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
             Log.Write($"--- multiplayer {version} started ---");
+            Log.DeleteOtherDays();
 
             if (NativeMethods.WineVersion() is { } wine)
             {

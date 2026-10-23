@@ -364,7 +364,7 @@ module MGQ_MpWorldOverview
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "overview"
 
   # Reports whether the overview is open.

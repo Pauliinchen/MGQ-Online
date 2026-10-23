@@ -21,7 +21,7 @@ module MGQ_MpUi
   module Theme
     extend MGQ_MpLog
 
-    # What starts this script's lines in Multiplayer InGame.log.
+    # What starts this script's lines in the log.
     LOG_TAG = "theme"
 
     # One preset: its name and the color of each of the style's box colors, by the constant's name,

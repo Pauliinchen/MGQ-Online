@@ -43,7 +43,7 @@
 module MGQ_MpGame
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "game"
 
   # The game's private fields the mod uses, by the name the mod calls each.

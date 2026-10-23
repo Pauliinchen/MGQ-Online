@@ -78,7 +78,7 @@ module MGQ_MpCoop
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "co-op"
 
   # Hands the party's messages marked by a field to a script, once they come from another member

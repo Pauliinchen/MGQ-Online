@@ -356,7 +356,7 @@ module MGQ_MpBattlesSync
 
   # The steps of a live battle that differ between host and guest.
   module Live
-    # Why a live battle ends early, by the reason end_early takes, for Multiplayer InGame.log.
+    # Why a live battle ends early, by the reason end_early takes, for the log.
     END_REASONS = {
       :left => "this player left it",
       :forfeit => "the other side forfeited",
@@ -824,7 +824,7 @@ module MGQ_MpBattlesSync
       @answered = []
     end
 
-    # Names the guests still in the live battle for Multiplayer InGame.log.
+    # Names the guests still in the live battle for the log.
     #
     # @return [String] Their seats and names, or the friend over the link.
     def self.guests_text

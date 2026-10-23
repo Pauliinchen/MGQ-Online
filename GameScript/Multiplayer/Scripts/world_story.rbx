@@ -271,7 +271,7 @@ module MGQ_MpWorldStory
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "world story"
 
   # Forgets the world's story, as when the world closes, a save is loaded or a new game starts,

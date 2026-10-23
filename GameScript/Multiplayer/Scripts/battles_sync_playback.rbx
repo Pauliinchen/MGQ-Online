@@ -142,7 +142,7 @@ module MGQ_MpBattlesSync
       Waiting.release_input(held)
     end
 
-    # Counts something of the playback for the turn's line in Multiplayer InGame.log.
+    # Counts something of the playback for the turn's line in the log.
     #
     # @param key [Symbol] What happened.
     # @param amount [Integer] How often.
@@ -150,7 +150,7 @@ module MGQ_MpBattlesSync
       (@stats ||= Hash.new(0))[key] += amount
     end
 
-    # Sums up a playback until the next command phase or the battle's end in Multiplayer InGame.log.
+    # Sums up a playback until the next command phase or the battle's end in the log.
     #
     # @param outcome [String] Where the playback stopped.
     def self.log_run(outcome)

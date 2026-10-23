@@ -21,7 +21,7 @@ module MGQ_MpUi
   module Layout
     extend MGQ_MpLog
 
-    # What starts this script's lines in Multiplayer InGame.log.
+    # What starts this script's lines in the log.
     LOG_TAG = "layout"
 
     # Windows' code of the left Alt; the right Alt is AltGr, which types characters.

@@ -30,7 +30,7 @@ module MGQ_MpWorldAffection
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "world affection"
 
   # Map frames counted by tick.

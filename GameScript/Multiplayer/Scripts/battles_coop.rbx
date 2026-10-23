@@ -326,7 +326,7 @@ module MGQ_MpBattlesCoop
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "co-op battle"
 
   # The party of the co-op battle running: every player's characters in the order every game shares,
@@ -417,10 +417,10 @@ module MGQ_MpBattlesCoop
     MGQ_MpCoop::Scope.raid?
   end
 
-  # The results of a battle as the game numbers them, for Multiplayer InGame.log.
+  # The results of a battle as the game numbers them, for the log.
   RESULTS = { 0 => "won", 1 => "escaped", 2 => "lost" }
 
-  # Writes a message's fields for Multiplayer InGame.log.
+  # Writes a message's fields for the log.
   #
   # @param fields [Hash] The fields.
   # @return [String] The fields as name=value pairs.
@@ -430,7 +430,7 @@ module MGQ_MpBattlesCoop
     "?"
   end
 
-  # Names a character of a player's builds by its place, for Multiplayer InGame.log.
+  # Names a character of a player's builds by its place, for the log.
   #
   # @param members [Array<MGQ_MpActors::Builds::Member>] The player's builds.
   # @param place [Integer] Its place among the player's characters.
@@ -445,8 +445,7 @@ module MGQ_MpBattlesCoop
     "#{place} ?"
   end
 
-  # Describes a battle player's share of the Frontline and of the Backline, for Multiplayer
-  # InGame.log.
+  # Describes a battle player's share of the Frontline and of the Backline, for the log.
   #
   # @param player [Player] The player, as arrange gives them.
   # @return [String] Their name, seat and characters per line.
@@ -588,7 +587,7 @@ module MGQ_MpBattlesCoop
     ([invite[:peer].seat] | seats).first(RAID_PLAYERS - 1)
   end
 
-  # Tells what the others do while a battle invites nobody, for Multiplayer InGame.log.
+  # Tells what the others do while a battle invites nobody, for the log.
   #
   # @return [String] Each party member's map and scene, in a Raid World each player's on the map.
   def self.nobody_text
@@ -598,8 +597,7 @@ module MGQ_MpBattlesCoop
     others.map { |peer| "#{peer.state['name']} on map #{peer.state['map']} (#{peer.state['scene']}#{', busy' if peer.state['busy'] == '1'})" }.join(", ")
   end
 
-  # Tells why the player hosts a battle instead of asking the party's leader to lead it, for
-  # Multiplayer InGame.log.
+  # Tells why the player hosts a battle instead of asking the party's leader to lead it, for the log.
   #
   # @param leader [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The party's leader.
   # @return [String] The reason.
@@ -673,7 +671,7 @@ module MGQ_MpBattlesCoop
   # Reports whether a battle starting now may become a co-op battle: in a party of an open world,
   # or anywhere in a Raid World, and no other multiplayer battle or Library replay running.
   #
-  # @param troop_id [Integer, nil] The battle's troop, for Multiplayer InGame.log.
+  # @param troop_id [Integer, nil] The battle's troop, for the log.
   # @return [Boolean] Whether it may.
   def self.host_possible?(troop_id = nil)
     return false unless MGQ_MpOverworldSync.in_world?
@@ -1620,7 +1618,7 @@ module MGQ_MpBattlesCoop
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
   # @param message [Hash] The member's request.
-  # @param reason [String] Why, for Multiplayer InGame.log.
+  # @param reason [String] Why, for the log.
   def self.refuse_lead(peer, message, reason = "?")
     @request = nil
     tell(peer.seat, "no_lead", "bid" => message["bid"].to_s)
@@ -1698,7 +1696,7 @@ module MGQ_MpBattlesCoop
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The host.
   # @param message [Hash] The invite.
-  # @param reason [String] Why, for Multiplayer InGame.log.
+  # @param reason [String] Why, for the log.
   def self.decline(peer, message, reason = "?")
     @invite = nil
     thaw("the invite was turned down")
@@ -1791,7 +1789,7 @@ module MGQ_MpBattlesCoop
   # Ends a guest's battle the host's party left out, since the guest joined after the host stopped
   # waiting.
   #
-  # @param reason [String] Why, for Multiplayer InGame.log.
+  # @param reason [String] Why, for the log.
   # @return [Symbol] :broken, which ends the battle.
   def self.left_out(reason)
     log("left out of battle #{MGQ_MpBattlesSync.battle_id}: #{reason}")
@@ -2016,7 +2014,7 @@ module MGQ_MpBattlesCoop
     [MGQ_MpActors::Builds.write(@own_squad), @own_squad.map { |actor| [actor.hp, actor.mp] }, max]
   end
 
-  # Describes the player's characters a battle may take, for Multiplayer InGame.log.
+  # Describes the player's characters a battle may take, for the log.
   #
   # @return [String] Each character's id, name, level and HP.
   def self.squad_text
@@ -2189,7 +2187,7 @@ module MGQ_MpBattlesCoop
     log("party unknown: #{e.class}")
   end
 
-  # Describes characters of a battle with their HP, for Multiplayer InGame.log.
+  # Describes characters of a battle with their HP, for the log.
   #
   # @param actors [Array<Game_Actor>] The characters.
   # @return [String] Each character's id, name and HP.

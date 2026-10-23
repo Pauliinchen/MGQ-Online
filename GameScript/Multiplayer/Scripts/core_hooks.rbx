@@ -49,7 +49,7 @@ module MGQ_MpHooks
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "hooks"
 
   # Runs a block before a game method, on the object the method runs on and with its arguments.

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-23: Told a report being sent here
+#                            - Stood in for handing the log's lines over
 #      Paulinchen  2026-10-22: Stood in for the update message
 #      Paulinchen  2026-10-12: Checked when what the notification box says waits, shows or is dropped
 #                            - Checked that the wheel scrolling the box being typed into draws it anew
@@ -136,7 +137,7 @@ module MGQ_Multiplayer
   def self.clean(text, _fallback = nil); text; end
   def self.path(name); "Patch\\Multiplayer\\#{name}"; end
   # Stands in for the mod's log, recording each line in $log.
-  module Log; def self.write(message); $log << message; end; end
+  module Log; def self.write(message); $log << message; end; def self.hand_over; end; end
   # Stands in for the ini reader, finding nothing.
   module Ini; def self.read(_path); {}; end; def self.load(_path, _quiet = false); {}; end; end
   # Stands in for the player's identity and Player.ini, from $name, $share and $player_ini.

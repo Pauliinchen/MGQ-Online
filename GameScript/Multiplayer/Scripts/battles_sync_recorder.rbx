@@ -305,7 +305,7 @@ module MGQ_MpBattlesSync
       @events = []
     end
 
-    # Stops recording after an error, which stays in Multiplayer InGame.log, and breaks the live
+    # Stops recording after an error, which stays in the log, and breaks the live
     # battle off, since the guest sees nothing but the stream.
     #
     # @param error [Exception] The error.

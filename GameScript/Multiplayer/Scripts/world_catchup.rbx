@@ -253,7 +253,7 @@ module MGQ_MpWorldCatchup
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "catch-up"
 
   # Forgets what this session knew of the world: the requests, the world's story and the companions

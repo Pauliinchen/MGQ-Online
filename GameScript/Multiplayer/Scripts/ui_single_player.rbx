@@ -53,7 +53,7 @@ module MGQ_MpSinglePlayer
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "single player"
 
   # Whether a row differs from its value at the last offer, while the player plays a game of their own.

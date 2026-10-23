@@ -3,7 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Removed the PvP battle screen's hotkey, its exchange and its Discord invites
-#      Paulinchen  2026-10-23: Deleted the mirror match
+#      Paulinchen  2026-10-23: Named the one log of the day where a battle that failed tells why
+#                            - Deleted the mirror match
 #                            - Deleted the switch that never turned PvP battles off
 #                            - Left out a skill hit's message without a target in every battle
 #      Paulinchen  2026-10-22: Said the version to play on F11 for a step back to an older release
@@ -61,7 +62,7 @@
 module MGQ_MpBattlesPvp
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "pvp battle"
 
   # The fields the Discord mod publishes about PvP battles, through its bridge.
@@ -677,15 +678,15 @@ module MGQ_MpBattlesPvp
     }
 
     # What the map says when the battle could not start.
-    FAILED = "The battle could not start, Logs\\Multiplayer InGame.log says why."
+    FAILED = "The battle could not start."
 
     # What the map says after a live battle broke off without a winner.
-    BROKEN = "The PvP battle against %s's team broke off, Logs\\Multiplayer InGame.log says why."
+    BROKEN = "The PvP battle against %s's team broke off."
 
     # Actions of the friend's characters logged per battle, so the log stays short.
     LOGGED_ACTIONS = 12
 
-    # The game's battle results as Multiplayer InGame.log names them.
+    # The game's battle results as the log names them.
     RESULT_NAMES = { 0 => "won", 1 => "left", 2 => "lost" }
 
     class << self

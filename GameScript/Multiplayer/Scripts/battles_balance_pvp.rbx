@@ -20,7 +20,7 @@
 module MGQ_MpBalancePvp
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "pvp balance"
 
   # Whether a skill deals what it deals in a monster's hands. Most skills carry a second formula
@@ -97,7 +97,7 @@ module MGQ_MpBalancePvp
     log("#{battler.name rescue '?'}: changes unknown (#{e.class})")
   end
 
-  # Reads the values of a character the balance changes, for Multiplayer InGame.log.
+  # Reads the values of a character the balance changes, for the log.
   #
   # @param battler [Game_Battler] The character.
   # @return [Hash{String => Numeric}] Each value by its name.

@@ -1024,7 +1024,7 @@ module MGQ_MpChat
     true
   end
 
-  # Writes a line for Multiplayer InGame.log, leaving a whisper's text out.
+  # Writes a line for the log, leaving a whisper's text out.
   #
   # @param text [String] The line.
   # @param channel [Symbol] Its chat.
@@ -1267,7 +1267,7 @@ module MGQ_MpChat
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "chat"
 
   # Tells every other game of the world something, through overworld_sync.rbx.

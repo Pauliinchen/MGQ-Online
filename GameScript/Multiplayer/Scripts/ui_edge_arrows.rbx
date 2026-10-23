@@ -90,7 +90,7 @@ module MGQ_MpEdgeArrows
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "edge arrows"
 
   # Tells why no arrow shows now.

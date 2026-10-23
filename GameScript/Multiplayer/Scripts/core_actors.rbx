@@ -27,7 +27,7 @@
 module MGQ_MpActors
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "actors"
 
   # Describes characters for the log.

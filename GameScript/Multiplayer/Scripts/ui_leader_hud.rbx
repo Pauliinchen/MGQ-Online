@@ -75,7 +75,7 @@ module MGQ_MpLeaderHud
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "leader hud"
 
   # The map scene's windows that open at the top left, by their field in MGQ_MpGame: the map's

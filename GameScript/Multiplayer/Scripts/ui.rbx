@@ -58,7 +58,7 @@
 module MGQ_MpUi
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "ui"
 
   # Side of an icon of the game's iconset, in pixels.

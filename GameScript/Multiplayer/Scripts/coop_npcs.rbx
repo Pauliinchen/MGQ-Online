@@ -73,7 +73,7 @@ module MGQ_MpCoopNpcs
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "co-op npcs"
 
   # Reports whether another player's game moves this map's events: never while the player resumes

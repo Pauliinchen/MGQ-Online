@@ -120,7 +120,7 @@ module MGQ_MpRaidFreezeUi
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "raid freeze ui"
 
   # Lists the frozen fights the map shows: those that block starts (see blocking), unless their

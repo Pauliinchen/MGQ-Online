@@ -44,7 +44,7 @@ module MGQ_MpBattlesTeam
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "team duel"
 
   # Reports whether this game's side is the host's.
@@ -83,7 +83,7 @@ module MGQ_MpBattlesTeam
     log("sides, the player's #{same_side ? 'hosting' : 'guest'} side: #{side_text(@own)}; the other side: #{side_text(@other)}")
   end
 
-  # Describes a side's players with their share of the Frontline, for Multiplayer InGame.log.
+  # Describes a side's players with their share of the Frontline, for the log.
   #
   # @param side [Array<MGQ_MpBattlesCoop::Player>] The side's players.
   # @return [String] Each player's name, seat and characters.
@@ -101,7 +101,7 @@ module MGQ_MpBattlesTeam
   rescue
   end
 
-  # Describes who commands the characters of the players who left, for Multiplayer InGame.log.
+  # Describes who commands the characters of the players who left, for the log.
   #
   # @return [String] Each player who left and who took their characters over.
   def self.heirs_text

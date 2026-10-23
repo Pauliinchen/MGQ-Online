@@ -102,7 +102,7 @@ module MGQ_MpBattlesDuel
 
   extend MGQ_MpLog
 
-  # What starts this script's lines in Multiplayer InGame.log.
+  # What starts this script's lines in the log.
   LOG_TAG = "duel"
 
   # Sends a duel message to another game, and logs it without its body, which holds a team.
@@ -449,7 +449,7 @@ module MGQ_MpBattlesDuel
   # As challenger, calls the team duel off, telling every player called.
   #
   # @param reason [String] A key of REASONS.
-  # @param why [String] Why, for Multiplayer InGame.log.
+  # @param why [String] Why, for the log.
   def self.cancel_gathering(reason, why)
     gathering = @gathering
     @gathering = nil
