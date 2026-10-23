@@ -2,7 +2,8 @@
 //  ModTopicsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Gave the topics the world directory too
+//      Paulinchen  2026-10-23: Covered the mods text topic
+//                            - Gave the topics the world directory too
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -55,6 +56,17 @@ public sealed class ModTopicsTests : IDisposable
         Assert.Equal(
             new RubyArray([new RubyArray(["levelcap", "Patch/Level_Cap.rb", "Level_Cap"]), new RubyArray(["großermod", "Patch/Ünïcode 模组/Großer Mod.rb", "Großer Mod"])]),
             _topics.Call(ModTopics.Installed));
+    }
+
+    /// <summary>
+    /// Asserts that a world's mods come back without their marks, the required ones first.
+    /// </summary>
+    [Fact]
+    public void Text_ReadsTheMarks()
+    {
+        Assert.Equal(
+            new RubyHash { { "names", new RubyArray(["Level Cap", "Data", "Other"]) }, { "required", new RubyArray(["Level Cap"]) }, { "essential", new RubyArray(["Data"]) } },
+            _topics.Call(ModTopics.Text, "?Data; Other; !Level Cap"));
     }
 
     /// <inheritdoc />

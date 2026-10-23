@@ -2,12 +2,22 @@
 //  GameBridge.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Kept the bug report's screenshot by walking to its pixels here
+//      Paulinchen  2026-10-23: Stopped registering the directory's tickets as topics
+//                            - Handed the world screen's forms and this game's data to its requests
+//                            - Registered the world screen's steps into a world
+//                            - Registered the topics of the world screen's model
+//                            - Registered the topics of turning other mods off
+//                            - Registered the topics of the mods check, the shared mod settings and the directory's tickets
+//                            - Registered the topics of the world screen's forms
+//                            - Registered the topics of the worlds on this PC and of the mod picker
+//                            - Registered the topics of the World overview
+//                            - Kept the bug report's screenshot by walking to its pixels here
 //                            - Registered the interface's models with the keyboard
 //                            - Registered the topics of the story tracks and the story tables
 //                            - Registered the topics of the open world
 //                            - Registered the topics both hosts answer
 //                            - Registered the topics of the event sorter
+//                            - Shared Player.ini, the world changes, the directory and the parking between the topics
 //                            - Registered the topics of Player.ini and the other settings files
 //                            - Registered the topics of the scripts' log
 //                            - Registered the topics of a world's rules
@@ -19,6 +29,7 @@
 
 using System;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.Runtime.CompilerServices;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Native;
@@ -53,13 +64,25 @@ internal static unsafe class GameBridge
     /// <param name="context">The context the handshake opened.</param>
     private static void RegisterTopics(BridgeContext context)
     {
+        var services = new WorldServices(new PlayerIni(Path.Combine(ModFolder.Root, PlayerIni.FileName)), new WorldChanges(context), () => WorldDirectory.Current, () => ModParking.Current,
+            new DirectoryTickets(() => WorldDirectory.Current.ActionNow().State, WorldDirectory.Current.ClearAction));
         ScriptLog.Register(context);
-        SettingsTopics.Register(context);
+        SettingsTopics.Register(context, services.Player);
         RuleTopics.Register(context);
         SharedTopics.Register(context);
-        ModTopics.Register(context, () => ModParking.Current, () => WorldDirectory.Current);
+        ModTopics.Register(context, services.Parking, services.Directory);
         EventTopics.Register(context, () => EventTopics.Current);
         WorldTopics.Register(context);
+        OverviewTopics.Register(context);
+        LocalWorldTopics.Kept local = LocalWorldTopics.Register(context, services);
+        ModPickTopics.Register(context, services.Parking);
+        FormTopics forms = FormTopics.Register(context);
+        ModCheckTopics check = ModCheckTopics.Register(context, services);
+        SharedSettingsSync settings = SharedSettingsSync.Register(context, services);
+        ParkingSession session = ParkingTopics.Register(context, services);
+        WorldScreen screen = new(WorldScreenSources.Of(services, local, check, settings, session));
+        ScreenTopics.Register(context, screen, services.Changes, () => services.Directory().ListRevision);
+        EnteringTopics.Register(context, services, local.Worlds, local.Lists, session, forms, local.Fingerprint);
         WorldRoomTopics.Register(context);
         StoryTopics.Register(context);
         UiTopics.Register(context, new TypedText());

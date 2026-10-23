@@ -2,7 +2,9 @@
 //  SettingsTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Created
+//      Paulinchen  2026-10-23: Shared the state of Player.ini with the lists of worlds
+//                            - Took the Player.ini the other topics share
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -61,12 +63,6 @@ internal static class SettingsTopics
     public const string WriteTopic = "ini.write";
 
     /// <summary>
-    /// Registers the topics on a context, with Player.ini in the mod folder.
-    /// </summary>
-    /// <param name="context">The context the handshake opened.</param>
-    public static void Register(BridgeContext context) => Register(context, new PlayerIni(Path.Combine(ModFolder.Root, PlayerIni.FileName)));
-
-    /// <summary>
     /// Registers the topics on a context.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
@@ -104,7 +100,7 @@ internal static class SettingsTopics
     /// <param name="player">The Player.ini.</param>
     /// <returns>{"values" => {setting => value}, the player key left out, "readable" => whether it was read or is missing, "notice" => what
     /// the notification box tells or nil, "name" => the name the others see or nil}.</returns>
-    private static RubyHash State(PlayerIni player)
+    internal static RubyHash State(PlayerIni player)
     {
         var values = new RubyHash();
         foreach (var (key, value) in player.Settings)

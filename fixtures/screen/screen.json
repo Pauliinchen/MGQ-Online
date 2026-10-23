@@ -1,0 +1,2341 @@
+{
+  "texts": {
+    "hint": "Up and down pick the worlds or the commands, confirm moves into them. Right arrow on a world: its details.",
+    "enter_hint": "Confirm to enter it.",
+    "busy": {
+      "create": "Creating the world . . .",
+      "unlock": "Opening the world . . .",
+      "delete": "Deleting the world . . .",
+      "ban": "Removing the player . . .",
+      "edit": "Saving the changes . . .",
+      "find": "Looking for the world . . .",
+      "data": "Updating the game data . . .",
+      "start": "Fetching the starting save . . .",
+      "mods": "Downloading the mods . . .",
+      "settings": "Saving the mod settings . . .",
+      "read": "Reading the world's mods . . ."
+    },
+    "mod_states": [
+      [
+        "unlisted",
+        "unlisted",
+        "grey"
+      ],
+      [
+        "listed",
+        "listed",
+        "plain"
+      ],
+      [
+        "required",
+        "required",
+        "bad"
+      ],
+      [
+        "essential",
+        "essential",
+        "gold"
+      ]
+    ]
+  },
+  "cases": [
+    {
+      "name": "classic featured open world with marked mods",
+      "me": "me",
+      "admin": false,
+      "favourite": true,
+      "gone": false,
+      "listed": {
+        "id": "w1",
+        "seats": 4,
+        "online": 2,
+        "creator_id": "c",
+        "active": 0,
+        "creator_name": "Creator",
+        "name": "World",
+        "start": "none",
+        "members": [
+          [
+            "me",
+            true,
+            "Me"
+          ],
+          [
+            "a",
+            true,
+            "Alma"
+          ],
+          [
+            "b",
+            false,
+            "Bea"
+          ]
+        ],
+        "hidden": false,
+        "choose": false,
+        "open": true,
+        "featured": true,
+        "strict": false,
+        "data": "1:ab",
+        "mods": "Plain; !Req; ?Ess",
+        "description": "",
+        "mod_hashes": "",
+        "settings": "",
+        "type": "classic",
+        "share": "off",
+        "difficulty": null,
+        "other_mods_off": false,
+        "squad": null,
+        "raid_bosses": false,
+        "mods_unread": false
+      },
+      "local": {
+        "id": "f1",
+        "played": "2026-10-01",
+        "latest_save": true
+      },
+      "facts": {
+        "differing": [
+
+        ],
+        "differing_text": "",
+        "installed": [
+          "Req"
+        ],
+        "rows": [
+          {
+            "name": "Req",
+            "yours": "1.0",
+            "text": "Req: 1.0 here, 1.1 in the world"
+          }
+        ],
+        "settings_text": "Mod settings: the creator's, shared with every player",
+        "shared": true,
+        "turned_off": [
+
+        ],
+        "added": [
+
+        ]
+      },
+      "row": {
+        "text": "* World",
+        "count": "2/4",
+        "color": "featured",
+        "dim": false
+      },
+      "played": "last played 2026-10-01",
+      "panels": [
+        {
+          "title": "World",
+          "note": "featured",
+          "target": null,
+          "rows": [
+            [
+              {
+                "label": "Creator",
+                "text": "Creator",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Players",
+                "text": "2 / 4 online",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Password",
+                "text": "None",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Listed",
+                "text": "Public",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Start",
+                "text": "The beginning",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        },
+        {
+          "title": "Game data",
+          "note": "differing games are warned",
+          "target": null,
+          "rows": [
+            [
+              {
+                "label": "Mods",
+                "text": "Req, Ess, Plain",
+                "color": "normal",
+                "target": "mods",
+                "chips": [
+                  "Req",
+                  "Ess",
+                  "Plain"
+                ],
+                "chip_colors": [
+                  [
+                    "Req",
+                    "gold"
+                  ],
+                  [
+                    "Ess",
+                    "good"
+                  ]
+                ]
+              }
+            ],
+            [
+              {
+                "label": null,
+                "text": "Mod settings: the creator's, shared with every player",
+                "color": "gold",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": null,
+                "text": "Other mods: allowed",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Your game",
+                "text": "Matches the creator's",
+                "color": "good",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        },
+        {
+          "title": "Players",
+          "note": "3 joined",
+          "target": "players",
+          "rows": [
+            [
+              {
+                "label": null,
+                "text": "Me (you)",
+                "color": "good",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": null,
+                "text": "Alma",
+                "color": "good",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": null,
+                "text": "Bea",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              null
+            ]
+          ]
+        }
+      ],
+      "actions": [
+        [
+          "Enter the world",
+          "enter",
+          true
+        ],
+        [
+          "No longer a favourite",
+          "favourite",
+          true
+        ],
+        [
+          "Copy my latest save to my game",
+          "export_save",
+          true
+        ],
+        [
+          "Delete my saves of it",
+          "delete_saves",
+          true
+        ],
+        [
+          "Back",
+          "cancel",
+          true
+        ]
+      ],
+      "players": [
+        [
+          "head",
+          "Online (2)"
+        ],
+        [
+          "item",
+          "Me (you)",
+          "good",
+          "online"
+        ],
+        [
+          "item",
+          "Alma",
+          "good",
+          "online"
+        ],
+        [
+          "head",
+          "Offline (1)"
+        ],
+        [
+          "item",
+          "Bea",
+          "grey",
+          "offline"
+        ]
+      ],
+      "mods": [
+        [
+          "head",
+          "Mods (3)"
+        ],
+        [
+          "item",
+          "Req",
+          "gold",
+          "required, 1.0 here, 1.1 in the world"
+        ],
+        [
+          "item",
+          "Ess",
+          "good",
+          "essential, data matches"
+        ],
+        [
+          "item",
+          "Plain",
+          "plain",
+          null
+        ]
+      ]
+    },
+    {
+      "name": "hidden raid world of the player's own, mods not read yet",
+      "me": "c",
+      "admin": false,
+      "favourite": false,
+      "gone": false,
+      "listed": {
+        "id": "w1",
+        "seats": 4,
+        "online": 1,
+        "creator_id": "c",
+        "active": 0,
+        "creator_name": "Creator",
+        "name": "World",
+        "start": "ready",
+        "members": [
+          [
+            "me",
+            true,
+            "Me"
+          ],
+          [
+            "a",
+            true,
+            "Alma"
+          ],
+          [
+            "b",
+            false,
+            "Bea"
+          ],
+          [
+            "c",
+            false,
+            "Creator"
+          ]
+        ],
+        "hidden": true,
+        "choose": true,
+        "open": false,
+        "featured": false,
+        "strict": true,
+        "data": "1:cd",
+        "mods": "",
+        "description": "",
+        "mod_hashes": "",
+        "settings": "",
+        "type": "raid",
+        "share": "story",
+        "difficulty": 2,
+        "other_mods_off": false,
+        "squad": {
+          "luka": true,
+          "formation": 6,
+          "front": 2,
+          "raid_front": 1
+        },
+        "raid_bosses": false,
+        "mods_unread": true
+      },
+      "local": null,
+      "facts": {
+        "differing": [
+          "skills",
+          "maps"
+        ],
+        "differing_text": "skills and maps",
+        "installed": [
+
+        ],
+        "rows": [
+
+        ],
+        "settings_text": "Mod settings: the creator's own",
+        "shared": false,
+        "turned_off": [
+
+        ],
+        "added": [
+
+        ]
+      },
+      "row": {
+        "text": "World",
+        "count": "1/4",
+        "color": "raid",
+        "dim": false
+      },
+      "played": "not entered yet",
+      "panels": [
+        {
+          "title": "World",
+          "note": null,
+          "target": null,
+          "rows": [
+            [
+              {
+                "label": "Creator",
+                "text": "You",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Players",
+                "text": "1 / 4 online",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Password",
+                "text": "Needed",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Listed",
+                "text": "Hidden",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Type",
+                "text": "Raid",
+                "color": "raid",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Sharing",
+                "text": "Story",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Start",
+                "text": "The creator's save",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Difficulty",
+                "text": "VERY HARD",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Luka",
+                "text": "Replaceable",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Formation",
+                "text": "6",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Frontline",
+                "text": "2 | 1  (regular | raids)",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        },
+        {
+          "title": "Game data",
+          "note": "confirm on Your game: update",
+          "target": null,
+          "rows": [
+            [
+              {
+                "label": "Mods",
+                "text": "Reading . . .",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Your game",
+                "text": "Differs: skills and maps",
+                "color": "warn",
+                "target": "data",
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        },
+        {
+          "title": "Players",
+          "note": "4 joined",
+          "target": "players",
+          "rows": [
+            [
+              {
+                "label": null,
+                "text": "Me",
+                "color": "good",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": null,
+                "text": "Alma",
+                "color": "good",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": null,
+                "text": "Bea",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": null,
+                "text": "Creator (you)",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        }
+      ],
+      "actions": [
+        [
+          "Enter the world",
+          "enter",
+          true
+        ],
+        [
+          "Mark as a favourite",
+          "favourite",
+          true
+        ],
+        [
+          "Copy the world id",
+          "copy_id",
+          true
+        ],
+        [
+          "Edit the world",
+          "edit_world",
+          true
+        ],
+        [
+          "Remove a player",
+          "ban",
+          true
+        ],
+        [
+          "Delete the world for everyone",
+          "delete_world",
+          true
+        ],
+        [
+          "Back",
+          "cancel",
+          true
+        ]
+      ],
+      "players": [
+        [
+          "head",
+          "Online (2)"
+        ],
+        [
+          "item",
+          "Me",
+          "good",
+          "online"
+        ],
+        [
+          "item",
+          "Alma",
+          "good",
+          "online"
+        ],
+        [
+          "head",
+          "Offline (2)"
+        ],
+        [
+          "item",
+          "Bea",
+          "grey",
+          "offline"
+        ],
+        [
+          "item",
+          "Creator (you)",
+          "grey",
+          "offline"
+        ]
+      ],
+      "mods": [
+        [
+          "head",
+          "Mods (0)"
+        ]
+      ]
+    },
+    {
+      "name": "raid world still being set up that turns other mods off",
+      "me": "me",
+      "admin": true,
+      "favourite": false,
+      "gone": false,
+      "listed": {
+        "id": "w1",
+        "seats": 8,
+        "online": 3,
+        "creator_id": "c",
+        "active": 0,
+        "creator_name": "Creator",
+        "name": "World",
+        "start": "pending",
+        "members": [
+          [
+            "me",
+            true,
+            "Me"
+          ],
+          [
+            "a",
+            true,
+            "Alma"
+          ],
+          [
+            "b",
+            false,
+            "Bea"
+          ],
+          [
+            "c",
+            false,
+            "Creator"
+          ],
+          [
+            "d",
+            true,
+            "Dora"
+          ]
+        ],
+        "hidden": false,
+        "choose": false,
+        "open": false,
+        "featured": false,
+        "strict": false,
+        "data": "",
+        "mods": "!Missing",
+        "description": "",
+        "mod_hashes": "",
+        "settings": "",
+        "type": "raid",
+        "share": "all",
+        "difficulty": null,
+        "other_mods_off": true,
+        "squad": null,
+        "raid_bosses": false,
+        "mods_unread": false
+      },
+      "local": {
+        "id": "f3",
+        "played": null,
+        "latest_save": false
+      },
+      "facts": {
+        "differing": null,
+        "differing_text": "",
+        "installed": [
+
+        ],
+        "rows": [
+          {
+            "name": "Missing",
+            "yours": "not installed",
+            "text": "Missing: not installed"
+          }
+        ],
+        "settings_text": "Mod settings: the creator's own",
+        "shared": false,
+        "turned_off": [
+          [
+            "Invasions",
+            1
+          ],
+          [
+            "Big Mod",
+            3
+          ]
+        ],
+        "added": [
+
+        ]
+      },
+      "row": {
+        "text": "World",
+        "count": "3/8",
+        "color": "raid",
+        "dim": false
+      },
+      "played": "entered, not played yet",
+      "panels": [
+        {
+          "title": "World",
+          "note": null,
+          "target": null,
+          "rows": [
+            [
+              {
+                "label": "Creator",
+                "text": "Creator",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Players",
+                "text": "3 / 8 online",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Password",
+                "text": "Known",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Listed",
+                "text": "Public",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Type",
+                "text": "Raid",
+                "color": "raid",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Sharing",
+                "text": "Story, recruits",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Start",
+                "text": "Its creator is still setting it up",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Difficulty",
+                "text": "Per player",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Luka",
+                "text": "Fixed",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Formation",
+                "text": "4",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Frontline",
+                "text": "1 | 1  (regular | raids)",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        },
+        {
+          "title": "Game data",
+          "note": null,
+          "target": null,
+          "rows": [
+            [
+              {
+                "label": "Mods",
+                "text": "Missing",
+                "color": "normal",
+                "target": "mods",
+                "chips": [
+                  "Missing"
+                ],
+                "chip_colors": [
+                  [
+                    "Missing",
+                    "bad"
+                  ]
+                ]
+              }
+            ],
+            [
+              {
+                "label": null,
+                "text": "Mod settings: the creator's own",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": null,
+                "text": "Other mods: turned off (2 of yours)",
+                "color": "warn",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Your game",
+                "text": "Not compared: the world does not tell",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        },
+        {
+          "title": "Players",
+          "note": "5 joined",
+          "target": "players",
+          "rows": [
+            [
+              {
+                "label": null,
+                "text": "Me (you)",
+                "color": "good",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": null,
+                "text": "Alma",
+                "color": "good",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": null,
+                "text": "Bea",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": null,
+                "text": "and 2 more",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        }
+      ],
+      "actions": [
+        [
+          "Enter the world",
+          "enter",
+          true
+        ],
+        [
+          "Mark as a favourite",
+          "favourite",
+          true
+        ],
+        [
+          "Edit the world",
+          "edit_world",
+          true
+        ],
+        [
+          "Delete the world for everyone",
+          "delete_world",
+          true
+        ],
+        [
+          "Delete my saves of it",
+          "delete_saves",
+          true
+        ],
+        [
+          "Back",
+          "cancel",
+          true
+        ]
+      ],
+      "players": [
+        [
+          "head",
+          "Online (3)"
+        ],
+        [
+          "item",
+          "Me (you)",
+          "good",
+          "online"
+        ],
+        [
+          "item",
+          "Alma",
+          "good",
+          "online"
+        ],
+        [
+          "item",
+          "Dora",
+          "good",
+          "online"
+        ],
+        [
+          "head",
+          "Offline (2)"
+        ],
+        [
+          "item",
+          "Bea",
+          "grey",
+          "offline"
+        ],
+        [
+          "item",
+          "Creator",
+          "grey",
+          "offline"
+        ]
+      ],
+      "mods": [
+        [
+          "head",
+          "Mods (1)"
+        ],
+        [
+          "item",
+          "Missing",
+          "bad",
+          "required, missing"
+        ],
+        [
+          "head",
+          "Your mods turned off here (2)"
+        ],
+        [
+          "item",
+          "Invasions",
+          "grey",
+          "yours, turned off here"
+        ],
+        [
+          "item",
+          "Big Mod",
+          "grey",
+          "yours, turned off here"
+        ]
+      ]
+    },
+    {
+      "name": "classic world of the player's own with raid bosses, not compared",
+      "me": "c",
+      "admin": false,
+      "favourite": false,
+      "gone": false,
+      "listed": {
+        "id": "w1",
+        "seats": 4,
+        "online": 1,
+        "creator_id": "c",
+        "active": 0,
+        "creator_name": "Creator",
+        "name": "World",
+        "start": "ready",
+        "members": [
+          [
+            "c",
+            true,
+            "Creator"
+          ]
+        ],
+        "hidden": false,
+        "choose": true,
+        "open": false,
+        "featured": false,
+        "strict": false,
+        "data": "",
+        "mods": "",
+        "description": "",
+        "mod_hashes": "",
+        "settings": "",
+        "type": "classic",
+        "share": "off",
+        "difficulty": null,
+        "other_mods_off": false,
+        "squad": null,
+        "raid_bosses": true,
+        "mods_unread": false
+      },
+      "local": {
+        "id": "f4",
+        "played": "2026-09-30",
+        "latest_save": true
+      },
+      "facts": {
+        "differing": null,
+        "differing_text": "",
+        "installed": [
+
+        ],
+        "rows": [
+
+        ],
+        "settings_text": "Mod settings: the creator's own",
+        "shared": false,
+        "turned_off": [
+
+        ],
+        "added": [
+
+        ]
+      },
+      "row": {
+        "text": "World",
+        "count": "1/4",
+        "color": "normal",
+        "dim": false
+      },
+      "played": "last played 2026-09-30",
+      "panels": [
+        {
+          "title": "World",
+          "note": null,
+          "target": null,
+          "rows": [
+            [
+              {
+                "label": "Creator",
+                "text": "You",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Players",
+                "text": "1 / 4 online",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Password",
+                "text": "Known",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Listed",
+                "text": "Public",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Start",
+                "text": "Your choice: beginning, own or creator's save",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Raid Bosses",
+                "text": "On: story bosses of their tier",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        },
+        {
+          "title": "Game data",
+          "note": "confirm on Your game: update",
+          "target": null,
+          "rows": [
+            [
+              {
+                "label": "Mods",
+                "text": "No mod named",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": [
+
+                ]
+              }
+            ],
+            [
+              {
+                "label": null,
+                "text": "Mod settings: the creator's own",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": null,
+                "text": "Other mods: allowed",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Your game",
+                "text": "Not compared. Confirm to set yours",
+                "color": "normal",
+                "target": "data",
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        },
+        {
+          "title": "Players",
+          "note": "1 joined",
+          "target": "players",
+          "rows": [
+            [
+              {
+                "label": null,
+                "text": "Creator (you)",
+                "color": "good",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              null
+            ]
+          ]
+        }
+      ],
+      "actions": [
+        [
+          "Enter the world",
+          "enter",
+          true
+        ],
+        [
+          "Mark as a favourite",
+          "favourite",
+          true
+        ],
+        [
+          "Edit the world",
+          "edit_world",
+          true
+        ],
+        [
+          "Remove a player",
+          "ban",
+          false
+        ],
+        [
+          "Delete the world for everyone",
+          "delete_world",
+          true
+        ],
+        [
+          "Copy my latest save to my game",
+          "export_save",
+          true
+        ],
+        [
+          "Delete my saves of it",
+          "delete_saves",
+          true
+        ],
+        [
+          "Back",
+          "cancel",
+          true
+        ]
+      ],
+      "players": [
+        [
+          "head",
+          "Online (1)"
+        ],
+        [
+          "item",
+          "Creator (you)",
+          "good",
+          "online"
+        ]
+      ],
+      "mods": [
+        [
+          "head",
+          "Mods (0)"
+        ]
+      ]
+    },
+    {
+      "name": "classic world of the player's own whose data differs, same data only",
+      "me": "c",
+      "admin": true,
+      "favourite": false,
+      "gone": false,
+      "listed": {
+        "id": "w1",
+        "seats": 4,
+        "online": 0,
+        "creator_id": "c",
+        "active": 0,
+        "creator_name": "Creator",
+        "name": "World",
+        "start": "none",
+        "members": [
+          [
+            "c",
+            false,
+            "Creator"
+          ],
+          [
+            "a",
+            false,
+            "Alma"
+          ]
+        ],
+        "hidden": false,
+        "choose": true,
+        "open": false,
+        "featured": false,
+        "strict": true,
+        "data": "",
+        "mods": "?Data Pack",
+        "description": "",
+        "mod_hashes": "",
+        "settings": "",
+        "type": "classic",
+        "share": "off",
+        "difficulty": null,
+        "other_mods_off": true,
+        "squad": null,
+        "raid_bosses": false,
+        "mods_unread": false
+      },
+      "local": null,
+      "facts": {
+        "differing": [
+          "items"
+        ],
+        "differing_text": "items",
+        "installed": [
+
+        ],
+        "rows": [
+
+        ],
+        "settings_text": "Mod settings: the creator's own",
+        "shared": false,
+        "turned_off": null,
+        "added": [
+
+        ]
+      },
+      "row": {
+        "text": "World",
+        "count": "0/4",
+        "color": "normal",
+        "dim": false
+      },
+      "played": "not entered yet",
+      "panels": [
+        {
+          "title": "World",
+          "note": null,
+          "target": null,
+          "rows": [
+            [
+              {
+                "label": "Creator",
+                "text": "You",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Players",
+                "text": "0 / 4 online",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Password",
+                "text": "Needed",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Listed",
+                "text": "Public",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Start",
+                "text": "Your choice: beginning or own save",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        },
+        {
+          "title": "Game data",
+          "note": "confirm on Your game: update",
+          "target": null,
+          "rows": [
+            [
+              {
+                "label": "Mods",
+                "text": "Data Pack",
+                "color": "normal",
+                "target": "mods",
+                "chips": [
+                  "Data Pack"
+                ],
+                "chip_colors": [
+                  [
+                    "Data Pack",
+                    "gold"
+                  ]
+                ]
+              }
+            ],
+            [
+              {
+                "label": null,
+                "text": "Mod settings: the creator's own",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": null,
+                "text": "Other mods: turned off",
+                "color": "warn",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Your game",
+                "text": "Differs: items",
+                "color": "warn",
+                "target": "data",
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        },
+        {
+          "title": "Players",
+          "note": "2 joined",
+          "target": "players",
+          "rows": [
+            [
+              {
+                "label": null,
+                "text": "Creator (you)",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": null,
+                "text": "Alma",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        }
+      ],
+      "actions": [
+        [
+          "Enter the world",
+          "enter",
+          true
+        ],
+        [
+          "Mark as a favourite",
+          "favourite",
+          true
+        ],
+        [
+          "Edit the world",
+          "edit_world",
+          true
+        ],
+        [
+          "Remove a player",
+          "ban",
+          true
+        ],
+        [
+          "Delete the world for everyone",
+          "delete_world",
+          true
+        ],
+        [
+          "Back",
+          "cancel",
+          true
+        ]
+      ],
+      "players": [
+        [
+          "head",
+          "Offline (2)"
+        ],
+        [
+          "item",
+          "Creator (you)",
+          "grey",
+          "offline"
+        ],
+        [
+          "item",
+          "Alma",
+          "grey",
+          "offline"
+        ]
+      ],
+      "mods": [
+        [
+          "head",
+          "Mods (1)"
+        ],
+        [
+          "item",
+          "Data Pack",
+          "gold",
+          "essential, data differs"
+        ]
+      ]
+    },
+    {
+      "name": "raid world that starts at the beginning on the easiest difficulty",
+      "me": "me",
+      "admin": false,
+      "favourite": true,
+      "gone": false,
+      "listed": {
+        "id": "w1",
+        "seats": 4,
+        "online": 0,
+        "creator_id": "c",
+        "active": 0,
+        "creator_name": "Creator",
+        "name": "World",
+        "start": "none",
+        "members": [
+
+        ],
+        "hidden": false,
+        "choose": false,
+        "open": false,
+        "featured": false,
+        "strict": false,
+        "data": "",
+        "mods": "",
+        "description": "A long night.",
+        "mod_hashes": "",
+        "settings": "",
+        "type": "raid",
+        "share": "off",
+        "difficulty": -2,
+        "other_mods_off": false,
+        "squad": null,
+        "raid_bosses": false,
+        "mods_unread": false
+      },
+      "local": null,
+      "facts": {
+        "differing": [
+          "skills"
+        ],
+        "differing_text": "skills",
+        "installed": [
+
+        ],
+        "rows": [
+
+        ],
+        "settings_text": "Mod settings: the creator's own",
+        "shared": false,
+        "turned_off": [
+
+        ],
+        "added": [
+          "w1"
+        ]
+      },
+      "row": {
+        "text": "* World",
+        "count": "0/4",
+        "color": "raid",
+        "dim": false
+      },
+      "played": "not entered yet",
+      "panels": [
+        {
+          "title": "World",
+          "note": null,
+          "target": null,
+          "rows": [
+            [
+              {
+                "label": "Creator",
+                "text": "Creator",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Players",
+                "text": "0 / 4 online",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Password",
+                "text": "Needed",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Listed",
+                "text": "Public",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Type",
+                "text": "Raid",
+                "color": "raid",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Sharing",
+                "text": "None",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Start",
+                "text": "The beginning",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Difficulty",
+                "text": "VERY EASY",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Luka",
+                "text": "Fixed",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Formation",
+                "text": "4",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Frontline",
+                "text": "1 | 1  (regular | raids)",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        },
+        {
+          "title": "Game data",
+          "note": "differing games are warned",
+          "target": null,
+          "rows": [
+            [
+              {
+                "label": "Mods",
+                "text": "No mod named",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": [
+
+                ]
+              }
+            ],
+            [
+              {
+                "label": null,
+                "text": "Mod settings: the creator's own",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": null,
+                "text": "Other mods: allowed",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Your game",
+                "text": "Differs: skills",
+                "color": "warn",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        },
+        {
+          "title": "Players",
+          "note": "0 joined",
+          "target": "players",
+          "rows": [
+
+          ]
+        }
+      ],
+      "actions": [
+        [
+          "Enter the world",
+          "enter",
+          true
+        ],
+        [
+          "No longer a favourite",
+          "favourite",
+          true
+        ],
+        [
+          "Remove from my list",
+          "forget",
+          true
+        ],
+        [
+          "Back",
+          "cancel",
+          true
+        ]
+      ],
+      "players": [
+
+      ],
+      "mods": [
+        [
+          "head",
+          "Mods (0)"
+        ]
+      ]
+    },
+    {
+      "name": "world only on this PC, gone from the directory",
+      "me": "me",
+      "admin": false,
+      "favourite": false,
+      "gone": true,
+      "listed": null,
+      "local": {
+        "id": "f7",
+        "played": "2026-08-01",
+        "latest_save": true,
+        "raid": true
+      },
+      "facts": {
+        "differing": [
+
+        ],
+        "differing_text": "",
+        "installed": [
+
+        ],
+        "rows": [
+
+        ],
+        "settings_text": "Mod settings: the creator's own",
+        "shared": false,
+        "turned_off": [
+
+        ],
+        "added": [
+
+        ]
+      },
+      "row": {
+        "text": "On this PC",
+        "count": null,
+        "color": "raid",
+        "dim": true
+      },
+      "played": "last played 2026-08-01",
+      "panels": [
+        {
+          "title": "World",
+          "note": null,
+          "target": null,
+          "rows": [
+            [
+              {
+                "label": "Status",
+                "text": "Only on this PC: deleted, or you were removed",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        }
+      ],
+      "actions": [
+        [
+          "Enter the world",
+          "enter",
+          true
+        ],
+        [
+          "Mark as a favourite",
+          "favourite",
+          true
+        ],
+        [
+          "Copy my latest save to my game",
+          "export_save",
+          true
+        ],
+        [
+          "Delete my saves of it",
+          "delete_saves",
+          true
+        ],
+        [
+          "Back",
+          "cancel",
+          true
+        ]
+      ],
+      "players": [
+
+      ],
+      "mods": [
+
+      ]
+    },
+    {
+      "name": "world on this PC while the list has not arrived",
+      "me": "me",
+      "admin": false,
+      "favourite": true,
+      "gone": false,
+      "listed": null,
+      "local": {
+        "id": "f8",
+        "played": null,
+        "latest_save": false,
+        "raid": false
+      },
+      "facts": {
+        "differing": [
+
+        ],
+        "differing_text": "",
+        "installed": [
+
+        ],
+        "rows": [
+
+        ],
+        "settings_text": "Mod settings: the creator's own",
+        "shared": false,
+        "turned_off": [
+
+        ],
+        "added": [
+
+        ]
+      },
+      "row": {
+        "text": "* On this PC",
+        "count": null,
+        "color": "favourite",
+        "dim": false
+      },
+      "played": "entered, not played yet",
+      "panels": [
+        {
+          "title": "World",
+          "note": null,
+          "target": null,
+          "rows": [
+            [
+              {
+                "label": "Status",
+                "text": "Not in the list right now",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        }
+      ],
+      "actions": [
+        [
+          "Enter the world",
+          "enter",
+          true
+        ],
+        [
+          "No longer a favourite",
+          "favourite",
+          true
+        ],
+        [
+          "Delete my saves of it",
+          "delete_saves",
+          true
+        ],
+        [
+          "Back",
+          "cancel",
+          true
+        ]
+      ],
+      "players": [
+
+      ],
+      "mods": [
+
+      ]
+    },
+    {
+      "name": "hidden world added by its id, never entered",
+      "me": "me",
+      "admin": false,
+      "favourite": false,
+      "gone": false,
+      "listed": {
+        "id": "w1",
+        "seats": 2,
+        "online": 1,
+        "creator_id": "c",
+        "active": 0,
+        "creator_name": "Creator",
+        "name": "World",
+        "start": "none",
+        "members": [
+          [
+            "c",
+            true,
+            "Creator"
+          ]
+        ],
+        "hidden": true,
+        "choose": false,
+        "open": false,
+        "featured": false,
+        "strict": false,
+        "data": "",
+        "mods": "A; B; C",
+        "description": "",
+        "mod_hashes": "",
+        "settings": "",
+        "type": "classic",
+        "share": "off",
+        "difficulty": null,
+        "other_mods_off": false,
+        "squad": null,
+        "raid_bosses": false,
+        "mods_unread": false
+      },
+      "local": null,
+      "facts": {
+        "differing": [
+
+        ],
+        "differing_text": "",
+        "installed": [
+
+        ],
+        "rows": [
+
+        ],
+        "settings_text": "Mod settings: the creator's own",
+        "shared": false,
+        "turned_off": [
+
+        ],
+        "added": [
+          "w1"
+        ]
+      },
+      "row": {
+        "text": "World",
+        "count": "1/2",
+        "color": "normal",
+        "dim": false
+      },
+      "played": "not entered yet",
+      "panels": [
+        {
+          "title": "World",
+          "note": null,
+          "target": null,
+          "rows": [
+            [
+              {
+                "label": "Creator",
+                "text": "Creator",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Players",
+                "text": "1 / 2 online",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Password",
+                "text": "Needed",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              {
+                "label": "Listed",
+                "text": "Hidden",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Start",
+                "text": "The beginning",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        },
+        {
+          "title": "Game data",
+          "note": "differing games are warned",
+          "target": null,
+          "rows": [
+            [
+              {
+                "label": "Mods",
+                "text": "A, B, C",
+                "color": "normal",
+                "target": "mods",
+                "chips": [
+                  "A",
+                  "B",
+                  "C"
+                ],
+                "chip_colors": [
+
+                ]
+              }
+            ],
+            [
+              {
+                "label": null,
+                "text": "Mod settings: the creator's own",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": null,
+                "text": "Other mods: allowed",
+                "color": "normal",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ],
+            [
+              {
+                "label": "Your game",
+                "text": "Matches the creator's",
+                "color": "good",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              }
+            ]
+          ]
+        },
+        {
+          "title": "Players",
+          "note": "1 joined",
+          "target": "players",
+          "rows": [
+            [
+              {
+                "label": null,
+                "text": "Creator",
+                "color": "good",
+                "target": null,
+                "chips": null,
+                "chip_colors": null
+              },
+              null
+            ]
+          ]
+        }
+      ],
+      "actions": [
+        [
+          "Enter the world",
+          "enter",
+          true
+        ],
+        [
+          "Mark as a favourite",
+          "favourite",
+          true
+        ],
+        [
+          "Remove from my list",
+          "forget",
+          true
+        ],
+        [
+          "Back",
+          "cancel",
+          true
+        ]
+      ],
+      "players": [
+        [
+          "head",
+          "Online (1)"
+        ],
+        [
+          "item",
+          "Creator",
+          "good",
+          "online"
+        ]
+      ],
+      "mods": [
+        [
+          "head",
+          "Mods (3)"
+        ],
+        [
+          "item",
+          "A",
+          "plain",
+          null
+        ],
+        [
+          "item",
+          "B",
+          "plain",
+          null
+        ],
+        [
+          "item",
+          "C",
+          "plain",
+          null
+        ]
+      ]
+    }
+  ]
+}

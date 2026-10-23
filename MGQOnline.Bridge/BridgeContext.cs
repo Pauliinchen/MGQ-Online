@@ -2,7 +2,8 @@
 //  BridgeContext.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Ran what the scripts staged in a frame through the batch topic
+//      Paulinchen  2026-10-23: Let a handler ask another topic in-process
+//                            - Ran what the scripts staged in a frame through the batch topic
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -161,6 +162,25 @@ public sealed class BridgeContext
         }
 
         _topics.Add(topic);
+    }
+
+    /// <summary>
+    /// Runs another topic's handler in-process, for a handler that builds on the topics of other areas,
+    /// such as the world screen's steps on the parking's.
+    /// </summary>
+    /// <remarks>
+    /// The value is the handler's own, never wrapped in the envelope, and a failure throws to the asking
+    /// handler, whose envelope then reports it.
+    /// </remarks>
+    /// <param name="topic">The topic.</param>
+    /// <param name="request">The request, <see langword="null"/> for nil.</param>
+    /// <returns>The value, <see langword="null"/> for none.</returns>
+    /// <exception cref="BridgeRequestException">No handler answers the topic.</exception>
+    public RubyValue? Ask(string topic, RubyValue? request = null)
+    {
+        BridgeHandler handler = _handlers.TryGetValue(topic, out BridgeHandler? found) ? found : throw new BridgeRequestException($"There is no topic {topic}.");
+        RubyValue? value = handler(this, request ?? RubyNil.Value);
+        return value is RubyNil ? null : value;
     }
 
     /// <summary>

@@ -2,7 +2,8 @@
 //  BridgeContextTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Covered the batch topic and checked the unknown topic against its contract fixture
+//      Paulinchen  2026-10-23: Covered a topic asked in-process
+//                            - Covered the batch topic and checked the unknown topic against its contract fixture
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -221,5 +222,20 @@ public sealed class BridgeContextTests
         int written = _context.Call(System.Text.Encoding.UTF8.GetBytes(topic), request, buffer);
         Assert.True(written >= 0, $"{topic} parked its reply ({written})");
         return buffer[..written];
+    }
+
+    /// <summary>
+    /// Asserts that a handler asks another topic in-process for its plain value, and that a topic
+    /// without a handler throws.
+    /// </summary>
+    [Fact]
+    public void Ask_RunsAnotherTopicInProcess()
+    {
+        _context.Register("double", (_, request) => request.AsInt() * 2);
+        _context.Register("nothing", (_, _) => null);
+
+        Assert.Equal(new RubyInteger(6), _context.Ask("double", 3));
+        Assert.Null(_context.Ask("nothing"));
+        Assert.Throws<BridgeRequestException>(() => _context.Ask("missing"));
     }
 }

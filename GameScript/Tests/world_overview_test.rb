@@ -3,8 +3,11 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Checked the pages of other mods with their tabs, controls, buttons and mouse
-#      Paulinchen  2026-10-23: Answered the confirm box after the frame it opened in, through the stand-in
+#      Paulinchen  2026-10-23: Checked that the title is asked once
+#                            - Named the world's route by the number of its variable
+#                            - Answered the confirm box after the frame it opened in, through the stand-in
 #                            - Answered the catch-up through the bridge from the golden cases and found the part as the DLL does
+#                            - Answered the confirm box after the frame it opened in, through the stand-in
 #                            - Played the party's view and checked the party's actions asked of the DLL
 #                            - Answered the catch-up through the bridge from the golden cases
 #      Paulinchen  2026-10-13: Checked that the Unlocks grid leaves out characters the catch-up does not count
@@ -194,7 +197,7 @@ load_script "world_overview_mods"
 # Stands in for the emote wheel, shut until a test opens it.
 module MGQ_MpEmotes; def self.open?; false; end; end
 load_script "ui_party_box"
-open_rules_bridge
+rules_bridge = open_rules_bridge
 
 overview = MGQ_MpWorldOverview
 
@@ -681,12 +684,15 @@ check("the sections shown follow the world's story: Part 1 from the start, Part 
 check("before the relay told the story no section shows without a pool, which says so", [reached.call(nil), overview.world_model.rows], [[], [[:none, "No raid bosses yet."]]])
 $world_story = { "part" => "2" }
 check("the title says the type and the difficulty after the world's name", [overview.world_name, overview.title_tail], ["Test World", " | Raid | Hard"])
+titles_asked = lambda { rules_bridge.calls.count { |topic, _| topic == "overview.title" } }
+before = titles_asked.call
+3.times { overview.title_tail }
+check("the title is asked once while the type and the difficulty stay", [before > 0, titles_asked.call - before], [true, 0])
 $difficulty = nil
 check("without a difficulty the type alone", overview.title_tail, " | Raid")
 $difficulty = 1
 $world_story = { "part" => "mr" }
-check("the world's route is named as the player's own, through the variable that counts it", overview.world_story_text, "Part 3: Destroyer route")
-$data_system.variables[1143] = "混沌ルート進行度"
+check("the world's route is named as the player's own, by the variable that counts it: 1142 the Monster Realm's", overview.world_story_text, "Part 3: Judgment route")
 $world_story = { "part" => "chaos" }
 check("so is the Chaos route", overview.world_story_text, "Part 3: Chaos route")
 $world_story = nil

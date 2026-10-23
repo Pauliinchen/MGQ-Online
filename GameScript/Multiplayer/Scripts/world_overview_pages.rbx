@@ -3,7 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Laid the pages of other mods out like the World page, with buttons and controls in the pane
-#      Paulinchen  2026-10-23: Asked the catch-up for each member's factor as text
+#      Paulinchen  2026-10-23: Took the World page's note of the world from the DLL
+#                            - Asked the catch-up for each member's factor as text
 #                            - Read the world's part from the relay's summary of its story tracks
 #                            - Labelled the objective with OBJECTIVE_LABEL
 #      Paulinchen  2026-10-13: Left a story's temporary party and companions on a visit out of the Unlocks page's grid
@@ -174,8 +175,7 @@ module MGQ_MpWorldOverview
     online = rows.size
     lines = [PLAYERS_LINE % (seats > 0 ? PLAYERS_OF % [online, seats] : online.to_s)]
     lines << (raid ? STORY_LINE % world_story_text : CLASSIC_STORY)
-    note = [WORLD_TYPES[raid], difficulty_name || PER_PLAYER].join(TITLE_JOINT)
-    head = Head.new(nil, WORLD_ICON, world_name, note, lines, nil, nil)
+    head = Head.new(nil, WORLD_ICON, world_name, world_note, lines, nil, nil)
     list = []
     main = main_quest
     list << [:entry, Note.new(OBJECTIVE_LABEL, main.texts)] if main

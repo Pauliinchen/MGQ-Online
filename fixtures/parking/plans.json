@@ -1,0 +1,919 @@
+{
+  "owners": [
+    {
+      "path": "Patch/Luka_Replacer/heroes.rb",
+      "name": "Luka_Replacer",
+      "key": "lukareplacer",
+      "path_key": "patch/luka_replacer/heroes.rb",
+      "shared": false
+    },
+    {
+      "path": "Patch\\Sub\\Deep\\x.rb",
+      "name": "Sub",
+      "key": "sub",
+      "path_key": "patch/sub/deep/x.rb",
+      "shared": false
+    },
+    {
+      "path": "Patch/Invasions.rb",
+      "name": "Invasions",
+      "key": "invasions",
+      "path_key": "patch/invasions.rb",
+      "shared": false
+    },
+    {
+      "path": "Patch/Odd.RB",
+      "name": "Odd",
+      "key": "odd",
+      "path_key": "patch/odd.rb",
+      "shared": false
+    },
+    {
+      "path": "patch/lower/Mod.rb",
+      "name": "lower",
+      "key": "lower",
+      "path_key": "patch/lower/mod.rb",
+      "shared": false
+    },
+    {
+      "path": "Invasions.rb",
+      "name": "Invasions",
+      "key": "invasions",
+      "path_key": "invasions.rb",
+      "shared": false
+    },
+    {
+      "path": "Patch/ünïcode Mod.rb",
+      "name": "ünïcode Mod",
+      "key": "ünïcodemod",
+      "path_key": "patch/ünïcode mod.rb",
+      "shared": false
+    },
+    {
+      "path": "Patch//Twice//a.rb",
+      "name": "Twice",
+      "key": "twice",
+      "path_key": "patch//twice//a.rb",
+      "shared": false
+    },
+    {
+      "path": "Other/Thing/x.rb",
+      "name": "Other",
+      "key": "other",
+      "path_key": "other/thing/x.rb",
+      "shared": false
+    },
+    {
+      "path": "Patch/Multiplayer/Old.rb",
+      "name": "Multiplayer",
+      "key": "multiplayer",
+      "path_key": "patch/multiplayer/old.rb",
+      "shared": true
+    },
+    {
+      "path": "Patch/0_ModConfigRemake.rb",
+      "name": "0_ModConfigRemake",
+      "key": "0modconfigremake",
+      "path_key": "patch/0_modconfigremake.rb",
+      "shared": true
+    },
+    {
+      "path": "Patch/Sub/Multiplayer.rb",
+      "name": "Sub",
+      "key": "sub",
+      "path_key": "patch/sub/multiplayer.rb",
+      "shared": true
+    }
+  ],
+  "plans": [
+    {
+      "name": "allows other mods",
+      "scripts": [
+        "Patch/Invasions.rb",
+        "Patch/Level_Cap.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Victory_Screen.rb",
+        "Patch/Zeta.rb",
+        "Patch/alpha.rb"
+      ],
+      "elsewhere": [
+
+      ],
+      "mods": "",
+      "off": false,
+      "personal": [
+        "victoryscreen"
+      ],
+      "parked": [
+
+      ],
+      "parked_world": null,
+      "moved": false,
+      "change": null,
+      "plan": [
+
+      ],
+      "stuck": [
+
+      ],
+      "elsewhere_text": "0 mod scripts lie on another drive behind a link in Patch and cannot be turned off: .",
+      "confirm_text": null,
+      "also_text": ""
+    },
+    {
+      "name": "names some",
+      "scripts": [
+        "Patch/Invasions.rb",
+        "Patch/Level_Cap.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Victory_Screen.rb",
+        "Patch/Zeta.rb",
+        "Patch/alpha.rb"
+      ],
+      "elsewhere": [
+
+      ],
+      "mods": "!Level Cap; ?Luka Replacer",
+      "off": true,
+      "personal": [
+        "victoryscreen"
+      ],
+      "parked": [
+
+      ],
+      "parked_world": null,
+      "moved": false,
+      "change": [
+        "Patch/alpha.rb",
+        "Patch/Invasions.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Zeta.rb"
+      ],
+      "plan": [
+        "Patch/alpha.rb",
+        "Patch/Invasions.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Zeta.rb"
+      ],
+      "stuck": [
+
+      ],
+      "elsewhere_text": "0 mod scripts lie on another drive behind a link in Patch and cannot be turned off: .",
+      "confirm_text": "These mods are turned off while you play in Strict: alpha, Invasions, Sub and 1 more. Restart and join?",
+      "also_text": " These mods are turned off while you play there: alpha, Invasions, Sub and 1 more."
+    },
+    {
+      "name": "names all in any case",
+      "scripts": [
+        "Patch/Invasions.rb",
+        "Patch/Level_Cap.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Victory_Screen.rb",
+        "Patch/Zeta.rb",
+        "Patch/alpha.rb"
+      ],
+      "elsewhere": [
+
+      ],
+      "mods": "level cap; Invasions; sub; luka-replacer; zeta; ALPHA",
+      "off": true,
+      "personal": [
+        "victoryscreen"
+      ],
+      "parked": [
+
+      ],
+      "parked_world": null,
+      "moved": false,
+      "change": null,
+      "plan": [
+
+      ],
+      "stuck": [
+
+      ],
+      "elsewhere_text": "0 mod scripts lie on another drive behind a link in Patch and cannot be turned off: .",
+      "confirm_text": null,
+      "also_text": ""
+    },
+    {
+      "name": "a script of a folder names nothing",
+      "scripts": [
+        "Patch/Invasions.rb",
+        "Patch/Level_Cap.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Victory_Screen.rb",
+        "Patch/Zeta.rb",
+        "Patch/alpha.rb"
+      ],
+      "elsewhere": [
+
+      ],
+      "mods": "Level Cap; Luka Replacer; Invasions; Extra Mod",
+      "off": true,
+      "personal": [
+        "victoryscreen"
+      ],
+      "parked": [
+
+      ],
+      "parked_world": null,
+      "moved": false,
+      "change": [
+        "Patch/alpha.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Zeta.rb"
+      ],
+      "plan": [
+        "Patch/alpha.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Zeta.rb"
+      ],
+      "stuck": [
+
+      ],
+      "elsewhere_text": "0 mod scripts lie on another drive behind a link in Patch and cannot be turned off: .",
+      "confirm_text": "These mods are turned off while you play in Strict: alpha, Sub and Zeta. Restart and join?",
+      "also_text": " These mods are turned off while you play there: alpha, Sub and Zeta."
+    },
+    {
+      "name": "catalog unknown",
+      "scripts": [
+        "Patch/Invasions.rb",
+        "Patch/Level_Cap.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Victory_Screen.rb",
+        "Patch/Zeta.rb",
+        "Patch/alpha.rb"
+      ],
+      "elsewhere": [
+
+      ],
+      "mods": "",
+      "off": true,
+      "personal": null,
+      "parked": [
+
+      ],
+      "parked_world": null,
+      "moved": false,
+      "change": "unknown",
+      "plan": null,
+      "stuck": [
+
+      ],
+      "elsewhere_text": "0 mod scripts lie on another drive behind a link in Patch and cannot be turned off: .",
+      "confirm_text": null,
+      "also_text": ""
+    },
+    {
+      "name": "catalog unknown but every script named",
+      "scripts": [
+        "Patch/Invasions.rb",
+        "Patch/Level_Cap.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Victory_Screen.rb",
+        "Patch/Zeta.rb",
+        "Patch/alpha.rb"
+      ],
+      "elsewhere": [
+
+      ],
+      "mods": "Level Cap; Invasions; Sub; Luka Replacer; Victory Screen; Zeta; alpha",
+      "off": true,
+      "personal": null,
+      "parked": [
+
+      ],
+      "parked_world": null,
+      "moved": false,
+      "change": null,
+      "plan": [
+
+      ],
+      "stuck": [
+
+      ],
+      "elsewhere_text": "0 mod scripts lie on another drive behind a link in Patch and cannot be turned off: .",
+      "confirm_text": null,
+      "also_text": ""
+    },
+    {
+      "name": "catalog unknown with this world parked",
+      "scripts": [
+        "Patch/Invasions.rb",
+        "Patch/Level_Cap.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Victory_Screen.rb",
+        "Patch/Zeta.rb",
+        "Patch/alpha.rb"
+      ],
+      "elsewhere": [
+
+      ],
+      "mods": "",
+      "off": true,
+      "personal": null,
+      "parked": [
+        "Patch/Invasions.rb"
+      ],
+      "parked_world": "w1",
+      "moved": false,
+      "change": null,
+      "plan": null,
+      "stuck": [
+
+      ],
+      "elsewhere_text": "0 mod scripts lie on another drive behind a link in Patch and cannot be turned off: .",
+      "confirm_text": null,
+      "also_text": ""
+    },
+    {
+      "name": "catalog unknown with another world parked",
+      "scripts": [
+        "Patch/Invasions.rb",
+        "Patch/Level_Cap.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Victory_Screen.rb",
+        "Patch/Zeta.rb",
+        "Patch/alpha.rb"
+      ],
+      "elsewhere": [
+
+      ],
+      "mods": "",
+      "off": true,
+      "personal": null,
+      "parked": [
+        "Patch/Invasions.rb"
+      ],
+      "parked_world": "w9",
+      "moved": false,
+      "change": "unknown",
+      "plan": null,
+      "stuck": [
+
+      ],
+      "elsewhere_text": "0 mod scripts lie on another drive behind a link in Patch and cannot be turned off: .",
+      "confirm_text": null,
+      "also_text": ""
+    },
+    {
+      "name": "unlisted",
+      "scripts": null,
+      "elsewhere": null,
+      "mods": "",
+      "off": true,
+      "personal": [
+        "victoryscreen"
+      ],
+      "parked": [
+
+      ],
+      "parked_world": null,
+      "moved": false,
+      "change": "unlisted",
+      "plan": null,
+      "stuck": null,
+      "elsewhere_text": "0 mod scripts lie on another drive behind a link in Patch and cannot be turned off: .",
+      "confirm_text": null,
+      "also_text": ""
+    },
+    {
+      "name": "unlisted for a world that allows them",
+      "scripts": null,
+      "elsewhere": null,
+      "mods": "",
+      "off": false,
+      "personal": [
+        "victoryscreen"
+      ],
+      "parked": [
+
+      ],
+      "parked_world": null,
+      "moved": false,
+      "change": null,
+      "plan": [
+
+      ],
+      "stuck": [
+
+      ],
+      "elsewhere_text": "0 mod scripts lie on another drive behind a link in Patch and cannot be turned off: .",
+      "confirm_text": null,
+      "also_text": ""
+    },
+    {
+      "name": "moved this session",
+      "scripts": [
+        "Patch/Invasions.rb",
+        "Patch/Level_Cap.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Victory_Screen.rb",
+        "Patch/Zeta.rb",
+        "Patch/alpha.rb"
+      ],
+      "elsewhere": [
+
+      ],
+      "mods": "",
+      "off": true,
+      "personal": [
+        "victoryscreen"
+      ],
+      "parked": [
+
+      ],
+      "parked_world": null,
+      "moved": true,
+      "change": "restart",
+      "plan": [
+        "Patch/alpha.rb",
+        "Patch/Invasions.rb",
+        "Patch/Level_Cap.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Zeta.rb"
+      ],
+      "stuck": [
+
+      ],
+      "elsewhere_text": "0 mod scripts lie on another drive behind a link in Patch and cannot be turned off: .",
+      "confirm_text": null,
+      "also_text": ""
+    },
+    {
+      "name": "behind a link",
+      "scripts": [
+        "Patch/Invasions.rb",
+        "Patch/Level_Cap.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Victory_Screen.rb",
+        "Patch/Zeta.rb",
+        "Patch/alpha.rb"
+      ],
+      "elsewhere": [
+        "Patch/Invasions.rb",
+        "Patch/Sub/Extra-Mod.rb"
+      ],
+      "mods": "Level Cap",
+      "off": true,
+      "personal": [
+        "victoryscreen"
+      ],
+      "parked": [
+
+      ],
+      "parked_world": null,
+      "moved": false,
+      "change": "elsewhere",
+      "plan": [
+        "Patch/alpha.rb",
+        "Patch/Invasions.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Zeta.rb"
+      ],
+      "stuck": [
+        "Patch/Invasions.rb",
+        "Patch/Sub/Extra-Mod.rb"
+      ],
+      "elsewhere_text": "2 mod scripts lie on another drive behind a link in Patch and cannot be turned off: Patch/Invasions.rb.",
+      "confirm_text": null,
+      "also_text": ""
+    },
+    {
+      "name": "one behind a link",
+      "scripts": [
+        "Patch/Invasions.rb",
+        "Patch/Level_Cap.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Victory_Screen.rb",
+        "Patch/Zeta.rb",
+        "Patch/alpha.rb"
+      ],
+      "elsewhere": [
+        "Patch/Sub/Extra-Mod.rb"
+      ],
+      "mods": "Level Cap",
+      "off": true,
+      "personal": [
+        "victoryscreen"
+      ],
+      "parked": [
+
+      ],
+      "parked_world": null,
+      "moved": false,
+      "change": "elsewhere",
+      "plan": [
+        "Patch/alpha.rb",
+        "Patch/Invasions.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Zeta.rb"
+      ],
+      "stuck": [
+        "Patch/Sub/Extra-Mod.rb"
+      ],
+      "elsewhere_text": "1 mod script lies on another drive behind a link in Patch and cannot be turned off: Patch/Sub/Extra-Mod.rb.",
+      "confirm_text": null,
+      "also_text": ""
+    },
+    {
+      "name": "a link the world names",
+      "scripts": [
+        "Patch/Invasions.rb",
+        "Patch/Level_Cap.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Victory_Screen.rb",
+        "Patch/Zeta.rb",
+        "Patch/alpha.rb"
+      ],
+      "elsewhere": [
+        "Patch/Invasions.rb"
+      ],
+      "mods": "Level Cap; Invasions; Sub; Luka Replacer; Zeta; alpha",
+      "off": true,
+      "personal": [
+        "victoryscreen"
+      ],
+      "parked": [
+
+      ],
+      "parked_world": null,
+      "moved": false,
+      "change": null,
+      "plan": [
+
+      ],
+      "stuck": [
+
+      ],
+      "elsewhere_text": "0 mod scripts lie on another drive behind a link in Patch and cannot be turned off: .",
+      "confirm_text": null,
+      "also_text": ""
+    },
+    {
+      "name": "parked already as planned",
+      "scripts": [
+        "Patch/Invasions.rb",
+        "Patch/Level_Cap.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Victory_Screen.rb",
+        "Patch/Zeta.rb",
+        "Patch/alpha.rb"
+      ],
+      "elsewhere": [
+
+      ],
+      "mods": "Level Cap; Luka Replacer; Zeta; alpha",
+      "off": true,
+      "personal": [
+        "victoryscreen"
+      ],
+      "parked": [
+        "Patch/Invasions.rb",
+        "Patch/Sub/Extra-Mod.rb"
+      ],
+      "parked_world": "w9",
+      "moved": false,
+      "change": null,
+      "plan": [
+        "Patch/Invasions.rb",
+        "Patch/Sub/Extra-Mod.rb"
+      ],
+      "stuck": [
+
+      ],
+      "elsewhere_text": "0 mod scripts lie on another drive behind a link in Patch and cannot be turned off: .",
+      "confirm_text": null,
+      "also_text": ""
+    },
+    {
+      "name": "parked otherwise",
+      "scripts": [
+        "Patch/Invasions.rb",
+        "Patch/Level_Cap.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Victory_Screen.rb",
+        "Patch/Zeta.rb",
+        "Patch/alpha.rb"
+      ],
+      "elsewhere": [
+
+      ],
+      "mods": "Level Cap",
+      "off": true,
+      "personal": [
+        "victoryscreen"
+      ],
+      "parked": [
+        "Patch/Invasions.rb"
+      ],
+      "parked_world": "w1",
+      "moved": false,
+      "change": [
+        "Patch/alpha.rb",
+        "Patch/Invasions.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Zeta.rb"
+      ],
+      "plan": [
+        "Patch/alpha.rb",
+        "Patch/Invasions.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Zeta.rb"
+      ],
+      "stuck": [
+
+      ],
+      "elsewhere_text": "0 mod scripts lie on another drive behind a link in Patch and cannot be turned off: .",
+      "confirm_text": "These mods are turned off while you play in Strict: alpha, Invasions, Luka_Replacer and 2 more. Restart and join?",
+      "also_text": " These mods are turned off while you play there: alpha, Invasions, Luka_Replacer and 2 more."
+    },
+    {
+      "name": "parked for a world that allows them",
+      "scripts": [
+        "Patch/Invasions.rb",
+        "Patch/Level_Cap.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Victory_Screen.rb",
+        "Patch/Zeta.rb",
+        "Patch/alpha.rb"
+      ],
+      "elsewhere": [
+
+      ],
+      "mods": "",
+      "off": false,
+      "personal": [
+        "victoryscreen"
+      ],
+      "parked": [
+        "Patch/Invasions.rb"
+      ],
+      "parked_world": "w1",
+      "moved": false,
+      "change": [
+
+      ],
+      "plan": [
+
+      ],
+      "stuck": [
+
+      ],
+      "elsewhere_text": "0 mod scripts lie on another drive behind a link in Patch and cannot be turned off: .",
+      "confirm_text": "Strict allows your turned-off mods, which come back after a restart. Restart and join?",
+      "also_text": ""
+    },
+    {
+      "name": "every script the world names is personal",
+      "scripts": [
+        "Patch/Invasions.rb",
+        "Patch/Level_Cap.rb",
+        "Patch/Luka_Replacer.rb",
+        "Patch/Luka_Replacer/heroes.rb",
+        "Patch/Sub/Extra-Mod.rb",
+        "Patch/Victory_Screen.rb",
+        "Patch/Zeta.rb",
+        "Patch/alpha.rb"
+      ],
+      "elsewhere": [
+
+      ],
+      "mods": "",
+      "off": true,
+      "personal": [
+        "invasions",
+        "levelcap",
+        "lukareplacer",
+        "sub",
+        "victoryscreen",
+        "zeta",
+        "alpha"
+      ],
+      "parked": [
+
+      ],
+      "parked_world": null,
+      "moved": false,
+      "change": null,
+      "plan": [
+
+      ],
+      "stuck": [
+
+      ],
+      "elsewhere_text": "0 mod scripts lie on another drive behind a link in Patch and cannot be turned off: .",
+      "confirm_text": null,
+      "also_text": ""
+    },
+    {
+      "name": "duplicate scripts",
+      "scripts": [
+        "Patch/Invasions.rb",
+        "Patch/Zeta.rb"
+      ],
+      "elsewhere": [
+
+      ],
+      "mods": "Level Cap",
+      "off": true,
+      "personal": [
+        "victoryscreen"
+      ],
+      "parked": [
+
+      ],
+      "parked_world": null,
+      "moved": false,
+      "change": [
+        "Patch/Invasions.rb",
+        "Patch/Zeta.rb"
+      ],
+      "plan": [
+        "Patch/Invasions.rb",
+        "Patch/Zeta.rb"
+      ],
+      "stuck": [
+
+      ],
+      "elsewhere_text": "0 mod scripts lie on another drive behind a link in Patch and cannot be turned off: .",
+      "confirm_text": "These mods are turned off while you play in Strict: Invasions and Zeta. Restart and join?",
+      "also_text": " These mods are turned off while you play there: Invasions and Zeta."
+    }
+  ],
+  "groups": [
+    {
+      "paths": [
+
+      ],
+      "mods": [
+
+      ],
+      "list_text": "",
+      "names": [
+
+      ]
+    },
+    {
+      "paths": [
+        "Patch/A.rb"
+      ],
+      "mods": [
+        [
+          "A",
+          1
+        ]
+      ],
+      "list_text": "A",
+      "names": [
+        "A"
+      ]
+    },
+    {
+      "paths": [
+        "Patch/A.rb",
+        "Patch/B.rb"
+      ],
+      "mods": [
+        [
+          "A",
+          1
+        ],
+        [
+          "B",
+          1
+        ]
+      ],
+      "list_text": "A and B",
+      "names": [
+        "A",
+        "B"
+      ]
+    },
+    {
+      "paths": [
+        "Patch/A.rb",
+        "Patch/B.rb",
+        "Patch/C.rb"
+      ],
+      "mods": [
+        [
+          "A",
+          1
+        ],
+        [
+          "B",
+          1
+        ],
+        [
+          "C",
+          1
+        ]
+      ],
+      "list_text": "A, B and C",
+      "names": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    {
+      "paths": [
+        "Patch/A.rb",
+        "Patch/B/x.rb",
+        "Patch/B/y.rb",
+        "Patch/C.rb",
+        "Patch/D.rb"
+      ],
+      "mods": [
+        [
+          "A",
+          1
+        ],
+        [
+          "B",
+          2
+        ],
+        [
+          "C",
+          1
+        ],
+        [
+          "D",
+          1
+        ]
+      ],
+      "list_text": "A, B, C and 1 more",
+      "names": [
+        "A",
+        "x",
+        "y",
+        "C",
+        "D"
+      ]
+    },
+    {
+      "paths": [
+        "Patch/b/x.rb",
+        "Patch/B.rb"
+      ],
+      "mods": [
+        [
+          "b",
+          2
+        ]
+      ],
+      "list_text": "b",
+      "names": [
+        "x",
+        "B"
+      ]
+    }
+  ],
+  "texts": {
+    "return": "Loose allows your turned-off mods, which come back after a restart. Restart and join?",
+    "also_none": ""
+  }
+}

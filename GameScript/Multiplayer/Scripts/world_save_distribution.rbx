@@ -2,6 +2,8 @@
 #  world_save_distribution.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-23: Dropped the starting save's files as text, which the DLL takes as pairs
+#                            - Left whether a new player is asked, warned or fetches the starting save to the DLL's steps into a world
 #      Paulinchen  2026-10-14: Fetched a Raid World's starting save in every build
 #      Paulinchen  2026-10-10: Fetched a Raid World's starting save in a development build
 #      Paulinchen  2026-10-09: Neither asked a new player of a Raid World where to start nor fetched its starting save
@@ -113,14 +115,6 @@ module MGQ_MpSaveDistribution
     SYSTEM_FALLBACK
   end
 
-  # Writes the files as Patch/Multiplayer/Multiplayer.dll takes them.
-  #
-  # @param files [Array<Array<String>>] Each file's name in the world's folder and its path in the game's folder.
-  # @return [String] One line per file, its name, "=" and its path; empty for none.
-  def self.text_of(files)
-    files.map { |name, path| "#{name}=#{path}" }.join("\n")
-  end
-
   # Copies the starting save into the creator's own folder of the new world, so the creator
   # starts from it too without fetching it back.
   #
@@ -138,46 +132,6 @@ module MGQ_MpSaveDistribution
   rescue => e
     log("could not place the starting save: #{e.class}: #{e.message}")
     false
-  end
-
-  # Reports whether a new player must be asked where to start before entering a world: the world
-  # lets its players choose, and this PC has no save of the world yet. Never in a Raid World, which
-  # takes no player's choice, even one made while it still offered one.
-  #
-  # @param world [MGQ_MpWorld::World] The world on this PC.
-  # @param choose [Boolean, nil] Whether the world lets its players choose, nil when unknown.
-  # @return [Boolean] Whether the player must be asked.
-  def self.ask_start?(world, choose)
-    choose == true && !world.raid? && new_player?(world)
-  end
-
-  # Reports whether a world's starting save must be fetched before entering it: the world has one,
-  # and this PC has no save of the world yet.
-  #
-  # @param world [MGQ_MpWorld::World] The world on this PC.
-  # @param start [String, nil] How far the world is with its starting save, nil when unknown.
-  # @return [Boolean] Whether it must.
-  def self.fetch?(world, start)
-    start == "ready" && new_player?(world)
-  end
-
-  # Reports whether the player enters a world for the first time: this PC has no save of it yet.
-  #
-  # @param world [MGQ_MpWorld::World] The world on this PC.
-  # @return [Boolean] Whether they do.
-  def self.new_player?(world)
-    world.latest_save.nil?
-  end
-
-  # Starts fetching a world's starting save into its folder; how it went follows as a directory action.
-  #
-  # @param world [MGQ_MpWorld::World] The world on this PC.
-  # @return [Boolean] Whether the action started.
-  def self.fetch(world)
-    MGQ_Multiplayer::Player.share
-    started = MGQ_Multiplayer::Link.function('mp_dir_fetch_start').call(world.code + "\0", world.save_folder + "\0") == 1
-    log(started ? "fetching the starting save of world #{world.id} (#{world.name}) into #{world.save_folder}" : "fetching the starting save of world #{world.id} could not start")
-    started
   end
 
   # Checks that this game can load a fetched starting save, and throws it away when it cannot, so

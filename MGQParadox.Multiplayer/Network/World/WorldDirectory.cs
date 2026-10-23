@@ -2,7 +2,13 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Took the squad settings from MGQOnline.Game
+//      Paulinchen  2026-10-28: Refused seats out of range and squad rules that do not parse before asking the relay
+//      Paulinchen  2026-10-23: Told the DLL itself what the last action handed back
+//                            - Handed out the list as it stands with a revision, for the world screen's model
+//                            - Found a world in the list as it stands, for the parked mods
+//                            - Read a world's mod settings on their own for the shared settings
+//                            - Told the DLL itself how the running action stands
+//                            - Took the squad settings from MGQOnline.Game
 //                            - Handed the game script the mod catalog as it stands instead of as text
 //      Paulinchen  2026-10-22: Read the mods, mod hashes and settings of the opened world on their own, which the list leaves out for this version
 //      Paulinchen  2026-10-13: Made, changed and listed Classic worlds with their raid bosses
@@ -190,9 +196,20 @@ internal sealed class WorldDirectory
     private string? _catalogLogged;
 
     /// <summary>
+    /// Counts the changes of the list: a fetch started or ended, the opened world's mods read.
+    /// </summary>
+    private long _listRevision;
+
+    /// <summary>
     /// Counts the actions, so a thread of an earlier one changes nothing.
     /// </summary>
     private int _actionGeneration;
+
+    /// <summary>
+    /// The reading of a world's mod settings for the shared settings: the world, its state ("busy",
+    /// "done" or "failed") and the settings read; <see langword="null"/> before the first.
+    /// </summary>
+    private (string Id, string State, string? Settings)? _settingsRead;
 
     /// <summary>
     /// The running or last action: its kind, and "busy", "done" or "failed".
@@ -265,6 +282,7 @@ internal sealed class WorldDirectory
             }
 
             _listing = true;
+            _listRevision++;
             watched = _watched;
         }
 
@@ -312,6 +330,7 @@ internal sealed class WorldDirectory
                 _listLogged = listSummary;
                 _catalogLogged = catalogSummary;
                 _listing = false;
+                _listRevision++;
                 _listError = error;
                 _admin = listing?.Admin == true;
                 _catalogError = catalogError;
@@ -454,6 +473,7 @@ internal sealed class WorldDirectory
             if (kept)
             {
                 _details = (world.Id, world.About);
+                _listRevision++;
             }
         }
 
@@ -498,13 +518,65 @@ internal sealed class WorldDirectory
     {
         lock (_gate)
         {
-            var state = _listing ? "loading" : _listError != null ? "failed" : _worlds != null ? "ready" : "idle";
-            var worlds = _worlds?.Select(world => world.ModsUnread && _details is { } details && details.Id == world.Id
-                ? world with { About = world.About with { Mods = details.About.Mods, ModHashes = details.About.ModHashes, Settings = details.About.Settings }, ModsUnread = false }
-                : world);
-            return new Message([new(StateHeader, state), new(ErrorHeader, _listError), new(AdminHeader, _admin ? "1" : null)], worlds != null ? ListText(worlds) : string.Empty).Encode();
+            var worlds = _worlds?.Select(WithDetails);
+            return new Message([new(StateHeader, ListState()), new(ErrorHeader, _listError), new(AdminHeader, _admin ? "1" : null)], worlds != null ? ListText(worlds) : string.Empty).Encode();
         }
     }
+
+    /// <summary>
+    /// Gets the list's revision, which moves whenever a fetch starts or ends or the opened world's mods were read.
+    /// </summary>
+    public long ListRevision
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _listRevision;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Hands out the list as it stands, each world with its mods once they were read.
+    /// </summary>
+    /// <returns>How the list stands ("loading", "ready", "failed" or "idle"), why it failed, whether it was made for one of the relay's admins, and its worlds, none before the first one arrived.</returns>
+    public (string State, string? Error, bool Admin, IReadOnlyList<ListedWorld> Worlds) ListNow()
+    {
+        lock (_gate)
+        {
+            return (ListState(), _listError, _admin, _worlds?.Select(WithDetails).ToList() ?? []);
+        }
+    }
+
+    /// <summary>
+    /// Finds a world in the list as it stands, with its mods once they were read.
+    /// </summary>
+    /// <param name="id">The world's id.</param>
+    /// <returns>How the list stands ("loading", "ready", "failed" or "idle"), and the world; <see langword="null"/> when the list lacks it.</returns>
+    public (string State, ListedWorld? World) ListedNow(string id)
+    {
+        lock (_gate)
+        {
+            return (ListState(), _worlds?.FirstOrDefault(world => world.Id == id) is { } listed ? WithDetails(listed) : null);
+        }
+    }
+
+    /// <summary>
+    /// Tells how the list stands; called under the gate.
+    /// </summary>
+    /// <returns>"loading", "failed", "ready" or "idle".</returns>
+    private string ListState() => _listing ? "loading" : _listError != null ? "failed" : _worlds != null ? "ready" : "idle";
+
+    /// <summary>
+    /// Adds the mods, mod hashes and settings read on their own to a world the list left them out of;
+    /// called under the gate.
+    /// </summary>
+    /// <param name="world">The world as listed.</param>
+    /// <returns>The world with them, or as listed.</returns>
+    private ListedWorld WithDetails(ListedWorld world) => world.ModsUnread && _details is { } details && details.Id == world.Id
+        ? world with { About = world.About with { Mods = details.About.Mods, ModHashes = details.About.ModHashes, Settings = details.About.Settings }, ModsUnread = false }
+        : world;
 
     /// <summary>
     /// Tells how the relay's mod catalog stands, as fetched with the list, for the game script.
@@ -634,6 +706,7 @@ internal sealed class WorldDirectory
     /// <returns><see langword="false"/> while another action runs.</returns>
     public bool Create(string name, string password, int seats, bool hidden, bool choose, IReadOnlyList<(string Name, string Path)> start, WorldAbout? about = null, string type = WorldType.Classic, string share = CompanionSharing.Off, int? difficulty = null, bool? otherModsOff = null, string? squad = null, bool? raidBosses = null) => Start("create", () =>
     {
+        CheckSettings(seats, squad);
         var (key, playerName) = Me();
         var token = JoinCode.NewToken();
         var id = Relays.WorldRoomOf(token);
@@ -830,10 +903,34 @@ internal sealed class WorldDirectory
     /// <returns><see langword="false"/> while another action runs.</returns>
     public bool Edit(string id, int seats, string description, string mods, string? modHashes = null, int? difficulty = null, bool? otherModsOff = null, string? squad = null, bool? raidBosses = null) => Start("edit", () =>
     {
+        CheckSettings(seats, squad);
         Client().Edit(id, Me().Key, seats, description, mods, modHashes, difficulty, otherModsOff, squad, raidBosses);
         Log.Write($"changed world {Log.Short(id)}: {seats.ToString(CultureInfo.InvariantCulture)} seats, description of {description.Length.ToString(CultureInfo.InvariantCulture)} characters, mods '{OnOneField(mods)}', {(modHashes != null ? $"mod hashes '{OnOneField(modHashes)}'" : "mod hashes left as they are")}{(difficulty is { } level ? $", difficulty {level.ToString(CultureInfo.InvariantCulture)}" : string.Empty)}{SquadNote(squad)}{RaidBossesNote(raidBosses)}{OtherModsOffNote(otherModsOff)}");
         return null;
     });
+
+    /// <summary>
+    /// Refuses a world's seats outside what a world code holds and squad settings that do not parse,
+    /// before the relay is asked.
+    /// </summary>
+    /// <remarks>
+    /// The world screen's form checks the same, but the directory owns what it sends.
+    /// </remarks>
+    /// <param name="seats">How many games the world seats at once.</param>
+    /// <param name="squad">A Raid World's squad settings as text, <see langword="null"/> for none.</param>
+    /// <exception cref="ActionException">The seats or the squad settings are refused.</exception>
+    private static void CheckSettings(int seats, string? squad)
+    {
+        if (seats is < WorldCode.MinSeats or > WorldCode.MaxSeats)
+        {
+            throw new ActionException($"A world seats {WorldCode.MinSeats.ToString(CultureInfo.InvariantCulture)} to {WorldCode.MaxSeats.ToString(CultureInfo.InvariantCulture)} players.");
+        }
+
+        if (squad != null && !RaidSquad.IsValid(squad))
+        {
+            throw new ActionException("The squad rules are not valid.");
+        }
+    }
 
     /// <summary>
     /// Tells the log a Raid World's squad settings.
@@ -878,6 +975,61 @@ internal sealed class WorldDirectory
         Log.Write($"set the mod settings of world {Log.Short(id)}: '{OnOneField(settings)}'");
         return null;
     });
+
+    /// <summary>
+    /// Reads a world's mod settings on the relay as they stand, on a thread of its own, outside the
+    /// actions, so the shared settings read one world instead of the whole list.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <returns><see langword="false"/> while a reading runs.</returns>
+    public bool ReadSettings(string id)
+    {
+        lock (_gate)
+        {
+            if (_settingsRead is { State: "busy" })
+            {
+                return false;
+            }
+
+            _settingsRead = (id, "busy", null);
+        }
+
+        var key = Playing()?.Key;
+        Threads.Start("MultiplayerWorldSettings", () =>
+        {
+            var state = "failed";
+            string? settings = null;
+
+            try
+            {
+                settings = Client().World(id, key).About.Settings;
+                state = "done";
+            }
+            catch (Exception ex)
+            {
+                Log.Write($"the mod settings of world {Log.Short(id)} could not be read: {ReasonFor("world", ex)}");
+            }
+
+            lock (_gate)
+            {
+                _settingsRead = (id, state, settings);
+            }
+        });
+        return true;
+    }
+
+    /// <summary>
+    /// Tells how the reading of a world's mod settings stands.
+    /// </summary>
+    /// <param name="id">The world.</param>
+    /// <returns>"busy", "done" with the settings, or "failed", also when the last reading was of another world.</returns>
+    public (string State, string? Settings) SettingsRead(string id)
+    {
+        lock (_gate)
+        {
+            return _settingsRead is { } read && read.Id == id ? (read.State, read.Settings) : ("failed", null);
+        }
+    }
 
     /// <summary>
     /// Replaces a world's game data with that of the creator's game as it is now, which only its creator may.
@@ -939,6 +1091,31 @@ internal sealed class WorldDirectory
             };
 
             return new Message(headers).Encode();
+        }
+    }
+
+    /// <summary>
+    /// Tells how the running or last action stands, for the DLL's own followers of actions.
+    /// </summary>
+    /// <returns>Its state ("idle", "busy", "done" or "failed"), its kind and, once it failed, why.</returns>
+    public (string State, string? Kind, string? Error) ActionNow()
+    {
+        lock (_gate)
+        {
+            return (_action?.State ?? "idle", _action?.Kind, _action?.State == "failed" ? _actionError : null);
+        }
+    }
+
+    /// <summary>
+    /// Tells what the last action that succeeded handed back, for the DLL's own followers of actions.
+    /// </summary>
+    /// <returns>The world code, the world's directory id, name, starting save state and whether its new players choose; <see langword="null"/> while none succeeded or it handed back none.</returns>
+    public (string Code, string? World, string? Name, string? Start, bool Choose)? ResultNow()
+    {
+        lock (_gate)
+        {
+            ActionResult? result = _action?.State == "done" ? _actionResult : null;
+            return result == null ? null : (result.Code, WorldCode.Parse(result.Code) is { } code ? Relays.WorldRoomOf(code.Token) : null, result.Name, result.Start, result.Choose);
         }
     }
 

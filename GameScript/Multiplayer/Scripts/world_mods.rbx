@@ -2,7 +2,13 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Took the mod catalog from the DLL as plain values instead of parsing its text
+#      Paulinchen  2026-10-23: Dropped the creator's hashes, the settings' marker, the settings an edit starts from and those the relay took, which the DLL's requests read themselves
+#                            - Left the download of a world's mods and the summary of its check to the DLL's steps into a world
+#                            - Left the restart for downloaded mods and the world to enter again to the DLL's parking
+#                            - Forgot the installed scripts and the world's settings through topics of their own names, and dropped list_text, which the DLL's texts replace
+#                            - Left the shared mod settings' rules, their sending, the relay's check and the notices to the DLL, playing its steps
+#                            - Left the required-mods check, the creator's hashes, the download, the options an admin sends and the battle server's mods to the DLL
+#                            - Took the mod catalog from the DLL as plain values instead of parsing its text
 #                            - Started the game again for downloaded mods under Wine or Proton too
 #                            - Deleted the options dump for the World Admin tool, its setting and its check
 #      Paulinchen  2026-10-22: Took a world's settings only once the list carries its mods, and as many settings and mod hashes as the relay's new limit
@@ -77,11 +83,20 @@ module MGQ_MpWorldMods
   # Seconds between two readings of the catalog.
   CATALOG_SECONDS = 1.0
 
-  # Bytes of a file's hash and its terminating zero.
-  HASH_SIZE = 65
+  # The topic that checks a world's required mods.
+  CHECK_TOPIC = "mods.check"
 
-  # The setting in Player.ini that names the world to enter again once the game started anew.
-  REJOIN_SETTING = "rejoin"
+  # The topic that forgets the scripts in Patch and their hashes.
+  FORGET_INSTALLED_TOPIC = "mods.forget"
+
+  # The topic that lists the mods of a world the battle server runs.
+  SERVED_TOPIC = "mods.served"
+
+  # The topic that names the catalog mods whose options an admin's game sends now.
+  REPORT_TOPIC = "mods.report"
+
+  # The topic that sends a mod's Mod Config options.
+  OPTIONS_TOPIC = "mods.options"
 
   # The row of Mod Config that tells whether the world shares its creator's settings.
   SHARED_OPTION = :mgq_mp_shared_mod_settings
@@ -95,32 +110,14 @@ module MGQ_MpWorldMods
   # What the row says while Off.
   ROW_OFF_HELP = "Each player here sets their own mod options."
 
-  # The pair that starts the settings of a world that shares them. Released games skip it, since
-  # they cannot read its type.
-  MARKER = "@shared=o:1"
-
   # The marker's key, as settings_from reads it.
   MARKER_KEY = :"@shared"
-
-  # The kind of directory action that sends the settings.
-  SHARE_ACTION = "settings"
 
   # The field that marks the creator's message of the world's new settings.
   LIVE_FIELD = "world_mods"
 
   # The field of a player's state that holds the checksum of the settings their game applies.
   STATE_FIELD = "mod_settings"
-
-  # Frames before settings that could not be sent are tried again, two seconds.
-  RETRY_FRAMES = 120
-
-  # Frames the relay may take to answer settings sent, or the list asked for the world's settings,
-  # thirty seconds.
-  SEND_FRAMES = 1800
-
-  # Frames a reading of the world's settings on the relay counts as recent, ten seconds; a player
-  # whose game holds other settings meanwhile is told the creator's without asking the relay again.
-  CHECK_FRAMES = 600
 
   # An option's name that opens its mod's group, "[Mod Name] Option", as Mod Config Remake reads it.
   MOD_NAME = /\A\s*\[([^\]]+)\]\s*/
@@ -134,429 +131,111 @@ module MGQ_MpWorldMods
   # Frames a notice shows, ten seconds.
   NOTICE_FRAMES = 600
 
-  # Most lines a notice takes, which leaves room for two invites in the box's five rows.
+  # Most lines a notice takes, as many as the DLL breaks it into.
   NOTICE_LINES = 3
 
-  # Most characters of a notice's line, about as many as the notification box holds at its default
-  # width; a longer line is squeezed.
-  NOTICE_LINE_CHARS = 46
+  # The topic that notes the world being entered.
+  ENTER_TOPIC = "settings.enter"
 
-  # Most mods a notice names before it counts the rest.
-  NAMED_MODS = 2
+  # The topic that forgets the world and the settings on their way.
+  FORGET_WORLD_TOPIC = "settings.forget"
 
-  # Most changed options a notice names before it counts the rest.
-  NAMED_CHANGES = 2
+  # The topic that takes this game's Mod Config groups for the notices.
+  GROUPS_TOPIC = "settings.options"
 
-  # What another player is told as they play in a world that shares settings, the creator's name
-  # and the options set filled in.
-  STAY_TEXT = "%s shares mod settings here: %s set for you. Your own saves keep yours."
+  # The topic that notes a save of the world loaded or started.
+  LOADED_TOPIC = "settings.loaded"
 
-  # What another player is told instead when none of the settings are for their mods.
-  STAY_EMPTY_TEXT = "%s shares mod settings here, but none are set for your mods yet."
+  # The topic that makes the creator's options the world's settings.
+  WANT_TOPIC = "settings.want"
 
-  # What the creator is told as they play in their world that shares settings, the mods filled in.
-  STAY_CREATOR_TEXT = "You share your options of %s with every player here."
+  # The topic that hands out the steps waiting for this script.
+  STEP_TOPIC = "settings.step"
 
-  # What the creator is told instead when the world's mods have no options to share.
-  STAY_CREATOR_NONE_TEXT = "You share your mod settings here, but this world's mods have no options to share."
+  # The topic that takes the options set for the creator's live settings.
+  APPLIED_TOPIC = "settings.applied"
 
-  # What another player is told once the world starts sharing settings, the creator's name and the
-  # options set filled in.
-  NOW_SHARED_TEXT = "%s now shares mod settings: %s set for you. Your own saves keep yours."
+  # The topic that takes the settings the creator sent live.
+  LIVE_TOPIC = "settings.live"
 
-  # What another player is told instead when none of the settings are for their mods.
-  NOW_SHARED_EMPTY_TEXT = "%s now shares mod settings, but none are set for your mods yet."
+  # The topic that takes another player's state.
+  OBSERVE_TOPIC = "settings.observe"
 
-  # What another player is told of a change, the creator's name and the changes filled in.
-  CHANGED_TEXT = "%s changed the shared mod settings: %s."
+  # The topic that notes another player was told the world's settings.
+  TOLD_TOPIC = "settings.told"
 
-  # What another player is told once the world stops sharing settings, the creator's name filled in.
-  NO_LONGER_TEXT = "%s stopped sharing mod settings: you can set your own options again. Your save here keeps the values so far."
+  # The topic that forgets what a player who left was told.
+  LEAVE_TOPIC = "settings.leave"
 
-  # What the creator is told once sharing is on, the mods filled in.
-  CREATOR_ON_TEXT = "Shared Mod Settings on: players here get your options of %s."
+  # The topic that takes the mods the open world names now.
+  MODS_TOPIC = "settings.mods"
 
-  # What the creator is told instead when the world's mods have no options to share.
-  CREATOR_ON_NONE_TEXT = "Shared Mod Settings on, but this world's mods have no options to share."
+  # The topic that tells whether settings are shared.
+  SHARED_TOPIC = "settings.shared"
 
-  # What the creator is told once sharing is off.
-  CREATOR_OFF_TEXT = "Shared Mod Settings off: every player here sets their own mod options again."
+  # The topic that says what the details say about a world's settings.
+  DETAILS_TOPIC = "settings.details"
 
-  # What the creator is told of a change every player got, the changes filled in.
-  CREATOR_CHANGE_TEXT = "Shared with every player: %s."
-
-  # What the creator is told when the relay refused the settings, why filled in.
-  FAILED_TEXT = "The world's mod settings could not be saved: %s"
-
-  # Why, when the relay never answered.
-  NO_ANSWER_TEXT = "the relay did not answer."
-
-  # What the creator is told, once, while settings cannot be sent.
-  NOT_SENT_TEXT = "The world's mod settings could not be sent yet. Trying again in a moment."
-
-  # What the creator is told first when options did not fit, how many filled in.
-  LEFT_OUT_TEXT = "%d option(s) did not fit and were left out."
-
-  # What the creator is told once the relay holds settings someone else set, such as an admin, the
-  # changes filled in.
-  RELAY_CHANGED_TEXT = "The shared mod settings were changed on the relay: %s."
-
-  # What the creator is told once sharing was turned on on the relay, the mods filled in.
-  RELAY_ON_TEXT = "Shared Mod Settings were turned on on the relay: players here get the options of %s."
-
-  # What the creator is told once sharing was turned off on the relay.
-  RELAY_OFF_TEXT = "Shared Mod Settings were turned off on the relay: every player here sets their own mod options again."
-
-  # The kinds of mods that come as a zip whose files go to their paths inside Patch.
-  ZIP_KINDS = %w(upload zip)
-
-  # Most characters of a world's settings, as many as the relay takes.
-  MAX_SETTINGS_CHARS = 64_000
-
-  # Longest mod name the relay takes among the creator's hashes.
-  MAX_HASH_NAME_CHARS = 100
-
-  # Most characters of the creator's hashes, as many as the relay takes.
-  MAX_HASHES_CHARS = 64_000
-
-  # A mod of the catalog.
-  #
-  # @!attribute key [String] Its key, as MGQ_MpWorld.mod_key makes it.
-  # @!attribute name [String] Its name.
-  # @!attribute kind [String] "link" for a script the relay follows on GitHub, "zip" for a zip of a release there, "upload" for a mod of several files an admin uploaded.
-  # @!attribute version [String] Its current version.
-  # @!attribute files [Hash] Its current files' hashes, a script's by its name, a zip's or an upload's by each path inside Patch.
-  # @!attribute versions [Array<Array>] Each version the relay saw and its files' hashes, newest first.
-  # @!attribute options_version [String, nil] The version whose Mod Config options the relay keeps, nil before an admin's game sent any.
-  Mod = Struct.new(:key, :name, :kind, :version, :files, :versions, :options_version)
-
-  # A required mod this game lacks or has in another version.
+  # A required mod this game lacks or has in another version, as the DLL checks it (ModCheck in
+  # MGQOnline.Game).
   #
   # @!attribute name [String] The mod's name, as the world writes it.
   # @!attribute yours [String] This game's version: "not installed", the version, "unknown" or "differs".
   # @!attribute worlds [String, nil] The world's version, nil when only the creator's hash tells it.
-  # @!attribute mod [Mod, nil] The catalog's mod, which can be downloaded; nil for a mod outside the catalog.
+  # @!attribute key [String, nil] The catalog mod's key, which can be downloaded; nil for a mod outside the catalog.
   # @!attribute target [String, nil] Where a link mod's script goes, relative to the game's folder.
-  Row = Struct.new(:name, :yours, :worlds, :mod, :target) do
+  # @!attribute text [String] The difference for the player, such as "Level Cap: yours 1.0.0, the world's 1.1.0".
+  Row = Struct.new(:name, :yours, :worlds, :key, :target, :text) do
     # Tells whether the world's version can be downloaded.
     #
     # @return [Boolean] Whether it can.
     def downloadable?
-      !mod.nil?
-    end
-
-    # Describes the difference for the player.
-    #
-    # @return [String] Such as "Level Cap: yours 1.0.0, the world's 1.1.0".
-    def text
-      return "#{name}: yours differs from the world creator's copy" if worlds.nil? && yours == "differs"
-      return "#{name}: not installed" if worlds.nil?
-
-      yours == "not installed" ? "#{name}: not installed, the world's #{worlds}" : "#{name}: yours #{yours}, the world's #{worlds}"
+      !key.nil?
     end
   end
 
-  # Installed files' hashes by path, see hash_of.
-  @hashes = {}
-  # The catalog version whose options this session sent, by the mod's key.
-  @reported = {}
-  # The settings the relay took from this game last, by the world's id.
-  @confirmed = {}
-  # The checksums of another player's settings and the world's they were told about, by seat.
-  @told_peers = {}
-  # Not nil, so an unknown catalog is logged at the first read too.
-  @logged_catalog = false
-
-  # Reads the relay's mod catalog as fetched with the world list, at most once a second, since the
-  # world screen asks every frame.
+  # Reads which mods the relay's catalog marks personal, at most once a second, since the parking
+  # asks every frame.
   #
-  # @return [Array<Mod>, nil] The mods, nil while the catalog is unknown, so the game checks only whether required mods are installed.
-  def self.catalog
-    return @catalog if @catalog_read && Time.now - @catalog_read < CATALOG_SECONDS
+  # @return [Array<String>, nil] The keys of the personal mods and of their names, as
+  #   MGQ_MpWorld.mod_key makes them; nil while the catalog is unknown.
+  def self.personal_keys
+    return @personal if @catalog_read && Time.now - @catalog_read < CATALOG_SECONDS
 
     @catalog_read = Time.now
     told = MGQ_Multiplayer::Bridge.call(CATALOG_TOPIC)
-    return @catalog if told == @catalog_told
-
-    @catalog_told = told
     state = told ? told["state"] : "failed"
-    case state
-    when "ready", "loading"
-      # The DLL hands out the catalog it had while it fetches the list again.
-      unless state == "loading" && told["mods"].empty? && told["personal"].empty?
-        @catalog = told["mods"].map { |mod| mod_of(mod) }
-        @personal = told["personal"]
-      end
-    else
-      @catalog = nil
-      @personal = nil
-    end
-    log_catalog(state)
-    @catalog
-  rescue => e
-    log_once(:catalog, "reading the mod catalog failed: #{e.class}: #{e.message}")
-    nil
+    # The DLL hands out the catalog it had while it fetches the list again.
+    return @personal if state == "loading" && told["mods"].empty? && told["personal"].empty?
+
+    @personal = %w(ready loading).include?(state) ? told["personal"] : nil
   end
 
-  # Logs the catalog whenever what it holds changed.
-  #
-  # @param state [String, nil] How the DLL's list stands.
-  def self.log_catalog(state)
-    seen = @catalog && @catalog.map { |mod| [mod.key, mod.version, mod.kind, mod.options_version] }
-    return if seen == @logged_catalog
-
-    @logged_catalog = seen
-    return log("mod catalog unknown (#{state == 'failed' ? 'the list did not arrive' : "list #{state.inspect}"}): required mods are only checked for being installed") unless @catalog
-
-    mods = @catalog.map { |mod| "#{mod.name} #{mod.version} (#{mod.kind}, #{mod.files.size} file(s))" }
-    log("mod catalog (list #{state}): #{@catalog.size} mod(s)#{mods.empty? ? '' : ': ' + mods.join(', ')}")
-  end
-
-  # Makes a mod of the catalog from what the DLL tells of it.
-  #
-  # @param told [Hash] The mod, see ModTopics.CatalogOf in the DLL.
-  # @return [Mod] The mod.
-  def self.mod_of(told)
-    Mod.new(told["key"], told["name"], told["kind"], told["version"], told["files"], told["versions"], told["options_version"])
-  end
-
-  # Lists the personal mods of the catalog.
-  #
-  # @return [Array<String>, nil] Their keys and the keys of their names, as MGQ_MpWorld.mod_key makes
-  #   them; nil while the catalog is unknown.
-  def self.personal_keys
-    catalog ? @personal || [] : nil
-  end
-
-  # Finds the catalog's mod for a name as a world writes it.
-  #
-  # @param name [String] The mod's name.
-  # @param mods [Array<Mod>, nil] The catalog.
-  # @return [Mod, nil] The mod, nil when the catalog lacks it.
-  def self.mod_named(name, mods = catalog)
-    key = MGQ_MpWorld.mod_key(name)
-    (mods || []).find { |mod| mod.key == key }
-  end
-
-  # Hashes an installed file the way the catalog does, through the DLL.
-  #
-  # @param path [String] The file, relative to the game's folder.
-  # @return [String, nil] The hash, nil when the file is missing or cannot be read.
-  def self.hash_of(path)
-    return @hashes[path] if @hashes.key?(path)
-
-    buffer = "\0" * HASH_SIZE
-    length = MGQ_Multiplayer::Link.function('mp_mod_hash').call(path + "\0", buffer, buffer.size)
-    @hashes[path] = length > 0 ? buffer[0, length] : nil
-  rescue => e
-    log_once(:hash, "hashing an installed mod failed: #{e.class}: #{e.message}")
-    nil
-  end
-
-  # Forgets what was read of the installed mods and of the catalog, as the world screen opens or
-  # after an install.
+  # Forgets what was read of the installed mods, as the world screen opens or after an install.
   def self.forget_installed
-    @hashes = {}
     @catalog_read = nil
+    MGQ_Multiplayer::Bridge.call(FORGET_INSTALLED_TOPIC)
     MGQ_MpWorld.forget_installed
   end
 
-  # Lists the required mods of a world that this game lacks or has in another version.
+  # Lists the required mods of a world that this game lacks or has in another version, as the DLL
+  # checks them against the catalog, this game's copies and the creator's hashes.
   #
   # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world.
-  # @return [Array<Row>] The mods, none when every one matches.
+  # @return [Array<Row>] The mods, none when every one matches or the DLL did not answer.
   def self.differing(listed)
-    mods = catalog
-    creator = hashes_of(listed.mod_hashes)
-    MGQ_MpWorld.required_mods(listed.mods).map { |name| row_for(name, mod_named(name, mods), creator) }.compact
+    checked = MGQ_Multiplayer::Bridge.call(CHECK_TOPIC, "mods" => listed.mods.to_s, "hashes" => listed.mod_hashes.to_s, "world" => nil)
+    return [] unless checked.is_a?(Hash)
+
+    checked["rows"].map { |row| Row.new(row["name"], row["yours"], row["worlds"], row["key"], row["target"], row["text"]) }
   end
 
-  # Checks one required mod.
-  #
-  # @param name [String] The mod's name, as the world writes it.
-  # @param mod [Mod, nil] The catalog's mod, nil when the catalog lacks it.
-  # @param creator [Hash] The creator's hashes of mods outside the catalog, by key.
-  # @return [Row, nil] The difference, nil when this game's copy matches.
-  def self.row_for(name, mod, creator)
-    return zip_row(name, mod) if mod && ZIP_KINDS.include?(mod.kind)
-    return link_row(name, mod) if mod
-    return Row.new(name, "not installed", nil, nil, nil) unless MGQ_MpWorld.installed_mod?(name)
-
-    expected = creator[MGQ_MpWorld.mod_key(name)]
-    path = expected && MGQ_MpWorld.installed_path(name)
-    return nil unless path
-
-    hash_of(path) == expected ? nil : Row.new(name, "differs", nil, nil, nil)
-  end
-
-  # Checks a link mod's script.
-  #
-  # @param name [String] The mod's name, as the world writes it.
-  # @param mod [Mod] The catalog's mod.
-  # @return [Row, nil] The difference, nil when this game's script is the current one.
-  def self.link_row(name, mod)
-    file, current = mod.files.first
-    path = MGQ_MpWorld.installed_path(name)
-    return Row.new(name, "not installed", mod.version, mod, "#{MGQ_MpWorld::PATCH_DIR}/#{file}") unless path
-
-    hash = hash_of(path)
-    return nil if hash == current
-
-    Row.new(name, version_of(mod, file => hash) || "unknown", mod.version, mod, path)
-  end
-
-  # Checks the files of a mod that comes as a zip.
-  #
-  # @param name [String] The mod's name, as the world writes it.
-  # @param mod [Mod] The catalog's mod.
-  # @return [Row, nil] The difference, nil when every file is the current one.
-  def self.zip_row(name, mod)
-    hashes = {}
-    mod.files.each_key { |path| hashes[path] = hash_of("#{MGQ_MpWorld::PATCH_DIR}/#{path}") }
-    return nil if hashes == mod.files
-    return Row.new(name, "not installed", mod.version, mod, nil) if hashes.values.compact.empty?
-
-    Row.new(name, version_of(mod, hashes) || "unknown", mod.version, mod, nil)
-  end
-
-  # Names the version whose files a copy's hashes are.
-  #
-  # @param mod [Mod] The catalog's mod.
-  # @param hashes [Hash] The copy's hashes.
-  # @return [String, nil] The version, nil when the relay never saw this copy.
-  def self.version_of(mod, hashes)
-    found = mod.versions.find { |_, files| files == hashes }
-    found && found[0]
-  end
-
-  # Reads the creator's hashes of mods outside the catalog.
-  #
-  # @param text [String, nil] "name=hash" pairs separated by semicolons.
-  # @return [Hash] The hashes by the mods' keys.
-  def self.hashes_of(text)
-    text.to_s.split(";").each_with_object({}) do |pair, hashes|
-      name, hash = pair.split("=", 2)
-      hashes[MGQ_MpWorld.mod_key(name)] = hash if name && hash
-    end
-  end
-
-  # Logs how each required mod of a world compares with this game's, as the player enters it.
-  #
-  # @param world [String] The world's name.
-  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world.
-  # @param rows [Array<Row>] The mods that differ, see differing.
-  def self.log_check(world, listed, rows)
-    required = MGQ_MpWorld.required_mods(listed.mods)
-    return log("mod check of #{world}: no required mods (mods \"#{listed.mods}\")") if required.empty?
-
-    creator = hashes_of(listed.mod_hashes)
-    results = required.map do |name|
-      row = rows.find { |candidate| candidate.name == name }
-      next "#{row.text}#{row.downloadable? ? ', downloadable' : ', from its author only'}" if row
-
-      mod = mod_named(name)
-      if mod
-        "#{name}: matches #{mod.version}"
-      elsif creator[MGQ_MpWorld.mod_key(name)]
-        "#{name}: matches the creator's copy"
-      else
-        "#{name}: installed, not compared (outside the catalog, no creator's hash)"
-      end
-    end
-    log("mod check of #{world}: #{rows.empty? ? 'all match' : "#{rows.size} differ"}#{catalog ? '' : ' (catalog unknown)'}: #{results.join('; ')}")
-  rescue => e
-    log("logging the mod check failed: #{e.class}: #{e.message}")
-  end
-
-  # Writes the creator's hashes of the required mods outside the catalog, for a world being made
-  # or changed. A mod the creator's game lacks, or whose name is longer than the relay takes, is
-  # left out, so it is only checked for being installed.
-  #
-  # @param mods [String] The mods as the creator wrote them.
-  # @return [String] "name=hash" pairs separated by semicolons.
-  def self.creator_hashes(mods)
-    known = catalog
-    pairs = MGQ_MpWorld.required_mods(mods).map do |name|
-      next if mod_named(name, known) || name =~ /[=;]/ || name.size > MAX_HASH_NAME_CHARS
-
-      path = MGQ_MpWorld.installed_path(name)
-      hash = path && hash_of(path)
-      log("creator's hash of #{name} left out: #{path ? 'it could not be read' : 'not installed here'}") unless hash
-      hash && "#{name}=#{hash}"
-    end
-    fit_hashes(pairs.compact)
-  rescue => e
-    log("hashing the required mods failed: #{e.class}: #{e.message}")
-    ""
-  end
-
-  # Joins the creator's hashes as long as they fit what the relay takes, leaving out and logging the
-  # rest, whose mods then only need to be installed.
-  #
-  # @param pairs [Array<String>] Each mod's "name=hash".
-  # @param most [Integer] The most characters the joined hashes take.
-  # @return [String] The hashes that fit, separated by semicolons.
-  def self.fit_hashes(pairs, most = MAX_HASHES_CHARS)
-    kept = []
-    pairs.each do |pair|
-      joined = (kept + [pair]).join(";")
-      next log("creator's hash of #{pair.split('=').first} left out: the hashes would pass the #{most} characters the relay takes") if joined.size > most
-
-      kept << pair
-    end
-    kept.join(";")
-  end
-
-  # Tells the player what differs, in the world screen's lines.
-  #
-  # @param world [String] The world's name.
-  # @param rows [Array<Row>] The mods that differ.
-  # @return [String] The text.
-  def self.summary(world, rows)
-    names = rows.map { |row| row.downloadable? ? row.name : "#{row.name} (get it from its author)" }
-    action = rows.all? { |row| row.downloadable? } ? " Download them and restart?" : ""
-    "#{world} needs mods that are missing or in another version here: #{names.join(', ')}.#{action}"
-  end
-
-  # Installs the world's versions of mods from the catalog. The DLL checks every file first.
-  #
-  # @param rows [Array<Row>] The mods, each downloadable.
-  # @return [Boolean] Whether the installation started.
-  def self.install(rows)
-    lines = rows.map { |row| "#{row.mod.key}\t#{row.target}" }.join("\n")
-    started = MGQ_Multiplayer::Link.function('mp_mods_install').call(lines + "\0") == 1
-    described = rows.map { |row| "#{row.name} #{row.yours} -> #{row.worlds}#{row.target ? " into #{row.target}" : ''}" }.join(", ")
-    log(started ? "downloading #{described}" : "the download of #{described} could not start")
-    started
-  end
-
-  # Starts the game again so the installed mods load, and enters the world once it is back.
-  #
-  # @param world_id [String] The world to enter again.
-  # @return [Symbol] :restarting when the game closes now to start again, :failed when it could not
-  #   and stays open.
-  def self.restart(world_id)
-    MGQ_Multiplayer::Player.store(REJOIN_SETTING, world_id)
-    case MGQ_Multiplayer::Link.function('mp_restart_game').call
-    when 1
-      log("starting the game again, to enter world #{MGQ_MpWorld.short(world_id)} once it is back")
-      :restarting
-    else
-      MGQ_Multiplayer::Player.store(REJOIN_SETTING, "")
-      log("the game could not start itself again, so world #{MGQ_MpWorld.short(world_id)} is not entered on its own")
-      :failed
-    end
-  end
-
-  # Takes the world the game should enter again after a restart, once.
+  # Takes the world the game should enter again after a restart, once, which the DLL's parking
+  # keeps, the one way back into a world after a restart.
   #
   # @return [String, nil] The world's id, nil when there is none.
   def self.take_rejoin
-    id = MGQ_Multiplayer::Player.setting(REJOIN_SETTING).to_s
-    return nil if id.empty?
-
-    MGQ_Multiplayer::Player.store(REJOIN_SETTING, "")
-    id
+    MGQ_MpModParking.take_rejoin
   end
 
   # Forgets a world the player backed out of before its new game, and opens the world screen to
@@ -684,40 +363,20 @@ module MGQ_MpWorldMods
     entry[:sub] ? nil : "button"
   end
 
-  # Sends the Mod Config options of each catalog mod this game has installed, whatever its version,
-  # unless the relay holds the current version's options or those of the version this copy is;
-  # once a session per mod. Only an admin's game sends them; the World Admin tool lists them.
-  # Called by the world screen whenever it reads the list.
+  # Sends the Mod Config options of each catalog mod this game has installed that the DLL names,
+  # once a session per mod's version. Only an admin's game sends them; the World Admin tool lists
+  # them. Called by the world screen whenever it reads the list.
   #
   # @param admin [Boolean] Whether the player is one of the relay's admins.
   def self.report_options(admin)
-    mods = admin && defined?(NWConst::Config::MOD_CONTENTS) ? catalog : nil
+    return unless admin && defined?(NWConst::Config::MOD_CONTENTS)
 
-    (mods || []).each do |mod|
-      version = installed_version(mod)
-      next if version.nil? || mod.options_version == mod.version || @reported[mod.key] == mod.version
-      next if !version.empty? && mod.options_version == version
-
-      @reported[mod.key] = mod.version
-      lines = world_entries([mod.key]).map { |entry| option_line(entry) }.compact
-      MGQ_Multiplayer::Link.function('mp_mods_options').call(mod.key + "\0", version + "\0", lines.join("\n") + "\0")
-      log("sending #{lines.size} Mod Config option(s) of #{mod.name} #{version.empty? ? 'of no known version' : version}")
+    (MGQ_Multiplayer::Bridge.call(REPORT_TOPIC) || []).each do |key, _name, version|
+      lines = world_entries([key]).map { |entry| option_line(entry) }.compact
+      MGQ_Multiplayer::Bridge.call(OPTIONS_TOPIC, "key" => key, "version" => version, "lines" => lines)
     end
   rescue => e
     log_once(:report_options, "sending the Mod Config options failed: #{e.class}: #{e.message}")
-  end
-
-  # Names the version of this game's copy of a catalog mod.
-  #
-  # @param mod [Mod] The catalog's mod.
-  # @return [String, nil] The version; "" for a copy that matches no version the relay knows; nil
-  #   when the mod is not installed.
-  def self.installed_version(mod)
-    row = row_for(mod.name, mod, {})
-    return mod.version if row.nil?
-    return nil if row.yours == "not installed"
-
-    row.yours == "unknown" ? "" : row.yours
   end
 
   # Writes one Mod Config option for the catalog: its key, name, type, default and choices.
@@ -778,29 +437,14 @@ module MGQ_MpWorldMods
 
   # Lists the mods of the open world the player's game runs, which the battle server runs too for a
   # battle it hosts: each mod the world names and the player installed, but those the catalog marks
-  # personal, with its kind, version and files' hashes as the catalog has them. A copy the server
-  # cannot get, outside the catalog or of another version than its current one, comes without a
-  # kind. Called by MGQ_MpBattlesServed.setup_text.
+  # personal, with its kind, version and files' hashes as the catalog has them; a copy the server
+  # cannot get comes without a kind. Called by MGQ_MpBattlesServed.setup_text.
   #
   # @return [Array<Array>] Each mod's key, kind, version and [path, hash] pairs.
   def self.served_mods
     return [] unless @world
 
-    mods = catalog
-    personal = personal_keys || []
-    MGQ_MpWorld.mods_of(@world[:mods]).map do |name|
-      key = MGQ_MpWorld.mod_key(name)
-      next if personal.include?(key) || !MGQ_MpWorld.installed_mod?(name)
-
-      mod = mod_named(name, mods)
-      next [key, "", "", []] unless mod
-
-      row = ZIP_KINDS.include?(mod.kind) ? zip_row(name, mod) : link_row(name, mod)
-      row ? [key, "", row.yours.to_s, []] : [mod.key, mod.kind, mod.version, mod.files.to_a]
-    end.compact
-  rescue => e
-    log("listing the world's mods for the battle server failed: #{e.class}: #{e.message}")
-    []
+    MGQ_Multiplayer::Bridge.call(SERVED_TOPIC, @world["mods"].to_s) || []
   end
 
   # Writes the player's options of the world's mods, which the battle server takes for a battle
@@ -810,7 +454,7 @@ module MGQ_MpWorldMods
   def self.served_settings
     return "" unless @world
 
-    option_pairs(MGQ_MpWorld.mods_of(@world[:mods]).map { |name| MGQ_MpWorld.mod_key(name) }).map { |_, pair| pair }.join(";")
+    option_pairs(MGQ_MpWorld.mods_of(@world["mods"]).map { |name| MGQ_MpWorld.mod_key(name) }).map { |_, pair| pair }.join(";")
   rescue => e
     log("writing the world's mod settings for the battle server failed: #{e.class}: #{e.message}")
     ""
@@ -827,31 +471,6 @@ module MGQ_MpWorldMods
     return [] unless $game_system
 
     world_options(keys).map { |key| (encoded = encode(option_value(key))) && [key, "#{key}=#{encoded}"] }.compact
-  end
-
-  # Writes a world's shared settings from the creator's game: the marker, the creator's options of
-  # the world's mods, then the options the world sets that the creator's game does not know.
-  #
-  # @param mods [String] The mods as the creator wrote them.
-  # @param base [String, nil] The world's settings as they are.
-  # @return [Array(String, Array<Symbol>)] The settings, at most MAX_SETTINGS_CHARS of them; and
-  #   the options left out since they did not fit.
-  def self.shared_text(mods, base)
-    wanted = MGQ_MpWorld.mods_of(mods).map { |name| MGQ_MpWorld.mod_key(name) }
-    known = menu_keys
-    kept = pairs_of(base).reject { |key, _| key == MARKER_KEY || known.include?(key) }
-    text, left_out = fit_settings([[MARKER_KEY, MARKER]] + option_pairs(wanted) + kept)
-    log("built the shared mod settings of #{wanted.join(', ')}, keeping #{kept.size} this game does not know: #{text}")
-    log("left out #{left_out.size} mod setting(s) past #{MAX_SETTINGS_CHARS} characters: #{left_out.join(', ')}") unless left_out.empty?
-    [text, left_out]
-  end
-
-  # Writes a world's settings shared, as they are otherwise, for the edit form, which knows no options.
-  #
-  # @param text [String, nil] The world's settings as they are.
-  # @return [String] The marker, then the settings' pairs as far as they fit.
-  def self.with_marker(text)
-    fit_settings([[MARKER_KEY, MARKER]] + pairs_of(text).reject { |key, _| key == MARKER_KEY })[0]
   end
 
   # Lists the keys of every Mod Config entry this game has.
@@ -876,26 +495,7 @@ module MGQ_MpWorldMods
   # @param text [String, nil] The world's settings.
   # @return [Boolean] Whether they are.
   def self.shared?(text)
-    !text.to_s.strip.empty?
-  end
-
-  # Joins settings as long as they fit in MAX_SETTINGS_CHARS, leaving out each that does not.
-  #
-  # @param pairs [Array<Array(Symbol, String)>] Each option's key and its "key=type:value" pair.
-  # @return [Array(String, Array<Symbol>)] The pairs separated by semicolons, and the options left out.
-  def self.fit_settings(pairs)
-    text = ""
-    left_out = []
-
-    pairs.each do |key, pair|
-      joined = text.empty? ? pair : "#{text};#{pair}"
-      if joined.size > MAX_SETTINGS_CHARS
-        left_out.push(key)
-      else
-        text = joined
-      end
-    end
-    [text, left_out]
+    MGQ_Multiplayer::Bridge.call(SHARED_TOPIC, text.to_s) == true
   end
 
   # Reads an option's current value.
@@ -962,12 +562,29 @@ module MGQ_MpWorldMods
     end
   end
 
-  # Writes settings for the log.
+  # Lists this game's Mod Config groups as the DLL's notices name them: each option's key, its name
+  # as its row shows it and the names Mod Config gives its values.
   #
-  # @param settings [Hash] The values by the options' keys.
-  # @return [String] Such as "lv_cap=true, rate=2".
-  def self.settings_text(settings)
-    settings.map { |key, value| "#{key}=#{value.inspect}" }.join(", ")
+  # @return [Array<Array>] Each group's name and [key, name, [[value with its type, name], ...]] options.
+  def self.options_table
+    texts = defined?(NWConst::Config::DATA_TEXT) ? NWConst::Config::DATA_TEXT : {}
+    menu_groups.map do |name, entries|
+      options = entries.select { |entry| entry[:key] }.map do |entry|
+        values = (texts[entry[:key]] || {}).map { |value, text| (encoded = encode(value)) && text.is_a?(Hash) && text[:name] ? [encoded, text[:name].to_s] : nil }.compact
+        [entry[:key].to_s, short_name(entry), values]
+      end
+      [name, options]
+    end
+  end
+
+  # Hands the DLL this game's Mod Config groups, once a session.
+  def self.hand_options
+    return if @options_handed
+
+    @options_handed = true
+    take(MGQ_Multiplayer::Bridge.call(GROUPS_TOPIC, options_table))
+  rescue => e
+    log("handing the Mod Config options to the DLL failed: #{e.class}: #{e.message}")
   end
 
   # The world being entered or played in.
@@ -975,49 +592,18 @@ module MGQ_MpWorldMods
   # Notes the world being entered: its creator, its mods and its settings, which apply once its
   # game is loaded or started. The row of Shared Mod Settings joins Mod Config.
   #
-  # A list from before the world screen opened may predate settings this game saved since, which
-  # would otherwise go back to every player the creator meets.
-  #
   # @param listed [MGQ_MpWorld::Directory::ListedWorld, nil] The world, nil when the list lacks it.
   # @param me [String] The player's id.
   # @param fresh [Boolean] Whether the list was fetched since the world screen opened.
   def self.enter_world(listed, me, fresh = true)
     forget_world
-    return log("entering a world the list lacks: no mod settings apply") unless listed
-
-    own = !me.to_s.empty? && listed.creator_id == me
-    text = settings_of(listed, fresh)
-    @confirmed.delete(listed.id) if fresh
-    @world = { :id => listed.id, :name => listed.name.to_s, :creator_id => listed.creator_id.to_s, :creator_name => MGQ_Multiplayer.clean(listed.creator_name),
-               :mods => listed.mods.to_s, :text => text, :own => own }
-    add_row
-    log("entering #{own ? "the player's own world" : 'a world'} #{MGQ_MpWorld.short(listed.id)}: " \
-        "#{shared?(@world[:text]) ? "it shares #{settings_from(@world[:text]).size} mod setting(s): #{settings_text(settings_from(@world[:text]))}" : "each player keeps their own mod settings"}")
+    hand_options
+    world = listed && { "id" => listed.id, "name" => listed.name.to_s, "creator_id" => listed.creator_id.to_s, "creator_name" => listed.creator_name.to_s,
+                        "mods" => listed.mods.to_s, "settings" => listed.settings.to_s }
+    take(MGQ_Multiplayer::Bridge.call(ENTER_TOPIC, "world" => world, "me" => me.to_s, "fresh" => fresh ? true : false))
+    add_row if @world
   rescue => e
     log("noting the world's mod settings failed: #{e.class}: #{e.message}")
-  end
-
-  # Reads a world's settings as they stand: the list's, or those the relay took from this game
-  # last when the list may be older than them.
-  #
-  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world.
-  # @param fresh [Boolean] Whether the list was fetched since the world screen opened.
-  # @return [String] The settings.
-  def self.settings_of(listed, fresh)
-    text = listed.settings.to_s
-    return text if fresh || !@confirmed.key?(listed.id) || @confirmed[listed.id] == text
-
-    log("the list of world #{MGQ_MpWorld.short(listed.id)} may be older than the mod settings the relay took from this game last, which count")
-    @confirmed[listed.id]
-  end
-
-  # Notes the settings the relay took from this game for a world, which count over a list from
-  # before them. Called as the relay took them, from the world or from the world screen.
-  #
-  # @param id [String] The world.
-  # @param text [String] The settings.
-  def self.confirmed(id, text)
-    @confirmed[id] = text.to_s
   end
 
   # Takes the mods the relay tells the open world names now, whose settings the creator shares from
@@ -1025,37 +611,24 @@ module MGQ_MpWorldMods
   #
   # @param mods [String] The mods as the world writes them.
   def self.take_mods(mods)
-    return unless @world
-
-    log("the world's mods are \"#{mods}\" now") if @world[:mods] != mods
-    @world[:mods] = mods.to_s
+    take(MGQ_Multiplayer::Bridge.call(MODS_TOPIC, mods.to_s)) if @world
   end
 
   # Forgets the world, its locks, the row of Shared Mod Settings and the settings on their way,
   # whose answer the directory then drops.
   def self.forget_world
-    log("forgot the mod settings of world #{MGQ_MpWorld.short(@world[:id])}") if @world
     lock([])
     remove_row
-    MGQ_MpWorld::Directory.release(@sending[:ticket]) if @sending
+    take(MGQ_Multiplayer::Bridge.call(FORGET_WORLD_TOPIC))
     @world = nil
-    @loaded = false
-    @stay_noticed = false
-    @stay_at = nil
-    @told_peers = {}
-    @wanted = nil
-    @wanted_base = nil
-    @sending = nil
-    @not_sent_told = false
     @in_options = false
-    forget_check
   end
 
   # Tells whether the player plays in a world they created.
   #
   # @return [Boolean] Whether they do.
   def self.own_world?
-    MGQ_MpWorld.open? && @world && @world[:own] ? true : false
+    MGQ_MpWorld.open? && @world && @world["own"] ? true : false
   end
 
   # Writes the world's settings into the game's options and has Mod Config Remake show them as
@@ -1064,19 +637,22 @@ module MGQ_MpWorldMods
   def self.apply
     return unless MGQ_MpWorld.open? && @world && $game_system
 
-    @loaded = true
-    show_row_value
-    unless shared?(@world[:text])
-      lock([])
-      return log("world #{MGQ_MpWorld.short(@world[:id])} does not share mod settings: every player keeps their own")
-    end
-
-    applied = apply_text(@world[:text])
-    # The creator's notice names what sync makes the world's settings, and what did not fit.
-    sync(:load)
-    notice_stay(applied)
+    applied = @world["shared"] ? apply_text(@world["text"]) : (lock([]); [])
+    take(MGQ_Multiplayer::Bridge.call(LOADED_TOPIC, own_options.merge("applied" => applied.map { |key| key.to_s })))
   rescue => e
     log("applying the world's mod settings failed: #{e.class}: #{e.message}")
+  end
+
+  # Writes the creator's options of the world's mods for the DLL, which makes them the world's
+  # settings while it shares them.
+  #
+  # @return [Hash] "pairs", each option's [key, "key=type:value"], and "known", the key of every
+  #   option this game's Mod Config has; none of either for another player.
+  def self.own_options
+    return { "pairs" => [], "known" => [] } unless own_world? && $game_system
+
+    keys = MGQ_MpWorld.mods_of(@world["mods"]).map { |name| MGQ_MpWorld.mod_key(name) }
+    { "pairs" => option_pairs(keys).map { |key, pair| [key.to_s, pair] }, "known" => menu_keys.map { |key| key.to_s } }
   end
 
   # Writes shared settings into the game's options and locks them, but for the creator.
@@ -1170,13 +746,15 @@ module MGQ_MpWorldMods
   def self.row_help
     return "Whether every player in this world plays with your options of its mods. Their own saves keep their own.\r\n←/→ Toggle" if own_world?
 
-    "#{@world ? @world[:creator_name] : 'The creator'} created this world and chose this. While On, the world's mod options are set for you here."
+    "#{@world ? MGQ_Multiplayer.clean(@world['creator_name']) : 'The creator'} created this world and chose this. While On, the world's mod options are set for you here."
   end
 
   # Shows in the row whether the world shares its settings, or will once the request on its way
   # arrived.
-  def self.show_row_value
-    $game_system.conf[SHARED_OPTION] = shared?(latest_text) ? 1 : 0 if $game_system && @world
+  #
+  # @param shared [Boolean] Whether it does, as the DLL tells it.
+  def self.show_row_value(shared = @world && @world["latest_shared"])
+    $game_system.conf[SHARED_OPTION] = shared ? 1 : 0 if $game_system && @world
   end
 
   # Draws Mod Config anew, should the player be in it.
@@ -1190,314 +768,52 @@ module MGQ_MpWorldMods
   #
   # @param value [Integer] 1 for On, 0 for Off.
   def self.switch(value)
-    unless own_world?
-      log("Shared Mod Settings not changed: the player is not in a world they created")
-      return show_row_value
-    end
-
-    text, left_out = value.to_i == 1 ? shared_text(@world[:mods], latest_text) : ["", []]
-    @left_out = left_out.size
-    log("the creator turned Shared Mod Settings #{value.to_i == 1 ? 'on' : 'off'}")
-    request(text, :switch)
-    show_row_value
+    take(MGQ_Multiplayer::Bridge.call(WANT_TOPIC, own_options.merge("reason" => "switch", "on" => value.to_i == 1)))
   rescue => e
     log("changing Shared Mod Settings failed: #{e.class}: #{e.message}")
   end
 
-  # Sending the creator's settings.
-
-  # Makes the creator's options of the world's mods its settings while it shares them, when they
-  # differ from what it has. Called as a save is loaded and as the options screen closes.
-  #
-  # @param reason [Symbol] :load or :options.
-  def self.sync(reason)
-    return unless own_world? && $game_system && shared?(latest_text)
-
-    text, left_out = shared_text(@world[:mods], latest_text)
-    @left_out = left_out.size
-    request(text, reason)
+  # Makes the creator's changed options the world's settings while it shares them. Called as the
+  # options screen closes.
+  def self.sync_options
+    take(MGQ_Multiplayer::Bridge.call(WANT_TOPIC, own_options.merge("reason" => "options"))) if own_world?
   end
 
-  # The settings the world has once every request on its way arrived.
+  # The DLL's steps.
+
+  # Takes the DLL's answer: the world as it stands now, and plays the steps it hands.
   #
-  # @return [String] The settings.
-  def self.latest_text
-    @wanted || (@sending && @sending[:id] == (@world && @world[:id]) ? @sending[:text] : nil) || (@world ? @world[:text] : "")
+  # @param reply [Hash, nil] "world" and "steps", see SharedSettingsSync in the DLL; nil when it did
+  #   not answer.
+  def self.take(reply)
+    return unless reply.is_a?(Hash)
+
+    @world = reply["world"]
+    reply["steps"].each { |step| play(step) }
   end
 
-  # Asks the relay to take settings as the world's, once the request on its way arrived and the
-  # relay told the world's settings as they stand, which someone else may have changed since.
+  # Plays one step of the DLL.
   #
-  # @param text [String] The settings.
-  # @param reason [Symbol] :switch, :load or :options.
-  def self.request(text, reason)
-    # What the creator's options started from, which tells what they changed.
-    @wanted_base = latest_text unless @wanted
-    @wanted = text
-    @wanted_reason = reason
-    @retry_at = nil
-    @need_check = true
-    pump
-  end
-
-  # Sends the settings wanted last, unless a request is on its way or the world has them already.
-  # First reads the world's settings on the relay and takes in what changed there.
-  def self.pump
-    return if @sending || @wanted.nil? || @world.nil?
-    return check_relay if @need_check || @check
-
-    merge_relay if @relay_text && @relay_text != @world[:text]
-    if @wanted == @world[:text]
-      log("the world's mod settings are as wanted already, nothing sent")
-      @wanted = nil
-      return
+  # @param step [Array] Its kind and values: "notify" with the lines, "apply" or "apply_live" with
+  #   the settings, "unlock", "broadcast" with the settings and their checksum, "tell" with the seat,
+  #   the checksum their game holds, the world's and its settings, "row" with whether it shares.
+  def self.play(step)
+    kind, first, second, third, fourth = step
+    case kind
+    when "notify" then notify(first)
+    when "apply" then apply_text(first) if $game_system
+    when "unlock" then lock([])
+    when "apply_live"
+      applied = $game_system ? apply_text(first) : []
+      take(MGQ_Multiplayer::Bridge.call(APPLIED_TOPIC, "keys" => applied.map { |key| key.to_s }))
+    when "broadcast" then broadcast(first, second)
+    when "tell" then tell(first, second, third, fourth)
+    when "row"
+      show_row_value(first)
+      refresh_menu
     end
-    return if @retry_at && @frames.to_i < @retry_at
-
-    # A request now would drop the answer of another one nobody took yet.
-    unless MGQ_MpWorld::Directory.free? && MGQ_MpWorld::Directory.set_settings(@world[:id], @wanted)
-      @retry_at = @frames.to_i + RETRY_FRAMES
-      log("the world's mod settings could not be sent, trying again in a moment")
-      notify(NOT_SENT_TEXT) unless @not_sent_told
-      @not_sent_told = true
-      return
-    end
-
-    @not_sent_told = false
-    @sending = { :id => @world[:id], :text => @wanted, :before => @world[:text], :reason => @wanted_reason, :left_out => @left_out.to_i, :since => @frames.to_i,
-                 :ticket => MGQ_MpWorld::Directory.claim }
-    @wanted = nil
-    @wanted_base = nil
-  end
-
-  # Takes the relay's answer to the settings on their way: the world has them, which every player
-  # in it hears at once, or the creator is told why not. An answer another directory request took
-  # the place of sends the settings again.
-  def self.follow_send
-    return resend unless MGQ_MpWorld::Directory.mine?(@sending[:ticket])
-
-    action = MGQ_MpWorld::Directory.action
-    if action["state"] == "busy" || action["kind"] != SHARE_ACTION
-      return unless @frames.to_i - @sending[:since] > SEND_FRAMES
-
-      log("the relay never answered the world's mod settings, giving up")
-      MGQ_MpWorld::Directory.release(@sending[:ticket])
-      @sending = nil
-      notify(format(FAILED_TEXT, NO_ANSWER_TEXT))
-      show_row_value
-      return refresh_menu
-    end
-
-    MGQ_MpWorld::Directory.clear
-    sent = @sending
-    @sending = nil
-    if action["state"] != "done"
-      notify(format(FAILED_TEXT, action["error"]))
-    else
-      confirmed(sent[:id], sent[:text])
-      if @world && @world[:id] == sent[:id]
-        @world[:text] = sent[:text]
-        @relay_text = sent[:text]
-        @checked_at = @frames.to_i
-        broadcast(sent[:text])
-        tell_creator(sent)
-      else
-        log("the relay took the mod settings of world #{MGQ_MpWorld.short(sent[:id])}, which is no longer open")
-      end
-    end
-    show_row_value
-    refresh_menu
-    pump
-  end
-
-  # Sends the settings on their way again, whose answer another directory request took the place
-  # of, unless newer ones wait.
-  def self.resend
-    sent = @sending
-    @sending = nil
-    log("the answer to the world's mod settings gave way to another directory request, sending them again")
-    unless @wanted
-      @wanted = sent[:text]
-      @wanted_reason = sent[:reason]
-      @left_out = sent[:left_out]
-    end
-    @wanted_base = sent[:before]
-    @need_check = true
-  end
-
-  # Takes in settings someone else, such as an admin, gave the world on the relay since this game
-  # read them: they become the world's, and the settings wanted keep only what the creator changed,
-  # which the creator's options then show.
-  def self.merge_relay
-    theirs = @relay_text
-    adopt(theirs)
-    merged = merged_text(@wanted_base.to_s, @wanted, theirs, @wanted_reason)
-    log("kept what the creator changed over the relay's settings: #{merged.empty? ? 'none' : merged}")
-    @wanted = merged
-    @wanted_base = theirs
-    if @loaded && $game_system
-      shared?(merged) ? apply_text(merged) : lock([])
-    end
-    broadcast(theirs) if merged == theirs
-    show_row_value
-    refresh_menu
-  end
-
-  # Joins what the creator changed to the settings the relay holds.
-  #
-  # @param base [String] The settings the creator's change started from.
-  # @param mine [String] The settings the creator's game wants.
-  # @param theirs [String] The settings the relay holds.
-  # @param reason [Symbol] :switch, :load or :options.
-  # @return [String] The relay's settings with every option the creator changed as the creator has
-  #   it; only the creator's own switch turns sharing on or off.
-  def self.merged_text(base, mine, theirs, reason)
-    return reason == :switch ? mine : theirs unless shared?(mine) && shared?(theirs)
-
-    before = {}
-    pairs_of(base).each { |key, pair| before[key] = pair }
-    changed = pairs_of(mine).reject { |key, pair| key == MARKER_KEY || before[key] == pair }
-    kept = pairs_of(theirs).reject { |key, _| key == MARKER_KEY || changed.assoc(key) }
-    fit_settings([[MARKER_KEY, MARKER]] + kept + changed)[0]
-  end
-
-  # Takes settings the relay holds that this game did not know of as the world's, and tells the
-  # creator what changed.
-  #
-  # @param text [String] The relay's settings.
-  def self.adopt(text)
-    before = @world[:text]
-    @world[:text] = text
-    confirmed(@world[:id], text)
-    log("the relay holds other mod settings of the world than this game knew, which count: #{text.empty? ? 'none' : text}")
-    message = relay_change_text(before, text)
-    notify(message) if message
-  end
-
-  # Tells the creator what someone else changed on the relay.
-  #
-  # @param before [String] The settings this game knew.
-  # @param after [String] The relay's settings.
-  # @return [String, nil] The notice, nil when no option this game knows changed.
-  def self.relay_change_text(before, after)
-    return RELAY_OFF_TEXT unless shared?(after)
-    return format(RELAY_ON_TEXT, mods_text(known_keys(settings_from(after).keys))) unless shared?(before)
-
-    changes = changes_text(settings_from(before), settings_from(after))
-    changes && format(RELAY_CHANGED_TEXT, changes)
-  end
-
-  # Reading the world's settings on the relay.
-
-  # Asks the relay for the world's settings as they stand, through the world list, once no request
-  # of this script is on its way and the list is not being fetched already, since either may make
-  # the answer older than the relay's settings.
-  def self.check_relay
-    @check_wanted = true
-    return if @check || @sending
-
-    unless own_world?
-      @check_wanted = false
-      @need_check = false
-      return
-    end
-    return if MGQ_MpWorld::Directory.list_state == "loading"
-
-    @check_wanted = false
-    MGQ_MpWorld::Directory.refresh
-    @check = { :since => @frames.to_i }
-    log("asking the relay for the world's mod settings as they stand")
-    follow_check
-  end
-
-  # Takes the world's settings from the list asked for once it arrived, or gives up on one that
-  # never arrives.
-  def self.follow_check
-    if MGQ_MpWorld::Directory.list_state == "loading"
-      return unless @frames.to_i - @check[:since] > SEND_FRAMES
-
-      log("the list never arrived, so the world's mod settings on the relay are unknown")
-      return complete_check(nil)
-    end
-
-    state, _error, worlds = MGQ_MpWorld::Directory.list
-    listed = state == "ready" ? worlds.find { |world| world.id == @world[:id] && !world.mods_unread } : nil
-    log("the list #{state == 'ready' ? 'lacks the world or its mods' : "did not arrive (#{state})"}, so its mod settings on the relay are unknown") unless listed
-    complete_check(listed && listed.settings.to_s)
-  end
-
-  # Notes the world's settings on the relay, takes them as the world's when someone else changed
-  # them while nothing waits to be sent, tells the players waiting for them, and sends what waits.
-  #
-  # @param text [String, nil] The relay's settings, nil when unknown.
-  def self.complete_check(text)
-    @check = nil
-    @need_check = false
-    @checked_at = @frames.to_i
-    @relay_text = text
-    take_relay(text) if text && text != @world[:text] && @wanted.nil?
-    waiting = @waiting || {}
-    @waiting = {}
-    waiting.each_value { |peer| on_observe(peer) }
-    pump
-  end
-
-  # Takes settings someone else gave the world on the relay as the world's: the creator's options
-  # and every player in it get them.
-  #
-  # @param text [String] The relay's settings.
-  def self.take_relay(text)
-    adopt(text)
-    if @loaded && $game_system
-      shared?(text) ? apply_text(text) : lock([])
-    end
-    broadcast(text)
-    show_row_value
-    refresh_menu
-  end
-
-  # Tells whether the world's settings on the relay were read a moment ago.
-  #
-  # @return [Boolean] Whether they were, less than CHECK_FRAMES ago.
-  def self.relay_known?
-    @check.nil? && @checked_at && @frames.to_i - @checked_at < CHECK_FRAMES ? true : false
-  end
-
-  # Forgets the reading of the world's settings on the relay and the players waiting for it.
-  def self.forget_check
-    @check = nil
-    @check_wanted = false
-    @need_check = false
-    @checked_at = nil
-    @relay_text = nil
-    @waiting = {}
-  end
-
-  # Tells the creator what the players got from the settings the relay took.
-  #
-  # @param sent [Hash] The request: the settings before and after, why, and how many options did not fit.
-  def self.tell_creator(sent)
-    was = shared?(sent[:before])
-    now = shared?(sent[:text])
-    # The notice of the stay that a load starts named what did not fit already.
-    told = sent[:reason] == :load && stay_recent?
-    left_out = now && sent[:left_out] > 0 && !told ? format(LEFT_OUT_TEXT, sent[:left_out]) : nil
-    text = if was != now
-             now ? creator_on_text(known_keys(settings_from(sent[:text]).keys)) : CREATOR_OFF_TEXT
-           elsif now && sent[:reason] != :load && (changes = changes_text(settings_from(sent[:before]), settings_from(sent[:text])))
-             format(CREATOR_CHANGE_TEXT, changes)
-           end
-    log("the relay took the world's mod settings (#{sent[:reason]}): #{sent[:text].empty? ? 'none, each player keeps their own' : sent[:text]}")
-    message = [left_out, text].compact.join(" ")
-    notify(message) unless message.empty?
-  end
-
-  # Tells the creator that sharing is on and which mods' options it shares.
-  #
-  # @param keys [Array<Symbol>] The creator's options the world shares.
-  # @return [String] The sentence.
-  def self.creator_on_text(keys)
-    keys.empty? ? CREATOR_ON_NONE_TEXT : format(CREATOR_ON_TEXT, mods_text(keys))
+  rescue => e
+    log_once([:step, kind], "playing the DLL's step #{kind} failed: #{e.class}: #{e.message}")
   end
 
   # Live changes.
@@ -1505,46 +821,45 @@ module MGQ_MpWorldMods
   # Tells every player in the world the settings the relay took, so they apply at once.
   #
   # @param text [String] The settings.
-  def self.broadcast(text)
+  # @param crc [String] Their checksum.
+  def self.broadcast(text, crc)
     return unless defined?(MGQ_MpOverworldSync)
 
-    crc = crc_of(text)
     sent = MGQ_MpOverworldSync.tell(-1, { LIVE_FIELD => crc }, text)
     log(sent ? "told every player in the world its new mod settings" : "could not tell the players the new mod settings; each hears of them from the creator's next state")
   end
 
-  # Tells another player the world's settings when their game holds others, as when they entered
-  # with a list from before the last change; first asks the relay, unless it did a moment ago,
-  # since the other game may hold settings the relay got after this one read them, such as an
-  # admin's. Called whenever another player tells their state.
+  # Tells another player the world's settings, which their game holds otherwise.
+  #
+  # @param seat [Integer] The player's seat.
+  # @param theirs [String] The checksum of the settings their game holds.
+  # @param mine [String] The checksum of the world's settings.
+  # @param text [String] The world's settings.
+  def self.tell(seat, theirs, mine, text)
+    return unless defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.tell(seat, { LIVE_FIELD => mine }, text)
+
+    MGQ_Multiplayer::Bridge.call(TOLD_TOPIC, "seat" => seat, "theirs" => theirs, "mine" => mine)
+    log("told the player on seat #{seat} the world's mod settings, which their game had otherwise")
+  end
+
+  # Hands the DLL another player's state, which tells the settings their game holds. Called
+  # whenever another player tells their state.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
   def self.on_observe(peer)
     return unless own_world?
 
-    theirs = peer.state[STATE_FIELD].to_s
-    mine = crc_of(@world[:text])
-    return if theirs.empty? || theirs == mine || @told_peers[peer.seat] == [theirs, mine]
-
-    unless relay_known?
-      (@waiting ||= {})[peer.seat] = peer
-      return check_relay
-    end
-    return unless MGQ_MpOverworldSync.tell(peer.seat, { LIVE_FIELD => mine }, @world[:text])
-
-    @told_peers[peer.seat] = [theirs, mine]
-    log("told #{MGQ_MpOverworldSync.who(peer)} the world's mod settings, which their game had otherwise")
+    take(MGQ_Multiplayer::Bridge.call(OBSERVE_TOPIC, "seat" => peer.seat, "crc" => peer.state[STATE_FIELD].to_s))
   rescue => e
     log_once(:observe, "telling a player the mod settings failed: #{e.class}: #{e.message}")
   end
 
-  # Forgets what another player was told, so whoever takes their seat next is checked anew. Called
-  # as a player leaves the world.
+  # Has the DLL forget what another player was told, so whoever takes their seat next is checked
+  # anew. Called as a player leaves the world.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
   def self.on_leave(peer)
-    @told_peers.delete(peer.seat)
-    @waiting.delete(peer.seat) if @waiting
+    MGQ_Multiplayer::Bridge.call(LEAVE_TOPIC, peer.seat)
   rescue => e
     log_once(:leave, "forgetting a player who left failed: #{e.class}: #{e.message}")
   end
@@ -1553,217 +868,32 @@ module MGQ_MpWorldMods
   #
   # @return [Hash] The checksum of the settings, none outside a world.
   def self.state_fields
-    @world && MGQ_MpWorld.open? ? { STATE_FIELD => crc_of(@world[:text]) } : {}
+    @world && MGQ_MpWorld.open? ? { STATE_FIELD => @world["crc"] } : {}
   end
 
-  # Writes the checksum of settings, which tells two games' settings apart.
-  #
-  # @param text [String] The settings.
-  # @return [String] The checksum in hexadecimal.
-  def self.crc_of(text)
-    Zlib.crc32(text.to_s).to_s(16)
-  end
-
-  # Takes the settings the world's creator sent: they apply at once while a save of the world is
-  # loaded, and otherwise once one is.
+  # Hands the DLL the settings the world's creator sent, which it applies at once while a save of
+  # the world is loaded, and otherwise once one is.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent them.
   # @param message [Hash] The message, the settings under :payload.
   def self.take_live(peer, message)
-    return unless @world && MGQ_MpWorld.open? && !@world[:own]
+    return unless @world && MGQ_MpWorld.open? && !@world["own"]
 
-    sender = peer && peer.state["id"].to_s
-    unless sender && !sender.empty? && sender == @world[:creator_id]
-      return log_once([:live_refused, sender], "ignored mod settings from #{MGQ_MpOverworldSync.who(peer)}, who did not create this world")
-    end
-
-    text = message[:payload].to_s
-    return if text == @world[:text]
-
-    before = @world[:text]
-    @world[:text] = text
-    name = MGQ_Multiplayer.clean(peer.state["name"])
-    log("#{name}, the world's creator, changed its mod settings to #{text.empty? ? 'none' : text}")
-    return log("they apply once a save of the world is loaded") unless @loaded && $game_system
-
-    apply_live(before, text, name)
+    take(MGQ_Multiplayer::Bridge.call(LIVE_TOPIC, "sender" => peer ? peer.state["id"].to_s : "", "name" => peer ? peer.state["name"].to_s : "", "text" => message[:payload].to_s))
   rescue => e
     log("taking the world's new mod settings failed: #{e.class}: #{e.message}")
   end
 
-  # Applies the world's new settings at once and tells the player what changed.
-  #
-  # @param before [String] The settings before.
-  # @param after [String] The settings now.
-  # @param name [String] The creator's name.
-  def self.apply_live(before, after, name)
-    if shared?(after)
-      applied = known_keys(apply_text(after))
-      if shared?(before) && stay_recent?
-        # Settings that arrive right after the load are only newer than the player's list, not a
-        # change, so the notice of the stay names them anew.
-        notify(stay_text(applied, name))
-      elsif shared?(before)
-        changes = changes_text(settings_from(before), settings_from(after))
-        notify(format(CHANGED_TEXT, name, changes)) if changes
-      else
-        @stay_noticed = true
-        notify(applied.empty? ? format(NOW_SHARED_EMPTY_TEXT, name) : format(NOW_SHARED_TEXT, name, options_text(applied)))
-      end
-    elsif shared?(before)
-      lock([])
-      notify(format(NO_LONGER_TEXT, name))
-    end
-    show_row_value
-    refresh_menu
-  end
-
   # Telling the player.
 
-  # Tells the player once per stay in a world that shares its settings what that means for them.
+  # Shows a message of the DLL in the notification box, in the lines it broke it into.
   #
-  # @param applied [Array<Symbol>] The options the world set.
-  def self.notice_stay(applied)
-    return if @stay_noticed
-
-    @stay_noticed = true
-    @stay_at = @frames.to_i
-    notify(own_world? ? creator_stay_text : stay_text(known_keys(applied), @world[:creator_name]))
-  end
-
-  # Tells whether the notice of the stay may still show.
-  #
-  # @return [Boolean] Whether it was posted less than NOTICE_FRAMES ago.
-  def self.stay_recent?
-    @stay_at && @frames.to_i - @stay_at < NOTICE_FRAMES ? true : false
-  end
-
-  # Tells another player what the world sets for them while they play in it.
-  #
-  # @param keys [Array<Symbol>] The options set that this game's Mod Config has.
-  # @param name [String] The creator's name.
-  # @return [String] The notice.
-  def self.stay_text(keys, name)
-    keys.empty? ? format(STAY_EMPTY_TEXT, name) : format(STAY_TEXT, name, options_text(keys))
-  end
-
-  # Tells the creator what they share, and first how many options did not fit.
-  #
-  # @return [String] The notice.
-  def self.creator_stay_text
-    keys = known_keys(settings_from(latest_text).keys)
-    text = keys.empty? ? STAY_CREATOR_NONE_TEXT : format(STAY_CREATOR_TEXT, mods_text(keys))
-    @left_out.to_i > 0 ? "#{format(LEFT_OUT_TEXT, @left_out)} #{text}" : text
-  end
-
-  # Keeps the options this game's Mod Config has, which are the only ones a notice can name.
-  #
-  # @param keys [Array<Symbol>] The options.
-  # @return [Array<Symbol>] Those of them in a mod's group.
-  def self.known_keys(keys)
-    known = menu_groups.inject([]) { |all, (_, entries)| all + entries.map { |entry| entry[:key] } }
-    keys.select { |key| known.include?(key) }
-  end
-
-  # Tells how many options of which mods a world sets.
-  #
-  # @param keys [Array<Symbol>] The options, each in this game's Mod Config.
-  # @return [String] Such as "2 options of Level Cap are".
-  def self.options_text(keys)
-    keys.size == 1 ? "1 option of #{mods_text(keys)} is" : "#{keys.size} options of #{mods_text(keys)} are"
-  end
-
-  # Names the mods whose options some are, as this game's Mod Config groups them.
-  #
-  # @param keys [Array<Symbol>] The options.
-  # @return [String] Such as "Level Cap, Party Sheet and 2 more", "the world's mods" when none is known.
-  def self.mods_text(keys)
-    names = menu_groups.select { |_, entries| entries.any? { |entry| keys.include?(entry[:key]) } }.map { |name, _| name }
-    names.empty? ? "the world's mods" : list_text(names, NAMED_MODS)
-  end
-
-  # Names a few things and counts the rest.
-  #
-  # @param names [Array<String>] The things.
-  # @param named [Integer] Most named before the rest is counted.
-  # @return [String] Such as "A and B" or "A, B and 3 more".
-  def self.list_text(names, named)
-    return names.join(" and ") if names.size <= 2 && names.size <= named
-    return "#{names[0...-1].join(', ')} and #{names.last}" if names.size <= named
-
-    "#{names.first(named).join(', ')} and #{names.size - named} more"
-  end
-
-  # Tells what changed between two of a world's settings: the first few options this game knows by
-  # name and value, the rest counted.
-  #
-  # @param before [Hash] The values before, by the options' keys.
-  # @param after [Hash] The values now.
-  # @return [String, nil] Such as "Level Cap: On -> Off", nil when nothing changed.
-  def self.changes_text(before, after)
-    keys = (after.keys + before.keys).uniq.reject { |key| after.key?(key) && before.key?(key) && same_value?(before[key], after[key]) }
-    return nil if keys.empty?
-
-    entries = {}
-    menu_groups.each { |_, group| group.each { |entry| entries[entry[:key]] ||= entry } }
-    known = keys.select { |key| entries[key] }
-    named = known.first(NAMED_CHANGES).map do |key|
-      from = before.key?(key) ? value_text(key, before[key]) : nil
-      to = after.key?(key) ? value_text(key, after[key]) : "no longer shared"
-      "#{short_name(entries[key])}: #{from ? "#{from} -> " : ''}#{to}"
-    end
-    return "#{keys.size} option#{keys.size == 1 ? '' : 's'}" if named.empty?
-
-    rest = keys.size - named.size
-    rest > 0 ? "#{named.join(', ')} and #{rest} more" : named.join(", ")
-  end
-
-  # Writes a value as Mod Config shows it.
-  #
-  # @param key [Symbol] The option.
-  # @param value [Object] The value.
-  # @return [String] The name Mod Config gives it, else the value.
-  def self.value_text(key, value)
-    texts = NWConst::Config.const_defined?(:DATA_TEXT) ? NWConst::Config::DATA_TEXT[key] : nil
-    named = texts && texts[value]
-    return named[:name].to_s if named && named[:name]
-
-    value.is_a?(Float) ? format("%.2f", value) : value.to_s
-  rescue
-    value.to_s
-  end
-
-  # Shows a message in the notification box, broken into lines that fit it.
-  #
-  # @param text [String] The message.
-  def self.notify(text)
-    log("told the player: #{text}")
+  # @param lines [Array<String>] The lines.
+  def self.notify(lines)
     return unless defined?(MGQ_MpNotices)
 
     NOTICE_LINES.times { |index| MGQ_MpNotices.drop([NOTICE_KEY, index], "a newer one replaces it") }
-    lines = notice_lines(text)
     (lines.size - 1).downto(0) { |index| MGQ_MpNotices.message([NOTICE_KEY, index], lines[index], NOTICE_FRAMES) }
-  end
-
-  # Breaks a message into lines of the notification box, at most NOTICE_LINES of them.
-  #
-  # @param text [String] The message.
-  # @return [Array<String>] The lines, the last one cut short when the message is longer.
-  def self.notice_lines(text)
-    lines = [""]
-    text.split(" ").each do |word|
-      candidate = lines.last.empty? ? word : "#{lines.last} #{word}"
-      if candidate.size <= NOTICE_LINE_CHARS || lines.last.empty?
-        lines[-1] = candidate
-      else
-        lines.push(word)
-      end
-    end
-    return lines if lines.size <= NOTICE_LINES
-
-    kept = lines.first(NOTICE_LINES)
-    kept[-1] = "#{kept[-1][0, NOTICE_LINE_CHARS - 3]}..."
-    kept
   end
 
   # What the world screen's details say about a world's mod settings.
@@ -1773,25 +903,14 @@ module MGQ_MpWorldMods
   # @return [String] Such as "Mod settings: shared by Creator (Level Cap)", naming the mods whose
   #   options the settings hold as this game's Mod Config groups them.
   def self.details_text(listed, me)
-    return "Mod settings: each player's own" unless shared?(listed.settings)
-
-    who = listed.creator_id == me ? "you" : MGQ_Multiplayer.clean(listed.creator_name)
-    keys = settings_from(listed.settings).keys
-    return "Mod settings: shared by #{who} (none set yet)" if keys.empty?
-
-    known = known_keys(keys)
-    what = known.empty? ? "#{keys.size} option#{keys.size == 1 ? '' : 's'} of mods you lack" : mods_text(known)
-    "Mod settings: shared by #{who} (#{what})"
+    hand_options
+    MGQ_Multiplayer::Bridge.call(DETAILS_TOPIC, "settings" => listed.settings.to_s, "creator_id" => listed.creator_id.to_s, "creator_name" => listed.creator_name.to_s, "me" => me.to_s).to_s
   end
 
-  # Follows the settings on their way, the reading of the relay's and the options screen. Called
-  # every frame of every scene.
+  # Takes the DLL's steps whenever it has some, and sends the creator's changed options once they
+  # leave the options screen. Called every frame of every scene.
   def self.tick
-    @frames = @frames.to_i + 1
-    follow_send if @sending
-    follow_check if @check
-    check_relay if @check_wanted && !@check && !@sending
-    pump if @wanted && !@sending
+    take(MGQ_Multiplayer::Bridge.call(STEP_TOPIC)) if MGQ_MpWorld::Changes.take?(MGQ_MpWorld::Changes::SETTINGS)
     watch_options
   rescue => e
     log_once(:tick, "tick failed: #{e.class}: #{e.message}")
@@ -1802,7 +921,7 @@ module MGQ_MpWorldMods
     in_options = defined?(Scene_Config) && SceneManager.scene.is_a?(Scene_Config) ? true : false
     left = @in_options && !in_options
     @in_options = in_options
-    sync(:options) if left
+    sync_options if left
   end
 end
 

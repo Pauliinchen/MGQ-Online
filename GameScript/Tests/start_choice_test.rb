@@ -2,7 +2,12 @@
 #  start_choice_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Answered the rules the DLL owns through the bridge from the golden cases
+#      Paulinchen  2026-10-23: Checked that a new world goes to the DLL and that the screen plays the steps it answers
+#                            - Checked that the screen plays the DLL's steps of where to start and hands back the player's choice
+#                            - Read the details and the texts through the stand-ins of the world screen's model
+#                            - Opened the world screen's forms through the DLL
+#                            - Made the worlds on this PC through the stand-ins of the DLL's topics
+#                            - Answered the rules the DLL owns through the bridge from the golden cases
 #      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number
 #      Paulinchen  2026-10-13: Expected the longer call of mp_dir_create, with the raid bosses, and the rows of the squad rules' button
 #      Paulinchen  2026-10-12: Expected the warning before a new player takes the creator's starting save
@@ -195,7 +200,7 @@ def new_scene
   scene = Scene_MpWorlds.allocate
   [:@actions_window, :@members_window, :@confirm_window, :@start_window, :@list_window, :@form_window].each { |name| scene.instance_variable_set(name, FakeChoice.new) }
   scene.instance_variable_set(:@info_window, FakeInfo.new)
-  scene.instance_variable_set(:@forms, { :new_world => MGQ_MpWorld::Form.create })
+  scene.instance_variable_set(:@forms, { :new_world => MGQ_MpWorld::WorldForm.create(:new_world) })
   scene
 end
 
@@ -217,7 +222,7 @@ def said(scene)
 end
 
 # The form.
-form = MGQ_MpWorld::Form.create
+form = MGQ_MpWorld::WorldForm.create(:new_world)
 choose = form.fields.find { |field| field.key == :choose }
 check("the form has a Player's choice checkbox beside Shared save", [choose.kind, choose.row, choose.side, choose.label, choose.group], [:check, 3, :right, "Player's choice", "World"])
 check("Players choose starts unticked", form[:choose], false)
@@ -228,11 +233,9 @@ check("a form with Players choose ticked alone can be sent", (form[:name] = "W";
 $dll["mp_dir_list"] = "state=ready\n\nworld\tw1\t4\t0\tc\t0\tC\tFree\tnone\t0\t1\nworld\tw2\t4\t0\tc\t0\tC\tFixed\tready\t1\t0\nworld\tw3\t4\t0\tc\t0\tC\tOld\tnone\t0\n"
 _, _, listed, = MGQ_MpWorld::Directory.list
 check("the list reads which worlds let their players choose", listed.map { |world| world.choose }, [true, false, false])
-MGQ_MpWorld::Directory.create("W", "p", 4, false, true, "")
-check("create hands Players choose to the DLL", $calls.last[0..1] + [($calls.last[2][3] & MGQ_MpWorld::Directory::CHOOSE_OPTION) > 0], ["mp_dir_create", "ppllppppppppllpl", true])
 
 # What the details say.
-detail = Window_MpWorldDetail.allocate
+detail = screen_detail
 # A listed world with a starting save's state and whether its players choose.
 listed_as = lambda { |start, choose| MGQ_MpWorld::Directory::ListedWorld.new("w", 4, 0, "c", 0, "C", "W", start, [], false, choose) }
 check("details: choose with the creator's save", detail.start_text(listed_as.call("ready", true)), "Your choice: beginning, own or creator's save")
@@ -248,126 +251,95 @@ Dir.mktmpdir do |root|
     my_system = Marshal.dump("my system")
     File.binwrite("Save/Save03.rvdata2", my_save)
     File.binwrite("Save/SystemSave.rvdata2", my_system)
-    world = MGQ_MpWorld::World.new("abcdef012345", "code" => "code", "name" => "Free")
+    world = local_world("abcdef012345", "code" => "code", "name" => "Free")
     FileUtils.mkdir_p(world.folder)
 
-    # A world made with Player's choice: it is left in the list as a favourite, and its creator is
-    # asked on entering it.
-    favourites = []
-    MGQ_MpWorld::Favourites.define_singleton_method(:add) { |id| favourites << id }
-    MGQ_MpWorld::World.define_singleton_method(:found) { |*| $found }
-    $found = world
-    $dll["mp_dir_action"] = "state=done\nkind=create\ncode=code\nworld=w\n\n"
+    # A world made with Player's choice: the DLL makes it from the form, and its steps empty the
+    # form, leave it and say where to enter it (WorldEnteringTests); its creator is asked on
+    # entering it.
     scene = new_scene
     scene.instance_variable_set(:@form_symbol, :new_world)
     scene.instance_variable_get(:@forms)[:new_world].tap { |made| made[:name] = "Free"; made[:choose] = true }
-    scene.instance_variable_set(:@busy, "create")
-    scene.instance_variable_set(:@creating, "Free")
-    scene.instance_variable_set(:@start_files, [])
-    $calls.clear
-    scene.follow_action
-    check("making a world fetches the list again", $calls.map { |call| call[0] }.include?("mp_dir_refresh"), true)
-    check("and empties the form, which no longer has the cursor", [scene.instance_variable_get(:@forms)[:new_world][:name], scene.form], ["", nil])
-    check("marks the world as a favourite and says where to enter it", [favourites, said(scene), start_choices(scene)], [["w"], "Free was created. #{Scene_MpWorlds::ENTER_HINT}", nil])
-    scene.enter(world, "none", true)
-    check("entering it asks the creator where to start", start_choices(scene), [:from_beginning, :from_own, :cancel])
-
-    # Asking a new player.
+    $screen_steps = [["busy", "create"]]
+    scene.send_form
+    check("sending the form has the DLL make the world, with no starting save to copy", screen_requests("screen.do").last.values_at("do", "start"), ["create", []])
+    scene.play("steps" => [["idle"], ["fresh_form", "new_world"], ["close_form"], ["select", "w"], ["say", "Free was created. #{MGQ_MpWorldScreen.text("enter_hint")}"], ["back"]])
+    check("once made, the form is empty and no longer has the cursor", [scene.instance_variable_get(:@forms)[:new_world][:name], scene.form], ["", nil])
+    check("and the screen says where to enter it", [said(scene), start_choices(scene)], ["Free was created. #{MGQ_MpWorldScreen.text("enter_hint")}", nil])
+    # Where to start, which the DLL's steps decide (WorldEnteringTests); the screen plays them.
+    where = [["say", "Where do you start in Free? A save cannot be undone."],
+             ["choices", [["From the creator's save", "from_creator"], ["At the beginning", "from_beginning"], ["From one of my saves", "from_own"], ["Back", "cancel"]]]]
     scene = new_scene
     scene.instance_variable_get(:@list_window).activate
-    scene.enter(world, "ready", true)
-    check("a new player of a world with the creator's save gets three choices", start_choices(scene), [:from_creator, :from_beginning, :from_own, :cancel])
-    check("the question names the world", said(scene).start_with?("Where do you start in Free?"), true)
+    scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w", "Free", nil, world, false, false))
+    scene.instance_variable_set(:@me, "me")
+    $screen_steps = where
+    scene.on_enter
+    check("entering hands the DLL the world, its folder, the player and the game data",
+          screen_requests("screen.enter").last.values_at("id", "folder", "name", "gone", "me"), ["w", world.id, "Free", false, "me"])
+    check("and shows the choices the steps name", start_choices(scene), [:from_creator, :from_beginning, :from_own, :cancel])
+    check("with the question they say", said(scene), "Where do you start in Free? A save cannot be undone.")
     check("and only the choice takes input", [scene.instance_variable_get(:@list_window).active, scene.instance_variable_get(:@form_window).active], [false, false])
 
-    scene = new_scene
-    scene.enter(world, "none", true)
-    check("without the creator's save, two", start_choices(scene), [:from_beginning, :from_own, :cancel])
+    scene.on_from_beginning
+    check("a choice goes back to the DLL as the answer", [screen_requests("screen.answer").last["answer"], start_choices(scene)], ["from_beginning", nil])
+    $screen_steps = where
+    scene.on_enter
+    scene.on_from_creator
+    scene.on_take_start
+    check("the creator's save and Take go back too", screen_requests("screen.answer").last(2).map { |request| request["answer"] }, ["from_creator", "take_start"])
+    $screen_steps = where
+    scene.on_enter
+    scene.on_back
+    check("Back out of the choice goes back to the DLL", screen_requests("screen.answer").last["answer"], "back")
 
-    scene = new_scene
-    scene.enter(world, "none", false)
-    check("a world without the choice is entered at once", [start_choices(scene), $started.last], [nil, world])
-
-    # A first entry without the listing.
+    # The steps of the running action.
     scene = new_scene
     scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w", "Free", nil, world, false, false))
+    $screen_steps = [["busy", "start"]]
     scene.on_enter
-    check("a first entry waits for the list", [$started.size, said(scene)], [1, "Free is not in the list right now. Try again once the list has loaded."])
-    scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w", "Free", nil, world, false, true))
-    scene.on_enter
-    check("a world gone from the list says so", said(scene), "Free is no longer in the list: it was deleted, or you were removed.")
+    check("a step holds the input while the DLL's action runs", [scene.instance_variable_get(:@busy), said(scene)], ["start", MGQ_MpWorldScreen.busy_text("start")])
+    MGQ_MpWorld::Changes.note(MGQ_MpWorld::Changes::SCREEN)
+    $screen_steps = [["idle"], ["back"]]
+    scene.follow_steps
+    check("and the step that ends it lets go of it", [screen_requests("screen.step").size, scene.instance_variable_get(:@busy)], [1, nil])
+    scene.follow_steps
+    check("the action is followed again only once the DLL tells of a change", screen_requests("screen.step").size, 1)
 
-    # At the beginning.
+    # From one of my saves.
     scene = new_scene
-    scene.enter(world, "ready", true)
-    scene.on_from_beginning
-    check("At the beginning enters without fetching", [$started.size, scene.instance_variable_get(:@busy)], [2, nil])
-
-    # From the creator's save.
-    scene = new_scene
-    scene.enter(world, "ready", true)
-    $calls.clear
-    scene.on_from_creator
-    check("From the creator's save warns first", [start_choices(scene), said(scene)], [[:take_start, :from_beginning, :cancel], Scene_MpWorlds::START_WARNING])
-    check("and fetches nothing yet", [scene.instance_variable_get(:@busy), $calls.map { |call| call[0] }.include?("mp_dir_fetch_start")], [nil, false])
-    scene.on_take_start
-    check("Take fetches it first", [scene.instance_variable_get(:@busy), $calls.last[0]], ["start", "mp_dir_fetch_start"])
-    check("and closes the choice", start_choices(scene), nil)
-
-    # From one of my saves, left without one.
-    scene = new_scene
-    scene.enter(world, "none", true)
+    scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w", "Free", nil, world, false, false))
+    $screen_steps = [["save_screen"]]
     scene.on_from_own
     check("From one of my saves opens the save screen", $called, Scene_MpStartSave)
     check("which says what the save is for", Scene_MpStartSave.allocate.help_window_text, MGQ_MpSaveDistribution::HELP_TEXTS[:own])
     check("every text of the save screen fits its line of help, 48 characters at most", MGQ_MpSaveDistribution::HELP_TEXTS.values.select { |text| text.size > 48 }, [])
     scene.take_start_save
-    check("leaving it without a save enters nothing", [scene.instance_variable_get(:@own_start), $started.size], [nil, 2])
-    check("and asks again", start_choices(scene), [:from_beginning, :from_own, :cancel])
-    scene.take_start_save
-    check("the world screen starting again later asks nothing more", start_choices(scene), [:from_beginning, :from_own, :cancel])
-
-    # From one of my saves, copied halfway.
-    scene.on_from_own
+    check("leaving it without a save tells the DLL, which asks again", screen_requests("screen.answer").last, { "answer" => "own_save", "index" => nil })
+    MGQ_MpSaveDistribution.choose(:own)
     MGQ_MpSaveDistribution.chosen = 2
+    $screen_steps = [["copy_own", $local_worlds[world.id], 2]]
     scene.take_start_save
-    File.rename("Save/SystemSave.rvdata2", "Save/Hidden.rvdata2")
-    FileUtils.mkdir_p("Save/SystemSave.rvdata2")
+    check("a save picked tells the DLL which", screen_requests("screen.answer").last, { "answer" => "own_save", "index" => 2 })
+    check("and the copy waits for the next frame", scene.instance_variable_get(:@own_start)[1], 2)
+    $screen_steps = [["start", $local_worlds[world.id], true, false, true]]
     scene.start_from_own
-    check("a copy that failed halfway leaves no save behind", [File.exist?("#{world.save_folder}/Save01.rvdata2"), said(scene)], [false, "Your save could not be copied into Free."])
-    FileUtils.rmdir("Save/SystemSave.rvdata2")
-    File.rename("Save/Hidden.rvdata2", "Save/SystemSave.rvdata2")
-
-    # From one of my saves, which this game cannot load.
-    scene.on_from_own
-    MGQ_MpSaveDistribution.chosen = 2
-    scene.take_start_save
-    $start_error = "The latest save of Free could not be loaded."
-    scene.start_from_own
-    check("a save that cannot be loaded is thrown away", [File.exist?("#{world.save_folder}/Save01.rvdata2"), said(scene)], [false, $start_error])
-    check("so the next entry asks again", MGQ_MpSaveDistribution.ask_start?(world, true), true)
-    $start_error = nil
-
-    # From one of my saves.
-    scene = new_scene
-    scene.enter(world, "none", true)
-    scene.on_from_own
-    MGQ_MpSaveDistribution.chosen = 2
-    scene.take_start_save
-    check("the picked save waits for the next frame", scene.instance_variable_get(:@own_start), 2)
-    scene.start_from_own
-    check("it becomes the world's first save", File.binread("#{world.save_folder}/Save01.rvdata2"), my_save)
+    check("the save becomes the world's first save", File.binread("#{world.save_folder}/Save01.rvdata2"), my_save)
     check("with the player's system save", File.binread("#{world.save_folder}/SystemSave.rvdata2"), my_system)
-    check("and the world is entered", [$started.size, $started.last], [4, world])
+    check("the DLL is told the copy worked", screen_requests("screen.answer").last, { "answer" => "own_copied", "ok" => true })
+    check("and its start step enters the world", $started.last.id, world.id)
     check("the player's own save stays", File.binread("Save/Save03.rvdata2"), my_save)
-    check("once the world has a save, nobody is asked again", [MGQ_MpSaveDistribution.new_player?(world), MGQ_MpSaveDistribution.ask_start?(world, true)], [false, false])
-    check("nothing is asked or fetched while the list does not tell", [MGQ_MpSaveDistribution.ask_start?(world, nil), MGQ_MpSaveDistribution.fetch?(world, nil)], [false, false])
 
-    # A fetched creator's save the game cannot load.
+    # A start that fails.
     $start_error = "The latest save of Free could not be loaded."
-    new_scene.start_world(world, true)
-    check("a fetched save that cannot be loaded is thrown away too", File.exist?("#{world.save_folder}/Save01.rvdata2"), false)
+    $screen_steps = [["start", $local_worlds[world.id], true, false, true]]
+    scene.on_enter
+    check("a start that fails tells the DLL why, and whether its save was just placed",
+          screen_requests("screen.answer").last, { "answer" => "start_failed", "text" => $start_error, "placed" => true })
     $start_error = nil
+    $screen_steps = [["discard", $local_worlds[world.id]], ["buzz"], ["say", "Could not."], ["back"]]
+    scene.on_enter
+    check("the discard step throws the placed save away", File.exist?("#{world.save_folder}/Save01.rvdata2"), false)
 
     # The creator's starting save still goes into the form.
     scene = new_scene
@@ -375,47 +347,5 @@ Dir.mktmpdir do |root|
     MGQ_MpSaveDistribution.chosen = 4
     scene.take_start_save
     check("a save picked for a new world goes into the form", scene.instance_variable_get(:@forms)[:new_world][:save], 4)
-
-    # A world whose new players all start from the creator's save: the warning comes first.
-    check("the warning fits the two lines the message has, 120 characters at most", Scene_MpWorlds::START_WARNING.size <= 120, true)
-    started = $started.size
-    scene = new_scene
-    scene.instance_variable_get(:@list_window).activate
-    $calls.clear
-    scene.enter(world, "ready", false)
-    check("a new player is warned before the creator's save is taken", [start_choices(scene), said(scene)], [[:take_start, :from_beginning, :cancel], Scene_MpWorlds::START_WARNING])
-    check("and nothing is fetched or started yet", [$calls.map { |call| call[0] }.include?("mp_dir_fetch_start"), scene.instance_variable_get(:@busy), $started.size], [false, nil, started])
-    check("and only the choice takes input", [scene.instance_variable_get(:@list_window).active, scene.instance_variable_get(:@form_window).active], [false, false])
-    scene.on_take_start
-    check("Take fetches the creator's save", [scene.instance_variable_get(:@busy), $calls.last[0], start_choices(scene)], ["start", "mp_dir_fetch_start", nil])
-
-    scene = new_scene
-    $calls.clear
-    scene.enter(world, "ready", false)
-    scene.on_from_beginning
-    check("Start at the beginning enters without fetching", [$started.size, $started.last, scene.instance_variable_get(:@busy), $calls.map { |call| call[0] }.include?("mp_dir_fetch_start")], [started + 1, world, nil, false])
-
-    scene = new_scene
-    $calls.clear
-    scene.enter(world, "ready", false)
-    scene.on_back
-    check("Back fetches and starts nothing and goes back to the list",
-          [start_choices(scene), $calls.map { |call| call[0] }.include?("mp_dir_fetch_start"), $started.size, scene.instance_variable_get(:@list_window).active], [nil, false, started + 1, true])
-
-    # The creator, on a PC without a save of their own world.
-    own_listed = MGQ_MpWorld::Directory::ListedWorld.new("w", 4, 0, "mine", 0, "Me", "Free", "ready", [], false, false)
-    scene = new_scene
-    scene.instance_variable_set(:@me, "mine")
-    scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w", "Free", own_listed, world, false, false))
-    scene.enter(world, "ready", false)
-    check("the creator takes their own save without the warning", [start_choices(scene), scene.instance_variable_get(:@busy), $calls.last[0]], [nil, "start", "mp_dir_fetch_start"])
-
-    own_listed.choose = true
-    scene = new_scene
-    scene.instance_variable_set(:@me, "mine")
-    scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w", "Free", own_listed, world, false, false))
-    scene.enter(world, "ready", true)
-    scene.on_from_creator
-    check("and with Player's choice too", [start_choices(scene), scene.instance_variable_get(:@busy)], [nil, "start"])
   end
 end

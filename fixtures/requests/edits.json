@@ -1,0 +1,432 @@
+{
+  "edits": [
+    {
+      "name": "a classic world kept as it was",
+      "raid": false,
+      "difficulty": null,
+      "squad": null,
+      "raid_bosses": false,
+      "other_mods_off": false,
+      "settings": "",
+      "own": true,
+      "form": {
+        "shared": false,
+        "difficulty": null,
+        "squad": {
+          "luka": false,
+          "formation": 4,
+          "front": 1,
+          "raid_front": 1
+        },
+        "raid_bosses": false,
+        "other_mods_off": false
+      },
+      "edited": {
+        "settings": null,
+        "difficulty": null,
+        "squad": null,
+        "raid_bosses": null,
+        "other_mods_off": null
+      },
+      "hashes": "hashes of !Mod",
+      "text": ""
+    },
+    {
+      "name": "a classic world gets raid bosses and turns other mods off",
+      "raid": false,
+      "difficulty": null,
+      "squad": null,
+      "raid_bosses": false,
+      "other_mods_off": false,
+      "settings": "",
+      "own": true,
+      "form": {
+        "shared": false,
+        "difficulty": null,
+        "squad": {
+          "luka": false,
+          "formation": 4,
+          "front": 1,
+          "raid_front": 1
+        },
+        "raid_bosses": true,
+        "other_mods_off": true
+      },
+      "edited": {
+        "settings": null,
+        "difficulty": null,
+        "squad": null,
+        "raid_bosses": true,
+        "other_mods_off": true
+      },
+      "hashes": "hashes of !Mod",
+      "text": " Its story bosses fight as raid bosses now. Players in it with other mods enter again without them."
+    },
+    {
+      "name": "a classic world loses raid bosses",
+      "raid": false,
+      "difficulty": null,
+      "squad": null,
+      "raid_bosses": true,
+      "other_mods_off": true,
+      "settings": "",
+      "own": true,
+      "form": {
+        "shared": false,
+        "difficulty": null,
+        "squad": {
+          "luka": false,
+          "formation": 4,
+          "front": 1,
+          "raid_front": 1
+        },
+        "raid_bosses": false,
+        "other_mods_off": true
+      },
+      "edited": {
+        "settings": null,
+        "difficulty": null,
+        "squad": null,
+        "raid_bosses": false,
+        "other_mods_off": null
+      },
+      "hashes": "hashes of !Mod",
+      "text": " Its story bosses fight as usual now."
+    },
+    {
+      "name": "a raid world gets a difficulty",
+      "raid": true,
+      "difficulty": null,
+      "squad": null,
+      "raid_bosses": false,
+      "other_mods_off": true,
+      "settings": "",
+      "own": true,
+      "form": {
+        "shared": false,
+        "difficulty": 3,
+        "squad": {
+          "luka": false,
+          "formation": 4,
+          "front": 1,
+          "raid_front": 1
+        },
+        "raid_bosses": false,
+        "other_mods_off": true
+      },
+      "edited": {
+        "settings": null,
+        "difficulty": 3,
+        "squad": null,
+        "raid_bosses": null,
+        "other_mods_off": null
+      },
+      "hashes": "hashes of !Mod",
+      "text": " Its players play on HELL now."
+    },
+    {
+      "name": "a raid world keeps its difficulty",
+      "raid": true,
+      "difficulty": 1,
+      "squad": null,
+      "raid_bosses": false,
+      "other_mods_off": true,
+      "settings": "",
+      "own": true,
+      "form": {
+        "shared": false,
+        "difficulty": 1,
+        "squad": {
+          "luka": false,
+          "formation": 4,
+          "front": 1,
+          "raid_front": 1
+        },
+        "raid_bosses": false,
+        "other_mods_off": true
+      },
+      "edited": {
+        "settings": null,
+        "difficulty": null,
+        "squad": null,
+        "raid_bosses": null,
+        "other_mods_off": null
+      },
+      "hashes": "hashes of !Mod",
+      "text": ""
+    },
+    {
+      "name": "a raid world back to per player",
+      "raid": true,
+      "difficulty": 2,
+      "squad": null,
+      "raid_bosses": false,
+      "other_mods_off": true,
+      "settings": "",
+      "own": true,
+      "form": {
+        "shared": false,
+        "difficulty": null,
+        "squad": {
+          "luka": false,
+          "formation": 4,
+          "front": 1,
+          "raid_front": 1
+        },
+        "raid_bosses": false,
+        "other_mods_off": true
+      },
+      "edited": {
+        "settings": null,
+        "difficulty": null,
+        "squad": null,
+        "raid_bosses": null,
+        "other_mods_off": null
+      },
+      "hashes": "hashes of !Mod",
+      "text": ""
+    },
+    {
+      "name": "a raid world without squad rules keeps the defaults",
+      "raid": true,
+      "difficulty": 0,
+      "squad": null,
+      "raid_bosses": false,
+      "other_mods_off": true,
+      "settings": "",
+      "own": true,
+      "form": {
+        "shared": false,
+        "difficulty": 0,
+        "squad": {
+          "luka": false,
+          "formation": 4,
+          "front": 1,
+          "raid_front": 1
+        },
+        "raid_bosses": false,
+        "other_mods_off": true
+      },
+      "edited": {
+        "settings": null,
+        "difficulty": null,
+        "squad": null,
+        "raid_bosses": null,
+        "other_mods_off": null
+      },
+      "hashes": "hashes of !Mod",
+      "text": ""
+    },
+    {
+      "name": "a raid world gets squad rules",
+      "raid": true,
+      "difficulty": 0,
+      "squad": null,
+      "raid_bosses": false,
+      "other_mods_off": true,
+      "settings": "",
+      "own": true,
+      "form": {
+        "shared": false,
+        "difficulty": 0,
+        "squad": {
+          "luka": true,
+          "formation": 6,
+          "front": 2,
+          "raid_front": 1
+        },
+        "raid_bosses": false,
+        "other_mods_off": true
+      },
+      "edited": {
+        "settings": null,
+        "difficulty": null,
+        "squad": {
+          "luka": true,
+          "formation": 6,
+          "front": 2,
+          "raid_front": 1
+        },
+        "raid_bosses": null,
+        "other_mods_off": null
+      },
+      "hashes": "hashes of !Mod",
+      "text": " Its squads: Formation 6, Frontline 2 | 1, Luka replaceable."
+    },
+    {
+      "name": "a raid world changes its squad rules to the defaults",
+      "raid": true,
+      "difficulty": 0,
+      "squad": {
+        "luka": true,
+        "formation": 0,
+        "front": 3,
+        "raid_front": 4
+      },
+      "raid_bosses": false,
+      "other_mods_off": true,
+      "settings": "",
+      "own": true,
+      "form": {
+        "shared": false,
+        "difficulty": 0,
+        "squad": {
+          "luka": false,
+          "formation": 4,
+          "front": 1,
+          "raid_front": 1
+        },
+        "raid_bosses": false,
+        "other_mods_off": true
+      },
+      "edited": {
+        "settings": null,
+        "difficulty": null,
+        "squad": {
+          "luka": false,
+          "formation": 4,
+          "front": 1,
+          "raid_front": 1
+        },
+        "raid_bosses": null,
+        "other_mods_off": null
+      },
+      "hashes": "hashes of !Mod",
+      "text": " Its squads: Formation 4, Frontline 1 | 1, Luka fixed."
+    },
+    {
+      "name": "a raid world allows other mods",
+      "raid": true,
+      "difficulty": -2,
+      "squad": {
+        "luka": false,
+        "formation": 8,
+        "front": 4,
+        "raid_front": 4
+      },
+      "raid_bosses": false,
+      "other_mods_off": true,
+      "settings": "",
+      "own": true,
+      "form": {
+        "shared": false,
+        "difficulty": 4,
+        "squad": {
+          "luka": false,
+          "formation": 0,
+          "front": 1,
+          "raid_front": 2
+        },
+        "raid_bosses": false,
+        "other_mods_off": false
+      },
+      "edited": {
+        "settings": null,
+        "difficulty": 4,
+        "squad": {
+          "luka": false,
+          "formation": 0,
+          "front": 1,
+          "raid_front": 2
+        },
+        "raid_bosses": null,
+        "other_mods_off": false
+      },
+      "hashes": "hashes of !Mod",
+      "text": " Its players play on PARADOX now. Its squads: Formation Original, Frontline 1 | 2, Luka fixed. Its players keep their mods from their next entry."
+    },
+    {
+      "name": "its creator shares the mod settings",
+      "raid": false,
+      "difficulty": null,
+      "squad": null,
+      "raid_bosses": false,
+      "other_mods_off": false,
+      "settings": "a=b",
+      "own": true,
+      "form": {
+        "shared": true,
+        "difficulty": null,
+        "squad": {
+          "luka": false,
+          "formation": 4,
+          "front": 1,
+          "raid_front": 1
+        },
+        "raid_bosses": false,
+        "other_mods_off": false
+      },
+      "edited": {
+        "settings": "!a=b",
+        "difficulty": null,
+        "squad": null,
+        "raid_bosses": null,
+        "other_mods_off": null
+      },
+      "hashes": "hashes of !Mod",
+      "text": ""
+    },
+    {
+      "name": "its creator stops sharing them",
+      "raid": false,
+      "difficulty": null,
+      "squad": null,
+      "raid_bosses": false,
+      "other_mods_off": false,
+      "settings": "!a=b",
+      "own": true,
+      "form": {
+        "shared": false,
+        "difficulty": null,
+        "squad": {
+          "luka": false,
+          "formation": 4,
+          "front": 1,
+          "raid_front": 1
+        },
+        "raid_bosses": false,
+        "other_mods_off": false
+      },
+      "edited": {
+        "settings": "",
+        "difficulty": null,
+        "squad": null,
+        "raid_bosses": null,
+        "other_mods_off": null
+      },
+      "hashes": "hashes of !Mod",
+      "text": ""
+    },
+    {
+      "name": "an admin leaves the sharing to its creator",
+      "raid": false,
+      "difficulty": null,
+      "squad": null,
+      "raid_bosses": false,
+      "other_mods_off": false,
+      "settings": "a=b",
+      "own": false,
+      "form": {
+        "shared": true,
+        "difficulty": null,
+        "squad": {
+          "luka": false,
+          "formation": 4,
+          "front": 1,
+          "raid_front": 1
+        },
+        "raid_bosses": false,
+        "other_mods_off": false
+      },
+      "edited": {
+        "settings": null,
+        "difficulty": null,
+        "squad": null,
+        "raid_bosses": null,
+        "other_mods_off": null
+      },
+      "hashes": null,
+      "text": ""
+    }
+  ]
+}

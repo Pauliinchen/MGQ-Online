@@ -2,7 +2,8 @@
 //  Exports.Input.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Dropped mp_take_typed, since the text box in C# takes what is typed
+//      Paulinchen  2026-10-23: Dropped mp_copy_text, since the DLL's world screen steps copy a world's id themselves
+//                            - Dropped mp_take_typed, since the text box in C# takes what is typed
 //      Paulinchen  2026-10-12: Added mp_mouse_wheel
 //      Paulinchen  2026-10-06: Kept what was typed when the game script's buffer was too small
 //      Paulinchen  2026-09-30: Created
@@ -36,25 +37,6 @@ internal static unsafe partial class Exports
         catch (Exception ex)
         {
             Log.Write($"mp_mouse_wheel failed: {ex}");
-            return 0;
-        }
-    }
-
-    /// <summary>
-    /// Puts a text on the clipboard, such as a hidden world's id for its creator to hand out.
-    /// </summary>
-    /// <param name="text">The text, UTF-8 and null-terminated.</param>
-    /// <returns>1 when the clipboard holds it, 0 otherwise.</returns>
-    [UnmanagedCallersOnly(EntryPoint = "mp_copy_text", CallConvs = [typeof(CallConvStdcall)])]
-    public static int CopyText(byte* text)
-    {
-        try
-        {
-            return Clipboard.SetText(Text(text)) ? 1 : 0;
-        }
-        catch (Exception ex)
-        {
-            Log.Write($"mp_copy_text failed: {ex}");
             return 0;
         }
     }

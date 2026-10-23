@@ -2,15 +2,17 @@
 #  player_ini_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Checked the settings the DLL answers instead of the file, whose reading and writing its tests cover
+#      Paulinchen  2026-10-23: Left marking favourites and adding hidden worlds to the DLL's tests
+#                            - Checked that the world lists hand their changes to the DLL and take Player.ini as it answers it
+#                            - Checked the settings the DLL answers instead of the file, whose reading and writing its tests cover
 #      Paulinchen  2026-10-12: Created
 #
 #----------------------------------------------------------------
 
 # Covers Player.ini as the scripts see it (Multiplayer.rb's Player and Ini, which ask the DLL
-# through the bridge) and the world lists world.rbx keeps in it: the settings kept as the DLL last
-# answered them, asked again only while Player.ini cannot be read, and moving Favourites.ini and
-# Added.ini into it. Reading and writing the files is the DLL's (PlayerIniTests, IniFileTests).
+# through the bridge) and the world lists world.rbx asks the DLL for: the settings kept as the DLL
+# last answered them, asked again only while Player.ini cannot be read. Reading and writing the
+# files, and the lists' rules, are the DLL's (PlayerIniTests, IniFileTests, LocalWorldTopicsTests).
 
 require_relative "bridge_support"
 require "tmpdir"
@@ -39,10 +41,7 @@ module MGQ_MpWorld
   # Answers the id as it is.
   def self.short(id); id; end
 end
-%w[FAVOURITE_SETTING ADDED_SETTING OLD_LIST_FILES].each do |name|
-  MGQ_MpWorld.module_eval(world_source[/^  #{name} = .*$/])
-end
-%w[OldLists Added Favourites].each do |name|
+%w[Added].each do |name|
   MGQ_MpWorld.module_eval(world_source[/  module #{name}\n.*?\n  end\n/m])
 end
 
@@ -67,7 +66,6 @@ player = MGQ_Multiplayer::Player
 # Starts Player and the old lists afresh, as a new session does.
 fresh = lambda do
   [:@state, :@asked_at, :@noticed, :@discord_name].each { |name| player.instance_variable_set(name, nil) }
-  [:@merged, :@tried_at].each { |name| MGQ_MpWorld::OldLists.instance_variable_set(name, nil) }
   $ini = {}
   $files = {}
   $unreadable = false
@@ -109,50 +107,6 @@ check("the name Discord tells is handed over once, and the name follows it", [$t
 $discord_name = "Disco 2"
 check("and again once it changes", [player.name, $told], ["Disco 2", ["Disco", "Disco 2"]])
 $discord_name = nil
-
-# Favourites.ini and Added.ini move into Player.ini.
-fresh.call
-$ini = { "favourite.w1" => "1" }
-$files = { "Favourites.ini" => { "w1" => "1", "w2" => "1" }, "Added.ini" => { "a1" => "1", "a2" => "1" } }
-Dir.mktmpdir do |root|
-  Dir.chdir(root) do
-    $files.keys.each { |file| File.write(file, "") }
-    check("the old files move into Player.ini, which keeps what it held", [MGQ_MpWorld::Favourites.all, MGQ_MpWorld::Added.all], [["w1", "w2"], ["a1", "a2"]])
-    check("and are deleted", [$ini.keys, File.exist?("Favourites.ini"), File.exist?("Added.ini")],
-          [["favourite.w1", "favourite.w2", "added.a1", "added.a2"], false, false])
-
-    fresh.call
-    $files = { "Favourites.ini" => :unreadable, "Added.ini" => { "a1" => "1" } }
-    $files.keys.each { |file| File.write(file, "") }
-    check("while one old file cannot be read, nothing moves and nothing is deleted", [MGQ_MpWorld::Added.all, $ini, File.exist?("Added.ini")], [[], {}, true])
-    $files["Favourites.ini"] = { "w1" => "1" }
-    MGQ_MpWorld::Added.all
-    check("nor within a second after", File.exist?("Added.ini"), true)
-    MGQ_MpWorld::OldLists.instance_variable_set(:@tried_at, Time.now - 2)
-    check("then it is tried again", [MGQ_MpWorld::Favourites.all, MGQ_MpWorld::Added.all, File.exist?("Added.ini")], [["w1"], ["a1"], false])
-
-    fresh.call
-    $unreadable = true
-    $files = { "Favourites.ini" => { "w9" => "1" } }
-    File.write("Favourites.ini", "")
-    check("while Player.ini cannot be read, nothing moves, and a world stays as it was",
-          [MGQ_MpWorld::Favourites.all, MGQ_MpWorld::Favourites.toggle("w9"), File.exist?("Favourites.ini")], [[], nil, true])
-    File.delete("Favourites.ini")
-  end
-end
-
-# The favourites and hidden worlds kept in Player.ini.
-fresh.call
-check("a world marked is a favourite, and no longer once unmarked",
-      [MGQ_MpWorld::Favourites.toggle("w1"), MGQ_MpWorld::Favourites.all, MGQ_MpWorld::Favourites.toggle("w1"), MGQ_MpWorld::Favourites.all], [true, ["w1"], false, []])
-(1..MGQ_MpWorld::Added::MAX).each { |n| MGQ_MpWorld::Added.add("h#{n}") }
-MGQ_MpWorld::Added.add("h1")
-MGQ_MpWorld::Added.add("new")
-check("a hidden world added again moves to the end, and the oldest goes beyond the limit",
-      [MGQ_MpWorld::Added.all.size, MGQ_MpWorld::Added.all.first, MGQ_MpWorld::Added.all.last(2), MGQ_MpWorld::Added.all.include?("h2")],
-      [MGQ_MpWorld::Added::MAX, "h3", ["h1", "new"], false])
-MGQ_MpWorld::Added.remove("new")
-check("and one removed is gone", MGQ_MpWorld::Added.all.include?("new"), false)
 
 # The other ini files cross as text, and one that cannot be read reads as nil.
 $files = { "world.ini" => :unreadable }

@@ -2,7 +2,14 @@
 #  world_mods_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Answered the mod catalog through the bridge
+#      Paulinchen  2026-10-23: Left what an edit says of the shared settings and which settings it changes to the DLL's tests
+#                            - Checked that the screen plays the DLL's steps of the download offer and the entry after a restart
+#                            - Read the list box's lines through the stand-ins of the world screen's model
+#                            - Dropped the stand-in of the deleted mp_mods_recover
+#                            - Left the checks of the shared settings' rules, sending and notices to the DLL's tests and checked the steps this script plays
+#                            - Left the checks of the catalog, the hashes and the options to send to the DLL's tests and answered the mods check through the bridge
+#                            - Opened the world screen's forms through the DLL
+#                            - Answered the mod catalog through the bridge
 #                            - Answered the mod keys and the scripts in Patch through the bridge
 #                            - Dropped the restart by hand under Wine
 #                            - Dropped the checks of the deleted options dump
@@ -38,11 +45,10 @@
 # entering the world again afterwards, the mod settings a world shares while in it, and the options
 # dump for the World Admin tool.
 
-require "fileutils"
-require "tmpdir"
 
 require_relative "support"
 require_relative "rules_support"
+require "zlib"
 
 # Stand-ins for the game.
 
@@ -195,7 +201,6 @@ end
 $sounds = []
 $calls = []
 $dll = {}
-$file_hashes = {}
 $restart = 1
 $ini = {}
 # The mod's base script: always available, never outdated, with a player named Me whose Player.ini
@@ -234,8 +239,7 @@ module MGQ_Multiplayer
   module Link
     # A DLL function: a call is checked against its signature, recorded and answered as the DLL would.
     Function = Struct.new(:name, :signature) do
-      # Calls the function: mp_mod_hash writes a file's hash from $file_hashes, mp_restart_game answers
-      # $restart, and the functions in $refused answer 0.
+      # Calls the function: mp_restart_game answers $restart, and the functions in $refused answer 0.
       #
       # @param args [Array] The call's arguments.
       # @return [Integer] The DLL's answer.
@@ -243,14 +247,7 @@ module MGQ_Multiplayer
         check_dll_call(name, args)
         $calls << [name, signature, args]
         case name
-        when "mp_mod_hash"
-          hash = $file_hashes[args[0].chomp("\0")]
-          return 0 unless hash
-
-          args[1][0, hash.size] = hash
-          hash.size
         when "mp_restart_game" then $restart
-        when "mp_mods_recover" then 0
         when "mp_dir_clear"
           $dll["mp_dir_action"] = ""
           1
@@ -331,7 +328,7 @@ def new_scene
   scene = Scene_MpWorlds.allocate
   [:@actions_window, :@members_window, :@confirm_window, :@start_window, :@list_window, :@form_window].each { |name| scene.instance_variable_set(name, FakeChoice.new) }
   scene.instance_variable_set(:@info_window, FakeInfo.new)
-  scene.instance_variable_set(:@forms, { :new_world => MGQ_MpWorld::Form.create })
+  scene.instance_variable_set(:@forms, { :new_world => MGQ_MpWorld::WorldForm.create(:new_world) })
   scene
 end
 
@@ -354,134 +351,53 @@ end
 mods = MGQ_MpWorldMods
 listed = MGQ_MpWorld::Directory::ListedWorld.new("w1", 4, 0, "creator", 0, "Creator", "Modded", "none", [], false, false, true, false, false, "", "", "", "", "")
 
-# The catalog.
-catalog("mod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb", "old\tlevelcap\t1.4.0\tLevel_Cap.rb\tbb", "old\tlevelcap\t1.3.5\tLevel_Cap.rb\taa",
-        "mod\tpack\tPack\tupload\t2\tPack/a.luka\tp1\tPack/b.luka\tp2")
-known = mods.catalog
-check("the catalog reads each mod with its files and versions", [known.map(&:key), known[0].files, known[0].versions.map(&:first), known[1].files.keys], [["levelcap", "pack"], { "Level_Cap.rb" => "bb" }, ["1.4.0", "1.3.5"], ["Pack/a.luka", "Pack/b.luka"]])
-check("a mod is found by its name as a world writes it", [mods.mod_named("Level_Cap").name, mods.mod_named("level cap").key, mods.mod_named("Other")], ["Level Cap", "levelcap", nil])
-catalog_told("failed")
-mods.forget_installed
-check("a catalog that could not be fetched is unknown", mods.catalog, nil)
-catalog("mod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb")
-mods.catalog
-catalog_told("loading", "mod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb")
-mods.forget_installed
-check("while the list is fetched again, the catalog the DLL still hands out counts", mods.catalog.map(&:key), ["levelcap"])
-catalog_told("loading")
-mods.forget_installed
-check("and without one, the catalog read before stays", mods.catalog.map(&:key), ["levelcap"])
-
-Dir.mktmpdir do |folder|
-  FileUtils.mkdir_p(File.join(folder, "Patch", "Mods"))
-  File.write(File.join(folder, "Patch", "Mods", "Level Cap.rb"), "")
-  File.write(File.join(folder, "Patch", "Other_Mod.rb"), "")
-
-  Dir.chdir(folder) do
-    catalog("mod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb", "old\tlevelcap\t1.4.0\tLevel_Cap.rb\tbb", "old\tlevelcap\t1.3.5\tLevel_Cap.rb\taa",
-            "mod\tpack\tPack\tupload\t2\tPack/a.luka\tp1", "mod\thero\tHero\tzip\t1.1\tHero.rb\th2\tHero/a.luka\th3", "old\thero\t1.0\tHero.rb\th1\tHero/a.luka\th3")
-
-    # Link mods.
-    listed.mods = "!Level Cap"
-    $file_hashes = { "Patch/Mods/Level Cap.rb" => "bb" }
-    check("the world's version of a link mod lets the game in", mods.differing(listed), [])
-    $file_hashes = { "Patch/Mods/Level Cap.rb" => "aa" }
-    mods.forget_installed
-    row = mods.differing(listed).first
-    check("an older version is named, and replaced where it is", [row.text, row.downloadable?, row.target], ["Level Cap: yours 1.3.5, the world's 1.4.0", true, "Patch/Mods/Level Cap.rb"])
-    $file_hashes = { "Patch/Mods/Level Cap.rb" => "cc" }
-    mods.forget_installed
-    check("a copy the relay never saw is unknown", mods.differing(listed).first.text, "Level Cap: yours unknown, the world's 1.4.0")
-    File.delete(File.join(folder, "Patch", "Mods", "Level Cap.rb"))
-    mods.forget_installed
-    row = mods.differing(listed).first
-    check("a missing link mod goes into Patch under its release's name", [row.text, row.target], ["Level Cap: not installed, the world's 1.4.0", "Patch/Level_Cap.rb"])
-
-    # Uploaded mods.
-    listed.mods = "!Pack"
-    $file_hashes = { "Patch/Pack/a.luka" => "p1" }
-    mods.forget_installed
-    check("an uploaded mod whose every file matches lets the game in", mods.differing(listed), [])
-    $file_hashes = {}
-    mods.forget_installed
-    check("one without its files is not installed", mods.differing(listed).first.text, "Pack: not installed, the world's 2")
-
-    # Links to a zip of a release.
-    listed.mods = "!Hero"
-    $file_hashes = { "Patch/Hero.rb" => "h2", "Patch/Hero/a.luka" => "h3" }
-    mods.forget_installed
-    check("a zip of a release whose every file matches lets the game in", mods.differing(listed), [])
-    $file_hashes = { "Patch/Hero.rb" => "h1", "Patch/Hero/a.luka" => "h3" }
-    mods.forget_installed
-    row = mods.differing(listed).first
-    check("an older zip of a release is named by its version and checked file by file", [row.text, row.downloadable?, row.target], ["Hero: yours 1.0, the world's 1.1", true, nil])
-
-    # Mods outside the catalog.
-    listed.mods = "!Other Mod; !Missing Mod"
-    listed.mod_hashes = "Other Mod=#{'e' * 64}"
-    $file_hashes = { "Patch/Other_Mod.rb" => "e" * 64 }
-    mods.forget_installed
-    rows = mods.differing(listed)
-    check("a mod outside the catalog matches the creator's hash, and a missing one is only named", rows.map(&:text), ["Missing Mod: not installed"])
-    $file_hashes = { "Patch/Other_Mod.rb" => "f" * 64 }
-    mods.forget_installed
-    rows = mods.differing(listed)
-    check("another copy than the creator's is named and cannot be downloaded", [rows[0].text, rows[0].downloadable?], ["Other Mod: yours differs from the world creator's copy", false])
-    listed.mod_hashes = ""
-    mods.forget_installed
-    check("without the creator's hash, an installed mod is enough", mods.differing(listed).map(&:name), ["Missing Mod"])
-
-    # The creator's hashes.
-    check("the creator's game hashes only required mods outside the catalog that it has", mods.creator_hashes("!Level Cap; !Other Mod; Free Mod; !Missing Mod"), "Other Mod=#{'f' * 64}")
-    long = "M" * (MGQ_MpWorldMods::MAX_HASH_NAME_CHARS + 1)
-    File.write(File.join(folder, "Patch", "#{long}.rb"), "")
-    $file_hashes = { "Patch/Other_Mod.rb" => "f" * 64, "Patch/#{long}.rb" => "f" * 64 }
-    mods.forget_installed
-    check("a name longer than the relay takes is left out of the creator's hashes", mods.creator_hashes("!Other Mod; !#{long}"), "Other Mod=#{'f' * 64}")
-    File.delete(File.join(folder, "Patch", "#{long}.rb"))
-    check("hashes past the relay's limit are left out, those that fit kept", mods.fit_hashes(["A=#{'1' * 64}", "B=#{'2' * 64}", "C=3"], 70), "A=#{'1' * 64};C=3")
-
-    # The world screen: the offer.
-    $file_hashes = { "Patch/Mods/Level Cap.rb" => "aa" }
-    File.write(File.join(folder, "Patch", "Mods", "Level Cap.rb"), "")
-    mods.forget_installed
-    listed.mods = "!Level Cap"
-    scene = new_scene
-    scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w1", "Modded", listed, nil, false, false))
-    scene.on_enter
-    check("entering with an older version offers to download it, to see the mods, or to go back", [said(scene), scene.instance_variable_get(:@confirm_window).choices.map { |choice| choice[1] }],
-          ["Modded needs mods that are missing or in another version here: Level Cap. Download them and restart?", [:yes, :show_mods, :cancel]])
-    $calls.clear
-    scene.on_confirmed
-    install = $calls.find { |call| call[0] == "mp_mods_install" }
-    check("download hands each mod and where it goes to the DLL", [install && install[2], scene.instance_variable_get(:@busy)], [["levelcap\tPatch/Mods/Level Cap.rb\0"], "mods"])
-
-    $dll["mp_dir_action"] = "state=done\nkind=mods\n\n"
-    $exited = false
-    scene.follow_action
-    check("once installed, the game closes to start again and enter the world", [$ini["rejoin"], $exited], ["w1", true])
-    $ini["rejoin"] = ""
-    $restart = 0
-    $exited = false
-    scene.instance_variable_set(:@busy, "mods")
-    scene.follow_action
-    check("when it cannot start again, it says what to do and stays", [$ini["rejoin"], $exited, said(scene)], ["", false, "The mods were installed. Close the game and start it again to enter Modded."])
-    $restart = 1
-
-    # A mod only its author has.
-    listed.mods = "!Other Mod"
-    listed.mod_hashes = "Other Mod=#{'e' * 64}"
-    $file_hashes = { "Patch/Other_Mod.rb" => "f" * 64 }
-    mods.forget_installed
-    scene = new_scene
-    scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w1", "Modded", listed, nil, false, false))
-    $sounds.clear
-    scene.on_enter
-    check("a mod the relay cannot give is named, with no download", [said(scene), scene.instance_variable_get(:@confirm_window).choices.map { |choice| choice[1] }, $sounds],
-          ["Modded needs mods that are missing or in another version here: Other Mod (get it from its author).", [:show_mods, :cancel], ["buzzer"]])
-    check("the mods box shows the difference", scene.mod_lines(listed.mods, nil, mods.differing(listed)), [[:head, "Mods (1)"], [:item, "Other Mod", :gold, "required, yours differs from the world creator's copy"]])
-  end
+# The world screen: the offer to download. The DLL checks the mods (ModCheck, covered by its own
+# tests) and answers with the rows it found.
+checked = []
+level_cap = { "name" => "Level Cap", "yours" => "1.3.5", "worlds" => "1.4.0", "key" => "levelcap", "target" => "Patch/Mods/Level Cap.rb",
+              "text" => "Level Cap: yours 1.3.5, the world's 1.4.0", "downloadable" => true }
+other_mod = { "name" => "Other Mod", "yours" => "differs", "worlds" => nil, "key" => nil, "target" => nil,
+              "text" => "Other Mod: yours differs from the world creator's copy", "downloadable" => false }
+listed.mods = "!Level Cap"
+listed.mod_hashes = "Other Mod=#{'e' * 64}"
+$mod_check = lambda do |request|
+  checked << request
+  { "known" => true, "rows" => [level_cap], "summary" => "Modded needs mods that are missing or in another version here: Level Cap. Download them and restart?" }
 end
+offer = "Modded needs mods that are missing or in another version here: Level Cap. Download them and restart?"
+scene = new_scene
+scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w1", "Modded", listed, nil, false, false))
+$screen_steps = [["say", offer], ["confirm", "mods", [["Download and restart", "yes"], ["See the mods", "show_mods"], ["Back", "cancel"]]]]
+scene.on_enter
+check("the DLL's steps offer to download the mods, to see them, or to go back", [said(scene), scene.instance_variable_get(:@confirm_window).choices.map { |choice| choice[1] }], [offer, [:yes, :show_mods, :cancel]])
+$screen_steps = [["busy", "mods"]]
+scene.on_confirmed
+check("download goes back to the DLL, whose action then holds the screen", [screen_requests("screen.answer").last, scene.instance_variable_get(:@busy)], [{ "answer" => "yes" }, "mods"])
+$exited = false
+$installed_forgotten = 0
+MGQ_MpWorldMods.singleton_class.send(:alias_method, :tested_forget_installed, :forget_installed)
+MGQ_MpWorldMods.define_singleton_method(:forget_installed) { $installed_forgotten += 1; tested_forget_installed }
+MGQ_MpWorld::Changes.note(MGQ_MpWorld::Changes::SCREEN)
+$screen_steps = [["idle"], ["forget_installed"], ["exit"]]
+scene.follow_steps
+check("once installed, the scripts forget what Patch held and the game closes to start again", [$installed_forgotten, $exited, scene.instance_variable_get(:@busy)], [1, true, nil])
+
+# A mod only its author has.
+listed.mods = "!Other Mod"
+$mod_check = lambda { |_request| { "known" => true, "rows" => [other_mod], "summary" => "Modded needs mods that are missing or in another version here: Other Mod (get it from its author)." } }
+scene = new_scene
+scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w1", "Modded", listed, nil, false, false))
+$sounds.clear
+$screen_steps = [["buzz"], ["say", "Modded needs mods that are missing or in another version here: Other Mod (get it from its author)."], ["confirm", "mods", [["See the mods", "show_mods"], ["Back", "cancel"]]]]
+scene.on_enter
+check("a mod the relay cannot give is named, with no download", [said(scene), scene.instance_variable_get(:@confirm_window).choices.map { |choice| choice[1] }, $sounds],
+      ["Modded needs mods that are missing or in another version here: Other Mod (get it from its author).", [:show_mods, :cancel], ["buzzer"]])
+scene.instance_variable_set(:@list_box, Object.new)
+scene.on_show_mods
+check("seeing the mods tells the DLL, which ends an entry after a restart", screen_requests("screen.answer").last, { "answer" => "show_mods" })
+check("the mods box shows the difference", screen_detail.mod_lines(listed.mods, nil, mods.differing(listed)), [[:head, "Mods (1)"], [:item, "Other Mod", :gold, "required, yours differs from the world creator's copy"]])
+$mod_check = nil
+listed.mod_hashes = ""
 
 # Entering again after the restart.
 $ini["rejoin"] = "w1"
@@ -490,354 +406,117 @@ title = Scene_Title.new
 mods.on_title_update(title)
 check("the title screen opens the world screen once to enter the world again", [$called, mods.rejoining, $ini["rejoin"]], [Scene_MpWorlds, "w1", ""])
 scene = new_scene
-entered = []
-scene.define_singleton_method(:on_enter) { entered << @entry.id }
-scene.rejoin([MGQ_MpWorld::Entry.new("w0", "Other", nil, nil, false, false), MGQ_MpWorld::Entry.new("w1", "Modded", listed, nil, false, false)], "loading")
-check("it waits for the list", [entered, mods.rejoining], [[], "w1"])
-scene.rejoin([MGQ_MpWorld::Entry.new("w0", "Other", nil, nil, false, false), MGQ_MpWorld::Entry.new("w1", "Modded", listed, nil, false, false)], "ready")
-check("then enters the world, once", [entered, mods.rejoining], [["w1"], nil])
+scene.instance_variable_set(:@me, "me")
+MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, "1:x")
+scene.open_steps
+MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
+check("the world screen hands the DLL the world to enter again, which it enters once the list holds it", [screen_requests("screen.do").last["rejoin"], mods.rejoining], ["w1", nil])
 
-# The settings a creator shares.
+# The settings a world shares. The DLL decides which hold, sends them and words the notices
+# (SharedSettingsSync, covered by its own tests); this script hands it the creator's options and
+# plays its steps.
 $game_system.conf = { :mod_level_cap => 0, :mod_party_sheet_theme => :dark, :mod_party_sheet_hotkey => 0x51, :global_thing => 5 }
-check("shared settings are the marker, then the creator's options of the named mods, required or listed, no key bindings, buttons or personal ones",
-      mods.shared_text("!Level_Cap; Party Sheet; Free", "")[0], "@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:1;mod_party_sheet_theme=y:dark")
-check("they keep the world's options the creator's game does not know, and drop those it knows of mods the world no longer names",
-      mods.shared_text("!Level_Cap", "@shared=o:1;mod_other=i:3;mod_level_cap=i:1;mod_party_sheet_theme=y:light")[0], "@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:1;mod_other=i:3")
-most = MGQ_MpWorldMods::MAX_SETTINGS_CHARS
-check("settings join as long as they fit into the relay's limit", mods.fit_settings([[:a, "a=s:#{'x' * (most - 10)}"], [:b, "b=s:#{'y' * 20}"], [:c, "c=i:1"]]),
-      ["a=s:#{'x' * (most - 10)};c=i:1", [:b]])
 check("values keep their type, and semicolons and equal signs survive", ["i:-3", "f:1.5", "b:true", "b:false", "y:dark", mods.encode("a;b=c%")].map { |text| mods.decode(text) },
       [[true, -3], [true, 1.5], [true, true], [true, false], [true, :dark], [true, "a;b=c%"]])
 check("a large decimal as Ruby writes it survives", mods.decode(mods.encode(1.0e20)), [true, 1.0e20])
 check("an unknown type is left out", [mods.decode("x:1"), mods.encode([1])], [[false, nil], nil])
 check("the marker is no option", mods.settings_from("@shared=o:1;mod_level_cap=i:0;broken"), { :mod_level_cap => 0 })
-check("settings are shared once they hold anything, the marker or options of a world from before it; empty ones leave every player their own",
-      ["@shared=o:1", "mod_level_cap=i:0", "", nil].map { |text| mods.shared?(text) }, [true, true, false, false])
-check("the edit form shares a world's settings as they are, the marker first", [mods.with_marker(""), mods.with_marker("mod_level_cap=i:0"), mods.with_marker("@shared=o:1;a=i:1")],
-      ["@shared=o:1", "@shared=o:1;mod_level_cap=i:0", "@shared=o:1;a=i:1"])
 
-# Another player's game in a world that shares its creator's settings.
 module MGQ_MpWorld; def self.open?; $world_open; end; end
 row_key = MGQ_MpWorldMods::SHARED_OPTION
 # The row of Shared Mod Settings in Mod Config.
 row = lambda { NWConst::Config::MOD_CONTENTS.find { |entry| entry[:key] == row_key } }
-creator = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "creator", "name" => "Creator" })
-stranger = MGQ_MpOverworldSync::Peers::Peer.new(3, { "id" => "p3", "name" => "Stranger" })
-# Hands the player the settings another player tells live.
-live = lambda { |peer, text| MGQ_MpOverworldSync.routes["world_mods"].call(peer, { "world_mods" => mods.crc_of(text), :payload => text }) }
+creator = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "creator", "name" => "Creator", "mod_settings" => "abc" })
 # A listed world with Level Cap and Party Sheet, of a creator and with mod settings.
 world = lambda { |creator_id, settings| MGQ_MpWorld::Directory::ListedWorld.new("w1", 4, 0, creator_id, 0, "Creator", "Modded", "none", [], false, false, true, false, false, "", "!Level Cap; Party Sheet", "", "", settings) }
-check("the details name the mods whose options a world shares as this game knows them, and say when it shares none yet",
-      [mods.details_text(world.call("creator", "@shared=o:1;mod_party_sheet_theme=y:dark;mod_missing=i:1"), "me"), mods.details_text(world.call("me", "@shared=o:1"), "me"),
-       mods.details_text(world.call("creator", "@shared=o:1;mod_missing=i:1"), "me"), mods.details_text(world.call("creator", ""), "me")],
-      ["Mod settings: shared by Creator (Party Sheet)", "Mod settings: shared by you (none set yet)", "Mod settings: shared by Creator (1 option of mods you lack)", "Mod settings: each player's own"])
+# The request of the last call of a settings topic.
+asked = lambda { |topic| found = $settings_calls.reverse.find { |name, _| name == topic }; found && found[1] }
+shared = "@shared=o:1;mod_level_cap=i:0;mod_party_sheet_theme=y:dark;mod_party_sheet_hotkey=i:7;global_thing=i:9;mod_level_cap_look=i:3;mod_missing=i:7"
+
+check("the details say what the DLL says of a world's settings", [mods.details_text(world.call("creator", "@shared=o:1"), "me"), asked.call("settings.details")],
+      ["Mod settings: shared", { "settings" => "@shared=o:1", "creator_id" => "creator", "creator_name" => "Creator", "me" => "me" }])
+check("handing it this game's Mod Config groups once, each option's key, its name as its row shows it and the names of its values",
+      asked.call("settings.options").map { |name, options| [name, options.first] },
+      [["Level Cap", ["mod_level_cap", "Level Cap", [["i:1", "On"], ["i:0", "Off"]]]], ["Party Sheet", ["mod_party_sheet_hotkey", "Hotkey", []]], ["Tab\tMod", ["tab_opt", "Opt\tion", []]],
+       ["MGQ Online Settings", ["mod_mp_backline", "PvP Backline", []]], ["MGQ Online Hotkeys", ["mp_key_chat", "Chat", []]]])
 Scene_Title.new.start
 $world_open = true
 check("outside a world Mod Config has no row of Shared Mod Settings", row.call, nil)
-mods.enter_world(world.call("creator", "@shared=o:1;mod_level_cap=i:0;mod_party_sheet_theme=y:dark;mod_missing=i:7"), "me")
-check("entering a world adds the row to the group of Monster Girl Quest! Online's settings, personal, with On and Off",
+mods.enter_world(world.call("creator", shared), "me")
+check("entering a world hands the DLL the world as the list has it", asked.call("settings.enter"),
+      { "world" => { "id" => "w1", "name" => "Modded", "creator_id" => "creator", "creator_name" => "Creator", "mods" => "!Level Cap; Party Sheet", "settings" => shared }, "me" => "me", "fresh" => true })
+check("and adds the row to the group of Monster Girl Quest! Online's settings, personal, with On and Off",
       [row.call[:name], row.call[:sub], row.call[:personal], NWConst::Config::DATA[row_key], NWConst::Config::DATA_TEXT[row_key].map { |value, text| [value, text[:name]] }, NWConst::Config::MOD_CONTENTS.last[:key]],
       ["[MGQ Online Settings] Shared Mod Settings", true, true, [1, 0], [[1, "On"], [0, "Off"]], :return])
-check("another player sees it greyed out, chosen by the world's creator", [row.call[:enable].call, row.call[:help].call],
-      [false, "Creator created this world and chose this. While On, the world's mod options are set for you here."])
-$game_system.conf = { :mod_level_cap => 1 }
-$notices.clear
+$game_system.conf = { :mod_level_cap => 1, :mod_party_sheet_theme => :light, :mod_party_sheet_hotkey => 0x51, :global_thing => 5, :mod_level_cap_look => 1 }
+ModConfigRemake.world_keys = nil
 DataManager.load_game(1)
 check("a save loaded in the world takes its settings, and Mod Config Remake shows them as set by the world",
-      [$game_system.conf.values_at(:mod_level_cap, :mod_party_sheet_theme, row_key), ModConfigRemake.world_keys], [[0, :dark, 1], [:mod_level_cap, :mod_party_sheet_theme]])
+      [$game_system.conf[:mod_level_cap], $game_system.conf[:mod_party_sheet_theme], ModConfigRemake.world_keys], [0, :dark, [:mod_level_cap, :mod_party_sheet_theme]])
 check("but none of a mod the player lacks, of the game's own options, of a key binding or of an option marked personal",
-      [$game_system.conf.key?(:mod_missing), mods.apply_values(:global_thing => 9, :mod_party_sheet_hotkey => 1, :mod_level_cap_look => 2, :mod_level_cap => 0),
-       $game_system.conf.keys & [:global_thing, :mod_party_sheet_hotkey, :mod_level_cap_look]], [false, [:mod_level_cap], []])
-check("the player is told whose settings they play with, counting only the options their game has, and that their own saves keep theirs", shown,
-      "Creator shares mod settings here: 2 options of Level Cap and Party Sheet are set for you. Your own saves keep yours.")
-check("in lines that fit the notification box", fits, [true, true])
-$notices.clear
+      [$game_system.conf[:mod_party_sheet_hotkey], $game_system.conf[:global_thing], $game_system.conf[:mod_level_cap_look], $game_system.conf.key?(:mod_missing)], [0x51, 5, 1, false])
+check("and the DLL hears which options were set, and no creator's options from another player", asked.call("settings.loaded"),
+      { "pairs" => [], "known" => [], "applied" => ["mod_level_cap", "mod_party_sheet_theme"] })
+$loaded = nil
+DataManager.singleton_class.send(:alias_method, :plugin_load_game, :load_game)
+DataManager.define_singleton_method(:load_game) { |index| load_game_without_rescue(index) }
+ModConfigRemake.world_keys = nil
 DataManager.load_game(1)
-check("once per stay", $notices, [])
-$calls.clear
-$game_system.conf[row_key] = 0
-row.call[:on_change].call(0)
-check("the row's change by another player sends nothing and shows the world's choice again", [$calls.map(&:first).grep(/settings/), $game_system.conf[row_key]], [[], 1])
-# The newest translation's plugin 299 replaces load_game after the Patch folder loaded.
-module DataManager; def self.load_game(index); load_game_without_rescue(index); end; end
-$game_system.conf = { :mod_level_cap => 1 }
-DataManager.load_game(1)
-check("a load_game a translation plugin replaced still takes the world's settings", $game_system.conf[:mod_level_cap], 0)
-$game_system.conf = {}
+check("a load_game a translation plugin replaced still takes the world's settings", [$loaded, ModConfigRemake.world_keys], [true, [:mod_level_cap, :mod_party_sheet_theme]])
+DataManager.singleton_class.send(:alias_method, :load_game, :plugin_load_game)
+ModConfigRemake.world_keys = nil
 DataManager.setup_new_game
-check("so does a new game in a world", [$game_system.conf[:mod_level_cap], $game_system.conf[:mod_party_sheet_theme]], [0, :dark])
+check("so does a new game in a world", ModConfigRemake.world_keys, [:mod_level_cap, :mod_party_sheet_theme])
 
-# What the creator changes reaches the player at once.
-wait_out_notices
 $notices.clear
-live.call(creator, "@shared=o:1;mod_level_cap=i:1;mod_party_sheet_theme=y:dark;mod_missing=i:7")
-check("a change from the creator applies at once, and the player is told what changed", [$game_system.conf[:mod_level_cap], shown],
-      [1, "Creator changed the shared mod settings: Level Cap: Off -> On."])
-$notices.clear
-live.call(creator, "@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:2;mod_party_sheet_theme=y:light;mod_party_sheet_size=i:4;mod_missing=i:8")
-check("many changes are named in short and counted", shown, "Creator changed the shared mod settings: Level Cap: On -> Off, Job and Race Limits: 2 and 3 more.")
-$game_system.conf[:mod_level_cap] = 1
-live.call(stranger, "")
-check("settings from a player who did not create the world are ignored", [$game_system.conf[:mod_level_cap], ModConfigRemake.world_keys.include?(:mod_level_cap)], [1, true])
-$notices.clear
-live.call(creator, "")
-check("once the world no longer shares them, the locks are lifted, the values stay and the player is told", [ModConfigRemake.world_keys, $game_system.conf[:mod_party_sheet_theme], $game_system.conf[row_key], shown],
-      [[], :light, 0, "Creator stopped sharing mod settings: you can set your own options again. Your save here keeps the values so far."])
-$notices.clear
-live.call(creator, "@shared=o:1;mod_level_cap=i:5;mod_party_sheet_theme=y:dark")
-check("when it shares them again, a value the player's copy does not offer is left out and stays unlocked", [$game_system.conf[:mod_level_cap], ModConfigRemake.world_keys, $log.grep(/do not offer/).size],
-      [1, [:mod_party_sheet_theme], 1])
-check("and the player is told what is set", shown, "Creator now shares mod settings: 1 option of Party Sheet is set for you. Your own saves keep yours.")
-check("the player's state tells which settings their game applies", MGQ_MpOverworldSync.fields.map(&:call), [{ "mod_settings" => mods.crc_of("@shared=o:1;mod_level_cap=i:5;mod_party_sheet_theme=y:dark") }])
-
-# Before a save is loaded, a change waits.
-mods.enter_world(world.call("creator", "@shared=o:1;mod_level_cap=i:0"), "me")
-$game_system.conf = { :mod_level_cap => 1 }
-live.call(creator, "@shared=o:1;mod_level_cap=i:1;mod_party_sheet_theme=y:light")
-check("a change before a save is loaded is only noted", [$game_system.conf, ModConfigRemake.world_keys], [{ :mod_level_cap => 1 }, []])
-DataManager.load_game(1)
-check("and applies with the load", [$game_system.conf[:mod_party_sheet_theme], ModConfigRemake.world_keys], [:light, [:mod_level_cap, :mod_party_sheet_theme]])
-$notices.clear
-live.call(creator, "@shared=o:1;mod_level_cap=i:0;mod_party_sheet_theme=y:light")
-check("settings that arrive right after the load, newer than the player's list, are named anew as what is set, not as a change",
-      [$game_system.conf[:mod_level_cap], shown], [0, "Creator shares mod settings here: 2 options of Level Cap and Party Sheet are set for you. Your own saves keep yours."])
-
-# A world that leaves every player their own.
-mods.enter_world(world.call("creator", ""), "me")
-$game_system.conf = { :mod_level_cap => 1 }
-$notices.clear
-DataManager.load_game(1)
-check("a world that shares no settings sets and locks nothing", [$game_system.conf, ModConfigRemake.world_keys, $notices], [{ :mod_level_cap => 1, row_key => 0 }, [], []])
+$settings_steps << [["notify", ["Creator shares mod settings here: 2 options", "of Level Cap and Party Sheet are set for you."]], ["row", true]]
+mods.on_observe(creator)
+check("another player's state goes to the DLL only in their own world", asked.call("settings.observe"), nil)
+mods.take(MGQ_Multiplayer::Bridge.call("settings.step"))
+check("a notice of the DLL shows in its lines, the row shows what it tells", [$notices.sort_by { |key, _| key[1] }.map(&:last), $game_system.conf[row_key]],
+      [["Creator shares mod settings here: 2 options", "of Level Cap and Party Sheet are set for you."], 1])
+MGQ_MpOverworldSync.routes["world_mods"].call(creator, { "world_mods" => "abc", :payload => "@shared=o:1;mod_level_cap=i:1" })
+check("settings the creator tells live go to the DLL with who sent them", asked.call("settings.live"), { "sender" => "creator", "name" => "Creator", "text" => "@shared=o:1;mod_level_cap=i:1" })
+$settings_steps << [["apply_live", "@shared=o:1;mod_level_cap=i:1"]]
+mods.take(MGQ_Multiplayer::Bridge.call("settings.step"))
+check("they apply at once, and the DLL hears which options were set", [$game_system.conf[:mod_level_cap], asked.call("settings.applied")], [1, { "keys" => ["mod_level_cap"] }])
+$settings_steps << [["unlock"]]
+mods.take(MGQ_Multiplayer::Bridge.call("settings.step"))
+check("once the world no longer shares them, the locks are lifted and the values stay", [ModConfigRemake.world_keys, $game_system.conf[:mod_level_cap]], [[], 1])
+check("the player's state tells the checksum of the settings the DLL holds", MGQ_MpOverworldSync.fields.map { |fields| fields.call }.inject({}) { |all, fields| all.merge(fields) }["mod_settings"],
+      Zlib.crc32(shared).to_s(16))
+MGQ_MpOverworldSync.leave.call(creator)
+check("a player who leaves is forgotten by the DLL", asked.call("settings.leave"), 2)
 Scene_Title.new.start
-check("the title screen takes the row away and lets every option be changed again", [row.call, ModConfigRemake.world_keys], [nil, []])
-$world_open = false
-$game_system.conf = {}
-DataManager.setup_new_game
-check("outside a world nothing is set", $game_system.conf, {})
+check("the title screen takes the row away and lets every option be changed again", [row.call, ModConfigRemake.world_keys, asked.call("settings.forget")], [nil, [], nil])
 
-# The creator's game in their own world.
-$world_open = true
-$scene = nil
-mods.enter_world(world.call("me", "@shared=o:1;mod_other=i:3"), "me")
-check("the creator may change the row, whose help says what it does to the others", [row.call[:enable].call, row.call[:help].call],
-      [true, "Whether every player in this world plays with your options of its mods. Their own saves keep their own.\r\n←/→ Toggle"])
-$game_system.conf = { :mod_level_cap => 0 }
-$notices.clear
-$calls.clear
+# The creator's own world.
+mods.enter_world(world.call("me", "@shared=o:1;mod_level_cap=i:1"), "me")
+check("the creator may change the row, whose help says what it does to the others", [row.call[:enable].call, row.call[:help].call.start_with?("Whether every player in this world plays with your options")], [true, true])
+$game_system.conf = { :mod_level_cap => 0, :mod_level_cap_limits => 1, :mod_party_sheet_theme => :dark }
 DataManager.load_game(1)
-# The settings sent to the relay.
-sent = lambda { $calls.select { |call| call[0] == "mp_dir_set_settings" }.map { |call| call[2][1].chomp("\0") } }
-check("loading in their own world tells the creator whose options they share, naming only mods with options to share", shown, "You share your options of Level Cap with every player here.")
-check("and makes their options the world's, keeping in them those their game does not know, unlocked for them",
-      [sent.call, $game_system.conf[:mod_other], ModConfigRemake.world_keys], [["@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:1;mod_other=i:3"], nil, []])
-$dll["mp_dir_action"] = "state=busy\nkind=settings\n\n"
-$calls.clear
+check("loading in their own world applies its settings and hands the DLL their options of the world's mods, no key bindings, buttons or personal ones, and every option this game has",
+      [asked.call("settings.loaded")["pairs"], asked.call("settings.loaded")["known"].size],
+      [[["mod_level_cap", "mod_level_cap=i:1"], ["mod_level_cap_limits", "mod_level_cap_limits=i:1"], ["mod_party_sheet_theme", "mod_party_sheet_theme=y:dark"]], NWConst::Config::MOD_CONTENTS.size])
+check("and leaves their options unlocked", ModConfigRemake.world_keys, [])
+$settings_calls.clear
+$scene = Scene_Config.new
 Scene_Base.new.update
-check("while the relay has not answered, nothing is taken", $calls.map(&:first), [])
-$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
+$game_system.conf[:mod_level_cap] = 1
+$scene = nil
+Scene_Base.new.update
+check("leaving the options screen hands the DLL the creator's options", asked.call("settings.want").values_at("reason", "pairs").map { |value| value.is_a?(Array) ? value.first : value },
+      ["options", ["mod_level_cap", "mod_level_cap=i:1"]])
+row.call[:on_change].call(0)
+check("turning the row off hands the DLL the switch", asked.call("settings.want").values_at("reason", "on"), ["switch", false])
 $told.clear
-$notices.clear
-Scene_Base.new.update
-check("its answer is taken in any scene, and every player in the world hears the settings at once",
-      [$calls.map(&:first).include?("mp_dir_clear"), $told], [true, [[-1, { "world_mods" => mods.crc_of("@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:1;mod_other=i:3") }, "@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:1;mod_other=i:3"]]])
-check("a load that only took the creator's options tells them nothing more", $notices, [])
-$calls.clear
-$scene = Scene_Config.new
-Scene_Base.new.update
-$scene = nil
-Scene_Base.new.update
-check("leaving the options screen unchanged sends nothing", sent.call, [])
-$scene = Scene_Config.new
-Scene_Base.new.update
-$game_system.conf[:mod_level_cap] = 1
-$scene = nil
-Scene_Base.new.update
-check("leaving it with a changed option sends the creator's options", sent.call, ["@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:1;mod_other=i:3"])
-$scene = Scene_Config.new
-Scene_Base.new.update
-$game_system.conf[:mod_level_cap_limits] = 2
-$scene = nil
-Scene_Base.new.update
-check("one request at a time", sent.call.size, 1)
-$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
-$notices.clear
-Scene_Base.new.update
-check("the creator is told what every player got, and the latest options follow once the first arrived",
-      [shown, sent.call], ["Shared with every player: Level Cap: Off -> On.", ["@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:1;mod_other=i:3", "@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:2;mod_other=i:3"]])
-$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
-Scene_Base.new.update
-$told.clear
-mods.on_observe(MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "p4", "name" => "Late", "mod_settings" => "abc" }))
-mods.on_observe(MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "p4", "name" => "Late", "mod_settings" => "abc" }))
-mods.on_observe(MGQ_MpOverworldSync::Peers::Peer.new(5, { "id" => "p5", "name" => "Current", "mod_settings" => mods.crc_of("@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:2;mod_other=i:3") }))
-check("a player whose game holds other settings is told the world's once", $told, [[4, { "world_mods" => mods.crc_of("@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:2;mod_other=i:3") }, "@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:2;mod_other=i:3"]])
-late = MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "p4", "name" => "Late", "mod_settings" => "abc" })
-MGQ_MpOverworldSync.leave.call(late)
-mods.on_observe(late)
-check("a player who takes a seat someone left is checked anew, though their game holds the same settings", $told.map(&:first), [4, 4])
-dropped = MGQ_MpOverworldSync::Peers::Peer.new(6, { "id" => "p6", "name" => "Dropped", "mod_settings" => "abc" })
-$tell_fails = true
-mods.on_observe(dropped)
-$tell_fails = false
-mods.on_observe(dropped)
-check("a player whose message did not go out is told as they next tell their state", $told.map(&:first), [4, 4, 6])
-
-# The creator turns sharing off and on in Mod Config.
-$calls.clear
-$notices.clear
-$game_system.conf[row_key] = 0
-row.call[:on_change].call(0)
-$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
-Scene_Base.new.update
-check("turning it off empties the world's settings, and the creator is told what players get", [sent.call, shown, $told.last[2]],
-      [[""], "Shared Mod Settings off: every player here sets their own mod options again.", ""])
-$notices.clear
-$game_system.conf[:mod_level_cap] = 1
-$game_system.conf[:mod_level_cap_limits] = 1
-$game_system.conf[row_key] = 1
-row.call[:on_change].call(1)
-$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
-Scene_Base.new.update
-check("turning it on sends the marker and the creator's options", [sent.call.last, shown, $game_system.conf[row_key]],
-      ["@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:1", "Shared Mod Settings on: players here get your options of Level Cap.", 1])
-$notices.clear
-$game_system.conf[:mod_level_cap] = "x" * MGQ_MpWorldMods::MAX_SETTINGS_CHARS
-$scene = Scene_Config.new
-Scene_Base.new.update
-$scene = nil
-Scene_Base.new.update
-$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
-Scene_Base.new.update
-check("an option past the relay's limit is left out, and the creator told so first", [sent.call.last, shown, fits],
-      ["@shared=o:1;mod_level_cap_limits=i:1", "1 option(s) did not fit and were left out. Shared with every player: Level Cap: On -> no longer shared.", [true, true]])
-$game_system.conf[:mod_level_cap] = 1
-$notices.clear
-$game_system.conf[row_key] = 0
-row.call[:on_change].call(0)
-$dll["mp_dir_action"] = "state=failed\nkind=settings\nerror=The relay is down.\n\n"
-Scene_Base.new.update
-check("settings the relay refused are named, and the row shows the world's choice again", [shown, $game_system.conf[row_key]], ["The world's mod settings could not be saved: The relay is down.", 1])
-$refused = ["mp_dir_set_settings"]
-$notices.clear
-$game_system.conf[row_key] = 0
-row.call[:on_change].call(0)
-told = shown
-(MGQ_MpWorldMods::RETRY_FRAMES * 2).times { mods.tick }
-check("settings that cannot be sent tell the creator once while they are tried again, and the row shows what is wanted",
-      [told, shown, $game_system.conf[row_key]], [MGQ_MpWorldMods::NOT_SENT_TEXT, MGQ_MpWorldMods::NOT_SENT_TEXT, 0])
-$refused = []
-$notices.clear
-(MGQ_MpWorldMods::RETRY_FRAMES + MGQ_MpWorldMods::SEND_FRAMES + 2).times { mods.tick }
-check("settings the relay never answers are named, and the row shows the world's choice again", [shown, $game_system.conf[row_key]],
-      ["The world's mod settings could not be saved: the relay did not answer.", 1])
+$settings_steps << [["broadcast", "@shared=o:1;mod_level_cap=i:1", "1a2b"], ["tell", 4, "ff", "1a2b", "@shared=o:1;mod_level_cap=i:1"]]
+mods.take(MGQ_Multiplayer::Bridge.call("settings.step"))
+check("every player, and a player whose game holds other settings, hears what the DLL says, and the DLL hears who was told",
+      [$told, asked.call("settings.told")], [[[-1, { "world_mods" => "1a2b" }, "@shared=o:1;mod_level_cap=i:1"], [4, { "world_mods" => "1a2b" }, "@shared=o:1;mod_level_cap=i:1"]],
+                                            { "seat" => 4, "theirs" => "ff", "mine" => "1a2b" }])
 Scene_Title.new.start
 check("the title screen forgets whose world it was", [row.call, mods.own_world?], [nil, false])
-
-# A list from before the world screen opened.
-mods.enter_world(world.call("me", "@shared=o:1;mod_level_cap=i:0"), "me", false)
-check("a list from before the world screen opened gives way to the settings the relay took from the creator's game last", mods.latest_text, "@shared=o:1;mod_level_cap_limits=i:1")
-mods.enter_world(world.call("me", "@shared=o:1;mod_level_cap=i:0"), "me")
-mods.enter_world(world.call("me", "@shared=o:1;mod_level_cap=i:0"), "me", false)
-check("a list fetched since counts, an admin's change too, and the settings taken before are forgotten", mods.latest_text, "@shared=o:1;mod_level_cap=i:0")
-Scene_Title.new.start
-
-# The creator's edit form.
-scene = new_scene
-scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w1", "Modded", world.call("me", ""), nil, false, false))
-scene.instance_variable_set(:@busy, "settings")
-scene.instance_variable_set(:@shared_settings, "@shared=o:1")
-$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
-scene.follow_action
-check("the edit form says its shared settings reach the players once the creator plays in the world", said(scene), "Modded was changed. Its players get your mod options once you play in it.")
-scene.instance_variable_set(:@busy, "settings")
-scene.instance_variable_set(:@shared_settings, "")
-scene.follow_action
-check("and that without them, the players set their own from their next visit", said(scene), "Modded was changed. Its players set their own mod options from their next visit.")
-scene.instance_variable_set(:@busy, "settings")
-$dll["mp_dir_action"] = "state=failed\nkind=settings\nerror=Too many requests.\n\n"
-scene.follow_action
-check("when only its mod settings fail, it says the other changes were saved", said(scene), "Modded was changed, but its mod settings could not be saved: Too many requests.")
-scene.start_action("settings") { false }
-check("also when they cannot be sent", said(scene), "Modded was changed, but its mod settings could not be saved: the request could not be started. Try again in a moment.")
-$world_open = false
-$dll["mp_dir_action"] = ""
-
-# Settings someone else, such as an admin, gave the world on the relay.
-$world_open = true
-$scene = nil
-# Has the directory list the player's world with these settings.
-listing = lambda { |settings| $dll["mp_dir_list"] = "state=ready\n\nworld\tw1\t4\t1\tme\t0\tMe\tModded\tnone\t0\t0\t1\t0\t0\t\t!Level Cap; Party Sheet\t\t\t#{settings}\n" }
-# Lets the time between two checks of the world's settings pass.
-let_time_pass = lambda { (MGQ_MpWorldMods::CHECK_FRAMES + 1).times { mods.tick } }
-listing.call("@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:1")
-mods.enter_world(world.call("me", "@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:1"), "me")
-$game_system.conf = { :mod_level_cap => 0, :mod_level_cap_limits => 1 }
-$calls.clear
-DataManager.load_game(1)
-check("loading in their own world asks the relay for the world's settings first, and sends nothing while they are as wanted",
-      [$calls.map(&:first).include?("mp_dir_refresh"), sent.call], [true, []])
-let_time_pass.call
-listing.call("@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:1")
-$told.clear
-$notices.clear
-mods.on_observe(MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "p4", "name" => "Late", "mod_settings" => mods.crc_of("@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:1") }))
-check("a player whose game holds other settings has the relay asked first, whose newer settings the creator's game takes, applies and tells every player",
-      [mods.latest_text, $game_system.conf[:mod_level_cap], $told, shown],
-      ["@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:1", 1,
-       [[-1, { "world_mods" => mods.crc_of("@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:1") }, "@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:1"]],
-       "The shared mod settings were changed on the relay: Level Cap: Off -> On."])
-let_time_pass.call
-listing.call("@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:2")
-$scene = Scene_Config.new
-Scene_Base.new.update
-$game_system.conf[:mod_level_cap] = 0
-$scene = nil
-Scene_Base.new.update
-check("options the creator changes join what changed on the relay meanwhile, which their options then show too",
-      [sent.call.last, $game_system.conf[:mod_level_cap_limits]], ["@shared=o:1;mod_level_cap_limits=i:2;mod_level_cap=i:0", 2])
-$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
-Scene_Base.new.update
-listing.call("")
-let_time_pass.call
-$calls.clear
-$told.clear
-$notices.clear
-$scene = Scene_Config.new
-Scene_Base.new.update
-$game_system.conf[:mod_level_cap] = 1
-$scene = nil
-Scene_Base.new.update
-check("sharing turned off on the relay stays off, whatever options the creator changes", [sent.call, mods.latest_text, $told.map(&:last), shown],
-      [[], "", [""], MGQ_MpWorldMods::RELAY_OFF_TEXT])
-
-# One answer of the directory at a time, for the world screen and the world's settings alike.
-listing.call("@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:2")
-mods.enter_world(world.call("me", "@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:2"), "me")
-DataManager.load_game(1)
-$scene = Scene_Config.new
-Scene_Base.new.update
-$game_system.conf[:mod_level_cap] = 0
-$scene = nil
-$calls.clear
-$dll["mp_dir_list"] = "state=loading\n\n"
-Scene_Base.new.update
-check("while the list is being fetched already, whose answer may be older, the relay is not asked and nothing goes out", $calls.map(&:first) & ["mp_dir_refresh", "mp_dir_set_settings"], [])
-listing.call("@shared=o:1;mod_level_cap=i:1;mod_level_cap_limits=i:2")
-Scene_Base.new.update
-check("once it arrived, the relay is asked and the creator's changed options go out", [$calls.map(&:first).include?("mp_dir_refresh"), sent.call], [true, ["@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:2"]])
-MGQ_MpWorld::Directory.claim
-$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
-$calls.clear
-Scene_Base.new.update
-check("an answer another directory request took the place of is left to that one, and the settings wait to go out again",
-      [$calls.map(&:first).include?("mp_dir_clear"), sent.call], [false, []])
-$dll["mp_dir_action"] = ""
-(MGQ_MpWorldMods::RETRY_FRAMES + 1).times { mods.tick }
-check("once it took its answer, the settings go out again", sent.call, ["@shared=o:1;mod_level_cap=i:0;mod_level_cap_limits=i:2"])
-Scene_Title.new.start
-check("the title screen forgets the settings on their way, though their request still runs", [mods.instance_variable_get(:@sending), MGQ_MpWorld::Directory.free?], [nil, false])
-$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
-check("and the next request drops their answer", [MGQ_MpWorld::Directory.free?, $dll["mp_dir_action"]], [true, ""])
 
 # Mod Config without entries.
 contents = NWConst::Config.send(:remove_const, :MOD_CONTENTS)
@@ -850,95 +529,39 @@ NWConst::Config.const_set(:MOD_CONTENTS, contents)
 
 # A world's settings are noted only once its entry goes on.
 strict = MGQ_MpWorld::Directory::ListedWorld.new("w2", 4, 0, "creator", 0, "Creator", "Strict", "none", [], false, false, true, false, true, "1:x", "", "", "", "@shared=o:1;mod_level_cap=i:0")
-differing = MGQ_MpWorld::GameData.method(:differing)
-MGQ_MpWorld::GameData.define_singleton_method(:differing) { |_data| ["maps"] }
 scene = new_scene
 scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w2", "Strict", strict, nil, false, false))
-scene.on_enter
-check("an entry refused for its game data notes no world and adds no row to Mod Config", [mods.instance_variable_get(:@world), row.call], [nil, nil])
-MGQ_MpWorld::GameData.define_singleton_method(:differing, differing)
 opening = MGQ_MpWorld.method(:start)
 MGQ_MpWorld.define_singleton_method(:start) { |_world, _scene| "It broke." }
-scene.instance_variable_set(:@entering, [strict, true])
-scene.start_world(Struct.new(:name, :id).new("Strict", "f2"))
+scene.start_world(Struct.new(:name, :id).new("Strict", "f2"), false, true, true)
 check("a world that fails to open forgets its settings", [mods.instance_variable_get(:@world), row.call], [nil, nil])
-MGQ_MpWorld.define_singleton_method(:start) { |_world, _scene| $noted = mods.instance_variable_get(:@world)[:id]; nil }
-scene.start_world(Struct.new(:name, :id).new("Strict", "f2"))
+MGQ_MpWorld.define_singleton_method(:start) { |_world, _scene| $noted = mods.instance_variable_get(:@world)["id"]; nil }
+scene.start_world(Struct.new(:name, :id).new("Strict", "f2"), false, true, true)
 check("one that opens has them noted before its save loads", $noted, "w2")
 MGQ_MpWorld.define_singleton_method(:start, opening)
 Scene_Title.new.start
 
-# The edit form of a list older than the settings the relay took from this game last.
-mods.confirmed("w3", "@shared=o:1;mod_level_cap=i:1")
-stale = MGQ_MpWorld::Directory::ListedWorld.new("w3", 4, 0, "me", 0, "Me", "Mine", "none", [], false, false, true, false, false, "", "", "", "", "")
-scene = new_scene
-scene.instance_variable_set(:@me, "me")
-scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w3", "Mine", stale, nil, false, false))
-scene.instance_variable_set(:@list_state, "loading")
-scene.instance_variable_get(:@forms)[:edit_world] = MGQ_MpWorld::Form.edit(stale, true)
-scene.instance_variable_set(:@form_symbol, :edit_world)
-scene.edit_world
-check("the edit form changes the settings the relay took last, not the older list's", scene.instance_variable_get(:@edited_settings), "")
 $world_open = false
 $dll["mp_dir_action"] = ""
 $dll["mp_dir_list"] = ""
 
-# The Mod Config options an admin's game sends for the catalog.
-Dir.mktmpdir do |folder|
-  FileUtils.mkdir_p(File.join(folder, "Patch"))
-  File.write(File.join(folder, "Patch", "Level_Cap.rb"), "")
-  File.write(File.join(folder, "Patch", "Party_Sheet.rb"), "")
+# The Mod Config options an admin's game sends for the catalog mods the DLL names.
+$reported_mods = [["levelcap", "Level Cap", "1.4.0"]]
+mods.report_options(false)
+check("a game that is no admin's sends none", $sent_options, [])
+mods.report_options(true)
+check("an admin's game sends the options of each mod the DLL names, with the version its copy is, without key bindings, buttons or personal ones", $sent_options,
+      [{ "key" => "levelcap", "version" => "1.4.0", "lines" => ["mod_level_cap\tLevel Cap\ti\t1\t1\tOn\t0\tOff", "mod_level_cap_limits\tJob and Race Limits\ti\t1"] }])
+$reported_mods = []
+check("an option's values come from its :values too, as Mod Config Remake reads them", mods.option_line(NWConst::Config::MOD_CONTENTS.find { |entry| entry[:key] == :mod_party_sheet_size }),
+      "mod_party_sheet_size\tSize\ti\t2\t2\t2\t4\t4")
 
-  Dir.chdir(folder) do
-    catalog("mod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb", "mod\tpartysheet\tParty Sheet\tlink\t1.3.5\tParty_Sheet.rb\tps", "opts\tpartysheet\t1.3.5",
-            "mod\tpack\tPack\tupload\t2\tPack/a.luka\tp1")
-    $file_hashes = { "Patch/Level_Cap.rb" => "bb", "Patch/Party_Sheet.rb" => "ps" }
-    check("the catalog tells which version's options the relay keeps", mods.catalog.map(&:options_version), [nil, "1.3.5", nil])
-    $calls.clear
-    mods.report_options(false)
-    check("a game that is no admin's sends none", $calls.map(&:first).grep(/options/), [])
-    mods.report_options(true)
-    sent = $calls.select { |call| call[0] == "mp_mods_options" }.map { |call| call[2] }
-    check("an admin's game sends the options of each mod it has in the catalog's version that the relay lacks, without key bindings, buttons or personal ones", sent,
-          [["levelcap\0", "1.4.0\0", "mod_level_cap\tLevel Cap\ti\t1\t1\tOn\t0\tOff\nmod_level_cap_limits\tJob and Race Limits\ti\t1\0"]])
-    $calls.clear
-    mods.report_options(true)
-    check("once a session", $calls.map(&:first).grep(/options/), [])
-    mods.forget_installed
-    mods.report_options(true)
-    check("also when the world screen opens again", $calls.map(&:first).grep(/options/), [])
-    catalog("mod\tlevelcap\tLevel Cap\tlink\t1.4.1\tLevel_Cap.rb\tcc", "old\tlevelcap\t1.4.0\tLevel_Cap.rb\tbb", "opts\tlevelcap\t1.4.1",
-            "mod\tpartysheet\tParty Sheet\tlink\t1.3.6\tParty_Sheet.rb\tqq", "old\tpartysheet\t1.3.5\tParty_Sheet.rb\tps", "opts\tpartysheet\t1.3.5")
-    mods.report_options(true)
-    check("a copy of an older version sends nothing while the relay has the current version's options or that older version's", $calls.map(&:first).grep(/options/), [])
-    catalog("mod\tlevelcap\tLevel Cap\tlink\t1.4.1\tLevel_Cap.rb\tcc", "old\tlevelcap\t1.4.0\tLevel_Cap.rb\tbb",
-            "mod\tpartysheet\tParty Sheet\tlink\t1.3.6\tParty_Sheet.rb\tqq", "opts\tpartysheet\t1.3.5", "mod\tpack\tPack\tupload\t2\tPack/a.luka\tp1")
-    $file_hashes["Patch/Party_Sheet.rb"] = "zz"
-    mods.forget_installed
-    mods.report_options(true)
-    sent = $calls.select { |call| call[0] == "mp_mods_options" }.map { |call| call[2][0, 2] }
-    check("while the relay lacks the current version's options, a copy of an older version sends them with its version, one of no known version with none, and a mod not installed sends nothing",
-          sent, [["levelcap\0", "1.4.0\0"], ["partysheet\0", "\0"]])
-    $calls.clear
-    check("an option's values come from its :values too, as Mod Config Remake reads them", mods.option_line(NWConst::Config::MOD_CONTENTS.find { |entry| entry[:key] == :mod_party_sheet_size }),
-          "mod_party_sheet_size\tSize\ti\t2\t2\t2\t4\t4")
-  end
-end
 # The world's mods the player's game runs, which the battle server runs too for a battle it hosts.
-Dir.mktmpdir do |folder|
-  FileUtils.mkdir_p(File.join(folder, "Patch"))
-  %w(Level_Cap.rb Party_Sheet.rb Own_Mod.rb Old_Mod.rb).each { |name| File.write(File.join(folder, "Patch", name), "") }
-  Dir.chdir(folder) do
-    catalog("mod\tlevelcap\tLevel Cap\tlink\t1.4.0\tLevel_Cap.rb\tbb", "mod\tpartysheet\tParty Sheet\tlink\t1.3.6\tParty_Sheet.rb\tqq", "personal\tpartysheet\tParty Sheet",
-            "mod\toldmod\tOld Mod\tlink\t2\tOld_Mod.rb\tnew")
-    $file_hashes = { "Patch/Level_Cap.rb" => "bb", "Patch/Party_Sheet.rb" => "qq", "Patch/Old_Mod.rb" => "old" }
-    mods.enter_world(MGQ_MpWorld::Directory::ListedWorld.new("w1", 4, 0, "creator", 0, "Creator", "Modded", "none", [], false, false, true, false, false, "",
-                                                             "!Level Cap; Party Sheet; Own Mod; Old Mod; Missing Mod", "", "", ""), "me")
-    check("the battle server gets the world's mods the player runs: the catalog's with their files, never a personal one or one not installed, and without a kind those it cannot get",
-          mods.served_mods, [["levelcap", "link", "1.4.0", [["Level_Cap.rb", "bb"]]], ["ownmod", "", "", []], ["oldmod", "", "unknown", []]])
-    check("and the player's options of them", mods.served_settings.split(";").map { |pair| pair.split("=")[0] }.include?("mod_level_cap"), true)
-    mods.forget_world
-  end
-end
+$served_mods = [["levelcap", "link", "1.4.0", [["Level_Cap.rb", "bb"]]], ["ownmod", "", "", []]]
+mods.enter_world(MGQ_MpWorld::Directory::ListedWorld.new("w1", 4, 0, "creator", 0, "Creator", "Modded", "none", [], false, false, true, false, false, "",
+                                                         "!Level Cap; Party Sheet; Own Mod", "", "", ""), "me")
+check("the battle server gets the world's mods as the DLL lists them", mods.served_mods, $served_mods)
+check("and the player's options of them", mods.served_settings.split(";").map { |pair| pair.split("=")[0] }.include?("mod_level_cap"), true)
+mods.forget_world
 check("outside a world it gets none", [mods.served_mods, mods.served_settings], [[], ""])
 check("nothing failed but the broken dumps", ($log || []).grep(/FAILED|failed/).reject { |line| line.include?("broken entry") || line.include?("is not loaded") || line.include?("Too many requests") }, [])

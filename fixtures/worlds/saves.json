@@ -1,0 +1,98 @@
+{
+  "cases": [
+    {
+      "files": [
+
+      ],
+      "latest": null
+    },
+    {
+      "files": [
+        [
+          "Save01.rvdata2",
+          100
+        ],
+        [
+          "Save02.rvdata2",
+          300
+        ],
+        [
+          "AutoSave01.rvdata2",
+          200
+        ]
+      ],
+      "latest": [
+        1,
+        "Save02.rvdata2"
+      ]
+    },
+    {
+      "files": [
+        [
+          "Save03.rvdata2",
+          100
+        ],
+        [
+          "AutoSave02.rvdata2",
+          500
+        ],
+        [
+          "notes.txt",
+          900
+        ],
+        [
+          "Save1.rvdata2",
+          950
+        ],
+        [
+          "Save001.rvdata2",
+          960
+        ],
+        [
+          "save04.RVDATA2",
+          400
+        ]
+      ],
+      "latest": [
+        "02",
+        "AutoSave02.rvdata2"
+      ]
+    },
+    {
+      "files": [
+        [
+          "AutoSave01.rvdata2",
+          700
+        ],
+        [
+          "Save05.rvdata2",
+          700
+        ]
+      ],
+      "latest": [
+        "01",
+        "AutoSave01.rvdata2"
+      ]
+    },
+    {
+      "files": [
+        [
+          "Save12.rvdata2",
+          10
+        ],
+        [
+          "SaveSystem.rvdata2",
+          9000
+        ],
+        [
+          "Save12.png",
+          20
+        ]
+      ],
+      "latest": [
+        11,
+        "Save12.rvdata2"
+      ]
+    }
+  ]
+}

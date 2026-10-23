@@ -2,14 +2,23 @@
 #  rules_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Kept the test's one stand-in bridge in $world_bridge
+#      Paulinchen  2026-10-23: Dropped the stand-in of the directory's tickets, which no script asks for any more
+#                            - Answered the world screen's steps into a world with the steps a test sets
+#                            - Answered the world screen's model
+#                            - Answered the parking topics as for a game with no mod turned off
+#                            - Answered the shared mod settings' topics with their golden texts and the steps a test queues
+#                            - Answered the mods check, the directory's tickets and the mods topics the world screen calls
+#                            - Answered the world screen's forms
+#                            - Answered the worlds on this PC, the lists, the invite, the game data and the mod picker
+#                            - Answered the World overview's story and title
+#                            - Answered the mods text of a world
+#                            - Kept the test's one stand-in bridge in $world_bridge
 #                            - Answered the event sorter
 #                            - Answered the mod catalog a test sets
 #                            - Added the answers to the world room's stand-in bridge when a test has one
 #                            - Stood in for the squad math, checked against its golden cases
 #                            - Answered the squad rules of a served battle and their defaults
 #                            - Answered the ids coop.rbx makes up
-#                            - Answered the squad rules of a served battle and their defaults
 #                            - Answered the story parts
 #                            - Answered the world rules, squad rules and world codes
 #                            - Answered the mod keys and the scripts in Patch
@@ -22,7 +31,9 @@
 # checked against every case as this file loads, so the stand-ins cannot drift from what C# answers.
 
 require "json"
+require "zlib"
 require_relative "bridge_support"
+require_relative "form_support"
 
 # Folder of the golden cases.
 RULE_FIXTURES = File.expand_path("../../fixtures", __dir__)
@@ -97,6 +108,34 @@ end
 # @param fake [FakeBridge] The bridge.
 def answer_mod_keys(fake)
   fake.answer("mods.keys") { |names| names.map { |name| golden_mod_key(name) } }
+end
+
+# The golden reads of mods texts.
+MODS_TEXTS = rule_cases("mods", "text.json")["cases"]
+
+# Reads a world's mods text as the golden cases show it: split at semicolons and stripped, the
+# required ("!") and essential ("?") ones without their mark first, each once, then the rest.
+#
+# @param text [String, nil] The mods as written.
+# @return [Hash] "names", "required" and "essential".
+def stand_in_mods_text(text)
+  marked = lambda { |mark| text.to_s.split(";").map { |mod| mod.strip[/\A#{Regexp.escape(mark)}\s*(\S.*)\z/, 1] }.compact }
+  names = text.to_s.split(";").map { |mod| mod.strip.sub(/\A[!?]\s*/, "") }.reject { |mod| mod.empty? }
+  required = marked.call("!")
+  essential = marked.call("?")
+  { "names" => (names & required) + (names & essential) + (names - required - essential), "required" => required, "essential" => essential }
+end
+
+MODS_TEXTS.each do |entry|
+  read = stand_in_mods_text(entry["text"])
+  raise "the mods text stand-in reads #{entry['text'].inspect} as #{read.inspect}" if read != { "names" => entry["names"], "required" => entry["required"], "essential" => entry["essential"] }
+end
+
+# Answers the mods text topic as fixtures/mods/text.json shows it.
+#
+# @param fake [FakeBridge] The bridge.
+def answer_mods_text(fake)
+  fake.answer("mods.text") { |text| stand_in_mods_text(text) }
 end
 
 # Answers the scripts in Patch as the DLL lists them, from the Patch folder below the current
@@ -195,6 +234,80 @@ end
 # @param fake [FakeBridge] The bridge.
 def answer_story_parts(fake)
   fake.answer("story.part") { |request| stand_in_part(request) }
+end
+
+# The golden story and title texts of the World overview.
+OVERVIEW_TEXTS = rule_cases("overview", "story.json")
+
+# The overview's names of the sides and routes.
+OVERVIEW_NAMES = { "ilias" => "Ilias side", "alice" => "Alice side", "chaos" => "Chaos route", "destroyer" => "Destroyer route", "judgment" => "Judgment route" }
+
+# Finds a player's place in the story as the golden cases show it: the part by the progress alone,
+# then in Part 3 the first route under way of chaos, destroyer and judgment, else the first side
+# chosen of ilias and alice.
+#
+# @param request [Hash] "p", "routes" and "sides".
+# @return [String] The code.
+def stand_in_story(request)
+  part = stand_in_part("p" => request["p"], "routes" => [0, 0, 0])
+  route = %w(chaos destroyer judgment).find { |key| request["routes"][key].to_i > 0 } if part == "3"
+  chosen = route || %w(ilias alice).find { |key| request["sides"][key] }
+  chosen ? "#{part}:#{chosen}" : part
+end
+
+# Writes a place in the story as the golden cases show it.
+#
+# @param code [String, nil] The code.
+# @return [String] The text.
+def stand_in_story_text(code)
+  part, chosen = code.to_s.split(":", 2)
+  return "" if part.to_s.empty?
+
+  OVERVIEW_NAMES[chosen.to_s] ? "Part #{part}: #{OVERVIEW_NAMES[chosen.to_s]}" : "Part #{part}"
+end
+
+# Writes the world's place in the story as the golden cases show it.
+#
+# @param part [String, nil] The part.
+# @return [Hash] "code" and "text".
+def stand_in_world_story(part)
+  route = { "ad" => "destroyer", "mr" => "judgment", "chaos" => "chaos" }[part]
+  code = route ? "3:#{route}" : part.to_s
+  { "code" => code, "text" => code.empty? ? "Not told yet" : stand_in_story_text(code) }
+end
+
+# Writes the title's tail and the World page's note as the golden cases show it.
+#
+# @param request [Hash] "raid" and "difficulty".
+# @return [Hash] "tail" and "note".
+def stand_in_title(request)
+  found = WORLD_RULES["rules"]["difficulties"].find { |value, _| value == request["difficulty"] }
+  name = found && found[1].capitalize
+  type = request["raid"] ? "Raid" : "Classic"
+  { "tail" => [type, name].compact.map { |part| " | #{part}" }.join, "note" => [type, name || "Per player"].join(" | ") }
+end
+
+OVERVIEW_TEXTS["stories"].each do |entry|
+  raise "the story stand-in finds #{stand_in_story(entry['request'])} for #{entry['request'].inspect}" if stand_in_story(entry["request"]) != entry["code"]
+end
+OVERVIEW_TEXTS["texts"].each do |entry|
+  raise "the story text stand-in writes #{entry['code'].inspect} otherwise" if stand_in_story_text(entry["code"]) != entry["text"]
+end
+OVERVIEW_TEXTS["worlds"].each do |entry|
+  raise "the world story stand-in writes #{entry['part'].inspect} otherwise" if stand_in_world_story(entry["part"]) != { "code" => entry["code"], "text" => entry["text"] }
+end
+OVERVIEW_TEXTS["titles"].each do |entry|
+  raise "the title stand-in writes #{entry.inspect} otherwise" if stand_in_title(entry) != { "tail" => entry["tail"], "note" => entry["note"] }
+end
+
+# Answers the World overview's story and title topics as fixtures/overview/story.json shows them.
+#
+# @param fake [FakeBridge] The bridge.
+def answer_overview(fake)
+  fake.answer("overview.story") { |request| stand_in_story(request) }
+  fake.answer("overview.story_text") { |code| stand_in_story_text(code) }
+  fake.answer("overview.world_story") { |part| stand_in_world_story(part) }
+  fake.answer("overview.title") { |request| stand_in_title(request) }
 end
 
 # The mod catalog the mods.catalog topic answers, which a test sets with catalog_told; nil answers
@@ -413,15 +526,197 @@ def golden_sort(request)
   { "needs" => Hash[needs.map { |kind, ids| [kind, ids.uniq] }] }
 end
 
+require_relative "local_worlds_support"
+require_relative "screen_support"
+# What the mods check answers, a block a test sets that takes the request; nil checks only whether
+# each required mod is installed, as the DLL does without a catalog or the creator's hashes.
+$mod_check = nil
+
+# The installs the mods.install topic was asked for, and whether it starts them.
+$mod_installs = []
+$mod_install_starts = true
+
+# The mods the battle server runs as mods.served answers them, the mods mods.report names and the
+# options mods.options was handed.
+$served_mods = []
+$reported_mods = []
+$sent_options = []
+
+# Checks a world's required mods as the golden cases show it for a game without a catalog or the
+# creator's hashes: each one whose script Patch lacks is not installed.
+#
+# @param request [Hash] The world's mods, hashes and name.
+# @param installed [Array<String>, nil] The keys of the scripts in Patch, nil when it cannot be read.
+# @return [Hash] The check as mods.check answers it.
+def stand_in_mod_check(request, installed)
+  missing = stand_in_mods_text(request["mods"])["required"].reject { |name| installed.nil? || installed.include?(golden_mod_key(name)) }
+  rows = missing.map { |name| { "name" => name, "yours" => "not installed", "worlds" => nil, "key" => nil, "target" => nil, "text" => "#{name}: not installed", "downloadable" => false } }
+  summary = "#{request['world']} needs mods that are missing or in another version here: #{missing.map { |name| "#{name} (get it from its author)" }.join(', ')}."
+  { "known" => false, "rows" => rows, "summary" => rows.empty? ? nil : summary }
+end
+
+rule_cases("mods", "check.json")["checks"].each do |entry|
+  next if entry["catalog"] || !entry["hashes"].empty?
+
+  installed = entry["installed"] && entry["installed"].map { |key, _| key }
+  read = stand_in_mod_check({ "mods" => entry["mods"], "world" => "Modded" }, installed)
+  golden = entry["rows"].map { |row| row.merge("downloadable" => !row["key"].nil?) }
+  raise "the mods check stand-in reads #{entry['mods'].inspect} otherwise than the DLL" if read["rows"] != golden || read["summary"] != entry["summary"]
+end
+
+# Answers the mods topics the world screen and the world's mods call: the check as $mod_check or
+# the stand-in has it over the scripts in Patch, and the rest from what a test sets.
+#
+# @param fake [FakeBridge] The bridge.
+def answer_mod_check(fake)
+  fake.answer("mods.check") do |request|
+    next $mod_check.call(request) if $mod_check
+
+    # The scripts a test told world.rbx Patch holds, else those of the Patch folder below the current one.
+    told = defined?(MGQ_MpWorld) && MGQ_MpWorld.instance_variable_get(:@installed)
+    installed = told ? told.map { |script| script[0] } : Dir.glob("Patch/**/*.rb").map { |file| golden_mod_key(File.basename(file)) }
+    stand_in_mod_check(request, installed)
+  end
+  fake.answer("mods.creator_hashes") { |_mods| $creator_hashes.to_s }
+  fake.answer("mods.install") { |request| $mod_installs << request; $mod_install_starts }
+  fake.answer("mods.forget") { nil }
+  fake.answer("mods.served") { |_mods| $served_mods }
+  fake.answer("mods.report") { $reported_mods }
+  fake.answer("mods.options") { |request| $sent_options << request; true }
+end
+
+# The golden texts of shared mod settings.
+SETTINGS_CASES = rule_cases("mods", "settings.json")
+
+# Tells whether settings are shared as the golden cases show it: anything but white space.
+#
+# @param text [String, nil] The settings.
+# @return [Boolean] Whether they are.
+def stand_in_shared(text)
+  !text.to_s.strip.empty?
+end
+
+# Writes settings shared as the golden cases show it: the marker, then every other pair.
+#
+# @param text [String, nil] The settings.
+# @return [String] The settings.
+def stand_in_marked(text)
+  (["@shared=o:1"] + text.to_s.split(";").reject { |pair| pair.split("=", 2)[0].to_s.empty? || pair.split("=", 2)[0] == "@shared" }).join(";")
+end
+
+SETTINGS_CASES["shared"].each { |entry| raise "the shared stand-in reads #{entry['text'].inspect} otherwise" if stand_in_shared(entry["text"]) != entry["shared"] }
+SETTINGS_CASES["marked"].each { |entry| raise "the marker stand-in writes #{entry['text'].inspect} otherwise" if stand_in_marked(entry["text"]) != entry["marked"] }
+
+# Each settings topic called, as [topic, request], and the steps the next calls answer, one Array
+# of steps per call, which a test queues.
+$settings_calls = []
+$settings_steps = []
+
+# Answers the shared mod settings' topics: the texts as the golden cases show them, the world
+# entered as the DLL describes it, and the steps a test queued.
+#
+# @param fake [FakeBridge] The bridge.
+def answer_settings(fake)
+  world = nil
+  confirmed = {}
+  reply = lambda { |topic, request| $settings_calls << [topic, request]; { "world" => world, "steps" => $settings_steps.shift || [] } }
+  fake.answer("settings.shared") { |text| stand_in_shared(text) }
+  fake.answer("settings.marked") { |text| stand_in_marked(text) }
+  fake.answer("settings.confirmed") { |request| confirmed[request["id"]] = request["text"]; nil }
+  fake.answer("settings.of") { |request| request["fresh"] || !confirmed.key?(request["id"]) ? request["settings"] : confirmed[request["id"]] }
+  fake.answer("settings.details") { |request| $settings_calls << ["settings.details", request]; "Mod settings: #{stand_in_shared(request['settings']) ? 'shared' : "each player's own"}" }
+  fake.answer("settings.enter") do |request|
+    listed = request["world"]
+    text = listed && (request["fresh"] || !confirmed.key?(listed["id"]) ? listed["settings"] : confirmed[listed["id"]])
+    world = listed && { "id" => listed["id"], "name" => listed["name"], "creator_id" => listed["creator_id"], "creator_name" => listed["creator_name"], "mods" => listed["mods"],
+                        "text" => text, "crc" => Zlib.crc32(text).to_s(16), "own" => !request["me"].empty? && request["me"] == listed["creator_id"],
+                        "shared" => stand_in_shared(text), "latest_shared" => stand_in_shared(text) }
+    reply.call("settings.enter", request)
+  end
+  fake.answer("settings.forget") { |request| world = nil; reply.call("settings.forget", request) }
+  %w(settings.options settings.loaded settings.want settings.step settings.applied settings.live settings.observe settings.mods).each do |topic|
+    fake.answer(topic) { |request| reply.call(topic, request) }
+  end
+  fake.answer("settings.told") { |request| $settings_calls << ["settings.told", request]; nil }
+  fake.answer("settings.leave") { |seat| $settings_calls << ["settings.leave", seat]; nil }
+end
+
+# The parking state the DLL answers while nothing is parked and nothing waits for the title screen.
+PARKING_IDLE = { "holding" => false, "due" => nil, "notice" => nil, "saving_off" => false, "save_text" => "", "moved" => false }
+
+# Answers the parking topics as the DLL does for a game with no mod parked whose worlds turn none
+# of its mods off; the world to enter again after a restart is Player.ini's "rejoin", as the test's
+# stand-in for Player keeps it. A test that parks answers the topics itself.
+#
+# @param fake [FakeBridge] The bridge.
+def answer_parking(fake)
+  fake.answer("parking.change") { { "kind" => "none", "plan" => [], "text" => nil, "also" => "", "claimed" => false, "moved" => false } }
+  fake.answer("parking.plan") { { "plan" => [], "mods" => [] } }
+  fake.answer("parking.parked_for") { { "parked" => false, "text" => "" } }
+  fake.answer("parking.rule") { { "taken" => true, "kick" => nil } }
+  fake.answer("parking.take_kick") { nil }
+  # With nothing parked, the restart for downloaded mods is the plain one, through the test's DLL.
+  fake.answer("parking.restart_for_mods") do |request|
+    MGQ_Multiplayer::Player.store("rejoin", request["world"])
+    next { "result" => "restarting", "text" => nil, "moved" => false } if MGQ_Multiplayer::Link.function("mp_restart_game").call == 1
+
+    MGQ_Multiplayer::Player.store("rejoin", "")
+    { "result" => "by_hand", "text" => "The mods were installed. Close the game and start it again to enter #{request['name']}.", "moved" => false }
+  end
+  fake.answer("parking.take_rejoin") do
+    world = MGQ_Multiplayer::Player.setting("rejoin").to_s
+    MGQ_Multiplayer::Player.store("rejoin", "") unless world.empty?
+    world.empty? ? nil : world
+  end
+  %w(state title_started title_left entered give_up notice_closed tell update_started).each { |topic| fake.answer("parking.#{topic}") { PARKING_IDLE } }
+end
+
 # Opens the scripts' bridge on a FakeBridge that answers the rule topics from the golden cases, or adds
 # those answers to the world room's stand-in bridge when the test loaded it.
 #
 # @return [FakeBridge] The bridge, for a test to add answers or read the calls.
+# The world screen's calls of its steps into a world (WorldEntering in C#), each as [topic, request].
+$screen_calls = []
+
+# The steps the world screen's next call of a step topic gets, which a test sets; every call takes
+# them and leaves none.
+$screen_steps = []
+
+# Whether the DLL's steps wait for the list to enter a world, as screen.do answers it.
+$screen_waiting = false
+
+# Answers the topics of the world screen's steps with the steps a test set, since their rules have
+# their tests in C# (WorldEnteringTests); the script tests check that the screen plays the steps it
+# is handed and hands back what the player did.
+#
+# @param fake [FakeBridge] The bridge.
+def answer_screen_steps(fake)
+  %w(screen.enter screen.answer screen.step screen.do).each do |topic|
+    fake.answer(topic) do |request|
+      $screen_calls << [topic, request]
+      steps = $screen_steps
+      $screen_steps = []
+      topic == "screen.do" ? { "steps" => steps, "waiting" => $screen_waiting } : { "steps" => steps }
+    end
+  end
+end
+
+# Finds the requests of the world screen's calls of a step topic.
+#
+# @param topic [String] The topic, such as "screen.answer".
+# @return [Array<Hash>] Each call's request, oldest first.
+def screen_requests(topic)
+  $screen_calls.select { |called, _| called == topic }.map { |_, request| request }
+end
+
 def open_rules_bridge
   load_bridge unless defined?(MGQ_Multiplayer::Bridge)
   fake = ($world_bridge ||= FakeBridge.new)
   answer_catchup(fake)
   answer_mod_keys(fake)
+  answer_mods_text(fake)
+  answer_mod_check(fake)
+  answer_settings(fake)
   answer_installed(fake)
   answer_world_rules(fake)
   fake.answer("mods.catalog") { $catalog }
@@ -429,6 +724,12 @@ def open_rules_bridge
   answer_random_ids(fake)
   answer_squads(fake)
   answer_events(fake)
+  answer_overview(fake)
+  answer_local_worlds(fake)
+  answer_screen(fake)
+  answer_forms(fake)
+  answer_parking(fake)
+  answer_screen_steps(fake)
   MGQ_Multiplayer::Bridge.open(fake)
   fake
 end

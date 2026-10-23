@@ -1,0 +1,631 @@
+{
+  "options": [
+    [
+      "Level Cap",
+      [
+        [
+          "mod_level_cap",
+          "Level Cap",
+          [
+            [
+              "i:1",
+              "On"
+            ],
+            [
+              "i:0",
+              "Off"
+            ]
+          ]
+        ],
+        [
+          "mod_level_cap_limits",
+          "Job and Race Limits",
+          [
+
+          ]
+        ]
+      ]
+    ],
+    [
+      "Party Sheet",
+      [
+        [
+          "mod_party_sheet_theme",
+          "Theme",
+          [
+            [
+              "y:dark",
+              "Dark"
+            ],
+            [
+              "y:light",
+              "Light"
+            ]
+          ]
+        ],
+        [
+          "mod_party_sheet_size",
+          "Size",
+          [
+            [
+              "i:2",
+              "Small"
+            ]
+          ]
+        ],
+        [
+          "mod_party_sheet_rate",
+          "Rate",
+          [
+
+          ]
+        ]
+      ]
+    ],
+    [
+      "Third",
+      [
+        [
+          "mod_third_a",
+          "A",
+          [
+
+          ]
+        ]
+      ]
+    ],
+    [
+      "Fourth",
+      [
+        [
+          "mod_fourth_a",
+          "A",
+          [
+
+          ]
+        ]
+      ]
+    ]
+  ],
+  "pairs": [
+    {
+      "text": null,
+      "pairs": [
+
+      ]
+    },
+    {
+      "text": "",
+      "pairs": [
+
+      ]
+    },
+    {
+      "text": "a=i:1;b=s:x;;=i:2;c",
+      "pairs": [
+        [
+          "a",
+          "a=i:1"
+        ],
+        [
+          "b",
+          "b=s:x"
+        ],
+        [
+          "c",
+          "c"
+        ]
+      ]
+    },
+    {
+      "text": "@shared=o:1;a=i:1;",
+      "pairs": [
+        [
+          "@shared",
+          "@shared=o:1"
+        ],
+        [
+          "a",
+          "a=i:1"
+        ]
+      ]
+    },
+    {
+      "text": "x=s:a=b",
+      "pairs": [
+        [
+          "x",
+          "x=s:a=b"
+        ]
+      ]
+    }
+  ],
+  "shared": [
+    {
+      "text": null,
+      "shared": false
+    },
+    {
+      "text": "",
+      "shared": false
+    },
+    {
+      "text": " ",
+      "shared": false
+    },
+    {
+      "text": "\t\n",
+      "shared": false
+    },
+    {
+      "text": "@shared=o:1",
+      "shared": true
+    },
+    {
+      "text": "a",
+      "shared": true
+    }
+  ],
+  "fits": [
+    {
+      "pairs": [
+        [
+          "a",
+          "a=s:xxxxxxxxxxxxxxxxxxxx"
+        ],
+        [
+          "b",
+          "b=s:yyyyyyyyyyyyyyyyyyyy"
+        ],
+        [
+          "c",
+          "c=i:1"
+        ]
+      ],
+      "most": 30,
+      "text": "a=s:xxxxxxxxxxxxxxxxxxxx;c=i:1",
+      "left_out": [
+        "b"
+      ]
+    },
+    {
+      "pairs": [
+        [
+          "é",
+          "é=s:éééééééééééééééééééé"
+        ],
+        [
+          "b",
+          "b=i:2"
+        ]
+      ],
+      "most": 30,
+      "text": "é=s:éééééééééééééééééééé;b=i:2",
+      "left_out": [
+
+      ]
+    },
+    {
+      "pairs": [
+
+      ],
+      "most": 30,
+      "text": "",
+      "left_out": [
+
+      ]
+    }
+  ],
+  "built": [
+    {
+      "mine": [
+        [
+          "mod_level_cap",
+          "mod_level_cap=i:0"
+        ],
+        [
+          "mod_party_sheet_theme",
+          "mod_party_sheet_theme=y:dark"
+        ]
+      ],
+      "known": [
+        "mod_level_cap",
+        "mod_party_sheet_theme",
+        "mod_party_sheet_size"
+      ],
+      "base": "",
+      "text": "@shared=o:1;mod_level_cap=i:0;mod_party_sheet_theme=y:dark",
+      "left_out": [
+
+      ]
+    },
+    {
+      "mine": [
+        [
+          "mod_level_cap",
+          "mod_level_cap=i:0"
+        ]
+      ],
+      "known": [
+        "mod_level_cap",
+        "mod_party_sheet_theme"
+      ],
+      "base": "@shared=o:1;mod_other=i:3;mod_level_cap=i:1;mod_party_sheet_theme=y:light",
+      "text": "@shared=o:1;mod_level_cap=i:0;mod_other=i:3",
+      "left_out": [
+
+      ]
+    },
+    {
+      "mine": [
+
+      ],
+      "known": [
+
+      ],
+      "base": null,
+      "text": "@shared=o:1",
+      "left_out": [
+
+      ]
+    }
+  ],
+  "marked": [
+    {
+      "text": "",
+      "marked": "@shared=o:1"
+    },
+    {
+      "text": null,
+      "marked": "@shared=o:1"
+    },
+    {
+      "text": "mod_level_cap=i:0",
+      "marked": "@shared=o:1;mod_level_cap=i:0"
+    },
+    {
+      "text": "@shared=o:1;a=i:1",
+      "marked": "@shared=o:1;a=i:1"
+    }
+  ],
+  "merged": [
+    {
+      "base": "@shared=o:1;mod_level_cap=i:1",
+      "mine": "@shared=o:1;mod_level_cap=i:0",
+      "theirs": "@shared=o:1;mod_level_cap=i:1;mod_party_sheet_theme=y:light",
+      "reason": "options",
+      "merged": "@shared=o:1;mod_party_sheet_theme=y:light;mod_level_cap=i:0"
+    },
+    {
+      "base": "@shared=o:1;a=i:1;b=i:1",
+      "mine": "@shared=o:1;a=i:2;b=i:1;c=i:5",
+      "theirs": "@shared=o:1;b=i:3;d=i:4",
+      "reason": "load",
+      "merged": "@shared=o:1;b=i:3;d=i:4;a=i:2;c=i:5"
+    },
+    {
+      "base": "@shared=o:1",
+      "mine": "",
+      "theirs": "@shared=o:1;a=i:1",
+      "reason": "switch",
+      "merged": ""
+    },
+    {
+      "base": "@shared=o:1",
+      "mine": "",
+      "theirs": "@shared=o:1;a=i:1",
+      "reason": "options",
+      "merged": "@shared=o:1;a=i:1"
+    },
+    {
+      "base": "",
+      "mine": "@shared=o:1;a=i:1",
+      "theirs": "",
+      "reason": "switch",
+      "merged": "@shared=o:1;a=i:1"
+    },
+    {
+      "base": "",
+      "mine": "@shared=o:1;a=i:1",
+      "theirs": "",
+      "reason": "load",
+      "merged": ""
+    }
+  ],
+  "changes": [
+    {
+      "before": "mod_level_cap=i:1",
+      "after": "mod_level_cap=i:0",
+      "changes": "Level Cap: On -> Off"
+    },
+    {
+      "before": "mod_level_cap=i:1;mod_party_sheet_theme=y:dark;mod_party_sheet_size=i:2",
+      "after": "mod_level_cap=i:0;mod_party_sheet_theme=y:light;mod_party_sheet_size=i:4",
+      "changes": "Level Cap: On -> Off, Theme: Dark -> Light and 1 more"
+    },
+    {
+      "before": "mod_party_sheet_rate=f:1.0",
+      "after": "mod_party_sheet_rate=f:1.0000001",
+      "changes": null
+    },
+    {
+      "before": "mod_party_sheet_rate=f:1.0",
+      "after": "mod_party_sheet_rate=f:2.005",
+      "changes": "Rate: 1.00 -> 2.00"
+    },
+    {
+      "before": "mod_party_sheet_rate=f:1.5",
+      "after": "mod_party_sheet_rate=i:1",
+      "changes": "Rate: 1.50 -> 1"
+    },
+    {
+      "before": "mod_level_cap=i:1",
+      "after": "",
+      "changes": "Level Cap: On -> no longer shared"
+    },
+    {
+      "before": "",
+      "after": "mod_party_sheet_theme=y:dark",
+      "changes": "Theme: Dark"
+    },
+    {
+      "before": "mod_missing=i:1",
+      "after": "mod_missing=i:2",
+      "changes": "1 option"
+    },
+    {
+      "before": "mod_missing=i:1;mod_level_cap=i:1",
+      "after": "mod_missing=i:2;mod_level_cap=i:1",
+      "changes": "1 option"
+    },
+    {
+      "before": "a=i:1",
+      "after": "a=i:1",
+      "changes": null
+    },
+    {
+      "before": "mod_third_a=s:x%3By",
+      "after": "mod_third_a=s:x%3Dy;mod_level_cap=i:007",
+      "changes": "A: x;y -> x=y, Level Cap: 7"
+    },
+    {
+      "before": "mod_third_a=b:true",
+      "after": "mod_third_a=b:false;mod_fourth_a=y:",
+      "changes": "A: true -> false"
+    }
+  ],
+  "relay": [
+    {
+      "before": "@shared=o:1;mod_level_cap=i:1",
+      "after": "",
+      "text": "An admin turned Shared Mod Settings off: every player here sets their own mod options again."
+    },
+    {
+      "before": "",
+      "after": "@shared=o:1;mod_level_cap=i:1;mod_party_sheet_theme=y:dark",
+      "text": "An admin turned Shared Mod Settings on: players here get the options of Level Cap and Party Sheet."
+    },
+    {
+      "before": "",
+      "after": "@shared=o:1;mod_missing=i:1",
+      "text": "An admin turned Shared Mod Settings on: players here get the options of the world's mods."
+    },
+    {
+      "before": "@shared=o:1;mod_level_cap=i:1",
+      "after": "@shared=o:1;mod_level_cap=i:0",
+      "text": "An admin changed the shared mod settings: Level Cap: On -> Off."
+    },
+    {
+      "before": "@shared=o:1;mod_missing=i:1",
+      "after": "@shared=o:1;mod_missing=i:2",
+      "text": "An admin changed the shared mod settings: 1 option."
+    },
+    {
+      "before": "@shared=o:1",
+      "after": "@shared=o:1",
+      "text": null
+    }
+  ],
+  "lists": [
+    {
+      "keys": [
+
+      ],
+      "known": [
+
+      ],
+      "mods": "the world's mods",
+      "options": null,
+      "stay": "Creator shares mod settings here, but none are set for your mods yet.",
+      "creator_on": "Shared Mod Settings on, but this world's mods have no options to share."
+    },
+    {
+      "keys": [
+        "mod_level_cap"
+      ],
+      "known": [
+        "mod_level_cap"
+      ],
+      "mods": "Level Cap",
+      "options": "1 option of Level Cap is",
+      "stay": "Creator shares mod settings here: 1 option of Level Cap is set for you. Your own saves keep yours.",
+      "creator_on": "Shared Mod Settings on: players here get your options of Level Cap."
+    },
+    {
+      "keys": [
+        "mod_level_cap",
+        "mod_party_sheet_theme"
+      ],
+      "known": [
+        "mod_level_cap",
+        "mod_party_sheet_theme"
+      ],
+      "mods": "Level Cap and Party Sheet",
+      "options": "2 options of Level Cap and Party Sheet are",
+      "stay": "Creator shares mod settings here: 2 options of Level Cap and Party Sheet are set for you. Your own saves keep yours.",
+      "creator_on": "Shared Mod Settings on: players here get your options of Level Cap and Party Sheet."
+    },
+    {
+      "keys": [
+        "mod_level_cap",
+        "mod_party_sheet_theme",
+        "mod_third_a"
+      ],
+      "known": [
+        "mod_level_cap",
+        "mod_party_sheet_theme",
+        "mod_third_a"
+      ],
+      "mods": "Level Cap, Party Sheet and 1 more",
+      "options": "3 options of Level Cap, Party Sheet and 1 more are",
+      "stay": "Creator shares mod settings here: 3 options of Level Cap, Party Sheet and 1 more are set for you. Your own saves keep yours.",
+      "creator_on": "Shared Mod Settings on: players here get your options of Level Cap, Party Sheet and 1 more."
+    },
+    {
+      "keys": [
+        "mod_level_cap",
+        "mod_party_sheet_theme",
+        "mod_third_a",
+        "mod_fourth_a"
+      ],
+      "known": [
+        "mod_level_cap",
+        "mod_party_sheet_theme",
+        "mod_third_a",
+        "mod_fourth_a"
+      ],
+      "mods": "Level Cap, Party Sheet and 2 more",
+      "options": "4 options of Level Cap, Party Sheet and 2 more are",
+      "stay": "Creator shares mod settings here: 4 options of Level Cap, Party Sheet and 2 more are set for you. Your own saves keep yours.",
+      "creator_on": "Shared Mod Settings on: players here get your options of Level Cap, Party Sheet and 2 more."
+    },
+    {
+      "keys": [
+        "mod_missing",
+        "mod_level_cap_limits"
+      ],
+      "known": [
+        "mod_level_cap_limits"
+      ],
+      "mods": "Level Cap",
+      "options": "1 option of Level Cap is",
+      "stay": "Creator shares mod settings here: 1 option of Level Cap is set for you. Your own saves keep yours.",
+      "creator_on": "Shared Mod Settings on: players here get your options of Level Cap."
+    }
+  ],
+  "names": [
+    {
+      "names": [
+        "A"
+      ],
+      "named": 2,
+      "text": "A"
+    },
+    {
+      "names": [
+        "A",
+        "B"
+      ],
+      "named": 2,
+      "text": "A and B"
+    },
+    {
+      "names": [
+        "A",
+        "B",
+        "C"
+      ],
+      "named": 2,
+      "text": "A, B and 1 more"
+    },
+    {
+      "names": [
+        "A",
+        "B",
+        "C"
+      ],
+      "named": 3,
+      "text": "A, B and C"
+    },
+    {
+      "names": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ],
+      "named": 3,
+      "text": "A, B, C and 1 more"
+    },
+    {
+      "names": [
+        "A",
+        "B"
+      ],
+      "named": 1,
+      "text": "A and 1 more"
+    }
+  ],
+  "notices": [
+    {
+      "text": "Short.",
+      "lines": [
+        "Short."
+      ]
+    },
+    {
+      "text": "Party Sheet shares mod settings here: 2 options of Level Cap and Party Sheet are set for you. Your own saves keep yours.",
+      "lines": [
+        "Party Sheet shares mod settings here: 2",
+        "options of Level Cap and Party Sheet are set",
+        "for you. Your own saves keep yours."
+      ]
+    },
+    {
+      "text": "One xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx word longer than a line, then more words to fill the box past its lines, past three lines of forty-six characters each, with more words still to come.",
+      "lines": [
+        "One",
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "word longer than a line, then more words to..."
+      ]
+    },
+    {
+      "text": "  Spaces   between\twords  ",
+      "lines": [
+        "Spaces between words"
+      ]
+    }
+  ],
+  "details": [
+    {
+      "settings": "@shared=o:1;mod_party_sheet_theme=y:dark;mod_missing=i:1",
+      "creator_id": "creator",
+      "text": "Mod settings: shared by Creator (Party Sheet)"
+    },
+    {
+      "settings": "@shared=o:1",
+      "creator_id": "me",
+      "text": "Mod settings: shared by you (none set yet)"
+    },
+    {
+      "settings": "@shared=o:1;mod_missing=i:1",
+      "creator_id": "creator",
+      "text": "Mod settings: shared by Creator (1 option of mods you lack)"
+    },
+    {
+      "settings": "@shared=o:1;mod_missing=i:1;mod_missing_b=i:1",
+      "creator_id": "creator",
+      "text": "Mod settings: shared by Creator (2 options of mods you lack)"
+    },
+    {
+      "settings": "",
+      "creator_id": "creator",
+      "text": "Mod settings: each player's own"
+    },
+    {
+      "settings": "mod_level_cap=i:0",
+      "creator_id": "creator",
+      "text": "Mod settings: shared by Creator (Level Cap)"
+    }
+  ]
+}

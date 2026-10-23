@@ -2,7 +2,8 @@
 //  Exports.World.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Dropped mp_world_say, mp_world_receive and mp_world_status, since the world room goes through the bridge
+//      Paulinchen  2026-10-23: Dropped mp_world_id and mp_world_directory_id, since the DLL keeps the folders and invites
+//                            - Dropped mp_world_say, mp_world_receive and mp_world_status, since the world room goes through the bridge
 //                            - Dropped mp_new_id and mp_set_player, since the DLL keeps Player.ini
 //      Paulinchen  2026-10-08: Answered mp_world_say with 2 for a dropped chat line
 //      Paulinchen  2026-10-07: Added mp_world_say
@@ -16,7 +17,6 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.World;
 
 namespace MGQParadox.Multiplayer;
@@ -42,48 +42,6 @@ internal static unsafe partial class Exports
         catch (Exception ex)
         {
             Log.Write($"mp_player_id failed: {ex}");
-            return 0;
-        }
-    }
-
-    /// <summary>
-    /// Names a world by its code, for its folder, without giving the code away.
-    /// </summary>
-    /// <param name="code">The world code, UTF-8 and null-terminated.</param>
-    /// <param name="buffer">Receives the world id, UTF-8 and null-terminated.</param>
-    /// <param name="size">The size of the buffer in bytes.</param>
-    /// <returns>The id's length, or its length negated when the buffer is too small, 0 when the text is no world code or it failed.</returns>
-    [UnmanagedCallersOnly(EntryPoint = "mp_world_id", CallConvs = [typeof(CallConvStdcall)])]
-    public static int WorldId(byte* code, byte* buffer, int size)
-    {
-        try
-        {
-            return WorldCode.Parse(Text(code)) is { } world ? Copy(WorldCode.IdOf(world.Token), buffer, size) : 0;
-        }
-        catch (Exception ex)
-        {
-            Log.Write($"mp_world_id failed: {ex}");
-            return 0;
-        }
-    }
-
-    /// <summary>
-    /// Tells the directory's id of a world by its code, which finds the world a Discord invite names in the list.
-    /// </summary>
-    /// <param name="code">The world code, UTF-8 and null-terminated.</param>
-    /// <param name="buffer">Receives the directory's id, UTF-8 and null-terminated.</param>
-    /// <param name="size">The size of the buffer in bytes.</param>
-    /// <returns>The id's length, or its length negated when the buffer is too small, 0 when the text is no world code or it failed.</returns>
-    [UnmanagedCallersOnly(EntryPoint = "mp_world_directory_id", CallConvs = [typeof(CallConvStdcall)])]
-    public static int WorldDirectoryId(byte* code, byte* buffer, int size)
-    {
-        try
-        {
-            return WorldCode.Parse(Text(code)) is { } world ? Copy(Relays.WorldRoomOf(world.Token), buffer, size) : 0;
-        }
-        catch (Exception ex)
-        {
-            Log.Write($"mp_world_directory_id failed: {ex}");
             return 0;
         }
     }

@@ -2,6 +2,7 @@
 //  WorldDirectoryTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Covered seats out of range and squad rules that do not parse refused before the relay
 //      Paulinchen  2026-10-23: Took the squad settings from MGQOnline.Game
 //                            - Expected the story tracks among the features
 //      Paulinchen  2026-10-15: Expected the keyed Raid World stories among the features
@@ -139,6 +140,28 @@ public sealed class WorldDirectoryTests
 
         Assert.Equal("done", Act(creator, directory => directory.Edit(made["world"], 8, string.Empty, string.Empty, null, 3))["state"]);
         Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t") && line.EndsWith("\traid\toff\t3\t1\t\t0"));
+    }
+
+    /// <summary>
+    /// Asserts that the directory refuses seats outside what a world code holds and squad settings
+    /// that do not parse, for a create and for an edit, without asking the relay.
+    /// </summary>
+    [Fact]
+    public void CreateAndEdit_RefuseSeatsOutOfRangeAndSquadRulesThatDoNotParse()
+    {
+        using var relay = new TestRelay();
+        var creator = NewDirectory(relay, CreatorKey, "Creator");
+
+        var few = Act(creator, directory => directory.Create("Lonely", "secret", WorldCode.MinSeats - 1, false, false, []));
+        Assert.Equal(("failed", "A world seats 2 to 32 players."), (few["state"], few["error"]));
+        var odd = Act(creator, directory => directory.Create("Odd Squad", "secret", 8, false, false, [], null, WorldType.Raid, CompanionSharing.Off, 0, null, "1 6 x"));
+        Assert.Equal(("failed", "The formation limits are not valid."), (odd["state"], odd["error"]));
+        Assert.Empty(List(creator).Where(line => line.StartsWith("world\t", StringComparison.Ordinal)));
+
+        var made = Act(creator, directory => directory.Create("Raid Night", "secret", 8, false, false, [], null, WorldType.Raid, CompanionSharing.Off, 0));
+        Assert.Equal("failed", Act(creator, directory => directory.Edit(made["world"], WorldCode.MaxSeats + 1, string.Empty, string.Empty))["state"]);
+        Assert.Equal("failed", Act(creator, directory => directory.Edit(made["world"], 8, string.Empty, string.Empty, null, null, null, "9 9 9 9 9"))["state"]);
+        Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t8\t", StringComparison.Ordinal) && line.EndsWith("\traid\toff\t0\t1\t\t0", StringComparison.Ordinal));
     }
 
     /// <summary>

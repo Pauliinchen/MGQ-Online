@@ -2,7 +2,8 @@
 //  ModParkingTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Covered the list of every script for the game script and dropped the check of the keys, which ModKey has
+//      Paulinchen  2026-10-23: Read the parked scripts and the scripts a world may park as values
+//                            - Covered the list of every script for the game script and dropped the check of the keys, which ModKey has
 //                            - Dropped the check of the deleted options dump
 //      Paulinchen  2026-10-13: Used a placeholder hero key
 //      Paulinchen  2026-10-10: Covered other volumes, changed parked files, recover conflicts and unreadable journals
@@ -19,7 +20,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MGQParadox.Multiplayer.Mods;
-using MGQParadox.Multiplayer.Network.Transport;
 using MGQParadox.Multiplayer.Tests.Network.World;
 
 namespace MGQParadox.Multiplayer.Tests.Mods;
@@ -74,9 +74,9 @@ public sealed class ModParkingTests : IDisposable
             File.ReadAllLines(parking.JournalPath));
         Assert.False(File.Exists(parking.JournalPath + ".tmp"));
 
-        var described = Message.Decode(parking.Describe());
-        Assert.Equal((World, "2", "0"), (described["world"], described["files"], described["conflicts"]));
-        Assert.Equal("Patch/Invasions.rb\nPatch/Extra/Other.rb", described.Team);
+        var described = parking.Parked();
+        Assert.Equal((World, 0), (described.World, described.Conflicts));
+        Assert.Equal(["Patch/Invasions.rb", "Patch/Extra/Other.rb"], described.Files);
     }
 
     /// <summary>
@@ -98,7 +98,7 @@ public sealed class ModParkingTests : IDisposable
         Assert.Equal(0, parking.Park([.. staying, "../Outside.rb", "C:/Windows/win.rb", "Patch/Missing.rb", string.Empty], World));
         Assert.All(staying, path => Assert.True(File.Exists(GamePath(path)), path));
         Assert.False(File.Exists(parking.JournalPath));
-        Assert.Empty(parking.Describe());
+        Assert.True(parking.Parked() is { World: "", Files.Count: 0, Conflicts: 0 });
     }
 
     /// <summary>
@@ -123,13 +123,13 @@ public sealed class ModParkingTests : IDisposable
         using var parking = Parking();
         Assert.Equal(
             "patch\tPatch/B.rb\npatch\tPatch/Extra/Deep/Other.rb\npatch\tPatch/Invasions.rb\npatch\tPatch/Ünïcode 模组/Main.RB",
-            parking.Scripts());
+            Lines(parking.Listed()));
 
         Assert.Equal(2, parking.Park(["Patch/B.rb", "Patch/Ünïcode 模组/Main.RB"], World));
 
         Assert.Equal(
             "patch\tPatch/Extra/Deep/Other.rb\npatch\tPatch/Invasions.rb\nparked\tPatch/B.rb\nparked\tPatch/Ünïcode 模组/Main.RB",
-            parking.Scripts());
+            Lines(parking.Listed()));
         Assert.True(File.Exists(GamePath("Parked mods/Patch/Ünïcode 模组/Main.RB")));
     }
 
@@ -150,11 +150,11 @@ public sealed class ModParkingTests : IDisposable
         Directory.Delete(GamePath("Dev/Gone"));
         using var parking = Parking();
 
-        Assert.Equal("patch\tPatch/A.rb\npatch\tPatch/SomeMod/Main.rb", parking.Scripts());
+        Assert.Equal("patch\tPatch/A.rb\npatch\tPatch/SomeMod/Main.rb", Lines(parking.Listed()));
 
         Assert.Equal(1, parking.Park(["Patch/SomeMod/Main.rb"], World));
         Assert.False(File.Exists(GamePath("Dev/SomeMod/Main.rb")));
-        Assert.Equal("patch\tPatch/A.rb\nparked\tPatch/SomeMod/Main.rb", parking.Scripts());
+        Assert.Equal("patch\tPatch/A.rb\nparked\tPatch/SomeMod/Main.rb", Lines(parking.Listed()));
 
         Assert.Equal(1, parking.Restore(false));
         Assert.True(File.Exists(GamePath("Dev/SomeMod/Main.rb")));
@@ -181,12 +181,12 @@ public sealed class ModParkingTests : IDisposable
 
         Assert.Equal(
             "elsewhere\tPatch/Far/Main.rb\nelsewhere\tPatch/Far/Sub/Deep.rb\npatch\tPatch/A.rb\npatch\tPatch/Far/Near/Back.rb",
-            parking.Scripts());
+            Lines(parking.Listed()));
 
         Assert.Equal(1, parking.Park(["Patch/Far/Main.rb", "Patch/Far/Near/Back.rb"], World));
         Assert.True(File.Exists(GamePath("Dev/Far/Main.rb")));
         Assert.False(File.Exists(GamePath("Dev/Near/Back.rb")));
-        Assert.Equal("Patch/Far/Near/Back.rb", Message.Decode(parking.Describe()).Team);
+        Assert.Equal("Patch/Far/Near/Back.rb", string.Join('\n', parking.Parked().Files));
         Assert.Equal(1, parking.Restore(false));
     }
 
@@ -248,20 +248,6 @@ public sealed class ModParkingTests : IDisposable
     }
 
     /// <summary>
-    /// Asserts that a failed description answers the error header alone, with the exception's message
-    /// on one line, or its type when it has none, never what reads as nothing parked.
-    /// </summary>
-    [Fact]
-    public void DescribeFailure_AnswersTheErrorHeaderAlone()
-    {
-        var typed = Message.Decode(ModParking.DescribeFailure(new InvalidOperationException(string.Empty)));
-        var told = Message.Decode(ModParking.DescribeFailure(new InvalidOperationException("broken\nhere")));
-
-        Assert.Equal(("InvalidOperationException", string.Empty, string.Empty), (typed[ModParking.DescribeError], typed["files"], typed.Team));
-        Assert.Equal("broken here", told[ModParking.DescribeError]);
-    }
-
-    /// <summary>
     /// Asserts that a parked file that is no longer the one parked goes to the conflicts folder and
     /// never into Patch, and counts as a conflict.
     /// </summary>
@@ -284,11 +270,11 @@ public sealed class ModParkingTests : IDisposable
     }
 
     /// <summary>
-    /// Asserts that the conflicts of the restore a recover makes stay in the description once nothing
+    /// Asserts that the conflicts of the restore a recover makes stay in the parked state once nothing
     /// is parked, without a world, so the game script can tell the player.
     /// </summary>
     [Fact]
-    public void Describe_AfterARecoverWithConflicts_TellsThem()
+    public void Parked_AfterARecoverWithConflicts_TellsThem()
     {
         WriteMod("Patch/A.rb", "# A 1.0\n");
         using var parking = Parking();
@@ -297,16 +283,16 @@ public sealed class ModParkingTests : IDisposable
 
         Assert.Equal(1, parking.Recover(OtherWorld));
 
-        var described = Message.Decode(parking.Describe());
-        Assert.Equal((string.Empty, "0", "1", string.Empty), (described["world"], described["files"], described["conflicts"], described.Team));
+        var described = parking.Parked();
+        Assert.Equal((string.Empty, 0, 1), (described.World, described.Files.Count, described.Conflicts));
     }
 
     /// <summary>
-    /// Asserts that a journal that cannot be read is described by the error header alone, never as
-    /// nothing parked, and described as usual once it can be read again.
+    /// Asserts that a journal that cannot be read throws, never reads as
+    /// nothing parked, and reads as usual once it can be read again.
     /// </summary>
     [Fact]
-    public void Describe_AJournalThatCannotBeRead_SaysSo()
+    public void Parked_AJournalThatCannotBeRead_Throws()
     {
         WriteMod("Patch/A.rb", "# A\n");
         using var parking = Parking();
@@ -314,13 +300,11 @@ public sealed class ModParkingTests : IDisposable
 
         using (new FileStream(parking.JournalPath, FileMode.Open, FileAccess.Read, FileShare.None))
         {
-            var failed = Message.Decode(parking.Describe());
-            Assert.NotEmpty(failed[ModParking.DescribeError]);
-            Assert.Equal((string.Empty, string.Empty, string.Empty), (failed["world"], failed["files"], failed.Team));
+            Assert.ThrowsAny<IOException>(parking.Parked);
         }
 
-        var described = Message.Decode(parking.Describe());
-        Assert.Equal((World, "1", string.Empty), (described["world"], described["files"], described[ModParking.DescribeError]));
+        var described = parking.Parked();
+        Assert.Equal((World, 1), (described.World, described.Files.Count));
     }
 
     /// <summary>
@@ -337,10 +321,10 @@ public sealed class ModParkingTests : IDisposable
 
         using (new FileStream(parking.JournalPath, FileMode.Open, FileAccess.Read, FileShare.None))
         {
-            Assert.Equal(ModParking.ScriptsFailed, parking.Scripts());
+            Assert.Null(parking.Listed());
         }
 
-        Assert.Equal("patch\tPatch/A.rb\nparked\tPatch/B.rb", parking.Scripts());
+        Assert.Equal("patch\tPatch/A.rb\nparked\tPatch/B.rb", Lines(parking.Listed()));
     }
 
     /// <summary>
@@ -367,7 +351,7 @@ public sealed class ModParkingTests : IDisposable
         Assert.True(File.Exists(GamePath("Parked mods/Patch/Sub/B.rb")));
         Assert.False(File.Exists(GamePath("Patch/A.rb")));
         Assert.False(Directory.Exists(GamePath("Parked mods/Conflicts")));
-        Assert.Equal(OtherWorld, Message.Decode(parking.Describe())["world"]);
+        Assert.Equal(OtherWorld, parking.Parked().World);
     }
 
     /// <summary>
@@ -388,7 +372,7 @@ public sealed class ModParkingTests : IDisposable
         Assert.True(File.Exists(GamePath("Patch/Extra/Other.rb")));
         Assert.False(File.Exists(parking.JournalPath));
         Assert.False(Directory.Exists(GamePath("Parked mods")));
-        Assert.Empty(parking.Describe());
+        Assert.True(parking.Parked() is { World: "", Files.Count: 0, Conflicts: 0 });
         Assert.Equal(0, parking.Restore(false));
     }
 
@@ -435,8 +419,8 @@ public sealed class ModParkingTests : IDisposable
         Assert.True(File.Exists(GamePath("Parked mods/Patch/B.rb")));
         Assert.True(File.Exists(GamePath("Parked mods/Patch/C.rb")));
         Assert.False(File.Exists(GamePath("Parked mods/Patch/A.rb")));
-        var described = Message.Decode(parking.Describe());
-        Assert.Equal((OtherWorld, "Patch/B.rb\nPatch/C.rb"), (described["world"], described.Team));
+        var described = parking.Parked();
+        Assert.Equal((OtherWorld, "Patch/B.rb\nPatch/C.rb"), (described.World, string.Join('\n', described.Files)));
     }
 
     /// <summary>
@@ -461,8 +445,8 @@ public sealed class ModParkingTests : IDisposable
         Assert.True(File.Exists(GamePath("Patch/C.rb")));
         Assert.True(File.Exists(GamePath("Parked mods/Patch/A.rb")));
         Assert.True(File.Exists(GamePath("Parked mods/Patch/B.rb")));
-        var described = Message.Decode(parking.Describe());
-        Assert.Equal((World, "Patch/A.rb\nPatch/B.rb"), (described["world"], described.Team));
+        var described = parking.Parked();
+        Assert.Equal((World, "Patch/A.rb\nPatch/B.rb"), (described.World, string.Join('\n', described.Files)));
     }
 
     /// <summary>
@@ -566,7 +550,7 @@ public sealed class ModParkingTests : IDisposable
         WriteMod("Parked mods/Parked.txt", $"world\t{World}\nafter\tnone\nfile\tPatch/A.rb\t{hash}\t0\n");
         using var parking = Parking();
 
-        Assert.Equal("Patch/A.rb", Message.Decode(parking.Describe()).Team);
+        Assert.Equal("Patch/A.rb", string.Join('\n', parking.Parked().Files));
         Assert.Equal(1, parking.Recover(OtherWorld));
         Assert.Equal("# A\n", File.ReadAllText(GamePath("Patch/A.rb")));
 
@@ -808,4 +792,12 @@ public sealed class ModParkingTests : IDisposable
     /// <param name="relative">Its path relative to the game folder.</param>
     /// <returns>The full path.</returns>
     private string GamePath(string relative) => Path.Combine(_game.Path, relative);
+
+    /// <summary>
+    /// Writes the scripts a world may park as lines of their kind and path, for short assertions.
+    /// </summary>
+    /// <param name="listed">The scripts.</param>
+    /// <returns>"elsewhere", "patch" or "parked", a tab and the path, one line each, in that order.</returns>
+    private static string Lines(ModParking.ScriptList? listed) => listed == null ? "unlisted" : string.Join('\n',
+        listed.Elsewhere.Select(path => "elsewhere\t" + path).Concat(listed.Patch.Select(path => "patch\t" + path)).Concat(listed.Parked.Select(path => "parked\t" + path)));
 }

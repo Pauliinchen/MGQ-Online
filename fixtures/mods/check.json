@@ -1,0 +1,978 @@
+{
+  "catalog": {
+    "state": "ready",
+    "error": null,
+    "personal": [
+      "personalmod",
+      "skins"
+    ],
+    "mods": [
+      {
+        "key": "levelcap",
+        "name": "Level Cap",
+        "kind": "link",
+        "version": "1.4.0",
+        "files": {
+          "Level_Cap.rb": "bb"
+        },
+        "versions": [
+          [
+            "1.4.0",
+            {
+              "Level_Cap.rb": "bb"
+            }
+          ],
+          [
+            "1.3.5",
+            {
+              "Level_Cap.rb": "aa"
+            }
+          ]
+        ],
+        "options_version": "1.3.5"
+      },
+      {
+        "key": "pack",
+        "name": "Pack",
+        "kind": "upload",
+        "version": "2",
+        "files": {
+          "Pack/a.luka": "p1",
+          "Pack/b.luka": "p2"
+        },
+        "versions": [
+          [
+            "2",
+            {
+              "Pack/a.luka": "p1",
+              "Pack/b.luka": "p2"
+            }
+          ]
+        ],
+        "options_version": null
+      },
+      {
+        "key": "hero",
+        "name": "Hero",
+        "kind": "zip",
+        "version": "1.1",
+        "files": {
+          "Hero.rb": "h2",
+          "Hero/a.luka": "h3"
+        },
+        "versions": [
+          [
+            "1.1",
+            {
+              "Hero.rb": "h2",
+              "Hero/a.luka": "h3"
+            }
+          ],
+          [
+            "1.0",
+            {
+              "Hero.rb": "h1",
+              "Hero/a.luka": "h3"
+            }
+          ]
+        ],
+        "options_version": "1.1"
+      }
+    ]
+  },
+  "checks": [
+    {
+      "mods": "!Level Cap",
+      "hashes": "",
+      "catalog": true,
+      "installed": [
+        [
+          "levelcap",
+          "Patch/Mods/Level Cap.rb"
+        ]
+      ],
+      "files": {
+        "Patch/Mods/Level Cap.rb": "bb"
+      },
+      "rows": [
+
+      ],
+      "summary": null,
+      "log": "mod check of Modded: all match: Level Cap: matches 1.4.0",
+      "installed_versions": [
+        [
+          "levelcap",
+          "1.4.0"
+        ],
+        [
+          "pack",
+          null
+        ],
+        [
+          "hero",
+          null
+        ]
+      ],
+      "served": [
+        [
+          "levelcap",
+          "link",
+          "1.4.0",
+          [
+            [
+              "Level_Cap.rb",
+              "bb"
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "mods": "!Level Cap",
+      "hashes": "",
+      "catalog": true,
+      "installed": [
+        [
+          "levelcap",
+          "Patch/Mods/Level Cap.rb"
+        ]
+      ],
+      "files": {
+        "Patch/Mods/Level Cap.rb": "aa"
+      },
+      "rows": [
+        {
+          "name": "Level Cap",
+          "yours": "1.3.5",
+          "worlds": "1.4.0",
+          "key": "levelcap",
+          "target": "Patch/Mods/Level Cap.rb",
+          "text": "Level Cap: yours 1.3.5, the world's 1.4.0"
+        }
+      ],
+      "summary": "Modded needs mods that are missing or in another version here: Level Cap. Download them and restart?",
+      "log": "mod check of Modded: 1 differ: Level Cap: yours 1.3.5, the world's 1.4.0, downloadable",
+      "installed_versions": [
+        [
+          "levelcap",
+          "1.3.5"
+        ],
+        [
+          "pack",
+          null
+        ],
+        [
+          "hero",
+          null
+        ]
+      ],
+      "served": [
+        [
+          "levelcap",
+          "",
+          "1.3.5",
+          [
+
+          ]
+        ]
+      ]
+    },
+    {
+      "mods": "!Level Cap",
+      "hashes": "",
+      "catalog": true,
+      "installed": [
+        [
+          "levelcap",
+          "Patch/Mods/Level Cap.rb"
+        ]
+      ],
+      "files": {
+        "Patch/Mods/Level Cap.rb": "cc"
+      },
+      "rows": [
+        {
+          "name": "Level Cap",
+          "yours": "unknown",
+          "worlds": "1.4.0",
+          "key": "levelcap",
+          "target": "Patch/Mods/Level Cap.rb",
+          "text": "Level Cap: yours unknown, the world's 1.4.0"
+        }
+      ],
+      "summary": "Modded needs mods that are missing or in another version here: Level Cap. Download them and restart?",
+      "log": "mod check of Modded: 1 differ: Level Cap: yours unknown, the world's 1.4.0, downloadable",
+      "installed_versions": [
+        [
+          "levelcap",
+          ""
+        ],
+        [
+          "pack",
+          null
+        ],
+        [
+          "hero",
+          null
+        ]
+      ],
+      "served": [
+        [
+          "levelcap",
+          "",
+          "unknown",
+          [
+
+          ]
+        ]
+      ]
+    },
+    {
+      "mods": "!Level Cap",
+      "hashes": "",
+      "catalog": true,
+      "installed": [
+
+      ],
+      "files": {
+      },
+      "rows": [
+        {
+          "name": "Level Cap",
+          "yours": "not installed",
+          "worlds": "1.4.0",
+          "key": "levelcap",
+          "target": "Patch/Level_Cap.rb",
+          "text": "Level Cap: not installed, the world's 1.4.0"
+        }
+      ],
+      "summary": "Modded needs mods that are missing or in another version here: Level Cap. Download them and restart?",
+      "log": "mod check of Modded: 1 differ: Level Cap: not installed, the world's 1.4.0, downloadable",
+      "installed_versions": [
+        [
+          "levelcap",
+          null
+        ],
+        [
+          "pack",
+          null
+        ],
+        [
+          "hero",
+          null
+        ]
+      ],
+      "served": [
+
+      ]
+    },
+    {
+      "mods": "!Pack",
+      "hashes": "",
+      "catalog": true,
+      "installed": [
+
+      ],
+      "files": {
+        "Patch/Pack/a.luka": "p1",
+        "Patch/Pack/b.luka": "p2"
+      },
+      "rows": [
+
+      ],
+      "summary": null,
+      "log": "mod check of Modded: all match: Pack: matches 2",
+      "installed_versions": [
+        [
+          "levelcap",
+          null
+        ],
+        [
+          "pack",
+          "2"
+        ],
+        [
+          "hero",
+          null
+        ]
+      ],
+      "served": [
+
+      ]
+    },
+    {
+      "mods": "!Pack",
+      "hashes": "",
+      "catalog": true,
+      "installed": [
+
+      ],
+      "files": {
+        "Patch/Pack/a.luka": "p1"
+      },
+      "rows": [
+        {
+          "name": "Pack",
+          "yours": "unknown",
+          "worlds": "2",
+          "key": "pack",
+          "target": null,
+          "text": "Pack: yours unknown, the world's 2"
+        }
+      ],
+      "summary": "Modded needs mods that are missing or in another version here: Pack. Download them and restart?",
+      "log": "mod check of Modded: 1 differ: Pack: yours unknown, the world's 2, downloadable",
+      "installed_versions": [
+        [
+          "levelcap",
+          null
+        ],
+        [
+          "pack",
+          ""
+        ],
+        [
+          "hero",
+          null
+        ]
+      ],
+      "served": [
+
+      ]
+    },
+    {
+      "mods": "!Pack",
+      "hashes": "",
+      "catalog": true,
+      "installed": [
+
+      ],
+      "files": {
+      },
+      "rows": [
+        {
+          "name": "Pack",
+          "yours": "not installed",
+          "worlds": "2",
+          "key": "pack",
+          "target": null,
+          "text": "Pack: not installed, the world's 2"
+        }
+      ],
+      "summary": "Modded needs mods that are missing or in another version here: Pack. Download them and restart?",
+      "log": "mod check of Modded: 1 differ: Pack: not installed, the world's 2, downloadable",
+      "installed_versions": [
+        [
+          "levelcap",
+          null
+        ],
+        [
+          "pack",
+          null
+        ],
+        [
+          "hero",
+          null
+        ]
+      ],
+      "served": [
+
+      ]
+    },
+    {
+      "mods": "!Hero",
+      "hashes": "",
+      "catalog": true,
+      "installed": [
+
+      ],
+      "files": {
+        "Patch/Hero.rb": "h2",
+        "Patch/Hero/a.luka": "h3"
+      },
+      "rows": [
+
+      ],
+      "summary": null,
+      "log": "mod check of Modded: all match: Hero: matches 1.1",
+      "installed_versions": [
+        [
+          "levelcap",
+          null
+        ],
+        [
+          "pack",
+          null
+        ],
+        [
+          "hero",
+          "1.1"
+        ]
+      ],
+      "served": [
+
+      ]
+    },
+    {
+      "mods": "!Hero",
+      "hashes": "",
+      "catalog": true,
+      "installed": [
+
+      ],
+      "files": {
+        "Patch/Hero.rb": "h1",
+        "Patch/Hero/a.luka": "h3"
+      },
+      "rows": [
+        {
+          "name": "Hero",
+          "yours": "1.0",
+          "worlds": "1.1",
+          "key": "hero",
+          "target": null,
+          "text": "Hero: yours 1.0, the world's 1.1"
+        }
+      ],
+      "summary": "Modded needs mods that are missing or in another version here: Hero. Download them and restart?",
+      "log": "mod check of Modded: 1 differ: Hero: yours 1.0, the world's 1.1, downloadable",
+      "installed_versions": [
+        [
+          "levelcap",
+          null
+        ],
+        [
+          "pack",
+          null
+        ],
+        [
+          "hero",
+          "1.0"
+        ]
+      ],
+      "served": [
+
+      ]
+    },
+    {
+      "mods": "!Other Mod; !Missing Mod",
+      "hashes": "Other Mod=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "catalog": true,
+      "installed": [
+        [
+          "othermod",
+          "Patch/Other_Mod.rb"
+        ]
+      ],
+      "files": {
+        "Patch/Other_Mod.rb": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "rows": [
+        {
+          "name": "Missing Mod",
+          "yours": "not installed",
+          "worlds": null,
+          "key": null,
+          "target": null,
+          "text": "Missing Mod: not installed"
+        }
+      ],
+      "summary": "Modded needs mods that are missing or in another version here: Missing Mod (get it from its author).",
+      "log": "mod check of Modded: 1 differ: Other Mod: matches the creator's copy; Missing Mod: not installed, from its author only",
+      "installed_versions": [
+        [
+          "levelcap",
+          null
+        ],
+        [
+          "pack",
+          null
+        ],
+        [
+          "hero",
+          null
+        ]
+      ],
+      "served": [
+        [
+          "othermod",
+          "",
+          "",
+          [
+
+          ]
+        ]
+      ]
+    },
+    {
+      "mods": "!Other Mod; !Missing Mod",
+      "hashes": "Other Mod=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "catalog": true,
+      "installed": [
+        [
+          "othermod",
+          "Patch/Other_Mod.rb"
+        ]
+      ],
+      "files": {
+        "Patch/Other_Mod.rb": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "rows": [
+        {
+          "name": "Other Mod",
+          "yours": "differs",
+          "worlds": null,
+          "key": null,
+          "target": null,
+          "text": "Other Mod: yours differs from the world creator's copy"
+        },
+        {
+          "name": "Missing Mod",
+          "yours": "not installed",
+          "worlds": null,
+          "key": null,
+          "target": null,
+          "text": "Missing Mod: not installed"
+        }
+      ],
+      "summary": "Modded needs mods that are missing or in another version here: Other Mod (get it from its author), Missing Mod (get it from its author).",
+      "log": "mod check of Modded: 2 differ: Other Mod: yours differs from the world creator's copy, from its author only; Missing Mod: not installed, from its author only",
+      "installed_versions": [
+        [
+          "levelcap",
+          null
+        ],
+        [
+          "pack",
+          null
+        ],
+        [
+          "hero",
+          null
+        ]
+      ],
+      "served": [
+        [
+          "othermod",
+          "",
+          "",
+          [
+
+          ]
+        ]
+      ]
+    },
+    {
+      "mods": "!Other Mod; !Missing Mod",
+      "hashes": "",
+      "catalog": true,
+      "installed": [
+        [
+          "othermod",
+          "Patch/Other_Mod.rb"
+        ]
+      ],
+      "files": {
+        "Patch/Other_Mod.rb": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "rows": [
+        {
+          "name": "Missing Mod",
+          "yours": "not installed",
+          "worlds": null,
+          "key": null,
+          "target": null,
+          "text": "Missing Mod: not installed"
+        }
+      ],
+      "summary": "Modded needs mods that are missing or in another version here: Missing Mod (get it from its author).",
+      "log": "mod check of Modded: 1 differ: Other Mod: installed, not compared (outside the catalog, no creator's hash); Missing Mod: not installed, from its author only",
+      "installed_versions": [
+        [
+          "levelcap",
+          null
+        ],
+        [
+          "pack",
+          null
+        ],
+        [
+          "hero",
+          null
+        ]
+      ],
+      "served": [
+        [
+          "othermod",
+          "",
+          "",
+          [
+
+          ]
+        ]
+      ]
+    },
+    {
+      "mods": "!Other Mod",
+      "hashes": "other_mod=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee;broken;=x;Missing=",
+      "catalog": true,
+      "installed": [
+        [
+          "othermod",
+          "Patch/Other_Mod.rb"
+        ]
+      ],
+      "files": {
+        "Patch/Other_Mod.rb": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "rows": [
+
+      ],
+      "summary": null,
+      "log": "mod check of Modded: all match: Other Mod: matches the creator's copy",
+      "installed_versions": [
+        [
+          "levelcap",
+          null
+        ],
+        [
+          "pack",
+          null
+        ],
+        [
+          "hero",
+          null
+        ]
+      ],
+      "served": [
+        [
+          "othermod",
+          "",
+          "",
+          [
+
+          ]
+        ]
+      ]
+    },
+    {
+      "mods": "!Level Cap; !Missing Mod",
+      "hashes": "",
+      "catalog": false,
+      "installed": [
+        [
+          "levelcap",
+          "Patch/Mods/Level Cap.rb"
+        ]
+      ],
+      "files": {
+        "Patch/Mods/Level Cap.rb": "aa"
+      },
+      "rows": [
+        {
+          "name": "Missing Mod",
+          "yours": "not installed",
+          "worlds": null,
+          "key": null,
+          "target": null,
+          "text": "Missing Mod: not installed"
+        }
+      ],
+      "summary": "Modded needs mods that are missing or in another version here: Missing Mod (get it from its author).",
+      "log": "mod check of Modded: 1 differ (catalog unknown): Level Cap: installed, not compared (outside the catalog, no creator's hash); Missing Mod: not installed, from its author only",
+      "installed_versions": [
+
+      ],
+      "served": [
+        [
+          "levelcap",
+          "",
+          "",
+          [
+
+          ]
+        ]
+      ]
+    },
+    {
+      "mods": "!Level Cap; !Missing Mod",
+      "hashes": "",
+      "catalog": true,
+      "installed": null,
+      "files": {
+        "Patch/Mods/Level Cap.rb": "aa"
+      },
+      "rows": [
+        {
+          "name": "Level Cap",
+          "yours": "not installed",
+          "worlds": "1.4.0",
+          "key": "levelcap",
+          "target": "Patch/Level_Cap.rb",
+          "text": "Level Cap: not installed, the world's 1.4.0"
+        }
+      ],
+      "summary": "Modded needs mods that are missing or in another version here: Level Cap. Download them and restart?",
+      "log": "mod check of Modded: 1 differ: Level Cap: not installed, the world's 1.4.0, downloadable; Missing Mod: installed, not compared (outside the catalog, no creator's hash)",
+      "installed_versions": [
+        [
+          "levelcap",
+          null
+        ],
+        [
+          "pack",
+          null
+        ],
+        [
+          "hero",
+          null
+        ]
+      ],
+      "served": [
+        [
+          "levelcap",
+          "",
+          "not installed",
+          [
+
+          ]
+        ],
+        [
+          "missingmod",
+          "",
+          "",
+          [
+
+          ]
+        ]
+      ]
+    },
+    {
+      "mods": "?Data; Free; !Level Cap; !Hero",
+      "hashes": "",
+      "catalog": true,
+      "installed": [
+        [
+          "levelcap",
+          "Patch/Mods/Level Cap.rb"
+        ]
+      ],
+      "files": {
+        "Patch/Mods/Level Cap.rb": "aa",
+        "Patch/Hero.rb": "h1",
+        "Patch/Hero/a.luka": "h3"
+      },
+      "rows": [
+        {
+          "name": "Level Cap",
+          "yours": "1.3.5",
+          "worlds": "1.4.0",
+          "key": "levelcap",
+          "target": "Patch/Mods/Level Cap.rb",
+          "text": "Level Cap: yours 1.3.5, the world's 1.4.0"
+        },
+        {
+          "name": "Hero",
+          "yours": "1.0",
+          "worlds": "1.1",
+          "key": "hero",
+          "target": null,
+          "text": "Hero: yours 1.0, the world's 1.1"
+        }
+      ],
+      "summary": "Modded needs mods that are missing or in another version here: Level Cap, Hero. Download them and restart?",
+      "log": "mod check of Modded: 2 differ: Level Cap: yours 1.3.5, the world's 1.4.0, downloadable; Hero: yours 1.0, the world's 1.1, downloadable",
+      "installed_versions": [
+        [
+          "levelcap",
+          "1.3.5"
+        ],
+        [
+          "pack",
+          null
+        ],
+        [
+          "hero",
+          "1.0"
+        ]
+      ],
+      "served": [
+        [
+          "levelcap",
+          "",
+          "1.3.5",
+          [
+
+          ]
+        ]
+      ]
+    },
+    {
+      "mods": "Free Mod",
+      "hashes": "",
+      "catalog": true,
+      "installed": [
+
+      ],
+      "files": {
+      },
+      "rows": [
+
+      ],
+      "summary": null,
+      "log": "mod check of Modded: no required mods (mods \"Free Mod\")",
+      "installed_versions": [
+        [
+          "levelcap",
+          null
+        ],
+        [
+          "pack",
+          null
+        ],
+        [
+          "hero",
+          null
+        ]
+      ],
+      "served": [
+
+      ]
+    }
+  ],
+  "creator": [
+    {
+      "mods": "!Level Cap; !Other Mod; Free Mod; !Missing Mod",
+      "catalog": true,
+      "installed": [
+        [
+          "othermod",
+          "Patch/Other_Mod.rb"
+        ],
+        [
+          "levelcap",
+          "Patch/Mods/Level Cap.rb"
+        ],
+        [
+          "mmmm",
+          "Patch/MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM.rb"
+        ],
+        [
+          "ab",
+          "Patch/a=b.rb"
+        ]
+      ],
+      "files": {
+        "Patch/Other_Mod.rb": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "Patch/Mods/Level Cap.rb": "aa"
+      },
+      "hashes": "Other Mod=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    {
+      "mods": "!Other Mod; !MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM; !a=b",
+      "catalog": true,
+      "installed": [
+        [
+          "othermod",
+          "Patch/Other_Mod.rb"
+        ],
+        [
+          "levelcap",
+          "Patch/Mods/Level Cap.rb"
+        ],
+        [
+          "mmmm",
+          "Patch/MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM.rb"
+        ],
+        [
+          "ab",
+          "Patch/a=b.rb"
+        ]
+      ],
+      "files": {
+        "Patch/Other_Mod.rb": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "Patch/MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM.rb": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "Patch/a=b.rb": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "hashes": "Other Mod=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    {
+      "mods": "!Level Cap; !Other Mod",
+      "catalog": false,
+      "installed": [
+        [
+          "othermod",
+          "Patch/Other_Mod.rb"
+        ],
+        [
+          "levelcap",
+          "Patch/Mods/Level Cap.rb"
+        ],
+        [
+          "mmmm",
+          "Patch/MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM.rb"
+        ],
+        [
+          "ab",
+          "Patch/a=b.rb"
+        ]
+      ],
+      "files": {
+        "Patch/Other_Mod.rb": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "Patch/Mods/Level Cap.rb": "aa"
+      },
+      "hashes": "Level Cap=aa;Other Mod=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    {
+      "mods": "!Other Mod",
+      "catalog": true,
+      "installed": [
+        [
+          "othermod",
+          "Patch/Other_Mod.rb"
+        ],
+        [
+          "levelcap",
+          "Patch/Mods/Level Cap.rb"
+        ],
+        [
+          "mmmm",
+          "Patch/MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM.rb"
+        ],
+        [
+          "ab",
+          "Patch/a=b.rb"
+        ]
+      ],
+      "files": {
+      },
+      "hashes": ""
+    }
+  ],
+  "fits": [
+    {
+      "pairs": [
+        "A=1111111111111111111111111111111111111111111111111111111111111111",
+        "B=2222222222222222222222222222222222222222222222222222222222222222",
+        "C=3"
+      ],
+      "most": 70,
+      "fitted": "A=1111111111111111111111111111111111111111111111111111111111111111;C=3"
+    },
+    {
+      "pairs": [
+        "É=1111111111111111111111111111111111111111111111111111111111111111",
+        "B=2"
+      ],
+      "most": 68,
+      "fitted": "É=1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "pairs": [
+
+      ],
+      "most": 10,
+      "fitted": ""
+    }
+  ]
+}

@@ -4,7 +4,9 @@
 //  Changelog:
 //      Paulinchen  2026-10-24: Covered mp_mod_browser_details
 //                            - Covered the Mods screen's exports
-//      Paulinchen  2026-10-23: Covered the mp_memory_usage export
+//      Paulinchen  2026-10-23: Dropped the checks of the directory exports the world screen no longer calls
+//                            - Dropped the parked mods' exports, whose work the bridge does
+//                            - Covered the mp_memory_usage export
 //      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number and no export past 16 arguments
 //      Paulinchen  2026-10-13: Expected the raid bosses setting at the end of mp_dir_create and mp_dir_edit
 //                            - Expected the squad settings at the end of mp_dir_create and mp_dir_edit
@@ -94,10 +96,9 @@ public sealed unsafe class ExportsTests
     }
 
     /// <summary>
-    /// Asserts that the parked mods' functions, the world exports that take whether a world turns
-    /// other mods off, mp_dev_build and mp_memory_usage are exported under the names the game script calls, each
-    /// taking what GameScript/Multiplayer.rb names for it, and that no export takes more than the 16
-    /// arguments the game's Win32API loads.
+    /// Asserts that mp_dev_build and mp_memory_usage are exported under the names the game script
+    /// calls, each taking what GameScript/Multiplayer.rb names for it, and that no export takes more
+    /// than the 16 arguments the game's Win32API loads.
     /// </summary>
     [Fact]
     public void ParkingExports_AreRegistered()
@@ -107,14 +108,6 @@ public sealed unsafe class ExportsTests
             .Where(export => export.Attribute?.EntryPoint != null)
             .ToDictionary(export => export.Attribute!.EntryPoint!, export => string.Concat(export.Method.GetParameters().Select(parameter => parameter.ParameterType == typeof(int) ? 'l' : 'p')));
 
-        Assert.Equal("pp", exported["mp_mods_park"]);
-        Assert.Equal("l", exported["mp_mods_restore"]);
-        Assert.Equal("pl", exported["mp_mods_parked"]);
-        Assert.Equal("pl", exported["mp_mods_scripts"]);
-        Assert.Equal("pl", exported["mp_mods_restart_parked"]);
-        Assert.Equal("p", exported["mp_mods_recover"]);
-        Assert.Equal("ppllppppppppllpl", exported["mp_dir_create"]);
-        Assert.Equal("plppplllllpl", exported["mp_dir_edit"]);
         Assert.Equal(string.Empty, exported["mp_dev_build"]);
         Assert.Equal("pl", exported["mp_memory_usage"]);
         Assert.Empty(exported.Where(export => export.Value.Length > 16).Select(export => export.Key));

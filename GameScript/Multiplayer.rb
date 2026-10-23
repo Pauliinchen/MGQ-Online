@@ -9,7 +9,13 @@
 #                            - Loaded world_gates.rbx after world_difficulty.rbx
 #                            - Loaded ui_mod_browser.rbx after ui_bug_report.rbx and named the mp_mod_browser_* exports
 #                            - Stopped loading the removed battles_pvp_lobby.rbx
-#      Paulinchen  2026-10-23: Dropped Link.take_typed and mp_take_typed, since the text box in C# takes what is typed
+#      Paulinchen  2026-10-23: Dropped the directory exports of the requests and actions the DLL now sends itself, and mp_copy_text
+#                            - Dropped the directory exports of the requests and actions the DLL now sends itself
+#                            - Dropped the mp_mods_* exports of parked mods, which the parking topics replace
+#                            - Dropped mp_mod_hash, mp_mods_install and mp_mods_options, which world_mods.rbx reaches through the bridge
+#                            - Dropped mp_world_id and mp_world_directory_id, whose folder ids and invites the DLL keeps
+#                            - Read the DLL's texts as text, which the bridge takes
+#                            - Dropped Link.take_typed and mp_take_typed, since the text box in C# takes what is typed
 #                            - Dropped mp_world_say, mp_world_receive and mp_world_status, since the world room goes through the bridge
 #                            - Loaded story_keys.rbx after story_state.rbx, and no longer world_affection.rbx, whose affection the story tracks keep
 #                            - Dropped the Raid World story's write, state, checkpoints and route lock, which play on the story tracks
@@ -727,7 +733,6 @@ module MGQ_Multiplayer
       # The keyboard, the clipboard and the mouse wheel.
       'mp_typing' => 'l',
       'mp_copy_code' => 'v',
-      'mp_copy_text' => 'p',
       'mp_mouse_wheel' => 'v',
 
       # The PvP connection.
@@ -744,33 +749,13 @@ module MGQ_Multiplayer
       # The world directory.
       'mp_dir_watch' => 'p',
       'mp_dir_refresh' => 'v',
-      'mp_dir_find' => 'p',
       'mp_dir_open' => 'p',
-      'mp_dir_read' => 'p',
       'mp_dir_list' => READ_ARGUMENTS,
-      'mp_dir_create' => 'ppllppppppppllpl',
-      'mp_dir_unlock' => 'pp',
-      'mp_dir_unlock_code' => 'p',
-      'mp_dir_edit' => 'plppplllllpl',
-      'mp_dir_set_settings' => 'pp',
-      'mp_dir_set_data' => 'pp',
-      'mp_dir_delete' => 'p',
-      'mp_dir_ban' => 'pp',
-      'mp_dir_action' => READ_ARGUMENTS,
-      'mp_dir_clear' => 'v',
-      'mp_dir_fetch_start' => 'pp',
 
       # The world's room.
-      'mp_world_id' => 'ppl',
-      'mp_world_directory_id' => 'ppl',
       'mp_world_open' => 'p',
       'mp_world_close' => 'v',
       'mp_world_send' => 'lp',
-
-      # The mod catalog.
-      'mp_mod_hash' => 'ppl',
-      'mp_mods_install' => 'p',
-      'mp_mods_options' => 'ppp',
 
       # The Mods screen of the title screen.
       'mp_mod_browser_refresh' => 'v',
@@ -780,12 +765,6 @@ module MGQ_Multiplayer
       'mp_mod_browser_details' => 'p',
 
       # The mods a world that turns other mods off does not name, parked outside Patch.
-      'mp_mods_park' => 'pp',
-      'mp_mods_restore' => 'l',
-      'mp_mods_parked' => READ_ARGUMENTS,
-      'mp_mods_scripts' => READ_ARGUMENTS,
-      'mp_mods_restart_parked' => 'pl',
-      'mp_mods_recover' => 'p',
 
       # Trades.
       'mp_trade_commit' => 'pppp',
@@ -976,8 +955,9 @@ module MGQ_Multiplayer
         length = function(name).call(buffer, buffer.size)
       end
 
-      # The DLL wrote bytes past Ruby's back, so only a binary string counts them right.
-      length > 0 ? buffer.force_encoding("ASCII-8BIT")[0, length] : ""
+      # The DLL wrote bytes past Ruby's back, so only a binary string counts them right; they are its
+      # UTF-8 text, which the bridge takes only as text.
+      length > 0 ? buffer.force_encoding("ASCII-8BIT")[0, length].force_encoding("UTF-8") : ""
     end
 
     # Loads an export of the DLL, with the arguments EXPORTS names for it.

@@ -3,7 +3,18 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-28: Closed the world's story before its room, so a world left for the title screen keeps its last writes
-#      Paulinchen  2026-10-23: Asked the DLL for the seats, difficulties and squad rules a world may set, and for the seats its code tells
+#                            - Dropped the invite as the title screen opens the world screen for it
+#      Paulinchen  2026-10-23: Dropped the list's refresh, the favourites, the hidden worlds added and removed, the deleted saves and the clipboard copy the DLL's steps do now
+#                            - Dropped the favourites, the hidden worlds added and removed, the deleted saves and the clipboard copy the DLL's steps do now
+#                            - Dropped the directory requests and tickets the DLL's world screen requests left without a caller
+#                            - Left opening a world's lock, reading its mods, its data update and the Discord invite's code to the DLL's steps into a world
+#                            - Took the world screen's entries and the mod picker's labels and colours from the DLL's model
+#                            - Dropped the list of the scripts every player has, which the DLL keeps
+#                            - Left the directory's action tickets to the DLL
+#                            - Left the world screen's forms to the DLL, keeping a form of this game alone for the story's choices and the bug report
+#                            - Left the worlds on this PC, the world screen's entries, the favourites, the hidden worlds added, the Discord invite, the game data compared and the mod picker to the DLL
+#                            - Read a world's mods text through the DLL and took what changed in the worlds once a frame
+#                            - Asked the DLL for the seats, difficulties and squad rules a world may set, and for the seats its code tells
 #                            - Asked the DLL for the mod keys and the scripts in Patch
 #                            - Offered the update under Wine or Proton too, and named the release to install by hand with --version
 #                            - Dropped the fallbacks for list fields the DLL always writes
@@ -138,33 +149,11 @@ module MGQ_MpWorld
   # The folder the game loads its mods' scripts from.
   PATCH_DIR = "Patch"
 
-  # What the settings of the favourite worlds in Player.ini start with, before a world's id.
-  FAVOURITE_SETTING = "favourite."
-
-  # What the settings of the hidden worlds the player added to their list by their ids start with
-  # in Player.ini, before a world's id.
-  ADDED_SETTING = "added."
-
-  # The files in the mod folder that kept the favourites and the hidden worlds added before
-  # Player.ini did, with what their settings start with there.
-  OLD_LIST_FILES = { "Favourites.ini" => FAVOURITE_SETTING, "Added.ini" => ADDED_SETTING }
-
-  # Longest name of a player or a world.
-  MAX_NAME_CHARS = 16
-
-  # Longest password.
-  MAX_PASSWORD_CHARS = 20
-
-  # Longest description of a world.
-  MAX_DESCRIPTION_CHARS = 1000
 
   # Longest text that names the mods a world needs, as long as the relay takes, far above any real
   # list.
   MAX_MODS_CHARS = 16_000
 
-  # Scripts every player of a world has, which the mod picker leaves out: the mod loader, this mod
-  # and Mod Config Remake, which ships with it. Compared by mod_key.
-  SHARED_SCRIPTS = %w[patch multiplayer 0modconfigremake]
 
   # The topic that lists the scripts in the Patch folder with their keys.
   INSTALLED_TOPIC = "mods.installed"
@@ -172,15 +161,11 @@ module MGQ_MpWorld
   # The topic that makes the keys of mods' names.
   KEYS_TOPIC = "mods.keys"
 
-  # Lines of the description the create form shows at once.
-  DESCRIPTION_LINES = 4
+  # The topic that reads a world's mods as written.
+  TEXT_TOPIC = "mods.text"
 
-  # Lines of the description the create form shows at once for a Raid World, whose shared save takes
-  # a row of its own.
-  RAID_DESCRIPTION_LINES = 2
-
-  # A world's id, which joins a hidden world.
-  WORLD_ID = /\A[0-9a-f]{32}\z/
+  # Mods texts mods_text keeps read before it forgets them all.
+  MODS_TEXTS_KEPT = 256
 
   # Colour of the featured worlds, which the relay's admins make, the style's gold.
   FEATURED_COLOR = MGQ_MpUi::Style::GOLD
@@ -196,18 +181,12 @@ module MGQ_MpWorld
   # name it.
   RAID = "raid"
 
-  # A world's types, in the order the new world's form offers them.
-  TYPES = [CLASSIC, RAID]
-
   # How a Raid World shares companions, as the directory and world.ini name it, in the order the new
   # world's form offers it.
   SHARING = ["off", "story", "all"]
 
   # Each way of sharing companions of SHARING, as companion_sharing tells it.
   SHARING_SYMBOLS = { "off" => :off, "story" => :story, "all" => :all }
-
-  # What the new world's form and the details call each way of sharing companions.
-  SHARING_NAMES = ["Off", "Story companions", "Story + battle recruits"]
 
   # The topic that hands out the seats, difficulties, Formation sizes, Frontlines and squad rules a
   # world may set, and their defaults.
@@ -312,8 +291,7 @@ module MGQ_MpWorld
   def self.take_difficulty(value)
     return false unless raid? && difficulties.include?(value)
 
-    @world.difficulty = value
-    @world.write
+    @world.change("difficulty" => value)
     true
   end
 
@@ -430,8 +408,7 @@ module MGQ_MpWorld
     valid = squad.is_a?(Hash) ? squad_of(squad_text(squad)) : nil
     return false unless raid? && valid
 
-    @world.squad = valid
-    @world.write
+    @world.change("squad" => squad_plain(valid))
     true
   end
 
@@ -451,9 +428,19 @@ module MGQ_MpWorld
   # @param squad [Hash] The rules, as squad tells them.
   # @return [String] The text, such as "0 4 1 1"; empty for rules out of range.
   def self.squad_text(squad)
-    request = { "luka" => squad[:luka] ? true : false }
-    [:formation, :front, :raid_front].each { |key| request[SQUAD_NAMES[key]] = squad[key].to_i }
-    MGQ_Multiplayer::Bridge.call(SQUAD_WRITE_TOPIC, request) || ""
+    MGQ_Multiplayer::Bridge.call(SQUAD_WRITE_TOPIC, squad_plain(squad)) || ""
+  end
+
+  # Turns squad rules the scripts keep into those the DLL takes.
+  #
+  # @param squad [Hash, nil] The rules, as squad tells them.
+  # @return [Hash, nil] The rules by their names in SQUAD_NAMES; nil for none.
+  def self.squad_plain(squad)
+    return nil unless squad
+
+    plain = { "luka" => squad[:luka] ? true : false }
+    [:formation, :front, :raid_front].each { |key| plain[SQUAD_NAMES[key]] = squad[key].to_i }
+    plain
   end
 
   # Turns squad rules as the DLL tells them into those the scripts keep.
@@ -502,8 +489,7 @@ module MGQ_MpWorld
   def self.take_raid_bosses(on)
     return false unless open? && !raid?
 
-    @world.raid_bosses = on ? true : false
-    @world.write
+    @world.change("raid_bosses" => on ? true : false)
     true
   end
 
@@ -747,6 +733,64 @@ module MGQ_MpWorld
     true
   end
 
+  # What changed in the worlds' models, as the DLL tells it once a frame (WorldChanges in C#): one
+  # Integer of bits, so a script asks for rows, details or steps only after a change.
+  module Changes
+    # The event the bits come with.
+    TOPIC = "worlds.changed"
+
+    # The worlds on this PC or in the directory's list changed.
+    LIST = 1
+
+    # What a world's details show changed.
+    DETAILS = 2
+
+    # The mod catalog or the scripts in Patch changed.
+    MODS = 4
+
+    # The shared mod settings have something to apply, lock or tell.
+    SETTINGS = 8
+
+    # Turning other mods off has something to show or do.
+    PARKING = 16
+
+    # The world screen has a step to play.
+    SCREEN = 32
+
+    # The World overview's model changed.
+    OVERVIEW = 64
+
+    # Takes whether any of some bits changed since they were last taken; the first look at any bit
+    # answers true, since nothing was known before it.
+    #
+    # @param bits [Integer] The bits, such as LIST | DETAILS.
+    # @return [Boolean] Whether any of them changed.
+    def self.take?(bits)
+      listen
+      @seen ||= 0
+      changed = (@bits & bits) != 0 || (@seen & bits) != bits
+      @seen |= bits
+      @bits &= ~bits
+      changed
+    end
+
+    # Takes the bits of a drain.
+    #
+    # @param bits [Integer] The bits that changed.
+    def self.note(bits)
+      @bits = (@bits || 0) | bits.to_i
+    end
+
+    # Takes the DLL's events from the first look on.
+    def self.listen
+      return if @listening
+
+      @listening = true
+      @bits ||= 0
+      MGQ_Multiplayer::Bridge.on(TOPIC) { |bits| note(bits) }
+    end
+  end
+
   # A message box that offers the update once the player picks Multiplayer while another release
   # is the one to play, a newer one or a step back the relay asks for: the DLL starts the helper's
   # update, which waits for the game to close, installs that release and starts the game again in
@@ -870,30 +914,6 @@ module MGQ_MpWorld
     end
   end
 
-  # Builds what the world screen lists: the directory's worlds, and the worlds on this PC the
-  # directory no longer has, those it still has first, Raid Worlds first among them, then favourites,
-  # then the featured ones, then those played last, then by name.
-  #
-  # @param listed [Array<Directory::ListedWorld>] The directory's worlds.
-  # @param complete [Boolean] Whether the directory's list arrived, so a world missing from it is gone.
-  # @return [Array<Entry>] The entries.
-  def self.entries(listed, complete)
-    local = World.all
-    by_directory_id = {}
-    local.each { |world| by_directory_id[world.directory_id] = world if world.directory_id }
-    favourites = Favourites.all
-
-    entries = listed.map { |world| Entry.new(world.id, world.name, world, by_directory_id[world.id], favourites.include?(world.id), false) }
-    listed_ids = listed.map { |world| world.id }
-    local.each do |world|
-      next if world.directory_id && listed_ids.include?(world.directory_id)
-
-      entries.push(Entry.new(world.directory_id, world.name, nil, world, favourites.include?(world.directory_id), complete || !world.directory_id))
-    end
-
-    entries.sort_by { |entry| [entry.gone ? 1 : 0, entry.raid? ? 0 : 1, entry.favourite ? 0 : 1, entry.featured? ? 0 : 1, -(entry.local ? entry.local.played_at.to_i : 0), entry.name.downcase] }
-  end
-
   # A world as the world screen lists it: the directory's, this PC's folder of it, or both.
   #
   # @!attribute id [String, nil] The directory's id of the world, nil for a world on this PC whose world.ini names none.
@@ -902,7 +922,9 @@ module MGQ_MpWorld
   # @!attribute local [World, nil] The world's folder on this PC, nil before the player entered it.
   # @!attribute favourite [Boolean] Whether the player marked it as a favourite.
   # @!attribute gone [Boolean] Whether the directory no longer has it, as opposed to its list not having arrived.
-  Entry = Struct.new(:id, :name, :listed, :local, :favourite, :gone) do
+  # @!attribute key [String, nil] Its row's key in the DLL's model of the world screen (WorldScreen), which names its details.
+  # @!attribute row [Hash, nil] Its row as that model draws it: "text", "count", "color" and "dim".
+  Entry = Struct.new(:id, :name, :listed, :local, :favourite, :gone, :key, :row) do
     # Tells whether the directory lists the world as one of the relay's own, which an admin made.
     #
     # @return [Boolean] Whether it does.
@@ -936,14 +958,6 @@ module MGQ_MpWorld
       !local.nil?
     end
 
-    # Tells everything the world screen shows of the world, by value. Every reading of the list
-    # makes new entries, so only this tells a changed world from the same one read again.
-    #
-    # @return [Array] What it shows.
-    def signature
-      [id, name, listed, favourite, gone, local && [local.name, local.directory_id, local.played_at.to_i]]
-    end
-
     # Lists what of the player's game data differs from that of the world's creator.
     #
     # @return [Array<String>, nil] The parts that differ, none when the games match, nil when the directory does not tell.
@@ -952,29 +966,8 @@ module MGQ_MpWorld
     end
   end
 
-  # Patch/Multiplayer/Multiplayer.dll's world functions: the folder id of a world code, and the
-  # connection to the open world's room.
+  # Patch/Multiplayer/Multiplayer.dll's world functions: the connection to the open world's room.
   module Link
-    # Names a world's folder by its code.
-    #
-    # @param code [String] The world code.
-    # @return [String, nil] The folder's id, nil when the text is no world code.
-    def self.id_of(code)
-      buffer = "\0" * 64
-      length = MGQ_Multiplayer::Link.function('mp_world_id').call(code + "\0", buffer, buffer.size)
-      length > 0 ? buffer[0, length] : nil
-    end
-
-    # Tells the directory's id of a world by its code.
-    #
-    # @param code [String] The world code.
-    # @return [String, nil] The id, nil when the text is no world code.
-    def self.directory_id(code)
-      buffer = "\0" * 64
-      length = MGQ_Multiplayer::Link.function('mp_world_directory_id').call(code + "\0", buffer, buffer.size)
-      length > 0 ? buffer[0, length] : nil
-    end
-
     # Takes a seat in a world's room, again whenever the connection breaks, until the world is closed.
     #
     # @param code [String] The world code.
@@ -988,13 +981,6 @@ module MGQ_MpWorld
       MGQ_Multiplayer::Link.function('mp_world_close').call
     end
 
-    # Puts a text on the clipboard.
-    #
-    # @param text [String] The text.
-    # @return [Boolean] Whether the clipboard holds it.
-    def self.copy(text)
-      MGQ_Multiplayer::Link.function('mp_copy_text').call(text + "\0") == 1
-    end
   end
 
   # Discord invites into a world: the Discord mod hands over the world code an invite carries, and
@@ -1003,49 +989,52 @@ module MGQ_MpWorld
     # What the notification box says when an invite comes in during a game.
     LATER_TEXT = "Discord invite taken: the title screen opens the world."
 
-    # Takes an invite the player accepted in Discord, if it is into a world.
+    # The topic that takes an invite, which the DLL keeps.
+    RECEIVE_TOPIC = "worlds.invite"
+
+    # The topic that hands the invite taken last out, once.
+    TAKE_TOPIC = "worlds.invite_take"
+
+    # Takes an invite the player accepted in Discord, if it is into a world; one into the world open
+    # already is dropped.
     #
     # @param code [String] The invite's join secret.
     # @return [Boolean] Whether it was into a world, which leaves it to the world screen.
     def self.receive(code)
-      id = Link.directory_id(code)
-      return false unless id
+      open = MGQ_MpWorld.open? ? MGQ_MpWorld.world.directory_id : nil
+      taken = MGQ_Multiplayer::Bridge.call(RECEIVE_TOPIC, "code" => code.to_s, "open" => open)
+      return false unless taken.is_a?(Hash)
+      return true unless taken["taken"]
 
-      if MGQ_MpWorld.open? && MGQ_MpWorld.world.directory_id == id
-        MGQ_MpWorld.log("ignored an invite into world #{MGQ_MpWorld.short(id)}, which is open already")
-      else
-        @pending = [id, code]
-        MGQ_MpWorld.log("took an invite into world #{MGQ_MpWorld.short(id)}")
-        MGQ_MpNotices.message(:world_invite, LATER_TEXT) if defined?(MGQ_MpNotices) && !SceneManager.scene.is_a?(Scene_Title)
-      end
+      @waiting = taken["world"]
+      MGQ_MpNotices.message(:world_invite, LATER_TEXT) if defined?(MGQ_MpNotices) && !SceneManager.scene.is_a?(Scene_Title)
       true
     end
 
-    # Opens the world screen for the invite taken last, or offers the update in its place once a
-    # newer release is out. Called by the title screen every frame while nothing else runs.
+    # Opens the world screen for the invite taken last, which the DLL hands over as the screen
+    # opens, or offers the update in its place once a newer release is out. Called by the title
+    # screen every frame while nothing else runs.
     #
     # @param scene [Scene_Title] The title screen.
     def self.on_title_update(scene)
-      return unless @pending
+      return unless @waiting
 
       if MGQ_Multiplayer.available? && MGQ_Multiplayer.outdated?
-        MGQ_MpWorld.log("not opening the world screen for the invite into world #{MGQ_MpWorld.short(@pending[0])}: the mod is outdated")
-        @pending = nil
+        MGQ_MpWorld.log("not opening the world screen for the invite into world #{MGQ_MpWorld.short(@waiting)}: the mod is outdated")
+        drop
         return MGQ_MpWorld.offer_update(scene)
       end
       return unless MGQ_MpWorld.available?
 
-      MGQ_MpWorld.log("opening the world screen for the invite into world #{MGQ_MpWorld.short(@pending[0])}")
+      MGQ_MpWorld.log("opening the world screen for the invite into world #{MGQ_MpWorld.short(@waiting)}")
+      @waiting = nil
       SceneManager.call(Scene_MpWorlds)
     end
 
-    # Takes the invite for the world screen, once.
-    #
-    # @return [Array, nil] The world's directory id and code, nil without an invite.
-    def self.take
-      pending = @pending
-      @pending = nil
-      pending
+    # Drops the invite once the world screen will not open for it, which the DLL then forgets too.
+    def self.drop
+      @waiting = nil
+      MGQ_Multiplayer::Bridge.call(TAKE_TOPIC)
     end
   end
 
@@ -1055,9 +1044,6 @@ module MGQ_MpWorld
     # The fingerprint's format, which both games must share to be compared.
     FORMAT = 1
 
-    # What the fingerprint covers, in its order, as a difference is called.
-    PARTS = ["actors", "classes", "skills", "items", "weapons", "armors", "enemies", "states", "troops", "common events", "maps"]
-
     # Most parts a text names before it counts the rest.
     NAMED_PARTS = 4
 
@@ -1065,6 +1051,15 @@ module MGQ_MpWorld
     # Admin tool reads an installation's game data: its "fingerprint" and when it was "written", in
     # seconds since 1970.
     FILE = "#{MGQ_Multiplayer::MOD_DIR}\\GameData.ini"
+
+    # The topic that keeps this game's fingerprint in the DLL.
+    FINGERPRINT_TOPIC = "worlds.game_data"
+
+    # The topic that compares it with another game's.
+    DIFFERING_TOPIC = "worlds.data_differing"
+
+    # The topic that names parts in a sentence.
+    TEXT_TOPIC = "worlds.data_text"
 
     # Finds the fingerprint of this game's data, once per session.
     #
@@ -1129,33 +1124,39 @@ module MGQ_MpWorld
       (0...entries.size).select { |id| entries[id] && yield(entries[id]) }
     end
 
-    # Lists what of this game's data differs from another game's.
+    # Lists what of this game's data differs from another game's, through the DLL (GameDataCompare
+    # in MGQOnline.Game), each fingerprint asked once.
     #
     # @param other [String, nil] The other game's fingerprint.
     # @return [Array<String>, nil] The parts that differ, none when the games match, nil when they cannot be compared.
     def self.differing(other)
       return nil if other.to_s.empty?
 
-      format, mine = fingerprint.split(":", 2)
-      other_format, theirs = other.to_s.split(":", 2)
-      return nil unless mine && theirs && format == other_format
+      hand_fingerprint
+      key = other.to_s
+      return @differing[key] if @differing.key?(key)
 
-      mine = mine.split(".")
-      theirs = theirs.split(".")
-      return nil unless mine.size == PARTS.size && theirs.size == PARTS.size
-
-      (0...PARTS.size).select { |index| mine[index] != theirs[index] }.map { |index| PARTS[index] }
+      @differing[key] = MGQ_Multiplayer::Bridge.call(DIFFERING_TOPIC, key)
     end
 
-    # Names parts in a sentence, the first few by name.
+    # Hands this game's fingerprint to the DLL, once per session, and forgets the comparisons made
+    # with another.
+    def self.hand_fingerprint
+      mine = fingerprint
+      return if @handed == mine
+
+      @handed = mine
+      @differing = {}
+      MGQ_Multiplayer::Bridge.call(FINGERPRINT_TOPIC, mine)
+    end
+
+    # Names parts in a sentence, the first few by name, as the DLL writes it.
     #
     # @param parts [Array<String>] The parts.
     # @param named [Integer] Most parts named before the rest is counted.
-    # @return [String] The text, such as "skills, items and 3 more".
+    # @return [String] The text, such as "skills, items and 3 more"; empty when the DLL did not answer.
     def self.text(parts, named = NAMED_PARTS)
-      return parts.join(", ") if parts.size <= named
-
-      "#{parts.first(named).join(', ')} and #{parts.size - named} more"
+      MGQ_Multiplayer::Bridge.call(TEXT_TOPIC, "parts" => parts, "named" => named) || ""
     end
   end
 
@@ -1211,18 +1212,6 @@ module MGQ_MpWorld
     # Bytes the DLL may write the list into at first. A larger list asks for a larger buffer.
     LIST_SIZE = 65_536
 
-    # The bits of mp_dir_create's options: the world is hidden, new players choose where to start,
-    # only games with the same data may enter.
-    HIDDEN_OPTION = 1
-    CHOOSE_OPTION = 2
-    STRICT_OPTION = 4
-
-    # Fetches the list again, with the hidden worlds the player added to it.
-    def self.refresh
-      MGQ_Multiplayer::Link.function('mp_dir_watch').call(Added.all.join(",") + "\0")
-      MGQ_Multiplayer::Link.function('mp_dir_refresh').call
-    end
-
     # Opens a world, whose mods, mod hashes and settings the list then carries: the DLL reads them on
     # a thread of its own whenever the list leaves them out, as the relay does for this version.
     #
@@ -1232,34 +1221,6 @@ module MGQ_MpWorld
 
       @opened = id
       MGQ_Multiplayer::Link.function('mp_dir_open').call(id.to_s + "\0")
-    end
-
-    # Opens a world and reads its mods, mod hashes and settings as an action, after which the list
-    # carries them.
-    #
-    # @param id [String] The world's id.
-    # @return [Boolean] Whether the action started.
-    def self.read(id)
-      @opened = id
-      started(MGQ_Multiplayer::Link.function('mp_dir_read').call(id + "\0") == 1, "read the mods of world #{MGQ_MpWorld.short(id)}")
-    end
-
-    # Looks a world up by its id alone; the action tells its name.
-    #
-    # @param id [String] The world's id.
-    # @return [Boolean] Whether the action started.
-    def self.find(id)
-      started(MGQ_Multiplayer::Link.function('mp_dir_find').call(id + "\0") == 1, "find world #{MGQ_MpWorld.short(id)}")
-    end
-
-    # Logs a request sent to the directory, or that it could not start.
-    #
-    # @param started [Boolean] Whether it started.
-    # @param what [String] The request, without secrets.
-    # @return [Boolean] started.
-    def self.started(started, what)
-      MGQ_MpWorld.log(started ? "directory request sent: #{what}" : "directory request could not start: #{what}")
-      started
     end
 
     # Reads the list as it stands.
@@ -1288,181 +1249,6 @@ module MGQ_MpWorld
       [state["state"] || "idle", state["error"], worlds, state["admin"] == "1"]
     end
 
-    # Makes a world, locked with its password, with the starting save new players get, if there is one.
-    #
-    # @param name [String] The world's name.
-    # @param password [String] The password, empty for none.
-    # @param seats [Integer] How many players it seats at once.
-    # @param hidden [Boolean] Whether the list leaves it out for everyone but its players and the relay's admins.
-    # @param choose [Boolean] Whether each new player chooses where to start.
-    # @param start [String] The starting save's files, see MGQ_MpSaveDistribution.text_of; empty for none.
-    # @param about [Hash] Whichever of :description, :mods, :data (the creator's game data), :strict (true when only games with the same data may enter), :mod_hashes, :settings,
-    #   :type (one of TYPES, CLASSIC when left out), :share (one of SHARING, "off" when left out), :difficulty (one of MGQ_MpWorld.difficulties, the default when left out),
-    #   :squad (the squad rules, see MGQ_MpWorld.squad, the default when left out), :raid_bosses (whether a Classic world fights raid bosses, false when left out) and
-    #   :other_mods_off (whether it turns off every mod it does not name, by its type when left out) apply;
-    #   a Raid World takes no player's choice, but may take a starting save.
-    # @return [Boolean] Whether the action started.
-    def self.create(name, password, seats, hidden, choose, start, about = {})
-      MGQ_Multiplayer::Player.share
-      type = about[:type] || CLASSIC
-      raid = type == RAID
-      share = raid ? about[:share] || SHARING[0] : SHARING[0]
-      difficulty = (raid && about[:difficulty]) || MGQ_MpWorld.default_difficulty
-      squad = raid ? MGQ_MpWorld.squad_text(about[:squad] || MGQ_MpWorld.default_squad) : ""
-      raid_bosses = !raid && about[:raid_bosses] ? true : false
-      other_mods_off = about[:other_mods_off].nil? ? raid : about[:other_mods_off]
-      choose = false if raid
-      options = (hidden ? HIDDEN_OPTION : 0) | (choose ? CHOOSE_OPTION : 0) | (about[:strict] ? STRICT_OPTION : 0)
-      sent = MGQ_Multiplayer::Link.function('mp_dir_create').call(name + "\0", password + "\0", seats, options, start + "\0",
-                                                                                  about[:description].to_s + "\0", about[:mods].to_s + "\0", about[:data].to_s + "\0",
-                                                                                  about[:mod_hashes].to_s + "\0", about[:settings].to_s + "\0", type + "\0", share + "\0", difficulty,
-                                                                                  other_mods_off ? 1 : 0, squad + "\0", raid ? -1 : (raid_bosses ? 1 : 0)) == 1
-      started(sent, "create #{name}")
-    end
-
-    # Opens a world's lock with its password; the action tells the world's name, its starting save,
-    # whether new players choose where to start, the mods it needs and which games may enter too, so
-    # a hidden world is joined by its id alone.
-    #
-    # @param id [String] The world's id.
-    # @param password [String] The password.
-    # @return [Boolean] Whether the action started.
-    def self.unlock(id, password)
-      sent = MGQ_Multiplayer::Link.function('mp_dir_unlock').call(id + "\0", password + "\0") == 1
-      started(sent, "unlock world #{MGQ_MpWorld.short(id)} #{password.empty? ? 'without a password' : 'with a password'}")
-    end
-
-    # Opens a world's lock with its world code instead of its password, as a Discord invite hands
-    # it over; the action tells the same as unlock.
-    #
-    # @param code [String] The world code.
-    # @return [Boolean] Whether the action started.
-    def self.unlock_code(code)
-      started(MGQ_Multiplayer::Link.function('mp_dir_unlock_code').call(code + "\0") == 1, "unlock a world with an invite")
-    end
-
-    # Changes a world's seats, description, mods, a Raid World's difficulty and squad rules, a
-    # Classic world's raid bosses and whether it turns other mods off, which its creator or an admin
-    # may, and for its creator the hashes of its required mods outside the catalog.
-    #
-    # @param id [String] The world.
-    # @param seats [Integer] How many players it seats at once.
-    # @param description [String] What it is about, empty for nothing.
-    # @param mods [String] The mods it needs, empty for none.
-    # @param mod_hashes [String, nil] The creator's mod hashes, nil to leave them, as an admin must.
-    # @param difficulty [Integer, nil] A Raid World's difficulty, one of MGQ_MpWorld.difficulties; nil to leave it, as for every Classic world.
-    # @param other_mods_off [Boolean, nil] Whether it turns off every mod it does not name; nil to leave it.
-    # @param squad [Hash, nil] A Raid World's squad rules, see MGQ_MpWorld.squad; nil to leave them, as for every Classic world.
-    # @param raid_bosses [Boolean, nil] Whether a Classic world fights raid bosses; nil to leave it, as for every Raid World.
-    # @return [Boolean] Whether the action started.
-    def self.edit(id, seats, description, mods, mod_hashes = nil, difficulty = nil, other_mods_off = nil, squad = nil, raid_bosses = nil)
-      MGQ_Multiplayer::Player.share
-      squad_text = squad ? MGQ_MpWorld.squad_text(squad) : ""
-      sent = MGQ_Multiplayer::Link.function('mp_dir_edit').call(id + "\0", seats, description + "\0", mods + "\0", mod_hashes.to_s + "\0", mod_hashes ? 1 : 0,
-                                                                                difficulty.to_i, difficulty ? 1 : 0, other_mods_off ? 1 : 0, other_mods_off.nil? ? 0 : 1, squad_text + "\0",
-                                                                                raid_bosses.nil? ? -1 : (raid_bosses ? 1 : 0)) == 1
-      started(sent, "edit world #{MGQ_MpWorld.short(id)}")
-    end
-
-    # Replaces a world's mod settings, which its creator or an admin may.
-    #
-    # @param id [String] The world.
-    # @param settings [String] "key=type:value" pairs separated by semicolons.
-    # @return [Boolean] Whether the action started.
-    def self.set_settings(id, settings)
-      MGQ_Multiplayer::Player.share
-      sent = MGQ_Multiplayer::Link.function('mp_dir_set_settings').call(id + "\0", settings + "\0") == 1
-      started(sent, "set the mod settings of world #{MGQ_MpWorld.short(id)}: \"#{settings}\"")
-    end
-
-    # Replaces a world's game data with this game's as it is now, which only its creator may.
-    #
-    # @param id [String] The world.
-    # @return [Boolean] Whether the action started; not while this game's data cannot be read.
-    def self.set_data(id)
-      MGQ_Multiplayer::Player.share
-      sent = MGQ_Multiplayer::Link.function('mp_dir_set_data').call(id + "\0", GameData.fingerprint + "\0") == 1
-      started(sent, "set the game data of world #{MGQ_MpWorld.short(id)} to #{GameData.fingerprint}")
-    end
-
-    # Deletes a world for everyone.
-    #
-    # @param id [String] The world.
-    # @return [Boolean] Whether the action started.
-    def self.delete(id)
-      MGQ_Multiplayer::Player.share
-      started(MGQ_Multiplayer::Link.function('mp_dir_delete').call(id + "\0") == 1, "delete world #{MGQ_MpWorld.short(id)}")
-    end
-
-    # Removes a player from a world and keeps them out.
-    #
-    # @param id [String] The world.
-    # @param target [String] The player's id.
-    # @return [Boolean] Whether the action started.
-    def self.ban(id, target)
-      MGQ_Multiplayer::Player.share
-      sent = MGQ_Multiplayer::Link.function('mp_dir_ban').call(id + "\0", target + "\0") == 1
-      started(sent, "remove player #{MGQ_MpWorld.short(target)} from world #{MGQ_MpWorld.short(id)}")
-    end
-
-    # Reads how the running or last action stands.
-    #
-    # @return [Hash] "state" ("idle", "busy", "done" or "failed"), and whichever of "kind", "code", "world", "name", "start", "choose" ("1" when new players choose where to start) and "error" apply.
-    def self.action
-      text = MGQ_Multiplayer::Link.read('mp_dir_action', 2048)
-      text.empty? ? { "state" => "idle" } : MGQ_Multiplayer::Link.parse(text)
-    end
-
-    # Forgets the last action once its result was taken.
-    def self.clear
-      MGQ_Multiplayer::Link.function('mp_dir_clear').call
-    end
-
-    # Notes that the action just started belongs to its caller, since the DLL keeps one action's
-    # answer at a time for the world screen and the world's mod settings alike.
-    #
-    # @return [Integer] The ticket that names the action.
-    def self.claim
-      @claimed = @claimed.to_i + 1
-      @released = false
-      @claimed
-    end
-
-    # Tells whether the action started last is the one a ticket names, whose answer is its caller's.
-    #
-    # @param ticket [Integer, nil] The ticket.
-    # @return [Boolean] Whether it is.
-    def self.mine?(ticket)
-      !ticket.nil? && ticket == @claimed
-    end
-
-    # Gives up on the answer of an action, which the next one may then drop.
-    #
-    # @param ticket [Integer, nil] The action's ticket.
-    def self.release(ticket)
-      @released = true if mine?(ticket)
-    end
-
-    # Tells whether an action may start without dropping an answer its caller still waits for: none
-    # ran, or the last one ended and was given up on, whose answer this forgets.
-    #
-    # @return [Boolean] Whether one may.
-    def self.free?
-      state = action["state"]
-      return true if state == "idle"
-      return false if state == "busy" || !@released
-
-      clear
-      true
-    end
-
-    # Reads how the list stands, without its worlds.
-    #
-    # @return [String] "idle", "loading", "ready" or "failed".
-    def self.list_state
-      MGQ_Multiplayer::Link.parse(MGQ_Multiplayer::Link.read('mp_dir_list', LIST_SIZE))["state"] || "idle"
-    end
-
     # Reads the id everyone sees for the player.
     #
     # @return [String] The id, "" while the player has no name.
@@ -1478,10 +1264,7 @@ module MGQ_MpWorld
   # @param text [String, nil] The mods as written.
   # @return [Array<String>] Each mod's name: the required ones first, then the essential ones, none for an empty text.
   def self.mods_of(text)
-    names = text.to_s.split(";").map { |mod| mod.strip.sub(/\A[!?]\s*/, "") }.reject { |mod| mod.empty? }
-    required = required_mods(text)
-    essential = essential_mods(text)
-    (names & required) + (names & essential) + (names - required - essential)
+    mods_text(text)["names"]
   end
 
   # Lists the mods a world's creator marked as required, with an exclamation mark in front: a
@@ -1490,7 +1273,7 @@ module MGQ_MpWorld
   # @param text [String, nil] The mods as written.
   # @return [Array<String>] Their names.
   def self.required_mods(text)
-    marked_mods(text, /!/)
+    mods_text(text)["required"]
   end
 
   # Lists the mods a world's creator marked as essential, with a question mark in front: they
@@ -1499,16 +1282,25 @@ module MGQ_MpWorld
   # @param text [String, nil] The mods as written.
   # @return [Array<String>] Their names.
   def self.essential_mods(text)
-    marked_mods(text, /\?/)
+    mods_text(text)["essential"]
   end
 
-  # Lists the names of the mods written with a mark in front, without the mark.
+  # Reads a world's mods as written through the DLL (ModsText in MGQOnline.Game), each text asked
+  # once.
   #
   # @param text [String, nil] The mods as written.
-  # @param mark [Regexp] The mark.
-  # @return [Array<String>] Their names.
-  def self.marked_mods(text, mark)
-    text.to_s.split(";").map { |mod| mod.strip[/\A#{mark}\s*(\S.*)\z/, 1] }.compact
+  # @return [Hash] "names", "required" and "essential", each an Array of names; none of either
+  #   when the DLL did not answer.
+  def self.mods_text(text)
+    key = text.to_s
+    @mods_texts ||= {}
+    return @mods_texts[key] if @mods_texts.key?(key)
+
+    read = MGQ_Multiplayer::Bridge.call(TEXT_TOPIC, key)
+    return { "names" => [], "required" => [], "essential" => [] } unless read.is_a?(Hash)
+
+    @mods_texts.clear if @mods_texts.size >= MODS_TEXTS_KEPT
+    @mods_texts[key] = read
   end
 
   # Tells whether a mod's script is installed: a .rb file of the mod's name anywhere in the Patch
@@ -1532,15 +1324,6 @@ module MGQ_MpWorld
     key = mod_key(name)
     found = (installed_scripts || []).find { |script| script[0] == key }
     found && found[1]
-  end
-
-  # Lists the mods the Patch folder holds, for the mod picker: each script once, by its file's name,
-  # without the scripts every player has.
-  #
-  # @return [Array<String>] The names, sorted whatever their case; none when the folder cannot be read.
-  def self.installed_mod_names
-    scripts = (installed_scripts || []).reject { |script| SHARED_SCRIPTS.include?(script[0]) }
-    scripts.uniq { |script| script[0] }.map { |script| script[2] }.sort_by { |name| name.downcase }
   end
 
   # Lists the scripts the Patch folder holds, as the DLL reads them, since the game's Ruby reads file
@@ -1580,213 +1363,48 @@ module MGQ_MpWorld
     @mod_keys[text] = keys[0]
   end
 
-  # The favourites and hidden worlds added that the files before Player.ini kept, moved into it once.
-  module OldLists
-    # Moves the entries of OLD_LIST_FILES into Player.ini, a setting it holds already winning, then
-    # deletes the files; tried again at most every Player::RETRY_SECONDS until it worked.
-    #
-    # Nothing is moved or deleted while any of the files or Player.ini cannot be read, so no entry
-    # is lost.
-    def self.merge
-      return if @merged
-      return if @tried_at && Time.now - @tried_at < MGQ_Multiplayer::Player::RETRY_SECONDS
-
-      files = OLD_LIST_FILES.keys.select { |file| File.exist?(MGQ_Multiplayer.path(file)) }
-      if files.empty?
-        @merged = true
-        return
-      end
-
-      entries = entries_of(files)
-      return later("#{files.join(' or ')} could not be read") unless entries
-      return later("Player.ini could not be read") unless MGQ_Multiplayer::Player.readable?
-
-      fresh = entries.reject { |key, _| MGQ_Multiplayer::Player.setting(key) }
-      return later("Player.ini could not be written") unless MGQ_Multiplayer::Player.change(fresh)
-
-      @merged = true
-      MGQ_MpWorld.log("moved the #{entries.size} entries of #{files.join(' and ')} into Player.ini, #{entries.size - fresh.size} of which it held already")
-      files.each { |file| delete(file) }
-    rescue => e
-      later("#{e.class}: #{e.message}")
-    end
-
-    # Reads the old files' entries as Player.ini's settings.
-    #
-    # @param files [Array<String>] The files there are, of OLD_LIST_FILES.
-    # @return [Hash, nil] The values by setting, nil when a file could not be read.
-    def self.entries_of(files)
-      entries = {}
-      files.each do |file|
-        values = MGQ_Multiplayer::Ini.load(MGQ_Multiplayer.path(file), !@tried_at.nil?)
-        return nil unless values
-
-        values.each { |id, value| entries[OLD_LIST_FILES[file] + id] = value }
-      end
-      entries
-    end
-
-    # Notes that the move must wait, logged once until it worked.
-    #
-    # @param reason [String] Why it waits.
-    def self.later(reason)
-      MGQ_MpWorld.log("did not move the favourites and hidden worlds into Player.ini yet: #{reason}") unless @tried_at
-      @tried_at = Time.now
-      nil
-    end
-
-    # Deletes an old file whose entries Player.ini holds now.
-    #
-    # @param file [String] The file, of OLD_LIST_FILES.
-    def self.delete(file)
-      File.delete(MGQ_Multiplayer.path(file))
-      MGQ_MpWorld.log("deleted #{file}")
-    rescue => e
-      MGQ_MpWorld.log("could not delete #{file}, so the next start moves its entries again: #{e.class}: #{e.message}")
-    end
-  end
-
   # The hidden worlds the player added to their list by their ids, which the relay lists for
-  # whoever names them, kept in Player.ini.
+  # whoever names them, kept in Player.ini by the DLL (WorldLists).
   module Added
-    # Most worlds kept, as many as the relay lists by their ids for one player.
-    MAX = 50
+    # The topic that lists them.
+    ALL_TOPIC = "worlds.added"
 
     # Lists the worlds added.
     #
     # @return [Array<String>] Their directory ids, the one added last at the end.
     def self.all
-      OldLists.merge
-      MGQ_Multiplayer::Player.keys_under(ADDED_SETTING)
-    end
-
-    # Adds a world, and forgets those added longest ago beyond MAX.
-    #
-    # The ids of deleted worlds are never listed again and so never removed by hand; without the
-    # limit they would crowd the newest ones out of what the relay lists.
-    #
-    # @param id [String] The world's directory id.
-    def self.add(id)
-      ids = all - [id] + [id]
-      dropped = ids.size > MAX ? ids[0, ids.size - MAX] : []
-      changes = {}
-      dropped.each { |old| changes[ADDED_SETTING + old] = nil }
-      changes[ADDED_SETTING + id] = "1"
-      return unless kept?(MGQ_Multiplayer::Player.change(changes), "add hidden world #{MGQ_MpWorld.short(id)} to the list")
-
-      forgot = dropped.empty? ? "" : ", forgot the oldest: #{dropped.map { |old| MGQ_MpWorld.short(old) }.join(', ')}"
-      MGQ_MpWorld.log("added hidden world #{MGQ_MpWorld.short(id)} to the list#{forgot}")
-    end
-
-    # Takes a world off the list again.
-    #
-    # @param id [String] The world's directory id.
-    def self.remove(id)
-      OldLists.merge
-      return unless kept?(MGQ_Multiplayer::Player.forget(ADDED_SETTING + id), "remove hidden world #{MGQ_MpWorld.short(id)} from the list")
-
-      MGQ_MpWorld.log("removed hidden world #{MGQ_MpWorld.short(id)} from the list")
-    end
-
-    # Logs a change of the list that Player.ini did not take.
-    #
-    # @param written [Boolean] Whether Player.ini was written.
-    # @param what [String] The change, for the log.
-    # @return [Boolean] Whether it was written.
-    def self.kept?(written, what)
-      MGQ_MpWorld.log("could not #{what}: Player.ini was not written") unless written
-      written
+      ids = MGQ_Multiplayer::Bridge.call(ALL_TOPIC)
+      ids.is_a?(Array) ? ids : []
     end
   end
 
-  # The worlds the player marked as favourites, kept in Player.ini.
-  module Favourites
-    # Lists the favourites.
-    #
-    # @return [Array<String>] The directory ids of the favourite worlds.
-    def self.all
-      OldLists.merge
-      MGQ_Multiplayer::Player.keys_under(FAVOURITE_SETTING)
-    end
-
-    # Marks a world as a favourite, if it is none yet.
-    #
-    # @param id [String] The world's directory id.
-    def self.add(id)
-      toggle(id) unless all.include?(id)
-    end
-
-    # Marks a world as a favourite, or no longer.
-    #
-    # @param id [String] The world's directory id.
-    # @return [Boolean, nil] Whether it is a favourite now, nil when it stays as it was since Player.ini cannot be read.
-    def self.toggle(id)
-      OldLists.merge
-      key = FAVOURITE_SETTING + id
-      favourite = MGQ_Multiplayer::Player.setting(key).nil?
-      MGQ_Multiplayer::Player.change(key => favourite ? "1" : nil)
-      if MGQ_Multiplayer::Player.setting(key).nil? == favourite
-        MGQ_MpWorld.log("world #{MGQ_MpWorld.short(id)} stays as it was: Player.ini cannot be read")
-        return nil
-      end
-
-      MGQ_MpWorld.log("world #{MGQ_MpWorld.short(id)} #{favourite ? 'is a favourite now' : 'is no longer a favourite'}")
-      favourite
-    end
-  end
-
-  # A world on this PC: its folder in Patch/Multiplayer/Worlds, named by a hash of its code, with
-  # world.ini (name, world code, directory id, type, how a Raid World shares companions, its
-  # difficulty and squad rules, whether a Classic world fights raid bosses, when it was made and
-  # last played) and the world's Save folder.
+  # A world on this PC as the DLL keeps it (LocalWorlds): its folder in Patch/Multiplayer/Worlds,
+  # named by a hash of its code, with world.ini (name, world code, directory id, type, how a Raid
+  # World shares companions, its difficulty and squad rules, whether a Classic world fights raid
+  # bosses, when it was made and last played) and the world's Save folder. The script keeps a copy
+  # of its fields, since the open world's are read every frame.
   class World
-    # The file inside the world's folder that describes it.
-    FILE = "world.ini"
+    # The topic that lists the worlds on this PC.
+    LOCAL_TOPIC = "worlds.local"
 
-    # What a world's folder is named.
-    ID = /\A[0-9a-f]{12}\z/
+    # The topic that makes a world's folder or finds the one there is.
+    FOUND_TOPIC = "worlds.found"
 
-    # Lists the worlds on this PC, read from their folders once until one is made, written or
-    # deleted, since the world screen asks every few frames.
+    # The topic that describes a world anew as the directory says it.
+    DESCRIBE_TOPIC = "worlds.describe"
+
+    # The topic that changes a world and writes its world.ini.
+    UPDATE_TOPIC = "worlds.update"
+
+    # The topic that finds a world's latest save.
+    LATEST_SAVE_TOPIC = "worlds.latest_save"
+
+    # Lists the worlds on this PC.
     #
-    # @return [Array<World>] The worlds.
+    # @return [Array<World>] The worlds; none when the DLL did not answer.
     def self.all
-      @all ||= list
-    end
-
-    # Forgets the worlds read, so the next look reads their folders again.
-    def self.forget
-      @all = nil
-    end
-
-    # Reads the worlds on this PC from their folders.
-    #
-    # @return [Array<World>] The worlds.
-    def self.list
-      return [] unless File.directory?(WORLDS_DIR)
-
-      Dir.entries(WORLDS_DIR).select { |entry| entry =~ ID }.map { |id| read(id) }.compact
-    rescue => e
-      MGQ_MpWorld.log("could not list the worlds: #{e.class}: #{e.message}")
-      []
-    end
-
-    # Reads a world.
-    #
-    # @param id [String] The folder's id.
-    # @return [World, nil] The world, nil when its folder holds none.
-    def self.read(id)
-      of(id, MGQ_Multiplayer::Ini.read("#{folder_of(id)}/#{FILE}"))
-    end
-
-    # Builds a world from what its world.ini says.
-    #
-    # @param id [String] The folder's id.
-    # @param values [Hash] The values of its world.ini.
-    # @return [World, nil] The world, nil when they hold no world code of the folder.
-    def self.of(id, values)
-      code = values["code"]
-      code && Link.id_of(code) == id ? new(id, values) : nil
+      worlds = MGQ_Multiplayer::Bridge.call(LOCAL_TOPIC)
+      worlds.is_a?(Array) ? worlds.map { |values| new(values) } : []
     end
 
     # Makes a world's folder, or finds the one there is, and describes the world in it.
@@ -1802,28 +1420,23 @@ module MGQ_MpWorld
     # @return [World, nil] The world, nil when the text is no world code, the folder could not be
     #   made or its world.ini exists but could not be read, which is then left as it is.
     def self.found(code, name, directory_id, type = nil, share = nil, difficulty = nil, squad = nil, raid_bosses = nil)
-      id = Link.id_of(code)
-      unless id
-        MGQ_MpWorld.log("no folder for world #{MGQ_MpWorld.short(directory_id)}: the relay's answer holds no world code")
-        return nil
-      end
+      values = MGQ_Multiplayer::Bridge.call(FOUND_TOPIC, about(name, directory_id, type, share, difficulty, squad, raid_bosses).merge("code" => code.to_s))
+      values.is_a?(Hash) ? new(values) : nil
+    end
 
-      [WORLDS_DIR, folder_of(id)].each { |dir| Dir.mkdir(dir) unless File.directory?(dir) }
-      values = MGQ_Multiplayer::Ini.load("#{folder_of(id)}/#{FILE}")
-      unless values
-        MGQ_MpWorld.log("left folder #{id} of world #{MGQ_MpWorld.short(directory_id)} as it is: its #{FILE} exists but could not be read")
-        return nil
-      end
-
-      known = of(id, values)
-      world = known || new(id, "code" => code, "created" => Time.now.to_i)
-      world.describe(name, directory_id, nil, type, share, difficulty, squad, raid_bosses)
-      written = world.write
-      MGQ_MpWorld.log("#{known ? 'found' : 'made'} folder #{id} of world #{MGQ_MpWorld.short(directory_id)} (#{world.name})#{written ? '' : ', but world.ini could not be written'}")
-      written ? world : nil
-    rescue => e
-      MGQ_MpWorld.log("could not create a world's folder: #{e.class}: #{e.message}")
-      nil
+    # Writes what the directory says of a world as the DLL takes it.
+    #
+    # @param name [String] The world's name.
+    # @param directory_id [String] The world's id in the directory.
+    # @param type [String, nil] Its type, nil to keep what world.ini says.
+    # @param share [String, nil] How a Raid World shares companions, nil to keep it.
+    # @param difficulty [Integer, nil] A Raid World's difficulty, nil to keep it.
+    # @param squad [Hash, nil] A Raid World's squad rules, nil to keep them.
+    # @param raid_bosses [Boolean, nil] Whether a Classic world fights raid bosses, nil to keep it.
+    # @return [Hash] The request's fields, see found.
+    def self.about(name, directory_id, type, share, difficulty, squad, raid_bosses)
+      { "name" => name.to_s, "world" => directory_id, "type" => type, "share" => share, "difficulty" => difficulty,
+        "squad" => MGQ_MpWorld.squad_plain(squad), "raid_bosses" => raid_bosses.nil? ? nil : (raid_bosses ? true : false) }
     end
 
     # Builds the folder of a world.
@@ -1846,7 +1459,7 @@ module MGQ_MpWorld
     # The world's id in the directory, nil when world.ini names none.
     attr_reader :directory_id
 
-    # When the world was played last.
+    # When the world was played last, nil before.
     attr_reader :played_at
 
     # The world's type, one of TYPES, nil when world.ini names none, which counts as Classic.
@@ -1856,34 +1469,46 @@ module MGQ_MpWorld
     attr_reader :share
 
     # The difficulty a Raid World sets for every player, one of MGQ_MpWorld.difficulties, nil when world.ini names none.
-    attr_accessor :difficulty
+    attr_reader :difficulty
 
     # The squad rules a Raid World sets for every player's team, see MGQ_MpWorld.squad, nil when
     # world.ini names none.
-    attr_accessor :squad
+    attr_reader :squad
 
     # Whether a Classic world's story bosses fight as raid bosses, see MGQ_MpWorld.raid_bosses?.
-    attr_accessor :raid_bosses
+    attr_reader :raid_bosses
 
-    # Creates a world from what its world.ini says.
+    # How many players the world seats at once, which its code tells, 0 for a code that tells none.
+    attr_reader :seats
+
+    # Creates a world from what the DLL tells of it.
     #
-    # @param id [String] The folder's id.
-    # @param values [Hash] The values of its world.ini.
-    def initialize(id, values)
-      @id = id
-      @name = values["name"].to_s.strip.empty? ? "?" : MGQ_Multiplayer.clean(values["name"])
-      @code = values["code"]
-      @directory_id = values["world"]
-      @created = values["created"].to_i
-      @played_at = values["played"] ? Time.at(values["played"].to_i) : nil
-      @type = values["type"]
-      @share = values["share"]
-      @difficulty = MGQ_MpWorld.difficulty_of(values["difficulty"])
-      @squad = MGQ_MpWorld.squad_of(values["squad"])
-      @raid_bosses = values["raid_bosses"].to_s == "1"
+    # @param values [Hash] The world, as worlds.local tells each.
+    def initialize(values)
+      take(values)
     end
 
-    # Takes the world's name, directory id, seats, type, companion sharing, difficulty, squad rules and raid bosses, as the directory says them.
+    # Takes what the DLL tells of the world.
+    #
+    # @param values [Hash] The world, as worlds.local tells each.
+    # @return [World] self.
+    def take(values)
+      @id = values["id"]
+      @name = values["name"]
+      @code = values["code"]
+      @directory_id = values["world"]
+      @played_at = values["played"] ? Time.at(values["played"]) : nil
+      @type = values["type"]
+      @share = values["share"]
+      @difficulty = values["difficulty"]
+      @squad = MGQ_MpWorld.squad_from(values["squad"])
+      @raid_bosses = values["raid_bosses"] == true
+      @seats = values["seats"].to_i
+      self
+    end
+
+    # Takes the world's name, directory id, seats, type, companion sharing, difficulty, squad rules
+    # and raid bosses, as the directory says them, which the DLL writes into world.ini at once.
     #
     # @param name [String] The world's name.
     # @param directory_id [String] The world's id in the directory.
@@ -1894,15 +1519,21 @@ module MGQ_MpWorld
     # @param squad [Hash, nil] A Raid World's squad rules, see MGQ_MpWorld.squad; nil to keep what world.ini says.
     # @param raid_bosses [Boolean, nil] Whether a Classic world fights raid bosses; nil to keep what world.ini says.
     def describe(name, directory_id, seats = nil, type = nil, share = nil, difficulty = nil, squad = nil, raid_bosses = nil)
-      @name = MGQ_Multiplayer.clean(name)
-      @directory_id = directory_id
-      @type = type if type
-      @share = share if share
-      @difficulty = difficulty if difficulty
-      @squad = squad if squad
-      @raid_bosses = raid_bosses ? true : false unless raid_bosses.nil?
-      read = seats ? MGQ_Multiplayer::Bridge.call(CODE_TOPIC, "code" => @code.to_s, "seats" => seats.to_i) : nil
-      @code = read["code"] if read
+      request = World.about(name, directory_id, type, share, difficulty, squad, raid_bosses).merge("id" => @id, "seats" => seats && seats.to_i)
+      values = MGQ_Multiplayer::Bridge.call(DESCRIBE_TOPIC, request)
+      take(values) if values.is_a?(Hash)
+    end
+
+    # Changes the world and writes its world.ini.
+    #
+    # @param changes [Hash] Any of "difficulty", "squad" (as squad_plain writes it), "raid_bosses" and "played" (true: played now).
+    # @return [Boolean] Whether it was written.
+    def change(changes)
+      answer = MGQ_Multiplayer::Bridge.call(UPDATE_TOPIC, { "id" => @id }.merge(changes))
+      return false unless answer.is_a?(Hash)
+
+      take(answer["world"])
+      answer["written"] == true
     end
 
     # The world's folder.
@@ -1926,17 +1557,6 @@ module MGQ_MpWorld
       raid? ? SHARING_SYMBOLS[@share] || :off : :off
     end
 
-    # How many players the world seats at once, which its code tells, as the DLL reads it.
-    #
-    # @return [Integer] The seats, 0 for a code that tells none.
-    def seats
-      return @seats[1] if @seats && @seats[0] == @code
-
-      read = MGQ_Multiplayer::Bridge.call(CODE_TOPIC, "code" => @code.to_s)
-      @seats = [@code, read ? read["seats"] : 0]
-      @seats[1]
-    end
-
     # The folder of the world's saves, which the game's Save folder stands for while it is open.
     #
     # @return [String] The folder, relative to the game's folder.
@@ -1945,25 +1565,10 @@ module MGQ_MpWorld
     end
 
     # Notes that the world is played now.
-    def played!
-      @played_at = Time.now
-      write
-    end
-
-    # Writes world.ini.
     #
-    # @return [Boolean] Whether it was written.
-    def write
-      values = { "name" => @name, "code" => @code, "created" => @created }
-      values["world"] = @directory_id if @directory_id
-      values["type"] = @type if @type
-      values["share"] = @share if @share
-      values["difficulty"] = @difficulty if @difficulty
-      values["squad"] = MGQ_MpWorld.squad_text(@squad) if @squad
-      values["raid_bosses"] = 1 if @raid_bosses
-      values["played"] = @played_at.to_i if @played_at
-      World.forget
-      MGQ_Multiplayer::Ini.write("#{folder}/#{FILE}", values)
+    # @return [Boolean] Whether world.ini was written.
+    def played!
+      change("played" => true)
     end
 
     # Finds the world's latest save, an autosave included.
@@ -1979,52 +1584,19 @@ module MGQ_MpWorld
     # @return [String, nil] Its path, relative to the game's folder; nil without any save.
     def latest_save_file
       latest = latest_save_entry
-      latest && "#{save_folder}/#{latest[1]}"
+      latest && latest[1]
     end
 
-    # Finds the world's latest save and its file.
+    # Finds the world's latest save and its file, from the files themselves, since the game only
+    # finds a world's saves while the world is open.
     #
-    # It looks at the files themselves, since the game only finds a world's saves while the world is open.
-    #
-    # @return [Array, nil] The save's index as DataManager takes it and its file's name, nil without any save.
+    # @return [Array, nil] The save's index as DataManager takes it and its file's path relative to
+    #   the game's folder, nil without any save.
     def latest_save_entry
-      return nil unless File.directory?(save_folder)
-
-      saves = Dir.entries(save_folder).map do |entry|
-        case entry
-        when /\ASave(\d{2})\.rvdata2\z/i then [$1.to_i - 1, entry]
-        when /\AAutoSave(\d{2})\.rvdata2\z/i then [$1, entry]
-        end
-      end
-      saves.compact.max_by { |_, entry| File.mtime("#{save_folder}/#{entry}") }
+      latest = MGQ_Multiplayer::Bridge.call(LATEST_SAVE_TOPIC, @id)
+      latest.is_a?(Array) ? latest : nil
     end
 
-    # Deletes the world's folder with everything in it: this game's saves of the world, and that
-    # it remembers the world's password.
-    #
-    # @return [Boolean] Whether it was deleted.
-    def delete
-      World.forget
-      World.remove_tree(folder)
-      MGQ_MpWorld.log("deleted folder #{@id} of world #{MGQ_MpWorld.short(@directory_id)} (#{@name}) with its saves")
-      true
-    rescue => e
-      MGQ_MpWorld.log("could not delete world #{@id}: #{e.class}: #{e.message}")
-      false
-    end
-
-    # Deletes a folder with everything in it.
-    #
-    # @param path [String] The folder.
-    def self.remove_tree(path)
-      Dir.entries(path).each do |entry|
-        next if entry == "." || entry == ".."
-
-        child = "#{path}/#{entry}"
-        File.directory?(child) ? remove_tree(child) : File.delete(child)
-      end
-      Dir.rmdir(path)
-    end
   end
 
   # While a world is open, sends every path below the game's Save folder to the world's instead.
@@ -2141,72 +1713,10 @@ module MGQ_MpWorld
     end
   end
 
-  # A form of the world screen: its fields, laid out in rows, and what is filled in.
+  # A form filled in on this game alone: its fields, laid out in rows, and what is filled in, which
+  # the story's choices and the bug report keep themselves. The world screen's forms are WorldForms,
+  # which the DLL holds.
   class Form
-    # What the lines at the top say on Shared Mod Settings.
-    SHARED_HINT = "Ticked: every player plays with your mod options here. Unticked: each keeps their own."
-
-    # What the lines at the top say on Turn off other mods.
-    OTHER_MODS_HINT = "Ticked: mods the world does not name are off in it. Personal mods stay on."
-
-    # What the lines at the top say on Turn off other mods in the edit form.
-    EDIT_OTHER_MODS_HINT = "Ticked: mods the world does not name are off. Personal mods stay on. Players in it enter again."
-
-    # What the lines at the top say on the world type.
-    TYPE_HINT = "Classic: each party plays its own story. Raid: the whole world plays one. Fixed once created."
-
-    # What the lines at the top say on Sharing companions.
-    SHARING_HINT = "Raid only: companions everyone gets on reaching their level. Fixed once created."
-
-    # What the lines at the top say on Raid Bosses.
-    RAID_BOSSES_HINT = "Classic only: story bosses fight as raid bosses of their tier, far stronger. Changeable later."
-
-    # What the lines at the top say on Raid Bosses in the edit form.
-    EDIT_RAID_BOSSES_HINT = "Story bosses fight as raid bosses of their tier, far stronger, from each player's next boss fight."
-
-    # What the lines at the top say on the difficulty.
-    DIFFICULTY_HINT = "Every player of the world plays on it. You can change it later in the edit form."
-
-    # What the lines at the top say on the difficulty in a Raid World's edit form.
-    EDIT_DIFFICULTY_HINT = "Every player of the world plays on it, those in it now at once."
-
-    # The edit form's first outcome of the difficulty for a Raid World that sets none, whose players
-    # keep their own while it stays picked.
-    PER_PLAYER = "Per player"
-
-    # Width of the world type's label, narrower than a text box's, so the switch fits half a row.
-    TYPE_LABEL_WIDTH = 70
-
-    # Width of a Save label that shares its row, narrower than a text box's, so the save's name fits half a row.
-    RAID_SAVE_LABEL_WIDTH = 40
-
-    # Width of the squad rules' switch labels, narrower than a text box's, so Original fits half a row.
-    SQUAD_LABEL_WIDTH = 80
-
-    # What the button that opens the form of a Raid World's squad rules says.
-    LIMITS_LABEL = "Set formation limits"
-
-    # What the lines at the top say on the button of a Raid World's squad rules.
-    LIMITS_HINT = "Luka, the team size and the Frontlines every player keeps. Changeable later too."
-
-    # What the lines at the top say on the button that leaves the form of a Raid World's squad rules.
-    DONE_HINT = "Back to the world's form. Cancel goes back too, keeping the limits."
-
-    # What the lines at the top say on Luka Replaceable.
-    LUKA_HINT = "Ticked: players may take Luka out of their team. Unticked: he always stays in it."
-
-    # What the lines at the top say on the Formation size.
-    FORMATION_HINT = "The team size every player keeps. Its last place sits out, except with Original, the game's own."
-
-    # What the lines at the top say on the Frontline in regular fights.
-    FRONT_HINT = "In front in regular fights, the rest on the Backline. With more players, each one's first fights."
-
-    # What the lines at the top say on the Frontline in raids.
-    RAID_FRONT_HINT = "In front in raid boss fights, the rest on the Backline. With more players, each one's first fights."
-
-    # What the lines at the top say on a Raid World's Shared save.
-    RAID_SAVE_HINT = "New players start from one of your saves, the world's story from its point. Fixed once created."
-
     # A field of a form: a text box (:text, :password, :number or :id), a box of several lines (:area), a checkbox (:check), a save
     # to choose (:save), the mods picked in the mod picker (:mods), a switch between several outcomes (:switch) or a button
     # (:button).
@@ -2245,7 +1755,7 @@ module MGQ_MpWorld
       # How many lines a box of several lines shows.
       attr_reader :lines
 
-      # What the lines at the top of the world screen say while the cursor is on the field.
+      # What the lines at the top of the screen say while the cursor is on the field.
       attr_reader :hint
 
       # Tells whether a text box may stay empty right now, nil when only optional decides.
@@ -2320,151 +1830,23 @@ module MGQ_MpWorld
       def typed?
         [:text, :password, :number, :id, :area].include?(@kind)
       end
-    end
 
-    # The form of a new world.
-    #
-    # @return [Form] The form, empty but for the default seats.
-    def self.create
-      fields = [
-        Field.new(:name, :text, "Name", 0, "The name everyone sees in the list.", :max_chars => MAX_NAME_CHARS, :group => "World", :empty_text => "The world needs a name."),
-        Field.new(:password, :password, "Password", 1, "Typed once to enter the world. Left empty, anyone may enter.", :max_chars => MAX_PASSWORD_CHARS, :side => :left, :group => "World"),
-        Field.new(:seats, :number, "Max Players", 1, "Players in the world at once, #{MGQ_MpWorld.min_seats} to #{MGQ_MpWorld.max_seats}.", :max_chars => MGQ_MpWorld.max_seats.to_s.size, :allowed => /\A\d\z/, :side => :right, :group => "World"),
-        Field.new(:hidden, :check, "Hidden", 2, "Only its players see it in the list. Others add it with its id.", :side => :left, :group => "World"),
-        Field.new(:type, :switch, "World type", 2, TYPE_HINT, :side => :right, :group => "World", :choices => ["Classic", "Raid"], :label_width => TYPE_LABEL_WIDTH),
-        # Raid only and Classic only, each shown for its type, so the form keeps to one page.
-        Field.new(:share, :switch, "Sharing companions", 3, SHARING_HINT, :group => "World", :choices => SHARING_NAMES,
-                  :shows => lambda { |form| form.type == RAID }),
-        Field.new(:from_save, :check, "Shared save", 3, "Classic only: new players start from one of your saves. Fixed once created.", :side => :left, :group => "World",
-                  :shows => lambda { |form| form.type == CLASSIC }),
-        Field.new(:choose, :check, "Player's choice", 3, "Classic only: new players pick their start, the opening or a save. Fixed once created.", :side => :right, :group => "World",
-                  :shows => lambda { |form| form.type == CLASSIC }),
-        # A Classic world shares the row between its Save and Raid Bosses, so the form keeps to one page.
-        Field.new(:save, :save, "Save", 4, "The save every new player starts from.", :side => :left, :group => "World", :label_width => RAID_SAVE_LABEL_WIDTH,
-                  :needs => lambda { |form| form.from_save? }, :shows => lambda { |form| form.type == CLASSIC }),
-        Field.new(:raid_bosses, :check, "Raid Bosses", 4, RAID_BOSSES_HINT, :side => :right, :group => "World", :shows => lambda { |form| form.type == CLASSIC }),
-        # A Raid World's Shared save shares its row with the Difficulty and its Save with the button of
-        # its squad rules, whose row comes off the description, so the form keeps to one page.
-        Field.new(:from_save, :check, "Shared save", 4, RAID_SAVE_HINT, :side => :left, :group => "World",
-                  :shows => lambda { |form| form.type == RAID }),
-        Field.new(:difficulty, :switch, "Difficulty", 4, DIFFICULTY_HINT, :side => :right, :group => "World", :choices => MGQ_MpWorld.difficulty_names,
-                  :label_width => TYPE_LABEL_WIDTH, :shows => lambda { |form| form.type == RAID }),
-        Field.new(:save, :save, "Save", 5, "The save every new player starts from.", :side => :left, :group => "World", :label_width => RAID_SAVE_LABEL_WIDTH,
-                  :needs => lambda { |form| form.from_save? }, :shows => lambda { |form| form.type == RAID }),
-        limits_field(5, :right, lambda { |form| form.type == RAID }),
-        Field.new(:mods, :mods, "Mods", 6, "The mods of the world: listed, required to enter or essential. Enter picks them.", :group => "Game data"),
-        Field.new(:mismatch, :check, "Allow data mismatch", 7, "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.", :side => :left, :group => "Game data"),
-        Field.new(:shared, :check, "Shared Mod Settings", 7, SHARED_HINT, :side => :right, :group => "Game data"),
-        Field.new(:other_mods_off, :check, "Turn off other mods", 8, OTHER_MODS_HINT, :group => "Game data"),
-        # The row of a Raid World's Save comes off its description, so the form keeps to one page.
-        Field.new(:description, :area, "What the world is about", 9, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description",
-                  :shows => lambda { |form| form.type != RAID }),
-        Field.new(:description, :area, "What the world is about", 9, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => RAID_DESCRIPTION_LINES,
-                  :group => "Description", :shows => lambda { |form| form.type == RAID }),
-        Field.new(:confirm, :button, "Create the world", 10, "Creates the world. You enter it from the list."),
-      ]
-      new("Create a new world", fields, { :name => "", :password => "", :seats => MGQ_MpWorld.default_seats.to_s, :hidden => false, :type => 0, :share => 0, :from_save => false, :save => nil, :choose => false, :description => "", :mods => "",
-                                          :mismatch => false, :shared => false, :difficulty => MGQ_MpWorld.difficulties.index(MGQ_MpWorld.default_difficulty), :other_mods_off => false, :raid_bosses => false }.merge(squad_values(MGQ_MpWorld.default_squad)))
-    end
-
-    # The button of a Raid World's form that opens the form of its squad rules, see limits.
-    #
-    # @param row [Integer] Its row.
-    # @param side [Symbol, nil] :left or :right when it shares the row, nil when it has the row alone.
-    # @param shows [Proc, nil] The block that tells whether it is part of the form now, nil for always.
-    # @return [Field] The button.
-    def self.limits_field(row, side, shows = nil)
-      Field.new(:limits, :button, LIMITS_LABEL, row, LIMITS_HINT, :side => side, :group => "World", :shows => shows)
-    end
-
-    # The fields of the form of a Raid World's squad rules, on three rows: Luka Replaceable beside the
-    # Formation size, the Frontline in regular fights beside the one in raids, and the button back.
-    #
-    # @return [Array<Field>] The fields.
-    def self.limits_fields
-      [
-        Field.new(:luka, :check, "Luka Replaceable", 0, LUKA_HINT, :side => :left, :group => "Team"),
-        Field.new(:formation, :switch, "Formation Size", 0, FORMATION_HINT, :side => :right, :group => "Team", :choices => MGQ_MpWorld.formations.map { |size| MGQ_MpWorld.formation_name(size) }, :label_width => SQUAD_LABEL_WIDTH),
-        Field.new(:front, :switch, "Frontline", 1, FRONT_HINT, :side => :left, :group => "Team", :choices => MGQ_MpWorld.fronts.map { |place| place.to_s }, :label_width => SQUAD_LABEL_WIDTH),
-        Field.new(:raid_front, :switch, "Raid Frontline", 1, RAID_FRONT_HINT, :side => :right, :group => "Team", :choices => MGQ_MpWorld.fronts.map { |place| place.to_s }, :label_width => SQUAD_LABEL_WIDTH),
-        Field.new(:done, :button, "Done", 2, DONE_HINT),
-      ]
-    end
-
-    # What the squad rules' fields hold at first for squad rules.
-    #
-    # @param squad [Hash] The rules, see MGQ_MpWorld.squad.
-    # @return [Hash] The values by the fields' keys.
-    def self.squad_values(squad)
-      { :luka => squad[:luka] ? true : false, :formation => MGQ_MpWorld.formations.index(squad[:formation]).to_i, :front => MGQ_MpWorld.fronts.index(squad[:front]).to_i,
-        :raid_front => MGQ_MpWorld.fronts.index(squad[:raid_front]).to_i }
-    end
-
-    # The form that changes a world, for its creator or an admin: what may change after it was made.
-    #
-    # @param listed [Directory::ListedWorld] The world in the directory.
-    # @param own [Boolean] Whether the player made the world, and so may replace its game data and
-    #   choose whether it shares their mod settings.
-    # @return [Form] The form, filled in as the world is; a Raid World's with its difficulty and the
-    #   button of its squad rules below the seats, the difficulty first PER_PLAYER for one that sets none.
-    def self.edit(listed, own = false)
-      fields = [
-        Field.new(:seats, :number, "Max Players", 0, "Players in the world at once, #{MGQ_MpWorld.min_seats} to #{MGQ_MpWorld.max_seats}.", :max_chars => MGQ_MpWorld.max_seats.to_s.size, :allowed => /\A\d\z/, :group => "World"),
-        Field.new(:mods, :mods, "Mods", 2, "The mods of the world: listed, required to enter or essential. Enter picks them.", :group => "Game data"),
-        Field.new(:other_mods_off, :check, "Turn off other mods", 5, EDIT_OTHER_MODS_HINT, :group => "Game data"),
-        Field.new(:description, :area, "What the world is about", 6, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description"),
-        Field.new(:confirm, :button, "Save the changes", 7, "Changes the world for everyone."),
-      ]
-      if own
-        fields.insert(2, Field.new(:data, :button, "Update current data scan", 3, "Scans your game's data as it is now and makes it the world's, such as after a mod update.", :group => "Game data"),
-                         Field.new(:shared, :check, "Shared Mod Settings", 4, SHARED_HINT, :group => "Game data"))
+      # Tells whether another field is the same one, as a form the DLL holds hands out each field
+      # anew with every view.
+      #
+      # @param other [Object] The other field.
+      # @return [Boolean] Whether it has the same key, kind and place.
+      def ==(other)
+        other.is_a?(Field) && [other.key, other.kind, other.row, other.side] == [@key, @kind, @row, @side]
       end
-      choices = listed.difficulty.nil? ? [PER_PLAYER] + MGQ_MpWorld.difficulty_names : MGQ_MpWorld.difficulty_names
-      if listed.type == RAID
-        fields.insert(1, Field.new(:difficulty, :switch, "Difficulty", 1, EDIT_DIFFICULTY_HINT, :side => :left, :group => "World", :choices => choices, :label_width => TYPE_LABEL_WIDTH),
-                      limits_field(1, :right))
-      else
-        fields.insert(1, Field.new(:raid_bosses, :check, "Raid Bosses", 1, EDIT_RAID_BOSSES_HINT, :group => "World"))
+      alias eql? ==
+
+      # Makes the field's hash, which a field equal to it shares.
+      #
+      # @return [Integer] The hash.
+      def hash
+        [@key, @kind, @row, @side].hash
       end
-      new("Edit #{listed.name}", fields, { :seats => listed.seats.to_s, :mods => listed.mods.to_s, :description => listed.description.to_s, :shared => MGQ_MpWorldMods.shared?(listed.settings),
-                                           :difficulty => choices.index(MGQ_MpWorld.difficulty_name(listed.difficulty) || PER_PLAYER),
-                                           :other_mods_off => listed.other_mods_off ? true : false, :raid_bosses => listed.raid_bosses ? true : false }.merge(squad_values(listed.squad || MGQ_MpWorld.default_squad)))
-    end
-
-    # The form of the name the others see.
-    #
-    # @param name [String] The name as it is, "" for none.
-    # @return [Form] The form, filled in with the name.
-    def self.rename(name)
-      fields = [
-        Field.new(:name, :text, "Your name", 0, "The name the others see. Without one, your name on Discord.", :max_chars => MAX_NAME_CHARS, :group => "Player",
-                  :empty_ok => lambda { MGQ_MpWorld.discord_name? }, :empty_text => "Type a name: Discord has not told yours yet."),
-        Field.new(:confirm, :button, "Use this name", 1, "Keeps the name for every world."),
-      ]
-      new("Your name", fields, :name => name)
-    end
-
-    # The form of a world's password, which enters it.
-    #
-    # @param name [String] The world's name.
-    # @return [Form] The form, empty.
-    def self.password(name)
-      fields = [
-        Field.new(:password, :password, "Password", 0, "The password the world's creator gave you.", :max_chars => MAX_PASSWORD_CHARS, :group => "World"),
-        Field.new(:confirm, :button, "Enter the world", 1, "Opens the world with the password."),
-      ]
-      new("Enter #{name}", fields, :password => "")
-    end
-
-    # The form that adds a hidden world to the list by its id.
-    #
-    # @return [Form] The form, empty.
-    def self.join
-      fields = [
-        Field.new(:id, :id, "World id", 0, "The id the world's creator copied for you. Ctrl+V pastes it.", :max_chars => 32, :allowed => /\A[0-9a-f]\z/i, :group => "World"),
-        Field.new(:confirm, :button, "Add the world", 1, "Adds the world to your list, where you enter it like any other."),
-      ]
-      new("Add a hidden world", fields, :id => "")
     end
 
     # What the form is called.
@@ -2522,72 +1904,6 @@ module MGQ_MpWorld
       @values[field.needs] == true
     end
 
-    # Tells the world type the new world's form picks.
-    #
-    # @return [String] One of TYPES.
-    def type
-      TYPES[@values[:type].to_i] || CLASSIC
-    end
-
-    # Tells how the new world's form has a Raid World share companions.
-    #
-    # @return [String] One of SHARING; "off" for a Classic world.
-    def share
-      type == RAID ? SHARING[@values[:share].to_i] || SHARING[0] : SHARING[0]
-    end
-
-    # Tells the difficulty the form picks.
-    #
-    # @return [Integer, nil] One of MGQ_MpWorld.difficulties; nil for PER_PLAYER.
-    def difficulty
-      field = @fields.find { |candidate| candidate.key == :difficulty }
-      name = field ? field.choices[@values[:difficulty].to_i] : nil
-      index = MGQ_MpWorld.difficulty_names.index(name)
-      return MGQ_MpWorld.difficulties[index] if index
-
-      name == PER_PLAYER ? nil : MGQ_MpWorld.default_difficulty
-    end
-
-    # The form of the squad rules this form picks, which holds the same values, so whatever it
-    # changes this form keeps.
-    #
-    # @return [Form] The form, the same one each time.
-    def limits
-      @limits ||= Form.new("Formation limits", Form.limits_fields, @values)
-    end
-
-    # Tells the squad rules the form picks.
-    #
-    # @return [Hash] The rules, see MGQ_MpWorld.squad.
-    def squad
-      default = MGQ_MpWorld.default_squad || {}
-      { :luka => @values[:luka] == true, :formation => MGQ_MpWorld.formations[@values[:formation].to_i] || default[:formation],
-        :front => MGQ_MpWorld.fronts[@values[:front].to_i] || default[:front], :raid_front => MGQ_MpWorld.fronts[@values[:raid_front].to_i] || default[:raid_front] }
-    end
-
-    # Tells whether the new world's form has new players start from one of the creator's saves, with
-    # Shared save ticked.
-    #
-    # @return [Boolean] Whether it does.
-    def from_save?
-      @values[:from_save] == true
-    end
-
-    # Tells whether the form has a Classic world's story bosses fight as raid bosses.
-    #
-    # @return [Boolean] Whether it does; false for a Raid World.
-    def raid_bosses?
-      type == CLASSIC && @values[:raid_bosses] == true
-    end
-
-    # Tells whether the new world's form lets each new player choose where to start, which only a
-    # Classic world does.
-    #
-    # @return [Boolean] Whether it does.
-    def choose?
-      type == CLASSIC && @values[:choose] == true
-    end
-
     # Moves a switch to its next or its previous outcome, round.
     #
     # @param field [Field] The switch.
@@ -2596,32 +1912,14 @@ module MGQ_MpWorld
     def turn(field, step)
       count = [field.choices.size, 1].max
       @values[field.key] = (@values[field.key].to_i + step) % count
-      follow_type if field.key == :type
-      @values[field.key]
     end
 
-    # Ticks a checkbox, or unticks it, which from then on keeps what the player chose.
+    # Ticks a checkbox, or unticks it.
     #
     # @param key [Symbol] The checkbox's key.
     # @return [Boolean] Whether it is ticked now.
     def tick(key)
-      @ticked = (@ticked || []) | [key]
       @values[key] = !@values[key]
-    end
-
-    # Ticks Turn off other mods for a Raid World and unticks it for a Classic one, unless the player
-    # ticked or unticked it themselves.
-    def follow_type
-      return if !@values.key?(:other_mods_off) || (@ticked || []).include?(:other_mods_off)
-
-      @values[:other_mods_off] = type == RAID
-    end
-
-    # Tells whether the form turns off every mod the world does not name.
-    #
-    # @return [Boolean] Whether it does.
-    def other_mods_off?
-      @values[:other_mods_off] == true
     end
 
     # Checks what a text box holds, and tidies it.
@@ -2630,22 +1928,19 @@ module MGQ_MpWorld
     # @param text [String] What it holds.
     # @return [Array] The tidied text, and why it is not accepted, nil when it is.
     def check(field, text)
-      case field.kind
-      when :number
-        seats = text =~ /\A\d+\z/ ? text.to_i : nil
-        return [text, "#{field.label} must be a number from #{MGQ_MpWorld.min_seats} to #{MGQ_MpWorld.max_seats}."] unless seats && seats.between?(MGQ_MpWorld.min_seats, MGQ_MpWorld.max_seats)
+      # A password keeps its spaces, since the others type it exactly, and may be empty.
+      return [text, nil] if field.kind == :password
 
-        [seats.to_s, nil]
-      when :id
-        id = text.strip.downcase
-        id =~ WORLD_ID ? [id, nil] : [text, "A world id has 32 characters, the digits and a to f."]
-      when :password
-        # A password keeps its spaces, since the others type it exactly, and may be empty.
-        [text, nil]
-      else
-        tidy = text.strip
-        tidy.empty? && !field.may_be_empty? ? [text, field.empty_text] : [tidy, nil]
-      end
+      tidy = text.strip
+      tidy.empty? && !field.may_be_empty? ? [text, field.empty_text] : [tidy, nil]
+    end
+
+    # Tells whether Enter in the form's text box sends it, which a form of this game alone leaves to
+    # its button.
+    #
+    # @return [Boolean] false.
+    def sends_on_enter?
+      false
     end
 
     # Finds the first field that keeps the form from being sent.
@@ -2656,54 +1951,423 @@ module MGQ_MpWorld
         next unless enabled?(field)
 
         error = field.typed? ? check(field, @values[field.key])[1] : nil
-        error ||= "Choose the save its players start from." if field.kind == :save && !field.optional && @values[field.key].nil?
         return [index, error] if error
       end
       nil
     end
   end
 
-  # The mods of a world as the mod picker shows them: every mod the Patch folder holds, each
-  # unlisted, listed, required or essential, then the mods added by name, which this game lacks.
+  # A form of the world screen whose fields, rules and values the DLL holds (topics form.*,
+  # WorldForms in MGQOnline.Game): it draws as a Form does, keeps a copy of what the DLL showed last,
+  # and hands over each change the player makes. Its page of the squad rules (limits) shares its
+  # values.
+  class WorldForm < Form
+    # The topic that opens a form in a slot.
+    OPEN_TOPIC = "form.open"
+
+    # The topic that hands out a page's view.
+    VIEW_TOPIC = "form.view"
+
+    # The topic that sets what a field holds.
+    SET_TOPIC = "form.set"
+
+    # The topic that turns a switch.
+    TURN_TOPIC = "form.turn"
+
+    # The topic that ticks a checkbox.
+    TICK_TOPIC = "form.tick"
+
+    # The topic that checks a text box's text.
+    CHECK_TOPIC = "form.check"
+
+    # The topic that sends a page, or names what keeps it from being sent.
+    SEND_TOPIC = "form.send"
+
+    # The topic that forgets a slot's form.
+    CLOSE_TOPIC = "form.close"
+
+    # The page of a Raid World's squad rules.
+    LIMITS_PAGE = "limits"
+
+    # The fact that Discord told the player's name, so the name form may stay empty.
+    DISCORD_FACT = "discord"
+
+    # The characters a text box takes, by the name the DLL gives them.
+    ALLOWED = { "digits" => /\A\d\z/, "hex" => /\A[0-9a-f]\z/i }
+
+    # What a page says when the DLL did not answer.
+    FAILED_TEXT = "Something went wrong. Try again."
+
+    # What a page holds while the DLL did not answer.
+    NO_VIEW = { "title" => "", "fields" => [], "values" => {}, "derived" => {} }
+
+    # The form of a new world, empty but for the defaults.
+    #
+    # @param slot [Symbol] The world screen's name of the form.
+    # @return [WorldForm] The form.
+    def self.create(slot)
+      open(slot, "create")
+    end
+
+    # The form that changes a world, for its creator or an admin: what may change after it was made.
+    #
+    # @param slot [Symbol] The world screen's name of the form.
+    # @param listed [Directory::ListedWorld] The world in the directory.
+    # @param own [Boolean] Whether the player made the world, and so may replace its game data and
+    #   choose whether it shares their mod settings.
+    # @return [WorldForm] The form, filled in as the world is.
+    def self.edit(slot, listed, own)
+      squad = listed.squad && { "luka" => listed.squad[:luka] ? true : false, "formation" => listed.squad[:formation], "front" => listed.squad[:front],
+                                "raid_front" => listed.squad[:raid_front] }
+      world = { "name" => listed.name.to_s, "seats" => listed.seats.to_i, "mods" => listed.mods.to_s, "description" => listed.description.to_s,
+                "shared" => MGQ_MpWorldMods.shared?(listed.settings), "difficulty" => listed.difficulty, "raid" => listed.type == RAID,
+                "other_mods_off" => listed.other_mods_off ? true : false, "raid_bosses" => listed.raid_bosses ? true : false, "squad" => squad }
+      open(slot, "edit", "world" => world, "own" => own ? true : false)
+    end
+
+    # The form of the name the others see, which may stay empty once Discord told the player's name.
+    #
+    # @param slot [Symbol] The world screen's name of the form.
+    # @param name [String] The name as it is, "" for none.
+    # @return [WorldForm] The form, filled in with the name.
+    def self.rename(slot, name)
+      facts = lambda { MGQ_MpWorld.discord_name? ? [DISCORD_FACT] : [] }
+      open(slot, "rename", { "name" => name.to_s, "discord" => facts.call.include?(DISCORD_FACT) }, facts)
+    end
+
+    # The form of a world's password, which enters it.
+    #
+    # @param slot [Symbol] The world screen's name of the form.
+    # @param name [String] The world's name.
+    # @return [WorldForm] The form, empty.
+    def self.password(slot, name)
+      open(slot, "password", "name" => name.to_s)
+    end
+
+    # The form that adds a hidden world to the list by its id.
+    #
+    # @param slot [Symbol] The world screen's name of the form.
+    # @return [WorldForm] The form, empty.
+    def self.join(slot)
+      open(slot, "join")
+    end
+
+    # Opens a form in the DLL.
+    #
+    # @param slot [Symbol] The world screen's name of the form.
+    # @param kind [String] The form, as WorldForms names it.
+    # @param seed [Hash] What it opens with.
+    # @param facts [Proc, nil] Tells the facts that hold as the player acts, nil for none.
+    # @return [WorldForm] The form, empty when the DLL did not answer.
+    def self.open(slot, kind, seed = {}, facts = nil)
+      view = MGQ_Multiplayer::Bridge.call(OPEN_TOPIC, seed.merge("form" => slot.to_s, "kind" => kind))
+      new(slot.to_s, nil, { :serial => 0, :values => {} }, view || NO_VIEW, facts)
+    end
+
+    # Creates a page's copy of what the DLL holds.
+    #
+    # @param slot [String] The form's slot.
+    # @param page [String, nil] The page, nil for the main one.
+    # @param shared [Hash] What the form's pages share: :values and the :serial of the last view.
+    # @param view [Hash] The page's view.
+    # @param facts [Proc, nil] Tells the facts that hold as the player acts.
+    def initialize(slot, page, shared, view, facts)
+      @slot = slot
+      @page = page
+      @shared = shared
+      @facts = facts
+      take(view)
+    end
+
+    # The page of the squad rules, which holds the same values, so whatever it changes this form keeps.
+    #
+    # @return [WorldForm] The page, the same one each time.
+    def limits
+      @limits ||= WorldForm.new(@slot, LIMITS_PAGE, @shared, MGQ_Multiplayer::Bridge.call(VIEW_TOPIC, "form" => @slot, "page" => LIMITS_PAGE) || NO_VIEW, @facts)
+    end
+
+    # Forgets the form in the DLL.
+    def close
+      MGQ_Multiplayer::Bridge.call(CLOSE_TOPIC, "form" => @slot)
+    end
+
+    # What the page is called.
+    #
+    # @return [String] The title.
+    def title
+      fresh
+      @title
+    end
+
+    # Lists the fields that are part of the page now, in the order the cursor visits them.
+    #
+    # @return [Array<Field>] The fields.
+    def fields
+      fresh
+      @fields
+    end
+
+    # Reads what a field holds, as the DLL showed it last or the player set it since.
+    #
+    # @param key [Symbol] The field's key.
+    # @return [Object] The value.
+    def [](key)
+      @shared[:values][key]
+    end
+
+    # Sets what a field holds, handing it to the DLL when it changed; the next read of a page then
+    # takes its view anew, unless the value is a text.
+    #
+    # @param key [Symbol] The field's key.
+    # @param value [String, Integer, Boolean, nil] The value.
+    def []=(key, value)
+      values = @shared[:values]
+      return if values.key?(key) && values[key] == value
+
+      values[key] = value
+      call(SET_TOPIC, "key" => key.to_s, "value" => value)
+      # A switch, a checkbox or a save may change what shows, a typed text never does.
+      @shared[:serial] += 1 unless value.is_a?(String)
+    end
+
+    # Tells whether a field can be used.
+    #
+    # @param field [Field] The field.
+    # @return [Boolean] Whether it can.
+    def enabled?(field)
+      fresh
+      @enabled[field.key] == true
+    end
+
+    # Moves a switch to its next or its previous outcome, round, which other fields may follow.
+    #
+    # @param field [Field] The switch.
+    # @param step [Integer] 1 for the next outcome, -1 for the previous.
+    # @return [Integer] The outcome's index now.
+    def turn(field, step)
+      act(TURN_TOPIC, "key" => field.key.to_s, "step" => step)
+      self[field.key]
+    end
+
+    # Ticks a checkbox, or unticks it, which from then on keeps what the player chose.
+    #
+    # @param key [Symbol] The checkbox's key.
+    # @return [Boolean] Whether it is ticked now.
+    def tick(key)
+      act(TICK_TOPIC, "key" => key.to_s)
+      self[key]
+    end
+
+    # Checks what a text box holds, and tidies it.
+    #
+    # @param field [Field] The text box.
+    # @param text [String] What it holds.
+    # @return [Array] The tidied text, and why it is not accepted, nil when it is.
+    def check(field, text)
+      answer = call(CHECK_TOPIC, "key" => field.key.to_s, "text" => text.to_s, "facts" => facts)
+      answer.is_a?(Array) ? answer : [text, FAILED_TEXT]
+    end
+
+    # Sends the page: finds the first field that keeps it from being sent, or, once none does, takes
+    # every text box as the DLL tidied it.
+    #
+    # @return [Array, nil] The field's index and why, nil when the page can be sent.
+    def problem
+      answer = call(SEND_TOPIC, "facts" => facts)
+      return [0, FAILED_TEXT] unless answer.is_a?(Hash)
+
+      key, reason = answer["problem"]
+      return [fields.index { |field| field.key.to_s == key } || 0, reason] if reason
+
+      take(answer)
+      nil
+    end
+
+    # Tells whether Enter in the page's text box sends it.
+    #
+    # @return [Boolean] Whether it does.
+    def sends_on_enter?
+      fresh
+      @view["sends_on_enter"] == true
+    end
+
+    # Tells the world type the page picks.
+    #
+    # @return [String] One of TYPES.
+    def type
+      derived("type") || CLASSIC
+    end
+
+    # Tells how the page has a Raid World share companions.
+    #
+    # @return [String] One of SHARING; "off" for a Classic world.
+    def share
+      derived("share") || SHARING[0]
+    end
+
+    # Tells the difficulty the page picks.
+    #
+    # @return [Integer, nil] One of MGQ_MpWorld.difficulties; nil for every player's own.
+    def difficulty
+      derived("difficulty")
+    end
+
+    # Tells the squad rules the page picks.
+    #
+    # @return [Hash] The rules, see MGQ_MpWorld.squad.
+    def squad
+      MGQ_MpWorld.squad_from(derived("squad")) || MGQ_MpWorld.default_squad
+    end
+
+    # Tells whether new players start from one of the creator's saves.
+    #
+    # @return [Boolean] Whether they do.
+    def from_save?
+      derived("from_save") == true
+    end
+
+    # Tells whether a Classic world's story bosses fight as raid bosses.
+    #
+    # @return [Boolean] Whether they do.
+    def raid_bosses?
+      derived("raid_bosses") == true
+    end
+
+    # Tells whether each new player of a Classic world chooses where to start.
+    #
+    # @return [Boolean] Whether they do.
+    def choose?
+      derived("choose") == true
+    end
+
+    # Tells whether the world turns off every mod it does not name.
+    #
+    # @return [Boolean] Whether it does.
+    def other_mods_off?
+      derived("other_mods_off") == true
+    end
+
+    private
+
+    # Reads what the values add up to, as the DLL tells it.
+    #
+    # @param name [String] The sum, such as "type".
+    # @return [Object, nil] Its value.
+    def derived(name)
+      fresh
+      (@view["derived"] || {})[name]
+    end
+
+    # Runs an action on the page and takes the view it answers.
+    #
+    # @param topic [String] The action's topic.
+    # @param request [Hash] What it needs besides the slot and the page.
+    def act(topic, request)
+      view = call(topic, request)
+      take(view) if view.is_a?(Hash)
+    end
+
+    # Calls a topic of the form.
+    #
+    # @param topic [String] The topic.
+    # @param request [Hash] What it needs besides the slot and the page.
+    # @return [Object, nil] The answer.
+    def call(topic, request = {})
+      MGQ_Multiplayer::Bridge.call(topic, request.merge("form" => @slot, "page" => @page))
+    end
+
+    # Tells the facts that hold now.
+    #
+    # @return [Array<String>, nil] The facts, nil to keep those the form opened with.
+    def facts
+      @facts ? @facts.call : nil
+    end
+
+    # Reads the page anew when another page of the form acted since it was last read.
+    def fresh
+      return if @seen == @shared[:serial]
+
+      view = call(VIEW_TOPIC)
+      take(view) if view.is_a?(Hash)
+      @seen = @shared[:serial]
+    end
+
+    # Takes a view as the page's copy, and its values as every page's.
+    #
+    # @param view [Hash] The view.
+    def take(view)
+      @title = view["title"].to_s
+      @enabled = {}
+      @fields = Array(view["fields"]).map do |about|
+        field = field_of(about)
+        @enabled[field.key] = about["enabled"] == true
+        field
+      end
+      values = {}
+      (view["values"] || {}).each { |key, value| values[key.to_sym] = value }
+      @shared[:values] = values
+      @view = view
+      @seen = @shared[:serial] += 1
+    end
+
+    # Makes the field a view describes.
+    #
+    # @param about [Hash] The field, as the view tells it.
+    # @return [Field] The field.
+    def field_of(about)
+      Field.new(about["key"].to_sym, about["kind"].to_sym, about["label"].to_s, about["row"].to_i, about["hint"].to_s,
+                :side => about["side"] && about["side"].to_sym, :max_chars => about["max_chars"], :allowed => ALLOWED[about["allowed"]],
+                :optional => about["optional"] == true, :group => about["group"], :lines => about["lines"], :choices => Array(about["choices"]),
+                :label_width => about["label_width"])
+    end
+  end
+
+  # The mods of a world as the mod picker shows them, which the DLL keeps (ModPick in
+  # MGQOnline.Game): every mod the Patch folder holds, each unlisted, listed, required or
+  # essential, then the mods added by name, which this game lacks.
   class ModPick
     # How a mod can be named, in the order the picker offers them.
     STATES = [:unlisted, :listed, :required, :essential]
 
-    # The mark in front of a mod's name for each state it is named in.
-    MARKS = { :listed => "", :required => "!", :essential => "?" }
+    # The topic that opens the picker.
+    OPEN_TOPIC = "modpick.open"
+
+    # The topic that changes it.
+    ACT_TOPIC = "modpick.act"
+
+    # The topic that closes it.
+    CLOSE_TOPIC = "modpick.close"
 
     # A mod of the picker.
     #
     # @!attribute name [String] Its name, the script's file name for an installed one.
     # @!attribute state [Symbol] One of STATES.
     # @!attribute installed [Boolean] Whether the Patch folder holds it.
-    Entry = Struct.new(:name, :state, :installed)
+    # @!attribute label [String] What the right end of its row says.
+    # @!attribute color [Symbol] Its row's color: :grey, :plain, :bad or :gold.
+    Entry = Struct.new(:name, :state, :installed, :label, :color)
 
     # The mods, the installed ones first.
     attr_reader :entries
 
-    # Reads the mods a world names into the player's installed ones; a named mod the player lacks
-    # follows them as added.
+    # The mods named, the way a world keeps them: each with its mark, separated by semicolons.
+    attr_reader :text
+
+    # Opens the picker on the mods a world names and the player's installed ones; a named mod the
+    # player lacks follows them as added.
     #
     # @param text [String, nil] The mods as written, see MGQ_MpWorld.mods_of.
-    # @param installed [Array<String>] The installed mods' names, see MGQ_MpWorld.installed_mod_names.
-    def initialize(text, installed)
-      @entries = installed.map { |name| Entry.new(name, :unlisted, true) }
-      required = MGQ_MpWorld.required_mods(text)
-      essential = MGQ_MpWorld.essential_mods(text)
-
-      MGQ_MpWorld.mods_of(text).each do |name|
-        state = required.include?(name) ? :required : (essential.include?(name) ? :essential : :listed)
-        entry = find(name)
-        entry ? entry.state = state : @entries.push(Entry.new(name, state, false))
-      end
+    def initialize(text)
+      @entries = []
+      @text = ""
+      show(MGQ_Multiplayer::Bridge.call(OPEN_TOPIC, "text" => text.to_s))
     end
 
-    # Writes the mods named, the way a world keeps them.
+    # Tells whether every installed mod is named.
     #
-    # @return [String] Each named mod with its mark, separated by semicolons.
-    def text
-      @entries.reject { |entry| entry.state == :unlisted }.map { |entry| "#{MARKS[entry.state]}#{entry.name}" }.join("; ")
+    # @return [Boolean] Whether it is; also when none is installed.
+    def all_listed?
+      @all_listed == true
     end
 
     # Names a mod another way. An added mod unlisted stays in the picker, but out of the text.
@@ -2712,12 +2376,7 @@ module MGQ_MpWorld
     # @param state [Symbol] One of STATES.
     # @return [String, nil] Why it cannot, nil when it was done.
     def set(index, state)
-      entry = @entries[index]
-      before = entry.state
-      entry.state = state
-      return too_long(entry, before) if text.size > MAX_MODS_CHARS
-
-      nil
+      act("do" => "set", "index" => index, "state" => state.to_s)
     end
 
     # Takes a mod added by name out of the picker. An installed mod stays, since the Patch folder
@@ -2726,10 +2385,7 @@ module MGQ_MpWorld
     # @param index [Integer] The mod's index in entries.
     # @return [Boolean] Whether it was taken out.
     def remove(index)
-      return false if @entries[index].installed
-
-      @entries.delete_at(index)
-      true
+      act("do" => "remove", "index" => index) == true
     end
 
     # Lists an unlisted mod, or unlists a named one.
@@ -2737,7 +2393,7 @@ module MGQ_MpWorld
     # @param index [Integer] The mod's index in entries.
     # @return [String, nil] Why it cannot, nil when it was done.
     def toggle(index)
-      set(index, @entries[index].state == :unlisted ? :listed : :unlisted)
+      act("do" => "toggle", "index" => index)
     end
 
     # Makes a mod required or essential, or only listed again when it is so already.
@@ -2746,35 +2402,21 @@ module MGQ_MpWorld
     # @param state [Symbol] :required or :essential.
     # @return [String, nil] Why it cannot, nil when it was done.
     def mark(index, state)
-      set(index, @entries[index].state == state ? :listed : state)
-    end
-
-    # Tells whether every installed mod is named.
-    #
-    # @return [Boolean] Whether it is; also when none is installed.
-    def all_listed?
-      @entries.all? { |entry| !entry.installed || entry.state != :unlisted }
+      act("do" => "mark", "index" => index, "state" => state.to_s)
     end
 
     # Lists every unlisted installed mod, in order, until the text would grow too long.
     #
     # @return [String, nil] Why the rest could not be listed, nil when all were.
     def list_all
-      @entries.each_index do |index|
-        next unless @entries[index].installed && @entries[index].state == :unlisted
-
-        error = set(index, :listed)
-        return error if error
-      end
-      nil
+      act("do" => "list_all")
     end
 
     # Unlists every installed mod; the mods added by name stay.
     #
     # @return [nil] Nothing, since unlisting always fits.
     def unlist_all
-      @entries.each { |entry| entry.state = :unlisted if entry.installed }
-      nil
+      act("do" => "unlist_all")
     end
 
     # Adds a mod the player lacks by its name, listed.
@@ -2782,37 +2424,47 @@ module MGQ_MpWorld
     # @param name [String] The name as typed.
     # @return [String, nil] Why it cannot, nil when it was added.
     def add(name)
-      name = name.to_s.strip.sub(/\A[!?]\s*/, "")
-      return "A mod's name cannot be empty." if name.empty?
-      return "A mod's name cannot hold a semicolon." if name.include?(";")
-      return "#{find(name).name} is in the list already." if find(name)
-
-      @entries.push(Entry.new(name, :listed, false))
-      return nil if text.size <= MAX_MODS_CHARS
-
-      @entries.pop
-      "The mods may take #{MAX_MODS_CHARS} characters at most."
+      act("do" => "add", "name" => name.to_s)
     end
 
-    # Finds a mod by its name, whatever its case, spaces, underscores and hyphens.
-    #
-    # @param name [String] The name.
-    # @return [Entry, nil] The mod, nil when the picker has none of that name.
-    def find(name)
-      key = MGQ_MpWorld.mod_key(name)
-      @entries.find { |entry| MGQ_MpWorld.mod_key(entry.name) == key }
+    # Closes the picker in the DLL.
+    def close
+      MGQ_Multiplayer::Bridge.call(CLOSE_TOPIC)
     end
 
     private
 
-    # Puts a mod's state back, since the text grew too long with the new one.
+    # Changes the picker through the DLL and takes it as it left it.
     #
-    # @param entry [Entry] The mod.
-    # @param state [Symbol] Its state before.
-    # @return [String] Why the change was refused.
-    def too_long(entry, state)
-      entry.state = state
-      "The mods may take #{MAX_MODS_CHARS} characters at most."
+    # @param request [Hash] The change, see modpick.act.
+    # @return [Object] The change's answer, nil when the DLL did not answer.
+    def act(request)
+      answer = MGQ_Multiplayer::Bridge.call(ACT_TOPIC, request)
+      return nil unless answer.is_a?(Hash)
+
+      show(answer["pick"])
+      answer["answer"]
+    end
+
+    # Takes the picker as the DLL tells it, keeping each entry's object while the mods stay as many,
+    # so an entry read before a change tells its new state.
+    #
+    # @param view [Hash, nil] The picker, as modpick.open tells it.
+    def show(view)
+      return unless view.is_a?(Hash)
+
+      rows = view["entries"]
+      @entries = [] if rows.size != @entries.size
+      rows.each_with_index do |(name, state, installed, label, color), index|
+        entry = (@entries[index] ||= Entry.new)
+        entry.name = name
+        entry.state = state.to_sym
+        entry.installed = installed
+        entry.label = label
+        entry.color = color.to_sym
+      end
+      @text = view["text"]
+      @all_listed = view["all_listed"]
     end
   end
 end

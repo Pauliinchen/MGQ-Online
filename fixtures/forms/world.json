@@ -1,0 +1,4411 @@
+{
+  "forms": [
+    {
+      "case": "create as it opens",
+      "open": {
+        "kind": "create"
+      },
+      "steps": [
+
+      ],
+      "view": {
+        "title": "Create a new world",
+        "fields": [
+          {
+            "key": "name",
+            "kind": "text",
+            "label": "Name",
+            "row": 0,
+            "side": null,
+            "max_chars": 16,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The name everyone sees in the list.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "password",
+            "kind": "password",
+            "label": "Password",
+            "row": 1,
+            "side": "left",
+            "max_chars": 20,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Typed once to enter the world. Left empty, anyone may enter.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "seats",
+            "kind": "number",
+            "label": "Max Players",
+            "row": 1,
+            "side": "right",
+            "max_chars": 2,
+            "allowed": "digits",
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Players in the world at once, 2 to 32.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "hidden",
+            "kind": "check",
+            "label": "Hidden",
+            "row": 2,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Only its players see it in the list. Others add it with its id.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "type",
+            "kind": "switch",
+            "label": "World type",
+            "row": 2,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic: each party plays its own story. Raid: the whole world plays one. Fixed once created.",
+            "choices": [
+              "Classic",
+              "Raid"
+            ],
+            "label_width": 70,
+            "enabled": true
+          },
+          {
+            "key": "from_save",
+            "kind": "check",
+            "label": "Shared save",
+            "row": 3,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic only: new players start from one of your saves. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "choose",
+            "kind": "check",
+            "label": "Player's choice",
+            "row": 3,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic only: new players pick their start, the opening or a save. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "save",
+            "kind": "save",
+            "label": "Save",
+            "row": 4,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The save every new player starts from.",
+            "choices": [
+
+            ],
+            "label_width": 40,
+            "enabled": false
+          },
+          {
+            "key": "raid_bosses",
+            "kind": "check",
+            "label": "Raid Bosses",
+            "row": 4,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic only: story bosses fight as raid bosses of their tier, far stronger. Changeable later.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mods",
+            "kind": "mods",
+            "label": "Mods",
+            "row": 6,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "The mods of the world: listed, required to enter or essential. Enter picks them.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mismatch",
+            "kind": "check",
+            "label": "Allow data mismatch",
+            "row": 7,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "shared",
+            "kind": "check",
+            "label": "Shared Mod Settings",
+            "row": 7,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: every player plays with your mod options here. Unticked: each keeps their own.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "other_mods_off",
+            "kind": "check",
+            "label": "Turn off other mods",
+            "row": 8,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: mods the world does not name are off in it. Personal mods stay on.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "description",
+            "kind": "area",
+            "label": "What the world is about",
+            "row": 9,
+            "side": null,
+            "max_chars": 1000,
+            "allowed": null,
+            "optional": true,
+            "group": "Description",
+            "lines": 4,
+            "hint": "Shown in the world's details. Optional.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "confirm",
+            "kind": "button",
+            "label": "Create the world",
+            "row": 10,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Creates the world. You enter it from the list.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "name": "",
+          "password": "",
+          "seats": "4",
+          "hidden": false,
+          "type": 0,
+          "share": 0,
+          "from_save": false,
+          "save": null,
+          "choose": false,
+          "description": "",
+          "mods": "",
+          "mismatch": false,
+          "shared": false,
+          "difficulty": 2,
+          "other_mods_off": false,
+          "raid_bosses": false,
+          "luka": false,
+          "formation": 1,
+          "front": 0,
+          "raid_front": 0
+        },
+        "derived": {
+          "type": "classic",
+          "share": "off",
+          "difficulty": 0,
+          "from_save": false,
+          "choose": false,
+          "raid_bosses": false,
+          "other_mods_off": false,
+          "squad": {
+            "luka": false,
+            "formation": 4,
+            "front": 1,
+            "raid_front": 1
+          }
+        },
+        "problem": [
+          "name",
+          "The world needs a name."
+        ]
+      }
+    },
+    {
+      "case": "create turned to a Raid World",
+      "open": {
+        "kind": "create"
+      },
+      "steps": [
+        [
+          "turn",
+          "type",
+          1
+        ]
+      ],
+      "view": {
+        "title": "Create a new world",
+        "fields": [
+          {
+            "key": "name",
+            "kind": "text",
+            "label": "Name",
+            "row": 0,
+            "side": null,
+            "max_chars": 16,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The name everyone sees in the list.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "password",
+            "kind": "password",
+            "label": "Password",
+            "row": 1,
+            "side": "left",
+            "max_chars": 20,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Typed once to enter the world. Left empty, anyone may enter.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "seats",
+            "kind": "number",
+            "label": "Max Players",
+            "row": 1,
+            "side": "right",
+            "max_chars": 2,
+            "allowed": "digits",
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Players in the world at once, 2 to 32.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "hidden",
+            "kind": "check",
+            "label": "Hidden",
+            "row": 2,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Only its players see it in the list. Others add it with its id.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "type",
+            "kind": "switch",
+            "label": "World type",
+            "row": 2,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic: each party plays its own story. Raid: the whole world plays one. Fixed once created.",
+            "choices": [
+              "Classic",
+              "Raid"
+            ],
+            "label_width": 70,
+            "enabled": true
+          },
+          {
+            "key": "share",
+            "kind": "switch",
+            "label": "Sharing companions",
+            "row": 3,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Raid only: companions everyone gets on reaching their level. Fixed once created.",
+            "choices": [
+              "Off",
+              "Story companions",
+              "Story + battle recruits"
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "from_save",
+            "kind": "check",
+            "label": "Shared save",
+            "row": 4,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "New players start from one of your saves, the world's story from its point. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "difficulty",
+            "kind": "switch",
+            "label": "Difficulty",
+            "row": 4,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Every player of the world plays on it. You can change it later in the edit form.",
+            "choices": [
+              "VERY EASY",
+              "EASY",
+              "NORMAL",
+              "HARD",
+              "VERY HARD",
+              "HELL",
+              "PARADOX"
+            ],
+            "label_width": 70,
+            "enabled": true
+          },
+          {
+            "key": "save",
+            "kind": "save",
+            "label": "Save",
+            "row": 5,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The save every new player starts from.",
+            "choices": [
+
+            ],
+            "label_width": 40,
+            "enabled": false
+          },
+          {
+            "key": "limits",
+            "kind": "button",
+            "label": "Set formation limits",
+            "row": 5,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Luka, the team size and the Frontlines every player keeps. Changeable later too.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mods",
+            "kind": "mods",
+            "label": "Mods",
+            "row": 6,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "The mods of the world: listed, required to enter or essential. Enter picks them.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mismatch",
+            "kind": "check",
+            "label": "Allow data mismatch",
+            "row": 7,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "shared",
+            "kind": "check",
+            "label": "Shared Mod Settings",
+            "row": 7,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: every player plays with your mod options here. Unticked: each keeps their own.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "other_mods_off",
+            "kind": "check",
+            "label": "Turn off other mods",
+            "row": 8,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: mods the world does not name are off in it. Personal mods stay on.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "description",
+            "kind": "area",
+            "label": "What the world is about",
+            "row": 9,
+            "side": null,
+            "max_chars": 1000,
+            "allowed": null,
+            "optional": true,
+            "group": "Description",
+            "lines": 2,
+            "hint": "Shown in the world's details. Optional.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "confirm",
+            "kind": "button",
+            "label": "Create the world",
+            "row": 10,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Creates the world. You enter it from the list.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "name": "",
+          "password": "",
+          "seats": "4",
+          "hidden": false,
+          "type": 1,
+          "share": 0,
+          "from_save": false,
+          "save": null,
+          "choose": false,
+          "description": "",
+          "mods": "",
+          "mismatch": false,
+          "shared": false,
+          "difficulty": 2,
+          "other_mods_off": true,
+          "raid_bosses": false,
+          "luka": false,
+          "formation": 1,
+          "front": 0,
+          "raid_front": 0
+        },
+        "derived": {
+          "type": "raid",
+          "share": "off",
+          "difficulty": 0,
+          "from_save": false,
+          "choose": false,
+          "raid_bosses": false,
+          "other_mods_off": true,
+          "squad": {
+            "luka": false,
+            "formation": 4,
+            "front": 1,
+            "raid_front": 1
+          }
+        },
+        "problem": [
+          "name",
+          "The world needs a name."
+        ]
+      }
+    },
+    {
+      "case": "create turned to a Raid World and back",
+      "open": {
+        "kind": "create"
+      },
+      "steps": [
+        [
+          "turn",
+          "type",
+          1
+        ],
+        [
+          "turn",
+          "type",
+          -1
+        ]
+      ],
+      "view": {
+        "title": "Create a new world",
+        "fields": [
+          {
+            "key": "name",
+            "kind": "text",
+            "label": "Name",
+            "row": 0,
+            "side": null,
+            "max_chars": 16,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The name everyone sees in the list.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "password",
+            "kind": "password",
+            "label": "Password",
+            "row": 1,
+            "side": "left",
+            "max_chars": 20,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Typed once to enter the world. Left empty, anyone may enter.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "seats",
+            "kind": "number",
+            "label": "Max Players",
+            "row": 1,
+            "side": "right",
+            "max_chars": 2,
+            "allowed": "digits",
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Players in the world at once, 2 to 32.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "hidden",
+            "kind": "check",
+            "label": "Hidden",
+            "row": 2,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Only its players see it in the list. Others add it with its id.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "type",
+            "kind": "switch",
+            "label": "World type",
+            "row": 2,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic: each party plays its own story. Raid: the whole world plays one. Fixed once created.",
+            "choices": [
+              "Classic",
+              "Raid"
+            ],
+            "label_width": 70,
+            "enabled": true
+          },
+          {
+            "key": "from_save",
+            "kind": "check",
+            "label": "Shared save",
+            "row": 3,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic only: new players start from one of your saves. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "choose",
+            "kind": "check",
+            "label": "Player's choice",
+            "row": 3,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic only: new players pick their start, the opening or a save. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "save",
+            "kind": "save",
+            "label": "Save",
+            "row": 4,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The save every new player starts from.",
+            "choices": [
+
+            ],
+            "label_width": 40,
+            "enabled": false
+          },
+          {
+            "key": "raid_bosses",
+            "kind": "check",
+            "label": "Raid Bosses",
+            "row": 4,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic only: story bosses fight as raid bosses of their tier, far stronger. Changeable later.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mods",
+            "kind": "mods",
+            "label": "Mods",
+            "row": 6,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "The mods of the world: listed, required to enter or essential. Enter picks them.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mismatch",
+            "kind": "check",
+            "label": "Allow data mismatch",
+            "row": 7,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "shared",
+            "kind": "check",
+            "label": "Shared Mod Settings",
+            "row": 7,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: every player plays with your mod options here. Unticked: each keeps their own.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "other_mods_off",
+            "kind": "check",
+            "label": "Turn off other mods",
+            "row": 8,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: mods the world does not name are off in it. Personal mods stay on.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "description",
+            "kind": "area",
+            "label": "What the world is about",
+            "row": 9,
+            "side": null,
+            "max_chars": 1000,
+            "allowed": null,
+            "optional": true,
+            "group": "Description",
+            "lines": 4,
+            "hint": "Shown in the world's details. Optional.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "confirm",
+            "kind": "button",
+            "label": "Create the world",
+            "row": 10,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Creates the world. You enter it from the list.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "name": "",
+          "password": "",
+          "seats": "4",
+          "hidden": false,
+          "type": 0,
+          "share": 0,
+          "from_save": false,
+          "save": null,
+          "choose": false,
+          "description": "",
+          "mods": "",
+          "mismatch": false,
+          "shared": false,
+          "difficulty": 2,
+          "other_mods_off": false,
+          "raid_bosses": false,
+          "luka": false,
+          "formation": 1,
+          "front": 0,
+          "raid_front": 0
+        },
+        "derived": {
+          "type": "classic",
+          "share": "off",
+          "difficulty": 0,
+          "from_save": false,
+          "choose": false,
+          "raid_bosses": false,
+          "other_mods_off": false,
+          "squad": {
+            "luka": false,
+            "formation": 4,
+            "front": 1,
+            "raid_front": 1
+          }
+        },
+        "problem": [
+          "name",
+          "The world needs a name."
+        ]
+      }
+    },
+    {
+      "case": "create keeps Turn off other mods once the player ticked it",
+      "open": {
+        "kind": "create"
+      },
+      "steps": [
+        [
+          "tick",
+          "other_mods_off"
+        ],
+        [
+          "turn",
+          "type",
+          1
+        ]
+      ],
+      "view": {
+        "title": "Create a new world",
+        "fields": [
+          {
+            "key": "name",
+            "kind": "text",
+            "label": "Name",
+            "row": 0,
+            "side": null,
+            "max_chars": 16,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The name everyone sees in the list.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "password",
+            "kind": "password",
+            "label": "Password",
+            "row": 1,
+            "side": "left",
+            "max_chars": 20,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Typed once to enter the world. Left empty, anyone may enter.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "seats",
+            "kind": "number",
+            "label": "Max Players",
+            "row": 1,
+            "side": "right",
+            "max_chars": 2,
+            "allowed": "digits",
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Players in the world at once, 2 to 32.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "hidden",
+            "kind": "check",
+            "label": "Hidden",
+            "row": 2,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Only its players see it in the list. Others add it with its id.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "type",
+            "kind": "switch",
+            "label": "World type",
+            "row": 2,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic: each party plays its own story. Raid: the whole world plays one. Fixed once created.",
+            "choices": [
+              "Classic",
+              "Raid"
+            ],
+            "label_width": 70,
+            "enabled": true
+          },
+          {
+            "key": "share",
+            "kind": "switch",
+            "label": "Sharing companions",
+            "row": 3,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Raid only: companions everyone gets on reaching their level. Fixed once created.",
+            "choices": [
+              "Off",
+              "Story companions",
+              "Story + battle recruits"
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "from_save",
+            "kind": "check",
+            "label": "Shared save",
+            "row": 4,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "New players start from one of your saves, the world's story from its point. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "difficulty",
+            "kind": "switch",
+            "label": "Difficulty",
+            "row": 4,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Every player of the world plays on it. You can change it later in the edit form.",
+            "choices": [
+              "VERY EASY",
+              "EASY",
+              "NORMAL",
+              "HARD",
+              "VERY HARD",
+              "HELL",
+              "PARADOX"
+            ],
+            "label_width": 70,
+            "enabled": true
+          },
+          {
+            "key": "save",
+            "kind": "save",
+            "label": "Save",
+            "row": 5,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The save every new player starts from.",
+            "choices": [
+
+            ],
+            "label_width": 40,
+            "enabled": false
+          },
+          {
+            "key": "limits",
+            "kind": "button",
+            "label": "Set formation limits",
+            "row": 5,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Luka, the team size and the Frontlines every player keeps. Changeable later too.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mods",
+            "kind": "mods",
+            "label": "Mods",
+            "row": 6,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "The mods of the world: listed, required to enter or essential. Enter picks them.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mismatch",
+            "kind": "check",
+            "label": "Allow data mismatch",
+            "row": 7,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "shared",
+            "kind": "check",
+            "label": "Shared Mod Settings",
+            "row": 7,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: every player plays with your mod options here. Unticked: each keeps their own.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "other_mods_off",
+            "kind": "check",
+            "label": "Turn off other mods",
+            "row": 8,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: mods the world does not name are off in it. Personal mods stay on.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "description",
+            "kind": "area",
+            "label": "What the world is about",
+            "row": 9,
+            "side": null,
+            "max_chars": 1000,
+            "allowed": null,
+            "optional": true,
+            "group": "Description",
+            "lines": 2,
+            "hint": "Shown in the world's details. Optional.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "confirm",
+            "kind": "button",
+            "label": "Create the world",
+            "row": 10,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Creates the world. You enter it from the list.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "name": "",
+          "password": "",
+          "seats": "4",
+          "hidden": false,
+          "type": 1,
+          "share": 0,
+          "from_save": false,
+          "save": null,
+          "choose": false,
+          "description": "",
+          "mods": "",
+          "mismatch": false,
+          "shared": false,
+          "difficulty": 2,
+          "other_mods_off": true,
+          "raid_bosses": false,
+          "luka": false,
+          "formation": 1,
+          "front": 0,
+          "raid_front": 0
+        },
+        "derived": {
+          "type": "raid",
+          "share": "off",
+          "difficulty": 0,
+          "from_save": false,
+          "choose": false,
+          "raid_bosses": false,
+          "other_mods_off": true,
+          "squad": {
+            "luka": false,
+            "formation": 4,
+            "front": 1,
+            "raid_front": 1
+          }
+        },
+        "problem": [
+          "name",
+          "The world needs a name."
+        ]
+      }
+    },
+    {
+      "case": "create with Shared save ticked and no save",
+      "open": {
+        "kind": "create"
+      },
+      "steps": [
+        [
+          "set",
+          "name",
+          "Home"
+        ],
+        [
+          "tick",
+          "from_save"
+        ]
+      ],
+      "view": {
+        "title": "Create a new world",
+        "fields": [
+          {
+            "key": "name",
+            "kind": "text",
+            "label": "Name",
+            "row": 0,
+            "side": null,
+            "max_chars": 16,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The name everyone sees in the list.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "password",
+            "kind": "password",
+            "label": "Password",
+            "row": 1,
+            "side": "left",
+            "max_chars": 20,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Typed once to enter the world. Left empty, anyone may enter.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "seats",
+            "kind": "number",
+            "label": "Max Players",
+            "row": 1,
+            "side": "right",
+            "max_chars": 2,
+            "allowed": "digits",
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Players in the world at once, 2 to 32.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "hidden",
+            "kind": "check",
+            "label": "Hidden",
+            "row": 2,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Only its players see it in the list. Others add it with its id.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "type",
+            "kind": "switch",
+            "label": "World type",
+            "row": 2,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic: each party plays its own story. Raid: the whole world plays one. Fixed once created.",
+            "choices": [
+              "Classic",
+              "Raid"
+            ],
+            "label_width": 70,
+            "enabled": true
+          },
+          {
+            "key": "from_save",
+            "kind": "check",
+            "label": "Shared save",
+            "row": 3,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic only: new players start from one of your saves. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "choose",
+            "kind": "check",
+            "label": "Player's choice",
+            "row": 3,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic only: new players pick their start, the opening or a save. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "save",
+            "kind": "save",
+            "label": "Save",
+            "row": 4,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The save every new player starts from.",
+            "choices": [
+
+            ],
+            "label_width": 40,
+            "enabled": true
+          },
+          {
+            "key": "raid_bosses",
+            "kind": "check",
+            "label": "Raid Bosses",
+            "row": 4,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic only: story bosses fight as raid bosses of their tier, far stronger. Changeable later.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mods",
+            "kind": "mods",
+            "label": "Mods",
+            "row": 6,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "The mods of the world: listed, required to enter or essential. Enter picks them.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mismatch",
+            "kind": "check",
+            "label": "Allow data mismatch",
+            "row": 7,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "shared",
+            "kind": "check",
+            "label": "Shared Mod Settings",
+            "row": 7,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: every player plays with your mod options here. Unticked: each keeps their own.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "other_mods_off",
+            "kind": "check",
+            "label": "Turn off other mods",
+            "row": 8,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: mods the world does not name are off in it. Personal mods stay on.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "description",
+            "kind": "area",
+            "label": "What the world is about",
+            "row": 9,
+            "side": null,
+            "max_chars": 1000,
+            "allowed": null,
+            "optional": true,
+            "group": "Description",
+            "lines": 4,
+            "hint": "Shown in the world's details. Optional.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "confirm",
+            "kind": "button",
+            "label": "Create the world",
+            "row": 10,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Creates the world. You enter it from the list.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "name": "Home",
+          "password": "",
+          "seats": "4",
+          "hidden": false,
+          "type": 0,
+          "share": 0,
+          "from_save": true,
+          "save": null,
+          "choose": false,
+          "description": "",
+          "mods": "",
+          "mismatch": false,
+          "shared": false,
+          "difficulty": 2,
+          "other_mods_off": false,
+          "raid_bosses": false,
+          "luka": false,
+          "formation": 1,
+          "front": 0,
+          "raid_front": 0
+        },
+        "derived": {
+          "type": "classic",
+          "share": "off",
+          "difficulty": 0,
+          "from_save": true,
+          "choose": false,
+          "raid_bosses": false,
+          "other_mods_off": false,
+          "squad": {
+            "luka": false,
+            "formation": 4,
+            "front": 1,
+            "raid_front": 1
+          }
+        },
+        "problem": [
+          "save",
+          "Choose the save its players start from."
+        ]
+      }
+    },
+    {
+      "case": "create with a save, a choice and raid bosses",
+      "open": {
+        "kind": "create"
+      },
+      "steps": [
+        [
+          "set",
+          "name",
+          " Home "
+        ],
+        [
+          "tick",
+          "from_save"
+        ],
+        [
+          "set",
+          "save",
+          2
+        ],
+        [
+          "tick",
+          "choose"
+        ],
+        [
+          "tick",
+          "raid_bosses"
+        ]
+      ],
+      "view": {
+        "title": "Create a new world",
+        "fields": [
+          {
+            "key": "name",
+            "kind": "text",
+            "label": "Name",
+            "row": 0,
+            "side": null,
+            "max_chars": 16,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The name everyone sees in the list.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "password",
+            "kind": "password",
+            "label": "Password",
+            "row": 1,
+            "side": "left",
+            "max_chars": 20,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Typed once to enter the world. Left empty, anyone may enter.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "seats",
+            "kind": "number",
+            "label": "Max Players",
+            "row": 1,
+            "side": "right",
+            "max_chars": 2,
+            "allowed": "digits",
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Players in the world at once, 2 to 32.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "hidden",
+            "kind": "check",
+            "label": "Hidden",
+            "row": 2,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Only its players see it in the list. Others add it with its id.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "type",
+            "kind": "switch",
+            "label": "World type",
+            "row": 2,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic: each party plays its own story. Raid: the whole world plays one. Fixed once created.",
+            "choices": [
+              "Classic",
+              "Raid"
+            ],
+            "label_width": 70,
+            "enabled": true
+          },
+          {
+            "key": "from_save",
+            "kind": "check",
+            "label": "Shared save",
+            "row": 3,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic only: new players start from one of your saves. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "choose",
+            "kind": "check",
+            "label": "Player's choice",
+            "row": 3,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic only: new players pick their start, the opening or a save. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "save",
+            "kind": "save",
+            "label": "Save",
+            "row": 4,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The save every new player starts from.",
+            "choices": [
+
+            ],
+            "label_width": 40,
+            "enabled": true
+          },
+          {
+            "key": "raid_bosses",
+            "kind": "check",
+            "label": "Raid Bosses",
+            "row": 4,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic only: story bosses fight as raid bosses of their tier, far stronger. Changeable later.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mods",
+            "kind": "mods",
+            "label": "Mods",
+            "row": 6,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "The mods of the world: listed, required to enter or essential. Enter picks them.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mismatch",
+            "kind": "check",
+            "label": "Allow data mismatch",
+            "row": 7,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "shared",
+            "kind": "check",
+            "label": "Shared Mod Settings",
+            "row": 7,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: every player plays with your mod options here. Unticked: each keeps their own.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "other_mods_off",
+            "kind": "check",
+            "label": "Turn off other mods",
+            "row": 8,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: mods the world does not name are off in it. Personal mods stay on.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "description",
+            "kind": "area",
+            "label": "What the world is about",
+            "row": 9,
+            "side": null,
+            "max_chars": 1000,
+            "allowed": null,
+            "optional": true,
+            "group": "Description",
+            "lines": 4,
+            "hint": "Shown in the world's details. Optional.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "confirm",
+            "kind": "button",
+            "label": "Create the world",
+            "row": 10,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Creates the world. You enter it from the list.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "name": " Home ",
+          "password": "",
+          "seats": "4",
+          "hidden": false,
+          "type": 0,
+          "share": 0,
+          "from_save": true,
+          "save": 2,
+          "choose": true,
+          "description": "",
+          "mods": "",
+          "mismatch": false,
+          "shared": false,
+          "difficulty": 2,
+          "other_mods_off": false,
+          "raid_bosses": true,
+          "luka": false,
+          "formation": 1,
+          "front": 0,
+          "raid_front": 0
+        },
+        "derived": {
+          "type": "classic",
+          "share": "off",
+          "difficulty": 0,
+          "from_save": true,
+          "choose": true,
+          "raid_bosses": true,
+          "other_mods_off": false,
+          "squad": {
+            "luka": false,
+            "formation": 4,
+            "front": 1,
+            "raid_front": 1
+          }
+        },
+        "problem": null
+      }
+    },
+    {
+      "case": "create of a Raid World with its choices",
+      "open": {
+        "kind": "create"
+      },
+      "steps": [
+        [
+          "set",
+          "name",
+          "Raid"
+        ],
+        [
+          "turn",
+          "type",
+          1
+        ],
+        [
+          "turn",
+          "share",
+          -1
+        ],
+        [
+          "turn",
+          "difficulty",
+          2
+        ],
+        [
+          "tick",
+          "choose"
+        ],
+        [
+          "tick",
+          "raid_bosses"
+        ]
+      ],
+      "view": {
+        "title": "Create a new world",
+        "fields": [
+          {
+            "key": "name",
+            "kind": "text",
+            "label": "Name",
+            "row": 0,
+            "side": null,
+            "max_chars": 16,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The name everyone sees in the list.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "password",
+            "kind": "password",
+            "label": "Password",
+            "row": 1,
+            "side": "left",
+            "max_chars": 20,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Typed once to enter the world. Left empty, anyone may enter.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "seats",
+            "kind": "number",
+            "label": "Max Players",
+            "row": 1,
+            "side": "right",
+            "max_chars": 2,
+            "allowed": "digits",
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Players in the world at once, 2 to 32.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "hidden",
+            "kind": "check",
+            "label": "Hidden",
+            "row": 2,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Only its players see it in the list. Others add it with its id.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "type",
+            "kind": "switch",
+            "label": "World type",
+            "row": 2,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic: each party plays its own story. Raid: the whole world plays one. Fixed once created.",
+            "choices": [
+              "Classic",
+              "Raid"
+            ],
+            "label_width": 70,
+            "enabled": true
+          },
+          {
+            "key": "share",
+            "kind": "switch",
+            "label": "Sharing companions",
+            "row": 3,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Raid only: companions everyone gets on reaching their level. Fixed once created.",
+            "choices": [
+              "Off",
+              "Story companions",
+              "Story + battle recruits"
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "from_save",
+            "kind": "check",
+            "label": "Shared save",
+            "row": 4,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "New players start from one of your saves, the world's story from its point. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "difficulty",
+            "kind": "switch",
+            "label": "Difficulty",
+            "row": 4,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Every player of the world plays on it. You can change it later in the edit form.",
+            "choices": [
+              "VERY EASY",
+              "EASY",
+              "NORMAL",
+              "HARD",
+              "VERY HARD",
+              "HELL",
+              "PARADOX"
+            ],
+            "label_width": 70,
+            "enabled": true
+          },
+          {
+            "key": "save",
+            "kind": "save",
+            "label": "Save",
+            "row": 5,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The save every new player starts from.",
+            "choices": [
+
+            ],
+            "label_width": 40,
+            "enabled": false
+          },
+          {
+            "key": "limits",
+            "kind": "button",
+            "label": "Set formation limits",
+            "row": 5,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Luka, the team size and the Frontlines every player keeps. Changeable later too.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mods",
+            "kind": "mods",
+            "label": "Mods",
+            "row": 6,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "The mods of the world: listed, required to enter or essential. Enter picks them.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mismatch",
+            "kind": "check",
+            "label": "Allow data mismatch",
+            "row": 7,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "shared",
+            "kind": "check",
+            "label": "Shared Mod Settings",
+            "row": 7,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: every player plays with your mod options here. Unticked: each keeps their own.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "other_mods_off",
+            "kind": "check",
+            "label": "Turn off other mods",
+            "row": 8,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: mods the world does not name are off in it. Personal mods stay on.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "description",
+            "kind": "area",
+            "label": "What the world is about",
+            "row": 9,
+            "side": null,
+            "max_chars": 1000,
+            "allowed": null,
+            "optional": true,
+            "group": "Description",
+            "lines": 2,
+            "hint": "Shown in the world's details. Optional.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "confirm",
+            "kind": "button",
+            "label": "Create the world",
+            "row": 10,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Creates the world. You enter it from the list.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "name": "Raid",
+          "password": "",
+          "seats": "4",
+          "hidden": false,
+          "type": 1,
+          "share": 2,
+          "from_save": false,
+          "save": null,
+          "choose": true,
+          "description": "",
+          "mods": "",
+          "mismatch": false,
+          "shared": false,
+          "difficulty": 4,
+          "other_mods_off": true,
+          "raid_bosses": true,
+          "luka": false,
+          "formation": 1,
+          "front": 0,
+          "raid_front": 0
+        },
+        "derived": {
+          "type": "raid",
+          "share": "all",
+          "difficulty": 2,
+          "from_save": false,
+          "choose": false,
+          "raid_bosses": false,
+          "other_mods_off": true,
+          "squad": {
+            "luka": false,
+            "formation": 4,
+            "front": 1,
+            "raid_front": 1
+          }
+        },
+        "problem": null
+      }
+    },
+    {
+      "case": "create with seats out of range",
+      "open": {
+        "kind": "create"
+      },
+      "steps": [
+        [
+          "set",
+          "name",
+          "Home"
+        ],
+        [
+          "set",
+          "seats",
+          "40"
+        ]
+      ],
+      "view": {
+        "title": "Create a new world",
+        "fields": [
+          {
+            "key": "name",
+            "kind": "text",
+            "label": "Name",
+            "row": 0,
+            "side": null,
+            "max_chars": 16,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The name everyone sees in the list.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "password",
+            "kind": "password",
+            "label": "Password",
+            "row": 1,
+            "side": "left",
+            "max_chars": 20,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Typed once to enter the world. Left empty, anyone may enter.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "seats",
+            "kind": "number",
+            "label": "Max Players",
+            "row": 1,
+            "side": "right",
+            "max_chars": 2,
+            "allowed": "digits",
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Players in the world at once, 2 to 32.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "hidden",
+            "kind": "check",
+            "label": "Hidden",
+            "row": 2,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Only its players see it in the list. Others add it with its id.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "type",
+            "kind": "switch",
+            "label": "World type",
+            "row": 2,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic: each party plays its own story. Raid: the whole world plays one. Fixed once created.",
+            "choices": [
+              "Classic",
+              "Raid"
+            ],
+            "label_width": 70,
+            "enabled": true
+          },
+          {
+            "key": "from_save",
+            "kind": "check",
+            "label": "Shared save",
+            "row": 3,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic only: new players start from one of your saves. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "choose",
+            "kind": "check",
+            "label": "Player's choice",
+            "row": 3,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic only: new players pick their start, the opening or a save. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "save",
+            "kind": "save",
+            "label": "Save",
+            "row": 4,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The save every new player starts from.",
+            "choices": [
+
+            ],
+            "label_width": 40,
+            "enabled": false
+          },
+          {
+            "key": "raid_bosses",
+            "kind": "check",
+            "label": "Raid Bosses",
+            "row": 4,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Classic only: story bosses fight as raid bosses of their tier, far stronger. Changeable later.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mods",
+            "kind": "mods",
+            "label": "Mods",
+            "row": 6,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "The mods of the world: listed, required to enter or essential. Enter picks them.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mismatch",
+            "kind": "check",
+            "label": "Allow data mismatch",
+            "row": 7,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "shared",
+            "kind": "check",
+            "label": "Shared Mod Settings",
+            "row": 7,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: every player plays with your mod options here. Unticked: each keeps their own.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "other_mods_off",
+            "kind": "check",
+            "label": "Turn off other mods",
+            "row": 8,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: mods the world does not name are off in it. Personal mods stay on.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "description",
+            "kind": "area",
+            "label": "What the world is about",
+            "row": 9,
+            "side": null,
+            "max_chars": 1000,
+            "allowed": null,
+            "optional": true,
+            "group": "Description",
+            "lines": 4,
+            "hint": "Shown in the world's details. Optional.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "confirm",
+            "kind": "button",
+            "label": "Create the world",
+            "row": 10,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Creates the world. You enter it from the list.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "name": "Home",
+          "password": "",
+          "seats": "40",
+          "hidden": false,
+          "type": 0,
+          "share": 0,
+          "from_save": false,
+          "save": null,
+          "choose": false,
+          "description": "",
+          "mods": "",
+          "mismatch": false,
+          "shared": false,
+          "difficulty": 2,
+          "other_mods_off": false,
+          "raid_bosses": false,
+          "luka": false,
+          "formation": 1,
+          "front": 0,
+          "raid_front": 0
+        },
+        "derived": {
+          "type": "classic",
+          "share": "off",
+          "difficulty": 0,
+          "from_save": false,
+          "choose": false,
+          "raid_bosses": false,
+          "other_mods_off": false,
+          "squad": {
+            "luka": false,
+            "formation": 4,
+            "front": 1,
+            "raid_front": 1
+          }
+        },
+        "problem": [
+          "seats",
+          "Max Players must be a number from 2 to 32."
+        ]
+      }
+    },
+    {
+      "case": "create with its formation limits",
+      "open": {
+        "kind": "create"
+      },
+      "steps": [
+        [
+          "turn",
+          "type",
+          1
+        ],
+        [
+          "page",
+          "limits"
+        ],
+        [
+          "tick",
+          "luka"
+        ],
+        [
+          "turn",
+          "formation",
+          -1
+        ],
+        [
+          "turn",
+          "front",
+          3
+        ],
+        [
+          "turn",
+          "raid_front",
+          1
+        ]
+      ],
+      "view": {
+        "title": "Formation limits",
+        "fields": [
+          {
+            "key": "luka",
+            "kind": "check",
+            "label": "Luka Replaceable",
+            "row": 0,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Team",
+            "lines": 1,
+            "hint": "Ticked: players may take Luka out of their team. Unticked: he always stays in it.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "formation",
+            "kind": "switch",
+            "label": "Formation Size",
+            "row": 0,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Team",
+            "lines": 1,
+            "hint": "The team size every player keeps. Its last place sits out, except with Original, the game's own.",
+            "choices": [
+              "Original",
+              "4",
+              "5",
+              "6",
+              "7",
+              "8"
+            ],
+            "label_width": 80,
+            "enabled": true
+          },
+          {
+            "key": "front",
+            "kind": "switch",
+            "label": "Frontline",
+            "row": 1,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Team",
+            "lines": 1,
+            "hint": "In front in regular fights, the rest on the Backline. With more players, each one's first fights.",
+            "choices": [
+              "1",
+              "2",
+              "3",
+              "4"
+            ],
+            "label_width": 80,
+            "enabled": true
+          },
+          {
+            "key": "raid_front",
+            "kind": "switch",
+            "label": "Raid Frontline",
+            "row": 1,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Team",
+            "lines": 1,
+            "hint": "In front in raid boss fights, the rest on the Backline. With more players, each one's first fights.",
+            "choices": [
+              "1",
+              "2",
+              "3",
+              "4"
+            ],
+            "label_width": 80,
+            "enabled": true
+          },
+          {
+            "key": "done",
+            "kind": "button",
+            "label": "Done",
+            "row": 2,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Back to the world's form. Cancel goes back too, keeping the limits.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "name": "",
+          "password": "",
+          "seats": "4",
+          "hidden": false,
+          "type": 1,
+          "share": 0,
+          "from_save": false,
+          "save": null,
+          "choose": false,
+          "description": "",
+          "mods": "",
+          "mismatch": false,
+          "shared": false,
+          "difficulty": 2,
+          "other_mods_off": true,
+          "raid_bosses": false,
+          "luka": true,
+          "formation": 0,
+          "front": 3,
+          "raid_front": 1
+        },
+        "derived": {
+          "type": "raid",
+          "share": "off",
+          "difficulty": 0,
+          "from_save": false,
+          "choose": false,
+          "raid_bosses": false,
+          "other_mods_off": true,
+          "squad": {
+            "luka": true,
+            "formation": 0,
+            "front": 4,
+            "raid_front": 2
+          }
+        },
+        "problem": null
+      }
+    },
+    {
+      "case": "edit of a Raid World without a difficulty, by its creator",
+      "open": {
+        "kind": "edit",
+        "world": {
+          "name": "Raid",
+          "seats": 8,
+          "mods": "!Level Cap",
+          "description": "About",
+          "settings": "a=b",
+          "difficulty": null,
+          "type": "raid",
+          "other_mods_off": true,
+          "raid_bosses": false,
+          "squad": {
+            "luka": true,
+            "formation": 6,
+            "front": 2,
+            "raid_front": 3
+          }
+        },
+        "own": true
+      },
+      "steps": [
+
+      ],
+      "view": {
+        "title": "Edit Raid",
+        "fields": [
+          {
+            "key": "seats",
+            "kind": "number",
+            "label": "Max Players",
+            "row": 0,
+            "side": null,
+            "max_chars": 2,
+            "allowed": "digits",
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Players in the world at once, 2 to 32.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "difficulty",
+            "kind": "switch",
+            "label": "Difficulty",
+            "row": 1,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Every player of the world plays on it, those in it now at once.",
+            "choices": [
+              "Per player",
+              "VERY EASY",
+              "EASY",
+              "NORMAL",
+              "HARD",
+              "VERY HARD",
+              "HELL",
+              "PARADOX"
+            ],
+            "label_width": 70,
+            "enabled": true
+          },
+          {
+            "key": "limits",
+            "kind": "button",
+            "label": "Set formation limits",
+            "row": 1,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Luka, the team size and the Frontlines every player keeps. Changeable later too.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mods",
+            "kind": "mods",
+            "label": "Mods",
+            "row": 2,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "The mods of the world: listed, required to enter or essential. Enter picks them.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "data",
+            "kind": "button",
+            "label": "Update current data scan",
+            "row": 3,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Scans your game's data as it is now and makes it the world's, such as after a mod update.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "shared",
+            "kind": "check",
+            "label": "Shared Mod Settings",
+            "row": 4,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: every player plays with your mod options here. Unticked: each keeps their own.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "other_mods_off",
+            "kind": "check",
+            "label": "Turn off other mods",
+            "row": 5,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: mods the world does not name are off. Personal mods stay on. Players in it enter again.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "description",
+            "kind": "area",
+            "label": "What the world is about",
+            "row": 6,
+            "side": null,
+            "max_chars": 1000,
+            "allowed": null,
+            "optional": true,
+            "group": "Description",
+            "lines": 4,
+            "hint": "Shown in the world's details. Optional.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "confirm",
+            "kind": "button",
+            "label": "Save the changes",
+            "row": 7,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Changes the world for everyone.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "seats": "8",
+          "mods": "!Level Cap",
+          "description": "About",
+          "shared": true,
+          "difficulty": 0,
+          "other_mods_off": true,
+          "raid_bosses": false,
+          "luka": true,
+          "formation": 3,
+          "front": 1,
+          "raid_front": 2
+        },
+        "derived": {
+          "type": "classic",
+          "share": "off",
+          "difficulty": null,
+          "from_save": false,
+          "choose": false,
+          "raid_bosses": false,
+          "other_mods_off": true,
+          "squad": {
+            "luka": true,
+            "formation": 6,
+            "front": 2,
+            "raid_front": 3
+          }
+        },
+        "problem": null
+      }
+    },
+    {
+      "case": "edit of a Raid World turned to its first difficulty",
+      "open": {
+        "kind": "edit",
+        "world": {
+          "name": "Raid",
+          "seats": 8,
+          "mods": "!Level Cap",
+          "description": "About",
+          "settings": "a=b",
+          "difficulty": null,
+          "type": "raid",
+          "other_mods_off": true,
+          "raid_bosses": false,
+          "squad": {
+            "luka": true,
+            "formation": 6,
+            "front": 2,
+            "raid_front": 3
+          }
+        },
+        "own": false
+      },
+      "steps": [
+        [
+          "turn",
+          "difficulty",
+          1
+        ]
+      ],
+      "view": {
+        "title": "Edit Raid",
+        "fields": [
+          {
+            "key": "seats",
+            "kind": "number",
+            "label": "Max Players",
+            "row": 0,
+            "side": null,
+            "max_chars": 2,
+            "allowed": "digits",
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Players in the world at once, 2 to 32.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "difficulty",
+            "kind": "switch",
+            "label": "Difficulty",
+            "row": 1,
+            "side": "left",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Every player of the world plays on it, those in it now at once.",
+            "choices": [
+              "Per player",
+              "VERY EASY",
+              "EASY",
+              "NORMAL",
+              "HARD",
+              "VERY HARD",
+              "HELL",
+              "PARADOX"
+            ],
+            "label_width": 70,
+            "enabled": true
+          },
+          {
+            "key": "limits",
+            "kind": "button",
+            "label": "Set formation limits",
+            "row": 1,
+            "side": "right",
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Luka, the team size and the Frontlines every player keeps. Changeable later too.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mods",
+            "kind": "mods",
+            "label": "Mods",
+            "row": 2,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "The mods of the world: listed, required to enter or essential. Enter picks them.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "other_mods_off",
+            "kind": "check",
+            "label": "Turn off other mods",
+            "row": 5,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: mods the world does not name are off. Personal mods stay on. Players in it enter again.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "description",
+            "kind": "area",
+            "label": "What the world is about",
+            "row": 6,
+            "side": null,
+            "max_chars": 1000,
+            "allowed": null,
+            "optional": true,
+            "group": "Description",
+            "lines": 4,
+            "hint": "Shown in the world's details. Optional.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "confirm",
+            "kind": "button",
+            "label": "Save the changes",
+            "row": 7,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Changes the world for everyone.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "seats": "8",
+          "mods": "!Level Cap",
+          "description": "About",
+          "shared": true,
+          "difficulty": 1,
+          "other_mods_off": true,
+          "raid_bosses": false,
+          "luka": true,
+          "formation": 3,
+          "front": 1,
+          "raid_front": 2
+        },
+        "derived": {
+          "type": "classic",
+          "share": "off",
+          "difficulty": -2,
+          "from_save": false,
+          "choose": false,
+          "raid_bosses": false,
+          "other_mods_off": true,
+          "squad": {
+            "luka": true,
+            "formation": 6,
+            "front": 2,
+            "raid_front": 3
+          }
+        },
+        "problem": null
+      }
+    },
+    {
+      "case": "edit of a Classic world, by an admin",
+      "open": {
+        "kind": "edit",
+        "world": {
+          "name": "Home",
+          "seats": 4,
+          "mods": "",
+          "description": "",
+          "settings": "",
+          "difficulty": 2,
+          "type": "classic",
+          "other_mods_off": false,
+          "raid_bosses": true,
+          "squad": null
+        },
+        "own": false
+      },
+      "steps": [
+
+      ],
+      "view": {
+        "title": "Edit Home",
+        "fields": [
+          {
+            "key": "seats",
+            "kind": "number",
+            "label": "Max Players",
+            "row": 0,
+            "side": null,
+            "max_chars": 2,
+            "allowed": "digits",
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Players in the world at once, 2 to 32.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "raid_bosses",
+            "kind": "check",
+            "label": "Raid Bosses",
+            "row": 1,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Story bosses fight as raid bosses of their tier, far stronger, from each player's next boss fight.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mods",
+            "kind": "mods",
+            "label": "Mods",
+            "row": 2,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "The mods of the world: listed, required to enter or essential. Enter picks them.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "other_mods_off",
+            "kind": "check",
+            "label": "Turn off other mods",
+            "row": 5,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: mods the world does not name are off. Personal mods stay on. Players in it enter again.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "description",
+            "kind": "area",
+            "label": "What the world is about",
+            "row": 6,
+            "side": null,
+            "max_chars": 1000,
+            "allowed": null,
+            "optional": true,
+            "group": "Description",
+            "lines": 4,
+            "hint": "Shown in the world's details. Optional.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "confirm",
+            "kind": "button",
+            "label": "Save the changes",
+            "row": 7,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Changes the world for everyone.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "seats": "4",
+          "mods": "",
+          "description": "",
+          "shared": false,
+          "difficulty": 4,
+          "other_mods_off": false,
+          "raid_bosses": true,
+          "luka": false,
+          "formation": 1,
+          "front": 0,
+          "raid_front": 0
+        },
+        "derived": {
+          "type": "classic",
+          "share": "off",
+          "difficulty": 0,
+          "from_save": false,
+          "choose": false,
+          "raid_bosses": true,
+          "other_mods_off": false,
+          "squad": {
+            "luka": false,
+            "formation": 4,
+            "front": 1,
+            "raid_front": 1
+          }
+        },
+        "problem": null
+      }
+    },
+    {
+      "case": "edit of a Classic world with its seats emptied",
+      "open": {
+        "kind": "edit",
+        "world": {
+          "name": "Home",
+          "seats": 4,
+          "mods": "",
+          "description": "",
+          "settings": "",
+          "difficulty": 2,
+          "type": "classic",
+          "other_mods_off": false,
+          "raid_bosses": true,
+          "squad": null
+        },
+        "own": true
+      },
+      "steps": [
+        [
+          "set",
+          "seats",
+          ""
+        ]
+      ],
+      "view": {
+        "title": "Edit Home",
+        "fields": [
+          {
+            "key": "seats",
+            "kind": "number",
+            "label": "Max Players",
+            "row": 0,
+            "side": null,
+            "max_chars": 2,
+            "allowed": "digits",
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Players in the world at once, 2 to 32.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "raid_bosses",
+            "kind": "check",
+            "label": "Raid Bosses",
+            "row": 1,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "Story bosses fight as raid bosses of their tier, far stronger, from each player's next boss fight.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "mods",
+            "kind": "mods",
+            "label": "Mods",
+            "row": 2,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "The mods of the world: listed, required to enter or essential. Enter picks them.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "data",
+            "kind": "button",
+            "label": "Update current data scan",
+            "row": 3,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Scans your game's data as it is now and makes it the world's, such as after a mod update.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "shared",
+            "kind": "check",
+            "label": "Shared Mod Settings",
+            "row": 4,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: every player plays with your mod options here. Unticked: each keeps their own.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "other_mods_off",
+            "kind": "check",
+            "label": "Turn off other mods",
+            "row": 5,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": "Game data",
+            "lines": 1,
+            "hint": "Ticked: mods the world does not name are off. Personal mods stay on. Players in it enter again.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "description",
+            "kind": "area",
+            "label": "What the world is about",
+            "row": 6,
+            "side": null,
+            "max_chars": 1000,
+            "allowed": null,
+            "optional": true,
+            "group": "Description",
+            "lines": 4,
+            "hint": "Shown in the world's details. Optional.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "confirm",
+            "kind": "button",
+            "label": "Save the changes",
+            "row": 7,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Changes the world for everyone.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "seats": "",
+          "mods": "",
+          "description": "",
+          "shared": false,
+          "difficulty": 4,
+          "other_mods_off": false,
+          "raid_bosses": true,
+          "luka": false,
+          "formation": 1,
+          "front": 0,
+          "raid_front": 0
+        },
+        "derived": {
+          "type": "classic",
+          "share": "off",
+          "difficulty": 0,
+          "from_save": false,
+          "choose": false,
+          "raid_bosses": true,
+          "other_mods_off": false,
+          "squad": {
+            "luka": false,
+            "formation": 4,
+            "front": 1,
+            "raid_front": 1
+          }
+        },
+        "problem": [
+          "seats",
+          "Max Players must be a number from 2 to 32."
+        ]
+      }
+    },
+    {
+      "case": "rename without a name while Discord tells none",
+      "open": {
+        "kind": "rename",
+        "name": ""
+      },
+      "steps": [
+
+      ],
+      "view": {
+        "title": "Your name",
+        "fields": [
+          {
+            "key": "name",
+            "kind": "text",
+            "label": "Your name",
+            "row": 0,
+            "side": null,
+            "max_chars": 16,
+            "allowed": null,
+            "optional": false,
+            "group": "Player",
+            "lines": 1,
+            "hint": "The name the others see. Without one, your name on Discord.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "confirm",
+            "kind": "button",
+            "label": "Use this name",
+            "row": 1,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Keeps the name for every world.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "name": ""
+        },
+        "derived": {
+          "type": "classic",
+          "share": "off",
+          "difficulty": 0,
+          "from_save": false,
+          "choose": false,
+          "raid_bosses": false,
+          "other_mods_off": false,
+          "squad": {
+            "luka": false,
+            "formation": 0,
+            "front": 1,
+            "raid_front": 1
+          }
+        },
+        "problem": [
+          "name",
+          "Type a name: Discord has not told yours yet."
+        ]
+      }
+    },
+    {
+      "case": "rename without a name while Discord tells one",
+      "open": {
+        "kind": "rename",
+        "name": "",
+        "discord": true
+      },
+      "steps": [
+
+      ],
+      "view": {
+        "title": "Your name",
+        "fields": [
+          {
+            "key": "name",
+            "kind": "text",
+            "label": "Your name",
+            "row": 0,
+            "side": null,
+            "max_chars": 16,
+            "allowed": null,
+            "optional": false,
+            "group": "Player",
+            "lines": 1,
+            "hint": "The name the others see. Without one, your name on Discord.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "confirm",
+            "kind": "button",
+            "label": "Use this name",
+            "row": 1,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Keeps the name for every world.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "name": ""
+        },
+        "derived": {
+          "type": "classic",
+          "share": "off",
+          "difficulty": 0,
+          "from_save": false,
+          "choose": false,
+          "raid_bosses": false,
+          "other_mods_off": false,
+          "squad": {
+            "luka": false,
+            "formation": 0,
+            "front": 1,
+            "raid_front": 1
+          }
+        },
+        "problem": null
+      }
+    },
+    {
+      "case": "password",
+      "open": {
+        "kind": "password",
+        "name": "Home"
+      },
+      "steps": [
+
+      ],
+      "view": {
+        "title": "Enter Home",
+        "fields": [
+          {
+            "key": "password",
+            "kind": "password",
+            "label": "Password",
+            "row": 0,
+            "side": null,
+            "max_chars": 20,
+            "allowed": null,
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The password the world's creator gave you.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "confirm",
+            "kind": "button",
+            "label": "Enter the world",
+            "row": 1,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Opens the world with the password.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "password": ""
+        },
+        "derived": {
+          "type": "classic",
+          "share": "off",
+          "difficulty": 0,
+          "from_save": false,
+          "choose": false,
+          "raid_bosses": false,
+          "other_mods_off": false,
+          "squad": {
+            "luka": false,
+            "formation": 0,
+            "front": 1,
+            "raid_front": 1
+          }
+        },
+        "problem": null
+      }
+    },
+    {
+      "case": "join",
+      "open": {
+        "kind": "join"
+      },
+      "steps": [
+
+      ],
+      "view": {
+        "title": "Add a hidden world",
+        "fields": [
+          {
+            "key": "id",
+            "kind": "id",
+            "label": "World id",
+            "row": 0,
+            "side": null,
+            "max_chars": 32,
+            "allowed": "hex",
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The id the world's creator copied for you. Ctrl+V pastes it.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "confirm",
+            "kind": "button",
+            "label": "Add the world",
+            "row": 1,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Adds the world to your list, where you enter it like any other.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "id": ""
+        },
+        "derived": {
+          "type": "classic",
+          "share": "off",
+          "difficulty": 0,
+          "from_save": false,
+          "choose": false,
+          "raid_bosses": false,
+          "other_mods_off": false,
+          "squad": {
+            "luka": false,
+            "formation": 0,
+            "front": 1,
+            "raid_front": 1
+          }
+        },
+        "problem": [
+          "id",
+          "That is not a world id. Copy it again from the world's creator."
+        ]
+      }
+    },
+    {
+      "case": "join with an id",
+      "open": {
+        "kind": "join"
+      },
+      "steps": [
+        [
+          "set",
+          "id",
+          "0123456789ABCDEF0123456789abcdef"
+        ]
+      ],
+      "view": {
+        "title": "Add a hidden world",
+        "fields": [
+          {
+            "key": "id",
+            "kind": "id",
+            "label": "World id",
+            "row": 0,
+            "side": null,
+            "max_chars": 32,
+            "allowed": "hex",
+            "optional": false,
+            "group": "World",
+            "lines": 1,
+            "hint": "The id the world's creator copied for you. Ctrl+V pastes it.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          },
+          {
+            "key": "confirm",
+            "kind": "button",
+            "label": "Add the world",
+            "row": 1,
+            "side": null,
+            "max_chars": null,
+            "allowed": null,
+            "optional": false,
+            "group": null,
+            "lines": 1,
+            "hint": "Adds the world to your list, where you enter it like any other.",
+            "choices": [
+
+            ],
+            "label_width": null,
+            "enabled": true
+          }
+        ],
+        "values": {
+          "id": "0123456789ABCDEF0123456789abcdef"
+        },
+        "derived": {
+          "type": "classic",
+          "share": "off",
+          "difficulty": 0,
+          "from_save": false,
+          "choose": false,
+          "raid_bosses": false,
+          "other_mods_off": false,
+          "squad": {
+            "luka": false,
+            "formation": 0,
+            "front": 1,
+            "raid_front": 1
+          }
+        },
+        "problem": null
+      }
+    }
+  ],
+  "checks": [
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "seats",
+      "text": "4",
+      "answer": [
+        "4",
+        null
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "seats",
+      "text": "2",
+      "answer": [
+        "2",
+        null
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "seats",
+      "text": "32",
+      "answer": [
+        "32",
+        null
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "seats",
+      "text": "1",
+      "answer": [
+        "1",
+        "Max Players must be a number from 2 to 32."
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "seats",
+      "text": "33",
+      "answer": [
+        "33",
+        "Max Players must be a number from 2 to 32."
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "seats",
+      "text": "04",
+      "answer": [
+        "4",
+        null
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "seats",
+      "text": "x",
+      "answer": [
+        "x",
+        "Max Players must be a number from 2 to 32."
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "seats",
+      "text": "",
+      "answer": [
+        "",
+        "Max Players must be a number from 2 to 32."
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "seats",
+      "text": " 5",
+      "answer": [
+        " 5",
+        "Max Players must be a number from 2 to 32."
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "seats",
+      "text": "５",
+      "answer": [
+        "５",
+        "Max Players must be a number from 2 to 32."
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "name",
+      "text": "Home",
+      "answer": [
+        "Home",
+        null
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "name",
+      "text": "  Home  ",
+      "answer": [
+        "Home",
+        null
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "name",
+      "text": "",
+      "answer": [
+        "",
+        "The world needs a name."
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "name",
+      "text": "   ",
+      "answer": [
+        "   ",
+        "The world needs a name."
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "name",
+      "text": "\tA\n",
+      "answer": [
+        "A",
+        null
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "password",
+      "text": "",
+      "answer": [
+        "",
+        null
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "password",
+      "text": " a b ",
+      "answer": [
+        " a b ",
+        null
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "password",
+      "text": "pw",
+      "answer": [
+        "pw",
+        null
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "description",
+      "text": "",
+      "answer": [
+        "",
+        null
+      ]
+    },
+    {
+      "open": {
+        "kind": "create"
+      },
+      "key": "description",
+      "text": "  text  ",
+      "answer": [
+        "text",
+        null
+      ]
+    },
+    {
+      "open": {
+        "kind": "join"
+      },
+      "key": "id",
+      "text": "0123456789abcdef0123456789abcdef",
+      "answer": [
+        "0123456789abcdef0123456789abcdef",
+        null
+      ]
+    },
+    {
+      "open": {
+        "kind": "join"
+      },
+      "key": "id",
+      "text": " 0123456789ABCDEF0123456789ABCDEF ",
+      "answer": [
+        "0123456789abcdef0123456789abcdef",
+        null
+      ]
+    },
+    {
+      "open": {
+        "kind": "join"
+      },
+      "key": "id",
+      "text": "0123",
+      "answer": [
+        "0123",
+        "That is not a world id. Copy it again from the world's creator."
+      ]
+    },
+    {
+      "open": {
+        "kind": "join"
+      },
+      "key": "id",
+      "text": "g123456789abcdef0123456789abcdef",
+      "answer": [
+        "g123456789abcdef0123456789abcdef",
+        "That is not a world id. Copy it again from the world's creator."
+      ]
+    },
+    {
+      "open": {
+        "kind": "rename",
+        "name": ""
+      },
+      "key": "name",
+      "text": "",
+      "answer": [
+        "",
+        "Type a name: Discord has not told yours yet."
+      ]
+    },
+    {
+      "open": {
+        "kind": "rename",
+        "name": ""
+      },
+      "key": "name",
+      "text": " Me ",
+      "answer": [
+        "Me",
+        null
+      ]
+    },
+    {
+      "open": {
+        "kind": "rename",
+        "name": "",
+        "discord": true
+      },
+      "key": "name",
+      "text": "",
+      "answer": [
+        "",
+        null
+      ]
+    }
+  ]
+}

@@ -5,7 +5,8 @@
 #      Paulinchen  2026-10-24: Listed the pages of other mods after the own pages and made room for two of their tabs
 #                            - Placed the menu of a page with a head, a list and a pane over the pane or under its buttons
 #                            - Opened the overview outside a world too, as Single player with the Quests page
-#      Paulinchen  2026-10-23: Asked the world story for the part the player is in
+#      Paulinchen  2026-10-23: Asked the DLL for the story's texts and the title
+#                            - Asked the world story for the part the player is in
 #                            - Read the world's part from the relay's summary of its story tracks
 #                            - Removed the unused EXP_VALUE, BOSSES_HEADING and World page labels, and the repeated page hints
 #                            - Kept the overview off the live map behind menus
@@ -100,14 +101,20 @@ module MGQ_MpWorldOverview
     "judgment" => ["魔界ルート進行度"],
   }
 
-  # What the overview calls each side and route.
-  STORY_NAMES = {
-    "ilias" => "Ilias side",
-    "alice" => "Alice side",
-    "chaos" => "Chaos route",
-    "destroyer" => "Destroyer route",
-    "judgment" => "Judgment route",
-  }
+  # The topic that finds a player's place in the story as a code, such as "2:alice".
+  STORY_TOPIC = "overview.story"
+
+  # The topic that writes a place in the story the way the overview shows it.
+  STORY_TEXT_TOPIC = "overview.story_text"
+
+  # The topic that writes the world's place in the story.
+  WORLD_STORY_TOPIC = "overview.world_story"
+
+  # The topic that writes what the title and the World page say of the world's type and difficulty.
+  TITLE_TOPIC = "overview.title"
+
+  # Texts the story's and the title's caches keep before they forget them all.
+  TEXTS_KEPT = 256
 
   # The overview's pages in the order Left and Right pass through them, each with its tab's title:
   # the players online, the world itself, the quests under way, and in a Raid World what the
@@ -151,20 +158,8 @@ module MGQ_MpWorldOverview
   # catch-up's next check.
   DUE = "Due"
 
-  # What the overview calls each kind of world, by whether it is a Raid World.
-  WORLD_TYPES = { true => "Raid", false => "Classic" }
-
-  # What joins the world's name, its type and its difficulty in the title.
-  TITLE_JOINT = " | "
-
   # What the title says while no world is open.
   NO_WORLD = "World"
-
-  # What the World page says of a world that sets no difficulty, whose players keep their own.
-  PER_PLAYER = "Per player"
-
-  # What the World page says of the world's story before the relay told it.
-  STORY_UNTOLD = "Not told yet"
 
   # The label of the World page's story objective.
   OBJECTIVE_LABEL = "Objective"
@@ -302,9 +297,6 @@ module MGQ_MpWorldOverview
 
   # The share of its HP a raid boss has while the relay told no pool of it: all of it.
   UNTOUCHED = 1.0
-
-  # The part of the story every route belongs to, see story_code.
-  ROUTE_PART = "3"
 
   # A raid boss of the World page.
   #
@@ -556,47 +548,56 @@ module MGQ_MpWorldOverview
   def self.title_tail
     return "" unless MGQ_MpOverworldSync.in_world?
 
-    [WORLD_TYPES[MGQ_MpCoop::Scope.raid?], difficulty_name].compact.map { |part| "#{TITLE_JOINT}#{part}" }.join
+    title["tail"]
   end
 
-  # Names the difficulty the world sets for every player, as the game's own difficulty choice
-  # names it, in plain case.
+  # What the World page notes of the world: its type, and its difficulty or that each player keeps
+  # their own.
   #
-  # @return [String, nil] Such as "Hard"; nil while the players keep their own.
-  def self.difficulty_name
-    name = MGQ_MpWorld.difficulty_name(MGQ_MpWorldDifficulty.value)
-    name ? name.capitalize : nil
+  # @return [String] Such as "Raid | Per player".
+  def self.world_note
+    title["note"]
   end
 
-  # Reads the world's place in the story as the relay told it: its part, and on a route of the
-  # final chapter the route, found through the variable that counts it (see ROUTES), since the
-  # relay's summary names routes as the relay does. The side is each player's own, so the world
-  # has none.
+  # Writes the title's and the note's texts through the DLL (OverviewText in MGQOnline.Game), once
+  # per type and difficulty, since the title is drawn every frame.
   #
-  # @return [String] "part" or "part:route", see story_code; empty before the relay told the story.
-  def self.world_story_code
+  # @return [Hash] "tail" and "note", both empty when the DLL did not answer.
+  def self.title
+    request = { "raid" => MGQ_MpCoop::Scope.raid? ? true : false, "difficulty" => MGQ_MpWorldDifficulty.value }
+    cached(:title, request) { MGQ_Multiplayer::Bridge.call(TITLE_TOPIC, request) } || { "tail" => "", "note" => "" }
+  end
+
+  # Writes the world's place in the story the way the overview shows it, its part as the relay
+  # told it and a route named as the player's own.
+  #
+  # @return [String] Such as "Part 3: Chaos route", or that the relay has not told it yet.
+  def self.world_story_text
     counters = MGQ_MpWorldStory.world
-    return "" unless counters
-
-    part = counters["part"].to_s
-    index = MGQ_MpWorldStory::ROUTES.index(part)
-    return part.to_s unless index
-
-    id = MGQ_MpWorldStory::ROUTE_VARIABLES[index]
-    route = ROUTES.keys.find { |key| ROUTES[key].any? { |name| $data_system.variables.index(name) == id } }
-    log_once([:world_route, part], "no variable of the game counts the world's #{part} route, telling the part alone") unless route
-    route ? "#{ROUTE_PART}:#{route}" : ROUTE_PART
+    part = counters ? counters["part"].to_s : nil
+    told = cached(:world_story, part) { MGQ_Multiplayer::Bridge.call(WORLD_STORY_TOPIC, part) }
+    told ? told["text"] : ""
   rescue => e
     log("reading the world's story failed: #{e.class}: #{e.message}")
     ""
   end
 
-  # Writes the world's place in the story the way the overview shows it.
+  # Keeps what the DLL answered for a request, so a text drawn every frame is asked once; an
+  # answer of nil is asked again.
   #
-  # @return [String] Such as "Part 3: Chaos route", STORY_UNTOLD before the relay told the story.
-  def self.world_story_text
-    code = world_story_code
-    code.empty? ? STORY_UNTOLD : story_text(code)
+  # @param kind [Symbol] What is cached, such as :title.
+  # @param key [Object] The request.
+  # @return [Object, nil] The answer.
+  def self.cached(kind, key)
+    @texts ||= {}
+    kept = (@texts[kind] ||= {})
+    return kept[key] if kept.key?(key)
+
+    answer = yield
+    return nil if answer.nil?
+
+    kept.clear if kept.size >= TEXTS_KEPT
+    kept[key] = answer
   end
 
   # Closes the overview once the map is left, or a world opens or closes under it. Called by
@@ -712,30 +713,31 @@ module MGQ_MpWorldOverview
     actor.respond_to?(:base_level) ? actor.base_level : actor.level
   end
 
-  # Reads the player's place in the story: the part, and the side chosen or the route played.
+  # Reads the player's place in the story: the part, and the side chosen or the route played, as
+  # the DLL finds it from the progress, the routes' variables and the sides' switches.
   #
-  # @return [String] "part", "part:side" or "part:route", such as "2:alice" or "3:destroyer".
+  # @return [String] "part", "part:side" or "part:route", such as "2:alice" or "3:destroyer";
+  #   empty when the DLL did not answer.
   def self.story_code
-    part = MGQ_MpWorldStory.part_of("p" => variable(PROGRESS))
-    route = ROUTES.keys.find { |key| variable(ROUTES[key]) > 0 } if part == MGQ_MpWorldStory::DECISION_PART
-    side = SIDES.keys.find { |key| switch?(SIDES[key]) }
-    chosen = route || side
-    chosen ? "#{part}:#{chosen}" : part.to_s
+    routes = {}
+    ROUTES.each { |key, names| routes[key] = variable(names) }
+    sides = {}
+    SIDES.each { |key, names| sides[key] = switch?(names) }
+    MGQ_Multiplayer::Bridge.call(STORY_TOPIC, "p" => variable(PROGRESS), "routes" => routes, "sides" => sides) || ""
   rescue => e
     log("reading the story failed: #{e.class}: #{e.message}")
     ""
   end
 
-  # Writes a place in the story the way the overview shows it.
+  # Writes a place in the story the way the overview shows it, each place asked once.
   #
-  # @param code [String, nil] The place, see story_code.
+  # @param code [String, nil] The place, see story_code; another player's as their game told it.
   # @return [String] Such as "Part 2: Alice side", empty while unknown.
   def self.story_text(code)
-    part, chosen = code.to_s.split(":", 2)
-    return "" if part.to_s.empty?
+    text = code.to_s
+    return "" if text.empty?
 
-    name = STORY_NAMES[chosen.to_s]
-    name ? "Part #{part}: #{name}" : "Part #{part}"
+    cached(:story, text) { MGQ_Multiplayer::Bridge.call(STORY_TEXT_TOPIC, text) } || ""
   end
 
   # Reads a variable by its names in the translation and the untranslated game.

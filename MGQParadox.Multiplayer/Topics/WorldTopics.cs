@@ -2,7 +2,8 @@
 //  WorldTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Left reading and writing squad settings to the topics both hosts answer
+//      Paulinchen  2026-10-23: Named the Formation sizes for the forms too
+//                            - Left reading and writing squad settings to the topics both hosts answer
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -68,7 +69,7 @@ internal static class WorldTopics
     /// </summary>
     /// <param name="size">The size.</param>
     /// <returns><see cref="RaidSquad.OriginalFormationName"/>, or the size as text.</returns>
-    private static string FormationName(int size) =>
+    internal static string FormationName(int size) =>
         size == RaidSquad.OriginalFormation ? RaidSquad.OriginalFormationName : size.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>

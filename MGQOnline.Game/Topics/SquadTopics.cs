@@ -2,7 +2,8 @@
 //  SquadTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Answered the squad math and the team fit
+//      Paulinchen  2026-10-23: Shared writing squad settings with the local worlds
+//                            - Answered the squad math and the team fit
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -202,7 +203,7 @@ public static class SquadTopics
     /// </summary>
     /// <param name="squad">The settings.</param>
     /// <returns>Their text, <see langword="null"/> for settings out of range.</returns>
-    private static RubyValue? TextOf(RubyHash squad)
+    public static RubyValue? TextOf(RubyHash squad)
     {
         string text = RaidSquad.TextOf(squad["luka"].AsBool(), squad["formation"].AsInt(), squad["front"].AsInt(), squad["raid_front"].AsInt());
         return RaidSquad.IsValid(text) ? text : null;

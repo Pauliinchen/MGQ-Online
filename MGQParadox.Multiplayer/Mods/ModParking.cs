@@ -2,7 +2,10 @@
 //  ModParking.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Made keys with ModKey of MGQOnline.Game, as the relay does
+//      Paulinchen  2026-10-23: Handed out the parked scripts and the scripts a world may park as values, dropping their texts
+//                            - Took the scripts every player has from ParkingRules
+//                            - Told which scripts every player has
+//                            - Made keys with ModKey of MGQOnline.Game, as the relay does
 //                            - Listed every script in Patch for the game script
 //                            - Read the journal for the helper's watchdog and let it take the lock
 //                            - Read the journal sharing it for writes and deletes
@@ -26,7 +29,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using MGQOnline.Game.Mods;
-using MGQParadox.Multiplayer.Network.Transport;
 
 namespace MGQParadox.Multiplayer.Mods;
 
@@ -84,36 +86,14 @@ internal sealed class ModParking : IDisposable
     /// </summary>
     public const int HeldElsewhere = -2;
 
-    /// <summary>
-    /// What <see cref="Scripts"/> answers, as its only line, when the scripts could not all be listed.
-    /// </summary>
-    /// <remarks>
-    /// An empty answer means no script, so a failed listing must never look like one.
-    /// </remarks>
-    public const string ScriptsFailed = "error";
 
     /// <summary>
-    /// What a line of <see cref="Scripts"/> starts with, before a tab, for a script that is never
-    /// parked because a link in its path leads to another volume than the game folder's.
+    /// How often <see cref="Parked"/> reads the journal before a failure counts.
     /// </summary>
     /// <remarks>
-    /// A move between two volumes copies, so a crash in between would leave a cut-off script, and it
-    /// would take the file out of a checkout or an install the link shares.
+    /// The game waits for the answer, so it tries fewer times than a write.
     /// </remarks>
-    public const string ScriptElsewhere = "elsewhere";
-
-    /// <summary>
-    /// The header of <see cref="Describe"/> that carries why the journal could not be read.
-    /// </summary>
-    public const string DescribeError = "error";
-
-    /// <summary>
-    /// How often <see cref="Describe"/> reads the journal before a failure counts.
-    /// </summary>
-    /// <remarks>
-    /// The game script waits for the answer, so it tries fewer times than a write.
-    /// </remarks>
-    private const int DescribeAttempts = 3;
+    private const int ParkedAttempts = 3;
 
     /// <summary>
     /// How often the journal is written or deleted before a failure counts.
@@ -139,9 +119,12 @@ internal sealed class ModParking : IDisposable
     private const string ScriptExtension = ".rb";
 
     /// <summary>
-    /// The keys of the scripts that are never parked: the mod loader, this mod and Mod Config Remake, which this mod ships.
+    /// Tells whether a script is one every player of a world has, which is never parked and which the
+    /// mod picker leaves out.
     /// </summary>
-    private static readonly HashSet<string> NeverParked = new(StringComparer.Ordinal) { "patch", "multiplayer", "0modconfigremake" };
+    /// <param name="key">The script's key, see <see cref="ModKey.Of"/>.</param>
+    /// <returns>Whether it is.</returns>
+    public static bool EveryPlayerHas(string key) => ParkingRules.SharedKeys.Contains(key);
 
     /// <summary>
     /// Guards the moves, the journal and the lock.
@@ -477,75 +460,38 @@ internal sealed class ModParking : IDisposable
     }
 
     /// <summary>
-    /// Describes the parked mods for the game script.
+    /// Tells which scripts are parked.
     /// </summary>
-    /// <remarks>
-    /// The <c>conflicts</c> header stays after the mods came back, a recover's restore included, so
-    /// the game script can tell the player where they went.
-    /// </remarks>
-    /// <returns>A <see cref="Message"/>: the headers <c>world</c>, <c>files</c> (how many) and <c>conflicts</c> (how many the last restore put into the conflicts folder, see <see cref="LastConflicts"/>), then one parked script per line, relative to the game folder; only <c>files=0</c> and <c>conflicts</c> once none are parked but the last restore had conflicts; empty when none are parked and it had none; only the header <see cref="DescribeError"/> with the reason when the journal could not be read, which says nothing about what is parked.</returns>
-    public string Describe()
+    /// <returns>The world they are parked for (empty when none are), the parked scripts relative to the game folder, and how many scripts the last restore put into the conflicts folder (<see cref="LastConflicts"/>), which stays after the mods came back.</returns>
+    /// <exception cref="IOException">The journal could not be read after a few tries, which says nothing about what is parked.</exception>
+    /// <exception cref="UnauthorizedAccessException">The journal may not be read.</exception>
+    public ParkedState Parked()
     {
         lock (_gate)
         {
-            Journal? journal;
-
-            try
-            {
-                journal = WithRetries(() => Journal.Read(JournalPath), DescribeAttempts);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                Log.Write($"the parked mods could not be described: the journal could not be read: {ex.Message}");
-                return DescribeFailure(ex);
-            }
-
+            var journal = WithRetries(() => Journal.Read(JournalPath), ParkedAttempts);
             var parked = journal?.Files.Where(file => File.Exists(ParkedPathOf(file.Path))).Select(file => file.Path).ToList() ?? [];
-
-            if (parked.Count == 0 && LastConflicts == 0)
-            {
-                return string.Empty;
-            }
-
-            var headers = new KeyValuePair<string, string?>[]
-            {
-                new("world", parked.Count > 0 ? journal!.World : null),
-                new("files", parked.Count.ToString(CultureInfo.InvariantCulture)),
-                new("conflicts", LastConflicts.ToString(CultureInfo.InvariantCulture)),
-            };
-
-            return new Message(headers, string.Join('\n', parked)).Encode();
+            return new ParkedState(parked.Count > 0 ? journal!.World : string.Empty, parked, LastConflicts);
         }
     }
 
     /// <summary>
-    /// Builds the answer of <see cref="Describe"/> for parked mods that could not be described.
+    /// Lists the scripts a world that turns other mods off may park, whose names the game's Ruby
+    /// cannot read outside the system's code page.
     /// </summary>
-    /// <remarks>
-    /// The game script reads an empty answer as nothing parked, so a failure must never answer that.
-    /// </remarks>
-    /// <param name="ex">Why they could not be described.</param>
-    /// <returns>A <see cref="Message"/> with only the header <see cref="DescribeError"/>, which carries the exception's message, or its type when it has none.</returns>
-    public static string DescribeFailure(Exception ex) =>
-        new Message([new(DescribeError, ex.Message.Length > 0 ? ex.Message : ex.GetType().Name)]).Encode();
-
-    /// <summary>
-    /// Lists the scripts a world that turns other mods off may park, for the game script, whose Ruby
-    /// cannot read file names outside the system's code page.
-    /// </summary>
-    /// <returns>One line per script, relative to the game folder with forward slashes: <see cref="ScriptElsewhere"/> and a tab before each in Patch behind a link to another volume, which is never parked, sorted; then <c>patch</c> and a tab before each other one in Patch, sorted; then <c>parked</c> and a tab before each parked one; none in this mod's folder or of a script that is never parked; only <see cref="ScriptsFailed"/> when a folder or the journal could not be read.</returns>
-    public string Scripts()
+    /// <returns>The scripts relative to the game folder with forward slashes, none in this mod's folder or of a script that is never parked; <see langword="null"/> when a folder or the journal could not be read, so a failed or partial listing never reads as no script.</returns>
+    public ScriptList? Listed()
     {
         lock (_gate)
         {
             try
             {
-                return string.Join('\n', ListScripts());
+                return ListScripts();
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 Log.Write($"the scripts a world may turn off could not be listed: {ex.Message}");
-                return ScriptsFailed;
+                return null;
             }
         }
     }
@@ -746,7 +692,7 @@ internal sealed class ModParking : IDisposable
         var inside = full.StartsWith(PatchFolder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
             && !full.StartsWith(OwnFolder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 
-        if (!inside || !full.EndsWith(ScriptExtension, StringComparison.OrdinalIgnoreCase) || (!everyScript && NeverParked.Contains(ModKey.Of(Path.GetFileName(full)))))
+        if (!inside || !full.EndsWith(ScriptExtension, StringComparison.OrdinalIgnoreCase) || (!everyScript && ParkingRules.SharedKeys.Contains(ModKey.Of(Path.GetFileName(full)))))
         {
             return null;
         }
@@ -806,25 +752,25 @@ internal sealed class ModParking : IDisposable
     }
 
     /// <summary>
-    /// Lists the lines of <see cref="Scripts"/>.
+    /// Lists the scripts of <see cref="Listed"/>.
     /// </summary>
-    /// <returns>The lines.</returns>
+    /// <returns>The scripts.</returns>
     /// <exception cref="IOException">A folder or the journal could not be read.</exception>
     /// <exception cref="UnauthorizedAccessException">A folder may not be listed.</exception>
-    private List<string> ListScripts()
+    private ScriptList ListScripts()
     {
-        var lines = new List<string>();
+        List<string> elsewhere = [];
+        List<string> patch = [];
+        List<string> parked = [];
 
         if (Directory.Exists(PatchFolder))
         {
             var found = new List<string>();
             CollectScripts(new DirectoryInfo(PatchFolder), found, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { PatchFolder }, false);
-            var elsewhere = found.Where(relative => BehindLinkElsewhere(GamePathOf(relative))).ToList();
+            elsewhere = found.Where(relative => BehindLinkElsewhere(GamePathOf(relative))).ToList();
             elsewhere.Sort(StringComparer.OrdinalIgnoreCase);
-            lines.AddRange(elsewhere.Select(relative => ScriptElsewhere + "\t" + relative));
-            var parkable = found.Except(elsewhere, StringComparer.OrdinalIgnoreCase).ToList();
-            parkable.Sort(StringComparer.OrdinalIgnoreCase);
-            lines.AddRange(parkable.Select(relative => "patch\t" + relative));
+            patch = found.Except(elsewhere, StringComparer.OrdinalIgnoreCase).ToList();
+            patch.Sort(StringComparer.OrdinalIgnoreCase);
         }
 
         if (Journal.Read(JournalPath) is { } journal)
@@ -833,12 +779,12 @@ internal sealed class ModParking : IDisposable
             {
                 if (Canonical(file.Path) is { } relative)
                 {
-                    lines.Add("parked\t" + relative);
+                    parked.Add(relative);
                 }
             }
         }
 
-        return lines;
+        return new ScriptList(elsewhere, patch, parked);
     }
 
     /// <summary>
@@ -1327,6 +1273,27 @@ internal sealed class ModParking : IDisposable
     /// <param name="Watch">The id of the watchdog the journal belongs to; empty when none waits.</param>
     /// <param name="Files">How many mods it lists.</param>
     public sealed record WatchState(string World, bool AfterTitle, bool Update, string Watch, int Files);
+
+    /// <summary>
+    /// The scripts that are parked, see <see cref="Parked"/>.
+    /// </summary>
+    /// <param name="World">The world they are parked for, empty when none are.</param>
+    /// <param name="Files">The parked scripts, relative to the game folder.</param>
+    /// <param name="Conflicts">How many scripts the last restore put into the conflicts folder.</param>
+    public sealed record ParkedState(string World, IReadOnlyList<string> Files, int Conflicts);
+
+    /// <summary>
+    /// The scripts a world may park, see <see cref="Listed"/>, each kind sorted.
+    /// </summary>
+    /// <remarks>
+    /// A move between two volumes copies, so a crash in between would leave a cut-off script, and it
+    /// would take the file out of a checkout or an install the link shares; so scripts behind a link
+    /// to another volume are never parked.
+    /// </remarks>
+    /// <param name="Elsewhere">The scripts in Patch behind a link to another volume than the game folder's.</param>
+    /// <param name="Patch">The other scripts in Patch.</param>
+    /// <param name="Parked">The parked scripts, by the path they come back to.</param>
+    public sealed record ScriptList(IReadOnlyList<string> Elsewhere, IReadOnlyList<string> Patch, IReadOnlyList<string> Parked);
 
     /// <summary>
     /// A mod the journal lists.

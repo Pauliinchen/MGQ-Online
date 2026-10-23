@@ -2,7 +2,8 @@
 //  TopicCaller.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Created
+//      Paulinchen  2026-10-23: Let other tests drop their bridge lines too
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -81,7 +82,7 @@ internal sealed class TopicCaller
     /// <summary>
     /// Keeps no log lines.
     /// </summary>
-    private sealed class NoLog : IBridgeLog
+    internal sealed class NoLog : IBridgeLog
     {
         /// <inheritdoc />
         public void Write(string line)

@@ -2,7 +2,8 @@
 #  save_export_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Answered the rules the DLL owns through the bridge from the golden cases
+#      Paulinchen  2026-10-23: Made the worlds on this PC through the stand-ins of the DLL's topics
+#                            - Answered the rules the DLL owns through the bridge from the golden cases
 #      Paulinchen  2026-10-12: Checked the menu taking input after the notice and a menu without commands
 #      Paulinchen  2026-10-09: Loaded world_mods_parking.rbx
 #      Paulinchen  2026-10-07: Checked the menu's handler once its commands are made
@@ -108,7 +109,7 @@ open_rules_bridge
 
 Dir.mktmpdir do |root|
   Dir.chdir(root) do
-    world = MGQ_MpWorld::World.new("abcdef012345", "code" => "code", "name" => "Free")
+    world = local_world("abcdef012345", "code" => "code", "name" => "Free")
     FileUtils.mkdir_p(world.save_folder)
     check("a world without a save says so", MGQ_MpSaveExport.export(world), "You have no save of Free yet. Save in the world first.")
 
@@ -148,7 +149,7 @@ Dir.mktmpdir do |root|
     menu.add_original_commands
     check("inside a world it comes after the game's own commands", menu.commands.last, ["Copy to my game", :mgq_mp_save_export, true])
 
-    empty = MGQ_MpWorld::World.new("0123456789ab", "code" => "code", "name" => "Empty")
+    empty = local_world("0123456789ab", "code" => "code", "name" => "Empty")
     MGQ_MpWorld.instance_variable_set(:@world, empty)
     menu.add_original_commands
     check("greyed out until the player saved in the world", menu.commands.last[2], false)

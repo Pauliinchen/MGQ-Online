@@ -7,6 +7,7 @@
 #                            - Checked that no script names an Encoding constant
 #      Paulinchen  2026-10-23: Checked that the log's lines wait for the bridge, cross it with the frame and go into the day's file while the mod stays off
 #                            - Checked that an error the error box shows is written once
+#                            - Checked that a text from the DLL reads as text
 #                            - Dropped the checks of the day's file, the repeats, the cut and the old logs, which the DLL's tests cover
 #                            - Dropped the checks of the chosen name, which the DLL keeps now
 #                            - Dropped the check of the log rules of the deleted options dump
@@ -384,3 +385,6 @@ check("one that grew again between asking its size and copying it is asked for a
 answers.replace([-5, -6, -7, -8, -9, -10])
 sizes.clear
 check("three more times at most, after which it reads as none", [reader.read("mp_text", 4), sizes, answers], ["", [4, 6, 7, 8, 9], [-10]])
+answers.replace(["0.6.9.2"])
+read = reader.read("mp_newer_version", 64)
+check("a text reads as the text the bridge takes, not as the bytes the DLL wrote", [read, read.encoding.name], ["0.6.9.2", "UTF-8"])

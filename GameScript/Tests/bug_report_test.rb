@@ -2,7 +2,8 @@
 #  bug_report_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Handed the screenshot to C# by the Bitmap's address, the walk to its pixels gone there
+#      Paulinchen  2026-10-23: Made the worlds on this PC through the stand-ins of the DLL's topics
+#                            - Handed the screenshot to C# by the Bitmap's address, the walk to its pixels gone there
 #                            - Typed through the stand-in text box
 #                            - Told a report being sent here
 #                            - Stood in for handing the log's lines over
@@ -248,7 +249,7 @@ $game_party = Struct.new(:members).new([Actor.new("Hero", 12), Actor.new("Fighte
 $game_system = Struct.new(:playtime_s).new("01:02:03")
 $data_system = Struct.new(:variables).new([nil, "Overall Events Progress"])
 $patch_ver = "v3.06.00"
-MGQ_MpWorld.instance_variable_set(:@world, MGQ_MpWorld::World.new("folder", "name" => "Test World", "world" => "dir0123", "type" => "raid"))
+MGQ_MpWorld.instance_variable_set(:@world, local_world("folder", "name" => "Test World", "world" => "dir0123", "type" => "raid"))
 $results["mp_dev_build"] = 0
 # A world in the directory's list.
 Listed = Struct.new(:id, :name, :hidden)

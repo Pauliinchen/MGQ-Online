@@ -2,7 +2,8 @@
 //  RubyAscii.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Created
+//      Paulinchen  2026-10-23: Stripped and lower-cased texts as Ruby does
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -49,4 +50,42 @@ public static class RubyAscii
         >= (byte)'A' and <= (byte)'F' => value - 'A' + 10,
         _ => -1,
     };
+
+    /// <summary>
+    /// Strips a text as Ruby's <c>String#strip</c> does: ASCII white space from both ends and NUL
+    /// from the end.
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <returns>The stripped text.</returns>
+    public static string Strip(string text)
+    {
+        int start = 0;
+        while (start < text.Length && text[start] < 0x80 && IsSpace((byte)text[start]))
+        {
+            start++;
+        }
+
+        int end = text.Length;
+        while (end > start && (text[end - 1] == '\0' || (text[end - 1] < 0x80 && IsSpace((byte)text[end - 1]))))
+        {
+            end--;
+        }
+
+        return text[start..end];
+    }
+
+    /// <summary>
+    /// Lower-cases a text as RGSS3's Ruby 1.9 <c>String#downcase</c> does: the letters A to Z only.
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <returns>The text with A to Z lower-cased.</returns>
+    public static string Downcase(string text) =>
+        string.Create(text.Length, text, (chars, source) =>
+        {
+            for (int index = 0; index < source.Length; index++)
+            {
+                char character = source[index];
+                chars[index] = character is >= 'A' and <= 'Z' ? (char)(character + 32) : character;
+            }
+        });
 }

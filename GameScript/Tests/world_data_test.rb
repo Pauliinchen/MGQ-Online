@@ -2,7 +2,13 @@
 #  world_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-23: Widened the list box through Player.ini
+#      Paulinchen  2026-10-23: Checked that the forms' requests go to the DLL and that the screen plays the steps it answers
+#                            - Left the data check and the mods read on entering to the DLL's tests and checked the steps the screen plays
+#                            - Took the entries, the details and the list box's lines from the stand-ins of the world screen's model
+#                            - Checked the details hand the DLL the shared settings and show what it says
+#                            - Opened the world screen's forms through the DLL
+#                            - Checked that the mod picker shows the DLL's answers, whose rules its tests cover
+#                            - Widened the list box through Player.ini
 #                            - Drew a box being typed into from what C# shows, the editor's own checks gone to C#
 #                            - Answered the mod keys and the scripts in Patch through the bridge
 #                            - Gave the stand-in world list every field the DLL writes
@@ -236,7 +242,7 @@ def new_scene
   scene = Scene_MpWorlds.allocate
   [:@actions_window, :@members_window, :@confirm_window, :@start_window, :@list_window, :@form_window].each { |name| scene.instance_variable_set(name, FakeChoice.new) }
   scene.instance_variable_set(:@info_window, FakeInfo.new)
-  scene.instance_variable_set(:@forms, { :new_world => MGQ_MpWorld::Form.create })
+  scene.instance_variable_set(:@forms, { :new_world => MGQ_MpWorld::WorldForm.create(:new_world) })
   scene
 end
 
@@ -341,11 +347,11 @@ MGQ_Multiplayer::Ini.singleton_class.send(:remove_method, :write)
 MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
 
 # The form.
-form = MGQ_MpWorld::Form.create
+form = MGQ_MpWorld::WorldForm.create(:new_world)
 form[:name] = "Modded Run"
 check("a new world needs no description, no mods, and keeps differing games out until told otherwise", [form.problem, form[:description], form[:mods], form[:mismatch]], [nil, "", "", false])
 description = form.fields.find { |field| field.key == :description }
-check("the description is a box of several lines in a panel of its own", [description.kind, description.lines, description.group, description.max_chars], [:area, 4, "Description", MGQ_MpWorld::MAX_DESCRIPTION_CHARS])
+check("the description is a box of several lines in a panel of its own", [description.kind, description.lines, description.group, description.max_chars], [:area, 4, "Description", 1000])
 check("the mods and the mismatch checkbox share the Game data panel", [:mods, :mismatch].map { |key| field = form.fields.find { |candidate| candidate.key == key }; [field.kind, field.label, field.group] }, [[:mods, "Mods", "Game data"], [:check, "Allow data mismatch", "Game data"]])
 check("the world type and the starting point share the World panel", form.fields.select { |field| field.group == "World" }.map { |field| field.label },
       ["Name", "Password", "Max Players", "Hidden", "World type", "Shared save", "Player's choice", "Save", "Raid Bosses"])
@@ -354,7 +360,7 @@ check("a Raid World has Sharing companions in place of Player's choice, Shared s
       form.fields.select { |field| field.group == "World" }.map { |field| field.label },
       ["Name", "Password", "Max Players", "Hidden", "World type", "Sharing companions", "Shared save", "Difficulty", "Save", "Set formation limits"])
 check("its Save's row comes off its description, so the form keeps its height",
-      [form.fields.find { |field| field.key == :description }.lines, form.fields.map { |field| field.row }.max], [MGQ_MpWorld::RAID_DESCRIPTION_LINES, 10])
+      [form.fields.find { |field| field.key == :description }.lines, form.fields.map { |field| field.row }.max], [2, 10])
 form[:type] = 0
 check("a description is tidied", form.check(description, "  A slow run.  "), ["A slow run.", nil])
 check("and may be empty", form.check(description, "  "), ["", nil])
@@ -368,7 +374,7 @@ check("the text screen breaks the description over several lines and a name not"
 SceneManager.define_singleton_method(:scene) { Object.new.tap { |scene| def scene.prepare(*); end } }
 $called = nil
 check("while a name may not", form.check(form.fields[0], " ")[1], "The world needs a name.")
-rename = MGQ_MpWorld::Form.rename("")
+rename = MGQ_MpWorld::WorldForm.rename(:rename, "")
 # Discord, which tells the player's name from $discord_name.
 module MGQ_Multiplayer; module Discord; def self.player_name; $discord_name; end; end; end
 # Player.ini, whose settings come from $player_ini.
@@ -382,61 +388,25 @@ $player_ini = { "discord_name" => "Earlier Me" }
 check("or told it in an earlier session", rename.check(rename.fields[0], ""), ["", nil])
 $player_ini = nil
 
-# A game whose data cannot be read.
-known_maps = $data_mapinfos
-$data_mapinfos = nil
-MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
+# A new world: the DLL builds the request from the form it holds and says what came of it
+# (WorldEnteringTests), the screen hands it the starting save's files.
 scene = new_scene
 strict_form = scene.instance_variable_get(:@forms)[:new_world]
 strict_form[:name] = "W"
-strict_form[:mismatch] = false
 scene.instance_variable_set(:@form_symbol, :new_world)
-$calls.clear
+$screen_steps = [["busy", "create"]]
 scene.create_world
-check("a world that keeps differing games out is not made while the creator's game data cannot be read", [$calls, said(scene) =~ /could not be read/ ? true : false], [[], true])
-strict_form[:mismatch] = true
-scene.create_world
-check("a world for every game is", [$calls.last[0], ($calls.last[2][3] & MGQ_MpWorld::Directory::STRICT_OPTION) > 0], ["mp_dir_create", false])
-$data_mapinfos = known_maps
-MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
-scene = new_scene
-strict_form = scene.instance_variable_get(:@forms)[:new_world]
-strict_form[:name] = "W"
-strict_form[:mismatch] = false
-scene.create_world
-check("with the data read, an unticked Allow data mismatch makes a world for the same data only", [$calls.last[2][7], ($calls.last[2][3] & MGQ_MpWorld::Directory::STRICT_OPTION) > 0], ["#{modded}\0", true])
-check("an unticked Shared Mod Settings leaves every player their own", $calls.last[2][9], "\0")
+check("making a world has the DLL make it, with no files without a shared save", [screen_requests("screen.do").last.values_at("do", "start"), scene.instance_variable_get(:@busy)], [["create", []], "create"])
 shared_field = strict_form.fields.find { |field| field.key == :shared }
 check("Shared Mod Settings sits beside Allow data mismatch, unticked, and says what it does to players",
-      [shared_field.kind, shared_field.label, shared_field.group, shared_field.side, strict_form.fields.find { |field| field.key == :mismatch }.side, MGQ_MpWorld::Form.create[:shared], shared_field.hint],
+      [shared_field.kind, shared_field.label, shared_field.group, shared_field.side, strict_form.fields.find { |field| field.key == :mismatch }.side, MGQ_MpWorld::WorldForm.create(:new_world)[:shared], shared_field.hint],
       [:check, "Shared Mod Settings", "Game data", :right, :left, false, "Ticked: every player plays with your mod options here. Unticked: each keeps their own."])
-strict_form[:shared] = true
+$screen_steps = [["buzz"], ["say", "Your game data could not be read. Tick Allow data mismatch."], ["resume_form"]]
+scene = new_scene
+scene.instance_variable_set(:@form_symbol, :new_world)
 scene.create_world
-check("ticked, the new world shares the creator's mod settings, which their game reads once they play in it", $calls.last[2][9], "@shared=o:1\0")
-check("a new world is Classic, sharing no companions, unless the form says otherwise", $calls.last[2][10..11], ["classic\0", "off\0"])
-strict_form[:share] = 2
-scene.create_world
-check("a Classic world shares no companions whatever the greyed-out switch shows", $calls.last[2][10..11], ["classic\0", "off\0"])
-strict_form[:type] = 1
-scene.create_world
-check("a Raid World goes with how it shares companions", $calls.last[2][10..11], ["raid\0", "all\0"])
-check("which the screen keeps for the world's folder with its difficulty and squad rules", scene.instance_variable_get(:@creating_kind), ["raid", "all", 0, MGQ_MpWorld.default_squad, false])
-check("and sends with the squad rules", $calls.last[2][-2], "0 4 1 1\0")
-strict_form[:type] = 0
-strict_form[:share] = 0
-strict_form[:raid_bosses] = true
-scene.create_world
-check("a Classic world with Raid Bosses ticked sends them and keeps them for the world's folder",
-      [$calls.last[2].last, scene.instance_variable_get(:@creating_kind)], [1, ["classic", "off", nil, nil, true]])
-strict_form[:raid_bosses] = false
-scene.create_world
-check("unticked it sends 0", $calls.last[2].last, 0)
-
-# The directory.
-MGQ_MpWorld::Directory.create("W", "p", 4, false, false, "", :description => "A slow run.", :mods => "Some Mod", :data => modded, :strict => true)
-check("create hands the description, the mods, the game data and the rule to the DLL", [$calls.last[1], $calls.last[2][5..7] + [($calls.last[2][3] & MGQ_MpWorld::Directory::STRICT_OPTION) > 0]], ["ppllppppppppllpl", ["A slow run.\0", "Some Mod\0", "#{modded}\0", true]])
-MGQ_MpWorld::Directory.create("W", "p", 4, false, false, "")
-check("or nothing", $calls.last[2][5..7] + [($calls.last[2][3] & MGQ_MpWorld::Directory::STRICT_OPTION) > 0], ["\0", "\0", "\0", false])
+check("a world the DLL refuses leaves the form open with why", [said(scene), scene.instance_variable_get(:@resume_form), scene.instance_variable_get(:@busy)],
+      ["Your game data could not be read. Tick Allow data mismatch.", true, nil])
 $dll["mp_dir_list"] = "state=ready\n\n" \
   "world\tw1\t4\t0\tc\t0\tC\tStrict\tnone\t0\t0\t1\t0\t1\t#{plain}\tNo mods\tUnmodded only.\t\t\tclassic\toff\t\t0\t\t0\n" \
   "world\tw2\t4\t0\tc\t0\tC\tLoose\tnone\t0\t0\t1\t0\t0\t#{plain}\tSome Mod\tA slow run through part one of the story with friends.\t\t\tclassic\toff\t\t0\t\t0\n" \
@@ -446,42 +416,10 @@ _, _, listed, = MGQ_MpWorld::Directory.list
 check("the list reads which worlds take the same data only", listed.map { |world| world.strict }, [true, false, true, false])
 check("their creators' game data", listed.map { |world| world.data }, [plain, plain, modded, ""])
 check("the mods they need and their descriptions", [listed[1].mods, listed[0].description, listed[3].mods, listed[3].description], ["Some Mod", "Unmodded only.", "", ""])
-MGQ_MpWorld::Favourites.define_singleton_method(:all) { [] }
-MGQ_MpWorld::World.define_singleton_method(:all) { [] }
-entries = MGQ_MpWorld.entries(listed, true).sort_by { |entry| entry.id }
+$local_worlds.clear
+$world_lists["favourite"] = []
+entries = screen_entries(listed, true).sort_by { |entry| entry.id }
 check("an entry tells what differs", entries.map { |entry| entry.differing }, [["skills", "maps"], ["skills", "maps"], [], nil])
-
-# Entering.
-scene = new_scene
-scene.instance_variable_set(:@entry, entries[0])
-$calls.clear
-$sounds.clear
-scene.on_enter
-check("entering a world opens it, so the list in the world carries its mods", $calls, [["mp_dir_open", "p", ["w1\0"]]])
-check("a game that differs is kept out of a world for the same data", [$sounds, scene.instance_variable_get(:@busy)], [["buzzer"], nil])
-check("and told what the world needs", said(scene), "Strict only takes matching game data. It needs: No mods.")
-
-scene = new_scene
-scene.instance_variable_set(:@entry, entries[1])
-$calls.clear
-scene.on_enter
-confirming = scene.instance_variable_get(:@confirm_window)
-check("in another world it is asked first", [$calls.reject { |call| call[0] == "mp_dir_open" }, confirming.choices.map { |choice| choice[1] }], [[], [:yes, :cancel]])
-check("with what the world needs", said(scene), "Your game data differs. It needs: Some Mod. Enter anyway?")
-scene.on_confirmed
-check("and enters once the player says so", [$calls.last[0], $calls.last[2], scene.instance_variable_get(:@busy)], ["mp_dir_unlock", ["w2\0", "\0"], "unlock"])
-$calls.clear
-scene.instance_variable_set(:@busy, nil)
-scene.on_enter
-check("the next time it is asked again", [$calls, confirming.choices.nil?], [[], false])
-
-[entries[2], entries[3]].each do |entry|
-  scene = new_scene
-  scene.instance_variable_set(:@entry, entry)
-  $calls.clear
-  scene.on_enter
-  check("#{entry.name}: a game that matches, or a world that does not tell, is entered at once", [$calls.last[0], scene.instance_variable_get(:@confirm_window).choices], ["mp_dir_unlock", nil])
-end
 
 # Adding a hidden world by its id.
 added = []
@@ -489,32 +427,23 @@ MGQ_MpWorld::Added.define_singleton_method(:all) { added }
 MGQ_MpWorld::Added.define_singleton_method(:add) { |id| added << id }
 MGQ_MpWorld::Added.define_singleton_method(:remove) { |id| added.delete(id) }
 scene = new_scene
-scene.instance_variable_get(:@forms)[:join_hidden] = MGQ_MpWorld::Form.join
+scene.instance_variable_get(:@forms)[:join_hidden] = MGQ_MpWorld::WorldForm.join(:join_hidden)
 scene.instance_variable_get(:@forms)[:join_hidden][:id] = "ab" * 16
 scene.instance_variable_set(:@form_symbol, :join_hidden)
 form_window = scene.instance_variable_get(:@form_window)
 form_window.define_singleton_method(:unselect) { }
 form_window.define_singleton_method(:select) { |_index| }
-$calls.clear
+$screen_steps = [["busy", "find"]]
 scene.send_form
-check("the form looks the world up by its id", [$calls.last[0], $calls.last[2], scene.instance_variable_get(:@busy)], ["mp_dir_find", ["#{'ab' * 16}\0"], "find"])
-$dll["mp_dir_action"] = "state=done\nkind=find\nname=Hidden Base\n\n"
-$calls.clear
-scene.follow_action
-check("a world that exists is added to the list, not entered", [added, said(scene), scene.form, $calls.map { |call| call[0] }.include?("mp_dir_unlock")], [["ab" * 16], "Hidden Base was added to your list. #{Scene_MpWorlds::ENTER_HINT}", nil, false])
-check("the list is then asked for it too", $calls.map { |call| [call[0], call[2]] }.select { |call| %w[mp_dir_watch mp_dir_refresh].include?(call[0]) }, [["mp_dir_watch", ["#{'ab' * 16}\0"]], ["mp_dir_refresh", []]])
-check("and the form is empty again", scene.instance_variable_get(:@forms)[:join_hidden][:id], "")
-scene = new_scene
-scene.instance_variable_get(:@forms)[:join_hidden] = MGQ_MpWorld::Form.join
-scene.instance_variable_get(:@forms)[:join_hidden][:id] = "cd" * 16
-scene.instance_variable_set(:@form_symbol, :join_hidden)
-scene.send_form
-$dll["mp_dir_action"] = "state=failed\nkind=find\nerror=There is no such world.\n\n"
-scene.follow_action
-check("a world that does not exist is not added", [added, said(scene)], [["ab" * 16], "There is no such world."])
+check("the form has the DLL look the world up by its id", [screen_requests("screen.do").last["do"], scene.instance_variable_get(:@busy)], ["find", "find"])
+scene.play("steps" => [["idle"], ["fresh_form", "join_hidden"], ["close_form"], ["select", "ab" * 16], ["say", "Hidden Base was added to your list. #{MGQ_MpWorldScreen.text("enter_hint")}"], ["back"]])
+check("a world found is added, the form empty again and closed", [said(scene), scene.form, scene.instance_variable_get(:@forms)[:join_hidden][:id]],
+      ["Hidden Base was added to your list. #{MGQ_MpWorldScreen.text("enter_hint")}", nil, ""])
+# The DLL keeps the world found among those added (WorldLists).
+added << "ab" * 16
 
 # Taking an added world off the list again.
-hidden_entry = MGQ_MpWorld::Entry.new("ab" * 16, "Hidden Base", listed[0], nil, false, false)
+hidden_entry = screen_entry(MGQ_MpWorld::Entry.new("ab" * 16, "Hidden Base", listed[0], nil, false, false))
 actions = lambda do |entry|
   screen = new_scene
   screen.instance_variable_get(:@list_window).define_singleton_method(:current_ext) { entry }
@@ -524,8 +453,9 @@ end
 scene, offered_actions = actions.call(hidden_entry)
 check("an added world never entered may be removed from the list", offered_actions.include?(:forget), true)
 check("another world may not", actions.call(entries[1])[1].include?(:forget), false)
+$screen_steps = [["say", "Hidden Base was removed from your list."], ["back"]]
 scene.on_forget
-check("removing it forgets its id", [added, said(scene)], [[], "Hidden Base was removed from your list."])
+check("removing it has the DLL forget its id, and says what the DLL tells", [screen_requests("screen.do").last.values_at("do", "id"), said(scene)], [["forget", "ab" * 16], "Hidden Base was removed from your list."])
 
 # A details window that draws on nothing and keeps the texts it draws.
 #
@@ -534,6 +464,8 @@ check("removing it forgets its id", [added, said(scene)], [[], "Hidden Base was 
 # @return [Array] The window and the texts drawn, which fill as it shows a world.
 def new_detail(width, height)
   detail = Window_MpWorldDetail.allocate
+  # The details' old methods, such as panels, are the prototype's, which the DLL's model follows.
+  detail.define_singleton_method(:method_missing) { |name, *args| screen_detail.send(name, *args) }
   texts = []
   font = Struct.new(:size).new(24)
   canvas = Struct.new(:font).new(font)
@@ -577,11 +509,10 @@ sharing.listed.settings = "@shared=o:1;mod_level_cap=i:0"
 sharing.listed.mods = "Some Mod; !Other Mod; Level Cap"
 # This game's Mod Config, whose groups name the mods of a world's options.
 module NWConst; module Config; MOD_CONTENTS = [{ :key => :mod_level_cap, :name => "[Level Cap] Level Cap", :sub => true }]; end; end
-check("one that shares them names whose and the mods of its options, in gold", [detail.panels(sharing, "me")[1].rows[1][0].text, detail.panels(sharing, "me")[1].rows[1][0].color],
-      ["Mod settings: shared by C (Level Cap)", :gold])
-check("to its creator, as theirs", detail.panels(sharing, "c")[1].rows[1][0].text, "Mod settings: shared by you (Level Cap)")
+check("one that shares them says what the DLL says of them, in gold", [detail.panels(sharing, "me")[1].rows[1][0].text, detail.panels(sharing, "me")[1].rows[1][0].color, $settings_calls.last[1].values_at("creator_id", "me")],
+      ["Mod settings: shared", :gold, ["c", "me"]])
 sharing.listed.settings = "mod_level_cap=i:0"
-check("settings from before the marker count as shared", detail.panels(sharing, "me")[1].rows[1][0].text, "Mod settings: shared by C (Level Cap)")
+check("settings from before the marker count as shared", detail.panels(sharing, "me")[1].rows[1][0].color, :gold)
 
 # The players.
 member = MGQ_MpWorld::Directory::Member
@@ -592,7 +523,7 @@ check("the players come two to a row, the player marked, the rest counted", play
 check("those online in the color of what is fine", players.rows.flatten.map { |cell| cell.color }, [:good, :good, :normal, :normal])
 check("with how many joined beside the heading", players.note, "5 joined")
 crowd.members = crowd.members.first(3)
-check("an odd one leaves its neighbour's place empty", detail.players_panel(crowd, "me").rows.last, [Window_MpWorldDetail::Cell.new(nil, "Bo", :normal), nil])
+check("an odd one leaves its neighbour's place empty", detail.players_panel(crowd, "me").rows.last, [ScreenPrototype::Model::Cell.new(nil, "Bo", :normal), nil])
 
 # The description.
 detail.show(entries[1], "me")
@@ -613,19 +544,19 @@ check("two fields of a row share it without touching", [key.call(:password).y ==
 check("the description takes four lines across its panel", [key.call(:description).height, key.call(:description).width], [4 * 16 + 2, 380])
 check("the button comes below the last panel, across the window", [key.call(:confirm).y > groups.last[1] + groups.last[2], key.call(:confirm).width], [true, 386])
 check("no two fields overlap", rects.combination(2).none? { |a, b| a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height }, true)
-join_rects = window.places(MGQ_MpWorld::Form.join.fields) { |*| }
+join_rects = window.places(MGQ_MpWorld::WorldForm.join(:join_hidden).fields) { |*| }
 check("the join form places its fields the same way", join_rects.map { |rect| rect.y }, join_rects.map { |rect| rect.y }.sort.uniq)
 fitting = lambda do |fields|
   placed = window.places(fields) { |*| }
   [placed.compact.size == fields.size, placed.map { |rect| rect.y + rect.height }.max <= 360,
    placed.combination(2).none? { |a, b| a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height }]
 end
-raid_form = MGQ_MpWorld::Form.create
+raid_form = MGQ_MpWorld::WorldForm.create(:new_world)
 raid_form[:type] = 1
 fit_listed = listed[1].dup
 fit_listed.type = MGQ_MpWorld::RAID
 check("a Raid World's forms fit their window with the squad rules' button and its Save, the new one and the creator's edit form, and so does the rules' form",
-      [fitting.call(raid_form.fields), fitting.call(MGQ_MpWorld::Form.edit(fit_listed, true).fields), fitting.call(raid_form.limits.fields)],
+      [fitting.call(raid_form.fields), fitting.call(MGQ_MpWorld::WorldForm.edit(:edit_world, fit_listed, true).fields), fitting.call(raid_form.limits.fields)],
       [[true, true, true], [true, true, true], [true, true, true]])
 
 # The editor every text box shares.
@@ -740,17 +671,16 @@ form.editing = nil
 form.edit = nil
 # The text box from here on types what $typed holds.
 open_fake_ui { typed = $typed.to_s; $typed = nil; [typed, 0] }
-check("a description may be 1000 characters long", MGQ_MpWorld::MAX_DESCRIPTION_CHARS, 1000)
 
 # The hints, which share two lines at the top of the world screen.
 hinted_raid = listed[1].dup
 hinted_raid.type = MGQ_MpWorld::RAID
-edits = (listed + [hinted_raid]).flat_map { |world| MGQ_MpWorld::Form.edit(world).fields + MGQ_MpWorld::Form.edit(world, true).fields }
-long = (MGQ_MpWorld::Form.create.fields + MGQ_MpWorld::Form.join.fields + edits).select { |field| field.hint.size > 100 }
+edits = (listed + [hinted_raid]).flat_map { |world| MGQ_MpWorld::WorldForm.edit(:edit_world, world, false).fields + MGQ_MpWorld::WorldForm.edit(:edit_world, world, true).fields }
+long = (MGQ_MpWorld::WorldForm.create(:new_world).fields + MGQ_MpWorld::WorldForm.join(:join_hidden).fields + edits).select { |field| field.hint.size > 100 }
 check("every field's hint fits two lines", long.map { |field| field.key }, [])
 
 # Changing a world.
-edit = MGQ_MpWorld::Form.edit(listed[1])
+edit = MGQ_MpWorld::WorldForm.edit(:edit_world, listed[1], false)
 check("the edit form holds what may change, filled in as the world is", [edit.title, edit.fields.map { |field| field.key }, edit[:seats], edit[:mods], edit[:description]], ["Edit Loose", [:seats, :raid_bosses, :mods, :other_mods_off, :description, :confirm], "4", "Some Mod", "A slow run through part one of the story with friends."])
 check("and may be sent as it is", edit.problem, nil)
 offered = lambda do |me, admin|
@@ -758,7 +688,8 @@ offered = lambda do |me, admin|
   scene.instance_variable_set(:@me, me)
   scene.instance_variable_set(:@admin, admin)
   list = scene.instance_variable_get(:@list_window)
-  list.define_singleton_method(:current_ext) { entries[1] }
+  world = screen_entry(entries[1].dup, admin, me)
+  list.define_singleton_method(:current_ext) { world }
   scene.on_world
   scene.instance_variable_get(:@actions_window).choices.map { |choice| choice[1] }.include?(:edit_world)
 end
@@ -772,54 +703,23 @@ form_window.define_singleton_method(:unselect) { @index = -1 }
 scene.on_edit_world
 check("editing opens the form in place of the details", [scene.form.title, scene.instance_variable_get(:@form_symbol)], ["Edit Loose", :edit_world])
 scene.form[:seats] = "8"
-scene.form[:mods] = ""
-$calls.clear
+$screen_steps = [["busy", "edit"]]
 scene.send_form
-check("sending it hands the changes to the DLL, a Classic world without a difficulty, its raid bosses left", [$calls.last[0], $calls.last[1], $calls.last[2], scene.instance_variable_get(:@busy)],
-      ["mp_dir_edit", "plppplllllpl", ["w2\0", 8, "A slow run through part one of the story with friends.\0", "\0", "\0", 0, 0, 0, 0, 0, "\0", -1], "edit"])
-$dll["mp_dir_action"] = "state=done\nkind=edit\n\n"
-scene.follow_action
-check("once changed, the form closes and the screen says so", [scene.form, said(scene)], [nil, "Loose was changed."])
+check("sending it has the DLL edit the world, with whether the list is fresh", [screen_requests("screen.do").last.values_at("do", "id", "fresh"), scene.instance_variable_get(:@busy)], [["edit", "w2", false], "edit"])
+scene.play("steps" => [["idle"], ["close_form"], ["say", "Loose was changed. Its players play on VERY HARD now."], ["back"]])
+check("once changed, the form closes and the screen says what the DLL tells", [scene.form, said(scene), scene.instance_variable_get(:@busy)], [nil, "Loose was changed. Its players play on VERY HARD now.", nil])
 scene.on_edit_world
 scene.form[:seats] = "99"
-$calls.clear
+calls = screen_requests("screen.do").size
 scene.send_form
-check("seats out of range are refused before anything is sent", [$calls, said(scene)], [[], "Max Players must be a number from 2 to 32."])
+check("seats out of range are refused before anything is sent", [screen_requests("screen.do").size, said(scene)], [calls, "Max Players must be a number from 2 to 32."])
 raid_listed = listed[1].dup
 raid_listed.type = MGQ_MpWorld::RAID
-raid_listed.difficulty = 1
-scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w2", "Loose", raid_listed, nil, false, false))
-scene.on_edit_world
-scene.form.turn(scene.form.fields.find { |field| field.key == :difficulty }, 1)
-$calls.clear
-scene.send_form
-check("editing a Raid World sends its difficulty along", [$calls.last[0], $calls.last[2][6..7]], ["mp_dir_edit", [2, 1]])
-scene.follow_action
-check("and says its players play on the new one now", said(scene), "Loose was changed. Its players play on VERY HARD now.")
-scene.on_edit_world
-scene.send_form
-sent = $calls.last[2][6..7]
-scene.follow_action
-check("but not when it stayed, since the relay would move every player onto it again", [sent, said(scene)], [[0, 0], "Loose was changed."])
 raid_listed.difficulty = nil
+scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w2", "Loose", raid_listed, nil, false, false))
 scene.on_edit_world
 picked = scene.form.fields.find { |field| field.key == :difficulty }
 check("a Raid World that sets none shows Per player first", [picked.choices.first, picked.choices[scene.form[:difficulty]], scene.form.difficulty], ["Per player", "Per player", nil])
-scene.send_form
-sent = $calls.last[2][6..7]
-scene.follow_action
-check("which an unrelated edit leaves as it is", [sent, said(scene)], [[0, 0], "Loose was changed."])
-scene.on_edit_world
-scene.form.turn(scene.form.fields.find { |field| field.key == :difficulty }, 1)
-scene.send_form
-check("until the creator picks one", $calls.last[2][6..7], [-2, 1])
-scene.follow_action
-scene.on_edit_world
-scene.send_form
-sent = $calls.last[2][-2]
-scene.follow_action
-check("a Raid World that names no squad rules keeps them unsent while the form shows the defaults", [sent, said(scene)], ["\0", "Loose was changed."])
-scene.on_edit_world
 scene.instance_variable_set(:@field_index, 2)
 scene.open_limits
 check("the button of the formation limits opens their form in place of the world's", [scene.form.title, scene.instance_variable_get(:@form_symbol), form_window.instance_variable_get(:@index)],
@@ -832,51 +732,12 @@ check("cancel goes back to the world's form at the button, keeping what was pick
 scene.open_limits
 scene.close_limits
 check("as Done does", [scene.instance_variable_get(:@form_symbol), scene.form.squad[:formation]], [:edit_world, 6])
-scene.send_form
-check("changed, they go along as their text", $calls.last[2][-2], "0 6 1 2\0")
-scene.follow_action
-check("and the screen says the new rules", said(scene), "Loose was changed. Its squads: Formation 6, Frontline 1 | 2, Luka fixed.")
-raid_listed.squad = { :luka => false, :formation => 6, :front => 1, :raid_front => 2 }
-scene.on_edit_world
-scene.send_form
-sent = $calls.last[2][-2]
-scene.follow_action
-check("but not when they stayed", [sent, said(scene)], ["\0", "Loose was changed."])
-raid_listed.squad = nil
-scene.instance_variable_set(:@entry, entries[1])
-scene.on_edit_world
-scene.form[:raid_bosses] = true
-scene.send_form
-sent = $calls.last[2].last
-scene.follow_action
-check("ticking Raid Bosses in a Classic world's edit form sends them on, and the screen says so", [sent, said(scene)],
-      [1, "Loose was changed. Its story bosses fight as raid bosses now."])
-entries[1].listed.raid_bosses = true
-scene.on_edit_world
-check("a world with them has the box ticked", scene.form[:raid_bosses], true)
-scene.send_form
-sent = $calls.last[2].last
-scene.follow_action
-check("which an unrelated edit leaves unsent, since the relay would tell every player again", [sent, said(scene)], [-1, "Loose was changed."])
-scene.on_edit_world
-scene.form[:raid_bosses] = false
-scene.send_form
-sent = $calls.last[2].last
-scene.follow_action
-check("unticked, they go off, and the screen says so", [sent, said(scene)], [0, "Loose was changed. Its story bosses fight as usual now."])
-entries[1].listed.raid_bosses = false
-scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w2", "Loose", raid_listed, nil, false, false))
-scene.on_edit_world
-scene.form.instance_variable_get(:@values)[:raid_bosses] = true
-scene.send_form
-check("a Raid World's edit never sends them", $calls.last[2].last, -1)
-scene.follow_action
 
 # The seats a world's code tells follow the directory.
-world = MGQ_MpWorld::World.new("abcdef012345", "code" => "mgqmp2;abcdefghjkmnpqrs;r1;4")
+world = local_world("abcdef012345", "code" => "mgqmp2;abcdefghjkmnpqrs;r1;4")
 world.describe("Loose", "w2", 8)
 check("a world's code takes the seats the directory lists", [world.seats, world.code], [8, "mgqmp2;abcdefghjkmnpqrs;r1;8"])
-old = MGQ_MpWorld::World.new("abcdef012345", "code" => "mgqmp2;abcdefghjkmnpqrs;r1")
+old = local_world("abcdef012345", "code" => "mgqmp2;abcdefghjkmnpqrs;r1")
 old.describe("Old", "w4", 8)
 check("a code without seats stays as it is", old.code, "mgqmp2;abcdefghjkmnpqrs;r1")
 
@@ -895,14 +756,8 @@ matching = listed[2].dup
 matching.mods = "?Mod E; !Mod B"
 matching_entry = MGQ_MpWorld::Entry.new("w3", "Same", matching, nil, false, false)
 check("an essential mod is fine while this game's data matches the world's", [matching_entry.differing, cell_of(detail.panels(matching_entry, "me"), "Mods").chip_colors], [[], { "Mod B" => :good, "Mod E" => :good }])
-check("the list box says so, or that the data differs", [new_scene.mod_lines("?Mod E", []), new_scene.mod_lines("?Mod E", ["skills"])], [[[:head, "Mods (1)"], [:item, "Mod E", :good, "essential, data matches"]], [[:head, "Mods (1)"], [:item, "Mod E", :gold, "essential, data differs"]]])
-check("the list box says which are installed and which nothing checks", new_scene.mod_lines("Mod A; ?Mod E; !Mod B; !Mod C"), [[:head, "Mods (4)"], [:item, "Mod B", :good, "required, installed"], [:item, "Mod C", :bad, "required, missing"], [:item, "Mod E", :gold, "essential, not checked"], [:item, "Mod A", :plain, nil]])
-scene = new_scene
-scene.instance_variable_set(:@entry, essential_entry)
-$calls.clear
-$sounds.clear
-scene.on_enter
-check("a game that lacks a required mod is kept out and told which", [$calls.reject { |call| call[0] == "mp_dir_open" }, $sounds, said(scene)], [[], ["buzzer"], "Loose needs Mod C: no such script in your Patch folder."])
+check("the list box says so, or that the data differs", [screen_detail.mod_lines("?Mod E", []), screen_detail.mod_lines("?Mod E", ["skills"])], [[[:head, "Mods (1)"], [:item, "Mod E", :good, "essential, data matches"]], [[:head, "Mods (1)"], [:item, "Mod E", :gold, "essential, data differs"]]])
+check("the list box says which are installed and which nothing checks", screen_detail.mod_lines("Mod A; ?Mod E; !Mod B; !Mod C"), [[:head, "Mods (4)"], [:item, "Mod B", :good, "required, installed"], [:item, "Mod C", :bad, "required, missing"], [:item, "Mod E", :gold, "essential, not checked"], [:item, "Mod A", :plain, nil]])
 
 # A world the list names without its mods, as the relay lists it for this version.
 unread_world = listed[1].dup
@@ -912,26 +767,16 @@ unread_entry = MGQ_MpWorld::Entry.new("w2", "Loose", unread_world, nil, false, f
 check("its details say its mods are being read", cell_of(detail.panels(unread_entry, "me"), "Mods").text, "Reading . . .")
 scene = new_scene
 scene.instance_variable_set(:@entry, unread_entry)
-$calls.clear
-scene.on_enter
-check("entering it reads its mods first", [$calls.map { |call| [call[0], call[2]] }, scene.instance_variable_get(:@busy)], [[["mp_dir_read", ["w2\0"]]], "read"])
 listed_before = $dll["mp_dir_list"]
-$dll["mp_dir_list"] = "state=ready\n\nworld\tw2\t4\t0\tc\t0\tC\tLoose\tnone\t0\t0\t1\t0\t0\t#{plain}\t!Mod C\tA slow run.\n"
-$dll["mp_dir_action"] = "state=done\nkind=read\nname=Loose\n\n"
-$sounds.clear
-scene.follow_action
-check("and goes on once the list carries them, which keep a game that lacks one out", [unread_entry.listed.mods, $sounds, said(scene)], ["!Mod C", ["buzzer"], "Loose needs Mod C: no such script in your Patch folder."])
-$dll["mp_dir_list"] = "state=ready\n\nworld\tw2\t4\t0\tc\t0\tC\tLoose\tnone\t0\t0\t1\t0\t0\t#{plain}\t\tA slow run.\nunread\n"
-unread_entry.listed = unread_world
+$dll["mp_dir_list"] = "state=ready
+
+world	w2	4	0	c	0	C	Loose	none	0	0	1	0	0	#{plain}	!Mod C	A slow run.
+"
+$screen_steps = [["read"]]
 scene.on_enter
-scene.follow_action
-check("mods the list still lacks after the read keep the player out, told to try again", said(scene), "The mods of Loose could not be read. Try again in a moment.")
+check("once the DLL read its mods, the read step takes the world anew from the list", unread_entry.listed.mods, "!Mod C")
 $dll["mp_dir_list"] = listed_before
 essential_world.mods = "Mod A; !Mod B; ?Mod E"
-scene = new_scene
-scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w2", "Loose", essential_world, nil, false, false))
-scene.on_enter
-check("one that has them all goes on, to the game data check, whatever essential mods the world names", scene.instance_variable_get(:@confirm_window).choices.map { |choice| choice[1] }, [:yes, :cancel])
 Dir.mktmpdir do |folder|
   FileUtils.mkdir_p(File.join(folder, "Patch", "Sub"))
   File.write(File.join(folder, "Patch", "Mask_of_Envy.rb"), "")
@@ -945,7 +790,7 @@ MGQ_MpWorld.instance_variable_set(:@installed, [["modb", "Patch/Mod_B.rb", "Mod_
 modded_world = listed[1].dup
 modded_world.mods = "Mod A; Mod B"
 modded_world.members = [member.new("me", true, "Me"), member.new("a", false, "Ann")]
-modded_entry = MGQ_MpWorld::Entry.new("w2", "Loose", modded_world, nil, false, false)
+modded_entry = screen_entry(MGQ_MpWorld::Entry.new("w2", "Loose", modded_world, nil, false, false))
 scene = new_scene
 scene.instance_variable_set(:@me, "me")
 scene.instance_variable_get(:@list_window).define_singleton_method(:current_ext) { modded_entry }
@@ -1170,56 +1015,23 @@ check("the creator of a world whose data differs from their game may update it",
 check("another player may not", cell_of(detail.panels(entries[1], "me"), "Your game").target, nil)
 check("nor the creator while their game matches", cell_of(detail.panels(entries[2], "c"), "Your game").target, nil)
 check("the creator of a world that tells no data may set theirs", [cell_of(detail.panels(entries[3], "c"), "Your game").target, cell_of(detail.panels(entries[3], "c"), "Your game").text], [:data, "Not compared. Confirm to set yours"])
-detail.show(entries[1], "c")
+detail.show(screen_entry(entries[1].dup, false, "c"), true)
 check("the row is one of what the details open, below the mods", detail.targets, [:mods, :data, :players, :description])
 scene = new_scene
 scene.instance_variable_set(:@me, "c")
 scene.instance_variable_get(:@list_window).define_singleton_method(:current_ext) { entries[1] }
+$screen_steps = [["say", "Take your game's data as that of Loose?"], ["confirm", "update_data", [["Update it", "yes"], ["Back", "cancel"]]]]
 scene.open_target(:data)
-check("confirming on it asks first", [scene.instance_variable_get(:@confirm_window).choices.map { |choice| choice[1] }, said(scene)], [[:yes, :cancel], "Take your game's data as that of Loose? Games that differ from yours are then warned or kept out."])
-$calls.clear
+check("confirming on it asks the DLL, which asks first", [screen_requests("screen.do").last.values_at("do", "id", "ask", "me"), scene.instance_variable_get(:@confirm_window).choices.map { |choice| choice[1] }],
+      [["update_data", "w2", true, "c"], [:yes, :cancel]])
 scene.on_confirmed
-check("then hands this game's data to the DLL", [$calls.last[0], $calls.last[2], scene.instance_variable_get(:@busy)], ["mp_dir_set_data", ["w2\0", "#{MGQ_MpWorld::GameData.fingerprint}\0"], "data"])
-$dll["mp_dir_action"] = "state=done\nkind=data\n\n"
-scene.follow_action
-check("and says so once it is done", said(scene), "The data scan of Loose was updated to your game.")
-
-# An update to enter with that was refused, or could not start, enters nothing after a later update.
-[[:refused, "the game data could not be read"], [:not_started, "the request could not start"]].each do |kind, label|
-  scene = new_scene
-  scene.instance_variable_set(:@me, "c")
-  scene.instance_variable_set(:@entry, entries[1])
-  entered = []
-  scene.define_singleton_method(:on_enter) { entered << true }
-  known_maps = $data_mapinfos
-  set_data = MGQ_MpWorld::Directory.method(:set_data)
-  if kind == :refused
-    $data_mapinfos = nil
-    MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
-  else
-    MGQ_MpWorld::Directory.define_singleton_method(:set_data) { |_id| false }
-  end
-  scene.instance_variable_set(:@confirming, :own_data)
-  scene.on_confirmed
-  $data_mapinfos = known_maps
-  MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
-  MGQ_MpWorld::Directory.define_singleton_method(:set_data, set_data)
-  scene.update_data
-  $dll["mp_dir_action"] = "state=done\nkind=data\n\n"
-  scene.follow_action
-  check("when #{label} for the update to enter with, the edit form's later update enters nothing", [entered, said(scene)], [[], "The data scan of Loose was updated to your game."])
-end
-scene = new_scene
-scene.instance_variable_set(:@me, "c")
-scene.instance_variable_set(:@entry, entries[0])
-scene.on_enter
-check("the creator of a world for the same data whose game differs is told where to update it", said(scene), "Strict only takes matching game data. Update it under Your game in its details.")
+check("and the player's yes goes back to it", screen_requests("screen.answer").last, { "answer" => "yes" })
 
 # The edit form of a world's creator.
-own_edit = MGQ_MpWorld::Form.edit(listed[1], true)
+own_edit = MGQ_MpWorld::WorldForm.edit(:edit_world, listed[1], true)
 check("the creator's edit form has a button that updates the data scan", [own_edit.fields.map { |field| field.key }, own_edit.fields[3].kind, own_edit.fields[3].label, own_edit.fields[3].group], [[:seats, :raid_bosses, :mods, :data, :shared, :other_mods_off, :description, :confirm], :button, "Update current data scan", "Game data"])
 check("and Shared Mod Settings, unticked while the world leaves every player their own", [own_edit.fields[4].kind, own_edit.fields[4].label, own_edit.fields[4].group, own_edit[:shared]], [:check, "Shared Mod Settings", "Game data", false])
-check("another editor's form does not", MGQ_MpWorld::Form.edit(listed[1]).fields.map { |field| field.key }, [:seats, :raid_bosses, :mods, :other_mods_off, :description, :confirm])
+check("another editor's form does not", MGQ_MpWorld::WorldForm.edit(:edit_world, listed[1], false).fields.map { |field| field.key }, [:seats, :raid_bosses, :mods, :other_mods_off, :description, :confirm])
 scene = new_scene
 scene.instance_variable_set(:@me, "c")
 scene.instance_variable_set(:@entry, entries[1])
@@ -1229,96 +1041,45 @@ form_window.define_singleton_method(:select) { |index| @index = index }
 form_window.define_singleton_method(:field) { @form.fields[@index] }
 scene.on_edit_world
 form_window.select(3)
-$calls.clear
+$screen_steps = [["busy", "data"]]
 scene.on_field
-check("the button hands this game's data to the DLL at once, without asking", [$calls.last[0], $calls.last[2], scene.instance_variable_get(:@confirm_window).choices, scene.instance_variable_get(:@busy)], ["mp_dir_set_data", ["w2\0", "#{MGQ_MpWorld::GameData.fingerprint}\0"], nil, "data"])
-$dll["mp_dir_action"] = "state=done\nkind=data\n\n"
-scene.follow_action
-check("and leaves the form open", [scene.form.title, said(scene)], ["Edit Loose", "The data scan of Loose was updated to your game."])
+check("the button has the DLL take this game's data at once, without asking", [screen_requests("screen.do").last.values_at("do", "id", "ask"), scene.instance_variable_get(:@confirm_window).choices, scene.instance_variable_get(:@busy)],
+      [["update_data", "w2", false], nil, "data"])
+MGQ_MpWorld::Changes.note(MGQ_MpWorld::Changes::SCREEN)
+$screen_steps = [["idle"], ["say", "The data scan of Loose was updated to your game."], ["back"]]
+scene.follow_steps
+check("and leaves the form open", [scene.form.title, said(scene), scene.instance_variable_get(:@busy)], ["Edit Loose", "The data scan of Loose was updated to your game.", nil])
 form_window.select(7)
-$calls.clear
+$screen_steps = [["busy", "edit"]]
 scene.on_field
-check("the form's own button still saves the other changes", $calls.last[0], "mp_dir_edit")
-form_window.define_singleton_method(:unselect) { @index = -1 }
-$dll["mp_dir_action"] = "state=done\nkind=edit\n\n"
-$calls.clear
-scene.follow_action
-check("with Shared Mod Settings as it was, no mod settings are sent", [$calls.map(&:first).include?("mp_dir_set_settings"), said(scene)], [false, "Loose was changed."])
-scene.on_edit_world
-scene.form[:shared] = true
-form_window.select(7)
-scene.on_field
-$calls.clear
-scene.follow_action
-check("ticked, the creator's game sends the marker once the other changes are saved", [$calls.find { |call| call[0] == "mp_dir_set_settings" }[2], scene.instance_variable_get(:@busy)], [["w2\0", "@shared=o:1\0"], "settings"])
-$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
-scene.follow_action
-check("and says when the players get them", said(scene), "Loose was changed. Its players get your mod options once you play in it.")
-entries[1].listed.settings = "@shared=o:1;mod_level_cap=i:0"
-scene.on_edit_world
-check("a world that shares them has it ticked", scene.form[:shared], true)
-scene.form[:shared] = false
-form_window.select(7)
-scene.on_field
-$dll["mp_dir_action"] = "state=done\nkind=edit\n\n"
-$calls.clear
-scene.follow_action
-check("unticked, the world's settings go, so every player keeps their own", $calls.find { |call| call[0] == "mp_dir_set_settings" }[2], ["w2\0", "\0"])
-$dll["mp_dir_action"] = "state=done\nkind=settings\n\n"
-scene.follow_action
-check("and the creator is told from when", said(scene), "Loose was changed. Its players set their own mod options from their next visit.")
+check("the form's own button still has the DLL save the other changes, the shared settings with them", screen_requests("screen.do").last["do"], "edit")
 entries[1].listed.settings = ""
 
-# What the screen draws again.
-again = MGQ_MpWorld::Entry.new(entries[1].id, entries[1].name, entries[1].listed.dup, nil, false, false)
-check("the same world read again shows the same", again.signature == entries[1].signature, true)
-changed = entries[1].listed.dup
-changed.online = 3
-check("a world that changed does not", MGQ_MpWorld::Entry.new(entries[1].id, entries[1].name, changed, nil, false, false).signature == entries[1].signature, false)
-folder = MGQ_MpWorld::World.new("abcdef012345", "code" => "c", "name" => "Loose", "world" => "w2")
-same_folder = MGQ_MpWorld::World.new("abcdef012345", "code" => "c", "name" => "Loose", "world" => "w2")
-check("nor does a world whose folder was read again", MGQ_MpWorld::Entry.new("w2", "Loose", listed[1], folder, false, false).signature == MGQ_MpWorld::Entry.new("w2", "Loose", listed[1], same_folder, false, false).signature, true)
+# What the screen draws again: the same world only once the list or what its details read changed.
+folder = local_world("abcdef012345", "code" => "c", "name" => "Loose", "world" => "w2")
+loose = screen_entry(MGQ_MpWorld::Entry.new("w2", "Loose", listed[1], folder, false, false))
 detail, texts = new_detail(386, 336)
-detail.show(MGQ_MpWorld::Entry.new("w2", "Loose", listed[1], folder, false, false), "me")
+detail.show(loose)
 texts.clear
-detail.show(MGQ_MpWorld::Entry.new("w2", "Loose", listed[1], same_folder, false, false), "me")
-check("so the details are not drawn again for it", texts, [])
+detail.show(loose)
+check("the details are not drawn again for the same world", texts, [])
+detail.show(loose, true)
+check("but once the list or what they read changed", texts.empty?, false)
 
-# The mod picker.
-pick = MGQ_MpWorld::ModPick.new("!level cap; Unknown Mod; ?Data Pack", ["Battle_Dialogue", "Level_Cap"])
-check("named mods take their state, matched whatever their case or spaces, and those not installed follow as added", pick.entries.map { |entry| entry.to_a },
-      [["Battle_Dialogue", :unlisted, true], ["Level_Cap", :required, true], ["Data Pack", :essential, false], ["Unknown Mod", :listed, false]])
+# The mod picker, which the DLL keeps (ModPickTests): the script shows what it answers and hands each
+# change over.
+$picker_installed = ["Battle_Dialogue", "Level_Cap"]
+pick = MGQ_MpWorld::ModPick.new("!level cap; Unknown Mod; ?Data Pack")
+check("named mods take their state, label and colour, matched whatever their case or spaces, and those not installed follow as added", pick.entries.map { |entry| entry.to_a },
+      [["Battle_Dialogue", :unlisted, true, "unlisted", :grey], ["Level_Cap", :required, true, "required", :bad], ["Data Pack", :essential, false, "essential", :gold], ["Unknown Mod", :listed, false, "listed", :plain]])
 check("the text names the mods as the world keeps them, an installed one by its file's name", pick.text, "!Level_Cap; ?Data Pack; Unknown Mod")
+first = pick.entries[0]
 pick.toggle(0)
-check("enter lists an unlisted mod", pick.text, "Battle_Dialogue; !Level_Cap; ?Data Pack; Unknown Mod")
-pick.toggle(3)
-check("and unlists a named one; an added mod unlisted stays in the picker, out of the text", [pick.entries.size, pick.text], [4, "Battle_Dialogue; !Level_Cap; ?Data Pack"])
+check("a change goes to the DLL, and a mod read before it tells its new state", [first.state, pick.text], [:listed, "Battle_Dialogue; !Level_Cap; ?Data Pack; Unknown Mod"])
 check("a mod added by name is removed on its own, an installed one not", [pick.remove(3), pick.remove(0), pick.entries.size], [true, false, 3])
-pick.toggle(1)
-check("an installed one unlisted stays, unnamed, even a required one", [pick.entries.size, pick.text], [3, "Battle_Dialogue; ?Data Pack"])
-pick.mark(0, :required)
-check("the red button makes a mod required", pick.text, "!Battle_Dialogue; ?Data Pack")
-pick.mark(0, :essential)
-check("the warning sign makes it essential instead", pick.text, "?Battle_Dialogue; ?Data Pack")
-pick.mark(0, :essential)
-check("pressed again, it is only listed", pick.text, "Battle_Dialogue; ?Data Pack")
-pick.mark(1, :required)
-check("a button names an unlisted mod at once", pick.text, "Battle_Dialogue; !Level_Cap; ?Data Pack")
-check("a mod is added by name, listed, without a mark typed in front", [pick.add(" !New One "), pick.text], [nil, "Battle_Dialogue; !Level_Cap; ?Data Pack; New One"])
-check("a name already in the list, an empty one or one with a semicolon is refused", [pick.add("level_cap"), pick.add(" "), pick.add("a;b")],
-      ["Level_Cap is in the list already.", "A mod's name cannot be empty.", "A mod's name cannot hold a semicolon."])
-all = MGQ_MpWorld::ModPick.new("?Data Pack; !B", ["A", "B", "C"])
-check("not every installed mod is listed yet", all.all_listed?, false)
-check("list all lists the unlisted installed mods and keeps how the others are named", [all.list_all, all.text, all.all_listed?], [nil, "A; !B; C; ?Data Pack", true])
-check("unlist all unlists every installed mod and keeps the added ones", [all.unlist_all, all.text], [nil, "?Data Pack"])
-half = MGQ_MpWorld::MAX_MODS_CHARS / 2
-too_long = "The mods may take #{MGQ_MpWorld::MAX_MODS_CHARS} characters at most."
-long = MGQ_MpWorld::ModPick.new("", ["A" * half, "B" * half])
-long.toggle(0)
-check("a change past the relay's limit is refused and undone, and so is an added mod", [long.mark(1, :required), long.add("C" * (half + 10)), long.text, long.entries.size],
-      [too_long, too_long, "A" * half, 2])
-long.unlist_all
-check("list all lists as many as fit and says why the rest are not", [long.list_all, long.text], [too_long, "A" * half])
+check("a refusal comes back as the DLL says it", pick.add("level_cap"), "Level_Cap is in the list already.")
+check("and list all lists the rest", [pick.mark(1, :required), pick.unlist_all, pick.list_all, pick.text, pick.all_listed?], [nil, nil, nil, "Battle_Dialogue; Level_Cap; ?Data Pack", true])
+$picker_installed = nil
 
 Dir.mktmpdir do |folder|
   FileUtils.mkdir_p(File.join(folder, "Patch", "Sub"))
@@ -1328,9 +1089,6 @@ Dir.mktmpdir do |folder|
 
   Dir.chdir(folder) do
     MGQ_MpWorld.forget_installed
-    check("the picker lists each installed mod once by its file's name, sorted, without the loader, this mod and Mod Config Remake", MGQ_MpWorld.installed_mod_names,
-          ["battle_dialogue", "Level_Cap", "Party Sheet", "Zeta"])
-
     off = [["!", :red, false], ["?", :orange, false]]
     scene = new_scene
     box = FakeBox.new
@@ -1515,7 +1273,7 @@ MGQ_Multiplayer::Player.define_singleton_method(:name=) { |name| named = name }
 scene = new_scene
 form_window = FakeForm.new
 scene.instance_variable_set(:@form_window, form_window)
-scene.instance_variable_get(:@forms)[:rename] = MGQ_MpWorld::Form.rename("")
+scene.instance_variable_get(:@forms)[:rename] = MGQ_MpWorld::WorldForm.rename(:rename, "")
 scene.instance_variable_set(:@form_symbol, :rename)
 form_window.form = scene.form
 scene.start_typing(scene.form.fields[0])
@@ -1525,7 +1283,7 @@ scene.update_typing
 ui_frame
 scene.update_typing
 check("Enter in the name's text box keeps the name and leaves the form, the screen still open", [named, scene.form, $returned, $typing], ["Bob", nil, nil, false])
-scene.instance_variable_get(:@forms)[:rename] = MGQ_MpWorld::Form.rename("")
+scene.instance_variable_get(:@forms)[:rename] = MGQ_MpWorld::WorldForm.rename(:rename, "")
 scene.instance_variable_set(:@form_symbol, :rename)
 MGQ_MpWorld.text_result = [[:field, :name], "Pad Name"]
 scene.take_text_result
@@ -1556,5 +1314,4 @@ check("where the numpad's 0 types a 0", [create[:seats], create.editing], ["40",
 scene.stop_typing
 create[:name] = "  Spaced  "
 create[:seats] = "08"
-scene.tidy_form
-check("a form sends its tidied values", [create[:name], create[:seats]], ["Spaced", "8"])
+check("a form sends its tidied values", [create.problem, create[:name], create[:seats]], [nil, "Spaced", "8"])
