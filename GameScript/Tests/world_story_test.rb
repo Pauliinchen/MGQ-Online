@@ -2,6 +2,7 @@
 #  world_story_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Checked that an unlock the player holds stays on under a world's story that lacks it
 #      Paulinchen  2026-10-23: Checked that the return to the Great Decision takes the player out of their own scene first
 #                            - Checked which event commands may move the world's story on
 #                            - Checked that a change saved before its write goes out at once and stays after a load
@@ -547,6 +548,12 @@ built, told, local, applied = one_way_stories({ 1032 => 5 }, { 1032 => 5 }, { 10
 check("but not through a step refused for another route", [story.keep_own(applied, told, local, built, true, false).map(&:size), applied[1][1032]], [[0, 1], 5])
 built, told, local, applied = one_way_stories({ 1141 => 30, 1144 => 4 }, { 1141 => 30, 1144 => 4 }, { 1141 => 0, 1144 => 0 })
 check("the player's own return to the Great Decision clears a route's one-way variables", [story.keep_own(applied, told, local, built, false).map(&:size), applied[1][1144]], [[2, 0], 0])
+# The second accessory slot (445), which a player got while an earlier build kept it their own,
+# stays on when the world's story lacks it, and counts as their change to write.
+built, told, local, applied = one_way_stories({}, {}, {})
+[built, local].each { |each| each[0][445] = true }
+check("an unlock the player holds and the world's story lacks stays on as their change",
+      [story.keep_own(applied, told, local, built, false), applied[0][445]], [[[[0, 445]], []], true])
 held = one_way_stories({}, {}, { 1032 => 3 })[2]
 check("a write holds a lowered one-way variable at the world's value", [story.hold_one_way(held, one_way_stories({}, { 1032 => 7 }, {})[1]), held[1][1032]], [[[1032, 3]], 7])
 $calls.clear

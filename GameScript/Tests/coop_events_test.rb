@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-24: Checked that the player's game notes whose scene that runs by itself it keeps from starting
+#      Paulinchen  2026-10-24: Set the unlocks aside in the generator's switches of each player's own
+#                            - Checked that the player's game notes whose scene that runs by itself it keeps from starting
 #      Paulinchen  2026-10-23: Checked that a weapon's pedestal handing out a medal is a chest of each player's own
 #                            - Checked that a talk ended early takes back what it changed
 #                            - Checked that a dark screen fades in while a watched scene shows nothing for ten seconds
@@ -1926,9 +1927,12 @@ if File.exist?(generator_file)
   load(generator_file, generator)
   own_switches = generator::PERSONAL_SWITCHES.flat_map { |ids| Array(ids) }
   own_variables = Object.new.extend(generator).send(:personal_variables, $data_actors.size).flat_map { |ids| Array(ids) }
-  # The chest flags are each player's own too, but only chests set them, which no marks come from.
-  check("the generator's switches of each player's own are this script's, the chest flags aside",
-        [own_switches.all? { |id| MGQ_MpStoryState.personal_switch?(id, []) }, (1..8000).select { |id| MGQ_MpStoryState.personal_switch?(id, []) } - own_switches - CHEST_FLAGS], [true, []])
+  # The chest flags are each player's own too, but only chests set them, which no marks come from;
+  # the unlocks are outside a Raid World, but the story's one event turns them on for good, which
+  # the generator refuses among each player's own.
+  check("the generator's switches of each player's own are this script's, the chest flags and the unlocks aside",
+        [own_switches.all? { |id| MGQ_MpStoryState.personal_switch?(id, []) },
+         (1..8000).select { |id| MGQ_MpStoryState.personal_switch?(id, []) } - own_switches - CHEST_FLAGS - MGQ_MpStoryState::UNLOCK_SWITCHES], [true, []])
   check("and so are its variables", [own_variables.all? { |id| MGQ_MpStoryState.personal_variable?(id) }, (1..8000).select { |id| MGQ_MpStoryState.personal_variable?(id) } - own_variables], [true, []])
 else
   puts "skipped the generator's lists: #{generator_file} is missing"

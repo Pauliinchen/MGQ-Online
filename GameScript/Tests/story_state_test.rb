@@ -2,6 +2,7 @@
 #  story_state_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Covered the second accessory slot a story written past the game turns on
 #      Paulinchen  2026-10-12: Covered unpacking a packed story and its refusals
 #      Paulinchen  2026-10-10: Created
 #
@@ -113,3 +114,21 @@ check("a small text that unpacks far past any story is refused as it unpacks",
 check("and so is a whole story written with it", refusal.call { state.decode_full("z" => bomb) }.to_s[/unpacked past/], "unpacked past")
 check("a text longer than any story is refused before it is read",
       refusal.call { state.unpack("A" * (state::MAX_PACKED_BYTES + 4)) }.to_s[/more than any story/], "more than any story")
+
+# A story written past the game's setter of switches gives the characters the second accessory
+# slot as that setter does, once it turns the slot's switch on, and not again while it stays on.
+# Stands in for the game's switches, variables and self switches, the story as their data.
+class Game_Switches; def initialize; @data = []; end; def [](id); @data[id]; end; end
+class Game_Variables; def initialize; @data = []; end; end
+class Game_SelfSwitches; def initialize; @data = {}; end; end
+class Game_Actor; attr_reader :refits; def change_slot; @refits = refits.to_i + 1; end; end
+class Game_Actors; def each(&block); @data.each_value(&block); end; end
+$game_switches = Game_Switches.new
+$game_variables = Game_Variables.new
+$game_self_switches = Game_SelfSwitches.new
+[1, 16].each { |id| $game_actors[id] }
+slot_on = []
+slot_on[state::EXTRA_ACCESSORY_SLOT] = true
+state.set_raw(slot_on, [], {})
+state.set_raw(slot_on.dup, [], {})
+check("a story that turns the second accessory slot on refits every character once", [$game_actors[1].refits, $game_actors[16].refits], [1, 1])

@@ -2,6 +2,7 @@
 #  world_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Kept on the unlocks the player holds that the world's story lacks, as the second accessory slot
 #      Paulinchen  2026-10-23: Took the player out of their own scene before the return to the Great Decision and the end of a cleared collab
 #                            - Told whether event commands may move the world's story on and read the values that do
 #                            - Wrote the story's waiting changes at once as the game saves, goes to the title screen, resets or closes
@@ -1038,15 +1039,18 @@ module MGQ_MpWorldStory
   # @param raises [Boolean] Whether the raises of one-way variables stay.
   # @return [Array<Array>] The kept and the dropped changes, each as [kind, key].
   def self.keep_own(applied, told, local, base, drop, raises = !drop)
-    return [[], []] unless base
+    unlocked = keep_unlocks(applied, local)
+    return [unlocked, []] unless base
 
-    kept = []
+    kept = unlocked.dup
     dropped = []
     returning = returning?(local, told)
     3.times do |kind|
       theirs = {}
       changes(kind, base[kind], told[kind]).each { |key| theirs[key] = true }
       changes(kind, base[kind], local[kind]).each do |key|
+        next if unlocked.include?([kind, key])
+
         way = kind == 1 && one_way?(key) && !(returning && return_cleared?(key)) ? local[1][key].to_i <=> told[1][key].to_i : nil
         if way == -1 || ((theirs[key] || drop) && !(raises && way == 1))
           dropped << [kind, key]
@@ -1057,6 +1061,20 @@ module MGQ_MpWorldStory
       end
     end
     [kept, dropped]
+  end
+
+  # Keeps on the unlocks the player's story holds and the story laid over it lacks
+  # (MGQ_MpStoryState::UNLOCK_SWITCHES), such as the second accessory slot, which the game never
+  # takes back: an earlier build kept it each player's own and never wrote it for the world.
+  #
+  # @param applied [Array] The story laid over the player's, which takes them.
+  # @param local [Array] The player's.
+  # @return [Array<Array>] The kept unlocks, each as [kind, key].
+  def self.keep_unlocks(applied, local)
+    MGQ_MpStoryState::UNLOCK_SWITCHES.select { |id| local[0][id] && !applied[0][id] }.map do |id|
+      applied[0][id] = true
+      [0, id]
+    end
   end
 
   # Reports whether a story variable only ever goes up in the world's story (see

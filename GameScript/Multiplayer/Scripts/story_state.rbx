@@ -2,6 +2,8 @@
 #  story_state.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Shared the second accessory slot (445) as a Raid World's story
+#                            - Gave the characters the second accessory slot once a story written past the game turned it on
 #      Paulinchen  2026-10-18: Kept switch and variable 0 out of the world's story
 #                            - Kept the collab's key item switch each Raid World player's own
 #      Paulinchen  2026-10-15: Kept the refusal of recruits each Raid World player's own
@@ -51,9 +53,18 @@ module MGQ_MpStoryState
   # Switches that are the player's own: the flags the game toggles around its fights (22, which the
   # events turn on around a story boss battle, 73 "Chaos Enemy Pause", 97 "Hades Rematch", which
   # every battle page clears and the Chaos cave's events set), configuration mirrored in switches
-  # (95, 445-447, 502), the warp and escape bans of the place they stand in, and the switches that
+  # (95, 446, 447, 502), the warp and escape bans of the place they stand in, and the switches that
   # tell whether a companion is in the party (1001-2000), and 0, which no switch is.
-  PERSONAL_SWITCHES = [0, 22, 73, ESCAPE_BAN, 95, 97, WARP_BAN, 445, 446, 447, 502, 1001..2000]
+  PERSONAL_SWITCHES = [0, 22, 73, ESCAPE_BAN, 95, 97, WARP_BAN, 446, 447, 502, 1001..2000]
+
+  # The switch of the second accessory slot, which Fallen Micaela's blessing turns on for good. The
+  # game's setter of the switch gives every character the slot.
+  EXTRA_ACCESSORY_SLOT = defined?(NWConst::Sw::EXTRA_ACCESSORY_SLOT) ? NWConst::Sw::EXTRA_ACCESSORY_SLOT : 445
+
+  # Switches the game turns on for good and never off, which a story laid over the player's keeps
+  # on. Outside a Raid World they stay each player's own: a party's member borrows the leader's
+  # story and gets their own back, and the slot coming and going would move their equipment.
+  UNLOCK_SWITCHES = [EXTRA_ACCESSORY_SLOT]
 
   # Switches that are each Raid World player's own, as the game sets them for the fights with values
   # of their own: a special boss's NORMAL (23), the Colosseum and its match under way (28, 87), the
@@ -135,10 +146,22 @@ module MGQ_MpStoryState
   # @param variables [Array] The variables.
   # @param self_switches [Hash] The self switches.
   def self.set_raw(switches, variables, self_switches)
+    slot = $game_switches[EXTRA_ACCESSORY_SLOT] ? true : false
     MGQ_MpGame.set($game_switches, :data, switches)
     MGQ_MpGame.set($game_variables, :data, variables)
     MGQ_MpGame.set($game_self_switches, :data, self_switches)
+    refit_accessory_slot(slot)
     $game_map.need_refresh = true if $game_map
+  end
+
+  # Gives every character the second accessory slot or takes it away, as the game's setter of its
+  # switch does, once a story written past that setter changed the switch.
+  #
+  # @param before [Boolean] Whether the switch was on before.
+  def self.refit_accessory_slot(before)
+    return if ($game_switches[EXTRA_ACCESSORY_SLOT] ? true : false) == before || !$game_actors.respond_to?(:each)
+
+    $game_actors.each { |actor| actor.change_slot if actor.respond_to?(:change_slot) }
   end
 
   # Reads the data the game keeps for its switches, variables or self switches, past its handling
@@ -202,6 +225,7 @@ module MGQ_MpStoryState
   def self.personal_switch?(id, variables = nil)
     return MGQ_MpCoop::Scope.raid? || sides_differ?(variables) if SIDE_SWITCHES.include?(id)
     return MGQ_MpCoop::Scope.raid? if RAID_PERSONAL_SWITCHES.include?(id) || scene_switch?(id)
+    return !MGQ_MpCoop::Scope.raid? if UNLOCK_SWITCHES.include?(id)
 
     PERSONAL_SWITCHES.any? { |range| range === id } || id.between?(AWAKENING_SWITCHES, AWAKENING_LAST) || choice_key?(:s, id) || chest_flag?(id)
   end
