@@ -64,6 +64,7 @@ Everyone goes where they like (see [Travelling](GUIDE.md#travelling)); only stor
 - The scene waits 30 seconds at most, then starts without whoever hasn't come; they play on where they are. The leader's own line names up to two members still missing and counts the rest ("Gathering: \<name>, \<name> +1 (22 s) . . .").
 - While the scene plays, the members on that map stand still and can't open the menu; the chat stays open. Story events don't get stuck on a member standing in their way.
 - When a scene moves the leader somewhere else, such as onto a theater's stage and back, the members with them come along at once.
+- A battlefuck is no story scene: it plays in the game of whoever starts it, without gathering the party.
 
 ## Chests
 
