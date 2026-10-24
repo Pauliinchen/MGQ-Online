@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-24: Tested the conditions of the Trigger -> Effect framework
+//                            - Tested the main target and chosen action conditions
 //      Paulinchen  2026-10-22: Tested the not in chain condition
 //      Paulinchen  2026-10-21: Created
 //
@@ -104,6 +105,30 @@ public sealed class ConditionEvaluatorTests
         Assert.True(Holds(new HitTypeIsCondition(HitKind.Magic), hit));
         Assert.False(Holds(new HitTypeIsCondition(HitKind.Physical), hit));
         Assert.True(Holds(new HitTypeIsCondition(HitKind.Any), new TurnStartEvent(1)));
+    }
+
+    /// <summary>
+    /// Holds main target only for the hit on the cast's main target.
+    /// </summary>
+    [Fact]
+    public void HoldsMainTargetForTheMainTargetsHitOnly()
+    {
+        UnitHitEvent main = new(3, "c1", 0, Blast, 1, new GridCell(4, 1), [], [], MainTarget: true);
+
+        Assert.True(Holds(new MainTargetCondition(), main));
+        Assert.False(Holds(new MainTargetCondition(), main with { MainTarget = false }));
+    }
+
+    /// <summary>
+    /// Holds chosen action only for a party hit from an action chosen in the command phase.
+    /// </summary>
+    [Fact]
+    public void HoldsChosenActionForAChosenPartyHitOnly()
+    {
+        BossHitEvent chosen = new(3, 0, 2, new GridCell(4, 1), HitKind.Magic, Blast, [3], true);
+
+        Assert.True(Holds(new ChosenActionCondition(), chosen));
+        Assert.False(Holds(new ChosenActionCondition(), chosen with { Chosen = false }));
     }
 
     /// <summary>

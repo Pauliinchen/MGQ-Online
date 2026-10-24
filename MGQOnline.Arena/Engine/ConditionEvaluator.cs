@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-24: Checked the conditions of the Trigger -> Effect framework
+//                            - Checked the main target and chosen action conditions
 //      Paulinchen  2026-10-23: Checked the enemy is condition
 //      Paulinchen  2026-10-22: Checked the not in chain condition
 //      Paulinchen  2026-10-21: Created
@@ -89,6 +90,8 @@ internal static class ConditionEvaluator
         // TE1: the hit type of a boss cast's hit; only party hits carry one for now.
         HitTypeIsCondition hitType => hitType.HitType == HitKind.Any || (battleEvent is BossHitEvent hit && hit.HitType == hitType.HitType),
         SwitchOnCondition on => context.IsSwitchOn(on.Switch),
+        MainTargetCondition => battleEvent is UnitHitEvent { MainTarget: true },
+        ChosenActionCondition => battleEvent is BossHitEvent { Chosen: true },
         NotSealedCondition notSealed => !context.IsSealed(enemy, notSealed.Skill),
         NotInChainCondition notInChain => EventFacts.CastIdOf(battleEvent) is not string castId || !context.ChainOf(castId).Contains(notInChain.Skill),
         _ => throw new ArgumentOutOfRangeException(nameof(condition), condition, "The engine does not know this condition."),

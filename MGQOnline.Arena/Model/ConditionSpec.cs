@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-24: Replaced the conditions with those of the Trigger -> Effect framework
+//                            - Added the main target and chosen action conditions
 //      Paulinchen  2026-10-23: Added the enemy is condition
 //      Paulinchen  2026-10-22: Added the not in chain condition
 //      Paulinchen  2026-10-21: Created
@@ -24,6 +25,8 @@ namespace MGQOnline.Arena.Model;
 [JsonDerivedType(typeof(EnemyPresentCondition), "enemyPresent")]
 [JsonDerivedType(typeof(HitTypeIsCondition), "hitTypeIs")]
 [JsonDerivedType(typeof(SwitchOnCondition), "switchOn")]
+[JsonDerivedType(typeof(MainTargetCondition), "mainTarget")]
+[JsonDerivedType(typeof(ChosenActionCondition), "chosenAction")]
 [JsonDerivedType(typeof(NotSealedCondition), "notSealed")]
 [JsonDerivedType(typeof(NotInChainCondition), "notInChain")]
 public abstract record ConditionSpec;
@@ -75,6 +78,17 @@ public sealed record HitTypeIsCondition(HitKind HitType) : ConditionSpec;
 /// </summary>
 /// <param name="Switch">The switch id.</param>
 public sealed record SwitchOnCondition(int Switch) : ConditionSpec;
+
+/// <summary>
+/// Holds while the unit the triggering cast hit is the cast's main target in that pulse.
+/// </summary>
+public sealed record MainTargetCondition : ConditionSpec;
+
+/// <summary>
+/// Holds while the triggering party hit comes from an action chosen in the command phase, not one
+/// that follows from it.
+/// </summary>
+public sealed record ChosenActionCondition : ConditionSpec;
 
 /// <summary>
 /// Holds while the row's enemy may use a skill: neither it nor every skill type of it is sealed; for

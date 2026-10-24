@@ -5,6 +5,7 @@
 //      Paulinchen  2026-10-24: Gave the boss a battle plan with two stages and rows of every trigger, condition, effect and owner
 //                            - Dropped the marks, mark reactions, scheduled actions and follow-ups
 //                            - Gave the area skill a payload override
+//                            - Added the main target and chosen action conditions
 //      Paulinchen  2026-10-23: Added the manual cells of a skill's targeting
 //                            - Gave the sample boss a battlefield instead of start debris
 //                            - Gave the boss its raid and a Hades refight
@@ -132,7 +133,7 @@ internal static class Samples
             "1c2d3e4f",
             RuleOwner.OfSkill(Stigmata),
             new SkillHitsTrigger(Who.Owner, Who.Character),
-            [new ChanceCondition(10000)],
+            [new ChanceCondition(10000), new MainTargetCondition()],
             [new AddStateEffect(TargetRef.TriggerUnit, 301, MinTurns: 1, UntilNextCastOf: AddStateEffect.RootOfCast)],
             HowOften.Every),
         new RuleSpec(
@@ -221,7 +222,7 @@ internal static class Samples
             "d2e3f4a5",
             RuleOwner.OfEnemy(FirstSlot),
             new DamageInTurnTrigger(Who.Owner, 15),
-            [],
+            [new ChosenActionCondition()],
             [new CancelSkillEffect(), new AddStateEffect(TargetRef.Owner, 10, Turns: 1)],
             new HowOften(Frequency.Nth, 2)),
         new RuleSpec(

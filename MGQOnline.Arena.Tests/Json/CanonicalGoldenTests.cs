@@ -41,7 +41,7 @@ public sealed class CanonicalGoldenTests
     /// <summary>
     /// The SHA-256 of the design golden.
     /// </summary>
-    private const string DesignSha256 = "d0bf4ee9dcf0ef4c75de45ce422f497543e826fecdb601d0126bbbe62f6e3571";
+    private const string DesignSha256 = "e5dcfd598b434d97f228563e73f8f6572dd9796a4d5fef123a822da03e9a6f72";
 
     /// <summary>
     /// The SHA-256 of the battle log golden.
