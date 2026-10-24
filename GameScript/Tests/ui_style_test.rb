@@ -2,6 +2,7 @@
 #  ui_style_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Checked that the confirm box opens on the title screen, where the game counts no frames
 #      Paulinchen  2026-10-12: Checked the scrollbars and the list windows' wheel
 #      Paulinchen  2026-10-11: Checked the list, message and confirm boxes in the layout
 #                            - Checked that an outlined text is drawn without the font's own outline
@@ -619,3 +620,10 @@ window.dispose
 check("disposing the window frees its scrollbar", [bar.disposed?, bar.bitmap.disposed?], [true, true])
 $wheel = 0
 $mouse = nil
+
+# The confirm box opens on the title screen too, where the game's frame count raises.
+class << Graphics; alias_method :counted_frames, :frame_count; def frame_count; raise TypeError, "nil can't be coerced into Fixnum"; end; end
+opened = MGQ_MpUi::Confirm.ask("Restart the game now?", ["Restart", "Later"]) { |_yes| }
+check("the confirm box opens while the game counts no frames", [opened, MGQ_MpUi::Confirm.open?], [true, true])
+MGQ_MpUi::Confirm.close
+class << Graphics; alias_method :frame_count, :counted_frames; end

@@ -2,6 +2,7 @@
 #  support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Counted the key frames as the tests count the game's
 #      Paulinchen  2026-10-13: Named the mod folder as Multiplayer.rb does
 #      Paulinchen  2026-10-12: Collected the log lines a block writes
 #      Paulinchen  2026-10-08: Stood in for watching keys
@@ -28,7 +29,7 @@ SCRIPTS_DIR = File.expand_path("../Multiplayer/Scripts", __dir__)
 
 # The keys Multiplayer.rb reads from Windows, which ui.rbx watches as it loads; a test that reads keys
 # stands in for the rest.
-module MGQ_Multiplayer; module Key; def self.watch(*_codes); end; end; end
+module MGQ_Multiplayer; module Key; def self.watch(*_codes); end; def self.frame; $frame.to_i; end; end; end
 
 # The mod folder as Multiplayer.rb names it, which the scripts build their files' paths on.
 module MGQ_Multiplayer; MOD_DIR = "Patch\\Multiplayer"; end

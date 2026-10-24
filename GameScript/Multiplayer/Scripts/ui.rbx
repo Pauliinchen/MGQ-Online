@@ -2,6 +2,7 @@
 #  ui.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Counted the confirm box's frames as the title screen does too
 #      Paulinchen  2026-10-13: Added the single player settings' Mod Config group, MGQ Online SP
 #      Paulinchen  2026-10-12: Gave the tabs not picked the edge's color, darkened
 #                            - Added the scrollbar every scrolling box draws and its track color
@@ -879,7 +880,7 @@ module MGQ_MpUi
       @block = answer
       @scene = SceneManager.scene
       @picked = false
-      @asked_at = Graphics.frame_count
+      @asked_at = MGQ_Multiplayer::Key.frame
       MGQ_Multiplayer::Key.watch(MGQ_MpHotkeys.code(:accept), MGQ_MpHotkeys.code(:decline))
       MGQ_Multiplayer::Capture.start(SCREEN)
       @sprite = Sprite_MpConfirmBox.new
@@ -927,7 +928,7 @@ module MGQ_MpUi
       return unless open?
       return finish if @answer
       return decide(false, SCENE_CHANGED_REASON, false) unless SceneManager.scene.equal?(@scene)
-      return if $mgq_text_input || Graphics.frame_count == @asked_at
+      return if $mgq_text_input || MGQ_Multiplayer::Key.frame == @asked_at
 
       read_keys
     rescue => e
