@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Loaded world_overview_mods.rbx after world_overview_pages.rbx
+#                            - Loaded world_gates.rbx after world_difficulty.rbx
 #                            - Stopped loading the removed battles_pvp_lobby.rbx
 #      Paulinchen  2026-10-23: Named mp_memory_usage
 #      Paulinchen  2026-10-22: Named mp_dir_open and mp_dir_read
@@ -148,7 +149,7 @@ module MGQ_Multiplayer
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_theme ui_layout ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
     coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs coop_story_rewards story_state coop_story coop_castle
-    world world_mods world_mods_parking world_catchup_data world_story world_catchup world_catchup_exp world_affection world_opening world_difficulty world_save_distribution world_text world_screen world_save_export coop_choices
+    world world_mods world_mods_parking world_catchup_data world_story world_catchup world_catchup_exp world_affection world_opening world_difficulty world_gates world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_raid_freeze_data battles_raid_freeze world_freeze battles_raid_tiers battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live battles_served
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_duel battles_team
