@@ -866,6 +866,7 @@ module MGQ_Multiplayer
       'mp_mod_browser_list' => READ_ARGUMENTS,
       'mp_mod_browser_apply' => 'p',
       'mp_mod_browser_open_page' => 'p',
+      'mp_mod_browser_details' => 'p',
 
       # The mods a world that turns other mods off does not name, parked outside Patch.
       'mp_mods_park' => 'pp',

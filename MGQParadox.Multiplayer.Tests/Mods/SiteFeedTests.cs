@@ -2,7 +2,8 @@
 //  SiteFeedTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-24: Created
+//      Paulinchen  2026-10-24: Covered the thumbnails and a mod's description
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -65,6 +66,40 @@ public sealed class SiteFeedTests
         {
             Assert.Equal(SiteFeed.Unverified, Assert.Throws<SiteFeedException>(() => SiteFeed.Fetch(TestKey.Key, website.Client())).Message);
         }
+    }
+
+    /// <summary>
+    /// Asserts that a thumbnail on the website is read, and one elsewhere or none leaves the mod without one.
+    /// </summary>
+    [Fact]
+    public void Fetch_ThumbnailOffTheWebsite_IsLeftOut()
+    {
+        var version = """{"version":"1","changelog":"","uploadedAt":"2026-10-20T10:00:00+00:00","package":{"name":"A.rb","size":1,"sha256":"aa","url":"https://mgqonline.org/mods/a/1/download"},"files":[{"path":"A.rb","sha256":"aa"}]}""";
+        var feed = Encoding.UTF8.GetBytes($$"""
+            {"schema":1,"mods":[
+             {"slug":"a","name":"A","author":"Someone","thumbnail":{"url":"https://mgqonline.org/mods/a/images/1/card.png","width":400,"height":225,"spoiler":true},"versions":[{{version}}]},
+             {"slug":"b","name":"B","author":"Someone","thumbnail":{"url":"https://example.com/b.png","width":400,"height":225,"spoiler":false},"versions":[{{version}}]},
+             {"slug":"c","name":"C","author":"Someone","thumbnail":null,"versions":[{{version}}]}]}
+            """);
+        var website = new FakeWebsite { [SiteFeed.Address] = () => FakeWebsite.Signed(feed) };
+
+        var mods = SiteFeed.Fetch(TestKey.Key, website.Client());
+
+        Assert.Equal(new SiteThumbnail("https://mgqonline.org/mods/a/images/1/card.png", 400, 225, true), mods[0].Thumbnail);
+        Assert.Null(mods[1].Thumbnail);
+        Assert.Null(mods[2].Thumbnail);
+    }
+
+    /// <summary>
+    /// Asserts that a mod's details signed with the key give its description.
+    /// </summary>
+    [Fact]
+    public void FetchDescription_SignedDetails_IsRead()
+    {
+        var details = Encoding.UTF8.GetBytes("""{"schema":1,"generatedAt":"2026-10-24T08:00:00+00:00","mod":{"slug":"level-cap","name":"Level Cap","description":"Caps **levels**.","versions":[]}}""");
+        var website = new FakeWebsite { [$"{SiteFeed.Address}/level-cap"] = () => FakeWebsite.Signed(details) };
+
+        Assert.Equal("Caps **levels**.", SiteFeed.FetchDescription(TestKey.Key, "level-cap", website.Client()));
     }
 
     /// <summary>

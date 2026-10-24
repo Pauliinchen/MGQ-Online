@@ -2,7 +2,8 @@
 //  ModBrowser.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-24: Created
+//      Paulinchen  2026-10-24: Cached the website's thumbnails and fetched a mod's description
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -46,6 +47,21 @@ internal sealed class ModBrowser
     /// Asks to remove an installed mod.
     /// </summary>
     private const string RemoveVerb = "remove";
+
+    /// <summary>
+    /// What the id of a mod of the website starts with, before its slug.
+    /// </summary>
+    private const string SitePrefix = "site:";
+
+    /// <summary>
+    /// The most lines of a description handed out.
+    /// </summary>
+    private const int MaxDescriptionLines = 60;
+
+    /// <summary>
+    /// The most characters a line of a description keeps.
+    /// </summary>
+    private const int MaxDescriptionLineLength = 400;
 
     /// <summary>
     /// The hosts a mod's page may be opened on.
@@ -123,6 +139,31 @@ internal sealed class ModBrowser
     private bool _restart;
 
     /// <summary>
+    /// Whether thumbnails are being cached.
+    /// </summary>
+    private bool _thumbnailing;
+
+    /// <summary>
+    /// Whether a fetch ended while thumbnails were being cached, so they are cached again for its list.
+    /// </summary>
+    private bool _thumbnailsAgain;
+
+    /// <summary>
+    /// The cached thumbnails' paths relative to the game's folder, by their addresses.
+    /// </summary>
+    private Dictionary<string, string> _thumbnails = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The plain lines of each fetched description, by its mod's id.
+    /// </summary>
+    private readonly Dictionary<string, IReadOnlyList<string>> _descriptions = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The ids of the mods whose descriptions are being fetched, the one asked for last at the end.
+    /// </summary>
+    private readonly List<string> _describing = [];
+
+    /// <summary>
     /// The game's mod browser, which the game script uses.
     /// </summary>
     public static ModBrowser Current { get; } = new();
@@ -148,6 +189,16 @@ internal sealed class ModBrowser
     public Func<string, string, byte[]> DownloadSite { get; init; } = SiteDownload.Get;
 
     /// <summary>
+    /// Fetches the description of a mod of the website by its slug and checks its signature with a key; tests replace it.
+    /// </summary>
+    public Func<FeedKey, string, string> FetchDescription { get; init; } = SiteFeed.FetchDescription;
+
+    /// <summary>
+    /// Downloads a mod's thumbnail from the website by its address; tests replace it.
+    /// </summary>
+    public Func<string, byte[]> DownloadThumbnail { get; init; } = ModThumbnails.Download;
+
+    /// <summary>
     /// Downloads a link mod's release file from GitHub; tests replace it.
     /// </summary>
     public Func<string, byte[]> DownloadRelease { get; init; } = ReleaseDownload.Get;
@@ -171,7 +222,8 @@ internal sealed class ModBrowser
     };
 
     /// <summary>
-    /// Fetches the website's and the relay's mods again and scans the Patch folder, unless they are being fetched already.
+    /// Fetches the website's and the relay's mods again and scans the Patch folder, unless they are
+    /// being fetched already, then caches the thumbnails of the list.
     /// </summary>
     /// <returns><see langword="false"/> while a fetch runs.</returns>
     public bool Refresh()
@@ -192,6 +244,7 @@ internal sealed class ModBrowser
             {
                 Fetch();
                 Scan();
+                StartThumbnails();
             }
             catch (Exception ex)
             {
@@ -216,12 +269,15 @@ internal sealed class ModBrowser
     /// <returns>
     /// <c>state</c> ("idle", "loading", "ready" or "failed"), <c>error</c> (why a source failed),
     /// <c>updates</c> (how many mods have an update), <c>action</c> ("idle", "busy", "done" or "failed"),
-    /// <c>action_error</c>, <c>done</c> (what the last action did) and <c>restart</c> (1 once an action
-    /// changed the Patch folder), then one line per mod, updates first, then changed, current and
-    /// available mods, each by name: <c>mod</c>, id, name, author, status (see <see cref="ModStatus"/>),
-    /// installed version, latest version, source (see <see cref="ModSource"/>), page, file count, size
-    /// in bytes, summary; after it one line <c>note</c>, id, line, per line of its changelog; each
-    /// separated by tabs.
+    /// <c>action_error</c>, <c>done</c> (what the last action did), <c>restart</c> (1 once an action
+    /// changed the Patch folder) and <c>loading_details</c> (the id of the mod whose description is
+    /// being fetched, the one asked for last), then one line per mod, updates first, then changed,
+    /// current and available mods, each by name: <c>mod</c>, id, name, author, status (see
+    /// <see cref="ModStatus"/>), installed version, latest version, source (see <see cref="ModSource"/>),
+    /// page, file count, size in bytes, summary, thumbnail (the cached PNG's path relative to the game's
+    /// folder, empty until it is there), spoiler (1 or empty); after it one line <c>note</c>, id, line,
+    /// per line of its changelog, then one line <c>desc</c>, id, line, per line of its fetched
+    /// description; each separated by tabs.
     /// </returns>
     public string Describe()
     {
@@ -238,9 +294,10 @@ internal sealed class ModBrowser
                 new("action_error", _action == "failed" ? _actionError : null),
                 new("done", _action is "done" or "failed" ? _done : null),
                 new("restart", _restart ? "1" : null),
+                new("loading_details", _describing.Count > 0 ? _describing[^1] : null),
             };
 
-            return new Message(headers, _listed is { } listed ? ListText(listed) : string.Empty).Encode();
+            return new Message(headers, _listed is { } listed ? ListText(listed, _thumbnails, _descriptions) : string.Empty).Encode();
         }
     }
 
@@ -271,6 +328,36 @@ internal sealed class ModBrowser
         }
 
         Threads.Start("MultiplayerModBrowserAction", () => Run(installs, removes, kept));
+        return true;
+    }
+
+    /// <summary>
+    /// Starts fetching the description of a mod of the website on a thread of its own, unless it is
+    /// known or being fetched already; a failed fetch may be started again.
+    /// </summary>
+    /// <param name="id">The mod's id.</param>
+    /// <returns>Whether it started or is known or being fetched; <see langword="false"/> for a mod the list lacks or one not of the website.</returns>
+    public bool Details(string id)
+    {
+        lock (_gate)
+        {
+            var mod = _listed?.Mods.FirstOrDefault(mod => mod.Id == id);
+
+            if (mod?.Source != ModSource.Site || !id.StartsWith(SitePrefix, StringComparison.Ordinal))
+            {
+                Log.Write($"mod browser: description of {id} not fetched: {(mod == null ? "the list has no such mod" : $"it is a mod of the {mod.Source}")}");
+                return false;
+            }
+
+            if (_descriptions.ContainsKey(id) || _describing.Contains(id))
+            {
+                return true;
+            }
+
+            _describing.Add(id);
+        }
+
+        Threads.Start("MultiplayerModDetails", () => FetchDetails(id, id[SitePrefix.Length..]));
         return true;
     }
 
@@ -355,6 +442,141 @@ internal sealed class ModBrowser
         lock (_gate)
         {
             _mods = mods;
+        }
+    }
+
+    /// <summary>
+    /// Fetches a mod's description and keeps it as plain lines, or logs why it failed.
+    /// </summary>
+    /// <param name="id">The mod's id.</param>
+    /// <param name="slug">Its slug on the website.</param>
+    private void FetchDetails(string id, string slug)
+    {
+        IReadOnlyList<string>? lines = null;
+
+        try
+        {
+            lines = MarkdownText.Lines(FetchDescription(SiteKey, slug), MaxDescriptionLines, MaxDescriptionLineLength);
+            Log.Write($"mod browser: the description of {id} has {lines.Count} line(s)");
+        }
+        catch (SiteFeedException ex)
+        {
+            Log.Write($"mod browser: the description of {id} failed: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mod browser: the description of {id} failed: {ex}");
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                _describing.Remove(id);
+
+                if (lines != null)
+                {
+                    _descriptions[id] = lines;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Caches the thumbnails of the list on a thread of its own, or once more after the run that caches them now.
+    /// </summary>
+    private void StartThumbnails()
+    {
+        lock (_gate)
+        {
+            if (_thumbnailing)
+            {
+                _thumbnailsAgain = true;
+                return;
+            }
+
+            _thumbnailing = true;
+        }
+
+        Threads.Start("MultiplayerModThumbnails", () =>
+        {
+            do
+            {
+                try
+                {
+                    CacheThumbnails();
+                }
+                catch (Exception ex)
+                {
+                    Log.Write($"mod browser: caching the thumbnails failed: {ex}");
+                }
+            }
+            while (ThumbnailsAgain());
+        });
+    }
+
+    /// <summary>
+    /// Tells whether a fetch ended while the thumbnails were being cached, and else ends caching them.
+    /// </summary>
+    /// <returns>Whether to cache them once more.</returns>
+    private bool ThumbnailsAgain()
+    {
+        lock (_gate)
+        {
+            _thumbnailing = _thumbnailsAgain;
+            _thumbnailsAgain = false;
+            return _thumbnailing;
+        }
+    }
+
+    /// <summary>
+    /// Takes the cached thumbnails of the list, deletes the others and downloads the missing ones one at a time.
+    /// </summary>
+    /// <remarks>
+    /// A failed download leaves its thumbnail out until the next refresh tries again.
+    /// </remarks>
+    private void CacheThumbnails()
+    {
+        List<string> urls;
+
+        lock (_gate)
+        {
+            if (_listed is not { } listed)
+            {
+                return;
+            }
+
+            urls = listed.Mods.Select(mod => mod.Thumbnail?.Url).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
+        }
+
+        var game = GameFolder();
+        var cached = urls.Where(url => File.Exists(Path.Combine(game, ModThumbnails.PathOf(url)))).ToDictionary(url => url, ModThumbnails.PathOf, StringComparer.Ordinal);
+
+        lock (_gate)
+        {
+            _thumbnails = new Dictionary<string, string>(cached, StringComparer.Ordinal);
+        }
+
+        ModThumbnails.Prune(game, urls);
+        var missing = urls.Where(url => !cached.ContainsKey(url)).ToList();
+        Log.Write($"mod browser: {cached.Count} thumbnail(s) cached, {missing.Count} to download");
+
+        foreach (var url in missing)
+        {
+            try
+            {
+                var path = ModThumbnails.Store(game, url, DownloadThumbnail(url));
+
+                lock (_gate)
+                {
+                    _thumbnails[url] = path;
+                }
+
+                Log.Write($"mod browser: thumbnail {url} cached as {path}");
+            }
+            catch (Exception ex)
+            {
+                Log.Write($"mod browser: thumbnail {url} not cached: {ex.Message}");
+            }
         }
     }
 
@@ -566,8 +788,10 @@ internal sealed class ModBrowser
     /// Writes the mods as the game script reads them.
     /// </summary>
     /// <param name="listed">The mods and their states.</param>
+    /// <param name="thumbnails">The cached thumbnails' paths relative to the game's folder, by their addresses.</param>
+    /// <param name="descriptions">The plain lines of each fetched description, by its mod's id.</param>
     /// <returns>The lines.</returns>
-    private static string ListText(Listing listed)
+    private static string ListText(Listing listed, IReadOnlyDictionary<string, string> thumbnails, IReadOnlyDictionary<string, IReadOnlyList<string>> descriptions)
     {
         var text = new StringBuilder();
         var order = new[] { ModStatus.Update, ModStatus.Changed, ModStatus.Current, ModStatus.Available };
@@ -575,12 +799,19 @@ internal sealed class ModBrowser
         foreach (var mod in listed.Mods.OrderBy(mod => Array.IndexOf(order, listed.States[mod.Id].Status)).ThenBy(mod => mod.Name, StringComparer.OrdinalIgnoreCase).ThenBy(mod => mod.Id, StringComparer.Ordinal))
         {
             var state = listed.States[mod.Id];
+            var thumbnail = mod.Thumbnail is { } image && thumbnails.TryGetValue(image.Url, out var path) ? path : string.Empty;
             text.AppendJoin('\t', "mod", OnOneField(mod.Id), OnOneField(mod.Name), OnOneField(mod.Author), state.Status, OnOneField(state.Installed?.Version ?? string.Empty),
-                OnOneField(mod.Latest), mod.Source, OnOneField(mod.Page), mod.Install.Files.Count.ToString(CultureInfo.InvariantCulture), mod.Bytes.ToString(CultureInfo.InvariantCulture), OnOneField(mod.Summary)).Append('\n');
+                OnOneField(mod.Latest), mod.Source, OnOneField(mod.Page), mod.Install.Files.Count.ToString(CultureInfo.InvariantCulture), mod.Bytes.ToString(CultureInfo.InvariantCulture), OnOneField(mod.Summary),
+                thumbnail, mod.Thumbnail?.Spoiler == true ? "1" : string.Empty).Append('\n');
 
             foreach (var note in mod.Notes)
             {
                 text.Append("note\t").Append(OnOneField(mod.Id)).Append('\t').Append(OnOneField(note)).Append('\n');
+            }
+
+            foreach (var line in descriptions.GetValueOrDefault(mod.Id) ?? [])
+            {
+                text.Append("desc\t").Append(OnOneField(mod.Id)).Append('\t').Append(OnOneField(line)).Append('\n');
             }
         }
 

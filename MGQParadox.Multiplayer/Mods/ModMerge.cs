@@ -2,7 +2,8 @@
 //  ModMerge.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-24: Created
+//      Paulinchen  2026-10-24: Carried the website's thumbnail
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -142,7 +143,7 @@ internal static partial class ModMerge
         var install = new CatalogMod(id, mod.Name, "link", latest.Version, files, known.Skip(1).ToList(), latest.Package.Url, Archive: zip);
         var changelog = latest.Changelog.TrimEnd();
         List<string> notes = changelog.Length > 0 ? changelog.Split('\n').Select(line => line.TrimEnd('\r')).Take(MaxNotes).ToList() : [];
-        return new BrowsedMod(id, mod.Name, mod.Author, ModSource.Site, mod.Page, mod.Summary, notes, latest.Package.Size, install, zip ? string.Empty : $"Patch/{files.Keys.Single()}", latest.Package.Sha256, known);
+        return new BrowsedMod(id, mod.Name, mod.Author, ModSource.Site, mod.Page, mod.Summary, notes, latest.Package.Size, install, zip ? string.Empty : $"Patch/{files.Keys.Single()}", latest.Package.Sha256, known, mod.Thumbnail);
     }
 
     /// <summary>

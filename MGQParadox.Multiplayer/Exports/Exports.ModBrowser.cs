@@ -2,7 +2,8 @@
 //  Exports.ModBrowser.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-24: Created
+//      Paulinchen  2026-10-24: Added mp_mod_browser_details
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -16,7 +17,8 @@ namespace MGQParadox.Multiplayer;
 
 /// <summary>
 /// The functions of the Mods screen of the title: the mods of the website and the relay with how
-/// each stands in the Patch folder, installing, updating and removing them, and opening a mod's page.
+/// each stands in the Patch folder, installing, updating and removing them, a mod's description,
+/// and opening a mod's page.
 /// </summary>
 internal static unsafe partial class Exports
 {
@@ -80,6 +82,26 @@ internal static unsafe partial class Exports
         catch (Exception ex)
         {
             Log.Write($"mp_mod_browser_apply failed: {ex}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Starts fetching the description of a mod of the website, unless it is known or being fetched.
+    /// Returns at once; its lines follow in <c>mp_mod_browser_list</c>.
+    /// </summary>
+    /// <param name="id">The mod's id, UTF-8 and null-terminated.</param>
+    /// <returns>1 when started, known or being fetched, 0 for a mod the list lacks, one not of the website, or when it failed.</returns>
+    [UnmanagedCallersOnly(EntryPoint = "mp_mod_browser_details", CallConvs = [typeof(CallConvStdcall)])]
+    public static int ModBrowserDetails(byte* id)
+    {
+        try
+        {
+            return ModBrowser.Current.Details(Text(id)) ? 1 : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"mp_mod_browser_details failed: {ex}");
             return 0;
         }
     }

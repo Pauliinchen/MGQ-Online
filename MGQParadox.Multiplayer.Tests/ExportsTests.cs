@@ -2,7 +2,8 @@
 //  ExportsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-24: Covered the Mods screen's exports
+//      Paulinchen  2026-10-24: Covered mp_mod_browser_details
+//                            - Covered the Mods screen's exports
 //      Paulinchen  2026-10-23: Covered the mp_memory_usage export
 //      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number and no export past 16 arguments
 //      Paulinchen  2026-10-13: Expected the raid bosses setting at the end of mp_dir_create and mp_dir_edit
@@ -153,6 +154,7 @@ public sealed unsafe class ExportsTests
         Assert.Equal("pl", exported["mp_mod_browser_list"]);
         Assert.Equal("p", exported["mp_mod_browser_apply"]);
         Assert.Equal("p", exported["mp_mod_browser_open_page"]);
+        Assert.Equal("p", exported["mp_mod_browser_details"]);
     }
 
     /// <summary>

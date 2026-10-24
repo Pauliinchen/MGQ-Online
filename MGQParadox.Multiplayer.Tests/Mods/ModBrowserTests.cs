@@ -2,7 +2,8 @@
 //  ModBrowserTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-24: Created
+//      Paulinchen  2026-10-24: Covered the cached thumbnails and a mod's description
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -64,7 +65,7 @@ public sealed class ModBrowserTests
         Assert.Equal("1", list["updates"]);
         Assert.Equal(
             [
-                $"mod\tsite:party-sheet\tParty Sheet\tSomeone\tupdate\t1.5.0\t1.5.2\tsite\thttps://mgqonline.org/mods/party-sheet\t1\t{Script.Length}\tParty Sheet does things.",
+                $"mod\tsite:party-sheet\tParty Sheet\tSomeone\tupdate\t1.5.0\t1.5.2\tsite\thttps://mgqonline.org/mods/party-sheet\t1\t{Script.Length}\tParty Sheet does things.\t\t",
                 "note\tsite:party-sheet\tFixed the sheet.",
                 "note\tsite:party-sheet\tAdded a page.",
             ],
@@ -111,9 +112,9 @@ public sealed class ModBrowserTests
 
         Assert.Equal(
             [
-                "mod\trelay:mapdisplay\tMap Display\t\tchanged\t\t1.5.2\tgithub\thttps://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection\t1\t0\t",
-                "mod\trelay:levelcap\tLevel Cap\t\tcurrent\t1.5.2\t1.5.2\tgithub\thttps://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection\t1\t0\t",
-                "mod\trelay:pack\tPack\t\tavailable\t\t2\trelay\t\t1\t0\t",
+                "mod\trelay:mapdisplay\tMap Display\t\tchanged\t\t1.5.2\tgithub\thttps://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection\t1\t0\t\t\t",
+                "mod\trelay:levelcap\tLevel Cap\t\tcurrent\t1.5.2\t1.5.2\tgithub\thttps://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection\t1\t0\t\t\t",
+                "mod\trelay:pack\tPack\t\tavailable\t\t2\trelay\t\t1\t0\t\t\t",
             ],
             Lines(list));
         Assert.Equal("0", list["updates"]);
@@ -284,6 +285,76 @@ public sealed class ModBrowserTests
         Assert.False(browser.OpenPage("site:elsewhere"));
         Assert.False(browser.OpenPage("relay:pack"));
         Assert.Equal(["https://mgqonline.org/mods/level-cap"], opened);
+    }
+
+    /// <summary>
+    /// Asserts that a mod's thumbnail is cached under the game's folder and named on its line with
+    /// its spoiler mark, and that a cached image no mod shows any more is deleted.
+    /// </summary>
+    [Fact]
+    public void Refresh_Thumbnail_IsCachedAndNamedOnTheModLine()
+    {
+        using var game = new TempFolder();
+        const string Url = "https://mgqonline.org/mods/level-cap/images/1/card.png";
+        Put(game, "Multiplayer/Cache/Mods/0123456789abcdef.png", ModThumbnailsTests.Png(10, 10));
+        var site = SiteScript("level-cap", "Level Cap", "Level_Cap.rb", "1.5.2", Script) with { Thumbnail = new SiteThumbnail(Url, 400, 225, Spoiler: true) };
+        var browser = new ModBrowser
+        {
+            FetchSite = _ => [site],
+            FetchRelay = () => new ModCatalog([], []),
+            DownloadThumbnail = url => url == Url ? ModThumbnailsTests.Png(400, 225) : throw new InvalidOperationException(url),
+            GameFolder = () => game.Path,
+        };
+        Refreshed(browser);
+
+        var line = Assert.Single(Lines(Until(browser, list => Lines(list)[0].Split('\t')[12].Length > 0)));
+        var path = line.Split('\t')[12];
+
+        Assert.Matches(@"^Patch\\Multiplayer\\Cache\\Mods\\[0-9a-f]{16}\.png$", path);
+        Assert.EndsWith($"\tLevel Cap does things.\t{path}\t1", line);
+        Assert.Equal(ModThumbnailsTests.Png(400, 225), File.ReadAllBytes(Path.Combine(game.Path, path)));
+        Assert.Single(Directory.GetFiles(Path.Combine(game.Path, "Patch", "Multiplayer", "Cache", "Mods")));
+    }
+
+    /// <summary>
+    /// Asserts that a mod's description is fetched once, named while it is fetched, then listed as
+    /// plain lines after the mod, and that only mods of the website have one.
+    /// </summary>
+    [Fact]
+    public void Details_FetchesTheDescriptionOnce()
+    {
+        using var game = new TempFolder();
+        var asked = new List<string>();
+        using var answer = new ManualResetEventSlim();
+        var browser = new ModBrowser
+        {
+            FetchSite = _ => [SiteScript("level-cap", "Level Cap", "Level_Cap.rb", "1.5.2", Script, "Fixed it.")],
+            FetchRelay = () => new ModCatalog([RelayUpload("pack", "Pack", "2", new() { ["Pack.rb"] = Script })], []),
+            FetchDescription = (_, slug) =>
+            {
+                lock (asked)
+                {
+                    asked.Add(slug);
+                }
+
+                answer.Wait(Patience);
+                return "# Level Cap\n\nCaps **levels**.";
+            },
+            GameFolder = () => game.Path,
+        };
+        Refreshed(browser);
+
+        Assert.True(browser.Details("site:level-cap"));
+        Assert.True(browser.Details("site:level-cap"));
+        Assert.Equal("site:level-cap", Message.Decode(browser.Describe())["loading_details"]);
+        answer.Set();
+        var list = Until(browser, list => list["loading_details"].Length == 0);
+
+        Assert.True(browser.Details("site:level-cap"));
+        Assert.Equal(["level-cap"], asked);
+        Assert.Equal(["note\tsite:level-cap\tFixed it.", "desc\tsite:level-cap\tLevel Cap", "desc\tsite:level-cap\tCaps levels."], Lines(list).Where(line => line.Contains("\tsite:level-cap\t") && !line.StartsWith("mod", StringComparison.Ordinal)));
+        Assert.False(browser.Details("relay:pack"));
+        Assert.False(browser.Details("site:missing"));
     }
 
     /// <summary>

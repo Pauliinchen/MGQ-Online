@@ -2,7 +2,8 @@
 //  BrowsedMod.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-24: Created
+//      Paulinchen  2026-10-24: Carried the website's thumbnail
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -26,7 +27,8 @@ namespace MGQParadox.Multiplayer.Mods;
 /// <param name="Target">Where a script goes, relative to the game's folder; empty for a zip.</param>
 /// <param name="PackageHash">The SHA-256 of the file the website hands out; empty for a mod of the relay.</param>
 /// <param name="Known">Every version known of the mod, the latest first, then the newest first, each with its files by their paths inside Patch.</param>
-internal sealed record BrowsedMod(string Id, string Name, string Author, string Source, string Page, string Summary, IReadOnlyList<string> Notes, long Bytes, CatalogMod Install, string Target, string PackageHash, IReadOnlyList<ModVersion> Known)
+/// <param name="Thumbnail">The image the website's card shows; <see langword="null"/> for none and for a mod of the relay.</param>
+internal sealed record BrowsedMod(string Id, string Name, string Author, string Source, string Page, string Summary, IReadOnlyList<string> Notes, long Bytes, CatalogMod Install, string Target, string PackageHash, IReadOnlyList<ModVersion> Known, SiteThumbnail? Thumbnail = null)
 {
     /// <summary>
     /// The latest version.

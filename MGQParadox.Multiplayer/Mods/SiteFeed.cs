@@ -2,7 +2,8 @@
 //  SiteFeed.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-24: Created
+//      Paulinchen  2026-10-24: Read each mod's thumbnail and fetched a mod's description
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -21,8 +22,8 @@ using System.Threading.Tasks;
 namespace MGQParadox.Multiplayer.Mods;
 
 /// <summary>
-/// Reads the website's list of its mods, <c>GET /api/mods</c>, and takes it only with the website's
-/// signature.
+/// Reads the website's list of its mods, <c>GET /api/mods</c>, and a mod's details,
+/// <c>GET /api/mods/{slug}</c>, and takes them only with the website's signature.
 /// </summary>
 /// <remarks>
 /// The key is built in rather than fetched, so whoever could change the list could not hand out a key of their own with it.
@@ -94,16 +95,50 @@ internal static class SiteFeed
     /// <param name="http">The client.</param>
     /// <returns>The mods.</returns>
     /// <exception cref="SiteFeedException">The website could not be reached, or the list could not be verified or read.</exception>
-    internal static IReadOnlyList<SiteMod> Fetch(FeedKey key, HttpClient http)
+    internal static IReadOnlyList<SiteMod> Fetch(FeedKey key, HttpClient http) => Verified(Address, "mod list", key, http, Parse);
+
+    /// <summary>
+    /// Fetches a mod's details, <c>GET /api/mods/{slug}</c>, checks their signature and reads its description.
+    /// </summary>
+    /// <param name="key">The key the details must be signed with.</param>
+    /// <param name="slug">The mod's slug.</param>
+    /// <returns>The description, Markdown; empty when the mod has none.</returns>
+    /// <exception cref="SiteFeedException">The website could not be reached, or the details could not be verified or read.</exception>
+    public static string FetchDescription(FeedKey key, string slug) => FetchDescription(key, slug, Http);
+
+    /// <summary>
+    /// Fetches a mod's details with a client of the caller's, checks their signature and reads its description.
+    /// </summary>
+    /// <param name="key">The key the details must be signed with.</param>
+    /// <param name="slug">The mod's slug.</param>
+    /// <param name="http">The client.</param>
+    /// <returns>The description, Markdown; empty when the mod has none.</returns>
+    /// <exception cref="SiteFeedException">The website could not be reached, or the details could not be verified or read.</exception>
+    internal static string FetchDescription(FeedKey key, string slug, HttpClient http) =>
+        Verified($"{Address}/{Uri.EscapeDataString(slug)}", $"details of {slug}", key, http, DescriptionOf);
+
+    /// <summary>
+    /// Fetches a signed answer of the website, checks its signature and reads it.
+    /// </summary>
+    /// <typeparam name="T">What is read of it.</typeparam>
+    /// <param name="address">The answer's address.</param>
+    /// <param name="what">What the answer is, for the log.</param>
+    /// <param name="key">The key it must be signed with.</param>
+    /// <param name="http">The client.</param>
+    /// <param name="parse">Reads it.</param>
+    /// <returns>What was read.</returns>
+    /// <exception cref="SiteFeedException">The website could not be reached, or the answer could not be verified or read.</exception>
+    private static T Verified<T>(string address, string what, FeedKey key, HttpClient http, Func<byte[], T> parse)
     {
         byte[] body;
         string? signature;
         string? keyId;
+        var path = new Uri(address).AbsolutePath;
 
         try
         {
-            using var response = http.Send(new HttpRequestMessage(HttpMethod.Get, Address), HttpCompletionOption.ResponseHeadersRead);
-            Log.Write($"website GET /api/mods: {(int)response.StatusCode}");
+            using var response = http.Send(new HttpRequestMessage(HttpMethod.Get, address), HttpCompletionOption.ResponseHeadersRead);
+            Log.Write($"website GET {path}: {(int)response.StatusCode}");
 
             if (response.StatusCode != HttpStatusCode.OK)
             {
@@ -112,7 +147,7 @@ internal static class SiteFeed
 
             if (response.Content.Headers.ContentLength > MaxBytes)
             {
-                Log.Write($"the website's mod list is larger than {MaxBytes} bytes");
+                Log.Write($"the website's {what} is larger than {MaxBytes} bytes");
                 throw new SiteFeedException(Unreadable);
             }
 
@@ -122,45 +157,48 @@ internal static class SiteFeed
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
         {
-            Log.Write($"website GET /api/mods failed: {ex.GetBaseException().Message}");
+            Log.Write($"website GET {path} failed: {ex.GetBaseException().Message}");
             throw new SiteFeedException(Unreachable);
         }
 
-        return Read(body, signature, keyId, key);
+        return Read(body, signature, keyId, key, what, parse);
     }
 
     /// <summary>
-    /// Checks a fetched list's signature and reads it.
+    /// Checks a fetched answer's signature and reads it.
     /// </summary>
-    /// <param name="body">The list exactly as it came.</param>
+    /// <typeparam name="T">What is read of it.</typeparam>
+    /// <param name="body">The answer exactly as it came.</param>
     /// <param name="signature">The signature header; <see langword="null"/> when it was missing.</param>
     /// <param name="keyId">The key header; <see langword="null"/> when it was missing.</param>
-    /// <param name="key">The key the list must be signed with.</param>
-    /// <returns>The mods.</returns>
-    /// <exception cref="SiteFeedException">The list could not be verified or read.</exception>
-    internal static IReadOnlyList<SiteMod> Read(byte[] body, string? signature, string? keyId, FeedKey key)
+    /// <param name="key">The key the answer must be signed with.</param>
+    /// <param name="what">What the answer is, for the log.</param>
+    /// <param name="parse">Reads it.</param>
+    /// <returns>What was read.</returns>
+    /// <exception cref="SiteFeedException">The answer could not be verified or read.</exception>
+    private static T Read<T>(byte[] body, string? signature, string? keyId, FeedKey key, string what, Func<byte[], T> parse)
     {
         if (body.Length > MaxBytes)
         {
-            Log.Write($"the website's mod list is larger than {MaxBytes} bytes");
+            Log.Write($"the website's {what} is larger than {MaxBytes} bytes");
             throw new SiteFeedException(Unreadable);
         }
 
         if (Unsigned(body, signature, keyId, key) is { } why)
         {
-            Log.Write($"the website's mod list of {body.Length} bytes could not be verified: {why}");
+            Log.Write($"the website's {what} of {body.Length} bytes could not be verified: {why}");
             throw new SiteFeedException(Unverified);
         }
 
-        Log.Write($"the website's mod list of {body.Length} bytes is verified with key {key.Id}");
+        Log.Write($"the website's {what} of {body.Length} bytes is verified with key {key.Id}");
 
         try
         {
-            return Parse(body);
+            return parse(body);
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException or KeyNotFoundException or FormatException)
         {
-            Log.Write($"the website's mod list could not be read: {ex.Message}");
+            Log.Write($"the website's {what} could not be read: {ex.Message}");
             throw new SiteFeedException(Unreadable);
         }
     }
@@ -235,12 +273,57 @@ internal static class SiteFeed
 
             if (versions.Count > 0)
             {
-                mods.Add(new SiteMod(Text(mod, "slug"), Text(mod, "name"), Text(mod, "summary"), Text(mod, "author"), Text(mod, "page"), versions.OrderByDescending(version => version.UploadedAt).ToList()));
+                var slug = Text(mod, "slug");
+                mods.Add(new SiteMod(slug, Text(mod, "name"), Text(mod, "summary"), Text(mod, "author"), Text(mod, "page"), versions.OrderByDescending(version => version.UploadedAt).ToList(), ThumbnailOf(mod, slug)));
             }
         }
 
         return mods;
     }
+
+    /// <summary>
+    /// Reads a mod's thumbnail, taking it only on the website over HTTPS.
+    /// </summary>
+    /// <param name="mod">The mod as JSON.</param>
+    /// <param name="slug">The mod's slug, for the log.</param>
+    /// <returns>The thumbnail; <see langword="null"/> when it has none or one elsewhere.</returns>
+    private static SiteThumbnail? ThumbnailOf(JsonElement mod, string slug)
+    {
+        if (!mod.TryGetProperty("thumbnail", out var thumbnail) || thumbnail.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var url = Text(thumbnail, "url");
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var address) || !SiteDownload.IsSite(address))
+        {
+            Log.Write($"the thumbnail of {slug} is left out: {(url.Length > 0 ? $"{url} is not on the website" : "it has no address")}");
+            return null;
+        }
+
+        return new SiteThumbnail(address.AbsoluteUri, Number(thumbnail, "width"), Number(thumbnail, "height"), thumbnail.TryGetProperty("spoiler", out var spoiler) && spoiler.ValueKind == JsonValueKind.True);
+    }
+
+    /// <summary>
+    /// Reads the description of a mod's details.
+    /// </summary>
+    /// <param name="body">The details as JSON.</param>
+    /// <returns>The description; empty when it has none.</returns>
+    private static string DescriptionOf(byte[] body)
+    {
+        using var document = JsonDocument.Parse(body);
+        return Text(document.RootElement.GetProperty("mod"), "description");
+    }
+
+    /// <summary>
+    /// Reads a whole number field.
+    /// </summary>
+    /// <param name="element">The object holding it.</param>
+    /// <param name="name">The field's name.</param>
+    /// <returns>The number; 0 when the field is missing or no whole number.</returns>
+    private static int Number(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number) ? number : 0;
 
     /// <summary>
     /// Reads a text field.
@@ -284,7 +367,17 @@ internal sealed record FeedKey(string Id, string X, string Y);
 /// <param name="Author">Who made it.</param>
 /// <param name="Page">The mod's page on the website.</param>
 /// <param name="Versions">Its versions, the latest upload first.</param>
-internal sealed record SiteMod(string Slug, string Name, string Summary, string Author, string Page, IReadOnlyList<SiteVersion> Versions);
+/// <param name="Thumbnail">The image its card shows; <see langword="null"/> for none.</param>
+internal sealed record SiteMod(string Slug, string Name, string Summary, string Author, string Page, IReadOnlyList<SiteVersion> Versions, SiteThumbnail? Thumbnail = null);
+
+/// <summary>
+/// The PNG image the card of a mod of the website shows.
+/// </summary>
+/// <param name="Url">Its address, on the website.</param>
+/// <param name="Width">Its width in pixels, as the list names it.</param>
+/// <param name="Height">Its height in pixels, as the list names it.</param>
+/// <param name="Spoiler">Whether it shows a spoiler, so a card blurs it.</param>
+internal sealed record SiteThumbnail(string Url, int Width, int Height, bool Spoiler);
 
 /// <summary>
 /// A version of a mod of the website.
