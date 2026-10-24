@@ -4,6 +4,8 @@
 #  Changelog:
 #      Paulinchen  2026-10-24: Checked the screenshots, the descriptions, the page's buttons and the input without cards
 #                            - Checked the search, the view kept in Player.ini and the list's rows
+#                            - Checked picking the bar or the mods as a whole and moving inside them
+#                            - Checked that leaving the search stays in the bar
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -15,7 +17,7 @@
 require_relative "support"
 
 # The game's scene base, which does nothing.
-class Scene_Base; def return_scene; end; def update; end; end
+class Scene_Base; def return_scene; end; def update; end; def terminate; end; end
 # The game's base of menu scenes.
 class Scene_MenuBase < Scene_Base; end
 # The game's window base, which draws nothing.
@@ -35,7 +37,15 @@ class Window_TitleCommand; def make_command_list; end; end
 # The game's system sounds: each one played is added to $sounds.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
 # The interface's shared parts the windows include.
-module MGQ_MpUi; module Theme; module Skinned; end; end; module ScrollingWindow; end; end
+module MGQ_MpUi; module Theme; module Skinned; end; end; module ScrollingWindow; end; def self.numpad_cancel?; false; end; end
+# The world screen's cursor around a whole window.
+module MGQ_MpBoxCursor; end
+# Stands in for the message box, keeping what it shows and whether it was freed.
+class Sprite_MpMessageBox
+  attr_accessor :visible, :text, :disposed
+  def show(_title, text, _hint); @text = text; @visible = true; end
+  def dispose; @disposed = true; end
+end
 # The parked mods, parked while $parked is.
 module MGQ_MpModParking; def self.parked?; $parked; end; end
 
@@ -67,6 +77,8 @@ module MGQ_Multiplayer
         $answer
       end
     end
+    # Turns the keyboard's typing on or off, which the tests leave alone.
+    def self.typing(_on); end
     # A DLL function.
     def self.function(name); Function.new(name); end
     # The list the DLL holds.
@@ -164,41 +176,65 @@ check("an installed mod without a page offers neither install nor its page", but
       [["Installed", :install, false], ["Remove", :remove, true], ["Open page", :open_site, false], ["Back", :back, true]])
 
 # No change starts while mods are parked for a world.
-# Stands in for a window that takes and gives back the input.
-FakeWindow = Struct.new(:active, :item_max) do
+# Stands in for a window that takes and gives back the input and can be picked as a whole.
+FakeWindow = Struct.new(:active, :item_max, :boxed, :cursor, :cursor_hidden) do
   def activate; self.active = true; end
   def deactivate; self.active = false; end
+  def hide_cursor; self.cursor = false; end
+  def show_cursor; self.cursor = true; end
 end
-# Stands in for the bar, keeping what it shows.
-FakeBar = Struct.new(:status, :message) { def show(status, message, *_search); self.status = status; self.message = message; end }
+# Stands in for the bar, keeping what it shows and whether it is picked as a whole.
+FakeBar = Struct.new(:status, :message, :boxed) { def show(status, message, *_search); self.status = status; self.message = message; end }
 scene = Scene_MpMods.new
 bar = FakeBar.new
 grid = FakeWindow.new(false, 3)
+bar_commands = FakeWindow.new(false, 2)
 scene.instance_variable_set(:@bar, bar)
 scene.instance_variable_set(:@grid, grid)
-scene.instance_variable_set(:@bar_commands, FakeWindow.new(false, 2))
+scene.instance_variable_set(:@bar_commands, bar_commands)
 scene.instance_variable_set(:@page_commands, FakeWindow.new(false, 4))
 scene.instance_variable_set(:@list, list)
 scene.instance_variable_set(:@query, "")
+scene.instance_variable_set(:@level, :inside)
+scene.instance_variable_set(:@box, :mods)
 $parked = true
 $calls.clear
 scene.change([[:install, list.mods[0]]])
 check("nothing goes to the DLL while mods are parked", $calls, [])
 check("the bar says why", bar.message, Scene_MpMods::PARKED_TEXT)
-check("the cards take the input back", grid.active, true)
+check("the mods take the input back", grid.active, true)
 $parked = false
 
-# Without cards, as offline or before the first list, the bar holds the input so Refresh is in
-# reach, and the cards take it once they arrive; Enter opens no card that is not there.
-bar_commands = FakeWindow.new(false, 2)
-grid = FakeWindow.new(true, 0)
-scene.instance_variable_set(:@grid, grid)
-scene.instance_variable_set(:@bar_commands, bar_commands)
+# A change shows what it does in a box, which the screen frees as it closes.
+$calls.clear
+scene.change([[:install, list.mods[0]]])
+progress = scene.instance_variable_get(:@progress_box)
+check("a change goes to the DLL and shows what it does", [$calls.map(&:first), progress.text, progress.visible],
+      [["mp_mod_browser_apply"], "Installing Party Sheet 1.5.2 . . .", true])
+scene.instance_variable_set(:@busy, false)
+scene.terminate
+check("closing the screen frees the box", progress.disposed, true)
+grid.active = true
+
+# The bar and the mods are picked as a whole first, so the bar is one step away from any mod.
+scene.back_to_boxes
+check("back from the mods, the mods are picked as a whole", [grid.active, grid.boxed, bar.boxed, bar.message], [false, true, false, Scene_MpMods::HINT])
+scene.pick_box(:bar)
+check("the bar picked as a whole, no window takes the input", [bar.boxed, grid.boxed, bar_commands.active, bar_commands.cursor], [true, false, false, false])
+scene.enter_box
+check("Enter moves inside the bar, to its buttons", [bar_commands.active, bar_commands.cursor, bar.boxed, bar.message], [true, true, false, Scene_MpMods::BAR_HINT])
+scene.pick_box(:mods)
+scene.enter_box
+check("Enter moves inside the mods", [grid.active, grid.boxed, bar_commands.cursor], [true, false, false])
+
+# Without mods, as offline or before the first list, the bar is picked so Refresh is in reach, and
+# the mods once they arrive; Enter opens no mod that is not there.
+grid.item_max = 0
 scene.follow_cards
-check("an empty grid hands the input to the bar", [grid.active, bar_commands.active], [false, true])
+check("an empty list hands the pick to the bar", [grid.active, bar.boxed, grid.boxed], [false, true, false])
 grid.item_max = 3
 scene.follow_cards
-check("the first cards take the input back", [grid.active, bar_commands.active], [true, false])
+check("the first mods are picked again", [bar.boxed, grid.boxed], [false, true])
 empty = Window_MpModGrid.allocate
 empty.instance_variable_set(:@mods, [])
 empty.define_singleton_method(:index) { -1 }
@@ -229,3 +265,12 @@ shown.instance_variable_set(:@view, "list")
 check("the list has one column of six rows", [shown.col_max, shown.item_height], [1, 64])
 shown.instance_variable_set(:@view, "cards")
 check("the cards have three columns of two rows", [shown.col_max, shown.item_height], [3, 192])
+
+# The search belongs to the bar: leaving it, kept or cleared, goes back to the bar's buttons, never into the mods.
+[:keep, :clear].each do |kept|
+  scene.pick_box(:bar)
+  scene.enter_box
+  scene.instance_variable_set(:@search, Object.new)
+  scene.end_search(kept)
+  check("leaving the search (#{kept}) stays in the bar", [bar_commands.active, grid.active, scene.instance_variable_get(:@box)], [true, false, :bar])
+end

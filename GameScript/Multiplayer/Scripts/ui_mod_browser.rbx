@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-24: Showed the mods as cards with screenshots and each on a page of its own
 #                            - Showed the mods as a list too and filtered them by a search typed in the bar
+#                            - Picked the bar or the mods as a whole before moving inside them
 #                            - Told in a box how a change goes and named what changed in the restart question
 #                            - Created
 #
@@ -472,10 +473,16 @@ end
 # card is opened.
 class Scene_MpMods < Scene_MenuBase
   # What the screen says while nothing else happened.
-  HINT = "Arrows pick a mod, Enter opens it, Up from the first row reaches the search and the buttons. Esc or Numpad 0 goes back."
+  HINT = "Up and down pick the bar or the mods, Enter moves into it. Esc or Numpad 0 goes back."
+
+  # What the screen says inside the mods.
+  MODS_HINT = "Arrows pick a mod, Enter opens it. Esc or Numpad 0 goes back to picking the bar or the mods."
+
+  # What the screen says inside the bar.
+  BAR_HINT = "Left and right pick a button, Down reaches the search. Esc or Numpad 0 goes back to picking the bar or the mods."
 
   # What the screen says while the search is typed.
-  SEARCH_HINT = "Type to filter the mods. Enter keeps the filter, Esc or Numpad 0 clears it, Up reaches the buttons."
+  SEARCH_HINT = "Type to filter the mods. Enter or Up keeps the filter and goes back to the buttons, Esc or Numpad 0 clears it."
 
   # Most characters a search takes.
   SEARCH_CHARS = 40
@@ -551,10 +558,10 @@ class Scene_MpMods < Scene_MenuBase
     @bar_commands.set_handler(:view, method(:on_view))
     @bar_commands.set_handler(:update_all, method(:on_update_all))
     @bar_commands.set_handler(:refresh, method(:on_refresh))
-    @bar_commands.set_handler(:cancel, method(:return_scene))
+    @bar_commands.set_handler(:cancel, method(:back_to_boxes))
     @grid = Window_MpModGrid.new(@bar.height, Graphics.height - @bar.height)
     @grid.set_handler(:ok, method(:on_card))
-    @grid.set_handler(:cancel, method(:return_scene))
+    @grid.set_handler(:cancel, method(:back_to_boxes))
     @grid.view = MGQ_MpModBrowser.view
     @bar_commands.view = @grid.view
     @page_commands = Window_MpModPageCommands.new
@@ -565,27 +572,32 @@ class Scene_MpMods < Scene_MenuBase
     @message = HINT
     @busy = false
     @query = ""
+    @level = :boxes
+    @box = :mods
     @list = MGQ_MpModBrowser::EMPTY
     MGQ_MpModBrowser.refresh("the Mods screen opened")
     look
-    give_back_input
+    @bar_for_want = @grid.item_max == 0
+    pick_box(@bar_for_want ? :bar : :mods)
     MGQ_MpModBrowser.log("opened")
   rescue => e
     MGQ_MpModBrowser.log("the Mods screen could not start: #{e.class}: #{e.message}")
     return_scene
   end
 
-  # Moves between the bar and the cards, scrolls a page's text, backs out with Numpad 0 too, and
-  # follows the list and a running change.
+  # Picks the bar or the mods, moves inside them, scrolls a page's text, backs out with Numpad 0
+  # too, and follows the list and a running change.
   def update
-    grid_row = @grid.active ? @grid.index / @grid.col_max : nil
     super
     return close_failure if @failure_shown && (Input.trigger?(:C) || MGQ_MpUi.cancel?)
 
+    # The key that led back to picking a box was taken this frame already and must not leave too.
+    just_picked = @just_picked
+    @just_picked = false
     if @search
       update_search
-    else
-      move_focus(grid_row) unless MGQ_MpUi::Confirm.open? || @failure_shown
+    elsif !(MGQ_MpUi::Confirm.open? || @failure_shown || @busy || just_picked)
+      @level == :boxes && !@page_mod ? update_boxes : move_focus
     end
     @look_frames += 1
     look if @look_frames >= MGQ_MpModBrowser::LOOK_FRAMES
@@ -594,18 +606,33 @@ class Scene_MpMods < Scene_MenuBase
     return_scene
   end
 
-  # Takes the arrows and Numpad 0 the windows leave alone: Up from the first row of mods to the
-  # search, Down from the bar's buttons to the search, up and down on a page to its text.
-  #
-  # @param grid_row [Integer, nil] The row the cards' cursor was on before this frame, nil while
-  #   they had no input.
-  def move_focus(grid_row)
-    if @grid.active
-      return return_scene if MGQ_MpUi.numpad_cancel?
-      return focus_search if grid_row == 0 && Input.trigger?(:UP)
-    elsif @bar_commands.active
-      return return_scene if MGQ_MpUi.numpad_cancel?
-      return focus_search if Input.trigger?(:DOWN)
+  # Picks the bar or the mods as a whole with Up and Down, moves inside with Enter, and leaves the
+  # screen with Esc or Numpad 0.
+  def update_boxes
+    if MGQ_MpUi.cancel?
+      Sound.play_cancel
+      return return_scene
+    end
+
+    if Input.trigger?(:UP) || Input.trigger?(:DOWN)
+      other = @box == :bar ? :mods : :bar
+      return Sound.play_buzzer if other == :mods && @grid.item_max == 0
+
+      Sound.play_cursor
+      @bar_for_want = false
+      pick_box(other)
+    elsif Input.trigger?(:C)
+      Sound.play_ok
+      enter_box
+    end
+  end
+
+  # Takes the arrows and Numpad 0 the windows leave alone: Numpad 0 back to picking the bar or the
+  # mods, Down from the bar's buttons to the search, up and down on a page to its text.
+  def move_focus
+    if @grid.active || @bar_commands.active
+      return back_to_boxes if MGQ_MpUi.numpad_cancel?
+      return focus_search if @bar_commands.active && Input.trigger?(:DOWN)
     elsif @page_commands.active
       return close_page if MGQ_MpUi.numpad_cancel?
 
@@ -614,12 +641,45 @@ class Scene_MpMods < Scene_MenuBase
     end
   end
 
-  # Gives the input to the bar's buttons.
-  def focus_bar
-    Sound.play_cursor
-    @bar_for_want = false
-    @grid.deactivate
-    @bar_commands.activate
+  # Picks the bar or the mods as a whole, the input with no window, and draws the cursor around it.
+  #
+  # @param box [Symbol] :bar or :mods.
+  def pick_box(box)
+    @box = box
+    @level = :boxes
+    @just_picked = true
+    take_input
+    show_boxes
+    say(HINT)
+  end
+
+  # Moves inside the box picked: to the bar's buttons or to the mods.
+  def enter_box
+    @level = :inside
+    show_boxes
+    if @box == :bar
+      @bar_commands.activate
+      say(BAR_HINT)
+    else
+      @grid.activate
+      say(MODS_HINT)
+    end
+  end
+
+  # Goes back from inside the bar or the mods to picking one of them as a whole.
+  def back_to_boxes
+    Sound.play_cancel if MGQ_MpUi.numpad_cancel?
+    pick_box(@box)
+  end
+
+  # Draws the cursor around the box picked while the player picks one, and the windows' own
+  # cursors while they are moved inside.
+  def show_boxes
+    picking = @level == :boxes
+    @bar.boxed = picking && @box == :bar
+    @grid.boxed = picking && @box == :mods
+    @grid.cursor_hidden = @box == :bar
+    @level == :inside && @box == :bar ? @bar_commands.show_cursor : @bar_commands.hide_cursor
   end
 
   # Starts typing the search in place in the bar, the mods filtered as it changes.
@@ -627,46 +687,45 @@ class Scene_MpMods < Scene_MenuBase
     Sound.play_cursor
     @bar_for_want = false
     take_input
+    @bar_commands.hide_cursor
+    @searched_before = @query
     @search = MGQ_MpUi::TextEdit.new(@query, :max_chars => SEARCH_CHARS)
     MGQ_Multiplayer::Link.typing(true)
     say(SEARCH_HINT)
   end
 
-  # Takes what is typed into the search: Enter keeps it and goes to the mods, Esc or Numpad 0
-  # clears it, Up goes to the bar's buttons and Down to the mods, both keeping it.
+  # Takes what is typed into the search, which belongs to the bar: Enter and Up keep it and go back
+  # to the bar's buttons, Esc or Numpad 0 clear it and go back to them; only Esc there leaves the bar.
   def update_search
     text, _keys = MGQ_Multiplayer::Link.take_typed
-    return end_search(:clear, :mods) if MGQ_MpUi.numpad_cancel?
+    return end_search(:clear) if MGQ_MpUi.numpad_cancel?
 
     text.each_char do |char|
       case @search.type(char)
-      when :enter then return end_search(:keep, :mods)
-      when :escape then return end_search(:clear, :mods)
+      when :enter then return end_search(:keep)
+      when :escape then return end_search(:clear)
       when :refused then Sound.play_buzzer
       end
     end
     @search.update_keys
-    return end_search(:keep, :bar) if MGQ_Multiplayer::Capture.trigger?(:UP)
-    return end_search(:keep, :mods) if MGQ_Multiplayer::Capture.trigger?(:DOWN)
+    return end_search(:keep) if MGQ_Multiplayer::Capture.trigger?(:UP)
 
     filter(@search.text)
     show_info
   end
 
-  # Stops typing the search and gives the input to the bar's buttons or to the mods.
+  # Stops typing the search and gives the input back to the bar's buttons.
   #
   # @param kept [Symbol] :keep to keep the search, :clear to show every mod again.
-  # @param to [Symbol] :bar or :mods.
-  def end_search(kept, to)
+  def end_search(kept)
     MGQ_Multiplayer::Link.typing(false)
     @search = nil
     Sound.play_cursor
     filter(kept == :clear ? "" : @query)
-    say(HINT)
-    MGQ_MpModBrowser.log(@query.empty? ? "search cleared" : "searched for \"#{@query}\": #{@grid.item_max} of #{@list.mods.size} mods")
-    return @bar_commands.activate if to == :bar
-
-    give_back_input
+    if @query != @searched_before
+      MGQ_MpModBrowser.log(@query.empty? ? "search cleared" : "searched for \"#{@query}\": #{@grid.item_max} of #{@list.mods.size} mods")
+    end
+    enter_box
   end
 
   # Shows only the mods a search finds.
@@ -692,7 +751,7 @@ class Scene_MpMods < Scene_MenuBase
   def terminate
     MGQ_Multiplayer::Link.typing(false) if @search
     super
-    @box.dispose if @box
+    @progress_box.dispose if @progress_box
     MGQ_MpModBrowser::Pictures.clear
     MGQ_MpModBrowser.log("closed")
   end
@@ -752,13 +811,13 @@ class Scene_MpMods < Scene_MenuBase
   # @param text [String] What it says.
   # @param hint [String] Its hint at the bottom.
   def show_box(text, hint)
-    @box ||= Sprite_MpMessageBox.new
-    @box.show(BOX_TITLE, text, hint)
+    @progress_box ||= Sprite_MpMessageBox.new
+    @progress_box.show(BOX_TITLE, text, hint)
   end
 
   # Takes the box off the screen.
   def hide_box
-    @box.visible = false if @box
+    @progress_box.visible = false if @progress_box
   end
 
   # Tells what a change does, for the box while it runs.
@@ -806,6 +865,8 @@ class Scene_MpMods < Scene_MenuBase
 
   # Goes back from a mod's page to the cards.
   def close_page
+    # Numpad 0 is the game's cancel with Num Lock on, so the same press must not leave the mods too.
+    @just_picked = true
     Sound.play_cancel
     @page_mod = nil
     @page.visible = false
@@ -813,7 +874,7 @@ class Scene_MpMods < Scene_MenuBase
     @page_commands.deactivate
     @grid.show
     @grid.activate
-    say(HINT)
+    say(MODS_HINT)
   end
 
   # Updates every mod with an update, changed copies left alone.
@@ -906,28 +967,35 @@ class Scene_MpMods < Scene_MenuBase
     [@grid, @bar_commands, @page_commands].each(&:deactivate)
   end
 
-  # Gives the input back to the page while it shows, else to the cards, or to the bar while there
-  # are none.
+  # Gives the input back where it was: to the page while it shows, inside the bar or the mods, or
+  # to picking a box, the bar while there are no mods.
   def give_back_input
     if @page_mod then @page_commands.activate
-    elsif @grid.item_max > 0 then @grid.activate
+    elsif @level == :inside && @box == :bar then @bar_commands.activate
+    elsif @level == :inside && @grid.item_max > 0 then @grid.activate
+    elsif @grid.item_max == 0
+      @box = :bar
+      @level = :boxes
+      show_boxes
     else
-      @bar_commands.activate
-      @bar_for_want = true
+      @level = :boxes
+      show_boxes
     end
   end
 
-  # Keeps the input where there is something to pick: on the bar while there are no cards, and on
-  # the cards once the first arrive while the bar had the input only for want of them.
+  # Keeps the input where there is something to pick: on the bar while there are no mods, and on
+  # the mods once the first arrive while the bar was picked only for want of them.
   def follow_cards
-    if @grid.active && @grid.item_max == 0
+    if @box == :mods && @grid.item_max == 0 && !@page_mod
       @grid.deactivate
-      @bar_commands.activate
+      @box = :bar
+      @level = :boxes
       @bar_for_want = true
-    elsif @bar_for_want && @bar_commands.active && @grid.item_max > 0
+      show_boxes
+    elsif @bar_for_want && @level == :boxes && @box == :bar && @grid.item_max > 0
       @bar_for_want = false
-      @bar_commands.deactivate
-      @grid.activate
+      @box = :mods
+      show_boxes
     end
   end
 
@@ -977,7 +1045,18 @@ class Window_MpModBar < Window_Base
   BOX_COLOR = Color.new(0, 0, 0, 96)
 
   # What the search says while it is empty and not typed into.
-  SEARCH_PLACEHOLDER = "Up from the mods to type"
+  SEARCH_PLACEHOLDER = "Down from the buttons to type"
+
+  # Draws the cursor around the whole bar while it is picked as a whole, or takes it away.
+  #
+  # @param boxed [Boolean] Whether the bar is picked as a whole.
+  def boxed=(boxed)
+    return if boxed == @boxed
+
+    @boxed = boxed
+    @shown = nil
+    boxed ? cursor_rect.set(0, 0, contents_width, contents_height) : cursor_rect.empty
+  end
 
   # Creates the bar across the top of the screen.
   def initialize
@@ -1026,7 +1105,7 @@ class Window_MpModBar < Window_Base
     else
       change_color(normal_color, !query.empty?)
       draw_text(text, query.empty? ? SEARCH_PLACEHOLDER : MGQ_MpUi.cut(self, query, text.width))
-      cursor_rect.empty
+      @boxed ? cursor_rect.set(0, 0, contents_width, contents_height) : cursor_rect.empty
     end
   end
 end
@@ -1078,6 +1157,20 @@ class Window_MpModBarCommands < Window_HorzCommand
     add_command("Refresh", :refresh)
   end
 
+  # Takes the cursor off the buttons while the player is not inside the bar, keeping the button it
+  # was on.
+  def hide_cursor
+    return if index < 0
+
+    @kept = index
+    unselect
+  end
+
+  # Puts the cursor back on the button it was on, Refresh the first time.
+  def show_cursor
+    select(@kept || 2) if index < 0
+  end
+
   # Names the other view on its button, once the view changed.
   #
   # @param view [String] How the mods show now, "cards" or "list".
@@ -1104,6 +1197,7 @@ end
 # name and version, who made it and its summary; or as a list, six rows on the screen, each with a
 # small screenshot and the same texts beside it.
 class Window_MpModGrid < Window_Selectable
+  include MGQ_MpBoxCursor
   include MGQ_MpUi::Theme::Skinned
   include MGQ_MpModDrawing
 
@@ -1207,6 +1301,23 @@ class Window_MpModGrid < Window_Selectable
   # @return [MGQ_MpModBrowser::Mod, nil] The mod, nil while there is none.
   def current_mod
     index >= 0 ? @mods[index] : nil
+  end
+
+  # Hides the cursor on the mod picked while the player works in the bar, keeping the pick.
+  #
+  # @param hidden [Boolean] Whether to hide it.
+  def cursor_hidden=(hidden)
+    return if hidden == @cursor_hidden
+
+    @cursor_hidden = hidden
+    update_cursor
+  end
+
+  # Draws the cursor as the box cursor and the game do, unless it is hidden.
+  def update_cursor
+    return cursor_rect.empty if @cursor_hidden
+
+    super
   end
 
   # Tells whether Enter may open the card the cursor is on.
