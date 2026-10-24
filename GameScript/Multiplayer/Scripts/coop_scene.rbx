@@ -2,6 +2,7 @@
 #  coop_scene.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Noted each change of a teller's scene that reached the player
 #      Paulinchen  2026-10-23: Took back what an event of the player's own changed once the mod ends it early or moves the player away
 #                            - Showed a viewer's character without a tint once the story ended on another map
 #      Paulinchen  2026-10-12: Left out picture and screen changes this game cannot take
@@ -588,6 +589,7 @@ module MGQ_MpCoopScene
     unless MGQ_MpCoopGather.story_map?(message["map"].to_i)
       return log("ignored #{kind} on map #{message['map']}: the player is on map #{$game_map.map_id}")
     end
+    MGQ_MpCoop::Scope.heard_from(peer)
 
     args = MGQ_MpBattlesSync::Wire.parse(message["args"].to_s) { nil }
     return log("ignored #{kind}: its arguments did not read (#{message['args'].to_s.size} characters)") unless args

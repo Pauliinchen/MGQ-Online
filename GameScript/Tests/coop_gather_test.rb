@@ -2,6 +2,8 @@
 #  coop_gather_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Checked that a viewer follows at once a scene that runs by itself and would start again in their game
+#                            - Checked that a telling nothing of which comes for thirty seconds holds the player no longer
 #      Paulinchen  2026-10-23: Checked that a Raid World viewer follows at once only a telling that moves the world's story on
 #      Paulinchen  2026-10-12: Checked which battles belong to a leader's call
 #      Paulinchen  2026-10-11: Checked that a follow to another map shows the followers the map left behind hidden
@@ -197,6 +199,7 @@ end
 # coop_scope.rbx.
 module MGQ_MpCoopEvents
   def self.behind?; $behind; end
+  def self.keeps_autorun_of?(peer); $kept_autorun == peer.state["id"]; end
   def self.telling?; $telling; end
   def self.story_playing?; $telling; end
   def self.leading_story?; MGQ_MpCoop::Scope.leads_story?; end
@@ -238,6 +241,14 @@ teller.state["scene"] = "battle"
 check("while the teller fights the story's battle, a player who came late may move and join it", gather.blocked?, false)
 teller.state["scene"] = "event"
 check("and stands still again once the story goes on", gather.blocked?, true)
+# A hold asked every half second, as the game asks it every frame.
+hold_for = lambda { |frames| (frames / 30).times { $frame_count += 30; gather.blocked? }; gather.blocked? }
+check("a telling nothing of which comes for 30 s holds the player no longer (issue 61)",
+      [hold_for.call(MGQ_MpCoop::Scope::SILENT_FRAMES - 60), hold_for.call(60)], [true, false])
+MGQ_MpCoop::Scope.heard_from(teller)
+check("one that sends something holds them again", hold_for.call(MGQ_MpCoop::Scope::SILENT_FRAMES - 60), true)
+$frame_count += MGQ_MpCoop::Scope::SILENT_FRAMES
+check("and a hold after a pause counts anew", gather.blocked?, true)
 gather.take(teller, { "pevent" => "gather", "map" => "3", "x" => "5", "y" => "5" })
 check("a call to gather is ignored", gather.coming?, false)
 gather.take(teller, { "pevent" => "follow", "map" => "8", "x" => "1", "y" => "2", "d" => "2" })
@@ -309,6 +320,12 @@ gather.decline_follow(teller)
 gather.take(teller, follow.merge("moves" => "0"))
 check("a player watching is only offered to follow a telling that does not move the world's story on, as a minigame's that moves its teller",
       [gather.coming?, $offers.notice_of(teller).nil?], [false, false])
+gather.decline_follow(teller)
+$kept_autorun = "t"
+gather.take(teller, follow.merge("moves" => "0"))
+check("but follows at once when the player's game keeps its own copy of the teller's scene, which runs by itself, from starting (issue 61)",
+      [gather.coming?, $offers.notice_of(teller)], [true, nil])
+$kept_autorun = nil
 gather.forget_story_place
 check("the world closing forgets the offers", $offers.notice_of(teller), nil)
 teller.state["map"] = "3"

@@ -2,6 +2,7 @@
 #  coop_scope.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Let a teller's telling hold the player no longer once nothing of it came for thirty seconds
 #      Paulinchen  2026-10-12: Sent a Classic world's message for several members as one party message
 #      Paulinchen  2026-10-11: Kept a viewer watching a Raid telling after taking its story values
 #      Paulinchen  2026-10-10: Kept the followed teller while their state briefly tells nothing
@@ -117,6 +118,46 @@ module MGQ_MpCoop
 
     # What starts this script's lines in Multiplayer InGame.log.
     LOG_TAG = "co-op scope"
+
+    # Frames a teller's telling may hold the player while nothing of it reaches them, thirty
+    # seconds, see silent?.
+    #
+    # A teller's game that said it told on the map for eight minutes and sent nothing kept every
+    # player there from moving (issue 61).
+    SILENT_FRAMES = 1800
+
+    # Frames between two questions of silent? after which a hold counts as new, one second.
+    HOLD_GAP_FRAMES = 60
+
+    # The teller something of whose telling reached the player last: :teller, their player id,
+    # :frame, when it came, and :asked, when silent? last asked; nil before any.
+    @heard = nil
+
+    # Notes that something of a teller's telling reached the player: a page, its end or a change
+    # of the scene. Called by coop_events.rbx and coop_scene.rbx.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
+    def self.heard_from(peer)
+      @heard = { :teller => peer.state["id"].to_s, :frame => Graphics.frame_count, :asked => Graphics.frame_count }
+    end
+
+    # Reports whether a teller's telling that holds the player sent nothing of it for
+    # SILENT_FRAMES, so it holds them no longer; a hold not asked about for HOLD_GAP_FRAMES starts
+    # the count anew. Asked every frame of a hold by coop_gather.rbx and coop_events.rbx.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
+    # @return [Boolean] Whether it did.
+    def self.silent?(peer)
+      now = Graphics.frame_count
+      id = peer.state["id"].to_s
+      heard = @heard
+      @heard = heard = { :teller => id, :frame => now } unless heard && heard[:teller] == id && (0..HOLD_GAP_FRAMES).include?(now - heard[:asked].to_i)
+      heard[:asked] = now
+      return false if now - heard[:frame] < SILENT_FRAMES
+
+      log_once([:silent, id, heard[:frame]], "#{MGQ_MpOverworldSync.who(peer)}'s telling holds the player no longer: nothing of it reached the player for #{SILENT_FRAMES / 60} s")
+      true
+    end
 
     # Reports whether a Raid World is open, through world.rbx.
     #

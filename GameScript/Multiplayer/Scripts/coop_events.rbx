@@ -2,6 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Noted the teller whose story event that runs by itself the player's game keeps from starting
+#                            - Let that event start once nothing came for thirty seconds of a telling outside battle
 #      Paulinchen  2026-10-23: Took back what a talk or story event changed once it ends early
 #                            - Noted the values that move the world's story on as a telling starts
 #                            - Faded the screen in once it stayed dark for ten seconds while nothing of a watched scene reached it
@@ -162,6 +164,10 @@ module MGQ_MpCoopEvents
   # Frames the screen may stay dark while the player watches another player's scene on the map and
   # nothing of it reaches the player's screen, ten seconds.
   WATCHED_DARK_FRAMES = 600
+
+  # Frames after the player's game last kept its own copy of a teller's story event that runs by
+  # itself from starting in which it still counts as kept, one second, see keeps_autorun_of?.
+  KEPT_AUTORUN_FRAMES = 60
 
   # The trigger of an event that runs alongside the map, and the command that fades the screen in.
   PARALLEL_TRIGGER = 4
@@ -1005,6 +1011,7 @@ module MGQ_MpCoopEvents
     unless scope.story_from?(peer)
       return log("ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: not from #{scope.raid? ? 'the player telling the story here' : "the party's leader"} (#{MGQ_MpOverworldSync.who(scope.teller)})")
     end
+    scope.heard_from(peer)
     unless scope.watches?(peer)
       return log_once([:not_watching, kind, peer ? peer.state["id"].to_s : nil], "ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: #{scope.raid? ? "the player's story is not where theirs is" : 'not synced with the leader, the player plays their own story'}")
     end
@@ -1050,8 +1057,11 @@ module MGQ_MpCoopEvents
       return false
     end
     if event.trigger == 3
+      return false if lead.state["telling"] == "1" && lead.state["scene"] != "battle" && MGQ_MpCoop::Scope.silent?(lead)
+
       log_once([:autorun, $game_map.map_id, event.id, lead.state["id"].to_s],
                "kept event #{event.id} on map #{$game_map.map_id} that runs by itself from starting: it is story, which #{MGQ_MpOverworldSync.who(lead)}'s game runs")
+      @kept_autorun = { :teller => lead.state["id"].to_s, :map => $game_map.map_id, :frame => Graphics.frame_count }
       fade_in_late(event, lead)
       return true
     end
@@ -1061,6 +1071,20 @@ module MGQ_MpCoopEvents
   rescue => e
     log("keeping a story event from starting failed: #{e.class}: #{e.message}")
     false
+  end
+
+  # Reports whether the player's game keeps its own copy of a teller's story event that runs by
+  # itself from starting on the player's map, which starts the moment the teller leaves it (see
+  # hand_over).
+  #
+  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
+  # @return [Boolean] Whether it does.
+  def self.keeps_autorun_of?(peer)
+    kept = @kept_autorun
+    return false unless kept && $game_map && kept[:map] == $game_map.map_id && kept[:teller] == peer.state["id"].to_s
+
+    elapsed = Graphics.frame_count - kept[:frame]
+    elapsed >= 0 && elapsed <= KEPT_AUTORUN_FRAMES
   end
 
   # Fades the screen in once per arrival on a map whose story event that runs by itself another

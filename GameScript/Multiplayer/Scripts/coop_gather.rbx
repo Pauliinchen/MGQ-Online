@@ -2,6 +2,8 @@
 #  coop_gather.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Followed a teller at once whose scene that runs by itself the player's game keeps from starting
+#                            - Held the player no longer for a telling nothing of which came for thirty seconds
 #      Paulinchen  2026-10-23: Took the player out of their own scene before a call, follow or teleport moves them
 #                            - Pulled a Raid World viewer along at once only when the telling moves the world's story on
 #      Paulinchen  2026-10-12: Let a player in a Classic world move while the teller fights the story's battle
@@ -196,10 +198,12 @@ module MGQ_MpCoopGather
 
   # Tells why the player does not follow a Raid World's teller at once where their story moved
   # them: only a player who watches that teller's story and is not behind the world's does, and
-  # only when the telling moves the world's story on (see moves_story?).
+  # only when the telling moves the world's story on (see moves_story?) or the player's game keeps
+  # its own copy of the telling's event that runs by itself from starting.
   #
   # A talk that sets values of its own and moves its teller, as a minigame does, is sorted as story
-  # too, which would pull every player watching along.
+  # too, which would pull every player watching along. A scene that runs by itself and moves its
+  # teller without moving the story on would start again for every player left behind (issue 61).
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
   # @param message [Hash] The call's fields, "moves" 0 for a telling that does not move the world's
@@ -208,8 +212,10 @@ module MGQ_MpCoopGather
   def self.follow_refusal(peer, message)
     return "the player's story is behind the world's" if MGQ_MpCoopEvents.behind?
     return "the player's story is not where #{MGQ_MpOverworldSync.who(peer)}'s is" unless MGQ_MpCoop::Scope.watches?(peer)
-    return "#{MGQ_MpOverworldSync.who(peer)}'s telling does not move the world's story on" if message["moves"] == "0"
+    return nil unless message["moves"] == "0"
+    return "#{MGQ_MpOverworldSync.who(peer)}'s telling does not move the world's story on" unless MGQ_MpCoopEvents.keeps_autorun_of?(peer)
 
+    log("follows #{MGQ_MpOverworldSync.who(peer)} though their telling does not move the world's story on: the player's game keeps its own copy of the scene, which runs by itself, from starting")
     nil
   end
 
@@ -807,7 +813,8 @@ module MGQ_MpCoopGather
   # without plays on elsewhere, and so does a player whose story does not match the teller's.
   #
   # A teller in the story's battle holds nobody: a player who came after its invites could
-  # otherwise neither move nor join it until it ended.
+  # otherwise neither move nor join it until it ended. Nor does a telling nothing of which reached
+  # the player for a while, see MGQ_MpCoop::Scope.silent?.
   #
   # @return [Boolean] Whether they do.
   def self.blocked?
@@ -815,7 +822,7 @@ module MGQ_MpCoopGather
     return false unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && lead.state["telling"] == "1"
     return false unless lead.state["map"].to_i == $game_map.map_id && MGQ_MpCoop::Scope.watches?(lead)
 
-    lead.state["scene"] != "battle"
+    lead.state["scene"] != "battle" && !MGQ_MpCoop::Scope.silent?(lead)
   end
 
   # Reports whether the player only waits for the party's story: as leader while it gathers, as

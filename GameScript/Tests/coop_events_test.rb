@@ -2,6 +2,7 @@
 #  coop_events_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Checked that the player's game notes whose scene that runs by itself it keeps from starting
 #      Paulinchen  2026-10-23: Checked that a weapon's pedestal handing out a medal is a chest of each player's own
 #                            - Checked that a talk ended early takes back what it changed
 #                            - Checked that a dark screen fades in while a watched scene shows nothing for ten seconds
@@ -904,6 +905,9 @@ $map_since = 1000
 $sent.clear
 $game_map.events[13].start
 check("a story event that runs by itself is left to the leader's game", [$game_map.setup_starting_map_event, $sent.size], [nil, 0])
+check("which notes it kept the leader's scene from starting, for their follow (issue 61)", [MGQ_MpCoopEvents.keeps_autorun_of?(leader), MGQ_MpCoopEvents.keeps_autorun_of?(far_friend)], [true, false])
+$frame_count += MGQ_MpCoopEvents::KEPT_AUTORUN_FRAMES + 1
+check("only while it keeps it", MGQ_MpCoopEvents.keeps_autorun_of?(leader), false)
 check("which fades in the dark screen of a player who came in the middle of it", $game_map.screen.fadein, MGQ_MpCoopEvents::LATE_FADEIN_FRAMES)
 $game_map.screen = LateScreen.new
 $game_map.events[13].start
