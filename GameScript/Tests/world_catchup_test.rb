@@ -2,6 +2,10 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Checked that Alice's Power-up counts the steps the world did
+#                            - Checked that a join's persona waits behind a later change of the story
+#                            - Checked that a power-up carried past changes the character once at its level
+#                            - Checked that a companion of the roster takes the persona a join brings
 #      Paulinchen  2026-10-23: Checked that a found job item comes to every player at once
 #                            - Checked that the gate's notices name the cap of another mod below it
 #                            - Checked that the story sets a return point only on the map of its event
@@ -304,10 +308,14 @@ class Game_Variables; def initialize; @data = []; end; def [](id); @data[id] || 
 class Game_SelfSwitches; def initialize; @data = {}; end; def [](key); @data[key] == true; end; def []=(key, value); @data[key] = value; end; end
 # A companion with the levels the catch-up reads and raises.
 class Game_Actor
-  attr_reader :id, :base_level, :persona
+  attr_reader :base_level, :persona
   attr_accessor :cap
   # Starts the companion at their join level, with no skills and no level cap of another mod.
   def initialize(id); @id = id; @persona = id; @base_level = $data_actors[id].initial_level; @skills = []; @cap = 9999; end
+  # Answers the persona the companion is in, as the game's id does.
+  def id; @persona; end
+  # Answers that the companion wears nothing.
+  def equips; []; end
   # Answers the companion's name.
   def name; $data_actors[@id].name; end
   # Answers the levels of the companion's classes and races by id.
@@ -375,6 +383,14 @@ class Game_Interpreter
   def ssw(key); false; end
   # Raises a class's or race's level, never lowering it.
   def set_class_level(actor_id, id, level, _show, _change); levels = $game_actors[actor_id].level_list; levels[id] = [levels[id].to_i, level].max; end
+  # Changes a companion's persona through the party, as the game's does.
+  def persona_change(persona); $game_party.persona_change(persona); end
+  # Raises a companion's level, never lowering it.
+  def level_adjust(actor_id, level); actor = $game_actors[actor_id]; actor.change_level(level, false, :base) if actor.base_level < level; end
+  # Records a worn item the call puts on in $worn.
+  def force_change_equip(actor_id, slot_id, _kind, item_id); ($worn ||= []) << [actor_id, slot_id, item_id]; end
+  # Records the personas the compendium counts as owned in $had.
+  def set_actor_had(*ids); ($had ||= []).concat(ids); end
 end
 # A vehicle: the map it stands on, 0 for none, and its tile.
 class Game_Vehicle
@@ -442,12 +458,14 @@ REAL_REMOVALS = DATA::REMOVALS
 REAL_SETTINGS = DATA::SETTINGS
 # The generated key items, kept before the tests replace them.
 REAL_KEY_ITEMS = DATA::KEY_ITEMS
+# The generated actor changes, kept before the tests replace them.
+REAL_ACTOR_CHANGES = DATA::ACTOR_CHANGES
 
 # Puts tables of rows in place of the generated ones.
 #
 # @param tables [Hash{Symbol => Array}] The rows by table, the others empty.
 def tables(tables = {})
-  [:JOINS, :REMOVALS, :KEY_ITEMS, :CHESTS, :REWARDS, :LESSONS, :CLASS_LEVELS, :SETTINGS, :VEHICLES, :WARP_FREE_MAPS, :MAKINA].each do |name|
+  [:JOINS, :REMOVALS, :KEY_ITEMS, :CHESTS, :REWARDS, :LESSONS, :CLASS_LEVELS, :ACTOR_CHANGES, :SETTINGS, :VEHICLES, :WARP_FREE_MAPS, :MAKINA].each do |name|
     DATA.send(:remove_const, name)
     DATA.const_set(name, tables[name] || [])
   end
@@ -722,9 +740,9 @@ relay({ "rev" => 5, "wrev" => 5, "p" => 31, "part" => "2" }, packed({ 1001 => 31
 frames(40)
 check("each once, the next only as the world gives it", [$game_party.items[502], $game_party.items[501], $game_party.items[504]], [1, 1, 1])
 
-# Companions join by their gates, Sonya's Chaos return at 300 among them.
+# Companions join by their gates, Sonya's Chaos return at 250 among them.
 sonya = REAL_JOINS.find { |row| row.persona == 842 && row.site == "map:1834:20:1" }
-check("Sonya's Chaos return joins as persona 842 at 300", [sonya.actor, sonya.gate, sonya.rule], [525, 300, :floor])
+check("Sonya's Chaos return joins as persona 842 at 250", [sonya.actor, sonya.gate, sonya.rule], [525, 250, :floor])
 tables(:JOINS => [sonya])
 chaos = { 1001 => 40, 1143 => 21 }
 sonya.marks.each { |mark| chaos[mark[1]] = mark[2] if mark[0] == :v }
@@ -738,15 +756,15 @@ frames(1)
 relay({ "rev" => 7, "wrev" => 7, "p" => 40, "r1143" => 21, "part" => "chaos", "route" => "chaos" }, packed(chaos, on))
 frames(40)
 check("a join the world's story carried the player past waits for its gate", [story.mode, roster.include?(525)], [:world, false])
-$game_actors[1].level = 299
-$game_actors[1].cap = 299
+$game_actors[1].level = 249
+$game_actors[1].cap = 249
 frames(40)
-check("not at 299, though another mod caps the player there", roster.include?(525), false)
+check("not at 249, though another mod caps the player there", roster.include?(525), false)
 $game_actors[1].cap = 9999
-$game_actors[1].level = 300
+$game_actors[1].level = 250
 frames(40)
-check("at 300 Sonya joins in her Chaos persona at 300", [roster.include?(525), $game_actors[525].persona, $game_actors[525].base_level], [true, 842, 300])
-check("and says so", $messages.last, "Sonya joined: level 300 reached.")
+check("at 250 Sonya joins in her Chaos persona at 250", [roster.include?(525), $game_actors[525].persona, $game_actors[525].base_level], [true, 842, 250])
+check("and says so", $messages.last, "Sonya joined: level 250 reached.")
 frames(40)
 check("never twice", roster.count(525), 1)
 
@@ -946,6 +964,24 @@ frames(1)
 relay({ "rev" => 18, "wrev" => 18, "p" => 24, "part" => "2" }, packed({ 1001 => 24, 1354 => 1 }, [3101, 3150]))
 frames(40)
 check("the Randolphs found count the Randolph switches of the world's story laid over the player's", [story.mode, $game_variables[1354]], [:world, 2])
+
+# Alice's Power-up counts its steps' switches the same way, the 11th and 12th Alipheese twice, from Saja on.
+tables
+new_game({ 1001 => 24, 1312 => 3, 1353 => 1 }, [3204], 40)
+frames(1)
+relay({ "rev" => 19, "wrev" => 19, "p" => 24, "part" => "2" }, packed({ 1001 => 24, 1312 => 3, 1353 => 1 }, [3204, 3211]))
+frames(40)
+check("Alice's Power-up counts every step the world did, two for the 11th and 12th Alipheese", $game_variables[1353], 3)
+tables
+new_game({ 1001 => 24, 1312 => 3, 1353 => 3 }, [3204, 3211], 40)
+frames(1)
+relay({ "rev" => 20, "wrev" => 20, "p" => 24, "part" => "2" }, packed({ 1001 => 24, 1312 => 3, 1353 => 3 }, [3204, 3211, 7034]))
+frames(40)
+check("and stands at 15 once Dark God's Castle 4F ended it", $game_variables[1353], 15)
+tables
+new_game({ 1001 => 24, 1312 => 2, 1353 => 0 }, [7140], 40)
+frames(40)
+check("before Saja it is left as the game keeps it", $game_variables[1353], 0)
 
 # What the story could not give shows as nothing given, whatever the log returns.
 tables(:REWARDS => [reward.new(:skill, 937, 1, "map:60:2:1", "2", 24, nil, [[:v, 1001, 24]], true),
@@ -1641,6 +1677,55 @@ relay({ "rev" => 36, "wrev" => 36, "p" => 12, "part" => "1" }, packed({ 1001 => 
 frames(40)
 check("and both once the world got past the later join", [roster.include?(16), catchup.unlocks.any? { |unlock| unlock.id == 16 }], [true, true])
 
+# What a power-up of the story changes of a character comes to every player the world's story
+# carried past it, once their level reaches the level it sets, as the game's own step gives it.
+$data_actors[7] = ActorData.new(7, "Alice", 1)
+$data_actors[26] = ActorData.new(26, "Ilias", 1)
+$data_actors[27] = ActorData.new(27, "Ilias", 1)
+Game_Actors::PERSONAS.merge!(7 => 5, 27 => 26)
+alice = REAL_ACTOR_CHANGES.find { |row| row.site == "map:1330:15:1" }
+check("Alice's power-up turns her into her persona 7 and, on a first playthrough alone, raises her to 250",
+      [alice.actor, alice.calls, alice.gate], [5, [[:persona_change, [7], false], [:level_adjust, [7, 250], true]], 250])
+# Plays a Raid World's Chaos route whose story carries the player past Alice's power-up.
+#
+# @param variables [Hash] The player's own variables.
+# @param switches [Array<Integer>] The player's own switches.
+# @param level [Integer] Luka's level.
+# @param companions [Array<Integer>] The companions in the player's roster.
+carry_past_power_up = lambda do |variables, switches, level, companions|
+  new_game({ 1001 => 40, 1143 => 21 }.merge(variables), switches, level)
+  companions.each { |id| $game_party.add_actor(id) }
+  frames(1)
+  relay({ "rev" => 50, "wrev" => 50, "p" => 40, "r1143" => 21, "part" => "chaos", "route" => "chaos" }, packed({ 1001 => 40, 1143 => 21 }.merge(variables), switches))
+  frames(16)
+  story.pushed(MGQ_MpOverworldSync::STORY_FIELD => "51", :relay => true)
+  frames(1)
+  relay({ "rev" => 51, "wrev" => 51, "p" => 40, "r1143" => 21, "part" => "chaos", "route" => "chaos" },
+        packed({ 1001 => 40, 1143 => 21, 1347 => 3, 1353 => 15 }.merge(variables), switches + [3193]))
+  frames(40)
+end
+tables(:ACTOR_CHANGES => [alice])
+carry_past_power_up.call({}, [], 249, [5])
+check("a player the world's story carried past it waits for that level", [story.mode, $game_actors[5].persona], [:world, 5])
+$game_actors[1].level = 250
+frames(40)
+check("then Alice takes her persona and her level", [$game_actors[5].persona, $game_actors[5].base_level], [7, 250])
+check("and the log tells it", $logs.grep(/took what map:1330:15:1 changes/).size, 1)
+$game_party.persona_change(5)
+frames(40)
+check("once: the persona the player picks again later stays", $game_actors[5].persona, 5)
+carry_past_power_up.call({ 1347 => 3, 1353 => 15 }, [3193], 250, [5])
+check("a player whose own game played the step keeps what they made of it", [$game_actors[5].persona, $game_actors[5].base_level], [5, 1])
+carry_past_power_up.call({ 912 => 1 }, [], 250, [5])
+check("a later playthrough takes the persona but not the level, as the step's own branch", [$game_actors[5].persona, $game_actors[5].base_level], [7, 1])
+
+# A companion in the roster whom a join brings in another of their personas takes it at the gate.
+ilias = REAL_JOINS.find { |row| row.persona == 27 && row.site == "map:1574:28:1" }
+check("Ilias's power-up brings her persona 27 at 250", [ilias.actor, ilias.gate, ilias.rule], [26, 250, :floor])
+tables(:JOINS => [ilias])
+carry_past_power_up.call({}, [], 250, [26])
+check("so Ilias of the roster takes that persona and its level", [roster.include?(26), $game_actors[26].persona, $game_actors[26].base_level], [true, 27, 250])
+
 # A lost raid boss battle's defeat takes items its undo gives back, so the catch-up waits meanwhile.
 # Stands in for the freeze engine: a lost raid boss battle's defeat runs while $holding.
 module MGQ_MpRaidFreeze; def self.holding_writes?; $holding ? true : false; end; end
@@ -1655,6 +1740,15 @@ check("a player behind fetches no checkpoint while a lost raid boss battle's def
 $holding = false
 frames(1)
 check("and does once it ended", calls_of("mp_raid_checkpoint_fetch"), [["w1\0", "1\0"]])
+
+# A join's persona waits behind a later change of the story, as Granberia's return to 16 after the
+# join of 17 in common event 9106.
+granberia_join = join.new(16, 17, "ce:9106", "chaos", 20, nil, [], 225, :floor, 461, true)
+granberia_back = DATA::ActorChange.new(16, [[:persona_change, [16], false]], nil, "ce:9106", "chaos", 20, nil, [], true)
+tables(:ACTOR_CHANGES => [granberia_back])
+check("a join's persona is left once a change of the story at its place or later set another (review H4)",
+      [catchup.form_changed_since?(granberia_join, { catchup.key_of("a", granberia_back) => true }), catchup.form_changed_since?(granberia_join, {})], [true, false])
+tables
 
 # Classic worlds have no catch-up.
 $raid = false

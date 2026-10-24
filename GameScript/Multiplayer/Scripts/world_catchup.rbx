@@ -2,6 +2,9 @@
 #  world_catchup.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Counted Alice's Power-up from the switches of its steps
+#                            - Ran what the power-ups of the story change of the characters for a player a story carried past them
+#                            - Turned a companion of the roster into the persona a join of theirs brings, unless a later change of the story set another
 #      Paulinchen  2026-10-23: Gave job and race items another player found to every player of the world at once
 #                            - Told the level a cap of another mod opens the gate at in the gate's notices
 #                            - Set the game over's return point of the story only on the map of the event that sets it
@@ -90,7 +93,13 @@
 # start level. A story event that would hand a companion out before then waits for the gate
 # instead. With the world's companion sharing on, every companion a player of the world got joins
 # the others on reaching its gate: the story's companions, and with battle recruits shared too
-# every companion, at its start level.
+# every companion, at its start level. A companion in the roster whom a join brings in another of
+# their personas, as Ilias's power-up does, takes that persona at the gate.
+#
+# What a story laid over the player's carried them past changes of the characters by the game's
+# script calls, as Alice's, Ilias's and Black Alice's power-ups (DATA::ACTOR_CHANGES), runs in their
+# game once their level reaches the highest level the step sets: the same calls, a first
+# playthrough's alone on a first playthrough, none the character shows already.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorldCatchup
@@ -157,10 +166,23 @@ module MGQ_MpWorldCatchup
   # The main story's progress ORB_EVENT sets.
   ORBS_GATHERED = 32
 
-  # Variables that count switches, by variable: the Randolphs found (1354), one switch each (3101 to
-  # 3180). The game adds 1 as it turns one on, so two players finding a Randolph each before either
-  # story reached the other kept one addition alone.
-  COUNTS = { 1354 => 3101..3180 }
+  # A variable that counts switches: what each switch adds, the switch that sets its last value
+  # with that value, and the variable at a value or more before it counts at all; nil for none.
+  Count = Struct.new(:weights, :done_switch, :done_value, :since)
+
+  # Variables that count switches, by variable: the Randolphs found (1354), one switch each, and
+  # Alice's Power-up (1353): the Alipheese 3rd to 14th (3204 to 3213, the 11th and 12th together
+  # in 3211), the Lilith sisters (7140) and the Tower of Light and Darkness (7040), 15 once Dark
+  # God's Castle 4F ends it (7034), counted from Saja on (1312 at 3), who sets it to 0 first.
+  #
+  # The game adds to the variable as it turns a switch on, so two players doing a step each before
+  # either story reached the other kept one addition alone. The Final Chapter's reset clears the
+  # variable but not 7034, 7040 and 7140, hence the start at Saja.
+  COUNTS = {
+    1354 => Count.new(Hash[(3101..3180).map { |id| [id, 1] }], nil, nil, nil),
+    1353 => Count.new({ 3204 => 1, 3205 => 1, 3206 => 1, 3207 => 1, 3208 => 1, 3209 => 1, 3210 => 1, 3211 => 2, 3212 => 1, 3213 => 1, 7140 => 1, 7040 => 1 },
+                      7034, 15, [1312, 3]),
+  }
 
   # Where each part stands in the story's order; the routes stand side by side.
   RANKS = { "1" => 0, "2" => 1, "3" => 2, "ad" => 3, "mr" => 3, "chaos" => 3 }
@@ -214,6 +236,15 @@ module MGQ_MpWorldCatchup
   # them: Amira joins only once her information network ("Pornof Rabbit Events") reached 2, and her
   # information in the Pocket Castle stays shut below it.
   COMPANION_VALUES = { 540 => { 1009 => 2 } }
+
+  # The game's script calls the rows of DATA::ACTOR_CHANGES may name, which alone the catch-up runs.
+  ACTOR_CALLS = [:persona_change, :level_adjust, :change_actor_ability, :force_change_equip, :change_actor_equip_stone, :set_actor_had]
+
+  # The kinds of worn items force_change_equip names, by its number, as MGQ_MpGame.item names them.
+  EQUIP_KINDS = { 1 => "w", 2 => "a" }
+
+  # Whole numbers a call shows at most in the log; the abilities of a power-up run to dozens.
+  LOGGED_NUMBERS = 6
 
   # The field of $game_system the save keeps the notes in, see ledger.
   LEDGER = :@mgq_mp_catchup
@@ -426,8 +457,8 @@ module MGQ_MpWorldCatchup
 
   # The notes the save keeps: the rows done ("done", a row's key to true, or to "c" or "o" for a
   # join waiting for its gate that a story carried the player past or that their own event held
-  # back), the companions their own event held back whose join the story has not passed yet
-  # ("held"), the part whose checkpoint the player got ("checkpoint"), the side they chose before
+  # back, or to the level an actor change a story carried them past waits for), the companions
+  # their own event held back whose join the story has not passed yet ("held"), the part whose checkpoint the player got ("checkpoint"), the side they chose before
   # the Great Decision ("side"), the gate of a move on a cap of another mod opened until its story
   # is laid over theirs ("capped"), and the rewards that move carried them past, waiting for their
   # gate ("waits", a row's key to its gate), and whether repair_rewards ran ("rewards_repaired",
@@ -1106,7 +1137,8 @@ module MGQ_MpWorldCatchup
 
   # Names a row in the notes.
   #
-  # @param kind [String] "j" join, "r" removal, "k" key item, "c" chest, "g" reward.
+  # @param kind [String] "j" join, "r" removal, "k" key item, "c" chest, "a" actor change, "g"
+  #   reward.
   # @param row [Struct] The row.
   # @return [String] Its key.
   def self.key_of(kind, row)
@@ -1115,6 +1147,7 @@ module MGQ_MpWorldCatchup
                        when "j", "r" then "#{kind}:#{row.site}:#{row.persona}"
                        when "k" then "k:#{row.site}:#{row.item}:#{row.amount}"
                        when "c" then "c:#{row.key.join('.')}"
+                       when "a" then "a:#{row.site}:#{row.actor}"
                        else "g:#{row.site}:#{row.kind}#{row.id}"
                        end
   end
@@ -1439,8 +1472,8 @@ module MGQ_MpWorldCatchup
   # Looks at every row of the tables against the player's story, see the module: rows the
   # player's own game played are noted done, those a story carried them past give their rewards,
   # or note them waiting for their gate after a move a cap opened (rewards_wait?), and take their
-  # companions, the world's key items and chests come to everyone, and companions
-  # whose gate the player reached join.
+  # companions, the world's key items and chests come to everyone, companions whose gate the
+  # player reached join, and the actor changes whose gate they reached run.
   #
   # @param story [Array] The player's story: switches, variables and self switches.
   # @param carried [Boolean] Whether a story laid over theirs just carried them past what is new.
@@ -1465,8 +1498,86 @@ module MGQ_MpWorldCatchup
     end
     gifts.concat(guarded(:world_items) { world_items(story, carried, done) } || [])
     guarded(:companions) { companions(story, carried, done) }
+    guarded(:actor_changes) { actor_changes(story, carried, done) }
     guarded(:settle) { settle(story, played_world_story) } if carried
     tell_gifts(gifts.compact)
+  end
+
+  # Notes the actor changes the player's story just got past: done where their own game played
+  # the step, else waiting for the row's gate, and the cap's gate too after a move a cap opened
+  # (rewards_wait?); then runs those whose gate the player's level reached (change_actors).
+  #
+  # @param story [Array] The player's story.
+  # @param carried [Boolean] Whether a story laid over theirs just carried them past what is new.
+  # @param done [Hash] The rows done.
+  def self.actor_changes(story, carried, done)
+    capped = carried && rewards_wait? ? ledger["capped"] : nil
+    DATA::ACTOR_CHANGES.each do |row|
+      key = key_of("a", row)
+      next if done[key] || (carried && !carries?(row)) || !passed?(row, story)
+
+      done[key] = carried ? [row.gate.to_i, capped.to_i].max : true
+    end
+    DATA::ACTOR_CHANGES.each do |row|
+      key = key_of("a", row)
+      gate = done[key]
+      next unless gate.is_a?(Integer) && reached?(gate)
+
+      done[key] = true
+      change_actors(row)
+    end
+  end
+
+  # Runs an actor change in the player's game as the story's event does, through the game's
+  # interpreter: each call in order, one only a first playthrough runs on a first playthrough
+  # alone, and none whose change the character shows already (shows?).
+  #
+  # @param row [MGQ_MpWorldCatchupData::ActorChange] The row.
+  # @return [Array<String>] The calls that ran, as logged.
+  def self.change_actors(row)
+    interpreter = Game_Interpreter.new
+    first = $game_variables[PLAYTHROUGH].to_i == 0
+    ran = row.calls.map do |name, ids, once|
+      next if once && !first
+      next log("skipped #{name} of #{row.site}: no call of the game the catch-up runs") unless ACTOR_CALLS.include?(name) && interpreter.respond_to?(name)
+      next if shows?(name, ids)
+
+      MGQ_MpCoopEvents.granting { interpreter.public_send(name, *ids) }
+      shown = ids.size > LOGGED_NUMBERS ? ids.first(LOGGED_NUMBERS).join(", ") + ", ... (#{ids.size})" : ids.join(", ")
+      "#{name}(#{shown})"
+    end.compact
+    roster_changed
+    log(ran.empty? ? "#{actor_label(row.actor)} shows what #{row.site} changes already" : "#{actor_label(row.actor)} took what #{row.site} changes: #{ran.join(', ')}")
+    ran
+  end
+
+  # Reports whether a character shows what a call of an actor change does already, so it would
+  # change nothing or give its items twice: the persona taken, the level reached, the item worn,
+  # the stones set or the abilities equipped. Marks of the compendium never show, as setting one
+  # twice changes nothing.
+  #
+  # @param name [Symbol] The call, one of ACTOR_CALLS.
+  # @param ids [Array<Integer>] Its whole numbers, the character's persona first.
+  # @return [Boolean] Whether it does; true for a character the game lacks.
+  def self.shows?(name, ids)
+    actor = $game_actors[ids[0]]
+    return true unless actor
+
+    case name
+    when :persona_change then actor.id == ids[0]
+    when :level_adjust then ids[1] ? actor.base_level >= ids[1] : false
+    when :force_change_equip
+      item = MGQ_MpGame.item(EQUIP_KINDS[ids[2]], ids[3])
+      worn = actor.equips[ids[1] - 1]
+      item && worn ? worn.class == item.class && worn.id == item.id : false
+    when :change_actor_equip_stone
+      worn = (actor.respond_to?(:base_equips) ? actor.base_equips : actor.equips)[ids[1]]
+      worn && worn.respond_to?(:stones) ? worn.stones.compact.map(&:id) == ids[2..-1] : false
+    when :change_actor_ability
+      equipped = MGQ_MpGame.get(actor, :equip_abilities)
+      equipped.is_a?(Hash) && equipped.values.flatten.sort == ids[1..-1].sort
+    else false
+    end
   end
 
   # Gives the world's key items and the items of its story chests, see the module. A key item row
@@ -1982,10 +2093,13 @@ module MGQ_MpWorldCatchup
     end
   end
 
-  # Sets each variable of COUNTS to how many of its switches are on.
+  # Sets each variable of COUNTS to what its switches that are on add up to, or to its last value
+  # once its last switch is on.
   def self.check_counts
-    COUNTS.each do |variable, switches|
-      count = switches.count { |id| $game_switches[id] }
+    COUNTS.each do |variable, rule|
+      next if rule.since && $game_variables[rule.since[0]].to_i < rule.since[1]
+
+      count = rule.done_switch && $game_switches[rule.done_switch] ? rule.done_value : rule.weights.inject(0) { |sum, (id, weight)| $game_switches[id] ? sum + weight : sum }
       next if $game_variables[variable] == count
 
       log("set v#{variable} from #{$game_variables[variable].inspect} to #{count}, the switches it counts")
@@ -2083,7 +2197,8 @@ module MGQ_MpWorldCatchup
 
   # Notes a join the player's story just got past: done when its companion is there or the
   # player's own game left them out, else waiting for its gate; dropped when the same look passed a
-  # later removal of the companion.
+  # later removal of the companion. A companion there whom a story carried past a join waits for
+  # it too unless it brings nothing: a first join at their start level in their main persona.
   #
   # @param row [MGQ_MpWorldCatchupData::Join] The join.
   # @param carried [Boolean] Whether a story laid over theirs carried them past it.
@@ -2096,7 +2211,7 @@ module MGQ_MpWorldCatchup
 
     present = in_roster?(row.actor)
     done[key] = if present
-                  carried && row.rule != START_RULE ? "c" : true
+                  carried && (row.rule != START_RULE || form?(row.persona)) ? "c" : true
                 elsif carried
                   "c"
                 else
@@ -2126,8 +2241,9 @@ module MGQ_MpWorldCatchup
     end
   end
 
-  # Lets the joins that wait for their gate in: the companion joins, or one already there is
-  # raised to the join's level, once the player's level reaches the gate.
+  # Lets the joins that wait for their gate in: the companion joins, or one already there takes
+  # the join's persona (take_form) and is raised to its level, once the player's level reaches the
+  # gate.
   #
   # @param done [Hash] The rows done.
   def self.bring_waiting(done)
@@ -2142,13 +2258,62 @@ module MGQ_MpWorldCatchup
 
       done[key] = true
       level = row.rule == START_RULE ? nil : row.gate
-      present ? raise_level(row.persona, level) : bring_in(row.persona, level, "level #{row.gate} reached")
+      next bring_in(row.persona, level, "level #{row.gate} reached") unless present
+
+      take_form(row.persona, row.site) unless form_changed_since?(row, done)
+      raise_level(row.persona, level)
     end
   end
 
-  # Brings a companion into the player's roster as the game's own join does: the persona, recovered,
-  # into the team, or on standby through the game's own cut when it is full or a story's temporary
-  # party plays; then raised to the join's level.
+  # Reports whether an actor change at a join's place or later already set the companion's
+  # persona, which the join's own persona would undo, as Granberia's return to 16 after the join of
+  # 17 in common event 9106.
+  #
+  # @param join [MGQ_MpWorldCatchupData::Join] The join.
+  # @param done [Hash] The rows done.
+  # @return [Boolean] Whether one did.
+  def self.form_changed_since?(join, done)
+    DATA::ACTOR_CHANGES.any? do |change|
+      change.actor == join.actor && done[key_of("a", change)] == true && (place_of(change) <=> place_of(join)) >= 0 &&
+        change.calls.any? { |name, _ids, _once| name == :persona_change }
+    end
+  end
+
+  # Turns a companion of the roster into the persona a join of theirs brings, as the game's own
+  # join does: one of their personas other than the main one, as Ilias's power-up brings her
+  # second (27).
+  #
+  # @param persona [Integer] The persona the join brings.
+  # @param site [String] The join's site, for the log.
+  def self.take_form(persona, site)
+    actor = $game_actors[persona]
+    return unless actor && form?(persona) && actor.id != persona
+
+    $game_party.persona_change(persona)
+    log("#{actor_label(persona)} took the persona the join at #{site} brings")
+  end
+
+  # Reports whether a persona is one of a companion's other personas than the main one.
+  #
+  # @param persona [Integer] The persona.
+  # @return [Boolean] Whether it is.
+  def self.form?(persona)
+    MGQ_MpStoryState.main_id(persona) != persona
+  end
+
+  # Reports whether a join of a companion's main persona keeps the other persona they are in, which
+  # an actor change gave them before the join's gate let them in.
+  #
+  # @param persona [Integer] The persona the join brings.
+  # @return [Boolean] Whether it does.
+  def self.keeps_form?(persona)
+    actor = $game_actors[persona]
+    actor && !form?(persona) && actor.id != persona ? true : false
+  end
+
+  # Brings a companion into the player's roster as the game's own join does: the persona (unless
+  # keeps_form?), recovered, into the team, or on standby through the game's own cut when it is full
+  # or a story's temporary party plays; then raised to the join's level.
   #
   # @param persona [Integer] The persona that joins.
   # @param level [Integer, nil] The level they come at least at, nil for their own.
@@ -2160,7 +2325,7 @@ module MGQ_MpWorldCatchup
 
     @granting = true
     begin
-      $game_party.persona_change(persona) if $game_party.respond_to?(:persona_change)
+      $game_party.persona_change(persona) if $game_party.respond_to?(:persona_change) && !keeps_form?(persona)
       actor = $game_actors[persona]
       actor.recover_all if actor && actor.respond_to?(:recover_all)
       temp = $game_party.respond_to?(:temp_actors_use?) && $game_party.temp_actors_use?

@@ -2,6 +2,7 @@
 #  catchup_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Checked the actor changes of the power-ups, Black Alice's on a first playthrough alone
 #      Paulinchen  2026-10-23: Checked that the pedestals of job orbs are world chests
 #      Paulinchen  2026-10-17: Checked where Remina's Card Key comes from
 #                            - Checked that the story first comes to a map before the part ending its lists set a value before
@@ -68,13 +69,13 @@ check("every join has its actor, persona and site",
       DATA::JOINS.all? { |join| join.actor.is_a?(Integer) && join.persona.is_a?(Integer) && join.site =~ /\A(ce|map|troop):[\d:]+\z/ }, true)
 check("every join's place is a part or side content, with marks", DATA::JOINS.all? { |join| (join.part.nil? || parts.include?(join.part)) && marks_shaped?(join.marks) }, true)
 check("every join of a part names its step there", DATA::JOINS.all? { |join| join.part.nil? || join.part == "ad" || join.part == "mr" || join.step.is_a?(Integer) }, true)
-check("every gate is a level of 1 to 300", DATA::JOINS.all? { |join| join.gate.is_a?(Integer) && join.gate.between?(1, 300) }, true)
+check("every gate is a level of 1 to 250", DATA::JOINS.all? { |join| join.gate.is_a?(Integer) && join.gate.between?(1, 250) }, true)
 check("every gate names its rule", DATA::JOINS.map(&:rule).uniq.sort, [:cap, :floor, :kept, :start])
 check("the joins come in the story's order", DATA::JOINS.map { |join| parts.index(join.part) || 9 }.each_cons(2).all? { |one, other| one <= other || (one == 3 && other == 4) || (one == 4 && other == 3) }, true)
 
 sonya = joins_at(842, "map:1834:20:1")
-check("Sonya's Chaos return joins at her floor of 325, through her persona 842, held at 300",
-      sonya.map { |join| [join.actor, join.part, join.gate, join.rule] }, [[525, "chaos", 300, :floor]])
+check("Sonya's Chaos return joins at her floor of 325, through her persona 842, held at 250",
+      sonya.map { |join| [join.actor, join.part, join.gate, join.rule] }, [[525, "chaos", 250, :floor]])
 check("and only once the story is past her event", sonya[0].marks.include?([:s, 3443]), true)
 check("her first join is at her start level", DATA::JOINS.find { |join| join.actor == 525 }.values_at(2, 7, 8), ["map:7:60:1", 2, :start])
 nuruko = joins_at(706, "map:1353:12:1")
@@ -96,6 +97,22 @@ check("every removal has its place", DATA::REMOVALS.all? { |removal| parts.inclu
 check("every join and removal names its command, and every row with a place whether its event ran",
       [DATA::JOINS.all? { |join| join.index.is_a?(Integer) && [true, false].include?(join.ran) }, DATA::REMOVALS.all? { |removal| removal.index.is_a?(Integer) },
        (DATA::KEY_ITEMS + DATA::REWARDS).all? { |row| [true, false].include?(row.ran) }], [true, true, true])
+# The game's calls the catch-up runs, as world_catchup.rbx's ACTOR_CALLS names them.
+ACTOR_CALLS = [:persona_change, :level_adjust, :change_actor_ability, :force_change_equip, :change_actor_equip_stone, :set_actor_had]
+check("every actor change runs only the game's calls the catch-up knows, with whole numbers, at a place with marks",
+      DATA::ACTOR_CHANGES.all? do |row|
+        row.calls.all? { |name, ids, once| ACTOR_CALLS.include?(name) && ids.all? { |id| id.is_a?(Integer) } && [true, false].include?(once) } &&
+          marks_shaped?(row.marks) && (row.gate.nil? || row.gate.between?(1, 250))
+      end, true)
+black_alice = DATA::ACTOR_CHANGES.find { |row| row.site == "map:1382:4:1" }
+check("Black Alice's tower gives Alicetroemeria her level, six worn items and their stones on a first playthrough alone",
+      [black_alice.actor, black_alice.gate, black_alice.calls.map { |name, _, once| [name, once] }.uniq],
+      [45, 200, [[:level_adjust, true], [:force_change_equip, true], [:change_actor_equip_stone, true], [:set_actor_had, false]]])
+ilias = DATA::ACTOR_CHANGES.find { |row| row.site == "map:1574:28:1" && row.actor == 26 }
+abilities = ilias.calls.find { |name, _, _| name == :change_actor_ability }[1]
+check("Ilias's power-up equips her second persona's abilities, read across the lines of one script up to its last",
+      [abilities.first, abilities.last, ilias.gate], [27, 10058, 250])
+check("and no row changes Luka, whose personas follow the scenes", DATA::ACTOR_CHANGES.none? { |row| row.actor == 1 }, true)
 rami = DATA::LESSONS.select { |row| row.actor == 56 }
 check("the skills Rami's flying quest teaches her are lessons placed at its steps, and no row of a skill an event takes away again",
       [rami.map(&:skill).uniq.sort, rami.all? { |row| row.ran && marks_shaped?(row.marks) }, DATA::LESSONS.any? { |row| row.actor == 823 && row.skill == 5837 }],
