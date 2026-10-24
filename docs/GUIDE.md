@@ -43,6 +43,7 @@ This guide names the default hotkeys. To bind others, open *Mod Config → MGQ O
 - **Monarch** (the default): dark maroon with a gold edge in a black rim, gold titles and dark gold tabs, the look of the raid boss bar.
 - **Legacy**: black glass with a thin grey edge and grey tabs, the look the mod had before.
 - **Game's Default**: the game's own windows in the game's *Window Color* (*Options → Window Color*), and the mod's boxes in the same colors. A change of the Window Color shows at once.
+- **Same in every save.** The look, *Look on Game Windows* and the game's *Window Color* are kept for the whole install (in `Patch\Multiplayer\Player.ini`), not in each save: once you set a Window Color in *Options*, every save and new game shows it.
 
 With Monarch or Legacy the game's Window Color has no effect. *Look on Game Windows* (On by default) turns this off: with Off the game's own windows keep the game's Window Color, and only the mod's windows and boxes wear the look. The raid boss bar's red HP stays red in every look.
 

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Added the Game's Default look, which follows the game's window color
+#                            - Kept the game's window color in Player.ini for every save of the install
 #                            - Dressed the game's own windows in the look, unless turned off in the Mod Config
 #      Paulinchen  2026-10-12: Gave the tabs not picked the edge's color, darkened
 #                            - Added the scrollbar track's color
@@ -228,6 +229,55 @@ module MGQ_MpUi
       log_once(:follow_game, "following the window color FAILED: #{e.class}: #{e.message}")
     end
 
+    # The Player.ini setting that keeps the game's window color for every save of this install.
+    COLOR_SETTING = "window_color"
+
+    # Where the game's options keep the window color's red, green and blue in each save.
+    COLOR_KEYS = [:tone_r, :tone_g, :tone_b]
+
+    # Keeps the window color the player set in the game's options in Player.ini, for every save of
+    # this install. Called each time the options apply it.
+    def self.keep_window_color
+      conf = $game_system && $game_system.respond_to?(:conf) ? $game_system.conf : nil
+      return unless conf
+
+      color = COLOR_KEYS.map { |key| conf[key].to_i }
+      return if color == stored_window_color
+
+      MGQ_Multiplayer::Player.store(COLOR_SETTING, color.join(","))
+      log("window color #{color.join(', ')} kept in Player.ini for every save")
+    rescue => e
+      log_once(:keep_color, "keeping the window color FAILED: #{e.class}: #{e.message}")
+    end
+
+    # Puts the window color Player.ini keeps into the game, so every save of this install shows it;
+    # until the player set one in the options, each save keeps its own.
+    #
+    # @param why [String] What happened, for the log.
+    def self.restore_window_color(why)
+      color = stored_window_color
+      return unless color && $game_system
+
+      conf = $game_system.respond_to?(:conf) ? $game_system.conf : nil
+      COLOR_KEYS.each_with_index { |key, at| conf[key] = color[at] } if conf
+      return if window_tone[0, 3] == color.map { |value| value.to_f }
+
+      $game_system.window_tone = Tone.new(*color)
+      log("window color #{color.join(', ')} from Player.ini put on #{why}")
+    rescue => e
+      log_once(:restore_color, "putting the window color on FAILED: #{e.class}: #{e.message}")
+    end
+
+    # Reads the window color Player.ini keeps.
+    #
+    # @return [Array<Integer>, nil] Red, green and blue, nil until the player set one.
+    def self.stored_window_color
+      parts = MGQ_Multiplayer::Player.setting(COLOR_SETTING).to_s.split(",").map { |part| part.strip }
+      return nil unless parts.size == COLOR_KEYS.size && parts.all? { |part| part =~ /\A-?\d+\z/ }
+
+      parts.map { |part| MGQ_MpUi.within(part.to_i, -255, 255) }
+    end
+
     # Reads the game's window color.
     #
     # @return [Array<Float>] Red, green, blue and gray, all 0 before the game's data loaded.
@@ -401,8 +451,24 @@ begin
   MGQ_MpHooks.after(Window_Base, :initialize, "theme") { MGQ_MpUi::Theme.dress(self) }
   MGQ_MpHooks.after(Window_Base, :update, "theme") { MGQ_MpUi::Theme.dress(self) }
   MGQ_MpHooks.after(Graphics.singleton_class, :update, "theme") { MGQ_MpUi::Theme.follow_game }
+
   MGQ_MpUi::Theme.load
   MGQ_MpUi::Theme.add_option
 rescue => e
   MGQ_MpUi::Theme.log("start FAILED: #{e.class}: #{e.message}")
+end
+
+# The game's window color for every save of this install, through core_hooks.rbx.
+
+begin
+  # The options keep the window color in each save, so the player's choice is kept apart and put
+  # back whenever the game makes its objects anew, as it starts and for a new game, and on every
+  # save loaded.
+  if defined?(Scene_Config) && Scene_Config.method_defined?(:tone_refresh)
+    MGQ_MpHooks.after(Scene_Config, :tone_refresh, "theme") { MGQ_MpUi::Theme.keep_window_color }
+  end
+  MGQ_MpHooks.after(DataManager.singleton_class, :create_game_objects, "theme") { MGQ_MpUi::Theme.restore_window_color("the game's objects made anew") }
+  MGQ_MpHooks.after(DataManager.singleton_class, :load_game_without_rescue, "theme") { |_index| MGQ_MpUi::Theme.restore_window_color("the save loaded") }
+rescue => e
+  MGQ_MpUi::Theme.log("window color hooks FAILED: #{e.class}: #{e.message}")
 end

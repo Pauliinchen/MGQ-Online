@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Checked that the confirm box opens on the title screen, where the game counts no frames
+#                            - Checked that the window color set in the options holds for every save
 #      Paulinchen  2026-10-12: Checked the scrollbars and the list windows' wheel
 #      Paulinchen  2026-10-11: Checked the list, message and confirm boxes in the layout
 #                            - Checked that an outlined text is drawn without the font's own outline
@@ -627,3 +628,16 @@ opened = MGQ_MpUi::Confirm.ask("Restart the game now?", ["Restart", "Later"]) { 
 check("the confirm box opens while the game counts no frames", [opened, MGQ_MpUi::Confirm.open?], [true, true])
 MGQ_MpUi::Confirm.close
 class << Graphics; alias_method :frame_count, :counted_frames; end
+
+# The window color the player sets in the game's options holds for every save of the install.
+Tone = Struct.new(:red, :green, :blue, :gray) unless defined?(Tone)
+GameSystem = Struct.new(:conf, :window_tone)
+$game_system = GameSystem.new({ :tone_r => 10, :tone_g => -20, :tone_b => 30 }, Tone.new(10.0, -20.0, 30.0, 0.0))
+MGQ_MpUi::Theme.restore_window_color("the save loaded")
+check("until the player sets a color, a save keeps its own", $game_system.conf[:tone_r], 10)
+MGQ_MpUi::Theme.keep_window_color
+check("the color set in the options is kept in Player.ini", $player_ini["window_color"], "10,-20,30")
+$game_system = GameSystem.new({ :tone_r => -34, :tone_g => 0, :tone_b => 68 }, Tone.new(-34.0, 0.0, 68.0, 0.0))
+MGQ_MpUi::Theme.restore_window_color("the save loaded")
+check("another save shows the kept color", [$game_system.conf.values_at(:tone_r, :tone_g, :tone_b), $game_system.window_tone.to_a.first(3)], [[10, -20, 30], [10, -20, 30]])
+$game_system = nil
