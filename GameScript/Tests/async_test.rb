@@ -2,6 +2,7 @@
 #  async_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Checked the live map handed from menu to menu and kept out while address space is short
 #      Paulinchen  2026-10-23: Checked that the live map shows none of the HUD the map shows
 #                            - Checked that the save and load screens keep their picture of the map
 #                            - Checked the memory the game uses in the log of a switch of screens
@@ -231,8 +232,39 @@ check("below the menu", [live.viewport1.z, live.viewport2.z, live.viewport3.z].a
 check("without the HUD the map shows", [live.mgq_mp_hud?, Spriteset_Map.new.mgq_mp_hud?], [false, true])
 menu.update_basic
 check("the live map moves every frame", live.updates, 1)
+SceneManager.scene = map_scene
 menu.dispose_background
-check("closing frees the live map and the picture", [live.disposed?, menu.background_sprite.disposed?, menu.instance_variable_get(:@mgq_mp_live_map)], [true, true, nil])
+check("closing for the map frees the live map and the picture", [live.disposed?, menu.background_sprite.disposed?, menu.instance_variable_get(:@mgq_mp_live_map)], [true, true, nil])
+
+status = Scene_Menu.new
+SceneManager.scene = status
+status.create_background
+handed = status.instance_variable_get(:@mgq_mp_live_map)
+SceneManager.scene = menu
+status.dispose_background
+menu.create_background
+check("the next menu takes the live map over (issue 60)", [menu.instance_variable_get(:@mgq_mp_live_map).equal?(handed), handed.disposed?], [true, nil])
+SceneManager.scene = Scene_Save.new
+menu.dispose_background
+check("a menu that keeps its picture frees it", handed.disposed?, true)
+status.create_background
+left = status.instance_variable_get(:@mgq_mp_live_map)
+SceneManager.scene = Scene_Poker.new
+status.dispose_background
+SceneManager.scene.post_start
+check("a live map the next screen leaves is freed once it started", left.disposed?, true)
+
+SceneManager.scene = menu
+$memory_usage = "private 1022 MB, address space 1418 of 2047 MB, 204 GDI and 25 USER handles"
+check("little free address space keeps the picture (issue 60)", logged_lines { menu.create_background },
+      ["async: kept the picture of the map behind Scene_Menu: 629 MB of address space free, a live map needs 768"])
+check("and builds no live map", [menu.instance_variable_get(:@mgq_mp_live_map), menu.background_sprite.visible], [nil, true])
+$memory_usage = "private 1022 MB, address space 1418 of 4095 MB, 204 GDI and 25 USER handles"
+menu.create_background
+check("a large address space builds it", menu.instance_variable_get(:@mgq_mp_live_map).is_a?(Spriteset_MpLiveMap), true)
+SceneManager.scene = map_scene
+menu.dispose_background
+$memory_usage = ""
 menu.create_background
 broken = menu.instance_variable_get(:@mgq_mp_live_map)
 def broken.update; raise "broken"; end

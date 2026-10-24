@@ -2,6 +2,8 @@
 #  core_async.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Handed the live map from one menu to the next
+#                            - Kept the picture of the map while little address space is free
 #      Paulinchen  2026-10-23: Kept the mod's HUD off the live map behind menus
 #                            - Kept the save and load screens on their picture of the map
 #                            - Logged every switch of screens with the memory and handles the game uses
@@ -50,8 +52,21 @@ module MGQ_MpAsync
   # Bytes the description of the memory and the handles fits in at first.
   MEMORY_USAGE_SIZE = 256
 
+  # The part of that description telling the address space used and the whole, in megabytes.
+  ADDRESS_SPACE = /address space (\d+) of (\d+) MB/
+
+  # Megabytes of free address space below which a menu keeps its picture of the map instead of
+  # building a live map.
+  #
+  # A game of 2 GB address space closed in the game's own code as a menu built a live map with
+  # about 600 MB of it left (issue 60).
+  LIVE_MAP_FREE_MB = 768
+
   # Whether tick runs the map now, the only time event commands are held.
   @ticking = false
+
+  # The live map a menu left to the menu after it, nil while none waits.
+  @spare_live_map = nil
 
   extend MGQ_MpLog
 
@@ -228,25 +243,82 @@ module MGQ_MpAsync
     skipped
   end
 
-  # Makes the live map a menu shows in place of its picture of the map, for menus whose background
-  # is that picture while the world runs; menus with a background of their own keep it, and so do
-  # the menus of PICTURE_SCENES.
+  # Gives a menu the live map in place of its picture of the map, for menus whose background is that
+  # picture while the world runs: the live map the menu before left, or a new one while the game
+  # has the address space for it. Menus with a background of their own keep it, and so do the menus
+  # of PICTURE_SCENES.
   #
   # @param scene [Scene_MenuBase] The menu.
   # @param background [Sprite, nil] The menu's background.
   # @return [Spriteset_MpLiveMap, nil] The live map, nil where the menu keeps its background.
   def self.live_map_for(scene, background)
-    return nil unless background && background.bitmap.equal?(SceneManager.background_bitmap)
-    return nil if one_of?(scene, PICTURE_SCENES)
-    return nil unless behind?(scene)
+    spare = @spare_live_map
+    @spare_live_map = nil
+    unless live_map_wanted?(scene, background) && (spare || room_for_live_map?(scene))
+      dispose_live_map(spare)
+      return nil
+    end
 
-    live_map = Spriteset_MpLiveMap.new
+    live_map = spare || Spriteset_MpLiveMap.new
     background.visible = false
-    log("showed the live map behind #{scene.class.name} in place of its picture of the map")
+    log("showed the live map behind #{scene.class.name} in place of its picture of the map#{spare ? ', the one the menu before showed' : ''}")
     live_map
   rescue => e
     log("live map failed: #{e.class}: #{e.message}")
+    dispose_live_map(live_map || spare)
     nil
+  end
+
+  # Reports whether a menu shows the live map in place of its background.
+  #
+  # @param scene [Scene_MenuBase] The menu.
+  # @param background [Sprite, nil] The menu's background.
+  # @return [Boolean] Whether it does.
+  def self.live_map_wanted?(scene, background)
+    return false unless background && background.bitmap.equal?(SceneManager.background_bitmap)
+    return false if one_of?(scene, PICTURE_SCENES)
+
+    behind?(scene)
+  end
+
+  # Reports whether the game has the address space for a new live map, logging when it has not.
+  #
+  # @param scene [Scene_MenuBase] The menu the live map would show behind.
+  # @return [Boolean] Whether it has, true when the DLL cannot tell.
+  def self.room_for_live_map?(scene)
+    match = MGQ_Multiplayer::Link.read(MEMORY_USAGE_EXPORT, MEMORY_USAGE_SIZE).match(ADDRESS_SPACE)
+    return true unless match
+
+    free = match[2].to_i - match[1].to_i
+    return true if free >= LIVE_MAP_FREE_MB
+
+    log("kept the picture of the map behind #{scene.class.name}: #{free} MB of address space free, a live map needs #{LIVE_MAP_FREE_MB}")
+    false
+  rescue => e
+    log("asking the DLL for the free address space failed: #{e.class}: #{e.message}")
+    true
+  end
+
+  # Takes a menu's live map off it as the menu closes: the next screen takes it over when it is a
+  # menu that may show it, and every other frees it.
+  #
+  # @param live_map [Spriteset_MpLiveMap, nil] The closing menu's live map.
+  def self.leave_live_map(live_map)
+    return unless live_map
+
+    drop_spare_live_map
+    following = SceneManager.scene
+    if following.is_a?(Scene_MenuBase) && !one_of?(following, PICTURE_SCENES)
+      @spare_live_map = live_map
+    else
+      dispose_live_map(live_map)
+    end
+  end
+
+  # Frees the live map a menu left, once the screen after it started without taking it.
+  def self.drop_spare_live_map
+    dispose_live_map(@spare_live_map)
+    @spare_live_map = nil
   end
 
   # Updates the live map behind a menu, showing the menu's picture again when it fails.
@@ -359,11 +431,14 @@ begin
     @mgq_mp_live_map = MGQ_MpAsync.live_map_for(self, @background_sprite)
   end
 
-  # Before the menu's picture of the map is freed, the live map.
+  # Before the menu's picture of the map is freed, the live map, unless the next menu takes it over.
   MGQ_MpHooks.before(Scene_MenuBase, :dispose_background, "core_async") do
-    MGQ_MpAsync.dispose_live_map(@mgq_mp_live_map)
+    MGQ_MpAsync.leave_live_map(@mgq_mp_live_map)
     @mgq_mp_live_map = nil
   end
+
+  # After a screen started, the live map the menu before left, when the screen did not take it.
+  MGQ_MpHooks.after(Scene_Base, :post_start, "core_async") { MGQ_MpAsync.drop_spare_live_map }
 rescue => e
   MGQ_MpAsync.log("menu hooks FAILED: #{e.class}: #{e.message}")
 end
