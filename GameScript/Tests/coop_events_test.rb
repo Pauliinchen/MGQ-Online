@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-24: Set the unlocks aside in the generator's switches of each player's own
+#      Paulinchen  2026-10-24: Checked that a page that may start a battlefuck plays in the player's own game
+#                            - Set the unlocks aside in the generator's switches of each player's own
 #                            - Checked that the player's game notes whose scene that runs by itself it keeps from starting
 #      Paulinchen  2026-10-23: Checked that a weapon's pedestal handing out a medal is a chest of each player's own
 #                            - Checked that a talk ended early takes back what it changed
@@ -1463,6 +1464,8 @@ module MGQ_MpCoopStoryRewards
   ROUTE = { :skills => [], :actors => [5] }
   # The self switch of every chest.
   CHESTS = [[40, 1, "A"], [40, 2, "A"]]
+  # The battlefuck events.
+  BATTLEFUCK_EVENTS = [7001, 7002]
   # The events where the sides differ.
   GROUPS = [
     # Training at a camp: each side learns its own skill, and nothing in the story tells it ran.
@@ -1476,6 +1479,12 @@ module MGQ_MpCoopStoryRewards
     { :alice => { :skills => [], :actors => [] }, :ilias => { :skills => [], :actors => [9] }, :choice => true, :marks => [[[:v, 1001, 7]]] },
   ]
 end
+check("a page that may start a battlefuck plays in the player's own game alone, though it moves the story on",
+      [kind([c(101, "", 0, 0, 2), c(121, 60, 60, 0), c(117, 7001)]), kind([c(117, 7003), c(121, 60, 60, 0)])], [:own, :story])
+# A town's quest page whose battlefuck lies in another step's branch than the one that runs now.
+quest_step = [Command.new(111, 0, [1, 1028, 0, 4, 0]), Command.new(117, 1, [7001]), Command.new(0, 1, []), Command.new(412, 0, []),
+              Command.new(101, 0, ["", 0, 0, 2]), Command.new(122, 0, [1028, 1028, 0, 0, 6])]
+check("but a quest page whose battlefuck waits in another step's branch stays story", kind(quest_step), :story)
 # A skill's data.
 Skill = Struct.new(:id, :name)
 $data_skills = Array.new(14)

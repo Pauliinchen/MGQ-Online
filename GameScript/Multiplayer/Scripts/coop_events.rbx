@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-24: Named the game's own common event that starts in the log
+#      Paulinchen  2026-10-24: Played every battlefuck in the player's own game alone
+#                            - Named the game's own common event that starts in the log
 #                            - Noted the teller whose story event that runs by itself the player's game keeps from starting
 #                            - Let that event start once nothing came for thirty seconds of a telling outside battle
 #      Paulinchen  2026-10-23: Took back what a talk or story event changed once it ends early
@@ -266,7 +267,8 @@ module MGQ_MpCoopEvents
   # Sorts an event's current page, by what of it can run now.
   #
   # @param event [Game_Event] The event.
-  # @return [Symbol] :talk, :travel, :chest, :battle or :story; :talk for an event without a page.
+  # @return [Symbol] :talk, :travel, :chest, :battle, :story or :own, see kind_of; :talk for an
+  #   event without a page.
   def self.kind(event)
     return :talk if event.mgq_mp_page < 0
     return :travel if exit?(event)
@@ -403,11 +405,13 @@ module MGQ_MpCoopEvents
   # choice is taken (see may_tell? and guard).
   #
   # @param list [Array<RPG::EventCommand>] The commands.
-  # @return [Symbol] :talk, :travel, :chest, :battle or :story.
+  # @return [Symbol] :talk, :travel, :chest, :battle or :story; :own for a battlefuck (battlefuck?).
   def self.kind_of(list)
+    can_run = runnable(list)
+    return :own if battlefuck?(can_run)
     return :talk if defined?(MGQ_MpCoopCastle) && MGQ_MpCoopCastle.resident?(list)
 
-    list = runnable(list)
+    list = can_run
     # Wandering monsters call the game's common events before and after their battle, which set
     # variables, so a battle is told apart by the page itself: a fight without its own dialogue.
     return :battle if list.any? { |c| c.code == 301 } && list.none? { |c| MESSAGE_CODES.include?(c.code) }
@@ -419,6 +423,20 @@ module MGQ_MpCoopEvents
     return :story if marks[:own_switch] || marks[:battle]
 
     marks[:travel] ? :travel : :talk
+  end
+
+  # Reports whether a list may start a battlefuck: it calls one of the battlefuck events
+  # (MGQ_MpCoopStoryRewards::BATTLEFUCK_EVENTS), which plays in the player's own game alone, with
+  # nobody taken along. Only what can run now counts, since a town's quest page may hold its
+  # battlefuck in one step's branch and story in the others.
+  #
+  # @param list [Array<RPG::EventCommand>] The commands that can run now, see runnable.
+  # @return [Boolean] Whether it does.
+  def self.battlefuck?(list)
+    return false unless defined?(MGQ_MpCoopStoryRewards::BATTLEFUCK_EVENTS)
+
+    @battlefuck_events ||= MGQ_MpCoopStoryRewards::BATTLEFUCK_EVENTS.each_with_object({}) { |id, found| found[id] = true }
+    list.any? { |command| command.code == 117 && @battlefuck_events[command.parameters[0]] }
   end
 
   # Reports whether marks are a one-time talk's: dialogue and the page's own self switch, nothing
