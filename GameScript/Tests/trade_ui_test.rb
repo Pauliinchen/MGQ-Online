@@ -2,6 +2,7 @@
 #  trade_ui_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Updated the help window through the game's window base, which every window's look follows
 #      Paulinchen  2026-10-12: Checked cuts with few measures
 #                            - Checked the lists scrolled with the mouse wheel
 #                            - Checked that a list's picture holds only the rows around those shown
@@ -51,6 +52,10 @@ class Window_Base
     rect, text = args[0].is_a?(Rect) ? [args[0], args[1]] : [Rect.new(*args[0, 4]), args[4]]
     @drawn << [rect, text.to_s, text_size(text).width]
   end
+  # Updates the window, tinting it as the game's does.
+  def update; update_tone; end
+  # Tints nothing.
+  def update_tone; end
 end
 # The game's window with a cursor.
 class Window_Selectable < Window_Base; def deactivate; end; end
@@ -179,8 +184,6 @@ class HelpWindow < Window_Base
   def tone; @tone ||= Tone.new; end
   # The window is never disposed.
   def disposed?; false; end
-  # Updates the window, tinting it.
-  def update; update_tone; end
   # Tints the window in the game's window color.
   def update_tone; tone.set(9, 9, 9, 0); end
 end

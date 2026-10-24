@@ -989,10 +989,9 @@ end
 
 module MGQ_MpUi
   module Theme
-    # The preset's window skin worn by the mod's windows, which ui_theme.rbx fills in as it loads.
+    # Marks a window of the mod, see ui_theme.rbx.
     #
-    # Declared here, since Window_MpInfo includes it as it is defined, before ui_theme.rbx loads,
-    # and an included module takes the methods added to it later.
+    # Declared here, since Window_MpInfo includes it as it is defined, before ui_theme.rbx loads.
     module Skinned
     end
   end

@@ -2,6 +2,7 @@
 #  ui_trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Gave the help window the boxes' background opacity, the look now worn by every window
 #      Paulinchen  2026-10-22: Let the chat box open in the trade screen, whose gold digits leave the cancel to the open chat box
 #      Paulinchen  2026-10-12: Kept the bag's and the offers' pictures as tall as the rows they show
 #                            - Scrolled the offers and the bag with the mouse wheel and drew their scrollbars
@@ -632,13 +633,13 @@ class Scene_MpTrade < Scene_MenuBase
     return_scene
   end
 
-  # Dresses a window of the game's own class in the interface look, now and whenever the look
-  # changes, as the trade screen's own windows are.
+  # Marks a window of the game's own class as one of the mod's, so it takes the boxes' background
+  # opacity as the trade screen's own windows do.
   #
   # @param window [Window_Base] The window.
   def wear_theme(window)
-    MGQ_MpUi::Theme.dress(window)
     window.extend(MGQ_MpUi::Theme::Skinned)
+    MGQ_MpUi::Theme.dress(window)
   end
 
   # Moves the cursor into the other player's offer, to look through it.

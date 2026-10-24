@@ -37,12 +37,13 @@ This guide names the default hotkeys. To bind others, open *Mod Config → MGQ O
 
 ## Interface
 
-**Look.** *Mod Config → MGQ Online Settings → Interface Look* sets the colors of every box, frame and window of the mod:
+**Look.** *Mod Config → MGQ Online Settings → Interface Look* sets the colors of every box, frame and window of the mod and of the game's own windows:
 
 - **Monarch** (the default): dark maroon with a gold edge in a black rim, gold titles and dark gold tabs, the look of the raid boss bar.
 - **Legacy**: black glass with a thin grey edge and grey tabs, the look the mod had before.
+- **Game's Default**: the game's own windows in the game's *Window Color* (*Options → Window Color*), and the mod's boxes in the same colors. A change of the Window Color shows at once.
 
-The raid boss bar's red HP stays red in both.
+With Monarch or Legacy the game's Window Color has no effect. *Look on Game Windows* (On by default) turns this off: with Off the game's own windows keep the game's Window Color, and only the mod's windows and boxes wear the look. The raid boss bar's red HP stays red in every look.
 
 **Scrolling.** The mouse wheel scrolls the list or text it points at: the world list and its choices, the players, mods and description boxes, the mod picker, the trade offers and your bag, the open chat log (three rows a notch), a description you type, and every page of the World overview. A thin scrollbar shows beside each of them while it holds more than fits.
 

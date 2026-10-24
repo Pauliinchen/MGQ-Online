@@ -2,6 +2,8 @@
 #  ui_layout_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Checked the Game's Default look and the game's windows wearing the look
+#                            - Checked turning the look on the game's windows off
 #      Paulinchen  2026-10-12: Counted the scrollbar track among the preset colors
 #                            - Followed the settings to their own Mod Config group
 #      Paulinchen  2026-10-11: Created
@@ -9,7 +11,8 @@
 #----------------------------------------------------------------
 
 # Covers the interface presets of ui_theme.rbx, set in place on the style's colors and kept in
-# Player.ini, with their Mod Config row, the framed box of ui.rbx, and the layout of ui_layout.rbx:
+# Player.ini, with their Mod Config row, the game's own look and every window wearing the look, the
+# framed box of ui.rbx, and the layout of ui_layout.rbx:
 # boxes moved and resized with Alt and the mouse, never below their least size or off the screen,
 # kept in Player.ini, put back by a double click or the Mod Config, and outlined while Alt is held.
 
@@ -80,6 +83,10 @@ class Bitmap
     x, y, w, h, color = args[0].is_a?(Rect) ? [args[0].x, args[0].y, args[0].width, args[0].height, args[1]] : args
     @fills << [x, y, w, h, color.to_a]
   end
+  # Copies nothing.
+  def blt(*); end
+  # Clears nothing.
+  def clear_rect(*); end
   # Forgets the fills and texts.
   def clear; @fills.clear; @texts.clear; end
   # Frees the picture.
@@ -100,8 +107,47 @@ class Sprite
 end
 # The game's screen of 640 by 480 pixels, at frame $frame.
 module Graphics; def self.width; 640; end; def self.height; 480; end; def self.update; end; def self.frame_count; $frame; end; end
-# The game's window base, which draws nothing.
-class Window_Base; def initialize(*); end; end
+# The game's tone.
+class Tone
+  # Its red, green, blue and gray.
+  attr_reader :red, :green, :blue, :gray
+  # Creates the tone.
+  def initialize(*values); set(*values); end
+  # Sets the tone.
+  def set(red = 0, green = 0, blue = 0, gray = 0); @red, @green, @blue, @gray = red, green, blue, gray; end
+  # The tone's values.
+  def to_a; [@red, @green, @blue, @gray]; end
+end
+# The game's window skin: a grey background, a frame of a black rim and a white line, a see-through
+# white cursor and the palette's white normal and blue system text colors.
+class GameSkin
+  # The skin's whole rectangle.
+  def rect; Rect.new(0, 0, 128, 128); end
+  # The color of a pixel.
+  def get_pixel(x, y)
+    return Color.new(60, 60, 60, 255) if x < 64 && y < 64
+    return [Color.new(0, 0, 0, 255), Color.new(255, 255, 255, 255), Color.new(128, 128, 128, 255)][y] || Color.new(0, 0, 0, 0) if x == 96 && y < 16
+    { [80, 80] => Color.new(255, 255, 255, 32), [64, 96] => Color.new(255, 255, 255, 255), [64, 112] => Color.new(132, 170, 255, 255) }[[x, y]]
+  end
+end
+# The game's cache, which hands out the window skin.
+module Cache; SKIN = GameSkin.new; def self.system(_name); SKIN; end; end
+# The game's system, in the game's default window color.
+$game_system = Struct.new(:window_tone).new(Tone.new(-34, 0, 68, 0))
+# The game's window base: a skin, a background opacity of 192 and a tone, which its update sets to
+# the game's window color.
+class Window_Base
+  # The window's skin, the opacity of its background and its tone.
+  attr_accessor :windowskin, :back_opacity, :tone
+  # Creates the window in the game's skin and window color.
+  def initialize(*); @windowskin = Cache.system("Window"); @back_opacity = 192; @tone = Tone.new; update_tone; end
+  # Updates the window.
+  def update; update_tone; end
+  # Tints the window in the game's window color.
+  def update_tone; tone.set(*$game_system.window_tone.to_a); end
+  # The window is never disposed.
+  def disposed?; false; end
+end
 # The game's scene base, which does nothing.
 class Scene_Base; def update; end; def start; end; end
 
@@ -135,8 +181,8 @@ def frame(position, alt, held, offers = [])
 end
 
 # The presets.
-check("the presets, Monarch first", theme.names, ["Monarch", "Legacy"])
-check("every preset names each of the style's box colors", theme::PRESETS.map { |preset| preset.colors.keys.sort }.uniq,
+check("the presets, Monarch first, the game's own look last", theme.names, ["Monarch", "Legacy", "Game's Default"])
+check("every preset with colors names each of the style's box colors", theme::PRESETS.select { |preset| preset.colors }.map { |preset| preset.colors.keys.sort }.uniq,
       [[:BACK, :EDGE, :FIELD, :HEADING, :PICKED, :PLATE, :RIM, :TAB, :TITLE, :TRACK, :WELL]])
 check("Monarch until the player picks another, logged as the default, its colors set in place", [theme.current.name, $log.grep(/interface look Monarch \(the default\)/).size, style::BACK.to_a],
       ["Monarch", 1, [36, 10, 14, 235]])
@@ -153,7 +199,43 @@ check("choose keeps the pick in Player.ini", [$player_ini[theme::SETTING], theme
 theme.apply("Monarch", "a test")
 theme.load
 check("load puts the kept preset to use", theme.current.name, "Legacy")
+
+# The game's own look.
+theme.apply("game's default", "a test")
+check("the game's look takes the skin's background in the window color, the frame's white line in its black rim and the palette's text colors",
+      [theme.game?, style::BACK.to_a, style::EDGE.to_a, style::RIM.to_a, style::HEADING.to_a, style::TITLE.to_a],
+      [true, [26, 60, 128, 192], [255, 255, 255, 230], [0, 0, 0, 255], [132, 170, 255, 255], [255, 255, 255, 255]])
+serial = theme.serial
+Graphics.update
+check("an unchanged window color draws nothing anew", theme.serial, serial)
+$game_system.window_tone = Tone.new(40, 0, 0, 0)
+Graphics.update
+check("a changed window color colors the boxes anew on the next frame", [style::BACK.to_a, theme.serial], [[100, 60, 60, 192], serial + 1])
+$game_system.window_tone = Tone.new(-34, 0, 68, 0)
+
+# Every window wears the look.
+# A window of the mod.
+class Window_MpTest < Window_Base; include MGQ_MpUi::Theme::Skinned; end
+game_window = Window_Base.new
+mod_window = Window_MpTest.new
+game_window.update
+check("with the game's look, a game window keeps the game's skin, its opacity and the window color",
+      [game_window.windowskin.equal?(Cache::SKIN), game_window.back_opacity, game_window.tone.to_a], [true, 192, [-34, 0, 68, 0]])
 theme.apply("Monarch", "a test")
+game_window.update
+mod_window.update
+check("with a preset, a game window wears the preset's skin untinted and keeps its own opacity",
+      [game_window.windowskin.equal?(theme.skin), game_window.back_opacity, game_window.tone.to_a], [true, 192, [0, 0, 0, 0]])
+check("and a window of the mod takes the boxes' background opacity", [mod_window.windowskin.equal?(theme.skin), mod_window.back_opacity], [true, 235])
+check("a window made while a preset is in use wears it at once", Window_Base.new.tone.to_a, [0, 0, 0, 0])
+check("the game's windows wear the look until turned off", theme.game_windows?, true)
+theme.dress_game_windows(false)
+game_window.update
+mod_window.update
+check("turned off, a game window goes back to the game's skin and window color, kept in Player.ini, while the mod's keeps the preset",
+      [game_window.windowskin.equal?(Cache::SKIN), game_window.tone.to_a, mod_window.windowskin.equal?(theme.skin), $player_ini[theme::GAME_WINDOWS_SETTING]],
+      [true, [-34, 0, 68, 0], true, "0"])
+theme.dress_game_windows(true)
 
 # The framed box.
 bitmap = Bitmap.new(100, 50)
@@ -175,7 +257,7 @@ check("both rows are added before Return, named for the mod, kept by the mod and
       [rows.last[:key], look[:name], look[:mod_stored], look[:personal], positions[:name], positions[:sub]],
       [:return, "[MGQ Online Settings] Interface Look", true, true, "[MGQ Online Settings] Interface Positions", true])
 look[:on_change].call("Monarch")
-check("the look row lists the presets, reads the one in use and picks one", [look[:values].call, look[:value].call, $player_ini["ui_preset"]], [["Monarch", "Legacy"], "Monarch", "Monarch"])
+check("the look row lists the presets, reads the one in use and picks one", [look[:values].call, look[:value].call, $player_ini["ui_preset"]], [["Monarch", "Legacy", "Game's Default"], "Monarch", "Monarch"])
 
 # The layout: a box at its default.
 layout.register(:test_box, "Test box", 200, 100)
@@ -251,7 +333,7 @@ check("letting go of Alt hides it", overlay.visible, false)
 # The Mod Config row puts every box back.
 check("the positions row says Moved while any box was moved, and offers Default", [positions[:value].call, positions[:values].call], ["Moved", ["Moved", "Default"]])
 positions[:on_change].call("Default")
-check("Default puts every box back", [layout.any_moved?, $player_ini.keys.grep(/\Aui_/), positions[:value].call, positions[:values].call], [false, ["ui_preset"], "Default", ["Default"]])
+check("Default puts every box back", [layout.any_moved?, $player_ini.keys.grep(/\Aui_/), positions[:value].call, positions[:values].call], [false, ["ui_preset", "ui_game_windows"], "Default", ["Default"]])
 
 # A place in Player.ini that cannot be read.
 $player_ini["ui_broken_box"] = "1,2,x,4"
