@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Checked the screenshots, the descriptions, the page's buttons and the input without cards
+#                            - Checked the search, the view kept in Player.ini and the list's rows
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -43,6 +44,13 @@ module MGQ_MpModParking; def self.parked?; $parked; end; end
 module MGQ_Multiplayer
   # The DLL is always there.
   def self.available?; true; end
+  # Player.ini, kept in $ini.
+  module Player
+    # A setting of Player.ini.
+    def self.setting(key); ($ini ||= {})[key]; end
+    # Stores a setting in Player.ini.
+    def self.store(key, value); ($ini ||= {})[key] = value.to_s; end
+  end
   # The mod's log, kept in $log.
   module Log; def self.write(message); ($log ||= []) << message; end; end
   # The link to the DLL.
@@ -162,7 +170,7 @@ FakeWindow = Struct.new(:active, :item_max) do
   def deactivate; self.active = false; end
 end
 # Stands in for the bar, keeping what it shows.
-FakeBar = Struct.new(:status, :message) { def show(status, message); self.status = status; self.message = message; end }
+FakeBar = Struct.new(:status, :message) { def show(status, message, *_search); self.status = status; self.message = message; end }
 scene = Scene_MpMods.new
 bar = FakeBar.new
 grid = FakeWindow.new(false, 3)
@@ -171,6 +179,7 @@ scene.instance_variable_set(:@grid, grid)
 scene.instance_variable_set(:@bar_commands, FakeWindow.new(false, 2))
 scene.instance_variable_set(:@page_commands, FakeWindow.new(false, 4))
 scene.instance_variable_set(:@list, list)
+scene.instance_variable_set(:@query, "")
 $parked = true
 $calls.clear
 scene.change([[:install, list.mods[0]]])
@@ -198,3 +207,25 @@ check("Enter on an empty grid opens nothing", empty.current_item_enabled?, false
 # The box names what a change does while it runs.
 check("the change told while it runs", scene.change_text([[:install, list.mods[0]], [:install, list.mods[1]], [:remove, list.mods[2]]]),
       "Installing Party Sheet 1.5.2 and Level Cap 1.5.2, removing Map Display . . .")
+
+# The search finds the mods whose name, author, summary or source holds every word, whatever the case.
+found = lambda { |query| MGQ_MpModBrowser.found(list.mods, query).map(&:name) }
+check("an empty search shows every mod", found.call(" "), ["Party Sheet", "Level Cap", "Map Display"])
+check("a word of the name or the summary finds the mod", [found.call("PARTY"), found.call("levels")], [["Party Sheet"], ["Level Cap"]])
+check("every word must match, the source counts too", [found.call("github map"), found.call("github party")], [["Map Display"], []])
+
+# The view the player chose holds for the next time the screen opens.
+check("the mods show as cards at first", MGQ_MpModBrowser.view, "cards")
+MGQ_MpModBrowser.view = "list"
+check("the view chosen is kept", [MGQ_MpModBrowser.view, $ini["mod_browser_view"]], ["list", "list"])
+$ini["mod_browser_view"] = "tiles"
+check("a view Player.ini does not know shows cards", MGQ_MpModBrowser.view, "cards")
+
+# The list shows one mod a row, six rows filling the window; the cards three a row, two rows.
+shown = Window_MpModGrid.allocate
+shown.define_singleton_method(:height) { 408 }
+shown.define_singleton_method(:standard_padding) { 12 }
+shown.instance_variable_set(:@view, "list")
+check("the list has one column of six rows", [shown.col_max, shown.item_height], [1, 64])
+shown.instance_variable_set(:@view, "cards")
+check("the cards have three columns of two rows", [shown.col_max, shown.item_height], [3, 192])

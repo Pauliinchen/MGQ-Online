@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Showed the mods as cards with screenshots and each on a page of its own
+#                            - Showed the mods as a list too and filtered them by a search typed in the bar
 #                            - Told in a box how a change goes and named what changed in the restart question
 #                            - Created
 #
@@ -34,6 +35,12 @@ module MGQ_MpModBrowser
 
   # Frames between two looks at the list the DLL holds, a third of a second at 60 frames per second.
   LOOK_FRAMES = 20
+
+  # The Player.ini setting that keeps how the Mods screen shows the mods.
+  VIEW_SETTING = "mod_browser_view"
+
+  # How the Mods screen shows the mods, as cards or as a list, the first the default.
+  VIEWS = ["cards", "list"]
 
   # The list the DLL holds.
   #
@@ -205,6 +212,38 @@ module MGQ_MpModBrowser
   # @return [Boolean] Whether they are.
   def self.parked?
     defined?(MGQ_MpModParking) && MGQ_MpModParking.parked? ? true : false
+  end
+
+  # Tells how the Mods screen shows the mods, as the player chose last.
+  #
+  # @return [String] "cards" or "list".
+  def self.view
+    view = MGQ_Multiplayer::Player.setting(VIEW_SETTING).to_s
+    VIEWS.include?(view) ? view : VIEWS[0]
+  end
+
+  # Keeps how the Mods screen shows the mods, for every later time it opens.
+  #
+  # @param view [String] "cards" or "list".
+  def self.view=(view)
+    MGQ_Multiplayer::Player.store(VIEW_SETTING, view)
+    log("the mods show as #{view} from now on")
+  end
+
+  # Picks the mods a search finds: those whose name, author, summary or source holds every word of
+  # it, whatever the case.
+  #
+  # @param mods [Array<Mod>] The mods.
+  # @param query [String] The search, empty for every mod.
+  # @return [Array<Mod>] The mods found, in their order.
+  def self.found(mods, query)
+    words = query.to_s.downcase.split(" ")
+    return mods if words.empty?
+
+    mods.select do |mod|
+      text = [mod.name, mod.author, mod.summary, mod.source == "github" ? "GitHub" : mod.source].join(" ").downcase
+      words.all? { |word| text.include?(word) }
+    end
   end
 
   # Fetches the lists the first time the title screen opens, so the title command counts the
@@ -433,7 +472,13 @@ end
 # card is opened.
 class Scene_MpMods < Scene_MenuBase
   # What the screen says while nothing else happened.
-  HINT = "Arrows pick a mod, Enter opens it, Up from the first row reaches Update all. Esc or Numpad 0 goes back."
+  HINT = "Arrows pick a mod, Enter opens it, Up from the first row reaches the search and the buttons. Esc or Numpad 0 goes back."
+
+  # What the screen says while the search is typed.
+  SEARCH_HINT = "Type to filter the mods. Enter keeps the filter, Esc or Numpad 0 clears it, Up reaches the buttons."
+
+  # Most characters a search takes.
+  SEARCH_CHARS = 40
 
   # What the screen says on a mod's page.
   PAGE_HINT = "Left and right pick a button, up and down scroll the text. Esc or Numpad 0 goes back."
@@ -503,12 +548,15 @@ class Scene_MpMods < Scene_MenuBase
     super
     @bar = Window_MpModBar.new
     @bar_commands = Window_MpModBarCommands.new
+    @bar_commands.set_handler(:view, method(:on_view))
     @bar_commands.set_handler(:update_all, method(:on_update_all))
     @bar_commands.set_handler(:refresh, method(:on_refresh))
     @bar_commands.set_handler(:cancel, method(:return_scene))
     @grid = Window_MpModGrid.new(@bar.height, Graphics.height - @bar.height)
     @grid.set_handler(:ok, method(:on_card))
     @grid.set_handler(:cancel, method(:return_scene))
+    @grid.view = MGQ_MpModBrowser.view
+    @bar_commands.view = @grid.view
     @page_commands = Window_MpModPageCommands.new
     @page = Window_MpModPage.new(@bar.height, Graphics.height - @bar.height - @page_commands.height)
     [:install, :replace, :remove, :open_site].each { |symbol| @page_commands.set_handler(symbol, method(:"on_#{symbol}")) }
@@ -516,6 +564,7 @@ class Scene_MpMods < Scene_MenuBase
     @page_commands.set_handler(:cancel, method(:close_page))
     @message = HINT
     @busy = false
+    @query = ""
     @list = MGQ_MpModBrowser::EMPTY
     MGQ_MpModBrowser.refresh("the Mods screen opened")
     look
@@ -533,7 +582,11 @@ class Scene_MpMods < Scene_MenuBase
     super
     return close_failure if @failure_shown && (Input.trigger?(:C) || MGQ_MpUi.cancel?)
 
-    move_focus(grid_row) unless MGQ_MpUi::Confirm.open? || @failure_shown
+    if @search
+      update_search
+    else
+      move_focus(grid_row) unless MGQ_MpUi::Confirm.open? || @failure_shown
+    end
     @look_frames += 1
     look if @look_frames >= MGQ_MpModBrowser::LOOK_FRAMES
   rescue => e
@@ -541,18 +594,18 @@ class Scene_MpMods < Scene_MenuBase
     return_scene
   end
 
-  # Takes the arrows and Numpad 0 the windows leave alone: Up from the first row of cards to the
-  # bar, Down from the bar to the cards, up and down on a page to its text.
+  # Takes the arrows and Numpad 0 the windows leave alone: Up from the first row of mods to the
+  # search, Down from the bar's buttons to the search, up and down on a page to its text.
   #
   # @param grid_row [Integer, nil] The row the cards' cursor was on before this frame, nil while
   #   they had no input.
   def move_focus(grid_row)
     if @grid.active
       return return_scene if MGQ_MpUi.numpad_cancel?
-      return focus_bar if grid_row == 0 && Input.trigger?(:UP) && @bar_commands.usable?
+      return focus_search if grid_row == 0 && Input.trigger?(:UP)
     elsif @bar_commands.active
       return return_scene if MGQ_MpUi.numpad_cancel?
-      return focus_grid if Input.trigger?(:DOWN) && @grid.item_max > 0
+      return focus_search if Input.trigger?(:DOWN)
     elsif @page_commands.active
       return close_page if MGQ_MpUi.numpad_cancel?
 
@@ -569,15 +622,75 @@ class Scene_MpMods < Scene_MenuBase
     @bar_commands.activate
   end
 
-  # Gives the input back to the cards.
-  def focus_grid
+  # Starts typing the search in place in the bar, the mods filtered as it changes.
+  def focus_search
     Sound.play_cursor
-    @bar_commands.deactivate
-    @grid.activate
+    @bar_for_want = false
+    take_input
+    @search = MGQ_MpUi::TextEdit.new(@query, :max_chars => SEARCH_CHARS)
+    MGQ_Multiplayer::Link.typing(true)
+    say(SEARCH_HINT)
   end
 
-  # Frees the screenshots and logs that the screen closed.
+  # Takes what is typed into the search: Enter keeps it and goes to the mods, Esc or Numpad 0
+  # clears it, Up goes to the bar's buttons and Down to the mods, both keeping it.
+  def update_search
+    text, _keys = MGQ_Multiplayer::Link.take_typed
+    return end_search(:clear, :mods) if MGQ_MpUi.numpad_cancel?
+
+    text.each_char do |char|
+      case @search.type(char)
+      when :enter then return end_search(:keep, :mods)
+      when :escape then return end_search(:clear, :mods)
+      when :refused then Sound.play_buzzer
+      end
+    end
+    @search.update_keys
+    return end_search(:keep, :bar) if MGQ_Multiplayer::Capture.trigger?(:UP)
+    return end_search(:keep, :mods) if MGQ_Multiplayer::Capture.trigger?(:DOWN)
+
+    filter(@search.text)
+    show_info
+  end
+
+  # Stops typing the search and gives the input to the bar's buttons or to the mods.
+  #
+  # @param kept [Symbol] :keep to keep the search, :clear to show every mod again.
+  # @param to [Symbol] :bar or :mods.
+  def end_search(kept, to)
+    MGQ_Multiplayer::Link.typing(false)
+    @search = nil
+    Sound.play_cursor
+    filter(kept == :clear ? "" : @query)
+    say(HINT)
+    MGQ_MpModBrowser.log(@query.empty? ? "search cleared" : "searched for \"#{@query}\": #{@grid.item_max} of #{@list.mods.size} mods")
+    return @bar_commands.activate if to == :bar
+
+    give_back_input
+  end
+
+  # Shows only the mods a search finds.
+  #
+  # @param query [String] The search, empty for every mod.
+  def filter(query)
+    return if query == @query
+
+    @query = query
+    @grid.mods = MGQ_MpModBrowser.found(@list.mods, @query)
+  end
+
+  # Shows the mods as cards or as a list, the other way than now, and keeps the choice.
+  def on_view
+    view = @grid.view == "cards" ? "list" : "cards"
+    @grid.view = view
+    @bar_commands.view = view
+    MGQ_MpModBrowser.view = view
+    @bar_commands.activate
+  end
+
+  # Stops the typing, frees the screenshots and logs that the screen closed.
   def terminate
+    MGQ_Multiplayer::Link.typing(false) if @search
     super
     @box.dispose if @box
     MGQ_MpModBrowser::Pictures.clear
@@ -588,7 +701,7 @@ class Scene_MpMods < Scene_MenuBase
   def look
     @look_frames = 0
     @list = MGQ_MpModBrowser.list
-    @grid.list = @list
+    @grid.mods = MGQ_MpModBrowser.found(@list.mods, @query)
     follow_cards
     @bar_commands.updates = @list.updates
     if @page_mod
@@ -835,56 +948,98 @@ class Scene_MpMods < Scene_MenuBase
     show_info
   end
 
-  # Shows the bar's status and what happened last.
+  # Shows the bar's status, the search and what happened last.
   def show_info
     status = if @list.mods.empty? && @list.state != "failed" then LOADING_TEXT
+             elsif !@query.empty? then "#{@grid.item_max} of #{@list.mods.size} mods"
              elsif @list.updates > 0 then "#{@list.updates} update#{@list.updates == 1 ? '' : 's'}"
              else "#{@list.mods.size} mods"
              end
-    @bar.show(status, @list.error || @message)
+    @bar.show(status, @list.error || @message, @query, @search)
   end
 end
 
 # The bar at the top of the Mods screen: the title and a status at the left of its first line, the
-# buttons at its right, and what happened last below.
+# buttons at its right, and below them the search and what happened last.
 class Window_MpModBar < Window_Base
   include MGQ_MpUi::Theme::Skinned
 
   # Lines the bar has.
   LINES = 2
 
+  # Width of the search's label.
+  SEARCH_LABEL_WIDTH = 56
+
+  # Width of the search's label and box together.
+  SEARCH_WIDTH = 300
+
+  # Fill behind the search's text.
+  BOX_COLOR = Color.new(0, 0, 0, 96)
+
+  # What the search says while it is empty and not typed into.
+  SEARCH_PLACEHOLDER = "Up from the mods to type"
+
   # Creates the bar across the top of the screen.
   def initialize
     super(0, 0, Graphics.width, fitting_height(LINES))
   end
 
-  # Draws the status and the message, if they changed.
+  # Draws the status, the search and the message, if they changed.
   #
   # @param status [String] Such as "2 updates".
   # @param message [String] What happened last.
-  def show(status, message)
-    return if [status, message] == @shown
+  # @param query [String] The search.
+  # @param editor [MGQ_MpUi::TextEdit, nil] The search's editor while it is typed, nil otherwise.
+  def show(status, message, query = "", editor = nil)
+    shown = [status, message, query, editor && [editor.text, editor.cursor, editor.cursor_shown?]]
+    return if shown == @shown
 
-    @shown = [status, message]
+    @shown = shown
     contents.clear
     change_color(system_color)
     draw_text(0, 0, 80, line_height, MGQ_MpModBrowser::COMMAND_NAME)
     contents.font.size = MGQ_MpModDrawing::SMALL_SIZE
     change_color(normal_color, false)
     draw_text(80, 0, 200, line_height, status)
+    draw_search(query, editor)
+    change_color(normal_color, false)
+    width = contents_width - SEARCH_WIDTH - 12
+    draw_text(SEARCH_WIDTH + 12, line_height, width, line_height, MGQ_MpUi.cut(self, message.to_s, width))
     reset_font_settings
-    contents.font.size = MGQ_MpModDrawing::SMALL_SIZE
-    draw_text(0, line_height, contents_width, line_height, MGQ_MpUi.cut(self, message.to_s, contents_width))
-    reset_font_settings
+  end
+
+  # Draws the search at the left of the second line: its label, then its text on a darker box, with
+  # the cursor while it is typed, or a hint while it is empty.
+  #
+  # @param query [String] The search.
+  # @param editor [MGQ_MpUi::TextEdit, nil] The search's editor while it is typed.
+  def draw_search(query, editor)
+    change_color(system_color)
+    draw_text(0, line_height, SEARCH_LABEL_WIDTH, line_height, "Search")
+    box = Rect.new(SEARCH_LABEL_WIDTH, line_height + 2, SEARCH_WIDTH - SEARCH_LABEL_WIDTH, line_height - 4)
+    contents.fill_rect(box, BOX_COLOR)
+    text = Rect.new(box.x + 4, box.y, box.width - 8, box.height)
+    if editor
+      change_color(normal_color)
+      MGQ_MpUi::TextBox.draw_line(contents, text, editor)
+      cursor_rect.set(box.x - 2, box.y - 2, box.width + 4, box.height + 4)
+    else
+      change_color(normal_color, !query.empty?)
+      draw_text(text, query.empty? ? SEARCH_PLACEHOLDER : MGQ_MpUi.cut(self, query, text.width))
+      cursor_rect.empty
+    end
   end
 end
 
-# The bar's buttons, Update all and Refresh, at the right of its first line.
+# The bar's buttons at the right of its first line: the other view, Update all and Refresh.
 class Window_MpModBarCommands < Window_HorzCommand
   include MGQ_MpUi::Theme::Skinned
 
   # Width of the buttons together.
-  WIDTH = 300
+  WIDTH = 420
+
+  # The view button, by the view it shows the mods in.
+  VIEW_BUTTONS = { "cards" => "List view", "list" => "Card view" }
 
   # The first button while updates wait, their number filled in.
   UPDATE_ALL = "Update all (%d)"
@@ -895,10 +1050,11 @@ class Window_MpModBarCommands < Window_HorzCommand
   # Creates the buttons without a frame of their own, over the bar, without the input.
   def initialize
     @updates = 0
+    @view = MGQ_MpModBrowser::VIEWS[0]
     super(Graphics.width - WIDTH, 0)
     self.opacity = 0
     deactivate
-    select(1)
+    select(2)
   end
 
   # Returns the buttons' width.
@@ -910,15 +1066,26 @@ class Window_MpModBarCommands < Window_HorzCommand
 
   # Returns how many buttons fit side by side.
   #
-  # @return [Integer] Both.
+  # @return [Integer] All three.
   def col_max
-    2
+    3
   end
 
-  # Lists Update all, enabled while updates wait, and Refresh.
+  # Lists the other view, Update all, enabled while updates wait, and Refresh.
   def make_command_list
+    add_command(VIEW_BUTTONS[@view], :view)
     add_command(@updates > 0 ? format(UPDATE_ALL, @updates) : NO_UPDATES, :update_all, @updates > 0)
     add_command("Refresh", :refresh)
+  end
+
+  # Names the other view on its button, once the view changed.
+  #
+  # @param view [String] How the mods show now, "cards" or "list".
+  def view=(view)
+    return if view == @view
+
+    @view = view
+    refresh
   end
 
   # Names the updates waiting, redrawing the buttons once their number changed.
@@ -931,16 +1098,11 @@ class Window_MpModBarCommands < Window_HorzCommand
     refresh
   end
 
-  # Tells whether the buttons can take the input.
-  #
-  # @return [Boolean] Always, since Refresh always works.
-  def usable?
-    true
-  end
 end
 
-# The mods as cards, three to a row, two rows on the screen: each with its screenshot, its badge,
-# its name and version, who made it and its summary.
+# The mods as cards, three to a row, two rows on the screen, each with its screenshot, its badge, its
+# name and version, who made it and its summary; or as a list, six rows on the screen, each with a
+# small screenshot and the same texts beside it.
 class Window_MpModGrid < Window_Selectable
   include MGQ_MpUi::Theme::Skinned
   include MGQ_MpModDrawing
@@ -963,22 +1125,32 @@ class Window_MpModGrid < Window_Selectable
   # Lines of a card's summary.
   SUMMARY_LINES = 2
 
+  # Rows of the list on the screen.
+  LIST_ROWS = 6
+
+  # Width of a list row's screenshot, 16:9 with the row's height.
+  ROW_PICTURE_WIDTH = 96
+
+  # How the mods show now, "cards" or "list".
+  attr_reader :view
+
   # Creates the cards below the bar, without the input.
   #
   # @param y [Integer] The top edge.
   # @param height [Integer] The height.
   def initialize(y, height)
     @mods = []
+    @view = MGQ_MpModBrowser::VIEWS[0]
     super(0, y, Graphics.width, height)
     deactivate
     refresh
   end
 
-  # Returns how many cards stand side by side.
+  # Returns how many mods stand side by side.
   #
-  # @return [Integer] COLUMNS.
+  # @return [Integer] COLUMNS as cards, one as a list.
   def col_max
-    COLUMNS
+    @view == "list" ? 1 : COLUMNS
   end
 
   # Returns the space between two cards.
@@ -988,11 +1160,23 @@ class Window_MpModGrid < Window_Selectable
     8
   end
 
-  # Returns a card's height, two rows filling the window.
+  # Returns a card's or a row's height, their rows filling the window.
   #
   # @return [Integer] The height.
   def item_height
-    (height - standard_padding * 2) / ROWS
+    (height - standard_padding * 2) / (@view == "list" ? LIST_ROWS : ROWS)
+  end
+
+  # Shows the mods as cards or as a list, keeping the mod picked in sight.
+  #
+  # @param view [String] "cards" or "list".
+  def view=(view)
+    return if view == @view
+
+    @view = view
+    create_contents
+    refresh
+    select([index, 0].max) if item_max > 0
   end
 
   # Returns how many cards there are.
@@ -1002,20 +1186,20 @@ class Window_MpModGrid < Window_Selectable
     @mods ? @mods.size : 0
   end
 
-  # Shows another list, keeping the mod picked.
+  # Shows other mods, keeping the mod picked.
   #
-  # @param list [MGQ_MpModBrowser::List] The list the DLL holds.
-  def list=(list)
-    signature = list.mods.map { |mod| [mod.id, mod.name, mod.status, mod.installed, mod.latest, mod.thumbnail, mod.summary] }
+  # @param mods [Array<MGQ_MpModBrowser::Mod>] The mods, all or those a search found.
+  def mods=(mods)
+    signature = mods.map { |mod| [mod.id, mod.name, mod.status, mod.installed, mod.latest, mod.thumbnail, mod.summary] }
     return if signature == @signature
 
     @signature = signature
     picked = current_mod && current_mod.id
-    @mods = list.mods
+    @mods = mods
     create_contents
     refresh
     again = picked && @mods.index { |mod| mod.id == picked }
-    select(again || [[index, 0].max, item_max - 1].min) if item_max > 0
+    item_max > 0 ? select(again || [[index, 0].max, item_max - 1].min) : unselect
   end
 
   # Returns the mod the cursor is on.
@@ -1032,12 +1216,53 @@ class Window_MpModGrid < Window_Selectable
     !current_mod.nil?
   end
 
+  # Moves the cursor up a row, never round to the last, so Up on the first row reaches the search.
+  #
+  # @param _wrap [Boolean] Whether the game would wrap, which the mods never do.
+  def cursor_up(_wrap = false)
+    super(false)
+  end
+
+  # Moves the cursor down a row, never round to the first, as the cards do.
+  #
+  # @param _wrap [Boolean] Whether the game would wrap, which the mods never do.
+  def cursor_down(_wrap = false)
+    super(false)
+  end
+
+  # Draws a mod as a card or as a row of the list.
+  #
+  # @param index [Integer] The mod.
+  def draw_item(index)
+    @view == "list" ? draw_row(@mods[index], item_rect(index)) : draw_card(@mods[index], item_rect(index))
+  end
+
+  # Draws a row of the list: a small screenshot with its badge, then the name and version, and who
+  # made it with the summary below them.
+  #
+  # @param mod [MGQ_MpModBrowser::Mod] The mod.
+  # @param rect [Rect] The row.
+  def draw_row(mod, rect)
+    contents.fill_rect(rect.x, rect.y + 1, rect.width, rect.height - 2, PANEL_COLOR)
+    picture = Rect.new(rect.x + PAD, rect.y + PAD, ROW_PICTURE_WIDTH, ROW_PICTURE_WIDTH * 9 / 16)
+    draw_picture(mod, picture, true)
+    draw_badge(mod, picture)
+    x = picture.x + picture.width + PAD * 2
+    width = rect.x + rect.width - PAD - x
+    y = rect.y + (rect.height - NAME_HEIGHT - SMALL_HEIGHT) / 2
+    draw_name(mod, x, y, width)
+    contents.font.size = SMALL_SIZE
+    change_color(normal_color, false)
+    line = mod.summary.empty? ? author_text(mod) : "#{author_text(mod)}  -  #{mod.summary}"
+    draw_text(x, y + NAME_HEIGHT, width, SMALL_HEIGHT, cut(line, width))
+    reset_font_settings
+  end
+
   # Draws a card: its screenshot with its badge, its name and version, who made it and its summary.
   #
-  # @param index [Integer] The card.
-  def draw_item(index)
-    mod = @mods[index]
-    rect = item_rect(index)
+  # @param mod [MGQ_MpModBrowser::Mod] The mod.
+  # @param rect [Rect] The card.
+  def draw_card(mod, rect)
     contents.fill_rect(rect, PANEL_COLOR)
     width = rect.width - PAD * 2
     picture = Rect.new(rect.x + PAD, rect.y + PAD, width, width * 9 / 16)
