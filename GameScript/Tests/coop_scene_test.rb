@@ -2,6 +2,7 @@
 #  coop_scene_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Checked that a viewer takes the warp and escape bans of the teller's scene
 #      Paulinchen  2026-10-23: Checked what an event ended early and the return to the Great Decision take back
 #                            - Checked that a viewer the story brought to another map comes back shown and without a tint
 #      Paulinchen  2026-10-12: Checked missing pictures and picture and screen changes with bad arguments
@@ -203,7 +204,8 @@ module Graphics; def self.frame_count; $frame_count; end; end
 
 # Stands in for coop_gather.rbx: the story's map is this one or the one in $following, and nobody
 # is taken along.
-module MGQ_MpCoopGather; def self.story_map?(map_id); map_id == $game_map.map_id || map_id == $following; end; def self.taken_along; []; end; end
+module MGQ_MpCoopGather; def self.story_map?(map_id); map_id == $game_map.map_id || map_id == $following; end; def self.taken_along; []; end
+  def self.take_place_ban(id, banned, map); ($bans_on_way ||= []) << [id, banned, map]; end; end
 load_script "battles_sync_wire"
 load_script "coop_scope"
 load_script "coop_scene"
@@ -538,11 +540,11 @@ $raid = false
 # Stands in for world_story.rbx: switches 4 and 2029 are each player's own, and the values taken as
 # the world's are noted in $mirrored.
 module MGQ_MpWorldStory
-  def self.personal?(kind, key); kind == 0 && [4, 2029].include?(key); end
+  def self.personal?(kind, key); kind == 0 && [4, 94, 100, 2029].include?(key); end
   def self.mirrored(kind, key, value); ($mirrored ||= []) << [kind, key, value]; end
 end
 # Stands in for story_state.rbx: ids below 5000 are known and switch 2029 is a scene switch.
-module MGQ_MpStoryState; def self.known_id?(_kind, id); id < 5000; end; def self.scene_switch?(id); id == 2029; end; end
+module MGQ_MpStoryState; PLACE_BANS = [100, 94]; def self.known_id?(_kind, id); id < 5000; end; def self.scene_switch?(id); id == 2029; end; end
 # Lets the overworld.rbx stand-in know only the graphic Actor1.
 module MGQ_MpOverworld; def self.graphic?(_folder, name); name == "Actor1"; end; end
 $data_animations = Array.new(10)
@@ -661,6 +663,16 @@ check("a viewer takes the teller's story values, never what is their own or name
       [$game_switches[40], $game_switches[4], $game_variables[1001], $game_switches[2029], $game_self_switches[[7, 12, "A"]], $game_variables[9999], $game_self_switches[[7, 12, "Z"]]],
       [true, nil, 41, true, true, nil, nil])
 check("as the world's, so they are not written as the viewer's own", $mirrored, [[0, 40, true], [1, 1001, 41], [2, [7, 12, "A"], true]])
+$game_switches[100] = true
+$mirrored = []
+scene.call("story.values", [[0, 100, false], [0, 94, true]])
+check("a viewer takes the warp and escape bans the teller's scene sets where they both stand, as their own",
+      [$game_switches[100], $game_switches[94], $mirrored], [false, true, []])
+$following = 8
+scene.call("story.values", [[0, 100, true]], "8")
+$following = nil
+check("and keeps a ban set on the map they are on the way to for their arrival", [$game_switches[100], $bans_on_way], [false, [[100, true, 8]]])
+$game_switches[94] = nil
 $own_markers = [13, 0, 0, 0]
 other = MGQ_MpOverworldSync::Peers::Peer.new(9, { "name" => "Other", "id" => "o", "map" => "7", "telling" => "1", "tsm" => "12,0,0,0", "since" => "1000" })
 check("the values moved the viewer's story past where the telling started, and they keep watching it, but no other teller's",

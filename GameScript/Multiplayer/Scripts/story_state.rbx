@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-24: Shared the second accessory slot (445) as a Raid World's story
 #                            - Gave the characters the second accessory slot once a story written past the game turned it on
+#                            - Listed the bans of the place a player stands in
 #      Paulinchen  2026-10-18: Kept switch and variable 0 out of the world's story
 #                            - Kept the collab's key item switch each Raid World player's own
 #      Paulinchen  2026-10-15: Kept the refusal of recruits each Raid World player's own
@@ -39,6 +40,9 @@ module MGQ_MpStoryState
   # the Head Priest of Ilias Temple turns off as he changes jobs: like the warp ban, it tells of
   # the player's place, not of the story.
   ESCAPE_BAN = 94
+
+  # The bans of the place a player stands in.
+  PLACE_BANS = [WARP_BAN, ESCAPE_BAN]
 
   # The switch that tells the player took Alice along.
   ALICE_CHOSEN = 4

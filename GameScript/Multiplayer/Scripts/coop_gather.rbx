@@ -2,7 +2,8 @@
 #  coop_gather.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-24: Followed a teller at once whose scene that runs by itself the player's game keeps from starting
+#      Paulinchen  2026-10-24: Took the warp and escape bans the teller's scene set on the map the player is on the way to
+#                            - Followed a teller at once whose scene that runs by itself the player's game keeps from starting
 #                            - Held the player no longer for a telling nothing of which came for thirty seconds
 #      Paulinchen  2026-10-23: Took the player out of their own scene before a call, follow or teleport moves them
 #                            - Pulled a Raid World viewer along at once only when the telling moves the world's story on
@@ -861,6 +862,18 @@ module MGQ_MpCoopGather
     $game_switches[MGQ_MpStoryState::WARP_BAN] = banned if defined?(MGQ_MpStoryState) && !banned.nil?
   end
 
+  # Keeps a ban of the place the teller's scene set on the map the player is on the way to, which
+  # the player takes on arriving, over the warp ban the call brought.
+  #
+  # @param id [Integer] The ban's switch, see MGQ_MpStoryState::PLACE_BANS.
+  # @param banned [Boolean] Whether it is on.
+  # @param map [Integer] The teller's map.
+  def self.take_place_ban(id, banned, map)
+    return log("ignored the teller's switch #{id}=#{banned} on map #{map}: the player is on map #{$game_map.map_id} and not on the way there") unless @gather && @gather[:place][0] == map
+
+    (@gather[:bans] ||= {})[id] = banned
+  end
+
   # Moves the player to the leader once a story scene's GATHER_FRAMES passed, once the player is
   # free: on the map, with no event, message, transfer or battle of their own in the way. What a
   # scene of the player's own left under way, such as an ending's walk, is taken back first (see
@@ -893,6 +906,7 @@ module MGQ_MpCoopGather
       $game_player.set_direction(direction) if direction > 0
     end
     take_warp_ban(warp_ban)
+    (gather[:bans] || {}).each { |id, banned| $game_switches[id] = banned }
     show_followers if elsewhere
   rescue => e
     log("coming to the leader failed: #{e.class}: #{e.message}")

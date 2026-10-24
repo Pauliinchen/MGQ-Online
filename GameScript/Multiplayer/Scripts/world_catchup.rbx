@@ -2,7 +2,8 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-24: Counted Alice's Power-up from the switches of its steps
+#      Paulinchen  2026-10-24: Lifted a warp ban left on where warping is free at every check
+#                            - Counted Alice's Power-up from the switches of its steps
 #                            - Ran what the power-ups of the story change of the characters for a player a story carried past them
 #                            - Turned a companion of the roster into the persona a join of theirs brings, unless a later change of the story set another
 #      Paulinchen  2026-10-23: Gave job and race items another player found to every player of the world at once
@@ -369,8 +370,8 @@ module MGQ_MpWorldCatchup
 
   # Follows the catch-up for one frame: the relay's answers, the checkpoint and the orbs' event that
   # wait, then every CHECK_FRAMES while the player is free the rewards waiting for their gate, the
-  # story's rows, the level gate, the shared companions, the orbs and the Makina, and the vehicles
-  # after a story laid over the player's. Called after the map's update. Nothing goes on while a
+  # story's rows, the level gate, the shared companions, the orbs and the Makina, a warp ban left
+  # where warping is free (lift_warp_ban), and the vehicles after a story laid over the player's. Called after the map's update. Nothing goes on while a
   # lost raid boss battle's defeat runs (see holding?).
   def self.tick
     @clock += 1
@@ -406,6 +407,7 @@ module MGQ_MpWorldCatchup
       guarded(:makina) { check_makina }
       guarded(:found_items) { check_found_items }
       guarded(:counts) { check_counts }
+      guarded(:warp_ban) { lift_warp_ban }
     end
     send_shared
   rescue => e
@@ -1160,8 +1162,8 @@ module MGQ_MpWorldCatchup
   # Looks at everything the player's story owes them once, whatever the rows' notes say, as on
   # entering the world, after a load and on a level up: the story's skills Luka lacks, the key
   # items (restock_key_items), the story's companions missing from the roster, who join at their
-  # gate, the player's own values the story sets (settle), with a warp ban left where warping is
-  # free (lift_warp_ban), and the vehicles by what the story gave (check_vehicles). The world's
+  # gate, the player's own values the story sets (settle), and the vehicles by what the story gave
+  # (check_vehicles). The world's
   # story counts for the skills, the values and the vehicles only while the player plays it, never
   # while they are behind it.
   #
@@ -1179,7 +1181,6 @@ module MGQ_MpWorldCatchup
     guarded(:companions) { missing_companions(story, told, done) }
     guarded(:companion_values) { companion_values }
     guarded(:settle) { settle(story, world) }
-    guarded(:warp_ban) { lift_warp_ban }
     guarded(:vehicles) { check_vehicles(story, world) }
     guarded(:held_items) { note_held_items }
     log("looked at everything the story owes the player once")

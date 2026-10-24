@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-24: Noted the teller whose story event that runs by itself the player's game keeps from starting
+#      Paulinchen  2026-10-24: Named the game's own common event that starts in the log
+#                            - Noted the teller whose story event that runs by itself the player's game keeps from starting
 #                            - Let that event start once nothing came for thirty seconds of a telling outside battle
 #      Paulinchen  2026-10-23: Took back what a talk or story event changed once it ends early
 #                            - Noted the values that move the world's story on as a telling starts
@@ -662,7 +663,7 @@ module MGQ_MpCoopEvents
     hold = @telling && scene?(list) && !MGQ_MpCoopGather.gathered?
     MGQ_MpCoopGather.hold(interpreter) if hold
     @chest = event && sorted == :chest && shares_chests? ? { :interpreter => interpreter, :key => chest_key(event), :gains => [] } : nil
-    log_start(event, sorted, hold) if MGQ_MpCoop::Scope.sharing?
+    log_start(event, sorted, hold, list) if MGQ_MpCoop::Scope.sharing?
   end
 
   # Notes when and where the player's telling starts, and in a Raid World how far their story is,
@@ -792,10 +793,13 @@ module MGQ_MpCoopEvents
   # @param event [Game_Event, nil] The event, nil for a common event.
   # @param sorted [Symbol] How it is sorted, see kind.
   # @param hold [Boolean] Whether the leader's game holds it for the party to gather.
-  def self.log_start(event, sorted, hold)
-    what = event ? "event #{event.id} (page #{event.mgq_mp_page + 1}) on map #{$game_map.map_id}" : "a common event on map #{$game_map.map_id}"
+  # @param list [Array<RPG::EventCommand>, nil] A common event's commands, nil for a map event.
+  def self.log_start(event, sorted, hold, list = nil)
+    common = own_common_id(list)
+    what = event ? "event #{event.id} (page #{event.mgq_mp_page + 1})" : (common ? "common event #{common}" : "a common event")
+    what += " on map #{$game_map.map_id}"
     notes = []
-    notes << "runs only in the player's own game: #{library_replay? ? "the Library's replay of a scene" : "the game's transfer process"}" if sorted == :own
+    notes << "runs only in the player's own game#{library_replay? ? ": the Library's replay of a scene" : ''}" if sorted == :own
     notes << "resumed as story" if @as_story
     notes << "the leader tells the party this story" if @telling
     notes << "the player plays their own story, not synced with the leader or leading no member who follows it" unless following? || leading_story?
@@ -1276,10 +1280,18 @@ module MGQ_MpCoopEvents
     return true if library_replay?
     return false unless list
 
-    OWN_COMMON_EVENTS.any? { |id| (common = $data_common_events[id]) && list.equal?(common.list) }
+    own_common_id(list) ? true : false
   rescue => e
     log_once(:own, "telling the player's own events apart failed: #{e.class}: #{e.message}")
     false
+  end
+
+  # Finds which of OWN_COMMON_EVENTS a list is.
+  #
+  # @param list [Array<RPG::EventCommand>, nil] The common event's commands, nil for a map event.
+  # @return [Integer, nil] Its id, nil for none of them.
+  def self.own_common_id(list)
+    list && OWN_COMMON_EVENTS.find { |id| (common = $data_common_events[id]) && list.equal?(common.list) }
   end
 
   # Reports whether the Library replays a scene now.
