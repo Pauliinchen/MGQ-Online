@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-24: Showed the mods as cards with screenshots and each on a page of its own
+#                            - Told in a box how a change goes and named what changed in the restart question
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -443,6 +444,21 @@ class Scene_MpMods < Scene_MenuBase
   # What the screen says while a change runs.
   BUSY_TEXT = "Changing the mods . . ."
 
+  # The title of the box that tells how a change goes.
+  BOX_TITLE = "Mods"
+
+  # What the box says of the mods a change installs, their names and versions filled in.
+  INSTALLING = "Installing %s"
+
+  # What the box says of the mods a change removes, their names filled in.
+  REMOVING = "Removing %s"
+
+  # The hint of the box while a change runs.
+  WAIT_HINT = "Downloading and checking the files . . ."
+
+  # The hint of the box once a change failed.
+  CLOSE_HINT = "Enter, Esc or Numpad 0: close"
+
   # What the screen says when a change could not start.
   NOT_STARTED_TEXT = "The change could not start. Wait until the list is fetched and try again."
 
@@ -467,8 +483,8 @@ class Scene_MpMods < Scene_MenuBase
   # The answers to REMOVE_QUESTION.
   REMOVE_CHOICES = ["Remove", "Keep"]
 
-  # The question once mods changed, which load only as the game starts.
-  RESTART_QUESTION = "The changed mods load when the game starts again. Restart the game now?"
+  # The question once mods changed, which load only as the game starts, what changed filled in.
+  RESTART_QUESTION = "%s The changed mods load when the game starts again. Restart the game now?"
 
   # The answers to RESTART_QUESTION.
   RESTART_CHOICES = ["Restart", "Later"]
@@ -515,7 +531,9 @@ class Scene_MpMods < Scene_MenuBase
   def update
     grid_row = @grid.active ? @grid.index / @grid.col_max : nil
     super
-    move_focus(grid_row) unless MGQ_MpUi::Confirm.open?
+    return close_failure if @failure_shown && (Input.trigger?(:C) || MGQ_MpUi.cancel?)
+
+    move_focus(grid_row) unless MGQ_MpUi::Confirm.open? || @failure_shown
     @look_frames += 1
     look if @look_frames >= MGQ_MpModBrowser::LOOK_FRAMES
   rescue => e
@@ -561,6 +579,7 @@ class Scene_MpMods < Scene_MenuBase
   # Frees the screenshots and logs that the screen closed.
   def terminate
     super
+    @box.dispose if @box
     MGQ_MpModBrowser::Pictures.clear
     MGQ_MpModBrowser.log("closed")
   end
@@ -596,12 +615,58 @@ class Scene_MpMods < Scene_MenuBase
     if @list.action == "failed"
       Sound.play_buzzer
       say(format(FAILED_TEXT, @list.action_error.to_s))
-      return give_back_input
+      show_box(format(FAILED_TEXT, @list.action_error.to_s), CLOSE_HINT)
+      @failure_shown = true
+      return
     end
 
+    hide_box
     Sound.play_ok
     say(@list.done.to_s.empty? ? HINT : @list.done)
-    @list.restart ? ask_restart : give_back_input
+    @list.restart ? ask_restart(@list.done.to_s) : give_back_input
+  end
+
+  # Closes the box that told why a change failed, and gives the input back.
+  def close_failure
+    Sound.play_cancel
+    @failure_shown = false
+    hide_box
+    give_back_input
+  end
+
+  # Shows the box in the middle of the screen that tells how a change goes.
+  #
+  # @param text [String] What it says.
+  # @param hint [String] Its hint at the bottom.
+  def show_box(text, hint)
+    @box ||= Sprite_MpMessageBox.new
+    @box.show(BOX_TITLE, text, hint)
+  end
+
+  # Takes the box off the screen.
+  def hide_box
+    @box.visible = false if @box
+  end
+
+  # Tells what a change does, for the box while it runs.
+  #
+  # @param changes [Array<Array(Symbol, MGQ_MpModBrowser::Mod)>] Each change and its mod.
+  # @return [String] Such as "Installing Party Sheet 1.5.2 and Level Cap 1.5.2, removing Map Display . . .".
+  def change_text(changes)
+    installs = changes.select { |kind, _mod| kind == :install }.map { |_kind, mod| "#{mod.name} #{mod.latest}" }
+    removes = changes.select { |kind, _mod| kind == :remove }.map { |_kind, mod| mod.name }
+    parts = []
+    parts << format(INSTALLING, joined(installs)) unless installs.empty?
+    parts << format(REMOVING, joined(removes)) unless removes.empty?
+    "#{parts.each_with_index.map { |part, at| at.zero? ? part : part.sub(/\A./) { |letter| letter.downcase } }.join(', ')} . . ."
+  end
+
+  # Joins names as a sentence does.
+  #
+  # @param names [Array<String>] The names, at least one.
+  # @return [String] Such as "A", "A and B" or "A, B and C".
+  def joined(names)
+    names.size > 1 ? "#{names[0..-2].join(', ')} and #{names[-1]}" : names[0].to_s
   end
 
   # Opens the page of the card picked.
@@ -684,6 +749,7 @@ class Scene_MpMods < Scene_MenuBase
 
     @busy = true
     say(BUSY_TEXT)
+    show_box(change_text(changes), WAIT_HINT)
     take_input
   end
 
@@ -702,9 +768,11 @@ class Scene_MpMods < Scene_MenuBase
   end
 
   # Offers to start the game again so the changed mods load.
-  def ask_restart
+  #
+  # @param done [String] What the change did, such as "Installed Party Sheet 1.5.2.".
+  def ask_restart(done)
     take_input
-    asked = MGQ_MpUi::Confirm.ask(RESTART_QUESTION, RESTART_CHOICES) do |yes|
+    asked = MGQ_MpUi::Confirm.ask(format(RESTART_QUESTION, done).strip, RESTART_CHOICES) do |yes|
       give_back_input
       yes ? restart : say(RESTART_LATER_TEXT)
     end

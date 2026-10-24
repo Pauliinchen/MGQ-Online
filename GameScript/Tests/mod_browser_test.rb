@@ -194,3 +194,7 @@ empty = Window_MpModGrid.allocate
 empty.instance_variable_set(:@mods, [])
 empty.define_singleton_method(:index) { -1 }
 check("Enter on an empty grid opens nothing", empty.current_item_enabled?, false)
+
+# The box names what a change does while it runs.
+check("the change told while it runs", scene.change_text([[:install, list.mods[0]], [:install, list.mods[1]], [:remove, list.mods[2]]]),
+      "Installing Party Sheet 1.5.2 and Level Cap 1.5.2, removing Map Display . . .")
