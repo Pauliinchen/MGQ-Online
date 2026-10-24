@@ -4,7 +4,7 @@ Damage formulas in a published raid design use a small, safe grammar: numbers, t
 
 The grammar lives in `MGQOnline.Arena/Formulas` (`FormulaParser`, `FormulaEvaluator`, `RubyPrinter`, `FormulaStats`, `FormulaLimits`, `FormulaErrors`); the tree's records are in `MGQOnline.Arena/Model/Formulas`.
 
-It applies to `damage.formula` in skill sections, a custom skill's `damage.formula` and `enemyFormula`, `markReactions[].gives.formula`, and the `damage` effect of rules.
+It applies to `damage.formula` in skill sections, a custom skill's `damage.formula` and `enemyFormula`, and the `damage` and `heal` effects of Trigger -> Effect rows.
 
 ## Grammar
 
