@@ -2,6 +2,9 @@
 //  Samples.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Gave the boss a battle plan with two stages and rows of every trigger, condition, effect and owner
+//                            - Dropped the marks, mark reactions, scheduled actions and follow-ups
+//                            - Gave the area skill a payload override
 //      Paulinchen  2026-10-23: Added the manual cells of a skill's targeting
 //                            - Gave the sample boss a battlefield instead of start debris
 //                            - Gave the boss its raid and a Hades refight
@@ -97,93 +100,152 @@ internal static class Samples
     public static FormulaSpec EveryNodeFormula { get; } = FormulaOf("-[a.atk, clamp(b.luk, 0, 5)].max * 2.50 + (a.mat % 3).to_f.abs");
 
     /// <summary>
-    /// Gets a rule of every trigger, condition and effect kind spread over a few rules.
+    /// Gets the id of the boss's first stage.
+    /// </summary>
+    public const string OpeningStage = "5a6b7c8d";
+
+    /// <summary>
+    /// Gets the id of the boss's second stage.
+    /// </summary>
+    public const string SeriousStage = "6b7c8d9e";
+
+    /// <summary>
+    /// Gets a row of every trigger, condition and effect kind, and of every owner, spread over a few rows.
     /// </summary>
     public static IReadOnlyList<RuleSpec> Rules { get; } =
     [
         new RuleSpec(
-            "a1b2c3d4:sched",
-            new RuleOrigin(PresetKind.ScheduledCast, BossId, "a1b2c3d4"),
-            new TurnScheduleTrigger(2, 3),
+            "a1b2c3d4",
+            RuleOwner.Battle,
+            new TurnTrigger(2, 3),
             [],
-            [new UseSkillEffect(Stigmata, true, true, CastTiming.PlanNow, CastSide.Own, CastAim.Default)],
-            RuleLimits.None,
-            null),
+            [new UseSkillEffect([new WeightedSkill(Stigmata)], CastWhen.ThisTurn, true, true, CastSide.Own, CastAim.Default, FirstSlot)],
+            HowOften.Every),
         new RuleSpec(
             "a1b2c3d4:follow",
-            new RuleOrigin(PresetKind.FollowUp, BossId, "a1b2c3d4"),
-            new AfterCastTrigger(CastOfAction: "a1b2c3d4"),
+            RuleOwner.Battle,
+            new SkillUsedTrigger(Who.Enemy(FirstSlot), Stigmata),
             [],
-            [new UseSkillEffect(Blast, true, false, CastTiming.PlanNow, CastSide.Opposite, CastAim.Default)],
-            RuleLimits.None,
-            null),
+            [new UseSkillEffect([new WeightedSkill(Blast)], CastWhen.ThisTurn, true, false, CastSide.Opposite, CastAim.Default, FirstSlot)],
+            HowOften.Every),
         new RuleSpec(
-            "game:3764:1c2d3e4f",
-            new RuleOrigin(PresetKind.LeavesMark, BossId, "1c2d3e4f"),
-            new UnitHitTrigger(BySkill: Stigmata, MainTarget: true),
+            "1c2d3e4f",
+            RuleOwner.OfSkill(Stigmata),
+            new SkillHitsTrigger(Who.Owner, Who.Character),
             [new ChanceCondition(10000)],
-            [new AddStateEffect(RuleTarget.TriggerUnit, 301, MinTurns: 1, UntilNextCastOf: AddStateEffect.RootOfCast)],
-            RuleLimits.None,
-            null),
+            [new AddStateEffect(TargetRef.TriggerUnit, 301, MinTurns: 1, UntilNextCastOf: AddStateEffect.RootOfCast)],
+            HowOften.Every),
         new RuleSpec(
             "77aa0b1c",
-            new RuleOrigin(PresetKind.MarkReaction, BossId, "77aa0b1c"),
-            new UnitHitTrigger(Holding: 301, HitByLeaving: 302),
-            [new UnitHoldsCondition(301)],
-            [new DamageEffect(RuleTarget.TriggerUnit, 150, null), new RemoveStateEffect(RuleTarget.TriggerUnit, 301)],
-            new RuleLimits(true, false, null),
-            null),
+            RuleOwner.OfSkill(Stigmata),
+            new SkillHitsTrigger(Who.Owner, Who.Character),
+            [new HoldsStateCondition(TargetRef.TriggerUnit, 302)],
+            [new DamageEffect(TargetRef.TriggerUnit, 150, null), new RemoveStateEffect(TargetRef.TriggerUnit, 302)],
+            new HowOften(Frequency.Every, OncePerUnitPerUse: true)),
         new RuleSpec(
             "0d9e8f7a",
-            new RuleOrigin(PresetKind.Advanced, BossId, "0d9e8f7a"),
-            new BossHitTrigger(HitKind.Magic, true, SkillRef.OfGame(12), 3),
-            [new BossHasStateCondition(14), new BossHpBetweenCondition(10, 50), new TurnAtLeastCondition(3), new NotSealedCondition(Blast)],
+            RuleOwner.OfEnemy(FirstSlot),
+            new SkillHitsTrigger(Who.Character, Who.Owner, SkillRef.OfGame(12), 3),
+            [new HoldsStateCondition(TargetRef.Owner, 14), new HpBetweenCondition(TargetRef.Owner, 10, 50), new TurnBetweenCondition(3), new HitTypeIsCondition(HitKind.Magic), new NotSealedCondition(Blast)],
             [
-                new UseSkillEffect(Blast, true, false, CastTiming.NextTurn, CastSide.Alternate, CastAim.Attacker),
+                new UseSkillEffect([new WeightedSkill(Blast)], CastWhen.NextTurn, true, false, CastSide.Alternate, CastAim.Attacker),
                 new ApDeltaEffect(-1, ApTurn.Next),
-                new DamageEffect(RuleTarget.Boss, null, Formula),
+                new DamageEffect(TargetRef.Attacker, null, Formula),
             ],
-            new RuleLimits(false, true, 3),
-            "counters"),
+            new HowOften(Frequency.AtMost, 3, OncePerTurn: true),
+            "counters",
+            1,
+            RuleTemplate.DelayedCounter),
         new RuleSpec(
             "5e6f7a8b",
-            new RuleOrigin(PresetKind.Advanced, BossId, "5e6f7a8b"),
-            new BossHpBelowTrigger(50),
+            RuleOwner.Battle,
+            new HpBelowTrigger(Who.Enemy(FirstSlot), 50),
             [],
             [
                 new PlaceDebrisEffect(new SkillDebrisSpec(DebrisPlace.RandomInArea, 2, Count: 3)),
-                new AddStateEffect(RuleTarget.Boss, 15, Turns: 2),
+                new AddStateEffect(TargetRef.Enemy(FirstSlot), 15, Turns: 2),
                 new PlaceHazardEffect(new HazardPlacement(FireId, 10000, HazardPlace.AimedCell)),
+                new ShowTextEffect("Morrigan gathers power!"),
+                new GoToStageEffect(SeriousStage),
             ],
-            new RuleLimits(false, false, 1),
-            null),
+            new HowOften(Frequency.Once)),
         new RuleSpec(
             "6a7b8c9d",
-            new RuleOrigin(PresetKind.Advanced, BossId, "6a7b8c9d"),
-            new StateAddedTrigger(29, StateHolder.Unit),
+            RuleOwner.OfEnemy(FirstSlot),
+            new StateGainedTrigger(Who.Character, 29),
             [],
-            [new AddStateEffect(RuleTarget.HitUnits, 30, Turns: 1), new DamageReductionEffect(RuleTarget.TriggerUnit, 30, 2), new RemoveDamageReductionEffect(RuleTarget.Boss)],
-            RuleLimits.None,
-            null),
+            [
+                new AddStateEffect(TargetRef.HitUnits, 30, Turns: 1),
+                new DamageReductionEffect(TargetRef.TriggerUnit, 30, 2),
+                new RemoveDamageReductionEffect(TargetRef.Owner),
+                new HealEffect(TargetRef.EveryEnemy, 10),
+                new ClearDebuffsEffect(TargetRef.EveryCharacter),
+            ],
+            HowOften.Every),
         Simple("1a1a1a1a", new BattleStartTrigger()),
         Simple("2b2b2b2b", new TurnStartTrigger()),
         Simple("3c3c3c3c", new TurnEndTrigger()),
-        Simple("4d4d4d4d", new UnitFellTrigger()),
+        Simple("4d4d4d4d", new FallsTrigger(Who.Character)),
         new RuleSpec(
             "8e9f0a1b",
-            new RuleOrigin(PresetKind.FightChange, BossId, "8e9f0a1b"),
-            new EnemyFellTrigger(FirstSlot),
-            [new EnemyIsCondition(FirstSlot)],
+            RuleOwner.Battle,
+            new FallsTrigger(Who.Enemy(FirstSlot)),
+            [new EnemyPresentCondition(ReserveSlot, false)],
             [new EnemyTransformsEffect(ReserveSlot, true), new EnemyLeavesEffect(ReserveSlot)],
-            RuleLimits.None,
-            Scope: RuleScope.Fight),
+            HowOften.Every),
         new RuleSpec(
             "9f0a1b2c",
-            new RuleOrigin(PresetKind.FightChange, BossId, "9f0a1b2c"),
+            RuleOwner.Battle,
             new AllEnemiesFellTrigger(),
             [],
             [new EnemyJoinsEffect(ReserveSlot)],
-            new RuleLimits(false, false, 1)),
+            new HowOften(Frequency.Once)),
+        new RuleSpec(
+            "b0c1d2e3",
+            RuleOwner.OfStage(SeriousStage),
+            new StageStartTrigger(),
+            [],
+            [
+                new SkipRollEffect(ApTurn.Next, FirstSlot),
+                new UseSkillEffect([new WeightedSkill(Stigmata, 3), new WeightedSkill(Blast, 1)], CastWhen.InTurns, true, true, CastSide.Random, CastAim.TriggerUnit, FirstSlot, 2),
+            ],
+            HowOften.Every),
+        new RuleSpec(
+            "c1d2e3f4",
+            RuleOwner.OfStage(SeriousStage),
+            new TurnTrigger(1, 2, TurnClock.Stage),
+            [new TurnBetweenCondition(Max: 6, Clock: TurnClock.Stage), new SwitchOnCondition(22)],
+            [new CancelSkillEffect(FirstSlot, Stigmata)],
+            new HowOften(Frequency.EveryNth, 2)),
+        new RuleSpec(
+            "d2e3f4a5",
+            RuleOwner.OfEnemy(FirstSlot),
+            new DamageInTurnTrigger(Who.Owner, 15),
+            [],
+            [new CancelSkillEffect(), new AddStateEffect(TargetRef.Owner, 10, Turns: 1)],
+            new HowOften(Frequency.Nth, 2)),
+        new RuleSpec(
+            "e3f4a5b6",
+            RuleOwner.Battle,
+            new StateLostTrigger(Who.Anyone, 15),
+            [new NotInChainCondition(Blast)],
+            [new SkipRollEffect(ApTurn.This)],
+            HowOften.Every),
+        new RuleSpec(
+            "f4a5b6c7",
+            RuleOwner.Battle,
+            new JoinsTrigger(Who.Enemy(ReserveSlot)),
+            [],
+            [new ShowTextEffect("The second wave joins!")],
+            HowOften.Every),
+        new RuleSpec(
+            "a5b6c7d8",
+            RuleOwner.OfSkill(Blast),
+            new SkillFinishedTrigger(Who.AnyEnemy, SkillType: 1),
+            [],
+            [new RemoveStateEffect(TargetRef.EveryEnemy, 15)],
+            HowOften.Every,
+            Template: RuleTemplate.Stance),
     ];
 
     /// <summary>
@@ -220,10 +282,19 @@ internal static class Samples
             new HitFactsSpec(100, 1, -500, false, 15000)),
         new SkillFacts(3, 1, 2, 1, 0, 1, 4181, 7, [1, 12], new TargetFilter([CharacterKind.Female, CharacterKind.Hero]), "SS"),
         new SkillDebrisSpec(DebrisPlace.HitCells, 3, 2, Type: CrystalId),
-        new MarksSpec([new MarkLeaveSpec("1c2d3e4f", 301, 10000, StateLanding.EveryoneHit, MarkUntil.NextScheduledCast, 1, null)]),
         Opener: true,
         Cycle: new CycleSpec(5, 3),
-        Hazard: new HazardPlacement(FireId, 5000, HazardPlace.RandomInArea, 2, 1));
+        Hazard: new HazardPlacement(FireId, 5000, HazardPlace.RandomInArea, 2, 1),
+        PayloadOverride: new PayloadSpec(
+            true,
+            1,
+            false,
+            [new PayloadEffectSpec(PayloadEffectKind.GatedState, 6, 8000, true, 4)],
+            [new PayloadEffectSpec(PayloadEffectKind.RemoveDebuff, 2, 10000, false, null)],
+            [new RestorationSpec(ResourcePool.Hp, 0.25)],
+            [new RecoverySpec(ResourcePool.Mp, 0.1, 50)],
+            ["predation"],
+            new HitFactsSpec(100, 1, -500, false, 15000)));
 
     /// <summary>
     /// Gets a hazard type with every part set.
@@ -233,10 +304,10 @@ internal static class Samples
         "Burning ground",
         [HazardTrigger.StepsOnto, HazardTrigger.EndsTurnOn],
         [
-            new DamageEffect(RuleTarget.TriggerUnit, 5),
-            new AddStateEffect(RuleTarget.TriggerUnit, 29, Turns: 2),
-            new RemoveStateEffect(RuleTarget.TriggerUnit, 30),
-            new UseSkillEffect(Blast, true, false, CastTiming.NextTurn, CastSide.Own, CastAim.TriggerUnit),
+            new DamageEffect(TargetRef.TriggerUnit, 5),
+            new AddStateEffect(TargetRef.TriggerUnit, 29, Turns: 2),
+            new RemoveStateEffect(TargetRef.TriggerUnit, 30),
+            new UseSkillEffect([new WeightedSkill(Blast)], CastWhen.NextTurn, true, false, CastSide.Own, CastAim.TriggerUnit),
         ],
         3,
         new HazardLook(180, new TileRef("Dungeon_A1", 2048), 112, new ColorRgba(255, 80, 0, 96)),
@@ -311,30 +382,37 @@ internal static class Samples
         BossOrigin.Catalog,
         new BattleEventRef(3, 723, 12, 1),
         [new RuntimeEnemy(0, FirstSlot, 301, new EnemyStats(5_000_000, 900, 410, 380, 395, 360, 120, 80), 9, true)],
-        new Dictionary<string, IReadOnlyList<RuntimeAction>>
-        {
-            [FirstSlot] =
+        new RuntimePlan(
             [
-                new RuntimeAction("a1b2c3d4", Stigmata, 5, new TurnActionCondition(2, 3), true, new FollowUpSpec(Blast, FollowUpSide.Opposite)),
-                new RuntimeAction("b2c3d4e5", SkillRef.OfGame(1515), 4, new AlwaysActionCondition(), false, null),
-                new RuntimeAction("c3d4e5f6", SkillRef.OfGame(1516), 3, new HpActionCondition(0, 50), false, null),
-                new RuntimeAction("d4e5f6a7", SkillRef.OfGame(1517), 3, new MpActionCondition(20, 100), false, new FollowUpSpec(Stigmata, FollowUpSide.Same)),
-                new RuntimeAction("e5f6a7b9", SkillRef.OfGame(1518), 2, new StateActionCondition(14), false, null),
-                new RuntimeAction("f6a7b8c9", SkillRef.OfGame(1519), 2, new PartyLevelActionCondition(60), false, null),
-                new RuntimeAction("a7b8c9d0", SkillRef.OfGame(1520), 1, new SwitchActionCondition(22), false, null),
+                new RuntimeStage(
+                    OpeningStage,
+                    "Opening",
+                    new Dictionary<string, IReadOnlyList<RuntimeAction>>
+                    {
+                        [FirstSlot] =
+                        [
+                            new RuntimeAction("b2c3d4e5", SkillRef.OfGame(1515), 4, new AlwaysActionCondition()),
+                            new RuntimeAction("c3d4e5f6", SkillRef.OfGame(1516), 3, new HpActionCondition(0, 50)),
+                            new RuntimeAction("d4e5f6a7", SkillRef.OfGame(1517), 3, new MpActionCondition(20, 100)),
+                            new RuntimeAction("e5f6a7b9", SkillRef.OfGame(1518), 2, new StateActionCondition(14)),
+                            new RuntimeAction("f6a7b8c9", SkillRef.OfGame(1519), 2, new PartyLevelActionCondition(60)),
+                            new RuntimeAction("a7b8c9d0", SkillRef.OfGame(1520), 1, new SwitchActionCondition(22)),
+                            new RuntimeAction("b8c9d0e1", SkillRef.OfGame(1521), 1, new TurnActionCondition(2, 3)),
+                        ],
+                        [ReserveSlot] = [],
+                    }),
+                new RuntimeStage(
+                    SeriousStage,
+                    "Serious",
+                    new Dictionary<string, IReadOnlyList<RuntimeAction>>
+                    {
+                        [FirstSlot] = [new RuntimeAction("c9d0e1f2", Stigmata, 6, new AlwaysActionCondition())],
+                    }),
             ],
-            [ReserveSlot] = [],
-        },
+            Rules),
         new RuntimeNormalAttack(new Dictionary<int, SkillRef> { [301] = Blast }, new Dictionary<int, int> { [301] = 0 }, Blast, "<通常攻撃 {custom:0}>"),
         Traits,
         new Dictionary<string, RuntimeSkill> { [Stigmata.Key] = AreaSkill, [Blast.Key] = SupportSkill },
-        Rules,
-        [
-            new MarkReactionSpec("77aa0b1c", 301, 302, new DamageGift(150, null), false),
-            new MarkReactionSpec("88bb1c2d", 302, 301, new StateGift(15, 2), true),
-            new MarkReactionSpec("99cc2d3e", 301, 301, new SkillGift(Blast), false),
-            new MarkReactionSpec("aadd3e4f", 302, 302, new DamageGift(10, Formula), false),
-        ],
         [new BattleMapRef(88, false), new BattleMapRef(723, true)],
         2,
         Reserve: [new ReserveEnemy(ReserveSlot, 302, new EnemyStats(2_500_000, 600, 380, 300, 410, 300, 140, 60), 7, true)],
@@ -504,7 +582,7 @@ internal static class Samples
     /// <param name="trigger">The trigger.</param>
     /// <returns>The rule.</returns>
     private static RuleSpec Simple(string id, TriggerSpec trigger) =>
-        new(id, new RuleOrigin(PresetKind.Advanced, BossId, id), trigger, [], [new ApDeltaEffect(1, ApTurn.This)], RuleLimits.None, null);
+        new(id, RuleOwner.OfEnemy(FirstSlot), trigger, [], [new ApDeltaEffect(1, ApTurn.This)], HowOften.Every);
 
     /// <summary>
     /// Collects every value the samples hold.
@@ -519,38 +597,35 @@ internal static class Samples
             GameRules.Kinds, GameRules.CrowdControl, GameRules.Debris, GameRules.Presentation, GameRules.Presentation.Animation,
             GameRules.Presentation.Animation.Area, GameRules.Presentation.Danger, GameRules.Limits,
             Tier, Tier.Stats, Boss.Battlefield!, Boss.Battlefield!.Debris!, Boss.Battlefield!.Hazards!, Boss.Raid!, Boss.AlsoAt![0], Design.DebrisTypes![CrystalId], Traits, Traits.Entries[1], Traits.Features[0], Traits.Entries[1].LastStand!, Traits.StateRecipes[1], Counter,
-            Boss, Boss.Event, new BattleEventRef(0, CommonEvent: 40), Boss.Enemies[0], Boss.Reserve![0], Boss.Enemies[0].Stats, Boss.NormalAttack, Boss.BattleMaps[0], Boss.Actions[FirstSlot][0], Boss.Actions[FirstSlot][0].FollowUp!,
+            Boss, Boss.Event, new BattleEventRef(0, CommonEvent: 40), Boss.Enemies[0], Boss.Reserve![0], Boss.Enemies[0].Stats, Boss.NormalAttack, Boss.BattleMaps[0], Boss.Plan, Boss.Plan.Stages[0], Boss.Plan.Stages[0].Actions![FirstSlot][0],
             CustomSkill, CustomSkill.Fields, CustomSkill.Fields.Damage, CustomSkill.Effects[0], CustomSkill.Stance!,
             AreaSkill, AreaSkill.Shape, AreaSkill.Targeting, AreaSkill.Targeting.Zone!, new ManualTarget([new GridCell(2, 1), new GridCell(7, 3)], new GridSize(15, 6), 1), AreaSkill.Damage, Formula, AreaSkill.Spread, AreaSkill.Falloff,
             AreaSkill.Presentation, AreaSkill.Presentation.CellAnimation!, AreaSkill.Presentation.CellFlash!, AreaSkill.Presentation.Animation,
-            AreaSkill.Debris!, Design.DebrisTypes![CrystalId].Look!, AreaSkill.Marks!, AreaSkill.Marks!.Leaves[0], AreaSkill.Payload, AreaSkill.Payload.TargetEffects[0],
+            AreaSkill.Debris!, Design.DebrisTypes![CrystalId].Look!, AreaSkill.Payload, AreaSkill.PayloadOverride!, AreaSkill.Payload.TargetEffects[0],
             AreaSkill.Payload.Restorations[0], AreaSkill.Payload.Recoveries[0], AreaSkill.Payload.Hit, SupportSkill.Support!, AreaSkill.Facts, AreaSkill.Facts.Filter, AreaSkill.Cycle!,
             EveryNodeFormula, Stigmata, Blast, new GridCell(3, 4), new GridSize(16, 10), new ColorRgba(1, 2, 3, 4), new TileRef("Sheet", 7), new PowerSize(100, 3),
-            new ClearDebuffsEffect(RuleTarget.Boss), new DebuffsClearedEvent(2, StateHolder.Boss, 0, "5e6f7a8b:stand"), new CastResolvedTrigger(Blast), new NotInChainCondition(Blast),
+            new DebuffsClearedEvent(2, StateHolder.Boss, 0, "5e6f7a8b:stand"), new WeightedSkill(Blast, 2), Who.Enemy(FirstSlot), TargetRef.Enemy(ReserveSlot),
             Hazard, Hazard.Look, AreaSkill.Hazard!,
         ];
         foreach (RuleSpec rule in Rules)
         {
             all.Add(rule);
-            all.Add(rule.Origin);
-            all.Add(rule.Limits);
+            all.Add(rule.Owner);
+            all.Add(rule.Often);
             all.Add(rule.Trigger);
             all.AddRange(rule.Conditions);
             all.AddRange(rule.Effects);
         }
 
-        foreach (IReadOnlyList<RuntimeAction> actions in Boss.Actions.Values)
+        foreach (RuntimeStage stage in Boss.Plan.Stages)
         {
-            foreach (RuntimeAction action in actions)
+            foreach (IReadOnlyList<RuntimeAction> actions in stage.Actions?.Values ?? [])
             {
-                all.Add(action.Condition);
+                foreach (RuntimeAction action in actions)
+                {
+                    all.Add(action.Condition);
+                }
             }
-        }
-
-        foreach (MarkReactionSpec reaction in Boss.MarkReactions)
-        {
-            all.Add(reaction);
-            all.Add(reaction.Gives);
         }
 
         AddNodes(all, EveryNodeFormula.Ast);

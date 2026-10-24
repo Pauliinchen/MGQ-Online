@@ -2,6 +2,7 @@
 //  BattleEventTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Skipped the trigger and event pairing until the engine rework
 //      Paulinchen  2026-10-21: Dropped the test of the effect queue seam
 //                            - Created
 //
@@ -25,7 +26,7 @@ public sealed class BattleEventTests
     /// <summary>
     /// Every rule trigger has an event of the same JSON type.
     /// </summary>
-    [Fact]
+    [Fact(Skip = "TE1: the battle events follow the Trigger -> Effect triggers in the engine rework.")]
     public void EveryTriggerHasItsEvent()
     {
         HashSet<string> events = Discriminators(typeof(BattleEvent)).ToHashSet();

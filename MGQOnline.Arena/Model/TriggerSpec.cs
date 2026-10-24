@@ -2,6 +2,7 @@
 //  TriggerSpec.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Replaced the triggers with the event and who triggers of the Trigger -> Effect framework
 //      Paulinchen  2026-10-23: Added the enemy fell and all enemies fell triggers
 //      Paulinchen  2026-10-22: Added the cast resolved trigger
 //                            - Added the main target filter of unit hits
@@ -14,21 +15,23 @@ using System.Text.Json.Serialization;
 namespace MGQOnline.Arena.Model;
 
 /// <summary>
-/// The event that fires a rule; JSON tells the trigger by its <c>type</c>.
+/// The event that fires a row; JSON tells the trigger by its <c>type</c>.
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type", UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FailSerialization)]
 [JsonDerivedType(typeof(BattleStartTrigger), "battleStart")]
 [JsonDerivedType(typeof(TurnStartTrigger), "turnStart")]
 [JsonDerivedType(typeof(TurnEndTrigger), "turnEnd")]
-[JsonDerivedType(typeof(TurnScheduleTrigger), "turnSchedule")]
-[JsonDerivedType(typeof(AfterCastTrigger), "afterCast")]
-[JsonDerivedType(typeof(CastResolvedTrigger), "castResolved")]
-[JsonDerivedType(typeof(UnitHitTrigger), "unitHit")]
-[JsonDerivedType(typeof(BossHitTrigger), "bossHit")]
-[JsonDerivedType(typeof(BossHpBelowTrigger), "bossHpBelow")]
-[JsonDerivedType(typeof(StateAddedTrigger), "stateAdded")]
-[JsonDerivedType(typeof(UnitFellTrigger), "unitFell")]
-[JsonDerivedType(typeof(EnemyFellTrigger), "enemyFell")]
+[JsonDerivedType(typeof(StageStartTrigger), "stageStart")]
+[JsonDerivedType(typeof(TurnTrigger), "turn")]
+[JsonDerivedType(typeof(SkillUsedTrigger), "skillUsed")]
+[JsonDerivedType(typeof(SkillHitsTrigger), "skillHits")]
+[JsonDerivedType(typeof(SkillFinishedTrigger), "skillFinished")]
+[JsonDerivedType(typeof(HpBelowTrigger), "hpBelow")]
+[JsonDerivedType(typeof(DamageInTurnTrigger), "damageInTurn")]
+[JsonDerivedType(typeof(StateGainedTrigger), "stateGained")]
+[JsonDerivedType(typeof(StateLostTrigger), "stateLost")]
+[JsonDerivedType(typeof(JoinsTrigger), "joins")]
+[JsonDerivedType(typeof(FallsTrigger), "falls")]
 [JsonDerivedType(typeof(AllEnemiesFellTrigger), "allEnemiesFell")]
 public abstract record TriggerSpec;
 
@@ -48,69 +51,87 @@ public sealed record TurnStartTrigger : TriggerSpec;
 public sealed record TurnEndTrigger : TriggerSpec;
 
 /// <summary>
+/// Fires when a stage starts: its own stage for a stage row, any stage for a battle row; the first
+/// stage starts at the battle start.
+/// </summary>
+public sealed record StageStartTrigger : TriggerSpec;
+
+/// <summary>
 /// Fires in the plan of every turn the game's turn condition holds for.
 /// </summary>
 /// <param name="A">The first turn.</param>
 /// <param name="B">The turns between two more, 0 for turn A alone.</param>
-public sealed record TurnScheduleTrigger(int A, int B) : TriggerSpec;
+/// <param name="Clock">Whether battle turns or stage turns are counted.</param>
+public sealed record TurnTrigger(int A, int B, TurnClock Clock = TurnClock.Battle) : TriggerSpec;
 
 /// <summary>
 /// Fires when a cast is planned; every filter set must match it.
 /// </summary>
-/// <param name="CastOfAction">The action id whose cast fires it, or null for any.</param>
-/// <param name="Skill">The skill whose cast fires it, or null for any.</param>
-/// <param name="SkillType">The skill type whose cast fires it, or null for any.</param>
-public sealed record AfterCastTrigger(string? CastOfAction = null, SkillRef? Skill = null, int? SkillType = null) : TriggerSpec;
+/// <param name="By">Who casts it.</param>
+/// <param name="Skill">The skill cast, or null for any; a skill's own rows mean that skill.</param>
+/// <param name="SkillType">The skill type cast, or null for any.</param>
+public sealed record SkillUsedTrigger(Who By, SkillRef? Skill = null, int? SkillType = null) : TriggerSpec;
 
 /// <summary>
-/// Fires when a boss cast runs at the resolve, one that crowd control or the Overdrive did not stop.
+/// Fires at the resolve once per unit a cast hits; conditions on the hit unit see the states it held
+/// before the cast.
 /// </summary>
-/// <param name="Skill">The skill whose cast fires it, or null for any.</param>
-public sealed record CastResolvedTrigger(SkillRef? Skill = null) : TriggerSpec;
+/// <param name="By">Who casts it.</param>
+/// <param name="Hit">Who is hit.</param>
+/// <param name="Skill">The skill cast, or null for any; a skill's own rows mean that skill.</param>
+/// <param name="SkillType">The skill type cast, or null for any.</param>
+public sealed record SkillHitsTrigger(Who By, Who Hit, SkillRef? Skill = null, int? SkillType = null) : TriggerSpec;
 
 /// <summary>
-/// Fires once per unit a boss cast hits; every filter set must match.
+/// Fires at the resolve after a cast ran, also when it hit no one.
 /// </summary>
-/// <param name="BySkill">The skill that must hit, or null for any.</param>
-/// <param name="Holding">The state the unit must hold from before the cast, or null for any.</param>
-/// <param name="HitByLeaving">The state the hitting skill must leave, or null for any.</param>
-/// <param name="MainTarget">True for the cast's main target only, false for everyone else it hits, null for anyone.</param>
-public sealed record UnitHitTrigger(SkillRef? BySkill = null, int? Holding = null, int? HitByLeaving = null, bool? MainTarget = null) : TriggerSpec;
+/// <param name="By">Who casts it.</param>
+/// <param name="Skill">The skill cast, or null for any; a skill's own rows mean that skill.</param>
+/// <param name="SkillType">The skill type cast, or null for any.</param>
+public sealed record SkillFinishedTrigger(Who By, SkillRef? Skill = null, int? SkillType = null) : TriggerSpec;
 
 /// <summary>
-/// Fires when a party hit lands on the boss; every filter set must match.
+/// Fires once per crossing when HP drops below a percent of the max HP.
 /// </summary>
-/// <param name="HitType">The kind of hit that fires it.</param>
-/// <param name="ChosenOnly">Whether only actions chosen in the command phase and their follow-ups fire it.</param>
-/// <param name="Skill">The party skill that fires it, or null for any.</param>
-/// <param name="SkillType">The party skill type that fires it, or null for any.</param>
-public sealed record BossHitTrigger(HitKind HitType, bool ChosenOnly, SkillRef? Skill = null, int? SkillType = null) : TriggerSpec;
+/// <param name="Whom">Whose HP.</param>
+/// <param name="Percent">The percent.</param>
+public sealed record HpBelowTrigger(Who Whom, int Percent) : TriggerSpec;
 
 /// <summary>
-/// Fires once when the boss's HP crosses below a percent.
+/// Fires once per turn when the damage taken this turn, in the party's and the boss's phases,
+/// reaches a percent of the max HP.
 /// </summary>
-/// <param name="Percent">The HP percent.</param>
-public sealed record BossHpBelowTrigger(int Percent) : TriggerSpec;
+/// <param name="Whom">Who takes the damage.</param>
+/// <param name="Percent">The percent.</param>
+public sealed record DamageInTurnTrigger(Who Whom, int Percent) : TriggerSpec;
 
 /// <summary>
 /// Fires when a state is added.
 /// </summary>
+/// <param name="Whom">Who gains it.</param>
 /// <param name="State">The state.</param>
-/// <param name="On">Who must receive it.</param>
-public sealed record StateAddedTrigger(int State, StateHolder On) : TriggerSpec;
+public sealed record StateGainedTrigger(Who Whom, int State) : TriggerSpec;
 
 /// <summary>
-/// Fires when a unit falls.
+/// Fires when a state goes, removed or run out.
 /// </summary>
-public sealed record UnitFellTrigger : TriggerSpec;
+/// <param name="Whom">Who loses it.</param>
+/// <param name="State">The state.</param>
+public sealed record StateLostTrigger(Who Whom, int State) : TriggerSpec;
 
 /// <summary>
-/// Fires when a boss enemy's HP reaches 0.
+/// Fires when an enemy joins the fight.
 /// </summary>
-/// <param name="Slot">The enemy slot that must fall, or null for any.</param>
-public sealed record EnemyFellTrigger(string? Slot = null) : TriggerSpec;
+/// <param name="Whom">Who joins.</param>
+public sealed record JoinsTrigger(Who Whom) : TriggerSpec;
 
 /// <summary>
-/// Fires once no boss enemy stands, every one fallen or gone; its rules are always fight rules.
+/// Fires when a unit or an enemy falls.
+/// </summary>
+/// <param name="Whom">Who falls.</param>
+public sealed record FallsTrigger(Who Whom) : TriggerSpec;
+
+/// <summary>
+/// Fires once no enemy stands, every one fallen or gone, before the victory is decided.
 /// </summary>
 public sealed record AllEnemiesFellTrigger : TriggerSpec;

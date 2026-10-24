@@ -2,6 +2,7 @@
 //  HazardTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Read the boss's actions from its battle plan
 //      Paulinchen  2026-10-23: Tested that a battle starts with the debris a preview rolls
 //                            - Tested the battlefield hazards and put test hazards on cells after the start
 //                            - Keyed the actions by enemy slot
@@ -184,7 +185,7 @@ public sealed class HazardTests
     [Fact]
     public void PlacesByARuleAndReplacesTheOlderHazard()
     {
-        RuleSpec rule = SimFixtures.Rule("spread", PresetKind.Advanced, "spread", new TurnStartTrigger(), [new PlaceHazardEffect(new HazardPlacement(IceId, 10000, HazardPlace.RandomInArea, 90))]);
+        RuleSpec rule = SimFixtures.Rule("spread", new TurnStartTrigger(), [new PlaceHazardEffect(new HazardPlacement(IceId, 10000, HazardPlace.RandomInArea, 90))]);
         RuntimeDesign design = Design(Hazard(FireId, [HazardTrigger.StepsOnto]), [rule]);
         design = design with { Hazards = new Dictionary<string, RuntimeHazard>(design.Hazards!) { [IceId] = Hazard(IceId, [HazardTrigger.StepsOnto]) } };
         BattleSimulator simulator = SimFixtures.Simulator(design);
@@ -214,7 +215,7 @@ public sealed class HazardTests
             {
                 [SimFixtures.BossKey] = design.Bosses[SimFixtures.BossKey] with
                 {
-                    Actions = new Dictionary<string, IReadOnlyList<RuntimeAction>> { [SimFixtures.Slot] = [SimFixtures.Action("strike", SimFixtures.Strike)] },
+                    Plan = RuntimePlan.OneStage(new Dictionary<string, IReadOnlyList<RuntimeAction>> { [SimFixtures.Slot] = [SimFixtures.Action("strike", SimFixtures.Strike)] }, design.Bosses[SimFixtures.BossKey].Plan.Rules),
                     Skills = new Dictionary<string, RuntimeSkill>(design.Bosses[SimFixtures.BossKey].Skills) { [SimFixtures.Strike.Key] = strike },
                 },
             },
@@ -240,7 +241,7 @@ public sealed class HazardTests
     {
         RuntimeHazard hazard = Hazard(FireId, [HazardTrigger.StartsTurnOn]) with
         {
-            Effects = [new DamageEffect(RuleTarget.Boss, 50), new ApDeltaEffect(3, ApTurn.This), new DamageEffect(RuleTarget.TriggerUnit, 10)],
+            Effects = [new DamageEffect(TargetRef.Owner, 50), new ApDeltaEffect(3, ApTurn.This), new DamageEffect(TargetRef.TriggerUnit, 10)],
         };
         BattleSimulator simulator = SimFixtures.Simulator(Design(hazard));
         BattleState state = Start(simulator, SimFixtures.Setup(1), (FireId, new GridCell(0, 0)));
@@ -261,7 +262,7 @@ public sealed class HazardTests
     {
         RuntimeHazard hazard = Hazard(FireId, [HazardTrigger.StartsTurnOn]) with
         {
-            Effects = [new UseSkillEffect(SimFixtures.Strike, true, false, CastTiming.PlanNow, CastSide.Own, CastAim.TriggerUnit)],
+            Effects = [new UseSkillEffect([new WeightedSkill(SimFixtures.Strike)], CastWhen.ThisTurn, true, false, CastSide.Own, CastAim.TriggerUnit)],
         };
         RuntimeDesign design = Design(hazard);
         design = design with
@@ -289,7 +290,7 @@ public sealed class HazardTests
     [Fact]
     public void EndsTheBattleAtTheTurnStart()
     {
-        RuntimeHazard hazard = Hazard(FireId, [HazardTrigger.StartsTurnOn]) with { Effects = [new DamageEffect(RuleTarget.TriggerUnit, 100)] };
+        RuntimeHazard hazard = Hazard(FireId, [HazardTrigger.StartsTurnOn]) with { Effects = [new DamageEffect(TargetRef.TriggerUnit, 100)] };
         BattleSimulator simulator = SimFixtures.Simulator(Design(hazard));
         BattleState state = Start(simulator, SimFixtures.Setup(1), (FireId, new GridCell(0, 0)));
 
@@ -332,7 +333,7 @@ public sealed class HazardTests
     /// <param name="fires">Its fire count, or null for no limit.</param>
     /// <returns>The hazard.</returns>
     private static RuntimeHazard Hazard(string id, IReadOnlyList<HazardTrigger> triggers, int turns = 0, int? fires = null) =>
-        new(id, id, triggers, [new DamageEffect(RuleTarget.TriggerUnit, 10)], turns, new HazardLook(255), fires);
+        new(id, id, triggers, [new DamageEffect(TargetRef.TriggerUnit, 10)], turns, new HazardLook(255), fires);
 
     /// <summary>
     /// Makes a design whose boss never acts, with one hazard type and the boss's battlefield.

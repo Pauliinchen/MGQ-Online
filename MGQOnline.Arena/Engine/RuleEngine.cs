@@ -2,6 +2,7 @@
 //  RuleEngine.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Limited the fires of a row by how often it fires
 //      Paulinchen  2026-10-23: Matched the fight rules once per event and the enemy rules by enemy slot
 //                            - Queued each effect with its place in its rule
 //      Paulinchen  2026-10-22: Ran the effects of a rule the battle fires itself
@@ -146,11 +147,11 @@ public sealed class RuleEngine
                 continue;
             }
 
-            Fire(context, battleEvent, depth, seat, enemy, enemy, Book.RulesOf(slot), fired);
+            Fire(context, battleEvent, depth, seat, enemy, enemy, false, Book.RulesOf(slot), fired);
         }
 
         int subject = EventFacts.SubjectOf(battleEvent) ?? FightEnemy;
-        Fire(context, battleEvent, depth, seat, subject, FightEnemy, Book.FightRules, fired);
+        Fire(context, battleEvent, depth, seat, subject, FightEnemy, true, Book.FightRules, fired);
         return fired;
     }
 
@@ -163,11 +164,12 @@ public sealed class RuleEngine
     /// <param name="seat">The unit the event names, or null.</param>
     /// <param name="enemy">The rule's enemy: the caster of its casts and the boss of its effects.</param>
     /// <param name="ledgerEnemy">The enemy the ledger counts the fires under.</param>
+    /// <param name="fight">Whether the rules are matched once for the fight.</param>
     /// <param name="rules">The rules in match order.</param>
     /// <param name="fired">Receives the fired rules.</param>
-    private void Fire(IRuleContext context, BattleEvent battleEvent, int depth, int? seat, int enemy, int ledgerEnemy, IReadOnlyList<RuleSpec> rules, List<FiredRule> fired)
+    private void Fire(IRuleContext context, BattleEvent battleEvent, int depth, int? seat, int enemy, int ledgerEnemy, bool fight, IReadOnlyList<RuleSpec> rules, List<FiredRule> fired)
     {
-        foreach (RuleSpec rule in RuleGroups.Pick(Successes(context, battleEvent, enemy, ledgerEnemy, rules), context.Rules))
+        foreach (RuleSpec rule in RuleGroups.Pick(Successes(context, battleEvent, enemy, ledgerEnemy, fight, rules), context.Rules))
         {
             Record(context, battleEvent, ledgerEnemy, rule);
             context.Log(new RuleFiredEvent(battleEvent.Turn, rule.Id, depth, seat));
@@ -182,14 +184,15 @@ public sealed class RuleEngine
     /// <param name="battleEvent">The event.</param>
     /// <param name="enemy">The rule's enemy, whom the conditions ask about.</param>
     /// <param name="ledgerEnemy">The enemy the ledger counts the fires under.</param>
+    /// <param name="fight">Whether the rules are matched once for the fight.</param>
     /// <param name="rules">The rules in match order.</param>
     /// <returns>The rules, in match order.</returns>
-    private List<RuleSpec> Successes(IRuleContext context, BattleEvent battleEvent, int enemy, int ledgerEnemy, IReadOnlyList<RuleSpec> rules)
+    private List<RuleSpec> Successes(IRuleContext context, BattleEvent battleEvent, int enemy, int ledgerEnemy, bool fight, IReadOnlyList<RuleSpec> rules)
     {
         List<RuleSpec> successes = [];
         foreach (RuleSpec rule in rules)
         {
-            if (TriggerMatcher.Matches(rule.Trigger, battleEvent, context, Book)
+            if (TriggerMatcher.Matches(rule, battleEvent, context, Book, enemy, fight)
                 && Allows(context.Ledger, rule, battleEvent, ledgerEnemy)
                 && ConditionEvaluator.Holds(rule.Conditions, context, enemy, battleEvent))
             {
@@ -201,7 +204,7 @@ public sealed class RuleEngine
     }
 
     /// <summary>
-    /// Tells whether a rule's limits allow another fire.
+    /// Tells whether a rule's frequency allows another fire.
     /// </summary>
     /// <remarks>An event without a cast counts as one use, so once per unit per use then means once per unit.</remarks>
     /// <param name="ledger">The fires so far.</param>
@@ -212,10 +215,20 @@ public sealed class RuleEngine
     private static bool Allows(IRuleLedger ledger, RuleSpec rule, BattleEvent battleEvent, int enemy)
     {
         RuleKey key = new(rule.Id, enemy);
-        RuleLimits limits = rule.Limits;
-        return !(limits.OncePerUnitPerUse && ledger.FiredForUse(key, UseOf(battleEvent), SeatOf(battleEvent)))
-            && !(limits.OncePerTurn && ledger.FiresInTurn(key, battleEvent.Turn) > 0)
-            && !(limits.MaxFires is int max && ledger.FiresTotal(key) >= max);
+        HowOften often = rule.Often;
+        int total = ledger.FiresTotal(key);
+        bool counted = often.Kind switch
+        {
+            Frequency.Once => total < 1,
+            Frequency.AtMost => total < (often.N ?? 0),
+
+            // TE1: the Nth and every Nth time count the times trigger and conditions held; they never fire yet.
+            Frequency.Nth or Frequency.EveryNth => false,
+            _ => true,
+        };
+        return counted
+            && !(often.OncePerUnitPerUse && ledger.FiredForUse(key, UseOf(battleEvent), SeatOf(battleEvent)))
+            && !(often.OncePerTurn && ledger.FiresInTurn(key, battleEvent.Turn) > 0);
     }
 
     /// <summary>

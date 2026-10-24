@@ -2,6 +2,7 @@
 //  PlanTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Scheduled the casts by battle rows of the Trigger -> Effect framework
 //      Paulinchen  2026-10-22: Tested the normal attacks per turn
 //      Paulinchen  2026-10-21: Created
 //
@@ -213,14 +214,14 @@ public sealed class PlanTests
     }
 
     /// <summary>
-    /// A scheduled action is never rolled; its lowered rule casts it free and uninterruptible on its
-    /// turns only, and it neither needs nor starts its skill's cooldown.
+    /// A turn row casts its skill outside the roll, free and uninterruptible on its turns only, and
+    /// the cast neither needs nor starts the skill's cooldown.
     /// </summary>
     [Fact]
-    public void CastsScheduledActionsOutsideTheRollAndTheCooldowns()
+    public void CastsTurnRowsOutsideTheRollAndTheCooldowns()
     {
         RuntimeDesign design = SimFixtures.Design(
-            [SimFixtures.Action("sched", SimFixtures.Heavy, 10, new TurnActionCondition(1, 1), scheduled: true)],
+            [],
             [SimFixtures.Skill(SimFixtures.Heavy, cost: 3, cooldown: 3)],
             [SimFixtures.Scheduled("sched", SimFixtures.Heavy, 1, 1)],
             ap: 3,
@@ -233,7 +234,7 @@ public sealed class PlanTests
         Assert.All(turns, turn =>
         {
             PlannedCast entry = Assert.Single(turn.Plan);
-            Assert.Equal((SimFixtures.Heavy, PlanKind.Scheduled, true, true, 0, "sched"), (entry.Skill, entry.Kind, entry.Free, entry.Uninterruptible, entry.Cost, entry.RootActionId));
+            Assert.Equal((SimFixtures.Heavy, PlanKind.Scheduled, true, true, 0, "sched:sched"), (entry.Skill, entry.Kind, entry.Free, entry.Uninterruptible, entry.Cost, entry.RootActionId));
         });
         Assert.Empty(state.Enemies[0].Rest);
     }
@@ -245,7 +246,7 @@ public sealed class PlanTests
     public void SchedulesByTheTurnCondition()
     {
         RuntimeDesign design = SimFixtures.Design(
-            [SimFixtures.Action("sched", SimFixtures.Stigmata, 5, new TurnActionCondition(2, 3), scheduled: true)],
+            [],
             [SimFixtures.Skill(SimFixtures.Stigmata)],
             [SimFixtures.Scheduled("sched", SimFixtures.Stigmata, 2, 3)],
             attackWeight: 0);
@@ -258,7 +259,7 @@ public sealed class PlanTests
     }
 
     /// <summary>
-    /// A follow-up is planned right behind its parent, free, with the parent's root action and the
+    /// A follow-up is planned right behind its parent, free, with the parent's root turn row and the
     /// other half; an alternating schedule switches halves on each of its turns.
     /// </summary>
     [Fact]
@@ -266,9 +267,9 @@ public sealed class PlanTests
     {
         ZoneSpec zone = new(Half: GridHalf.Left, Side: SideChoice.Alternate);
         RuntimeDesign design = SimFixtures.Design(
-            [SimFixtures.Action("sched", SimFixtures.Stigmata, 5, new TurnActionCondition(2, 3), scheduled: true), SimFixtures.Action("strike", SimFixtures.Strike, 5)],
+            [SimFixtures.Action("strike", SimFixtures.Strike, 5)],
             [SimFixtures.Skill(SimFixtures.Stigmata, zone: zone), SimFixtures.Skill(SimFixtures.DarkStigmata, zone: zone), SimFixtures.Skill(SimFixtures.Strike, cost: 2)],
-            [SimFixtures.Scheduled("sched", SimFixtures.Stigmata, 2, 3), SimFixtures.FollowUp("sched", SimFixtures.DarkStigmata)],
+            [SimFixtures.Scheduled("sched", SimFixtures.Stigmata, 2, 3), SimFixtures.FollowUp("sched", SimFixtures.Stigmata, SimFixtures.DarkStigmata)],
             ap: 4,
             attackWeight: 0);
         BattleSimulator simulator = SimFixtures.Simulator(design);
@@ -281,7 +282,7 @@ public sealed class PlanTests
             PlannedCast parent = turn.Plan[0];
             PlannedCast follow = turn.Plan[1];
             Assert.Equal((PlanKind.Scheduled, PlanKind.FollowUp), (parent.Kind, follow.Kind));
-            Assert.Equal((parent.CastId, "sched", true, 0), (follow.ParentCastId, follow.RootActionId, follow.Free, follow.Cost));
+            Assert.Equal((parent.CastId, "sched:sched", true, 0), (follow.ParentCastId, follow.RootActionId, follow.Free, follow.Cost));
             Assert.All(turn.Plan.Skip(2), entry => Assert.Equal(PlanKind.Rolled, entry.Kind));
             sides.Add((parent.Side, follow.Side));
         }
@@ -297,13 +298,13 @@ public sealed class PlanTests
     public void OrdersTheForcedEntries()
     {
         RuntimeDesign design = SimFixtures.Design(
-            [SimFixtures.Action("sched", SimFixtures.Stigmata, 5, new TurnActionCondition(1, 1), scheduled: true)],
+            [],
             [SimFixtures.Skill(SimFixtures.Stigmata), SimFixtures.Skill(SimFixtures.Strike), SimFixtures.Skill(SimFixtures.Sweep), SimFixtures.Skill(SimFixtures.Heavy)],
             [
                 SimFixtures.Scheduled("sched", SimFixtures.Stigmata, 1, 1),
-                SimFixtures.Rule("start", PresetKind.TurnStartSkill, "start", new TurnStartTrigger(), [new UseSkillEffect(SimFixtures.Strike, true, true, CastTiming.PlanNow, CastSide.Own, CastAim.Default)]),
-                SimFixtures.Rule("counter", PresetKind.DelayedCounter, "counter", new BossHitTrigger(HitKind.Any, false), [new UseSkillEffect(SimFixtures.Sweep, true, true, CastTiming.NextTurn, CastSide.Own, CastAim.Attacker)]),
-                SimFixtures.Rule("stand", PresetKind.LastStandStart, "stand", new BossHpBelowTrigger(50), [new UseSkillEffect(SimFixtures.Heavy, true, true, CastTiming.NextTurn, CastSide.Own, CastAim.Default)]),
+                SimFixtures.Rule("start", new TurnStartTrigger(), [new UseSkillEffect([new WeightedSkill(SimFixtures.Strike)], CastWhen.ThisTurn, true, true, CastSide.Own, CastAim.Default)]),
+                SimFixtures.Rule("counter", new SkillHitsTrigger(Who.Character, Who.Owner), [new UseSkillEffect([new WeightedSkill(SimFixtures.Sweep)], CastWhen.NextTurn, true, true, CastSide.Own, CastAim.Attacker)]),
+                SimFixtures.Rule("stand", new HpBelowTrigger(Who.Owner, 50), [new UseSkillEffect([new WeightedSkill(SimFixtures.Heavy)], CastWhen.NextTurn, true, true, CastSide.Own, CastAim.Default)]),
             ],
             attackWeight: 0);
         BattleSimulator simulator = SimFixtures.Simulator(design);
@@ -331,7 +332,7 @@ public sealed class PlanTests
             [],
             [],
             [
-                SimFixtures.Rule("haste", PresetKind.Advanced, "haste", new TurnStartTrigger(), [new ApDeltaEffect(2, ApTurn.This), new ApDeltaEffect(1, ApTurn.Next)]),
+                SimFixtures.Rule("haste", new TurnStartTrigger(), [new ApDeltaEffect(2, ApTurn.This), new ApDeltaEffect(1, ApTurn.Next)]),
             ],
             ap: 3,
             bankTurns: 0);

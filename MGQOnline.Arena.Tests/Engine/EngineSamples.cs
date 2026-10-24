@@ -2,6 +2,7 @@
 //  EngineSamples.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Made the sample rules rows of the Trigger -> Effect framework
 //      Paulinchen  2026-10-23: Keyed the sample book by enemy slot
 //      Paulinchen  2026-10-21: Created
 //
@@ -33,7 +34,7 @@ internal static class EngineSamples
     public const int Dark = 302;
 
     /// <summary>
-    /// The id of the scheduled Stigmata action.
+    /// The id of the turn row that schedules Stigmata, which marks may wait for.
     /// </summary>
     public const string StigmataAction = "a1b2c3d4";
 
@@ -41,11 +42,6 @@ internal static class EngineSamples
     /// The id of a rolled action.
     /// </summary>
     public const string RolledAction = "b2c3d4e5";
-
-    /// <summary>
-    /// The boss entity id of the rules.
-    /// </summary>
-    public const string BossId = "boss:7f3a91c04be2d55e0a1c9b8e2f6d4a10";
 
     /// <summary>
     /// Gets the light Stigmata skill, which leaves the light mark.
@@ -63,36 +59,47 @@ internal static class EngineSamples
     public static SkillRef Blast { get; } = SkillRef.OfGame(1515);
 
     /// <summary>
-    /// Gets the action list of enemy 0: Stigmata scheduled on turn 2 + 3·X with a dark follow-up, and a rolled Blast.
+    /// Gets the battle row that schedules Stigmata from enemy 0 on turn 2 + 3·X.
     /// </summary>
-    public static IReadOnlyList<RuntimeAction> Actions { get; } =
-    [
-        new RuntimeAction(StigmataAction, LightStigmata, 5, new TurnActionCondition(2, 3), true, new FollowUpSpec(DarkStigmata, FollowUpSide.Opposite)),
-        new RuntimeAction(RolledAction, Blast, 4, new AlwaysActionCondition(), false),
-    ];
+    public static RuleSpec Schedule { get; } = new(
+        StigmataAction,
+        RuleOwner.Battle,
+        new TurnTrigger(2, 3),
+        [],
+        [Use(LightStigmata, uninterruptible: true, caster: FakeRuleContext.SlotOfIndex(0))],
+        HowOften.Every);
 
     /// <summary>
-    /// Makes a rule.
+    /// Gets the battle row that follows enemy 0's light Stigmata with the dark one on the other half.
+    /// </summary>
+    public static RuleSpec FollowUp { get; } = new(
+        StigmataAction + ":follow",
+        RuleOwner.Battle,
+        new SkillUsedTrigger(Who.Enemy(FakeRuleContext.SlotOfIndex(0)), LightStigmata),
+        [],
+        [Use(DarkStigmata, side: CastSide.Opposite, caster: FakeRuleContext.SlotOfIndex(0))],
+        HowOften.Every);
+
+    /// <summary>
+    /// Makes a rule of every enemy slot.
     /// </summary>
     /// <param name="id">The rule id.</param>
     /// <param name="trigger">The trigger.</param>
     /// <param name="effects">The effects.</param>
     /// <param name="conditions">The conditions, or null for none.</param>
-    /// <param name="limits">The limits, or null for none.</param>
+    /// <param name="often">How often it fires, or null for every time.</param>
     /// <param name="group">The group, or null.</param>
-    /// <param name="preset">The preset it comes from.</param>
-    /// <param name="itemId">The item it comes from, or null for the id.</param>
+    /// <param name="owner">The owner, or null for an enemy row of every slot.</param>
     /// <returns>The rule.</returns>
     public static RuleSpec Rule(
         string id,
         TriggerSpec trigger,
         IReadOnlyList<EffectSpec> effects,
         IReadOnlyList<ConditionSpec>? conditions = null,
-        RuleLimits? limits = null,
+        HowOften? often = null,
         string? group = null,
-        PresetKind preset = PresetKind.Advanced,
-        string? itemId = null) =>
-        new(id, new RuleOrigin(preset, BossId, itemId ?? id), trigger, conditions ?? [], effects, limits ?? RuleLimits.None, group);
+        RuleOwner? owner = null) =>
+        new(id, owner ?? new RuleOwner(OwnerKind.Enemy), trigger, conditions ?? [], effects, often ?? HowOften.Every, group);
 
     /// <summary>
     /// Makes a rule whose one effect gives the boss an action point, for telling which rules fired.
@@ -100,14 +107,35 @@ internal static class EngineSamples
     /// <param name="id">The rule id.</param>
     /// <param name="trigger">The trigger.</param>
     /// <param name="conditions">The conditions, or null for none.</param>
-    /// <param name="limits">The limits, or null for none.</param>
+    /// <param name="often">How often it fires, or null for every time.</param>
     /// <param name="group">The group, or null.</param>
     /// <returns>The rule.</returns>
-    public static RuleSpec Marker(string id, TriggerSpec trigger, IReadOnlyList<ConditionSpec>? conditions = null, RuleLimits? limits = null, string? group = null) =>
-        Rule(id, trigger, [new ApDeltaEffect(1, ApTurn.This)], conditions, limits, group);
+    public static RuleSpec Marker(string id, TriggerSpec trigger, IReadOnlyList<ConditionSpec>? conditions = null, HowOften? often = null, string? group = null) =>
+        Rule(id, trigger, [new ApDeltaEffect(1, ApTurn.This)], conditions, often, group);
 
     /// <summary>
-    /// Makes a rule book with the sample actions for every enemy.
+    /// Makes a use skill effect of one skill.
+    /// </summary>
+    /// <param name="skill">The skill.</param>
+    /// <param name="when">When it is cast.</param>
+    /// <param name="free">Whether it costs no action points.</param>
+    /// <param name="uninterruptible">Whether crowd control cannot disable it.</param>
+    /// <param name="side">Which half it is cast on.</param>
+    /// <param name="aim">Where it is aimed.</param>
+    /// <param name="caster">The casting slot, or null for the rule's enemy.</param>
+    /// <returns>The effect.</returns>
+    public static UseSkillEffect Use(
+        SkillRef skill,
+        CastWhen when = CastWhen.ThisTurn,
+        bool free = true,
+        bool uninterruptible = false,
+        CastSide side = CastSide.Own,
+        CastAim aim = CastAim.Default,
+        string? caster = null) =>
+        new([new WeightedSkill(skill)], when, free, uninterruptible, side, aim, caster);
+
+    /// <summary>
+    /// Makes a rule book for some enemies.
     /// </summary>
     /// <param name="rules">The rules.</param>
     /// <param name="enemies">The number of enemies.</param>
@@ -115,7 +143,7 @@ internal static class EngineSamples
     public static RuleBook Book(IReadOnlyList<RuleSpec> rules, int enemies = 1) =>
         new(
             rules,
-            Enumerable.Range(0, enemies).ToDictionary(FakeRuleContext.SlotOfIndex, _ => Actions),
+            Enumerable.Range(0, enemies).Select(FakeRuleContext.SlotOfIndex),
             new Dictionary<string, IReadOnlyList<int>> { [Blast.Key] = [3], [LightStigmata.Key] = [1], [DarkStigmata.Key] = [1] });
 
     /// <summary>
@@ -126,7 +154,7 @@ internal static class EngineSamples
     public static RuleEngine EngineOf(params RuleSpec[] rules) => new(Book(rules));
 
     /// <summary>
-    /// Makes the leaves-mark rule of a Stigmata skill as the lowering writes it.
+    /// Makes the row of a Stigmata skill that leaves its mark on every character it hits.
     /// </summary>
     /// <param name="skill">The skill.</param>
     /// <param name="mark">The mark it leaves.</param>
@@ -134,29 +162,36 @@ internal static class EngineSamples
     public static RuleSpec Leaves(SkillRef skill, int mark) =>
         Rule(
             $"{skill.Key}:leave{mark}",
-            new UnitHitTrigger(BySkill: skill),
-            [new AddStateEffect(RuleTarget.TriggerUnit, mark, MinTurns: 1, UntilNextCastOf: AddStateEffect.RootOfCast)],
+            new SkillHitsTrigger(Who.Owner, Who.Character),
+            [new AddStateEffect(TargetRef.TriggerUnit, mark, MinTurns: 1, UntilNextCastOf: AddStateEffect.RootOfCast)],
             [new ChanceCondition(10_000)],
-            preset: PresetKind.LeavesMark);
+            owner: RuleOwner.OfSkill(skill));
 
     /// <summary>
-    /// Makes a mark reaction as the lowering writes it: damage by percent, and the held mark consumed unless kept.
+    /// Makes the row of a skill that reacts to a mark the hit character held: damage by percent, and
+    /// the held mark consumed unless kept.
     /// </summary>
     /// <param name="id">The rule id.</param>
     /// <param name="holding">The mark the unit holds.</param>
-    /// <param name="leaving">The mark the hitting skill leaves.</param>
+    /// <param name="by">The hitting skill, which owns the row.</param>
     /// <param name="percent">The damage in percent of the unit's max HP.</param>
     /// <param name="keepMark">Whether the mark stays.</param>
     /// <returns>The rule.</returns>
-    public static RuleSpec Reaction(string id, int holding, int leaving, double percent, bool keepMark = false)
+    public static RuleSpec Reaction(string id, int holding, SkillRef by, double percent, bool keepMark = false)
     {
-        List<EffectSpec> effects = [new DamageEffect(RuleTarget.TriggerUnit, percent)];
+        List<EffectSpec> effects = [new DamageEffect(TargetRef.TriggerUnit, percent)];
         if (!keepMark)
         {
-            effects.Add(new RemoveStateEffect(RuleTarget.TriggerUnit, holding));
+            effects.Add(new RemoveStateEffect(TargetRef.TriggerUnit, holding));
         }
 
-        return Rule(id, new UnitHitTrigger(Holding: holding, HitByLeaving: leaving), effects, limits: new RuleLimits(true, false), preset: PresetKind.MarkReaction);
+        return Rule(
+            id,
+            new SkillHitsTrigger(Who.Owner, Who.Character),
+            effects,
+            [new HoldsStateCondition(TargetRef.TriggerUnit, holding)],
+            new HowOften(Frequency.Every, OncePerUnitPerUse: true),
+            owner: RuleOwner.OfSkill(by));
     }
 
     /// <summary>

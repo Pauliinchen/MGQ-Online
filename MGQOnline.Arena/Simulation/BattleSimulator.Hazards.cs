@@ -2,6 +2,7 @@
 //  BattleSimulator.Hazards.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Ran a hazard's effects as a battle row
 //      Paulinchen  2026-10-23: Placed the raid's battlefield hazards at battle start
 //                            - Left out the hazard effects that change the boss's damage reductions
 //                            - Left out the hazard effects that change the fight's enemies
@@ -209,7 +210,7 @@ public sealed partial class BattleSimulator
         }
 
         TriggerSpec kind = trigger == HazardTrigger.StartsTurnOn ? new TurnStartTrigger() : new TurnEndTrigger();
-        RuleSpec rule = new(ruleId, new RuleOrigin(PresetKind.Hazard, hazard.Id, hazard.Id), kind, [], effects, RuleLimits.None);
+        RuleSpec rule = new(ruleId, RuleOwner.Battle, kind, [], effects, HowOften.Every);
         state.Engine.Run(ContextOf(state), new FiredRule(rule, enemyIndex, fire, 0));
     }
 
@@ -242,19 +243,27 @@ public sealed partial class BattleSimulator
     /// Tells whether an effect acts on the boss, which hazards never affect.
     /// </summary>
     /// <param name="effect">The effect.</param>
-    /// <returns>Whether it gives, takes, damages, clears or shields the boss, changes its action points, or brings enemies in, takes them out or transforms them.</returns>
+    /// <returns>Whether it gives, takes, damages, heals, clears or shields the boss, changes its action points, roll, casts or stage, or brings enemies in, takes them out or transforms them.</returns>
     private static bool ActsOnBoss(EffectSpec effect) => effect switch
     {
         EnemyJoinsEffect or EnemyLeavesEffect or EnemyTransformsEffect => true,
-        DamageReductionEffect reduction => reduction.To == RuleTarget.Boss,
-        RemoveDamageReductionEffect remove => remove.From == RuleTarget.Boss,
-        AddStateEffect add => add.To == RuleTarget.Boss,
-        RemoveStateEffect remove => remove.From == RuleTarget.Boss,
-        DamageEffect damage => damage.To == RuleTarget.Boss,
-        ClearDebuffsEffect clear => clear.From == RuleTarget.Boss,
-        ApDeltaEffect => true,
+        DamageReductionEffect reduction => IsEnemy(reduction.To),
+        RemoveDamageReductionEffect remove => IsEnemy(remove.From),
+        AddStateEffect add => IsEnemy(add.To),
+        RemoveStateEffect remove => IsEnemy(remove.From),
+        DamageEffect damage => IsEnemy(damage.To),
+        HealEffect heal => IsEnemy(heal.To),
+        ClearDebuffsEffect clear => IsEnemy(clear.From),
+        ApDeltaEffect or SkipRollEffect or CancelSkillEffect or GoToStageEffect => true,
         _ => false,
     };
+
+    /// <summary>
+    /// Tells whether a target names enemies.
+    /// </summary>
+    /// <param name="target">The target.</param>
+    /// <returns>Whether it is the owner, an enemy slot or every enemy.</returns>
+    private static bool IsEnemy(TargetRef target) => target.Kind is TargetKind.Owner or TargetKind.Enemy or TargetKind.EveryEnemy;
 
     /// <summary>
     /// Describes a planned cast's telegraphed pulses as their placement reads them, without the cells

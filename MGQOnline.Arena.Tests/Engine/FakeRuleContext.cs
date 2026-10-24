@@ -2,6 +2,7 @@
 //  FakeRuleContext.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Told whether a game switch is on
 //      Paulinchen  2026-10-23: Recorded damage reductions
 //                            - Brought enemies in, took them out and transformed them
 //                            - Handed the debris placed back as cells
@@ -90,6 +91,11 @@ internal sealed class FakeRuleContext : IRuleContext
     public Dictionary<int, string> Slots { get; } = [];
 
     /// <summary>
+    /// Gets the game switches that are on.
+    /// </summary>
+    public HashSet<int> Switches { get; } = [];
+
+    /// <summary>
     /// Gets the sealed skills.
     /// </summary>
     public HashSet<SkillRef> Sealed { get; } = [];
@@ -156,6 +162,9 @@ internal sealed class FakeRuleContext : IRuleContext
 
     /// <inheritdoc />
     public bool TurnHolds(int a, int b, int turn) => TurnCondition(a, b, turn);
+
+    /// <inheritdoc />
+    public bool IsSwitchOn(int id) => Switches.Contains(id);
 
     /// <summary>
     /// Gives the slot an enemy index has until a join or a transform gives it another.

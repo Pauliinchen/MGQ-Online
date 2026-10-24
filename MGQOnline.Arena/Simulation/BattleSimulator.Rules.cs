@@ -2,6 +2,7 @@
 //  BattleSimulator.Rules.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Told the rule engine whether a game switch is on
 //      Paulinchen  2026-10-23: Added and removed damage reductions and reduced every damage by them last
 //                            - Brought enemies in, took them out and transformed them by a rule
 //                            - Decided the victory once the rules of the last fall ran
@@ -260,6 +261,9 @@ public sealed partial class BattleSimulator
 
         /// <inheritdoc />
         public bool TurnHolds(int a, int b, int turn) => TurnSchedule.Holds(a, b, turn);
+
+        /// <inheritdoc />
+        public bool IsSwitchOn(int id) => state.Setup.SwitchesOn.Contains(id);
 
         /// <inheritdoc />
         public FormulaStats StatsOf(StateHolder holder, int index)

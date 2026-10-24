@@ -2,6 +2,7 @@
 //  BattleState.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Kept the battle plan's stage and the turn it started in
 //      Paulinchen  2026-10-23: Kept the damage reductions of units and enemies
 //                            - Kept the enemies that join, leave or transform, and the rules of the whole boss
 //      Paulinchen  2026-10-22: Kept the hazards and their fires
@@ -92,6 +93,7 @@ public sealed class BattleState
         Grid = grid;
         Random = new RandomStreams(setup.Seed);
         Engine = new RuleEngine(RuleBook.ForBoss(boss));
+        Stage = boss.Plan.Stages.Count > 0 ? boss.Plan.Stages[0].Id : RuntimePlan.MainStage;
     }
 
     /// <summary>
@@ -118,6 +120,16 @@ public sealed class BattleState
     /// Gets the current turn, 1 the first, 0 before it.
     /// </summary>
     public int Turn { get; internal set; }
+
+    /// <summary>
+    /// Gets the id of the battle plan's stage the battle is in.
+    /// </summary>
+    public string Stage { get; internal set; }
+
+    /// <summary>
+    /// Gets the turn the stage started in; the stage turn is <see cref="Turn"/> - StageStartTurn + 1.
+    /// </summary>
+    public int StageStartTurn { get; internal set; } = 1;
 
     /// <summary>
     /// Gets where the turn stands.
@@ -375,7 +387,7 @@ public sealed class EnemyState
     public int Index { get; }
 
     /// <summary>
-    /// Gets its enemy slot, which names its action list and which a transform changes.
+    /// Gets its enemy slot, which names its rolled skills and which a transform changes.
     /// </summary>
     public string Slot { get; private set; }
 
@@ -546,8 +558,8 @@ public sealed class RuleMemory
 /// <param name="CastId">The cast's id, unique in the battle.</param>
 /// <param name="Enemy">The casting enemy's index.</param>
 /// <param name="Skill">The skill.</param>
-/// <param name="ActionId">The action it comes from, or null.</param>
-/// <param name="RootActionId">The action at the root of its follow-up chain, or null.</param>
+/// <param name="ActionId">The rolled action or turn row it comes from, or null.</param>
+/// <param name="RootActionId">The rolled action or turn row at the root of its follow-up chain, or null.</param>
 /// <param name="Kind">Why it is in the plan.</param>
 /// <param name="Free">Whether it cost no action points.</param>
 /// <param name="Uninterruptible">Whether crowd control cannot disable it.</param>
@@ -626,7 +638,7 @@ public sealed record PlannedCast(
 /// <param name="Side">Which half it is cast on.</param>
 /// <param name="AimSeat">The seat it is aimed at, or null for the skill's own targeting.</param>
 /// <param name="ParentSide">The half of the cast that caused it, or null.</param>
-/// <param name="RootActionId">The root action of the cast that caused it, or null.</param>
+/// <param name="RootActionId">The rolled action or turn row at the root of the cast that caused it, or null.</param>
 /// <param name="RuleId">The rule that queued it.</param>
 /// <param name="QueuedTurn">The turn it was queued in.</param>
 public sealed record QueuedCast(

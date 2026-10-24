@@ -2,6 +2,7 @@
 //  RuleEngineTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Tested the engine with rows of the Trigger -> Effect framework
 //      Paulinchen  2026-10-21: Dropped the test of the effect queue seam
 //                            - Created
 //
@@ -33,7 +34,7 @@ public sealed class RuleEngineTests
     public void ReactsBeforeTheHitLeavesItsMark()
     {
         _context.Give(StateHolder.Unit, 1, Light, new MarkClock(3, StigmataAction, "c1"));
-        RuleEngine engine = EngineOf(Leaves(DarkStigmata, Dark), Leaves(DarkStigmata, Light), Reaction("react", Light, Dark, 10));
+        RuleEngine engine = EngineOf(Schedule, Leaves(DarkStigmata, Dark), Leaves(DarkStigmata, Light), Reaction("react", Light, DarkStigmata, 10));
 
         engine.Raise(_context, HitIn(_context, 5, "c4", DarkStigmata, Dark, 1));
 
@@ -50,7 +51,7 @@ public sealed class RuleEngineTests
     public void ConsumesTheHeldMark()
     {
         _context.Give(StateHolder.Unit, 1, Light, new MarkClock(3, StigmataAction, "c1"));
-        RuleEngine engine = EngineOf(Leaves(DarkStigmata, Dark), Reaction("react", Light, Dark, 10));
+        RuleEngine engine = EngineOf(Schedule, Leaves(DarkStigmata, Dark), Reaction("react", Light, DarkStigmata, 10));
 
         engine.Raise(_context, HitIn(_context, 5, "c4", DarkStigmata, Dark, 1));
 
@@ -65,7 +66,7 @@ public sealed class RuleEngineTests
     public void KeepsTheMarkWhenAsked()
     {
         _context.Give(StateHolder.Unit, 1, Light, new MarkClock(3, StigmataAction, "c1"));
-        RuleEngine engine = EngineOf(Leaves(DarkStigmata, Dark), Reaction("react", Light, Dark, 10, keepMark: true));
+        RuleEngine engine = EngineOf(Schedule, Leaves(DarkStigmata, Dark), Reaction("react", Light, DarkStigmata, 10, keepMark: true));
 
         engine.Raise(_context, HitIn(_context, 5, "c4", DarkStigmata, Dark, 1));
 
@@ -81,7 +82,7 @@ public sealed class RuleEngineTests
     public void ReactsOncePerUnitPerUse()
     {
         _context.Give(StateHolder.Unit, 1, Light);
-        RuleEngine engine = EngineOf(Reaction("react", Light, Dark, 10, keepMark: true));
+        RuleEngine engine = EngineOf(Reaction("react", Light, DarkStigmata, 10, keepMark: true));
 
         engine.Raise(_context, HitIn(_context, 5, "c4", DarkStigmata, Dark, 1));
         engine.Raise(_context, HitIn(_context, 5, "c4", DarkStigmata, Dark, 1));
@@ -96,7 +97,7 @@ public sealed class RuleEngineTests
     [Fact]
     public void ReactsToTheMarksHeldBeforeTheCast()
     {
-        RuleEngine engine = EngineOf(Leaves(LightStigmata, Light), Reaction("react", Light, Light, 10));
+        RuleEngine engine = EngineOf(Leaves(LightStigmata, Light), Reaction("react", Light, LightStigmata, 10));
 
         engine.Raise(_context, HitIn(_context, 2, "c1", LightStigmata, Light, 1));
 
@@ -111,8 +112,8 @@ public sealed class RuleEngineTests
     public void StopsLoopsAtDepthEight()
     {
         RuleEngine engine = EngineOf(
-            Rule("ping", new StateAddedTrigger(40, StateHolder.Unit), [new RemoveStateEffect(RuleTarget.TriggerUnit, 41), new AddStateEffect(RuleTarget.TriggerUnit, 41, Turns: 1)]),
-            Rule("pong", new StateAddedTrigger(41, StateHolder.Unit), [new RemoveStateEffect(RuleTarget.TriggerUnit, 40), new AddStateEffect(RuleTarget.TriggerUnit, 40, Turns: 1)]));
+            Rule("ping", new StateGainedTrigger(Who.Character, 40), [new RemoveStateEffect(TargetRef.TriggerUnit, 41), new AddStateEffect(TargetRef.TriggerUnit, 41, Turns: 1)]),
+            Rule("pong", new StateGainedTrigger(Who.Character, 41), [new RemoveStateEffect(TargetRef.TriggerUnit, 40), new AddStateEffect(TargetRef.TriggerUnit, 40, Turns: 1)]));
 
         engine.Raise(_context, new StateAddedEvent(1, StateHolder.Unit, 0, 40));
 
@@ -128,9 +129,9 @@ public sealed class RuleEngineTests
     public void RunsEffectsInQueueOrder()
     {
         RuleEngine engine = EngineOf(
-            Rule("first", new TurnStartTrigger(), [new AddStateEffect(RuleTarget.Boss, 50, Turns: 1), new ApDeltaEffect(1, ApTurn.This)]),
+            Rule("first", new TurnStartTrigger(), [new AddStateEffect(TargetRef.Owner, 50, Turns: 1), new ApDeltaEffect(1, ApTurn.This)]),
             Rule("second", new TurnStartTrigger(), [new ApDeltaEffect(2, ApTurn.This)]),
-            Rule("deeper", new StateAddedTrigger(50, StateHolder.Boss), [new ApDeltaEffect(3, ApTurn.This)]));
+            Rule("deeper", new StateGainedTrigger(Who.Owner, 50), [new ApDeltaEffect(3, ApTurn.This)]));
 
         engine.Raise(_context, new TurnStartEvent(1));
 
@@ -145,7 +146,7 @@ public sealed class RuleEngineTests
     {
         FakeRuleContext context = new(enemies: 3);
         context.Living.Remove(1);
-        RuleEngine engine = new(Book([Marker("start", new TurnStartTrigger()), Marker("hit", new BossHitTrigger(HitKind.Any, false))], enemies: 3));
+        RuleEngine engine = new(Book([Marker("start", new TurnStartTrigger()), Marker("hit", new SkillHitsTrigger(Who.Character, Who.Owner))], enemies: 3));
 
         engine.Raise(context, new TurnStartEvent(1));
         engine.Raise(context, new BossHitEvent(1, 2, 0, new GridCell(0, 0), HitKind.Magic, Blast, [], true));

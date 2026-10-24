@@ -2,6 +2,7 @@
 //  CrowdControlTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Scheduled the casts and follow-ups by battle rows of the Trigger -> Effect framework
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -160,7 +161,7 @@ public sealed class CrowdControlTests
     [Fact]
     public void FreezesTheBossDuringTheOverdrive()
     {
-        RuntimeDesign design = CcDesign([], [SimFixtures.Rule("counter", PresetKind.DelayedCounter, "counter", new TurnEndTrigger(), [new UseSkillEffect(SimFixtures.Sweep, true, true, CastTiming.NextTurn, CastSide.Own, CastAim.Default)], limits: new RuleLimits(false, false, 1))]);
+        RuntimeDesign design = CcDesign([], [SimFixtures.Rule("counter", new TurnEndTrigger(), [new UseSkillEffect([new WeightedSkill(SimFixtures.Sweep)], CastWhen.NextTurn, true, true, CastSide.Own, CastAim.Default)], often: new HowOften(Frequency.Once))]);
         BattleSimulator simulator = SimFixtures.Simulator(design);
         BattleState state = simulator.Start(SimFixtures.Setup());
         simulator.Plan(state);
@@ -208,14 +209,13 @@ public sealed class CrowdControlTests
     /// <returns>The design.</returns>
     private static RuntimeDesign CcDesign(IReadOnlyList<int> tierStates, IReadOnlyList<RuleSpec>? extra = null) => SimFixtures.Design(
         [
-            SimFixtures.Action("sched", SimFixtures.Stigmata, 5, new TurnActionCondition(1, 1), scheduled: true),
             SimFixtures.Action("strike", SimFixtures.Strike, 5),
         ],
         [SimFixtures.Skill(SimFixtures.Stigmata), SimFixtures.Skill(SimFixtures.DarkStigmata), SimFixtures.Skill(SimFixtures.Strike), SimFixtures.Skill(SimFixtures.Sweep)],
         [
             SimFixtures.Scheduled("sched", SimFixtures.Stigmata, 1, 1),
-            SimFixtures.FollowUp("sched", SimFixtures.DarkStigmata),
-            SimFixtures.FollowUp("strike", SimFixtures.Sweep, CastSide.Same),
+            SimFixtures.FollowUp("sched", SimFixtures.Stigmata, SimFixtures.DarkStigmata),
+            SimFixtures.FollowUp("strike", SimFixtures.Strike, SimFixtures.Sweep, CastSide.Same),
             .. extra ?? [],
         ],
         attackWeight: 0,

@@ -2,6 +2,7 @@
 //  RuleEnums.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Replaced the preset, scope, rule target and cast timing with the row kinds
 //      Paulinchen  2026-10-23: Added the rule scope and the fight change origin
 //      Paulinchen  2026-10-22: Added the hazard origin
 //      Paulinchen  2026-10-21: Created
@@ -14,92 +15,202 @@ using MGQOnline.Arena.Json;
 namespace MGQOnline.Arena.Model;
 
 /// <summary>
-/// The editor preset a rule was lowered from.
+/// Where a rule lives.
 /// </summary>
-[JsonConverter(typeof(CamelCaseEnumConverter<PresetKind>))]
-public enum PresetKind
+[JsonConverter(typeof(CamelCaseEnumConverter<OwnerKind>))]
+public enum OwnerKind
 {
     /// <summary>
-    /// A scheduled action: a turn condition cast outside the roll.
+    /// A script row of the battle that holds in every stage.
     /// </summary>
-    ScheduledCast,
+    Battle,
 
     /// <summary>
-    /// An action's follow-up skill.
+    /// A script row of one stage.
     /// </summary>
-    FollowUp,
+    Stage,
 
     /// <summary>
-    /// A mark a skill leaves on the units it hits.
+    /// A row of a skill's effects.
     /// </summary>
-    LeavesMark,
+    Skill,
 
     /// <summary>
-    /// A boss's reaction to a unit hit while it holds a mark.
+    /// A trait row of an enemy slot.
     /// </summary>
-    MarkReaction,
-
-    /// <summary>
-    /// A rule written in the advanced form.
-    /// </summary>
-    Advanced,
-
-    /// <summary>
-    /// A delayed counter trait.
-    /// </summary>
-    DelayedCounter,
-
-    /// <summary>
-    /// A custom skill's stance.
-    /// </summary>
-    Stance,
-
-    /// <summary>
-    /// A turn start skill trait.
-    /// </summary>
-    TurnStartSkill,
-
-    /// <summary>
-    /// A Last stand's start skill.
-    /// </summary>
-    LastStandStart,
-
-    /// <summary>
-    /// The game's chain tag.
-    /// </summary>
-    ChainTag,
-
-    /// <summary>
-    /// A combo skill trait.
-    /// </summary>
-    ComboSkill,
-
-    /// <summary>
-    /// A hazard's effects, run for the character who fired it.
-    /// </summary>
-    Hazard,
-
-    /// <summary>
-    /// A fight change: an enemy joins, leaves or transforms.
-    /// </summary>
-    FightChange,
+    Enemy,
 }
 
 /// <summary>
-/// Whom a rule is matched for.
+/// Whom a trigger asks about.
 /// </summary>
-[JsonConverter(typeof(CamelCaseEnumConverter<RuleScope>))]
-public enum RuleScope
+[JsonConverter(typeof(CamelCaseEnumConverter<WhoKind>))]
+public enum WhoKind
 {
     /// <summary>
-    /// Every enemy whose rules hold it, each in turn; the rule's enemy is that enemy.
+    /// The owning enemy, or the caster of the owning skill.
+    /// </summary>
+    Owner,
+
+    /// <summary>
+    /// The enemies of one slot.
     /// </summary>
     Enemy,
 
     /// <summary>
-    /// The fight once per event, also when no enemy stands; the rule's enemy is the one the event names.
+    /// Any enemy.
     /// </summary>
-    Fight,
+    AnyEnemy,
+
+    /// <summary>
+    /// Any party character.
+    /// </summary>
+    Character,
+
+    /// <summary>
+    /// Anyone, enemy or character.
+    /// </summary>
+    Anyone,
+}
+
+/// <summary>
+/// Whom an effect or a condition acts on.
+/// </summary>
+[JsonConverter(typeof(CamelCaseEnumConverter<TargetKind>))]
+public enum TargetKind
+{
+    /// <summary>
+    /// The unit the triggering event hit or affected.
+    /// </summary>
+    TriggerUnit,
+
+    /// <summary>
+    /// The unit that attacked the trigger unit.
+    /// </summary>
+    Attacker,
+
+    /// <summary>
+    /// The owning enemy, or the caster of the owning skill.
+    /// </summary>
+    Owner,
+
+    /// <summary>
+    /// Every standing enemy of one slot.
+    /// </summary>
+    Enemy,
+
+    /// <summary>
+    /// Every party character.
+    /// </summary>
+    EveryCharacter,
+
+    /// <summary>
+    /// Every standing enemy.
+    /// </summary>
+    EveryEnemy,
+
+    /// <summary>
+    /// Every unit the triggering cast hit.
+    /// </summary>
+    HitUnits,
+}
+
+/// <summary>
+/// How often a rule fires among the times its trigger and conditions hold.
+/// </summary>
+[JsonConverter(typeof(CamelCaseEnumConverter<Frequency>))]
+public enum Frequency
+{
+    /// <summary>
+    /// Every time.
+    /// </summary>
+    Every,
+
+    /// <summary>
+    /// The first time only.
+    /// </summary>
+    Once,
+
+    /// <summary>
+    /// The Nth time only.
+    /// </summary>
+    Nth,
+
+    /// <summary>
+    /// Every Nth time.
+    /// </summary>
+    EveryNth,
+
+    /// <summary>
+    /// The first N times.
+    /// </summary>
+    AtMost,
+}
+
+/// <summary>
+/// Which turn count a turn trigger or condition reads.
+/// </summary>
+[JsonConverter(typeof(CamelCaseEnumConverter<TurnClock>))]
+public enum TurnClock
+{
+    /// <summary>
+    /// The battle turn, 1 the first.
+    /// </summary>
+    Battle,
+
+    /// <summary>
+    /// The stage turn, 1 the turn the stage started.
+    /// </summary>
+    Stage,
+}
+
+/// <summary>
+/// When a skill a rule uses is cast.
+/// </summary>
+[JsonConverter(typeof(CamelCaseEnumConverter<CastWhen>))]
+public enum CastWhen
+{
+    /// <summary>
+    /// In this turn's plan, telegraphed now; from a trigger after the plan it acts as <see cref="NextTurn"/>.
+    /// </summary>
+    ThisTurn,
+
+    /// <summary>
+    /// In the next turn's plan, telegraphed then.
+    /// </summary>
+    NextTurn,
+
+    /// <summary>
+    /// In the plan a number of turns later.
+    /// </summary>
+    InTurns,
+}
+
+/// <summary>
+/// The trait template a rule was filled in from, for the designer.
+/// </summary>
+[JsonConverter(typeof(CamelCaseEnumConverter<RuleTemplate>))]
+public enum RuleTemplate
+{
+    /// <summary>
+    /// A delayed counter.
+    /// </summary>
+    DelayedCounter,
+
+    /// <summary>
+    /// A stance.
+    /// </summary>
+    Stance,
+
+    /// <summary>
+    /// A turn start skill.
+    /// </summary>
+    TurnStartSkill,
+
+    /// <summary>
+    /// A Last stand.
+    /// </summary>
+    LastStand,
 }
 
 /// <summary>
@@ -109,7 +220,7 @@ public enum RuleScope
 public enum HitKind
 {
     /// <summary>
-    /// Any hit; only in triggers and counters.
+    /// Any hit; only in conditions and counters.
     /// </summary>
     Any,
 
@@ -144,45 +255,6 @@ public enum StateHolder
     /// A boss enemy.
     /// </summary>
     Boss,
-}
-
-/// <summary>
-/// Whom a rule effect acts on.
-/// </summary>
-[JsonConverter(typeof(CamelCaseEnumConverter<RuleTarget>))]
-public enum RuleTarget
-{
-    /// <summary>
-    /// The unit the triggering event names.
-    /// </summary>
-    TriggerUnit,
-
-    /// <summary>
-    /// Every unit the triggering cast hit; only for adding states.
-    /// </summary>
-    HitUnits,
-
-    /// <summary>
-    /// The boss enemy the rule belongs to.
-    /// </summary>
-    Boss,
-}
-
-/// <summary>
-/// When a skill a rule uses is cast.
-/// </summary>
-[JsonConverter(typeof(CamelCaseEnumConverter<CastTiming>))]
-public enum CastTiming
-{
-    /// <summary>
-    /// In the plan being made, telegraphed now.
-    /// </summary>
-    PlanNow,
-
-    /// <summary>
-    /// As a forced entry of the next turn's plan, telegraphed then.
-    /// </summary>
-    NextTurn,
 }
 
 /// <summary>
@@ -239,18 +311,18 @@ public enum CastAim
     Default,
 
     /// <summary>
-    /// At the unit the triggering event names.
+    /// At the unit the triggering event hit or affected.
     /// </summary>
     TriggerUnit,
 
     /// <summary>
-    /// At the unit that hit the boss.
+    /// At the unit that hit the enemy.
     /// </summary>
     Attacker,
 }
 
 /// <summary>
-/// The turn an action point change applies to.
+/// The turn an effect applies to.
 /// </summary>
 [JsonConverter(typeof(CamelCaseEnumConverter<ApTurn>))]
 public enum ApTurn
@@ -288,7 +360,7 @@ public enum PlanKind
     TurnStart,
 
     /// <summary>
-    /// A scheduled action.
+    /// A cast a turn trigger planned.
     /// </summary>
     Scheduled,
 

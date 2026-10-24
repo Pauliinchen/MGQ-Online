@@ -2,6 +2,9 @@
 //  EffectHandlers.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Found the receivers by the targets of the Trigger -> Effect framework
+//                            - Picked the skill and caster of a use skill effect
+//                            - Left the heal, cancel skill, skip roll, show text and go to stage effects to the engine rework
 //      Paulinchen  2026-10-23: Added and removed damage reductions by a rule
 //                            - Logged the damage a rule dealt after the damage reduction
 //                            - Brought enemies in, took them out and transformed them by a rule
@@ -45,6 +48,7 @@ internal static class EffectHandlers
     /// <exception cref="ArgumentOutOfRangeException">The effect is of a kind the engine does not know.</exception>
     public static IReadOnlyList<BattleEvent> Run(IRuleContext context, RuleBook book, QueuedEffect queued) => queued.Effect switch
     {
+        // TE1: the non-cast effects of a skill used row wait for the parent cast to resolve; they run at once for now.
         UseSkillEffect useSkill => UseSkill(context, queued.Fired, useSkill),
         AddStateEffect addState => AddState(context, book, queued.Fired, addState),
         RemoveStateEffect removeState => RemoveState(context, queued.Fired, removeState),
@@ -58,11 +62,14 @@ internal static class EffectHandlers
         EnemyTransformsEffect transform => Transform(context, queued.Fired, transform),
         DamageReductionEffect reduction => ReduceDamage(context, queued, reduction),
         RemoveDamageReductionEffect remove => RemoveReductions(context, queued.Fired, remove),
+
+        // TE1: heal, cancel skill, skip roll, show text and go to stage do nothing yet.
+        HealEffect or CancelSkillEffect or SkipRollEffect or ShowTextEffect or GoToStageEffect => [],
         _ => throw new ArgumentOutOfRangeException(nameof(queued), queued.Effect, "The engine does not know this effect."),
     };
 
     /// <summary>
-    /// Orders a telegraphed cast from the rule's enemy.
+    /// Orders a telegraphed cast of one of the effect's skills from its caster.
     /// </summary>
     /// <param name="context">The battle.</param>
     /// <param name="fired">The fired rule.</param>
@@ -72,21 +79,34 @@ internal static class EffectHandlers
     {
         RuleSpec rule = fired.Rule;
         BattleEvent cause = fired.Cause;
-        PlanKind kind = KindOf(rule.Trigger, effect.Timing);
-        string? actionId = rule.Origin.Preset == PresetKind.ScheduledCast ? rule.Origin.ItemId : null;
+
+        // TE1: casts queued two or more turns ahead.
+        if (TimingOf(effect) is not CastTiming timing)
+        {
+            return [];
+        }
+
+        if (CasterOf(context, fired, effect.Caster) is not int caster || PickSkill(context, effect.Skills) is not SkillRef skill)
+        {
+            context.Log(new WarningEvent(cause.Turn, EngineWarnings.NoTarget, rule.Id));
+            return [];
+        }
+
+        PlanKind kind = KindOf(rule.Trigger, timing);
+        string? actionId = rule.Trigger is TurnTrigger ? rule.Id : null;
         bool followsCause = kind == PlanKind.FollowUp;
         (CastSide side, GridHalf? fixedSide) = SideOf(effect.Side, context, cause);
         int? aim = effect.Aim switch
         {
-            CastAim.TriggerUnit => EventFacts.TriggerUnitOf(cause),
+            CastAim.TriggerUnit => Targets.AffectedOf(cause) is (StateHolder.Unit, int seat) ? seat : null,
             CastAim.Attacker => (cause as BossHitEvent)?.Attacker,
             _ => null,
         };
         CastOrder order = new(
-            fired.Enemy,
-            effect.Skill,
+            caster,
+            skill,
             kind,
-            effect.Timing,
+            timing,
             effect.Free,
             effect.Uninterruptible,
             side,
@@ -100,6 +120,66 @@ internal static class EffectHandlers
     }
 
     /// <summary>
+    /// Tells which plan a use skill effect's cast goes into.
+    /// </summary>
+    /// <param name="effect">The effect.</param>
+    /// <returns>The timing, or null for a cast two or more turns ahead.</returns>
+    private static CastTiming? TimingOf(UseSkillEffect effect) => effect.When switch
+    {
+        CastWhen.NextTurn => CastTiming.NextTurn,
+        CastWhen.InTurns => (effect.InTurns ?? 0) switch
+        {
+            <= 0 => CastTiming.PlanNow,
+            1 => CastTiming.NextTurn,
+            _ => null,
+        },
+        _ => CastTiming.PlanNow,
+    };
+
+    /// <summary>
+    /// Finds the enemy that casts a use skill effect's skill.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="fired">The fired rule.</param>
+    /// <param name="slot">The caster's slot, or null for the rule's enemy.</param>
+    /// <returns>The caster's index, or null when no such enemy stands.</returns>
+    private static int? CasterOf(IRuleContext context, FiredRule fired, string? slot)
+    {
+        if (slot is null)
+        {
+            return fired.Enemy >= 0 ? fired.Enemy : null;
+        }
+
+        // TE1: which enemy casts when several stand in the slot; the first for now.
+        foreach (int enemy in context.LivingEnemies)
+        {
+            if (context.SlotOf(enemy) == slot)
+            {
+                return enemy;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Picks one of a use skill effect's skills by weight; a single skill draws nothing.
+    /// </summary>
+    /// <param name="context">The battle, whose rules stream draws.</param>
+    /// <param name="skills">The skills with their weights.</param>
+    /// <returns>The skill, or null for none.</returns>
+    private static SkillRef? PickSkill(IRuleContext context, IReadOnlyList<WeightedSkill> skills)
+    {
+        if (skills.Count <= 1)
+        {
+            return skills.Count == 1 ? skills[0].Skill : null;
+        }
+
+        int[] weights = [.. skills.Select(each => Math.Max(1, each.Weight))];
+        return skills[context.Rules.PickWeighted(weights)].Skill;
+    }
+
+    /// <summary>
     /// Tells why a cast a rule orders is in the plan.
     /// </summary>
     /// <param name="trigger">The rule's trigger.</param>
@@ -107,10 +187,10 @@ internal static class EffectHandlers
     /// <returns>The plan kind.</returns>
     private static PlanKind KindOf(TriggerSpec trigger, CastTiming timing) => (timing, trigger) switch
     {
-        (_, BossHpBelowTrigger) => PlanKind.LastStandStart,
+        (_, HpBelowTrigger) => PlanKind.LastStandStart,
         (CastTiming.NextTurn, _) => PlanKind.DelayedAnswer,
-        (_, TurnScheduleTrigger) => PlanKind.Scheduled,
-        (_, AfterCastTrigger) => PlanKind.FollowUp,
+        (_, TurnTrigger) => PlanKind.Scheduled,
+        (_, SkillUsedTrigger) => PlanKind.FollowUp,
         (_, TurnStartTrigger) => PlanKind.TurnStart,
         _ => PlanKind.DelayedAnswer,
     };
@@ -427,36 +507,15 @@ internal static class EffectHandlers
     /// <param name="fired">The fired rule.</param>
     /// <param name="target">Whom the effect names.</param>
     /// <returns>The receivers.</returns>
-    private static IReadOnlyList<(StateHolder Holder, int Index)> Receivers(IRuleContext context, FiredRule fired, RuleTarget target)
+    private static IReadOnlyList<(StateHolder Holder, int Index)> Receivers(IRuleContext context, FiredRule fired, TargetRef target)
     {
-        IReadOnlyList<(StateHolder, int)>? receivers = target switch
-        {
-            RuleTarget.TriggerUnit => EventFacts.TriggerUnitOf(fired.Cause) is int seat ? [(StateHolder.Unit, seat)] : null,
-            RuleTarget.HitUnits => EventFacts.CastIdOf(fired.Cause) is string castId ? Units(context.SeatsHitBy(castId)) : null,
-            _ => [(StateHolder.Boss, fired.Enemy)],
-        };
+        IReadOnlyList<(StateHolder, int)>? receivers = Targets.Of(target, context, fired.Enemy, fired.Cause);
         if (receivers is null)
         {
             context.Log(new WarningEvent(fired.Cause.Turn, EngineWarnings.NoTarget, fired.Rule.Id));
         }
 
         return receivers ?? [];
-    }
-
-    /// <summary>
-    /// Names units by their seats.
-    /// </summary>
-    /// <param name="seats">The seats.</param>
-    /// <returns>The receivers.</returns>
-    private static (StateHolder, int)[] Units(IReadOnlyList<int> seats)
-    {
-        (StateHolder, int)[] units = new (StateHolder, int)[seats.Count];
-        for (int i = 0; i < seats.Count; i++)
-        {
-            units[i] = (StateHolder.Unit, seats[i]);
-        }
-
-        return units;
     }
 
     /// <summary>

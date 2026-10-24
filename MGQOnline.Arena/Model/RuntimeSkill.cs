@@ -2,6 +2,8 @@
 //  RuntimeSkill.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Dropped the marks
+//                            - Added the payload override of the built-in effect rows
 //      Paulinchen  2026-10-23: Added the cells of the manual target mode
 //      Paulinchen  2026-10-22: Added the hazards a skill leaves
 //                            - Added the cycle
@@ -12,6 +14,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace MGQOnline.Arena.Model;
 
@@ -33,11 +36,11 @@ namespace MGQOnline.Arena.Model;
 /// <param name="Payload">What it does to whom it reaches.</param>
 /// <param name="Facts">What the game rule read from the skill.</param>
 /// <param name="Debris">The debris it leaves, or null for none.</param>
-/// <param name="Marks">The marks it leaves, or null for none.</param>
 /// <param name="Support">Whom it acts on on the boss's side, or null for a skill aimed at the party.</param>
 /// <param name="Opener">Whether a skill with a cooldown is ready at the battle's start instead of resting a start rest.</param>
 /// <param name="Cycle">The game's cycle of the skill, or null for a skill rolled on every turn.</param>
 /// <param name="Hazard">The hazards it leaves after its last pulse, or null for none.</param>
+/// <param name="PayloadOverride">The game payload with the skill's built-in effect rows applied, rows switched off left out and changed chances set; null while it keeps the game's payload.</param>
 public sealed record RuntimeSkill(
     SkillRef Ref,
     SkillKind Kind,
@@ -54,11 +57,18 @@ public sealed record RuntimeSkill(
     PayloadSpec Payload,
     SkillFacts Facts,
     SkillDebrisSpec? Debris = null,
-    MarksSpec? Marks = null,
     SupportSpec? Support = null,
     bool Opener = false,
     CycleSpec? Cycle = null,
-    HazardPlacement? Hazard = null);
+    HazardPlacement? Hazard = null,
+    PayloadSpec? PayloadOverride = null)
+{
+    /// <summary>
+    /// Gets the payload the skill acts with: its override, else the game's.
+    /// </summary>
+    [JsonIgnore]
+    public PayloadSpec EffectivePayload => PayloadOverride ?? Payload;
+}
 
 /// <summary>
 /// The game's cycle of a skill, &lt;周期技 a+b*X&gt;: on the turns it fires only the cycle skills

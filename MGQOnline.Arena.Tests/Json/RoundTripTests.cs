@@ -2,6 +2,7 @@
 //  RoundTripTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Read a turn trigger whose type comes last
 //      Paulinchen  2026-10-21: Gave the formula refusals a tree and refused a formula without one
 //                            - Created
 //
@@ -174,9 +175,9 @@ public sealed class RoundTripTests
     [Fact]
     public void TypeMayComeLast()
     {
-        TriggerSpec? trigger = JsonSerializer.Deserialize("""{"a":2,"b":3,"type":"turnSchedule"}""", ArenaJsonContext.Default.TriggerSpec);
+        TriggerSpec? trigger = JsonSerializer.Deserialize("""{"a":2,"b":3,"clock":"stage","type":"turn"}""", ArenaJsonContext.Default.TriggerSpec);
 
-        Assert.Equal(new TurnScheduleTrigger(2, 3), trigger);
+        Assert.Equal(new TurnTrigger(2, 3, TurnClock.Stage), trigger);
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 //  GoldenParityTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Wrote the turn start skills as rows of the Trigger -> Effect framework
 //      Paulinchen  2026-10-23: Built the enemy without a troop
 //      Paulinchen  2026-10-22: Planned the Overdrive and Last stand cases through the plan toggles
 //      Paulinchen  2026-10-21: Built state instances without a mark clock
@@ -314,8 +315,8 @@ public sealed class GoldenParityTests
 
         List<RuleSpec> rules = name == "turnStart"
             ? [
-                SimFixtures.Rule("start11", PresetKind.TurnStartSkill, "start11", new TurnStartTrigger(), [new UseSkillEffect(SkillRef.OfGame(11), true, true, CastTiming.PlanNow, CastSide.Own, CastAim.Default)]),
-                SimFixtures.Rule("start13", PresetKind.TurnStartSkill, "start13", new TurnStartTrigger(), [new UseSkillEffect(SkillRef.OfGame(13), true, true, CastTiming.PlanNow, CastSide.Own, CastAim.Default)], [new ChanceCondition(5000)]),
+                SimFixtures.Rule("start11", new TurnStartTrigger(), [SimFixtures.Use(SkillRef.OfGame(11), uninterruptible: true)]),
+                SimFixtures.Rule("start13", new TurnStartTrigger(), [SimFixtures.Use(SkillRef.OfGame(13), uninterruptible: true)], [new ChanceCondition(5000)]),
             ]
             : [];
         TraitEntrySpec lastStand = new("stand", "lastStand", TraitSource.Boss, 0, [], new Dictionary<int, SkillRef>(), false, LastStand: new LastStandSpec(50, 3, 0, 1));

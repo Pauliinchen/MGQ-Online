@@ -2,6 +2,7 @@
 //  DamageReductionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Aimed the damage reductions at the targets of the Trigger -> Effect framework
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -47,7 +48,7 @@ public sealed class DamageReductionTests
     [Fact]
     public void ExpiresAfterItsTurns()
     {
-        RuleSpec shield = Rule("shield", new BattleStartTrigger(), new DamageReductionEffect(RuleTarget.Boss, 50, 1));
+        RuleSpec shield = Rule("shield", new BattleStartTrigger(), new DamageReductionEffect(TargetRef.Owner, 50, 1));
         BattleSimulator simulator = SimFixtures.Simulator(Design([shield]));
         BattleState state = simulator.Start(SimFixtures.Setup(1));
 
@@ -63,8 +64,8 @@ public sealed class DamageReductionTests
     [Fact]
     public void RemoveTakesEveryReduction()
     {
-        RuleSpec shields = Rule("shields", new BattleStartTrigger(), new DamageReductionEffect(RuleTarget.Boss, 20), new DamageReductionEffect(RuleTarget.Boss, 40));
-        RuleSpec breaks = Rule("break", new TurnEndTrigger(), new RemoveDamageReductionEffect(RuleTarget.Boss));
+        RuleSpec shields = Rule("shields", new BattleStartTrigger(), new DamageReductionEffect(TargetRef.Owner, 20), new DamageReductionEffect(TargetRef.Owner, 40));
+        RuleSpec breaks = Rule("break", new TurnEndTrigger(), new RemoveDamageReductionEffect(TargetRef.Owner));
         BattleSimulator simulator = SimFixtures.Simulator(Design([shields, breaks]));
         BattleState state = simulator.Start(SimFixtures.Setup(1));
 
@@ -89,7 +90,7 @@ public sealed class DamageReductionTests
             Payload = SimFixtures.Skill(SimFixtures.Strike).Payload with { Damage = true },
             Facts = SimFixtures.Skill(SimFixtures.Strike).Facts with { ElementId = 3 },
         };
-        RuleSpec guard = Rule("guard", new UnitHitTrigger(), new DamageReductionEffect(RuleTarget.TriggerUnit, 30));
+        RuleSpec guard = Rule("guard", new SkillHitsTrigger(Who.Owner, Who.Character), new DamageReductionEffect(TargetRef.TriggerUnit, 30));
         BattleSimulator simulator = new(SimFixtures.Design([SimFixtures.Action("strike", SimFixtures.Strike)], [strike], [guard], ap: 1, attackWeight: 0));
         BattleSetup setup = SimFixtures.Setup(1);
         setup = setup with { Party = [setup.Party[0] with { ElementRates = new Dictionary<int, double> { [3] = 80 } }] };
@@ -106,7 +107,7 @@ public sealed class DamageReductionTests
     [Fact]
     public void LeavesHealsAlone()
     {
-        RuleSpec shield = Rule("shield", new BattleStartTrigger(), new DamageReductionEffect(RuleTarget.Boss, 50));
+        RuleSpec shield = Rule("shield", new BattleStartTrigger(), new DamageReductionEffect(TargetRef.Owner, 50));
         BattleSimulator simulator = SimFixtures.Simulator(Design([shield]));
         BattleState state = simulator.Start(SimFixtures.Setup(1));
 
@@ -123,7 +124,7 @@ public sealed class DamageReductionTests
     /// <param name="effects">The effects.</param>
     /// <returns>The rule.</returns>
     private static RuleSpec Rule(string id, TriggerSpec trigger, params EffectSpec[] effects) =>
-        SimFixtures.Rule(id, PresetKind.Advanced, id, trigger, effects);
+        SimFixtures.Rule(id, trigger, effects);
 
     /// <summary>
     /// Makes the test design: the simulation boss without actions or a normal attack.

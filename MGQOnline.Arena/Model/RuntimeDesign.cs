@@ -2,6 +2,7 @@
 //  RuntimeDesign.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Raised the runtime format to 2 for the battle plan
 //      Paulinchen  2026-10-23: Dropped the battle map's debris type and start hazards
 //                            - Dropped the troops of the catalog and the boss fight overrides
 //                            - Added the debris types and the debris type of a map
@@ -48,7 +49,7 @@ public sealed record RuntimeDesign(
     /// <summary>
     /// The runtime format this library reads and writes.
     /// </summary>
-    public const int CurrentFormat = 1;
+    public const int CurrentFormat = 2;
 }
 
 /// <summary>

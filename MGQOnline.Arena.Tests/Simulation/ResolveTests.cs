@@ -2,6 +2,9 @@
 //  ResolveTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Played the halves battle with battle and skill rows of the Trigger -> Effect framework
+//                            - Saved the reference design built when it differs from its fixture
+//                            - Took the turn row ids in the golden log hash
 //      Paulinchen  2026-10-22: Took the seats of rule fires in the golden log hash
 //                            - Tested the seat each rule fired for
 //                            - Took the main target in the golden log hash
@@ -10,6 +13,7 @@
 //
 //----------------------------------------------------------------
 
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -32,7 +36,7 @@ public sealed class ResolveTests
     /// <summary>
     /// The golden hash of the reference battle's log through the arena's casting part and rule engine.
     /// </summary>
-    private const string GoldenLogSha256 = "71e4be2607e864ea5f340ddc071c602395df50d297e3ed08da6de590575313d5";
+    private const string GoldenLogSha256 = "9fcb07e5767e7f1ed7e80ab2d9aeaf171b762ce90fed378247add294ce04405c";
 
     /// <summary>
     /// The cells of the halves battle's units: four on each half.
@@ -122,7 +126,7 @@ public sealed class ResolveTests
     [Fact]
     public void WaitsForTheMinimumWhenTheNextCastComesEarly()
     {
-        RuntimeDesign design = MarkDesign(SimFixtures.Action("sched", SimFixtures.Stigmata, 5, new TurnActionCondition(1, 2), scheduled: true), SimFixtures.Scheduled("sched", SimFixtures.Stigmata, 1, 2));
+        RuntimeDesign design = MarkDesign(null, SimFixtures.Scheduled("sched", SimFixtures.Stigmata, 1, 2));
         BattleSimulator simulator = SimFixtures.Simulator(design);
         BattleState state = simulator.Start(SimFixtures.Setup([new GridCell(0, 0)]));
         SimFixtures.Play(simulator, state, 2);
@@ -147,8 +151,8 @@ public sealed class ResolveTests
             [],
             [],
             [
-                SimFixtures.Rule("seed", PresetKind.Advanced, "seed", new BattleStartTrigger(), [new AddStateEffect(RuleTarget.Boss, SimFixtures.LightMark, 1)]),
-                SimFixtures.Rule("loop", PresetKind.Advanced, "loop", new StateAddedTrigger(SimFixtures.LightMark, StateHolder.Boss), [new AddStateEffect(RuleTarget.Boss, SimFixtures.LightMark, 1)]),
+                SimFixtures.Rule("seed", new BattleStartTrigger(), [new AddStateEffect(TargetRef.Owner, SimFixtures.LightMark, 1)]),
+                SimFixtures.Rule("loop", new StateGainedTrigger(Who.Owner, SimFixtures.LightMark), [new AddStateEffect(TargetRef.Owner, SimFixtures.LightMark, 1)]),
             ]);
         BattleSimulator simulator = SimFixtures.Simulator(design);
 
@@ -168,7 +172,7 @@ public sealed class ResolveTests
         RuntimeDesign design = SimFixtures.Design(
             [],
             [],
-            [SimFixtures.Rule("mark", PresetKind.Advanced, "mark", new TurnStartTrigger(), [new AddStateEffect(RuleTarget.Boss, SimFixtures.LightMark, 3)])],
+            [SimFixtures.Rule("mark", new TurnStartTrigger(), [new AddStateEffect(TargetRef.Owner, SimFixtures.LightMark, 3)])],
             attackWeight: 0);
         BattleSimulator simulator = SimFixtures.Simulator(design);
         BattleState state = simulator.Start(SimFixtures.Setup());
@@ -186,7 +190,7 @@ public sealed class ResolveTests
     public void HitsOnlyUnitsStillOnTheTelegraphedCells()
     {
         RuntimeDesign design = SimFixtures.Design(
-            [SimFixtures.Action("sched", SimFixtures.Stigmata, 5, new TurnActionCondition(1, 1), scheduled: true)],
+            [],
             [SimFixtures.Skill(SimFixtures.Stigmata, zone: new ZoneSpec(Half: GridHalf.Left))],
             [SimFixtures.Scheduled("sched", SimFixtures.Stigmata, 1, 1)],
             attackWeight: 0);
@@ -247,9 +251,15 @@ public sealed class ResolveTests
     [Fact]
     public void KeepsTheReferenceDesignInStep()
     {
-        BattleSimulator simulator = HalvesBattle(withStrikes: true);
-
-        Assert.Equal(File.ReadAllBytes(ReferenceDesignPath()), CanonicalJson.Serialize(simulator.Design, ArenaJsonContext.Default.RuntimeDesign));
+        byte[] built = CanonicalJson.Serialize(HalvesBattle(withStrikes: true).Design, ArenaJsonContext.Default.RuntimeDesign);
+        byte[] fixture = File.Exists(ReferenceDesignPath()) ? File.ReadAllBytes(ReferenceDesignPath()) : [];
+        if (!fixture.AsSpan().SequenceEqual(built))
+        {
+            string saved = Path.Combine(AppContext.BaseDirectory, "canonical-actual", "referenceDesign.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(saved)!);
+            File.WriteAllBytes(saved, built);
+            Assert.Fail($"The reference design differs from its fixture; the bytes built are in {saved}.");
+        }
     }
 
     /// <summary>
@@ -288,21 +298,16 @@ public sealed class ResolveTests
     private static BattleSimulator HalvesBattle(IReadOnlyList<int>? tierStates = null, bool withStrikes = false)
     {
         ZoneSpec zone = new(Half: GridHalf.Left, Side: SideChoice.Alternate);
-        MarksSpec light = new([new MarkLeaveSpec("l1", SimFixtures.LightMark, 10000, StateLanding.EveryoneHit, MarkUntil.NextScheduledCast, 1)]);
-        MarksSpec dark = new([new MarkLeaveSpec("d1", SimFixtures.DarkMark, 10000, StateLanding.EveryoneHit, MarkUntil.NextScheduledCast, 1)]);
         RuntimeDesign design = SimFixtures.Design(
-            [
-                SimFixtures.Action("sched", SimFixtures.Stigmata, 5, new TurnActionCondition(2, 3), scheduled: true),
-                SimFixtures.Action("strike", SimFixtures.Strike, withStrikes ? 5 : 0),
-            ],
-            [SimFixtures.Skill(SimFixtures.Stigmata, zone: zone, marks: light), SimFixtures.Skill(SimFixtures.DarkStigmata, zone: zone, marks: dark), SimFixtures.Skill(SimFixtures.Strike)],
+            [SimFixtures.Action("strike", SimFixtures.Strike, withStrikes ? 5 : 0)],
+            [SimFixtures.Skill(SimFixtures.Stigmata, zone: zone), SimFixtures.Skill(SimFixtures.DarkStigmata, zone: zone), SimFixtures.Skill(SimFixtures.Strike)],
             [
                 SimFixtures.Scheduled("sched", SimFixtures.Stigmata, 2, 3),
-                SimFixtures.FollowUp("sched", SimFixtures.DarkStigmata),
+                SimFixtures.FollowUp("sched", SimFixtures.Stigmata, SimFixtures.DarkStigmata),
                 Leaves("leave-light", SimFixtures.Stigmata, SimFixtures.LightMark),
                 Leaves("leave-dark", SimFixtures.DarkStigmata, SimFixtures.DarkMark),
-                Reaction("react-light", SimFixtures.LightMark, SimFixtures.DarkMark),
-                Reaction("react-dark", SimFixtures.DarkMark, SimFixtures.LightMark),
+                Reaction("react-light", SimFixtures.LightMark, SimFixtures.DarkStigmata),
+                Reaction("react-dark", SimFixtures.DarkMark, SimFixtures.Stigmata),
             ],
             attackWeight: 0,
             tierStates: tierStates);
@@ -310,29 +315,28 @@ public sealed class ResolveTests
     }
 
     /// <summary>
-    /// Makes a design whose only action casts the left half skill, which leaves the light mark for
-    /// at least three turns, until the next scheduled cast.
+    /// Makes a design whose skill casts the left half and leaves the light mark until the next
+    /// scheduled cast, at least three turns with a schedule and two without.
     /// </summary>
-    /// <param name="action">The action.</param>
-    /// <param name="schedule">The action's schedule rule, or null for an unscheduled action.</param>
+    /// <param name="action">The action that rolls the skill, or null for none.</param>
+    /// <param name="schedule">The turn row that schedules the skill, or null for none.</param>
     /// <returns>The design.</returns>
-    private static RuntimeDesign MarkDesign(RuntimeAction action, RuleSpec? schedule)
+    private static RuntimeDesign MarkDesign(RuntimeAction? action, RuleSpec? schedule)
     {
         RuleSpec leaves = SimFixtures.Rule(
             "leave",
-            PresetKind.LeavesMark,
-            "leave",
-            new UnitHitTrigger(BySkill: SimFixtures.Stigmata),
-            [new AddStateEffect(RuleTarget.TriggerUnit, SimFixtures.LightMark, MinTurns: action.Scheduled ? 3 : 2, UntilNextCastOf: AddStateEffect.RootOfCast)]);
+            new SkillHitsTrigger(Who.Owner, Who.Character),
+            [new AddStateEffect(TargetRef.TriggerUnit, SimFixtures.LightMark, MinTurns: schedule is null ? 2 : 3, UntilNextCastOf: AddStateEffect.RootOfCast)],
+            owner: RuleOwner.OfSkill(SimFixtures.Stigmata));
         return SimFixtures.Design(
-            [action],
+            action is null ? [] : [action],
             [SimFixtures.Skill(SimFixtures.Stigmata, cost: 6, zone: new ZoneSpec(Half: GridHalf.Left))],
             schedule is null ? [leaves] : [schedule, leaves],
             attackWeight: 0);
     }
 
     /// <summary>
-    /// Makes the rule a leaves mark preset is lowered to.
+    /// Makes the row of a skill that leaves its mark on every character it hits.
     /// </summary>
     /// <param name="id">The rule id.</param>
     /// <param name="skill">The skill that leaves the mark.</param>
@@ -340,24 +344,24 @@ public sealed class ResolveTests
     /// <returns>The rule.</returns>
     private static RuleSpec Leaves(string id, SkillRef skill, int mark) => SimFixtures.Rule(
         id,
-        PresetKind.LeavesMark,
-        id,
-        new UnitHitTrigger(BySkill: skill),
-        [new AddStateEffect(RuleTarget.TriggerUnit, mark, MinTurns: 1, UntilNextCastOf: AddStateEffect.RootOfCast)],
-        [new ChanceCondition(10000)]);
+        new SkillHitsTrigger(Who.Owner, Who.Character),
+        [new AddStateEffect(TargetRef.TriggerUnit, mark, MinTurns: 1, UntilNextCastOf: AddStateEffect.RootOfCast)],
+        [new ChanceCondition(10000)],
+        owner: RuleOwner.OfSkill(skill));
 
     /// <summary>
-    /// Makes the rule a mark reaction preset is lowered to: 10 % of the unit's max HP, the mark consumed.
+    /// Makes the row of a skill that reacts to a mark the hit character held: 10 % of its max HP,
+    /// the mark consumed.
     /// </summary>
     /// <param name="id">The rule id.</param>
     /// <param name="holding">The mark the unit holds.</param>
-    /// <param name="leaving">The mark the hitting skill leaves.</param>
+    /// <param name="by">The hitting skill, which owns the row.</param>
     /// <returns>The rule.</returns>
-    private static RuleSpec Reaction(string id, int holding, int leaving) => SimFixtures.Rule(
+    private static RuleSpec Reaction(string id, int holding, SkillRef by) => SimFixtures.Rule(
         id,
-        PresetKind.MarkReaction,
-        id,
-        new UnitHitTrigger(Holding: holding, HitByLeaving: leaving),
-        [new DamageEffect(RuleTarget.TriggerUnit, 10), new RemoveStateEffect(RuleTarget.TriggerUnit, holding)],
-        limits: new RuleLimits(true, false));
+        new SkillHitsTrigger(Who.Owner, Who.Character),
+        [new DamageEffect(TargetRef.TriggerUnit, 10), new RemoveStateEffect(TargetRef.TriggerUnit, holding)],
+        [new HoldsStateCondition(TargetRef.TriggerUnit, holding)],
+        new HowOften(Frequency.Every, OncePerUnitPerUse: true),
+        RuleOwner.OfSkill(by));
 }

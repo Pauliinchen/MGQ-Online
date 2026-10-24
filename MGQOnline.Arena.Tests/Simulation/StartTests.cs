@@ -2,6 +2,7 @@
 //  StartTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Wrote the start rule as a row of the Trigger -> Effect framework
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -62,7 +63,7 @@ public sealed class StartTests
         RuntimeDesign design = SimFixtures.Design(
             [],
             [],
-            [SimFixtures.Rule("start", PresetKind.Advanced, "start", new BattleStartTrigger(), [new AddStateEffect(RuleTarget.Boss, SimFixtures.DarkMark)])],
+            [SimFixtures.Rule("start", new BattleStartTrigger(), [new AddStateEffect(TargetRef.Owner, SimFixtures.DarkMark)])],
             tierStates: [SimFixtures.Confusion]);
         BattleSimulator simulator = SimFixtures.Simulator(design);
 

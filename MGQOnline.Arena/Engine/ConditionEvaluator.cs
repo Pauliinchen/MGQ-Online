@@ -2,6 +2,7 @@
 //  ConditionEvaluator.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Checked the conditions of the Trigger -> Effect framework
 //      Paulinchen  2026-10-23: Checked the enemy is condition
 //      Paulinchen  2026-10-22: Checked the not in chain condition
 //      Paulinchen  2026-10-21: Created
@@ -78,26 +79,43 @@ internal static class ConditionEvaluator
     /// <exception cref="ArgumentOutOfRangeException">The condition is of a kind the engine does not know.</exception>
     private static bool HoldsPlain(ConditionSpec condition, IRuleContext context, int enemy, BattleEvent battleEvent) => condition switch
     {
-        UnitHoldsCondition holds => EventFacts.TriggerUnitOf(battleEvent) is int seat && HoldsState(context, StateHolder.Unit, seat, holds.State),
-        BossHasStateCondition has => HoldsState(context, StateHolder.Boss, enemy, has.State),
-        BossHpBetweenCondition between => HpBetween(context.StatsOf(StateHolder.Boss, enemy), between.Min, between.Max),
-        TurnAtLeastCondition atLeast => battleEvent.Turn >= atLeast.Turn,
+        HoldsStateCondition holds => All(Targets.Of(holds.Who, context, enemy, battleEvent), target => HoldsState(context, target, holds.State, battleEvent)),
+        HpBetweenCondition between => All(Targets.Of(between.Who, context, enemy, battleEvent), target => HpBetween(context.StatsOf(target.Holder, target.Index), between.Min, between.Max)),
+
+        // TE1: the stage clock; the battle turn for now.
+        TurnBetweenCondition turn => (turn.Min is not int min || battleEvent.Turn >= min) && (turn.Max is not int max || battleEvent.Turn <= max),
+        EnemyPresentCondition present => context.LivingEnemies.Any(each => context.SlotOf(each) == present.Slot) == present.Present,
+
+        // TE1: the hit type of a boss cast's hit; only party hits carry one for now.
+        HitTypeIsCondition hitType => hitType.HitType == HitKind.Any || (battleEvent is BossHitEvent hit && hit.HitType == hitType.HitType),
+        SwitchOnCondition on => context.IsSwitchOn(on.Switch),
         NotSealedCondition notSealed => !context.IsSealed(enemy, notSealed.Skill),
         NotInChainCondition notInChain => EventFacts.CastIdOf(battleEvent) is not string castId || !context.ChainOf(castId).Contains(notInChain.Skill),
-        EnemyIsCondition enemyIs => context.SlotOf(enemy) == enemyIs.Slot,
         _ => throw new ArgumentOutOfRangeException(nameof(condition), condition, "The engine does not know this condition."),
     };
 
     /// <summary>
-    /// Tells whether a unit or an enemy holds a state.
+    /// Tells whether a check holds for every target and there is at least one.
+    /// </summary>
+    /// <param name="targets">The targets, or null when the event names nobody.</param>
+    /// <param name="check">The check.</param>
+    /// <returns>Whether it holds.</returns>
+    private static bool All(IReadOnlyList<(StateHolder Holder, int Index)>? targets, Func<(StateHolder Holder, int Index), bool> check) =>
+        targets is { Count: > 0 } && targets.All(check);
+
+    /// <summary>
+    /// Tells whether a unit or an enemy holds a state; the unit a cast hits counts with the states it
+    /// held before the cast.
     /// </summary>
     /// <param name="context">The battle.</param>
-    /// <param name="holder">Whether a unit or an enemy is meant.</param>
-    /// <param name="index">The unit's seat or the enemy's index.</param>
+    /// <param name="target">Whether a unit or an enemy is meant, and its seat or index.</param>
     /// <param name="state">The state.</param>
+    /// <param name="battleEvent">The event the rule matched.</param>
     /// <returns>Whether it holds the state.</returns>
-    private static bool HoldsState(IRuleContext context, StateHolder holder, int index, int state) =>
-        context.StatesOf(holder, index).Any(held => held.State == state);
+    private static bool HoldsState(IRuleContext context, (StateHolder Holder, int Index) target, int state, BattleEvent battleEvent) =>
+        battleEvent is UnitHitEvent hit && target == (StateHolder.Unit, hit.Seat)
+            ? hit.HeldBefore.Contains(state)
+            : context.StatesOf(target.Holder, target.Index).Any(held => held.State == state);
 
     /// <summary>
     /// Tells whether HP lies between two percents of the max HP, both included, in whole numbers.

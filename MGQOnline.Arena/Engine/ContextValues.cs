@@ -23,7 +23,7 @@ public sealed record HeldState(int State, MarkClock? Clock);
 /// The lifetime of a mark that waits for a scheduled cast or for a turn.
 /// </summary>
 /// <param name="MinUntilTurn">The turn from which it may go.</param>
-/// <param name="UntilNextCastOf">The scheduled action whose next cast ends it, or null once only the turn counts.</param>
+/// <param name="UntilNextCastOf">The turn row whose next cast ends it, or null once only the turn counts.</param>
 /// <param name="AppliedCastId">The cast that added or last refreshed it, or null for none.</param>
 public sealed record MarkClock(int MinUntilTurn, string? UntilNextCastOf, string? AppliedCastId);
 

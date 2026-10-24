@@ -2,6 +2,7 @@
 //  ArenaJsonContext.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Added the battle plan and dropped the mark gifts
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -36,6 +37,8 @@ namespace MGQOnline.Arena.Json;
 [JsonSerializable(typeof(RuntimeCustomSkill))]
 [JsonSerializable(typeof(RuntimeSkill))]
 [JsonSerializable(typeof(RuntimeAction))]
+[JsonSerializable(typeof(RuntimePlan))]
+[JsonSerializable(typeof(RuntimeStage))]
 [JsonSerializable(typeof(RuntimeState))]
 [JsonSerializable(typeof(RuntimeMap))]
 [JsonSerializable(typeof(RuntimeTileset))]
@@ -44,7 +47,6 @@ namespace MGQOnline.Arena.Json;
 [JsonSerializable(typeof(ConditionSpec))]
 [JsonSerializable(typeof(EffectSpec))]
 [JsonSerializable(typeof(ActionCondition))]
-[JsonSerializable(typeof(MarkGift))]
 [JsonSerializable(typeof(FormulaSpec))]
 [JsonSerializable(typeof(SkillRef))]
 [JsonSerializable(typeof(BattleEvent))]

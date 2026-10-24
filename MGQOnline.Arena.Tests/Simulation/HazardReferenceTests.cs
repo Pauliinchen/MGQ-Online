@@ -2,6 +2,8 @@
 //  HazardReferenceTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Wrote the ice trail as a row of the Trigger -> Effect framework in the battle plan
+//                            - Took the turn row ids in the golden log hash
 //      Paulinchen  2026-10-23: Started the reference battle with battlefield hazards instead of the tier's and the map's
 //      Paulinchen  2026-10-22: Created
 //
@@ -29,7 +31,7 @@ public sealed class HazardReferenceTests
     /// <summary>
     /// The golden hash of the hazard reference battle's log.
     /// </summary>
-    private const string GoldenLogSha256 = "3e4c903c63fa36f5b1b44d50b86a07b54dc375bf718c3d3d034d045193504c47";
+    private const string GoldenLogSha256 = "d036fc10827108b91d5abda4f50dce90eb60bf10c6a850a6c6c643780463e4d3";
 
     /// <summary>
     /// The burning hazard's id.
@@ -110,7 +112,7 @@ public sealed class HazardReferenceTests
             FireId,
             "Burning ground",
             [HazardTrigger.StepsOnto, HazardTrigger.EndsTurnOn],
-            [new DamageEffect(RuleTarget.TriggerUnit, 5), new AddStateEffect(RuleTarget.TriggerUnit, SimFixtures.Sleep, Turns: 1)],
+            [new DamageEffect(TargetRef.TriggerUnit, 5), new AddStateEffect(TargetRef.TriggerUnit, SimFixtures.Sleep, Turns: 1)],
             3,
             new HazardLook(200, new TileRef("Dungeon_A1", 2048), 112, new ColorRgba(255, 80, 0, 96)),
             3);
@@ -118,14 +120,12 @@ public sealed class HazardReferenceTests
             IceId,
             "Black ice",
             [HazardTrigger.StartsTurnOn],
-            [new DamageEffect(RuleTarget.TriggerUnit, null, EngineSamples.Formula("b.mhp * 0.03 + a.atk / 10")), new UseSkillEffect(SimFixtures.Strike, true, false, CastTiming.PlanNow, CastSide.Own, CastAim.TriggerUnit)],
+            [new DamageEffect(TargetRef.TriggerUnit, null, EngineSamples.Formula("b.mhp * 0.03 + a.atk / 10")), new UseSkillEffect([new WeightedSkill(SimFixtures.Strike)], CastWhen.ThisTurn, true, false, CastSide.Own, CastAim.TriggerUnit)],
             0,
             new HazardLook(160, Animation: 41));
         RuleSpec leavesIce = SimFixtures.Rule(
             "ice-trail",
-            PresetKind.Advanced,
-            "ice-trail",
-            new CastResolvedTrigger(SimFixtures.Stigmata),
+            new SkillFinishedTrigger(Who.Owner, SimFixtures.Stigmata),
             [new PlaceHazardEffect(new HazardPlacement(IceId, 2500, HazardPlace.HitCells, Turns: 2))]);
         return reference with
         {
@@ -138,7 +138,7 @@ public sealed class HazardReferenceTests
                     {
                         [SimFixtures.Strike.Key] = boss.Skills[SimFixtures.Strike.Key] with { Hazard = new HazardPlacement(FireId, 7500, HazardPlace.RandomInArea, 2) },
                     },
-                    Rules = [.. boss.Rules, leavesIce],
+                    Plan = boss.Plan with { Rules = [.. boss.Plan.Rules, leavesIce] },
                     Battlefield = new Battlefield(Hazards: new BattlefieldHazards(500, [FireId, IceId])),
                 },
             },

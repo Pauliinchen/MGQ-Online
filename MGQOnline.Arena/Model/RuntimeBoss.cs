@@ -2,6 +2,7 @@
 //  RuntimeBoss.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Replaced the action lists, rules and mark reactions with the battle plan
 //      Paulinchen  2026-10-23: Replaced the start debris with the raid's battlefield
 //                            - Added the fight's raid and the other event battles that start it
 //                            - Fought one event battle with its starting enemies and a reserve in place of the troop phases
@@ -31,12 +32,10 @@ namespace MGQOnline.Arena.Model;
 /// <param name="Origin">Where it comes from.</param>
 /// <param name="Event">The event battle it is fought in.</param>
 /// <param name="Enemies">The starting line-up, in its order.</param>
-/// <param name="Actions">The action list per enemy slot, the reserve's included.</param>
+/// <param name="Plan">The battle plan: the stages with the rolled skills per enemy slot, the reserve's included, and every row of the battle.</param>
 /// <param name="NormalAttack">The normal attack.</param>
 /// <param name="Traits">The tier's and the boss's traits, merged.</param>
 /// <param name="Skills">Every skill the boss uses, by skill key.</param>
-/// <param name="Rules">The rules the boss's presets are lowered to, and its advanced rules.</param>
-/// <param name="MarkReactions">The mark reactions as set, for the logs.</param>
 /// <param name="BattleMaps">The maps the boss is fought on, its own first.</param>
 /// <param name="Tier">The tier, or null for none.</param>
 /// <param name="NormalAttacks">The most normal attacks each enemy rolls per turn, or null for its tier's.</param>
@@ -55,12 +54,10 @@ public sealed record RuntimeBoss(
     BossOrigin Origin,
     BattleEventRef Event,
     IReadOnlyList<RuntimeEnemy> Enemies,
-    IReadOnlyDictionary<string, IReadOnlyList<RuntimeAction>> Actions,
+    RuntimePlan Plan,
     RuntimeNormalAttack NormalAttack,
     TraitBlock Traits,
     IReadOnlyDictionary<string, RuntimeSkill> Skills,
-    IReadOnlyList<RuleSpec> Rules,
-    IReadOnlyList<MarkReactionSpec> MarkReactions,
     IReadOnlyList<BattleMapRef> BattleMaps,
     int? Tier = null,
     int? NormalAttacks = null,
@@ -114,7 +111,7 @@ public sealed record BattleEventRef(int Command, int? Map = null, int? Event = n
 /// An enemy slot of a boss's starting line-up.
 /// </summary>
 /// <param name="Index">Its place in the starting line-up.</param>
-/// <param name="Slot">The slot's item id, which names its action list.</param>
+/// <param name="Slot">The slot's item id, which names its rolled skills.</param>
 /// <param name="EnemyId">The enemy id.</param>
 /// <param name="Stats">Its stats, resolved by the designer.</param>
 /// <param name="Ap">The action points it spends per turn before its features.</param>
@@ -124,7 +121,7 @@ public sealed record RuntimeEnemy(int Index, string Slot, int EnemyId, EnemyStat
 /// <summary>
 /// An enemy slot that only joins a boss's battle or is transformed into by a rule.
 /// </summary>
-/// <param name="Slot">The slot's item id, which names its action list.</param>
+/// <param name="Slot">The slot's item id, which names its rolled skills.</param>
 /// <param name="EnemyId">The enemy id.</param>
 /// <param name="Stats">Its stats, resolved by the designer.</param>
 /// <param name="Ap">The action points it spends per turn before its features.</param>

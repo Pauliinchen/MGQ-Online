@@ -2,6 +2,7 @@
 //  ArenaCasts.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Cast with the payload the skill's built-in effect rows override
 //      Paulinchen  2026-10-23: Rolled the battlefield debris without a chance roll
 //                            - Took a debris type from the fight's battlefield
 //                            - Placed debris in the style of its debris type
@@ -170,7 +171,7 @@ public sealed class ArenaCasts : ICastResolver
     /// <returns>The damage, rounded half away from zero; 0 without a formula.</returns>
     private static long DamageOf(RuntimeSkill skill, FormulaStats? user, UnitState unit, double percent)
     {
-        if (!skill.Payload.Damage || skill.Damage.Formula is not FormulaSpec formula || user is null)
+        if (!skill.EffectivePayload.Damage || skill.Damage.Formula is not FormulaSpec formula || user is null)
         {
             return 0;
         }
@@ -191,7 +192,7 @@ public sealed class ArenaCasts : ICastResolver
     private static IReadOnlyList<int> StatesLanding(RuntimeSkill skill, UnitState unit, ArenaRandom random)
     {
         List<int> landed = [];
-        foreach (PayloadEffectSpec effect in skill.Payload.TargetEffects)
+        foreach (PayloadEffectSpec effect in skill.EffectivePayload.TargetEffects)
         {
             bool adds = effect.Kind == PayloadEffectKind.AddState
                 || (effect.Kind == PayloadEffectKind.GatedState && unit.States.Exists(held => held.StateId == effect.NeededState));

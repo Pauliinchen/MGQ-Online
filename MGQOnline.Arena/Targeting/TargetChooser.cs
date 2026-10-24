@@ -2,6 +2,7 @@
 //  TargetChooser.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Read the payload the skill's built-in effect rows override
 //      Paulinchen  2026-10-23: Took the preview's own click of a later pulse
 //                            - Aimed the manual mode at the pulse's cell
 //      Paulinchen  2026-10-21: Created
@@ -180,7 +181,7 @@ public static class TargetChooser
         List<GridCell> best = [];
         int mostHit = 0;
         double mostDamage = 0;
-        bool damages = request.Skill.Payload.Damage;
+        bool damages = request.Skill.EffectivePayload.Damage;
         foreach (GridCell cell in open)
         {
             IReadOnlyList<UnitHit> hits = HitCalculator.Compute(request.Grid, request.Units, request.Skill, cell, request.Limits, request.Debris, request.Zone).Hits;

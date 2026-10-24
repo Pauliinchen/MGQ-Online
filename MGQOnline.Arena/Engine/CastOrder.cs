@@ -2,6 +2,7 @@
 //  CastOrder.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Moved the cast timing here from the model
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -23,8 +24,8 @@ namespace MGQOnline.Arena.Engine;
 /// <param name="FixedSide">The half the rule fixed, or null for the planner to choose.</param>
 /// <param name="AimSeat">The seat of the unit it is aimed at, or null for the skill's own targeting.</param>
 /// <param name="RuleId">The rule that orders it.</param>
-/// <param name="ActionId">The action it is a cast of, or null; with the enemy it keys an alternating side's memory, the skill keys it without an action.</param>
-/// <param name="RootActionId">The action at the root of its follow-up chain, or null.</param>
+/// <param name="ActionId">The turn row it is a cast of, or null; with the enemy it keys an alternating side's memory, the skill keys it without one.</param>
+/// <param name="RootActionId">The turn row at the root of its follow-up chain, or null.</param>
 /// <param name="ParentCastId">The cast it follows right behind, or null.</param>
 public sealed record CastOrder(
     int Enemy,
@@ -40,3 +41,19 @@ public sealed record CastOrder(
     string? ActionId = null,
     string? RootActionId = null,
     string? ParentCastId = null);
+
+/// <summary>
+/// Which plan a cast a rule orders goes into.
+/// </summary>
+public enum CastTiming
+{
+    /// <summary>
+    /// The plan being made, telegraphed now.
+    /// </summary>
+    PlanNow,
+
+    /// <summary>
+    /// The next turn's plan as a forced entry, telegraphed then.
+    /// </summary>
+    NextTurn,
+}

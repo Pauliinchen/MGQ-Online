@@ -2,6 +2,9 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Read each enemy's rolled skills from the battle plan's stage
+//                            - Rolled every action, since turn rows cast outside the roll
+//                            - Named the states a skill's own hit rows add as the marks it leaves
 //      Paulinchen  2026-10-23: Placed the raid's battlefield debris at battle start without a chance roll
 //                            - Logged the damage dealt after the damage reduction and ended the reductions' turns
 //                            - Fought the boss's starting line-up and raised the falls of the enemies the party felled
@@ -447,7 +450,7 @@ public sealed partial class BattleSimulator
         List<StartRestSkill> skills = [];
         foreach (RuntimeAction action in ActionsOf(state, enemy))
         {
-            if (!action.Scheduled && action.Rating >= 1 && state.Boss.Skills.TryGetValue(action.Skill.Key, out RuntimeSkill? skill) && !IsGrappleSkill(skill) && skill.Cycle is null)
+            if (action.Rating >= 1 && state.Boss.Skills.TryGetValue(action.Skill.Key, out RuntimeSkill? skill) && !IsGrappleSkill(skill) && skill.Cycle is null)
             {
                 skills.Add(new StartRestSkill(skill.Ref.Key, skill.ApCost, skill.Cooldown, skill.Opener));
             }
@@ -494,7 +497,7 @@ public sealed partial class BattleSimulator
     }
 
     /// <summary>
-    /// Rolls an enemy's actions on its points: the unscheduled actions of the normal pool whose
+    /// Rolls an enemy's actions on its points: the actions of the normal pool whose
     /// condition holds and whose skill does not rest, and the normal attack with the lowest weight;
     /// every entry of the normal attack's skill runs at most the boss's or its tier's normal attacks
     /// per turn. With a full bank a resting skill joins at its skip price, and its use starts its
@@ -516,8 +519,7 @@ public sealed partial class BattleSimulator
         List<(RuntimeAction Action, RuntimeSkill Skill)> pickable = [];
         foreach (RuntimeAction action in ActionsOf(state, enemy))
         {
-            if (action.Scheduled
-                || action.Rating < 1
+            if (action.Rating < 1
                 || !state.Boss.Skills.TryGetValue(action.Skill.Key, out RuntimeSkill? skill)
                 || IsGrappleSkill(skill)
                 || !ActionConditions.Holds(state, enemy, action.Condition))
@@ -809,7 +811,7 @@ public sealed partial class BattleSimulator
                 }
             }
 
-            IReadOnlyList<int> leaves = [.. skill.Marks?.Leaves.Select(leave => leave.State) ?? []];
+            IReadOnlyList<int> leaves = LeavesOf(state.Boss, entry.Skill);
             foreach (CastHit hit in hits.Where(hit => !state.Units[hit.Seat].Fallen))
             {
                 Raise(state, new UnitHitEvent(state.Turn, entry.CastId, entry.Enemy, entry.Skill, hit.Seat, state.Units[hit.Seat].Cell, heldBefore[hit.Seat], leaves, entry.RootActionId, hit.MainTarget));
@@ -969,13 +971,25 @@ public sealed partial class BattleSimulator
     }
 
     /// <summary>
-    /// Lists an enemy's actions.
+    /// Lists an enemy's rolled skills in the battle's stage.
     /// </summary>
     /// <param name="state">The battle.</param>
-    /// <param name="enemy">The enemy, whose slot names its action list.</param>
+    /// <param name="enemy">The enemy, whose slot names its rolled skills.</param>
     /// <returns>The actions, none for a slot without a list.</returns>
     private static IReadOnlyList<RuntimeAction> ActionsOf(BattleState state, EnemyState enemy) =>
-        state.Boss.Actions.TryGetValue(enemy.Slot, out IReadOnlyList<RuntimeAction>? actions) ? actions : [];
+        state.Boss.Plan.ActionsOf(state.Stage, enemy.Slot);
+
+    /// <summary>
+    /// Lists the states a skill's own skill hits rows add, which a unit hit names as the marks it leaves.
+    /// </summary>
+    /// <param name="boss">The boss.</param>
+    /// <param name="skill">The skill.</param>
+    /// <returns>The states, each once, in row order.</returns>
+    private static IReadOnlyList<int> LeavesOf(RuntimeBoss boss, SkillRef skill) =>
+        [.. boss.Plan.Rules
+            .Where(rule => rule.Owner.Kind == OwnerKind.Skill && rule.Owner.Key == skill.Key && rule.Trigger is SkillHitsTrigger)
+            .SelectMany(rule => rule.Effects.OfType<AddStateEffect>().Select(effect => effect.State))
+            .Distinct()];
 
     /// <summary>
     /// Tells whether a skill belongs to a grapple pool.

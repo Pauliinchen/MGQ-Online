@@ -2,6 +2,7 @@
 //  DesignEnums.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Dropped the follow-up side
 //      Paulinchen  2026-10-23: Added the kinds of event battles that start a fight besides its own
 //      Paulinchen  2026-10-21: Created
 //
@@ -171,21 +172,4 @@ public enum ExtensionKind
     /// Telegraphed random strikes: a single hit with a new target each pulse.
     /// </summary>
     Strikes,
-}
-
-/// <summary>
-/// Which half a follow-up is cast on, relative to its parent.
-/// </summary>
-[JsonConverter(typeof(CamelCaseEnumConverter<FollowUpSide>))]
-public enum FollowUpSide
-{
-    /// <summary>
-    /// The other half than the parent's.
-    /// </summary>
-    Opposite,
-
-    /// <summary>
-    /// The parent's half.
-    /// </summary>
-    Same,
 }

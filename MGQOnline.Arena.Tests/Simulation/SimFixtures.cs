@@ -2,6 +2,8 @@
 //  SimFixtures.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Fought the test boss by a battle plan of one stage
+//                            - Made the schedule and follow-up battle rows of the Trigger -> Effect framework
 //      Paulinchen  2026-10-23: Left the battlefield empty
 //                            - Left the samples' raid and refight out
 //                            - Fought the test boss in an event battle with one enemy slot and without a reserve
@@ -116,9 +118,8 @@ internal static class SimFixtures
     /// <param name="unstoppable">Whether it is unstoppable.</param>
     /// <param name="zone">Its zone, or null.</param>
     /// <param name="skillTypes">Its skill types, or null for none.</param>
-    /// <param name="marks">The marks it leaves, or null.</param>
     /// <returns>The skill.</returns>
-    public static RuntimeSkill Skill(SkillRef skill, int cost = 1, int cooldown = 0, bool unstoppable = false, ZoneSpec? zone = null, IReadOnlyList<int>? skillTypes = null, MarksSpec? marks = null) => new(
+    public static RuntimeSkill Skill(SkillRef skill, int cost = 1, int cooldown = 0, bool unstoppable = false, ZoneSpec? zone = null, IReadOnlyList<int>? skillTypes = null) => new(
         skill,
         SkillKind.Area,
         new ShapeSpec(zone is null ? ShapeType.Square : ShapeType.Zone, ShapeFit.Clip, Size: 1),
@@ -132,8 +133,7 @@ internal static class SimFixtures
         new FalloffSpec(DistanceMetric.Chebyshev, [100], false),
         new PresentationSpec(6, 20, new ColorRgba(230, 40, 40, 160), new AnimationSpec(AnimationPlacement.PerCharacter, AnimationScreen.Off, 100, 0)),
         new PayloadSpec(false, 0, false, [], [], [], [], [], new HitFactsSpec(100, 0, 0, true)),
-        new SkillFacts(0, 1, 1, 1, 0, 1, 0, 1, skillTypes ?? [], new TargetFilter([])),
-        Marks: marks);
+        new SkillFacts(0, 1, 1, 1, 0, 1, 0, 1, skillTypes ?? [], new TargetFilter([])));
 
     /// <summary>
     /// Makes a design of one boss.
@@ -178,12 +178,10 @@ internal static class SimFixtures
             Event = new BattleEventRef(0, 88, 1, 0),
             Enemies = [new RuntimeEnemy(0, Slot, EnemyId, new EnemyStats(100_000, 500, 100, 100, 100, 100, 100, 100), ap)],
             Reserve = null,
-            Actions = new Dictionary<string, IReadOnlyList<RuntimeAction>> { [Slot] = actions },
+            Plan = RuntimePlan.OneStage(new Dictionary<string, IReadOnlyList<RuntimeAction>> { [Slot] = actions }, rules ?? []),
             NormalAttack = new RuntimeNormalAttack(new Dictionary<int, SkillRef> { [EnemyId] = Attack }, new Dictionary<int, int>()),
             Traits = traits ?? TraitBlock.Empty,
             Skills = byKey,
-            Rules = rules ?? [],
-            MarkReactions = [],
             Tier = TierNumber,
             Battlefield = null,
             Raid = null,
@@ -219,45 +217,65 @@ internal static class SimFixtures
     /// <param name="skill">The skill.</param>
     /// <param name="rating">The rating.</param>
     /// <param name="condition">The condition, or null for always.</param>
-    /// <param name="scheduled">Whether it is scheduled.</param>
     /// <returns>The action.</returns>
-    public static RuntimeAction Action(string id, SkillRef skill, int rating = 5, ActionCondition? condition = null, bool scheduled = false) =>
-        new(id, skill, rating, condition ?? new AlwaysActionCondition(), scheduled);
+    public static RuntimeAction Action(string id, SkillRef skill, int rating = 5, ActionCondition? condition = null) =>
+        new(id, skill, rating, condition ?? new AlwaysActionCondition());
 
     /// <summary>
     /// Makes a rule.
     /// </summary>
     /// <param name="id">The rule id.</param>
-    /// <param name="preset">The preset it comes from.</param>
-    /// <param name="itemId">The item it comes from.</param>
     /// <param name="trigger">The trigger.</param>
     /// <param name="effects">The effects.</param>
     /// <param name="conditions">The conditions, or null for none.</param>
-    /// <param name="limits">The limits, or null for none.</param>
+    /// <param name="often">How often it fires, or null for every time.</param>
+    /// <param name="owner">The owner, or null for a trait row of every enemy slot.</param>
     /// <returns>The rule.</returns>
-    public static RuleSpec Rule(string id, PresetKind preset, string itemId, TriggerSpec trigger, IReadOnlyList<EffectSpec> effects, IReadOnlyList<ConditionSpec>? conditions = null, RuleLimits? limits = null) =>
-        new(id, new RuleOrigin(preset, "boss:test", itemId), trigger, conditions ?? [], effects, limits ?? RuleLimits.None);
+    public static RuleSpec Rule(string id, TriggerSpec trigger, IReadOnlyList<EffectSpec> effects, IReadOnlyList<ConditionSpec>? conditions = null, HowOften? often = null, RuleOwner? owner = null) =>
+        new(id, owner ?? new RuleOwner(OwnerKind.Enemy), trigger, conditions ?? [], effects, often ?? HowOften.Every);
 
     /// <summary>
-    /// Makes the rule a scheduled action is lowered to.
+    /// Makes a use skill effect of one skill.
     /// </summary>
-    /// <param name="actionId">The action id.</param>
+    /// <param name="skill">The skill.</param>
+    /// <param name="when">When it is cast.</param>
+    /// <param name="free">Whether it costs no action points.</param>
+    /// <param name="uninterruptible">Whether crowd control cannot disable it.</param>
+    /// <param name="side">Which half it is cast on.</param>
+    /// <param name="aim">Where it is aimed.</param>
+    /// <param name="caster">The casting slot, or null for the rule's enemy.</param>
+    /// <returns>The effect.</returns>
+    public static UseSkillEffect Use(
+        SkillRef skill,
+        CastWhen when = CastWhen.ThisTurn,
+        bool free = true,
+        bool uninterruptible = false,
+        CastSide side = CastSide.Own,
+        CastAim aim = CastAim.Default,
+        string? caster = null) =>
+        new([new WeightedSkill(skill)], when, free, uninterruptible, side, aim, caster);
+
+    /// <summary>
+    /// Makes the battle row that casts a skill from the test boss on a turn condition, free and uninterruptible.
+    /// </summary>
+    /// <param name="id">The row id without its ":sched" suffix.</param>
     /// <param name="skill">The skill.</param>
     /// <param name="a">The first turn.</param>
     /// <param name="b">The turns between two more.</param>
     /// <returns>The rule.</returns>
-    public static RuleSpec Scheduled(string actionId, SkillRef skill, int a, int b) =>
-        Rule(actionId + ":sched", PresetKind.ScheduledCast, actionId, new TurnScheduleTrigger(a, b), [new UseSkillEffect(skill, true, true, CastTiming.PlanNow, CastSide.Own, CastAim.Default)]);
+    public static RuleSpec Scheduled(string id, SkillRef skill, int a, int b) =>
+        Rule(id + ":sched", new TurnTrigger(a, b), [Use(skill, uninterruptible: true, caster: Slot)], owner: RuleOwner.Battle);
 
     /// <summary>
-    /// Makes the rule a follow-up is lowered to.
+    /// Makes the battle row that follows the test boss's cast of a skill with another, free.
     /// </summary>
-    /// <param name="actionId">The parent action id.</param>
+    /// <param name="id">The row id without its ":follow" suffix.</param>
+    /// <param name="parent">The skill it follows.</param>
     /// <param name="skill">The follow-up skill.</param>
     /// <param name="side">The follow-up's side.</param>
     /// <returns>The rule.</returns>
-    public static RuleSpec FollowUp(string actionId, SkillRef skill, CastSide side = CastSide.Opposite) =>
-        Rule(actionId + ":follow", PresetKind.FollowUp, actionId, new AfterCastTrigger(actionId), [new UseSkillEffect(skill, true, false, CastTiming.PlanNow, side, CastAim.Default)]);
+    public static RuleSpec FollowUp(string id, SkillRef parent, SkillRef skill, CastSide side = CastSide.Opposite) =>
+        Rule(id + ":follow", new SkillUsedTrigger(Who.Enemy(Slot), parent), [Use(skill, side: side, caster: Slot)], owner: RuleOwner.Battle);
 
     /// <summary>
     /// Makes a party setup.

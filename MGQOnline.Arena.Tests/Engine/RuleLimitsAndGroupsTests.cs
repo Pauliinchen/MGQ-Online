@@ -2,6 +2,7 @@
 //  RuleLimitsAndGroupsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Limited the rows by how often they fire
 //      Paulinchen  2026-10-22: Tested the rank within a group
 //      Paulinchen  2026-10-21: Created
 //
@@ -18,7 +19,7 @@ using static MGQOnline.Arena.Tests.Engine.EngineSamples;
 namespace MGQOnline.Arena.Tests.Engine;
 
 /// <summary>
-/// Tests the rules' limits and groups.
+/// Tests how often rows fire, and their groups.
 /// </summary>
 public sealed class RuleLimitsAndGroupsTests
 {
@@ -29,7 +30,7 @@ public sealed class RuleLimitsAndGroupsTests
     public void FiresOncePerUnitPerUse()
     {
         FakeRuleContext context = new();
-        RuleEngine engine = EngineOf(Marker("r", new UnitHitTrigger(), limits: new RuleLimits(true, false)));
+        RuleEngine engine = EngineOf(Marker("r", new SkillHitsTrigger(Who.Owner, Who.Character), often: new HowOften(Frequency.Every, OncePerUnitPerUse: true)));
 
         engine.Raise(context, Hit(2, "c1", LightStigmata, 0));
         engine.Raise(context, Hit(2, "c1", LightStigmata, 0));
@@ -46,7 +47,7 @@ public sealed class RuleLimitsAndGroupsTests
     public void FiresOncePerTurn()
     {
         FakeRuleContext context = new();
-        RuleEngine engine = EngineOf(Marker("r", new UnitHitTrigger(), limits: new RuleLimits(false, true)));
+        RuleEngine engine = EngineOf(Marker("r", new SkillHitsTrigger(Who.Owner, Who.Character), often: new HowOften(Frequency.Every, OncePerTurn: true)));
 
         engine.Raise(context, Hit(2, "c1", LightStigmata, 0));
         engine.Raise(context, Hit(2, "c2", LightStigmata, 1));
@@ -56,13 +57,13 @@ public sealed class RuleLimitsAndGroupsTests
     }
 
     /// <summary>
-    /// Stops a rule at its most fires, counted per enemy.
+    /// Stops a row at its most fires, counted per enemy.
     /// </summary>
     [Fact]
-    public void StopsAtMaxFiresPerEnemy()
+    public void StopsAtMostFiresPerEnemy()
     {
         FakeRuleContext context = new(enemies: 2);
-        RuleEngine engine = new(Book([Marker("r", new TurnStartTrigger(), limits: new RuleLimits(false, false, 2))], enemies: 2));
+        RuleEngine engine = new(Book([Marker("r", new TurnStartTrigger(), often: new HowOften(Frequency.AtMost, 2))], enemies: 2));
 
         for (int turn = 1; turn <= 4; turn++)
         {
@@ -80,10 +81,10 @@ public sealed class RuleLimitsAndGroupsTests
     {
         FakeRuleContext context = new();
         RuleEngine engine = EngineOf(
-            Marker("a", new BossHitTrigger(HitKind.Any, false), group: "counters"),
-            Marker("free", new BossHitTrigger(HitKind.Any, false)),
-            Marker("b", new BossHitTrigger(HitKind.Any, false), group: "counters"),
-            Marker("c", new BossHitTrigger(HitKind.Any, false), group: "counters"));
+            Marker("a", new SkillHitsTrigger(Who.Character, Who.Owner), group: "counters"),
+            Marker("free", new SkillHitsTrigger(Who.Character, Who.Owner)),
+            Marker("b", new SkillHitsTrigger(Who.Character, Who.Owner), group: "counters"),
+            Marker("c", new SkillHitsTrigger(Who.Character, Who.Owner), group: "counters"));
         ArenaRandom twin = new RandomStreams(42).Get(RandomStream.Rules);
         string[] members = ["a", "b", "c"];
 
@@ -103,8 +104,8 @@ public sealed class RuleLimitsAndGroupsTests
     {
         FakeRuleContext context = new();
         RuleEngine engine = EngineOf(
-            Marker("never", new BossHitTrigger(HitKind.Any, false), [new ChanceCondition(0)], group: "counters"),
-            Marker("sure", new BossHitTrigger(HitKind.Any, false), [new ChanceCondition(10_000)], group: "counters"));
+            Marker("never", new SkillHitsTrigger(Who.Character, Who.Owner), [new ChanceCondition(0)], group: "counters"),
+            Marker("sure", new SkillHitsTrigger(Who.Character, Who.Owner), [new ChanceCondition(10_000)], group: "counters"));
 
         engine.Raise(context, PartyHit(1));
 
@@ -119,8 +120,8 @@ public sealed class RuleLimitsAndGroupsTests
     {
         FakeRuleContext context = new();
         RuleEngine engine = EngineOf(
-            Marker("a", new BossHitTrigger(HitKind.Any, false), group: "g"),
-            Marker("b", new BossHitTrigger(HitKind.Any, false), group: "g"));
+            Marker("a", new SkillHitsTrigger(Who.Character, Who.Owner), group: "g"),
+            Marker("b", new SkillHitsTrigger(Who.Character, Who.Owner), group: "g"));
 
         for (int turn = 1; turn <= 200; turn++)
         {
@@ -140,9 +141,9 @@ public sealed class RuleLimitsAndGroupsTests
     {
         FakeRuleContext context = new();
         RuleEngine engine = EngineOf(
-            Marker("low", new BossHitTrigger(HitKind.Any, false), group: "counters"),
-            Marker("first", new BossHitTrigger(HitKind.Any, false), group: "counters") with { GroupRank = 1 },
-            Marker("second", new BossHitTrigger(HitKind.Any, false), group: "counters") with { GroupRank = 1 });
+            Marker("low", new SkillHitsTrigger(Who.Character, Who.Owner), group: "counters"),
+            Marker("first", new SkillHitsTrigger(Who.Character, Who.Owner), group: "counters") with { GroupRank = 1 },
+            Marker("second", new SkillHitsTrigger(Who.Character, Who.Owner), group: "counters") with { GroupRank = 1 });
         ArenaRandom twin = new RandomStreams(42).Get(RandomStream.Rules);
 
         engine.Raise(context, PartyHit(1));
@@ -158,8 +159,8 @@ public sealed class RuleLimitsAndGroupsTests
     {
         FakeRuleContext context = new();
         RuleEngine engine = EngineOf(
-            Marker("low", new BossHitTrigger(HitKind.Any, false), group: "counters"),
-            Marker("top", new BossHitTrigger(HitKind.Any, false), group: "counters") with { GroupRank = 1 });
+            Marker("low", new SkillHitsTrigger(Who.Character, Who.Owner), group: "counters"),
+            Marker("top", new SkillHitsTrigger(Who.Character, Who.Owner), group: "counters") with { GroupRank = 1 });
         int next = new RandomStreams(42).Get(RandomStream.Rules).NextInt(1000);
 
         engine.Raise(context, PartyHit(1));
@@ -176,14 +177,29 @@ public sealed class RuleLimitsAndGroupsTests
     {
         FakeRuleContext context = new();
         RuleEngine engine = EngineOf(
-            Marker("a", new BossHitTrigger(HitKind.Any, false), limits: new RuleLimits(false, false, 1), group: "g"),
-            Marker("b", new BossHitTrigger(HitKind.Any, false), limits: new RuleLimits(false, false, 1), group: "g"));
+            Marker("a", new SkillHitsTrigger(Who.Character, Who.Owner), often: new HowOften(Frequency.Once), group: "g"),
+            Marker("b", new SkillHitsTrigger(Who.Character, Who.Owner), often: new HowOften(Frequency.Once), group: "g"));
 
         engine.Raise(context, PartyHit(1));
         engine.Raise(context, PartyHit(2));
         engine.Raise(context, PartyHit(3));
 
         Assert.Equal(["a", "b"], FiredIds(context).Order());
+    }
+
+    /// <summary>
+    /// Fires a once row the first time only.
+    /// </summary>
+    [Fact]
+    public void FiresAOnceRowTheFirstTimeOnly()
+    {
+        FakeRuleContext context = new();
+        RuleEngine engine = EngineOf(Marker("r", new TurnStartTrigger(), often: new HowOften(Frequency.Once)));
+
+        engine.Raise(context, new TurnStartEvent(1));
+        engine.Raise(context, new TurnStartEvent(2));
+
+        Assert.Equal([1], context.LoggedOf<RuleFiredEvent>().Select(fired => fired.Turn));
     }
 
     /// <summary>

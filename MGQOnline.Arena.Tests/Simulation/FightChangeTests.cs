@@ -2,6 +2,7 @@
 //  FightChangeTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Wrote the fight changes as rows of the Trigger -> Effect framework
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -40,7 +41,7 @@ public sealed class FightChangeTests
     /// Gets the rule that brings the reserve's raid boss enemy in once every enemy has fallen.
     /// </summary>
     private static RuleSpec Chain { get; } =
-        SimFixtures.Rule("chain", PresetKind.FightChange, "c1", new AllEnemiesFellTrigger(), [new EnemyJoinsEffect(SecondSlot)], limits: new RuleLimits(false, false, 1));
+        SimFixtures.Rule("chain", new AllEnemiesFellTrigger(), [new EnemyJoinsEffect(SecondSlot)], often: new HowOften(Frequency.Once));
 
     /// <summary>
     /// A chain rule keeps the battle going with the enemy it brings in, and that enemy's fall wins it.
@@ -64,14 +65,14 @@ public sealed class FightChangeTests
     }
 
     /// <summary>
-    /// A fight rule on an enemy's fall fires once, while the same rule per enemy fires for every enemy still standing.
+    /// A battle row on an enemy's fall fires once, while the same row as a trait fires for every enemy still standing.
     /// </summary>
     [Fact]
     public void FightRuleFiresOncePerFall()
     {
-        RuleSpec joins = SimFixtures.Rule("reinforce", PresetKind.FightChange, "r1", new EnemyFellTrigger(SimFixtures.Slot), [new EnemyJoinsEffect(SecondSlot)]);
+        RuleSpec joins = SimFixtures.Rule("reinforce", new FallsTrigger(Who.Enemy(SimFixtures.Slot)), [new EnemyJoinsEffect(SecondSlot)]);
 
-        Assert.Equal(1, JoinsAfterFirstFall(joins with { Scope = RuleScope.Fight }));
+        Assert.Equal(1, JoinsAfterFirstFall(joins with { Owner = RuleOwner.Battle }));
         Assert.Equal(2, JoinsAfterFirstFall(joins));
     }
 
@@ -86,7 +87,7 @@ public sealed class FightChangeTests
     [InlineData(false, 40_000)]
     public void TransformsAtHalfHp(bool keepHpRatio, long hp)
     {
-        RuleSpec half = SimFixtures.Rule("half", PresetKind.FightChange, "h1", new BossHpBelowTrigger(50), [new EnemyTransformsEffect(SecondSlot, keepHpRatio)]);
+        RuleSpec half = SimFixtures.Rule("half", new HpBelowTrigger(Who.Owner, 50), [new EnemyTransformsEffect(SecondSlot, keepHpRatio)]);
         BattleSimulator simulator = SimFixtures.Simulator(Design([half]));
         BattleState state = simulator.Start(SimFixtures.Setup(1));
 
@@ -107,7 +108,7 @@ public sealed class FightChangeTests
     [Fact]
     public void LastLeaveWinsUnlessAChainBringsSomeone()
     {
-        RuleSpec leave = SimFixtures.Rule("leave", PresetKind.FightChange, "l1", new TurnStartTrigger(), [new EnemyLeavesEffect()]);
+        RuleSpec leave = SimFixtures.Rule("leave", new TurnStartTrigger(), [new EnemyLeavesEffect()]);
         BattleSimulator alone = SimFixtures.Simulator(Design([leave]));
         BattleSimulator chained = SimFixtures.Simulator(Design([leave, Chain]));
         BattleState left = alone.Start(SimFixtures.Setup(1));
@@ -157,7 +158,7 @@ public sealed class FightChangeTests
                 [SimFixtures.BossKey] = boss with
                 {
                     Enemies = [boss.Enemies[0], boss.Enemies[0] with { Index = 1, Slot = "1f1f1f1f" }],
-                    Actions = new Dictionary<string, IReadOnlyList<RuntimeAction>>(boss.Actions) { ["1f1f1f1f"] = [] },
+                    Plan = RuntimePlan.OneStage(new Dictionary<string, IReadOnlyList<RuntimeAction>>(boss.Plan.Stages[0].Actions!) { ["1f1f1f1f"] = [] }, boss.Plan.Rules),
                 },
             },
         };
@@ -195,8 +196,8 @@ public sealed class FightChangeTests
     [Fact]
     public void DepthGuardStopsAnEndlessJoinAndFall()
     {
-        RuleSpec endless = Chain with { Limits = RuleLimits.None };
-        RuleSpec crush = SimFixtures.Rule("crush", PresetKind.Advanced, "k1", new StateAddedTrigger(SimFixtures.LightMark, StateHolder.Boss), [new DamageEffect(RuleTarget.Boss, 100)]);
+        RuleSpec endless = Chain with { Often = HowOften.Every };
+        RuleSpec crush = SimFixtures.Rule("crush", new StateGainedTrigger(Who.Owner, SimFixtures.LightMark), [new DamageEffect(TargetRef.Owner, 100)]);
         BattleSimulator simulator = SimFixtures.Simulator(Design([endless, crush], tierStates: [SimFixtures.LightMark]));
 
         BattleState state = simulator.Start(SimFixtures.Setup(1));

@@ -2,6 +2,7 @@
 //  CanonicalGoldenTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Took the battle plan and the rows of the Trigger -> Effect framework in the design golden
 //      Paulinchen  2026-10-23: Took the golden design with the battlefield
 //                            - Took the boss's raid and refight in the design golden
 //                            - Took the damage reductions in the goldens
@@ -40,7 +41,7 @@ public sealed class CanonicalGoldenTests
     /// <summary>
     /// The SHA-256 of the design golden.
     /// </summary>
-    private const string DesignSha256 = "d9909e71847f52f89186cd11c3ffa10aaf6842dfe3b5b8824d01be8eb57e630a";
+    private const string DesignSha256 = "d0bf4ee9dcf0ef4c75de45ce422f497543e826fecdb601d0126bbbe62f6e3571";
 
     /// <summary>
     /// The SHA-256 of the battle log golden.

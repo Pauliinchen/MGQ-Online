@@ -2,6 +2,7 @@
 //  RuntimeAction.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Dropped the scheduled flag and the follow-up
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -11,22 +12,13 @@ using System.Text.Json.Serialization;
 namespace MGQOnline.Arena.Model;
 
 /// <summary>
-/// An entry of an enemy's action list.
+/// An entry of an enemy's rolled skills.
 /// </summary>
 /// <param name="Id">The item id, unique within its boss.</param>
 /// <param name="Skill">The skill.</param>
 /// <param name="Rating">The rating from 1 to 10; the roll weight is rating × 1024.</param>
 /// <param name="Condition">When it may be used.</param>
-/// <param name="Scheduled">Whether it is kept out of the roll; its lowered schedule rule is then its only cast.</param>
-/// <param name="FollowUp">The skill cast right behind it, or null for none.</param>
-public sealed record RuntimeAction(string Id, SkillRef Skill, int Rating, ActionCondition Condition, bool Scheduled, FollowUpSpec? FollowUp = null);
-
-/// <summary>
-/// A skill cast right behind an action.
-/// </summary>
-/// <param name="Skill">The skill.</param>
-/// <param name="Side">Which half it is cast on, relative to its parent.</param>
-public sealed record FollowUpSpec(SkillRef Skill, FollowUpSide Side);
+public sealed record RuntimeAction(string Id, SkillRef Skill, int Rating, ActionCondition Condition);
 
 /// <summary>
 /// When an action may be used, by the game's condition types; JSON tells it by its <c>type</c>.

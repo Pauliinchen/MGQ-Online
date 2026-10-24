@@ -2,6 +2,7 @@
 //  MarkScenarioTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Played the Stigmata as battle and skill rows of the Trigger -> Effect framework
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -16,7 +17,7 @@ using static MGQOnline.Arena.Tests.Engine.EngineSamples;
 namespace MGQOnline.Arena.Tests.Engine;
 
 /// <summary>
-/// Plays the Stigmata presets over several turns with a minimal planner: a scheduled light Stigmata on
+/// Plays the Stigmata rows over several turns with a minimal planner: a scheduled light Stigmata on
 /// turn 2 + 3·X with a dark follow-up on the other half, light and dark marks until the next scheduled
 /// cast, and a reaction to each mark hit by the other.
 /// </summary>
@@ -38,25 +39,19 @@ public sealed class MarkScenarioTests
     private readonly FakeRuleContext _context = new();
 
     /// <summary>
-    /// The engine over the lowered presets.
+    /// The engine over the rows.
     /// </summary>
     private readonly RuleEngine _engine = EngineOf(
         Rule(
-            $"{StigmataAction}:sched",
-            new TurnScheduleTrigger(2, 3),
-            [new UseSkillEffect(LightStigmata, true, true, CastTiming.PlanNow, CastSide.Alternate, CastAim.Default)],
-            preset: PresetKind.ScheduledCast,
-            itemId: StigmataAction),
-        Rule(
-            $"{StigmataAction}:follow",
-            new AfterCastTrigger(CastOfAction: StigmataAction),
-            [new UseSkillEffect(DarkStigmata, true, false, CastTiming.PlanNow, CastSide.Opposite, CastAim.Default)],
-            preset: PresetKind.FollowUp,
-            itemId: StigmataAction),
+            StigmataAction,
+            new TurnTrigger(2, 3),
+            [Use(LightStigmata, uninterruptible: true, side: CastSide.Alternate, caster: FakeRuleContext.SlotOfIndex(0))],
+            owner: RuleOwner.Battle),
+        FollowUp,
         Leaves(LightStigmata, Light),
         Leaves(DarkStigmata, Dark),
-        Reaction("lightHitByDark", Light, Dark, 10),
-        Reaction("darkHitByLight", Dark, Light, 20));
+        Reaction("lightHitByDark", Light, DarkStigmata, 10),
+        Reaction("darkHitByLight", Dark, LightStigmata, 20));
 
     /// <summary>
     /// The casts planned so far.

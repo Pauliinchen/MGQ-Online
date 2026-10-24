@@ -2,6 +2,8 @@
 //  EffectHandlersTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Tested the effects with the targets of the Trigger -> Effect framework
+//                            - Tested the skill pick, the caster slot and the targets of a party hit
 //      Paulinchen  2026-10-22: Tested placing hazards
 //                            - Tested clearing debuffs
 //      Paulinchen  2026-10-21: Created
@@ -12,6 +14,7 @@ using System.Linq;
 using MGQOnline.Arena.Engine;
 using MGQOnline.Arena.Events;
 using MGQOnline.Arena.Model;
+using MGQOnline.Arena.Randomness;
 using static MGQOnline.Arena.Tests.Engine.EngineSamples;
 
 namespace MGQOnline.Arena.Tests.Engine;
@@ -27,22 +30,15 @@ public sealed class EffectHandlersTests
     private readonly FakeRuleContext _context = new();
 
     /// <summary>
-    /// Orders a scheduled cast as the action's own cast at the root of its chain.
+    /// Orders a turn row's cast as its own cast at the root of its chain, from the slot it names.
     /// </summary>
     [Fact]
-    public void OrdersAScheduledCastAsTheActionsCast()
+    public void OrdersATurnRowsCastAsItsOwn()
     {
-        RuleSpec schedule = Rule(
-            $"{StigmataAction}:sched",
-            new TurnScheduleTrigger(2, 3),
-            [new UseSkillEffect(LightStigmata, true, true, CastTiming.PlanNow, CastSide.Own, CastAim.Default)],
-            preset: PresetKind.ScheduledCast,
-            itemId: StigmataAction);
-
-        EngineOf(schedule).Raise(_context, new TurnScheduleEvent(2, 0));
+        EngineOf(Schedule).Raise(_context, new TurnScheduleEvent(2, 0));
 
         CastOrder order = Assert.Single(_context.Orders);
-        Assert.Equal(new CastOrder(0, LightStigmata, PlanKind.Scheduled, CastTiming.PlanNow, true, true, CastSide.Own, null, null, schedule.Id, StigmataAction, StigmataAction), order);
+        Assert.Equal(new CastOrder(0, LightStigmata, PlanKind.Scheduled, CastTiming.PlanNow, true, true, CastSide.Own, null, null, StigmataAction, StigmataAction, StigmataAction), order);
     }
 
     /// <summary>
@@ -51,14 +47,7 @@ public sealed class EffectHandlersTests
     [Fact]
     public void OrdersAFollowUpBehindItsParent()
     {
-        RuleSpec follow = Rule(
-            $"{StigmataAction}:follow",
-            new AfterCastTrigger(CastOfAction: StigmataAction),
-            [new UseSkillEffect(DarkStigmata, true, false, CastTiming.PlanNow, CastSide.Opposite, CastAim.Default)],
-            preset: PresetKind.FollowUp,
-            itemId: StigmataAction);
-
-        EngineOf(follow).Raise(_context, new AfterCastEvent(2, "c1", 0, LightStigmata, PlanKind.Scheduled, StigmataAction, StigmataAction, GridHalf.Left));
+        EngineOf(FollowUp).Raise(_context, new AfterCastEvent(2, "c1", 0, LightStigmata, PlanKind.Scheduled, StigmataAction, StigmataAction, GridHalf.Left));
 
         CastOrder order = Assert.Single(_context.Orders);
         Assert.Equal(PlanKind.FollowUp, order.Kind);
@@ -66,6 +55,54 @@ public sealed class EffectHandlersTests
         Assert.Null(order.ActionId);
         Assert.Equal(StigmataAction, order.RootActionId);
         Assert.Equal("c1", order.ParentCastId);
+    }
+
+    /// <summary>
+    /// Casts from the first standing enemy of the slot it names, and warns when none stands.
+    /// </summary>
+    [Fact]
+    public void CastsFromTheNamedSlot()
+    {
+        FakeRuleContext context = new(enemies: 3);
+        context.Living.Remove(1);
+        RuleEngine engine = new(Book(
+            [
+                Rule("second", new TurnStartTrigger(), [Use(Blast, caster: FakeRuleContext.SlotOfIndex(2))], owner: RuleOwner.Battle),
+                Rule("gone", new TurnStartTrigger(), [Use(Blast, caster: FakeRuleContext.SlotOfIndex(1))], owner: RuleOwner.Battle),
+            ],
+            enemies: 3));
+
+        engine.Raise(context, new TurnStartEvent(1));
+
+        Assert.Equal(2, Assert.Single(context.Orders).Enemy);
+        Assert.Equal((EngineWarnings.NoTarget, "gone"), (Assert.Single(context.LoggedOf<WarningEvent>()).Code, context.LoggedOf<WarningEvent>().Single().RuleId));
+    }
+
+    /// <summary>
+    /// Picks one of several skills by weight on the rules' stream.
+    /// </summary>
+    [Fact]
+    public void PicksOneOfSeveralSkillsByWeight()
+    {
+        ArenaRandom twin = new RandomStreams(42).Get(RandomStream.Rules);
+        UseSkillEffect effect = new([new WeightedSkill(Blast, 3), new WeightedSkill(LightStigmata, 1)], CastWhen.ThisTurn, true, false, CastSide.Own, CastAim.Default);
+
+        EngineOf(Rule("r", new TurnStartTrigger(), [effect])).Raise(_context, new TurnStartEvent(1));
+
+        Assert.Equal(new[] { Blast, LightStigmata }[twin.PickWeighted([3, 1])], Assert.Single(_context.Orders).Skill);
+    }
+
+    /// <summary>
+    /// Targets the hit enemy as the trigger unit of a party hit, and the hitting character as its attacker.
+    /// </summary>
+    [Fact]
+    public void TargetsTheHitEnemyAndTheAttackerOfAPartyHit()
+    {
+        EngineOf(Rule("r", new SkillHitsTrigger(Who.Character, Who.Owner), [new AddStateEffect(TargetRef.TriggerUnit, 15, Turns: 1), new AddStateEffect(TargetRef.Attacker, 29, Turns: 1)]))
+            .Raise(_context, new BossHitEvent(3, 0, 2, new GridCell(5, 4), HitKind.Physical, Blast, [], true));
+
+        Assert.NotNull(_context.StateOf(StateHolder.Boss, 0, 15));
+        Assert.True(_context.UnitHolds(2, 29));
     }
 
     /// <summary>
@@ -87,7 +124,7 @@ public sealed class EffectHandlersTests
     [InlineData(CastSide.Own, GridHalf.Left, CastSide.Own, null)]
     public void ResolvesTheSide(CastSide side, GridHalf? parent, CastSide expectedSide, GridHalf? expectedFixed)
     {
-        EngineOf(Rule("r", new AfterCastTrigger(), [new UseSkillEffect(Blast, true, false, CastTiming.PlanNow, side, CastAim.Default)]))
+        EngineOf(Rule("r", new SkillUsedTrigger(Who.Owner), [Use(Blast, side: side)]))
             .Raise(_context, new AfterCastEvent(2, "c1", 0, LightStigmata, PlanKind.Scheduled, StigmataAction, StigmataAction, parent));
 
         CastOrder order = Assert.Single(_context.Orders);
@@ -102,7 +139,7 @@ public sealed class EffectHandlersTests
     {
         _context.Sides["c1"] = GridHalf.Left;
 
-        EngineOf(Rule("r", new UnitHitTrigger(), [new UseSkillEffect(Blast, true, false, CastTiming.NextTurn, CastSide.Opposite, CastAim.TriggerUnit)]))
+        EngineOf(Rule("r", new SkillHitsTrigger(Who.Owner, Who.Character), [new UseSkillEffect([new WeightedSkill(Blast)], CastWhen.NextTurn, true, false, CastSide.Opposite, CastAim.TriggerUnit)]))
             .Raise(_context, Hit(2, "c1", LightStigmata, 3));
 
         CastOrder order = Assert.Single(_context.Orders);
@@ -118,7 +155,7 @@ public sealed class EffectHandlersTests
     [Fact]
     public void AimsAtTheAttacker()
     {
-        EngineOf(Rule("r", new BossHitTrigger(HitKind.Any, false), [new UseSkillEffect(Blast, false, false, CastTiming.NextTurn, CastSide.Own, CastAim.Attacker)], group: "g"))
+        EngineOf(Rule("r", new SkillHitsTrigger(Who.Character, Who.Owner), [new UseSkillEffect([new WeightedSkill(Blast)], CastWhen.NextTurn, false, false, CastSide.Own, CastAim.Attacker)], group: "g"))
             .Raise(_context, new BossHitEvent(3, 0, 2, new GridCell(5, 4), HitKind.Physical, Blast, [], true));
 
         Assert.Equal(2, Assert.Single(_context.Orders).AimSeat);
@@ -132,8 +169,8 @@ public sealed class EffectHandlersTests
     {
         _context.Plan = order => new AfterCastEvent(2, "c" + _context.Orders.Count, order.Enemy, order.Skill, order.Kind, order.ActionId, order.RootActionId);
         RuleEngine engine = EngineOf(
-            Rule("sched", new TurnScheduleTrigger(2, 0), [new UseSkillEffect(LightStigmata, true, true, CastTiming.PlanNow, CastSide.Own, CastAim.Default)], preset: PresetKind.ScheduledCast, itemId: StigmataAction),
-            Rule("follow", new AfterCastTrigger(Skill: LightStigmata), [new UseSkillEffect(DarkStigmata, true, false, CastTiming.PlanNow, CastSide.Own, CastAim.Default)]));
+            Rule(StigmataAction, new TurnTrigger(2, 0), [Use(LightStigmata, uninterruptible: true)]),
+            Rule("follow", new SkillUsedTrigger(Who.Owner, LightStigmata), [Use(DarkStigmata)]));
 
         engine.Raise(_context, new TurnScheduleEvent(2, 0));
 
@@ -149,7 +186,7 @@ public sealed class EffectHandlersTests
     [Fact]
     public void AddsAStateForTurns()
     {
-        EngineOf(Rule("r", new UnitHitTrigger(), [new AddStateEffect(RuleTarget.TriggerUnit, 29, Turns: 2)])).Raise(_context, Hit(2, "c1", Blast, 1));
+        EngineOf(Rule("r", new SkillHitsTrigger(Who.Owner, Who.Character), [new AddStateEffect(TargetRef.TriggerUnit, 29, Turns: 2)])).Raise(_context, Hit(2, "c1", Blast, 1));
 
         FakeState state = _context.StateOf(StateHolder.Unit, 1, 29)!;
         Assert.Equal((2, null), (state.Turns, state.Clock));
@@ -164,7 +201,7 @@ public sealed class EffectHandlersTests
     {
         _context.Hits["c1"] = [0, 2];
 
-        EngineOf(Rule("r", new UnitHitTrigger(), [new AddStateEffect(RuleTarget.HitUnits, 30, Turns: 1), new AddStateEffect(RuleTarget.Boss, 15, Turns: 2)]))
+        EngineOf(Rule("r", new SkillHitsTrigger(Who.Owner, Who.Character), [new AddStateEffect(TargetRef.HitUnits, 30, Turns: 1), new AddStateEffect(TargetRef.Owner, 15, Turns: 2)]))
             .Raise(_context, Hit(2, "c1", Blast, 0));
 
         Assert.True(_context.UnitHolds(0, 30));
@@ -179,7 +216,7 @@ public sealed class EffectHandlersTests
     [Fact]
     public void WarnsWithoutATarget()
     {
-        EngineOf(Rule("r", new TurnStartTrigger(), [new AddStateEffect(RuleTarget.TriggerUnit, 30, Turns: 1), new AddStateEffect(RuleTarget.HitUnits, 31, Turns: 1)]))
+        EngineOf(Rule("r", new TurnStartTrigger(), [new AddStateEffect(TargetRef.TriggerUnit, 30, Turns: 1), new AddStateEffect(TargetRef.HitUnits, 31, Turns: 1)]))
             .Raise(_context, new TurnStartEvent(1));
 
         Assert.Equal([EngineWarnings.NoTarget, EngineWarnings.NoTarget], _context.LoggedOf<WarningEvent>().Select(warning => warning.Code));
@@ -193,7 +230,7 @@ public sealed class EffectHandlersTests
     public void RemovesAState()
     {
         _context.Give(StateHolder.Unit, 1, Light);
-        RuleEngine engine = EngineOf(Rule("r", new UnitHitTrigger(), [new RemoveStateEffect(RuleTarget.TriggerUnit, Light)]));
+        RuleEngine engine = EngineOf(Rule("r", new SkillHitsTrigger(Who.Owner, Who.Character), [new RemoveStateEffect(TargetRef.TriggerUnit, Light)]));
 
         engine.Raise(_context, Hit(2, "c1", Blast, 1));
         engine.Raise(_context, Hit(2, "c2", Blast, 1));
@@ -208,7 +245,7 @@ public sealed class EffectHandlersTests
     [Fact]
     public void DealsAPercentOfTheUnitsMaxHp()
     {
-        EngineOf(Rule("r", new UnitHitTrigger(), [new DamageEffect(RuleTarget.TriggerUnit, 12.59)])).Raise(_context, Hit(2, "c1", Blast, 1));
+        EngineOf(Rule("r", new SkillHitsTrigger(Who.Owner, Who.Character), [new DamageEffect(TargetRef.TriggerUnit, 12.59)])).Raise(_context, Hit(2, "c1", Blast, 1));
 
         Assert.Equal(new DamageEvent(2, StateHolder.Unit, 1, 125, 875, "c1", "r"), Assert.Single(_context.LoggedOf<DamageEvent>()));
     }
@@ -220,8 +257,8 @@ public sealed class EffectHandlersTests
     public void DealsAFormulasDamage()
     {
         RuleEngine engine = EngineOf(
-            Rule("r", new UnitHitTrigger(BySkill: Blast), [new DamageEffect(RuleTarget.TriggerUnit, Formula: Formula("a.atk * 2 - b.def"))]),
-            Rule("negative", new UnitHitTrigger(BySkill: LightStigmata), [new DamageEffect(RuleTarget.TriggerUnit, Formula: Formula("b.def - a.atk * 2"))]));
+            Rule("r", new SkillHitsTrigger(Who.Owner, Who.Character, Blast), [new DamageEffect(TargetRef.TriggerUnit, Formula: Formula("a.atk * 2 - b.def"))]),
+            Rule("negative", new SkillHitsTrigger(Who.Owner, Who.Character, LightStigmata), [new DamageEffect(TargetRef.TriggerUnit, Formula: Formula("b.def - a.atk * 2"))]));
 
         engine.Raise(_context, Hit(2, "c1", Blast, 1));
         engine.Raise(_context, Hit(2, "c2", LightStigmata, 1));
@@ -237,8 +274,8 @@ public sealed class EffectHandlersTests
     {
         _context.SetHp(StateHolder.Unit, 1, 100);
         RuleEngine engine = EngineOf(
-            Rule("r", new UnitHitTrigger(), [new DamageEffect(RuleTarget.TriggerUnit, 50)]),
-            Marker("fell", new UnitFellTrigger()));
+            Rule("r", new SkillHitsTrigger(Who.Owner, Who.Character), [new DamageEffect(TargetRef.TriggerUnit, 50)]),
+            Marker("fell", new FallsTrigger(Who.Character)));
 
         engine.Raise(_context, Hit(2, "c1", Blast, 1));
 
@@ -254,8 +291,8 @@ public sealed class EffectHandlersTests
     {
         _context.Thresholds[0] = [75, 50];
         RuleEngine engine = EngineOf(
-            Rule("r", new TurnStartTrigger(), [new DamageEffect(RuleTarget.Boss, 60)]),
-            Marker("below50", new BossHpBelowTrigger(50)));
+            Rule("r", new TurnStartTrigger(), [new DamageEffect(TargetRef.Owner, 60)]),
+            Marker("below50", new HpBelowTrigger(Who.Owner, 50)));
 
         engine.Raise(_context, new TurnStartEvent(3));
 
@@ -271,7 +308,7 @@ public sealed class EffectHandlersTests
     {
         FakeRuleContext context = new(enemies: 2);
 
-        new RuleEngine(Book([Rule("r", new BossHitTrigger(HitKind.Any, false), [new ApDeltaEffect(-2, ApTurn.Next)])], enemies: 2))
+        new RuleEngine(Book([Rule("r", new SkillHitsTrigger(Who.Character, Who.Owner), [new ApDeltaEffect(-2, ApTurn.Next)])], enemies: 2))
             .Raise(context, new BossHitEvent(1, 1, 0, new GridCell(0, 0), HitKind.Magic, Blast, [], true));
 
         Assert.Equal([(1, -2, ApTurn.Next)], context.ApChanges);
@@ -285,7 +322,7 @@ public sealed class EffectHandlersTests
     {
         SkillDebrisSpec debris = new(DebrisPlace.ImpactCell, 2, 1);
 
-        EngineOf(Rule("r", new UnitHitTrigger(), [new PlaceDebrisEffect(debris)])).Raise(_context, Hit(2, "c1", Blast, 1));
+        EngineOf(Rule("r", new SkillHitsTrigger(Who.Owner, Who.Character), [new PlaceDebrisEffect(debris)])).Raise(_context, Hit(2, "c1", Blast, 1));
 
         Assert.Equal([(0, debris, "c1")], _context.Debris);
         DebrisPlacedEvent placed = Assert.Single(_context.LoggedOf<DebrisPlacedEvent>());
@@ -300,7 +337,7 @@ public sealed class EffectHandlersTests
     {
         HazardPlacement hazard = new("fire", 5000, HazardPlace.HitCells, Turns: 2);
 
-        EngineOf(Rule("r", new UnitHitTrigger(), [new PlaceHazardEffect(hazard)])).Raise(_context, Hit(2, "c1", Blast, 1));
+        EngineOf(Rule("r", new SkillHitsTrigger(Who.Owner, Who.Character), [new PlaceHazardEffect(hazard)])).Raise(_context, Hit(2, "c1", Blast, 1));
 
         Assert.Equal([(0, hazard, "c1", (int?)1, "r")], _context.Hazards);
     }
@@ -311,7 +348,7 @@ public sealed class EffectHandlersTests
     [Fact]
     public void ClearsTheBossDebuffs()
     {
-        EngineOf(Rule("r", new BossHpBelowTrigger(50), [new ClearDebuffsEffect(RuleTarget.Boss)])).Raise(_context, new BossHpBelowEvent(2, 0, 50));
+        EngineOf(Rule("r", new HpBelowTrigger(Who.Owner, 50), [new ClearDebuffsEffect(TargetRef.Owner)])).Raise(_context, new BossHpBelowEvent(2, 0, 50));
 
         Assert.Equal(new DebuffsClearedEvent(2, StateHolder.Boss, 0, "r"), Assert.Single(_context.LoggedOf<DebuffsClearedEvent>()));
     }

@@ -14,7 +14,7 @@ namespace MGQOnline.Arena.Model;
 /// <summary>
 /// The parts of a trait list the game reads: features, note tags, state recipes and delayed counters.
 /// </summary>
-/// <remarks>The C# engine reads the lowered rules instead; this block feeds the Ruby reader.</remarks>
+/// <remarks>The C# engine reads the battle plan's rows instead; this block feeds the Ruby reader.</remarks>
 /// <param name="Entries">One entry per trait, a tier's first, then a boss's.</param>
 /// <param name="Features">The features added to every enemy.</param>
 /// <param name="NoteTags">The note tag lines appended to every enemy's note, with placeholders.</param>

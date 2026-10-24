@@ -2,6 +2,7 @@
 //  SkillEnums.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Dropped how long a mark lasts
 //      Paulinchen  2026-10-23: Added the manual target mode
 //      Paulinchen  2026-10-21: Created
 //
@@ -447,21 +448,4 @@ public enum DebrisLookKind
     /// A picture.
     /// </summary>
     Picture,
-}
-
-/// <summary>
-/// How long a mark a skill leaves lasts.
-/// </summary>
-[JsonConverter(typeof(CamelCaseEnumConverter<MarkUntil>))]
-public enum MarkUntil
-{
-    /// <summary>
-    /// A number of turns.
-    /// </summary>
-    Turns,
-
-    /// <summary>
-    /// Through the next cast of the same root scheduled action, at least the minimum turns.
-    /// </summary>
-    NextScheduledCast,
 }

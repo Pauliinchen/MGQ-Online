@@ -2,6 +2,7 @@
 //  MarkLifecycle.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Let marks wait for the casts of turn rows
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -15,7 +16,7 @@ using MGQOnline.Arena.Model;
 namespace MGQOnline.Arena.Engine;
 
 /// <summary>
-/// Sets and ends the clocks of marks that last until the next cast of a scheduled action, or for a
+/// Sets and ends the clocks of marks that last until the next cast of a turn row, or for a
 /// fewest number of turns.
 /// </summary>
 public static class MarkLifecycle
@@ -26,11 +27,11 @@ public static class MarkLifecycle
     /// <param name="effect">The effect that adds it.</param>
     /// <param name="turn">The turn it lands in.</param>
     /// <param name="castId">The cast that leads to it, or null.</param>
-    /// <param name="rootActionId">The action at the root of that cast's follow-up chain, or null.</param>
-    /// <param name="book">The rule book, which tells scheduled actions.</param>
+    /// <param name="rootActionId">The turn row at the root of that cast's follow-up chain, or null.</param>
+    /// <param name="book">The rule book, which tells turn rows.</param>
     /// <returns>
-    /// The clock, or null for a state that runs by turns. A clock waits for a cast only of a scheduled
-    /// action; otherwise its fewest turns alone apply.
+    /// The clock, or null for a state that runs by turns. A clock waits for a cast only of a turn
+    /// row; otherwise its fewest turns alone apply.
     /// </returns>
     public static MarkClock? ClockFor(AddStateEffect effect, int turn, string? castId, string? rootActionId, RuleBook book)
     {
@@ -42,7 +43,7 @@ public static class MarkLifecycle
         }
 
         string? until = effect.UntilNextCastOf == AddStateEffect.RootOfCast ? rootActionId : effect.UntilNextCastOf;
-        if (until is not null && !book.IsScheduledAction(until))
+        if (until is not null && !book.IsTurnRow(until))
         {
             until = null;
         }
@@ -51,16 +52,16 @@ public static class MarkLifecycle
     }
 
     /// <summary>
-    /// Ends the marks that waited for a scheduled action, once its cast and follow-ups resolved.
+    /// Ends the marks that waited for a turn row, once its cast and follow-ups resolved.
     /// </summary>
     /// <remarks>
-    /// A mark this action's casts just landed or refreshed stays for its next cast. A mark whose fewest
+    /// A mark this row's casts just landed or refreshed stays for its next cast. A mark whose fewest
     /// turns have not passed stops waiting and goes at the first turn end that reaches them.
     /// </remarks>
     /// <param name="context">The battle.</param>
     /// <param name="turn">The turn.</param>
-    /// <param name="rootActionId">The scheduled action.</param>
-    /// <param name="castIds">The ids of the action's cast and its follow-ups.</param>
+    /// <param name="rootActionId">The turn row.</param>
+    /// <param name="castIds">The ids of the row's cast and its follow-ups.</param>
     public static void ActionEnded(IRuleContext context, int turn, string rootActionId, IReadOnlyCollection<string> castIds)
     {
         ArgumentNullException.ThrowIfNull(context);

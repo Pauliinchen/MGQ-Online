@@ -2,6 +2,7 @@
 //  TriggerMatcher.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Matched the event and who triggers of the Trigger -> Effect framework
 //      Paulinchen  2026-10-23: Matched the enemy fell and all enemies fell triggers
 //      Paulinchen  2026-10-22: Matched resolved casts by their skill
 //                            - Matched unit hits by the main target
@@ -17,80 +18,94 @@ using MGQOnline.Arena.Model;
 namespace MGQOnline.Arena.Engine;
 
 /// <summary>
-/// Tells whether a rule's trigger matches a battle event.
+/// Tells whether a row's trigger matches a battle event.
 /// </summary>
 internal static class TriggerMatcher
 {
     /// <summary>
-    /// Matches a trigger against an event; every filter the trigger sets must match.
+    /// Matches a row's trigger against an event; every filter the trigger sets must match.
     /// </summary>
-    /// <param name="trigger">The trigger.</param>
+    /// <param name="rule">The row.</param>
     /// <param name="battleEvent">The event.</param>
-    /// <param name="context">The battle, for the turn condition.</param>
+    /// <param name="context">The battle, for the turn condition and enemy slots.</param>
     /// <param name="book">The rule book, for skill types.</param>
+    /// <param name="enemy">The row's enemy, whom Owner means.</param>
+    /// <param name="fight">Whether the row is matched once for the fight.</param>
     /// <returns>Whether the trigger fires.</returns>
-    public static bool Matches(TriggerSpec trigger, BattleEvent battleEvent, IRuleContext context, RuleBook book) => (trigger, battleEvent) switch
+    public static bool Matches(RuleSpec rule, BattleEvent battleEvent, IRuleContext context, RuleBook book, int enemy, bool fight)
     {
-        (BattleStartTrigger, BattleStartEvent) => true,
-        (TurnStartTrigger, TurnStartEvent) => true,
-        (TurnEndTrigger, TurnEndEvent) => true,
-        (TurnScheduleTrigger schedule, TurnScheduleEvent planned) => context.TurnHolds(schedule.A, schedule.B, planned.Turn),
-        (AfterCastTrigger after, AfterCastEvent cast) => MatchesCast(after, cast, book),
-        (CastResolvedTrigger resolved, CastResolvedEvent cast) => Same(resolved.Skill, cast.Skill),
-        (UnitHitTrigger unitHit, UnitHitEvent hit) => MatchesUnitHit(unitHit, hit),
-        (BossHitTrigger bossHit, BossHitEvent hit) => MatchesBossHit(bossHit, hit),
-        (BossHpBelowTrigger below, BossHpBelowEvent crossed) => below.Percent == crossed.Percent,
-        (StateAddedTrigger added, StateAddedEvent landed) => added.State == landed.State && added.On == landed.On,
-        (UnitFellTrigger, UnitFellEvent) => true,
-        (EnemyFellTrigger fell, EnemyFellEvent fallen) => fell.Slot is null || fell.Slot == fallen.Slot,
-        (AllEnemiesFellTrigger, AllEnemiesFellEvent) => true,
-        _ => false,
-    };
+        Subject subject = new(context, enemy, fight);
+        string? ownSkill = rule.Owner.Kind == OwnerKind.Skill ? rule.Owner.Key : null;
+        return (rule.Trigger, battleEvent) switch
+        {
+            (BattleStartTrigger, BattleStartEvent) => true,
+            (TurnStartTrigger, TurnStartEvent) => true,
+            (TurnEndTrigger, TurnEndEvent) => true,
+            (TurnTrigger turn, TurnScheduleEvent planned) => MatchesTurn(turn, planned, context, fight),
+            (SkillUsedTrigger used, AfterCastEvent cast) =>
+                subject.Is(used.By, Boss(cast.Enemy)) && Same(used.Skill, ownSkill, cast.Skill) && HasType(used.SkillType, book.SkillTypesOf(cast.Skill)),
+            (SkillHitsTrigger hits, UnitHitEvent hit) =>
+                subject.Is(hits.By, Boss(hit.Enemy)) && subject.Is(hits.Hit, Unit(hit.Seat))
+                && Same(hits.Skill, ownSkill, hit.Skill) && HasType(hits.SkillType, book.SkillTypesOf(hit.Skill)),
+            (SkillHitsTrigger hits, BossHitEvent hit) =>
+                subject.Is(hits.By, Unit(hit.Attacker)) && subject.Is(hits.Hit, Boss(hit.Enemy))
+                && Same(hits.Skill, ownSkill, hit.Skill) && HasType(hits.SkillType, hit.SkillTypes),
+            (SkillFinishedTrigger finished, CastResolvedEvent cast) =>
+                subject.Is(finished.By, Boss(cast.Enemy)) && Same(finished.Skill, ownSkill, cast.Skill) && HasType(finished.SkillType, book.SkillTypesOf(cast.Skill)),
+            (HpBelowTrigger below, BossHpBelowEvent crossed) => below.Percent == crossed.Percent && subject.Is(below.Whom, Boss(crossed.Enemy)),
+            (StateGainedTrigger gained, StateAddedEvent added) => gained.State == added.State && subject.Is(gained.Whom, (added.On, added.Index)),
+            (JoinsTrigger joins, EnemyJoinedEvent joined) => subject.Is(joins.Whom, Boss(joined.Enemy)),
+            (FallsTrigger falls, UnitFellEvent fell) => subject.Is(falls.Whom, Unit(fell.Seat)),
+            (FallsTrigger falls, EnemyFellEvent fell) => subject.Is(falls.Whom, Boss(fell.Enemy)),
+            (AllEnemiesFellTrigger, AllEnemiesFellEvent) => true,
+
+            // TE1: stage start, damage in one turn, lost states and the HP of characters raise no event yet.
+            _ => false,
+        };
+    }
 
     /// <summary>
-    /// Matches an after-cast trigger.
+    /// Matches a turn trigger against an enemy's plan; a fight row fires on the plan of the first standing enemy only.
     /// </summary>
     /// <param name="trigger">The trigger.</param>
-    /// <param name="cast">The planned cast.</param>
-    /// <param name="book">The rule book, for skill types.</param>
-    /// <returns>Whether every filter matches.</returns>
-    private static bool MatchesCast(AfterCastTrigger trigger, AfterCastEvent cast, RuleBook book) =>
-        (trigger.CastOfAction is null || trigger.CastOfAction == cast.ActionId)
-        && Same(trigger.Skill, cast.Skill)
-        && HasType(trigger.SkillType, book.SkillTypesOf(cast.Skill));
+    /// <param name="planned">The plan event.</param>
+    /// <param name="context">The battle.</param>
+    /// <param name="fight">Whether the row is matched once for the fight.</param>
+    /// <returns>Whether the turn condition holds.</returns>
+    private static bool MatchesTurn(TurnTrigger trigger, TurnScheduleEvent planned, IRuleContext context, bool fight)
+    {
+        // TE1: one plan event per turn for the fight rows, and the stage clock; both read the battle turn of the first enemy's plan for now.
+        if (fight && (context.LivingEnemies.Count == 0 || context.LivingEnemies[0] != planned.Enemy))
+        {
+            return false;
+        }
+
+        return context.TurnHolds(trigger.A, trigger.B, planned.Turn);
+    }
 
     /// <summary>
-    /// Matches a unit hit trigger against the marks the unit held before the cast and whether it is
-    /// the cast's main target.
+    /// Names an enemy.
     /// </summary>
-    /// <param name="trigger">The trigger.</param>
-    /// <param name="hit">The hit.</param>
-    /// <returns>Whether every filter matches.</returns>
-    private static bool MatchesUnitHit(UnitHitTrigger trigger, UnitHitEvent hit) =>
-        Same(trigger.BySkill, hit.Skill)
-        && (trigger.Holding is not int holding || hit.HeldBefore.Contains(holding))
-        && (trigger.HitByLeaving is not int leaving || hit.Leaves.Contains(leaving))
-        && (trigger.MainTarget is not bool main || hit.MainTarget == main);
+    /// <param name="enemy">The enemy's index.</param>
+    /// <returns>The actor.</returns>
+    private static (StateHolder, int) Boss(int enemy) => (StateHolder.Boss, enemy);
 
     /// <summary>
-    /// Matches a boss hit trigger.
+    /// Names a unit.
     /// </summary>
-    /// <param name="trigger">The trigger.</param>
-    /// <param name="hit">The party's hit.</param>
-    /// <returns>Whether every filter matches.</returns>
-    private static bool MatchesBossHit(BossHitTrigger trigger, BossHitEvent hit) =>
-        (trigger.HitType == HitKind.Any || trigger.HitType == hit.HitType)
-        && (!trigger.ChosenOnly || hit.Chosen)
-        && Same(trigger.Skill, hit.Skill)
-        && HasType(trigger.SkillType, hit.SkillTypes);
+    /// <param name="seat">The unit's seat.</param>
+    /// <returns>The actor.</returns>
+    private static (StateHolder, int) Unit(int seat) => (StateHolder.Unit, seat);
 
     /// <summary>
     /// Matches a skill filter.
     /// </summary>
     /// <param name="filter">The skill the trigger asks for, or null for any.</param>
+    /// <param name="ownSkill">The key of the skill that owns the row, or null.</param>
     /// <param name="skill">The event's skill.</param>
-    /// <returns>Whether the filter is unset or names the skill.</returns>
-    private static bool Same(SkillRef? filter, SkillRef skill) => filter is not SkillRef wanted || wanted == skill;
+    /// <returns>Whether the filter, else the owning skill, names the skill, or neither is set.</returns>
+    private static bool Same(SkillRef? filter, string? ownSkill, SkillRef skill) =>
+        filter is SkillRef wanted ? wanted == skill : ownSkill is null || ownSkill == skill.Key;
 
     /// <summary>
     /// Matches a skill type filter.
@@ -99,4 +114,28 @@ internal static class TriggerMatcher
     /// <param name="types">The skill's types.</param>
     /// <returns>Whether the filter is unset or among the types.</returns>
     private static bool HasType(int? filter, IReadOnlyList<int> types) => filter is not int wanted || types.Contains(wanted);
+
+    /// <summary>
+    /// The row a who is read for.
+    /// </summary>
+    /// <param name="Context">The battle, for enemy slots.</param>
+    /// <param name="Enemy">The row's enemy, whom Owner means.</param>
+    /// <param name="Fight">Whether the row is matched once for the fight, which owns no enemy.</param>
+    private readonly record struct Subject(IRuleContext Context, int Enemy, bool Fight)
+    {
+        /// <summary>
+        /// Tells whether a who names an actor.
+        /// </summary>
+        /// <param name="who">The who.</param>
+        /// <param name="actor">Whether a unit or an enemy acts, and its seat or index.</param>
+        /// <returns>Whether the who names it.</returns>
+        public bool Is(Who who, (StateHolder Holder, int Index) actor) => who.Kind switch
+        {
+            WhoKind.Owner => !Fight && actor.Holder == StateHolder.Boss && actor.Index == Enemy,
+            WhoKind.Enemy => actor.Holder == StateHolder.Boss && Context.SlotOf(actor.Index) == who.Slot,
+            WhoKind.AnyEnemy => actor.Holder == StateHolder.Boss,
+            WhoKind.Character => actor.Holder == StateHolder.Unit,
+            _ => true,
+        };
+    }
 }

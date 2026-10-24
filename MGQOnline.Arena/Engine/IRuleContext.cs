@@ -2,6 +2,7 @@
 //  IRuleContext.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Told whether a game switch is on
 //      Paulinchen  2026-10-23: Added and removed damage reductions
 //                            - Brought enemies in, took them out and transformed them
 //                            - Handed the debris placed back as cells with their hits
@@ -97,6 +98,13 @@ public interface IRuleContext
     /// <param name="turn">The turn, counted from 1.</param>
     /// <returns>Whether the condition holds.</returns>
     bool TurnHolds(int a, int b, int turn);
+
+    /// <summary>
+    /// Tells whether a game switch is on.
+    /// </summary>
+    /// <param name="id">The switch id.</param>
+    /// <returns>Whether the battle's setup has it on.</returns>
+    bool IsSwitchOn(int id);
 
     /// <summary>
     /// Gives a unit's or an enemy's stats as formulas read them.

@@ -2,6 +2,7 @@
 //  ConditionEvaluatorTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Tested the conditions of the Trigger -> Effect framework
 //      Paulinchen  2026-10-22: Tested the not in chain condition
 //      Paulinchen  2026-10-21: Created
 //
@@ -26,32 +27,34 @@ public sealed class ConditionEvaluatorTests
     private readonly FakeRuleContext _context = new();
 
     /// <summary>
-    /// Holds unit holds while the triggering unit holds the state, and never without a triggering unit.
+    /// Holds a held state for a hit character by the states it held before the cast, and for others by their states now.
     /// </summary>
     [Fact]
-    public void HoldsUnitHoldsForTheTriggeringUnit()
+    public void HoldsAStateOfTheHitCharacterFromBeforeTheCast()
     {
-        _context.Give(StateHolder.Unit, 1, Light);
+        _context.Give(StateHolder.Unit, 1, Dark);
 
-        Assert.True(Holds(new UnitHoldsCondition(Light), Hit(2, "c1", LightStigmata, 1)));
-        Assert.False(Holds(new UnitHoldsCondition(Light), Hit(2, "c1", LightStigmata, 2)));
-        Assert.False(Holds(new UnitHoldsCondition(Light), new TurnStartEvent(2)));
+        Assert.True(Holds(new HoldsStateCondition(TargetRef.TriggerUnit, Light), Hit(2, "c1", LightStigmata, 1, heldBefore: [Light])));
+        Assert.False(Holds(new HoldsStateCondition(TargetRef.TriggerUnit, Dark), Hit(2, "c1", LightStigmata, 1, heldBefore: [Light])));
+        Assert.True(Holds(new HoldsStateCondition(TargetRef.TriggerUnit, Dark), new StateAddedEvent(2, StateHolder.Unit, 1, 29)));
+        Assert.False(Holds(new HoldsStateCondition(TargetRef.TriggerUnit, Dark), new TurnStartEvent(2)));
     }
 
     /// <summary>
-    /// Holds boss has state while the rule's enemy holds the state.
+    /// Holds a held state for several targets only while every one holds it.
     /// </summary>
     [Fact]
-    public void HoldsBossHasStateForTheRulesEnemy()
+    public void HoldsAStateOnlyWhenEveryTargetHoldsIt()
     {
         _context.Give(StateHolder.Boss, 0, 14);
 
-        Assert.True(Holds(new BossHasStateCondition(14), new TurnStartEvent(1)));
-        Assert.False(Holds(new BossHasStateCondition(15), new TurnStartEvent(1)));
+        Assert.True(Holds(new HoldsStateCondition(TargetRef.Owner, 14), new TurnStartEvent(1)));
+        Assert.True(Holds(new HoldsStateCondition(TargetRef.EveryEnemy, 14), new TurnStartEvent(1)));
+        Assert.False(Holds(new HoldsStateCondition(TargetRef.EveryCharacter, 14), new TurnStartEvent(1)));
     }
 
     /// <summary>
-    /// Holds boss HP between with both percents included.
+    /// Holds HP between with both percents included.
     /// </summary>
     /// <param name="hp">The boss's HP of 1,000.</param>
     /// <param name="holds">Whether 10 % to 50 % holds.</param>
@@ -60,21 +63,60 @@ public sealed class ConditionEvaluatorTests
     [InlineData(501, false)]
     [InlineData(100, true)]
     [InlineData(99, false)]
-    public void HoldsBossHpBetweenInclusively(long hp, bool holds)
+    public void HoldsHpBetweenInclusively(long hp, bool holds)
     {
         _context.SetHp(StateHolder.Boss, 0, hp);
 
-        Assert.Equal(holds, Holds(new BossHpBetweenCondition(10, 50), new TurnStartEvent(1)));
+        Assert.Equal(holds, Holds(new HpBetweenCondition(TargetRef.Owner, 10, 50), new TurnStartEvent(1)));
     }
 
     /// <summary>
-    /// Holds turn at least from the event's turn on.
+    /// Holds turn between from its first to its last turn, either end open.
     /// </summary>
     [Fact]
-    public void HoldsTurnAtLeastFromItsTurn()
+    public void HoldsTurnBetweenItsTurns()
     {
-        Assert.False(Holds(new TurnAtLeastCondition(3), new TurnStartEvent(2)));
-        Assert.True(Holds(new TurnAtLeastCondition(3), new TurnStartEvent(3)));
+        Assert.False(Holds(new TurnBetweenCondition(3), new TurnStartEvent(2)));
+        Assert.True(Holds(new TurnBetweenCondition(3), new TurnStartEvent(9)));
+        Assert.True(Holds(new TurnBetweenCondition(3, 4), new TurnStartEvent(4)));
+        Assert.False(Holds(new TurnBetweenCondition(Max: 4), new TurnStartEvent(5)));
+    }
+
+    /// <summary>
+    /// Holds enemy present while an enemy of the slot stands, and its opposite while none does.
+    /// </summary>
+    [Fact]
+    public void HoldsEnemyPresentBySlot()
+    {
+        Assert.True(Holds(new EnemyPresentCondition(FakeRuleContext.SlotOfIndex(0), true), new TurnStartEvent(1)));
+        Assert.True(Holds(new EnemyPresentCondition("gone", false), new TurnStartEvent(1)));
+        Assert.False(Holds(new EnemyPresentCondition("gone", true), new TurnStartEvent(1)));
+    }
+
+    /// <summary>
+    /// Holds hit type is for a party hit of that kind, and any kind always.
+    /// </summary>
+    [Fact]
+    public void HoldsHitTypeIsForThePartysHit()
+    {
+        BossHitEvent hit = new(3, 0, 2, new GridCell(4, 1), HitKind.Magic, Blast, [3], true);
+
+        Assert.True(Holds(new HitTypeIsCondition(HitKind.Magic), hit));
+        Assert.False(Holds(new HitTypeIsCondition(HitKind.Physical), hit));
+        Assert.True(Holds(new HitTypeIsCondition(HitKind.Any), new TurnStartEvent(1)));
+    }
+
+    /// <summary>
+    /// Holds switch on while the battle has the switch on.
+    /// </summary>
+    [Fact]
+    public void HoldsSwitchOnWhileItIsOn()
+    {
+        Assert.False(Holds(new SwitchOnCondition(22), new TurnStartEvent(1)));
+
+        _context.Switches.Add(22);
+
+        Assert.True(Holds(new SwitchOnCondition(22), new TurnStartEvent(1)));
     }
 
     /// <summary>
@@ -128,7 +170,7 @@ public sealed class ConditionEvaluatorTests
 
         Assert.True(Holds(new ChanceCondition(10_000), new TurnStartEvent(1)));
         Assert.False(Holds(new ChanceCondition(0), new TurnStartEvent(1)));
-        Assert.False(ConditionEvaluator.Holds([new ChanceCondition(5000), new TurnAtLeastCondition(9)], _context, 0, new TurnStartEvent(1)));
+        Assert.False(ConditionEvaluator.Holds([new ChanceCondition(5000), new TurnBetweenCondition(9)], _context, 0, new TurnStartEvent(1)));
 
         Assert.Equal(twin.NextUInt(), _context.Rules.NextUInt());
     }

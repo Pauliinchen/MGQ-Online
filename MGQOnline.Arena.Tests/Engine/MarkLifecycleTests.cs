@@ -2,6 +2,7 @@
 //  MarkLifecycleTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Let the marks wait for a turn row
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -24,15 +25,15 @@ public sealed class MarkLifecycleTests
     private readonly FakeRuleContext _context = new();
 
     /// <summary>
-    /// The rule book with the scheduled Stigmata action.
+    /// The rule book with the turn row that schedules Stigmata.
     /// </summary>
-    private readonly RuleBook _book = Book([]);
+    private readonly RuleBook _book = Book([Schedule]);
 
     /// <summary>
-    /// Waits for the root scheduled action of the cast, at least the fewest turns.
+    /// Waits for the turn row at the root of the cast, at least the fewest turns.
     /// </summary>
     [Fact]
-    public void WaitsForTheRootScheduledAction()
+    public void WaitsForTheRootTurnRow()
     {
         MarkClock? clock = MarkLifecycle.ClockFor(Until(AddStateEffect.RootOfCast, 1), 2, "c1", StigmataAction, _book);
 
@@ -40,9 +41,9 @@ public sealed class MarkLifecycleTests
     }
 
     /// <summary>
-    /// Keeps only the fewest turns when the casting action is not scheduled or the cast has no root.
+    /// Keeps only the fewest turns when no turn row planned the cast or the cast has no root.
     /// </summary>
-    /// <param name="root">The root action of the cast.</param>
+    /// <param name="root">The root of the cast.</param>
     [Theory]
     [InlineData(RolledAction)]
     [InlineData(null)]
@@ -50,10 +51,10 @@ public sealed class MarkLifecycleTests
         Assert.Equal(new MarkClock(4, null, "c1"), MarkLifecycle.ClockFor(Until(AddStateEffect.RootOfCast, 2), 2, "c1", root, _book));
 
     /// <summary>
-    /// Waits for a named scheduled action, whatever cast the mark came from.
+    /// Waits for a named turn row, whatever cast the mark came from.
     /// </summary>
     [Fact]
-    public void WaitsForANamedScheduledAction() =>
+    public void WaitsForANamedTurnRow() =>
         Assert.Equal(new MarkClock(2, StigmataAction, null), MarkLifecycle.ClockFor(Until(StigmataAction, null), 2, null, null, _book));
 
     /// <summary>
@@ -62,12 +63,12 @@ public sealed class MarkLifecycleTests
     [Fact]
     public void GivesNoClockToTurnStates()
     {
-        Assert.Null(MarkLifecycle.ClockFor(new AddStateEffect(RuleTarget.TriggerUnit, Light, Turns: 3, MinTurns: 1, UntilNextCastOf: AddStateEffect.RootOfCast), 2, "c1", StigmataAction, _book));
-        Assert.Null(MarkLifecycle.ClockFor(new AddStateEffect(RuleTarget.TriggerUnit, Light), 2, "c1", StigmataAction, _book));
+        Assert.Null(MarkLifecycle.ClockFor(new AddStateEffect(TargetRef.TriggerUnit, Light, Turns: 3, MinTurns: 1, UntilNextCastOf: AddStateEffect.RootOfCast), 2, "c1", StigmataAction, _book));
+        Assert.Null(MarkLifecycle.ClockFor(new AddStateEffect(TargetRef.TriggerUnit, Light), 2, "c1", StigmataAction, _book));
     }
 
     /// <summary>
-    /// Ends a mark of an earlier cast at the end of the action it waited for.
+    /// Ends a mark of an earlier cast at the end of the turn row's cast it waited for.
     /// </summary>
     [Fact]
     public void EndsAMarkAtTheActionsEnd()
@@ -81,7 +82,7 @@ public sealed class MarkLifecycleTests
     }
 
     /// <summary>
-    /// Spares a mark the action's own casts landed or refreshed.
+    /// Spares a mark the turn row's own casts landed or refreshed.
     /// </summary>
     [Fact]
     public void SparesTheActionsOwnMarks()
@@ -96,7 +97,7 @@ public sealed class MarkLifecycleTests
     }
 
     /// <summary>
-    /// Spares marks that wait for another action, and states without a clock.
+    /// Spares marks that wait for another turn row, and states without a clock.
     /// </summary>
     [Fact]
     public void SparesOtherMarksAndStates()
@@ -165,5 +166,5 @@ public sealed class MarkLifecycleTests
     /// <param name="until">What it waits for.</param>
     /// <param name="minTurns">The fewest turns.</param>
     /// <returns>The effect.</returns>
-    private static AddStateEffect Until(string until, int? minTurns) => new(RuleTarget.TriggerUnit, Light, MinTurns: minTurns, UntilNextCastOf: until);
+    private static AddStateEffect Until(string until, int? minTurns) => new(TargetRef.TriggerUnit, Light, MinTurns: minTurns, UntilNextCastOf: until);
 }

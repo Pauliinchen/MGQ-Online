@@ -2,6 +2,7 @@
 //  ArenaPartsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Named the main target on unit hits without the dropped main target filter
 //      Paulinchen  2026-10-22: Tested the formula floored at 0
 //                            - Tested a mark that lands on the main target
 //      Paulinchen  2026-10-21: Created
@@ -86,11 +87,11 @@ public sealed class ArenaPartsTests
     }
 
     /// <summary>
-    /// A single hit with a splash names its main target on the unit hit events, so a mark that lands
-    /// on the main target lands on the character the hit was aimed at and on nobody in the splash.
+    /// A single hit with a splash names its main target on the unit hit events: the character the hit
+    /// was aimed at, and nobody in the splash.
     /// </summary>
     [Fact]
-    public void LandsAMainTargetMarkOnTheMainTargetOnly()
+    public void NamesTheMainTargetOnTheUnitHits()
     {
         RuntimeSkill splash = SimFixtures.Skill(SimFixtures.Stigmata) with
         {
@@ -98,15 +99,7 @@ public sealed class ArenaPartsTests
             Targeting = new TargetSpec(TargetMode.RandomCharacter, false),
             Spread = new SpreadSpec(SpreadMode.Splash, 0, 1, 50, DistanceMetric.Chebyshev, StateLanding.MainTarget, new ShapeSpec(ShapeType.Square, ShapeFit.Clip, Size: 3)),
         };
-        RuntimeDesign design = SimFixtures.Design(
-            [SimFixtures.Action("splash", SimFixtures.Stigmata)],
-            [splash],
-            [
-                SimFixtures.Rule("main", PresetKind.LeavesMark, "m1", new UnitHitTrigger(BySkill: SimFixtures.Stigmata, MainTarget: true), [new AddStateEffect(RuleTarget.TriggerUnit, SimFixtures.LightMark, 3)]),
-                SimFixtures.Rule("splashed", PresetKind.LeavesMark, "m2", new UnitHitTrigger(BySkill: SimFixtures.Stigmata, MainTarget: false), [new AddStateEffect(RuleTarget.TriggerUnit, SimFixtures.DarkMark, 3)]),
-            ],
-            ap: 1,
-            attackWeight: 0);
+        RuntimeDesign design = SimFixtures.Design([SimFixtures.Action("splash", SimFixtures.Stigmata)], [splash], ap: 1, attackWeight: 0);
         BattleSimulator simulator = new(design);
         BattleState state = simulator.Start(SimFixtures.Setup([new GridCell(5, 2), new GridCell(6, 2)]));
 
@@ -114,10 +107,8 @@ public sealed class ArenaPartsTests
 
         List<UnitHitEvent> hits = [.. turn.Events.OfType<UnitHitEvent>()];
         UnitHitEvent main = Assert.Single(hits, hit => hit.MainTarget);
-        UnitHitEvent other = Assert.Single(hits, hit => !hit.MainTarget);
+        Assert.Single(hits, hit => !hit.MainTarget);
         Assert.Equal(turn.Plan.Single().Telegraph!.Pulses.Single().Anchor, main.Cell);
-        Assert.Equal([SimFixtures.LightMark], state.Units[main.Seat].States.Select(held => held.StateId));
-        Assert.Equal([SimFixtures.DarkMark], state.Units[other.Seat].States.Select(held => held.StateId));
     }
 
     /// <summary>
