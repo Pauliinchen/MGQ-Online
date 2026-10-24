@@ -67,7 +67,7 @@ For a PvP battle without a world, press **F11** on the map and host; your friend
 | **B** | Action wheel: invite, duel, trade, chat, report a bug, teleport to the leader (other members from the World overview) |
 | **T** | Chat: **/g** everyone, **/m** your map, **/p** your party, **/w** one player, **/help** |
 | **E** | Emote wheel |
-| **F11** | World overview, or the PvP battle screen outside a world |
+| **F11** | World overview, in a world and in single player |
 | **Y** / **N** | Accept / decline the first invite at the top left, or answer a question box |
 | **Tab** | Make the party box small or full; in a raid boss battle, shrink the boss's HP bar to the bars alone or back |
 | **H** | Make the Leader HUD at the top left small or large |

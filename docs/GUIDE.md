@@ -23,7 +23,7 @@ Everything Monster Girl Quest! Online does, for players. To install the mod, see
 | **B** | Opens the action wheel. |
 | **T** | Opens the chat. |
 | **E** | Opens the emote wheel. |
-| **F11** | Opens the World overview, or the PvP battle screen outside a world. |
+| **F11** | Opens the World overview, in a world and in single player. |
 | **Y** / **N** | Accepts / declines the first invite in the notification box, and answers a question box (see [Notifications](#notifications)). |
 | **Tab** | Makes the party box small or full. In a raid boss battle, shrinks the boss's HP bar to the bars alone, without its title and the names, or back. |
 | **H** | Makes the Leader HUD at the top left small or large (see [Interface](#interface)). |
@@ -216,7 +216,6 @@ A script in a folder inside `Patch` belongs to the mod that folder is named afte
 - **Above your own head** the mod says what you're waiting for, with the seconds it still stands: "Inviting to a party (12 s) . . .", "Asking \<name> to teleport (45 s) . . .", "Challenging to a duel (9 s) . . ." and the like.
 - **The bottom left** tells who joined and left, and when the connection is being restored. A player whose connection drops stays in the world and in their party for 15 seconds, so a short break changes nothing.
 - **The world never pauses.** While you're in a menu, a shop, a battle or a story scene, the map goes on behind it: the others walk on, NPCs move, and background events and timers run. Menus show the live map instead of a still picture, except the save and load screens; the chat, the party box and the mod's other boxes stay off it (shops, the casino and trades have a chat of their own). Anything that needs you, such as a message, a battle, a move to another map or an NPC walking into you, waits until you're back on the map.
-- **No PvP battle screen** while you're in a world: challenge other players to a [duel](#duels) instead.
 
 ### Where the others are
 
@@ -282,7 +281,7 @@ Press **E** on the map for a ring of eight emotes around your character: a jump,
 
 ![The World overview](images/world-overview.png)
 
-Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, numpad **0** or a click outside closes it. The world keeps running behind it. The title names the world, its type and a Raid World's difficulty ("World | Raid | Hard") and your party's size, and the tabs below it hold the pages **Players**, **World**, **Quests** and in a Raid World **Unlocks**: **Left** and **Right**, or a click on a tab, switch between them. The mouse wheel scrolls whatever it points at, and a scrollbar shows wherever there is more than fits.
+Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, numpad **0** or a click outside closes it. The world keeps running behind it. The title names the world, its type and a Raid World's difficulty ("World | Raid | Hard") and your party's size, and the tabs below it hold the pages **Players**, **World**, **Quests** and in a Raid World **Unlocks**: **Left** and **Right**, or a click on a tab, switch between them. Outside a world, in single player, **F11** opens it too, titled *Single player*, with the **Quests** page. Other mods can add pages of their own as further tabs, in a world and in single player. The mouse wheel scrolls whatever it points at, and a scrollbar shows wherever there is more than fits.
 
 **The Players page:**
 
@@ -396,13 +395,9 @@ Trade items and gold with another player on your map. Nothing changes hands unti
 
 ## PvP battles
 
-Press **F11** on the map, outside a world, to open the PvP battle screen.
+PvP battles are fought as [duels](#duels) between players of a world.
 
-- **Host:** your game waits for a friend and puts a join code on your clipboard. Send it to your friend, or invite them through the **+** in a Discord chat when the Discord mod is installed.
-- **Join:** copy your friend's join code and pick *Join with the copied code*, or accept their Discord invite: your game starts if it's closed, loads your newest save (the one *Continue* picks first) and joins by itself. While you host, invites you accept are ignored; stop hosting first.
-- **Fight your own team:** a mirror match against a copy of your own team, played by the computer, no network needed. `Logs\Mirror Match.log` then lists each of your characters next to its copy and marks every value that differs.
-
-Once the games have exchanged their teams, both battles start together. The host's game runs the battle, and the other game shows what happened. You meet your friend's characters as they are: jobs, races, equipment, gems and abilities, pre-battle spells and passives included. A defeated character of your friend stays as a grey silhouette, since their team can still revive it.
+Once both games have each other's team, both battles start together. The host's game runs the battle, and the other game shows what happened. You meet your friend's characters as they are: jobs, races, equipment, gems and abilities, pre-battle spells and passives included. A defeated character of your friend stays as a grey silhouette, since their team can still revive it.
 
 - **Backline:** both of you swap your Backline in with the battle's *Party* command, chosen with the round's commands. The character swapped in gives no commands that round, and an attack hits whoever stands in the place it was aimed at once it lands. A fallen character can be swapped out, and a team loses once its whole Frontline is down.
 - **Frontline only:** the host decides. *Mod Config → MGQ Online Settings → PvP Backline* set to *Frontline Only* takes the *Party* command out of the battles you host and the duels you challenge to, for both players.

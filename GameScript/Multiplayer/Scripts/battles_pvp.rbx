@@ -2,6 +2,7 @@
 #  battles_pvp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Removed the PvP battle screen's hotkey, its exchange and its Discord invites
 #      Paulinchen  2026-10-23: Left out a skill hit's message without a target in every battle
 #      Paulinchen  2026-10-22: Said the version to play on F11 for a step back to an older release
 #      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
@@ -60,206 +61,13 @@ module MGQ_MpBattlesPvp
   # Turns PvP battles off without uninstalling them.
   ENABLED = true
 
-  # Frames between two looks at the exchange, a third of a second at 60 frames per second.
-  POLL_INTERVAL = 20
-
   # Who the player's own team belongs to in a mirror match.
   MIRROR_NAME = "Mirror"
-
-  # What the game says when a Discord invite arrived while this game hosted, which the DLL ignores.
-  IGNORED_INVITE = "You're hosting, so the Discord invite you accepted was ignored."
-
-  # Tells whether PvP battles can run.
-  #
-  # A world keeps a connection of its own, and the two would both claim the Discord status.
-  #
-  # @return [Boolean] Whether PvP battles are on, the mod's DLL is installed, no newer
-  #   release is out, and no world is open.
-  def self.available?
-    ENABLED && MGQ_Multiplayer.available? && !MGQ_Multiplayer.outdated? && !MGQ_MpWorld.open?
-  end
 
   extend MGQ_MpLog
 
   # What starts this script's lines in Multiplayer InGame.log.
   LOG_TAG = "pvp battle"
-
-  # Has the map start a mirror match against the player's own team, once the screen closed.
-  def self.request_mirror
-    @mirror_requested = true
-  end
-
-  # Opens the PvP battle screen when the hotkey is pressed, starts a requested mirror match, starts
-  # the battle once the friend's team arrived, and joins the host of a Discord invite. Called by the
-  # map while nothing else runs.
-  #
-  # Once a newer release is out, the hotkey only tells the player to update instead.
-  def self.on_map
-    # In a world the same hotkey opens the World overview, and a press is read only once, by
-    # whoever asks first.
-    return if MGQ_MpWorld.open?
-
-    if MGQ_Multiplayer.available? && MGQ_Multiplayer.outdated?
-      pressed = MGQ_MpHotkeys.pressed?(:overview)
-      return if $game_map.interpreter.running? || $game_player.moving?
-
-      if pressed
-        MGQ_MpHotkeys.log_refusal(:overview, "the PvP battle screen stays closed, a newer release is out")
-        $game_message.add(MGQ_Multiplayer.update_message)
-      end
-      return
-    end
-
-    return unless available?
-
-    pressed = MGQ_MpHotkeys.pressed?(:overview)
-    return if $game_map.interpreter.running? || $game_player.moving?
-
-    if pressed
-      log("opened the PvP battle screen")
-      SceneManager.call(Scene_PvpLobby)
-      return
-    end
-
-    if @mirror_requested
-      @mirror_requested = false
-      log("starting the requested mirror match")
-      begin_mirror
-      return
-    end
-
-    @frames = (@frames || 0) + 1
-    return if @frames < POLL_INTERVAL
-
-    @frames = 0
-    look_at(MGQ_Multiplayer::Link.status)
-  rescue => e
-    @frames = 0
-    log("map check failed: #{e.class}: #{e.message}")
-  end
-
-  # Acts on how the exchange stands, seen from the map.
-  #
-  # @param state [Hash] The state without the friend's team, see MGQ_Multiplayer::Link.status.
-  def self.look_at(state)
-    note_state(state)
-    $game_message.add(IGNORED_INVITE) if ignored_invite?(state)
-
-    case state["state"]
-    when "received"
-      state = MGQ_Multiplayer::Link.state
-      live = MGQ_MpBattlesSync.join(state)
-      log("#{MGQ_Multiplayer.clean(state['opponent'])}'s team arrived (#{state[:payload].to_s.size} bytes), " +
-          (live ? "the battle is live as #{state['role']}" : "the link is not open, so the battle is not live and the link closes"))
-      MGQ_Multiplayer::Link.cancel unless live
-      begin_battle(state)
-    when "failed"
-      # Cancelling would turn down an invite the player accepted since, which makes the failure old news.
-      if join_invite(state)
-        log("the exchange failed, but a Discord invite was accepted since: opening the PvP battle screen")
-        SceneManager.call(Scene_PvpLobby)
-      else
-        log("the exchange failed (#{state['error']}): closed it and told the player")
-        MGQ_Multiplayer::Link.cancel
-        $game_message.add("PvP battle: #{state['error']}")
-      end
-    else
-      SceneManager.call(Scene_PvpLobby) if join_invite(state)
-    end
-  end
-
-  # Logs how the exchange stands once it changed, never its join code.
-  #
-  # @param state [Hash] The state without the friend's team, see MGQ_Multiplayer::Link.status.
-  def self.note_state(state)
-    current = state["state"].to_s
-    current = "idle" if current.empty?
-    return if current == (@logged_state || "idle")
-
-    details = []
-    details << "as #{state['role']}" if state["role"]
-    details << "join code ready" if current == "hosting" && state["code"]
-    details << state["error"].to_s if current == "failed"
-    log("the PvP exchange went from #{@logged_state || 'idle'} to #{current}#{details.empty? ? '' : " (#{details.join(', ')})"}")
-    @logged_state = current
-  rescue => e
-    log_once(:note_state, "could not log the exchange: #{e.class}: #{e.message}")
-  end
-
-  # Tells once per invite that one arrived while this game hosted and was ignored.
-  #
-  # @param state [Hash] The state without the friend's team, see MGQ_Multiplayer::Link.status.
-  # @return [Boolean] Whether another invite was ignored since the last look.
-  def self.ignored_invite?(state)
-    count = state["ignored"].to_i
-    fresh = count > (@ignored_seen || 0)
-    @ignored_seen = count
-    log("a Discord invite arrived while hosting and was ignored (#{count} so far)") if fresh
-    fresh
-  end
-
-  # Joins the host of an invite the player accepted in Discord, unless this game joins already.
-  #
-  # @param state [Hash] The state without the friend's team, see MGQ_Multiplayer::Link.status.
-  # @return [Boolean] Whether it started joining.
-  def self.join_invite(state)
-    return false unless state["invite"] == "1" && state["state"] != "joining"
-
-    MGQ_Multiplayer::Link.join_invite(Team.game, Team.build)
-    log("joining the host of a Discord invite")
-    true
-  end
-
-  # Loads the last save at the title screen once the player accepted a Discord invite, so the map
-  # joins the host. Called by the title screen every frame while nothing else runs.
-  #
-  # Without any save it does nothing, and the map joins once the player started a game.
-  def self.on_title
-    return unless available? && !@title_load_failed
-
-    @title_frames = (@title_frames || 0) + 1
-    return if @title_frames < POLL_INTERVAL
-
-    @title_frames = 0
-    return unless MGQ_Multiplayer::Link.status["invite"] == "1"
-
-    index = DataManager.latest_savefile_index
-    return unless index && DataManager.load_header(index)
-
-    unless DataManager.load_game(index)
-      @title_load_failed = true
-      return log("could not load the last save for a Discord invite")
-    end
-
-    log("loaded the last save for a Discord invite")
-    # Scene_Load finishes the game's own loads, so the map starts exactly as after Continue.
-    Scene_Load.new.on_load_success
-  rescue => e
-    @title_frames = 0
-    log("title check failed: #{e.class}: #{e.message}")
-  end
-
-  # Starts the battle against the friend's team that arrived.
-  #
-  # @param state [Hash] The state, see MGQ_Multiplayer::Link.state.
-  def self.begin_battle(state)
-    opponent = MGQ_Multiplayer.clean(state["opponent"])
-    members = Team.parse(state[:payload])
-
-    if members.empty?
-      log("#{opponent}'s team could not be read (#{state[:payload].to_s.size} bytes): no battle, the link closes")
-      $game_message.add("#{opponent}'s team could not be read.")
-      MGQ_MpBattlesSync.finish
-      MGQ_Multiplayer::Link.cancel
-      return
-    end
-
-    # The host's rule holds: the one it sent with its own team, or the one its team brought.
-    backline = state["role"] == "host" ? Team.sent_backline? : Team.backline?(state[:payload])
-    log("read #{members.size} members of #{opponent}'s team; the host's rule: #{backline ? 'with' : 'without'} the Backline" +
-        " (#{state['role'] == 'host' ? 'this game hosts' : "the host's team says so"})")
-    Battle.start(opponent, members, false, backline)
-  end
 
   # Starts a mirror match: the player's own team, sent through the same build as a friend's would
   # be, so it fights exactly as a friend would meet it.
@@ -1191,14 +999,8 @@ end
 # Game hooks shared with other scripts, through core_hooks.rbx.
 
 begin
-  # The game checks its own keys after the map's update too, only while no event, message or scene
-  # change is in the way.
-  MGQ_MpHooks.after(Scene_Map, :update_scene, "battles_pvp") { MGQ_MpBattlesPvp.on_map unless scene_changing? }
-
   # The title screen interrupts a battle only through a reset, which loads the game data anew.
   MGQ_MpHooks.before(Scene_Title, :start, "battles_pvp") { MGQ_MpBattlesPvp::Battle.forget }
-
-  MGQ_MpHooks.after(Scene_Title, :update, "battles_pvp") { MGQ_MpBattlesPvp.on_title unless scene_changing? }
 
   MGQ_MpHooks.before(SceneManager.singleton_class, :run, "battles_pvp") { MGQ_MpBattlesPvp.install }
 rescue => e

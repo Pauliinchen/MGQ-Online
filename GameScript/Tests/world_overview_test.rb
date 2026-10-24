@@ -2,6 +2,7 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Checked the pages of other mods with their tabs, controls, buttons and mouse
 #      Paulinchen  2026-10-13: Checked that the Unlocks grid leaves out characters the catch-up does not count
 #      Paulinchen  2026-10-12: Checked the World, Quests and Unlocks pages with a head, a list and a pane
 #                            - Checked the Quests page and the catch-up experience on the Levels page
@@ -186,6 +187,7 @@ load_script "ui_layout" unless defined?(MGQ_MpUi::Layout)
 load_script "world_catchup_exp"
 load_script "world_overview"
 load_script "world_overview_pages"
+load_script "world_overview_mods"
 # Stands in for the emote wheel, shut until a test opens it.
 module MGQ_MpEmotes; def self.open?; false; end; end
 load_script "ui_party_box"
@@ -299,7 +301,7 @@ $pressed = 0x7A
 refused = logged_lines { overview.on_map }
 check("the overview stays shut while the emote wheel is open", overview.open?, false)
 check("which the log says under the hotkeys", refused.grep(/ignored/),
-      ["keys: hotkey F11 (World Overview) ignored: not on a quiet map in a world, or the chat or a wheel is open"])
+      ["keys: hotkey F11 (World Overview) ignored: not on a quiet map, or the chat or a wheel is open"])
 $mgq_text_input = true
 $pressed = 0x7A
 typed = logged_lines { overview.on_map }
@@ -649,7 +651,7 @@ check("at Part 2 only Part 1 and Part 2 follow, each boss once in the order the 
       [["Part 1", "Part 2"], sections[0][1] + sections[1][1], ["Four bandits", 9, 1.0, false, nil], ["Sonya Chaos", 4, 1.0, false, nil]])
 check("a boss's row tells its share left over a gauge, its pane its section, its tier with what it changes and its gauge",
       [overview.row_view(world.rows[1][1]).to_a, overview.pane_of(world.rows[1][1]).to_a],
-      [[nil, "Four bandits", "100%", false, 1.0], ["Four bandits", nil, [[:text, "Part 1"], [:text, "Tier 9: enemies have HP x5."], [:gauge, 1.0, "100%"]]]])
+      [[nil, "Four bandits", "100%", false, 1.0], ["Four bandits", nil, [[:text, "Part 1"], [:text, "Tier 9: enemies have HP x5."], [:gauge, 1.0, "100%"]], nil, nil]])
 check("the sections run in story order, the Chaos route's by the order of the troops, the one-time bosses last",
       [sections.map(&:first), sections[1][1].first, sections[1][1].last(3), sections[2][1].last, sections[5][1].first, sections[5][1].last, sections[6][1].size],
       [["Part 1", "Part 2", "Part 3", "Angelic Dominion", "Monster Realm", "Chaos route", "Chaos Domain"], "Bonnie and Ashel",
@@ -1060,9 +1062,9 @@ place_box = lambda do |text|
   layout.instance_variable_get(:@stored).delete(:overview)
 end
 place_box.call(nil)
-check("the overview is a box the player moves and resizes both ways, never smaller than what its columns, tabs, lines and menu need",
+check("the overview is a box the player moves and resizes both ways, never smaller than what its columns, tabs (two of other mods' pages among them), lines and menu need",
       [layout.instance_variable_get(:@boxes)[:overview].to_a, [sprite_class::PLAYERS_WIDTH, sprite_class::TABS_WIDTH]],
-      [["World overview", 560, 232, :both], [560, 332]])
+      [["World overview", 560, 232, :both], [560, 492]])
 check("it starts at the list box's place with its lines", [sprite_class.box.to_a, sprite_class.list_rows], [[40, 32, 560, 404], 13])
 place_box.call("20,150,600,300")
 check("a placement Player.ini keeps is honoured, the lines following its height", [sprite_class.box.to_a, sprite_class.list_rows], [[20, 150, 600, 300], 9])
@@ -1230,6 +1232,148 @@ $pressed = MGQ_MpHotkeys.code(:accept)
 $frame += 1
 2.times { confirm.tick }
 check("yes once the party dissolved under the box leaves nothing, so nothing says so", [confirm.open?, MGQ_MpOverworldSync::Status.lines.size], [false, notices])
+
+# Pages of other mods: a mod adds one to ModPages, which shows as a tab while it has something to
+# show, laid out like the World page; confirm moves the cursor into the pane, onto its controls and
+# the buttons beside its title.
+
+# Stands in for another mod's page: two characters, two controls, a Reset button with a menu of
+# one step; the steps and paths taken kept in $mod_adjusted and $mod_chosen.
+class TestModPage
+  # Whether the page has something to show.
+  attr_accessor :shown
+
+  # Its tab's title.
+  def title; "Points"; end
+  # Whether it shows, as the test sets it.
+  def shown?; @shown; end
+  # Its head: title, note, lines and portrait.
+  def head; ["Job points", "9 points", ["Slots cost points."], ["Granberia_cip", 0, "granberia_fc", 1]]; end
+  # One group with both characters.
+  def groups; [["Party", [1, 2]]]; end
+  # A character's row.
+  def row(key); [key == 1 ? "Luka" : "Alice", "Hero / Human", "#{key} free", key == 2]; end
+  # A character's pane: looks, a text, two controls, a gap and the points under the name.
+  def pane(_key)
+    ["Luka", ["Hero_cip", 1, "luka_fc", 2],
+     [[:text, "Points per tier."], [:control, :jobs, "Basic jobs", "1/2", :good, false, true], [:control, :races, "Basic races", "1/1", :warn, true, false], [:gap]], "3 of 9 points free"]
+  end
+  # Records the step; raising the races is refused.
+  def adjust(key, id, step); $mod_adjusted << [key, id, step]; id == :races && step > 0 ? "No room." : nil; end
+  # The Reset button, then which job to keep, of which one cannot be taken.
+  def menu(_key, path)
+    case path
+    when [] then [["Reset", true]]
+    when [0] then [["Keep Hero", true], ["Keep Fighter", false]]
+    else []
+    end
+  end
+  # Records the path taken and tells what happened.
+  def choose(key, path); $mod_chosen << [key, path]; "Reset Luka."; end
+end
+
+$mod_adjusted = []
+$mod_chosen = []
+mod_page = TestModPage.new
+ModPages.add(mod_page)
+overview.open("the test")
+check("a mod's page with nothing to show has no tab", overview.pages.assoc(:mod_0), nil)
+mod_page.shown = true
+$frame += 1
+check("one with something to show follows the own pages", overview.pages.last, [:mod_0, "Points"])
+overview.turn_to(:mod_0, "the test")
+overview.on_map
+data = overview.view[:model]
+check("its head with its portrait, and its groups with each entry's row",
+      [data.head.looks.to_a, data.head.title, data.head.note, data.head.lines, data.rows.map { |kind, value| kind == :fold ? value.title : overview.row_view(value).to_a }],
+      [["Granberia_cip", 0, "granberia_fc", 1], "Job points", "9 points", ["Slots cost points."], ["Party (2)", ["Luka", "Hero / Human", "1 free", false, nil], ["Alice", "Hero / Human", "2 free", true, nil]]])
+pane = overview.pane_of(data.picks[1])
+check("an entry's pane with how the character looks, the line under its title, its text, its controls, its gap and its button",
+      [pane.title, pane.subtitle, pane.looks.to_a, pane.lines.map { |kind, value| value.is_a?(overview::Control) ? [kind, value.id, value.tone, value.less, value.more] : [kind, value] }, pane.buttons],
+      ["Luka", "3 of 9 points free", ["Hero_cip", 1, "luka_fc", 2], [[:text, "Points per tier."], [:control, :jobs, :good, false, true], [:control, :races, :warn, true, false], [:gap, nil]], [["Reset", true]]])
+$buttons << :DOWN
+overview.on_map
+$buttons << :C
+overview.on_map
+check("confirm on an entry moves the cursor onto the first control of its pane", overview.view[:focused], [:control, :jobs])
+$buttons << :LEFT
+overview.on_map
+check("Left changes the control through the page, and the page stays", [$mod_adjusted.last, $sounds.last, overview.page], [[1, :jobs, -1], "cursor", :mod_0])
+$buttons << :DOWN
+overview.on_map
+$buttons << :RIGHT
+overview.on_map
+check("a change the page refuses buzzes and tells why",
+      [overview.view[:focused], $mod_adjusted.last, $sounds.last, MGQ_MpOverworldSync::Status.lines.last.inspect.include?("No room.")], [[:control, :races], [1, :races, 1], "buzzer", true])
+2.times { $buttons << :UP; overview.on_map }
+check("Up from the first control reaches the button beside the title", overview.view[:focused], [:button, 0])
+$buttons << :C
+overview.on_map
+mod_box = Sprite_MpWorldOverview.box
+mod_layout = Sprite_MpWorldOverview.split_layout(mod_box.width, mod_box.height)
+check("confirm on the button opens its menu under it", [overview.view[:menu].map { |option| [option.text, !option.run.nil?] }, Sprite_MpWorldOverview.menu_origin(overview.view, mod_box.width, mod_box.height)[0]],
+      [[["Keep Hero", true], ["Keep Fighter", false]], mod_layout[:pane_x] + mod_layout[:pane_w] - Sprite_MpWorldOverview::BAR_ROOM - Sprite_MpWorldOverview::MENU_WIDTH])
+$buttons << :DOWN
+overview.on_map
+$buttons << :C
+overview.on_map
+check("a choice that cannot be taken buzzes and keeps the menu", [$sounds.last, overview.view[:menu].size], ["buzzer", 2])
+$buttons << :B
+overview.on_map
+check("cancel closes the button's menu, the cursor staying on the button", [overview.open?, overview.view[:menu], overview.view[:focused]], [true, nil, [:button, 0]])
+$buttons << :C
+overview.on_map
+$buttons << :C
+overview.on_map
+check("the last choice runs through the page with the whole path, closes the menu and tells what happened",
+      [$mod_chosen, overview.view[:menu], overview.view[:focused], MGQ_MpOverworldSync::Status.lines.last.inspect.include?("Reset Luka.")], [[[1, [0, 0]]], nil, [:button, 0], true])
+$buttons << :CTRL
+overview.on_map
+check("Ctrl takes the cursor back to the list", [overview.view[:focused], overview.view[:pick], overview.open?], [nil, 1, true])
+$mouse = [mod_box.x + Sprite_MpWorldOverview::MARGIN + 20, mod_box.y + mod_layout[:body_y] + Sprite_MpWorldOverview::ROW + 5]
+$click = true
+overview.on_map
+check("a click on the entry picked moves the cursor into its pane", overview.view[:focused], [:control, :jobs])
+pane_head = Sprite_MpWorldOverview.pane_head(pane)
+$mouse = [mod_box.x + mod_layout[:pane_x] + mod_layout[:pane_w] - Sprite_MpWorldOverview::BAR_ROOM - 4,
+          mod_box.y + mod_layout[:body_y] + pane_head + Sprite_MpWorldOverview::PANE_LINE + Sprite_MpWorldOverview::ROW + 5]
+$click = true
+overview.on_map
+check("a click on a control's right arrow moves the cursor onto it and changes it", [overview.view[:focused], $mod_adjusted.last], [[:control, :races], [1, :races, 1]])
+$mouse = nil
+mod_drawing = Sprite_MpWorldOverview.allocate
+mod_drawing.bitmap = Bitmap.new(mod_box.width, mod_box.height)
+mod_drawing.draw(overview.view)
+check("the page draws its tab, head, rows, pane with the line under its title, controls and button, and the pane's hint",
+      ["Points", "Job points", "Luka", "3 of 9 points free", "Points per tier.", "Basic jobs", "1/1", "Reset", "Ctrl: back"].map { |text| mod_drawing.bitmap.texts.any? { |drawn| drawn.to_s.include?(text) } }, [true] * 9)
+$buttons << :DOWN
+overview.on_map
+$buttons << :B
+overview.on_map
+$buttons << :DOWN
+overview.on_map
+check("cancel takes the cursor back to the list too, where Up and Down pick again", [overview.view[:focused], overview.view[:pick], overview.open?], [nil, 2, true])
+mod_page.shown = false
+$frame += 1
+overview.on_map
+check("once it has nothing to show its tab goes and the overview turns back to the Players page", [overview.pages.assoc(:mod_0), overview.view[:page]], [nil, :players])
+overview.close
+
+# Outside a world the hotkey opens the overview too, as Single player, with the Quests page and
+# the pages of other mods.
+$open = false
+mod_page.shown = true
+$frame += 1
+$pressed = 0x7A
+overview.on_map
+check("outside a world the hotkey opens the overview on the Quests page, titled Single player, with the pages of other mods",
+      [overview.open?, overview.page, overview.pages, overview.world_name, overview.title_tail],
+      [true, :quests, [[:quests, "Quests"], [:mod_0, "Points"]], "Single player", ""])
+$pressed = nil
+overview.tick(true)
+check("a world opening under it closes it", overview.open?, false)
+$open = true
+mod_page.shown = false
 
 # Closing the world forgets what the player told.
 MGQ_MpCoopSquad.define_singleton_method(:own_order, own_order)

@@ -2,6 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Loaded world_overview_mods.rbx after world_overview_pages.rbx
+#                            - Stopped loading the removed battles_pvp_lobby.rbx
 #      Paulinchen  2026-10-23: Named mp_memory_usage
 #      Paulinchen  2026-10-22: Named mp_dir_open and mp_dir_read
 #                            - Named mp_update_rollback, told whether the release to install is a step back and said the version to play for one
@@ -149,9 +151,9 @@ module MGQ_Multiplayer
     world world_mods world_mods_parking world_catchup_data world_story world_catchup world_catchup_exp world_affection world_opening world_difficulty world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_raid_freeze_data battles_raid_freeze world_freeze battles_raid_tiers battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live battles_served
-    battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_pvp_lobby battles_duel battles_team
+    battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_duel battles_team
     trade ui_trade
-    world_overview world_overview_pages ui_party_box ui_edge_arrows ui_raid_bar ui_raid_freeze ui_leader_hud ui_single_player ui_notices ui_bug_report
+    world_overview world_overview_pages world_overview_mods ui_party_box ui_edge_arrows ui_raid_bar ui_raid_freeze ui_leader_hud ui_single_player ui_notices ui_bug_report
   ]
 
   # Extension of the scripts, which the mod loader skips, since only this script may load them.

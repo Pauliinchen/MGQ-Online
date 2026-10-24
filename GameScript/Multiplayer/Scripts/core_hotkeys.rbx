@@ -2,6 +2,7 @@
 #  core_hotkeys.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Named the World overview in single player in the overview hotkey's help
 #      Paulinchen  2026-10-12: Logged every refused hotkey here
 #                            - Added the Leader HUD size hotkey
 #                            - Listed the hotkeys in their own Mod Config group
@@ -46,7 +47,7 @@ module MGQ_MpHotkeys
     :chat => Binding.new("key_chat", 0x54, :mp_key_chat, "Chat",
                          "The hotkey that opens the chat box of a world, on the map and in battles."),
     :overview => Binding.new("key_overview", 0x7A, :mp_key_overview, "World Overview",
-                             "The hotkey that opens and closes the World overview in a world, and the PvP battle screen outside one."),
+                             "The hotkey that opens and closes the World overview, in a world and in single player."),
     :accept => Binding.new("key_accept", 0x59, :mp_key_accept, "Accept Notification",
                            "The hotkey that accepts the first invite or challenge in the notification box at the top left, in a world."),
     :decline => Binding.new("key_decline", 0x4E, :mp_key_decline, "Decline Notification",

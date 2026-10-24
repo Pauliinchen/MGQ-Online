@@ -2,6 +2,9 @@
 #  world_overview.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-24: Listed the pages of other mods after the own pages and made room for two of their tabs
+#                            - Placed the menu of a page with a head, a list and a pane over the pane or under its buttons
+#                            - Opened the overview outside a world too, as Single player with the Quests page
 #      Paulinchen  2026-10-23: Kept the overview off the live map behind menus
 #      Paulinchen  2026-10-13: Removed the unused YOUR_LEVEL
 #      Paulinchen  2026-10-12: Moved the World, Quests and Unlocks pages into world_overview_pages.rbx
@@ -115,6 +118,17 @@ module MGQ_MpWorldOverview
 
   # The pages only a Raid World shows.
   RAID_PAGES = [:unlocks]
+
+  # The pages the overview shows outside a world, the only ones that work there, with the pages of
+  # other mods after them.
+  SOLO_PAGES = [:quests]
+
+  # What the title says outside a world.
+  SOLO_TITLE = "Single player"
+
+  # Tabs the box makes room for beside PAGES, so the most pages of other mods shown, see
+  # world_overview_mods.rbx.
+  MOD_TABS = 2
 
   # How the Unlocks page heads what comes at a level.
   LEVEL_HEADING = "Level %d"
@@ -384,7 +398,8 @@ module MGQ_MpWorldOverview
     true
   end
 
-  # Opens the overview on the Players page, on the player's own row.
+  # Opens the overview on the Players page, on the player's own row; outside a world on its first
+  # page.
   #
   # @param via [String] What opened it, for the log.
   def self.open(via = "the action wheel")
@@ -392,12 +407,16 @@ module MGQ_MpWorldOverview
     @open = true
     @fresh = true
     @menu = nil
+    @menu_path = []
+    @focus = nil
     @selected = :me
     @scroll = 0
-    @page = :players
+    @in_world = MGQ_MpOverworldSync.in_world?
+    @page = pages.assoc(:players) ? :players : pages.first[0]
     @mouse = nil
     @view = view
-    log("opened through #{via}, #{@view[:lines].count { |kind, _| kind == :player }} player(s) online")
+    players = @view[:lines].count { |kind, _| kind == :player }
+    log("opened through #{via}, #{@in_world ? "#{players} player(s) online" : 'outside a world'}")
     MGQ_Multiplayer::Capture.start(:overview)
   end
 
@@ -414,12 +433,12 @@ module MGQ_MpWorldOverview
     MGQ_Multiplayer::Capture.stop(:overview)
   end
 
-  # Reports whether the overview may open: in a world, on the map, with no event, message, chat
-  # box, action wheel or emote wheel open.
+  # Reports whether the overview may open: on the map, in a world or outside one, with no event,
+  # message, chat box, action wheel or emote wheel open.
   #
   # @return [Boolean] Whether it may.
   def self.openable?
-    MGQ_MpOverworldSync.in_world? && SceneManager.scene.is_a?(Scene_Map) && MGQ_MpOverworldSync.map_quiet? &&
+    SceneManager.scene.is_a?(Scene_Map) && MGQ_MpOverworldSync.map_quiet? &&
       !MGQ_MpChat.typing? && !MGQ_MpActions::Wheel.open? && !MGQ_MpEmotes.open?
   end
 
@@ -435,19 +454,19 @@ module MGQ_MpWorldOverview
       Sound.play_ok
       open("its hotkey")
     else
-      MGQ_MpHotkeys.log_refusal(:overview, "not on a quiet map in a world, or the chat or a wheel is open")
+      MGQ_MpHotkeys.log_refusal(:overview, "not on a quiet map, or the chat or a wheel is open")
     end
   rescue => e
     log("overview failed: #{e.class}: #{e.message}")
     close("it failed")
   end
 
-  # Reports whether the open overview may stay: still in a world and on the map, with no event or
-  # message, nor the chat box, which its key opens over it.
+  # Reports whether the open overview may stay: still in a world, or still outside one, as it
+  # opened, with no event or message, nor the chat box, which its key opens over it.
   #
   # @return [Boolean] Whether it may.
   def self.openable_while_open?
-    MGQ_MpOverworldSync.in_world? && MGQ_MpOverworldSync.map_quiet? && !MGQ_MpChat.typing?
+    MGQ_MpOverworldSync.in_world? == @in_world && MGQ_MpOverworldSync.map_quiet? && !MGQ_MpChat.typing?
   end
 
   # The page shown.
@@ -457,11 +476,17 @@ module MGQ_MpWorldOverview
     @page
   end
 
-  # Lists the pages the world shows: every page in a Raid World, else those of RAID_PAGES left out.
+  # Lists the pages the overview shows: outside a world those of SOLO_PAGES; in a world every page in
+  # a Raid World, else those of RAID_PAGES left out; after them the pages of other mods, see
+  # mod_tabs.
   #
   # @return [Array<Array>] The pages with their tabs' titles, see PAGES.
   def self.pages
-    MGQ_MpCoop::Scope.raid? ? PAGES : PAGES.reject { |key, _| RAID_PAGES.include?(key) }
+    own = if !MGQ_MpOverworldSync.in_world? then PAGES.select { |key, _| SOLO_PAGES.include?(key) }
+          elsif MGQ_MpCoop::Scope.raid? then PAGES
+          else PAGES.reject { |key, _| RAID_PAGES.include?(key) }
+          end
+    own + mod_tabs
   end
 
   # Turns to a page, closing the menu, which belongs to the Players page, and showing the new
@@ -475,6 +500,8 @@ module MGQ_MpWorldOverview
 
     @page = page
     @menu = nil
+    @menu_path = []
+    @focus = nil
     forget_model(page) if split_page?(page)
     Sound.play_cursor
     log("turned to the #{title[1]} page through #{via}")
@@ -524,16 +551,20 @@ module MGQ_MpWorldOverview
 
   # The open world's name, for the title and the World page.
   #
-  # @return [String] The name, NO_WORLD while none is open.
+  # @return [String] The name; SOLO_TITLE outside a world, NO_WORLD while one opens.
   def self.world_name
+    return SOLO_TITLE unless MGQ_MpOverworldSync.in_world?
+
     world = MGQ_MpWorld.world
     world ? world.name.to_s : NO_WORLD
   end
 
   # What follows the world's name in the title: its type, and its difficulty when it sets one.
   #
-  # @return [String] Such as " | Raid | Hard".
+  # @return [String] Such as " | Raid | Hard"; empty outside a world.
   def self.title_tail
+    return "" unless MGQ_MpOverworldSync.in_world?
+
     [WORLD_TYPES[MGQ_MpCoop::Scope.raid?], difficulty_name].compact.map { |part| "#{TITLE_JOINT}#{part}" }.join
   end
 
@@ -577,12 +608,17 @@ module MGQ_MpWorldOverview
     code.empty? ? STORY_UNTOLD : story_text(code)
   end
 
-  # Closes the overview once the map is left. Called by overworld_sync.rbx every frame in every
-  # scene; reads the player's formation's highest level and place in the story every READ_FRAMES.
+  # Closes the overview once the map is left, or a world opens or closes under it. Called by
+  # overworld_sync.rbx every frame in every scene; in a world reads the player's formation's highest
+  # level and place in the story every READ_FRAMES.
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
-    close(in_world ? "the map was left" : "the world closed") unless in_world && SceneManager.scene.is_a?(Scene_Map)
+    if !SceneManager.scene.is_a?(Scene_Map)
+      close("the map was left")
+    elsif in_world != @in_world
+      close(in_world ? "a world opened" : "the world closed")
+    end
     return forget unless in_world
 
     @frames -= 1
@@ -1192,8 +1228,8 @@ class Sprite_MpWorldOverview < Sprite
   # Width the Players page's columns need, the story column at its least.
   PLAYERS_WIDTH = COLUMNS[:story] + STORY_WIDTH + MGQ_MpUi::Style::GAP + MGQ_MpOverworld::PING_WIDTH + PING_INSET
 
-  # Width the pages' tabs need.
-  TABS_WIDTH = 2 * MARGIN + MGQ_MpWorldOverview::PAGES.size * (TAB_WIDTH + MGQ_MpUi::Style::GAP) - MGQ_MpUi::Style::GAP
+  # Width the pages' tabs need, the pages of other mods included.
+  TABS_WIDTH = 2 * MARGIN + (MGQ_MpWorldOverview::PAGES.size + MGQ_MpWorldOverview::MOD_TABS) * (TAB_WIDTH + MGQ_MpUi::Style::GAP) - MGQ_MpUi::Style::GAP
 
   # Narrowest the box gets: what the Players page's columns, the tabs and the menu need.
   MIN_WIDTH = [PLAYERS_WIDTH, TABS_WIDTH, MENU_WIDTH + 2 * MARGIN].max
@@ -1211,6 +1247,12 @@ class Sprite_MpWorldOverview < Sprite
     :quests => ["Left or right: page", "Up or down: pick", "Page Up or Down: read on", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP),
     :unlocks => ["Left or right: page", "Up or down: pick", "Page Up or Down: read on", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP),
   }
+
+  # The hint at the bottom of another mod's page.
+  MOD_HINT = ["Left or right: page", "Up or down: pick", "Enter: select", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP)
+
+  # The hint at the bottom of another mod's page while the cursor is in its pane.
+  MOD_PANE_HINT = ["Up or down: pick", "Left or right: change", "Enter: press", "Ctrl: back"].join(MGQ_MpUi::Style::HINT_GAP)
 
   # Tells where the box starts on the screen: the list box's place.
   #
@@ -1309,21 +1351,33 @@ class Sprite_MpWorldOverview < Sprite
     choice < view[:menu].size ? choice : nil
   end
 
-  # Tells where the menu sits in the box: right of the list, under the player picked, or above
-  # them when it would leave the box; in a box too low for either, as low as it stays whole above
-  # the hint.
+  # Tells where the menu sits in the box: right of the list, under the player or entry picked, or
+  # above them when it would leave the box; in a box too low for either, as low as it stays whole
+  # above the hint. On a page with a head, a list and a pane it covers the pane's left, or hangs
+  # under the pane's buttons when one of them opened it.
   #
   # @param view [Hash] What the overview shows, see MGQ_MpWorldOverview.view.
   # @param width [Integer] The box's width, the box's own by default.
   # @param height [Integer] The box's height, the box's own by default.
   # @return [Array<Integer>] The menu's left and top edge in the box.
   def self.menu_origin(view, width = box.width, height = box.height)
-    row_top = LIST_TOP + (view[:selected] - view[:scroll]) * ROW
+    if view[:focused]
+      layout = split_layout(width, height)
+      row_top = layout[:body_y]
+      left = layout[:pane_x] + layout[:pane_w] - BAR_ROOM - MENU_WIDTH
+    elsif view[:model]
+      layout = split_layout(width, height)
+      row_top = layout[:body_y] + (entry_row(view[:model], view[:pick]).to_i - view[:list_scroll]) * ROW
+      left = layout[:pane_x]
+    else
+      row_top = LIST_TOP + (view[:selected] - view[:scroll]) * ROW
+      left = width - MENU_WIDTH - MARGIN
+    end
     menu_height = view[:menu].size * ROW
     bottom = height - HINT_HEIGHT
     top = row_top + ROW
     top = row_top - menu_height if top + menu_height > bottom
-    [width - MENU_WIDTH - MARGIN, [[top, bottom - menu_height].min, 0].max]
+    [left, [[top, bottom - menu_height].min, 0].max]
   end
 
   # Places the box where it lies, offers it to the layout and draws the overview while it is open,
@@ -1346,7 +1400,7 @@ class Sprite_MpWorldOverview < Sprite
     end
     drawn = [view[:page], view[:calls], overview.world_name, overview.title_tail, MGQ_MpOverworld.party_badge(:me), rows, view[:selected], view[:scroll],
              view[:menu] && view[:menu].map { |option| [option.text, !option.run.nil?] }, view[:menu_index], box.width, box.height, MGQ_MpUi::Theme.serial,
-             view[:pick], view[:list_scroll], view[:pane_scroll], view[:model] && view[:model].object_id,
+             view[:pick], view[:list_scroll], view[:pane_scroll], view[:model] && view[:model].object_id, view[:pane], view[:focused],
              MGQ_MpWorldOverview.portraits]
     return if drawn == @shown
 
@@ -1388,7 +1442,7 @@ class Sprite_MpWorldOverview < Sprite
       lines.each_with_index { |line, index| draw_line(line, LIST_TOP + index * ROW, view[:scroll] + index == view[:selected]) }
       style.draw_scrollbar(bitmap, width - MARGIN + (MARGIN - style::SCROLLBAR_WIDTH) / 2, LIST_TOP, rows * ROW, view[:scroll], rows, view[:lines].size)
     end
-    style.draw_hint(bitmap, MARGIN, height - HINT_HEIGHT, width - 2 * MARGIN, HINT_HEIGHT, HINTS[view[:page]] % MGQ_MpHotkeys.label(:overview))
+    style.draw_hint(bitmap, MARGIN, height - HINT_HEIGHT, width - 2 * MARGIN, HINT_HEIGHT, view[:focused] ? MOD_PANE_HINT : HINTS.fetch(view[:page], MOD_HINT) % MGQ_MpHotkeys.label(:overview))
     draw_menu(view) if view[:menu]
   end
 
