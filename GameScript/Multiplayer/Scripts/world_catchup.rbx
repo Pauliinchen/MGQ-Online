@@ -2,7 +2,8 @@
 #  world_catchup.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-24: Lifted a warp ban left on where warping is free at every check
+#      Paulinchen  2026-10-24: Gave every player the prizes another player claimed, as the Reaper's Battle Challenge's
+#                            - Lifted a warp ban left on where warping is free at every check
 #                            - Counted Alice's Power-up from the switches of its steps
 #                            - Ran what the power-ups of the story change of the characters for a player a story carried past them
 #                            - Turned a companion of the roster into the persona a join of theirs brings, unless a later change of the story set another
@@ -1489,7 +1490,7 @@ module MGQ_MpWorldCatchup
       next if done[key] || (carried && !carries?(row)) || !passed?(row, story)
 
       done[key] = true
-      next unless carried
+      next unless carried || unclaimed_prize?(row)
 
       if waits
         waits[key] = ledger["capped"]
@@ -1502,6 +1503,20 @@ module MGQ_MpWorldCatchup
     guarded(:actor_changes) { actor_changes(story, carried, done) }
     guarded(:settle) { settle(story, played_world_story) } if carried
     tell_gifts(gifts.compact)
+  end
+
+  # Reports whether a prize (DATA::PRIZE_VARIABLES) the player's story got past without a story
+  # carrying them is another player's claim: the player holds none of it, while one they claimed in
+  # their own game is in their bag. Before the catch-up knew prizes, the world's count laid over
+  # theirs carried them past without giving any.
+  #
+  # @param row [MGQ_MpWorldCatchupData::Reward] The row.
+  # @return [Boolean] Whether it is.
+  def self.unclaimed_prize?(row)
+    return false unless row.kind != :skill && row.marks.any? { |mark| mark[0] == :v && DATA::PRIZE_VARIABLES.include?(mark[1]) }
+
+    item = MGQ_MpGame.item(reward_kind(row), row.id)
+    item && !held?(item) ? true : false
   end
 
   # Notes the actor changes the player's story just got past: done where their own game played

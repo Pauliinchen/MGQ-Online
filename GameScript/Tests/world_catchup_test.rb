@@ -2,7 +2,8 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-24: Checked that Alice's Power-up counts the steps the world did
+#      Paulinchen  2026-10-24: Checked that a prize another player claimed reaches the player
+#                            - Checked that Alice's Power-up counts the steps the world did
 #                            - Checked that a join's persona waits behind a later change of the story
 #                            - Checked that a power-up carried past changes the character once at its level
 #                            - Checked that a companion of the roster takes the persona a join brings
@@ -1749,6 +1750,16 @@ tables(:ACTOR_CHANGES => [granberia_back])
 check("a join's persona is left once a change of the story at its place or later set another (review H4)",
       [catchup.form_changed_since?(granberia_join, { catchup.key_of("a", granberia_back) => true }), catchup.form_changed_since?(granberia_join, {})], [true, false])
 tables
+
+# A prize of the Reaper's Battle Challenge (87) another player claimed before the catch-up knew
+# prizes reaches a player whose story the world's count got past, unless they hold it, as one they
+# claimed in their own game.
+tables(:REWARDS => [reward.new(:i, 600, 1, "ce:148", nil, nil, nil, [[:v, 87, 1]], true),
+                    reward.new(:i, 700, 1, "ce:148", nil, nil, nil, [[:v, 87, 2]], true)])
+new_game({ 87 => 2 }, [], 10)
+$game_party.gain_item($data_items[700], 1)
+catchup.review(catchup.story_now, false)
+check("a prize another player claimed reaches the player, one they hold stays single", [$game_party.item_number($data_items[600]), $game_party.item_number($data_items[700])], [1, 1])
 
 # Classic worlds have no catch-up.
 $raid = false
