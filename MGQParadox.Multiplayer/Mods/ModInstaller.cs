@@ -2,6 +2,10 @@
 //  ModInstaller.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Matched files against the hash of their raw bytes too
+//                            - Renamed a loaded DLL that cannot be overwritten out of the way
+//                            - Shared how a path is read inside Patch with the mod browser
+//                            - Left the files of other installed mods when removing an older version's files
 //      Paulinchen  2026-10-07: Logged hash checks, files written or put back, and zip files the catalog does not name
 //      Paulinchen  2026-10-06: Put every replaced file back when one cannot be written
 //                            - Deleted files that an older version of a zip mod shipped
@@ -35,14 +39,20 @@ internal static class ModInstaller
     private const string PatchFolder = "Patch/";
 
     /// <summary>
+    /// What a DLL renamed out of the way ends with, which the next scan of Patch deletes once it is no longer loaded.
+    /// </summary>
+    public const string OldDllSuffix = ".old";
+
+    /// <summary>
     /// Installs mods.
     /// </summary>
     /// <param name="mods">Each mod, and for a script where it goes, relative to the game's folder; a zip's files go to their paths inside Patch.</param>
     /// <param name="download">Fetches a mod: a script, or a zip of a release or an upload.</param>
     /// <param name="gameFolder">The game's folder, which holds Patch.</param>
+    /// <param name="kept">Paths inside Patch that other installed mods ship, which an older version's removal leaves alone.</param>
     /// <returns>The files written, relative to the game's folder.</returns>
     /// <exception cref="InvalidDataException">A file differs from the catalog, is missing, or would land outside Patch.</exception>
-    public static IReadOnlyList<string> Install(IReadOnlyList<(CatalogMod Mod, string Target)> mods, Func<CatalogMod, byte[]> download, string gameFolder)
+    public static IReadOnlyList<string> Install(IReadOnlyList<(CatalogMod Mod, string Target)> mods, Func<CatalogMod, byte[]> download, string gameFolder, IReadOnlySet<string>? kept = null)
     {
         var patch = Path.GetFullPath(Path.Combine(gameFolder, "Patch"));
         var staged = new List<(string Staged, string Target)>();
@@ -67,7 +77,7 @@ internal static class ModInstaller
 
             foreach (var (mod, _) in mods.Where(mod => mod.Mod.IsZip))
             {
-                RemoveOldFiles(mod, patch, written);
+                RemoveOldFiles(mod, patch, written, kept);
             }
 
             return staged.Select(file => Path.GetRelativePath(gameFolder, file.Target)).ToList();
@@ -111,7 +121,7 @@ internal static class ModInstaller
 
                 done.Add((target, backup));
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                File.Copy(file, target, overwrite: true);
+                CopyOver(file, target, patch);
                 Log.Write($"wrote {Path.GetRelativePath(patch, target)} in Patch{(backup != null ? ", replacing the file there" : ", a new file")}");
             }
         }
@@ -119,6 +129,31 @@ internal static class ModInstaller
         {
             PutBack(done, patch);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Copies a file over its target, renaming a DLL the game has loaded out of the way first.
+    /// </summary>
+    /// <remarks>
+    /// Windows refuses to overwrite a loaded DLL but lets it be renamed.
+    /// </remarks>
+    /// <param name="file">The checked file in the staging folder.</param>
+    /// <param name="target">Its full target path.</param>
+    /// <param name="patch">The full path of the Patch folder, which the log names the files from.</param>
+    /// <exception cref="IOException">The file could not be written.</exception>
+    private static void CopyOver(string file, string target, string patch)
+    {
+        try
+        {
+            File.Copy(file, target, overwrite: true);
+        }
+        catch (IOException ex) when (target.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) && File.Exists(target))
+        {
+            var old = target + OldDllSuffix;
+            Log.Write($"could not overwrite {Path.GetRelativePath(patch, target)} in Patch, which is likely loaded, so it is renamed to {Path.GetFileName(old)}: {ex.Message}");
+            File.Move(target, old, overwrite: true);
+            File.Copy(file, target, overwrite: true);
         }
     }
 
@@ -163,7 +198,8 @@ internal static class ModInstaller
     /// <param name="mod">The mod just installed.</param>
     /// <param name="patch">The full path of the Patch folder.</param>
     /// <param name="written">The full paths just written, which stay whatever an older version named them.</param>
-    private static void RemoveOldFiles(CatalogMod mod, string patch, IReadOnlySet<string> written)
+    /// <param name="kept">Paths inside Patch that other installed mods ship; <see langword="null"/> for none.</param>
+    private static void RemoveOldFiles(CatalogMod mod, string patch, IReadOnlySet<string> written, IReadOnlySet<string>? kept)
     {
         foreach (var version in mod.Versions)
         {
@@ -171,14 +207,14 @@ internal static class ModInstaller
             {
                 var path = Path.GetFullPath(Path.Combine(patch, name));
 
-                if (mod.Files.ContainsKey(name) || written.Contains(path) || !path.StartsWith(patch + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                if (mod.Files.ContainsKey(name) || kept?.Contains(name) == true || written.Contains(path) || !path.StartsWith(patch + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
 
                 try
                 {
-                    if (File.Exists(path) && ModHash.OfFile(path) == hash)
+                    if (File.Exists(path) && ModHash.Matches(path, File.ReadAllBytes(path), hash))
                     {
                         File.Delete(path);
                         Log.Write($"removed {Path.GetRelativePath(patch, path)}, which {mod.Name} {version.Version} shipped and {mod.Version} no longer does");
@@ -230,8 +266,7 @@ internal static class ModInstaller
         // extract into the game folder; the relay reads both the same way.
         foreach (var entry in archive.Entries)
         {
-            var name = entry.FullName.Replace('\\', '/');
-            var path = name.StartsWith(PatchFolder, StringComparison.OrdinalIgnoreCase) ? name[PatchFolder.Length..] : name;
+            var path = PathInsidePatch(entry.FullName);
 
             if (!entries.TryAdd(path, entry) && path.Length > 0 && !path.EndsWith('/'))
             {
@@ -266,6 +301,17 @@ internal static class ModInstaller
     }
 
     /// <summary>
+    /// Reads a path a zip or a list names as the path inside Patch it goes to.
+    /// </summary>
+    /// <param name="name">The path as the zip or the list names it.</param>
+    /// <returns>The path with forward slashes, without a leading Patch folder.</returns>
+    internal static string PathInsidePatch(string name)
+    {
+        var path = name.Replace('\\', '/');
+        return path.StartsWith(PatchFolder, StringComparison.OrdinalIgnoreCase) ? path[PatchFolder.Length..] : path;
+    }
+
+    /// <summary>
     /// Checks a downloaded file against the catalog's hash, and logs the outcome.
     /// </summary>
     /// <param name="mod">The mod it belongs to.</param>
@@ -276,7 +322,7 @@ internal static class ModInstaller
     private static bool Checked(CatalogMod mod, string name, byte[] bytes, string hash)
     {
         var actual = ModHash.Of(name, bytes);
-        var matches = actual == hash;
+        var matches = ModHash.Matches(name, bytes, hash);
         Log.Write(matches
             ? $"{name} of {mod.Name} {mod.Version} matches the catalog, {bytes.Length} bytes"
             : $"{name} of {mod.Name} {mod.Version} differs from the catalog: hash {Log.Short(actual)}, the catalog says {Log.Short(hash)}");

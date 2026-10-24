@@ -2,6 +2,7 @@
 //  ModHash.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Matched a file against the hash of its raw bytes too
 //      Paulinchen  2026-10-06: Created
 //
 //----------------------------------------------------------------
@@ -61,6 +62,20 @@ internal static class ModHash
     /// <returns>The SHA-256 as 64 lowercase hexadecimal characters.</returns>
     /// <exception cref="IOException">The file could not be read.</exception>
     public static string OfFile(string path) => Of(path, File.ReadAllBytes(path));
+
+    /// <summary>
+    /// Tells whether a mod's file is the one a hash names, as the website hashes it or as the relay does.
+    /// </summary>
+    /// <remarks>
+    /// The website hashes every file as it is, so a script it lists with carriage returns matches only its raw hash.
+    /// </remarks>
+    /// <param name="name">The file's name or path, which tells a script from other files.</param>
+    /// <param name="bytes">The file.</param>
+    /// <param name="hash">The hash, 64 hexadecimal characters.</param>
+    /// <returns>Whether the SHA-256 of the raw bytes or <see cref="Of"/> equals the hash.</returns>
+    public static bool Matches(string name, ReadOnlySpan<byte> bytes, string hash) =>
+        string.Equals(Convert.ToHexStringLower(SHA256.HashData(bytes)), hash, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(Of(name, bytes), hash, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Tells a script from other files.

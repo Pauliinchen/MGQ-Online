@@ -22,6 +22,7 @@ Play Monster Girl Quest! Paradox RPG together with friends over the internet, wi
 - **Co-op battles:** party members on the same map join each other's battles, each commanding their own characters.
 - **Duels and PvP battles:** your team against a friend's, live, inside a world or outside one.
 - **Trading:** swap items, equipment, stones and gold with a player on your map; the relay sees to it that a disconnect never loses or copies anything.
+- **Mods:** install, update and remove mods of the [website](https://mgqonline.org/mods) from the title screen, which counts the updates waiting.
 - **Your interface:** three looks for the mod and the game alike, Monarch, Legacy and the game's own window color, and every box of the mod moves and resizes while you hold the left **Alt**.
 
 Worlds, Raid Worlds, parties and co-op battles are a **prototype**: expect bugs, and please [report them](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).

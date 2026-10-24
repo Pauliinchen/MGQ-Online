@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-24: Loaded world_overview_mods.rbx after world_overview_pages.rbx
 #                            - Loaded world_gates.rbx after world_difficulty.rbx
+#                            - Loaded ui_mod_browser.rbx after ui_bug_report.rbx and named the mp_mod_browser_* exports
 #                            - Stopped loading the removed battles_pvp_lobby.rbx
 #      Paulinchen  2026-10-23: Named mp_memory_usage
 #      Paulinchen  2026-10-22: Named mp_dir_open and mp_dir_read
@@ -154,7 +155,7 @@ module MGQ_Multiplayer
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live battles_served
     battles_balance_pvp battles_pvp battles_pvp_backline battles_pvp_mirror battles_duel battles_team
     trade ui_trade
-    world_overview world_overview_pages world_overview_mods ui_party_box ui_edge_arrows ui_raid_bar ui_raid_freeze ui_leader_hud ui_single_player ui_notices ui_bug_report
+    world_overview world_overview_pages world_overview_mods ui_party_box ui_edge_arrows ui_raid_bar ui_raid_freeze ui_leader_hud ui_single_player ui_notices ui_bug_report ui_mod_browser
   ]
 
   # Extension of the scripts, which the mod loader skips, since only this script may load them.
@@ -859,6 +860,12 @@ module MGQ_Multiplayer
       'mp_mod_hash' => 'ppl',
       'mp_mods_install' => 'p',
       'mp_mods_options' => 'ppp',
+
+      # The Mods screen of the title screen.
+      'mp_mod_browser_refresh' => 'v',
+      'mp_mod_browser_list' => READ_ARGUMENTS,
+      'mp_mod_browser_apply' => 'p',
+      'mp_mod_browser_open_page' => 'p',
 
       # The mods a world that turns other mods off does not name, parked outside Patch.
       'mp_mods_park' => 'pp',

@@ -5,6 +5,7 @@ Everything Monster Girl Quest! Online does, for players. To install the mod, see
 - [Hotkeys](#hotkeys)
 - [Interface](#interface)
 - [Single player](#single-player)
+- [Mods](#mods)
 - [Worlds](#worlds)
 - [On the map](#on-the-map)
 - [Parties](#parties)
@@ -78,6 +79,16 @@ Outside a world, the world features (chat, players, parties, trading) stay hidde
 They are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save.
 
 **Restart.** After you change one of them while playing outside a world, the map asks whether to start the game again so they apply cleanly, as soon as nothing runs there and the game would let you save. *Restart* saves your game apart from your save slots (`Patch\Multiplayer\Resume.rvdata2`), starts the game again and goes on right where you were; nothing is lost and no slot is touched. *Later* keeps playing; the settings apply anyway. Under Wine or Proton the game closes and you start it again yourself; it still goes on where you were. Should that game ever fail to load, it is kept as `Patch\Multiplayer\Resume <date>.rvdata2` and a message names it.
+
+## Mods
+
+*Mods* on the title screen, below *Multiplayer*, installs, updates and removes mods without leaving the game. It counts the updates waiting, such as *Mods (2)*.
+
+- **What it lists.** Every mod of the [website](https://mgqonline.org/mods) and the developer's mods on GitHub, those with an update first. At the right of each: *Update*, *Changed* (your copy matches no known version, for example because you edited it) or *Installed*.
+- **Details.** The picked mod's author, where it comes from, your version and the newest, its size, what it does and what changed in the newest version.
+- **What you can do.** Confirm on a mod: *Install*, *Update to …*, *Replace with …* for a changed copy (asks first, your changes are lost), *Remove* (asks first) and *Open page*, which opens its page in your browser. *Update all* at the top updates every mod marked *Update*, never a changed copy.
+- **Restart.** Mods load as the game starts, so after a change the screen offers to start the game again. *Later* keeps playing; the change loads on your next start. Under Wine or Proton you start the game again yourself.
+- **Safe downloads.** The list of the website is signed, and every downloaded file is checked against the list before anything is written; a download that differs changes nothing. Mods only ever go into the `Patch` folder, and never touch MGQ Online's own files. While other mods are turned off for a world, changes wait until you restart.
 
 ## Worlds
 

@@ -2,6 +2,7 @@
 //  ExportsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Covered the Mods screen's exports
 //      Paulinchen  2026-10-23: Covered the mp_memory_usage export
 //      Paulinchen  2026-10-15: Expected the options of mp_dir_create in one number and no export past 16 arguments
 //      Paulinchen  2026-10-13: Expected the raid bosses setting at the end of mp_dir_create and mp_dir_edit
@@ -134,6 +135,24 @@ public sealed unsafe class ExportsTests
         Assert.Equal(string.Empty, exported["mp_report_drop_snap"]);
         Assert.Equal("ppppl", exported["mp_report_send"]);
         Assert.Equal("pl", exported["mp_report_state"]);
+    }
+
+    /// <summary>
+    /// Asserts that the Mods screen's functions are exported under the names the game script calls,
+    /// each taking what GameScript/Multiplayer.rb names for it.
+    /// </summary>
+    [Fact]
+    public void ModBrowserExports_AreRegistered()
+    {
+        var exported = typeof(Exports).GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Select(method => (Method: method, Attribute: method.GetCustomAttribute<UnmanagedCallersOnlyAttribute>()))
+            .Where(export => export.Attribute?.EntryPoint != null)
+            .ToDictionary(export => export.Attribute!.EntryPoint!, export => string.Concat(export.Method.GetParameters().Select(parameter => parameter.ParameterType == typeof(int) ? 'l' : 'p')));
+
+        Assert.Equal(string.Empty, exported["mp_mod_browser_refresh"]);
+        Assert.Equal("pl", exported["mp_mod_browser_list"]);
+        Assert.Equal("p", exported["mp_mod_browser_apply"]);
+        Assert.Equal("p", exported["mp_mod_browser_open_page"]);
     }
 
     /// <summary>

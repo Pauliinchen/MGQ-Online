@@ -2,6 +2,7 @@
 //  ModInstallerTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-24: Covered a loaded DLL renamed out of the way
 //      Paulinchen  2026-10-06: Covered failed writes, files of older versions and zips holding a file twice
 //                            - Covered zips whose files sit in a Patch folder
 //                            - Covered links to a zip of a release and zips written with backslashes
@@ -180,6 +181,29 @@ public sealed class ModInstallerTests
         Assert.True(File.Exists(Path.Combine(game.Path, "Patch", "Foo.rb")));
         Assert.False(File.Exists(Path.Combine(game.Path, "Patch", "Foo_Core.rb")));
         Assert.True(File.Exists(Path.Combine(game.Path, "Patch", "Foo", "notes.txt")));
+    }
+
+    /// <summary>
+    /// Asserts that a DLL the game has loaded, which Windows lets be renamed but not overwritten, is
+    /// renamed out of the way and the new one written in its place.
+    /// </summary>
+    [Fact]
+    public void Install_LoadedDll_IsRenamedOutOfTheWay()
+    {
+        using var game = new TempFolder();
+        var dll = Path.Combine(game.Path, "Patch", "Pack", "Pack.dll");
+        var library = Encoding.UTF8.GetBytes("new library");
+        Directory.CreateDirectory(Path.GetDirectoryName(dll)!);
+        File.WriteAllText(dll, "old library");
+        var mod = UploadMod(new() { ["Pack/Pack.dll"] = ModHash.Of("Pack.dll", library) });
+
+        using (new FileStream(dll, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete))
+        {
+            ModInstaller.Install([(mod, string.Empty)], _ => Zip(("Pack/Pack.dll", library)), game.Path);
+        }
+
+        Assert.Equal(library, File.ReadAllBytes(dll));
+        Assert.Equal("old library", File.ReadAllText(dll + ModInstaller.OldDllSuffix));
     }
 
     /// <summary>
