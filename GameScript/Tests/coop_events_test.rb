@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Checked that a player behind starts every story event and talk but one that ends their part
+#      Paulinchen  2026-10-28: Checked that a held page asks the DLL whether it is over only once something changed
+#                            - Checked that a player behind starts every story event and talk but one that ends their part
 #                            - Read the frames of a call from the gather stand-in
 #                            - Read the pages waiting from the stand-in of the DLL
 #                            - Checked that a story event waits for the relay's telling lock and ends once refused, in place of the tie
@@ -1048,8 +1049,15 @@ pause = Fiber.new { window.process_input; :closed }
 pause.resume
 pause.resume
 check("the member cannot move the leader's page on or close it", [pause.alive?, $own_pause, window.pause], [true, nil, true])
+over_asks = lambda { $world_bridge.calls.count { |topic, _| topic == "pages.over" } }
+asks = over_asks.call
+5.times { $frame_count += 1; pause.resume }
+check("a held page asks the DLL nothing more frame by frame while nothing changes", [over_asks.call - asks, window.pause], [0, true])
 MGQ_MpCoopEvents.take(leader, { "pevent" => "done", "party" => "p1", "map" => "7", "x" => "0", "y" => "0", "d" => "2", "page" => say["page"] })
 check("the leader moving on leaves the page a moment to read", [pause.resume, window.pause], [nil, true])
+asks = over_asks.call
+5.times { $frame_count += 1; pause.resume }
+check("asking again only once that moment passed", over_asks.call - asks, 0)
 $frame_count += $pages_stand_in.reading_frames(["Hello, \\N[1]!", "Leader chooses: Yes / No"])
 check("then it ends", [pause.resume, window.pause], [:closed, false])
 Fiber.new { window.process_input }.resume

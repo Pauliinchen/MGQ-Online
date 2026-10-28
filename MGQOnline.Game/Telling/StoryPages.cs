@@ -2,7 +2,8 @@
 //  StoryPages.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Created
+//      Paulinchen  2026-10-28: Told how long a page that holds holds by time alone
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -68,7 +69,8 @@ public sealed record PagesNext(HeardPage? Show, IReadOnlyList<string> Skipped, I
 /// </summary>
 /// <param name="Over">Whether it is.</param>
 /// <param name="Reason">Why, the first time it is over; <see langword="null"/> afterwards and while it holds.</param>
-public sealed record PageOver(bool Over, string? Reason);
+/// <param name="Wait">While it holds, the frames after which time alone may end it; <see langword="null"/> when only a change of the inputs or pages can.</param>
+public sealed record PageOver(bool Over, string? Reason, long? Wait = null);
 
 /// <summary>
 /// The pages of a story's dialogue as coop_events.rbx kept them, by frame. The teller's side names
@@ -445,7 +447,7 @@ public sealed class StoryPages
                 : confirm ? "the player read on"
                 : skip ? "the player skips"
                 : null;
-            return reason is null ? new PageOver(false, null) : OverFor($"the leader moved past it and {reason}");
+            return reason is null ? new PageOver(false, null, mirrored.Read - (frame - mirrored.Since)) : OverFor($"the leader moved past it and {reason}");
         }
 
         if (teller is null)
@@ -463,7 +465,9 @@ public sealed class StoryPages
             return OverFor("the relay ended the teller's telling");
         }
 
-        return Past(mirrored.Since, StaleFrames, frame) ? OverFor($"the leader stopped telling the story {StaleFrames} frames ago") : new PageOver(false, null);
+        return Past(mirrored.Since, StaleFrames, frame)
+            ? OverFor($"the leader stopped telling the story {StaleFrames} frames ago")
+            : new PageOver(false, null, StaleFrames - (frame - mirrored.Since));
     }
 
     /// <summary>

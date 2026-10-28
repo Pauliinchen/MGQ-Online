@@ -2,7 +2,8 @@
 #  pages_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Created
+#      Paulinchen  2026-10-28: Told how long a page that holds holds by time alone
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -194,10 +195,11 @@ class PagesStandIn
   #
   # @param request [Hash] "teller", "telling", "raid", "giving_way", "confirm" and "skip".
   # @param frame [Integer] The frame now.
-  # @return [Hash] "over" and "reason".
+  # @return [Hash] "over", "reason" and "wait".
   def over(request, frame)
     return { "over" => true, "reason" => nil } unless @mirrored
 
+    wait = nil
     reason =
       if @done.include?(@mirrored[:id])
         reason = if request["giving_way"] then "#{request['giving_way']} waits for the player"
@@ -206,13 +208,15 @@ class PagesStandIn
                  elsif request["confirm"] then "the player read on"
                  elsif request["skip"] then "the player skips"
                  end
+        wait = @mirrored[:read] - (frame - @mirrored[:since]) unless reason
         reason && "the leader moved past it and #{reason}"
       elsif request["teller"].nil? then "the teller is no longer the player's leader"
       elsif request["telling"] then nil
       elsif request["raid"] then "the relay ended the teller's telling"
       elsif past?(@mirrored[:since], STALE_FRAMES, frame) then "the leader stopped telling the story #{STALE_FRAMES} frames ago"
+      else wait = STALE_FRAMES - (frame - @mirrored[:since]); nil
       end
-    return { "over" => false, "reason" => nil } unless reason
+    return { "over" => false, "reason" => nil, "wait" => wait } unless reason
 
     first = !@mirrored[:over]
     @mirrored[:over] = true

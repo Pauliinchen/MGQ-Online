@@ -2,7 +2,8 @@
 //  PageTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Created
+//      Paulinchen  2026-10-28: Told how long a page that holds holds by time alone
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -82,7 +83,8 @@ public static class PageTopics
     /// <summary>
     /// Tells whether the page the window holds is over: <c>teller</c> (the teller's name, nil once
     /// they are no longer the player's), <c>telling</c>, <c>raid</c>, <c>giving_way</c>,
-    /// <c>confirm</c> and <c>skip</c> in; <c>over</c> and <c>reason</c> (the first time) out.
+    /// <c>confirm</c> and <c>skip</c> in; <c>over</c>, <c>reason</c> (the first time) and <c>wait</c>
+    /// (while it holds, the frames after which time alone may end it, else nil) out.
     /// </summary>
     public const string Over = "pages.over";
 
@@ -142,7 +144,7 @@ public static class PageTopics
         {
             RubyHash fields = request.AsHash();
             PageOver over = pages.Over(Text(fields["teller"]), Flag(fields["telling"]), Flag(fields["raid"]), Text(fields["giving_way"]), Flag(fields["confirm"]), Flag(fields["skip"]), host.Frame);
-            return new RubyHash { { "over", over.Over }, { "reason", over.Reason } };
+            return new RubyHash { { "over", over.Over }, { "reason", over.Reason }, { "wait", over.Wait is { } wait ? wait : RubyNil.Value } };
         });
         context.Register(Ended, (_, _) => pages.Ended());
     }

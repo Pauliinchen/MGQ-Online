@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Held only the story events and talks that would move a player behind past the end of their part
+#      Paulinchen  2026-10-28: Asked the DLL whether a teller's page is over only once what it reads changed or its time came
+#                            - Held only the story events and talks that would move a player behind past the end of their part
 #                            - Held a Raid World's story event at its first command for the relay's telling lock in place of the tie hold
 #                            - Kept the pages a teller tells and a viewer shows, with their pace and reading times, in the DLL
 #                            - Told a refused story event once per event in one place
@@ -252,6 +253,8 @@ module MGQ_MpCoopEvents
   @granting = false
   # Whether the message window waits for the input that ends a page, see page_end_input.
   @page_end = false
+  # The DLL's last answer that the page the window holds is not over, see page_held?.
+  @page_asked = nil
 
   extend MGQ_MpLog
 
@@ -1362,6 +1365,7 @@ module MGQ_MpCoopEvents
   # @param message [Hash] The message's fields.
   def self.hear(peer, message)
     forget_former_leader(peer)
+    @page_asked = nil
     answer = MGQ_Multiplayer::Bridge.call(PAGE_HEAR_TOPIC, "page" => message["page"].to_s, "name" => peer.state["name"].to_s, "face" => message["face"].to_s,
                                                            "index" => message["index"].to_i, "background" => message["background"].to_i,
                                                            "position" => message["position"].to_i, "lines" => message["lines"].to_s, "choices" => message["choices"].to_s)
@@ -1381,6 +1385,7 @@ module MGQ_MpCoopEvents
   # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] The teller, nil when unknown.
   def self.heard_done(message, peer = nil)
     forget_former_leader(peer)
+    @page_asked = nil
     MGQ_Multiplayer::Bridge.call(PAGE_DONE_TOPIC, "page" => message["page"].to_s)
     log("the leader moved past page #{message['page']}")
   end
@@ -1398,7 +1403,8 @@ module MGQ_MpCoopEvents
   # waits for the player to be free (giving_way?) or more pages wait behind it; the teller is no
   # longer the player's leader or gone; the relay ended their telling; or a Classic leader's state
   # stopped saying they tell the story a while ago. One the DLL does not answer for is over, so a
-  # page never holds the player for good.
+  # page never holds the player for good. The DLL is asked again only once what it reads changed,
+  # see page_held?, since the window asks every frame.
   #
   # @return [Boolean] Whether it is over.
   def self.page_done?
@@ -1406,14 +1412,36 @@ module MGQ_MpCoopEvents
 
     lead = page_teller
     known = lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
-    answer = MGQ_Multiplayer::Bridge.call(PAGE_OVER_TOPIC, "teller" => known ? MGQ_MpOverworldSync.who(lead) : nil,
-                                                           "telling" => known && MGQ_MpCoop::Scope.telling?(lead) ? true : false, "raid" => MGQ_MpCoop::Scope.raid?,
-                                                           "giving_way" => giving_way?, "confirm" => Input.trigger?(:C) ? true : false,
-                                                           "skip" => Input.press?(SKIP_BUTTON) ? true : false)
+    asked = [known ? MGQ_MpOverworldSync.who(lead) : nil, known && MGQ_MpCoop::Scope.telling?(lead) ? true : false, MGQ_MpCoop::Scope.raid?,
+             giving_way?, Input.trigger?(:C) ? true : false, Input.press?(SKIP_BUTTON) ? true : false]
+    return false if page_held?(asked)
+
+    @page_asked = nil
+    answer = MGQ_Multiplayer::Bridge.call(PAGE_OVER_TOPIC, "teller" => asked[0], "telling" => asked[1], "raid" => asked[2],
+                                                           "giving_way" => asked[3], "confirm" => asked[4], "skip" => asked[5])
     return true unless answer
 
     log("the page of the leader's story the window shows is over: #{answer['reason']}") if answer["reason"]
-    answer["over"] ? true : false
+    return true if answer["over"]
+
+    now = Graphics.frame_count
+    @page_asked = { :asked => asked, :at => now, :until => answer["wait"] ? now + answer["wait"].to_i : nil }
+    false
+  end
+
+  # Reports whether the DLL's last answer that the page the window holds is not over still stands:
+  # it was asked with the same teller, telling, raid, wait and input, no page was heard, passed or
+  # shown since, and the frames after which time alone may end the page have not passed. A loaded
+  # save sets the frame count back, which asks anew.
+  #
+  # @param asked [Array] What page_done? hands the DLL now.
+  # @return [Boolean] Whether it stands.
+  def self.page_held?(asked)
+    kept = @page_asked
+    return false unless kept && kept[:asked] == asked
+
+    now = Graphics.frame_count
+    now >= kept[:at] && (kept[:until].nil? || now < kept[:until])
   end
 
   # Finds who told the pages the player follows: the party's leader, or in a Raid World the player
@@ -1506,6 +1534,7 @@ module MGQ_MpCoopEvents
   #
   # @param page [Hash] The page: "page", "face", "index", "background", "position" and "lines".
   def self.show_page(page)
+    @page_asked = nil
     log("showing page #{page['page']} of the leader's story, #{@waiting} more waiting")
     $game_message.face_name = MGQ_MpOverworld.graphic?(:face, page["face"].to_s) ? page["face"] : ""
     $game_message.face_index = page["index"]
@@ -1546,6 +1575,7 @@ module MGQ_MpCoopEvents
 
     waiting = MGQ_Multiplayer::Bridge.call(PAGE_FORGET_TOPIC).to_i
     @waiting = 0
+    @page_asked = nil
     log("the teller whose story pages the player follows is #{id ? MGQ_MpOverworldSync.who(peer || MGQ_MpCoop::Scope.teller) : 'nobody'} now#{waiting > 0 ? ", forgot #{waiting} waiting pages of the former teller" : ''}")
     @heard_from = id
   end

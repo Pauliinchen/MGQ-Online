@@ -2,7 +2,8 @@
 //  StoryPagesTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Created
+//      Paulinchen  2026-10-28: Checked how long a page that holds holds by time alone
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -117,6 +118,27 @@ public sealed class StoryPagesTests
                 Assert.True(JsonNode.DeepEquals(expected, answer), $"{scenario.GetProperty("name").GetString()}: after {step.GetRawText()} expected {expected?.ToJsonString()}, got {answer.ToJsonString()}");
             }
         }
+    }
+
+    /// <summary>
+    /// Asserts that a page that holds tells when time alone may end it: once the teller moved past
+    /// it, when the player had the time to read it; while a Classic leader stopped telling, when the
+    /// page goes stale; never while the teller still tells.
+    /// </summary>
+    [Fact]
+    public void Over_TellsWhenTimeAloneMayEndAPage()
+    {
+        var pages = new StoryPages(() => "sess01");
+        var page = new StoryPage("", 0, 0, 2, ["Hello."], []);
+        pages.Hear("s.1", "Teller", page);
+        pages.Next(null, sharing: true, frame: 100);
+        int read = StoryPages.ReadingFrames(["Hello."]);
+
+        Assert.Equal(new PageOver(false, null), pages.Over("Teller", telling: true, raid: false, null, confirm: false, skip: false, frame: 110));
+        Assert.Equal(StoryPages.StaleFrames - 10, pages.Over("Teller", telling: false, raid: false, null, confirm: false, skip: false, frame: 110).Wait);
+        pages.Done("s.1");
+        Assert.Equal(read - 10, pages.Over("Teller", telling: true, raid: false, null, confirm: false, skip: false, frame: 110).Wait);
+        Assert.True(pages.Over("Teller", telling: true, raid: false, null, confirm: false, skip: false, frame: 100 + read).Over);
     }
 
     /// <summary>
