@@ -2,6 +2,8 @@
 //  story_catchup.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Checked the chests and chest flags a party member keeps their own of
+//                            - Checked the rules, counts, actor changes and prizes of the catch-up
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -94,4 +96,48 @@ test("a world chest and its self switch go in one batch, and keyed catch-up rows
   const moved = await mapping.edit({ edits: [{ table: "chests", op: "change", id: "ss127.81.A", row: { ...chest, key: "ss127.81.B" } }] }, ADMIN);
   assert.equal(moved.body.code, MAPPING_REFUSAL.key);
   assert.equal((await mapping.edit({ edits: [{ table: "makina", op: "add", row: { item: 700, level: 6, site: "map:215:23:1" } }, { table: "makina", op: "add", row: { item: 700, level: 7, site: "map:215:23:1" } }] }, ADMIN)).body.code, MAPPING_REFUSAL.twice);
+});
+
+test("a party member's own chests are rows by their self switch, the chest flags by their switch", async () => {
+  const mapping = makeMapping();
+  const done = await mapping.edit({ edits: [{ table: "party_chests", op: "add", row: { key: "ss6.9.A" } }, { table: "chest_flags", op: "add", row: { switch: 2045 } }] }, ADMIN);
+  assert.deepEqual(done.body.changed.map((change) => change.id), ["ss6.9.A", "2045"]);
+  assert.equal(readRow(CATCHUP_TABLES.party_chests, { key: "6.9.A" }).code, MAPPING_REFUSAL.field);
+  assert.equal(readRow(CATCHUP_TABLES.chest_flags, { switch: 0 }).code, MAPPING_REFUSAL.field);
+
+  const read = (await mapping.forGames(null)).body.tables;
+  assert.deepEqual([read.party_chests, read.chest_flags], [[{ key: "ss6.9.A" }], [{ switch: 2045 }]]);
+});
+
+test("each rule of the catch-up is one row by its name, with the value its rule takes", async () => {
+  const code = (row) => readRow(CATCHUP_TABLES.rules, row).code ?? null;
+
+  assert.equal(code({ rule: "lasting_companions", value: [5, 26, 29, 30] }), null);
+  assert.equal(code({ rule: "side_companions", value: { alice: 5, ilias: 26 } }), null);
+  assert.equal(code({ rule: "orb_event", value: 330 }), null);
+  assert.equal(code({ rule: "orb_event", value: [330] }), MAPPING_REFUSAL.field);
+  assert.equal(code({ rule: "side_companions", value: { alice: 5 } }), MAPPING_REFUSAL.field);
+  assert.equal(code({ rule: "playthrough", value: 912 }), MAPPING_REFUSAL.field);
+
+  const mapping = makeMapping();
+  await mapping.edit({ edits: [{ table: "rules", op: "add", row: { rule: "side_step", value: 7 } }] }, ADMIN);
+  assert.equal((await mapping.edit({ edits: [{ table: "rules", op: "add", row: { rule: "side_step", value: 8 } }] }, ADMIN)).body.code, MAPPING_REFUSAL.exists);
+  assert.deepEqual((await mapping.forGames(null)).body.tables.rules, [{ rule: "side_step", value: 7 }]);
+});
+
+test("a count names its switches with their weights and its last value with its switch, an actor change its calls, a prize its variable", () => {
+  const code = (table, row) => readRow(CATCHUP_TABLES[table], row).code ?? null;
+  const count = { variable: 1353, weights: [{ switch: 3204, weight: 1 }, { switch: 3211, weight: 2 }], doneSwitch: 7034, doneValue: 15, since: { variable: 1312, atLeast: 3 } };
+  const change = { actor: 5, calls: [["persona_change", [6], false], ["level_adjust", [6, 65], false]], gate: 65, site: "map:1650:19:1", part: "ad", step: 18, side: null, marks: [["v", 1141, 18]], ran: true, order: 0 };
+
+  assert.equal(code("counts", count), null);
+  assert.equal(code("counts", { ...count, doneSwitch: null, doneValue: null, since: null }), null);
+  assert.equal(code("counts", { ...count, doneValue: null }), MAPPING_REFUSAL.field, "a last value needs its switch");
+  assert.equal(code("counts", { ...count, weights: [[3204, 1]] }), MAPPING_REFUSAL.field);
+  assert.equal(code("actor_changes", change), null);
+  assert.equal(code("actor_changes", { ...change, gate: null }), null);
+  assert.equal(code("actor_changes", { ...change, calls: [["change_class", [6, 1], false]] }), MAPPING_REFUSAL.field);
+  assert.equal(code("actor_changes", { ...change, calls: [["persona_change", [], false]] }), MAPPING_REFUSAL.field);
+  assert.equal(code("prize_variables", { variable: 87 }), null);
+  assert.equal(code("prize_variables", { variable: 0 }), MAPPING_REFUSAL.field);
 });

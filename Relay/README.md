@@ -195,8 +195,16 @@ Options, each left out when off: `defeatWrite: true` (the post-defeat processing
 | `warp_free_maps` | `WARP_FREE_MAPS` | `map` | `map` |
 | `makina` | `MAKINA` | `item` | `item`, `level`, `site` |
 | `companion_values` | `COMPANION_VALUES` | `<actor>:<variable>` | `actor`, `variable`, `atLeast` |
+| `rules` | `world_catchup.rbx` `LASTING_COMPANIONS`, `ORBS`, `ORB_EVENT`, `ORBS_GATHERED`, `SIDE_STEP`, `SIDE_COMPANIONS` | `rule` | `rule` (`lasting_companions`, `orbs`, `orb_event`, `orbs_gathered`, `side_step` or `side_companions`), `value` (a list of ids for the first two, a common event or step for the next three, `{alice, ilias}` companions for the last) |
+| `counts` | `world_catchup.rbx` `COUNTS` | `variable` | `variable`, `weights` (each `{switch, weight}`), `doneSwitch` and `doneValue` (the switch that sets its last value, with that value; both null for none), `since` (`{variable, atLeast}` the variable at a value or more before it counts at all, or null) |
+| `actor_changes` *ordered* | `ACTOR_CHANGES` | numbered | `actor`, `calls` (each `[call, [whole numbers], once]`, the call one of `persona_change`, `level_adjust`, `change_actor_ability`, `force_change_equip`, `change_actor_equip_stone`, `set_actor_had`, `once` whether only a first playthrough runs it), `gate` (the highest level they set, or null), place, `ran` |
+| `prize_variables` | `PRIZE_VARIABLES` | `variable` | `variable` |
 | `event_rewards` | `coop_story_rewards.rbx` `SKILLS`, `ACTORS`, `ITEMS`, `SIDED`, `ROUTE`, `FINAL` | `<kind>:<id>` | `kind` (`skill`, `companion`, `item`, `weapon`, `armor`), `id`, `most` (items only), `sided`, `route` (sided ones only), `final` |
 | `side_events` | `coop_story_rewards.rbx` `GROUPS` | `site` | `site` (`map:<map>:<event>` or `ce:<id>`), `alice` and `ilias` (each `{skills, companions}`), `choice`, `marks` (one list of marks per page) |
+| `party_chests` | `coop_story_rewards.rbx` `CHESTS` | `key` | `key` (`ss<map>.<event>.<letter>`, every chest of the game, which a party member keeps their own of) |
+| `chest_flags` | `coop_story_rewards.rbx` `CHEST_FLAGS` | `switch` | `switch` (one only chests turn on, each player's own) |
+
+**Seeds.** `seed/story/<table>.json` holds the rows a table starts with: the rules, counts and companion values of the catch-up, kept by hand in `seed/story/make_seed.rb` (`ruby Relay/seed/story/make_seed.rb` in the repository writes them, and the game scripts' generated tables into `fixtures/catchup/generated` for the tests, never into the seed, since no row nobody reviewed reaches the relay), and the reviewed rows of the other tables once they come. A file holds either `rows` (each as an admin would add it) and `source` (where they came from), or the list of edits an admin would send to `POST /v1/admin/story/edit`, each an `add` of the file's table. At every start the Node relay fills each table that holds no rows yet from its seed file, all in one revision with the author `seed` and no history, and leaves every table with rows as the admins keep it; a table it filled or found with rows once is never seeded again (the mapping's meta names it in `seeded`), so a table the admins emptied stays empty; a seed file of another shape or a seed row the table refuses stops the relay, and a relay installed without the folder seeds nothing and logs so. The mapping's own `keys` and `events` have no seed: the admins keep them.
 
 ### Story tracks
 
@@ -386,7 +394,7 @@ Up to 0.6.6.1 relay r1 ran on the free Workers plan at `relay.mgqmp.workers.dev`
 ## Moving to a rented server
 
 1. On the server, install Node.js 24 or later (the SQLite database needs `node:sqlite`) and [Caddy](https://caddyserver.com), and point a domain at the server.
-2. Copy `core/`, `node/`, `package.json` and `package-lock.json`, then run `npm install --omit=dev`.
+2. Copy `core/`, `node/`, `seed/`, `package.json` and `package-lock.json`, then run `npm install --omit=dev`.
 3. Start `node node/server.js` as a systemd service, with these environment variables:
    - `MGQ_RELAY_DB=/var/lib/mgq-relay/relay.sqlite`: the SQLite database the worlds, their starting saves, the mod catalog, its uploaded zips, the trades, the Raid Worlds' stories and their boss pools, the release control and the story mapping are kept in, made on the first start (with its `-wal` and `-shm` files beside it). Without it everything stays in memory and is gone with the process. Back the file up with `sqlite3 relay.sqlite ".backup copy.sqlite"`, never by copying it while the relay runs.
    - `ADMINS`: the admins' player ids, as above.

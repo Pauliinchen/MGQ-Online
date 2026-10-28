@@ -7,6 +7,9 @@
 #                            - Checked that a story event waits for the relay's telling lock and ends once refused, in place of the tie
 #                            - Answered the telling machine through the bridge from its golden cases
 #                            - Took a Raid World's tellers from the relay's tellings and its viewers from their tracks
+#                            - Checked that the leader answers an ask for the whole story once the rewards a member catches up with came
+#                            - Checked that the scripts ask the DLL for missing rewards once within half a second
+#                            - Had the scripts read the rewards anew once the stand-in of their table is in place
 #      Paulinchen  2026-10-24: Set the unlocks aside in the generator's switches of each player's own
 #                            - Checked that the player's game notes whose scene that runs by itself it keeps from starting
 #      Paulinchen  2026-10-23: Left the sorting checks to MGQOnline.Game.Tests and answered the sorts from its golden cases
@@ -1340,6 +1343,21 @@ $game_party.gain_item(key, 1)
 $sent.clear
 MGQ_MpCoopStory.take(friend, { "story" => "ask", "party" => "p1" })
 check("the leader's story carries the key items they hold", $sent.last[1]["k"], "3:1")
+
+# The whole story waits for the rewards a member catches up with, which come with the story mapping;
+# while they are missing, the scripts ask the DLL for them only every half second.
+reward_asks = 0
+$world_bridge.answer("story.rewards") { |_known| reward_asks += 1; nil }
+rewards_changed
+$sent.clear
+2.times { MGQ_MpCoopStory.take(friend, { "story" => "ask", "party" => "p1" }) }
+check("the leader leaves an ask for the whole story unanswered until the rewards a member catches up with came, asking the DLL once within half a second",
+      [$sent, reward_asks], [[], 1])
+answer_party_rewards($world_bridge)
+$frame_count += MGQ_MpStoryState::MISSING_FRAMES
+MGQ_MpCoopStory.take(friend, { "story" => "ask", "party" => "p1" })
+$frame_count -= MGQ_MpStoryState::MISSING_FRAMES
+check("and answers it once they came", $sent.map { |_, fields| fields["story"] }, ["full"])
 MGQ_MpCoopStory.instance_variable_set(:@frames, MGQ_MpCoopStory::SEND_FRAMES)
 $sent.clear
 MGQ_MpCoopStory.update
@@ -1379,6 +1397,7 @@ module MGQ_MpCoopStoryRewards
     { :alice => { :skills => [], :actors => [] }, :ilias => { :skills => [], :actors => [9] }, :choice => true, :marks => [[[:v, 1001, 7]]] },
   ]
 end
+rewards_changed
 # A skill's data.
 Skill = Struct.new(:id, :name)
 $data_skills = Array.new(14)

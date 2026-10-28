@@ -4,6 +4,9 @@
 //  Changelog:
 //      Paulinchen  2026-10-28: Answered the telling machine, which takes the relay's telling lock
 //                            - Told the scripts the teller whose ended telling the game has yet to take the track of
+//                            - Fetched the mapping in a Classic world too, and handed the scripts the rewards a party member catches up with
+//                            - Handed the catch-up the tables the mapping came with
+//                            - Handed the catch-up the tables the mapping came with
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -16,6 +19,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Catchup;
 using MGQOnline.Game.Story;
 using MGQOnline.Game.Telling;
 using MGQParadox.Multiplayer.Network.Relay;
@@ -26,7 +30,8 @@ namespace MGQParadox.Multiplayer;
 /// <summary>
 /// The bridge topics of a Raid World's story on the relay's tracks (<see cref="StoryTrack"/>), of
 /// the tables the scripts look each story write up in (the story mapping, fetched as the story
-/// starts and again on its new revision, and a Classic party's table) and of the player's telling
+/// starts and again on its new revision, or in a Classic world for the rewards its party members
+/// catch up with, and a Classic party's table) and of the player's telling
 /// (<see cref="TellingMachine"/>), which takes the relay's telling lock through the track.
 /// </summary>
 internal sealed class StoryTopics : IStoryTrackHost
@@ -82,6 +87,11 @@ internal sealed class StoryTopics : IStoryTrackHost
     public const string ClassicTopic = "story.classic_table";
 
     /// <summary>
+    /// Gets the catch-up's tables the story mapping came with, <see langword="null"/> before it came.
+    /// </summary>
+    internal CatchupTables? Catchup => _table?.Catchup;
+
+    /// <summary>
     /// The topic that takes an event of the map's interpreter starting: {"telling" (whether it is
     /// story the player tells), "by_itself", "map", "site" (nil for none)}; answers {"telling",
     /// "continued" ("frame", "moved" or nil), "from" (the telling's map before), "hold", "locked"}.
@@ -110,6 +120,18 @@ internal sealed class StoryTopics : IStoryTrackHost
     public const string TellingArrivedTopic = "telling.arrived";
 
     /// <summary>
+    /// The topic that has the mapping fetched from the relay of a Classic world, which plays no story
+    /// on tracks: the world's id, nil once it closed.
+    /// </summary>
+    public const string MappingTopic = "story.mapping";
+
+    /// <summary>
+    /// The topic that hands the rewards a party member catches up with, see <see cref="RewardsOf"/>:
+    /// the revision the scripts hold, nil for none; nil while it is the one held or before the mapping came.
+    /// </summary>
+    public const string RewardsTopic = "story.rewards";
+
+    /// <summary>
     /// The event of how the story on tracks stands, see <see cref="StatusOf"/>.
     /// </summary>
     public const string StatusEvent = "story.status";
@@ -128,6 +150,12 @@ internal sealed class StoryTopics : IStoryTrackHost
     /// Bridge frames before a failed fetch of the mapping is tried again, by try.
     /// </summary>
     private static readonly int[] FetchRetryFrames = [120, 300, 600, 1800];
+
+    /// <summary>
+    /// Bridge frames between two fetches of the mapping in a Classic world, ten minutes: no track
+    /// tells its new revision there.
+    /// </summary>
+    private const int ClassicFetchFrames = 36_000;
 
     /// <summary>
     /// The context the events go to.
@@ -196,6 +224,16 @@ internal sealed class StoryTopics : IStoryTrackHost
     private Uri? _relay;
 
     /// <summary>
+    /// The relay of the Classic world open, whose mapping is fetched, <see langword="null"/> outside one.
+    /// </summary>
+    private Uri? _classicRelay;
+
+    /// <summary>
+    /// The bridge frame the last fetch of the mapping started at.
+    /// </summary>
+    private long _fetchedAt;
+
+    /// <summary>
     /// The world connections counted when the story last looked, see <see cref="WorldSession.Connections"/>.
     /// </summary>
     private int _connections;
@@ -236,7 +274,8 @@ internal sealed class StoryTopics : IStoryTrackHost
     /// Registers the topics and the frame step on a context, over the game's world connection.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
-    public static void Register(BridgeContext context) => Register(context, WorldSession.Current);
+    /// <returns>The story's topics, whose mapping the catch-up reads.</returns>
+    public static StoryTopics Register(BridgeContext context) => Register(context, WorldSession.Current);
 
     /// <summary>
     /// Registers the topics and the frame step on a context.
@@ -299,6 +338,8 @@ internal sealed class StoryTopics : IStoryTrackHost
             topics._telling.Arrived(request.AsHash()["map"].AsInt());
             return null;
         });
+        context.Register(MappingTopic, (_, request) => topics.FollowClassic(request.IsNil ? null : request.AsText()));
+        context.Register(RewardsTopic, (_, request) => topics._table is { } table && (request.IsNil || request.AsLong() != table.Rev) ? RewardsOf(table) : null);
         context.EveryFrame(_ => topics.Step());
         return topics;
     }
@@ -543,7 +584,11 @@ internal sealed class StoryTopics : IStoryTrackHost
                 _track.Receive(frame);
             }
 
-            FollowMapping();
+            FollowMapping(_relay, false);
+        }
+        else if (_classicRelay is { } classic)
+        {
+            FollowMapping(classic, true);
         }
 
         if (_track.TakeRefusals() is { Count: > 0 } refusals)
@@ -563,12 +608,42 @@ internal sealed class StoryTopics : IStoryTrackHost
     }
 
     /// <summary>
-    /// Takes a mapping a fetch read, and starts a fetch while none came yet or the relay reads
-    /// requests by a newer revision than the one held.
+    /// Has the mapping fetched from the relay of a Classic world, or no longer once it closed.
     /// </summary>
-    private void FollowMapping()
+    /// <param name="world">The world's id, <see langword="null"/> once it closed.</param>
+    /// <returns><see langword="null"/>, no reply.</returns>
+    private RubyValue? FollowClassic(string? world)
     {
-        Uri relay = _relay!;
+        _classicRelay = world is null ? null : RelayOf(world);
+        if (world is not null && _classicRelay is null)
+        {
+            Log.Write($"story track: the Classic world {Log.Short(world)} is of no known relay, so its story mapping is not fetched");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Writes the rewards a party member catches up with as the scripts read them.
+    /// </summary>
+    /// <param name="table">The mapping's table.</param>
+    /// <returns>The mapping's "rev" and the rewards, see <see cref="PartyRewards.Write"/>.</returns>
+    internal static RubyHash RewardsOf(StoryTable table)
+    {
+        RubyHash rewards = PartyRewards.Write(table.Catchup);
+        rewards["rev"] = table.Rev;
+        return rewards;
+    }
+
+    /// <summary>
+    /// Takes a mapping a fetch read, and starts a fetch while none came yet, or on a story on tracks
+    /// once the relay reads requests by a newer revision than the one held, in a Classic world every
+    /// <see cref="ClassicFetchFrames"/>.
+    /// </summary>
+    /// <param name="relay">The relay.</param>
+    /// <param name="classic">Whether it is a Classic world's.</param>
+    private void FollowMapping(Uri relay, bool classic)
+    {
         long? known;
         lock (_gate)
         {
@@ -585,12 +660,13 @@ internal sealed class StoryTopics : IStoryTrackHost
                 _fetchDelay = null;
             }
 
-            if (_fetching || _context.Frame < _fetchAfter || (_table is { } held && held.Rev >= _track.MappingRev))
+            if (_fetching || _context.Frame < _fetchAfter || (_table is { } held && (classic ? _context.Frame - _fetchedAt < ClassicFetchFrames : held.Rev >= _track.MappingRev)))
             {
                 return;
             }
 
             _fetching = true;
+            _fetchedAt = _context.Frame;
             known = _table?.Rev;
         }
 

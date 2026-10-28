@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Filled the story tables that hold no rows yet from the seed files at start
 //      Paulinchen  2026-10-23: Kept the story mapping, answered its admin routes and handed it to games
 //                            - Asked the battle server for the derived story index after every change of rows and at start
 //                            - Played each Raid World's story on tracks with the games that name tracks, over their world room
@@ -93,6 +94,7 @@ import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, pinOf, seale
 import { STORY_TABLES } from "../core/story_catchup.js";
 import { BATTLE_SERVER_AUTHOR, MAPPING_ADMIN_ROUTE, MAPPING_GAME_ROUTE, MAPPING_REFUSAL, StoryMapping, handleMappingGameRequest } from "../core/story_mapping.js";
 import { StoryTracks, TRACKS_FEATURE, TRACK_FRAME } from "../core/story_tracks.js";
+import { seedStoryTables } from "./story_seed.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
   AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, LIMITS, OUT, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, admit, chatLineOf, chatText, newPeer, newWorldPeer,
@@ -2191,6 +2193,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const release = await new ReleaseControl(stores.releases, { envMin: process.env.MIN_VERSION, repo: process.env.RELEASE_REPO || RELEASE_REPO }).load();
   const battleServer = battleServerOf(process.env[BATTLE_SERVER_VARIABLE]);
   const mapping = new StoryMapping(stores.mapping, { tables: STORY_TABLES });
+  await seedStoryTables(mapping, stamped(consoleLog));
   const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports, minVersion: process.env.MIN_VERSION, release, releases, battleServer, mapping, tracks: stores.tracks });
 
   relay.server.listen(port, host, () => console.log(`${new Date().toISOString()} relay listening on ${host}:${port}, ${database ? `database ${database}` : "everything in memory"}, ${battleServer ? `battle server ${battleServer.host}:${battleServer.port}` : "no battle server"}, ${offline} world(s) with players online marked empty`));

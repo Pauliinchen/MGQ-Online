@@ -2,7 +2,10 @@
 #  rules_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Read the seed rows of the relay's story tables, from which the catch-up's tests build their tables
+#                            - Answered the rewards a party member catches up with from the test's stand-in of coop_story_rewards.rbx
 #      Paulinchen  2026-10-23: Dropped the stand-in of the directory's tickets, which no script asks for any more
+#                            - Kept the test's one stand-in bridge in $world_bridge
 #                            - Stood in for the frozen fights' write journal, checked against its golden cases
 #                            - Answered the world screen's steps into a world with the steps a test sets
 #                            - Answered the world screen's model
@@ -40,6 +43,7 @@ require "json"
 require "zlib"
 require_relative "bridge_support"
 require_relative "form_support"
+require_relative "../../fixtures/catchup/relay_rows"
 
 # Folder of the golden cases.
 RULE_FIXTURES = File.expand_path("../../fixtures", __dir__)
@@ -51,6 +55,17 @@ RULE_FIXTURES = File.expand_path("../../fixtures", __dir__)
 # @return [Hash] Its content.
 def rule_cases(area, name)
   JSON.parse(File.read(File.join(RULE_FIXTURES, area, name), :encoding => "UTF-8"))
+end
+
+# Folder of the relay's seed rows of its story tables.
+STORY_SEEDS = File.expand_path("../../Relay/seed/story", __dir__)
+
+# Reads the rows of a seed file of the relay's story tables.
+#
+# @param table [String] The table, such as "rules".
+# @return [Array<Hash>] Its rows.
+def seed_rows(table)
+  JSON.parse(File.read(File.join(STORY_SEEDS, "#{table}.json"), :encoding => "UTF-8"))["rows"]
 end
 
 # Answers the catch-up experience's topics from fixtures/catchup/exp.json.
@@ -574,6 +589,24 @@ JOURNAL_CASES.each do |entry|
   raise "the stand-in of the journal differs from fixtures/freeze/journal.json: #{entry['name']}" unless journal.since(entry["mark"]) == { "rows" => entry["rows"], "overflow" => false }
 end
 
+# Answers the rewards a party member catches up with from the test's stand-in of the constants of
+# coop_story_rewards.rbx (MGQ_MpCoopStoryRewards), empty without one, as PartyRewards in the DLL
+# writes the tables that replace them (held against fixtures/catchup/party_rewards.json by
+# MGQOnline.Game.Tests); and a Classic world's fetch of the story mapping, which answers nothing.
+#
+# @param fake [FakeBridge] The bridge.
+def answer_party_rewards(fake)
+  fake.answer("story.rewards") { |_known| CatchupRelayRows.party_rewards(defined?(MGQ_MpCoopStoryRewards) ? MGQ_MpCoopStoryRewards : nil).merge("rev" => 1) }
+  fake.answer("story.mapping") { |_world| nil }
+end
+
+# Has the scripts read the rewards a party member catches up with anew, as after a test put its
+# stand-in of their table in place.
+def rewards_changed
+  MGQ_MpStoryState.instance_variable_set(:@rewards, nil)
+  MGQ_MpStoryState.instance_variable_set(:@rewards_at, nil)
+end
+
 # Answers the frozen fights' write journal with a stand-in of its own.
 #
 # @param fake [FakeBridge] The bridge.
@@ -792,6 +825,7 @@ def open_rules_bridge
   answer_scene(fake)
   answer_pages(fake)
   answer_journal(fake)
+  answer_party_rewards(fake)
   MGQ_Multiplayer::Bridge.open(fake)
   fake
 end

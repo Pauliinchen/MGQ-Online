@@ -4,6 +4,7 @@
 #  Changelog:
 #      Paulinchen  2026-10-28: Left the player's telling to the DLL's telling machine
 #                            - Let the DLL name whose ended telling the player's story events wait for
+#                            - Checked that a Classic world has the DLL fetch the story mapping
 #                            - Checked that the relay's values are written outside the frozen fights' write journal
 #                            - Checked that the world's close sends the frame's writes first
 #      Paulinchen  2026-10-24: Checked that an unlock the player holds stays on when the relay hands it off
@@ -743,3 +744,13 @@ frames(1)
 check("closing the world sends the frame's writes first, then tells the DLL and forgets the mapping",
       [$story_staged.map { |topic, _| topic }, staged("story.writes").last, keys.raid_table, keys.recording],
       [["story.writes", "story.close"], [["v1001", "n42", "game"]], nil, nil])
+
+# A Classic world has the DLL fetch the story mapping, for the rewards a party member catches up
+# with, and no longer once it closed.
+fetches = []
+fake.answer("story.mapping") { |world| fetches << world; nil }
+MGQ_MpWorld.world = MGQ_MpWorld::World.new("c1")
+frames(1)
+MGQ_MpWorld.world = nil
+frames(1)
+check("a Classic world has the DLL fetch the story mapping, and no longer once it closed", fetches, ["c1", nil])

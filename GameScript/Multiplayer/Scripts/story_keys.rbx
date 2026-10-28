@@ -2,6 +2,7 @@
 #  story_keys.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Built a Classic party's table anew once the chest flags came with the story mapping
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
@@ -163,14 +164,17 @@ module MGQ_MpStoryKeys
     log("recorded #{kept.size} of the #{unsorted.size} writes made before the story mapping came") unless unsorted.empty?
   end
 
-  # A Classic party's table, built by the DLL the first time from the game's database.
+  # A Classic party's table, built by the DLL from the game's database and the chest flags that
+  # came with the story mapping (MGQ_MpStoryState.rewards), again once other ones came.
   #
   # @return [Table, nil] The table, nil while the DLL builds none.
   def self.classic_table
-    return @classic if @classic
+    return @classic if @classic && @classic_serial == MGQ_MpStoryState.rewards_serial
 
+    flags = MGQ_MpStoryState.chest_flags
+    @classic_serial = MGQ_MpStoryState.rewards_serial
     hash = MGQ_Multiplayer::Bridge.call(CLASSIC_TOPIC, "switches" => $data_system.switches.size, "variables" => $data_system.variables.size,
-                                                       "companions" => $data_actors ? $data_actors.size : 1000, "chest_flags" => MGQ_MpStoryState.chest_flags)
+                                                       "companions" => $data_actors ? $data_actors.size : 1000, "chest_flags" => flags)
     @classic = hash ? table_of(hash) : nil
   rescue => e
     log_once(:classic_table, "building the Classic party's table failed: #{e.class}: #{e.message}")

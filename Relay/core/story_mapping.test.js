@@ -2,6 +2,7 @@
 //  story_mapping.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Covered the seeding of the tables that hold no rows yet
 //      Paulinchen  2026-10-23: Covered the keys the whole world keeps
 //                            - Covered the derived index's common events and the game's names kept with it
 //                            - Created
@@ -11,7 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { playerIdOf } from "./directory.js";
-import { BATTLE_SERVER_AUTHOR, MAPPING_LIMITS, MAPPING_REFUSAL, StoryMapping, handleMappingAdminRequest, handleMappingGameRequest } from "./story_mapping.js";
+import { BATTLE_SERVER_AUTHOR, MAPPING_LIMITS, MAPPING_REFUSAL, SEED_AUTHOR, StoryMapping, handleMappingAdminRequest, handleMappingGameRequest } from "./story_mapping.js";
 
 /**
  * The admin's player key.
@@ -222,4 +223,29 @@ test("the battle server's index keeps its common events and the game's names, wh
 
   await ask("POST", "/edit", { edits: [add("keys", { key: "v1141", kind: "one_way" })] });
   assert.equal((await ask("GET", "/names")).body.names.stale, true);
+});
+
+test("seeds fill only the tables that hold no rows, in one revision without history and only once, and a seed row that does not read stops the seeding", async () => {
+  const { mapping, ask } = makeMapping();
+  await ask("POST", "/edit", { edits: [add("events", { key: "ss0.*.F", share: "shared" })] });
+
+  const seeded = await mapping.seed({ keys: [{ key: "v1001", kind: "one_way" }, { key: "s2029", kind: "scene" }], events: [{ key: "ce154.*", share: "shared" }] });
+  assert.deepEqual(seeded, { rev: 2, seeded: { keys: 2 } });
+
+  const read = (await handleMappingGameRequest(mapping, "GET", new URL("https://relay/v1/story-mapping"))).body;
+  assert.deepEqual([read.rev, read.tables.keys.map((row) => row.key), read.tables.events.map((row) => row.key)], [2, ["s2029", "v1001"], ["ss0.*.F"]]);
+  assert.deepEqual((await ask("GET", "/keys")).body.rows.map((row) => [row.author, row.rev]), [[SEED_AUTHOR, 2], [SEED_AUTHOR, 2]]);
+  assert.deepEqual((await ask("GET", "/keys/v1001/history")).body.history, []);
+  assert.deepEqual(await mapping.seed({ keys: [{ key: "v1141", kind: "one_way" }], events: [] }), { rev: 2, seeded: {} }, "a table with rows is left as it is");
+
+  await ask("POST", "/edit", { edits: [{ table: "keys", op: "remove", id: "v1001" }, { table: "keys", op: "remove", id: "s2029" }] });
+  await ask("POST", "/edit", { edits: [{ table: "events", op: "remove", id: "ss0.*.F" }] });
+  assert.deepEqual(await mapping.seed({ keys: [{ key: "v1141", kind: "one_way" }], events: [{ key: "ce154.*", share: "shared" }] }), { rev: 4, seeded: {} },
+    "a table the seeding filled or found with rows stays empty once the admins emptied it");
+
+  await assert.rejects(mapping.seed({ parts: [{ id: "1" }] }), /seed of parts must be a list of rows of a table/);
+  const { mapping: empty } = makeMapping();
+  await assert.rejects(empty.seed({ keys: [{ key: "v1001", kind: "later" }] }), /seed row 0 of keys: kind must be/);
+  await assert.rejects(empty.seed({ keys: [{ key: "v1001", kind: "shared" }, { key: "v1001", kind: "one_way" }] }), /seed rows of keys name v1001 twice/);
+  assert.equal((await empty.meta()).rev, 0, "a refused seeding changes nothing");
 });

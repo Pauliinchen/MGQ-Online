@@ -2,6 +2,7 @@
 //  StoryMapping.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Read the catch-up tables with the mapping
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -9,6 +10,8 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using MGQOnline.Game.Catchup;
+using static MGQOnline.Game.Story.JsonFields;
 
 namespace MGQOnline.Game.Story;
 
@@ -104,29 +107,7 @@ public static class StoryMapping
             }
         }
 
-        return new StoryTable(rev, [.. switches], [.. variables], selfRules, index, localSteps, gates);
-    }
-
-    /// <summary>
-    /// Lists the rows of a table of the mapping.
-    /// </summary>
-    /// <param name="tables">The tables.</param>
-    /// <param name="name">The table.</param>
-    /// <returns>Its rows, none when it is missing.</returns>
-    private static IEnumerable<JsonElement> RowsOf(JsonElement tables, string name)
-    {
-        if (tables.ValueKind != JsonValueKind.Object || !tables.TryGetProperty(name, out JsonElement rows) || rows.ValueKind != JsonValueKind.Array)
-        {
-            yield break;
-        }
-
-        foreach (JsonElement row in rows.EnumerateArray())
-        {
-            if (row.ValueKind == JsonValueKind.Object)
-            {
-                yield return row;
-            }
-        }
+        return new StoryTable(rev, [.. switches], [.. variables], selfRules, index, localSteps, gates, catchup: CatchupTables.Read(tables));
     }
 
     /// <summary>
@@ -181,33 +162,4 @@ public static class StoryMapping
 
         list[id] = (byte)kind;
     }
-
-    /// <summary>
-    /// Reads a field of a row as text.
-    /// </summary>
-    /// <param name="row">The row.</param>
-    /// <param name="name">The field.</param>
-    /// <returns>The text, empty for a field missing or of another kind.</returns>
-    private static string Text(JsonElement row, string name) =>
-        row.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : string.Empty;
-
-    /// <summary>
-    /// Reads a whole number that fits an id, gate or step.
-    /// </summary>
-    /// <param name="value">The value.</param>
-    /// <param name="number">Receives the number.</param>
-    /// <returns>Whether the value is such a number.</returns>
-    private static bool Whole(JsonElement value, out long number)
-    {
-        number = 0;
-        return value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out number) && number is >= int.MinValue and <= int.MaxValue;
-    }
-
-    /// <summary>
-    /// Reads a field of a row that is on when it is <see langword="true"/>.
-    /// </summary>
-    /// <param name="row">The row.</param>
-    /// <param name="name">The field.</param>
-    /// <returns>Whether it is on.</returns>
-    private static bool On(JsonElement row, string name) => row.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.True;
 }

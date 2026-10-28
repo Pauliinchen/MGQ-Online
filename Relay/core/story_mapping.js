@@ -2,6 +2,7 @@
 //  story_mapping.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Filled each table that holds no rows from seed rows, once
 //      Paulinchen  2026-10-23: Let shared and one-way keys be the whole world's, players behind included
 //                            - Kept the common events and the game's names with the derived index, which the battle server sends
 //                            - Created
@@ -62,6 +63,11 @@ export const MAPPING_REFUSAL = Object.freeze({
  * Who the derived index names as its author when the battle server built it.
  */
 export const BATTLE_SERVER_AUTHOR = "battle server";
+
+/**
+ * Who a row names as its author when a seed file put it there, see StoryMapping.seed.
+ */
+export const SEED_AUTHOR = "seed";
 
 /**
  * The route's name after `/v1/admin`.
@@ -574,7 +580,7 @@ function refusal(status, error, code, edit) {
  * author, time}`.
  *
  * @typedef {object} StoryMappingStore
- * @property {() => Promise<{rev: number, rowsRev: number, next: Object<string, number>} | undefined>} getMeta Reads the revision, undefined before the first change.
+ * @property {() => Promise<{rev: number, rowsRev: number, next: Object<string, number>, seeded?: Object<string, number>} | undefined>} getMeta Reads the revision, undefined before the first change.
  * @property {(table: string) => Promise<object[]>} all Reads every entry of a store's table.
  * @property {(table: string, id: string) => Promise<object | undefined>} get Reads one entry.
  * @property {(table: string, id: string) => Promise<object[]>} history Reads a row's changes, newest first.
@@ -608,9 +614,9 @@ export class StoryMapping {
   }
 
   /**
-   * Reads the revision.
+   * Reads the revision, with the tables the seeding is done with (see seed).
    *
-   * @returns {Promise<{rev: number, rowsRev: number, next: Object<string, number>}>} The revision, 0 before the first change.
+   * @returns {Promise<{rev: number, rowsRev: number, next: Object<string, number>, seeded?: Object<string, number>}>} The revision, 0 before the first change.
    */
   async meta() {
     return (await this.store.getMeta()) ?? { rev: 0, rowsRev: 0, next: {} };
@@ -752,7 +758,7 @@ export class StoryMapping {
         return { status: 200, body: { rev: meta.rev, changed } };
       }
 
-      await this.store.commit({ meta: { rev, rowsRev: rev, next }, ...commit }, this.limits.history);
+      await this.store.commit({ meta: { ...meta, rev, rowsRev: rev, next }, ...commit }, this.limits.history);
       this.gameView = null;
       return { status: 200, body: { rev, changed }, audit: `admin ${admin} changed the story mapping to rev ${rev}: ${changesText(changed)}` };
     });
@@ -896,6 +902,80 @@ export class StoryMapping {
       const view = { built: index.built, stale: false, events: events.length, commons: commons.length, author: by, time: index.time };
       const who = by === BATTLE_SERVER_AUTHOR ? "the battle server" : `admin ${by}`;
       return { status: 200, body: { rev, index: view }, audit: `${who} kept the story index of rows rev ${index.built} with ${events.length} events and ${commons.length} common events${names ? " and the game's names" : ""}, rev ${rev}` };
+    });
+  }
+
+  /**
+   * Fills the tables that hold no rows yet with seed rows, all in one revision, as the relay's
+   * start fills the catch-up's tables from its seed files (Relay/seed/story). The rows keep no
+   * history, as nothing was there before them. A table the seeding filled or found with rows is
+   * named in the meta's `seeded` and never seeded again, so a table the admins emptied stays empty.
+   *
+   * @param {Object<string, object[]>} seeds The rows by table, as an admin would add them.
+   * @param {string} [by] Who the rows name as their author, SEED_AUTHOR unless given.
+   * @returns {Promise<{rev: number, seeded: Object<string, number>}>} The revision and how many rows each table took; the revision as it was when none did.
+   * @throws {Error} A table is unknown or a row does not read, since the seeds are the relay's own files.
+   */
+  async seed(seeds, by = SEED_AUTHOR) {
+    return this.exclusive(async () => {
+      const meta = await this.meta();
+      const next = { ...meta.next };
+      const rev = meta.rev + 1;
+      const time = this.clock();
+      const puts = [];
+      const seeded = {};
+      const done = { ...meta.seeded };
+
+      for (const [name, rows] of Object.entries(seeds)) {
+        const spec = this.tableOf(name);
+
+        if (!spec || !Array.isArray(rows)) {
+          throw new Error(`the seed of ${name} must be a list of rows of a table: the tables are ${Object.keys(this.tables).join(", ")}`);
+        }
+
+        if (rows.length === 0 || done[name] !== undefined) {
+          continue;
+        }
+
+        if ((await this.store.all(spec.store)).length > 0) {
+          done[name] = meta.rev;
+          continue;
+        }
+
+        const ids = new Set();
+
+        for (const [index, raw] of rows.entries()) {
+          const read = readRow(spec, raw);
+
+          if (read.error) {
+            throw new Error(`seed row ${index} of ${name}: ${read.error}`);
+          }
+
+          const id = spec.key ? spec.key(read.row) : String((next[name] = (next[name] ?? 0) + 1));
+
+          if (ids.has(id)) {
+            throw new Error(`the seed rows of ${name} name ${id} twice`);
+          }
+
+          ids.add(id);
+          puts.push({ table: spec.store, entry: { id, row: read.row, note: "", author: by, time, rev } });
+        }
+
+        seeded[name] = rows.length;
+        done[name] = rev;
+      }
+
+      if (puts.length === 0) {
+        if (Object.keys(done).length > Object.keys(meta.seeded ?? {}).length) {
+          await this.store.commit({ meta: { ...meta, seeded: done }, puts: [], removes: [], changes: [] }, this.limits.history);
+        }
+
+        return { rev: meta.rev, seeded };
+      }
+
+      await this.store.commit({ meta: { ...meta, rev, rowsRev: rev, next, seeded: done }, puts, removes: [], changes: [] }, this.limits.history);
+      this.gameView = null;
+      return { rev, seeded };
     });
   }
 

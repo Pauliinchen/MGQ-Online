@@ -2,6 +2,7 @@
 //  RubyHash.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Removed a key, as Hash#delete does
 //      Paulinchen  2026-10-23: Took Integer keys as plain
 //                            - Created
 //
@@ -127,6 +128,28 @@ public sealed class RubyHash : RubyValue, IEnumerable<KeyValuePair<RubyValue, Ru
 
         value = null;
         return false;
+    }
+
+    /// <summary>
+    /// Removes a key and its value; the pairs after it keep their order, as Hash#delete leaves them.
+    /// </summary>
+    /// <param name="key">The key.</param>
+    /// <returns>Whether the hash had the key.</returns>
+    public bool Remove(RubyValue key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        if (!_places.Remove(key, out int place))
+        {
+            return false;
+        }
+
+        _pairs.RemoveAt(place);
+        for (int index = place; index < _pairs.Count; index++)
+        {
+            _places[_pairs[index].Key] = index;
+        }
+
+        return true;
     }
 
     /// <summary>

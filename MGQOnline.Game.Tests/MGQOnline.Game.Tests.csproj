@@ -50,4 +50,11 @@
     <None Include="..\fixtures\freeze\*.json" LinkBase="fixtures\freeze" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- The seed rows of the relay's story tables and the game scripts' generated tables, which the
+       catch-up tables are read from. -->
+  <ItemGroup>
+    <None Include="..\Relay\seed\story\*.json" LinkBase="fixtures\seed" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\catchup\generated\*.json" LinkBase="fixtures\catchup\generated" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

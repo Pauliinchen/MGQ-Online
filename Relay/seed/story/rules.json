@@ -1,0 +1,11 @@
+{
+  "source": "Relay/seed/story/make_seed.rb",
+  "rows": [
+    {"rule":"lasting_companions","value":[5,26,29,30]},
+    {"rule":"orbs","value":[537,538,540,541,542]},
+    {"rule":"orb_event","value":330},
+    {"rule":"orbs_gathered","value":32},
+    {"rule":"side_step","value":7},
+    {"rule":"side_companions","value":{"alice":5,"ilias":26}}
+  ]
+}

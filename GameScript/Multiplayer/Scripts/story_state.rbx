@@ -2,6 +2,7 @@
 #  story_state.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Read the rewards a party member catches up with, every chest and the chest flags from the catch-up tables the DLL holds
 #      Paulinchen  2026-10-24: Shared the second accessory slot (445) as a Raid World's story
 #                            - Gave the characters the second accessory slot once a story written past the game turned it on
 #                            - Listed the bans of the place a player stands in
@@ -92,6 +93,85 @@ module MGQ_MpStoryState
 
   # What starts this script's lines in the log, the same as coop_story.rbx's.
   LOG_TAG = "co-op story"
+
+  # The topic that hands the rewards a party member catches up with, see PartyRewards in the DLL.
+  REWARDS_TOPIC = "story.rewards"
+
+  # Frames between two looks whether the DLL holds newer rewards, five seconds.
+  REWARDS_FRAMES = 300
+
+  # Frames between two asks for the rewards while none came, half a second, so the callers that ask
+  # every frame do not call the DLL every frame when the relay never sends them.
+  MISSING_FRAMES = 30
+
+  # The rewards of the game's events a party member of a Classic world catches up with
+  # (coop_story.rbx), every chest and the chest flags, as the catch-up tables the relay keeps beside
+  # the story mapping hold them, in the shapes the constants of coop_story_rewards.rbx had.
+  class Rewards
+    # @return [Integer] The story mapping's revision they came with.
+    attr_reader :rev
+
+    # @return [Array<Integer>] The skills Luka learns in events.
+    attr_reader :skills
+
+    # @return [Array<Integer>] The companions who join in events.
+    attr_reader :actors
+
+    # @return [Hash{String => Integer}] How many of each item the events that move the story on give
+    #   at most, by its letter and id.
+    attr_reader :items
+
+    # @return [Hash{Symbol => Array<Integer>}] The skills and companions only the events where the
+    #   sides differ give before the Great Decision (:skills, :actors).
+    attr_reader :sided
+
+    # @return [Hash{Symbol => Array<Integer>}] Those of sided the Final Chapter's events give too.
+    attr_reader :route
+
+    # @return [Hash{Symbol => Array}] The skills, companions and story items only the Final Chapter's
+    #   events give, along one route (:skills, :actors, :items).
+    attr_reader :final
+
+    # @return [Array<Hash>] The events that give each side other skills or companions: :alice and
+    #   :ilias (each {:skills, :actors}), :choice and :marks (one list per page, each [:s, switch],
+    #   [:v, variable, at least] or [:ss, map, event, letter]).
+    attr_reader :groups
+
+    # @return [Array<Array>] The self switch of every chest: map, event and letter.
+    attr_reader :chests
+
+    # @return [Array<Integer>] The switches only chests turn on.
+    attr_reader :chest_flags
+
+    # Reads the rewards the DLL handed.
+    #
+    # @param answer [Hash] The answer of REWARDS_TOPIC.
+    def initialize(answer)
+      @rev = answer["rev"]
+      @skills = answer["skills"]
+      @actors = answer["actors"]
+      @items = answer["items"]
+      @sided = kinds(answer["sided"])
+      @route = kinds(answer["route"])
+      @final = kinds(answer["final"])
+      @groups = answer["groups"].map do |group|
+        { :alice => kinds(group["alice"]), :ilias => kinds(group["ilias"]), :choice => group["choice"] ? true : false,
+          :marks => group["marks"].map { |page| page.map { |mark| [mark[0].to_sym] + mark[1..-1] } } }
+      end
+      @chests = answer["chests"]
+      @chest_flags = answer["chest_flags"]
+    end
+
+    # Names the lists of a Hash by Symbols, as the constants did.
+    #
+    # @param lists [Hash{String => Array}] The lists.
+    # @return [Hash{Symbol => Array}] The same lists.
+    def kinds(lists)
+      named = {}
+      lists.each { |kind, list| named[kind.to_sym] = list }
+      named
+    end
+  end
 
   # Reads the story as the game keeps it, past the game's own handling of single switches and
   # variables.
@@ -196,11 +276,42 @@ module MGQ_MpStoryState
     chest_flags.include?(id)
   end
 
-  # Lists the chest flags, see MGQ_MpCoopStoryRewards::CHEST_FLAGS.
+  # Lists the chest flags, see Rewards.
   #
-  # @return [Array<Integer>] The switches.
+  # @return [Array<Integer>] The switches; none before the story mapping came.
   def self.chest_flags
-    defined?(MGQ_MpCoopStoryRewards::CHEST_FLAGS) ? MGQ_MpCoopStoryRewards::CHEST_FLAGS : []
+    found = rewards
+    found ? found.chest_flags : []
+  end
+
+  # The rewards a party member catches up with, every chest and the chest flags, from the DLL: asked
+  # every MISSING_FRAMES until they came, then every REWARDS_FRAMES whether newer ones came.
+  #
+  # @return [Rewards, nil] The rewards; nil before the story mapping came.
+  def self.rewards
+    now = Graphics.frame_count
+    # A loaded save moves the frame count back.
+    return @rewards if @rewards_at && now >= @rewards_at && now - @rewards_at < (@rewards ? REWARDS_FRAMES : MISSING_FRAMES)
+
+    @rewards_at = now
+    answer = MGQ_Multiplayer::Bridge.call(REWARDS_TOPIC, @rewards ? @rewards.rev : nil)
+    return @rewards unless answer.is_a?(Hash)
+
+    @rewards = Rewards.new(answer)
+    @rewards_serial = rewards_serial + 1
+    log("read the rewards a party member catches up with at revision #{@rewards.rev}: #{@rewards.skills.size} skill(s), #{@rewards.actors.size} companion(s), " \
+        "#{@rewards.items.size} item(s), #{@rewards.groups.size} side event(s), #{@rewards.chests.size} chest(s)")
+    @rewards
+  rescue => e
+    log_once(:rewards, "reading the rewards a party member catches up with failed: #{e.class}: #{e.message}")
+    @rewards
+  end
+
+  # Counts how often other rewards came, which a table built from them compares to know it is old.
+  #
+  # @return [Integer] The count, 0 before the first.
+  def self.rewards_serial
+    @rewards_serial.to_i
   end
 
   # Reports whether a switch only stays on while a scene runs, such as "White Rabbit Emerged" (2029),
@@ -273,11 +384,12 @@ module MGQ_MpStoryState
     $game_map ? MGQ_MpCoopEvents.chest_keys : []
   end
 
-  # Lists the self switches of every chest in the game, see MGQ_MpCoopStoryRewards::CHESTS.
+  # Lists the self switches of every chest in the game, see Rewards.
   #
-  # @return [Array<Array>] Their keys: map, event and letter.
+  # @return [Array<Array>] Their keys: map, event and letter; none before the story mapping came.
   def self.all_chest_keys
-    defined?(MGQ_MpCoopStoryRewards) ? MGQ_MpCoopStoryRewards::CHESTS : []
+    found = rewards
+    found ? found.chests : []
   end
 
   # Reports whether the sides still get other rewards in a story: before the Great Decision, while

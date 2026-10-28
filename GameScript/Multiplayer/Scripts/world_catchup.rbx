@@ -2,6 +2,9 @@
 #  world_catchup.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Handed the DLL a snapshot of the story, party and items and carried out the catch-up it decides
+#                            - Read the rules, counts and companion values of the catch-up from the story mapping the DLL holds
+#                            - Kept the tables built from the rows until the rules come anew
 #      Paulinchen  2026-10-24: Gave every player the prizes another player claimed, as the Reaper's Battle Challenge's
 #                            - Lifted a warp ban left on where warping is free at every check
 #                            - Counted Alice's Power-up from the switches of its steps
@@ -62,7 +65,10 @@
 #
 #----------------------------------------------------------------
 
-# A Raid World's catch-up, on the story of world_story.rbx and the tables of world_catchup_data.rbx.
+# A Raid World's catch-up, on the story of world_story.rbx. What the story owes a player is decided
+# in the DLL (CatchupEngine of MGQOnline.Game, topics catchup.*) over the catch-up's tables the relay
+# keeps beside the story mapping; this script hands it a snapshot of the player's story, party and
+# items, and carries out the actions it answers with the game's own grants.
 #
 # A player whose story is in an earlier part than the world's is behind (MGQ_MpWorldStory.mode
 # :behind): the relay puts them on a track of their own at the checkpoint of their part, the world
@@ -71,59 +77,37 @@
 # the relay moves them straight into the next part: its checkpoint while the world is past it, else
 # the world's own story. A player whom another mod caps below the gate is moved on once at that cap.
 #
-# What the story gives goes by its place in the story, never by what another player holds. A
-# row of the tables counts once the player's story is past it (passed?), and once per save, which
-# keeps what it did in its notes (ledger). A row the player's own game played gives nothing here,
-# since the game gave it; a row a story laid over theirs carried them past gives its skills and
-# items, takes the companions a first playthrough loses for good, and lets its companions join,
-# as long as its marks tell that its event ran: one only there to play stays the player's own.
-# The world's key items and the chests that hold them are the whole world's: once the world's story
-# is past one, every player gets it, whatever their part, and a key item whose event is only there
-# to play up to its amount. A player who then holds every orb of Part 2 plays the event that moves
-# the story on, which only an orb's own event calls. Every item unlocking a job or a race that any
-# player of the world got comes to every other player. Every Makina comes once the player's level
-# reaches the area level of its easiest place, one of each.
-#
-# Companions, Makina and the story's skills and items go by the player's real level alone: a cap
-# of another mod lets the player move on in the story, and what that move carries them past waits
-# in the save until their real level reaches the gate. A player behind learns no skill of the
-# world's story past their part's checkpoint before moving on. Every look while the player is free
-# hands out what their level reached, so entering the world or loading a save brings everything
-# pending at once.
-#
-# A companion joins once the player's story is past the join and their highest base level reaches
-# the join's gate, and comes at least at that level unless it is a first join at the companion's
-# start level. A story event that would hand a companion out before then waits for the gate
-# instead. With the world's companion sharing on, every companion a player of the world got joins
-# the others on reaching its gate: the story's companions, and with battle recruits shared too
-# every companion, at its start level. A companion in the roster whom a join brings in another of
-# their personas, as Ilias's power-up does, takes that persona at the gate.
-#
-# What a story laid over the player's carried them past changes of the characters by the game's
-# script calls, as Alice's, Ilias's and Black Alice's power-ups (DATA::ACTOR_CHANGES), runs in their
-# game once their level reaches the highest level the step sets: the same calls, a first
-# playthrough's alone on a first playthrough, none the character shows already.
+# What the story gives goes by its place in the story, never by what another player holds, once per
+# save, which keeps the notes the DLL writes (ledger): the story's skills and items, its companions
+# at their gates, the world's key items and chests, the skills, classes and races the story teaches
+# the roster, what its power-ups change of the characters, the player's own values it sets, the
+# vehicles it gave, Makina by level and the items unlocking a job or a race that any player found.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorldCatchup
-  # The tables this catch-up follows.
-  DATA = MGQ_MpWorldCatchupData
+  # The topic that lists what the snapshot reads, see CatchupTopics in the DLL.
+  KEYS_TOPIC = "catchup.keys"
+
+  # The topic of one look at the player's story.
+  CHECK_TOPIC = "catchup.check"
+
+  # The topic of a note of the world's story for the save's notes.
+  NOTE_TOPIC = "catchup.note"
+
+  # The topic that tells whether a companion the player's own event hands out waits for its gate.
+  HOLD_TOPIC = "catchup.hold_join"
+
+  # The topic of what the catch-up hands out by level, for the World overview.
+  UNLOCKS_TOPIC = "catchup.unlocks"
 
   # The event command that turns random encounters off (its parameter 0) or on.
   ENCOUNTER_CODE = 136
 
-  # The switch that bans warping, as Harpy Feathers do, each player's own.
-  WARP_BAN = defined?(NWConst::Sw::WARP_BAN) ? NWConst::Sw::WARP_BAN : 100
-
-  # The game's vehicles by the number its events and DATA::VEHICLES name them.
+  # The game's vehicles by the number the DLL's answers name them.
   VEHICLE_TYPES = [:boat, :ship, :airship]
 
   # Frames between two looks at the player's story, half a second.
   CHECK_FRAMES = 30
-
-  # Looks between two looks at the skills, classes and races the story gave the roster's
-  # characters (check_growth), five seconds, as the tables hold thousands of rows.
-  GROWTH_CHECKS = 10
 
   # Frames between two reads of the DLL's state while an addition of shared companions runs, a
   # quarter of a second.
@@ -148,58 +132,8 @@ module MGQ_MpWorldCatchup
   # Luka, who never joins nor leaves.
   HERO = 1
 
-  # The companions none of whose joins is temporary, however the story takes them away again (see
-  # temporary?): Alice, and Ilias with her later selves, who travel with Luka.
-  LASTING_COMPANIONS = [5, 26, 29, 30]
-
-  # The variable that counts the playthroughs, at 0 on the first, which alone loses companions for
-  # good.
+  # The variable that counts the playthroughs, at 0 on the first.
   PLAYTHROUGH = 912
-
-  # Part 2's orbs the game keeps as items, all of which ORB_EVENT asks for before it moves the story
-  # on.
-  ORBS = [537, 538, 540, 541, 542]
-
-  # The common event that moves the story on to the Holy Wings Shrine once the player holds every
-  # orb, which each orb's event calls only for the player who plays it.
-  ORB_EVENT = 330
-
-  # The main story's progress ORB_EVENT sets.
-  ORBS_GATHERED = 32
-
-  # A variable that counts switches: what each switch adds, the switch that sets its last value
-  # with that value, and the variable at a value or more before it counts at all; nil for none.
-  Count = Struct.new(:weights, :done_switch, :done_value, :since)
-
-  # Variables that count switches, by variable: the Randolphs found (1354), one switch each, and
-  # Alice's Power-up (1353): the Alipheese 3rd to 14th (3204 to 3213, the 11th and 12th together
-  # in 3211), the Lilith sisters (7140) and the Tower of Light and Darkness (7040), 15 once Dark
-  # God's Castle 4F ends it (7034), counted from Saja on (1312 at 3), who sets it to 0 first.
-  #
-  # The game adds to the variable as it turns a switch on, so two players doing a step each before
-  # either story reached the other kept one addition alone. The Final Chapter's reset clears the
-  # variable but not 7034, 7040 and 7140, hence the start at Saja.
-  COUNTS = {
-    1354 => Count.new(Hash[(3101..3180).map { |id| [id, 1] }], nil, nil, nil),
-    1353 => Count.new({ 3204 => 1, 3205 => 1, 3206 => 1, 3207 => 1, 3208 => 1, 3209 => 1, 3210 => 1, 3211 => 2, 3212 => 1, 3213 => 1, 7140 => 1, 7040 => 1 },
-                      7034, 15, [1312, 3]),
-  }
-
-  # Where each part stands in the story's order; the routes stand side by side.
-  RANKS = { "1" => 0, "2" => 1, "3" => 2, "ad" => 3, "mr" => 3, "chaos" => 3 }
-
-  # The parts before the Great Decision, whose sides the player chose themselves.
-  SIDED_PARTS = %w(1 2 3)
-
-  # What the notes keep for a companion the world shares once it joined or never will.
-  #
-  # A value of its own rather than true, so a note of true that another build wrote is looked at
-  # again.
-  SHARE_SETTLED = "settled"
-
-  # The rule of a join whose gate is the companion's start level, which a companion new to the
-  # player has anyway.
-  START_RULE = :start
 
   # The kinds of what the catch-up hands out by level, in the order the World overview lists them
   # within a level.
@@ -228,17 +162,14 @@ module MGQ_MpWorldCatchup
   # @!attribute icon [Integer] Its icon.
   Gain = Struct.new(:kind, :id, :item_kind, :amount, :name, :icon)
 
+  # The order the gains of a move on are listed in.
+  GAIN_ORDER = [:key, :unlock, :skill, :item]
+
   # The tag at the start of an item's description that tells it unlocks a job or a race, in the
   # translation and the untranslated game.
   UNLOCK_ITEM_TAG = /\A\s*[\[［](Job|Race|職業|種族)/
 
-  # The story values a companion's own join stands for, by companion: each variable with the least
-  # it holds once they joined. A companion the world shared, or the catch-up brought, comes without
-  # them: Amira joins only once her information network ("Pornof Rabbit Events") reached 2, and her
-  # information in the Pocket Castle stays shut below it.
-  COMPANION_VALUES = { 540 => { 1009 => 2 } }
-
-  # The game's script calls the rows of DATA::ACTOR_CHANGES may name, which alone the catch-up runs.
+  # The game's script calls an actor change of the DLL's answers may name, which alone run.
   ACTOR_CALLS = [:persona_change, :level_adjust, :change_actor_ability, :force_change_equip, :change_actor_equip_stone, :set_actor_had]
 
   # The kinds of worn items force_change_equip names, by its number, as MGQ_MpGame.item names them.
@@ -247,38 +178,72 @@ module MGQ_MpWorldCatchup
   # Whole numbers a call shows at most in the log; the abilities of a power-up run to dozens.
   LOGGED_NUMBERS = 6
 
-  # The field of $game_system the save keeps the notes in, see ledger.
+  # The field of $game_system the save keeps the DLL's notes in, see ledger.
   LEDGER = :@mgq_mp_catchup
+
+  # The map of the self switches [FOUND_MAP, item, FOUND_LETTER] that tell which items unlocking a
+  # job or a race, and which Makina, a player of the world got.
+  #
+  # No map has the id 0, so no event reads them, and they go with the world's story as any other
+  # self switch.
+  FOUND_MAP = 0
+
+  # The letter of the self switches that tell which items a player of the world got, see FOUND_MAP.
+  FOUND_LETTER = "F"
 
   extend MGQ_MpLog
 
   # What starts this script's lines in the log.
   LOG_TAG = "catch-up"
 
-  # Forgets what this session knew of the world: the requests, the world's story and the companions
-  # noted. The notes in the save stay.
+  # Forgets what this session knew of the world: the shared companions, the world's story and the
+  # looks due. The notes in the save stay, and go to the DLL again with the next call.
   def self.forget
     @world_id = nil
     @world_told = nil
     @known_roster = nil
-    @growth_count = 0
-    @growth_roster = nil
+    @growth = nil
     @share_queue = []
     @adding = nil
     @share_at = 0
     @orbs_due = false
+    @orbs_now = false
     @orbs_played = false
     @asking_side = false
     @audit_due = true
     @riding_early = false
     @vehicles_due = false
     @watched = nil
+    @visiting = []
+    @ledger_sent = false
     @clock ||= 0
     @checked = @clock
     @state_read = @clock
   end
 
   forget
+
+  # Lists what a snapshot reads, as the DLL wrote it from the story mapping's catch-up tables, once
+  # per revision of the mapping: "switches", "variables" and "selves" (the keys of the story),
+  # "items" (each "i<id>", "w<id>" or "a<id>"), "makina" (their items), "parts" ([id, name, gate]
+  # each), "side_companions" ({"alice", "ilias"}) and "orb_event".
+  #
+  # @return [Hash, nil] The keys; nil before the story mapping came.
+  def self.keys
+    table = MGQ_MpStoryKeys.raid_table
+    return nil unless table
+    return @keys if @keys && @keys_rev == table.rev
+
+    found = MGQ_Multiplayer::Bridge.call(KEYS_TOPIC)
+    return @keys unless found.is_a?(Hash)
+
+    @keys = found
+    @keys_rev = table.rev
+    @tested = nil
+    log("read what the catch-up reads at revision #{table.rev}: #{found['switches'].size} switch(es), #{found['variables'].size} variable(s), " \
+        "#{found['selves'].size} self switch(es), #{found['items'].size} item(s)")
+    @keys
+  end
 
   # Reports whether the catch-up applies: a Raid World's story is followed, see
   # MGQ_MpWorldStory.active?.
@@ -344,10 +309,9 @@ module MGQ_MpWorldCatchup
   end
 
   # Follows the catch-up for one frame: the relay's answer to shared companions and the orbs' event
-  # that waits, then every CHECK_FRAMES while the player is free the rewards waiting for their gate,
-  # the story's rows, the shared companions, the orbs and the Makina, a warp ban left where warping
-  # is free (lift_warp_ban), and the vehicles after a story written into the player's. Called after
-  # the map's update. Nothing goes on while a lost raid boss battle's defeat runs (see holding?).
+  # that waits, then every CHECK_FRAMES while the player is free one look of the DLL at their story
+  # (see look). Called after the map's update. Nothing goes on while a lost raid boss battle's
+  # defeat runs (see holding?).
   def self.tick
     @clock += 1
     return close unless active?
@@ -360,41 +324,35 @@ module MGQ_MpWorldCatchup
 
     @checked = @clock
     return if MGQ_MpWorldStory.mode.nil?
+    return log_once(:keys, "the catch-up waits for the story mapping") if keys.nil?
 
     carry_watched
     @audit_due = true if got_off_early?
-    looking do
-      if @audit_due
-        audit(story_now)
-      elsif @vehicles_due
-        guarded(:vehicles) { check_vehicles(story_now, played_world_story) }
-      end
-      guarded(:waiting_rewards) { give_waiting_rewards }
-      review(story_now, false)
-      guarded(:side) { ask_side }
-      guarded(:growth) { check_growth }
-      guarded(:roster) { note_roster }
-      guarded(:orbs) { check_orbs }
-      guarded(:makina) { check_makina }
-      guarded(:found_items) { check_found_items }
-      guarded(:counts) { check_counts }
-      guarded(:warp_ban) { lift_warp_ban }
-    end
+    look
     send_shared
   rescue => e
     log_once(:tick, "following the catch-up failed: #{e.class}: #{e.message}")
   end
 
-  # Runs one check of the catch-up and logs it failing once, so a failing check leaves the ones
-  # after it running.
-  #
-  # @param name [Symbol] The check, for the log.
-  # @return [Object, nil] What the check returned, nil when it failed.
-  def self.guarded(name)
-    yield
-  rescue => e
-    log_once([:check, name], "the #{name} check failed: #{e.class}: #{e.message}")
-    nil
+  # Has the DLL look at the player's story once and carries out its answer: everything the story
+  # owes once when an audit is due (on entering, after a load, on a level up), the vehicles after a
+  # story written into the player's, else the rows new since, the rewards waiting for their gate,
+  # the roster's skills, classes and races, the shared companions, the Makina, the found items, the
+  # counts and the warp ban.
+  def self.look
+    note_held_items if @audit_due
+    audit = @audit_due
+    vehicles = !audit && @vehicles_due
+    answer = call(CHECK_TOPIC, snapshot.merge("look" => "tick", "audit" => audit, "vehicles" => vehicles, "growth" => @growth))
+    return unless answer
+
+    @audit_due = false
+    @vehicles_due = false if audit || vehicles
+    @growth = answer["growth"]
+    apply(answer)
+    ask_side(answer["ask_side"])
+    note_roster(Array(answer["sharable"]))
+    note_orbs(answer["orbs"])
   end
 
   # Forgets the world's catch-up once the world closed or is no Raid World.
@@ -421,6 +379,11 @@ module MGQ_MpWorldCatchup
     @world_id = id
   end
 
+  # Has the save's notes go to the DLL again with its next call, as after a load.
+  def self.hand_ledger
+    @ledger_sent = false
+  end
+
   # The story the game keeps now, read in place.
   #
   # @return [Array] The switches, variables and self switches, the game's own data.
@@ -428,69 +391,50 @@ module MGQ_MpWorldCatchup
     [MGQ_MpStoryState.data_of($game_switches), MGQ_MpStoryState.data_of($game_variables), MGQ_MpStoryState.data_of($game_self_switches)]
   end
 
-  # The notes the save keeps: the rows done ("done", a row's key to true, or to "c" or "o" for a
-  # join waiting for its gate that a story carried the player past or that their own event held
-  # back, or to the level an actor change a story carried them past waits for), the companions
-  # their own event held back whose join the story has not passed yet ("held"), the part whose checkpoint the player got ("checkpoint"), the side they chose before
-  # the Great Decision ("side"), the gate of a move on a cap of another mod opened until its story
-  # is laid over theirs ("capped"), and the rewards that move carried them past, waiting for their
-  # gate ("waits", a row's key to its gate), and whether repair_rewards ran ("rewards_repaired",
-  # true from the start for notes it never needs to repair). Notes of another world start anew.
+  # The notes the save keeps of the open world, as the DLL wrote them (CatchupLedger): the rows
+  # done, the companions held back, the checkpoint taken, the side chosen before the Great Decision,
+  # the gate a cap of another mod opened and the rewards waiting for it.
   #
-  # @return [Hash] The notes.
+  # @return [Hash] The notes; empty for none of the open world.
   def self.ledger
     notes = $game_system.instance_variable_get(LEDGER)
-    id = MGQ_MpWorldStory.world_id
-    unless notes.is_a?(Hash) && notes["world"] == id && notes["done"].is_a?(Hash)
-      notes = { "world" => id, "done" => {}, "held" => {}, "checkpoint" => nil, "side" => nil, "capped" => nil, "waits" => {}, "rewards_repaired" => true }
-      $game_system.instance_variable_set(LEDGER, notes)
-    end
-    notes["held"] ||= {}
-    notes["waits"] ||= {}
-    notes
+    notes.is_a?(Hash) && notes["world"] == MGQ_MpWorldStory.world_id ? notes : {}
   end
 
   # The part the player's story is in.
   #
   # @return [String] See MGQ_MpWorldStory.part_of.
   def self.own_part
-    part_of(story_now)
+    MGQ_MpWorldStory.part_of(MGQ_MpWorldStory.local_counters(story_now))
   end
 
-  # The part a story is in.
-  #
-  # @param story [Array] The switches, variables and self switches.
-  # @return [String] See MGQ_MpWorldStory.part_of.
-  def self.part_of(story)
-    MGQ_MpWorldStory.part_of(MGQ_MpWorldStory.local_counters(story))
-  end
-
-  # Finds a part of the tables.
+  # Finds a part of the story mapping's catch-up tables.
   #
   # @param id [String] The part, as the relay names it.
-  # @return [MGQ_MpWorldCatchupData::Part, nil] The part, nil for none.
+  # @return [Array, nil] Its id, name and gate; nil for none.
   def self.part(id)
-    DATA::PARTS.find { |entry| entry.id == id }
+    found = keys
+    found ? found["parts"].find { |entry| entry[0] == id } : nil
   end
 
   # The level that moves a player on from a part.
   #
   # @param id [String] The part.
-  # @return [Integer] Its gate.
+  # @return [Integer, nil] Its gate, the last part's for one the tables lack; nil before the mapping.
   def self.gate_of(id)
-    entry = part(id)
-    entry ? entry.gate : DATA::PARTS.last.gate
+    entry = part(id) || (keys && keys["parts"].last)
+    entry && entry[2]
   end
 
   # The level a part's gate asks of the player: the gate, or the cap another mod holds them at
-  # below it, which opens the gate too (see gate_open?).
+  # below it, which opens the gate too.
   #
   # @param id [String] The part.
   # @return [Integer] The level.
   def self.level_to_reach(id)
     gate = gate_of(id)
     cap = roster_view[:cap]
-    cap.is_a?(Integer) && cap < gate ? cap : gate
+    gate && cap.is_a?(Integer) && cap < gate ? cap : gate
   rescue
     gate_of(id)
   end
@@ -501,7 +445,7 @@ module MGQ_MpWorldCatchup
   # @return [String] Its name.
   def self.part_name(id)
     entry = part(id)
-    entry ? entry.name : "Part #{id}"
+    entry ? entry[1] : "Part #{id}"
   end
 
   # Takes the player behind the world's story, on a track of their own at the checkpoint of their
@@ -510,24 +454,23 @@ module MGQ_MpWorldCatchup
   # @param part [String] The part of their track.
   # @param gate [Integer, nil] The level gate of that part, as the relay tells it.
   def self.behind(part, gate)
-    ledger["checkpoint"] = part
+    note("checkpoint" => part)
     log("the player plays a track of their own in #{part_name(part)} until level #{gate || gate_of(part)} moves them on")
   end
 
-  # Notes the world's story written into the player's, for the key items and chests it gave, and
+  # Keeps the world's story written into the player's, for the key items and chests it gave, and
   # clears the save's note that the player is behind, see noted_behind?. Called by world_story.rbx.
   #
-  # @param told [Array, nil] The world's story, nil while the player plays a track of their own,
-  #   whose game the relay tells the world's story only of the keys the whole world keeps.
+  # @param told [Array, nil] The world's story, nil while the player plays a track of their own.
   def self.world_told(told)
-    @world_told = told
-    ledger["checkpoint"] = nil if told && active?
+    @world_told = told && keys ? values(told) : nil
+    note("checkpoint" => nil) if told && active? && ledger["checkpoint"]
   end
 
   # Follows the relay moving the player on from their part by their level: the notice, the rewards
-  # that wait while only a cap of another mod opened the gate (see note_capped), and the personal
-  # half of the world's return to the Great Decision when they leave a route the world finished.
-  # Called by world_story.rbx before the track the move led to is followed.
+  # that wait while only a cap of another mod opened the gate, and the personal half of the world's
+  # return to the Great Decision when they leave a route the world finished. Called by
+  # world_story.rbx before the track the move led to is followed.
   #
   # @param move [Hash] "from", "to" (a part or "world"), "gate" and "by" ("level" or "cap").
   # @param world [Hash, nil] The world's summary, see MGQ_MpWorldStory.world.
@@ -538,190 +481,8 @@ module MGQ_MpWorldCatchup
     name = to == MGQ_MpWorldStory::WORLD_TRACK ? "the world's story" : part_name(to)
     log("level #{gate} reached in #{part_name(from)}#{move['by'] == 'cap' ? ' by the level cap' : ''}: the relay moved the player on to #{name}")
     notice(:gate, "Level #{move['by'] == 'cap' ? level_to_reach(from) : gate} reached: catching up to #{name}.")
-    note_capped(gate)
+    note("capped" => gate)
     return_from_route(from, world) if world
-  end
-
-  # Follows a story written into the player's: what their own game played before counts as theirs,
-  # then what the story carried them past gives what it gives, and the next check looks at the
-  # vehicles (check_vehicles). Called by world_story.rbx.
-  #
-  # The first story laid over a player no longer behind is the one a move on at a level cap led to,
-  # even when its checkpoint was dropped, so its rewards still wait (see note_capped); later ones
-  # give as usual.
-  #
-  # @param before [Array] The player's story before: switches, variables and self switches.
-  def self.carried(before)
-    return unless active?
-
-    drop_capped("the player plays the world's story already") if MGQ_MpWorldStory.mode == :world
-    # The story before a telling the player watched is older, and the telling's values count as laid
-    # over too, see watched.
-    before = @watched || before
-    @watched = nil
-    @vehicles_due = true
-    looking do
-      review(before, false)
-      review(story_now, true)
-    end
-    drop_capped("the story the move led to is laid over the player's") unless MGQ_MpWorldStory.mode == :behind
-  rescue => e
-    log("following a story laid over the player's failed: #{e.class}: #{e.message}")
-  end
-
-  # Keeps the player's story from before a teller's story values first moved it while they watch a
-  # telling, until the player is free again (see carry_watched). Called before the values are
-  # written, see MGQ_MpCoopScene.apply_values.
-  #
-  # @yieldreturn [Array] A copy of the player's story now.
-  def self.watched
-    @watched ||= yield if active?
-  end
-
-  # Follows the story values a watched telling laid over the player's as a story laid over theirs,
-  # since only the teller's game ran the scene's commands: what the scene gave comes, and the key
-  # items it took go. Its rows would otherwise count as played by the player's own game.
-  def self.carry_watched
-    return unless @watched
-
-    log("following the story values of a telling the player watched")
-    carried(@watched)
-  end
-
-  # Reports whether the player's highest base level reaches their part's gate, or the cap another
-  # mod holds them at below it.
-  #
-  # @return [Boolean] Whether it does.
-  def self.gate_reached?
-    gate_open?(gate_of(own_part))
-  end
-
-  # Reports whether a part's gate lets the player move on: their level reached it, or the character
-  # of their highest base level is at the highest level the game lets them reach (Game_Actor#max_level,
-  # which another mod may cap) below it.
-  #
-  # A cap that rises with the story's bosses would otherwise hold a player behind for good, as their
-  # story plays no boss while behind.
-  #
-  # @param level [Integer] The gate.
-  # @return [Boolean] Whether it does.
-  def self.gate_open?(level)
-    return true if reached?(level)
-
-    view = roster_view
-    cap = view[:cap]
-    view[:best] && cap.is_a?(Integer) && cap < level && view[:best] >= cap
-  rescue
-    false
-  end
-
-  # Reports whether the player's highest base level among their characters reaches a level, which
-  # every companion and Makina the catch-up hands out waits for, whatever cap another mod holds the
-  # player at.
-  #
-  # @param level [Integer] The level.
-  # @return [Boolean] Whether it does.
-  def self.reached?(level)
-    best = roster_view[:best]
-    best ? best >= level : false
-  rescue
-    false
-  end
-
-  # Reports whether a companion is in the player's own roster, in any of their personas.
-  #
-  # @param id [Integer] The companion.
-  # @return [Boolean] Whether they are.
-  def self.in_roster?(id)
-    roster_view[:ids][MGQ_MpStoryState.main_id(id)] ? true : false
-  end
-
-  # What the rows ask of the player's roster: its companions, and the highest base level among
-  # them, those on a visit aside (see visiting?), with that character's own highest level. Kept for one look at the rows, see looking, as
-  # it copies the roster.
-  #
-  # @return [Hash] :ids (each companion's main persona to true), :best and :cap (nil without one).
-  def self.roster_view
-    return @roster_view if @roster_view
-
-    ids = {}
-    MGQ_MpStoryState.roster_ids.each { |id| ids[id] = true }
-    story = story_now
-    best = MGQ_MpStoryState.roster.reject { |actor| visiting?(MGQ_MpStoryState.main_id(actor.id), story) }.max_by { |actor| actor.base_level }
-    view = { :ids => ids, :best => best && best.base_level, :cap => best && best.max_level(:base) }
-    @looking ? @roster_view = view : view
-  end
-
-  # Runs a look at the rows with the roster read once, see roster_view.
-  def self.looking
-    outer = @looking
-    @looking = true
-    yield
-  ensure
-    @looking = outer
-    @roster_view = nil unless outer
-  end
-
-  # Forgets the roster read for this look, as a companion joined or left.
-  def self.roster_changed
-    @roster_view = nil
-  end
-
-  # Notes the gate the player moves on at while only a cap of another mod opened it, so the story's
-  # rewards the move carries them past wait for their real level (see rewards_wait?). The story the
-  # move lays over theirs clears it, see carried and drop_capped.
-  #
-  # @param gate [Integer] The gate.
-  def self.note_capped(gate)
-    notes = ledger
-    notes["capped"] = reached?(gate) ? nil : gate
-    log("moved on at a level cap below #{gate}: the story's rewards wait for level #{gate}") if notes["capped"]
-  end
-
-  # Forgets the gate a move on at a level cap noted, so the story's rewards give as usual again.
-  #
-  # @param reason [String] Why, for the log.
-  def self.drop_capped(reason)
-    gate = ledger["capped"]
-    return unless gate
-
-    ledger["capped"] = nil
-    log("the story's rewards no longer wait for level #{gate}: #{reason}")
-  end
-
-  # Reports whether the story's rewards a story laid over the player's carries them past wait: it is
-  # the move a cap of another mod opened (note_capped), and their real level has not reached that
-  # gate yet.
-  #
-  # @return [Boolean] Whether they do.
-  def self.rewards_wait?
-    gate = ledger["capped"]
-    gate.is_a?(Integer) && !reached?(gate)
-  end
-
-  # Gives the story's rewards that wait for a gate (rewards_wait?) once the player's real level
-  # reaches it.
-  def self.give_waiting_rewards
-    waits = ledger["waits"]
-    return if waits.empty?
-
-    gifts = DATA::REWARDS.map do |row|
-      key = key_of("g", row)
-      gate = waits[key]
-      next unless gate && reached?(gate)
-
-      waits.delete(key)
-      give(reward_kind(row), row.id, row.amount, key)
-    end
-    tell_gifts(gifts.compact)
-  end
-
-  # The kind give takes for a reward row.
-  #
-  # @param row [MGQ_MpWorldCatchupData::Reward] The row.
-  # @return [Symbol, String] :skill, or the item's kind.
-  def self.reward_kind(row)
-    row.kind == :skill ? :skill : row.kind.to_s
   end
 
   # Gives a player on a route the world finished the personal half of the world's return to the
@@ -735,481 +496,310 @@ module MGQ_MpWorldCatchup
     MGQ_MpWorldStory.returned(MGQ_MpWorldStory.local_counters(story_now))
   end
 
-  # Lists the world's parts in the order the world played them: Parts 1 to 3, the routes it
-  # finished, and the route under way.
+  # Follows a story written into the player's: the DLL counts what their own game played before as
+  # theirs and gives what the story carried them past, and the next look follows the vehicles.
+  # Called by world_story.rbx and coop_choices.rbx.
   #
-  # @param world [Hash] The world's counters.
-  # @return [Array<String>] The parts.
-  def self.world_parts(world)
-    parts = %w(1 2 3) + world["done"].to_a
-    current = world["part"].to_s
-    parts << current if MGQ_MpWorldStory::ROUTES.include?(current) && !parts.include?(current)
-    parts
-  end
+  # @param before [Array] The player's story before: switches, variables and self switches.
+  def self.carried(before)
+    return unless active? && keys
 
-  # Finds where a player moves on to from a part: the next of Parts 1 to 3 the world played that has
-  # a checkpoint, or the world's own story once that is the world's part or none is left. A route
-  # the world finished is never a next part, as the routes stand side by side: the world's story
-  # laid over theirs gives the finished route's rows too (see passed?). A player in the world's
-  # part, as after its return from a route to the Great Decision, goes to its story.
-  #
-  # @param from [String] The player's part.
-  # @param world [Hash] The world's counters.
-  # @return [String, Symbol] The part, or :world.
-  def self.next_part(from, world)
-    current = world["part"].to_s
-    return :world if from == current
-
-    parts = world_parts(world)
-    at = parts.index(from)
-    return :world unless at
-
-    parts[(at + 1)..-1].each do |candidate|
-      return :world if candidate == current
-      next if MGQ_MpWorldStory::ROUTES.include?(candidate)
-      return candidate if world["checkpoints"].to_a.include?(candidate)
-    end
-    :world
-  end
-
-  # Reports whether a mark holds in a story.
-  #
-  # @param mark [Array] [:s, switch], [:v, variable, at least] or [:ss, map, event, letter].
-  # @param story [Array] The switches, variables and self switches.
-  # @return [Boolean] Whether it holds.
-  def self.mark_holds?(mark, story)
-    case mark[0]
-    when :s then story[0][mark[1]] ? true : false
-    when :v
-      value = story[1][mark[1]]
-      value.is_a?(Numeric) && value >= mark[2]
-    when :ss then story[2][[mark[1], mark[2], mark[3]]] ? true : false
-    else false
-    end
-  end
-
-  # Reports whether a mark is a choice's outcome, which only the player's own story holds.
-  #
-  # @param mark [Array] The mark.
-  # @return [Boolean] Whether it is.
-  def self.choice_mark?(mark)
-    return false if mark[0] == :ss
-
-    @choice_marks ||= {}
-    key = mark[1] * 2 + (mark[0] == :s ? 0 : 1)
-    known = @choice_marks[key]
-    return known unless known.nil?
-
-    @choice_marks[key] = defined?(MGQ_MpCoopChoices) && MGQ_MpCoopChoices.personal?(mark[0], mark[1]) ? true : false
-  end
-
-  # The side a row asks for in the player's story: before the Great Decision the side they chose
-  # then, which the save notes, since the route sets it anew.
-  #
-  # @param row [Struct] The row.
-  # @param own [Array] The player's story.
-  # @return [Symbol, nil] :alice, :ilias or nil.
-  def self.side_for(row, own)
-    side = MGQ_MpStoryState.side_of(own[0])
-    return side unless SIDED_PARTS.include?(row.part)
-
-    @noted_side = ledger["side"] || false if @noted_side.nil?
-    @noted_side ? @noted_side.to_sym : side
-  end
-
-  # Notes the side the player chose before the Great Decision, which the route sets anew.
-  #
-  # @param story [Array] The player's story.
-  def self.note_side(story)
-    side = MGQ_MpStoryState.side_of(story[0])
-    return unless side && SIDED_PARTS.include?(story_part(story))
-
-    ledger["side"] = @noted_side = side.to_s
-  end
-
-  # The main story's step the choice of a side in Iliasville leaves (map 6, events 30 and 31).
-  SIDE_STEP = 7
-
-  # The companion each side brings along.
-  SIDE_COMPANIONS = { :alice => 5, :ilias => 26 }
-
-  # Asks the player whom they take along once they are free, when their story went past the choice
-  # of a side before the Great Decision without one, until they chose.
-  #
-  # A teller's scene ends the player's own choice before it sets the side when both play it at once,
-  # and the side switches are each player's own in a Raid World, so the teller's choice is no help.
-  def self.ask_side
-    # A battle's invite clears the message window, and the question with it.
-    @asking_side = false if @asking_side && !$game_message.busy?
-    return if @asking_side || !lost_side? || !MGQ_MpOverworldSync.map_free? || MGQ_MpCoopEvents.mirroring? || $game_message.busy?
-
-    @asking_side = true
-    log("asking the player whom they take along: their story went past the choice of a side without one")
-    $game_message.add("Your story went past the choice of whom you take along. Whom do you take along on your journey?")
-    $game_message.choices.push("Alice", "Ilias")
-    $game_message.choice_cancel_type = 0
-    $game_message.choice_proc = Proc.new { |index| take_side(index == 0 ? :alice : :ilias) }
-  end
-
-  # Reports whether the player's story went past the choice of a side without one, before the Great
-  # Decision.
-  #
-  # @return [Boolean] Whether it did.
-  def self.lost_side?
-    story = story_now
-    MGQ_MpStoryState.side_of(story[0]).nil? && SIDED_PARTS.include?(part_of(story)) &&
-      story[1][MGQ_MpWorldStory::MAIN_PROGRESS].to_i.between?(SIDE_STEP, MGQ_MpWorldStory::BEFORE_DECISION)
-  end
-
-  # Keeps the side the player chose and brings its companion along, as the choice in Iliasville
-  # does; the next look gives what the side's rows owe, as the Pocket Castle.
-  #
-  # @param side [Symbol] :alice or :ilias.
-  def self.take_side(side)
-    @asking_side = false
-    MGQ_MpStoryState::SIDE_SWITCHES.each { |id| $game_switches[id] = id == (side == :alice ? MGQ_MpStoryState::ALICE_CHOSEN : MGQ_MpStoryState::ILIAS_CHOSEN) }
-    name = side == :alice ? "Alice" : "Ilias"
-    log("the player took #{name} along")
-    bring_in(SIDE_COMPANIONS[side], nil, "you took #{name} along")
-    @audit_due = true
+    # The story before a telling the player watched is older, and the telling's values count as laid
+    # over too, see watched.
+    before = @watched || values(before)
+    @watched = nil
+    @vehicles_due = true
+    answer = call(CHECK_TOPIC, snapshot.merge("look" => "carried", "before" => before))
+    apply(answer) if answer
   rescue => e
-    log("taking a side failed: #{e.class}: #{e.message}")
+    log("following a story laid over the player's failed: #{e.class}: #{e.message}")
   end
 
-  # The part a story is in, kept for the look at the rows under way, see review.
+  # Keeps the player's story from before a teller's story values first moved it while they watch a
+  # telling, until the player is free again (see carry_watched). Called before the values are
+  # written, see MGQ_MpCoopScene.apply_values.
   #
-  # The part is kept by the story itself, as an object id comes back once its story is collected
-  # and would hand a later story the part of an earlier one.
+  # @yieldreturn [Array] A copy of the player's story now.
+  def self.watched
+    @watched ||= values(yield) if active? && keys
+  end
+
+  # Follows the story values a watched telling laid over the player's as a story laid over theirs,
+  # since only the teller's game ran the scene's commands.
+  def self.carry_watched
+    return unless @watched
+
+    log("following the story values of a telling the player watched")
+    carried(nil)
+  end
+
+  # What the DLL's catch-up reads of the player's game: the story's values it reads, the world's
+  # story laid over theirs, the roster, the items and what the game's data tells of them.
+  #
+  # @return [Hash] The snapshot, see CatchupTopics in the DLL.
+  def self.snapshot
+    world = MGQ_MpWorldStory.world
+    sharing = MGQ_MpWorld.companion_sharing
+    comps = world ? world["comps"].to_a : []
+    {
+      "mode" => MGQ_MpWorldStory.mode ? MGQ_MpWorldStory.mode.to_s : nil, "own" => keys ? values(story_now) : nil, "told" => @world_told, "roster" => roster_entries,
+      "items" => item_counts, "worn" => worn_items, "unlocks" => unlock_ids, "map" => $game_map ? $game_map.map_id : 0,
+      "encounters" => !$game_system.encounter_disabled, "summary" => world, "sharing" => sharing.to_s, "starts" => comps.map { |id| [id, start_level(id)] },
+    }
+  end
+
+  # Reads the values of a story the DLL's catch-up reads (see keys): the switches and self switches
+  # on and the variables set to a number, with the self switches of the items found.
   #
   # @param story [Array] The switches, variables and self switches.
-  # @return [String] See MGQ_MpWorldStory.part_of.
-  def self.story_part(story)
-    @story_parts ||= {}.compare_by_identity
-    @story_parts[story] ||= part_of(story)
+  # @return [Hash] "s" (the switches on), "v" ([id, value] each) and "ss" (the self switches on).
+  def self.values(story)
+    tested = tested_keys
+    switches = tested[0].select { |id| story[0][id] }
+    # A Float goes as its floor, which holds a mark at a whole number exactly when the Float does.
+    variables = tested[1].map { |id| (value = whole(story[1][id])) ? [id, value] : nil }.compact
+    selves = tested[2].select { |key| story[2][key] }
+    story[2].each { |key, on| selves << key if on && key[0] == FOUND_MAP && key[2] == FOUND_LETTER && !tested[3][key] }
+    { "s" => switches, "v" => variables, "ss" => selves }
   end
 
-  # Forgets what one look at the rows kept, as the stories it read change.
-  def self.new_look
-    @story_parts = {}.compare_by_identity
-    @noted_side = nil
-    @choice_marks = {}
-  end
-
-  # Reports whether a story is past a row: the row's part is the story's or an earlier one, and its
-  # marks hold, so an optional event nobody played is never past; a route's rows also once the
-  # route is finished, whose return clears its marks. Side content counts by its marks alone. The
-  # row's side and the choices' outcomes among its marks are the player's own, always read from
-  # their story.
+  # The keys the snapshot reads, kept per revision of the mapping.
   #
-  # @param row [Struct] A row of the tables, with part, side and marks.
-  # @param story [Array] The story: switches, variables and self switches.
-  # @param own [Array] The player's own story, the same unless the story is the world's.
-  # @return [Boolean] Whether it is.
-  def self.passed?(row, story, own = story)
-    finished = false
-    unless row.part.nil?
-      current = story_part(story)
-      rank = RANKS[row.part]
-      finished = rank == RANKS["ad"] && cleared?(row.part, story)
-      return false unless finished || rank < RANKS[current].to_i || current == row.part
-    end
-    return false if row.side && row.side != side_for(row, own)
-    return false unless row.marks.all? { |mark| !choice_mark?(mark) || mark_holds?(mark, own) }
-    return true if finished
-
-    !row.marks.empty? && row.marks.all? { |mark| mark_holds?(mark, choice_mark?(mark) ? own : story) }
-  end
-
-  # Reports whether the player's story or the world's is past a row, see passed?.
-  #
-  # @param row [Struct] A row of the tables.
-  # @param story [Array] The player's story.
-  # @param told [Array, nil] The world's story, nil when it does not count.
-  # @return [Boolean] Whether one is.
-  def self.passed_any?(row, story, told)
-    passed?(row, story) || (told && passed?(row, told, story)) ? true : false
-  end
-
-  # Reports whether a story laid over the player's gives what a row gives: only when its marks tell
-  # that its event ran (the row's ran, see world_catchup_data.rbx). An event they only tell is there
-  # to play, as a town's companion who joins on a talk, stays the player's own to play.
-  #
-  # @param row [Struct] The row.
-  # @return [Boolean] Whether it does.
-  def self.carries?(row)
-    row.ran != false
-  end
-
-  # Reports whether a story finished a route.
-  #
-  # @param route [String] The route.
-  # @param story [Array] The story.
-  # @return [Boolean] Whether it did.
-  def self.cleared?(route, story)
-    story[0][MGQ_MpWorldStory::CLEAR_SWITCHES[MGQ_MpWorldStory::ROUTES.index(route)]] ? true : false
-  end
-
-  # Orders two rows by their places in the story: part, then step.
-  #
-  # @param row [Struct] The one.
-  # @return [Array<Integer>] Its order, compared left to right.
-  def self.place_of(row)
-    [RANKS[row.part].to_i, row.step.to_i]
-  end
-
-  # Reports whether a row comes after another in the story: at a later place, or later in the same
-  # event's list.
-  #
-  # @param row [Struct] The one, with its site and index.
-  # @param other [Struct] The other.
-  # @return [Boolean] Whether it does.
-  def self.after?(row, other)
-    order = place_of(row) <=> place_of(other)
-    return order > 0 unless order == 0
-
-    row.site == other.site && row.index.to_i > other.index.to_i
-  end
-
-  # Names a row in the notes.
-  #
-  # @param kind [String] "j" join, "r" removal, "k" key item, "c" chest, "a" actor change, "g"
-  #   reward.
-  # @param row [Struct] The row.
-  # @return [String] Its key.
-  def self.key_of(kind, row)
-    @row_keys ||= {}.compare_by_identity
-    @row_keys[row] ||= case kind
-                       when "j", "r" then "#{kind}:#{row.site}:#{row.persona}"
-                       when "k" then "k:#{row.site}:#{row.item}:#{row.amount}"
-                       when "c" then "c:#{row.key.join('.')}"
-                       when "a" then "a:#{row.site}:#{row.actor}"
-                       else "g:#{row.site}:#{row.kind}#{row.id}"
-                       end
-  end
-
-  # Asks for one look at everything once the player is free again, see audit: as their level rose.
-  def self.level_up
-    @audit_due = true if active?
-  end
-
-  # Looks at everything the player's story owes them once, whatever the rows' notes say, as on
-  # entering the world, after a load and on a level up: the story's skills Luka lacks, the key
-  # items (restock_key_items), the story's companions missing from the roster, who join at their
-  # gate, the player's own values the story sets (settle), and the vehicles by what the story gave
-  # (check_vehicles). The world's
-  # story counts for the skills, the values and the vehicles only while the player plays it, never
-  # while they are behind it.
-  #
-  # @param story [Array] The player's story.
-  def self.audit(story)
-    @audit_due = false
-    new_look
-    told = @world_told
-    world = played_world_story
-    done = ledger["done"]
-    gifts = guarded(:skills) { missing_skills(story, world) } || []
-    gifts.concat(guarded(:key_items) { restock_key_items(story, told) } || [])
-    gifts.concat(guarded(:unlock_items) { restock_unlock_items(story, told) } || [])
-    gifts.concat(guarded(:repair) { repair_rewards(story) } || [])
-    guarded(:companions) { missing_companions(story, told, done) }
-    guarded(:companion_values) { companion_values }
-    guarded(:settle) { settle(story, world) }
-    guarded(:vehicles) { check_vehicles(story, world) }
-    guarded(:held_items) { note_held_items }
-    log("looked at everything the story owes the player once")
-    tell_gifts(gifts.compact)
-  end
-
-  # The world's story while the player plays it, see audit.
-  #
-  # @return [Array, nil] The world's story, nil before it came or while the player is behind it.
-  def self.played_world_story
-    MGQ_MpWorldStory.mode == :world ? @world_told : nil
-  end
-
-  # Teaches Luka the story's skills he lacks, of the rows the player's story or the world's is past,
-  # unless the row waits for its gate (rewards_wait?).
-  #
-  # @param story [Array] The player's story.
-  # @param told [Array, nil] The world's story, nil before it came or while the player is behind it,
-  #   whose skills come as they move on.
-  # @return [Array<String>] What was given, as shown.
-  def self.missing_skills(story, told)
-    hero = $game_actors[MGQ_MpStoryState::HERO]
-    waits = ledger["waits"]
-    DATA::REWARDS.map do |row|
-      next unless row.kind == :skill && carries?(row) && !MGQ_MpStoryState.knows?(hero, row.id)
-      next if waits[key_of("g", row)]
-      next unless passed_any?(row, story, told)
-
-      give(:skill, row.id, 1, key_of("g", row))
+  # @return [Array] The switches, the variables, the self switches and the self switches by key.
+  def self.tested_keys
+    @tested ||= begin
+      found = keys
+      selves = {}
+      found["selves"].each { |key| selves[key] = true }
+      [found["switches"], found["variables"], found["selves"], selves]
     end
   end
 
-  # Looks at the skills, classes and races the story and its quests gave the roster's characters
-  # every GROWTH_CHECKS looks, and at the next look after the roster changed, see missing_lessons
-  # and missing_class_levels.
-  def self.check_growth
-    ids = MGQ_MpStoryState.roster_ids
-    @growth_count += 1
-    return unless @growth_count >= GROWTH_CHECKS || ids != @growth_roster
+  # Reads a story value as a whole number for the DLL.
+  #
+  # @param value [Object] The value.
+  # @return [Integer, nil] The number; nil for one that is none.
+  def self.whole(value)
+    return value if value.is_a?(Integer)
 
-    @growth_count = 0
-    @growth_roster = ids.dup
-    story = story_now
-    told = played_world_story
-    tell_gifts((missing_lessons(story, told) + missing_class_levels(story, told)).compact)
+    value.is_a?(Float) && value.finite? ? value.floor : nil
   end
 
-  # Teaches the companions of the player's roster the skills the story and its quests taught them,
-  # of the rows the player's story or the world's is past. It goes by what each companion knows, so
-  # a step passed before the world's last look, or a companion who joins after it, still counts.
+  # Lists the roster as the DLL's catch-up reads it.
   #
-  # @param story [Array] The player's story.
-  # @param told [Array, nil] The world's story, nil before it came or while the player is behind it.
-  # @return [Array<String>] What was taught, as shown.
-  def self.missing_lessons(story, told)
-    DATA::LESSONS.map do |row|
-      next unless carries?(row) && in_roster?(row.actor)
+  # @return [Array<Array>] Each companion's id, persona, base level and the highest level the game
+  #   lets them reach (nil for none).
+  def self.roster_entries
+    MGQ_MpStoryState.roster_ids.map do |id|
+      actor = $game_actors[id]
+      next nil unless actor
 
-      actor = $game_actors[row.actor]
-      next if actor.nil? || MGQ_MpStoryState.knows?(actor, row.skill)
-      next unless passed_any?(row, story, told)
+      cap = actor.respond_to?(:max_level) ? actor.max_level(:base) : nil
+      [id, actor.id, actor.base_level, cap.is_a?(Integer) ? cap : nil]
+    end.compact
+  end
 
-      MGQ_MpStoryState.teach(row.actor, row.skill)
+  # Counts the items the DLL's catch-up reads (see keys) and those unlocking a job or a race that the
+  # game has.
+  #
+  # @return [Hash{String => Integer}] The counts by "i<id>", "w<id>" or "a<id>".
+  def self.item_counts
+    counts = {}
+    ((keys ? keys["items"] : []) + unlock_ids.map { |id| "i#{id}" }).each do |key|
+      next if counts.key?(key)
+
+      item = MGQ_MpGame.item(key[0, 1], key[1..-1].to_i)
+      counts[key] = $game_party.item_number(item) if item
     end
+    counts
   end
 
-  # Gives the characters of the player's roster the classes and races the story and its quests gave
-  # them, at their levels, of the rows the player's story or the world's is past, keeping the class
-  # and race each plays now. It goes by each character's levels, so a step passed before the
-  # world's last look, or a companion who joins after it, still counts.
+  # Lists the weapons and armors the party wears.
   #
-  # @param story [Array] The player's story.
-  # @param told [Array, nil] The world's story, nil before it came or while the player is behind it.
-  # @return [Array<String>] What was given, as shown.
-  def self.missing_class_levels(story, told)
-    DATA::CLASS_LEVELS.map do |row|
-      next unless carries?(row) && (row.actor == HERO || in_roster?(row.actor))
-
-      actor = $game_actors[row.actor]
-      next if actor.nil? || MGQ_MpStoryState.class_level(actor, row.class_id) >= row.level
-      next unless passed_any?(row, story, told)
-
-      MGQ_MpStoryState.give_class(row.actor, row.class_id, row.level)
-    end
+  # @return [Array<String>] Each "w<id>" or "a<id>".
+  def self.worn_items
+    $game_party.all_members.flat_map do |actor|
+      actor.respond_to?(:equips) ? actor.equips.compact.map { |item| worn_key(item) } : []
+    end.compact.uniq
   end
 
-  # Lets the story's companions the roster lacks join at their gate: of the joins the player's
-  # story or the world's is past and whose event the rows tell ran, those no later removal of the
-  # story took away, which the notes took as done.
+  # Names a worn item as the counts do.
   #
-  # @param story [Array] The player's story.
-  # @param told [Array, nil] The world's story, nil before it came.
-  # @param done [Hash] The rows done.
-  def self.missing_companions(story, told, done)
-    passes = lambda { |row| passed_any?(row, story, told) }
-    story_joins.each do |row|
-      key = key_of("j", row)
-      next unless done[key] == true && row.part && carries?(row) && !in_roster?(row.actor) && passes.call(row)
-      next if taken_away_since?(row, story, told)
+  # @param item [RPG::EquipItem] The item.
+  # @return [String, nil] "w<id>" or "a<id>"; nil for neither.
+  def self.worn_key(item)
+    return "w#{item.id}" if defined?(RPG::Weapon) && item.is_a?(RPG::Weapon)
+    return "a#{item.id}" if defined?(RPG::Armor) && item.is_a?(RPG::Armor)
 
-      done[key] = "c"
-      log("#{actor_label(row.persona)} of #{row.site} is missing from the roster: joins at level #{row.gate}")
-    end
-    bring_waiting(done)
+    nil
   end
 
-  # Reports whether a removal of the story after a join, which the player's story or the world's
-  # got past, took the companion away again, for good or until a later join.
+  # Lists the items of the game that unlock a job or a race, see unlock_item?.
   #
-  # @param row [MGQ_MpWorldCatchupData::Join] The join.
-  # @param story [Array] The player's story.
-  # @param told [Array, nil] The world's story, nil before it came.
-  # @return [Boolean] Whether one did.
-  def self.taken_away_since?(row, story, told)
-    DATA::REMOVALS.any? { |removal| removal.actor == row.actor && after?(removal, row) && passed_any?(removal, story, told) }
+  # @return [Array<Integer>] The items.
+  def self.unlock_ids
+    @unlock_ids ||= ($data_items || []).select { |item| unlock_item?(item) }.map { |item| item.id }
   end
 
-  # Raises the story values of the companions in the player's roster to what their joins stand for
-  # (COMPANION_VALUES), which a companion the world shared or the catch-up brought comes without.
-  # The raised values reach the world's story like any change of the player's.
-  def self.companion_values
-    COMPANION_VALUES.each do |actor, values|
-      next unless in_roster?(actor)
+  # Calls a catch-up topic of the DLL with the open world and, once after a load, the save's notes,
+  # and keeps the notes it answers.
+  #
+  # @param topic [String] The topic.
+  # @param request [Hash] The request.
+  # @return [Hash, nil] The answer; nil when the DLL failed.
+  def self.call(topic, request)
+    request = request.merge("world" => MGQ_MpWorldStory.world_id)
+    request["ledger"] = $game_system.instance_variable_get(LEDGER) unless @ledger_sent
+    answer = MGQ_Multiplayer::Bridge.call(topic, request)
+    return nil unless answer.is_a?(Hash)
 
-      values.each do |id, least|
-        now = $game_variables[id].to_i
-        next if now >= least
+    @ledger_sent = true
+    $game_system.instance_variable_set(LEDGER, answer["ledger"]) if answer["ledger"]
+    answer
+  end
 
-        $game_variables[id] = least
-        log("raised variable #{id} from #{now} to #{least}: #{actor_label(actor)} is in the roster, whose join stands for it")
+  # Writes a note of the world's story into the save's notes, through the DLL.
+  #
+  # @param request [Hash] The note, see CatchupTopics in the DLL.
+  def self.note(request)
+    answer = call(NOTE_TOPIC, snapshot.merge(request))
+    run(answer["actions"]) if answer
+  end
+
+  # Carries out what a look answered and keeps the companions on a visit it names.
+  #
+  # @param answer [Hash] The answer.
+  def self.apply(answer)
+    run(answer["actions"])
+    @visiting = Array(answer["visiting"]) if answer.key?("visiting")
+  end
+
+  # Carries out the actions the DLL answered, in their order, each with the game's own grant.
+  #
+  # @param actions [Array<Array>] The actions, see CatchupTopics in the DLL.
+  def self.run(actions)
+    gifts = []
+    Array(actions).each do |action|
+      begin
+        gift = act(action)
+        gifts << gift if gift.is_a?(String)
+        if action[0] == "gifts"
+          tell_gifts(gifts)
+          gifts = []
+        end
+      rescue => e
+        log_once([:act, action[0], e.class], "carrying out #{action[0]} failed: #{e.class}: #{e.message}")
       end
     end
   end
 
-  # Moves the player's own values the story's events set (DATA::SETTINGS: the game over's return
-  # point, the random encounters) to what the latest step their story or the world's passed set,
-  # where they still hold what an earlier step set: a story laid over theirs, or the opening's
-  # setup, skipped the events. A value of their own making, such as a church they prayed at, stays,
-  # and so do the encounters on a map whose events set them the other way now, and a variable of
-  # the player's own away from the map of the event that sets it (see at_site?). Of the routes
-  # only the rows of the route under way count, none at the Great Decision: a finished route's
-  # rows, which passed? counts for its rewards, would set its last return point.
+  # Carries out one action.
   #
-  # @param story [Array] The player's story.
-  # @param told [Array, nil] The world's story, nil before it came or while the player is behind it.
-  def self.settle(story, told)
-    part = story_part(story)
-    latest = {}
-    earlier = Hash.new { |hash, key| hash[key] = [] }
-    DATA::SETTINGS.each do |row|
-      next if MGQ_MpWorldStory::ROUTES.include?(row.part) && row.part != part
-      next unless passed_any?(row, story, told)
-
-      key = [row.kind, row.id]
-      earlier[key] << latest[key].value if latest[key]
-      latest[key] = row
+  # @param action [Array] The action: its name, then its fields.
+  # @return [String, nil] What it gave, as shown, for the next tell of gifts.
+  def self.act(action)
+    case action[0]
+    when "give" then return give_row(action[1], action[2], action[3], action[4], action[5])
+    when "learn" then return learn(action[1], action[2])
+    when "teach" then return teach(action[1], action[2])
+    when "class" then return give_class(action[1], action[2], action[3])
+    when "log" then log(action[1].gsub(/\{actor:(\d+)\}/) { actor_label($1.to_i) })
+    when "join" then bring_in(action[1], action[2], action[3])
+    when "raise" then raise_level(action[1], action[2])
+    when "form" then take_form(action[1], action[2])
+    when "leave" then take_away(action[1], action[2])
+    when "change" then change_actors(action[1], action[2], action[3])
+    when "set" then $game_variables[action[1]] = action[2]
+    when "switch" then $game_switches[action[1]] = action[2]
+    when "open" then open_chest(action[1])
+    when "setting" then settle(action[1], action[2], action[3], action[4])
+    when "vehicles" then place_vehicles(action[1])
+    when "trim" then trim_copies(action[1], action[2])
+    when "makina" then hand_makina(action[1], action[2])
     end
-    latest.each do |key, row|
-      now = setting_now(row)
-      next if now == row.value || !earlier[key].include?(now)
-      next log_once([:own_encounters, $game_map.map_id], "left the random encounters to map #{$game_map.map_id}, whose event sets them the other way now") if row.kind == :encounters && map_sets_encounters?(row.value)
-      next log_once([:elsewhere, row.site, $game_map.map_id], "left #{setting_label(row)} at #{now.inspect}: #{row.site} sets it where the player does not stand") unless at_site?(row)
-
-      row.kind == :encounters ? $game_system.encounter_disabled = !row.value : $game_variables[row.id] = row.value
-      log("set #{setting_label(row)} from #{now.inspect} to #{row.value.inspect}, as #{row.site} of the story left it")
-    end
+    nil
   end
 
-  # Reports whether a setting of settle may apply where the player stands: the random encounters
-  # anywhere, a variable of the player's own only on the map of the event that sets it.
+  # Gives or takes what a row names.
+  #
+  # @param kind [String] "skill", or "i", "w" or "a" for an item.
+  # @param id [Integer] The skill or item.
+  # @param amount [Integer] How many, below 0 to take.
+  # @param key [String] The row, for the log.
+  # @param gift [Boolean] Whether it counts among the gifts the next tell lists.
+  # @return [String, nil] What was given, as shown.
+  def self.give_row(kind, id, amount, key, gift)
+    given = give(kind == "skill" ? :skill : kind, id, amount, key)
+    gift ? given : nil
+  end
+
+  # Teaches Luka a skill of the story he lacks, leaving one he knows quietly.
+  #
+  # @param id [Integer] The skill.
+  # @param key [String] The row, for the log.
+  # @return [String, nil] What was given, as shown.
+  def self.learn(id, key)
+    MGQ_MpStoryState.knows?($game_actors[HERO], id) ? nil : give(:skill, id, 1, key)
+  end
+
+  # Teaches a companion a skill the story taught them, leaving one they know quietly.
+  #
+  # @param actor_id [Integer] The companion's persona.
+  # @param skill [Integer] The skill.
+  # @return [String, nil] What was taught, as shown.
+  def self.teach(actor_id, skill)
+    actor = $game_actors[actor_id]
+    return nil if actor.nil? || MGQ_MpStoryState.knows?(actor, skill)
+
+    MGQ_MpStoryState.teach(actor_id, skill)
+  end
+
+  # Gives a character a class or race at a level the story gave them, leaving one they hold at that
+  # level quietly.
+  #
+  # @param actor_id [Integer] The character.
+  # @param class_id [Integer] The class or race.
+  # @param level [Integer] The level.
+  # @return [String, nil] What was given, as shown.
+  def self.give_class(actor_id, class_id, level)
+    actor = $game_actors[actor_id]
+    return nil if actor.nil? || MGQ_MpStoryState.class_level(actor, class_id) >= level
+
+    MGQ_MpStoryState.give_class(actor_id, class_id, level)
+  end
+
+  # Moves a value of the player's own the story set to what the DLL found the latest step left,
+  # unless the map sets the encounters the other way now or the value tells a place elsewhere.
+  #
+  # @param kind [String] "encounters", "v" or "s".
+  # @param id [Integer] The variable, 0 for the encounters.
+  # @param value [Object] The value.
+  # @param site [String] The event that sets it.
+  def self.settle(kind, id, value, site)
+    encounters = kind == "encounters"
+    now = encounters ? !$game_system.encounter_disabled : $game_variables[id]
+    label = encounters ? "the random encounters" : "variable #{id}"
+    return log_once([:own_encounters, $game_map.map_id], "left the random encounters to map #{$game_map.map_id}, whose event sets them the other way now") if encounters && map_sets_encounters?(value)
+    return log_once([:elsewhere, site, $game_map.map_id], "left #{label} at #{now.inspect}: #{site} sets it where the player does not stand") unless at_site?(kind, id, site)
+
+    encounters ? $game_system.encounter_disabled = !value : $game_variables[id] = value
+    log("set #{label} from #{now.inspect} to #{value.inspect}, as #{site} of the story left it")
+  end
+
+  # Reports whether a setting may apply where the player stands: the random encounters anywhere, a
+  # variable of the player's own only on the map of the event that sets it.
   #
   # Such a variable tells a place, as where a game over returns the player, so a value the world's
   # story set elsewhere could send them into another player's scene with no way out.
   #
-  # @param row [Struct] A row of DATA::SETTINGS.
+  # @param kind [String] "encounters", "v" or "s".
+  # @param id [Integer] The variable.
+  # @param site [String] The event that sets it.
   # @return [Boolean] Whether it may.
-  def self.at_site?(row)
-    return true unless row.kind == :v && MGQ_MpStoryState.personal_variable?(row.id)
+  def self.at_site?(kind, id, site)
+    return true unless kind == "v" && MGQ_MpStoryState.personal_variable?(id)
 
-    row.site.to_s =~ /\Amap:(\d+):/ && $1.to_i == $game_map.map_id ? true : false
-  end
-
-  # Reads a value of the player's own that the story sets, see settle.
-  #
-  # @param row [Struct] A row of DATA::SETTINGS.
-  # @return [Object] Its value now: whether random encounters are on, or the variable's.
-  def self.setting_now(row)
-    row.kind == :encounters ? !$game_system.encounter_disabled : $game_variables[row.id]
-  end
-
-  # Names a value of the player's own that the story sets, for the log.
-  #
-  # @param row [Struct] A row of DATA::SETTINGS.
-  # @return [String] Its name.
-  def self.setting_label(row)
-    row.kind == :encounters ? "the random encounters" : "variable #{row.id}"
+    site.to_s =~ /\Amap:(\d+):/ && $1.to_i == $game_map.map_id ? true : false
   end
 
   # Reports whether an event of the player's map sets random encounters the other way: on the page
@@ -1227,30 +817,18 @@ module MGQ_MpWorldCatchup
     end
   end
 
-  # Lifts the warp ban left on where the game lets the player warp (DATA::WARP_FREE_MAPS, as the
-  # field), as a skipped event or a game over under an earlier return point left it.
-  def self.lift_warp_ban
-    return unless $game_switches[WARP_BAN] && DATA::WARP_FREE_MAPS.include?($game_map.map_id)
-
-    $game_switches[WARP_BAN] = false
-    log("lifted the warp ban: map #{$game_map.map_id} lets the player warp")
-  end
-
-  # Keeps the vehicles to the story: one that no event that gives it (DATA::VEHICLES) is behind the
+  # Keeps the vehicles to the story as the DLL found it: one no event that gives it is behind the
   # player's story or the world's leaves its map (park_vehicle), one the story gave that stands on
   # no map comes back to its start (return_vehicle).
   #
-  # @param story [Array] The player's story.
-  # @param told [Array, nil] The world's story, nil before it came or while the player is behind it.
-  def self.check_vehicles(story, told)
-    @vehicles_due = false
+  # @param given [Array<Boolean>] Whether the story gave each vehicle, by VEHICLE_TYPES.
+  def self.place_vehicles(given)
     VEHICLE_TYPES.each_with_index do |type, id|
       vehicle = $game_map.vehicle(type)
       next unless vehicle
 
       map_id = MGQ_MpGame.get(vehicle, :map_id).to_i
-      given = DATA::VEHICLES.any? { |row| row.vehicle == id && passed_any?(row, story, told) }
-      if given
+      if given[id]
         return_vehicle(type, vehicle) if map_id == 0
       elsif map_id != 0
         park_vehicle(type, vehicle, map_id)
@@ -1293,7 +871,7 @@ module MGQ_MpWorldCatchup
   end
 
   # Reports whether the player got off a vehicle that park_vehicle left while they rode it, which
-  # it then takes away at the next look.
+  # the next look then takes away.
   #
   # @return [Boolean] Whether they did.
   def self.got_off_early?
@@ -1303,100 +881,35 @@ module MGQ_MpWorldCatchup
     true
   end
 
-  # Looks at every row of the tables against the player's story, see the module: rows the
-  # player's own game played are noted done, those a story carried them past give their rewards,
-  # or note them waiting for their gate after a move a cap opened (rewards_wait?), and take their
-  # companions, the world's key items and chests come to everyone, companions whose gate the
-  # player reached join, and the actor changes whose gate they reached run.
-  #
-  # @param story [Array] The player's story: switches, variables and self switches.
-  # @param carried [Boolean] Whether a story laid over theirs just carried them past what is new.
-  def self.review(story, carried)
-    new_look
-    note_side(story)
-    done = ledger["done"]
-    gifts = []
-    waits = carried && rewards_wait? ? ledger["waits"] : nil
-    DATA::REWARDS.each do |row|
-      key = key_of("g", row)
-      next if done[key] || (carried && !carries?(row)) || !passed?(row, story)
-
-      done[key] = true
-      next unless carried || unclaimed_prize?(row)
-
-      if waits
-        waits[key] = ledger["capped"]
-      else
-        gifts << give(reward_kind(row), row.id, row.amount, key)
-      end
-    end
-    gifts.concat(guarded(:world_items) { world_items(story, carried, done) } || [])
-    guarded(:companions) { companions(story, carried, done) }
-    guarded(:actor_changes) { actor_changes(story, carried, done) }
-    guarded(:settle) { settle(story, played_world_story) } if carried
-    tell_gifts(gifts.compact)
-  end
-
-  # Reports whether a prize (DATA::PRIZE_VARIABLES) the player's story got past without a story
-  # carrying them is another player's claim: the player holds none of it, while one they claimed in
-  # their own game is in their bag. Before the catch-up knew prizes, the world's count laid over
-  # theirs carried them past without giving any.
-  #
-  # @param row [MGQ_MpWorldCatchupData::Reward] The row.
-  # @return [Boolean] Whether it is.
-  def self.unclaimed_prize?(row)
-    return false unless row.kind != :skill && row.marks.any? { |mark| mark[0] == :v && DATA::PRIZE_VARIABLES.include?(mark[1]) }
-
-    item = MGQ_MpGame.item(reward_kind(row), row.id)
-    item && !held?(item) ? true : false
-  end
-
-  # Notes the actor changes the player's story just got past: done where their own game played
-  # the step, else waiting for the row's gate, and the cap's gate too after a move a cap opened
-  # (rewards_wait?); then runs those whose gate the player's level reached (change_actors).
-  #
-  # @param story [Array] The player's story.
-  # @param carried [Boolean] Whether a story laid over theirs just carried them past what is new.
-  # @param done [Hash] The rows done.
-  def self.actor_changes(story, carried, done)
-    capped = carried && rewards_wait? ? ledger["capped"] : nil
-    DATA::ACTOR_CHANGES.each do |row|
-      key = key_of("a", row)
-      next if done[key] || (carried && !carries?(row)) || !passed?(row, story)
-
-      done[key] = carried ? [row.gate.to_i, capped.to_i].max : true
-    end
-    DATA::ACTOR_CHANGES.each do |row|
-      key = key_of("a", row)
-      gate = done[key]
-      next unless gate.is_a?(Integer) && reached?(gate)
-
-      done[key] = true
-      change_actors(row)
-    end
+  # Asks for one look at everything once the player is free again: as their level rose.
+  def self.level_up
+    @audit_due = true if active?
   end
 
   # Runs an actor change in the player's game as the story's event does, through the game's
   # interpreter: each call in order, one only a first playthrough runs on a first playthrough
   # alone, and none whose change the character shows already (shows?).
   #
-  # @param row [MGQ_MpWorldCatchupData::ActorChange] The row.
-  # @return [Array<String>] The calls that ran, as logged.
-  def self.change_actors(row)
+  # @param actor_id [Integer] The character's main persona.
+  # @param site [String] The event that changes them.
+  # @param calls [Array<Array>] Each call's name, whole numbers and whether only a first playthrough
+  #   runs it.
+  # @return [nil] Nothing to tell among the gifts.
+  def self.change_actors(actor_id, site, calls)
     interpreter = Game_Interpreter.new
     first = $game_variables[PLAYTHROUGH].to_i == 0
-    ran = row.calls.map do |name, ids, once|
+    ran = calls.map do |name, ids, once|
+      name = name.to_sym
       next if once && !first
-      next log("skipped #{name} of #{row.site}: no call of the game the catch-up runs") unless ACTOR_CALLS.include?(name) && interpreter.respond_to?(name)
+      next log("skipped #{name} of #{site}: no call of the game the catch-up runs") unless ACTOR_CALLS.include?(name) && interpreter.respond_to?(name)
       next if shows?(name, ids)
 
       MGQ_MpCoopEvents.granting { interpreter.public_send(name, *ids) }
       shown = ids.size > LOGGED_NUMBERS ? ids.first(LOGGED_NUMBERS).join(", ") + ", ... (#{ids.size})" : ids.join(", ")
       "#{name}(#{shown})"
     end.compact
-    roster_changed
-    log(ran.empty? ? "#{actor_label(row.actor)} shows what #{row.site} changes already" : "#{actor_label(row.actor)} took what #{row.site} changes: #{ran.join(', ')}")
-    ran
+    log(ran.empty? ? "#{actor_label(actor_id)} shows what #{site} changes already" : "#{actor_label(actor_id)} took what #{site} changes: #{ran.join(', ')}")
+    nil
   end
 
   # Reports whether a character shows what a call of an actor change does already, so it would
@@ -1425,202 +938,6 @@ module MGQ_MpWorldCatchup
       equipped = MGQ_MpGame.get(actor, :equip_abilities)
       equipped.is_a?(Hash) && equipped.values.flatten.sort == ids[1..-1].sort
     else false
-    end
-  end
-
-  # Gives the world's key items and the items of its story chests, see the module. A key item row
-  # the story passed only takes what it takes; what the rows give comes through
-  # restock_key_items, which gives only what the player lacks, so nothing comes twice.
-  #
-  # @param story [Array] The player's story.
-  # @param carried [Boolean] Whether a story laid over theirs just carried them past what is new.
-  # @param done [Hash] The rows done.
-  # @return [Array<String>] What was given, as shown.
-  def self.world_items(story, carried, done)
-    gifts = []
-    told = @world_told
-    DATA::KEY_ITEMS.each do |row|
-      key = key_of("k", row)
-      next if done[key]
-      mine = passed?(row, story)
-      next unless mine || (told && passed?(row, told, story))
-
-      done[key] = true
-      give("i", row.item, row.amount, key) if row.amount < 0 && carries?(row) && (carried || !mine)
-    end
-    DATA::CHESTS.each do |row|
-      key = key_of("c", row)
-      next if done[key]
-
-      mine = story[2][row.key] ? true : false
-      next unless mine || (told && told[2][row.key])
-
-      done[key] = true
-      next unless carried || !mine
-
-      row.items.each { |id| gifts << give("i", id, 1, key) }
-      turn_on_flags(row, key)
-      open_chest(row.key) unless mine
-    end
-    gifts.concat(restock_key_items(story, told))
-    gifts.concat(restock_unlock_items(story, told))
-  end
-
-  # Hands out every key item the story owes the player by now and they hold fewer of: one a key
-  # item row gives that the player's story or the world's is past, on the player's side, and that
-  # no later row took back, up to the most such a row gives. Unlike the rows' ledger it goes by the
-  # story's place alone, so a row added after the player's story passed it, or an event a story
-  # laid over theirs skipped, as the Pocket Castle's handover, still gives the item.
-  #
-  # @param story [Array] The player's story.
-  # @param told [Array, nil] The world's story, nil before it came.
-  # @return [Array<String>] What was given, as shown.
-  def self.restock_key_items(story, told)
-    owed = Hash.new(0)
-    DATA::KEY_ITEMS.each do |row|
-      next unless row.amount > 0 && passed_any?(row, story, told)
-      next if taken_since?(row, story, story) || (told && taken_since?(row, told, story))
-
-      owed[row.item] = [owed[row.item], row.amount].max
-    end
-    owed.map do |id, amount|
-      item = MGQ_MpGame.item("i", id)
-      missing = item ? amount - $game_party.item_number(item) : 0
-      missing > 0 ? give("i", id, missing, "k:owed:#{id}") : nil
-    end
-  end
-
-  # Hands out every item unlocking a job or a race a reward row gives whose own self switch tells
-  # that the player's story or the world's ran its event, and that the player lacks. Like
-  # restock_key_items it goes by the story's place alone, so a gift the rows' ledger noted done
-  # without giving it, as the King of Remina's, still comes.
-  #
-  # @param story [Array] The player's story.
-  # @param told [Array, nil] The world's story, nil before it came.
-  # @return [Array<String>] What was given, as shown.
-  def self.restock_unlock_items(story, told)
-    unlock_rows.map do |row|
-      next unless passed_any?(row, story, told)
-
-      item = MGQ_MpGame.item("i", row.id)
-      item && $game_party.item_number(item) == 0 ? give("i", row.id, 1, "#{key_of('g', row)}:owed") : nil
-    end
-  end
-
-  # The reward rows restock_unlock_items looks at: items unlocking a job or a race, given by an
-  # event whose own self switch is among the row's marks.
-  #
-  # @return [Array<MGQ_MpWorldCatchupData::Reward>] The rows.
-  def self.unlock_rows
-    return [] unless $data_items
-
-    @unlock_rows ||= DATA::REWARDS.select do |row|
-      row.kind == :i && carries?(row) && own_switch_mark?(row) && unlock_item?(MGQ_MpGame.item("i", row.id))
-    end
-  end
-
-  # Reports whether a row's marks hold a self switch of its own map event.
-  #
-  # @param row [Struct] The row.
-  # @return [Boolean] Whether they do.
-  def self.own_switch_mark?(row)
-    kind, map, event = row.site.to_s.split(":")
-    kind == "map" && row.marks.any? { |mark| mark[0] == :ss && mark[1] == map.to_i && mark[2] == event.to_i }
-  end
-
-  # The rewards the story trades away again, which repair_rewards never gives: the Fallen Sword
-  # Angel Halo, which map 1075 event 35 takes for the weapon it gives.
-  TRADED_REWARDS = [[:w, 4112]]
-
-  # Gives once per save every item of a map event's reward row the player's story is past and the
-  # rows' ledger noted done that the player holds none of, items unlocking a job or a race and
-  # TRADED_REWARDS aside.
-  #
-  # Before 0.6.7.2 the catch-up failed between noting the rewards a story carried the player past
-  # and giving them, so the ledger kept them noted done.
-  #
-  # @param story [Array] The player's story.
-  # @return [Array<String>] What was given, as shown.
-  def self.repair_rewards(story)
-    notes = ledger
-    return [] if notes["rewards_repaired"]
-
-    notes["rewards_repaired"] = true
-    DATA::REWARDS.map do |row|
-      key = key_of("g", row)
-      next unless row.kind != :skill && notes["done"][key] && !notes["waits"].key?(key) && carries?(row)
-      next if TRADED_REWARDS.include?([row.kind, row.id])
-      next unless row.site.to_s.start_with?("map:") && passed?(row, story)
-
-      item = MGQ_MpGame.item(reward_kind(row), row.id)
-      next if item.nil? || unlock_item?(item) || held?(item)
-
-      give(reward_kind(row), row.id, row.amount, "#{key}:repaired")
-    end
-  end
-
-  # Reports whether the party holds an item, in the bag or worn.
-  #
-  # @param item [RPG::BaseItem] The item.
-  # @return [Boolean] Whether it does.
-  def self.held?(item)
-    return true if $game_party.item_number(item) > 0
-
-    $game_party.all_members.any? { |actor| actor.respond_to?(:equips) && actor.equips.include?(item) }
-  end
-
-  # Reports whether a story took a key item after a row gave it: a row of a later part, a later row
-  # of the same part, one of the same step whose marks lie further (see marks_beyond?), or one of the
-  # same event and marks listed after it, that takes it. The routes share a rank, so a row of another
-  # route never counts as later.
-  #
-  # @param row [MGQ_MpWorldCatchupData::KeyItem] The row that gives it.
-  # @param told [Array] The story.
-  # @param story [Array] The player's own story.
-  # @return [Boolean] Whether it did.
-  def self.taken_since?(row, told, story)
-    DATA::KEY_ITEMS.any? do |other|
-      next false unless other.item == row.item && other.amount < 0 && other.part && row.part
-      later = if other.part != row.part then RANKS[other.part] > RANKS[row.part]
-              elsif other.step.to_i != row.step.to_i then other.step.to_i > row.step.to_i
-              elsif other.site == row.site && same_marks?(other, row) then listed_after?(other, row)
-              else marks_beyond?(other, row)
-              end
-      later && passed?(other, told, story)
-    end
-  end
-
-  # Reports whether two rows hold the same marks, in any order.
-  #
-  # @param row [Struct] The one.
-  # @param other [Struct] The other.
-  # @return [Boolean] Whether they do.
-  def self.same_marks?(row, other)
-    row.marks.sort_by(&:inspect) == other.marks.sort_by(&:inspect)
-  end
-
-  # Reports whether a key item row comes after another in KEY_ITEMS, which lists the rows that give
-  # before those that take at one place.
-  #
-  # @param row [MGQ_MpWorldCatchupData::KeyItem] The one.
-  # @param other [MGQ_MpWorldCatchupData::KeyItem] The other.
-  # @return [Boolean] Whether it does.
-  def self.listed_after?(row, other)
-    DATA::KEY_ITEMS.index { |listed| listed.equal?(row) } > DATA::KEY_ITEMS.index { |listed| listed.equal?(other) }
-  end
-
-  # Reports whether a row's marks lie further than another's of the same step: each of the other's
-  # marks is the row's too, a variable's at least as high, and they differ. Rows of one step, as
-  # the Yggdrasil Fruit Nero gives and the Queen Harpy event takes, tell their order by them alone.
-  #
-  # @param row [Struct] The one.
-  # @param other [Struct] The other.
-  # @return [Boolean] Whether they do.
-  def self.marks_beyond?(row, other)
-    return false if same_marks?(row, other)
-
-    other.marks.all? do |mark|
-      row.marks.any? { |own| own == mark || (own[0] == :v && mark[0] == :v && own[1] == mark[1] && own[2] >= mark[2]) }
     end
   end
 
@@ -1659,82 +976,48 @@ module MGQ_MpWorldCatchup
   #
   # @return [Array<Unlock>] By level, then kind and name; none outside a Raid World.
   def self.unlocks
-    return [] unless active?
+    return [] unless active? && keys
 
-    list = []
-    looking do
-      new_look
-      story = story_now
-      list.concat(story_unlocks)
-      list.concat(companion_unlocks(story, @world_told))
-      list.concat(makina_unlocks)
-    end
-    list.sort_by { |unlock| [unlock.level, UNLOCK_KINDS.index(unlock.kind), unlock.name] }
+    answer = call(UNLOCKS_TOPIC, snapshot)
+    return [] unless answer
+
+    list = Array(answer["unlocks"]).map { |level, kind, id, name, got, due, gains| unlock_of(level, kind, id, name, got, due, gains) }.compact
+    list.sort_by { |unlock| [unlock.level.to_i, UNLOCK_KINDS.index(unlock.kind), unlock.name] }
   rescue => e
     log_once(:unlocks, "listing what the catch-up hands out failed: #{e.class}: #{e.message}")
     []
   end
 
-  # Reads the level the catch-up counts: the highest base level among the player's characters.
+  # Names an unlock the DLL listed.
   #
-  # @return [Integer, nil] The level, nil without characters.
-  def self.counted_level
-    roster_view[:best]
-  rescue
-    nil
-  end
-
-  # Lists moving on from the parts before the world's, at each part's gate, and from a route the
-  # world finished while the player is on it.
-  #
-  # @return [Array<Unlock>] The unlocks.
-  def self.story_unlocks
-    world = MGQ_MpWorldStory.world
-    return [] unless world
-
-    order = world_parts(world)
-    current = world["part"].to_s
-    own = own_part
-    own_at = order.index(own)
-    parts = order.take_while { |part| part != current }
-    parts.select { |part| !MGQ_MpWorldStory::ROUTES.include?(part) || part == own }.map do |part|
-      got = own_at.nil? || own_at > order.index(part)
-      into = next_part(part, world)
-      gains = gains_of(part, into == :world ? current : into, part == own)
-      Unlock.new(gate_of(part), :story, part_name(part), nil, got, !got && gate_open?(gate_of(part)), nil, gains)
+  # @param level [Integer] Its level.
+  # @param kind [String] "story", "companion" or "makina".
+  # @param id [Integer, nil] The companion or the Makina.
+  # @param name [String, nil] The part's name.
+  # @param got [Boolean] Whether the player has it.
+  # @param due [Boolean] Whether it comes at the next check.
+  # @param gains [Array<Array>] What moving on brings along: kind, id and amount each.
+  # @return [Unlock, nil] The unlock; nil for a Makina the game lacks.
+  def self.unlock_of(level, kind, id, name, got, due, gains)
+    case kind
+    when "story" then Unlock.new(level, :story, name, nil, got, due, nil, gains_of(gains))
+    when "companion" then Unlock.new(level, :companion, actor_name(id), nil, got, due, id, [])
+    else
+      item = MGQ_MpGame.item("i", id)
+      item ? Unlock.new(level, :makina, item.name, item.respond_to?(:icon_index) ? item.icon_index : nil, got, due, id, []) : nil
     end
   end
 
-  # Lists what moving on from a part brings along: the key items and the story's and side quests'
-  # rewards of the next part the world's story passed, and of the player's own part those their
-  # story has not passed yet.
+  # Names what moving on from a part brings along.
   #
-  # @param part [String] The part moved on from.
-  # @param into [String, nil] The part moved on to.
-  # @param own [Boolean] Whether it is the player's part.
-  # @return [Array<Gain>] Key items and unlocks first, then skills and items, each once with its amount.
-  def self.gains_of(part, into, own)
-    story = story_now
-    told = @world_told
-    carried = lambda do |row|
-      next false unless carries?(row) && told
-
-      (row.part == into && passed?(row, told, story)) || (own && row.part == part && passed?(row, told, story) && !passed?(row, story))
+  # @param gains [Array<Array>] Each kind ("skill", "i", "w" or "a"), id and amount.
+  # @return [Array<Gain>] Key items and unlocks first, then skills and items.
+  def self.gains_of(gains)
+    found = Array(gains).map do |kind, id, amount|
+      gain = gain_of(kind == "skill" ? :skill : kind, id)
+      gain && gain.tap { |named| named.amount = amount }
     end
-    gains = {}
-    add = lambda do |kind, id, amount|
-      return if amount.to_i <= 0
-
-      gain = gain_of(kind, id)
-      return unless gain
-
-      key = [gain.kind, gain.item_kind, id]
-      gains[key] ? gains[key].amount += amount : gains[key] = gain.tap { |found| found.amount = amount }
-    end
-    DATA::KEY_ITEMS.each { |row| add.call("i", row.item, row.amount) if carried.call(row) }
-    DATA::REWARDS.each { |row| add.call(row.kind == :skill ? :skill : row.kind.to_s, row.id, row.amount) if carried.call(row) }
-    order = [:key, :unlock, :skill, :item]
-    gains.values.sort_by { |gain| [order.index(gain.kind), gain.name] }
+    found.compact.sort_by { |gain| [GAIN_ORDER.index(gain.kind), gain.name] }
   end
 
   # Reads what an item or skill is, for gains_of.
@@ -1761,71 +1044,70 @@ module MGQ_MpWorldCatchup
     Gain.new(sort, id, kind, 0, item.name.to_s, item.icon_index.to_i)
   end
 
-  # Lists the companions the catch-up brings at their gate: those of the joins the world's story
-  # got past, at their earliest gate, unless a removal took them away since (see
-  # missing_companions), and those the world shares that share_in still brings.
+  # Reads the level the catch-up counts: the highest base level among the player's characters.
   #
-  # @param story [Array] The player's story.
-  # @param told [Array, nil] The world's story, nil before it came.
-  # @return [Array<Unlock>] The unlocks.
-  def self.companion_unlocks(story, told)
-    gates = {}
-    if told
-      story_joins.each do |row|
-        next unless row.part && carries?(row) && passed?(row, told, story) && !taken_away_since?(row, story, told)
-
-        gates[row.actor] = [gates[row.actor], row.gate].compact.min
-      end
-    end
-    sharing = MGQ_MpWorld.companion_sharing
-    world = MGQ_MpWorldStory.world
-    if sharing != :off && world
-      done = ledger["done"]
-      lost = taken_for_good(done)
-      world["comps"].to_a.each do |id|
-        next if !in_roster?(id) && (done["s:#{id}"] == SHARE_SETTLED || lost[id] || joined?(id, done))
-
-        first = joins_of(id).first
-        gate = first ? first.gate : (sharing == :all ? start_level(id) : nil)
-        gates[id] = [gates[id], gate].compact.min if gate && id != HERO
-      end
-    end
-    gates.map do |id, gate|
-      got = in_roster?(id)
-      Unlock.new(gate, :companion, actor_name(id), nil, got, !got && reached?(gate), id, [])
-    end
+  # @return [Integer, nil] The level, nil without characters.
+  def self.counted_level
+    roster_view[:best]
+  rescue
+    nil
   end
 
-  # Lists every Makina a player of the world got at its level, see check_makina.
+  # The highest base level among the roster's companions not on a visit (see counts?), with that
+  # character's own highest level.
   #
-  # @return [Array<Unlock>] The unlocks.
-  def self.makina_unlocks
-    DATA::MAKINA.map do |row|
-      item = MGQ_MpGame.item("i", row.item)
-      next unless item && found?(row.item)
-
-      got = $game_party.item_number(item) > 0
-      Unlock.new(row.level, :makina, item.name, item.respond_to?(:icon_index) ? item.icon_index : nil, got, !got && reached?(row.level), row.item, [])
-    end.compact
+  # @return [Hash] :best and :cap (nil without one).
+  def self.roster_view
+    best = MGQ_MpStoryState.roster.reject { |actor| visiting?(MGQ_MpStoryState.main_id(actor.id)) }.max_by { |actor| actor.base_level }
+    { :best => best && best.base_level, :cap => best && best.max_level(:base) }
   end
 
-  # Hands out every Makina a player of the world got (see found?) whose level the player reached and
-  # they lack (DATA::MAKINA), and takes back every copy of one beyond the first, which the game never
-  # uses: a Raid World gives Makina by level, since a chest of one another player's story closed
-  # again gave it twice.
-  def self.check_makina
-    DATA::MAKINA.each do |row|
-      item = MGQ_MpGame.item("i", row.item)
-      next unless item && !trim_copies(item)
-      next unless $game_party.item_number(item) == 0 && found?(row.item) && reached?(row.level)
+  # Reports whether a companion is in the roster on a visit only, as the DLL's last look found.
+  #
+  # @param id [Integer] The companion's main persona.
+  # @return [Boolean] Whether they are.
+  def self.visiting?(id)
+    @visiting.include?(id)
+  end
 
-      @handing_makina = true
-      begin
-        give("i", row.item, 1, "makina:#{row.item} at level #{row.level}")
-      ensure
-        @handing_makina = false
-      end
-    end
+  # Reports whether a character counts in the catch-up, toward the player's level and in the
+  # catch-up experience: one of their own roster, not a story's temporary party, and not on a visit.
+  #
+  # @param actor [Game_Actor] The character.
+  # @return [Boolean] Whether they do.
+  def self.counts?(actor)
+    main = MGQ_MpStoryState.main_id(actor.id)
+    MGQ_MpStoryState.roster_ids.include?(main) && !visiting?(main)
+  rescue
+    true
+  end
+
+  # Gives a Makina the DLL found due, which is not noted as found again (see gained).
+  #
+  # @param id [Integer] The item.
+  # @param key [String] Why, for the log.
+  # @return [nil] Nothing to tell among the gifts.
+  def self.hand_makina(id, key)
+    @handing_makina = true
+    give("i", id, 1, key)
+    nil
+  ensure
+    @handing_makina = false
+  end
+
+  # Takes back copies of an item beyond the first, as a Makina or an item unlocking a job or a race
+  # counts once.
+  #
+  # @param id [Integer] The item.
+  # @param count [Integer] How many to take back.
+  # @return [nil] Nothing to tell among the gifts.
+  def self.trim_copies(id, count)
+    item = MGQ_MpGame.item("i", id)
+    return nil unless item
+
+    $game_party.lose_item(item, count)
+    log("took #{item.name} x#{count}: it counts once")
+    nil
   end
 
   # Reports whether a player of the world got an item, as gained notes it.
@@ -1836,39 +1118,14 @@ module MGQ_MpWorldCatchup
     $game_self_switches[[FOUND_MAP, id, FOUND_LETTER]] ? true : false
   end
 
-  # Reports whether an item is a Makina, see DATA::MAKINA.
+  # Reports whether an item is a Makina of the catch-up's tables.
   #
   # @param item [RPG::BaseItem, nil] The item.
   # @return [Boolean] Whether it is.
   def self.makina?(item)
-    @makina_ids ||= DATA::MAKINA.map { |row| row.item }
-    item.is_a?(RPG::Item) && @makina_ids.include?(item.id)
+    found = keys
+    item.is_a?(RPG::Item) && found && found["makina"].include?(item.id) ? true : false
   end
-
-  # Takes back every copy of an item beyond the first, as a Makina or an item unlocking a job or a
-  # race counts once.
-  #
-  # @param item [RPG::Item] The item.
-  # @return [Boolean] Whether there were more.
-  def self.trim_copies(item)
-    held = $game_party.item_number(item)
-    return false unless held > 1
-
-    $game_party.lose_item(item, held - 1)
-    log("took #{item.name} x#{held - 1}: it counts once")
-    true
-  end
-
-  # The map of the self switches [FOUND_MAP, item, FOUND_LETTER] that tell which items unlocking a
-  # job or a race, and which Makina, a player of the world got.
-  #
-  # No map has the id 0, so no event reads them, and they go with the world's story as any other
-  # self switch.
-  FOUND_MAP = 0
-
-  # The letter of the self switches that tell which items unlocking a job or a race a player of the
-  # world got, see FOUND_MAP.
-  FOUND_LETTER = "F"
 
   # Notes an item unlocking a job or a race, or a Makina, the player gained as found for the world, so
   # every other player gets it too; a Makina only by level, and not one the catch-up hands out
@@ -1890,10 +1147,9 @@ module MGQ_MpWorldCatchup
 
   # Notes every item unlocking a job or a race and every Makina the player holds as found for the
   # world, as gained does for one they get, so one got before the world noted it still reaches the
-  # other players.
+  # other players. Runs before every look at everything.
   def self.note_held_items
-    @unlock_items ||= ($data_items || []).select { |item| unlock_item?(item) || makina?(item) }
-    @unlock_items.each { |item| gained(item, 1) if $game_party.item_number(item) > 0 }
+    ($data_items || []).each { |item| gained(item, 1) if (unlock_item?(item) || makina?(item)) && $game_party.item_number(item) > 0 }
   end
 
   # Reports whether an item unlocks a job or a race.
@@ -1904,64 +1160,15 @@ module MGQ_MpWorldCatchup
     item.is_a?(RPG::Item) && item.description.to_s =~ UNLOCK_ITEM_TAG ? true : false
   end
 
-  # Hands out every item unlocking a job or a race a player of the world found that the player
-  # lacks, at once, wherever their story is, and takes back copies beyond the first, as a chest of
-  # one gives a second.
-  def self.check_found_items
-    found_ids.each do |id|
-      item = MGQ_MpGame.item("i", id)
-      next unless item && !makina?(item) && !trim_copies(item) && $game_party.item_number(item) == 0
-
-      give("i", id, 1, "found:#{id}")
-    end
-  end
-
-  # Lists the items the world found: those noted in the player's story and in the world's, which a
-  # player behind it does not play.
-  #
-  # @return [Array<Integer>] The items.
-  def self.found_ids
-    stories = [MGQ_MpStoryState.data_of($game_self_switches)]
-    stories << @world_told[2] if @world_told
-    keys = stories.flat_map { |selfs| selfs.keys.select { |key| selfs[key] && key[0] == FOUND_MAP && key[2] == FOUND_LETTER } }
-    keys.map { |key| key[1] }.uniq
-  end
-
-  # Turns on the chest flags a world-wide chest turns on, which are each player's own: the Chaos
-  # forge asks for "Carrying Moonbow Crystal" (7102) rather than the ore it gave.
-  #
-  # @param row [MGQ_MpWorldCatchupData::Chest] The chest.
-  # @param key [String] Its row, for the log.
-  def self.turn_on_flags(row, key)
-    Array(row.flags).each do |id|
-      next if $game_switches[id]
-
-      $game_switches[id] = true
-      log("turned on s#{id} of #{key}")
-    end
-  end
-
-  # Sets each variable of COUNTS to what its switches that are on add up to, or to its last value
-  # once its last switch is on.
-  def self.check_counts
-    COUNTS.each do |variable, rule|
-      next if rule.since && $game_variables[rule.since[0]].to_i < rule.since[1]
-
-      count = rule.done_switch && $game_switches[rule.done_switch] ? rule.done_value : rule.weights.inject(0) { |sum, (id, weight)| $game_switches[id] ? sum + weight : sum }
-      next if $game_variables[variable] == count
-
-      log("set v#{variable} from #{$game_variables[variable].inspect} to #{count}, the switches it counts")
-      $game_variables[variable] = count
-    end
-  end
-
   # Shows a world-wide chest the world opened as open in the player's story too, so it gives
   # nothing twice.
   #
   # @param key [Array] Its self switch: map, event and letter.
+  # @return [nil] Nothing to tell among the gifts.
   def self.open_chest(key)
     MGQ_MpStoryState.data_of($game_self_switches)[key] = true
     $game_map.need_refresh = true if $game_map
+    nil
   end
 
   # Logs what the story gave the player at once.
@@ -1973,172 +1180,132 @@ module MGQ_MpWorldCatchup
     log("the story gave the player #{gifts.join(', ')}") unless gifts.empty?
   end
 
-  # Notes that ORB_EVENT waits to play once the player holds every orb before the story moved on,
-  # once per session: the orbs the catch-up gave came without the call of an orb's event.
-  def self.check_orbs
-    return if @orbs_due || @orbs_played || MGQ_MpWorldStory.mode != :world || !orbs_due?
+  # Asks the player whom they take along once they are free, when the DLL found their story went
+  # past the choice of a side before the Great Decision without one, until they chose.
+  #
+  # A teller's scene ends the player's own choice before it sets the side when both play it at once,
+  # and the side switches are each player's own in a Raid World, so the teller's choice is no help.
+  #
+  # @param lost [Boolean] Whether the story went past the choice without one.
+  def self.ask_side(lost)
+    # A battle's invite clears the message window, and the question with it.
+    @asking_side = false if @asking_side && !$game_message.busy?
+    return if @asking_side || !lost || !MGQ_MpOverworldSync.map_free? || MGQ_MpCoopEvents.mirroring? || $game_message.busy?
+
+    @asking_side = true
+    log("asking the player whom they take along: their story went past the choice of a side without one")
+    $game_message.add("Your story went past the choice of whom you take along. Whom do you take along on your journey?")
+    $game_message.choices.push("Alice", "Ilias")
+    $game_message.choice_cancel_type = 0
+    $game_message.choice_proc = Proc.new { |index| take_side(index == 0 ? :alice : :ilias) }
+  end
+
+  # Keeps the side the player chose and brings its companion along, as the choice in Iliasville
+  # does; the next look gives what the side's rows owe, as the Pocket Castle.
+  #
+  # @param side [Symbol] :alice or :ilias.
+  def self.take_side(side)
+    @asking_side = false
+    MGQ_MpStoryState::SIDE_SWITCHES.each { |id| $game_switches[id] = id == (side == :alice ? MGQ_MpStoryState::ALICE_CHOSEN : MGQ_MpStoryState::ILIAS_CHOSEN) }
+    name = side == :alice ? "Alice" : "Ilias"
+    log("the player took #{name} along")
+    companion = keys && (keys["side_companions"] || {})[side.to_s]
+    bring_in(companion, nil, "you took #{name} along") if companion
+    @audit_due = true
+  rescue => e
+    log("taking a side failed: #{e.class}: #{e.message}")
+  end
+
+  # Notes that the orbs' event waits to play once the DLL found the player holds every orb before
+  # the story moved on, once per session: the orbs the catch-up gave came without the call of an
+  # orb's event, which only the player who plays it gets.
+  #
+  # @param due [Boolean] Whether the DLL found it due.
+  def self.note_orbs(due)
+    @orbs_now = due ? true : false
+    return if @orbs_due || @orbs_played || !@orbs_now
 
     @orbs_due = true
-    log("the player holds every orb of Part 2 at #{$game_variables[MGQ_MpWorldStory::MAIN_PROGRESS]}: common event #{ORB_EVENT} waits to play once the player is free")
+    log("the player holds every orb of Part 2 at #{$game_variables[MGQ_MpWorldStory::MAIN_PROGRESS]}: common event #{keys['orb_event']} waits to play once the player is free")
   end
 
-  # Reports whether the story waits for ORB_EVENT: the player holds every orb, and the main story
-  # has not reached ORBS_GATHERED.
-  #
-  # @return [Boolean] Whether it does.
-  def self.orbs_due?
-    return false unless $game_variables[MGQ_MpWorldStory::MAIN_PROGRESS].to_i < ORBS_GATHERED
-
-    ORBS.all? do |id|
-      item = MGQ_MpGame.item("i", id)
-      item && $game_party.item_number(item) > 0
-    end
-  end
-
-  # Plays ORB_EVENT once the player is free on the map, unless the story moved on meanwhile.
+  # Plays the orbs' event once the player is free on the map, unless the story moved on meanwhile.
   def self.play_orb_event
     return unless MGQ_MpOverworldSync.map_free? && !MGQ_MpWorldStory.queued?
 
     @orbs_due = false
-    return unless MGQ_MpWorldStory.mode == :world && orbs_due?
+    return unless MGQ_MpWorldStory.mode == :world && @orbs_now && keys && keys["orb_event"]
 
     @orbs_played = true
-    log("playing common event #{ORB_EVENT} now")
-    $game_map.interpreter.setup([MGQ_MpWorldStory.command(117, [ORB_EVENT]), MGQ_MpWorldStory.command(0, [])], 0)
+    event = keys["orb_event"]
+    log("playing common event #{event} now")
+    $game_map.interpreter.setup([MGQ_MpWorldStory.command(117, [event]), MGQ_MpWorldStory.command(0, [])], 0)
   end
 
-  # Follows the story's companions, see the module: the removals and joins the player's story is
-  # past, and the joins waiting for their gate.
+  # Brings a companion into the player's roster as the game's own join does: the persona (unless
+  # keeps_form?), recovered, into the team, or on standby through the game's own cut when it is full
+  # or a story's temporary party plays; then raised to the join's level.
   #
-  # @param story [Array] The player's story.
-  # @param carried [Boolean] Whether a story laid over theirs just carried them past what is new.
-  # @param done [Hash] The rows done.
-  def self.companions(story, carried, done)
-    removed = {}
-    DATA::REMOVALS.each do |row|
-      key = key_of("r", row)
-      next if done[key] || !passed?(row, story)
+  # @param persona [Integer] The persona that joins.
+  # @param level [Integer, nil] The level they come at least at, nil for their own.
+  # @param reason [String] Why, for the notice.
+  # @return [nil] Nothing to tell among the gifts.
+  def self.bring_in(persona, level, reason)
+    return nil unless $data_actors[persona]
+    return nil if MGQ_MpStoryState.in_roster?(persona)
 
-      done[key] = true
-      (removed[row.actor] ||= []) << row
+    @granting = true
+    begin
+      $game_party.persona_change(persona) if $game_party.respond_to?(:persona_change) && !keeps_form?(persona)
+      actor = $game_actors[persona]
+      actor.recover_all if actor && actor.respond_to?(:recover_all)
+      temp = $game_party.respond_to?(:temp_actors_use?) && $game_party.temp_actors_use?
+      temp ? $game_party.add_stand_actor(persona) : $game_party.add_actor(persona)
+    ensure
+      @granting = false
     end
-    fresh = []
-    story_joins.each do |row|
-      key = key_of("j", row)
-      state = done[key]
-      if state.nil?
-        next if carried && !carries?(row)
-        next unless passed?(row, story)
-        next done[key] = true if row.part.nil?
-
-        fresh << row
-      elsif state != true && removed[row.actor]
-        # A removal passed after this join waited, so it came later in the story.
-        done[key] = true
-        log("dropped the waiting join of #{actor_label(row.persona)} at #{row.site}: the story took them away since")
-      end
-    end
-    fresh.each { |row| note_join(row, carried, removed, done) }
-    take_away(removed, fresh) if carried
-    bring_waiting(done)
+    raise_level(persona, level)
+    log("#{actor_label(persona)} joined the player's roster (#{reason})")
+    notice([:joined, persona], "#{actor_name(persona)} joined you.")
+    nil
   end
 
-  # Notes a join the player's story just got past: done when its companion is there or the
-  # player's own game left them out, else waiting for its gate; dropped when the same look passed a
-  # later removal of the companion. A companion there whom a story carried past a join waits for
-  # it too unless it brings nothing: a first join at their start level in their main persona.
+  # Raises a companion to a level, as the story's level floors do; never lowers them.
   #
-  # @param row [MGQ_MpWorldCatchupData::Join] The join.
-  # @param carried [Boolean] Whether a story laid over theirs carried them past it.
-  # @param removed [Hash{Integer => Array}] The removals passed in the same look, by companion.
-  # @param done [Hash] The rows done.
-  def self.note_join(row, carried, removed, done)
-    key = key_of("j", row)
-    later = (removed[row.actor] || []).any? { |removal| after?(removal, row) }
-    return done[key] = true if later
+  # @param persona [Integer] The companion, in any persona.
+  # @param level [Integer, nil] The level, nil for none.
+  # @return [nil] Nothing to tell among the gifts.
+  def self.raise_level(persona, level)
+    actor = level && $game_actors[persona]
+    return nil unless actor && actor.base_level < level
 
-    present = in_roster?(row.actor)
-    done[key] = if present
-                  carried && (row.rule != START_RULE || form?(row.persona)) ? "c" : true
-                elsif carried
-                  "c"
-                else
-                  ledger["held"].delete(row.actor) ? "o" : true
-                end
-  end
-
-  # Takes away the companions a story carried the player past the lasting removal of, as a first
-  # playthrough loses them, unless a join of the same look comes after each of those removals or at
-  # the same place.
-  #
-  # @param removed [Hash{Integer => Array}] The removals passed, by companion.
-  # @param fresh [Array] The joins passed in the same look.
-  def self.take_away(removed, fresh)
-    return unless $game_variables[PLAYTHROUGH].to_i == 0
-
-    removed.each do |actor, rows|
-      lasting = rows.select { |row| row.first }
-      next if lasting.empty? || actor == HERO || !in_roster?(actor)
-
-      next if fresh.any? { |row| row.actor == actor && lasting.none? { |removal| after?(removal, row) } }
-
-      $game_party.remove_actor(actor)
-      roster_changed
-      log("#{actor_label(actor)} left the player's roster: the story carried them past #{lasting.map { |row| row.site }.join(', ')}")
-      notice([:left, actor], "#{actor_name(actor)} left with the story.")
-    end
-  end
-
-  # Lets the joins that wait for their gate in: the companion joins, or one already there takes
-  # the join's persona (take_form) and is raised to its level, once the player's level reaches the
-  # gate.
-  #
-  # @param done [Hash] The rows done.
-  def self.bring_waiting(done)
-    story_joins.each do |row|
-      key = key_of("j", row)
-      state = done[key]
-      next if state.nil? || state == true
-
-      present = in_roster?(row.actor)
-      next done[key] = true if present && state == "o"
-      next unless reached?(row.gate)
-
-      done[key] = true
-      level = row.rule == START_RULE ? nil : row.gate
-      next bring_in(row.persona, level, "level #{row.gate} reached") unless present
-
-      take_form(row.persona, row.site) unless form_changed_since?(row, done)
-      raise_level(row.persona, level)
-    end
-  end
-
-  # Reports whether an actor change at a join's place or later already set the companion's
-  # persona, which the join's own persona would undo, as Granberia's return to 16 after the join of
-  # 17 in common event 9106.
-  #
-  # @param join [MGQ_MpWorldCatchupData::Join] The join.
-  # @param done [Hash] The rows done.
-  # @return [Boolean] Whether one did.
-  def self.form_changed_since?(join, done)
-    DATA::ACTOR_CHANGES.any? do |change|
-      change.actor == join.actor && done[key_of("a", change)] == true && (place_of(change) <=> place_of(join)) >= 0 &&
-        change.calls.any? { |name, _ids, _once| name == :persona_change }
-    end
+    actor.change_level(level, false, :base)
+    log("raised #{actor_label(persona)} to level #{actor.base_level}")
+    nil
   end
 
   # Turns a companion of the roster into the persona a join of theirs brings, as the game's own
-  # join does: one of their personas other than the main one, as Ilias's power-up brings her
-  # second (27).
+  # join does.
   #
   # @param persona [Integer] The persona the join brings.
   # @param site [String] The join's site, for the log.
+  # @return [nil] Nothing to tell among the gifts.
   def self.take_form(persona, site)
-    actor = $game_actors[persona]
-    return unless actor && form?(persona) && actor.id != persona
-
     $game_party.persona_change(persona)
     log("#{actor_label(persona)} took the persona the join at #{site} brings")
+    nil
+  end
+
+  # Takes away a companion a story carried the player past the lasting removal of.
+  #
+  # @param actor [Integer] The companion's main persona.
+  # @param sites [String] The removals' sites, for the log.
+  # @return [nil] Nothing to tell among the gifts.
+  def self.take_away(actor, sites)
+    $game_party.remove_actor(actor)
+    log("#{actor_label(actor)} left the player's roster: the story carried them past #{sites}")
+    notice([:left, actor], "#{actor_name(actor)} left with the story.")
+    nil
   end
 
   # Reports whether a persona is one of a companion's other personas than the main one.
@@ -2159,50 +1326,8 @@ module MGQ_MpWorldCatchup
     actor && !form?(persona) && actor.id != persona ? true : false
   end
 
-  # Brings a companion into the player's roster as the game's own join does: the persona (unless
-  # keeps_form?), recovered, into the team, or on standby through the game's own cut when it is full
-  # or a story's temporary party plays; then raised to the join's level.
-  #
-  # @param persona [Integer] The persona that joins.
-  # @param level [Integer, nil] The level they come at least at, nil for their own.
-  # @param reason [String] Why, for the notice.
-  # @return [Boolean] Whether they joined.
-  def self.bring_in(persona, level, reason)
-    return false unless $data_actors[persona]
-    return false if in_roster?(persona)
-
-    @granting = true
-    begin
-      $game_party.persona_change(persona) if $game_party.respond_to?(:persona_change) && !keeps_form?(persona)
-      actor = $game_actors[persona]
-      actor.recover_all if actor && actor.respond_to?(:recover_all)
-      temp = $game_party.respond_to?(:temp_actors_use?) && $game_party.temp_actors_use?
-      temp ? $game_party.add_stand_actor(persona) : $game_party.add_actor(persona)
-    ensure
-      @granting = false
-      roster_changed
-    end
-    raise_level(persona, level)
-    log("#{actor_label(persona)} joined the player's roster (#{reason})")
-    notice([:joined, persona], "#{actor_name(persona)} joined: #{reason}.")
-    companion_values
-    true
-  end
-
-  # Raises a companion to a level, as the story's level floors do; never lowers them.
-  #
-  # @param persona [Integer] The companion, in any persona.
-  # @param level [Integer, nil] The level, nil for none.
-  def self.raise_level(persona, level)
-    actor = level && $game_actors[persona]
-    return unless actor && actor.base_level < level
-
-    actor.change_level(level, false, :base)
-    log("raised #{actor_label(persona)} to level #{actor.base_level}")
-  end
-
   # Holds back a companion a story event of the player's own hands out in a Raid World before the
-  # player's level reaches the join's gate: the join waits for it instead, see bring_waiting.
+  # player's level reaches the join's gate, as the DLL finds it: the join waits for it instead.
   # Called before the game adds a companion to the party.
   #
   # @param actor_id [Integer] The companion, in any persona.
@@ -2212,18 +1337,15 @@ module MGQ_MpWorldCatchup
     return false unless defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.telling?
 
     main = MGQ_MpStoryState.main_id(actor_id)
-    return false if in_roster?(main) || visit_running?(main)
+    return false if MGQ_MpStoryState.in_roster?(main) || keys.nil?
 
-    part = own_part
-    done = ledger["done"]
-    rows = joins_of(main).select { |row| row.part == part && done[key_of("j", row)] != true }
-    return false if rows.empty?
+    answer = call(HOLD_TOPIC, "actor" => main, "site" => running_page_site, "own" => values(story_now), "roster" => roster_entries)
+    return false unless answer
 
-    gate = rows.map { |row| row.gate }.min
-    return false if reached?(gate)
+    run(answer["actions"])
+    gate = answer["gate"]
+    return false unless gate
 
-    ledger["held"][main] = true
-    log("held back #{actor_label(actor_id)}, whom the player's story event hands out: they join once the player's level reaches #{gate}")
     notice([:held, main], "#{actor_name(actor_id)} joins you once you reach level #{gate}.")
     true
   rescue => e
@@ -2231,21 +1353,7 @@ module MGQ_MpWorldCatchup
     false
   end
 
-  # Reports whether the map event page running brings a companion along on a visit only (see
-  # temporary?), which the catch-up never holds back: such an event may insist on them, as the
-  # Arena's final (map 483, event 86) adds Alma Elma again until she is in the party.
-  #
-  # Only the running page counts: Red Mountain's Queen Bee (map 134, event 34) brings Miria along on
-  # page 2 and recruits her for good on page 4.
-  #
-  # @param main [Integer] The companion's main persona.
-  # @return [Boolean] Whether it does.
-  def self.visit_running?(main)
-    site = running_page_site
-    site ? DATA::JOINS.any? { |row| row.actor == main && row.site == site && temporary?(row) } : false
-  end
-
-  # Names the map event page the map's interpreter runs as the catch-up data's sites do.
+  # Names the map event page the map's interpreter runs as the catch-up tables' sites do.
   #
   # The page is found by its list, which the interpreter keeps while the event's shown page changes.
   #
@@ -2261,109 +1369,18 @@ module MGQ_MpWorldCatchup
     page ? "map:#{$game_map.map_id}:#{event_id}:#{page + 1}" : nil
   end
 
-  # Lists the story's joins the catch-up goes by: those that last, see temporary?.
+  # Notes the companions new in the player's roster that the world's shared list takes, as the DLL
+  # found them: the story's companions, every one with battle recruits shared too. A companion on a
+  # visit is noted only once they stay.
   #
-  # @return [Array<MGQ_MpWorldCatchupData::Join>] The joins, in the story's order.
-  def self.story_joins
-    @story_joins ||= DATA::JOINS.reject { |row| temporary?(row) }
-  end
-
-  # Reports whether a join only brings its companion along for a visit: a removal of the story takes
-  # them away again in the same step (see takes_back?), unless they are one of LASTING_COMPANIONS.
-  # The catch-up neither lists nor gives such a companion, and they count toward no level.
-  #
-  # @param row [MGQ_MpWorldCatchupData::Join] The join.
-  # @return [Boolean] Whether it does.
-  def self.temporary?(row)
-    !taking_back(row).empty?
-  end
-
-  # Lists the removals that take a join's companion away again, see takes_back?.
-  #
-  # @param row [MGQ_MpWorldCatchupData::Join] The join.
-  # @return [Array<MGQ_MpWorldCatchupData::Removal>] The removals; none for one of LASTING_COMPANIONS.
-  def self.taking_back(row)
-    @taking_back ||= {}.compare_by_identity
-    @taking_back[row] ||= LASTING_COMPANIONS.include?(row.actor) ? [] : DATA::REMOVALS.select { |removal| takes_back?(removal, row) }
-  end
-
-  # Reports whether a removal takes a join's companion away again in the same step of the story:
-  # later in the same event, or in an event whose marks lie further, on the same side.
-  #
-  # @param removal [MGQ_MpWorldCatchupData::Removal] The removal.
-  # @param row [MGQ_MpWorldCatchupData::Join] The join.
-  # @return [Boolean] Whether it does.
-  def self.takes_back?(removal, row)
-    return false unless removal.actor == row.actor && removal.part == row.part && removal.step == row.step
-    return false if removal.side && row.side && removal.side != row.side
-
-    removal.site == row.site ? removal.index.to_i > row.index.to_i : marks_beyond?(removal, row)
-  end
-
-  # Reports whether a companion is in the player's roster on a visit only: their own story passed a
-  # temporary join of theirs (see temporary?) and none of the removals that take them away again yet.
-  #
-  # @param id [Integer] The companion's main persona.
-  # @param story [Array] The player's story.
-  # @return [Boolean] Whether they are.
-  def self.visiting?(id, story)
-    @visits ||= DATA::JOINS.select { |row| row.part && temporary?(row) }.group_by { |row| row.actor }
-    Array(@visits[id]).any? { |row| passed?(row, story) && taking_back(row).none? { |removal| passed?(removal, story) } }
-  end
-
-  # Reports whether a character counts in the catch-up, toward the player's level and in the
-  # catch-up experience: one of their own roster, not a story's temporary party, and not on a visit
-  # (see visiting?).
-  #
-  # @param actor [Game_Actor] The character.
-  # @return [Boolean] Whether they do.
-  def self.counts?(actor)
-    main = MGQ_MpStoryState.main_id(actor.id)
-    MGQ_MpStoryState.roster_ids.include?(main) && !visiting?(main, story_now)
-  rescue
-    true
-  end
-
-  # Lists the story's joins of a companion.
-  #
-  # @param actor [Integer] The companion's main persona.
-  # @return [Array<MGQ_MpWorldCatchupData::Join>] The joins that last, in the story's order.
-  def self.joins_of(actor)
-    unless @joins_by_actor
-      @joins_by_actor = {}
-      story_joins.each { |row| (@joins_by_actor[row.actor] ||= []) << row if row.part }
-    end
-    @joins_by_actor[actor] || []
-  end
-
-  # Reports whether a companion is one of the story's.
-  #
-  # @param actor [Integer] The companion's main persona.
-  # @return [Boolean] Whether they are.
-  def self.story_companion?(actor)
-    !joins_of(actor).empty?
-  end
-
-  # Notes the companions new in the player's roster, which the world's shared list takes once
-  # sharing is on: the story's companions, every one with battle recruits shared too. A companion
-  # on a visit (see visiting?) is noted only once they stay.
-  def self.note_roster
-    story = story_now
-    ids = MGQ_MpStoryState.roster_ids.reject { |id| visiting?(id, story) }
+  # @param sharable [Array<Integer>] The roster's companions the world's list takes.
+  def self.note_roster(sharable)
+    ids = MGQ_MpStoryState.roster_ids.reject { |id| visiting?(id) }
     fresh = ids - (@known_roster || [])
     @known_roster = ids
-    sharing = MGQ_MpWorld.companion_sharing
-    world = MGQ_MpWorldStory.world
-    return if sharing == :off || world.nil?
+    return if MGQ_MpWorld.companion_sharing == :off || MGQ_MpWorldStory.world.nil?
 
-    shared = world["comps"].to_a
-    fresh.each do |id|
-      next if id == HERO || shared.include?(id) || @share_queue.include?(id)
-      next unless sharing == :all || story_companion?(id)
-
-      @share_queue << id
-    end
-    share_in(sharing, shared)
+    fresh.each { |id| @share_queue << id if sharable.include?(id) && !@share_queue.include?(id) }
   end
 
   # Writes the companions noted to the world's shared list, a few together.
@@ -2394,59 +1411,6 @@ module MGQ_MpWorldCatchup
     @share_queue = (ids + @share_queue).uniq
     @share_at = @clock + RETRY_FRAMES
     log("sharing companions with the world failed (#{outcome}): trying again later")
-  end
-
-  # Lets the companions the world shares join the player once their level reaches each one's gate:
-  # a story companion at their first join's, a battle recruit at their start level. A companion the
-  # player had is never brought back this way, in their roster or past one of their joins in the
-  # player's story, nor one their story took away for good.
-  #
-  # @param sharing [Symbol] :story or :all, see MGQ_MpWorld.companion_sharing.
-  # @param shared [Array<Integer>] The world's shared companions.
-  def self.share_in(sharing, shared)
-    done = ledger["done"]
-    lost = nil
-    shared.each do |id|
-      key = "s:#{id}"
-      next if id == HERO || done[key] == SHARE_SETTLED
-
-      lost ||= taken_for_good(done)
-      next done[key] = SHARE_SETTLED if in_roster?(id) || lost[id] || joined?(id, done)
-
-      first = joins_of(id).first
-      next unless first || sharing == :all
-
-      gate = first ? first.gate : start_level(id)
-      next unless reached?(gate)
-
-      done[key] = SHARE_SETTLED
-      bring_in(first ? first.persona : id, first && first.rule != START_RULE ? gate : nil, "shared by the world")
-    end
-  end
-
-  # Reports whether the player's story got past a join of a companion, which gave them the companion
-  # whether or not they are in the roster now: a temporary removal of the story or the player may have
-  # let them go since. A join whose marks never tell that it ran, as a talk the player may decline,
-  # gave nothing by being walked past.
-  #
-  # @param id [Integer] The companion's main persona.
-  # @param done [Hash] The rows done.
-  # @return [Boolean] Whether it did.
-  def self.joined?(id, done)
-    joins_of(id).any? { |row| carries?(row) && done[key_of("j", row)] == true }
-  end
-
-  # Lists the companions the player's story took away for good: past a removal that lasts, on a
-  # first playthrough, which alone loses companions so.
-  #
-  # @param done [Hash] The rows done.
-  # @return [Hash{Integer => Boolean}] The companions' main personas to true.
-  def self.taken_for_good(done)
-    lost = {}
-    return lost unless $game_variables[PLAYTHROUGH].to_i == 0
-
-    DATA::REMOVALS.each { |row| lost[row.actor] = true if row.first && done[key_of("r", row)] }
-    lost
   end
 
   # Finds a companion's start level, the database's.

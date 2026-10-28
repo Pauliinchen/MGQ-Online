@@ -2,6 +2,7 @@
 #  story_keys_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Checked that a Classic party's table is built anew once the chest flags came
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
@@ -10,7 +11,8 @@
 # up as the relay's tracks look keys up (fixtures/story/classes.json), and the one hook on the
 # game's writes: which writes a story records, with the event that wrote them, which it never
 # records (the multiplayer's own, a lost battle's defeat scene, another object's), one batch a
-# frame for the DLL, the writes before the mapping came, and a Classic leader's writes.
+# frame for the DLL, the writes before the mapping came, a Classic leader's writes, and a Classic
+# party's table built anew once the chest flags came.
 
 require_relative "support"
 require_relative "story_support"
@@ -226,3 +228,19 @@ keys.recording = nil
 $game_switches[7096] = false
 keys.flush
 check("and none once the party's story records no more", $recorded.size, 1)
+
+# A Classic party's table is built with the chest flags known so far, and anew once the rewards a
+# party member catches up with brought other ones.
+built = []
+fake.answer("story.classic_table") { |request| built << request["chest_flags"]; classic_table_hash(request) }
+fake.answer("story.rewards") { |_known| nil }
+rewards_changed
+keys.instance_variable_set(:@classic, nil)
+before = keys.bridge_classic_table
+fake.answer("story.rewards") { |_known| CatchupRelayRows.party_rewards(nil).merge("chest_flags" => [2045], "rev" => 1) }
+rewards_changed
+MGQ_MpStoryState.rewards
+after = keys.bridge_classic_table
+keys.bridge_classic_table
+check("a Classic party's table is built without chest flags before they came, once more when they came, and not again while they stay",
+      [built, before.switches.getbyte(2045), after.switches.getbyte(2045)], [[[], [2045]], 1, 8])

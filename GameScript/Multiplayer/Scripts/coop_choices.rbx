@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-28: Asked the DLL for the choices, their outcomes and which keys are the player's own
+#                            - Read the Final Chapter's rewards from the catch-up tables the DLL holds
 #      Paulinchen  2026-10-14: Added the Navy or the Pirates as each player's own choice, with its ship and its line's self switches
 #                            - Asked a save past a choice a later build added once the world's first story came
 #      Paulinchen  2026-10-11: Dropped Amira's choice in Iliasburg
@@ -273,9 +274,10 @@ module MGQ_MpCoopChoices
   def self.skip_reason(kind, id)
     reason = MGQ_Multiplayer::Bridge.call(SKIP_TOPIC, "kind" => kind.to_s, "id" => id)
     return reason if reason
-    return nil unless @accepted && @accepted[:other_route] && defined?(MGQ_MpCoopStoryRewards) && MGQ_MpCoopStoryRewards.const_defined?(:FINAL)
+    rewards = @accepted && @accepted[:other_route] ? MGQ_MpStoryState.rewards : nil
+    return nil unless rewards
 
-    MGQ_MpCoopStoryRewards::FINAL[kind].include?(id) ? "only the leader's route gives it, and the player starts another" : nil
+    rewards.final[kind].include?(id) ? "only the leader's route gives it, and the player starts another" : nil
   end
 
   # Gives the player a choice's outcome in the story they play: its switches and variables, the

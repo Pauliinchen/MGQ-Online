@@ -1,0 +1,11 @@
+{
+  "source": "GameScript/Multiplayer/Scripts/world_catchup_data.rbx at 54a0c4ae",
+  "rows": [
+    {"id":"1","name":"Part 1","ending":[["v",1001,18],["v",1032,5]],"gate":25,"order":10},
+    {"id":"2","name":"Part 2","ending":[["v",1001,33],["v",1075,14]],"gate":55,"order":20},
+    {"id":"3","name":"Part 3","ending":[["v",1001,39],["s",2485],["s",2486],["s",2487]],"gate":65,"order":30},
+    {"id":"ad","name":"Angelic Dominion","ending":[["v",1141,73]],"gate":120,"order":40},
+    {"id":"mr","name":"Monster Realm","ending":[["v",1142,81]],"gate":120,"order":50},
+    {"id":"chaos","name":"Chaos","ending":[["v",1143,24],["v",1348,5]],"gate":300,"order":60}
+  ]
+}

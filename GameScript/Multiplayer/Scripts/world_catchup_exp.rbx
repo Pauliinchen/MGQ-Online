@@ -2,6 +2,7 @@
 #  world_catchup_exp.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Left a battle outside a Raid World's story before asking the catch-up whether a character counts
 #      Paulinchen  2026-10-23: Asked the DLL for the target, the factor and the grown experience
 #      Paulinchen  2026-10-13: Grew the experience of no story companion on a visit nor of a story's temporary party
 #      Paulinchen  2026-10-12: Created
@@ -27,12 +28,20 @@ module MGQ_MpWorldCatchupExp
   # What starts this script's lines in the log.
   LOG_TAG = "catch-up exp"
 
+  # Reports whether the catch-up experience applies: a Raid World's story is followed and the relay
+  # told its counters.
+  #
+  # @return [Boolean] Whether it does.
+  def self.active?
+    MGQ_MpWorldStory.active? && MGQ_MpWorldStory.world ? true : false
+  end
+
   # Finds the level up to which characters catch up: the cap the world's story unlocked before its
   # latest one.
   #
   # @return [Integer, nil] The level; nil outside a Raid World's story.
   def self.target
-    return nil unless MGQ_MpWorldStory.active? && MGQ_MpWorldStory.world
+    return nil unless active?
 
     MGQ_Multiplayer::Bridge.call(TARGET_TOPIC, Array(MGQ_MpWorldStory.world["caps"]))
   end
@@ -47,15 +56,17 @@ module MGQ_MpWorldCatchupExp
     MGQ_Multiplayer::Bridge.call(FACTOR_TOPIC, "target" => target, "level" => level) || ""
   end
 
-  # Grows the experience a character gains from a battle: not for one the catch-up does not count
-  # (see MGQ_MpWorldCatchup.counts?).
+  # Grows the experience a character gains from a battle: not outside a Raid World's story, where
+  # the catch-up is not even asked, nor for one it does not count (see MGQ_MpWorldCatchup.counts?).
   #
   # @param actor [Game_Actor] The character.
   # @param exp [Integer] The base experience.
   # @param cexp [Integer] The job and race experience.
   # @return [Array<Integer>] The experience to gain.
   def self.grown(actor, exp, cexp)
-    target = MGQ_MpWorldCatchup.counts?(actor) ? self.target : nil
+    return [exp, cexp] unless active? && MGQ_MpWorldCatchup.counts?(actor)
+
+    target = self.target
     return [exp, cexp] unless target
 
     grown = MGQ_Multiplayer::Bridge.call(GROW_TOPIC, "target" => target, "level" => actor.base_level, "exp" => exp, "cexp" => cexp)

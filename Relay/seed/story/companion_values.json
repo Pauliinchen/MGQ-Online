@@ -1,0 +1,6 @@
+{
+  "source": "Relay/seed/story/make_seed.rb",
+  "rows": [
+    {"actor":540,"variable":1009,"atLeast":2}
+  ]
+}

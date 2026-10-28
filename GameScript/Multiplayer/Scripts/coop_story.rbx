@@ -2,6 +2,7 @@
 #  coop_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Read the rewards a member catches up with from the catch-up tables the DLL holds, and sent the whole story once they came
 #      Paulinchen  2026-10-23: Told the members the story's writes the leader's game made, recorded by story_keys.rbx, instead of a comparison of the whole story every quarter second
 #      Paulinchen  2026-10-09: Moved the story's state model into story_state.rbx
 #      Paulinchen  2026-10-08: Kept the leader's story to Classic worlds
@@ -457,7 +458,7 @@ module MGQ_MpCoopStory
       @ask_frames = ASK_FRAMES
       @asks = 0
     end
-    return unless @waiting
+    return unless @waiting && rewards_came?
 
     @ask_frames += 1
     return if @ask_frames < ASK_FRAMES
@@ -466,6 +467,18 @@ module MGQ_MpCoopStory
     @asks = @asks.to_i + 1
     log("asking #{MGQ_MpOverworldSync.who(leader)} for their whole story, try #{@asks}")
     tell(leader.seat, "ask", {})
+  end
+
+  # Reports whether the rewards a member catches up with came from the DLL with the story mapping,
+  # which the whole story waits for on both sides: without them a member would catch up with
+  # nothing, and with every side's rewards. Logs once while they have not.
+  #
+  # @return [Boolean] Whether they came.
+  def self.rewards_came?
+    return true if MGQ_MpStoryState.rewards
+
+    log_once(:await_rewards, "the whole story waits for the rewards a member catches up with, which come with the story mapping")
+    false
   end
 
   # Takes a message about the story. Called by coop.rbx.
@@ -485,6 +498,8 @@ module MGQ_MpCoopStory
 
     case kind
     when "ask"
+      return log("left the ask unanswered: the rewards a member catches up with have not come yet, the member asks again") unless rewards_came?
+
       keys = key_items
       held = holdings(keys)
       log("sending #{MGQ_MpOverworldSync.who(peer)} the whole story at #{MGQ_MpStoryState.progress_text(MGQ_MpStoryState.data_of($game_variables))}, with #{holdings_text(held)}")
@@ -556,9 +571,10 @@ module MGQ_MpCoopStory
   # As leader, logs the companions in the roster that are no story companion, which a member who
   # catches up never gets, since the rewards table leaves them out.
   def self.log_roster_outside_rewards
-    return unless defined?(MGQ_MpCoopStoryRewards)
+    rewards = MGQ_MpStoryState.rewards
+    return unless rewards
 
-    story = MGQ_MpCoopStoryRewards::ACTORS.map { |id| MGQ_MpStoryState.main_id(id) }
+    story = rewards.actors.map { |id| MGQ_MpStoryState.main_id(id) }
     outside = MGQ_MpStoryState.roster_ids - story - [MGQ_MpStoryState::HERO]
     log("companions in the roster a member does not catch up with, not in the rewards table's companions: #{outside.map { |id| MGQ_MpStoryState.actor_label(id) }.join(', ')}") unless outside.empty?
   end
@@ -860,13 +876,14 @@ module MGQ_MpCoopStory
     log("#{label} waits for the story to get past the Great Decision, since the sides still differ (route waiting)")
   end
 
-  # Reports whether the Final Chapter gives a reward too, see MGQ_MpCoopStoryRewards::ROUTE.
+  # Reports whether the Final Chapter gives a reward too, see MGQ_MpStoryState::Rewards#route.
   #
   # @param kind [Symbol] :skills or :actors.
   # @param id [Integer] The reward.
   # @return [Boolean] Whether it does.
   def self.route_reward?(kind, id)
-    defined?(MGQ_MpCoopStoryRewards) && MGQ_MpCoopStoryRewards::ROUTE[kind].include?(id) ? true : false
+    rewards = MGQ_MpStoryState.rewards
+    rewards && rewards.route[kind].include?(id) ? true : false
   end
 
   # Gives the rewards that waited for the story to get past the Great Decision, once it is, those
@@ -1016,14 +1033,14 @@ module MGQ_MpCoopStory
   # @return [Hash] :skills and :actors as ids, :items as counts by letter and id, :side.
   def self.holdings(keys = key_items)
     held = { :skills => [], :actors => [], :items => {}, :side => own_side }
-    return held unless defined?(MGQ_MpCoopStoryRewards)
+    rewards = MGQ_MpStoryState.rewards
+    return held unless rewards
 
-    hero = $game_actors[MGQ_MpStoryState::HERO]
-    held[:skills] = MGQ_MpCoopStoryRewards::SKILLS.select { |id| MGQ_MpStoryState.knows?(hero, id) }
+    held[:skills] = rewards.skills.select { |id| MGQ_MpStoryState.knows?($game_actors[MGQ_MpStoryState::HERO], id) }
     roster = MGQ_MpStoryState.roster_ids
-    held[:actors] = MGQ_MpCoopStoryRewards::ACTORS.select { |id| roster.include?(MGQ_MpStoryState.main_id(id)) }
+    held[:actors] = rewards.actors.select { |id| roster.include?(MGQ_MpStoryState.main_id(id)) }
     worn = MGQ_MpStoryState.worn_counts
-    MGQ_MpCoopStoryRewards::ITEMS.each_key do |key|
+    rewards.items.each_key do |key|
       item = MGQ_MpStoryState.item_of(key)
       count = item ? MGQ_MpStoryState.story_count(item, worn) : 0
       held[:items][key] = count if count > 0
@@ -1142,8 +1159,10 @@ module MGQ_MpCoopStory
   # @param actor [Game_Actor] The character.
   # @param skill_id [Integer] The skill.
   def self.learned(actor, skill_id)
-    return unless defined?(MGQ_MpCoopStoryRewards) && MGQ_MpCoopStoryRewards::SKILLS.include?(skill_id)
     return unless actor.equal?($game_actors[MGQ_MpStoryState::HERO])
+
+    rewards = MGQ_MpStoryState.rewards
+    return unless rewards && rewards.skills.include?(skill_id)
     return log("Luka learned #{MGQ_MpStoryState.skill_label(skill_id)} outside the story (#{untold_reason}), the party is not told") if leading_synced? && !telling_party?
     return unless telling_party?
 
@@ -1191,7 +1210,8 @@ module MGQ_MpCoopStory
 
       next if skipped?(:items, key, MGQ_MpStoryState.item_label(key))
 
-      most = MGQ_MpCoopStoryRewards::ITEMS[key] if defined?(MGQ_MpCoopStoryRewards)
+      rewards = MGQ_MpStoryState.rewards
+      most = rewards.items[key] if rewards
       most ||= item.is_a?(RPG::Item) && item.key_item? ? count : 0
       have = MGQ_MpStoryState.story_count(item)
       missing = [count, most].min - have
@@ -1224,23 +1244,25 @@ module MGQ_MpCoopStory
     @leader_held && @leader_held[:side]
   end
 
-  # The events where the sides get other rewards, see MGQ_MpCoopStoryRewards::GROUPS.
+  # The events where the sides get other rewards, see MGQ_MpStoryState::Rewards#groups.
   #
   # @return [Array<Hash>] The events.
   def self.groups
-    defined?(MGQ_MpCoopStoryRewards) ? MGQ_MpCoopStoryRewards::GROUPS : []
+    rewards = MGQ_MpStoryState.rewards
+    rewards ? rewards.groups : []
   end
 
   # Reports whether only the events where the sides differ give a reward, which comes with those
-  # events alone, see MGQ_MpCoopStoryRewards::SIDED, so a member holds only their own side's; any
+  # events alone, see MGQ_MpStoryState::Rewards#sided, so a member holds only their own side's; any
   # other comes as the leader holds it, as does one the Final Chapter gives too once the story
-  # played is past the Great Decision, see MGQ_MpCoopStoryRewards::ROUTE.
+  # played is past the Great Decision, see MGQ_MpStoryState::Rewards#route.
   #
   # @param kind [Symbol] :skills or :actors.
   # @param id [Integer] The reward.
   # @return [Boolean] Whether they do.
   def self.sided?(kind, id)
-    return false unless defined?(MGQ_MpCoopStoryRewards) && MGQ_MpCoopStoryRewards::SIDED[kind].include?(id)
+    rewards = MGQ_MpStoryState.rewards
+    return false unless rewards && rewards.sided[kind].include?(id)
 
     MGQ_MpStoryState.sides_differ? || !route_reward?(kind, id)
   end

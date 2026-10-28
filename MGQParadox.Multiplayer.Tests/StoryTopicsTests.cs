@@ -2,6 +2,8 @@
 //  StoryTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Checked the mapping a Classic world fetches and the rewards a party member catches up with
+//                            - Checked that the catch-up reads the tables the mapping came with
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -14,6 +16,7 @@ using System.Text;
 using System.Text.Json;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Topics;
 using MGQParadox.Multiplayer.Network.World;
 
 namespace MGQParadox.Multiplayer.Tests;
@@ -97,6 +100,58 @@ public sealed class StoryTopicsTests
         Assert.Equal(0, before);
         Assert.Equal((7L, false, false, true), (status["classes"].AsLong(), status["synced"].AsBool(), status["pending"].AsBool(), status["world"].IsNil));
         Assert.True(Call(StoryTopics.TakeTopic, RubyNil.Value).IsNil);
+    }
+
+    /// <summary>
+    /// Asserts that the catch-up reads the tables the mapping came with, and waits before it came.
+    /// </summary>
+    [Fact]
+    public void Catchup_ReadsTheTablesTheMappingCameWith()
+    {
+        CatchupTopics.Register(_context, () => _topics.Catchup);
+        _topics.FetchMapping = (_, _) => JsonDocument.Parse("""
+            {"rev": 9, "tables": {"rules": [{"rule": "orb_event", "value": 330}, {"rule": "side_companions", "value": {"alice": 5, "ilias": 26}}]}, "index": null}
+            """);
+        Assert.True(Call(CatchupTopics.KeysTopic, RubyNil.Value).IsNil);
+
+        Call(StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false }, { "level", RubyNil.Value } });
+        Drain(1);
+        Drain(2);
+        RubyHash keys = Call(CatchupTopics.KeysTopic, RubyNil.Value).AsHash();
+
+        Assert.Equal((330L, new RubyHash { { "alice", 5 }, { "ilias", 26 } }), (keys["orb_event"].AsLong(), keys["side_companions"]));
+    }
+
+    /// <summary>
+    /// Asserts that a Classic world fetches the mapping without a story on tracks, again only after
+    /// ten minutes, and hands the scripts the rewards a party member catches up with once per revision.
+    /// </summary>
+    [Fact]
+    public void ClassicWorld_FetchesTheMappingForTheRewards()
+    {
+        _topics.FetchMapping = (_, known) =>
+        {
+            _fetches.Add(known);
+            return JsonDocument.Parse("""
+                {"rev": 4, "tables": {"event_rewards": [{"kind": "skill", "id": 937, "most": null, "sided": true, "route": false, "final": false},
+                 {"kind": "item", "id": 501, "most": 1, "sided": false, "route": false, "final": true}],
+                 "party_chests": [{"key": "ss6.9.A"}], "chest_flags": [{"switch": 2045}]}, "index": null}
+                """);
+        };
+        Assert.True(Call(StoryTopics.RewardsTopic, RubyNil.Value).IsNil);
+
+        Call(StoryTopics.MappingTopic, "w1");
+        Drain(1);
+        Drain(2);
+        RubyHash rewards = Call(StoryTopics.RewardsTopic, RubyNil.Value).AsHash();
+        Drain(30_000);
+
+        Assert.Equal([null], _fetches);
+        Assert.Equal((4L, new RubyArray { 937 }, new RubyHash { { "i501", 1 } }), (rewards["rev"].AsLong(), rewards["skills"], rewards["items"]));
+        Assert.Equal((new RubyArray { new RubyArray { 6, 9, "A" } }, new RubyArray { 2045 }), (rewards["chests"], rewards["chest_flags"]));
+        Assert.True(Call(StoryTopics.RewardsTopic, 4).IsNil);
+        Drain(36_002);
+        Assert.Equal([null, 4], _fetches);
     }
 
     /// <summary>

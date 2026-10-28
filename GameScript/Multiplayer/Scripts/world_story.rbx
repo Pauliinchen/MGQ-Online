@@ -5,6 +5,7 @@
 #      Paulinchen  2026-10-28: Left the player's telling to the DLL's telling machine
 #                            - Told the player's track in their state and read the tellings on it from the DLL
 #                            - Let the DLL say whose ended telling the player's story events wait for, ten seconds at most
+#                            - Had the DLL fetch the story mapping in a Classic world too, for the rewards a party member catches up with
 #                            - Wrote what the relay handed outside the write journal of the frozen fights
 #                            - Sent the frame's writes to the DLL ahead of the world's close
 #      Paulinchen  2026-10-24: Kept on the unlocks the player holds that the relay hands off, as the second accessory slot
@@ -113,6 +114,9 @@ module MGQ_MpWorldStory
   SEED_TOPIC = "story.seed"
   WATCH_TOPIC = "story.watch"
   TAKE_TOPIC = "story.take"
+
+  # The topic that has the DLL fetch the story mapping of a Classic world's relay, see StoryTopics.
+  MAPPING_TOPIC = "story.mapping"
 
   # The events of the story on tracks.
   STATUS_EVENT = "story.status"
@@ -472,6 +476,7 @@ module MGQ_MpWorldStory
   # Called after the map's update.
   def self.tick
     @clock += 1
+    follow_classic
     return close unless active?
 
     note_world
@@ -489,6 +494,18 @@ module MGQ_MpWorldStory
     follow_comps
   rescue => e
     log_once(:tick, "following the world's story failed: #{e.class}: #{e.message}")
+  end
+
+  # Has the DLL fetch the story mapping in a Classic world too, whose catch-up tables hold the
+  # rewards a party member catches up with (coop_story.rbx), and looks whether they came.
+  def self.follow_classic
+    id = MGQ_MpCoop::Scope.raid? || !MGQ_MpOverworldSync.in_world? ? "" : world_id
+    MGQ_MpStoryState.rewards unless id.empty?
+    return if id == @classic_world_id.to_s
+
+    @classic_world_id = id.empty? ? nil : id
+    log(id.empty? ? "the Classic world closed" : "a Classic world is open (#{id[0, 12]}): the DLL fetches the story mapping for the rewards a party member catches up with")
+    MGQ_Multiplayer::Bridge.stage(MAPPING_TOPIC, @classic_world_id)
   end
 
   # Notes the open world, starting its story when it is another than the last.

@@ -2,6 +2,7 @@
 //  GameBridge.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Registered the topics of the catch-up over the tables the story mapping came with
 //      Paulinchen  2026-10-23: Stopped registering the directory's tickets as topics
 //                            - Handed the world screen's forms and this game's data to its requests
 //                            - Registered the world screen's steps into a world
@@ -85,7 +86,8 @@ internal static unsafe class GameBridge
         ScreenTopics.Register(context, screen, services.Changes, () => services.Directory().ListRevision);
         EnteringTopics.Register(context, services, local.Worlds, local.Lists, session, forms, local.Fingerprint);
         WorldRoomTopics.Register(context);
-        StoryTopics.Register(context);
+        StoryTopics story = StoryTopics.Register(context);
+        CatchupTopics.Register(context, () => story.Catchup);
         JournalTopics.Register(context);
         UiTopics.Register(context, new TypedText());
         context.Register(SnapTopic, (_, request) => Snap(request.AsArray()));

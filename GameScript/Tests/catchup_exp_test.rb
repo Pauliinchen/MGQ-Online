@@ -2,6 +2,7 @@
 #  catchup_exp_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Checked that outside a Raid World's story the catch-up is not asked whether a character counts
 #      Paulinchen  2026-10-23: Checked the requests to the DLL, which owns the rule
 #      Paulinchen  2026-10-13: Checked that a character the catch-up does not count gains no more
 #      Paulinchen  2026-10-12: Created
@@ -44,8 +45,9 @@ class Game_Actor
   end
 end
 
-# Stands in for the catch-up, which counts every character but those named in $uncounted.
-module MGQ_MpWorldCatchup; def self.counts?(actor); !Array($uncounted).include?(actor.name); end; end
+# Stands in for the catch-up, which counts every character but those named in $uncounted, and
+# counts in $asked how often it was asked.
+module MGQ_MpWorldCatchup; def self.counts?(actor); $asked = $asked.to_i + 1; !Array($uncounted).include?(actor.name); end; end
 
 load_script("world_catchup_exp")
 exp = MGQ_MpWorldCatchupExp
@@ -80,7 +82,8 @@ check("nor for one the catch-up does not count, such as a story's temporary part
 $uncounted = nil
 
 MGQ_MpWorldStory.active = false
+asked = $asked
 low.gain_exp(100, 40)
-check("outside a Raid World's story it stays", low.gained.last, [100, 40])
+check("outside a Raid World's story it stays, the catch-up not even asked", [low.gained.last, $asked], [[100, 40], asked])
 low.gain_exp(100)
 check("experience given another way stays", low.gained.last, [100, nil])

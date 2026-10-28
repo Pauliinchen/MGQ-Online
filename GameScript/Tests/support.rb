@@ -2,6 +2,7 @@
 #  support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Kept the script's own Classic party's table for the test that builds it
 #      Paulinchen  2026-10-24: Counted the key frames as the tests count the game's
 #      Paulinchen  2026-10-23: Loaded the bridge, closed, with the first script
 #                            - Loaded story_keys.rbx after story_state.rbx, with the Classic party's table the DLL builds
@@ -148,9 +149,10 @@ STORY_FIXTURES = File.expand_path("../../fixtures/story", __dir__)
 
 # Loads story_keys.rbx, which Multiplayer.rb loads right after story_state.rbx, with a stand-in for
 # the DLL's Classic party's table (see classic_table_hash), so no test needs the DLL to tell what a
-# party shares.
+# party shares; the script's own stays as bridge_classic_table for the test that builds it.
 def load_story_keys
   load File.join(SCRIPTS_DIR, "story_keys.rbx")
+  MGQ_MpStoryKeys.singleton_class.send(:alias_method, :bridge_classic_table, :classic_table)
   MGQ_MpStoryKeys.define_singleton_method(:classic_table) { @classic ||= table_of(classic_table_hash(classic_request)) }
 end
 

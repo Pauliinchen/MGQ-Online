@@ -2,6 +2,7 @@
 //  StoryTable.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Carried the catch-up tables the mapping came with
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -9,6 +10,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using MGQOnline.Game.Catchup;
 
 namespace MGQOnline.Game.Story;
 
@@ -45,8 +47,9 @@ public sealed class StoryTable
     /// <param name="localSteps">The steps that stay each player's own in places.</param>
     /// <param name="gates">Each part's level gate by its id.</param>
     /// <param name="selfDefault">The class of a self switch no rule and no indexed event names.</param>
+    /// <param name="catchup">The catch-up's tables the mapping came with, <see langword="null"/> for none.</param>
     public StoryTable(long rev, byte[] switches, byte[] variables, IReadOnlyDictionary<string, StoryClass> selfRules, IReadOnlySet<long> index,
-        IReadOnlyList<LocalSteps> localSteps, IReadOnlyDictionary<string, int> gates, StoryClass selfDefault = StoryClass.Personal)
+        IReadOnlyList<LocalSteps> localSteps, IReadOnlyDictionary<string, int> gates, StoryClass selfDefault = StoryClass.Personal, CatchupTables? catchup = null)
     {
         SelfDefault = selfDefault;
         Rev = rev;
@@ -56,12 +59,18 @@ public sealed class StoryTable
         Index = index;
         LocalSteps = localSteps;
         Gates = gates;
+        Catchup = catchup ?? CatchupTables.Empty;
     }
 
     /// <summary>
     /// Gets the revision the table was read at.
     /// </summary>
     public long Rev { get; }
+
+    /// <summary>
+    /// Gets the catch-up's tables the mapping came with, empty for a table of the game's own.
+    /// </summary>
+    public CatchupTables Catchup { get; }
 
     /// <summary>
     /// Gets the class of each switch by id; an id past the end is each player's own.
