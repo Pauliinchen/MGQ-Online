@@ -2,7 +2,8 @@
 //  RuleEngine.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Warned of a rule loop only for the dropped events that would fire a row
+//      Paulinchen  2026-10-28: Fired a row the Nth or every Nth time its trigger and conditions held
+//                            - Warned of a rule loop only for the dropped events that would fire a row
 //      Paulinchen  2026-10-24: Limited the fires of a row by how often it fires
 //      Paulinchen  2026-10-23: Matched the fight rules once per event and the enemy rules by enemy slot
 //                            - Queued each effect with its place in its rule
@@ -230,9 +231,16 @@ public sealed class RuleEngine
         List<RuleSpec> successes = [];
         foreach (RuleSpec rule in rules)
         {
-            if (TriggerMatcher.Matches(rule, battleEvent, context, Book, enemy, fight)
-                && Allows(context.Ledger, rule, battleEvent, ledgerEnemy)
-                && ConditionEvaluator.Holds(rule.Conditions, context, enemy, battleEvent, Book))
+            if (!TriggerMatcher.Matches(rule, battleEvent, context, Book, enemy, fight))
+            {
+                continue;
+            }
+
+            RuleKey key = new(rule.Id, ledgerEnemy);
+            bool fires = rule.Often.Kind is Frequency.Nth or Frequency.EveryNth
+                ? HoldsOnItsTurn(context, rule, battleEvent, enemy, key)
+                : Allows(context.Ledger, rule, battleEvent, key) && ConditionEvaluator.Holds(rule.Conditions, context, enemy, battleEvent, Book);
+            if (fires)
             {
                 successes.Add(rule);
             }
@@ -242,32 +250,63 @@ public sealed class RuleEngine
     }
 
     /// <summary>
+    /// Counts a hold of a row that fires the Nth or every Nth time and tells whether this hold is one it fires on.
+    /// </summary>
+    /// <remarks>Every hold counts, also one the per-turn or per-use limit then stops, so the count reads
+    /// as the times trigger and conditions held; an Nth row past its N draws nothing.</remarks>
+    /// <param name="context">The battle.</param>
+    /// <param name="rule">The row.</param>
+    /// <param name="battleEvent">The event.</param>
+    /// <param name="enemy">The row's enemy, whom the conditions ask about.</param>
+    /// <param name="key">The row as the ledger counts it.</param>
+    /// <returns>Whether it fires.</returns>
+    private bool HoldsOnItsTurn(IRuleContext context, RuleSpec rule, BattleEvent battleEvent, int enemy, RuleKey key)
+    {
+        int n = Math.Max(1, rule.Often.N ?? 1);
+        if ((rule.Often.Kind == Frequency.Nth && context.Ledger.HoldsTotal(key) >= n)
+            || !ConditionEvaluator.Holds(rule.Conditions, context, enemy, battleEvent, Book))
+        {
+            return false;
+        }
+
+        context.Ledger.RecordHold(key);
+        int held = context.Ledger.HoldsTotal(key);
+        return (rule.Often.Kind == Frequency.Nth ? held == n : held % n == 0) && WithinTurnAndUse(context.Ledger, rule.Often, battleEvent, key);
+    }
+
+    /// <summary>
     /// Tells whether a rule's frequency allows another fire.
     /// </summary>
-    /// <remarks>An event without a cast counts as one use, so once per unit per use then means once per unit.</remarks>
     /// <param name="ledger">The fires so far.</param>
-    /// <param name="rule">The rule.</param>
+    /// <param name="rule">The rule, neither an Nth nor an every Nth one.</param>
     /// <param name="battleEvent">The event.</param>
-    /// <param name="enemy">The enemy the rule belongs to.</param>
+    /// <param name="key">The rule as the ledger counts it.</param>
     /// <returns>Whether it may fire.</returns>
-    private static bool Allows(IRuleLedger ledger, RuleSpec rule, BattleEvent battleEvent, int enemy)
+    private static bool Allows(IRuleLedger ledger, RuleSpec rule, BattleEvent battleEvent, RuleKey key)
     {
-        RuleKey key = new(rule.Id, enemy);
         HowOften often = rule.Often;
         int total = ledger.FiresTotal(key);
         bool counted = often.Kind switch
         {
             Frequency.Once => total < 1,
             Frequency.AtMost => total < (often.N ?? 0),
-
-            // TE1: the Nth and every Nth time count the times trigger and conditions held; they never fire yet.
-            Frequency.Nth or Frequency.EveryNth => false,
             _ => true,
         };
-        return counted
-            && !(often.OncePerUnitPerUse && ledger.FiredForUse(key, UseOf(battleEvent), SeatOf(battleEvent)))
-            && !(often.OncePerTurn && ledger.FiresInTurn(key, battleEvent.Turn) > 0);
+        return counted && WithinTurnAndUse(ledger, often, battleEvent, key);
     }
+
+    /// <summary>
+    /// Tells whether the once per turn and once per unit per use limits allow another fire.
+    /// </summary>
+    /// <remarks>An event without a cast counts as one use, so once per unit per use then means once per unit.</remarks>
+    /// <param name="ledger">The fires so far.</param>
+    /// <param name="often">How often the rule fires.</param>
+    /// <param name="battleEvent">The event.</param>
+    /// <param name="key">The rule as the ledger counts it.</param>
+    /// <returns>Whether they do.</returns>
+    private static bool WithinTurnAndUse(IRuleLedger ledger, HowOften often, BattleEvent battleEvent, RuleKey key) =>
+        !(often.OncePerUnitPerUse && ledger.FiredForUse(key, UseOf(battleEvent), SeatOf(battleEvent)))
+        && !(often.OncePerTurn && ledger.FiresInTurn(key, battleEvent.Turn) > 0);
 
     /// <summary>
     /// Records a fire in the ledger.

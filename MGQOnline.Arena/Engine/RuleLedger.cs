@@ -2,6 +2,7 @@
 //  RuleLedger.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Counted the times each rule held
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -48,6 +49,19 @@ public interface IRuleLedger
     bool FiredForUse(RuleKey key, string castId, int seat);
 
     /// <summary>
+    /// Counts the times a rule's trigger and conditions held, fired or not.
+    /// </summary>
+    /// <param name="key">The rule.</param>
+    /// <returns>The times.</returns>
+    int HoldsTotal(RuleKey key);
+
+    /// <summary>
+    /// Records that a rule's trigger and conditions held.
+    /// </summary>
+    /// <param name="key">The rule.</param>
+    void RecordHold(RuleKey key);
+
+    /// <summary>
     /// Records a fire.
     /// </summary>
     /// <param name="key">The rule.</param>
@@ -72,6 +86,11 @@ public sealed class RuleLedger : IRuleLedger
     /// </summary>
     private readonly HashSet<(RuleKey Key, string CastId, int Seat)> _uses = [];
 
+    /// <summary>
+    /// The times each rule held.
+    /// </summary>
+    private readonly Dictionary<RuleKey, int> _holds = [];
+
     /// <inheritdoc />
     public int FiresInTurn(RuleKey key, int turn) =>
         _fires.TryGetValue(key, out Fires fires) && fires.LastTurn == turn ? fires.InLastTurn : 0;
@@ -81,6 +100,12 @@ public sealed class RuleLedger : IRuleLedger
 
     /// <inheritdoc />
     public bool FiredForUse(RuleKey key, string castId, int seat) => _uses.Contains((key, castId, seat));
+
+    /// <inheritdoc />
+    public int HoldsTotal(RuleKey key) => _holds.GetValueOrDefault(key);
+
+    /// <inheritdoc />
+    public void RecordHold(RuleKey key) => _holds[key] = _holds.GetValueOrDefault(key) + 1;
 
     /// <inheritdoc />
     public void Record(RuleKey key, int turn, string castId, int seat)

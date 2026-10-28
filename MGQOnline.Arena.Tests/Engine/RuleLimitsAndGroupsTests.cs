@@ -2,6 +2,7 @@
 //  RuleLimitsAndGroupsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Tested the Nth and every Nth time a row held
 //      Paulinchen  2026-10-24: Limited the rows by how often they fire
 //      Paulinchen  2026-10-22: Tested the rank within a group
 //      Paulinchen  2026-10-21: Created
@@ -200,6 +201,62 @@ public sealed class RuleLimitsAndGroupsTests
         engine.Raise(context, new TurnStartEvent(2));
 
         Assert.Equal([1], context.LoggedOf<RuleFiredEvent>().Select(fired => fired.Turn));
+    }
+
+    /// <summary>
+    /// Fires an Nth row the Nth time only.
+    /// </summary>
+    [Fact]
+    public void FiresAnNthRowTheNthTimeOnly()
+    {
+        FakeRuleContext context = new();
+        RuleEngine engine = EngineOf(Marker("r", new TurnStartTrigger(), often: new HowOften(Frequency.Nth, 3)));
+
+        for (int turn = 1; turn <= 6; turn++)
+        {
+            engine.Raise(context, new TurnStartEvent(turn));
+        }
+
+        Assert.Equal([3], context.LoggedOf<RuleFiredEvent>().Select(fired => fired.Turn));
+    }
+
+    /// <summary>
+    /// Fires an every Nth row on every Nth time its conditions held, not counting the times they failed.
+    /// </summary>
+    [Fact]
+    public void CountsTheTimesTheConditionsHeld()
+    {
+        FakeRuleContext context = new();
+        RuleEngine engine = EngineOf(Marker("r", new TurnStartTrigger(), [new SwitchOnCondition(7)], new HowOften(Frequency.EveryNth, 2)));
+
+        for (int turn = 1; turn <= 8; turn++)
+        {
+            if (turn > 2)
+            {
+                context.Switches.Add(7);
+            }
+
+            engine.Raise(context, new TurnStartEvent(turn));
+        }
+
+        Assert.Equal([4, 6, 8], context.LoggedOf<RuleFiredEvent>().Select(fired => fired.Turn));
+    }
+
+    /// <summary>
+    /// Counts a hold the once per turn limit stops, so an every Nth row reads the times it held.
+    /// </summary>
+    [Fact]
+    public void CountsTheHoldsTheTurnLimitStops()
+    {
+        FakeRuleContext context = new();
+        RuleEngine engine = EngineOf(Marker("r", new SkillHitsTrigger(Who.Character, Who.Owner), often: new HowOften(Frequency.EveryNth, 2, OncePerTurn: true)));
+
+        engine.Raise(context, PartyHit(1));
+        engine.Raise(context, PartyHit(1));
+        engine.Raise(context, PartyHit(1));
+        engine.Raise(context, PartyHit(2));
+
+        Assert.Equal([1, 2], context.LoggedOf<RuleFiredEvent>().Select(fired => fired.Turn));
     }
 
     /// <summary>
