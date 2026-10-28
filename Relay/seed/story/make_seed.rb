@@ -14,7 +14,8 @@
 # world_catchup_data.rbx and coop_story_rewards.rbx of GameScript/Multiplayer/Scripts, as the admins
 # would add their rows (Relay/README.md "Catch-up tables"), into fixtures/catchup/generated, where
 # the tests of the DLL and the scripts read them. The generated tables never go into the seed: the
-# relay takes no row nobody reviewed. It also writes the rewards a party member catches up with as
+# reviewed rows of each table are kept there as lists of admin edits (REVIEW.md), which this script
+# never writes. It also writes the rewards a party member catches up with as
 # the DLL hands them to the scripts, from the constants of coop_story_rewards.rbx, into
 # fixtures/catchup/party_rewards.json, which MGQOnline.Game.Tests holds PartyRewards against over
 # the generated tables. Run it again after raid_data.rb or story_rewards.rb of
@@ -37,7 +38,7 @@ SEED_FOLDER = __dir__
 # Where the generated tables go, for the tests.
 GENERATED_FOLDER = File.join(ROOT, "fixtures", "catchup", "generated")
 
-# The tables kept by hand below, the only ones the relay seeds from.
+# The tables kept by hand below, the only seed files this script writes.
 HAND_KEPT = %w(rules counts companion_values)
 
 # The rules of world_catchup.rbx, by the rule's name as the relay's `rules` table takes it: the

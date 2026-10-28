@@ -1,0 +1,21 @@
+[
+  {"op":"add","table":"side_events","row":{"site":"ce:346","alice":{"skills":[],"companions":[45]},"ilias":{"skills":[],"companions":[]},"choice":false,"marks":[[["v",1001,29],["v",1069,4]]]}},
+  {"op":"add","table":"side_events","row":{"site":"map:181:10","alice":{"skills":[],"companions":[]},"ilias":{"skills":[],"companions":[383]},"choice":false,"marks":[[["v",1076,5]],[["v",1076,5],["v",1077,1]]]}},
+  {"op":"add","table":"side_events","row":{"site":"map:193:9","alice":{"skills":[],"companions":[406]},"ilias":{"skills":[],"companions":[]},"choice":false,"marks":[[["v",1136,3]]]}},
+  {"op":"add","table":"side_events","row":{"site":"map:324:22","alice":{"skills":[],"companions":[420]},"ilias":{"skills":[],"companions":[]},"choice":false,"marks":[[["v",1001,39]]]}},
+  {"op":"add","table":"side_events","row":{"site":"map:327:20","alice":{"skills":[],"companions":[426,427,428]},"ilias":{"skills":[],"companions":[]},"choice":false,"marks":[[["s",2435]]]}},
+  {"op":"add","table":"side_events","row":{"site":"map:406:7","alice":{"skills":[937],"companions":[]},"ilias":{"skills":[930],"companions":[]},"choice":false,"marks":[]}},
+  {"op":"add","table":"side_events","row":{"site":"map:437:11","alice":{"skills":[],"companions":[26,34,36,383,538]},"ilias":{"skills":[],"companions":[5,45]},"choice":false,"marks":[[["s",5091],["s",7089]]]}},
+  {"op":"add","table":"side_events","row":{"site":"map:515:29","alice":{"skills":[],"companions":[]},"ilias":{"skills":[],"companions":[538]},"choice":false,"marks":[[["v",1069,7]]]}},
+  {"op":"add","table":"side_events","row":{"site":"map:523:7","alice":{"skills":[938,1670],"companions":[]},"ilias":{"skills":[1636,1670],"companions":[]},"choice":false,"marks":[]}},
+  {"op":"add","table":"side_events","row":{"site":"map:587:5","alice":{"skills":[1066],"companions":[]},"ilias":{"skills":[976],"companions":[]},"choice":false,"marks":[[["v",1001,13],["v",1019,6]]]}},
+  {"op":"add","table":"side_events","row":{"site":"map:604:7","alice":{"skills":[953],"companions":[]},"ilias":{"skills":[1092],"companions":[]},"choice":false,"marks":[]}},
+  {"op":"add","table":"side_events","row":{"site":"map:6:30","alice":{"skills":[],"companions":[5]},"ilias":{"skills":[],"companions":[]},"choice":true,"marks":[[["v",1001,7]]]}},
+  {"op":"add","table":"side_events","row":{"site":"map:6:31","alice":{"skills":[],"companions":[]},"ilias":{"skills":[],"companions":[26]},"choice":true,"marks":[[["v",1001,7]]]}},
+  {"op":"add","table":"side_events","row":{"site":"map:711:7","alice":{"skills":[950],"companions":[]},"ilias":{"skills":[1637],"companions":[]},"choice":false,"marks":[]}},
+  {"op":"add","table":"side_events","row":{"site":"map:736:7","alice":{"skills":[1112],"companions":[]},"ilias":{"skills":[1638],"companions":[]},"choice":false,"marks":[]}},
+  {"op":"add","table":"side_events","row":{"site":"map:741:7","alice":{"skills":[1023],"companions":[]},"ilias":{"skills":[966],"companions":[]},"choice":false,"marks":[]}},
+  {"op":"add","table":"side_events","row":{"site":"map:750:12","alice":{"skills":[],"companions":[382,525]},"ilias":{"skills":[],"companions":[]},"choice":false,"marks":[[["v",1001,34],["v",1076,7]]]}},
+  {"op":"add","table":"side_events","row":{"site":"map:751:13","alice":{"skills":[],"companions":[]},"ilias":{"skills":[],"companions":[525]},"choice":false,"marks":[[["v",1001,34],["v",1076,7]]]}},
+  {"op":"add","table":"side_events","row":{"site":"map:933:7","alice":{"skills":[],"companions":[382]},"ilias":{"skills":[],"companions":[]},"choice":false,"marks":[[["ss",933,7,"A"]]]}}
+]

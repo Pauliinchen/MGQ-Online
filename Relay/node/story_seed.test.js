@@ -2,7 +2,8 @@
 //  story_seed.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Created
+//      Paulinchen  2026-10-28: Seeded the reviewed rows of every story table and kept a table the admins emptied empty
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -25,23 +26,27 @@ function makeMapping() {
   return new StoryMapping(memoryMappingStore(), { tables: STORY_TABLES, clock: () => 1000 });
 }
 
-test("the seed files hold the hand-kept rules of the catch-up alone, which fill their tables at a start", async () => {
+test("the seed files hold the hand-kept rules and the reviewed rows of story tables, which fill a fresh relay at its start", async () => {
   const seeds = await readStorySeeds();
   const lines = [];
   const mapping = makeMapping();
 
-  assert.deepEqual(Object.keys(seeds).sort(), ["companion_values", "counts", "rules"], "no generated and unreviewed rows are seeded");
+  assert.deepEqual(Object.keys(seeds).filter((table) => !STORY_TABLES[table]), [], "every seed file names a story table");
+  assert.ok(["rules", "counts", "companion_values"].every((table) => seeds[table]), "the hand-kept tables are seeded");
   assert.deepEqual(seeds.rules.map((row) => row.rule).sort(), Object.keys(CATCHUP_RULES).sort());
 
   const done = await seedStoryTables(mapping, { info: (line) => lines.push(line) });
   assert.equal(done.rev, 1);
-  assert.deepEqual(Object.keys(done.seeded).sort(), Object.keys(seeds).sort());
+  assert.deepEqual(done.seeded, Object.fromEntries(Object.entries(seeds).map(([table, rows]) => [table, rows.length])));
   assert.ok(lines[0].startsWith("seeded the story tables to rev 1: "));
 
   const read = (await mapping.forGames(null)).body;
   assert.deepEqual(read.tables.counts.map((row) => row.variable), [1353, 1354]);
   assert.deepEqual(read.tables.companion_values.map((row) => row.actor), [540]);
-  assert.deepEqual(read.tables.joins, [], "the generated joins start empty, for the admins to fill with reviewed rows");
+
+  for (const [table, rows] of Object.entries(seeds)) {
+    assert.equal(read.tables[table].length, rows.length, `${table} holds every seed row`);
+  }
 
   assert.deepEqual(await seedStoryTables(mapping, { info: () => assert.fail("nothing to log") }), { rev: 1, seeded: {} }, "a second start seeds nothing");
 });
@@ -80,24 +85,32 @@ test("a relay installed without the seed folder starts and seeds nothing", async
   assert.deepEqual(lines, [`no seed folder at ${folder}, nothing seeded`]);
 });
 
-test("the seeded rows outlast a restart, which seeds nothing more", async () => {
+test("the seeded rows outlast a restart, which seeds nothing more, not even a table the admins emptied", async () => {
   const folder = mkdtempSync(join(tmpdir(), "mgq-seed-db-"));
   const path = join(folder, "relay.sqlite");
   const first = await openStores(path);
+  let emptied;
 
   try {
-    const seeded = await seedStoryTables(new StoryMapping(first.mapping, { tables: STORY_TABLES }), { info: () => {} });
-    first.close();
-    const second = await openStores(path);
-
-    try {
-      const mapping = new StoryMapping(second.mapping, { tables: STORY_TABLES });
-      assert.deepEqual(await seedStoryTables(mapping, { info: () => assert.fail("nothing to log") }), { rev: seeded.rev, seeded: {} });
-      assert.equal((await mapping.rows("rules")).body.rows.length, 6);
-    } finally {
-      second.close();
-    }
+    const mapping = new StoryMapping(first.mapping, { tables: STORY_TABLES });
+    await seedStoryTables(mapping, { info: () => {} });
+    const counts = (await mapping.rows("counts")).body.rows;
+    assert.ok(counts.length > 0);
+    emptied = await mapping.edit({ edits: counts.map((entry) => ({ op: "remove", table: "counts", id: entry.id })) }, "admin");
+    assert.equal(emptied.status, 200);
   } finally {
+    first.close();
+  }
+
+  const second = await openStores(path);
+
+  try {
+    const mapping = new StoryMapping(second.mapping, { tables: STORY_TABLES });
+    assert.deepEqual(await seedStoryTables(mapping, { info: () => assert.fail("nothing to log") }), { rev: emptied.body.rev, seeded: {} });
+    assert.equal((await mapping.rows("rules")).body.rows.length, 6);
+    assert.deepEqual((await mapping.rows("counts")).body.rows, [], "the emptied table stays empty");
+  } finally {
+    second.close();
     rmSync(folder, { recursive: true, force: true });
   }
 });
