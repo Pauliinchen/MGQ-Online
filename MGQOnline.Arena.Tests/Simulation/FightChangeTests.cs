@@ -2,7 +2,8 @@
 //  FightChangeTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Tested a trait row on the fall of its own enemy
+//      Paulinchen  2026-10-28: Tested a battle row that targets the enemy that joined
+//                            - Tested a trait row on the fall of its own enemy
 //      Paulinchen  2026-10-24: Wrote the fight changes as rows of the Trigger -> Effect framework
 //      Paulinchen  2026-10-23: Created
 //
@@ -92,6 +93,24 @@ public sealed class FightChangeTests
         simulator.Resolve(state, Hit(0));
 
         Assert.Equal("bye", Assert.Single(state.Log.OfType<ShowTextEvent>()).Text);
+    }
+
+    /// <summary>
+    /// A battle row on a join reaches the enemy that joined as the enemy of the trigger.
+    /// </summary>
+    [Fact]
+    public void BattleRowOnAJoinTargetsTheJoinedEnemy()
+    {
+        RuleSpec call = SimFixtures.Rule("call", new TurnStartTrigger(), [new EnemyJoinsEffect(SecondSlot)], often: new HowOften(Frequency.Once), owner: RuleOwner.Battle);
+        RuleSpec greet = SimFixtures.Rule("greet", new JoinsTrigger(Who.Enemy(SecondSlot)), [new AddStateEffect(TargetRef.Owner, SimFixtures.LightMark)], owner: RuleOwner.Battle);
+        BattleSimulator simulator = SimFixtures.Simulator(Design([call, greet]));
+        BattleState state = simulator.Start(SimFixtures.Setup(1));
+
+        simulator.Plan(state);
+
+        EnemyState joined = Assert.Single(state.Enemies, enemy => enemy.Slot == SecondSlot);
+        Assert.Contains(joined.States, held => held.StateId == SimFixtures.LightMark);
+        Assert.DoesNotContain(state.Log, battleEvent => battleEvent is WarningEvent);
     }
 
     /// <summary>
