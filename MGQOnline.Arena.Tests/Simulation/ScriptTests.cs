@@ -2,7 +2,8 @@
 //  ScriptTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Created
+//      Paulinchen  2026-10-28: Tested interrupts, cancelled queued casts, skipped rolls and an HP row after a heal
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -68,6 +69,91 @@ public sealed class ScriptTests
 
         Assert.False(afterPlan);
         Assert.Equal(!frozen, Holds(state));
+    }
+
+    /// <summary>
+    /// Damage in one turn cancels a planned cast and its follow-up before they run; both stay in the
+    /// plan as cancelled by the row.
+    /// </summary>
+    [Fact]
+    public void InterruptsAPlannedCastAndItsFollowUp()
+    {
+        BattleSimulator simulator = SimFixtures.Simulator(Design(
+            SimFixtures.Rule("charge", new TurnTrigger(1, 0), [Use(SimFixtures.Heavy, CastWhen.ThisTurn)], owner: RuleOwner.Battle),
+            SimFixtures.Rule("chain", new SkillUsedTrigger(Who.Enemy(SimFixtures.Slot), SimFixtures.Heavy), [Use(SimFixtures.Sweep, CastWhen.ThisTurn)], owner: RuleOwner.Battle),
+            SimFixtures.Rule("interrupt", new DamageInTurnTrigger(Who.Enemy(SimFixtures.Slot), 10), [new CancelSkillEffect(SimFixtures.Slot, SimFixtures.Heavy)], owner: RuleOwner.Battle)));
+        BattleState state = simulator.Start(SimFixtures.Setup());
+
+        simulator.Plan(state);
+        TurnResult result = simulator.Resolve(state, new PartyTurn([], [new PartyHit(0, 0, HitKind.Physical, 10_000, SimFixtures.Attack, [], true, [])]));
+
+        Assert.Equal([(SimFixtures.Heavy, "interrupt"), (SimFixtures.Sweep, "interrupt")], result.Plan.Select(cast => (cast.Skill, cast.CancelledBy)));
+        Assert.All(result.Plan, cast => Assert.True(cast.Disabled));
+        Assert.Empty(result.Cast);
+        Assert.Equal(2, result.Events.OfType<CastCancelledEvent>().Count(cancelled => cancelled.CastId is not null));
+    }
+
+    /// <summary>
+    /// A cast cancelled while it waits for a later turn enters that turn's plan as cancelled and never runs.
+    /// </summary>
+    [Fact]
+    public void CancelsAQueuedCast()
+    {
+        BattleSimulator simulator = SimFixtures.Simulator(Design(
+            SimFixtures.Rule("later", new TurnTrigger(1, 0), [Use(SimFixtures.Heavy, CastWhen.InTurns, 2)], owner: RuleOwner.Battle),
+            SimFixtures.Rule("calm", new TurnEndTrigger(), [new CancelSkillEffect(SimFixtures.Slot)], often: new HowOften(Frequency.Once), owner: RuleOwner.Battle)));
+        BattleState state = simulator.Start(SimFixtures.Setup());
+
+        TurnResult third = default!;
+        for (int turn = 1; turn <= 3; turn++)
+        {
+            simulator.Plan(state);
+            third = simulator.Resolve(state, PartyTurn.Idle);
+        }
+
+        PlannedCast heavy = Assert.Single(third.Plan);
+        Assert.Equal((SimFixtures.Heavy, true, "calm", "later"), (heavy.Skill, heavy.Disabled, heavy.CancelledBy, heavy.RuleId));
+        Assert.Empty(third.Cast);
+    }
+
+    /// <summary>
+    /// A skipped roll rolls nothing and banks the enemy's points, while the script's casts still run.
+    /// </summary>
+    [Fact]
+    public void SkipsTheRollAndBanksThePoints()
+    {
+        RuntimeDesign design = SimFixtures.Design(
+            [SimFixtures.Action("strike", SimFixtures.Strike)],
+            [SimFixtures.Skill(SimFixtures.Strike), SimFixtures.Skill(SimFixtures.Heavy)],
+            [SimFixtures.Rule("pause", new TurnStartTrigger(), [new SkipRollEffect(ApTurn.This), Use(SimFixtures.Heavy, CastWhen.ThisTurn)], often: new HowOften(Frequency.Once))],
+            attackWeight: 0);
+        BattleSimulator simulator = SimFixtures.Simulator(design);
+        BattleState state = simulator.Start(SimFixtures.Setup());
+
+        EnemyPlan plan = Assert.Single(simulator.Plan(state).Enemies);
+
+        Assert.Equal([SimFixtures.Heavy], plan.Entries.Select(cast => cast.Skill));
+        Assert.Equal(("pause", 0, ApBudget.Bank(plan.ApStart, 1, 6)), (plan.RollSkippedBy, plan.ApSpent, plan.ApBanked));
+    }
+
+    /// <summary>
+    /// An HP row fires again once a heal lifted the HP above its percent and it crossed below once more.
+    /// </summary>
+    [Fact]
+    public void FiresAnHpRowAgainAfterAHeal()
+    {
+        BattleSimulator simulator = SimFixtures.Simulator(Design(
+            SimFixtures.Rule("mend", new HpBelowTrigger(Who.Enemy(SimFixtures.Slot), 50), [new HealEffect(TargetRef.Enemy(SimFixtures.Slot), 30)], owner: RuleOwner.Battle)));
+        BattleState state = simulator.Start(SimFixtures.Setup());
+
+        for (int turn = 1; turn <= 2; turn++)
+        {
+            simulator.Plan(state);
+            simulator.Resolve(state, new PartyTurn([], [new PartyHit(0, 0, HitKind.Physical, turn == 1 ? 60_000 : 30_000, SimFixtures.Attack, [], true, [])]));
+        }
+
+        Assert.Equal([1, 2], state.Log.OfType<RuleFiredEvent>().Where(fired => fired.RuleId == "mend").Select(fired => fired.Turn));
+        Assert.Equal(70_000, state.Enemies[0].Hp);
     }
 
     /// <summary>

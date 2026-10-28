@@ -2,7 +2,8 @@
 //  FakeRuleContext.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Told whether the plan is being made and kept the effects that wait for a cast
+//      Paulinchen  2026-10-28: Recorded the cancels and skipped rolls
+//                            - Told whether the plan is being made and kept the effects that wait for a cast
 //                            - Went to a stage
 //                            - Named the stage and the turn it started in
 //      Paulinchen  2026-10-24: Told whether a game switch is on
@@ -332,6 +333,22 @@ internal sealed class FakeRuleContext : IRuleContext
 
     /// <inheritdoc />
     public void AddAp(int enemy, int amount, ApTurn turn) => ApChanges.Add((enemy, amount, turn));
+
+    /// <summary>
+    /// Gets the cancels asked for.
+    /// </summary>
+    public List<(int Enemy, SkillRef? Skill, string RuleId)> Cancels { get; } = [];
+
+    /// <summary>
+    /// Gets the skipped rolls asked for.
+    /// </summary>
+    public List<(int Enemy, ApTurn Turn, string RuleId)> SkippedRolls { get; } = [];
+
+    /// <inheritdoc />
+    public void CancelCasts(int enemy, SkillRef? skill, string ruleId) => Cancels.Add((enemy, skill, ruleId));
+
+    /// <inheritdoc />
+    public void SkipRoll(int enemy, ApTurn turn, string ruleId) => SkippedRolls.Add((enemy, turn, ruleId));
 
     /// <inheritdoc />
     public int? AddDamageReduction(StateHolder holder, int index, string source, int percent, int? turns)

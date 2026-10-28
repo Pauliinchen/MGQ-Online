@@ -2,7 +2,8 @@
 //  IRuleContext.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Kept effects until a planned cast resolves
+//      Paulinchen  2026-10-28: Cancelled casts, skipped rolls and healed
+//                            - Kept effects until a planned cast resolves
 //                            - Told whether the plan of the turn is still being made
 //                            - Went to a stage
 //                            - Named the stage and the turn it started in
@@ -218,7 +219,7 @@ public interface IRuleContext
     /// </summary>
     /// <param name="holder">Whether a unit or an enemy takes it.</param>
     /// <param name="index">The unit's seat or the enemy's index.</param>
-    /// <param name="amount">The damage, at least 0.</param>
+    /// <param name="amount">The damage, below 0 for a heal.</param>
     /// <returns>What it did with the damage dealt, or null when the receiver cannot take damage, such as a fallen unit.</returns>
     DamageResult? Damage(StateHolder holder, int index, long amount);
 
@@ -275,6 +276,24 @@ public interface IRuleContext
     /// <param name="order">The cast.</param>
     /// <returns>The after-cast event of a cast planned now, or null for a queued or refused one.</returns>
     AfterCastEvent? OrderCast(CastOrder order);
+
+    /// <summary>
+    /// Cancels an enemy's matching casts still to run this turn and those queued for later turns, their
+    /// follow-ups included, and logs each; the plan keeps them as cancelled with the rule.
+    /// </summary>
+    /// <param name="enemy">The casting enemy's index.</param>
+    /// <param name="skill">The skill cancelled, or null for every cast a row ordered.</param>
+    /// <param name="ruleId">The rule that cancels them.</param>
+    void CancelCasts(int enemy, SkillRef? skill, string ruleId);
+
+    /// <summary>
+    /// Makes an enemy roll nothing in a turn's plan and bank its points; a skip of this turn after the
+    /// enemy's roll logs a warning instead.
+    /// </summary>
+    /// <param name="enemy">The enemy's index.</param>
+    /// <param name="turn">The turn whose roll it skips.</param>
+    /// <param name="ruleId">The rule that skips it.</param>
+    void SkipRoll(int enemy, ApTurn turn, string ruleId);
 
     /// <summary>
     /// Adds an event to the battle log.

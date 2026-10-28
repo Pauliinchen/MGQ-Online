@@ -2,7 +2,8 @@
 //  EffectHandlers.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Cast from the enemy the event names when several stand in the slot
+//      Paulinchen  2026-10-28: Healed, cancelled casts, skipped rolls and showed lines by a rule
+//                            - Cast from the enemy the event names when several stand in the slot
 //                            - Timed a use skill cast by its trigger and queued it turns ahead
 //                            - Went to a stage by a rule
 //                            - Raised the lost states and the HP thresholds and damage in a turn of the receivers
@@ -66,9 +67,10 @@ internal static class EffectHandlers
         DamageReductionEffect reduction => ReduceDamage(context, queued, reduction),
         RemoveDamageReductionEffect remove => RemoveReductions(context, queued.Fired, remove),
         GoToStageEffect goToStage => GoToStage(context, queued.Fired, goToStage),
-
-        // TE1: heal, cancel skill, skip roll and show text do nothing yet.
-        HealEffect or CancelSkillEffect or SkipRollEffect or ShowTextEffect => [],
+        HealEffect heal => Heal(context, queued.Fired, heal),
+        CancelSkillEffect cancel => CancelSkill(context, queued.Fired, cancel),
+        SkipRollEffect skip => SkipRoll(context, queued.Fired, skip),
+        ShowTextEffect text => ShowText(context, queued.Fired, text),
         _ => throw new ArgumentOutOfRangeException(nameof(queued), queued.Effect, "The engine does not know this effect."),
     };
 
@@ -272,11 +274,7 @@ internal static class EffectHandlers
         List<BattleEvent> raised = [];
         foreach ((StateHolder holder, int index) in Receivers(context, fired, effect.To))
         {
-            FormulaStats target = context.StatsOf(holder, index);
-            double value = effect.Formula is FormulaSpec formula
-                ? FormulaEvaluator.Evaluate(formula.Ast, context.StatsOf(StateHolder.Boss, fired.Enemy), target)
-                : target.Mhp * (effect.Percent ?? 0) / 100;
-            long amount = ToDamage(value);
+            long amount = AmountOf(context, fired, (holder, index), effect.Percent, effect.Formula);
             if (context.Damage(holder, index, amount) is not DamageResult result)
             {
                 continue;
@@ -307,6 +305,94 @@ internal static class EffectHandlers
         }
 
         return raised;
+    }
+
+    /// <summary>
+    /// Heals a percent of each receiver's max HP, or a formula with the rule's enemy as its user, and
+    /// logs it as damage below 0.
+    /// </summary>
+    /// <remarks>The value is cut as damage is; a fallen unit or enemy is not healed.</remarks>
+    /// <param name="context">The battle.</param>
+    /// <param name="fired">The fired rule.</param>
+    /// <param name="effect">The effect.</param>
+    /// <returns>Nothing rules match.</returns>
+    private static IReadOnlyList<BattleEvent> Heal(IRuleContext context, FiredRule fired, HealEffect effect)
+    {
+        foreach ((StateHolder holder, int index) in Receivers(context, fired, effect.To))
+        {
+            long amount = AmountOf(context, fired, (holder, index), effect.Percent, effect.Formula);
+            if (context.Damage(holder, index, -amount) is DamageResult result)
+            {
+                context.Log(new DamageEvent(fired.Cause.Turn, holder, index, result.Amount, result.HpAfter, EventFacts.CastIdOf(fired.Cause), fired.Rule.Id));
+            }
+        }
+
+        return [];
+    }
+
+    /// <summary>
+    /// Works out the HP a damage or heal effect changes on one receiver.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="fired">The fired rule, whose enemy uses the formula.</param>
+    /// <param name="receiver">Whether a unit or an enemy receives it, and its seat or index.</param>
+    /// <param name="percent">The percent of the receiver's max HP, or null with a formula.</param>
+    /// <param name="formula">The formula, or null with a percent.</param>
+    /// <returns>The HP, a whole number of at least 0.</returns>
+    private static long AmountOf(IRuleContext context, FiredRule fired, (StateHolder Holder, int Index) receiver, double? percent, FormulaSpec? formula)
+    {
+        FormulaStats target = context.StatsOf(receiver.Holder, receiver.Index);
+        double value = formula is not null
+            ? FormulaEvaluator.Evaluate(formula.Ast, context.StatsOf(StateHolder.Boss, fired.Enemy), target)
+            : target.Mhp * (percent ?? 0) / 100;
+        return ToDamage(value);
+    }
+
+    /// <summary>
+    /// Cancels the matching planned and queued casts of the enemies the effect names.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="fired">The fired rule.</param>
+    /// <param name="effect">The effect.</param>
+    /// <returns>Nothing rules match.</returns>
+    private static IReadOnlyList<BattleEvent> CancelSkill(IRuleContext context, FiredRule fired, CancelSkillEffect effect)
+    {
+        foreach (int enemy in Enemies(context, fired, effect.Caster))
+        {
+            context.CancelCasts(enemy, effect.Skill, fired.Rule.Id);
+        }
+
+        return [];
+    }
+
+    /// <summary>
+    /// Makes the enemies the effect names roll nothing in a turn.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="fired">The fired rule.</param>
+    /// <param name="effect">The effect.</param>
+    /// <returns>Nothing rules match.</returns>
+    private static IReadOnlyList<BattleEvent> SkipRoll(IRuleContext context, FiredRule fired, SkipRollEffect effect)
+    {
+        foreach (int enemy in Enemies(context, fired, effect.Slot))
+        {
+            context.SkipRoll(enemy, effect.Turn, fired.Rule.Id);
+        }
+
+        return [];
+    }
+
+    /// <summary>
+    /// Shows a line in battle as a logged event.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="fired">The fired rule.</param>
+    /// <param name="effect">The effect.</param>
+    /// <returns>Nothing rules match.</returns>
+    private static IReadOnlyList<BattleEvent> ShowText(IRuleContext context, FiredRule fired, ShowTextEffect effect)
+    {
+        context.Log(new ShowTextEvent(fired.Cause.Turn, effect.Text, fired.Rule.Id));
+        return [];
     }
 
     /// <summary>
@@ -485,7 +571,7 @@ internal static class EffectHandlers
     }
 
     /// <summary>
-    /// Lists the enemies a fight change acts on.
+    /// Lists the enemies an effect names by their slot.
     /// </summary>
     /// <param name="context">The battle.</param>
     /// <param name="fired">The fired rule.</param>

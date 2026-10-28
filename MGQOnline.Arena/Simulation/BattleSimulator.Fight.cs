@@ -2,7 +2,8 @@
 //  BattleSimulator.Fight.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Entered a stage of the battle plan
+//      Paulinchen  2026-10-28: Cancelled planned and queued casts and skipped rolls by a rule
+//                            - Entered a stage of the battle plan
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -17,7 +18,7 @@ namespace MGQOnline.Arena.Simulation;
 
 /// <summary>
 /// The simulator's fight changes: enemies that fall, join, leave or transform, the stages entered,
-/// and the victory once no enemy stands.
+/// the casts cancelled and rolls skipped, and the victory once no enemy stands.
 /// </summary>
 public sealed partial class BattleSimulator
 {
@@ -222,6 +223,81 @@ public sealed partial class BattleSimulator
                 Log(state, new CastDisabledEvent(state.Turn, state.Plan[i].CastId));
             }
         }
+    }
+
+    /// <summary>
+    /// Cancels an enemy's matching casts still to run this turn, waiting for its plan or queued for a
+    /// later turn, with the follow-ups of each, and logs every one.
+    /// </summary>
+    /// <param name="state">The battle.</param>
+    /// <param name="enemy">The casting enemy's index.</param>
+    /// <param name="skill">The skill cancelled, or null for every cast a row ordered.</param>
+    /// <param name="ruleId">The rule that cancels them.</param>
+    private void CancelCasts(BattleState state, int enemy, SkillRef? skill, string ruleId)
+    {
+        bool Matches(int caster, SkillRef cast, string? orderedBy) => caster == enemy && (skill is SkillRef named ? named == cast : orderedBy is not null);
+
+        if (state.Phase is BattlePhase.Plan or BattlePhase.Party or BattlePhase.Resolve)
+        {
+            for (int i = state.Phase == BattlePhase.Resolve ? _resolveIndex + 1 : 0; i < state.Plan.Count; i++)
+            {
+                PlannedCast entry = state.Plan[i];
+                if (!entry.Disabled && Matches(entry.Enemy, entry.Skill, entry.RuleId))
+                {
+                    state.Plan[i] = entry with { Disabled = true, CancelledBy = ruleId, MayRedirect = [] };
+                    List<(string CastId, int State)> followUps = [(entry.CastId, 0)];
+                    CrowdControl.ShareWithFollowUps(state.Plan, i, followUps);
+                    foreach ((string castId, _) in followUps)
+                    {
+                        PlannedCast cancelled = state.Plan.Find(each => each.CastId == castId)!;
+                        Log(state, new CastCancelledEvent(state.Turn, cancelled.Enemy, cancelled.Skill, ruleId, castId));
+                    }
+                }
+            }
+        }
+
+        for (int i = 0; _drafts is not null && i < _drafts.Count; i++)
+        {
+            if (_drafts[i].CancelledBy is null && Matches(_drafts[i].Enemy, _drafts[i].Skill, _drafts[i].RuleId))
+            {
+                _drafts[i] = _drafts[i] with { CancelledBy = ruleId };
+                Log(state, new CastCancelledEvent(state.Turn, enemy, _drafts[i].Skill, ruleId));
+            }
+        }
+
+        for (int i = 0; i < state.NextTurn.Count; i++)
+        {
+            if (state.NextTurn[i].CancelledBy is null && Matches(state.NextTurn[i].Enemy, state.NextTurn[i].Skill, state.NextTurn[i].RuleId))
+            {
+                state.NextTurn[i] = state.NextTurn[i] with { CancelledBy = ruleId };
+                Log(state, new CastCancelledEvent(state.Turn, enemy, state.NextTurn[i].Skill, ruleId));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Makes an enemy roll nothing in this or the next turn's plan, or warns when this turn's roll is already made.
+    /// </summary>
+    /// <param name="state">The battle.</param>
+    /// <param name="index">The enemy's index.</param>
+    /// <param name="turn">The turn whose roll it skips.</param>
+    /// <param name="ruleId">The rule that skips it.</param>
+    private static void SkipRoll(BattleState state, int index, ApTurn turn, string ruleId)
+    {
+        if (state.Enemies.Find(enemy => enemy.Index == index && !enemy.Fallen) is not EnemyState enemy)
+        {
+            return;
+        }
+
+        int now = state.Phase == BattlePhase.Setup ? 1 : state.Turn;
+        bool rolled = state.Phase is BattlePhase.Party or BattlePhase.Resolve or BattlePhase.TurnEnd || (state.Phase != BattlePhase.Setup && enemy.RolledTurn == state.Turn);
+        if (turn == ApTurn.This && rolled)
+        {
+            Log(state, new WarningEvent(state.Turn, SkipRollAfterPlanWarning, ruleId));
+            return;
+        }
+
+        enemy.RollSkips[turn == ApTurn.This ? now : now + 1] = ruleId;
     }
 
     /// <summary>

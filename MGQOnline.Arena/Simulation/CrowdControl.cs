@@ -2,6 +2,7 @@
 //  CrowdControl.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Shared the row that cancelled a parent with its follow-ups
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -130,7 +131,7 @@ public static class CrowdControl
                 chain.Add(plan[i].CastId);
                 if (!plan[i].Disabled)
                 {
-                    plan[i] = plan[i] with { Disabled = true, DisabledBy = plan[parent].DisabledBy, MidTurn = plan[parent].MidTurn, TimeStopped = plan[parent].TimeStopped, MayRedirect = [] };
+                    plan[i] = plan[i] with { Disabled = true, DisabledBy = plan[parent].DisabledBy, MidTurn = plan[parent].MidTurn, TimeStopped = plan[parent].TimeStopped, CancelledBy = plan[parent].CancelledBy, MayRedirect = [] };
                     disabled.Add((plan[i].CastId, plan[parent].DisabledBy ?? 0));
                 }
             }

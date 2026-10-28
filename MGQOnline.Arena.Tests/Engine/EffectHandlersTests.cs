@@ -2,7 +2,8 @@
 //  EffectHandlersTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Tested the caster of a slot, the plan a cast goes into and the effects that wait for a cast
+//      Paulinchen  2026-10-28: Tested healing, cancelling casts, skipping rolls and showing lines
+//                            - Tested the caster of a slot, the plan a cast goes into and the effects that wait for a cast
 //                            - Planned the battle's turn row on the turn event
 //      Paulinchen  2026-10-24: Tested the effects with the targets of the Trigger -> Effect framework
 //                            - Tested the skill pick, the caster slot and the targets of a party hit
@@ -342,6 +343,45 @@ public sealed class EffectHandlersTests
         engine.Raise(_context, Hit(2, "c2", LightStigmata, 1));
 
         Assert.Equal([150L, 0L], _context.LoggedOf<DamageEvent>().Select(damage => damage.Amount));
+    }
+
+    /// <summary>
+    /// Heals a percent of the unit's max HP and logs it as damage below 0.
+    /// </summary>
+    [Fact]
+    public void HealsAPercentOfTheMaxHp()
+    {
+        _context.SetHp(StateHolder.Unit, 1, 500);
+
+        EngineOf(Rule("r", new SkillHitsTrigger(Who.Owner, Who.Character), [new HealEffect(TargetRef.TriggerUnit, 20)])).Raise(_context, Hit(2, "c1", Blast, 1));
+
+        Assert.Equal(new DamageEvent(2, StateHolder.Unit, 1, -200, 700, "c1", "r"), Assert.Single(_context.LoggedOf<DamageEvent>()));
+    }
+
+    /// <summary>
+    /// Cancels the casts of the slot it names, or of the row's enemy, and skips their rolls.
+    /// </summary>
+    [Fact]
+    public void CancelsCastsAndSkipsRollsOfTheEnemiesItNames()
+    {
+        FakeRuleContext context = new(enemies: 2);
+
+        new RuleEngine(Book([Rule("r", new TurnStartTrigger(), [new CancelSkillEffect(FakeRuleContext.SlotOfIndex(1), Blast), new CancelSkillEffect(), new SkipRollEffect(ApTurn.Next)], owner: RuleOwner.OfEnemy(FakeRuleContext.SlotOfIndex(0)))], enemies: 2))
+            .Raise(context, new TurnStartEvent(1));
+
+        Assert.Equal([(1, (SkillRef?)Blast, "r"), (0, null, "r")], context.Cancels);
+        Assert.Equal([(0, ApTurn.Next, "r")], context.SkippedRolls);
+    }
+
+    /// <summary>
+    /// Shows a line as a logged event under the row.
+    /// </summary>
+    [Fact]
+    public void ShowsALine()
+    {
+        EngineOf(Rule("r", new TurnStartTrigger(), [new ShowTextEffect("Alma Elma gathers power!")])).Raise(_context, new TurnStartEvent(3));
+
+        Assert.Equal(new ShowTextEvent(3, "Alma Elma gathers power!", "r"), Assert.Single(_context.LoggedOf<ShowTextEvent>()));
     }
 
     /// <summary>

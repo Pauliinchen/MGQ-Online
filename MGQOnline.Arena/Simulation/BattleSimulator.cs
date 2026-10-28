@@ -2,7 +2,8 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Ran the effects of the skill used rows of a cast when it resolves
+//      Paulinchen  2026-10-28: Skipped rolls and planned the casts cancelled while queued as cancelled
+//                            - Ran the effects of the skill used rows of a cast when it resolves
 //                            - Named the row of each planned cast
 //                            - Planned the queued casts whose turn has come
 //                            - Raised the first stage start only when no battle start rule went to a stage
@@ -86,6 +87,11 @@ public sealed partial class BattleSimulator
     /// The warning of an action point change for a plan already made.
     /// </summary>
     public const string ApAfterPlanWarning = "apDeltaAfterPlan";
+
+    /// <summary>
+    /// The warning of a skip of this turn's roll after the enemy rolled.
+    /// </summary>
+    public const string SkipRollAfterPlanWarning = "skipRollAfterPlan";
 
     /// <summary>
     /// The warning of a party move the grid refuses.
@@ -300,7 +306,7 @@ public sealed partial class BattleSimulator
             {
                 foreach (QueuedCast queued in state.NextTurn.Where(queued => IsDue(queued, state.Turn)))
                 {
-                    _drafts.Add(new Draft(queued.Enemy, queued.Skill, queued.Kind, queued.Side, queued.AimSeat, queued.ParentSide, null, queued.RootActionId) { RuleId = queued.RuleId });
+                    _drafts.Add(new Draft(queued.Enemy, queued.Skill, queued.Kind, queued.Side, queued.AimSeat, queued.ParentSide, null, queued.RootActionId) { RuleId = queued.RuleId, CancelledBy = queued.CancelledBy });
                 }
 
                 state.NextTurn.RemoveAll(queued => IsDue(queued, state.Turn));
@@ -438,7 +444,13 @@ public sealed partial class BattleSimulator
             : 0;
         int spent = 0;
         int left = points;
-        if (grapple == 0 || !Grapple(state, enemy, grapple))
+        enemy.RolledTurn = state.Turn;
+        if (enemy.RollSkips.Remove(state.Turn, out string? skippedBy))
+        {
+            grapple = 0;
+            Log(state, new RollSkippedEvent(state.Turn, enemy.Index, skippedBy));
+        }
+        else if (grapple == 0 || !Grapple(state, enemy, grapple))
         {
             grapple = 0;
             (left, spent) = Roll(state, enemy, points, fullBank);
@@ -467,7 +479,10 @@ public sealed partial class BattleSimulator
         }
 
         Log(state, new ApTurnEvent(state.Turn, enemy.Index, points, spent, banked));
-        return new EnemyPlan(enemy.Index, points, spent, banked, grapple == 0 ? 0 : grapple == BindSkillType ? BindState : EternalBindState, frozen, state.Plan.GetRange(start, state.Plan.Count - start));
+        return new EnemyPlan(enemy.Index, points, spent, banked, grapple == 0 ? 0 : grapple == BindSkillType ? BindState : EternalBindState, frozen, state.Plan.GetRange(start, state.Plan.Count - start))
+        {
+            RollSkippedBy = skippedBy,
+        };
     }
 
     /// <summary>
@@ -622,7 +637,8 @@ public sealed partial class BattleSimulator
     }
 
     /// <summary>
-    /// Plans a cast at the end of the plan and fires its after-cast rules.
+    /// Plans a cast at the end of the plan and fires its after-cast rules; a cast cancelled while it
+    /// was queued enters cancelled and fires none.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="draft">The cast.</param>
@@ -631,7 +647,7 @@ public sealed partial class BattleSimulator
     /// <param name="uninterruptible">Whether crowd control cannot disable it.</param>
     private void PlanCast(BattleState state, Draft draft, int cost, bool free, bool uninterruptible)
     {
-        if (AddCast(state, draft, cost, free, uninterruptible, null, state.Plan.Count) is AfterCastEvent after)
+        if (AddCast(state, draft, cost, free, uninterruptible, null, state.Plan.Count) is AfterCastEvent after && draft.CancelledBy is null)
         {
             Raise(state, after);
         }
@@ -663,7 +679,7 @@ public sealed partial class BattleSimulator
         memory.LastSide = side ?? memory.LastSide;
         memory.LastCastTurn = state.Turn;
         CastTelegraph telegraph = _casts.Telegraph(state, new TelegraphRequest(castId, draft.Enemy, skill, side, draft.AimSeat));
-        PlannedCast planned = new(castId, draft.Enemy, draft.Skill, draft.ActionId, draft.RootActionId, draft.Kind, free, uninterruptible, side, [.. telegraph.Pulses.Select(pulse => pulse.Cells)], false, null, parentCastId)
+        PlannedCast planned = new(castId, draft.Enemy, draft.Skill, draft.ActionId, draft.RootActionId, draft.Kind, free, uninterruptible, side, [.. telegraph.Pulses.Select(pulse => pulse.Cells)], draft.CancelledBy is not null, null, parentCastId)
         {
             Cost = cost,
             AimSeat = draft.AimSeat,
@@ -671,6 +687,7 @@ public sealed partial class BattleSimulator
             Telegraph = telegraph,
             SkippedRest = draft.SkippedRest,
             RuleId = draft.RuleId,
+            CancelledBy = draft.CancelledBy,
         };
         state.Plan.Insert(place, planned);
         return new AfterCastEvent(state.Turn, castId, draft.Enemy, draft.Skill, draft.Kind, draft.ActionId, draft.RootActionId, side);
@@ -1135,5 +1152,10 @@ public sealed partial class BattleSimulator
         /// Gets the row that ordered it, or null for a rolled or grapple cast.
         /// </summary>
         public string? RuleId { get; init; }
+
+        /// <summary>
+        /// Gets the row that cancelled it while it waited, or null.
+        /// </summary>
+        public string? CancelledBy { get; init; }
     }
 }

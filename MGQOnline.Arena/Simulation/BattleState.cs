@@ -2,7 +2,9 @@
 //  BattleState.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Named the turn a queued cast is due
+//      Paulinchen  2026-10-28: Kept the turns whose roll a row skipped
+//                            - Named the row that cancelled a planned or queued cast
+//                            - Named the turn a queued cast is due
 //                            - Named the row of a planned cast
 //                            - Kept the effects that wait for a planned cast
 //                            - Kept the damage taken in a turn and the HP percents the units crossed
@@ -372,7 +374,7 @@ public sealed class UnitState
     public List<DamageReductionInstance> Reductions { get; } = [];
 
     /// <summary>
-    /// Gets the HP percents it has crossed below.
+    /// Gets the HP percents it crossed below and has not risen above since.
     /// </summary>
     public HashSet<int> HpThresholdsCrossed { get; } = [];
 }
@@ -481,7 +483,7 @@ public sealed class EnemyState
     public List<StateInstance> States { get; } = [];
 
     /// <summary>
-    /// Gets the HP percents it has crossed below.
+    /// Gets the HP percents it crossed below and has not risen above since.
     /// </summary>
     public HashSet<int> HpThresholdsCrossed { get; } = [];
 
@@ -489,6 +491,16 @@ public sealed class EnemyState
     /// Gets the damage reductions it holds, one per application.
     /// </summary>
     public List<DamageReductionInstance> Reductions { get; } = [];
+
+    /// <summary>
+    /// Gets the turns whose roll a row skipped, with the row's id.
+    /// </summary>
+    internal Dictionary<int, string> RollSkips { get; } = [];
+
+    /// <summary>
+    /// Gets or sets the last turn whose roll it rolled or skipped.
+    /// </summary>
+    internal int RolledTurn { get; set; }
 
     /// <summary>
     /// Gets whether it fell.
@@ -653,6 +665,11 @@ public sealed record PlannedCast(
     public string? RuleId { get; init; }
 
     /// <summary>
+    /// Gets the row that cancelled it, or null; a cancelled cast is disabled too.
+    /// </summary>
+    public string? CancelledBy { get; init; }
+
+    /// <summary>
     /// Gets whether crowd control may pick it: neither uninterruptible, unstoppable nor a follow-up.
     /// </summary>
     public bool Stoppable => !Uninterruptible && !Unstoppable && ParentCastId is null;
@@ -685,4 +702,9 @@ public sealed record QueuedCast(
     /// Gets the turn whose plan it goes into, or null for the next plan made.
     /// </summary>
     public int? DueTurn { get; init; }
+
+    /// <summary>
+    /// Gets the row that cancelled it, or null; it enters its plan as cancelled.
+    /// </summary>
+    public string? CancelledBy { get; init; }
 }

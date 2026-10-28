@@ -2,7 +2,9 @@
 //  BattleSimulator.Rules.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Disabled a follow-up planned behind a parent that no longer runs
+//      Paulinchen  2026-10-28: Armed an HP threshold again once the HP rises above it
+//                            - Cancelled casts and skipped rolls by a rule
+//                            - Disabled a follow-up planned behind a parent that no longer runs
 //                            - Queued a rule cast for the turn it is due
 //                            - Told whether the plan is being made and kept the effects that wait for a cast
 //                            - Went to a stage by a rule
@@ -166,8 +168,8 @@ public sealed partial class BattleSimulator
     /// <param name="state">The battle.</param>
     /// <param name="unit">The unit.</param>
     /// <param name="amount">The damage after everything else that changes it, below 0 for a heal.</param>
-    /// <returns>What it did, with the HP percents of the units' rules it crossed below for the first time
-    /// and the percents of damage in a turn it reached; null for a fallen unit.</returns>
+    /// <returns>What it did, with the HP percents of the unit rows it crossed below since it last stood
+    /// above them and the percents of damage in a turn it reached; null for a fallen unit.</returns>
     private static DamageResult? DamageUnit(BattleState state, UnitState unit, long amount)
     {
         if (unit.Fallen)
@@ -178,6 +180,7 @@ public sealed partial class BattleSimulator
         long dealt = DamageReductions.Reduce(amount, EffectiveReduction(unit.Reductions));
         unit.Hp = (int)Math.Clamp(unit.Hp - dealt, 0, unit.MaxHp);
         unit.Fallen = unit.Hp == 0;
+        unit.HpThresholdsCrossed.RemoveWhere(percent => (long)unit.Hp * 100 >= (long)percent * unit.MaxHp);
         List<int> crossed = [.. state.Engine.Book.UnitHpThresholds.Where(percent => (long)unit.Hp * 100 < (long)percent * unit.MaxHp && unit.HpThresholdsCrossed.Add(percent))];
         return WithDamageInTurn(state, StateHolder.Unit, unit.Seat, unit.MaxHp, new DamageResult(unit.Hp, unit.Fallen, crossed, dealt));
     }
@@ -189,11 +192,12 @@ public sealed partial class BattleSimulator
     /// <param name="state">The battle.</param>
     /// <param name="enemy">The enemy.</param>
     /// <param name="amount">The damage after everything else that changes it, below 0 for a heal.</param>
-    /// <returns>What it did, with the HP percents of the enemy's rules it crossed below for the first time.</returns>
+    /// <returns>What it did, with the HP percents of the enemy's rows it crossed below since it last stood above them.</returns>
     private static DamageResult DamageEnemy(BattleState state, EnemyState enemy, long amount)
     {
         long dealt = DamageReductions.Reduce(amount, EffectiveReduction(enemy.Reductions));
         enemy.Hp = Math.Clamp(enemy.Hp - dealt, 0, enemy.MaxHp);
+        enemy.HpThresholdsCrossed.RemoveWhere(percent => (Int128)enemy.Hp * 100 >= (Int128)percent * enemy.MaxHp);
         List<int> crossed = [.. state.Engine.Book.HpThresholdsOf(enemy.Slot).Where(percent => enemy.Hp * 100 < percent * enemy.MaxHp && enemy.HpThresholdsCrossed.Add(percent))];
         return WithDamageInTurn(state, StateHolder.Boss, enemy.Index, enemy.MaxHp, new DamageResult(enemy.Hp, enemy.Fallen, crossed, dealt));
     }
@@ -570,6 +574,12 @@ public sealed partial class BattleSimulator
                 Log(new CastDisabledEvent(state.Turn, castId, state.Plan[parent].DisabledBy is null ? null : by));
             }
         }
+
+        /// <inheritdoc />
+        public void CancelCasts(int enemy, SkillRef? skill, string ruleId) => simulator.CancelCasts(state, enemy, skill, ruleId);
+
+        /// <inheritdoc />
+        public void SkipRoll(int enemy, ApTurn turn, string ruleId) => BattleSimulator.SkipRoll(state, enemy, turn, ruleId);
 
         /// <inheritdoc />
         public void Log(BattleEvent battleEvent) => BattleSimulator.Log(state, battleEvent);

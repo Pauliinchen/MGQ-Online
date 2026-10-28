@@ -2,6 +2,7 @@
 //  TurnRecords.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Named the row that skipped an enemy's roll
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -47,7 +48,13 @@ public sealed record TurnPlan(int Turn, IReadOnlyList<EnemyPlan> Enemies)
 /// <param name="Grapple">The grapple pool's state, 0 for a turn of the roll.</param>
 /// <param name="Frozen">Whether the party's Overdrive freezes the enemy this turn.</param>
 /// <param name="Entries">The entries in the order they run.</param>
-public sealed record EnemyPlan(int Enemy, int ApStart, int ApSpent, int ApBanked, int Grapple, bool Frozen, IReadOnlyList<PlannedCast> Entries);
+public sealed record EnemyPlan(int Enemy, int ApStart, int ApSpent, int ApBanked, int Grapple, bool Frozen, IReadOnlyList<PlannedCast> Entries)
+{
+    /// <summary>
+    /// Gets the row that skipped the enemy's roll this turn, or null when it rolled.
+    /// </summary>
+    public string? RollSkippedBy { get; init; }
+}
 
 /// <summary>
 /// The party's turn between the boss's plan and its resolve.

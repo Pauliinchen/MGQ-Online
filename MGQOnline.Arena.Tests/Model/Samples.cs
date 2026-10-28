@@ -2,7 +2,8 @@
 //  Samples.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Added the stage start, turn, unit HP below and damage in turn events
+//      Paulinchen  2026-10-28: Added the show text, cast cancelled and roll skipped events
+//                            - Added the stage start, turn, unit HP below and damage in turn events
 //      Paulinchen  2026-10-24: Gave the boss a battle plan with two stages and rows of every trigger, condition, effect and owner
 //                            - Dropped the marks, mark reactions, scheduled actions and follow-ups
 //                            - Gave the area skill a payload override
@@ -532,6 +533,10 @@ internal static class Samples
         new EnemyTransformedEvent(1, 1, ReserveSlot, FirstSlot, 301, 2_500_000, "8e9f0a1b"),
         new EnemyLeftEvent(1, 1, FirstSlot, 301, "8e9f0a1b"),
         new StageStartEvent(1, SeriousStage, "5e6f7a8b"),
+        new ShowTextEvent(1, "Alma Elma gathers power!", "5e6f7a8b"),
+        new CastCancelledEvent(1, 0, Stigmata, "c1d2e3f4", "c1"),
+        new CastCancelledEvent(1, 0, Blast, "c1d2e3f4"),
+        new RollSkippedEvent(1, 0, "b0c1d2e3"),
         new DamageReductionAddedEvent(1, StateHolder.Unit, 2, "6a7b8c9d#1", 30, 30, 2),
         new DamageReductionRemovedEvent(1, StateHolder.Boss, 0, "6a7b8c9d"),
         new WarningEvent(1, WarningEvent.RuleLoop, "0d9e8f7a"),

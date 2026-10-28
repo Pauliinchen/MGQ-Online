@@ -2,7 +2,8 @@
 //  BattleEvent.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Named the rule that entered a stage on its own turn event
+//      Paulinchen  2026-10-28: Added the cast cancelled, roll skipped and show text events
+//                            - Named the rule that entered a stage on its own turn event
 //                            - Added the stage start, turn, unit HP below and damage in turn events
 //      Paulinchen  2026-10-23: Added the damage reduction added, expired and removed events
 //                            - Added the enemy fell, all enemies fell, joined, left and transformed events
@@ -51,6 +52,9 @@ namespace MGQOnline.Arena.Events;
 [JsonDerivedType(typeof(DamageReductionExpiredEvent), "damageReductionExpired")]
 [JsonDerivedType(typeof(DamageReductionRemovedEvent), "damageReductionRemoved")]
 [JsonDerivedType(typeof(CastDisabledEvent), "castDisabled")]
+[JsonDerivedType(typeof(CastCancelledEvent), "castCancelled")]
+[JsonDerivedType(typeof(RollSkippedEvent), "rollSkipped")]
+[JsonDerivedType(typeof(ShowTextEvent), "showText")]
 [JsonDerivedType(typeof(CastResolvedEvent), "castResolved")]
 [JsonDerivedType(typeof(DamageEvent), "damage")]
 [JsonDerivedType(typeof(StateRemovedEvent), "stateRemoved")]
@@ -294,6 +298,33 @@ public sealed record DamageReductionRemovedEvent(int Turn, StateHolder On, int I
 /// <param name="CastId">The cast's id.</param>
 /// <param name="By">The state that disabled it, or null for the time stop.</param>
 public sealed record CastDisabledEvent(int Turn, string CastId, int? By = null) : BattleEvent(Turn);
+
+/// <summary>
+/// A row cancelled a planned cast, which stays in its plan as cancelled, or a cast queued for a later
+/// turn, which enters its plan as cancelled.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="Enemy">The casting enemy's index.</param>
+/// <param name="Skill">The skill.</param>
+/// <param name="RuleId">The rule that cancelled it.</param>
+/// <param name="CastId">The cast's id, or null for a cast still queued.</param>
+public sealed record CastCancelledEvent(int Turn, int Enemy, SkillRef Skill, string RuleId, string? CastId = null) : BattleEvent(Turn);
+
+/// <summary>
+/// An enemy rolled nothing in its plan because a row skipped its roll; its points were banked.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="Enemy">The enemy's index.</param>
+/// <param name="RuleId">The rule that skipped the roll.</param>
+public sealed record RollSkippedEvent(int Turn, int Enemy, string RuleId) : BattleEvent(Turn);
+
+/// <summary>
+/// A row showed a line in battle.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="Text">The line.</param>
+/// <param name="RuleId">The rule that showed it.</param>
+public sealed record ShowTextEvent(int Turn, string Text, string RuleId) : BattleEvent(Turn);
 
 /// <summary>
 /// A planned cast was resolved over its telegraphed cells.
