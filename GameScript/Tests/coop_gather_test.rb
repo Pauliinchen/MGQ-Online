@@ -2,6 +2,8 @@
 #  coop_gather_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Answered the calls, the hold and the offers through the bridge from their golden cases
+#                            - Took a Raid World's tellers from the relay's tellings
 #      Paulinchen  2026-10-24: Checked that a viewer follows at once a scene that runs by itself and would start again in their game
 #                            - Checked that a telling nothing of which comes for thirty seconds holds the player no longer
 #      Paulinchen  2026-10-23: Checked that a Raid World viewer follows at once only a telling that moves the world's story on
@@ -35,6 +37,7 @@
 # follow the story's teller, and a teleport goes to the story.
 
 require_relative "support"
+require_relative "rules_support"
 
 # Stands in for the mod's log, printing each line.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
@@ -43,7 +46,7 @@ module Graphics; def self.frame_count; $frame_count; end; def self.brightness; 2
 # Stands in for the game's event interpreter.
 class Game_Interpreter; def execute_command; end; end
 # Stands in for the game's map.
-class Game_Map; attr_accessor :map_id; def initialize; @map_id = 3; end; def update(main = false); end; end
+class Game_Map; attr_accessor :map_id; def initialize; @map_id = 3; end; def update(main = false); end; def interpreter; @interpreter ||= Game_Interpreter.new; end; end
 # Stands in for the game's player.
 class Game_Player
   # The player's followers, shown while visible.
@@ -98,6 +101,7 @@ end
 
 load_script "coop_scope"
 load_script "coop_gather"
+open_rules_bridge
 
 gather = MGQ_MpCoopGather
 $game_map = Game_Map.new
@@ -111,17 +115,21 @@ check("a member the leader calls is coming", gather.coming?, true)
 check("and the line above their head counts the seconds down before they come over", gather.own_doing, ["Joining Leader", 5.0])
 $frame_count += 2 * 60
 check("as the frames pass", gather.own_doing, ["Joining Leader", 3.0])
-$frame_count += MGQ_MpCoopGather::GATHER_FRAMES - 2 * 60
+$frame_count += GatherStandIn::GATHER_FRAMES - 2 * 60
 check("then names that they come once free, without a time", gather.own_doing, "Joining Leader once free")
-$frame_count += MGQ_MpCoopGather::CALL_LAPSE_FRAMES
+$frame_count += GatherStandIn::CALL_LAPSE_FRAMES
 check("until the calls stop", [gather.coming?, gather.own_doing], [false, nil])
+$frame_count += 1
+asked = $world_bridge.calls.size
+gather.update
+check("then the map's frames ask the DLL nothing until the next call comes", [$world_bridge.calls.size - asked, gather.coming?], [0, false])
 
 $leader.state["id"] = "leader"
 other = MGQ_MpOverworldSync::Peers::Peer.new(3, { "name" => "Other", "id" => "other" })
 gather.called($leader, place)
 check("a battle of the calling leader on the map the call leads to belongs to the call, one elsewhere or of another player does not",
       [gather.calling_battle?($leader, 9), gather.calling_battle?($leader, 4), gather.calling_battle?(other, 9)], [true, false, false])
-$frame_count += MGQ_MpCoopGather::CALL_LAPSE_FRAMES + 1
+$frame_count += GatherStandIn::CALL_LAPSE_FRAMES + 1
 check("nor once the call lapsed", gather.calling_battle?($leader, 9), false)
 
 gather.called($leader, place)
@@ -145,7 +153,7 @@ check("until a save is loaded", gather.coming?, false)
 
 gather.come_to("Friend", [4, 1, 1, 2], false)
 gather.called($leader, place)
-$frame_count += MGQ_MpCoopGather::CALL_LAPSE_FRAMES
+$frame_count += GatherStandIn::CALL_LAPSE_FRAMES
 check("a leader's call that takes over a teleport the player asked for lapses as a call does",
       [gather.pending_call, $notices.last], [nil, "Leader's story started without you."])
 
@@ -165,15 +173,13 @@ module MGQ_MpCoop::Party
     (1..4).map { |n| MGQ_MpOverworldSync::Peers::Peer.new(n + 1, { "name" => "Player #{n}", "map" => "9", "x" => "10", "y" => "10" }) }
   end
 end
+# The script reads the calls once per frame, so the party's change shows once read anew.
+gather.refresh
 check("naming two missing members at most and how many more", gather.own_doing, ["Gathering: Player 1, Player 2 +2", 20.0])
 # The party of the one member again.
 module MGQ_MpCoop::Party; def self.members; [$member]; end; end
 DataManager.extract_save_contents({})
 check("until a save is loaded", gather.holding_story?, false)
-check("the frames a moment has left count down from the frames given, into the past, which within? reads",
-      [gather.frames_left($frame_count - 100, 300), gather.frames_left($frame_count - 400, 300), gather.frames_left($frame_count + 50, 300),
-       gather.within?($frame_count - 100, 300), gather.within?($frame_count - 400, 300), gather.within?($frame_count + 50, 300)],
-      [200, -100, 350, true, false, false])
 
 # A Raid World gathers nobody: whoever is on the map watches.
 
@@ -203,16 +209,19 @@ module MGQ_MpCoopEvents
   def self.telling?; $telling; end
   def self.story_playing?; $telling; end
   def self.leading_story?; MGQ_MpCoop::Scope.leads_story?; end
-  def self.told_markers; $telling ? [12, 0, 0, 0] : nil; end
   def self.tell(seat, kind, fields = {}); MGQ_MpCoop::Scope.tell(seat, "pevent", kind, fields); end
   def self.tell_each(peers, kind, fields = {}); MGQ_MpCoop::Scope.tell_each(peers, "pevent", kind, fields); end
 end
 # Stands in for story_state.rbx, whose WARP_BAN names the switch that bans warping.
 module MGQ_MpStoryState; WARP_BAN = 100; end
-# How far each story is: markers read as coop_story.rbx reads them, the player's own in $own_markers.
-module MGQ_MpCoopStory
-  def self.read_markers(text); values = text.to_s.split(","); values.size == 4 ? values.map(&:to_i) : nil; end
-  def self.own_markers; $own_markers; end
+# The world's story: the player's track from $track, and the tellings the relay told of on it from
+# $tellings, by seat.
+module MGQ_MpWorldStory
+  def self.track; $track; end
+  def self.telling_of(seat); $tellings[seat]; end
+  # No value moves the world's story on, and no commands may.
+  def self.progress_now; []; end
+  def self.progress_ahead?(*); false; end
 end
 # A player whose transfer is set from outside, and who notes the transfer reserved.
 class Game_Player
@@ -224,19 +233,20 @@ end
 $raid = true
 $telling = false
 $told = []
-$own_markers = [12, 0, 0, 0]
+$track = "world"
 $game_variables = {}
 $game_switches = {}
 $game_map = Game_Map.new
 $game_player = Game_Player.new
-teller = MGQ_MpOverworldSync::Peers::Peer.new(4, { "name" => "Teller", "id" => "t", "map" => "3", "x" => "5", "y" => "5", "d" => "2", "since" => "1000", "telling" => "1", "sm" => "12,0,0,0" })
-behind = MGQ_MpOverworldSync::Peers::Peer.new(5, { "name" => "Behind", "id" => "b", "map" => "3", "x" => "9", "y" => "9", "since" => "1500", "sm" => "8,0,0,0" })
+teller = MGQ_MpOverworldSync::Peers::Peer.new(4, { "name" => "Teller", "id" => "t", "map" => "3", "x" => "5", "y" => "5", "d" => "2", "since" => "1000", "trk" => "world" })
+behind = MGQ_MpOverworldSync::Peers::Peer.new(5, { "name" => "Behind", "id" => "b", "map" => "3", "x" => "9", "y" => "9", "since" => "1500", "trk" => "t2" })
 $peers = [teller, behind]
+$tellings = { 4 => ["t1", 3, "map:3:1:1"] }
 check("a Raid World holds no story for anyone to gather", MGQ_MpCoopGather.gathered?, true)
-check("a player whose story matches the teller's stands still while it plays on their map", gather.blocked?, true)
-teller.state["tsm"] = "9,0,0,0"
-check("one whose story does not match plays on", gather.blocked?, false)
-teller.state.delete("tsm")
+check("a player the relay told of the teller's telling stands still while it plays on their map", gather.blocked?, true)
+$tellings.delete(4)
+check("one it told of no telling of theirs, as a player on another track, plays on", gather.blocked?, false)
+$tellings[4] = ["t1", 3, "map:3:1:1"]
 teller.state["scene"] = "battle"
 check("while the teller fights the story's battle, a player who came late may move and join it", gather.blocked?, false)
 teller.state["scene"] = "event"
@@ -259,17 +269,17 @@ $map_free = false
 $frame_count += 20 * 60
 gather.update
 check("still while the player is busy for 20 s, since the story calls once", [gather.coming?, gather.followed_id, gather.story_map?(8)], [true, "t", true])
-$frame_count += MGQ_MpCoopGather::ASKED_LAPSE_FRAMES
+$frame_count += GatherStandIn::ASKED_LAPSE_FRAMES
 check("until a minute passed", [gather.pending_call, gather.followed_id, $notices.last], [nil, nil, "Teller's story went on without you."])
 gather.forget
 
 # Only a player who watches the teller's story and is not behind the world's follows at once; any
 # other is offered to follow in the notification box while the teller tells there.
 follow = { "pevent" => "follow", "map" => "8", "x" => "1", "y" => "2", "d" => "2" }
-teller.state["tsm"] = "9,0,0,0"
+$tellings.delete(4)
 gather.take(teller, follow)
 notice = $offers.notice_of(teller)
-check("a player whose story differs from the teller's does not follow at once", gather.coming?, false)
+check("a player on another track, whom the relay told of no telling of the teller, does not follow at once", gather.coming?, false)
 check("but is offered to in the notification box", [notice.text, notice.action, notice.color, notice.key],
       ["Teller's story moved on to map 8. Follow?", "Follow", :invite, [:story_follow, 4]])
 check("which leaves the World overview's rows alone", [$offers.call_of(teller), $offers.peer_option(teller), $offers.own_options], [nil, nil, []])
@@ -284,7 +294,7 @@ gather.update
 check("taken, the follow still names its teller and map while the player is on the way and after they arrived",
       [$game_player.reserved, gather.coming?, gather.followed_id, gather.story_map?(8)], [[8, 1, 2, 2], false, "t", true])
 check("and shows the followers the map left behind hidden, such as Hades after a defeat", $game_player.followers.visible, true)
-$frame_count += MGQ_MpCoopGather::CALL_LAPSE_FRAMES
+$frame_count += GatherStandIn::CALL_LAPSE_FRAMES
 check("until CALL_LAPSE_FRAMES passed", [gather.followed_id, gather.story_map?(8)], [nil, false])
 $game_player.reserved = nil
 $map_free = false
@@ -293,25 +303,23 @@ gather.take(teller, follow)
 $offers.notice_of(teller).decline.call
 check("declining drops the offer", [$offers.notice_of(teller), gather.coming?], [nil, false])
 gather.take(teller, follow)
-teller.state["telling"] = "0"
-check("an offer that comes before the teller's state tells them telling stands", $offers.notice_of(teller).nil?, false)
-teller.state["telling"] = "1"
+check("an offer to follow a teller the relay told of no telling of stands, as one on another track", $offers.notice_of(teller).nil?, false)
+$tellings[4] = ["t1", 8, "map:3:1:1"]
 $offers.notice_of(teller)
-teller.state["telling"] = "0"
-check("an offer ends with the teller's telling", $offers.notice_of(teller), nil)
-teller.state["telling"] = "1"
-gather.take(teller, follow)
+$tellings.delete(4)
+check("an offer ends once a telling the relay told of ended", $offers.notice_of(teller), nil)
+$tellings[4] = ["t1", 8, "map:3:1:1"]
+gather.take(teller, follow.merge("moves" => "0"))
 $offers.notice_of(teller).take.call
 $map_free = false
 $frame_count += 20 * 60
 gather.update
 check("a follow accepted while the player is busy for 20 s still stands", [gather.coming?, gather.followed_id], [true, "t"])
-$frame_count += MGQ_MpCoopGather::ASKED_LAPSE_FRAMES
+$frame_count += GatherStandIn::ASKED_LAPSE_FRAMES
 check("until a minute passed", [gather.pending_call, $notices.last], [nil, "Teller's story went on without you."])
-gather.take(teller, follow)
-$frame_count += MGQ_MpCoopGather::FOLLOW_OFFER_FRAMES
+gather.take(teller, follow.merge("moves" => "0"))
+$frame_count += GatherStandIn::FOLLOW_OFFER_FRAMES
 check("or after a minute", $offers.notice_of(teller), nil)
-teller.state.delete("tsm")
 $behind = true
 gather.take(teller, follow)
 check("a player behind the world's story is offered to follow too, though their story matches", [gather.coming?, $offers.notice_of(teller).nil?], [false, false])

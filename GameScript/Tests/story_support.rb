@@ -2,6 +2,7 @@
 #  story_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Added the seat whose ended telling the game waits for to the status
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
@@ -63,7 +64,7 @@ end
 def story_status(fields = {})
   { "synced" => true, "track" => "world", "part" => "1", "gate" => nil, "rev" => 1, "taken" => 0,
     "world" => { "rev" => 1, "part" => "1", "route" => "none", "done" => [], "checkpoints" => [] }, "pending" => false, "need_seed" => false,
-    "classes" => 1, "tellings" => {}, "told" => {}, "telling" => nil, "holder" => nil, "unanswered" => 0 }.merge(fields)
+    "classes" => 1, "tellings" => {}, "told" => {}, "await" => nil, "telling" => nil, "holder" => nil, "unanswered" => 0 }.merge(fields)
 end
 
 # Makes a whole track as the DLL hands it in a take, see StoryTopics.TakeOf.

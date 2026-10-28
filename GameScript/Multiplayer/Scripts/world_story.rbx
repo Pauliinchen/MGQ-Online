@@ -2,7 +2,10 @@
 #  world_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Sent the frame's writes to the DLL ahead of the world's close
+#      Paulinchen  2026-10-28: Left the player's telling to the DLL's telling machine
+#                            - Told the player's track in their state and read the tellings on it from the DLL
+#                            - Let the DLL say whose ended telling the player's story events wait for, ten seconds at most
+#                            - Sent the frame's writes to the DLL ahead of the world's close
 #      Paulinchen  2026-10-24: Kept on the unlocks the player holds that the relay hands off, as the second accessory slot
 #      Paulinchen  2026-10-23: Asked the DLL for the part a story is in
 #                            - Played the world's story on the relay's tracks: the player's own writes as requests, the relay's values written straight into the story
@@ -84,13 +87,13 @@ module MGQ_MpWorldStory
   # Frames between two looks at the player's level and what the world's story left.
   CHECK_FRAMES = 30
 
-  # Frames a story event waits at most after a player on the map stopped telling the story, for
-  # the world's story of their telling, ten seconds.
-  AWAIT_TELLER_FRAMES = 600
-
   # Frames the player's story events wait at most for the world's story after the world opened, a
   # save loaded or a new game started, ten seconds, in case the relay does not answer.
   AWAIT_WORLD_FRAMES = 600
+
+  # Frames the player's story events wait at most for the world's story of a telling that ended,
+  # ten seconds, in case the take that writes it stays held.
+  AWAIT_TELLER_FRAMES = 600
 
   # Frames before the player's story is handed again while the relay still asks for it, a second.
   SEED_FRAMES = 60
@@ -101,12 +104,12 @@ module MGQ_MpWorldStory
   # The highest level the relay's gates take.
   MAX_LEVEL = 99_999
 
-  # The topics of the story on tracks, see StoryTopics in the DLL.
+  # The topics of the story on tracks, see StoryTopics in the DLL; the player's own telling goes to
+  # the DLL from coop_events.rbx.
   ENTER_TOPIC = "story.enter"
   CLOSE_TOPIC = "story.close"
   LEVEL_TOPIC = "story.level"
   SEED_TOPIC = "story.seed"
-  TELL_TOPIC = "story.tell"
   WATCH_TOPIC = "story.watch"
   TAKE_TOPIC = "story.take"
 
@@ -237,9 +240,7 @@ module MGQ_MpWorldStory
   def self.forget(reason = nil)
     @mode = nil
     @waiting = nil
-    @telling = nil
     @watching = nil
-    @teller = nil
     @level_sent = nil
     @seeded_at = nil
     @queued = nil
@@ -250,6 +251,7 @@ module MGQ_MpWorldStory
     @caps = nil
     @clock ||= 0
     @awaited_since = reason ? @clock : nil
+    @awaited_telling = nil
     @checked = @clock
   end
 
@@ -391,6 +393,34 @@ module MGQ_MpWorldStory
   def self.status=(status)
     @status = status
     @world = nil
+    note_awaited
+  end
+
+  # The track the player plays, which tells the others who views their telling.
+  #
+  # @return [String, nil] "world" or the player's own track, nil before the relay placed them.
+  def self.track
+    @status && @status["synced"] ? @status["track"].to_s : nil
+  end
+
+  # Finds the telling of another player on the player's track, as the relay told of it, see
+  # MGQ_MpCoop::Scope::Raid.
+  #
+  # @param seat [Integer] The player's seat.
+  # @return [Array, nil] The telling's id, map and site, nil for none the relay told of.
+  def self.telling_of(seat)
+    tellings = @status && @status["tellings"]
+    tellings ? tellings[seat] : nil
+  end
+
+  # The fields the world's story adds to the state the player's game tells the others.
+  #
+  # @return [Hash] "trk", the player's track, while the relay placed them.
+  def self.state_fields
+    track = active? ? self.track : nil
+    track ? { "trk" => track } : {}
+  rescue
+    {}
   end
 
   # Takes the requests of the player the relay did not keep as written: a route variable another
@@ -436,9 +466,9 @@ module MGQ_MpWorldStory
     log("following a #{reason} failed: #{e.class}: #{e.message}")
   end
 
-  # Follows the world's story for one frame: the mapping, the story the relay asks for, the
-  # player's telling, the teller they watch and their level, and what the relay handed back once
-  # the player is free. Called after the map's update.
+  # Follows the world's story for one frame: the mapping, the story the relay asks for, the teller
+  # the player watches and their level, and what the relay handed back once the player is free.
+  # Called after the map's update.
   def self.tick
     @clock += 1
     return close unless active?
@@ -447,7 +477,6 @@ module MGQ_MpWorldStory
     MGQ_MpStoryKeys.recording = :raid
     load_classes
     send_seed
-    note_telling
     note_teller
     take_pending if quiet?
     play_queued
@@ -977,66 +1006,54 @@ module MGQ_MpWorldStory
     missing.each { |id| MGQ_MpStoryState.bring(id) }
   end
 
-  # Tells the relay the player's telling as it starts, goes on on another map and ends, which its
-  # telling lock and the players behind the world follow.
-  def self.note_telling
-    unless MGQ_MpCoopEvents.telling_or_moved?
-      return unless @telling
-
-      @telling = nil
-      return MGQ_Multiplayer::Bridge.stage(TELL_TOPIC, nil)
-    end
-
-    map = $game_map.map_id
-    return if @telling && @telling[:map] == map
-
-    site = @telling ? @telling[:site] : MGQ_MpStoryKeys.site_of($game_map.interpreter)
-    return log_once([:telling_site, map], "told the relay no telling on map #{map}: no event of the map or common event tells it (#{site})") if site.start_with?("game")
-
-    @telling = { :map => map, :site => site }
-    MGQ_Multiplayer::Bridge.stage(TELL_TOPIC, "site" => site, "map" => map)
-  end
-
   # Notes a player telling the story on the map whose scene the player watches, which the relay
-  # hears, and when they stop, see awaits_teller?.
+  # hears, and when they stop.
   def self.note_teller
     teller = MGQ_MpCoop::Scope.teller
-    seat = nil
-    if teller.is_a?(MGQ_MpOverworldSync::Peers::Peer) && @mode && MGQ_MpCoop::Scope.watches?(teller)
-      seat = teller.seat
-      @teller = { :seat => seat, :name => teller.state["name"].to_s } if @teller.nil? || @teller[:stopped] || @teller[:seat] != seat
-    elsif @teller && !@teller[:stopped]
-      @teller[:stopped] = @clock
-    end
+    seat = teller.is_a?(MGQ_MpOverworldSync::Peers::Peer) && @mode && MGQ_MpCoop::Scope.watches?(teller) ? teller.seat : nil
     return if seat == @watching
 
     @watching = seat
     MGQ_Multiplayer::Bridge.stage(WATCH_TOPIC, seat)
   end
 
-  # Reports whether the player's story events wait for the world's story of a telling they watched
-  # on the map that just ended, until the player's story holds the track's revision the telling
-  # ended at, AWAIT_TELLER_FRAMES at most: the player's game would play the scene again before.
-  # Called by coop_events.rbx.
+  # Reports whether the player's story events wait for the world's story of a telling on their
+  # track that ended, until the DLL's take wrote the track's revision it ended at into the player's
+  # story (the status's "await"), AWAIT_TELLER_FRAMES at most: the player's game would play the
+  # scene again before. Called by coop_events.rbx.
   #
   # @return [Boolean] Whether they wait.
   def self.awaits_teller?
-    return false unless @teller && @teller[:stopped]
+    awaited = @awaited_telling
+    return false unless awaited && active?
+    return true if @clock - awaited[:since] < AWAIT_TELLER_FRAMES
+    return false if awaited[:lapsed]
 
-    told = @status && @status["told"] ? @status["told"][@teller[:seat]] : nil
-    taken = @status ? @status["taken"].to_i : 0
-    return true if active? && @clock - @teller[:stopped] < AWAIT_TELLER_FRAMES && (told.nil? || taken < told)
-
-    @teller = nil
+    log("the world's story of the telling seat #{awaited[:telling][0]} ended did not come within #{AWAIT_TELLER_FRAMES / 60} s: the player's story events start without it")
+    awaited[:lapsed] = true
     false
   end
 
-  # Names the player whose telling the player watched, whose world's story the player's story events
-  # wait for, see awaits_teller?.
+  # Notes the ended telling whose world's story the player's story events wait for, and since
+  # when, as the status names a new one, see awaits_teller?.
+  def self.note_awaited
+    seat = @status && @status["await"]
+    return @awaited_telling = nil if seat.nil?
+
+    told = @status["told"]
+    telling = [seat, told ? told[seat] : nil]
+    @awaited_telling = { :telling => telling, :since => @clock } unless @awaited_telling && @awaited_telling[:telling] == telling
+  end
+
+  # Names the player whose telling ended, whose world's story the player's story events wait for,
+  # see awaits_teller?.
   #
-  # @return [String, nil] Their name, nil when the player waits for nobody's.
+  # @return [String, nil] Their name, nil when the player waits for nobody's or the DLL names a
+  #   seat this game knows nobody on.
   def self.watched_teller
-    name = @teller && @teller[:name]
+    seat = @status && @status["await"]
+    peer = seat.nil? || !MGQ_MpOverworldSync::Peers.respond_to?(:all) ? nil : MGQ_MpOverworldSync::Peers.all.find { |each| each.seat == seat }
+    name = peer && peer.state["name"].to_s
     name && !name.empty? ? name : nil
   end
 
@@ -1411,6 +1428,7 @@ end
 
 begin
   MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::STORY_FIELD) { |_peer, message| MGQ_MpWorldStory.pushed(message) }
+  MGQ_MpOverworldSync.state_fields { MGQ_MpWorldStory.state_fields }
   MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpWorldStory.close unless in_world }
   MGQ_Multiplayer::Bridge.on(MGQ_MpWorldStory::STATUS_EVENT) { |status| MGQ_MpWorldStory.status = status }
   MGQ_Multiplayer::Bridge.on(MGQ_MpWorldStory::REFUSED_EVENT) { |refusals| MGQ_MpWorldStory.refused(refusals) }

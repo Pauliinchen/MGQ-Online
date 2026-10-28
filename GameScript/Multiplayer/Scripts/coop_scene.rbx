@@ -2,6 +2,8 @@
 #  coop_scene.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Put a Raid World viewer's screen back with the relay's word that the telling ended, and dropped the places a viewer kept of the values taken
+#                            - Kept the teller's changes waiting and checked another game's changes in the DLL
 #      Paulinchen  2026-10-24: Gave the viewers the warp and escape bans the teller's scene sets
 #                            - Noted each change of a teller's scene that reached the player
 #      Paulinchen  2026-10-23: Took the story's writes from the one hook of story_keys.rbx
@@ -45,51 +47,27 @@
 # through coop_events.rbx. In a Raid World the player telling the story on the map shows it to
 # everyone there whose story matches theirs, see MGQ_MpCoop::Scope. The player's own scenes are
 # followed too (Own), so the mod takes back what it left of one it ends early or moves them away
-# from.
+# from. The changes waiting to go out, how they merge and split into messages, and what a viewer
+# refuses of another game's changes before this game's own facts are asked are the DLL's
+# (MGQOnline.Game's Scene folder, behind the topics of SceneTopics); this script reads the game and
+# applies what passed.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopScene
+  # The DLL's topics of the story's scene, see SceneTopics in MGQOnline.Game: a change kept for the
+  # viewers, the changes waiting taken as their messages, those forgotten, a message of another
+  # game checked for the player and one change checked for a battle's playback.
+  CHANGE_TOPIC = "scene.change"
+  FLUSH_TOPIC = "scene.flush"
+  CLEAR_TOPIC = "scene.clear"
+  TAKE_TOPIC = "scene.take"
+  CHECK_TOPIC = "scene.check"
+
   # What of a picture the story changes: showing, moving, turning, tinting and erasing it.
   PICTURE_METHODS = [:show, :move, :rotate, :start_tone_change, :erase]
 
   # What of the map's screen the story changes, those the game has: the game's own fades too.
   SCREEN_METHODS = [:start_fadeout, :start_fadein, :start_tone_change, :start_flash, :start_shake, :od_fadein, :od_fadeout]
-
-  # A picture's file name, which may hold dots, such as "ev_aguni._hb1", but is never a path.
-  PICTURE_NAME = /\A[\w\- ]+(\.[\w\- ]+)*\z/
-
-  # The highest number of a picture the game's screens hold, which another game may name.
-  MAX_PICTURE = 100
-
-  # The largest place, zoom, opacity or turning speed another game may name for a picture, either
-  # way; a larger one or Infinity raises in the game's sprites every frame.
-  MOST_AMOUNT = 100_000
-
-  # The longest change of a picture or the screen another game may name, in frames: ten minutes.
-  MOST_FRAMES = 36_000
-
-  # The strongest and fastest shake of the screen another game may name, the editor's own range.
-  MOST_SHAKE = 9
-
-  # The kind of each argument a picture's change takes, by the change, see arg_fits?.
-  PICTURE_ARGS = {
-    :show => [:name, :origin, :amount, :amount, :amount, :amount, :amount, :blend],
-    :move => [:origin, :amount, :amount, :amount, :amount, :amount, :blend, :frames],
-    :rotate => [:amount],
-    :start_tone_change => [:tone, :frames],
-    :erase => []
-  }
-
-  # The kind of each argument a change of the screen takes, by the change, see arg_fits?.
-  SCREEN_ARGS = {
-    :start_fadeout => [:frames],
-    :start_fadein => [:frames],
-    :start_tone_change => [:tone, :frames],
-    :start_flash => [:color, :frames],
-    :start_shake => [:shake, :shake, :frames],
-    :od_fadein => [],
-    :od_fadeout => []
-  }
 
   # Frames the member's screen takes to come back once the story ended.
   RESTORE_FRAMES = 30
@@ -97,8 +75,9 @@ module MGQ_MpCoopScene
   # The red, green, blue and gray of a screen without a tint.
   NO_TONE = [0, 0, 0, 0]
 
-  # Frames a change of the leader's scene stays before the leader's state says the story plays,
-  # two seconds, since the leader's state and the changes travel apart.
+  # Frames a change of a Classic leader's scene stays before the leader's state says the story
+  # plays, two seconds, since the leader's state and the changes travel apart; a Raid World's
+  # viewers hear of the telling from the relay before its first change.
   STATE_GRACE_FRAMES = 120
 
   # The kinds of story values the teller tells, by the number each travels as: switches, variables
@@ -129,7 +108,7 @@ module MGQ_MpCoopScene
   # viewer's game plays from.
   AUDIO_FOLDERS = { "bgm" => "Audio/BGM/", "bgs" => "Audio/BGS/", "me" => "Audio/ME/", "se" => "Audio/SE/" }
 
-  # What a viewer's game does with each of the teller's Audio calls: play, stop or fade a kind.
+  # The teller's Audio calls the story reaches, which a viewer's game plays, stops or fades.
   AUDIO_CALLS = %w(bgm_play bgm_stop bgm_fade bgs_play bgs_stop bgs_fade me_play me_stop me_fade se_play se_stop)
 
   # The volume, pitch and for music the position the game's Audio calls take by each kind of sound
@@ -160,25 +139,14 @@ module MGQ_MpCoopScene
   # The largest map zoom, in percent, as the game's map_zoom keeps to it.
   MOST_ZOOM = 2000
 
-  # What a message holding several changes of the scene names its change, see flush_changes.
-  # Earlier builds ignore it as an unknown change.
+  # What a message holding several changes of the scene names its change, see take.
   BATCH_KIND = "batch"
-
-  # Most changes one message holds; a viewer drops a message with more.
-  MAX_BATCH = 256
-
-  # Most bytes the changes of one message take together. The DLL sends a world message of at most
-  # 262,103 bytes (its 256 KB frame less the cipher), so this leaves room for the other fields.
-  MAX_BATCH_BYTES = 240 * 1024
 
   # The numbers of the pictures the leader's story showed on the player's screen, to erase after.
   @pictures = []
 
   # The story values changed this frame, waiting for send_values, by their kind and key.
   @values = {}
-
-  # The changes waiting for flush_changes: kind, arguments, map and whether logged.
-  @outgoing = []
 
   # The map and the tone the player's screen had before the leader's scene changed it, nil for
   # none.
@@ -436,8 +404,8 @@ module MGQ_MpCoopScene
     log_once(:erase, "telling an erased event failed: #{e.class}: #{e.message}")
   end
 
-  # Keeps one change of the story's scene for those who see it, with the map it happens on, which
-  # flush_changes tells them.
+  # Keeps one change of the story's scene in the DLL for those who see it, with the map it happens
+  # on, which flush_changes tells them; the DLL merges it with those waiting.
   #
   # The viewers are noted with it, since a Raid World's viewers are nobody once its telling ended,
   # which the last changes still go out after.
@@ -451,86 +419,30 @@ module MGQ_MpCoopScene
     followers = MGQ_MpCoop::Scope.viewers
     return if followers.empty?
 
+    kept = MGQ_Multiplayer::Bridge.call(CHANGE_TOPIC, "kind" => kind, "line" => MGQ_MpBattlesSync::Wire.line(args), "map" => $game_map.map_id,
+                                                      "logged" => logged ? true : false, "skip" => MGQ_MpCoopEvents.skip_held?)
+    return log_once([:unkept, kind], "did not tell the party #{kind}: the DLL did not keep it (#{describe(args)})") unless kept
+
     @outgoing_viewers = followers
-    coalesce(kind, args)
-    @outgoing << [kind, args, $game_map.map_id, logged]
   end
 
-  # Leaves out the change waiting to go out that a new one makes needless: the last move of the
-  # same picture, unless anything else of that picture came after it, the camera's last place,
-  # and while the player holds the game's skip the last sound effect. The story values waiting
-  # are merged into the new ones, the newer value of each kept.
-  #
-  # A move route is never left out, since a viewer's character may have walked part of it already.
-  #
-  # @param kind [String] What changes.
-  # @param args [Array] Its arguments, which take the story values waiting.
-  def self.coalesce(kind, args)
-    case kind
-    when "picture.move"
-      last = @outgoing.rindex { |entry| entry[0].start_with?("picture.") && entry[1][0] == args[0] }
-      @outgoing.delete_at(last) if last && @outgoing[last][0] == kind
-    when "map.camera"
-      @outgoing.reject! { |entry| entry[0] == kind }
-    when "audio.se_play"
-      @outgoing.reject! { |entry| entry[0] == kind } if MGQ_MpCoopEvents.skip_held?
-    when "story.values"
-      waiting = @outgoing.rindex { |entry| entry[0] == kind }
-      return unless waiting
-
-      keys = args.map { |value| value[0, 2] }
-      args.unshift(*@outgoing.delete_at(waiting)[1].reject { |value| keys.include?(value[0, 2]) })
-    end
-  end
-
-  # Reports whether the changes waiting go out now: every frame, but while the player holds the
-  # game's skip only MGQ_MpCoopEvents::SKIP_SEND_FRAMES after the last went out, or once the story
-  # stopped playing or another scene was called.
-  #
-  # @return [Boolean] Whether they do.
-  def self.send_due?
-    return true unless MGQ_MpCoopEvents.skip_held?
-
-    past_frames?(@flushed_at, MGQ_MpCoopEvents::SKIP_SEND_FRAMES) || !MGQ_MpCoopEvents.story_playing? || !SceneManager.scene.is_a?(Scene_Map)
-  end
-
-  # As teller, tells those who see the story the changes waiting, see send_change, in their order
-  # and by the map they happened on: a lone change as itself, which earlier builds take, several
-  # as messages of BATCH_KIND, each within MAX_BATCH changes and MAX_BATCH_BYTES.
+  # As teller, tells those who see the story the changes waiting in the DLL once they are due:
+  # every frame, but while the player holds the game's skip only every few frames, unless the story
+  # stopped playing or another scene was called. The DLL hands them as messages by the map they
+  # happened on: a lone change as itself, which earlier builds take, several as one of BATCH_KIND.
   def self.flush_changes
-    return if @outgoing.empty?
+    return unless @outgoing_viewers
 
-    outgoing = @outgoing
-    @outgoing = []
-    @flushed_at = Graphics.frame_count
-    viewers = @outgoing_viewers || []
-    groups = []
-    outgoing.each { |entry| groups.last && groups.last[0] == entry[2] ? groups.last[1] << entry : groups << [entry[2], [entry]] }
-    groups.each { |map, entries| split_batches(entries).each { |batch| send_batch(viewers, map, batch) } }
-    MGQ_MpCoop::Scope::Raid.sent_values_to(viewers) if outgoing.any? { |entry| entry[0] == "story.values" }
+    playing = MGQ_MpCoopEvents.story_playing? && SceneManager.scene.is_a?(Scene_Map) ? true : false
+    messages = MGQ_Multiplayer::Bridge.call(FLUSH_TOPIC, "skip" => MGQ_MpCoopEvents.skip_held?, "playing" => playing)
+    return if messages == false
+
+    viewers = @outgoing_viewers
+    @outgoing_viewers = nil
+    (messages || []).each { |message| send_message(viewers, message) }
   rescue => e
-    @outgoing = []
+    @outgoing_viewers = nil
     log_once(:flush, "telling the scene's changes failed: #{e.class}: #{e.message}")
-  end
-
-  # Splits the changes of one map into the messages they go out in, see flush_changes.
-  #
-  # @param entries [Array<Array>] The changes: kind, arguments, map and whether logged.
-  # @return [Array<Array<Array>>] The changes of each message, each with its line for a batch.
-  def self.split_batches(entries)
-    batches = [[]]
-    bytes = -1
-    entries.each do |entry|
-      line = MGQ_MpBattlesSync::Wire.line([[entry[0], entry[1]]])
-      batch = batches.last
-      if batch.size >= MAX_BATCH || (!batch.empty? && bytes + 1 + line.bytesize > MAX_BATCH_BYTES)
-        batches << (batch = [])
-        bytes = -1
-      end
-      bytes += 1 + line.bytesize
-      batch << [entry, line]
-    end
-    batches
   end
 
   # Sends those who see the story one message of changes of a map, see flush_changes. In a Raid
@@ -538,24 +450,25 @@ module MGQ_MpCoopScene
   # changes waited.
   #
   # @param viewers [Array<MGQ_MpOverworldSync::Peers::Peer>] Those who see the story.
-  # @param map [Integer] The map the changes happened on.
-  # @param batch [Array<Array>] The changes, each with its line, see split_batches.
-  def self.send_batch(viewers, map, batch)
+  # @param message [Hash] The message: "map", "kind", "args" and "changes", each change's kind,
+  #   its arguments as the log shows them and whether it is logged.
+  def self.send_message(viewers, message)
     names = viewers.map { |peer| peer.state['name'] }.join(', ')
+    map = message["map"]
     fields = { "map" => map }
     fields["mmap"] = map if MGQ_MpCoop::Scope.raid?
-    if batch.size == 1
-      kind, args, _map, logged = batch[0][0]
-      sent = MGQ_MpCoop::Scope.tell_each(viewers, "pscene", kind, fields.merge("args" => MGQ_MpBattlesSync::Wire.line(args)))
-      log("told #{names} #{kind} #{describe(args)} on map #{map}#{sent ? '' : ', which failed for some'}") if logged || !sent
+    sent = MGQ_MpCoop::Scope.tell_each(viewers, "pscene", message["kind"], fields.merge("args" => message["args"]))
+    changes = message["changes"]
+    if changes.size == 1
+      kind, shown, logged = changes[0]
+      log("told #{names} #{kind} #{shown} on map #{map}#{sent ? '' : ', which failed for some'}") if logged || !sent
       return
     end
 
-    sent = MGQ_MpCoop::Scope.tell_each(viewers, "pscene", BATCH_KIND, fields.merge("args" => batch.map { |_entry, line| line }.join("\t")))
-    kinds = batch.map { |entry, _line| entry[0] }
+    kinds = changes.map { |kind, _shown, _logged| kind }
     counted = kinds.uniq.map { |kind| (count = kinds.count(kind)) > 1 ? "#{kind} x#{count}" : kind }
-    log("told #{names} #{batch.size} changes in one message on map #{map}: #{counted.join(', ')}#{sent ? '' : ', which failed for some'}")
-    batch.each { |(kind, args, _map, logged), _line| log("  with #{kind} #{describe(args)}") if logged }
+    log("told #{names} #{changes.size} changes in one message on map #{map}: #{counted.join(', ')}#{sent ? '' : ', which failed for some'}")
+    changes.each { |kind, shown, logged| log("  with #{kind} #{shown}") if logged }
   end
 
   # Writes a change's arguments for the log: tones and colors by their values, long texts cut.
@@ -576,8 +489,9 @@ module MGQ_MpCoopScene
 
   # Takes a change of the leader's story scene, or several of BATCH_KIND: the player sees it while
   # on the leader's map or on the way there, since the screen keeps its pictures and tint through a
-  # transfer. Called by coop.rbx, which drops another party's, or by coop_scope.rbx, which drops
-  # another map's.
+  # transfer. The DLL checks each change before this game's own facts are asked (see take_change).
+  # Called by coop.rbx, which drops another party's, or by coop_scope.rbx, which drops another
+  # map's.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
   # @param message [Hash] The message, the change under "pscene".
@@ -594,54 +508,55 @@ module MGQ_MpCoopScene
     end
     MGQ_MpCoop::Scope.heard_from(peer)
 
-    args = MGQ_MpBattlesSync::Wire.parse(message["args"].to_s) { nil }
-    return log("ignored #{kind}: its arguments did not read (#{message['args'].to_s.size} characters)") unless args
-    return take_batch(peer, args, message["map"].to_i) if kind == BATCH_KIND
+    line = message["args"].to_s
+    map = message["map"].to_i
+    refusals = MGQ_Multiplayer::Bridge.call(TAKE_TOPIC, "kind" => kind, "line" => line, "map" => map, "here" => $game_map.map_id)
+    args = refusals && MGQ_MpBattlesSync::Wire.parse(line) { nil }
+    return log("ignored #{kind}: its arguments did not read (#{line.size} characters)") unless args
+    if refusals.is_a?(String)
+      return log_once([:batch, peer.state["id"]], "ignored #{args.size} changes from #{MGQ_MpOverworldSync.who(peer)} in one message: #{refusals}")
+    end
 
-    take_change(peer, kind, args, message["map"].to_i)
+    changes = kind == BATCH_KIND ? args : [[kind, args]]
+    changes.each_with_index { |(each_kind, each_args), index| take_change(each_kind, each_args, map, refusals[index]) }
   rescue => e
     log_once(:take, "showing the leader's scene failed: #{e.class}: #{e.message}")
   end
 
-  # Takes the changes of a message of BATCH_KIND in their order, see take_change; a message of
-  # more than MAX_BATCH changes, or of anything but changes, is dropped whole.
+  # Takes one change of the leader's story scene from the teller's map, see take, unless the DLL
+  # refused it: a change this game has no such change for, arguments it cannot take, a name that
+  # is no plain file name, or a change bound to the teller's map while the player is on the way.
   #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
-  # @param entries [Array] The changes, each its kind and arguments.
-  # @param map [Integer] The teller's map they happened on.
-  def self.take_batch(peer, entries, map)
-    unless entries.size <= MAX_BATCH && entries.all? { |entry| entry.is_a?(Array) && entry.size == 2 && entry[0].is_a?(String) && entry[1].is_a?(Array) }
-      return log_once([:batch, peer.state["id"]], "ignored #{entries.size} changes from #{MGQ_MpOverworldSync.who(peer)} in one message: more than #{MAX_BATCH} or not changes")
-    end
-
-    entries.each { |kind, args| take_change(peer, kind, args, map) }
-  end
-
-  # Takes one change of the leader's story scene from the teller's map, see take.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
   # @param kind [String] What changes, such as "picture.show".
   # @param args [Array] Its arguments.
   # @param map [Integer] The teller's map it happened on.
-  def self.take_change(peer, kind, args, map)
-    # An event is named by its id on the teller's map, which another map's event may share, the
-    # camera's place is the teller's map's, and a fanfare or sound effect is over before the player
-    # arrives.
-    if (kind.start_with?("event.") || kind == "map.camera" || MAP_LOOKS.include?(kind.sub("map.", "")) || kind =~ /\Aaudio\.(me|se)_/) &&
-       map != $game_map.map_id
-      return log("ignored #{kind} on map #{map}: the player is still on the way, on map #{$game_map.map_id}")
-    end
+  # @param refusal [String, nil] Why the DLL refused it, nil for a change that passed.
+  def self.take_change(kind, args, map, refusal)
+    return log_once([:refused, kind, refusal], "ignored #{kind} #{describe(args)} on map #{map}: #{refusal}") if refusal
 
-    # The values move the player's story past where the telling started, which would end their
-    # watching.
-    MGQ_MpCoop::Scope::Raid.takes_values(peer) if kind == "story.values" && MGQ_MpCoop::Scope.raid?
     apply(kind, args, map)
   rescue => e
     log_once(:take, "showing the leader's #{kind} failed: #{e.class}: #{e.message}")
   end
 
-  # Makes one change of the leader's story scene on the player's map screen, noting what to put
-  # back once the story ended.
+  # Tells what this game refuses of a change of a picture or the screen another game made before
+  # its own facts are asked, as take_change does; a battle's playback asks it.
+  #
+  # @param kind [String] What changes, such as "picture.show".
+  # @param args [Array] Its arguments.
+  # @return [String, nil] The refusal, nil for a change that passes; a refusal while the DLL does
+  #   not answer, since a wrong argument ends the game outside every rescue.
+  def self.refusal(kind, args)
+    # The line writes Infinity and NaN as texts that read back as 0.0, so the DLL never sees them.
+    return "arguments this game cannot take" if args.flatten.any? { |arg| arg.is_a?(Float) && !arg.finite? }
+
+    MGQ_Multiplayer::Bridge.call!(CHECK_TOPIC, "kind" => kind, "line" => MGQ_MpBattlesSync::Wire.line(args))
+  rescue => e
+    "the DLL did not check it (#{e.message})"
+  end
+
+  # Makes one change of the leader's story scene on the player's map screen, which the DLL checked
+  # (see take_change), noting what to put back once the story ended.
   #
   # The names came from another game, so they are compared as text and never made symbols.
   #
@@ -657,7 +572,6 @@ module MGQ_MpCoopScene
     when "screen"
       name = SCREEN_METHODS.find { |known| known.to_s == method }
       return log_once([:unknown, kind], "ignored #{kind}: this game's screen has no such change") unless name && $game_map.screen.respond_to?(name)
-      return log_once([:screen_args, name], "ignored #{kind} #{describe(args)}: arguments this game cannot take") unless args_fit?(SCREEN_ARGS[name], args)
 
       unless @screen
         @screen = { :map => $game_map.map_id, :tone => copy_tone($game_map.screen.tone) }
@@ -666,8 +580,6 @@ module MGQ_MpCoopScene
       $game_map.screen.send(name, *args)
       log("applied the leader's #{kind} #{describe(args)}")
     when "player"
-      return log_once([:unknown, kind], "ignored #{kind}: no such change") unless method == "transparent"
-
       if @transparent.nil?
         @transparent = $game_player.transparent
         @transparent_map = $game_map.map_id
@@ -675,8 +587,6 @@ module MGQ_MpCoopScene
       $game_player.transparent = args[0] ? true : false
       log("applied the leader's #{kind}: the player's character is #{args[0] ? 'hidden' : 'shown'}")
     when "story"
-      return log_once([:unknown, kind], "ignored #{kind}: no such change") unless method == "values"
-
       apply_values(args, map)
     when "event"
       apply_event(method, args)
@@ -684,8 +594,6 @@ module MGQ_MpCoopScene
       apply_audio(method, args, map)
     when "map"
       apply_map(method, args)
-    else
-      log_once([:unknown, kind], "ignored #{kind}: no such change")
     end
   end
 
@@ -699,10 +607,6 @@ module MGQ_MpCoopScene
   def self.apply_picture(method, args)
     name = PICTURE_METHODS.find { |known| known.to_s == method }
     number = args[0].to_i
-    return log("ignored picture.#{method} of picture #{number}: no such change or picture") unless name && number > 0 && number <= MAX_PICTURE
-    return log_once([:picture_args, name], "ignored picture.#{method} #{describe(args)}: arguments this game cannot take") unless args_fit?(PICTURE_ARGS[name], args[1..-1])
-    return log("ignored showing picture #{number}: '#{args[1].to_s[0, 40]}' is no picture's file name") if name == :show && args[1] !~ PICTURE_NAME
-
     @pictures |= [number]
     if name == :show && !map_graphics?([[:picture, args[1]]])
       $game_map.screen.pictures[number].erase
@@ -710,52 +614,6 @@ module MGQ_MpCoopScene
     end
     $game_map.screen.pictures[number].send(name, *args[1..-1])
     log("applied the leader's picture.#{method} #{describe(args)}")
-  end
-
-  # Reports whether the arguments another game sent for a change of a picture or the screen are
-  # ones this game takes: as many as the change takes, each of its kind and within the limits.
-  #
-  # The game keeps them and uses them each frame, where a wrong one ends the game outside every
-  # rescue of the mod.
-  #
-  # @param kinds [Array<Symbol>, nil] The kind of each argument, see PICTURE_ARGS and SCREEN_ARGS.
-  # @param args [Array] The arguments.
-  # @return [Boolean] Whether they are, never raising.
-  def self.args_fit?(kinds, args)
-    kinds.size == args.size && kinds.zip(args).all? { |kind, value| arg_fits?(kind, value) }
-  rescue
-    false
-  end
-
-  # Reports whether one argument another game sent is of its kind and within the limits: a finite
-  # amount up to MOST_AMOUNT either way, whole frames up to MOST_FRAMES, a whole origin, a blend
-  # type of 0 to 2, a tone, a color, a shake up to MOST_SHAKE, or a name.
-  #
-  # @param kind [Symbol] The argument's kind, as PICTURE_ARGS and SCREEN_ARGS name it.
-  # @param value [Object] The argument.
-  # @return [Boolean] Whether it is, never raising.
-  def self.arg_fits?(kind, value)
-    case kind
-    when :amount then number?(value) && value.abs <= MOST_AMOUNT
-    when :frames then number?(value) && value == value.floor && value >= 0 && value <= MOST_FRAMES
-    when :origin then value.is_a?(Integer)
-    when :blend then value.is_a?(Integer) && value >= 0 && value <= 2
-    when :tone then value.is_a?(Tone)
-    when :color then value.is_a?(Color)
-    when :shake then number?(value) && value >= 0 && value <= MOST_SHAKE
-    when :name then value.is_a?(String)
-    else false
-    end
-  rescue
-    false
-  end
-
-  # Reports whether a value is a whole or finite number.
-  #
-  # @param value [Object] The value.
-  # @return [Boolean] Whether it is.
-  def self.number?(value)
-    value.is_a?(Integer) || (value.is_a?(Float) && value.finite?)
   end
 
   # Lays the teller's story values over the player's while they watch, see story_value: what is
@@ -884,8 +742,6 @@ module MGQ_MpCoopScene
   def self.apply_map(method, args)
     case method
     when "camera"
-      return log_once([:camera, args.size], "ignored map.camera #{describe(args)}: no place") unless args.size == 2 && args.all? { |value| value.is_a?(Numeric) }
-
       log("follows the teller's camera on map #{$game_map.map_id}, from #{describe(args)}") unless @camera_target
       @camera_target = [args[0].to_f, args[1].to_f, $game_map.map_id]
     when *MAP_LOOKS
@@ -903,15 +759,13 @@ module MGQ_MpCoopScene
 
   # Plays, stops or fades a sound as the teller's story did, see audio, on the teller's map screen
   # alone: a battle or menu brings its own music back as it ends, and a transfer's autoplay replaces
-  # what played on the way, so music and background sounds wait there (see hold_audio). A file
-  # this game cannot play is left out, which the game would otherwise stop at.
+  # what played on the way, so music and background sounds wait there (see hold_audio). A name
+  # that is no sound's file name never comes here, see take_change.
   #
   # @param call [String] The Audio call, one of AUDIO_CALLS.
   # @param args [Array] Its arguments, see audio.
   # @param map [Integer] The teller's map it happened on.
   def self.apply_audio(call, args, map = $game_map.map_id)
-    return log_once([:unknown, call], "ignored audio.#{call}: no such call") unless AUDIO_CALLS.include?(call)
-
     kind, action = call.split("_")
     return hold_audio(kind, call, args, map) unless map == $game_map.map_id && SceneManager.scene.is_a?(Scene_Map)
 
@@ -919,8 +773,6 @@ module MGQ_MpCoopScene
     case action
     when "play"
       name = args[0].to_s
-      return log("ignored audio.#{call}: '#{name[0, 40]}' is no sound's file name") unless name =~ FILE_NAME
-
       volume, pitch = AUDIO_DEFAULTS[kind]
       file = sound.new(name, args.fetch(1, volume).to_i, args.fetch(2, pitch).to_i)
       kind == "bgm" || kind == "bgs" ? file.play(args[3].to_i) : file.play
@@ -1081,26 +933,27 @@ module MGQ_MpCoopScene
   end
 
   # Reports whether the player sees the leader's story scene now: in a party whose leader tells
-  # the story on the player's map, or in a Raid World while the teller there tells a story that
-  # matches the player's.
+  # the story on the player's map, or in a Raid World while the relay tells of the teller's
+  # telling there, on the player's track.
   #
   # @return [Boolean] Whether they do.
   def self.watching?
     lead = MGQ_MpCoop::Scope.teller
-    lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && lead.state["telling"] == "1" && MGQ_MpCoopGather.story_map?(lead.state["map"].to_i) &&
-      MGQ_MpCoop::Scope.watches?(lead)
+    return false unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && MGQ_MpCoop::Scope.telling?(lead)
+
+    MGQ_MpCoopGather.story_map?(lead.state["map"].to_i) && MGQ_MpCoop::Scope.watches?(lead)
   end
 
   # As teller, tells the viewers the story values of the frame, the camera's place and the changes
-  # waiting once due (send_due?); as viewer, plays the story's sounds held for the map's screen
+  # waiting once due (flush_changes); as viewer, plays the story's sounds held for the map's screen
   # while they see the leader's story scene, and puts the player's screen back once they no longer
   # do. Called after the map's update.
   def self.update
     send_values
     send_camera
-    flush_changes if send_due?
+    flush_changes
     return unless pending?
-    return play_held if watching? || just_changed?
+    return play_held if watching? || (!MGQ_MpCoop::Scope.raid? && just_changed?)
 
     restore(why_not_watching)
   rescue => e
@@ -1108,8 +961,8 @@ module MGQ_MpCoopScene
     forget("putting it back failed")
   end
 
-  # Reports whether a change of the leader's scene came only a moment ago, which the leader's state
-  # that says the story plays may still follow.
+  # Reports whether a change of the leader's scene came only a moment ago, which a Classic leader's
+  # state that says the story plays may still follow.
   #
   # @return [Boolean] Whether it did.
   def self.just_changed?
@@ -1131,7 +984,7 @@ module MGQ_MpCoopScene
   def self.why_not_watching
     lead = MGQ_MpCoop::Scope.teller
     return "nobody else tells the story" unless lead.is_a?(MGQ_MpOverworldSync::Peers::Peer)
-    return "#{lead.state['name']}'s story ended" unless lead.state["telling"] == "1"
+    return "#{lead.state['name']}'s story ended" unless MGQ_MpCoop::Scope.telling?(lead)
 
     "#{lead.state['name']} tells it on map #{lead.state['map']}, the player is on map #{$game_map.map_id}"
   rescue
@@ -1217,9 +1070,8 @@ module MGQ_MpCoopScene
     log("forgot the leader's scene without putting it back: #{reason}") if reason && pending?
     @pictures = []
     @values = {}
-    @outgoing = []
     @outgoing_viewers = nil
-    @flushed_at = nil
+    MGQ_Multiplayer::Bridge.call(CLEAR_TOPIC)
     @screen = nil
     @transparent = nil
     @transparent_map = nil

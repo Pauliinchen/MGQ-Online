@@ -2,6 +2,8 @@
 //  StoryTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Answered the telling machine, which takes the relay's telling lock
+//                            - Told the scripts the teller whose ended telling the game has yet to take the track of
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -15,15 +17,17 @@ using System.Text.Json;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Story;
+using MGQOnline.Game.Telling;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.World;
 
 namespace MGQParadox.Multiplayer;
 
 /// <summary>
-/// The bridge topics of a Raid World's story on the relay's tracks (<see cref="StoryTrack"/>) and
-/// of the tables the scripts look each story write up in: the story mapping, fetched as the story
-/// starts and again on its new revision, and a Classic party's table.
+/// The bridge topics of a Raid World's story on the relay's tracks (<see cref="StoryTrack"/>), of
+/// the tables the scripts look each story write up in (the story mapping, fetched as the story
+/// starts and again on its new revision, and a Classic party's table) and of the player's telling
+/// (<see cref="TellingMachine"/>), which takes the relay's telling lock through the track.
 /// </summary>
 internal sealed class StoryTopics : IStoryTrackHost
 {
@@ -78,6 +82,34 @@ internal sealed class StoryTopics : IStoryTrackHost
     public const string ClassicTopic = "story.classic_table";
 
     /// <summary>
+    /// The topic that takes an event of the map's interpreter starting: {"telling" (whether it is
+    /// story the player tells), "by_itself", "map", "site" (nil for none)}; answers {"telling",
+    /// "continued" ("frame", "moved" or nil), "from" (the telling's map before), "hold", "locked"}.
+    /// </summary>
+    public const string TellingStartTopic = "telling.start";
+
+    /// <summary>
+    /// The topic the interpreter asks before a command of the telling while its first waits for the
+    /// relay: answers {"command" ("go", "hold", "end" or "unlocked", see <see cref="TellingCommand"/>), "holder" (the seat that tells there, or nil)}.
+    /// </summary>
+    public const string TellingCommandTopic = "telling.command";
+
+    /// <summary>
+    /// The topic that takes the telling's event ending.
+    /// </summary>
+    public const string TellingEndTopic = "telling.end";
+
+    /// <summary>
+    /// The topic that takes the telling moving the player onto another map: {"map" (the one left)}.
+    /// </summary>
+    public const string TellingMovingTopic = "telling.moving";
+
+    /// <summary>
+    /// The topic that takes the telling's transfer landing the player on another map: {"map" (the one arrived on)}.
+    /// </summary>
+    public const string TellingArrivedTopic = "telling.arrived";
+
+    /// <summary>
     /// The event of how the story on tracks stands, see <see cref="StatusOf"/>.
     /// </summary>
     public const string StatusEvent = "story.status";
@@ -111,6 +143,11 @@ internal sealed class StoryTopics : IStoryTrackHost
     /// The player's story on tracks.
     /// </summary>
     private readonly StoryTrack _track;
+
+    /// <summary>
+    /// The player's telling.
+    /// </summary>
+    private readonly TellingMachine _telling;
 
     /// <summary>
     /// Guards the mapping a fetch hands over.
@@ -173,6 +210,7 @@ internal sealed class StoryTopics : IStoryTrackHost
         _context = context;
         _session = session;
         _track = new StoryTrack(this, () => RandomNumberGenerator.GetString(TellingLetters, 12));
+        _telling = new TellingMachine(_track);
         RelayOf = id => session.OpenWorld(id) is { } code ? Relays.AddressOf(code.Relay) : null;
         context.Events.Coalesce(StatusEvent);
     }
@@ -244,8 +282,59 @@ internal sealed class StoryTopics : IStoryTrackHost
         context.Register(TakeTopic, (_, _) => topics._track.Take() is { } take ? TakeOf(take) : null);
         context.Register(ClassesTopic, (_, _) => topics._table is { } table ? TableOf(table) : null);
         context.Register(ClassicTopic, (_, request) => ClassicOf(request.AsHash()));
+        context.Register(TellingStartTopic, (_, request) => topics.TellingStart(request.AsHash()));
+        context.Register(TellingCommandTopic, (_, _) => topics.TellingCommandOf());
+        context.Register(TellingEndTopic, (_, _) =>
+        {
+            topics._telling.End();
+            return null;
+        });
+        context.Register(TellingMovingTopic, (_, request) =>
+        {
+            topics._telling.Moving(request.AsHash()["map"].AsInt(), context.Frame);
+            return null;
+        });
+        context.Register(TellingArrivedTopic, (_, request) =>
+        {
+            topics._telling.Arrived(request.AsHash()["map"].AsInt());
+            return null;
+        });
         context.EveryFrame(_ => topics.Step());
         return topics;
+    }
+
+    /// <summary>
+    /// Takes an event of the map's interpreter starting, see <see cref="TellingStartTopic"/>.
+    /// </summary>
+    /// <param name="request">The event.</param>
+    /// <returns>How it goes on with the telling.</returns>
+    private RubyHash TellingStart(RubyHash request)
+    {
+        RubyValue site = request["site"];
+        TellingStart start = _telling.Start(request["telling"].AsBool(), request["by_itself"].AsBool(), request["map"].AsInt(), site.IsNil ? null : site.AsText(), _context.Frame);
+        return new RubyHash
+        {
+            { "telling", start.Telling },
+            { "continued", start.Continued switch { TellingContinued.SameFrame => "frame", TellingContinued.Moved => "moved", _ => RubyNil.Value } },
+            { "from", start.From },
+            { "hold", start.Hold },
+            { "locked", start.Locked },
+        };
+    }
+
+    /// <summary>
+    /// Answers what a command of the telling does while its first waits for the relay, see
+    /// <see cref="TellingCommandTopic"/>.
+    /// </summary>
+    /// <returns>The command and the seat that tells on the map when it ends the event.</returns>
+    private RubyHash TellingCommandOf()
+    {
+        TellingCommand command = _telling.Command(_context.Frame);
+        return new RubyHash
+        {
+            { "command", command switch { TellingCommand.Hold => "hold", TellingCommand.End => "end", TellingCommand.Unlocked => "unlocked", _ => "go" } },
+            { "holder", command == TellingCommand.End && _telling.RefusedBy is { } holder ? holder : RubyNil.Value },
+        };
     }
 
     /// <inheritdoc />
@@ -401,6 +490,7 @@ internal sealed class StoryTopics : IStoryTrackHost
     private RubyValue? Close()
     {
         _relay = null;
+        _telling.Forget();
         _track.Leave();
         _track.Connection(false);
         return null;
@@ -431,11 +521,12 @@ internal sealed class StoryTopics : IStoryTrackHost
     }
 
     /// <summary>
-    /// Runs the story's frame: the connection, the relay's frames, the mapping, and the status and
-    /// refusals the scripts read.
+    /// Runs the story's frame: the connection, the relay's frames, the mapping, the telling's end of
+    /// frame, and the status and refusals the scripts read.
     /// </summary>
     private void Step()
     {
+        _telling.Step(_context.Frame);
         if (_relay is not null)
         {
             int connections = _session.Connections;
@@ -544,7 +635,7 @@ internal sealed class StoryTopics : IStoryTrackHost
     /// <summary>
     /// Describes how the story on tracks stands, as the scripts read it each frame.
     /// </summary>
-    /// <returns>{"synced", "track", "part", "gate", "rev", "taken", "world" ({"rev", "part", "route", "done", "checkpoints"} or nil), "pending", "need_seed", "classes" (the mapping's revision held, nil before), "tellings" (seat => [telling, map, site]), "told" (seat => revision), "telling" (true, false or nil), "holder", "unanswered"}.</returns>
+    /// <returns>{"synced", "track", "part", "gate", "rev", "taken", "world" ({"rev", "part", "route", "done", "checkpoints"} or nil), "pending", "need_seed", "classes" (the mapping's revision held, nil before), "tellings" (seat => [telling, map, site]), "told" (seat => revision), "await" (the seat whose ended telling the game has yet to take the track of, or nil), "telling" (true, false or nil), "holder", "unanswered"}.</returns>
     private RubyHash StatusOf()
     {
         var tellings = new RubyHash();
@@ -583,6 +674,7 @@ internal sealed class StoryTopics : IStoryTrackHost
             { "classes", _table is { } table ? table.Rev : RubyNil.Value },
             { "tellings", tellings },
             { "told", told },
+            { "await", _track.AwaitingSeat is { } awaiting ? awaiting : RubyNil.Value },
             { "telling", _track.TellingGranted is { } granted ? granted : RubyNil.Value },
             { "holder", _track.TellingHolder is { } holder ? holder : RubyNil.Value },
             { "unanswered", _track.Unanswered },

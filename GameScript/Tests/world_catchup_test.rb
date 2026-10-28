@@ -2,6 +2,7 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Dropped the stand-in for the telling that may go on after a move
 #      Paulinchen  2026-10-24: Checked that a prize another player claimed reaches the player
 #                            - Checked that Alice's Power-up counts the steps the world did
 #                            - Checked that a join's persona waits behind a later change of the story
@@ -171,8 +172,6 @@ end
 module MGQ_MpCoopEvents
   # Answers whether the player tells a story event, as $telling says.
   def self.telling?; $telling ? true : false; end
-  # Answers telling?.
-  def self.telling_or_moved?; telling?; end
   # Answers that no PvP battle runs.
   def self.pvp_running?; false; end
   # Answers that no event is a chest.

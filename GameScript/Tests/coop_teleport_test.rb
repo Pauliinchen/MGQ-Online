@@ -2,6 +2,7 @@
 #  coop_teleport_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Read the frames of a teleport from the gather stand-in
 #      Paulinchen  2026-10-11: Checked that the line above the head names a request to another member
 #                            - Stood in for the line above the player's head with its doings and lapses
 #      Paulinchen  2026-10-10: Checked that an allowed teleport waits a minute for a busy player
@@ -14,6 +15,7 @@
 # loaded save or the world's close.
 
 require_relative "support"
+require_relative "rules_support"
 
 # Stands in for the mod's log, printing each line.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
@@ -97,6 +99,7 @@ module MGQ_MpStoryState; WARP_BAN = 100; end
 load_script "coop_scope"
 load_script "coop_gather"
 load_script "coop_teleport"
+open_rules_bridge
 
 teleport = MGQ_MpCoopTeleport
 $frame_count = 1000
@@ -141,7 +144,7 @@ MGQ_MpCoopGather.update
 check("and teleports the player once free", [$game_player.reserved, MGQ_MpCoopGather.coming?], [[9, 10, 10, 4], false])
 MGQ_MpCoopGather.come_to("Leader", [9, 10, 10, 4], nil)
 $map_free = false
-$frame_count += MGQ_MpCoopGather::ASKED_LAPSE_FRAMES
+$frame_count += GatherStandIn::ASKED_LAPSE_FRAMES
 check("one that waits a minute for the player lapses with a notice",
       [MGQ_MpCoopGather.coming?, MGQ_MpCoopGather.pending_call, $notices.last], [false, nil, "You were too busy to teleport to Leader."])
 $game_player.reserved = nil

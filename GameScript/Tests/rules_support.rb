@@ -13,6 +13,11 @@
 #                            - Answered the World overview's story and title
 #                            - Answered the mods text of a world
 #                            - Kept the test's one stand-in bridge in $world_bridge
+#      Paulinchen  2026-10-28: Answered the story's choices
+#                            - Answered the calls of a story
+#                            - Answered the story's scene
+#                            - Answered the story's pages
+#      Paulinchen  2026-10-23: Kept the test's one stand-in bridge in $world_bridge
 #                            - Answered the event sorter
 #                            - Answered the mod catalog a test sets
 #                            - Added the answers to the world room's stand-in bridge when a test has one
@@ -730,6 +735,15 @@ def open_rules_bridge
   answer_forms(fake)
   answer_parking(fake)
   answer_screen_steps(fake)
+  answer_choices(fake)
+  answer_gather(fake)
+  answer_scene(fake)
+  answer_pages(fake)
   MGQ_Multiplayer::Bridge.open(fake)
   fake
 end
+
+require_relative "choices_support"
+require_relative "gather_support"
+require_relative "scene_support"
+require_relative "pages_support"

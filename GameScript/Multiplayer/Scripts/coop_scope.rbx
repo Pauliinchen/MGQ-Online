@@ -2,6 +2,7 @@
 #  coop_scope.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Took a Raid World's tellers from the tellings the relay told of on the player's track, and its viewers from their tracks
 #      Paulinchen  2026-10-24: Let a teller's telling hold the player no longer once nothing of it came for thirty seconds
 #      Paulinchen  2026-10-23: Left the map's message gate to the DLL
 #      Paulinchen  2026-10-12: Sent a Classic world's message for several members as one party message
@@ -170,7 +171,7 @@ module MGQ_MpCoop
     end
 
     # Lists the others whom the player's story is told to: the members synced with them, or the
-    # players on the map whose story is where the player's was when the telling started.
+    # players on the map who play the player's track.
     #
     # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
     def self.viewers
@@ -185,13 +186,22 @@ module MGQ_MpCoop
       current.story_from?(peer)
     end
 
-    # Reports whether the player sees the teller's story: synced with the leader, or with a story
-    # where the teller's was when the telling started.
+    # Reports whether the player sees the teller's story: synced with the leader, or told of the
+    # teller's telling by the relay, which tells of the tellings on the player's track alone.
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
     # @return [Boolean] Whether they do.
     def self.watches?(peer)
       current.watches?(peer)
+    end
+
+    # Reports whether another player tells the story: their state says so in a Classic world, the
+    # relay told of their telling in a Raid World.
+    #
+    # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
+    # @return [Boolean] Whether they do.
+    def self.telling?(peer)
+      current.telling?(peer)
     end
 
     # Reports whether another player tells the story the player shares, so the player's own story
@@ -335,6 +345,14 @@ module MGQ_MpCoop
         defined?(MGQ_MpCoopStory) && MGQ_MpCoopStory.leading_synced? ? true : false
       end
 
+      # Reports whether another player tells the story, as their state says.
+      #
+      # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
+      # @return [Boolean] Whether they do.
+      def self.telling?(peer)
+        peer.state["telling"] == "1"
+      end
+
       # Reports whether the player plays in a party with someone else.
       #
       # @return [Boolean] Whether they do.
@@ -370,12 +388,10 @@ module MGQ_MpCoop
       end
     end
 
-    # The scope of a Raid World: everyone on the map, party or not.
+    # The scope of a Raid World: everyone on the map, party or not. Who tells is the relay's
+    # word: the tellings it told of on the player's track (MGQ_MpWorldStory.telling_of), which
+    # every game hears before the teller's first page; who views is whoever plays that track.
     module Raid
-      # Places in the story a viewer remembers of one teller's tellings whose story values they
-      # took, see takes_values.
-      TAKEN_STARTS = 8
-
       # Lists the other players on the player's map whose connection stands.
       #
       # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
@@ -386,18 +402,18 @@ module MGQ_MpCoop
       end
 
       # Finds whose story the player shares: their own while they tell it, else of the players whose
-      # state says they tell it on the player's map, or on the map the story takes the player to,
-      # the one whose story took the player along or whose pages the player follows, else the one
-      # whose story the player follows to where it moved them (followed_on_the_way), else the one
-      # who entered their map first.
+      # telling the relay told of who stand on the player's map, or on the map the story takes the
+      # player to, the one whose story took the player along or whose pages the player follows, else
+      # the one whose story the player follows to where it moved them (followed_on_the_way), else
+      # the one who entered their map first.
       #
-      # A story that moves its teller onto a map where another player tells one goes on, since only
-      # two tellings started at the same moment break the tie, see first_teller_here.
+      # The teller's own map, as their state tells it, says where their scene plays: the telling's
+      # lock moves to a new map only with the story's next event there.
       #
       # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The teller, :me for the player, nil
       #   for none.
       def self.teller
-        return :me if telling?
+        return :me if own_telling?
 
         candidates = tellers.select { |peer| Scope.story_map?(peer.state["map"].to_i) }
         followed_teller_ids.each do |id|
@@ -423,13 +439,30 @@ module MGQ_MpCoop
         MGQ_MpOverworldSync::Peers.all.find { |peer| peer.state["id"].to_s == follow[:id] && peer.state["map"].to_i == follow[:place][0] }
       end
 
-      # Lists the others whose state says they tell the story, those whose connection is down
-      # included until their game is forgotten, so a moment without a connection, theirs or the
-      # player's, ends no scene; the party's leader of a Classic world stays the same way.
+      # Lists the others whose telling the relay told of on the player's track, those whose
+      # connection is down included while the relay keeps their lock.
       #
       # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
       def self.tellers
-        MGQ_MpOverworldSync::Peers.all.select { |peer| peer.state["telling"] == "1" }
+        MGQ_MpOverworldSync::Peers.all.select { |peer| telling?(peer) }
+      end
+
+      # Reports whether the relay told of another player's telling on the player's track, through
+      # world_story.rbx.
+      #
+      # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
+      # @return [Boolean] Whether it did.
+      def self.telling?(peer)
+        defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.telling_of(peer.seat) ? true : false
+      end
+
+      # Reports whether another player plays the player's track, as their state tells it.
+      #
+      # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
+      # @return [Boolean] Whether they do.
+      def self.same_track?(peer)
+        track = defined?(MGQ_MpWorldStory) ? MGQ_MpWorldStory.track : nil
+        track && peer.state["trk"].to_s == track ? true : false
       end
 
       # Names the tellers the player keeps over the order of the map: the one whose story takes the
@@ -444,96 +477,37 @@ module MGQ_MpCoop
         ids.compact.map { |id| id.to_s }
       end
 
-      # Finds who of the players telling the story on the player's map, the player included while
-      # telling, entered the map first: of two who start telling at the same moment, the one who
-      # goes on.
-      #
-      # @return [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The first, :me for the player, nil
-      #   for none.
-      def self.first_teller_here
-        here = $game_map ? $game_map.map_id : nil
-        candidates = tellers.select { |peer| peer.state["map"].to_i == here }
-        candidates << :me if telling?
-        Scope.first(candidates)
-      end
-
       # Reports whether the player tells their story now, through coop_events.rbx.
       #
       # @return [Boolean] Whether they do.
-      def self.telling?
+      def self.own_telling?
         defined?(MGQ_MpCoopEvents) && MGQ_MpCoopEvents.telling? ? true : false
       end
 
-      # Lists the players on the map, and those the story took along who are not there yet, whose
-      # story is where the player's was when their telling started, which a player behind's is not.
+      # Lists the players on the map, and those the story took along who are not there yet, who
+      # play the player's track (same_track?), which a player behind the world does not.
       #
       # @return [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
       def self.viewers
-        told = told_markers
-        return [] unless told
-
-        along = defined?(MGQ_MpCoopGather) ? MGQ_MpCoopGather.taken_along : []
-        (peers_here + along).uniq.select { |peer| markers(peer.state["sm"]) == told || sent_values?(peer, told) }
+        along = defined?(MGQ_MpCoopGather) && MGQ_MpCoopGather.respond_to?(:taken_along) ? MGQ_MpCoopGather.taken_along : []
+        (peers_here + along).uniq.select { |peer| same_track?(peer) }
       end
 
-      # Notes the players the telling's story values went to (see MGQ_MpCoopScene.send_values),
-      # whose own story moves on with them past where the telling started: they stay viewers.
-      #
-      # @param peers [Array<MGQ_MpOverworldSync::Peers::Peer>] The players.
-      def self.sent_values_to(peers)
-        told = told_markers
-        return unless told
-
-        @sent_values = [told, []] unless @sent_values && @sent_values[0] == told
-        @sent_values[1] |= peers.map { |peer| peer.state["id"].to_s }
-      end
-
-      # Reports whether the telling that started at some markers sent a player its story values.
-      #
-      # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
-      # @param told [Array<Integer>] Where the telling started.
-      # @return [Boolean] Whether it did.
-      def self.sent_values?(peer, told)
-        @sent_values && @sent_values[0] == told && @sent_values[1].include?(peer.state["id"].to_s) ? true : false
-      end
-
-      # Notes that the player takes the story values of a teller whose telling they watch, see
-      # MGQ_MpCoopScene.apply_values: they move the player's own story past where the telling
-      # started, and the player keeps watching it (see watches?).
-      #
-      # Remembers where the telling started, once the teller's state names it, and where the
-      # player's story was before these values, which the telling matched; never the teller's
-      # progress now, which between the story's events on two maps stands in for the telling's
-      # start.
-      #
-      # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
-      def self.takes_values(peer)
-        id = peer.state["id"].to_s
-        @taking = [id, []] unless @taking && @taking[0] == id
-        [markers(peer.state["tsm"]), own_markers].compact.each { |told| @taking[1].push(told) unless @taking[1].include?(told) }
-        @taking[1].shift while @taking[1].size > TAKEN_STARTS
-      end
-
-      # Reports whether another player's story pages may reach the player: they tell the story here,
-      # or nobody's state says so yet, since a teller's state and their pages travel apart.
+      # Reports whether another player's story pages may reach the player: they tell the story here.
       #
       # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
       # @return [Boolean] Whether they may.
       def self.story_from?(peer)
-        lead = teller
-        lead.nil? || lead.equal?(peer)
+        teller.equal?(peer)
       end
 
-      # Reports whether the player's story is where the teller's was when their telling started, or
-      # was until the player took that telling's story values, see takes_values.
+      # Reports whether the player sees the teller's story: the relay told of their telling, which
+      # it does for the tellings on the player's track alone.
       #
       # @param peer [MGQ_MpOverworldSync::Peers::Peer] The teller.
-      # @return [Boolean] Whether it is.
+      # @return [Boolean] Whether they do.
       def self.watches?(peer)
-        theirs = markers(peer.state["tsm"]) || markers(peer.state["sm"])
-        return false if theirs.nil?
-
-        theirs == own_markers || (@taking && @taking[0] == peer.state["id"].to_s && @taking[1].include?(theirs)) ? true : false
+        telling?(peer)
       end
 
       # Reports whether another player tells the story here.
@@ -577,29 +551,6 @@ module MGQ_MpCoop
       # @return [Boolean] Whether it went out.
       def self.tell_each(peers, field, value, fields)
         MGQ_MpCoop.tell_map_to(peers, field, value, fields)
-      end
-
-      # Reads how far a story is, as a state tells it, through coop_story.rbx.
-      #
-      # @param text [String, nil] The values, comma separated.
-      # @return [Array<Integer>, nil] The values, nil for none.
-      def self.markers(text)
-        defined?(MGQ_MpCoopStory) ? MGQ_MpCoopStory.read_markers(text) : nil
-      end
-
-      # How far the player's own story is, through coop_story.rbx.
-      #
-      # @return [Array<Integer>, nil] The values, nil before the game's variables exist.
-      def self.own_markers
-        defined?(MGQ_MpCoopStory) && $game_variables ? MGQ_MpCoopStory.own_markers : nil
-      end
-
-      # How far the player's story was when their telling started, or is now outside one.
-      #
-      # @return [Array<Integer>, nil] The values.
-      def self.told_markers
-        told = defined?(MGQ_MpCoopEvents) ? MGQ_MpCoopEvents.told_markers : nil
-        told || own_markers
       end
     end
   end

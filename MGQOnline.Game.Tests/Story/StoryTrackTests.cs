@@ -2,6 +2,7 @@
 //  StoryTrackTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Checked whose ended telling the game waits for the take of
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -185,6 +186,29 @@ public sealed class StoryTrackTests
              """{"t":"told","telling":"t1"}""", """{"t":"watch","teller":2,"telling":"x9"}"""],
             host.Sent);
         Assert.Equal((9L, 0), (track.Told[2], track.Tellings.Count));
+    }
+
+    /// <summary>
+    /// Asserts that another teller's telling that ended at a revision not taken yet names a seat to
+    /// wait for while something waits to be taken, and that the player's own telling's end never does.
+    /// </summary>
+    [Fact]
+    public void Told_NamesTheTellerWhoseRevisionWaitsButNeverTheOwn()
+    {
+        var host = new Host();
+        StoryTrack track = Synced(host);
+        track.Take();
+        track.Receive("""{"t":"push","track":"world","rev":6,"prev":5,"keys":{"v50":"n2"}}""");
+        track.Receive("""{"t":"told","telling":"x9","teller":2,"map":7,"track":"world","rev":6,"why":"ended"}""");
+        int? waiting = track.AwaitingSeat;
+        track.Take();
+        int? taken = track.AwaitingSeat;
+        track.Tell("map:7:39:1", 7);
+        track.Tell(null, 7);
+        track.Receive("""{"t":"push","track":"world","rev":7,"prev":6,"keys":{"v51":"n3"}}""");
+        track.Receive("""{"t":"told","telling":"t1","teller":9,"map":7,"track":"world","rev":7,"why":"ended"}""");
+
+        Assert.Equal((2, null, null, true), (waiting, taken, track.AwaitingSeat, track.Pending));
     }
 
     /// <summary>

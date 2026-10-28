@@ -2,7 +2,9 @@
 #  world_story_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Checked that the world's close sends the frame's writes first
+#      Paulinchen  2026-10-28: Left the player's telling to the DLL's telling machine
+#                            - Let the DLL name whose ended telling the player's story events wait for
+#                            - Checked that the world's close sends the frame's writes first
 #      Paulinchen  2026-10-24: Checked that an unlock the player holds stays on when the relay hands it off
 #      Paulinchen  2026-10-23: Answered the rules the DLL owns through the bridge from the golden cases
 #                            - Checked the world's story on the relay's tracks through the DLL's story topics, in place of the fetches, merges and writes
@@ -110,8 +112,8 @@ module MGQ_MpOverworldSync
   # The state field the relay pushes the story's revision in.
   STORY_FIELD = "story_rev"
 
-  # Stands in for the players present, of whom there are none.
-  module Peers; Peer = Struct.new(:seat, :state); def self.present; []; end; end
+  # Stands in for the players present, of whom there are none, and those known, from $peers.
+  module Peers; Peer = Struct.new(:seat, :state); def self.present; []; end; def self.all; $peers || []; end; end
 
   # Stands in for the player's own id, always me.
   module Me; def self.id; "me"; end; end
@@ -153,14 +155,8 @@ module MGQ_MpCoop
   def self.party_leader; nil; end
 end
 
-# Stands in for the co-op events, whose telling follows $telling and $moved.
+# Stands in for the co-op events, which tell nothing here.
 module MGQ_MpCoopEvents
-  # Answers whether the player tells the story, from $telling.
-  def self.telling?; $telling ? true : false; end
-
-  # Answers whether the player tells the story or its telling just moved them onto another map, from $moved.
-  def self.telling_or_moved?; telling? || ($moved ? true : false); end
-
   # Answers that no PvP battle runs.
   def self.pvp_running?; false; end
 
@@ -522,38 +518,34 @@ tell_status(fake, "pending" => true)
 frames(2)
 check("an unlock the player holds that the relay hands off stays on and goes to the relay", [$game_switches[445], staged("story.writes")], [true, [[["s445", "1", "game"]]]])
 
-# Telling: the relay hears the telling start, go on on another map and end.
-$story_staged.clear
-$data_common_events[20] = RPG::CommonEvent.new([c(0)])
-$game_map.interpreter.setup([c(101), c(0)], 6)
-$game_map.interpreter.instance_variable_set(:@event_id, 6)
-$game_map.interpreter.instance_variable_set(:@map_id, 3)
-$game_map.events = { 6 => Game_Event.new([[c(0)], $game_map.interpreter.list]) }
-$telling = true
-frames(1)
-$game_map.map_id = 4
-frames(1)
-$telling = false
-frames(1)
-check("the relay hears the player's telling start with its event's page, go on on another map and end",
-      staged("story.tell"), [{ "site" => "map:3:6:2", "map" => 3 }, { "site" => "map:3:6:2", "map" => 4 }, nil])
-$game_map.map_id = 3
-
 # The teller the player watches: the relay hears of them, and the player's story events wait until
 # the track's revision the telling ended at was written into their story.
 teller = MGQ_MpOverworldSync::Peers::Peer.new(2, { "name" => "Friend" })
+$peers = [teller]
 $teller = teller
 frames(1)
 $teller = nil
 frames(1)
 check("the relay hears whose telling the player watches, and that they watch none once it stopped", staged("story.watch"), [2, nil])
-check("the player's story events wait for the world's story of that telling", [story.awaits_teller?, story.watched_teller], [true, "Friend"])
-tell_status(fake, "told" => { 2 => 6 }, "taken" => 4)
+tell_status(fake, "await" => 2)
 frames(2)
-check("while the revision the telling ended at is not in the player's story", story.awaits_teller?, true)
-tell_status(fake, "told" => { 2 => 6 }, "taken" => 6)
+check("the player's story events wait while the DLL holds the world's story of a telling that ended, which names the teller",
+      [story.awaits_teller?, story.watched_teller], [true, "Friend"])
+tell_status(fake, "await" => nil)
 frames(2)
-check("and no longer once it is", story.awaits_teller?, false)
+check("and no longer once it was written into theirs", story.awaits_teller?, false)
+tell_status(fake, "await" => 2, "told" => { 2 => 9 })
+frames(story::AWAIT_TELLER_FRAMES)
+waited = story.awaits_teller?
+frames(1)
+check("a take that stays held keeps them waiting AWAIT_TELLER_FRAMES at most", [waited, story.awaits_teller?], [true, false])
+tell_status(fake, "await" => 2, "told" => { 2 => 10 })
+frames(1)
+check("while a later end of a telling waits anew", story.awaits_teller?, true)
+tell_status(fake, "await" => nil)
+frames(1)
+$story_staged.clear
+check("the player's state tells their track", story.state_fields, { "trk" => "world" })
 
 # The player's level, which the relay's level gates read.
 $game_actors[1].base_level = 14

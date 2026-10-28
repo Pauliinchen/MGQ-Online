@@ -42,6 +42,11 @@
     <None Include="..\fixtures\screen\*.json" LinkBase="fixtures\screen" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\entering\*.json" LinkBase="fixtures\entering" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\requests\*.json" LinkBase="fixtures\requests" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\telling\*.json" LinkBase="fixtures\telling" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\choices\*.json" LinkBase="fixtures\choices" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\gather\*.json" LinkBase="fixtures\gather" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\scene\*.json" LinkBase="fixtures\scene" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\pages\*.json" LinkBase="fixtures\pages" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

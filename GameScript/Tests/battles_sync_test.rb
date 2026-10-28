@@ -2,6 +2,7 @@
 #  battles_sync_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Checked the host's picture and screen calls through the stand-in of the DLL
 #      Paulinchen  2026-10-23: Dropped the check of the battle end kept on file
 #                            - Checked that Cancel during a wait goes back or asks before leaving
 #                            - Checked that messages lost over a reconnect come again, once and in order
@@ -715,7 +716,7 @@ $log.clear
 playback.play(scene, ["time_stop", 0, nil])
 check("and its end, without a log line", [$game_party.od_turn, $game_party.od_user, $log.grep(/time stop/).size], [0, nil, 0])
 
-# The host's cut-ins and screen effects are checked as the story's are in coop_scene.rbx.
+# The host's cut-ins and screen effects are checked as the story's are, by the DLL.
 Object.send(:remove_const, :MGQ_MpCoopScene)
 load_script "coop_scene"
 # A picture that notes what was done to it.
@@ -752,5 +753,5 @@ playback.play(scene, ["screen.start_shake", 50, 5, 10])
 check("the screen takes a flash of a color and a shake within the editor's range alone",
       $game_troop.screen.done.map(&:first), [:flash, :shake])
 check("and nothing raised, the calls left out logged once",
-      [$log.grep(/could not play/).size, $log.grep(/left out the host's (picture|screen) call/).size], [0, 4])
+      [$log.grep(/could not play/).size, $log.grep(/left out the host's (picture|screen) call/).size], [0, 5])
 sync.finish

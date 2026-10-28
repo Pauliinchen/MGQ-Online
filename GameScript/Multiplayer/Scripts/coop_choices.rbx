@@ -2,6 +2,7 @@
 #  coop_choices.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Asked the DLL for the choices, their outcomes and which keys are the player's own
 #      Paulinchen  2026-10-14: Added the Navy or the Pirates as each player's own choice, with its ship and its line's self switches
 #                            - Asked a save past a choice a later build added once the world's first story came
 #      Paulinchen  2026-10-11: Dropped Amira's choice in Iliasburg
@@ -21,112 +22,42 @@
 # brings join them, never the leader's. A party's leader offers a member behind them to bring their
 # story up to the leader's ("Sync story"), and the member picks on one screen every choice the
 # catch-up carries them past. The same screen asks a member their own outcome of each choice the
-# leader's story passes, and in a Raid World each choice the world's story passes.
+# leader's story passes, and in a Raid World each choice the world's story passes. The choices,
+# their outcomes and the rules are the DLL's (MGQOnline.Game's Story/Choices, behind the topics of
+# ChoiceTopics); this script reads the game, writes the outcomes and shows the screen.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopChoices
-  # A choice of the story and its outcomes.
-  #
-  # @!attribute key [Symbol] Its name.
-  # @!attribute title [String] What the screen calls it.
-  # @!attribute point [Integer] The main story's progress (variable 1001) from which it can be made.
-  # @!attribute hint [String] What the lines at the top say while the cursor is on it.
-  # @!attribute outcomes [Array<Hash>] Each outcome's :label, :switches (by id, on or off),
-  #   :variables (by id), :joins (companions) and :note (what it brings).
-  Branch = Struct.new(:key, :title, :point, :hint, :outcomes)
+  # The DLL's topics of the choices, see ChoiceTopics in MGQOnline.Game.
+  PASSED_TOPIC = "choices.passed"
+  PROMPTS_TOPIC = "choices.prompts"
+  MISSED_TOPIC = "choices.missed"
+  OFFERED_TOPIC = "choices.offered"
+  ENDINGS_TOPIC = "choices.endings"
+  NOTE_TOPIC = "choices.note"
+  OUTCOME_TOPIC = "choices.outcome"
+  PERSONAL_TOPIC = "choices.personal"
+  SKIP_TOPIC = "choices.skip"
+  OFFER_REFUSAL_TOPIC = "choices.offer_refusal"
+  LAPSED_TOPIC = "choices.lapsed"
+  TABLE_TOPIC = "choices.table"
 
-  # The choices, in story order.
-  BRANCHES = [
-    Branch.new(:side, "Alice or Ilias", 7, "Iliasville: whom Luka takes along on his journey, his side until the Great Decision.", [
-      { :label => "Take Alice along", :switches => { 4 => true, 5 => false }, :joins => [5], :note => "Alice joins." },
-      { :label => "Take Ilias along", :switches => { 4 => false, 5 => true }, :joins => [26], :note => "Ilias joins." },
-    ]),
-    Branch.new(:magistea, "Magistea Village", 17, "Magistea Village: whom Luka defeats, Lily or Lucia. The other joins.", [
-      { :label => "Defeat Lily", :switches => { 2096 => true, 7017 => true, 2095 => true, 2097 => false, 7016 => false, 2094 => false, 2138 => true, 2137 => false },
-        :variables => { 1029 => 6 }, :joins => [167], :note => "Lucia joins." },
-      { :label => "Defeat Lucia", :switches => { 2097 => true, 7016 => true, 2094 => true, 2096 => false, 7017 => false, 2095 => false, 2137 => true, 2138 => false },
-        :variables => { 1029 => 6 }, :joins => [163], :note => "Lily joins." },
-    ]),
-    Branch.new(:navy, "Navy or Pirates", 22, "Navy Headquarters: whether Luka helps the Navy catch the Fishy Pirates or sails with them. Either side gives him a ship.", [
-      { :label => "Cooperate with the Navy", :switches => { 2148 => true, 2149 => false, 2168 => true, 2169 => false, 7001 => true, 7068 => true },
-        :variables => { 1050 => 9, 1051 => 0, 1053 => 0 }, :least => { 56 => 2 }, :joins => [203, 204], :ship => [2, 334, 240],
-        :note => "Bonnie and Ashel are caught. Tatsuko and Stacy join, and the Navy's ship is yours." },
-      { :label => "Aid the Fishy Pirates", :switches => { 2149 => true, 2148 => false, 2168 => true, 2169 => true, 7001 => false, 7068 => true, 2150 => true },
-        :variables => { 1050 => 6, 1051 => 5, 1053 => 0 }, :least => { 56 => 2 }, :joins => [201, 202], :ship => [2, 21, 211],
-        :self_switches => [[709, 6, "A"], [709, 15, "A"], [376, 53, "A"], [376, 53, "B"]],
-        :note => "Ashel and Bonnie join, and the MS Fish and the Dark Saber are yours." },
-    ]),
-    Branch.new(:plansect, "Plansect", 24, "Plansect: whose side Luka takes, the plants' Priestess or the insects' Queen Bee.", [
-      { :label => "Side with the Priestess", :switches => { 7003 => true, 2154 => false, 7002 => false }, :variables => { 1061 => 1, 1056 => 6 },
-        :joins => [241], :note => "The Queen Bee is defeated. The Priestess joins." },
-      { :label => "Side with the Queen Bee", :switches => { 2154 => true, 7002 => true, 7003 => false }, :variables => { 1061 => 2, 1056 => 6 },
-        :joins => [245], :note => "The Priestess is defeated. Miria, the Queen Bee, joins." },
-    ]),
-    Branch.new(:succubus, "Succubus Village", 27, "Succubus Village: whom Luka allies with. Who joins depends on Lily or Lucia.", [
-      { :label => "Ally with Natasha", :note => "" },
-      { :label => "Ally with the mayor", :note => "" },
-    ]),
-    Branch.new(:spider, "The Spider Princess", 30, "The Secluded Lands: whose side Luka takes, the Spider Princess or the Queen Ants.", [
-      { :label => "Side with the Spider Princess", :switches => { 2280 => true, 2281 => false }, :joins => [334], :note => "The Spider Princess joins." },
-      { :label => "Side with the Queen Ants", :switches => { 2281 => true, 2280 => false }, :joins => [], :note => "Nobody joins." },
-    ]),
-    Branch.new(:sphinx, "The Sphinx", 31, "The Pyramid: whether Luka challenges the Sphinx or invites her along.", [
-      { :label => "Challenge her", :switches => { 2090 => true }, :joins => [], :note => "The Sphinx is defeated. Nobody joins." },
-      { :label => "Invite her", :switches => {}, :joins => [153], :note => "The Sphinx joins." },
-    ]),
-    Branch.new(:decision, "The Great Decision", 40, "The Monster Lord's Castle: whose side Luka takes, which decides the route of the Final Chapter.", [
-      { :label => "Side with the Dark Goddess (World Breaker)", :route => 0, :side => 4, :return => 111, :map => 430 },
-      { :label => "Side with the Goddess Ilias (Judgement)", :route => 1, :side => 5, :return => 112, :map => 431 },
-      { :label => "Search for a third way (Chaos)", :route => 2 },
-    ]),
-  ]
+  # The choice of Alice or Ilias, which the party's story chooses, and the Great Decision.
+  SIDE = :side
+  DECISION = :decision
 
-  # The outcomes of Succubus Village, by the side taken and whether Lily (with Natasha) or Lucia
-  # (with the mayor) is with the player.
-  SUCCUBUS = {
-    [0, true] => { :switches => { 2210 => true, 7007 => true }, :joins => [288] },
-    [0, false] => { :switches => { 2211 => true, 7007 => true }, :joins => [] },
-    [1, true] => { :switches => { 2212 => true, 7008 => true }, :joins => [287] },
-    [1, false] => { :switches => { 2213 => true, 7008 => true }, :joins => [] },
-  }
+  # What the routes are called, by the Great Decision's outcome.
+  ROUTE_NAMES = ["Angelic Dominion", "Monster Realm", "Chaos"]
 
-  # Every switch the outcomes of Succubus Village set, which each of them sets on or off.
-  SUCCUBUS_SWITCHES = [2210, 2211, 2212, 2213, 7007, 7008]
+  # The table while the DLL has not handed it: no choices, nothing read.
+  NO_TABLE = { "branches" => [], "reads" => { "s" => [], "v" => [], "roster" => [] }, "great_decision" => 40, "routes" => [1141, 1142, 1143],
+               "chaos_start" => [437, 12, 12, 0], "decision" => [], "offer_frames" => 3600 }
 
-  # The companions the choices bring, which come only with the member's own outcome, never as the
-  # leader holds them: Lily, Lucia, Natasha, the mayor, the Sphinx, the Priestess, Miria, the
-  # Spider Princess, Ashel, Bonnie, Tatsuko and Stacy.
-  CHOICE_COMPANIONS = [163, 167, 288, 287, 153, 241, 245, 334, 201, 202, 203, 204]
+  # What the screen offers while the DLL does not answer: nothing.
+  NO_OFFER = { "labels" => [], "outcomes" => [] }
 
-  # The choices a later build added, which saves from earlier builds are past without having made
-  # them, see missed.
-  LATER_BRANCHES = [:navy]
-
-  # The switches each side of the Navy or the Pirates turns on as the player takes it in their own
-  # play, Navy Headquarters' answer: once one is on, only that side's outcome is offered.
-  NAVY_SIDES = [2148, 2149]
-
-  # The maps of the Navy's and the Pirates' lines (the Great Pirate's Cave, the MS Fish raid, the
-  # pirates' cave and the raided headquarters), whose self switches are each Raid World player's
-  # own, since each plays their own side; and the self switches of the MS Fish's Ashel.
-  NAVY_MAPS = [231, 232, 233, 667, 680, 685, 696, 701, 703, 708, 709]
-  NAVY_SELF_SWITCHES = [[376, 53, "A"], [376, 53, "B"]]
-
-  # The main story's progress the Great Decision sets.
-  GREAT_DECISION = 40
-
-  # The routes' progress variables, by the Great Decision's outcome.
-  ROUTES = [1141, 1142, 1143]
-
-  # Where the Great Decision's third way takes the player: map, x, y and direction.
-  CHAOS_START = [437, 12, 12, 0]
-
-  # The switches that tell the world cleared the two first routes, which open the third way in a
-  # Raid World.
-  ROUTE_CLEARS = [7096, 7097]
-
-  # Frames an offer of the leader stands, a minute.
-  OFFER_FRAMES = 3600
+  # The keys that are the player's own while the DLL does not answer: none.
+  NO_PERSONAL = { "s" => [], "v" => [], "maps" => [], "self_switches" => [] }
 
   # Color of the offer in the notification box and the World overview.
   OFFER_COLOR = MGQ_MpActions::LINE_COLOR
@@ -145,51 +76,86 @@ module MGQ_MpCoopChoices
   @nonce = 0
   # The route a Raid World took at the Great Decision, waiting for the player to confirm it.
   @raid_route = nil
+  # The table the DLL handed, see table.
+  @table = nil
+  # The keys the DLL named the player's own, with the request they answer, see personal_keys.
+  @personal = nil
 
   extend MGQ_MpLog
 
   # What starts this script's lines in the log.
   LOG_TAG = "co-op choices"
 
+  # What the scripts read of the choices, handed by the DLL once: each choice's key, title, point
+  # and hint, the switches, variables and companions the rules read, and the Great Decision's
+  # outcomes.
+  #
+  # @return [Hash] The table, see ChoiceTopics.Table; NO_TABLE while the DLL does not answer.
+  def self.table
+    @table ||= MGQ_Multiplayer::Bridge.call(TABLE_TOPIC)
+    @table || NO_TABLE
+  end
+
+  # Lists the choices, in story order.
+  #
+  # @return [Array<Symbol>] Their names.
+  def self.keys
+    table["branches"].map { |entry| entry[0].to_sym }
+  end
+
   # Finds a choice by its name.
   #
   # @param key [Symbol] Its name.
-  # @return [Branch, nil] The choice.
+  # @return [Array, nil] Its key, title, point and hint; nil for none.
   def self.branch(key)
-    BRANCHES.find { |candidate| candidate.key == key }
+    table["branches"].find { |entry| entry[0] == key.to_s }
   end
 
-  # Lists every switch and variable an outcome of a choice sets.
-  #
-  # @param branch [Branch] The choice.
-  # @return [Array<Array<Integer>>] The switches, then the variables.
-  def self.keys_of(branch)
-    return [SUCCUBUS_SWITCHES, [1065]] if branch.key == :succubus
-    return [[], []] if branch.key == :decision
-
-    [branch.outcomes.map { |outcome| (outcome[:switches] || {}).keys }.flatten.uniq,
-     branch.outcomes.map { |outcome| (outcome[:variables] || {}).keys }.flatten.uniq]
-  end
-
-  # Reports whether a story made a choice already.
+  # Tells the main story's progress from which a choice can be made.
   #
   # @param key [Symbol] The choice.
+  # @return [Integer] The progress.
+  def self.point_of(key)
+    found = branch(key)
+    found ? found[2] : 0
+  end
+
+  # Reads the values of a story the rules read, as the DLL's requests carry them.
+  #
   # @param switches [Array] The story's switches.
   # @param variables [Array] The story's variables.
   # @param roster [Array<Integer>] The player's companions.
-  # @return [Boolean] Whether it did.
-  def self.made?(key, switches, variables, roster)
-    case key
-    when :side then switches[4] || switches[5] ? true : false
-    when :magistea then switches[2096] || switches[2097] ? true : false
-    when :navy then variables[1050].to_i >= 9 || variables[1051].to_i >= 5
-    when :plansect then variables[1061].to_i >= 1
-    when :succubus then SUCCUBUS_SWITCHES.first(4).any? { |id| switches[id] }
-    when :spider then switches[2280] || switches[2281] ? true : false
-    when :sphinx then switches[2090] || roster.include?(153) ? true : false
-    when :decision then variables[1001].to_i >= GREAT_DECISION
-    else false
-    end
+  # @return [Hash] "s", the switches read that are on; "v", each variable read with its value;
+  #   "roster", the companions read that are in the roster.
+  def self.values_of(switches, variables, roster)
+    reads = table["reads"]
+    { "s" => reads["s"].select { |id| switches[id] }, "v" => reads["v"].map { |id| [id, variables[id].to_i] }, "roster" => reads["roster"] & roster }
+  end
+
+  # Reads the values of the story played.
+  #
+  # @return [Hash] The values, see values_of.
+  def self.story_values
+    values_of(MGQ_MpStoryState.data_of($game_switches), MGQ_MpStoryState.data_of($game_variables), MGQ_MpStoryState.roster_ids)
+  end
+
+  # Writes what the rules read of the game beside the story played: whether a Raid World is open,
+  # the install's endings, the route a Raid World took and the routes it may still take.
+  #
+  # @param fields [Hash] What the request names besides.
+  # @return [Hash] The request.
+  def self.context(fields = {})
+    switches = defined?($game_system_switches) ? $game_system_switches : nil
+    { "raid" => raid?, "values" => story_values, "ends" => [switches && switches[:ed1] ? true : false, switches && switches[:ed2] ? true : false],
+      "raid_route" => @raid_route, "world_routes" => defined?(MGQ_MpWorldStory) ? MGQ_MpWorldStory.decision_routes : nil }.merge(fields)
+  end
+
+  # Writes the answers given so far as a request carries them.
+  #
+  # @param answers [Hash{Symbol => Integer}] The answers.
+  # @return [Hash{String => Integer}] The answers.
+  def self.answers_text(answers)
+    Hash[answers.map { |key, index| [key.to_s, index] }]
   end
 
   # Lists the choices a catch-up from one point of the main story to another carries the player
@@ -202,9 +168,7 @@ module MGQ_MpCoopChoices
   # @param roster [Array<Integer>] The player's companions.
   # @return [Array<Symbol>] The choices, in story order.
   def self.passed(from, to, switches, variables, roster)
-    BRANCHES.select do |branch|
-      from < branch.point && to >= branch.point && !made?(branch.key, switches, variables, roster)
-    end.map { |branch| branch.key }
+    Array(MGQ_Multiplayer::Bridge.call(PASSED_TOPIC, "from" => from, "to" => to, "values" => values_of(switches, variables, roster))).map { |key| key.to_sym }
   end
 
   # Reports whether the player's own save cleared both endings, which the third way of the Great
@@ -213,75 +177,27 @@ module MGQ_MpCoopChoices
   #
   # @return [Boolean] Whether it did.
   def self.both_endings?
-    return ROUTE_CLEARS.all? { |id| MGQ_MpStoryState.data_of($game_switches)[id] } if raid?
-
-    switches = defined?($game_system_switches) ? $game_system_switches : nil
-    switches && switches[:ed1] && switches[:ed2] ? true : false
+    MGQ_Multiplayer::Bridge.call(ENDINGS_TOPIC, context) ? true : false
   rescue
     false
   end
 
+  # Asks the DLL what the screen offers for a choice.
+  #
+  # @param key [Symbol] The choice.
+  # @return [Hash] "labels", the outcomes' labels, and "outcomes", each one's place in the
+  #   choice's outcomes; NO_OFFER while the DLL does not answer.
+  def self.offered(key)
+    MGQ_Multiplayer::Bridge.call(OFFERED_TOPIC, context("key" => key.to_s)) || NO_OFFER
+  end
+
   # Lists the outcomes the screen offers for a choice: the third way only with both endings cleared;
-  # in a Raid World the routes of decision_routes.
+  # in a Raid World the routes the world may still take.
   #
   # @param key [Symbol] The choice.
   # @return [Array<String>] The outcomes' labels.
   def self.labels(key)
-    outcomes = branch(key).outcomes
-    return decision_routes.map { |index| outcomes[index][:label] } if key == :decision && raid?
-    return navy_sides.map { |index| outcomes[index][:label] } if key == :navy
-
-    outcomes = outcomes.first(2) if key == :decision && !both_endings?
-    outcomes.map { |outcome| outcome[:label] }
-  end
-
-  # Lists the outcomes of the Navy or the Pirates the player may still take: only the side their own
-  # play took at Navy Headquarters (NAVY_SIDES), whose companions joined them already, else both.
-  #
-  # @return [Array<Integer>] The outcomes, by their place in the choice's outcomes.
-  def self.navy_sides
-    switches = MGQ_MpStoryState.data_of($game_switches)
-    taken = NAVY_SIDES.index { |id| switches[id] }
-    taken ? [taken] : [0, 1]
-  rescue
-    [0, 1]
-  end
-
-  # Finds the outcome an answer picks, given as its place among the labels offered.
-  #
-  # @param key [Symbol] The choice.
-  # @param index [Integer] The answer.
-  # @return [Integer] The outcome's place in the choice's outcomes.
-  def self.outcome_index(key, index)
-    key == :navy ? navy_sides[index] || index : index
-  end
-
-  # Reports whether Lily is with the player once Magistea Village is decided, by the screen's answer,
-  # else by their own story or roster.
-  #
-  # @param answers [Hash{Symbol => Integer}] The answers given so far.
-  # @return [Array<Boolean>] Whether Lily is with them, and whether Lucia is.
-  def self.magistea_companions(answers)
-    return [answers[:magistea] == 1, answers[:magistea] == 0] if answers.key?(:magistea)
-
-    switches = MGQ_MpStoryState.data_of($game_switches)
-    roster = MGQ_MpStoryState.roster_ids
-    [switches[2097] || roster.include?(163) ? true : false, switches[2096] || roster.include?(167) ? true : false]
-  rescue
-    [false, false]
-  end
-
-  # Finds what an outcome of Succubus Village sets and brings.
-  #
-  # @param index [Integer] 0 for Natasha's side, 1 for the mayor's.
-  # @param answers [Hash{Symbol => Integer}] The answers given so far, Magistea Village's among them.
-  # @return [Hash] :switches and :joins.
-  def self.succubus_outcome(index, answers)
-    lily, lucia = magistea_companions(answers)
-    chosen = SUCCUBUS[[index, index == 0 ? lily : lucia]]
-    switches = {}
-    SUCCUBUS_SWITCHES.each { |id| switches[id] = chosen[:switches][id] ? true : false }
-    { :switches => switches, :variables => { 1065 => 3 }, :joins => chosen[:joins] }
+    offered(key)["labels"]
   end
 
   # Reports whether the open world is a Raid World, see MGQ_MpCoop::Scope.
@@ -291,100 +207,33 @@ module MGQ_MpCoopChoices
     MGQ_MpCoop::Scope.raid?
   end
 
-  # Lists the Great Decision's outcomes the screen offers in a Raid World: the route the world took
-  # when it carried the player past the decision, else those the world may still take (see
-  # MGQ_MpWorldStory.decision_routes).
-  #
-  # @return [Array<Integer>] The outcomes, by their place in the decision's outcomes.
-  def self.decision_routes
-    return [@raid_route] if @raid_route
-
-    routes = defined?(MGQ_MpWorldStory) ? MGQ_MpWorldStory.decision_routes : nil
-    routes || (both_endings? ? [0, 1, 2] : [0, 1])
-  end
-
   # Writes what an outcome brings, for the screen's line below it.
   #
   # @param key [Symbol] The choice.
   # @param index [Integer] The outcome.
   # @param answers [Hash{Symbol => Integer}] The answers given so far.
-  # @param leader_route [Integer, nil] The leader's route, its place in ROUTES, nil before the Great Decision.
+  # @param leader_route [Integer, nil] The leader's route, its place in the routes, nil before the Great Decision.
   # @param leader_name [String] The leader's name.
   # @return [String] The line.
   def self.note(key, index, answers, leader_route = nil, leader_name = "the leader")
-    case key
-    when :succubus
-      lily, lucia = magistea_companions(answers)
-      return lily ? "Natasha joins, as Lily is with you." : "Nobody joins: Natasha joins only while Lily is with you." if index == 0
-
-      lucia ? "The mayor joins, as Lucia is with you." : "Nobody joins: the mayor joins only while Lucia is with you."
-    when :decision then raid? ? raid_decision_note(decision_routes[index] || index) : decision_note(index, leader_route, leader_name)
-    else branch(key).outcomes[outcome_index(key, index)][:note].to_s
-    end
+    MGQ_Multiplayer::Bridge.call(NOTE_TOPIC, context("key" => key.to_s, "index" => index, "answers" => answers_text(answers), "route" => leader_route, "leader" => leader_name)).to_s
   end
 
-  # Writes what an outcome of the Great Decision brings.
+  # The keys the DLL names the player's own as choices' outcomes, asked once per request: in a Raid
+  # World every choice's, while a Classic party's member plays the leader's story those of the
+  # choices their own story made.
   #
-  # @param index [Integer] The outcome.
-  # @param leader_route [Integer, nil] The leader's route, nil before the Great Decision.
-  # @param leader_name [String] The leader's name.
-  # @return [String] The line.
-  def self.decision_note(index, leader_route, leader_name)
-    follow = index == leader_route ? "You follow #{leader_name}'s route." : "Not #{leader_name}'s route: you start it and play it on your own."
-    (decision_texts(index) + [follow]).reject { |part| part.empty? }.join(" ")
-  end
+  # @return [Hash] "s" and "v", the switches and variables by id; "maps", the maps whose self
+  #   switches are the player's own; "self_switches", those that are.
+  def self.personal_keys
+    own = !raid? && MGQ_MpCoopStory.guest? ? MGQ_MpCoopStory.own_story_data : nil
+    request = { "raid" => raid?, "own" => own ? values_of(own[0], own[1], []) : nil }
+    return @personal[1] if @personal && @personal[0] == request
 
-  # Writes what an outcome of the Great Decision brings in a Raid World, where the world took it.
-  #
-  # @param index [Integer] The outcome.
-  # @return [String] The line.
-  def self.raid_decision_note(index)
-    (decision_texts(index) + ["The whole world plays this route."]).reject { |part| part.empty? }.join(" ")
-  end
-
-  # Names an outcome of the Great Decision and the companions it changes.
-  #
-  # @param index [Integer] The outcome.
-  # @return [Array<String>] The route, then the companions, empty when none change.
-  def self.decision_texts(index)
-    route = ["Angelic Dominion route", "Monster Realm route", "Chaos route"][index]
-    party = ["Alice, Alicetroemeria and Morrigan join; Ilias's companions leave.", "Ilias, Micaela-chan, Lucifina-chan, Eden and Heinrich join; Alice's companions leave.", ""][index]
-    party = "" if variable(912) > 0
-    [route + ".", party]
-  end
-
-  # Reads a variable of the story played.
-  #
-  # @param id [Integer] The variable.
-  # @return [Integer] Its value.
-  def self.variable(id)
-    MGQ_MpStoryState.data_of($game_variables)[id].to_i
-  rescue
-    0
-  end
-
-  # Lists the switches and variables the choices the player made keep their own, while they play the
-  # leader's story: those of every choice their own story made.
-  #
-  # @return [Array<Hash>] The switches and the variables, by id.
-  def self.own_keys
-    story = MGQ_MpCoopStory.own_story_data
-    return [{}, {}] unless story
-
-    signature = BRANCHES.map { |branch| made?(branch.key, story[0], story[1], []) }
-    return @own_keys if @own_keys && @own_keys_for == signature
-
-    switches = {}
-    variables = {}
-    BRANCHES.each_with_index do |branch, index|
-      next unless signature[index]
-
-      keys = keys_of(branch)
-      keys[0].each { |id| switches[id] = true }
-      keys[1].each { |id| variables[id] = true }
-    end
-    @own_keys_for = signature
-    @own_keys = [switches, variables]
+    answer = MGQ_Multiplayer::Bridge.call(PERSONAL_TOPIC, request) || NO_PERSONAL
+    keys = { "s" => Hash[answer["s"].map { |id| [id, true] }], "v" => Hash[answer["v"].map { |id| [id, true] }], "maps" => answer["maps"], "self_switches" => answer["self_switches"] }
+    @personal = [request, keys]
+    keys
   end
 
   # Reports whether a switch or a variable is the player's own as a choice's outcome, while they
@@ -395,40 +244,24 @@ module MGQ_MpCoopChoices
   # @param id [Integer] The switch or variable.
   # @return [Boolean] Whether it is.
   def self.personal?(kind, id)
-    return raid_keys[kind == :s ? 0 : 1].key?(id) if raid?
-    return false unless MGQ_MpCoopStory.guest?
-
-    own_keys[kind == :s ? 0 : 1].key?(id)
+    personal_keys[kind == :s ? "s" : "v"].key?(id)
   rescue
     false
   end
 
   # Reports whether a self switch is each Raid World player's own as one of the Navy's or the
-  # Pirates' lines (NAVY_MAPS, NAVY_SELF_SWITCHES), whose events each player plays for their own
-  # side: one pirate's treasure taken must not empty the next pirate's chest.
+  # Pirates' lines, whose events each player plays for their own side: one pirate's treasure taken
+  # must not empty the next pirate's chest.
   #
   # @param key [Array] The self switch: map, event and letter.
   # @return [Boolean] Whether it is.
   def self.personal_self_switch?(key)
-    raid? && (NAVY_MAPS.include?(key[0]) || NAVY_SELF_SWITCHES.include?(key)) ? true : false
+    return false unless raid?
+
+    keys = personal_keys
+    keys["maps"].include?(key[0]) || keys["self_switches"].include?(key)
   rescue
     false
-  end
-
-  # Lists the switches and variables of every choice's outcomes, each player's own in a Raid World.
-  #
-  # @return [Array<Hash>] The switches and the variables, by id.
-  def self.raid_keys
-    @raid_keys ||= begin
-      switches = {}
-      variables = {}
-      BRANCHES.each do |branch|
-        keys = keys_of(branch)
-        keys[0].each { |id| switches[id] = true }
-        keys[1].each { |id| variables[id] = true }
-      end
-      [switches, variables]
-    end
   end
 
   # Tells why the catch-up leaves out a reward: a choice's companion, which comes with the member's
@@ -438,58 +271,61 @@ module MGQ_MpCoopChoices
   # @param id [Integer, String] The reward.
   # @return [String, nil] The reason, nil to give it.
   def self.skip_reason(kind, id)
-    return "a choice's companion, who comes with the player's own outcome" if kind == :actors && CHOICE_COMPANIONS.include?(id)
+    reason = MGQ_Multiplayer::Bridge.call(SKIP_TOPIC, "kind" => kind.to_s, "id" => id)
+    return reason if reason
     return nil unless @accepted && @accepted[:other_route] && defined?(MGQ_MpCoopStoryRewards) && MGQ_MpCoopStoryRewards.const_defined?(:FINAL)
 
     MGQ_MpCoopStoryRewards::FINAL[kind].include?(id) ? "only the leader's route gives it, and the player starts another" : nil
   end
 
   # Gives the player a choice's outcome in the story they play: its switches and variables, the
-  # values it raises (:least) and the self switches it turns on, also in their own story kept aside,
-  # the companions it brings and the ship it puts on the field. In a Raid World the catch-up then
+  # values it raises and the self switches it turns on, also in their own story kept aside, the
+  # companions it brings and the ship it puts on the field. In a Raid World the catch-up then
   # follows the outcome as a story carrying the player past it, so its items and return point come.
   #
   # @param key [Symbol] The choice.
   # @param index [Integer] The answer, its place among the labels offered.
   # @param answers [Hash{Symbol => Integer}] Every answer given, Magistea Village's among them.
   def self.apply(key, index, answers = {})
-    return MGQ_MpCoopStory.choose_side(index == 0 ? :alice : :ilias) if key == :side
+    outcome = MGQ_Multiplayer::Bridge.call(OUTCOME_TOPIC, context("key" => key.to_s, "index" => index, "answers" => answers_text(answers)))
+    return log("the DLL did not answer the outcome of #{key}") unless outcome
+    return MGQ_MpCoopStory.choose_side(outcome["side"].to_sym) if key == SIDE
 
-    outcome = key == :succubus ? succubus_outcome(index, answers) : branch(key).outcomes[outcome_index(key, index)]
+    @personal = nil
     before = MGQ_MpStoryState.deep_copy(MGQ_MpStoryState.raw_state)
     switches = MGQ_MpStoryState.data_of($game_switches)
     variables = MGQ_MpStoryState.data_of($game_variables)
     own = MGQ_MpCoopStory.own_story_aside
     written = []
-    (outcome[:switches] || {}).each do |id, value|
+    outcome["switches"].each do |id, value|
       written << "s#{id} #{switches[id] ? 'on' : 'off'} -> #{value ? 'on' : 'off'}"
       switches[id] = value
       own[0][id] = value if own
     end
-    (outcome[:variables] || {}).each do |id, value|
+    outcome["variables"].each do |id, value|
       written << "v#{id} #{variables[id].to_i} -> #{value}"
       variables[id] = value
       own[1][id] = value if own
     end
-    (outcome[:least] || {}).each do |id, value|
+    outcome["least"].each do |id, value|
       next if variables[id].to_i >= value
 
       written << "v#{id} #{variables[id].to_i} -> #{value}"
       variables[id] = value
       own[1][id] = value if own
     end
-    (outcome[:self_switches] || []).each do |self_key|
+    outcome["self_switches"].each do |self_key|
       written << "ss#{self_key.join('.')} on"
       $game_self_switches[self_key] = true
       own[2][self_key] = true if own
     end
     $game_map.need_refresh = true if $game_map
-    log("#{branch(key).title}: the player's own outcome \"#{labels(key)[index]}\": #{written.join(', ')}")
-    (outcome[:joins] || []).each do |id|
+    log("#{outcome['title']}: the player's own outcome \"#{outcome['label']}\": #{written.join(', ')}")
+    outcome["joins"].each do |id|
       name = MGQ_MpStoryState.bring(id)
       MGQ_MpOverworldSync.notice("#{name} joined you.") if name
     end
-    place_ship(outcome[:ship]) if outcome[:ship]
+    place_ship(outcome["ship"]) if outcome["ship"]
     MGQ_MpWorldCatchup.carried(before) if raid? && defined?(MGQ_MpWorldCatchup)
   end
 
@@ -539,26 +375,24 @@ module MGQ_MpCoopChoices
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
   # @return [String, nil] Why no offer is possible, nil when it is.
   def self.offer_refusal(peer)
-    theirs = MGQ_MpCoopStory.read_markers(peer.state["sm"])
-    own = MGQ_MpCoopStory.own_markers
-    return "#{peer.state['name']}'s game tells no story progress." unless theirs
-    return "#{peer.state['name']} follows your story already." if peer.state["ssync"].to_s == MGQ_MpOverworldSync::Me.id.to_s
-    return "#{peer.state['name']} is not behind you in the story." if theirs == own || theirs.each_with_index.any? { |value, index| value > own[index] }
-
-    nil
+    request = { "name" => peer.state["name"].to_s, "theirs" => MGQ_MpCoopStory.read_markers(peer.state["sm"]), "own" => MGQ_MpCoopStory.own_markers,
+                "follows" => peer.state["ssync"].to_s == MGQ_MpOverworldSync::Me.id.to_s }
+    MGQ_Multiplayer::Bridge.call(OFFER_REFUSAL_TOPIC, request)
   end
 
   # As leader, takes back the offers that no longer stand: to a player who left the party, follows
   # the player's story now, or let it run out. Called after the map's update.
   def self.tick_offers
     return @offers.clear if @offers.any? && MGQ_MpCoop.party_leader != :me
+    return if @offers.empty?
 
     members = MGQ_MpCoop::Party.members
+    lapsed = Array(MGQ_Multiplayer::Bridge.call(LAPSED_TOPIC, "now" => Graphics.frame_count, "since" => @offers.map { |id, offer| [id, offer[:since]] }))
     @offers.keys.each do |id|
       member = members.find { |peer| peer.state["id"].to_s == id }
       next drop_offer(id, "they left the party") unless member
       next drop_offer(id, "they follow the player's story now") if member.state["ssync"].to_s == MGQ_MpOverworldSync::Me.id.to_s
-      next drop_offer(id, "nobody answered in #{OFFER_FRAMES / 60} s") if Graphics.frame_count - @offers[id][:since] >= OFFER_FRAMES || Graphics.frame_count < @offers[id][:since]
+      next drop_offer(id, "nobody answered in #{table['offer_frames'] / 60} s") if lapsed.include?(id)
     end
   end
 
@@ -586,12 +420,10 @@ module MGQ_MpCoopChoices
       return MGQ_MpOverworldSync.notice("Your story is not behind #{peer.state['name']}'s.")
     end
 
-    switches = MGQ_MpStoryState.data_of($game_switches)
-    variables = MGQ_MpStoryState.data_of($game_variables)
-    keys = passed(own[0], theirs[0], switches, variables, MGQ_MpStoryState.roster_ids)
+    keys = passed(own[0], theirs[0], MGQ_MpStoryState.data_of($game_switches), MGQ_MpStoryState.data_of($game_variables), MGQ_MpStoryState.roster_ids)
     log("accepted #{MGQ_MpOverworldSync.who(peer)}'s offer: own #{MGQ_MpCoopStory.markers_text(own)}, theirs #{MGQ_MpCoopStory.markers_text(theirs)}; " \
         "choices to make: #{keys.empty? ? 'none' : keys.join(', ')}")
-    route = theirs[0] >= GREAT_DECISION ? MGQ_MpCoopStory.route_of(theirs) : nil
+    route = theirs[0] >= table["great_decision"] ? MGQ_MpCoopStory.route_of(theirs) : nil
     show_screen("Sync story with #{peer.state['name']}", keys, ["Bring me there", "Cancel"], peer, route,
                 lambda { |answers| confirm_offer(peer, theirs, route, answers) }, lambda { valid_offer?(peer) })
   end
@@ -623,12 +455,12 @@ module MGQ_MpCoopChoices
   # @param route [Integer, nil] The leader's route, nil before the Great Decision.
   # @param answers [Hash{Symbol => Integer}] The answers.
   def self.confirm_offer(peer, theirs, route, answers)
-    decision = answers[:decision]
+    decision = answers[DECISION]
     other = !decision.nil? && decision != route
     @accepted = { :with => peer.state["id"].to_s, :decision => decision, :other_route => other }
     log("bringing the player's story up to #{MGQ_MpOverworldSync.who(peer)}'s (#{MGQ_MpCoopStory.markers_text(theirs)})" \
-        "#{decision ? ", the Great Decision: #{labels(:decision)[decision]}#{other ? ', another route than theirs' : ', their route'}" : ''}")
-    (answers.keys & BRANCHES.map { |branch| branch.key } - [:decision]).sort_by { |key| branch(key).point }.each { |key| apply(key, answers[key], answers) }
+        "#{decision ? ", the Great Decision: #{labels(DECISION)[decision]}#{other ? ', another route than theirs' : ', their route'}" : ''}")
+    (answers.keys & keys - [DECISION]).sort_by { |key| point_of(key) }.each { |key| apply(key, answers[key], answers) }
     MGQ_MpCoopStory.start_offer(peer)
   end
 
@@ -666,10 +498,10 @@ module MGQ_MpCoopChoices
   def self.start_route(index, peer)
     variables = MGQ_MpStoryState.data_of($game_variables)
     # The kept story must not tell the leader's route, or the player would follow it again at once.
-    ([1001] + (1140..1143).to_a).each { |id| variables[id] = id == 1001 ? GREAT_DECISION - 1 : 0 }
-    MGQ_MpCoopStory.keep_and_leave("the player starts the #{["Angelic Dominion", "Monster Realm", "Chaos"][index]} route, not #{peer.state['name']}'s")
+    ([1001] + (1140..1143).to_a).each { |id| variables[id] = id == 1001 ? table["great_decision"] - 1 : 0 }
+    MGQ_MpCoopStory.keep_and_leave("the player starts the #{ROUTE_NAMES[index]} route, not #{peer.state['name']}'s")
     @queued = decision_commands(index)
-    log("the Great Decision's outcome \"#{labels(:decision)[index]}\" waits to play once the player is free: #{@queued.size} commands")
+    log("the Great Decision's outcome \"#{labels(DECISION)[index]}\" waits to play once the player is free: #{@queued.size} commands")
     MGQ_MpOverworldSync.notice("You start your own route. Each of you plays your own story.")
   end
 
@@ -681,20 +513,21 @@ module MGQ_MpCoopChoices
   # @return [Array<RPG::EventCommand>] The commands.
   def self.decision_commands(index)
     commands = [RPG::EventCommand.new(117, 0, [154]), RPG::EventCommand.new(122, 0, [1140, 1140, 0, 0, 0])]
-    outcome = branch(:decision).outcomes[index]
+    outcome = table["decision"][index] || {}
+    routes = table["routes"]
     if index == 2
       [7091, 7092, 92].each { |id| commands << RPG::EventCommand.new(121, 0, [id, id, 0]) }
-      commands << RPG::EventCommand.new(122, 0, [1001, 1001, 0, 0, GREAT_DECISION])
-      commands << RPG::EventCommand.new(122, 0, [1143, 1143, 0, 0, 1])
-      commands << RPG::EventCommand.new(201, 0, [0] + CHAOS_START + [2])
+      commands << RPG::EventCommand.new(122, 0, [1001, 1001, 0, 0, table["great_decision"]])
+      commands << RPG::EventCommand.new(122, 0, [routes[2], routes[2], 0, 0, 1])
+      commands << RPG::EventCommand.new(201, 0, [0] + table["chaos_start"] + [2])
       return commands << RPG::EventCommand.new(0, 0, [])
     end
 
     part = decision_part(outcome)
-    transfer = part.pop || RPG::EventCommand.new(201, 0, [0, outcome[:map], 25, 19, 8, 2])
+    transfer = part.pop || RPG::EventCommand.new(201, 0, [0, outcome["map"], 25, 19, 8, 2])
     commands.concat(part)
-    [4, 5].each { |id| commands << RPG::EventCommand.new(121, 0, [id, id, id == outcome[:side] ? 0 : 1]) }
-    commands << RPG::EventCommand.new(122, 0, [ROUTES[index], ROUTES[index], 0, 0, 1])
+    [4, 5].each { |id| commands << RPG::EventCommand.new(121, 0, [id, id, id == outcome["side"] ? 0 : 1]) }
+    commands << RPG::EventCommand.new(122, 0, [routes[index], routes[index], 0, 0, 1])
     commands << transfer
     commands << RPG::EventCommand.new(0, 0, [])
   end
@@ -708,12 +541,12 @@ module MGQ_MpCoopChoices
   # @param index [Integer] The outcome: 0 the Dark Goddess, 1 the Goddess Ilias, 2 the third way.
   # @return [Array<RPG::EventCommand>] The commands, none for the third way.
   def self.raid_decision_commands(index)
-    outcome = branch(:decision).outcomes[index]
-    return [] unless outcome[:return]
+    outcome = table["decision"][index] || {}
+    return [] unless outcome["return"]
 
     commands = decision_part(outcome)
     commands.pop if commands.last && commands.last.code == 201
-    [4, 5].each { |id| commands << RPG::EventCommand.new(121, 0, [id, id, id == outcome[:side] ? 0 : 1]) }
+    [4, 5].each { |id| commands << RPG::EventCommand.new(121, 0, [id, id, id == outcome["side"] ? 0 : 1]) }
     commands << RPG::EventCommand.new(222, 0, [])
     commands << RPG::EventCommand.new(0, 0, [])
   end
@@ -722,16 +555,16 @@ module MGQ_MpCoopChoices
   # notes where a game over returns the player to the transfer to the outcome's map, moved to the
   # left so it runs on its own.
   #
-  # @param outcome [Hash] The outcome: :return and :map.
+  # @param outcome [Hash] The outcome: "return" and "map".
   # @return [Array<RPG::EventCommand>] The commands, the transfer last; none when the game's event
   #   differs.
   def self.decision_part(outcome)
     list = ($data_common_events[380] && $data_common_events[380].list) || []
-    first = list.index { |command| command.code == 122 && command.parameters[0, 5] == [1002, 1002, 0, 0, outcome[:return]] }
-    last = first && (first...list.size).find { |at| list[at].code == 201 && list[at].parameters[1] == outcome[:map] }
+    first = list.index { |command| command.code == 122 && command.parameters[0, 5] == [1002, 1002, 0, 0, outcome["return"]] }
+    last = first && (first...list.size).find { |at| list[at].code == 201 && list[at].parameters[1] == outcome["map"] }
     unless first && last
       log("the Great Decision's event differs from the one known, so its outcome plays without its party changes")
-      return [RPG::EventCommand.new(122, 0, [1002, 1002, 0, 0, outcome[:return].to_i])]
+      return [RPG::EventCommand.new(122, 0, [1002, 1002, 0, 0, outcome["return"].to_i])]
     end
 
     base = list[first].indent
@@ -752,36 +585,25 @@ module MGQ_MpCoopChoices
     story = MGQ_MpCoopStory.own_story_data
     return unless story
 
-    roster = MGQ_MpStoryState.roster_ids
-    # The side is each player's own in a Raid World, whose story nobody chose it in for them.
-    keys = passed(from, to, story[0], story[1], roster) - (raid? ? [:decision] : [:side, :decision])
-    # The leader resolving a choice the player has not made asks it too.
-    BRANCHES.each do |branch|
-      next if [:side, :decision].include?(branch.key) || keys.include?(branch.key) || made?(branch.key, story[0], story[1], roster)
-
-      all = keys_of(branch).flatten
-      keys << branch.key if (all & changed).any?
-    end
-    keys -= @prompts
+    request = { "from" => from, "to" => to, "changed" => changed, "raid" => raid?, "values" => values_of(story[0], story[1], MGQ_MpStoryState.roster_ids),
+                "waiting" => @prompts.map { |key| key.to_s } }
+    keys = Array(MGQ_Multiplayer::Bridge.call(PROMPTS_TOPIC, request)).map { |key| key.to_sym }
     return if keys.empty?
 
     @prompts.concat(keys)
     log("the #{raid? ? 'world' : 'leader'}'s story passed #{keys.join(', ')} (1001 #{from} -> #{to}), whose own outcome the player picks once free")
   end
 
-  # Asks the player the choices a later build added (LATER_BRANCHES) that a Raid World's story is
-  # past while their own save never made them, since no story moves them past those again. Called
-  # with the first world's story laid over theirs after entering, a load or a new game.
+  # Asks the player the choices a later build added that a Raid World's story is past while their
+  # own save never made them, since no story moves them past those again. Called with the first
+  # world's story laid over theirs after entering, a load or a new game.
   #
   # @param progress [Integer] The main story's progress of the story laid over theirs.
   def self.missed(progress)
     return unless raid?
 
-    switches = MGQ_MpStoryState.data_of($game_switches)
-    variables = MGQ_MpStoryState.data_of($game_variables)
-    keys = LATER_BRANCHES.select do |key|
-      progress >= branch(key).point && !made?(key, switches, variables, MGQ_MpStoryState.roster_ids) && !@prompts.include?(key)
-    end
+    request = { "progress" => progress, "raid" => true, "values" => story_values, "waiting" => @prompts.map { |key| key.to_s } }
+    keys = Array(MGQ_Multiplayer::Bridge.call(MISSED_TOPIC, request)).map { |key| key.to_sym }
     return if keys.empty?
 
     @prompts.concat(keys)
@@ -793,11 +615,11 @@ module MGQ_MpCoopChoices
   # Asks the player at the Great Decision once a Raid World's story carried them past it: the screen
   # offers the route the world took alone, whose own half plays once confirmed.
   #
-  # @param index [Integer] The world's route, its place in ROUTES.
+  # @param index [Integer] The world's route, its place in the routes.
   def self.raid_decision(index)
     @raid_route = index
-    @prompts << :decision unless @prompts.include?(:decision)
-    log("the world's story took the #{labels(:decision).first} route at the Great Decision, which the player confirms once free")
+    @prompts << DECISION unless @prompts.include?(DECISION)
+    log("the world's story took the #{labels(DECISION).first} route at the Great Decision, which the player confirms once free")
   end
 
   # Shows the screen of the next choice the player picks their own outcome of, once they are free
@@ -814,7 +636,7 @@ module MGQ_MpCoopChoices
 
     key = @prompts.first
     lead = MGQ_MpCoop.party_leader
-    title = key == :decision && raid? ? "The world's route" : "Your own outcome"
+    title = key == DECISION && raid? ? "The world's route" : "Your own outcome"
     show_screen(title, [key], ["Confirm"], lead, nil, lambda { |answers| answered_prompt(key, answers) }, nil)
   rescue => e
     log("updating the choices failed: #{e.class}: #{e.message}")
@@ -827,7 +649,7 @@ module MGQ_MpCoopChoices
   def self.answered_prompt(key, answers)
     @prompts.delete(key)
     return unless answers.key?(key)
-    return take_raid_decision(answers[key]) if key == :decision && raid?
+    return take_raid_decision(answers[key]) if key == DECISION && raid?
 
     apply(key, answers[key], answers)
   end
@@ -836,12 +658,12 @@ module MGQ_MpCoopChoices
   #
   # @param place [Integer] The outcome's place among those the screen offered.
   def self.take_raid_decision(place)
-    index = decision_routes[place.to_i]
+    index = offered(DECISION)["outcomes"][place.to_i]
     @raid_route = nil
     return unless index
 
     commands = raid_decision_commands(index)
-    log("the Great Decision of the world: \"#{branch(:decision).outcomes[index][:label]}\", #{commands.empty? ? 'nothing of the player\'s own changes' : "the player's own half waits to play once free: #{commands.size} commands"}")
+    log("the Great Decision of the world: the #{ROUTE_NAMES[index]} route, #{commands.empty? ? 'nothing of the player\'s own changes' : "the player's own half waits to play once free: #{commands.size} commands"}")
     @queued = commands unless commands.empty?
   end
 
@@ -890,10 +712,11 @@ module MGQ_MpCoopChoices
     fields = []
     values = {}
     screen[:keys].each_with_index do |key, row|
-      branch = branch(key)
+      found = branch(key) || [key.to_s, key.to_s, 0, ""]
+      offered = labels(key)
       note = lambda { |form, index| note(key, index, answers_of(form, screen[:keys]), screen[:route], screen[:leader]) }
-      fields << field.new(key, :switch, branch.title, row, branch.hint, :choices => labels(key), :note => note, :group => "Your choices")
-      values[key] = key == :decision && screen[:route] && screen[:route] < labels(key).size ? screen[:route] : 0
+      fields << field.new(key, :switch, found[1], row, found[3], :choices => offered, :note => note, :group => "Your choices")
+      values[key] = key == DECISION && screen[:route] && screen[:route] < offered.size ? screen[:route] : 0
     end
     row = screen[:keys].size
     screen[:buttons].each_with_index do |label, index|
@@ -926,6 +749,7 @@ module MGQ_MpCoopChoices
     @prompts.clear
     @queued = nil
     @raid_route = nil
+    @personal = nil
   end
 
   # Takes a message about the choices. Called by coop.rbx.

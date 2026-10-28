@@ -2,6 +2,10 @@
 //  SharedTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Registered the choice topics
+//                            - Registered the gather topics
+//                            - Registered the scene topics
+//                            - Registered the page topics
 //      Paulinchen  2026-10-23: Registered the squad topics
 //                            - Created
 //
@@ -41,6 +45,10 @@ public static class SharedTopics
         Random random = new();
         context.Register(RandomIdTopic, (_, request) => MakeId(random, request.AsHash()));
         SquadTopics.Register(context);
+        ChoiceTopics.Register(context);
+        GatherTopics.Register(context);
+        SceneTopics.Register(context);
+        PageTopics.Register(context, random);
     }
 
     /// <summary>

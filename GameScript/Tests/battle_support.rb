@@ -2,6 +2,7 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Gave the stand-in of the color its parts
 #      Paulinchen  2026-10-23: Opened the stand-in of the interface's models, which places the boxes
 #                            - Answered the rules' topics through the bridge, such as the squad math
 #                            - Stood in for the confirm box
@@ -137,8 +138,11 @@ module RPG
   end
   class State; end; class Weapon; end; class Armor; end
 end
-# Stands in for the game's color.
-class Color; def initialize(*); end; end
+# Stands in for the game's color, with its parts the battle line writes.
+class Color
+  attr_reader :red, :green, :blue, :alpha
+  def initialize(red = 0, green = 0, blue = 0, alpha = 255); @red = red; @green = green; @blue = blue; @alpha = alpha; end
+end
 # Stands in for the game's tone.
 class Tone; end
 # Stands in for the game's result of an action.

@@ -2,6 +2,7 @@
 #  battles_sync_playback.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Checked the host's picture and screen calls in the DLL
 #      Paulinchen  2026-10-23: Named the player by their seat in the battle
 #      Paulinchen  2026-10-15: Noted the enemies a co-op host defeats as fallen, for the player's own recruit
 #      Paulinchen  2026-10-12: Left out failing mode messages and unreadable stream lines
@@ -555,24 +556,19 @@ module MGQ_MpBattlesSync
       value.nil? || (value.is_a?(Integer) && range.include?(value))
     end
 
-    # Changes a picture, such as a cut-in, once its arguments are ones this game takes, as the
-    # story's pictures are checked in coop_scene.rbx. A picture this game lacks erases the picture's
-    # place instead.
+    # Changes a picture, such as a cut-in, once the DLL found it one this game takes, as the
+    # story's pictures are checked (MGQ_MpCoopScene.refusal). A picture this game lacks erases the
+    # picture's place instead.
     #
     # @param method [String] What the host did with it.
     # @param args [Array] The picture's number, then the method's arguments.
     def self.picture(method, args)
       name = Hooks::PICTURE_METHODS.find { |known| known.to_s == method }
+      refusal = name ? MGQ_MpCoopScene.refusal("picture.#{method}", args) : "no such change"
+      if refusal
+        return MGQ_MpBattlesSync.log_once([:picture, method.to_s[0, 40], refusal], "left out the host's picture call #{method.to_s[0, 40]} with the arguments #{args.inspect[0, 80]}: #{refusal}")
+      end
       number = args[0].to_i
-      unless name && number > 0 && number <= MGQ_MpCoopScene::MAX_PICTURE
-        return MGQ_MpBattlesSync.log_once([:picture, method.to_s[0, 40]], "left out the host's picture call #{method.to_s[0, 40]} on picture #{number}")
-      end
-      unless MGQ_MpCoopScene.args_fit?(MGQ_MpCoopScene::PICTURE_ARGS[name], args[1..-1])
-        return MGQ_MpBattlesSync.log_once([:picture_args, name], "left out the host's picture call #{method} with the arguments #{args.inspect[0, 80]}")
-      end
-      if name == :show && args[1] !~ MGQ_MpCoopScene::PICTURE_NAME
-        return MGQ_MpBattlesSync.log_once([:picture_name, args[1][0, 40]], "left out the host's picture #{args[1][0, 40].inspect}, not a plain file name")
-      end
       if name == :show && !MGQ_MpCoopScene.map_graphics?([[:picture, args[1]]])
         $game_troop.screen.pictures[number].erase
         return MGQ_MpBattlesSync.log_once([:no_picture, args[1][0, 40]], "erased picture #{number} instead of the host's #{args[1][0, 40].inspect}, which this game lacks")
@@ -581,16 +577,16 @@ module MGQ_MpBattlesSync
       $game_troop.screen.pictures[number].send(name, *args[1..-1])
     end
 
-    # Changes the battle's screen as the host did, such as a flash, once its arguments are ones
-    # this game takes, see MGQ_MpCoopScene.args_fit?.
+    # Changes the battle's screen as the host did, such as a flash, once the DLL found its
+    # arguments ones this game takes, see MGQ_MpCoopScene.refusal.
     #
     # @param method [String] What the host did with it.
     # @param args [Array] The change's arguments.
     def self.screen(method, args)
       name = Hooks::SCREEN_METHODS.find { |known| known.to_s == method }
       return unless name
-      unless MGQ_MpCoopScene.args_fit?(MGQ_MpCoopScene::SCREEN_ARGS[name], args)
-        return MGQ_MpBattlesSync.log_once([:screen_args, name], "left out the host's screen call #{method} with the arguments #{args.inspect[0, 80]}")
+      if (refusal = MGQ_MpCoopScene.refusal("screen.#{method}", args))
+        return MGQ_MpBattlesSync.log_once([:screen_args, name, refusal], "left out the host's screen call #{method} with the arguments #{args.inspect[0, 80]}: #{refusal}")
       end
 
       $game_troop.screen.send(name, *args)

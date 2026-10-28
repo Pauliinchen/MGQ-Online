@@ -2,6 +2,8 @@
 //  StoryTrack.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Stood as the telling lock of the telling machine
+//                            - Named the teller whose ended telling the game has yet to take the track of
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -14,6 +16,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using MGQOnline.Game.Telling;
 
 namespace MGQOnline.Game.Story;
 
@@ -29,7 +32,7 @@ namespace MGQOnline.Game.Story;
 /// unanswered: the relay applied the batch that carried it before the player's, so the player's value
 /// stands unless the answer brings the relay's own.
 /// </remarks>
-public sealed partial class StoryTrack
+public sealed partial class StoryTrack : ITellingLock
 {
     /// <summary>
     /// The world's own track.
@@ -152,6 +155,12 @@ public sealed partial class StoryTrack
     private StoryLevel? levelSent;
 
     /// <summary>
+    /// The id of the player's own last telling, whose end the relay tells of as it tells of the
+    /// others'; <see langword="null"/> for none.
+    /// </summary>
+    private string? lastOwnTelling;
+
+    /// <summary>
     /// Initializes a track.
     /// </summary>
     /// <param name="host">What it reaches outside itself.</param>
@@ -244,6 +253,25 @@ public sealed partial class StoryTrack
     public int Unanswered => queued.Count + unanswered.Sum(batch => batch.Writes.Count);
 
     /// <summary>
+    /// Gets the seat of a teller whose telling on the player's track ended at a revision the game
+    /// has not taken yet while something waits to be taken, the lowest of them; <see langword="null"/>
+    /// for none. The player's story events wait for it, since the scene would play again before.
+    /// </summary>
+    public int? AwaitingSeat => Pending ? told.Where(pair => pair.Value > TakenRev).Select(pair => (int?)pair.Key).Order().FirstOrDefault() : null;
+
+    /// <inheritdoc />
+    bool ITellingLock.Locks => entered;
+
+    /// <inheritdoc />
+    bool ITellingLock.Answerable => connected;
+
+    /// <inheritdoc />
+    bool? ITellingLock.Granted => TellingGranted;
+
+    /// <inheritdoc />
+    int? ITellingLock.Holder => TellingHolder;
+
+    /// <summary>
     /// Gets or sets whether a sync is under way, so another waits for its answer.
     /// </summary>
     private bool Syncing { get; set; }
@@ -312,6 +340,7 @@ public sealed partial class StoryTrack
         watching = null;
         watchedTelling = null;
         levelSent = null;
+        lastOwnTelling = null;
         host.Log("story track: left the Raid World's story");
     }
 
@@ -422,6 +451,7 @@ public sealed partial class StoryTrack
             if (ownTelling is { } ending)
             {
                 ownTelling = null;
+                lastOwnTelling = ending.Id;
                 TellingGranted = null;
                 TellingHolder = null;
                 if (Synced && connected)
@@ -447,6 +477,12 @@ public sealed partial class StoryTrack
         TellingHolder = null;
         SendTell();
     }
+
+    /// <inheritdoc />
+    void ITellingLock.Request(string site, int map) => Tell(site, map);
+
+    /// <inheritdoc />
+    void ITellingLock.Release() => Tell(null, 0);
 
     /// <summary>
     /// Takes whose telling the player watches, which the relay keeps the player beside the teller by
@@ -950,11 +986,17 @@ public sealed partial class StoryTrack
     }
 
     /// <summary>
-    /// Takes a telling that ended, with the revision of the track it ended at.
+    /// Takes a telling that ended, with the revision of the track it ended at; the player's own
+    /// telling's end asks nothing of the game, whose story holds its writes already.
     /// </summary>
     /// <param name="frame">The frame.</param>
     private void TakeTold(JsonElement frame)
     {
+        if (Text(frame, "telling") == lastOwnTelling)
+        {
+            return;
+        }
+
         int seat = (int)Number(frame, "teller");
         if (tellings.TryGetValue(seat, out StoryTelling? telling) && telling.Telling == Text(frame, "telling"))
         {

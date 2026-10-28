@@ -2,6 +2,7 @@
 #  raid_scope_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Took a Raid World's tellers from the relay's tellings and its viewers from their tracks
 #      Paulinchen  2026-10-23: Left the map's gate to the DLL, checking only the route it registers
 #      Paulinchen  2026-10-12: Checked the messages of a Classic world to several members and to a lone member
 #      Paulinchen  2026-10-09: Checked messages to the whole map or several players going out once
@@ -62,17 +63,11 @@ end
 module MGQ_MpCoopEvents
   # Whether the player tells the story.
   def self.telling?; $telling; end
-  # The story markers as the telling started, nil while not telling.
-  def self.told_markers; $telling ? [12, 0, 0, 0] : nil; end
   # Whether the player follows a telling.
   def self.following?; $following; end
 end
-# How far each story is, and the synced members, as coop_story.rbx tells them.
+# The synced members, as coop_story.rbx tells them.
 module MGQ_MpCoopStory
-  # Reads four comma-separated story markers, nil for anything else.
-  def self.read_markers(text); values = text.to_s.split(","); values.size == 4 ? values.map(&:to_i) : nil; end
-  # The player's own story markers.
-  def self.own_markers; $own_markers; end
   # The members synced with the player.
   def self.synced_members; $synced; end
   # Whether the player follows the leader's story.
@@ -80,22 +75,31 @@ module MGQ_MpCoopStory
   # Whether the player leads synced members.
   def self.leading_synced?; !$synced.empty?; end
 end
+# The world's story: the player's track from $track, and the tellings the relay told of on it from
+# $tellings, by seat.
+module MGQ_MpWorldStory
+  # The player's track.
+  def self.track; $track; end
+  # A telling the relay told of, by its teller's seat.
+  def self.telling_of(seat); $tellings[seat]; end
+end
 
 load_script "coop_scope"
 
 scope = MGQ_MpCoop::Scope
 $game_map = Struct.new(:map_id).new(5)
 $game_variables = {}
-$own_markers = [12, 0, 0, 0]
+$track = "world"
+$tellings = {}
 $since = 2000
 $telling = false
 $following = false
 $synced = []
 $party = "p1"
-member = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "m", "name" => "Member", "map" => "5", "since" => "3000", "sm" => "12,0,0,0" }, nil, true, nil)
-stranger = MGQ_MpOverworldSync::Peers::Peer.new(3, { "id" => "k", "name" => "Stranger", "map" => "5", "since" => "2000", "sm" => "9,0,0,0" }, nil, false, nil)
-elsewhere = MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "e", "name" => "Elsewhere", "map" => "8", "since" => "100", "sm" => "12,0,0,0" }, nil, false, nil)
-away = MGQ_MpOverworldSync::Peers::Peer.new(5, { "id" => "a", "name" => "Away", "map" => "5", "since" => "100", "sm" => "12,0,0,0" }, nil, false, 600)
+member = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "m", "name" => "Member", "map" => "5", "since" => "3000", "trk" => "world" }, nil, true, nil)
+stranger = MGQ_MpOverworldSync::Peers::Peer.new(3, { "id" => "k", "name" => "Stranger", "map" => "5", "since" => "2000", "trk" => "t3" }, nil, false, nil)
+elsewhere = MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "e", "name" => "Elsewhere", "map" => "8", "since" => "100", "trk" => "world" }, nil, false, nil)
+away = MGQ_MpOverworldSync::Peers::Peer.new(5, { "id" => "a", "name" => "Away", "map" => "5", "since" => "100", "trk" => "world" }, nil, false, 600)
 $peers = [member, stranger, elsewhere, away]
 $leader = member
 
@@ -125,34 +129,27 @@ $party = "p1"
 check("its sync host entered the map first, the lower id among equals", scope.sync_host, stranger)
 stranger.state["since"] = "3000"
 check("the player when they came first", scope.sync_host, :me)
-check("who tells the story here is nobody while nobody's state says so", scope.teller, nil)
-member.state["telling"] = "1"
-check("the player on the map whose state says they tell it", [scope.teller, scope.follows_teller?, scope.leads_story?], [member, true, false])
-elsewhere.state["telling"] = "1"
+check("who tells the story here is nobody while the relay told of no telling", scope.teller, nil)
+$tellings[2] = ["m1", 5, "map:5:1:1"]
+check("the player on the map whose telling the relay told of",
+      [scope.teller, scope.follows_teller?, scope.leads_story?, scope.telling?(member)], [member, true, false, true])
+$tellings[4] = ["e1", 8, "map:8:1:1"]
 check("never one on another map", scope.teller, member)
 $telling = true
-check("the player while telling, having entered the map before the other teller", [scope.teller, scope::Raid.first_teller_here], [:me, :me])
-$since = 4000
-check("still the player once the other teller entered it first, of whom only a tie hears",
-      [scope.teller, scope::Raid.first_teller_here], [:me, member])
-$since = 2000
-member.state["telling"] = "0"
-check("the story goes to the players on the map whose story is where the player's was as the telling started",
-      scope.viewers, [member])
+check("the player while telling", scope.teller, :me)
+$tellings.delete(2)
+check("the story goes to the players on the map who play the player's track", scope.viewers, [member])
 # The players the story took along, as coop_gather.rbx tells them.
 module MGQ_MpCoopGather; def self.taken_along; $along; end; def self.story_map?(map_id); map_id == $game_map.map_id; end; end
 $along = [elsewhere, member]
 check("and to those it took along who are not on the map yet", scope.viewers, [member, elsewhere])
 $along = []
 $telling = false
-member.state["telling"] = "1"
-check("a player whose story matches the teller's watches it", scope.watches?(member), true)
-member.state["tsm"] = "11,0,0,0"
-check("as told when the telling started, not as the teller's story moved on since", scope.watches?(member), false)
-member.state.delete("tsm")
+$tellings[2] = ["m1", 5, "map:5:1:1"]
+check("a player watches a telling the relay told them of, which it does for their track alone", [scope.watches?(member), scope.watches?(stranger)], [true, false])
 check("pages come from the teller alone", [scope.story_from?(member), scope.story_from?(stranger)], [true, false])
-member.state["telling"] = "0"
-check("or from anyone while nobody's state says they tell yet, since states and pages travel apart", scope.story_from?(stranger), true)
+$tellings.delete(2)
+check("and from nobody while the relay told of no telling", scope.story_from?(stranger), false)
 
 $told.clear
 MGQ_MpCoop.tell_map(-1, "npcs", 5, "full" => 1)
@@ -191,13 +188,13 @@ check("and hands a message on under its field", taken, [["k", "5"]])
 module MGQ_MpCoopGather; def self.story_map?(map_id); map_id == $game_map.map_id || map_id == 8; end; end
 
 # Tellers whose connection is down, and the one whose story took the player along.
-member.state.merge!("telling" => "1", "since" => "3000")
-stranger.state.merge!("telling" => "0")
-elsewhere.state["telling"] = "0"
+member.state["since"] = "3000"
+$tellings = { 2 => ["m1", 5, "map:5:1:1"] }
 member.away = 600
-check("a teller whose connection is down still tells until their game is forgotten", [scope.teller, scope::Raid.first_teller_here, scope.watches?(member)], [member, member, true])
+check("a teller whose connection dropped tells until the relay ends their telling", [scope.teller, scope.watches?(member)], [member, true])
 member.away = nil
-elsewhere.state.merge!("telling" => "1", "map" => "8", "since" => "9000")
+elsewhere.state.merge!("map" => "8", "since" => "9000")
+$tellings[4] = ["e1", 8, "map:8:1:1"]
 check("of two tellers on the story's maps the one who entered their map first", scope.teller, member)
 # The player whose story took the player along, from $followed.
 module MGQ_MpCoopGather; def self.followed_id; $followed; end; end
@@ -208,8 +205,7 @@ check("but the one whose story takes the player along, though another entered fi
 $followed = nil
 $heard = "e"
 check("or whose pages the player follows", scope.teller, elsewhere)
-elsewhere.state["telling"] = "0"
+$tellings.delete(4)
 check("until they stop telling", scope.teller, member)
 $heard = nil
-member.state["telling"] = "0"
-elsewhere.state["map"] = "8"
+$tellings.delete(2)

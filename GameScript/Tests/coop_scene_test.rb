@@ -2,6 +2,7 @@
 #  coop_scene_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Answered the queue and checks of the scene from the stand-in of the DLL
 #      Paulinchen  2026-10-24: Checked that a viewer takes the warp and escape bans of the teller's scene
 #      Paulinchen  2026-10-23: Handed the map's scenes to the route past the DLL's map gate
 #                            - Checked that the teller's values a viewer takes never go to the relay as theirs, through the hook of story_keys.rbx
@@ -34,6 +35,7 @@
 # story matches.
 
 require_relative "support"
+require_relative "rules_support"
 
 # Stands in for the loader's log, printing its lines.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
@@ -216,6 +218,7 @@ load_script "battles_sync_wire"
 load_script "coop_scope"
 load_script "coop_scene"
 load_script "story_keys"
+open_rules_bridge
 
 # Hands a message to a map route, as the DLL does once it passed the map's gate.
 #
@@ -361,16 +364,8 @@ $game_map.update
 $sent.clear
 
 # The DLL sends a world message of at most its 256 KB frame less the cipher's 41 bytes.
-dll_message_bytes = 256 * 1024 - 41
-long_changes = Array.new(5) { |n| ["audio.se_play", ["x" * 100_000, 80, n], 7, false] }
-batches = MGQ_MpCoopScene.split_batches(long_changes)
-batch_bytes = batches.map { |batch| batch.map { |_entry, line| line }.join("\t").bytesize }
-check("changes past MAX_BATCH_BYTES go out in several messages, in their order",
-      [batches.map(&:size), batches.flatten(1).map { |entry, _line| entry[1][2] }], [[2, 2, 1], [0, 1, 2, 3, 4]])
-check("each within MAX_BATCH_BYTES, which leaves room below the largest world message the DLL sends",
-      [batch_bytes.max <= MGQ_MpCoopScene::MAX_BATCH_BYTES, MGQ_MpCoopScene::MAX_BATCH_BYTES + 16_000 <= dll_message_bytes], [true, true])
-check("a change longer than MAX_BATCH_BYTES goes out alone",
-      MGQ_MpCoopScene.split_batches([long_changes[0], ["audio.se_play", ["x" * 300_000, 80, 100], 7, false], long_changes[1]]).map(&:size), [1, 1, 1])
+check("the changes of one message leave room below the largest world message the DLL sends",
+      SceneStandIn::MAX_BATCH_BYTES + 16_000 <= 256 * 1024 - 41, true)
 
 # A member sees them on the leader's map.
 leader = MGQ_MpOverworldSync::Peers::Peer.new(2, { "map" => "7", "telling" => "1" })
@@ -433,7 +428,7 @@ check("but not on the map the member follows the leader to", $game_map.screen.pi
 take.call("batch", [["picture.show", [14, "ahead", 0, 0, 0, 100, 100, 255, 0]], ["event.balloon", [1, 3]], ["picture.move", [14, 0, 5, 5, 100, 100, 255, 0, 30]]], 8)
 check("a message of several changes makes them in their order, each through its own gate, so an event's on the map the member is still on the way to is left out",
       $game_map.screen.pictures[14].done, [[:show, "ahead", 0, 0, 0, 100, 100, 255, 0], [:move, 0, 5, 5, 100, 100, 255, 0, 30]])
-take.call("batch", Array.new(MGQ_MpCoopScene::MAX_BATCH + 1) { ["picture.rotate", [15, 1]] }, 8)
+take.call("batch", Array.new(SceneStandIn::MAX_BATCH + 1) { ["picture.rotate", [15, 1]] }, 8)
 take.call("batch", [["picture.rotate", [15, 1]], "picture.rotate"], 8)
 take.call("batch", [["picture.rotate", [15, 1]], ["picture.rotate", 1]], 8)
 check("one of more than MAX_BATCH changes, or holding anything but changes, is left out whole", $game_map.screen.pictures[15].done, [])
@@ -499,33 +494,35 @@ module MGQ_MpOverworldSync
     def self.on_this_map?(peer); peer.state["map"].to_i == $game_map.map_id; end
   end
 end
-# Lets the coop_events.rbx stand-in tell while $playing is, from the story markers 12, 0, 0, 0.
+# Lets the coop_events.rbx stand-in tell while $playing is.
 module MGQ_MpCoopEvents
   def self.telling?; $playing; end
   def self.leading_story?; MGQ_MpCoop::Scope.leads_story?; end
-  def self.told_markers; $playing ? [12, 0, 0, 0] : nil; end
 end
-# Lets the coop_story.rbx stand-in read story markers, the player's own kept in $own_markers.
-module MGQ_MpCoopStory
-  def self.read_markers(text); values = text.to_s.split(","); values.size == 4 ? values.map(&:to_i) : nil; end
-  def self.own_markers; $own_markers; end
+# The world's story: the player's track from $track, and the tellings the relay told of on it from
+# $tellings, by seat.
+module MGQ_MpWorldStory
+  def self.track; $track; end
+  def self.telling_of(seat); $tellings[seat]; end
 end
 $raid = true
 $told = []
+$track = "world"
+$tellings = {}
 $game_variables = {}
 $game_map = Game_Map.new
 $game_player = Game_Player.new
 main = $game_map.interpreter
-matching = MGQ_MpOverworldSync::Peers::Peer.new(4, { "name" => "Match", "id" => "m", "map" => "7", "sm" => "12,0,0,0", "since" => "3000" })
-behind = MGQ_MpOverworldSync::Peers::Peer.new(5, { "name" => "Behind", "id" => "b", "map" => "7", "sm" => "8,0,0,0", "since" => "3000" })
-away = MGQ_MpOverworldSync::Peers::Peer.new(6, { "name" => "Away", "id" => "a", "map" => "9", "sm" => "12,0,0,0", "since" => "3000" })
+matching = MGQ_MpOverworldSync::Peers::Peer.new(4, { "name" => "Match", "id" => "m", "map" => "7", "trk" => "world", "since" => "3000" })
+behind = MGQ_MpOverworldSync::Peers::Peer.new(5, { "name" => "Behind", "id" => "b", "map" => "7", "trk" => "t2", "since" => "3000" })
+away = MGQ_MpOverworldSync::Peers::Peer.new(6, { "name" => "Away", "id" => "a", "map" => "9", "trk" => "world", "since" => "3000" })
 $peers = [matching, behind, away]
 $playing = true
 frame.call(main, lambda { $game_map.screen.pictures[3].show("story_cg", 0, 0, 0, 100, 100, 255, 0) })
-check("the teller's scene goes through the map's gate to the players on the map whose story matches",
+check("the teller's scene goes through the map's gate to the players on the map who play the player's track",
       [$told.map { |seat, fields| [seat, fields["map_pscene"], fields["mmap"]] }, changes.call($told, "map_pscene").map { |_, kind, _, _| kind }],
       [[[4, "batch", 7]], ["picture.show", "map.camera"]])
-second = MGQ_MpOverworldSync::Peers::Peer.new(7, { "name" => "Second", "id" => "s", "map" => "7", "sm" => "12,0,0,0", "since" => "3000" })
+second = MGQ_MpOverworldSync::Peers::Peer.new(7, { "name" => "Second", "id" => "s", "map" => "7", "trk" => "world", "since" => "3000" })
 $peers = [matching, behind, second]
 $told.clear
 frame.call(main, lambda { $game_map.screen.pictures[3].show("story_cg", 0, 0, 0, 100, 100, 255, 0) })
@@ -533,21 +530,22 @@ check("to several of them in one message that names them",
       $told.map { |seat, fields| [seat, fields["map_pscene"], fields["mto"]] }, [[-1, "picture.show", "m,s"]])
 
 $playing = false
-$own_markers = [12, 0, 0, 0]
 $game_map = Game_Map.new
-teller = MGQ_MpOverworldSync::Peers::Peer.new(2, { "name" => "Teller", "id" => "t", "map" => "7", "telling" => "1", "tsm" => "12,0,0,0", "sm" => "13,0,0,0", "since" => "1000" })
+teller = MGQ_MpOverworldSync::Peers::Peer.new(2, { "name" => "Teller", "id" => "t", "map" => "7", "trk" => "world", "since" => "1000" })
+$tellings[2] = ["x1", 7, "map:7:1:1"]
 $peers = [teller, matching]
 show = lambda do |sender, number|
   take_map("pscene", sender, { "map_pscene" => "picture.show", "mmap" => "7", "map" => "7", "args" => wire.line([number, "story_cg", 0, 0, 0, 100, 100, 255, 0]) })
 end
 show.call(teller, 3)
-check("a player whose story is where the teller's was as the telling started sees the scene, though the teller's moved on",
+check("a player the relay told of the teller's telling sees the scene",
       [$game_map.screen.pictures[3].done.size, MGQ_MpCoopScene.watching?], [1, true])
 show.call(matching, 4)
 check("but none from a player who does not tell it", $game_map.screen.pictures[4].done, [])
-$own_markers = [8, 0, 0, 0]
+$tellings.delete(2)
 show.call(teller, 5)
-check("a player whose story does not match sees none of it", [$game_map.screen.pictures[5].done, MGQ_MpCoopScene.watching?], [[], false])
+check("a player the relay told of no telling of theirs, as one on another track, sees none of it", [$game_map.screen.pictures[5].done, MGQ_MpCoopScene.watching?], [[], false])
+$tellings[2] = ["x1", 7, "map:7:1:1"]
 $raid = false
 
 # In a Raid World the teller's story values, the move routes it gives the map's events and the
@@ -566,7 +564,6 @@ module MGQ_MpOverworld; def self.graphic?(_folder, name); name == "Actor1"; end;
 $data_animations = Array.new(10)
 $raid = true
 $playing = true
-$own_markers = [12, 0, 0, 0]
 $game_map = Game_Map.new
 $game_player = Game_Player.new
 $game_switches = Game_Switches.new
@@ -575,7 +572,7 @@ $game_self_switches = Game_SelfSwitches.new
 main = $game_map.interpreter
 mover = Game_Event.new(12)
 $game_map.events = { 12 => mover }
-$peers = [matching]
+$peers = [matching, teller]
 $told.clear
 route = RPG::MoveRoute.new
 route.repeat = false
@@ -655,13 +652,11 @@ check("the player's route, the map's zoom and the camera's place go out, the pla
 $told.clear
 $playing = false
 $playing = true
-matching.state["sm"] = "13,0,0,0"
-stranger = MGQ_MpOverworldSync::Peers::Peer.new(8, { "name" => "Stranger", "id" => "x", "map" => "7", "sm" => "13,0,0,0", "since" => "3000" })
+stranger = MGQ_MpOverworldSync::Peers::Peer.new(8, { "name" => "Stranger", "id" => "x", "map" => "7", "trk" => "t2", "since" => "3000" })
 $peers = [matching, stranger]
-check("a viewer the values moved past where the telling started stays a viewer, one they never reached does not",
+check("a player on another track is no viewer, whoever is on the map",
       MGQ_MpCoop::Scope.viewers.map { |peer| peer.state["name"] }, ["Match"])
-matching.state["sm"] = "12,0,0,0"
-$peers = [matching]
+$peers = [matching, teller]
 $playing = false
 
 $game_map = Game_Map.new
@@ -690,20 +685,6 @@ scene.call("story.values", [[0, 100, true]], "8")
 $following = nil
 check("and keeps a ban set on the map they are on the way to for their arrival", [$game_switches[100], $bans_on_way], [false, [[100, true, 8]]])
 $game_switches[94] = nil
-$own_markers = [13, 0, 0, 0]
-other = MGQ_MpOverworldSync::Peers::Peer.new(9, { "name" => "Other", "id" => "o", "map" => "7", "telling" => "1", "tsm" => "12,0,0,0", "since" => "1000" })
-check("the values moved the viewer's story past where the telling started, and they keep watching it, but no other teller's",
-      [MGQ_MpCoop::Scope.watches?(teller), MGQ_MpCoop::Scope.watches?(other)], [true, false])
-teller.state["tsm"] = "13,0,0,0"
-check("and the teller's next telling, which starts where they are now", MGQ_MpCoop::Scope.watches?(teller), true)
-teller.state["tsm"] = "12,0,0,0"
-# Values that come between the story's events on two maps, while the teller's state names only
-# their progress and no telling start, leave the start the viewer keeps.
-teller.state.delete("tsm")
-teller.state["sm"] = "13,0,0,0"
-scene.call("story.values", [[0, 41, true]])
-teller.state["tsm"] = "12,0,0,0"
-check("values between the story's events on two maps keep the viewer watching the telling", MGQ_MpCoop::Scope.watches?(teller), true)
 scene.call("event.route", [12, true, false, [[1], [41, "Actor1", 2], [41, "Missing", 0], [41, "../evil", 0], [44, "Door", 80, 100], [45, "exit"], [2, "x"]]])
 check("the event walks the teller's route, without a graphic or sound this game lacks, a script or a broken command",
       [viewed.route.list.map(&:code), viewed.route.list[1].parameters, viewed.route.repeat, viewed.route.wait], [[1, 41, 0], ["Actor1", 2], true, false])
@@ -753,11 +734,13 @@ scene.call("audio.bgs_play", ["Rain", 70, 100, 0], "8")
 scene.call("audio.se_play", ["Step", 80, 100], "8")
 $game_map.update
 on_the_way = $played.dup
+teller.state["map"] = "8"
 $game_map.map_id = 8
 $game_map.update
 check("a viewer on the way to the teller's map hears its background sound once there, after the map's own, and none of its sound effects",
       [on_the_way, $played], [[], [["BGS", "Rain", 70, 100, 0]]])
 $game_map.map_id = 7
+teller.state["map"] = "7"
 $following = nil
 $data_tilesets = [nil, 1, 2, 3, 4, 5]
 # Lets the overworld.rbx stand-in know the graphics Actor1 and Sky.
@@ -785,13 +768,12 @@ check("the route skips a step the viewer's character cannot take, which stands e
 scene.call("event.route", [-1, true, false, [[4], [0]]])
 $forcing = true
 $restored = nil
-teller.state["telling"] = "0"
-$frame_count += MGQ_MpCoopScene::STATE_GRACE_FRAMES
+$tellings.delete(2)
 $game_map.update
-check("a route still walked once the viewer no longer sees the scene ends, giving the player their character back",
+check("a route still walked once the relay ended the telling, which ends the scene at once, ends, giving the player their character back",
       [$restored, $game_player.instance_variable_get(:@move_route_forcing), MGQ_MpCoopScene.walks_player?], [true, false, false])
 check("and the scene switch the scene turned on is off again", $game_switches[2029], false)
-teller.state["telling"] = "1"
+$tellings[2] = ["x1", 7, "map:7:1:1"]
 $raid = false
 
 # The player's own scene: what the events of the player's own map interpreter change is taken back
