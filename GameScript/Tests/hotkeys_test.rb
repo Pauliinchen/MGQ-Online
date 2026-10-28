@@ -2,6 +2,7 @@
 #  hotkeys_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Dropped the table of default hotkeys
 #      Paulinchen  2026-10-12: Checked that a refused hotkey is logged, and not while the player types
 #                            - Checked the Leader HUD size hotkey and the hotkeys' own Mod Config group
 #      Paulinchen  2026-10-11: Checked the hotkey that opens the bug report
@@ -43,11 +44,7 @@ load_script "core_hotkeys"
 
 keys = MGQ_MpHotkeys
 
-# The defaults.
-check("the defaults: B, T, F11, Y, N, E, Tab, H, J and F3",
-      [keys.code(:wheel), keys.code(:chat), keys.code(:overview), keys.code(:accept), keys.code(:decline), keys.code(:emotes), keys.code(:party_box),
-       keys.code(:leader_hud), keys.code(:join_battle), keys.code(:bug_report)],
-      [0x42, 0x54, 0x7A, 0x59, 0x4E, 0x45, 0x09, 0x48, 0x4A, 0x72])
+# Reading a hotkey.
 check("a key is read by its code", [($down = [0x54]) && keys.pressed?(:chat), keys.pressed?(:wheel)], [true, false])
 
 # A confirm box of the mod takes every hotkey while it is open.

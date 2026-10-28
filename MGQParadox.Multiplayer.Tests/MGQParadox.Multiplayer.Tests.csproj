@@ -41,6 +41,11 @@
     <Compile Include="..\MGQOnline.Game.Tests\Events\TinyGame.cs" Link="Topics\TinyGame.cs" />
   </ItemGroup>
 
+  <!-- The export table of the scripts, which ExportsTests compares with the exports. -->
+  <ItemGroup>
+    <None Include="..\GameScript\Multiplayer.rb" Link="GameScript\Multiplayer.rb" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- The golden answers of the topics, shared with the script tests. -->
   <ItemGroup>
     <None Include="..\fixtures\world\*.json" LinkBase="fixtures\world" CopyToOutputDirectory="PreserveNewest" />

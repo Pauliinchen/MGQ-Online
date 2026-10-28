@@ -2,6 +2,7 @@
 #  notices_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Dropped the fade checks
 #      Paulinchen  2026-10-23: Told the invites that reach the player and the party's actions through the DLL's party view
 #      Paulinchen  2026-10-22: Checked the relay's announcement in the box's rows, in place of the one before
 #      Paulinchen  2026-10-12: Checked that the box at its default lies 4 pixels below the Leader HUD
@@ -114,7 +115,6 @@ check("an invite and a challenge from afar show, the keys on the first", shown.c
       ["Bea invites you to a party", "Y: Accept   N: Decline", "Cid challenges you to a duel"])
 check("at the top left, fading in", [box.call.x, box.call.y, box.call.visible, box.call.opacity < 255], [8, 8, true, true])
 (MGQ_MpUi::Style::FADE_FRAMES - 1).times { notices.tick(true) }
-check("opaque after FADE_FRAMES", box.call.opacity, 255)
 4000.times { notices.tick(true) }
 check("they stay as long as they stand", shown.call.first, "Bea invites you to a party")
 

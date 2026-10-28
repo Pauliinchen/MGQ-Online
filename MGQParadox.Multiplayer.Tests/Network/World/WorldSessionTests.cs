@@ -2,6 +2,7 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Covered the world room refusals in one theory
 //      Paulinchen  2026-10-13: Covered the relay's word of a Classic world's new raid bosses setting
 //                            - Covered the relay's word of a Raid World's new squad settings
 //      Paulinchen  2026-10-12: Covered paced message bursts and closing a connection that sends too fast
@@ -451,60 +452,34 @@ public sealed class WorldSessionTests
     }
 
     /// <summary>
-    /// Asserts that a world room turning the game away as too old, with 400 and the code "update" as
-    /// the relay does, ends the session for good telling the player to update, without trying again.
+    /// Asserts that a world room turned down ends the session for good with the reason, after a single
+    /// request: 400 with the code "update" as the relay turns a game too old for it away, 426 with or
+    /// without a text as an older or self-hosted relay may, and 400 without a code or with one this
+    /// game does not know.
     /// </summary>
-    [Fact]
-    public void OutdatedGame_EndsForGoodTellingToUpdate()
+    /// <param name="status">The status the relay answers.</param>
+    /// <param name="code">The code in X-MGQ-Refusal, or <see langword="null"/> for none.</param>
+    /// <param name="reason">The reason the session ends with.</param>
+    [Theory]
+    [InlineData(400, "update", "Update MGQ Online to play online.")]
+    [InlineData(426, "This relay serves MGQ Online 0.7.0 and newer.", "This relay serves MGQ Online 0.7.0 and newer.")]
+    [InlineData(426, null, "Update MGQ Online to play online.")]
+    [InlineData(400, null, "The relay turned the request down. Update the mod.")]
+    [InlineData(400, "something_new", "The relay turned the request down. Update the mod.")]
+    public void RefusedWorldRoom_EndsForGoodWithTheReason(int status, string? code, string reason)
     {
         using var relay = new TestRelay();
-        var code = MakeWorld(relay, 2);
+        var world = MakeWorld(relay, 2);
         var session = NewSession(relay.Address);
 
-        relay.UpdateRefusal = string.Empty;
-        session.Open(code);
+        relay.WorldRoomRefusal = (status, code);
+        session.Open(world);
 
         var ended = AwaitError(session);
-        Assert.Equal(("failed", "Update MGQ Online to play online."), (ended["state"], ended["error"]));
+        Assert.Equal(("failed", reason), (ended["state"], ended["error"]));
         Thread.Sleep(500);
         Assert.Equal(1, relay.WorldRoomRequests);
     }
-
-    /// <summary>
-    /// Asserts that a world room turned down with 426 and a text, as an older or self-hosted relay
-    /// may, ends the session for good with that text, without trying again.
-    /// </summary>
-    [Fact]
-    public void UpgradeRequiredWithText_EndsForGoodWithTheRelayText()
-    {
-        const string text = "This relay serves MGQ Online 0.7.0 and newer.";
-
-        AssertWorldRoomRefusalEndsForGood((426, text), text);
-    }
-
-    /// <summary>
-    /// Asserts that a world room turned down with 426 and no text ends the session for good telling
-    /// the player to update, without trying again.
-    /// </summary>
-    [Fact]
-    public void UpgradeRequiredWithoutText_EndsForGoodTellingToUpdate() =>
-        AssertWorldRoomRefusalEndsForGood((426, null), "Update MGQ Online to play online.");
-
-    /// <summary>
-    /// Asserts that a world room turned down with 400 and no code ends the session for good telling
-    /// the player to update the mod, without trying again.
-    /// </summary>
-    [Fact]
-    public void BadRequestWithoutCode_EndsForGoodTellingToUpdateTheMod() =>
-        AssertWorldRoomRefusalEndsForGood((400, null), "The relay turned the request down. Update the mod.");
-
-    /// <summary>
-    /// Asserts that a world room turned down with 400 and a code this game does not know ends the
-    /// session for good telling the player to update the mod, without trying again.
-    /// </summary>
-    [Fact]
-    public void BadRequestWithUnknownCode_EndsForGoodTellingToUpdateTheMod() =>
-        AssertWorldRoomRefusalEndsForGood((400, "something_new"), "The relay turned the request down. Update the mod.");
 
     /// <summary>
     /// Asserts that a session without a player cannot open a world.
@@ -894,27 +869,6 @@ public sealed class WorldSessionTests
     /// <param name="others">The seats, separated by commas.</param>
     private static void AwaitOthers(WorldSession session, string others) =>
         Await(session, described => described["others"] == others, $"the others {others}");
-
-    /// <summary>
-    /// Asserts that the relay turning every world room request down with a status and code ends a
-    /// session for good with a reason, after a single request.
-    /// </summary>
-    /// <param name="refusal">The status, and the code in X-MGQ-Refusal or <see langword="null"/> for none.</param>
-    /// <param name="reason">The reason the session ends with.</param>
-    private static void AssertWorldRoomRefusalEndsForGood((int Status, string? Code) refusal, string reason)
-    {
-        using var relay = new TestRelay();
-        var code = MakeWorld(relay, 2);
-        var session = NewSession(relay.Address);
-
-        relay.WorldRoomRefusal = refusal;
-        session.Open(code);
-
-        var ended = AwaitError(session);
-        Assert.Equal(("failed", reason), (ended["state"], ended["error"]));
-        Thread.Sleep(500);
-        Assert.Equal(1, relay.WorldRoomRequests);
-    }
 
     /// <summary>
     /// Waits until a session tells an error.

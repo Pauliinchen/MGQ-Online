@@ -2,6 +2,7 @@
 //  relay.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Dropped the test of the presence list
 //      Paulinchen  2026-10-08: Covered the chat's rate limit and chat frames without a line
 //      Paulinchen  2026-10-07: Covered the auth key header
 //      Paulinchen  2026-10-06: Covered a guest waiting alone, the player key header, the rate limiter and replaced connections
@@ -15,7 +16,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   CHAT_LIMITS, CLOSE, EVERYONE, IN, LIMITS, REPLACED, RateLimiter, admit, chatLineOf, newPeer, newWorldPeer, nextDeadline, nextWorldDeadline, overdue,
-  parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText, takeChatLine, takeMessage, takeSeat, worldOverdue,
+  parseRoute, replacedBy, routeWorldMessage, seatChangeText, seatText, takeChatLine, takeMessage, takeSeat, worldOverdue,
 } from "./relay.js";
 
 /**
@@ -130,10 +131,6 @@ test("takeSeat gives the lowest free seat, and refuses once every seat is taken"
 
   const full = [0, 1].map((seat) => newWorldPeer(seat, WHO, T0));
   assert.deepEqual(takeSeat(full, 2), { seat: null, refusal: { code: CLOSE.worldFull, reason: "the world is full" } });
-});
-
-test("presenceOf lists who sits in a world room", () => {
-  assert.deepEqual(presenceOf([newWorldPeer(1, WHO, T0)]), [WHO]);
 });
 
 test("seatText and seatChangeText write what the games are told", () => {

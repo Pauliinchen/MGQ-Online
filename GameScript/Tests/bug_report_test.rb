@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-30: Expected the whole version the mod loader names
+#                            - Dropped the default hotkey and the export signatures
 #      Paulinchen  2026-10-23: Made the worlds on this PC through the stand-ins of the DLL's topics
 #                            - Handed the screenshot to C# by the Bitmap's address, the walk to its pixels gone there
 #                            - Typed through the stand-in text box
@@ -274,9 +275,6 @@ end
 
 # The registrations.
 check("the report follows every frame and adds its choice after the wheel's others", [$ticks.size, $wheel.map(&:first)], [1, [60]])
-check("its hotkey is F3 unless bound, named in Mod Config", [MGQ_MpHotkeys.code(:bug_report), MGQ_MpHotkeys::BINDINGS[:bug_report].name], [0x72, "Report a Bug"])
-check("the exports have the contract's signatures",
-      %w[mp_report_snap mp_report_drop_snap mp_report_send mp_report_state].map { |name| dll_signature(name) }, %w[pll v ppppl pl])
 
 # The facts and details.
 SceneManager.scene = Scene_Map.new

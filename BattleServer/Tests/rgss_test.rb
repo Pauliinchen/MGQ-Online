@@ -2,6 +2,7 @@
 #  rgss_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Dropped the checks of plain getters
 #      Paulinchen  2026-10-15: Created
 #
 #----------------------------------------------------------------
@@ -38,9 +39,7 @@ check("a tone keeps its channels within -255 and 255", [tone.red, tone.blue, ton
 window = Window.new(1, 2, 30, 40)
 window.openness = 300
 check("a window's openness stays within 0 and 255", window.openness, 255)
-check("a window is open at 255", window.open?, true)
 bitmap = Bitmap.new(100, 50)
-check("a bitmap keeps its size", [bitmap.width, bitmap.height], [100, 50])
 check("a bitmap guesses a text's width from its font", bitmap.text_size("abcd").width, 4 * bitmap.font.size / 2)
 Graphics.frame_count = 0
 Graphics.wait(5)

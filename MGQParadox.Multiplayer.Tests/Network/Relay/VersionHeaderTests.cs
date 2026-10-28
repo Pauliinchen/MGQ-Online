@@ -2,6 +2,7 @@
 //  VersionHeaderTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Checked the directory and both rooms in one test and dropped the check of the build constant
 //      Paulinchen  2026-10-12: Created
 //
 //----------------------------------------------------------------
@@ -26,52 +27,21 @@ public sealed class VersionHeaderTests
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(10);
 
     /// <summary>
-    /// Asserts that the tests run a development build, which names its development stamp.
+    /// Asserts that the directory requests and the world and PvP room connections name the version of this game.
     /// </summary>
     [Fact]
-    public void ModVersion_OfTheTestBuild_IsTheDevelopmentStamp() => Assert.Equal("0.0.0-dev", UpdateCheck.ModVersion);
-
-    /// <summary>
-    /// Asserts that every directory request names the version of this game.
-    /// </summary>
-    [Fact]
-    public void DirectoryRequests_NameTheVersion()
-    {
-        using var relay = new TestRelay();
-        var creator = WorldDirectoryTests.NewDirectory(relay, WorldDirectoryTests.CreatorKey, "Creator");
-
-        Assert.Equal("done", WorldDirectoryTests.Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4, false, false, []))["state"]);
-        WorldDirectoryTests.List(creator);
-
-        var requests = relay.Versions.Where(request => request.Path.StartsWith("/v1/worlds", StringComparison.Ordinal)).ToArray();
-        Assert.NotEmpty(requests);
-        Assert.All(requests, request => Assert.Equal(UpdateCheck.ModVersion, request.Version));
-    }
-
-    /// <summary>
-    /// Asserts that a world room connection names the version of this game.
-    /// </summary>
-    [Fact]
-    public void WorldRoom_NamesTheVersion()
+    public void RelayRequests_NameTheVersion()
     {
         using var relay = new TestRelay();
         var creator = WorldDirectoryTests.NewDirectory(relay, WorldDirectoryTests.CreatorKey, "Creator");
         var token = WorldCode.Parse(WorldDirectoryTests.Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4, false, false, []))["code"])!.Token;
-        using var channel = RelayWorldChannel.Connect(relay.Address, Relays.WorldRoomOf(token), WorldDirectoryTests.PlayerKey(7), "Guest", WorldKeys.AuthKeyOf(token), Patience, CancellationToken.None, out _, out _);
+        WorldDirectoryTests.List(creator);
+        using var world = RelayWorldChannel.Connect(relay.Address, Relays.WorldRoomOf(token), WorldDirectoryTests.PlayerKey(7), "Guest", WorldKeys.AuthKeyOf(token), Patience, CancellationToken.None, out _, out _);
+        using var pvp = RelayFrameChannel.Connect(relay.Address, Relays.RoomOf("abcdefghjk"), host: true, Patience);
 
-        Assert.NotNull(channel);
-        Assert.Equal(UpdateCheck.ModVersion, relay.Versions.Single(request => request.Path.StartsWith("/v1/world/", StringComparison.Ordinal)).Version);
-    }
-
-    /// <summary>
-    /// Asserts that a PvP room connection names the version of this game.
-    /// </summary>
-    [Fact]
-    public void PvpRoom_NamesTheVersion()
-    {
-        using var relay = new TestRelay();
-        using var channel = RelayFrameChannel.Connect(relay.Address, Relays.RoomOf("abcdefghjk"), host: true, Patience);
-
-        Assert.Equal(UpdateCheck.ModVersion, relay.Versions.Single(request => request.Path.StartsWith("/v1/room/", StringComparison.Ordinal)).Version);
+        Assert.NotNull(world);
+        var requests = relay.Versions.ToArray();
+        Assert.All(new[] { "/v1/worlds", "/v1/world/", "/v1/room/" }, path => Assert.Contains(requests, request => request.Path.StartsWith(path, StringComparison.Ordinal)));
+        Assert.All(requests, request => Assert.Equal(UpdateCheck.ModVersion, request.Version));
     }
 }

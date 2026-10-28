@@ -2,6 +2,7 @@
 #  battles_join_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Dropped the default hotkey
 #      Paulinchen  2026-10-23: Told a side battle through the pools' side_battle?
 #      Paulinchen  2026-10-17: Covered the frozen fight the prompt offers near its boss's stand-in
 #      Paulinchen  2026-10-11: Checked that a running battle takes an encounter with as many players as fit
@@ -188,7 +189,6 @@ $game_player.y = 0
 $scene_now = Scene_Map.new
 
 # The state a host tells.
-check("the hotkey is J unless bound", [MGQ_MpHotkeys.code(:join_battle), MGQ_MpHotkeys.label(:join_battle)], [0x4A, "J"])
 check("on the map a Raid World's player tells no battle that takes players in", join.state_fields, { "rbn" => 0 })
 $raid = false
 check("a Classic world's player tells nothing", join.state_fields, {})

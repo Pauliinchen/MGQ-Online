@@ -2,6 +2,7 @@
 //  SquadTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Dropped the default settings, which WorldTopicsTests checks
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -30,13 +31,6 @@ public sealed class SquadTopicsTests
     /// The golden cases.
     /// </summary>
     private readonly JsonElement _cases = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fixtures", "squad", "squad.json"))).RootElement;
-
-    /// <summary>
-    /// Asserts that the settings of a Raid World that names none are those the world's rules name.
-    /// </summary>
-    [Fact]
-    public void Default_AnswersTheDefaultSettings() =>
-        Assert.Equal(new RubyHash { { "luka", false }, { "formation", 4L }, { "front", 1L }, { "raid_front", 1L } }, _topics.Call(SquadTopics.Default));
 
     /// <summary>
     /// Asserts that a served battle's settings fill in the defaults as battles_served.rbx did.

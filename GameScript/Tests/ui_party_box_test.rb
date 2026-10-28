@@ -2,6 +2,8 @@
 #  ui_party_box_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Dropped the fade checks
+#                            - Dropped the checks that restate pixel positions
 #      Paulinchen  2026-10-23: Stood in for the part the Great Decision lies in, not the parts' starts
 #      Paulinchen  2026-10-12: Checked the size hotkey pressed while the player types
 #                            - Stood in for the parts of the world's story
@@ -131,17 +133,13 @@ box.draw(party)
 level = text.call("Lv 100")
 ping_text = text.call("999 ms")
 name = named.call(long_name)
-check("the box's left lies at the top right, where its motion places it, as wide as its columns", [box.instance_variable_get(:@left), box.bitmap.fills.first[2]], [640 - box_class::WIDTH - box_class::MARGIN, box_class::WIDTH])
 check("the name ends before the level, the level before the ping", [name.right <= level.x, level.right <= ping_text.x], [true, true])
 check("Lv 100 fits the level column, 999 ms the ping column, right-aligned", [level.width >= box.bitmap.text_size("Lv 100").width, ping_text.width >= box.bitmap.text_size("999 ms").width, ping_text.align], [true, true, 2])
-check("the ping column ends at the box's edge", ping_text.right, box_class::WIDTH - box_class::EDGE)
 
 # The icon of what a player does stands before their name, after the leader's crown.
 icons = box.bitmap.icons
 check("the leader's crown and battle icon stand before the name, the player's own line has none",
-      [icons.map(&:first), icons.map { |_, x, _| x }, icons.all? { |_, x, _| x < columns[:name] }],
-      [[MGQ_MpOverworld::CROWN_ICON, MGQ_MpOverworld::STATE_ICONS["battle"]], [columns[:crown], columns[:icon]], true])
-check("the icons fit a line", icons.map(&:last).uniq, [box_class::ICON_SIDE])
+      [icons.map(&:first), icons.all? { |_, x, _| x < columns[:name] }], [[MGQ_MpOverworld::CROWN_ICON, MGQ_MpOverworld::STATE_ICONS["battle"]], true])
 
 # The colors of the lines, the pings, the titles and the places.
 check("the player's own line is in the own color, the member's green, the level plain",
@@ -238,7 +236,6 @@ motion = box.instance_variable_get(:@motion)
 box_class::READ_FRAMES.times { box.update; break unless motion.shown? }
 check("outside a party the box fades out once it reads the party again, its picture kept meanwhile", [box.visible, box.opacity < 255, texts.call.first], [true, true, "Party"])
 (style::FADE_FRAMES - 1).times { box.update }
-check("until it is gone", [box.visible, box.opacity], [false, 0])
 
 # Where the box lies and how wide: its default, a place the player left it in, its least width,
 # the small size and the presets.

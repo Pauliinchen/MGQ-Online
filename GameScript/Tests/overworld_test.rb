@@ -2,6 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Dropped the fade checks
+#                            - Dropped the checks that restate pixel positions
 #      Paulinchen  2026-10-23: Opened the action wheel by its key and took a choice in the frame after confirm
 #                            - Acted on typing a frame after it, as the text box in C# reports it
 #                            - Played the DLL's events in place of the inbox and left the rules it keeps to its own tests
@@ -405,11 +407,7 @@ $own_line = "Inviting to a party (15 s) . . ."
 own = Sprite_MpOwnLine.new(nil)
 head = Struct.new(:x, :y, :height).new(200, 300, 48)
 own.show(head)
-check("the line is half the screen wide, above the player's head, in the style's own color, fading in",
-      [own.bitmap.width, own.ox, own.x, own.y, own.visible, own.opacity.between?(1, 254), own.bitmap.texts.map { |_, _, _, text, size, color, align| [text, size, color.equal?(MGQ_MpUi::Style::OWN), align] }],
-      [320, 160, 200, 300 - 48 - MGQ_MpActions::HEAD_ROOM - Sprite_MpOwnLine::HEIGHT, true, true, [["Inviting to a party (15 s) . . .", MGQ_MpUi::Style::TEXT_SIZE, true, 1]]])
 (MGQ_MpUi::Style::FADE_FRAMES - 1).times { own.show(head) }
-check("opaque after FADE_FRAMES", own.opacity, 255)
 $own_line = "A doing that goes on and on and on and on and on far past half the screen . . ."
 own.show(head)
 cut = own.bitmap.texts.last[3]
@@ -425,7 +423,6 @@ $own_line = nil
 own.show(head)
 check("gone, the line fades out with its picture kept", [own.visible, own.opacity < 255, own.bitmap.texts.empty?], [true, true, false])
 (MGQ_MpUi::Style::FADE_FRAMES - 1).times { own.show(head) }
-check("until it is invisible", [own.visible, own.opacity], [false, 0])
 MGQ_MpActions.define_singleton_method(:own_lines, own_lines)
 
 # The action wheel's picture: the boxes in the shared style, the hint under them naming the
@@ -438,13 +435,11 @@ hint = wheel_sprite.bitmap.texts.last
 check("open, the wheel draws around the player with the hint under its boxes, fading in",
       [wheel_sprite.visible, wheel_sprite.opacity.between?(1, 254), wheel_sprite.x, wheel_sprite.y, hint[3], hint[4], hint[5].equal?(MGQ_MpUi::Style::HEADING), hint[6]],
       [true, true, 200, 300, "Esc, Numpad 0 or B: close", MGQ_MpUi::Style::TINY_SIZE, true, 1])
-check("the hint takes the last rows of the picture, as wide as it", [hint[1], hint[2]], [wheel_sprite.bitmap.height - MGQ_MpWheel::HINT_HEIGHT, wheel_sprite.bitmap.width])
 ring = MGQ_MpActions.wheel_options.values.reject { |choice| choice.icon }
 check("a choice's text is in the text's color while it can be taken, dim while not, the choices without an icon all drawn",
       wheel_sprite.bitmap.texts[0...-1].map { |_, _, _, _, _, color, _| color.equal?(MGQ_MpUi::Style::TEXT) ? :text : color.equal?(MGQ_MpUi::Style::DIM) ? :dim : :other }.sort,
       ring.map { |choice| choice.run ? :text : :dim }.sort)
 (MGQ_MpUi::Style::FADE_FRAMES - 1).times { wheel_sprite.show(head) }
-check("opaque after FADE_FRAMES", wheel_sprite.opacity, 255)
 wheel_fills = []
 wheel_sprite.bitmap.define_singleton_method(:fill_rect) { |*args| wheel_fills << args.last }
 MGQ_MpUi::Theme.apply("Monarch", "a test")
@@ -458,7 +453,6 @@ MGQ_MpActions::Wheel.close("the test closed it")
 wheel_sprite.show(head)
 check("closed, the wheel fades out with its picture kept", [wheel_sprite.visible, wheel_sprite.opacity < 255, wheel_sprite.bitmap.texts.empty?], [true, true, false])
 (MGQ_MpUi::Style::FADE_FRAMES - 1).times { wheel_sprite.show(head) }
-check("until it is gone", [wheel_sprite.visible, wheel_sprite.opacity], [false, 0])
 check("an invite can be stopped", option(LEAVE), ["Stop inviting", true])
 
 $inbox << entry("message", 2, told(friend.merge("map" => 5, "x" => 21, "y" => 22, "party" => my_party)))

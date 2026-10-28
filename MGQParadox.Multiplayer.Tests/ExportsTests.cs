@@ -2,6 +2,7 @@
 //  ExportsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Compared every export with the table of GameScript/Multiplayer.rb in one test
 //      Paulinchen  2026-10-24: Covered mp_mod_browser_details
 //                            - Covered the Mods screen's exports
 //      Paulinchen  2026-10-23: Dropped the checks of the directory exports the world screen no longer calls
@@ -19,10 +20,12 @@
 //----------------------------------------------------------------
 
 using System;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace MGQParadox.Multiplayer.Tests;
 
@@ -96,73 +99,26 @@ public sealed unsafe class ExportsTests
     }
 
     /// <summary>
-    /// Asserts that mp_dev_build and mp_memory_usage are exported under the names the game script
-    /// calls, each taking what GameScript/Multiplayer.rb names for it, and that no export takes more
-    /// than the 16 arguments the game's Win32API loads.
+    /// Asserts that every export takes the arguments the EXPORTS table of GameScript/Multiplayer.rb
+    /// names for it and returns a long, and that none takes more than the 16 arguments the game's
+    /// Win32API loads.
     /// </summary>
     [Fact]
-    public void ParkingExports_AreRegistered()
+    public void Exports_TakeWhatTheScriptsTableNames()
     {
-        var exported = typeof(Exports).GetMethods(BindingFlags.Public | BindingFlags.Static)
+        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "GameScript", "Multiplayer.rb"));
+        var readArguments = Regex.Match(source, "READ_ARGUMENTS = '([a-z]+)'").Groups[1].Value;
+        var table = Regex.Matches(Regex.Match(source, @"    EXPORTS = \{.*?\n    \}", RegexOptions.Singleline).Value, "'(mp_[a-z0-9_]+)' => (?:'([a-z]+)'|READ_ARGUMENTS)")
+            .ToDictionary(row => row.Groups[1].Value, row => !row.Groups[2].Success ? readArguments : row.Groups[2].Value == "v" ? string.Empty : row.Groups[2].Value);
+        var exports = typeof(Exports).GetMethods(BindingFlags.Public | BindingFlags.Static)
             .Select(method => (Method: method, Attribute: method.GetCustomAttribute<UnmanagedCallersOnlyAttribute>()))
             .Where(export => export.Attribute?.EntryPoint != null)
-            .ToDictionary(export => export.Attribute!.EntryPoint!, export => string.Concat(export.Method.GetParameters().Select(parameter => parameter.ParameterType == typeof(int) ? 'l' : 'p')));
+            .ToArray();
+        var exported = exports.ToDictionary(export => export.Attribute!.EntryPoint!, export => string.Concat(export.Method.GetParameters().Select(parameter => parameter.ParameterType == typeof(int) ? 'l' : 'p')));
 
-        Assert.Equal(string.Empty, exported["mp_dev_build"]);
-        Assert.Equal("pl", exported["mp_memory_usage"]);
+        Assert.NotEmpty(table);
+        Assert.Equal(table.OrderBy(row => row.Key), exported.OrderBy(row => row.Key));
+        Assert.All(exports, export => Assert.Equal(typeof(int), export.Method.ReturnType));
         Assert.Empty(exported.Where(export => export.Value.Length > 16).Select(export => export.Key));
-    }
-
-    /// <summary>
-    /// Asserts that the bug report's functions are exported under the names the game script calls,
-    /// each taking what GameScript/Multiplayer.rb names for it.
-    /// </summary>
-    [Fact]
-    public void ReportExports_AreRegistered()
-    {
-        var exported = typeof(Exports).GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .Select(method => (Method: method, Attribute: method.GetCustomAttribute<UnmanagedCallersOnlyAttribute>()))
-            .Where(export => export.Attribute?.EntryPoint != null)
-            .ToDictionary(export => export.Attribute!.EntryPoint!, export => string.Concat(export.Method.GetParameters().Select(parameter => parameter.ParameterType == typeof(int) ? 'l' : 'p')));
-
-        Assert.Equal("pll", exported["mp_report_snap"]);
-        Assert.Equal(string.Empty, exported["mp_report_drop_snap"]);
-        Assert.Equal("ppppl", exported["mp_report_send"]);
-        Assert.Equal("pl", exported["mp_report_state"]);
-    }
-
-    /// <summary>
-    /// Asserts that the Mods screen's functions are exported under the names the game script calls,
-    /// each taking what GameScript/Multiplayer.rb names for it.
-    /// </summary>
-    [Fact]
-    public void ModBrowserExports_AreRegistered()
-    {
-        var exported = typeof(Exports).GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .Select(method => (Method: method, Attribute: method.GetCustomAttribute<UnmanagedCallersOnlyAttribute>()))
-            .Where(export => export.Attribute?.EntryPoint != null)
-            .ToDictionary(export => export.Attribute!.EntryPoint!, export => string.Concat(export.Method.GetParameters().Select(parameter => parameter.ParameterType == typeof(int) ? 'l' : 'p')));
-
-        Assert.Equal(string.Empty, exported["mp_mod_browser_refresh"]);
-        Assert.Equal("pl", exported["mp_mod_browser_list"]);
-        Assert.Equal("p", exported["mp_mod_browser_apply"]);
-        Assert.Equal("p", exported["mp_mod_browser_open_page"]);
-        Assert.Equal("p", exported["mp_mod_browser_details"]);
-    }
-
-    /// <summary>
-    /// Asserts that mp_mouse_wheel is exported under the name the game script calls, without
-    /// arguments, as GameScript/Multiplayer.rb names it.
-    /// </summary>
-    [Fact]
-    public void MouseWheelExport_IsRegistered()
-    {
-        var exported = typeof(Exports).GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .Select(method => (Method: method, Attribute: method.GetCustomAttribute<UnmanagedCallersOnlyAttribute>()))
-            .Where(export => export.Attribute?.EntryPoint != null)
-            .ToDictionary(export => export.Attribute!.EntryPoint!, export => export.Method);
-
-        Assert.Empty(exported["mp_mouse_wheel"].GetParameters());
-        Assert.Equal(typeof(int), exported["mp_mouse_wheel"].ReturnType);
     }
 }

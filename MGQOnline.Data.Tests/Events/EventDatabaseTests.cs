@@ -2,6 +2,7 @@
 //  EventDatabaseTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Left the writer's same bytes to the generator's test of two builds
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -139,25 +140,6 @@ public sealed class EventDatabaseTests : IDisposable
         Assert.Equal(2, store.Troop(1)?.MemberCount);
         Assert.Equal([10, 11], store.TroopMembers(1).Select(member => member.EnemyId));
         Assert.Equal(8, Assert.Single(store.Alternatives(7)).OtherTroopId);
-    }
-
-    /// <summary>
-    /// Asserts that two builds of the same rows give the same bytes, even with the rows handed
-    /// over in another order.
-    /// </summary>
-    [Fact]
-    public void Write_GivesTheSameBytesTwice()
-    {
-        string first = Path.Combine(_folder, "first.db");
-        string second = Path.Combine(_folder, "second.db");
-        EventDatabaseWriter.Write(TinyRows.Make(), first);
-        EventRows shuffled = TinyRows.Make();
-        shuffled.Commands.Reverse();
-        shuffled.Lists.Reverse();
-        shuffled.ListReads.Reverse();
-        EventDatabaseWriter.Write(shuffled, second);
-
-        Assert.Equal(File.ReadAllBytes(first), File.ReadAllBytes(second));
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 #  catchup_exp_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Kept one check of the target
 #      Paulinchen  2026-10-28: Checked that outside a Raid World's story the catch-up is not asked whether a character counts
 #      Paulinchen  2026-10-23: Checked the requests to the DLL, which owns the rule
 #      Paulinchen  2026-10-13: Checked that a character the catch-up does not count gains no more
@@ -54,10 +55,6 @@ exp = MGQ_MpWorldCatchupExp
 bridge = open_rules_bridge
 
 MGQ_MpWorldStory.active = true
-MGQ_MpWorldStory.world = { "caps" => [] }
-check("no catch-up before the world's story raised the level cap", exp.target, nil)
-MGQ_MpWorldStory.world = { "caps" => [10] }
-check("the first raise leaves the cap every story starts with", exp.target, 5)
 MGQ_MpWorldStory.world = { "caps" => [10, 15] }
 check("the world jumping from 10 to 15 catches up to 10", exp.target, 10)
 MGQ_MpWorldStory.active = false

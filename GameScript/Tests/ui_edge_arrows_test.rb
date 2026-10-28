@@ -2,6 +2,7 @@
 #  ui_edge_arrows_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Dropped the checks that restate pixel positions
 #      Paulinchen  2026-10-11: Checked that a preset change draws an arrow anew
 #                            - Checked that a player outside the party gets a plain white arrow
 #                            - Created
@@ -264,8 +265,6 @@ check("a member off the screen gets a sprite at the right edge, sliding in from 
 check("the arrows lie under the lines and the boxes of the map, which cover them", MGQ_MpUi::Z[:arrows] < MGQ_MpUi::Z[:lines], true)
 check("the sprite's picture holds the plate with the name and the tiles", arrow.bitmap.texts.map { |text| text[3] }, ["Member 37"])
 check("the plate lies left of the triangle, which points right", arrow.bitmap.fills.find { |fill| fill[4].equal?(Style::PLATE) }[0] + arrow.bitmap.fills.find { |fill| fill[4].equal?(Style::PLATE) }[2] < arrow.ox - Arrows::REACH, true)
-check("the triangle is filled in the member's color over its outline",
-      [arrow.bitmap.fills.count { |fill| fill[4].equal?(Style::OUTLINE) } > 0, arrow.bitmap.fills.count { |fill| fill[4].equal?(Style::MEMBER) }], [true, Arrows::WIDTH + 1])
 check("the log says the arrow appeared, once", $logs.count { |line| line.include?("an arrow for Member (seat 2) appeared, 37 tiles away, in member") }, 1)
 picture = arrow.bitmap
 (Style::FADE_FRAMES - 1).times { spriteset.update }

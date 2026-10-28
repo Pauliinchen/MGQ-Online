@@ -2,6 +2,7 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Turned only PvP rooms away with UpdateRefusal, world rooms with WorldRoomRefusal
 //      Paulinchen  2026-10-23: Kept the story tracks' frames games send
 //      Paulinchen  2026-10-22: Listed worlds without their mods for newer games once a test says so, and handed out one world with them
 //      Paulinchen  2026-10-17: Told a world's new game the seats that left or came during its handshake
@@ -216,16 +217,15 @@ internal sealed partial class TestRelay : IDisposable
     public TaskCompletionSource? WorldUpgradeHold { get; set; }
 
     /// <summary>
-    /// Turns every world room and PvP room request away once set, as the relay does a game too old
-    /// for it: a world room with 400 and the code "update" in X-MGQ-Refusal, a PvP room with 426,
+    /// Turns every PvP room request away with 426 once set, as the relay does a game too old for it,
     /// naming this text in X-MGQ-Refusal unless it is empty.
     /// </summary>
     public string? UpdateRefusal { get; set; }
 
     /// <summary>
     /// Turns every world room request away with this status, naming the code in X-MGQ-Refusal unless
-    /// it is <see langword="null"/>, as an older or self-hosted relay may; ahead of
-    /// <see cref="UpdateRefusal"/>.
+    /// it is <see langword="null"/>, as the relay does a game too old for it with 400 and "update", and
+    /// an older or self-hosted relay may otherwise.
     /// </summary>
     public (int Status, string? Code)? WorldRoomRefusal { get; set; }
 
@@ -544,13 +544,6 @@ internal sealed partial class TestRelay : IDisposable
             }
 
             Refuse(context, status);
-            return;
-        }
-
-        if (context.Request.IsWebSocketRequest && parts is [_, "world", _] && UpdateRefusal != null)
-        {
-            context.Response.Headers["X-MGQ-Refusal"] = "update";
-            Refuse(context, 400);
             return;
         }
 

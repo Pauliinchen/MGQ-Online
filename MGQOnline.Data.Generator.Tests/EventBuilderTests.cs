@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-30: Expected the fingerprint of format 2, which counts entries by what they hold and the two skills the game appends
+//                            - Handed the second build's rows to the writer in another order
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -241,7 +242,8 @@ public sealed class EventBuilderTests
     }
 
     /// <summary>
-    /// Asserts that two builds of the same game write the same bytes.
+    /// Asserts that two builds of the same game write the same bytes, even with the second's rows
+    /// handed to the writer in another order.
     /// </summary>
     [Fact]
     public void Build_WritesTheSameBytesTwice()
@@ -254,7 +256,15 @@ public sealed class EventBuilderTests
             {
                 TinyGame game = new TinyGame().Event(1, C(355, "$game_variables[5] += 1"), C(301, 0, 12, true, false)).Common(2, C(117, 2)).Troop(1, [5]);
                 string path = Path.Combine(folder, $"events{build}.db");
-                EventDatabaseWriter.Write(EventBuilder.Build(game.Files(), new BuildOptions()), path);
+                EventRows rows = EventBuilder.Build(game.Files(), new BuildOptions());
+                if (build == 1)
+                {
+                    rows.Commands.Reverse();
+                    rows.Lists.Reverse();
+                    rows.ListReads.Reverse();
+                }
+
+                EventDatabaseWriter.Write(rows, path);
                 builds[build] = File.ReadAllBytes(path);
             }
 

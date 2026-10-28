@@ -2,6 +2,7 @@
 //  ModFolderTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Checked the paths in one test
 //      Paulinchen  2026-10-15: Checked the name of a day's log
 //      Paulinchen  2026-10-07: Checked the name of a session's log
 //      Paulinchen  2026-10-06: Checked that the DLL's log lands in the Logs folder
@@ -24,32 +25,17 @@ public sealed class ModFolderTests
     private const string ModFolderPath = @"C:\Games\MGQ\Patch\Multiplayer";
 
     /// <summary>
-    /// Asserts that a relative path starts at the game's folder, two folders above the mod folder.
+    /// Asserts that a relative path starts at the game's folder, two folders above the mod folder, the
+    /// DLL's log in its Logs folder, which every mod writes its logs to, and that a full path stays as it is.
     /// </summary>
     [Fact]
-    public void GamePathOf_Relative_StartsAtTheGameFolder()
+    public void GamePathOf_StartsARelativePathAtTheGameFolder()
     {
+        var full = Path.Combine(Path.GetTempPath(), "Save01.rvdata2");
+
         Assert.Equal(@"C:\Games\MGQ\Save\Save01.rvdata2", ModFolder.GamePathOf("Save/Save01.rvdata2", ModFolderPath));
         Assert.Equal(@"C:\Games\MGQ\Patch\Multiplayer\Worlds\ab12", ModFolder.GamePathOf("Patch/Multiplayer/Worlds/ab12", ModFolderPath));
-    }
-
-    /// <summary>
-    /// Asserts that the DLL's log lands in the game folder's Logs folder, which every mod writes its logs to.
-    /// </summary>
-    [Fact]
-    public void GamePathOf_Log_IsInTheLogsFolder()
-    {
         Assert.Equal(@"C:\Games\MGQ\Logs\Multiplayer 2026-10-07.log", ModFolder.GamePathOf(Log.FileNameOf(new System.DateTime(2026, 10, 7, 18, 30, 5)), ModFolderPath));
-    }
-
-    /// <summary>
-    /// Asserts that a full path stays as it is.
-    /// </summary>
-    [Fact]
-    public void GamePathOf_Full_StaysAsItIs()
-    {
-        var path = Path.Combine(Path.GetTempPath(), "Save01.rvdata2");
-
-        Assert.Equal(path, ModFolder.GamePathOf(path, ModFolderPath));
+        Assert.Equal(full, ModFolder.GamePathOf(full, ModFolderPath));
     }
 }

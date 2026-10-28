@@ -2,6 +2,8 @@
 #  world_open_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Kept one check of each squad and seats topic
+#                            - Left the hints fitting their lines to world_data_test.rb
 #      Paulinchen  2026-10-28: Checked that the title screen opens the world screen for an invite once
 #                            - Checked that a later screen of the session reads the list on its first look
 #      Paulinchen  2026-10-23: Took a world off this PC through the stand-in's own state
@@ -460,7 +462,6 @@ check("a world without a description says so at the bottom", texts.last, "No des
 
 # The seats, which the world code tells.
 check("a world's code tells its seats", local_world("abcdef012345", "code" => "mgqmp2;abcdefghjkmnpqrs;r1;8").seats, 8)
-check("a code without them tells none", local_world("abcdef012345", {}).seats, 0)
 
 # Raid Worlds: the type and companion sharing the list reads, their place and colour, the details,
 # world.ini, what every script asks of the open world, and the new world's form.
@@ -564,9 +565,6 @@ check("squad rules read from their text", [MGQ_MpWorld.squad_of("0 4 1 1"), MGQ_
       [{ :luka => false, :formation => 4, :front => 1, :raid_front => 1 }, { :luka => true, :formation => 0, :front => 4, :raid_front => 3 },
        { :luka => true, :formation => 8, :front => 2, :raid_front => 2 }])
 check("and written back the same", ["0 4 1 1", "1 0 4 3", "1 8 2 2"].map { |text| MGQ_MpWorld.squad_text(MGQ_MpWorld.squad_of(text)) }, ["0 4 1 1", "1 0 4 3", "1 8 2 2"])
-check("an empty text, one spaced otherwise or a value out of its range is none",
-      [nil, "", " 1  8 2 2 ", "0 4 1", "0 4 1 1 1", "2 4 1 1", "0 3 1 1", "0 9 1 1", "0 4 0 1", "0 4 1 5", "0 4 -1 1", "a 4 1 1", "0 4.0 1 1"].map { |text| MGQ_MpWorld.squad_of(text) },
-      [nil] * 13)
 check("Formation sizes are named for texts", [MGQ_MpWorld.formation_name(0), MGQ_MpWorld.formation_name(4), MGQ_MpWorld.formation_name(8)], ["Original", "4", "8"])
 check("outside a world there are no squad rules", MGQ_MpWorld.squad, nil)
 MGQ_MpWorld.instance_variable_set(:@world, local_world("abcdef012345", "code" => "x", "type" => "classic", "squad" => "1 6 2 2"))
@@ -624,7 +622,6 @@ raid_form[:type] = 1
 raid_form[:share] = 1
 share_field = raid_form.fields.find { |field| field.key == :share }
 check("a Raid World brings it back below the type", [share_field.kind, share_field.row, share_field.choices.size, raid_form.type, raid_form.share], [:switch, 3, 3, "raid", "story"])
-check("whose hints fit the lines at the top", [type_field.hint.size <= 100, share_field.hint.size <= 100], [true, true])
 
 # Turning the form's switches on the world screen.
 scene = form_scene

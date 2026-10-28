@@ -2,6 +2,7 @@
 //  WorldScreenModelTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Dropped the comparison of the screen texts with their copy in screen.json
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -43,24 +44,6 @@ public sealed class WorldScreenModelTests
             Same(entry.GetProperty("actions"), new JsonArray([.. WorldScreenModel.Actions(world, facts).Select(action => (JsonNode)new JsonArray(action.Label, action.Symbol, action.Enabled))]), name + ": the choices");
             Same(entry.GetProperty("players"), Lines(world.Listed == null ? [] : WorldScreenModel.PlayerLines(world.Listed.Members, facts.Me)), name + ": the players");
             Same(entry.GetProperty("mods"), Lines(world.Listed == null ? [] : WorldScreenModel.ModLines(world.Listed, facts)), name + ": the mods");
-        }
-    }
-
-    /// <summary>
-    /// Asserts that the screen says what the script said.
-    /// </summary>
-    [Fact]
-    public void Texts_AreTheScriptTexts()
-    {
-        JsonElement texts = Fixtures.Read("screen", "screen.json").GetProperty("texts");
-
-        Assert.Equal(WorldScreenModel.Hint, Text(texts, "hint"));
-        Assert.Equal(WorldScreenModel.EnterHint, Text(texts, "enter_hint"));
-        Assert.Equal(texts.GetProperty("busy").EnumerateObject().Select(pair => (pair.Name, pair.Value.GetString())), WorldScreenModel.BusyTexts.Select(pair => (pair.Key, (string?)pair.Value)));
-        foreach (JsonElement state in texts.GetProperty("mod_states").EnumerateArray())
-        {
-            ModPickState named = System.Enum.Parse<ModPickState>(state[0].GetString()!, ignoreCase: true);
-            Assert.Equal((state[1].GetString(), state[2].GetString()), (ModPickStates.NameOf(named), ModPickStates.ColorOf(named)));
         }
     }
 

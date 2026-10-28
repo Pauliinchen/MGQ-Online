@@ -2,6 +2,7 @@
 //  mods.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Left the mod keys to the golden keys
 //      Paulinchen  2026-10-23: Checked modKey against the golden keys the game's ModKey passes too
 //      Paulinchen  2026-10-22: Covered a check whose link still leads to the same release
 //                            - Published a new release before holding the schedule's check, which reads only new ones
@@ -213,12 +214,6 @@ test("the options route reads a body larger than the other routes take", async (
   const answer = await handleModRequest(catalog, "POST", new URL("https://relay/v1/mods/levelcap/options"), async () => body, async () => null);
   assert.equal(answer.status, 200);
   assert.equal((await catalog.list()).body.mods[0].options[0].choices.length, 60);
-});
-
-test("modKey compares names the way the games do", () => {
-  assert.equal(modKey("Level_Cap.rb"), "levelcap");
-  assert.equal(modKey("Level Cap"), "levelcap");
-  assert.equal(modKey("Luka-Replacer"), "lukareplacer");
 });
 
 test("modKey still makes the golden keys, which the game's ModKey makes too", () => {

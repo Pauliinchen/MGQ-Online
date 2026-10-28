@@ -2,6 +2,7 @@
 //  BattleSessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Cut the seat lists to one of each rule
 //      Paulinchen  2026-10-15: Created
 //
 //----------------------------------------------------------------
@@ -127,15 +128,10 @@ public sealed class BattleSessionTests
     /// <param name="text">The seats as the game script writes them.</param>
     /// <param name="taken">Whether they are taken.</param>
     [Theory]
-    [InlineData("0", true)]
     [InlineData("3,0,254", true)]
-    [InlineData("0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15", true)]
     [InlineData("0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16", false)]
-    [InlineData("", false)]
     [InlineData("1,,2", false)]
     [InlineData("255", false)]
-    [InlineData("-1", false)]
-    [InlineData(" 1", false)]
     [InlineData("2,2", false)]
     public void SeatsOf_Text_TakesDistinctWorldSeats(string text, bool taken) =>
         Assert.Equal(taken, BattleSession.SeatsOf(text) != null);

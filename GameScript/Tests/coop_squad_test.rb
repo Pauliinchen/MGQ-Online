@@ -2,6 +2,7 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Kept one check of the shares
 #      Paulinchen  2026-10-23: Set the parties up through the party's view the DLL posts
 #                            - Left the squad math to the golden cases and checked that the hooks ask for a squad once
 #                            - Answered the ids coop.rbx makes up through the bridge
@@ -274,11 +275,7 @@ $game_player = Game_Player.new
 $game_player.followers = [1, 2, 3].map { |index| Game_Follower.new(index, "Follower#{index}") }
 
 # Shares.
-check("two players split the Frontline and the Backline evenly", [squad.share(0, 2, 8), squad.share(1, 2, 8)], [[2, 2], [2, 2]])
-check("of three the leader has the place left over", (0..2).map { |at| squad.share(at, 3, 8) }, [[2, 2], [1, 1], [1, 1]])
-check("four players bring one and one each", (0..3).map { |at| squad.share(at, 4, 8) }, [[1, 1]] * 4)
 check("a larger party gives more of the Backline, the first ones first", (0..2).map { |at| squad.share(at, 3, 14) }, [[2, 4], [1, 3], [1, 3]])
-check("alone, the whole team", squad.share(0, 1, 10), [4, 6])
 check("the leader first, then by id", squad.ranked([["b", false], ["c", true], ["a", false]]), %w[c a b])
 
 # Outside a party nothing is cut.

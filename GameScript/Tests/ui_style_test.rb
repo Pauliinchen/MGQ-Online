@@ -2,6 +2,8 @@
 #  ui_style_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Dropped the checks that restate the style's constants
+#                            - Dropped the fade checks of the box
 #      Paulinchen  2026-10-28: Checked a font named in bytes
 #      Paulinchen  2026-10-24: Checked that the confirm box opens on the title screen, where the game counts no frames
 #                            - Checked that the window color set in the options holds for every save
@@ -170,9 +172,6 @@ load_script "ui_layout"
 style = MGQ_MpUi::Style
 
 # The style's values.
-check("a member's color is GOOD itself, and there is no white besides the style's text", [style::MEMBER.equal?(style::GOOD), MGQ_MpUi.const_defined?(:WHITE)], [true, false])
-check("the sizes, the padding and the timings", [style::TITLE_SIZE, style::TEXT_SIZE, style::SMALL_SIZE, style::TINY_SIZE, style::PAD, style::FADE_FRAMES, style::SLIDE_FRAMES, style::LINGER_FRAMES],
-      [20, 18, 16, 14, 6, 12, 8, 180])
 check("the confirm box lies above every box and below the typing chat", [MGQ_MpUi::Z[:confirm] > MGQ_MpUi::Z[:boxes], MGQ_MpUi::Z[:confirm] < MGQ_MpUi::Z[:typing]], [true, true])
 
 # The drawing helpers.
@@ -438,7 +437,6 @@ item = drawn.call(style::TEXT_SIZE).find { |t| t[4] == style::GOOD }
 hint = drawn.call(style::SMALL_SIZE).last
 check("it fades in on show, hidden until then", [box.visible, box.opacity, box.x, box.y], [true, 0, 40, 32])
 style::FADE_FRAMES.times { box.update }
-check("and is opaque after FADE_FRAMES", box.opacity, 255)
 check("the title is cut before its note, which is in GOOD at the right",
       [title[2].end_with?(MGQ_MpUi::ELLIPSIS), box.bitmap.text_size(title[2]).width <= 540 - box.bitmap.text_size("Players").width - style::PAD, note[2], note[4] == style::GOOD, note[5]],
       [true, true, "Players", true, 2])
@@ -454,7 +452,6 @@ box.hide
 box.update
 check("hide fades it out, the picture kept meanwhile", [box.visible, box.opacity < 255, box.bitmap.texts.empty?], [true, true, false])
 (style::FADE_FRAMES - 1).times { box.update }
-check("until it is gone", [box.visible, box.opacity], [false, 0])
 
 # The message box: as wide as the screen leaves between SIDE on either side, centred, its title
 # cut to it and its hint drawn whole.

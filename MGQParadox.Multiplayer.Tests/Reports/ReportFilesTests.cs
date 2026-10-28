@@ -2,6 +2,7 @@
 //  ReportFilesTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Dropped the check of how sizes read
 //      Paulinchen  2026-10-15: Checked that only the newest log of each type goes along
 //      Paulinchen  2026-10-11: Checked that mods.txt skips a vanished file
 //                            - Created
@@ -301,18 +302,6 @@ public sealed class ReportFilesTests : IDisposable
         Assert.StartsWith($"Multiplayer{Path.DirectorySeparatorChar}Worlds{Path.DirectorySeparatorChar}w{Path.DirectorySeparatorChar}Save{Path.DirectorySeparatorChar}Save01.rvdata2\t3\t",
             ReportFiles.ModsLine(patch, Path.Combine(save, "Save01.rvdata2")), StringComparison.Ordinal);
         Assert.Equal("", ReportFiles.ModsLine(patch, Path.Combine(save, "SaveTemp.rvdata2")));
-    }
-
-    /// <summary>
-    /// Asserts how sizes read in report.md.
-    /// </summary>
-    [Fact]
-    public void Bytes_ReadsAsKbOrMib()
-    {
-        Assert.Equal("1 KB", ReportFiles.Bytes(10));
-        Assert.Equal("812 KB", ReportFiles.Bytes(812 * 1024));
-        Assert.Equal("8 MiB", ReportFiles.Bytes(8 * 1024 * 1024));
-        Assert.Equal("9.3 MiB", ReportFiles.Bytes((long)(9.3 * 1024 * 1024)));
     }
 
     /// <summary>

@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-30: Checked that the fingerprint counts an entry by its note, features and effects, whatever its name
+#                            - Checked the hints of the Raid World form and its formation limits with every other form's
+#                            - Kept one check of each seats and mods topic
 #      Paulinchen  2026-10-23: Checked that the forms' requests go to the DLL and that the screen plays the steps it answers
 #                            - Left the data check and the mods read on entering to the DLL's tests and checked the steps the screen plays
 #                            - Took the entries, the details and the list box's lines from the stand-ins of the world screen's model
@@ -710,8 +712,15 @@ open_fake_ui { typed = $typed.to_s; $typed = nil; [typed, 0] }
 hinted_raid = listed[1].dup
 hinted_raid.type = MGQ_MpWorld::RAID
 edits = (listed + [hinted_raid]).flat_map { |world| MGQ_MpWorld::WorldForm.edit(:edit_world, world, false).fields + MGQ_MpWorld::WorldForm.edit(:edit_world, world, true).fields }
-long = (MGQ_MpWorld::WorldForm.create(:new_world).fields + MGQ_MpWorld::WorldForm.join(:join_hidden).fields + edits).select { |field| field.hint.size > 100 }
-check("every field's hint fits two lines", long.map { |field| field.key }, [])
+# A new form takes the slot of the one before, so each form's fields are read before the next opens.
+classic_fields = MGQ_MpWorld::WorldForm.create(:new_world).fields
+raid_create = MGQ_MpWorld::WorldForm.create(:new_world)
+raid_create.turn(raid_create.fields.find { |field| field.key == :type }, 1)
+raid_fields = raid_create.fields
+form_fields = classic_fields + raid_fields + raid_create.limits.fields + MGQ_MpWorld::WorldForm.join(:join_hidden).fields
+long = (form_fields + edits).select { |field| field.hint.size > 100 }
+check("every field's hint fits two lines, a Raid World's and its formation limits' too",
+      [long.map { |field| field.key }, [:difficulty, :limits] - raid_fields.map { |field| field.key }], [[], []])
 
 # Changing a world.
 edit = MGQ_MpWorld::WorldForm.edit(:edit_world, listed[1], false)
@@ -771,13 +780,8 @@ check("as Done does", [scene.instance_variable_get(:@form_symbol), scene.form.sq
 world = local_world("abcdef012345", "code" => "mgqmp2;abcdefghjkmnpqrs;r1;4")
 world.describe("Loose", "w2", 8)
 check("a world's code takes the seats the directory lists", [world.seats, world.code], [8, "mgqmp2;abcdefghjkmnpqrs;r1;8"])
-old = local_world("abcdef012345", "code" => "mgqmp2;abcdefghjkmnpqrs;r1")
-old.describe("Old", "w4", 8)
-check("a code without seats stays as it is", old.code, "mgqmp2;abcdefghjkmnpqrs;r1")
 
 # The players and the mods of a world, listed from its choices.
-check("mods are split at each semicolon", MGQ_MpWorld.mods_of(" Mod A ;Mod B;; "), ["Mod A", "Mod B"])
-check("no mods give none", [MGQ_MpWorld.mods_of(""), MGQ_MpWorld.mods_of(nil)], [[], []])
 check("a mod written with an exclamation mark is required, one with a question mark essential, both named first without their mark", [MGQ_MpWorld.mods_of("Mod A; ?Mod D; !Mod B;! Mod C; !; ?"), MGQ_MpWorld.required_mods("Mod A; ?Mod D; !Mod B;! Mod C; !"), MGQ_MpWorld.essential_mods("Mod A; ?Mod D; !Mod B")], [["Mod B", "Mod C", "Mod D", "Mod A"], ["Mod B", "Mod C"], ["Mod D"]])
 MGQ_MpWorld.instance_variable_set(:@installed, [["modb", "Patch/Mod_B.rb", "Mod_B"], ["maskofenvy", "Patch/Mask_of_Envy.rb", "Mask_of_Envy"]])
 check("a mod's script is found by its name, whatever its case, spaces or underscores", ["Mod B", "mod_b.rb", "Mask of Envy", "Mask-Of-Envy", "Mod C"].map { |mod| MGQ_MpWorld.installed_mod?(mod) }, [true, true, true, true, false])

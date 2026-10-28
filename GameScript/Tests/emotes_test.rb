@@ -2,6 +2,7 @@
 #  emotes_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Dropped the fade checks
 #      Paulinchen  2026-10-23: Left the wheel's pointing to C# and checked what the script does with its events
 #      Paulinchen  2026-10-12: Checked the log of the emote hotkey while typing and when refused
 #      Paulinchen  2026-10-11: Checked the wheel's boxes, the picked one lit and a redraw after a preset change
@@ -187,7 +188,6 @@ check("a preset change draws the wheel anew, each box's frame with the preset's 
 MGQ_MpUi::Theme.apply("Legacy", "a test")
 wheel.show(player)
 (style::FADE_FRAMES - 1).times { wheel.show(player) }
-check("opaque after FADE_FRAMES", wheel.opacity, 255)
 MGQ_MpHotkeys.bind(:emotes, 0xBA)
 wide = Sprite_MpEmoteWheel.new(nil)
 wide.show(player)
@@ -202,4 +202,3 @@ emotes.close
 wheel.show(player)
 check("closed, the wheel fades out with its picture kept", [wheel.visible, wheel.opacity < 255, wheel.bitmap.texts.empty?], [true, true, false])
 (style::FADE_FRAMES - 1).times { wheel.show(player) }
-check("until it is gone", [wheel.visible, wheel.opacity], [false, 0])

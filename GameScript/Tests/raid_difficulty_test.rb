@@ -2,6 +2,7 @@
 #  raid_difficulty_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Left the hints fitting their lines to world_data_test.rb
 #      Paulinchen  2026-10-23: Left the calls a new world and an edit hand the directory to the DLL's tests
 #                            - Left where a Raid World's new player starts to the DLL's tests
 #                            - Opened the world screen's forms through the DLL
@@ -221,7 +222,6 @@ raid_bosses = field_of(form, :raid_bosses)
 check("and Raid Bosses beside the Save, unticked, with a narrower Save label so both fit",
       [raid_bosses.kind, raid_bosses.label, raid_bosses.row, raid_bosses.side, raid_bosses.group, form[:raid_bosses], form.raid_bosses?, save.label_width],
       [:check, "Raid Bosses", 4, :right, "World", false, false, 40])
-check("whose hint fits the lines at the top", raid_bosses.hint.size <= 100, true)
 form[:raid_bosses] = true
 check("ticked, the form has raid bosses", form.raid_bosses?, true)
 form[:from_save] = true
@@ -238,7 +238,6 @@ check("a Raid World has no Player's choice, Sharing companions on its row, its o
       [[false, false], 3, [:check, 4, :left], [4, :right, true], [5, :left, 40], 16])
 check("which offers the game's difficulties and starts on NORMAL", [picked.kind, picked.choices, form.difficulty],
       [:switch, ["VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"], 0])
-check("whose hints fit the lines at the top, as the starting point's do", ([picked, raid_from_save] + starting).map { |field| field.hint.size <= 100 }, [true, true, true, true])
 check("Shared save ticked before stays ticked, the player's choice does not, and the form asks for the save", [form.from_save?, form.choose?, form.problem],
       [true, false, [8, "Choose the save its players start from."]])
 form.turn(picked, 1)
@@ -281,7 +280,6 @@ check("whose title says what it sets", limits_form.title, "Formation limits")
 check("the switches offer Original and 4 to 8, and 1 to 4", squad_fields[1..3].map { |field| field.choices },
       [["Original", "4", "5", "6", "7", "8"], ["1", "2", "3", "4"], ["1", "2", "3", "4"]])
 check("which start on the defaults: Luka fixed, a team of four, one in front", squad_form.squad, { :luka => false, :formation => 4, :front => 1, :raid_front => 1 })
-check("whose hints fit the lines at the top", (squad_fields + [limits, field_of(limits_form, :done)]).map { |field| field.hint.size <= 100 }, [true] * 6)
 limits_form.tick(:luka)
 limits_form.turn(squad_fields[1], -1)
 limits_form.turn(squad_fields[2], 1)
@@ -306,7 +304,6 @@ bosses_field = field_of(bosses_edit, :raid_bosses)
 check("a Classic world's edit form has Raid Bosses below Max Players, ticked as the world is",
       [bosses_edit.fields.index(bosses_field), bosses_field.kind, bosses_field.row, bosses_field.group, bosses_edit[:raid_bosses], bosses_edit.raid_bosses?],
       [1, :check, 1, "World", true, true])
-check("whose hint fits the lines at the top", bosses_field.hint.size <= 100, true)
 bosses_listed.raid_bosses = false
 check("unticked for a world without them", MGQ_MpWorld::WorldForm.edit(:edit_world, bosses_listed, false).raid_bosses?, false)
 check("and a Raid World's edit form has none", field_of(MGQ_MpWorld::WorldForm.edit(:edit_world, squad_listed.tap { |world| world.type = "raid" }, true), :raid_bosses), nil)

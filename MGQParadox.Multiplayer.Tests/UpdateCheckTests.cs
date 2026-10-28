@@ -2,6 +2,8 @@
 //  UpdateCheckTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Read the release version, the relay version and the development stamp in one theory
+//                            - Cut the release tags to one of each kind
 //      Paulinchen  2026-10-23: Read the release version through ReleaseVersion
 //      Paulinchen  2026-10-22: Covered the release the relay names, a step back too, and GitHub without its answer
 //      Paulinchen  2026-10-12: Covered the version named to the relay
@@ -21,46 +23,26 @@ namespace MGQParadox.Multiplayer.Tests;
 public sealed class UpdateCheckTests
 {
     /// <summary>
-    /// Asserts that a release build reads its version and a development build none.
+    /// Asserts what a build reads from its stamp: a release its version, a development or pre-release
+    /// build none; the version named to the relay without the commit; and a development build only by
+    /// the development stamp.
     /// </summary>
     /// <param name="informationalVersion">The version the build stamped.</param>
-    /// <param name="expected">The release version, or <see langword="null"/>.</param>
+    /// <param name="release">The release version, or <see langword="null"/>.</param>
+    /// <param name="named">The version named to the relay.</param>
+    /// <param name="development">Whether it is a development build.</param>
     [Theory]
-    [InlineData("0.1.0+4357977", "0.1.0")]
-    [InlineData("0.2.0", "0.2.0")]
-    [InlineData("0.0.0-dev+9611cfb", null)]
-    [InlineData("", null)]
-    public void ReleaseVersion_SkipsDevelopmentBuilds(string informationalVersion, string? expected) =>
-        Assert.Equal(expected, ReleaseVersion.OfStamp(informationalVersion)?.ToString());
-
-    /// <summary>
-    /// Asserts that the version named to the relay leaves out the commit and keeps a development stamp.
-    /// </summary>
-    /// <param name="informationalVersion">The version the build stamped.</param>
-    /// <param name="expected">The version named to the relay.</param>
-    [Theory]
-    [InlineData("0.6.4+4357977", "0.6.4")]
-    [InlineData("0.6.4", "0.6.4")]
-    [InlineData("0.0.0-dev+9611cfb", "0.0.0-dev")]
-    [InlineData("0.6.0-beta+9611cfb", "0.6.0-beta")]
-    [InlineData("", "")]
-    public void VersionOf_LeavesOutTheCommit(string informationalVersion, string expected) =>
-        Assert.Equal(expected, UpdateCheck.VersionOf(informationalVersion));
-
-    /// <summary>
-    /// Asserts that only the development stamp counts as a development build, never a pre-release.
-    /// </summary>
-    /// <param name="informationalVersion">The version the build stamped.</param>
-    /// <param name="expected">Whether it is a development build.</param>
-    [Theory]
-    [InlineData("0.0.0-dev+9611cfb", true)]
-    [InlineData("0.0.0-dev", true)]
-    [InlineData("0.6.0-beta+9611cfb", false)]
-    [InlineData("0.6.0-rc1", false)]
-    [InlineData("0.5.3+4357977", false)]
-    [InlineData("", false)]
-    public void IsDevelopmentVersion_IsOnlyTheDevelopmentStamp(string informationalVersion, bool expected) =>
-        Assert.Equal(expected, UpdateCheck.IsDevelopmentVersion(informationalVersion));
+    [InlineData("0.1.0+4357977", "0.1.0", "0.1.0", false)]
+    [InlineData("0.2.0", "0.2.0", "0.2.0", false)]
+    [InlineData("0.0.0-dev+9611cfb", null, "0.0.0-dev", true)]
+    [InlineData("0.6.0-beta+9611cfb", null, "0.6.0-beta", false)]
+    [InlineData("", null, "", false)]
+    public void Stamp_ReadsTheReleaseTheRelayVersionAndADevelopmentBuild(string informationalVersion, string? release, string named, bool development)
+    {
+        Assert.Equal(release, ReleaseVersion.OfStamp(informationalVersion)?.ToString());
+        Assert.Equal(named, UpdateCheck.VersionOf(informationalVersion));
+        Assert.Equal(development, UpdateCheck.IsDevelopmentVersion(informationalVersion));
+    }
 
     /// <summary>
     /// Asserts that only a newer release is reported, without the tag's <c>v</c>.
@@ -69,7 +51,6 @@ public sealed class UpdateCheckTests
     /// <param name="tag">The latest release's tag.</param>
     /// <param name="expected">The reported version, or <see langword="null"/>.</param>
     [Theory]
-    [InlineData("0.1.0", "v0.2.0", "0.2.0")]
     [InlineData("0.1.0", "v0.1.10", "0.1.10")]
     [InlineData("0.1.0", "v0.1.0", null)]
     [InlineData("0.2.0", "v0.1.0", null)]

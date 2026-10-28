@@ -2,6 +2,7 @@
 //  SessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Covered an unreachable relay and an outdated game for host and guest in one test each
 //      Paulinchen  2026-10-12: Covered the relay turning an outdated host or guest away
 //      Paulinchen  2026-10-07: Took the message the session handed out
 //      Paulinchen  2026-10-06: Covered kept invites, hosting that nobody joins and teams too large to send
@@ -184,30 +185,21 @@ public sealed class SessionTests
     }
 
     /// <summary>
-    /// Asserts that a guest who cannot reach the relay says so.
+    /// Asserts that a guest and a host who cannot reach the relay say so, and that the host never
+    /// offers a join code.
     /// </summary>
     [Fact]
-    public void UnreachableRelay_FailsJoining()
+    public void UnreachableRelay_FailsJoiningAndHosting()
     {
         var guest = NewSession("Guest", new Uri($"ws://127.0.0.1:{FreePort()}"));
+        var host = NewSession("Host", new Uri($"ws://127.0.0.1:{FreePort()}"));
 
         guest.Join(CodeWithoutHost, "3.06", "guest team");
+        host.Host("3.06", "host team");
 
         var guestSide = AwaitSettled(guest);
         Assert.Equal("failed", guestSide["state"]);
         Assert.Contains("relay could not be reached", guestSide["error"]);
-    }
-
-    /// <summary>
-    /// Asserts that a host who cannot reach the relay fails without ever offering a join code.
-    /// </summary>
-    [Fact]
-    public void UnreachableRelay_FailsHosting()
-    {
-        var host = NewSession("Host", new Uri($"ws://127.0.0.1:{FreePort()}"));
-
-        host.Host("3.06", "host team");
-
         var hostSide = AwaitSettled(host);
         Assert.Contains("relay could not be reached", hostSide["error"]);
         Assert.Equal(string.Empty, hostSide["code"]);
@@ -215,38 +207,34 @@ public sealed class SessionTests
     }
 
     /// <summary>
-    /// Asserts that a guest the relay turns away as too old is told the relay's text.
+    /// Asserts that a guest the relay turns away as too old is told the relay's text, and a host
+    /// turned away without a text is told to update and never offers a join code.
     /// </summary>
     [Fact]
-    public void OutdatedGame_FailsJoiningWithTheRelayText()
+    public void OutdatedGame_FailsJoiningAndHosting()
     {
-        using var relay = new TestRelay();
-        var guest = NewSession("Guest", relay.Address);
         const string text = "This relay serves MGQ Online 0.7.0 and newer.";
 
-        relay.UpdateRefusal = text;
-        guest.Join(CodeWithoutHost, "3.06", "guest team");
+        using (var relay = new TestRelay())
+        {
+            var guest = NewSession("Guest", relay.Address);
+            relay.UpdateRefusal = text;
+            guest.Join(CodeWithoutHost, "3.06", "guest team");
 
-        var guestSide = AwaitSettled(guest);
-        Assert.Equal(("failed", text), (guestSide["state"], guestSide["error"]));
-    }
+            var guestSide = AwaitSettled(guest);
+            Assert.Equal(("failed", text), (guestSide["state"], guestSide["error"]));
+        }
 
-    /// <summary>
-    /// Asserts that a host the relay turns away as too old without a text is told to update and
-    /// never offers a join code.
-    /// </summary>
-    [Fact]
-    public void OutdatedGame_FailsHostingWithoutText()
-    {
-        using var relay = new TestRelay();
-        var host = NewSession("Host", relay.Address);
+        using (var relay = new TestRelay())
+        {
+            var host = NewSession("Host", relay.Address);
+            relay.UpdateRefusal = string.Empty;
+            host.Host("3.06", "host team");
 
-        relay.UpdateRefusal = string.Empty;
-        host.Host("3.06", "host team");
-
-        var hostSide = AwaitSettled(host);
-        Assert.Equal(("failed", "Update MGQ Online to play online."), (hostSide["state"], hostSide["error"]));
-        Assert.Equal(string.Empty, hostSide["code"]);
+            var hostSide = AwaitSettled(host);
+            Assert.Equal(("failed", "Update MGQ Online to play online."), (hostSide["state"], hostSide["error"]));
+            Assert.Equal(string.Empty, hostSide["code"]);
+        }
     }
 
     /// <summary>

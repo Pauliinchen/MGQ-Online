@@ -2,6 +2,7 @@
 #  compat_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Checked what Ruby 1.9.2 had and later Rubies dropped in one check
 #      Paulinchen  2026-10-15: Created
 #
 #----------------------------------------------------------------
@@ -47,8 +48,5 @@ check("so do the others of the loop", GameWrapper.public_method_defined?(:mat), 
 check("an ordinary def after private stays private", Class.new { private; def hidden; end }.private_method_defined?(:hidden), true)
 
 # What Ruby 1.9.2 had and later Rubies dropped.
-check("Fixnum is Integer", Fixnum, Integer)
-check("Object#=~ matches nothing", Object.new =~ /x/, nil)
-check("Hash#index finds a key by its value", { a: 1, b: 2 }.index(2), :b)
-check("File.exists? is back", File.exists?(__FILE__), true)
-check("taint does nothing", "x".taint, "x")
+check("Fixnum is Integer, Object#=~ matches nothing, Hash#index finds a key by its value, File.exists? is back and taint does nothing",
+      [Fixnum, Object.new =~ /x/, { a: 1, b: 2 }.index(2), File.exists?(__FILE__), "x".taint], [Integer, nil, :b, true, "x"])

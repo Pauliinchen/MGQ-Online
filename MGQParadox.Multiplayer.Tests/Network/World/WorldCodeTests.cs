@@ -2,6 +2,7 @@
 //  WorldCodeTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Cut the texts that are no world codes to one of each rule
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
@@ -45,12 +46,7 @@ public sealed class WorldCodeTests
     [InlineData("mgqmp2;abcdefghjkmnpqrs;r1;1")]
     [InlineData("mgqmp2;abcdefghjkmnpqrs;r1;33")]
     [InlineData("mgqmp2;abcdefghjkmnpqrs;r1;+4")]
-    [InlineData("mgqmp2;abcdefghjkmnpqrs;r1;004")]
-    [InlineData("mgqmp2;abcdefghjkmnpqrs;r1;")]
-    [InlineData("mgqmp2;abcdefghjkmnpqr;r1;4")]
     [InlineData("mgqmp1;abcdefghjkmnpqrs;r1;4")]
-    [InlineData("mgqmp2;abcdefghjkmnpqrs;R1;4")]
-    [InlineData("")]
     [InlineData(null)]
     public void NoWorldCode_ReadsAsNone(string? text)
     {

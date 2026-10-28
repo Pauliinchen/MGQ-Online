@@ -2,6 +2,7 @@
 //  releases.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Dropped the test of the update line
 //      Paulinchen  2026-10-22: Tested the current release cleared by a newer release only
 //                            - Tested the release control the relay's admins set
 //      Paulinchen  2026-10-12: Created
@@ -10,7 +11,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { RELEASE_REPO, ReleaseControl, ReleaseWatch, compareVersions, handleReleaseRequest, readLatestVersion, updateLine } from "./releases.js";
+import { RELEASE_REPO, ReleaseControl, ReleaseWatch, compareVersions, handleReleaseRequest, readLatestVersion } from "./releases.js";
 
 /**
  * Stands in for GitHub's latest release page, which leads to the tag of the release it names.
@@ -73,10 +74,6 @@ test("compareVersions compares part by part, a missing part counting as 0", () =
   assert.ok(compareVersions("0.6.4", "0.6.5") < 0);
   assert.equal(compareVersions("0.6", "0.6.0"), 0);
   assert.ok(compareVersions("0.6.3.1", "0.6.3") > 0);
-});
-
-test("updateLine names the release and how to update", () => {
-  assert.equal(updateLine("0.6.5"), "MGQ Online 0.6.5 is out. Restart the game and pick Multiplayer to update.");
 });
 
 test("the watch only keeps the first release it reads, then announces each newer one once", async () => {

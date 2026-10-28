@@ -2,6 +2,7 @@
 #  game_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Checked that the run adds or changes nothing in the game folder's saves, whatever saves it holds
 #      Paulinchen  2026-10-15: Created
 #
 #----------------------------------------------------------------
@@ -20,6 +21,20 @@ end
 require_relative File.join(LIB_DIR, "boot")
 require_relative File.join(LIB_DIR, "battle")
 
+# Lists the files of the game folder's Save folder with their sizes and times, which the tests only
+# read: the folder holds the player's own saves.
+#
+# @return [Hash{String => Array}] Each file's path inside the folder to its size and time; empty
+#   without the folder.
+def save_files
+  folder = File.join(game_dir, "Save")
+  Dir.glob("**/*", base: folder).select { |name| File.file?(File.join(folder, name)) }.to_h do |name|
+    path = File.join(folder, name)
+    [name, [File.size(path), File.mtime(path)]]
+  end
+end
+
+saves_before = save_files
 log = StringIO.new
 Boot.run(log)
 HeadlessBattle.install
@@ -43,4 +58,4 @@ check("a troop without enemies is refused before the battle",
       raised { HeadlessBattle.run(troop_id: 0, party: [[1, 1]]) }&.message, "troop 0 has no enemies")
 check("an actor the database lacks is refused",
       raised { HeadlessBattle.run(troop_id: 1, party: [[99_999, 1]]) }&.message, "actor 99999 is not in the database")
-check("nothing the game writes reaches the disk", Dir.exist?(File.join(game_dir, "Save")) && !Dir.empty?(File.join(game_dir, "Save")), false)
+check("nothing the game writes reaches the disk", save_files, saves_before)

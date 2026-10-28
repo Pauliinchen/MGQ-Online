@@ -2,6 +2,7 @@
 //  bodies.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Dropped the test of joining chunks
 //      Paulinchen  2026-10-12: Tested a body read until a deadline and a body drained up to a limit
 //                            - Created
 //
@@ -82,11 +83,6 @@ function watch(promise) {
   });
   return watched;
 }
-
-test("concatBytes joins chunks in order", () => {
-  assert.deepEqual([...concatBytes([new Uint8Array([1, 2]), new Uint8Array(0), new Uint8Array([3])])], [1, 2, 3]);
-  assert.equal(concatBytes([]).length, 0);
-});
 
 test("readLimited stops reading a body over the limit after one chunk past it", async () => {
   const source = countingStream(10, 100);

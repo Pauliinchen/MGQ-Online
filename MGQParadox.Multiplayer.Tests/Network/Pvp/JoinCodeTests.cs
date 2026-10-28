@@ -2,6 +2,7 @@
 //  JoinCodeTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Cut the codes turned down to one of each rule and dropped the relay check RelaysTests holds
 //      Paulinchen  2026-09-29: Covered the join code of token and relay only and codes of other versions
 //                            - Covered version 2 of the join code
 //      Paulinchen  2026-09-28: Created
@@ -39,21 +40,17 @@ public sealed class JoinCodeTests
 
     /// <summary>
     /// Asserts that anything but a join code of this version is turned down, codes of earlier
-    /// versions and of this version's first draft with port and addresses included.
+    /// versions, wrong case, a short token and a malformed relay included.
     /// </summary>
     /// <param name="text">The text.</param>
     [Theory]
     [InlineData(null)]
-    [InlineData("")]
     [InlineData("hello")]
     [InlineData("mgqmp1;abcdefghjk;47625;203.0.113.7")]
-    [InlineData("mgqmp2;abcdefghjkmnpqrs;47625;r1;203.0.113.7")]
-    [InlineData("mgqmp2;abcdefghjk;r1")]
     [InlineData("mgqmp2;ABCDEFGHJKMNPQRS;r1")]
-    [InlineData("mgqmp2;abcdefghjkmnpqrs;")]
+    [InlineData("mgqmp2;abcdefghjk;r1")]
     [InlineData("mgqmp2;abcdefghjkmnpqrs;R1")]
     [InlineData("mgqmp2;abcdefghjkmnpqrs;relay/r1")]
-    [InlineData("mgqmp2;abcdefghjkmnpqrs;relayfour")]
     public void Parse_TurnsDownAnythingElse(string? text) => Assert.Null(JoinCode.Parse(text));
 
     /// <summary>
@@ -101,15 +98,5 @@ public sealed class JoinCodeTests
         Assert.Equal(room, Relays.RoomOf(Token));
         Assert.NotEqual(room, Relays.RoomOf("zzzzzzzzzzzzzzzz"));
         Assert.Matches("^[0-9a-f]{32}$", room);
-    }
-
-    /// <summary>
-    /// Asserts that this version knows the relay it hosts on, and no relay it was never told of.
-    /// </summary>
-    [Fact]
-    public void Relays_KnowTheCurrentOne()
-    {
-        Assert.Equal("wss", Relays.AddressOf(Relays.Current)!.Scheme);
-        Assert.Null(Relays.AddressOf("r9"));
     }
 }

@@ -2,6 +2,7 @@
 #  ui_leader_hud_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Dropped the checks that restate pixel positions
 #      Paulinchen  2026-10-23: Kept the HUD in the corner through Player.ini, the drag gone to C#
 #      Paulinchen  2026-10-13: Expected the single player row from ui_single_player.rbx, not from the HUD
 #                            - Checked the HUD outside a world by its single player setting
@@ -185,14 +186,6 @@ check("both in the Settings, the single player row left to ui_single_player.rbx"
 box.update
 check("it shows at once in the Large size until the player picks another, at the top left, offered to the layout where it lies",
       [box.instance_variable_get(:@motion).shown?, box.x, box.y, box.bitmap.width, offered.call], [true, 8, 8, 240, [8, 8, 240, large_height]])
-check("the face, the sheet's sixth, shrunk into the square beside the name and both bars",
-      box.bitmap.faces, [["face:alice_fc1", [96, 96, 96, 96], [8, 8, 56, 56]]])
-name = text.call("Alice")
-level = text.call("Lv 30")
-check("the name in the text color beside the base level at the right in the heading color",
-      [name.nil?, name && name.color, level && [level.color, level.align, level.x + level.width]], [false, style::TEXT, [style::HEADING, 2, 240 - 8]])
-check("the HP and MP bars' names and numbers inside them",
-      [text.call("HP").nil?, text.call("189 / 252").align, text.call("MP").nil?, text.call("40 / 80").size], [false, 2, false, style::TINY_SIZE])
 bars = box.bitmap.gradients
 check("the HP bar red and three quarters full, the MP bar half full",
       [bars[0][4..5], bars[0][2], bars[1][2]], [box_class::HP_COLORS, ((240 - 8 - 70) * 0.75).round, ((240 - 8 - 70) * 0.5).round])

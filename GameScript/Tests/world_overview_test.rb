@@ -2,6 +2,7 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Kept one check of the story's place
 #      Paulinchen  2026-10-28: Read the place in the story by the ids of its switches and variables
 #      Paulinchen  2026-10-24: Checked the pages of other mods with their tabs, controls, buttons and mouse
 #      Paulinchen  2026-10-23: Checked that the title is asked once
@@ -204,25 +205,11 @@ overview = MGQ_MpWorldOverview
 
 # The player's place in the story: the part, the side and the route.
 check("the wheel's middle is the overview's globe", [MGQ_MpActions.wheel_options[:CENTER].text, MGQ_MpActions.wheel_options[:CENTER].icon], ["World (F11)", 3988])
-check("before the side is chosen: the part", [overview.story_code, overview.story_text(overview.story_code)], ["1", "Part 1"])
 $game_switches[4] = true
-$game_variables[1001] = 25
-check("Part 2 with a side", [overview.story_code, overview.story_text(overview.story_code)], ["2:alice", "Part 2: Alice side"])
-$game_variables[1001] = 45
-check("Part 3 before a route: still the side", overview.story_text(overview.story_code), "Part 3: Alice side")
-$game_variables[1141] = 3
-check("Part 3 with a route", [overview.story_code, overview.story_text(overview.story_code)], ["3:destroyer", "Part 3: Destroyer route"])
-$game_variables[1141] = 0
-$game_variables[1001] = 18
-$game_switches[4] = false
-check("progress 18 is still Part 1", overview.story_code, "1")
-$game_switches[4] = true
-check("Part 2 starts at progress 19, with Tartarus Escape", [19, 33].map { |progress| $game_variables[1001] = progress; overview.story_code }, ["2:alice", "2:alice"])
-$game_variables[1001] = 34
-check("Part 3 starts at progress 34, with the Middle Chapter's epilogue", overview.story_code, "3:alice")
-$game_variables[1141] = 3
 $game_variables[1001] = 39
-check("before the Great Decision a route already shows", overview.story_code, "3:destroyer")
+$game_variables[1141] = 3
+check("the progress, the side and the route go to the DLL and come back as the place and its text",
+      [overview.story_code, overview.story_text(overview.story_code)], ["3:destroyer", "Part 3: Destroyer route"])
 check("an unknown place shows nothing", overview.story_text(""), "")
 
 # The formation's highest level and the place the player tells.

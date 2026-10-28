@@ -2,6 +2,7 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Dropped the checks of a missing method and of two equal constants
 #      Paulinchen  2026-10-23: Acted on typing a frame after it, as the text box in C# reports it
 #                            - Read the lines sent through the DLL's chat.send, and the names the DLL numbers
 #                            - Read the lines sent here
@@ -458,8 +459,6 @@ high = lambda { |rows| log_class::TAB_ROW + log_class::ROW * (rows + 1) }
 check("the map's, the battle's and the menus' log are boxes of their own, resized both ways, no smaller than the tabs, the hints and the list of names need",
       [:chat, :battle_chat, :menu_chat].map { |id| box = layout.instance_variable_get(:@boxes)[id]; box && [box.name, box.min_width, box.min_height, box.resize] },
       [["Chat", 400, high.call(MGQ_MpChat::SUGGESTIONS), :both], ["Battle chat", 400, high.call(MGQ_MpChat::SUGGESTIONS), :both], ["Menu chat", 400, high.call(MGQ_MpChat::SUGGESTIONS), :both]])
-check("the chat keeps no resizing of its own", [chat.respond_to?(:resize), chat.respond_to?(:keep_size)], [false, false])
-check("the chat's Alt is the layout's", MGQ_MpChat::ALT_KEY, layout::ALT_KEY)
 
 $player_ini.delete("chat_size")
 chat.instance_variable_set(:@size, nil)

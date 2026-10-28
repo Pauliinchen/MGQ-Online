@@ -2,6 +2,7 @@
 #  mod_parking_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Left the hint fitting its lines to world_data_test.rb
 #      Paulinchen  2026-10-23: Left the create and edit calls of Turn off other mods to the DLL's tests
 #                            - Left entering a world that turns other mods off to the DLL's tests and checked the steps the screen plays
 #                            - Read the details and the list box's lines through the stand-ins of the world screen's model
@@ -348,7 +349,7 @@ Dir.mktmpdir do |folder|
     type = form.fields.find { |field| field.key == :type }
     check("the new world's form has Turn off other mods below Shared Mod Settings, unticked for a Classic world",
           [other.kind, other.label, other.group, other.row, form[:other_mods_off]], [:check, "Turn off other mods", "Game data", 8, false])
-    check("whose hint fits the lines at the top and tells that personal mods stay", [other.hint.size <= 100, other.hint.include?("Personal mods stay on")], [true, true])
+    check("whose hint tells that personal mods stay", other.hint.include?("Personal mods stay on"), true)
     form.turn(type, 1)
     check("a Raid World ticks it", form.other_mods_off?, true)
     form.tick(:other_mods_off)
