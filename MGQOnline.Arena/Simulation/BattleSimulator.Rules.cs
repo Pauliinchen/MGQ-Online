@@ -2,7 +2,8 @@
 //  BattleSimulator.Rules.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Kept whether a rule cast is free and uninterruptible until it is planned
+//      Paulinchen  2026-10-28: Kept the action points a rule cast costs until it is planned
+//                            - Kept whether a rule cast is free and uninterruptible until it is planned
 //                            - Raised no state added event for a refresh of a held state
 //                            - Armed an HP threshold again once the HP rises above it
 //                            - Cancelled casts and skipped rolls by a rule
@@ -529,7 +530,7 @@ public sealed partial class BattleSimulator
                 && order.ParentCastId is string parentId && state.Plan.FindIndex(entry => entry.CastId == parentId) is int parent and >= 0)
             {
                 Draft followUp = new(order.Enemy, order.Skill, PlanKind.FollowUp, side, order.AimSeat, state.Plan[parent].Side, order.ActionId, order.RootActionId) { RuleId = order.RuleId };
-                AfterCastEvent? after = simulator.AddCast(state, followUp, 0, order.Free, order.Uninterruptible, parentId, BehindChain(state.Plan, parent));
+                AfterCastEvent? after = simulator.AddCast(state, followUp, 0, true, order.Uninterruptible, parentId, BehindChain(state.Plan, parent));
                 if (after is not null)
                 {
                     Log(after);
@@ -544,7 +545,7 @@ public sealed partial class BattleSimulator
                 simulator._drafts.Add(new Draft(order.Enemy, order.Skill, order.Kind, side, order.AimSeat, null, order.ActionId, order.RootActionId)
                 {
                     RuleId = order.RuleId,
-                    Free = order.Free,
+                    ApCost = order.ApCost,
                     Uninterruptible = order.Uninterruptible,
                 });
                 return null;
@@ -562,7 +563,7 @@ public sealed partial class BattleSimulator
             state.NextTurn.Add(new QueuedCast(order.Enemy, order.Skill, queued, side, order.AimSeat, null, order.RootActionId, order.RuleId, state.Turn)
             {
                 DueTurn = due,
-                Free = order.Free,
+                ApCost = order.ApCost,
                 Uninterruptible = order.Uninterruptible,
             });
             return null;

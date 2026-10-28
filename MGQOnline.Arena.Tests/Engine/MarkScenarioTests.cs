@@ -2,7 +2,8 @@
 //  MarkScenarioTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Planned the battle's turn rows on the turn event
+//      Paulinchen  2026-10-28: Checked the action points of the ordered casts
+//                            - Planned the battle's turn rows on the turn event
 //      Paulinchen  2026-10-24: Played the Stigmata as battle and skill rows of the Trigger -> Effect framework
 //      Paulinchen  2026-10-21: Created
 //
@@ -80,7 +81,7 @@ public sealed class MarkScenarioTests
         Assert.Equal(
             [("c1", LightStigmata, GridHalf.Left), ("c2", DarkStigmata, GridHalf.Right), ("c3", LightStigmata, GridHalf.Right), ("c4", DarkStigmata, GridHalf.Left)],
             _casts);
-        Assert.All(_context.Orders, order => Assert.True(order.Free));
+        Assert.All(_context.Orders, order => Assert.Equal(0, order.ApCost));
         Assert.True(_context.Orders[0].Uninterruptible);
     }
 

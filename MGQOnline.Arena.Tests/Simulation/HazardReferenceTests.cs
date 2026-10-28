@@ -2,7 +2,8 @@
 //  HazardReferenceTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Dropped the state added events of refreshes from the golden log hash
+//      Paulinchen  2026-10-28: Set the action points of the use skill effect
+//                            - Dropped the state added events of refreshes from the golden log hash
 //                            - Took the stage start and turn events in the reference log hashes
 //      Paulinchen  2026-10-24: Wrote the ice trail as a row of the Trigger -> Effect framework in the battle plan
 //                            - Took the turn row ids in the golden log hash
@@ -122,7 +123,7 @@ public sealed class HazardReferenceTests
             IceId,
             "Black ice",
             [HazardTrigger.StartsTurnOn],
-            [new DamageEffect(TargetRef.TriggerUnit, null, EngineSamples.Formula("b.mhp * 0.03 + a.atk / 10")), new UseSkillEffect([new WeightedSkill(SimFixtures.Strike)], CastWhen.ThisTurn, true, false, CastSide.Own, CastAim.TriggerUnit)],
+            [new DamageEffect(TargetRef.TriggerUnit, null, EngineSamples.Formula("b.mhp * 0.03 + a.atk / 10")), new UseSkillEffect([new WeightedSkill(SimFixtures.Strike)], CastWhen.ThisTurn, 0, false, CastSide.Own, CastAim.TriggerUnit)],
             0,
             new HazardLook(160, Animation: 41));
         RuleSpec leavesIce = SimFixtures.Rule(

@@ -2,7 +2,8 @@
 //  CanonicalGoldenTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Took the show text, cast cancelled and roll skipped events in the battle log golden
+//      Paulinchen  2026-10-28: Took the action points of the use skill effects in the design golden
+//                            - Took the show text, cast cancelled and roll skipped events in the battle log golden
 //                            - Took the stage start, turn, unit HP below and damage in turn events in the battle log golden
 //      Paulinchen  2026-10-24: Took the battle plan and the rows of the Trigger -> Effect framework in the design golden
 //      Paulinchen  2026-10-23: Took the golden design with the battlefield
@@ -43,7 +44,7 @@ public sealed class CanonicalGoldenTests
     /// <summary>
     /// The SHA-256 of the design golden.
     /// </summary>
-    private const string DesignSha256 = "e5dcfd598b434d97f228563e73f8f6572dd9796a4d5fef123a822da03e9a6f72";
+    private const string DesignSha256 = "a1f97506445e64e739442e7594854d1f4e6db6436b3ddf9a0b797209cad8d2c1";
 
     /// <summary>
     /// The SHA-256 of the battle log golden.

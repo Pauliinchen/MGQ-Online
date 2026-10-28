@@ -2,7 +2,8 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Planned a free rule cast ordered after its caster planned into that plan and queued any other with a warning
+//      Paulinchen  2026-10-28: Paid the action points a rule cast sets, or its skill's cost when it sets none
+//                            - Planned a free rule cast ordered after its caster planned into that plan and queued any other with a warning
 //                            - Paid the cost of a forced rule cast that is not free and let crowd control disable one that is not uninterruptible
 //                            - Named the stage and stage turn of each turn plan
 //                            - Skipped rolls and planned the casts cancelled while queued as cancelled
@@ -318,7 +319,7 @@ public sealed partial class BattleSimulator
                     {
                         RuleId = queued.RuleId,
                         CancelledBy = queued.CancelledBy,
-                        Free = queued.Free,
+                        ApCost = queued.ApCost,
                         Uninterruptible = queued.Uninterruptible,
                     });
                 }
@@ -525,14 +526,14 @@ public sealed partial class BattleSimulator
                 continue;
             }
 
-            if (planned < 0 || !draft.Free || i >= count)
+            if (planned < 0 || PriceOf(state, draft) > 0 || i >= count)
             {
                 Log(state, new WarningEvent(state.Turn, CastQueuedWarning, draft.RuleId));
                 state.NextTurn.Add(new QueuedCast(draft.Enemy, draft.Skill, draft.Kind == PlanKind.LastStandStart ? PlanKind.LastStandStart : PlanKind.DelayedAnswer, draft.Side, draft.AimSeat, draft.ParentSide, draft.RootActionId, draft.RuleId ?? string.Empty, state.Turn)
                 {
                     DueTurn = state.Turn + 1,
                     CancelledBy = draft.CancelledBy,
-                    Free = draft.Free,
+                    ApCost = draft.ApCost,
                     Uninterruptible = draft.Uninterruptible,
                 });
                 continue;
@@ -572,8 +573,8 @@ public sealed partial class BattleSimulator
     }
 
     /// <summary>
-    /// Plans a forced entry; one that is not free pays the skill's cost from the turn's points
-    /// before the roll, as a rolled cast would.
+    /// Plans a forced entry; one that is not free pays its price from the turn's points before the
+    /// roll, as a rolled cast would.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="draft">The forced cast.</param>
@@ -581,16 +582,28 @@ public sealed partial class BattleSimulator
     /// <returns>The points it cost; 0 when it is free, cancelled or left out because the points fall short.</returns>
     private int PlanForced(BattleState state, Draft draft, int points)
     {
-        int cost = draft.Free || draft.CancelledBy is not null || !state.Boss.Skills.TryGetValue(draft.Skill.Key, out RuntimeSkill? skill) ? 0 : Math.Max(1, skill.ApCost);
+        int price = PriceOf(state, draft);
+        int cost = draft.CancelledBy is null ? price : 0;
         if (cost > points)
         {
             Log(state, new WarningEvent(state.Turn, CastUnpaidWarning, draft.RuleId));
             return 0;
         }
 
-        PlanCast(state, draft, cost, draft.Free, draft.Uninterruptible);
+        PlanCast(state, draft, cost, price == 0, draft.Uninterruptible);
         return cost;
     }
+
+    /// <summary>
+    /// Tells the action points a forced cast costs: the amount its row set, never below 0, else its
+    /// skill's cost, at least 1.
+    /// </summary>
+    /// <param name="state">The battle.</param>
+    /// <param name="draft">The forced cast.</param>
+    /// <returns>The points; 0 when it is free or the boss lacks the skill.</returns>
+    private static int PriceOf(BattleState state, Draft draft) => draft.ApCost is int set
+        ? Math.Max(0, set)
+        : state.Boss.Skills.TryGetValue(draft.Skill.Key, out RuntimeSkill? skill) ? Math.Max(1, skill.ApCost) : 0;
 
     /// <summary>
     /// Tells whether a bank is at its cap, so it may pay to skip rests when the game rule lets it.
@@ -1267,9 +1280,10 @@ public sealed partial class BattleSimulator
         public string? CancelledBy { get; init; }
 
         /// <summary>
-        /// Gets whether a forced cast costs no action points; a rolled or grapple cast pays by its roll.
+        /// Gets the action points a forced cast costs: null for the skill's own cost, 0 for free, else
+        /// exactly that many; a rolled or grapple cast pays by its roll.
         /// </summary>
-        public bool Free { get; init; } = true;
+        public int? ApCost { get; init; } = 0;
 
         /// <summary>
         /// Gets whether crowd control cannot disable a forced cast.

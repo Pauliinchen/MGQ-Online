@@ -2,7 +2,8 @@
 //  ScriptTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Tested a rule cast ordered after its caster planned
+//      Paulinchen  2026-10-28: Tested a rule cast that sets its action points
+//                            - Tested a rule cast ordered after its caster planned
 //                            - Tested rule casts that are neither free nor uninterruptible
 //                            - Tested the HP rows of characters and the lost state rows
 //                            - Tested interrupts, cancelled queued casts, skipped rolls and an HP row after a heal
@@ -185,8 +186,8 @@ public sealed class ScriptTests
     }
 
     /// <summary>
-    /// A row cast that is neither free nor uninterruptible pays its cost from the turn's points, and
-    /// crowd control at the plan may disable it.
+    /// A row cast that sets no action points and is not uninterruptible pays its skill's cost from the
+    /// turn's points, and crowd control at the plan may disable it.
     /// </summary>
     [Fact]
     public void PaysForACastThatIsNotFreeAndLetsCrowdControlStopIt()
@@ -199,6 +200,24 @@ public sealed class ScriptTests
         PlannedCast heavy = Assert.Single(plan.Entries);
         Assert.Equal((3, false, true, (int?)SimFixtures.Stone), (heavy.Cost, heavy.Free, heavy.Disabled, heavy.DisabledBy));
         Assert.Equal(3, plan.ApSpent);
+    }
+
+    /// <summary>
+    /// A row cast pays the action points its row sets instead of its skill's cost, nothing when it sets 0.
+    /// </summary>
+    /// <param name="apCost">The points the row sets.</param>
+    [Theory]
+    [InlineData(2)]
+    [InlineData(0)]
+    public void PaysThePointsTheRowSets(int apCost)
+    {
+        BattleSimulator simulator = SimFixtures.Simulator(PaidDesign(3, apCost));
+        BattleState state = simulator.Start(SimFixtures.Setup());
+
+        EnemyPlan plan = Assert.Single(simulator.Plan(state).Enemies);
+
+        PlannedCast heavy = Assert.Single(plan.Entries);
+        Assert.Equal((apCost, apCost == 0, apCost), (heavy.Cost, heavy.Free, plan.ApSpent));
     }
 
     /// <summary>
@@ -242,14 +261,15 @@ public sealed class ScriptTests
     }
 
     /// <summary>
-    /// Builds a design whose battle row casts a skill every turn, neither free nor uninterruptible, from an
-    /// enemy the tier keeps stoned and that rolls nothing.
+    /// Builds a design whose battle row casts a skill every turn, not uninterruptible, from an enemy the
+    /// tier keeps stoned and that rolls nothing.
     /// </summary>
     /// <param name="cost">The skill's cost.</param>
+    /// <param name="apCost">The points the row sets, or null for the skill's cost.</param>
     /// <returns>The design.</returns>
-    private static RuntimeDesign PaidDesign(int cost)
+    private static RuntimeDesign PaidDesign(int cost, int? apCost = null)
     {
-        UseSkillEffect paid = new([new WeightedSkill(SimFixtures.Heavy)], CastWhen.ThisTurn, false, false, CastSide.Own, CastAim.Default, SimFixtures.Slot);
+        UseSkillEffect paid = new([new WeightedSkill(SimFixtures.Heavy)], CastWhen.ThisTurn, apCost, false, CastSide.Own, CastAim.Default, SimFixtures.Slot);
         RuleSpec cast = SimFixtures.Rule("cast", new TurnTrigger(1, 1), [paid], owner: RuleOwner.Battle);
         return SimFixtures.Design([], [SimFixtures.Skill(SimFixtures.Heavy, cost)], [cast], attackWeight: 0, tierStates: [SimFixtures.Stone]);
     }
@@ -270,7 +290,7 @@ public sealed class ScriptTests
     /// <param name="caster">The casting slot, or null for the slot of the test boss.</param>
     /// <returns>The effect.</returns>
     private static UseSkillEffect Use(SkillRef skill, CastWhen when, int? inTurns = null, string? caster = null) =>
-        new([new WeightedSkill(skill)], when, true, false, CastSide.Own, CastAim.Default, caster ?? SimFixtures.Slot, inTurns);
+        new([new WeightedSkill(skill)], when, 0, false, CastSide.Own, CastAim.Default, caster ?? SimFixtures.Slot, inTurns);
 
     /// <summary>
     /// Builds a design whose enemy rolls nothing, so the plan holds the script's casts alone.

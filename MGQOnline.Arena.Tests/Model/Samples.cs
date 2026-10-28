@@ -2,7 +2,8 @@
 //  Samples.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Added the show text, cast cancelled and roll skipped events
+//      Paulinchen  2026-10-28: Set the action points of the use skill effects
+//                            - Added the show text, cast cancelled and roll skipped events
 //                            - Added the stage start, turn, unit HP below and damage in turn events
 //      Paulinchen  2026-10-24: Gave the boss a battle plan with two stages and rows of every trigger, condition, effect and owner
 //                            - Dropped the marks, mark reactions, scheduled actions and follow-ups
@@ -122,14 +123,14 @@ internal static class Samples
             RuleOwner.Battle,
             new TurnTrigger(2, 3),
             [],
-            [new UseSkillEffect([new WeightedSkill(Stigmata)], CastWhen.ThisTurn, true, true, CastSide.Own, CastAim.Default, FirstSlot)],
+            [new UseSkillEffect([new WeightedSkill(Stigmata)], CastWhen.ThisTurn, 0, true, CastSide.Own, CastAim.Default, FirstSlot)],
             HowOften.Every),
         new RuleSpec(
             "a1b2c3d4:follow",
             RuleOwner.Battle,
             new SkillUsedTrigger(Who.Enemy(FirstSlot), Stigmata),
             [],
-            [new UseSkillEffect([new WeightedSkill(Blast)], CastWhen.ThisTurn, true, false, CastSide.Opposite, CastAim.Default, FirstSlot)],
+            [new UseSkillEffect([new WeightedSkill(Blast)], CastWhen.ThisTurn, 0, false, CastSide.Opposite, CastAim.Default, FirstSlot)],
             HowOften.Every),
         new RuleSpec(
             "1c2d3e4f",
@@ -151,7 +152,7 @@ internal static class Samples
             new SkillHitsTrigger(Who.Character, Who.Owner, SkillRef.OfGame(12), 3),
             [new HoldsStateCondition(TargetRef.Owner, 14), new HpBetweenCondition(TargetRef.Owner, 10, 50), new TurnBetweenCondition(3), new HitTypeIsCondition(HitKind.Magic), new NotSealedCondition(Blast)],
             [
-                new UseSkillEffect([new WeightedSkill(Blast)], CastWhen.NextTurn, true, false, CastSide.Alternate, CastAim.Attacker),
+                new UseSkillEffect([new WeightedSkill(Blast)], CastWhen.NextTurn, 0, false, CastSide.Alternate, CastAim.Attacker),
                 new ApDeltaEffect(-1, ApTurn.Next),
                 new DamageEffect(TargetRef.Attacker, null, Formula),
             ],
@@ -210,7 +211,7 @@ internal static class Samples
             [],
             [
                 new SkipRollEffect(ApTurn.Next, FirstSlot),
-                new UseSkillEffect([new WeightedSkill(Stigmata, 3), new WeightedSkill(Blast, 1)], CastWhen.InTurns, true, true, CastSide.Random, CastAim.TriggerUnit, FirstSlot, 2),
+                new UseSkillEffect([new WeightedSkill(Stigmata, 3), new WeightedSkill(Blast, 1)], CastWhen.InTurns, 0, true, CastSide.Random, CastAim.TriggerUnit, FirstSlot, 2),
             ],
             HowOften.Every),
         new RuleSpec(
@@ -310,7 +311,7 @@ internal static class Samples
             new DamageEffect(TargetRef.TriggerUnit, 5),
             new AddStateEffect(TargetRef.TriggerUnit, 29, Turns: 2),
             new RemoveStateEffect(TargetRef.TriggerUnit, 30),
-            new UseSkillEffect([new WeightedSkill(Blast)], CastWhen.NextTurn, true, false, CastSide.Own, CastAim.TriggerUnit),
+            new UseSkillEffect([new WeightedSkill(Blast)], CastWhen.NextTurn, 0, false, CastSide.Own, CastAim.TriggerUnit),
         ],
         3,
         new HazardLook(180, new TileRef("Dungeon_A1", 2048), 112, new ColorRgba(255, 80, 0, 96)),

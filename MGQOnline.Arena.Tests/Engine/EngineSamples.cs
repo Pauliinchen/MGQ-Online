@@ -2,6 +2,7 @@
 //  EngineSamples.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Let the use skill sample set its action points
 //      Paulinchen  2026-10-24: Made the sample rules rows of the Trigger -> Effect framework
 //      Paulinchen  2026-10-23: Keyed the sample book by enemy slot
 //      Paulinchen  2026-10-21: Created
@@ -118,7 +119,7 @@ internal static class EngineSamples
     /// </summary>
     /// <param name="skill">The skill.</param>
     /// <param name="when">When it is cast.</param>
-    /// <param name="free">Whether it costs no action points.</param>
+    /// <param name="apCost">The action points it costs: null for the skill's own cost, 0 for free.</param>
     /// <param name="uninterruptible">Whether crowd control cannot disable it.</param>
     /// <param name="side">Which half it is cast on.</param>
     /// <param name="aim">Where it is aimed.</param>
@@ -127,12 +128,12 @@ internal static class EngineSamples
     public static UseSkillEffect Use(
         SkillRef skill,
         CastWhen when = CastWhen.ThisTurn,
-        bool free = true,
+        int? apCost = 0,
         bool uninterruptible = false,
         CastSide side = CastSide.Own,
         CastAim aim = CastAim.Default,
         string? caster = null) =>
-        new([new WeightedSkill(skill)], when, free, uninterruptible, side, aim, caster);
+        new([new WeightedSkill(skill)], when, apCost, uninterruptible, side, aim, caster);
 
     /// <summary>
     /// Makes a rule book for some enemies.

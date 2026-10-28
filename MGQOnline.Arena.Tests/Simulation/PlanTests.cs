@@ -2,6 +2,7 @@
 //  PlanTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Set the action points of the forced casts
 //      Paulinchen  2026-10-24: Scheduled the casts by battle rows of the Trigger -> Effect framework
 //      Paulinchen  2026-10-22: Tested the normal attacks per turn
 //      Paulinchen  2026-10-21: Created
@@ -302,9 +303,9 @@ public sealed class PlanTests
             [SimFixtures.Skill(SimFixtures.Stigmata), SimFixtures.Skill(SimFixtures.Strike), SimFixtures.Skill(SimFixtures.Sweep), SimFixtures.Skill(SimFixtures.Heavy)],
             [
                 SimFixtures.Scheduled("sched", SimFixtures.Stigmata, 1, 1),
-                SimFixtures.Rule("start", new TurnStartTrigger(), [new UseSkillEffect([new WeightedSkill(SimFixtures.Strike)], CastWhen.ThisTurn, true, true, CastSide.Own, CastAim.Default)]),
-                SimFixtures.Rule("counter", new SkillHitsTrigger(Who.Character, Who.Owner), [new UseSkillEffect([new WeightedSkill(SimFixtures.Sweep)], CastWhen.NextTurn, true, true, CastSide.Own, CastAim.Attacker)]),
-                SimFixtures.Rule("stand", new HpBelowTrigger(Who.Owner, 50), [new UseSkillEffect([new WeightedSkill(SimFixtures.Heavy)], CastWhen.NextTurn, true, true, CastSide.Own, CastAim.Default)]),
+                SimFixtures.Rule("start", new TurnStartTrigger(), [new UseSkillEffect([new WeightedSkill(SimFixtures.Strike)], CastWhen.ThisTurn, 0, true, CastSide.Own, CastAim.Default)]),
+                SimFixtures.Rule("counter", new SkillHitsTrigger(Who.Character, Who.Owner), [new UseSkillEffect([new WeightedSkill(SimFixtures.Sweep)], CastWhen.NextTurn, 0, true, CastSide.Own, CastAim.Attacker)]),
+                SimFixtures.Rule("stand", new HpBelowTrigger(Who.Owner, 50), [new UseSkillEffect([new WeightedSkill(SimFixtures.Heavy)], CastWhen.NextTurn, 0, true, CastSide.Own, CastAim.Default)]),
             ],
             attackWeight: 0);
         BattleSimulator simulator = SimFixtures.Simulator(design);

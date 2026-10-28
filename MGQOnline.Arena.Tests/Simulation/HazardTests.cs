@@ -2,6 +2,7 @@
 //  HazardTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Set the action points of the use skill effect
 //      Paulinchen  2026-10-24: Read the boss's actions from its battle plan
 //      Paulinchen  2026-10-23: Tested that a battle starts with the debris a preview rolls
 //                            - Tested the battlefield hazards and put test hazards on cells after the start
@@ -262,7 +263,7 @@ public sealed class HazardTests
     {
         RuntimeHazard hazard = Hazard(FireId, [HazardTrigger.StartsTurnOn]) with
         {
-            Effects = [new UseSkillEffect([new WeightedSkill(SimFixtures.Strike)], CastWhen.ThisTurn, true, false, CastSide.Own, CastAim.TriggerUnit)],
+            Effects = [new UseSkillEffect([new WeightedSkill(SimFixtures.Strike)], CastWhen.ThisTurn, 0, false, CastSide.Own, CastAim.TriggerUnit)],
         };
         RuntimeDesign design = Design(hazard);
         design = design with

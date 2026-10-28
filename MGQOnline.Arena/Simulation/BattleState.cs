@@ -2,7 +2,8 @@
 //  BattleState.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Told whether a queued cast is free and uninterruptible
+//      Paulinchen  2026-10-28: Told the action points a queued cast costs
+//                            - Told whether a queued cast is free and uninterruptible
 //                            - Kept the turns whose roll a row skipped
 //                            - Named the row that cancelled a planned or queued cast
 //                            - Named the turn a queued cast is due
@@ -710,9 +711,9 @@ public sealed record QueuedCast(
     public string? CancelledBy { get; init; }
 
     /// <summary>
-    /// Gets whether it costs no action points.
+    /// Gets the action points it costs: null for the skill's own cost, 0 for free, else exactly that many.
     /// </summary>
-    public bool Free { get; init; } = true;
+    public int? ApCost { get; init; } = 0;
 
     /// <summary>
     /// Gets whether crowd control cannot disable it.

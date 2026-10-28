@@ -2,6 +2,7 @@
 //  CrowdControlTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Set the action points of the counter cast
 //      Paulinchen  2026-10-24: Scheduled the casts and follow-ups by battle rows of the Trigger -> Effect framework
 //      Paulinchen  2026-10-21: Created
 //
@@ -161,7 +162,7 @@ public sealed class CrowdControlTests
     [Fact]
     public void FreezesTheBossDuringTheOverdrive()
     {
-        RuntimeDesign design = CcDesign([], [SimFixtures.Rule("counter", new TurnEndTrigger(), [new UseSkillEffect([new WeightedSkill(SimFixtures.Sweep)], CastWhen.NextTurn, true, true, CastSide.Own, CastAim.Default)], often: new HowOften(Frequency.Once))]);
+        RuntimeDesign design = CcDesign([], [SimFixtures.Rule("counter", new TurnEndTrigger(), [new UseSkillEffect([new WeightedSkill(SimFixtures.Sweep)], CastWhen.NextTurn, 0, true, CastSide.Own, CastAim.Default)], often: new HowOften(Frequency.Once))]);
         BattleSimulator simulator = SimFixtures.Simulator(design);
         BattleState state = simulator.Start(SimFixtures.Setup());
         simulator.Plan(state);

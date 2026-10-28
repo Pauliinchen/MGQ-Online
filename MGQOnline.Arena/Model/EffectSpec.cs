@@ -2,6 +2,7 @@
 //  EffectSpec.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Let the use skill effect set the action points its cast costs
 //      Paulinchen  2026-10-24: Gave the effects targets of the Trigger -> Effect framework
 //                            - Let the use skill effect pick one of several skills for a caster
 //                            - Added the heal, cancel skill, skip roll, show text and go to stage effects
@@ -48,7 +49,7 @@ public abstract record EffectSpec;
 /// </summary>
 /// <param name="Skills">The skills, one picked by weight on the rules stream.</param>
 /// <param name="When">When it is cast.</param>
-/// <param name="Free">Whether it costs no action points.</param>
+/// <param name="ApCost">The action points it costs: null for the skill's own cost, 0 for free, else exactly that many.</param>
 /// <param name="Uninterruptible">Whether crowd control cannot disable it.</param>
 /// <param name="Side">Which half it is cast on.</param>
 /// <param name="Aim">Where it is aimed.</param>
@@ -57,7 +58,7 @@ public abstract record EffectSpec;
 public sealed record UseSkillEffect(
     IReadOnlyList<WeightedSkill> Skills,
     CastWhen When,
-    bool Free,
+    int? ApCost,
     bool Uninterruptible,
     CastSide Side,
     CastAim Aim,

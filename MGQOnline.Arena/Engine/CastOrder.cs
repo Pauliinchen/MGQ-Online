@@ -2,7 +2,8 @@
 //  CastOrder.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Queued a cast some turns ahead
+//      Paulinchen  2026-10-28: Carried the action points a cast costs
+//                            - Queued a cast some turns ahead
 //      Paulinchen  2026-10-24: Moved the cast timing here from the model
 //      Paulinchen  2026-10-21: Created
 //
@@ -19,7 +20,7 @@ namespace MGQOnline.Arena.Engine;
 /// <param name="Skill">The skill.</param>
 /// <param name="Kind">Why it is in the plan.</param>
 /// <param name="Timing">Which plan it goes into.</param>
-/// <param name="Free">Whether it costs no action points.</param>
+/// <param name="ApCost">The action points it costs: null for the skill's own cost, 0 for free, else exactly that many.</param>
 /// <param name="Uninterruptible">Whether crowd control cannot disable it.</param>
 /// <param name="Side">How the planner chooses the half when <paramref name="FixedSide"/> is null: own, random or alternate.</param>
 /// <param name="FixedSide">The half the rule fixed, or null for the planner to choose.</param>
@@ -34,7 +35,7 @@ public sealed record CastOrder(
     SkillRef Skill,
     PlanKind Kind,
     CastTiming Timing,
-    bool Free,
+    int? ApCost,
     bool Uninterruptible,
     CastSide Side,
     GridHalf? FixedSide,

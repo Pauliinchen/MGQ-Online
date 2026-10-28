@@ -2,7 +2,8 @@
 //  EffectHandlersTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Tested healing, cancelling casts, skipping rolls and showing lines
+//      Paulinchen  2026-10-28: Ordered the casts with the action points they cost
+//                            - Tested healing, cancelling casts, skipping rolls and showing lines
 //                            - Tested the caster of a slot, the plan a cast goes into and the effects that wait for a cast
 //                            - Planned the battle's turn row on the turn event
 //      Paulinchen  2026-10-24: Tested the effects with the targets of the Trigger -> Effect framework
@@ -41,7 +42,7 @@ public sealed class EffectHandlersTests
         EngineOf(Schedule).Raise(_context, new TurnEvent(2, RuntimePlan.MainStage, 2));
 
         CastOrder order = Assert.Single(_context.Orders);
-        Assert.Equal(new CastOrder(0, LightStigmata, PlanKind.Scheduled, CastTiming.PlanNow, true, true, CastSide.Own, null, null, StigmataAction, StigmataAction, StigmataAction), order);
+        Assert.Equal(new CastOrder(0, LightStigmata, PlanKind.Scheduled, CastTiming.PlanNow, 0, true, CastSide.Own, null, null, StigmataAction, StigmataAction, StigmataAction), order);
     }
 
     /// <summary>
@@ -130,7 +131,7 @@ public sealed class EffectHandlersTests
     [Fact]
     public void QueuesACastSomeTurnsAhead()
     {
-        UseSkillEffect later = new([new WeightedSkill(Blast)], CastWhen.InTurns, true, false, CastSide.Own, CastAim.Default, InTurns: 3);
+        UseSkillEffect later = new([new WeightedSkill(Blast)], CastWhen.InTurns, 0, false, CastSide.Own, CastAim.Default, InTurns: 3);
 
         EngineOf(Rule("r", new TurnStartTrigger(), [later])).Raise(_context, new TurnStartEvent(1));
 
@@ -164,7 +165,7 @@ public sealed class EffectHandlersTests
     public void PicksOneOfSeveralSkillsByWeight()
     {
         ArenaRandom twin = new RandomStreams(42).Get(RandomStream.Rules);
-        UseSkillEffect effect = new([new WeightedSkill(Blast, 3), new WeightedSkill(LightStigmata, 1)], CastWhen.ThisTurn, true, false, CastSide.Own, CastAim.Default);
+        UseSkillEffect effect = new([new WeightedSkill(Blast, 3), new WeightedSkill(LightStigmata, 1)], CastWhen.ThisTurn, 0, false, CastSide.Own, CastAim.Default);
 
         EngineOf(Rule("r", new TurnStartTrigger(), [effect])).Raise(_context, new TurnStartEvent(1));
 
@@ -218,7 +219,7 @@ public sealed class EffectHandlersTests
     {
         _context.Sides["c1"] = GridHalf.Left;
 
-        EngineOf(Rule("r", new SkillHitsTrigger(Who.Owner, Who.Character), [new UseSkillEffect([new WeightedSkill(Blast)], CastWhen.NextTurn, true, false, CastSide.Opposite, CastAim.TriggerUnit)]))
+        EngineOf(Rule("r", new SkillHitsTrigger(Who.Owner, Who.Character), [new UseSkillEffect([new WeightedSkill(Blast)], CastWhen.NextTurn, 0, false, CastSide.Opposite, CastAim.TriggerUnit)]))
             .Raise(_context, Hit(2, "c1", LightStigmata, 3));
 
         CastOrder order = Assert.Single(_context.Orders);
@@ -234,7 +235,7 @@ public sealed class EffectHandlersTests
     [Fact]
     public void AimsAtTheAttacker()
     {
-        EngineOf(Rule("r", new SkillHitsTrigger(Who.Character, Who.Owner), [new UseSkillEffect([new WeightedSkill(Blast)], CastWhen.NextTurn, false, false, CastSide.Own, CastAim.Attacker)], group: "g"))
+        EngineOf(Rule("r", new SkillHitsTrigger(Who.Character, Who.Owner), [new UseSkillEffect([new WeightedSkill(Blast)], CastWhen.NextTurn, null, false, CastSide.Own, CastAim.Attacker)], group: "g"))
             .Raise(_context, new BossHitEvent(3, 0, 2, new GridCell(5, 4), HitKind.Physical, Blast, [], true));
 
         Assert.Equal(2, Assert.Single(_context.Orders).AimSeat);

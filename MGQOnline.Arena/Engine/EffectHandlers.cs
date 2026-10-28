@@ -2,7 +2,8 @@
 //  EffectHandlers.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Healed, cancelled casts, skipped rolls and showed lines by a rule
+//      Paulinchen  2026-10-28: Passed on the action points a use skill cast costs
+//                            - Healed, cancelled casts, skipped rolls and showed lines by a rule
 //                            - Cast from the enemy the event names when several stand in the slot
 //                            - Timed a use skill cast by its trigger and queued it turns ahead
 //                            - Went to a stage by a rule
@@ -107,7 +108,7 @@ internal static class EffectHandlers
             skill,
             kind,
             timing,
-            effect.Free,
+            effect.ApCost,
             effect.Uninterruptible,
             side,
             fixedSide,
