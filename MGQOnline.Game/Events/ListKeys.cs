@@ -2,6 +2,8 @@
 //  ListKeys.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Kept the value each variable is set to when it is known before the list runs
+//                            - Kept the self switches the list turns on and the maps it transfers the player to
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -19,6 +21,14 @@ namespace MGQOnline.Game.Events;
 /// <param name="From">The first id.</param>
 /// <param name="To">The last id; a range that ends before it starts holds none.</param>
 public readonly record struct KeyRange(bool Variable, long From, long To);
+
+/// <summary>
+/// A range of variables a command sets, with the value when it is known before the list runs.
+/// </summary>
+/// <param name="From">The first variable.</param>
+/// <param name="To">The last variable; a range that ends before it starts holds none.</param>
+/// <param name="Value">The value a set to a constant writes; <see langword="null"/> for any other operation, operand or command.</param>
+public readonly record struct VariableSet(long From, long To, long? Value);
 
 /// <summary>
 /// What one list of event commands reads and writes by itself, every branch counted, without the
@@ -43,6 +53,11 @@ public sealed partial class ListKeys
     public List<KeyRange> Writes { get; } = [];
 
     /// <summary>
+    /// Gets the variables the list sets with their values where known, in their order.
+    /// </summary>
+    public List<VariableSet> VariableSets { get; } = [];
+
+    /// <summary>
     /// Gets the switches the list turns on (Control Switches to on), in their order.
     /// </summary>
     public List<KeyRange> TurnsOn { get; } = [];
@@ -51,6 +66,16 @@ public sealed partial class ListKeys
     /// Gets the letters of the self switches the list sets, in their order.
     /// </summary>
     public List<string> SelfSwitches { get; } = [];
+
+    /// <summary>
+    /// Gets the letters of the self switches the list turns on, in their order.
+    /// </summary>
+    public List<string> SelfSwitchesOn { get; } = [];
+
+    /// <summary>
+    /// Gets the maps the list transfers the player to by a constant, in their order.
+    /// </summary>
+    public List<long> Transfers { get; } = [];
 
     /// <summary>
     /// Gets the common events the list calls, in their order.
@@ -154,6 +179,7 @@ public sealed partial class ListKeys
                 break;
             case EventCodes.ControlVariables:
                 Writes.Add(new KeyRange(true, command.Number(0), command.Number(1)));
+                VariableSets.Add(new VariableSet(command.Number(0), command.Number(1), ConstantSet(command)));
                 AddOperand(command, 3);
                 if (command.Number(3) == 4)
                 {
@@ -163,6 +189,11 @@ public sealed partial class ListKeys
                 break;
             case EventCodes.ControlSelfSwitch:
                 SelfSwitches.Add(command.Text(0));
+                if (command.Number(1) == 0)
+                {
+                    SelfSwitchesOn.Add(command.Text(0));
+                }
+
                 break;
             case EventCodes.ChangeGold:
                 AddOperand(command, 1);
@@ -172,6 +203,11 @@ public sealed partial class ListKeys
                 break;
             case EventCodes.TransferPlayer:
                 AddPlace(command, 0, 1, 3);
+                if (command.Number(0) == 0)
+                {
+                    Transfers.Add(command.Number(1));
+                }
+
                 break;
             case EventCodes.SetVehicleLocation:
                 AddPlace(command, 1, 2, 3);
@@ -269,6 +305,10 @@ public sealed partial class ListKeys
             if (match.Groups["set"].Success)
             {
                 Writes.Add(new KeyRange(variable, id, id));
+                if (variable)
+                {
+                    VariableSets.Add(new VariableSet(id, id, null));
+                }
             }
         }
     }
@@ -277,7 +317,18 @@ public sealed partial class ListKeys
     /// Notes a variable the list sets.
     /// </summary>
     /// <param name="id">The variable.</param>
-    private void WriteVariable(long id) => Writes.Add(new KeyRange(true, id, id));
+    private void WriteVariable(long id)
+    {
+        Writes.Add(new KeyRange(true, id, id));
+        VariableSets.Add(new VariableSet(id, id, null));
+    }
+
+    /// <summary>
+    /// Reads the value a Control Variables command sets when it sets a constant.
+    /// </summary>
+    /// <param name="command">The command: its operation third (0 sets), its operand's kind fourth (0 for a constant), the constant fifth.</param>
+    /// <returns>The constant, <see langword="null"/> for another operation or operand.</returns>
+    private static long? ConstantSet(EventCommand command) => command.Number(2) == 0 && command.Number(3) == 0 ? command.Number(4) : null;
 
     /// <summary>
     /// A switch or variable a script names by its id, set when an assignment follows.

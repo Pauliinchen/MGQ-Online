@@ -2,7 +2,8 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Held a Raid World's story event at its first command for the relay's telling lock in place of the tie hold
+#      Paulinchen  2026-10-28: Held only the story events and talks that would move a player behind past the end of their part
+#                            - Held a Raid World's story event at its first command for the relay's telling lock in place of the tie hold
 #                            - Kept the pages a teller tells and a viewer shows, with their pace and reading times, in the DLL
 #                            - Told a refused story event once per event in one place
 #                            - Left how a story event goes on with the telling to the DLL's telling machine
@@ -230,10 +231,19 @@ module MGQ_MpCoopEvents
   # The game's switch that is on while the Library replays a scene, by its id in 3.06.
   LIBRARY_REPLAY_SWITCH = 443
 
+  # The DLL's topic that tells whether a story event would move the player's story past the end of
+  # their part, see StoryTopics.LeavesPartTopic.
+  LEAVES_PART_TOPIC = "story.leaves_part"
+
   # The values the DLL named a sort's list needs, by the list's key (see site_key) and kind.
   @needs = {}
   # The last sort of each list, with the values it read, see sorting.
   @answers = {}
+  # Why each list would leave the part of a player behind, nil for one that stays, with the values
+  # it was told for, see leaving_part.
+  @leaving = {}
+  # The values the DLL named the chain of a list reads, by the list's key (see site_key) and kind.
+  @part_needs = {}
   # The checks of what waits for the player to be free, see give_way_to.
   @waits = []
   # The chest the player opens: its interpreter, self switch, gains and sound.
@@ -426,8 +436,8 @@ module MGQ_MpCoopEvents
     grew
   end
 
-  # Reads the values the DLL named: switches, variables (their whole numbers, nil for none) and
-  # whether switches and variables are the player's own.
+  # Reads the values the DLL named: switches, variables (their whole numbers, nil for none), self
+  # switches and whether switches and variables are the player's own.
   #
   # @param needs [Hash] The kept needs, see add_needs.
   # @return [Hash] The values, by kind and id.
@@ -441,16 +451,26 @@ module MGQ_MpCoopEvents
 
   # Reads one value the DLL named.
   #
-  # @param kind [String] "s", "v", "ps" or "pv".
-  # @param id [Integer] The switch or variable.
+  # @param kind [String] "s", "v", "ss", "ps" or "pv".
+  # @param id [Integer, String] The switch or variable, or the self switch as "map.event.letter".
   # @return [Boolean, Integer, nil] The value.
   def self.value_of(kind, id)
     case kind
     when "s" then $game_switches ? $game_switches[id] == true : false
+    when "ss" then $game_self_switches ? $game_self_switches[self_switch_key(id)] == true : false
     when "v" then $game_variables ? number($game_variables[id]) : 0
     when "ps" then defined?(MGQ_MpStoryState) && MGQ_MpStoryState.personal_switch?(id) ? true : false
     when "pv" then defined?(MGQ_MpStoryState) && MGQ_MpStoryState.personal_variable?(id) ? true : false
     end
+  end
+
+  # Reads a self switch's key from the name the DLL gives it.
+  #
+  # @param name [String] Such as "750.12.A".
+  # @return [Array] Its map, event and letter.
+  def self.self_switch_key(name)
+    map_id, event_id, letter = name.to_s.split(".")
+    [map_id.to_i, event_id.to_i, letter]
   end
 
   # Reads a variable as a branch does, its to_i, nil for a value without a number.
@@ -744,8 +764,9 @@ module MGQ_MpCoopEvents
 
     @may_tell = false
     lead = MGQ_MpCoop::Scope.teller
-    if behind?
-      log("ended a talk where it would move the story on (command #{list[index].code}): the player's story is behind the world's")
+    why = behind? ? leaving_part(list, event_id > 0 ? $game_map.events[event_id] : nil) : nil
+    if why
+      log("ended a talk where it would move the story on (command #{list[index].code}): the player's story is behind the world's and #{why}")
       end_event(interpreter, list, "a talk ended where it would move the story on")
       MGQ_MpOverworldSync.notice(MGQ_MpWorldCatchup.refusal_text)
     elsif lead.is_a?(MGQ_MpOverworldSync::Peers::Peer) && following?
@@ -904,8 +925,8 @@ module MGQ_MpCoopEvents
   # Keeps a member's story event from starting: only the leader starts story, in their own game.
   # In a Raid World only while another player tells the story on the map, while the player follows
   # a teller's story to where it moved them (held_following), while the player's story is behind
-  # the world's (held_behind), or until the world's story came (awaits_world_story). Called when the
-  # map's main event would start it. A new game's opening never starts while world_opening.rbx runs
+  # the world's and the event would end their part (held_behind?), or until the world's story came
+  # (awaits_world_story). Called when the map's main event would start it. A new game's opening never starts while world_opening.rbx runs
   # its setup without its scene.
   #
   # An event that runs by itself is left to the teller's own game, which runs it on its map.
@@ -915,7 +936,7 @@ module MGQ_MpCoopEvents
   def self.hand_over(event)
     return true if defined?(MGQ_MpWorldOpening) && MGQ_MpWorldOpening.holds?(event)
     return awaits_world_story(event) if defined?(MGQ_MpWorldStory) && MGQ_MpWorldStory.awaits_world? && !own? && kind(event) == :story
-    return held_behind(event) if behind? && !own? && kind(event) == :story
+    return true if behind? && !own? && kind(event) == :story && held_behind?(event)
 
     follow = MGQ_MpCoopGather.follow_taken
     return held_following(event, follow) if follow && !own? && kind(event) == :story
@@ -1023,29 +1044,64 @@ module MGQ_MpCoopEvents
     lists.any? { |list| list && list.any? { |command| command.code == FADEIN_CODE } }
   end
 
-  # Reports whether the player's story is behind a Raid World's, which keeps their story events from
-  # starting, see MGQ_MpWorldCatchup.holds_story?.
+  # Reports whether the player's story is behind a Raid World's, which keeps their story events that
+  # would end their part from starting, see MGQ_MpWorldCatchup.holds_story?.
   #
   # @return [Boolean] Whether it is.
   def self.behind?
     defined?(MGQ_MpWorldCatchup) && MGQ_MpWorldCatchup.holds_story? ? true : false
   end
 
-  # Keeps a story event from starting while the player's story is behind the world's: one they
-  # start tells the level that moves them on, once per event in REFUSE_FRAMES, and one that runs by
-  # itself waits silently, so a teleport onto its map cannot loop.
+  # Finds whether a story event would move the player's story past the end of the part they play
+  # while behind the world's, as the DLL reads from the keys it and the chain it starts across maps
+  # write (issue #48); every other story event runs. The DLL names the switches, variables and self
+  # switches the pages of the chain check (needs, as for sorting), and the answer is kept per list
+  # and part while those stay as they were, since an event that runs by itself starts again every
+  # frame.
+  #
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @param event [Game_Event, nil] The event whose page the list may be, nil for none.
+  # @return [String, nil] Why it would leave the part, nil when it stays in it; an event the DLL
+  #   cannot tell of leaves it.
+  def self.leaving_part(list, event = nil)
+    request = request_for(list, event)
+    table = defined?(MGQ_MpStoryKeys) ? MGQ_MpStoryKeys.raid_table : nil
+    key = [site_key(request, list), list.size, defined?(MGQ_MpWorldStory) ? MGQ_MpWorldStory.part : nil, table ? table.rev : nil]
+    needs = (@part_needs[key[0]] ||= {})
+    kept = @leaving[key]
+    return kept[1] if kept && kept[0] == values_of(needs)
+
+    answer = ask(LEAVES_PART_TOPIC, request, needs)
+    answer = ask(LEAVES_PART_TOPIC, inline_request(list, event), needs) if answer && answer["unknown"] && !request["list"]
+    return "the DLL could not tell what it writes" unless answer && !answer["unknown"]
+
+    @leaving.clear if @leaving.size >= MAX_KEPT_SORTS
+    why = answer["leaves"] ? answer["why"].to_s : nil
+    @leaving[key] = [values_of(needs), why]
+    why
+  end
+
+  # Keeps a story event from starting while the player's story is behind the world's and the event
+  # would move it past the end of their part (see leaving_part): one they start tells the level that
+  # moves them on, once per event in REFUSE_FRAMES, and one that runs by itself waits silently, so a
+  # teleport onto its map cannot loop.
   #
   # @param event [Game_Event] The story event.
-  # @return [Boolean] Always true: it must not run.
-  def self.held_behind(event)
+  # @return [Boolean] Whether it must not run.
+  def self.held_behind?(event)
+    why = leaving_part(event.list || [], event)
+    unless why
+      log_once([:behind_runs, $game_map.map_id, event.id], "story event #{event.id} on map #{$game_map.map_id} may start while the player's story is behind the world's: it moves nothing past the end of their part")
+      return false
+    end
     if event.trigger == 3
-      log_once([:behind_autorun, $game_map.map_id, event.id], "kept event #{event.id} on map #{$game_map.map_id} that runs by itself from starting: it is story, and the player's story is behind the world's")
+      log_once([:behind_autorun, $game_map.map_id, event.id], "kept event #{event.id} on map #{$game_map.map_id} that runs by itself from starting: the player's story is behind the world's and #{why}")
       return true
     end
 
     return true if refused_lately?([$game_map.map_id, event.id])
 
-    log("kept story event #{event.id} on map #{$game_map.map_id} from starting: the player's story is behind the world's")
+    log("kept story event #{event.id} on map #{$game_map.map_id} from starting: the player's story is behind the world's and #{why}")
     MGQ_MpOverworldSync.notice(MGQ_MpWorldCatchup.refusal_text)
     true
   end
@@ -1184,8 +1240,9 @@ module MGQ_MpCoopEvents
       log_once([:await_world_common, common.respond_to?(:id) ? common.id : "?"], "kept common event #{common.respond_to?(:id) ? common.id : '?'} that runs by itself from starting: the world's story has not come yet")
       return true
     end
-    if behind? && !own?(common.list) && kind_of(common.list || []) == :story
-      log_once([:behind_common, common.respond_to?(:id) ? common.id : "?"], "kept common event #{common.respond_to?(:id) ? common.id : '?'} that runs by itself from starting: it is story, and the player's story is behind the world's")
+    why = behind? && !own?(common.list) && kind_of(common.list || []) == :story ? leaving_part(common.list || []) : nil
+    if why
+      log_once([:behind_common, common.respond_to?(:id) ? common.id : "?"], "kept common event #{common.respond_to?(:id) ? common.id : '?'} that runs by itself from starting: the player's story is behind the world's and #{why}")
       return true
     end
 

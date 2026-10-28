@@ -2,6 +2,7 @@
 //  EventCatalog.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Kept the chains story events start across maps
 //      Paulinchen  2026-10-23: Read the common events and a map ahead on another thread
 //                            - Kept the event command index
 //                            - Created
@@ -63,6 +64,11 @@ public sealed class EventCatalog
     private readonly ReadOnce<EventCommandIndex> _commands;
 
     /// <summary>
+    /// The chains across maps, made once the first question comes.
+    /// </summary>
+    private readonly ReadOnce<EventChain> _chains;
+
+    /// <summary>
     /// Initializes the events of the game's data.
     /// </summary>
     /// <param name="data">The game's data.</param>
@@ -73,6 +79,7 @@ public sealed class EventCatalog
         _keptMaps = Math.Max(1, keptMaps);
         _sorter = new(() => new EventSorter(id => data.CommonEvent(id)?.List, data.System));
         _commands = new(() => new EventCommandIndex(data));
+        _chains = new(() => new EventChain(data, Commands));
     }
 
     /// <summary>
@@ -89,6 +96,11 @@ public sealed class EventCatalog
     /// Gets the command index over the game's common events: the troops lists fight and the keys they set.
     /// </summary>
     public EventCommandIndex Commands => _commands.Value;
+
+    /// <summary>
+    /// Gets the chains story events start across maps, see <see cref="EventChain"/>.
+    /// </summary>
+    public EventChain Chains => _chains.Value;
 
     /// <summary>
     /// Reads what the first sort on a map needs before it comes: the names, the common events and

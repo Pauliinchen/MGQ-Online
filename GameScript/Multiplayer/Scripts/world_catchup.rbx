@@ -72,10 +72,11 @@
 #
 # A player whose story is in an earlier part than the world's is behind (MGQ_MpWorldStory.mode
 # :behind): the relay puts them on a track of their own at the checkpoint of their part, the world
-# as it was right before that part's ending, and they play no story while behind (coop_events.rbx
-# asks holds_story?). Once the highest base level of their characters reaches their part's gate,
-# the relay moves them straight into the next part: its checkpoint while the world is past it, else
-# the world's own story. A player whom another mod caps below the gate is moved on once at that cap.
+# as it was right before that part's ending, and while behind they start no story event that would
+# move them past that ending (coop_events.rbx asks holds_story?). Once the highest base level of
+# their characters reaches their part's gate, the relay moves them straight into the next part: its
+# checkpoint while the world is past it, else the world's own story. A player whom another mod caps
+# below the gate is moved on once at that cap.
 #
 # What the story gives goes by its place in the story, never by what another player holds, once per
 # save, which keeps the notes the DLL writes (ledger): the story's skills and items, its companions
@@ -253,10 +254,10 @@ module MGQ_MpWorldCatchup
     MGQ_MpWorldStory.active?
   end
 
-  # Reports whether the player's story events are held: their story is behind the world's, or
+  # Reports whether the player's story is held to their part: their story is behind the world's, or
   # their save noted them behind in their part while the world's story has not come since the save
   # loaded or the world opened, so a part's ending held on the map never starts before the relay
-  # answers. Called by coop_events.rbx.
+  # answers. coop_events.rbx then keeps every story event that would end the part from starting.
   #
   # @return [Boolean] Whether they are.
   def self.holds_story?

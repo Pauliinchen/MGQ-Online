@@ -2,7 +2,8 @@
 #  world_story.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Left the player's telling to the DLL's telling machine
+#      Paulinchen  2026-10-28: Told the part of the player's track
+#                            - Left the player's telling to the DLL's telling machine
 #                            - Told the player's track in their state and read the tellings on it from the DLL
 #                            - Let the DLL say whose ended telling the player's story events wait for, ten seconds at most
 #                            - Had the DLL fetch the story mapping in a Classic world too, for the rewards a party member catches up with
@@ -406,6 +407,14 @@ module MGQ_MpWorldStory
   # @return [String, nil] "world" or the player's own track, nil before the relay placed them.
   def self.track
     @status && @status["synced"] ? @status["track"].to_s : nil
+  end
+
+  # The part of the track the player plays, which bounds the story events they may start while
+  # behind the world's (see MGQ_MpCoopEvents.leaving_part).
+  #
+  # @return [String, nil] Such as "2", nil before the relay placed them.
+  def self.part
+    @status && @status["synced"] ? @status["part"].to_s : nil
   end
 
   # Finds the telling of another player on the player's track, as the relay told of it, see

@@ -2,7 +2,8 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Read the frames of a call from the gather stand-in
+#      Paulinchen  2026-10-28: Checked that a player behind starts every story event and talk but one that ends their part
+#                            - Read the frames of a call from the gather stand-in
 #                            - Read the pages waiting from the stand-in of the DLL
 #                            - Checked that a story event waits for the relay's telling lock and ends once refused, in place of the tie
 #                            - Answered the telling machine through the bridge from its golden cases
@@ -2294,30 +2295,99 @@ check("and one a party member opened gives nothing", $game_party.gold, 0)
 $game_map.events = {}
 MGQ_MpCoopEvents.instance_variable_set(:@chest_keys_map, nil)
 
-# A player behind the world's story starts no story event and hears the level that moves them on;
-# story that runs by itself waits silently, talks run.
+# A player behind the world's story starts no story event that ends their part and hears the level
+# that moves them on; such story that runs by itself waits silently; every other story event and
+# talk runs, as Promestein's race machine and Lime's talk must (issue #48).
 # Stands in for world_catchup.rbx, the player behind the world's story while $behind is set.
 module MGQ_MpWorldCatchup
   def self.holds_story?; $behind; end
   def self.refusal_text; "Reach level 25 to continue the story."; end
 end
+# The part of the player's track, $track_part.
+module MGQ_MpWorldStory
+  def self.part; $track_part; end
+end
+$track_part = "1"
+# Stands in for the DLL's check of what a story event writes (StoryTopics.LeavesPartTopic, whose
+# rule PartEndTests covers): a write of $part_end ("s<id>" or "v<id>") ends the player's part, and
+# while $chain_end names a self switch, the chain the event starts across maps ends it until that
+# self switch is on, which the DLL names as a value it needs. It counts its asks.
+$part_end = "v1001"
+$chain_end = nil
+leave_asks = 0
+$world_bridge.answer("story.leaves_part") do |request|
+  leave_asks += 1
+  next { "unknown" => true } unless request["list"]
+
+  if $chain_end
+    known = request["values"] && request["values"]["ss"]
+    next { "needs" => { "ss" => [$chain_end] } } unless known && known.key?($chain_end)
+    next { "leaves" => !known[$chain_end], "why" => known[$chain_end] ? nil : "its chain sets v1001, which leaves Part #{$track_part}" }
+  end
+
+  code = $part_end[0] == "s" ? 121 : 122
+  id = $part_end[1..-1].to_i
+  ends = request["list"].any? { |command, _indent, parameters| command == code && parameters[0] <= id && id <= parameters[1] }
+  { "leaves" => ends, "why" => ends ? "it sets #{$part_end}, which leaves Part #{$track_part}" : nil }
+end
 $behind = true
 $peers = []
 $notices.clear
 MGQ_MpCoopEvents.instance_variable_set(:@refused, nil)
+race_machine = Game_Event.new(57, [story_page])
+check("a player behind the world's story starts story that stays in their part, as the race machine is", [MGQ_MpCoopEvents.hand_over(race_machine), $notices], [false, []])
+$track_part = "2"
+$part_end = "s60"
 behind_story = Game_Event.new(54, [story_page])
 behind_auto = Game_Event.new(55, [story_page], 3)
 behind_talk = Game_Event.new(56, [talk_page])
-check("a player behind the world's story starts no story event and hears the level that moves them on",
+check("but no story event that ends their part, and hears the level that moves them on",
       [MGQ_MpCoopEvents.hand_over(behind_story), $notices], [true, ["Reach level 25 to continue the story."]])
 check("once, however often they step on it", [MGQ_MpCoopEvents.hand_over(behind_story), $notices.size], [true, 1])
-check("story that runs by itself waits without a word, so a teleport onto its map cannot loop", [MGQ_MpCoopEvents.hand_over(behind_auto), $notices.size], [true, 1])
+check("such story that runs by itself waits without a word, so a teleport onto its map cannot loop", [MGQ_MpCoopEvents.hand_over(behind_auto), $notices.size], [true, 1])
+asks = leave_asks
+3.times { MGQ_MpCoopEvents.hand_over(behind_auto) }
+check("and asks the DLL no more on the frames it would start again", leave_asks - asks, 0)
+# Alice's final battle, which leads across maps to the part's end on a map without exits, waits
+# where it starts, as long as the self switch its chain's last page checks keeps that page.
+$chain_end = "750.12.A"
+final_battle = Game_Event.new(58, [story_page], 3)
+check("story whose chain across maps ends the part waits too, read with the self switch the DLL named",
+      [MGQ_MpCoopEvents.hand_over(final_battle), $notices.size], [true, 1])
+asks = leave_asks
+MGQ_MpCoopEvents.hand_over(final_battle)
+check("asked no more while that self switch stays", leave_asks - asks, 0)
+$game_self_switches[[750, 12, "A"]] = true
+check("and starts once it changed", MGQ_MpCoopEvents.hand_over(final_battle), false)
+$game_self_switches[[750, 12, "A"]] = false
+$chain_end = nil
 check("talks run", MGQ_MpCoopEvents.hand_over(behind_talk), false)
 behind_common = RPG::CommonEvent.new([c(101, "", 0, 0, 2), c(121, 60, 60, 0)])
 behind_common.switch_id = 70
 $data_common_events[4] = behind_common
 raw($game_switches)[70] = true
-check("as does a story common event that runs by itself", $game_map.setup_autorun_common_event, nil)
+check("as does a story common event that runs by itself and ends the part", $game_map.setup_autorun_common_event, nil)
+# A talk that turns into story follows the same rule: one whose story stays in the part goes on, as
+# Lime's goes on past her wedding line's switch; one whose story ends the part ends there.
+interpreter = $game_map.interpreter
+guard_talk = lambda do
+  interpreter.setup(trader, 0)
+  interpreter.busy = true
+  interpreter.instance_variable_set(:@index, 7)
+  MGQ_MpCoopEvents.instance_variable_set(:@may_tell, true)
+  $notices.clear
+  MGQ_MpCoopEvents.guard(interpreter)
+  reached = [interpreter.instance_variable_get(:@index), $notices.dup]
+  MGQ_MpCoopEvents.finished(interpreter)
+  interpreter.busy = false
+  reached
+end
+check("a talk of a player behind goes on where its story stays in their part", guard_talk.call, [7, []])
+$track_part = "3"
+$part_end = "v1007"
+check("and ends where its story would end their part", guard_talk.call, [trader.size - 1, ["Reach level 25 to continue the story."]])
+$track_part = "1"
+$part_end = "v1001"
 $behind = false
 check("caught up, the player's story events start again", [MGQ_MpCoopEvents.hand_over(behind_story), $game_map.setup_autorun_common_event], [false, behind_common])
 

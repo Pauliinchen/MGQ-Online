@@ -2,6 +2,7 @@
 //  TinyGame.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Wrote events of other maps that run by themselves
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -35,6 +36,12 @@ internal sealed class TinyGame : IGameDataFiles
     /// The common events, by id.
     /// </summary>
     private readonly SortedDictionary<int, object[][]> _commons = [];
+
+    /// <summary>
+    /// The events of other maps that run by themselves, by map and id: the self switch that ends
+    /// each and its commands.
+    /// </summary>
+    private readonly SortedDictionary<int, SortedDictionary<int, (string? EndedBy, object[][] Commands)>> _autoruns = [];
 
     /// <summary>
     /// Writes a command: code, then its parameters.
@@ -78,6 +85,25 @@ internal sealed class TinyGame : IGameDataFiles
     }
 
     /// <summary>
+    /// Adds an event of another map than 1 that runs by itself.
+    /// </summary>
+    /// <param name="map">The map.</param>
+    /// <param name="id">The event.</param>
+    /// <param name="endedBy">A self switch that, once on, shows a second page that runs nothing; <see langword="null"/> for none.</param>
+    /// <param name="commands">The commands of the page that runs by itself.</param>
+    /// <returns>The game, for more.</returns>
+    public TinyGame Autorun(int map, int id, string? endedBy, params object[][] commands)
+    {
+        if (!_autoruns.TryGetValue(map, out SortedDictionary<int, (string?, object[][])>? events))
+        {
+            _autoruns[map] = events = [];
+        }
+
+        events[id] = (endedBy, commands);
+        return this;
+    }
+
+    /// <summary>
     /// Writes the files and opens their data.
     /// </summary>
     /// <returns>The data.</returns>
@@ -85,6 +111,11 @@ internal sealed class TinyGame : IGameDataFiles
     {
         _files[GameDataPaths.MapInfos(0)] = Dump(w => w.Hash(1, () => w.Object("RPG::MapInfo", ("name", () => w.Text("Field")), ("parent_id", () => w.Int(0)))));
         _files[GameDataPaths.Map(1)] = Dump(w => w.Object("RPG::Map", ("events", () => w.HashOf(_events, (id, commands) => WriteEvent(w, id, commands)))));
+        foreach (var (map, events) in _autoruns)
+        {
+            _files[GameDataPaths.Map(map)] = Dump(w => w.Object("RPG::Map", ("events", () => w.HashOf(events, (id, autorun) => WriteAutorun(w, id, autorun.EndedBy, autorun.Commands)))));
+        }
+
         int last = _commons.Count == 0 ? 0 : _commons.Keys.Max();
         _files[GameDataPaths.CommonEvents] = Dump(w => w.Array(last + 1, id => _commons.TryGetValue(id, out object[][]? commands) ? WriteCommon(w, id, commands) : w.Nil()));
         _files[GameDataPaths.System] = Dump(w => w.Object("RPG::System", ("switches", () => w.Array(3, id => w.Text(id == 2 ? "Temp flag" : ""))), ("variables", () => w.Array(1, _ => w.Text("")))));
@@ -106,6 +137,23 @@ internal sealed class TinyGame : IGameDataFiles
             ("condition", () => w.Object("RPG::Event::Page::Condition", ("switch1_valid", () => w.Bool(false)))),
             ("trigger", () => w.Int(0)),
             ("list", () => w.List(commands))))));
+
+    /// <summary>
+    /// Writes a map event whose first page runs by itself, see <see cref="Autorun"/>.
+    /// </summary>
+    /// <param name="w">The writer.</param>
+    /// <param name="id">The event.</param>
+    /// <param name="endedBy">The self switch of its second page, <see langword="null"/> for none.</param>
+    /// <param name="commands">The first page's commands.</param>
+    private static void WriteAutorun(Writer w, int id, string? endedBy, object[][] commands) => w.Object(
+        "RPG::Event",
+        ("id", () => w.Int(id)),
+        ("name", () => w.Text($"EV{id:000}")),
+        ("pages", () => w.Array(endedBy is null ? 1 : 2, place => w.Object(
+            "RPG::Event::Page",
+            ("condition", () => w.Object("RPG::Event::Page::Condition", ("self_switch_valid", () => w.Bool(place == 1)), ("self_switch_ch", () => w.Text(endedBy ?? "A")))),
+            ("trigger", () => w.Int(place == 0 ? 3 : 0)),
+            ("list", () => w.List(place == 0 ? commands : []))))));
 
     /// <summary>
     /// Writes a common event that never starts by itself.

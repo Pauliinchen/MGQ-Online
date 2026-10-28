@@ -2,6 +2,8 @@
 //  EventTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Shared finding the list a request names with the story topics
+//                            - Read the self switches a page checks and shared the values a request hands over with the story topics
 //      Paulinchen  2026-10-23: Read the event data ahead on a thread of the dll
 //                            - Answered the event command index
 //                            - Created
@@ -11,6 +13,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using MGQOnline.Bridge;
@@ -237,7 +240,7 @@ internal static class EventTopics
     /// <param name="request">The request.</param>
     /// <returns>The commands and a page's trigger; no commands when the data lacks them or holds another length.</returns>
     /// <exception cref="BridgeRequestException">The request names no list.</exception>
-    private static (IReadOnlyList<EventCommand>? List, int? Trigger) ListOf(EventCatalog catalog, RubyHash request)
+    internal static (IReadOnlyList<EventCommand>? List, int? Trigger) ListOf(EventCatalog catalog, RubyHash request)
     {
         if (request["list"] is RubyArray rows)
         {
@@ -297,15 +300,21 @@ internal static class EventTopics
     /// <summary>
     /// The live values a request hands over, which notes every one the sort read that it lacks:
     /// <c>s</c> (switch id to true or false), <c>v</c> (variable id to its number, nil for none),
-    /// <c>ps</c> and <c>pv</c> (switch or variable id to whether it is the player's own).
+    /// <c>ps</c> and <c>pv</c> (switch or variable id to whether it is the player's own), <c>ss</c>
+    /// (self switch "map.event.letter", such as "750.12.A", to true or false).
     /// </summary>
     /// <param name="values">The values, <see langword="null"/> for none.</param>
-    private sealed class RequestState(RubyHash? values) : IEventState
+    internal sealed class RequestState(RubyHash? values) : IPageState
     {
         /// <summary>
         /// The ids read that the request lacks, by kind.
         /// </summary>
         private readonly SortedDictionary<string, SortedSet<long>> _missing = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// The self switches read that the request lacks, as their names in <c>ss</c>.
+        /// </summary>
+        private readonly SortedSet<string> _missingSelfSwitches = new(StringComparer.Ordinal);
 
         /// <inheritdoc />
         public bool Switch(long id) => Read("s", id) is RubyBool { Flag: true };
@@ -324,6 +333,19 @@ internal static class EventTopics
         /// <inheritdoc />
         public bool PersonalVariable(long id) => Read("pv", id) is RubyBool { Flag: true };
 
+        /// <inheritdoc />
+        public bool SelfSwitch(int map, int eventId, string letter)
+        {
+            string name = string.Create(CultureInfo.InvariantCulture, $"{map}.{eventId}.{letter}");
+            if (values?["ss"] is RubyHash known && known.TryGetValue(name, out RubyValue? value))
+            {
+                return value is RubyBool { Flag: true };
+            }
+
+            _missingSelfSwitches.Add(name);
+            return false;
+        }
+
         /// <summary>
         /// Answers the values the sort lacked: <c>{"needs"=>{"s"=>[ids], ...}}</c>, a kind only where
         /// one lacked.
@@ -331,7 +353,7 @@ internal static class EventTopics
         /// <returns>The answer, <see langword="null"/> when the request held every value read.</returns>
         public RubyHash? Needs()
         {
-            if (_missing.Count == 0)
+            if (_missing.Count == 0 && _missingSelfSwitches.Count == 0)
             {
                 return null;
             }
@@ -340,6 +362,11 @@ internal static class EventTopics
             foreach (var (kind, ids) in _missing)
             {
                 needs[kind] = new RubyArray(ids.Select(id => (RubyValue)id));
+            }
+
+            if (_missingSelfSwitches.Count > 0)
+            {
+                needs["ss"] = new RubyArray(_missingSelfSwitches.Select(name => (RubyValue)name));
             }
 
             return new RubyHash { { "needs", needs } };

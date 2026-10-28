@@ -2,7 +2,8 @@
 //  StoryTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Answered the telling machine, which takes the relay's telling lock
+//      Paulinchen  2026-10-28: Told whether a story event would move a player behind past the end of their part
+//                            - Answered the telling machine, which takes the relay's telling lock
 //                            - Told the scripts the teller whose ended telling the game has yet to take the track of
 //                            - Fetched the mapping in a Classic world too, and handed the scripts the rewards a party member catches up with
 //                            - Handed the catch-up the tables the mapping came with
@@ -20,10 +21,13 @@ using System.Text.Json;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Catchup;
+using MGQOnline.Game.Events;
+using MGQOnline.Game.Events.Data;
 using MGQOnline.Game.Story;
 using MGQOnline.Game.Telling;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.World;
+using MGQParadox.Multiplayer.Topics;
 
 namespace MGQParadox.Multiplayer;
 
@@ -130,6 +134,15 @@ internal sealed class StoryTopics : IStoryTrackHost
     /// the revision the scripts hold, nil for none; nil while it is the one held or before the mapping came.
     /// </summary>
     public const string RewardsTopic = "story.rewards";
+
+    /// <summary>
+    /// The topic that tells whether a story event, with the chain it starts across maps (see
+    /// <see cref="EventChain"/>), would move the player's story past the end of the part their
+    /// track is in (see <see cref="PartEnd"/>): the list named as for <see cref="EventTopics.Sort"/>,
+    /// with <c>values</c> as there. Answers <c>{"unknown"=>true}</c> or <c>needs</c> as that does,
+    /// else <c>{"leaves", "why"}</c> (nil while it stays).
+    /// </summary>
+    public const string LeavesPartTopic = "story.leaves_part";
 
     /// <summary>
     /// The event of how the story on tracks stands, see <see cref="StatusOf"/>.
@@ -266,6 +279,11 @@ internal sealed class StoryTopics : IStoryTrackHost
     internal Func<string, Uri?> RelayOf { get; set; }
 
     /// <summary>
+    /// Gets or sets how the game's events are found; tests hand out their own.
+    /// </summary>
+    internal Func<EventCatalog> Catalog { get; set; } = () => EventTopics.Current;
+
+    /// <summary>
     /// Gets or sets how a fetch runs; tests run it at once.
     /// </summary>
     internal Action<Action> Run { get; set; } = work => Threads.Start("MultiplayerStoryMapping", work);
@@ -340,6 +358,7 @@ internal sealed class StoryTopics : IStoryTrackHost
         });
         context.Register(MappingTopic, (_, request) => topics.FollowClassic(request.IsNil ? null : request.AsText()));
         context.Register(RewardsTopic, (_, request) => topics._table is { } table && (request.IsNil || request.AsLong() != table.Rev) ? RewardsOf(table) : null);
+        context.Register(LeavesPartTopic, (_, request) => topics.LeavesPart(request.AsHash()));
         context.EveryFrame(_ => topics.Step());
         return topics;
     }
@@ -362,6 +381,42 @@ internal sealed class StoryTopics : IStoryTrackHost
             { "locked", start.Locked },
         };
     }
+
+    /// <summary>
+    /// Answers <see cref="LeavesPartTopic"/> by the part of the player's track, unknown before the
+    /// relay placed them.
+    /// </summary>
+    /// <param name="request">The list.</param>
+    /// <returns>The answer.</returns>
+    private RubyHash LeavesPart(RubyHash request)
+    {
+        EventCatalog catalog = Catalog();
+        (IReadOnlyList<EventCommand>? list, _) = EventTopics.ListOf(catalog, request);
+        if (list is null)
+        {
+            return new RubyHash { { "unknown", true } };
+        }
+
+        var state = new EventTopics.RequestState(request["values"] as RubyHash);
+        int map = request["map"] is RubyInteger mapId ? mapId.AsInt() : 0;
+        int eventId = request["event"] is RubyInteger id ? id.AsInt() : 0;
+        IReadOnlyList<VariableSet> sets = catalog.Chains.VariableSetsOf(list, map, eventId, state);
+        if (state.Needs() is { } needs)
+        {
+            return needs;
+        }
+
+        PartLeave? leave = PartEnd.Leaving(_track.Synced ? _track.Part : null, sets, Kept);
+        return new RubyHash { { "leaves", leave is not null }, { "why", leave?.Why() } };
+    }
+
+    /// <summary>
+    /// Tells whether the story mapping keeps a variable on the tracks; before it came, every one counts.
+    /// </summary>
+    /// <param name="variable">The variable.</param>
+    /// <returns>Whether it does.</returns>
+    private bool Kept(long variable) =>
+        _table is not { } table || (variable < table.Variables.Length && ((StoryClass)table.Variables[variable]).HasFlag(StoryClass.Kept));
 
     /// <summary>
     /// Answers what a command of the telling does while its first waits for the relay, see

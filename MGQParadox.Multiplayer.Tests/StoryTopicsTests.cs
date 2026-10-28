@@ -2,7 +2,8 @@
 //  StoryTopicsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Checked the mapping a Classic world fetches and the rewards a party member catches up with
+//      Paulinchen  2026-10-28: Checked whether a story event leaves the part before the relay placed the player
+//                            - Checked the mapping a Classic world fetches and the rewards a party member catches up with
 //                            - Checked that the catch-up reads the tables the mapping came with
 //      Paulinchen  2026-10-23: Created
 //
@@ -16,8 +17,11 @@ using System.Text;
 using System.Text.Json;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Events;
+using MGQOnline.Game.Events.Data;
 using MGQOnline.Game.Topics;
 using MGQParadox.Multiplayer.Network.World;
+using MGQParadox.Multiplayer.Tests.Network.World;
 
 namespace MGQParadox.Multiplayer.Tests;
 
@@ -165,6 +169,24 @@ public sealed class StoryTopicsTests
 
         Assert.Equal((8000, 1, 0, 8, 129), (switches.Length, switches[7096], switches[100], switches[7102], switches[4]));
         Assert.Equal(1L, table["self_default"].AsLong());
+    }
+
+    /// <summary>
+    /// Asserts that before the relay placed the player any story event setting the main story's
+    /// progress leaves their part, one setting other keys does not, and a page the data lacks is
+    /// unknown, so the scripts hand its commands over.
+    /// </summary>
+    [Fact]
+    public void LeavesPart_HoldsAnyWriteOfThePartBeforeThePlayerIsPlaced()
+    {
+        using var game = new TempFolder();
+        _topics.Catalog = () => new EventCatalog(GameData.OfFolder(game.Path));
+        RubyHash Ask(int code, params RubyValue[] parameters) =>
+            Call(StoryTopics.LeavesPartTopic, new RubyHash { { "list", new RubyArray { new RubyArray { code, 0, new RubyArray(parameters) }, new RubyArray { 0, 0, new RubyArray() } } } }).AsHash();
+
+        Assert.Equal(new RubyHash { { "leaves", true }, { "why", "it sets variable 1001 to 40, which leaves the part the relay has yet to name" } }, Ask(122, 1001, 1001, 0, 0, 40));
+        Assert.Equal(new RubyHash { { "leaves", false }, { "why", RubyNil.Value } }, Ask(121, 451, 451, 0));
+        Assert.Equal(new RubyHash { { "unknown", true } }, Call(StoryTopics.LeavesPartTopic, new RubyHash { { "map", 228 }, { "event", 51 }, { "page", 0 }, { "size", 1550 } }));
     }
 
     /// <summary>

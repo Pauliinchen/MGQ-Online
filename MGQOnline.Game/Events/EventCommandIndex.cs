@@ -2,6 +2,8 @@
 //  EventCommandIndex.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Listed the variables a list sets with their values
+//                            - Shared the walk through the common events a list calls
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -50,23 +52,22 @@ public sealed class EventCommandIndex(GameData data)
     {
         var keys = new List<KeyRange>();
         var selfSwitches = new List<string>();
-        var seen = new HashSet<long>();
-        var pending = new Stack<ListKeys>([ListKeys.Of(list)]);
-        while (pending.TryPop(out ListKeys? next))
+        foreach (ListKeys reached in Reached(list))
         {
-            keys.AddRange(next.Writes);
-            selfSwitches.AddRange(next.SelfSwitches);
-            foreach (long id in Enumerable.Reverse(next.Calls))
-            {
-                if (seen.Add(id) && Common(id) is { } common)
-                {
-                    pending.Push(common);
-                }
-            }
+            keys.AddRange(reached.Writes);
+            selfSwitches.AddRange(reached.SelfSwitches);
         }
 
         return (keys, [.. selfSwitches.Distinct(StringComparer.Ordinal)]);
     }
+
+    /// <summary>
+    /// Lists the variables a list sets, directly or through the common events it calls, with the
+    /// values known before it runs, in the order the walk meets them.
+    /// </summary>
+    /// <param name="list">The commands.</param>
+    /// <returns>The variables set.</returns>
+    public IReadOnlyList<VariableSet> VariableSetsOf(IReadOnlyList<EventCommand> list) => [.. Reached(list).SelectMany(reached => reached.VariableSets)];
 
     /// <summary>
     /// Gets what a common event does by itself.
@@ -81,6 +82,29 @@ public sealed class EventCommandIndex(GameData data)
         }
 
         return keys;
+    }
+
+    /// <summary>
+    /// Walks a list and the common events it calls, each once, in the order of
+    /// <see cref="WritesOf"/>.
+    /// </summary>
+    /// <param name="list">The commands.</param>
+    /// <returns>What the list and each common event reached does by itself.</returns>
+    internal IEnumerable<ListKeys> Reached(IReadOnlyList<EventCommand> list)
+    {
+        var seen = new HashSet<long>();
+        var pending = new Stack<ListKeys>([ListKeys.Of(list)]);
+        while (pending.TryPop(out ListKeys? next))
+        {
+            yield return next;
+            foreach (long id in Enumerable.Reverse(next.Calls))
+            {
+                if (seen.Add(id) && Common(id) is { } common)
+                {
+                    pending.Push(common);
+                }
+            }
+        }
     }
 
     /// <summary>
