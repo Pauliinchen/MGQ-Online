@@ -2,7 +2,10 @@
 //  BattleSimulator.Rules.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Went to a stage by a rule
+//      Paulinchen  2026-10-28: Disabled a follow-up planned behind a parent that no longer runs
+//                            - Queued a rule cast for the turn it is due
+//                            - Told whether the plan is being made and kept the effects that wait for a cast
+//                            - Went to a stage by a rule
 //                            - Named the stage and the turn it started in
 //                            - Kept the damage taken in a turn and the HP percents the units crossed
 //      Paulinchen  2026-10-24: Told the rule engine whether a game switch is on
@@ -297,6 +300,21 @@ public sealed partial class BattleSimulator
         public int StageStartTurn => state.StageStartTurn;
 
         /// <inheritdoc />
+        public bool Planning => state.Phase is BattlePhase.Setup or BattlePhase.TurnStart or BattlePhase.Plan;
+
+        /// <inheritdoc />
+        public void AwaitCast(string castId, QueuedEffect effect)
+        {
+            if (!state.AwaitingCasts.TryGetValue(castId, out List<QueuedEffect>? effects))
+            {
+                effects = [];
+                state.AwaitingCasts[castId] = effects;
+            }
+
+            effects.Add(effect);
+        }
+
+        /// <inheritdoc />
         public StageStartEvent? GoToStage(string stage, string ruleId) => simulator.EnterStage(state, stage, ruleId);
 
         /// <inheritdoc />
@@ -504,11 +522,12 @@ public sealed partial class BattleSimulator
             if (order.Kind == PlanKind.FollowUp && order.Timing == CastTiming.PlanNow && state.Phase == BattlePhase.Plan
                 && order.ParentCastId is string parentId && state.Plan.FindIndex(entry => entry.CastId == parentId) is int parent and >= 0)
             {
-                Draft followUp = new(order.Enemy, order.Skill, PlanKind.FollowUp, side, order.AimSeat, state.Plan[parent].Side, order.ActionId, order.RootActionId);
+                Draft followUp = new(order.Enemy, order.Skill, PlanKind.FollowUp, side, order.AimSeat, state.Plan[parent].Side, order.ActionId, order.RootActionId) { RuleId = order.RuleId };
                 AfterCastEvent? after = simulator.AddCast(state, followUp, 0, order.Free, order.Uninterruptible, parentId, BehindChain(state.Plan, parent));
                 if (after is not null)
                 {
                     Log(after);
+                    ShareParentFlags(parent);
                 }
 
                 return after;
@@ -516,18 +535,40 @@ public sealed partial class BattleSimulator
 
             if (order.Timing == CastTiming.PlanNow && simulator._drafts is not null && state.Phase is BattlePhase.TurnStart or BattlePhase.Plan)
             {
-                simulator._drafts.Add(new Draft(order.Enemy, order.Skill, order.Kind, side, order.AimSeat, null, order.ActionId, order.RootActionId));
+                simulator._drafts.Add(new Draft(order.Enemy, order.Skill, order.Kind, side, order.AimSeat, null, order.ActionId, order.RootActionId) { RuleId = order.RuleId });
                 return null;
             }
 
-            if (order.Timing == CastTiming.PlanNow)
+            bool setup = state.Phase == BattlePhase.Setup;
+            if (order.Timing == CastTiming.PlanNow && !setup)
             {
                 Log(new WarningEvent(state.Turn, CastQueuedWarning, order.RuleId));
             }
 
+            int now = setup ? 1 : state.Turn;
+            int due = order.Timing == CastTiming.PlanNow ? (setup ? now : now + 1) : now + Math.Max(1, order.TurnsAhead);
             PlanKind queued = order.Kind == PlanKind.LastStandStart ? PlanKind.LastStandStart : PlanKind.DelayedAnswer;
-            state.NextTurn.Add(new QueuedCast(order.Enemy, order.Skill, queued, side, order.AimSeat, null, order.RootActionId, order.RuleId, state.Turn));
+            state.NextTurn.Add(new QueuedCast(order.Enemy, order.Skill, queued, side, order.AimSeat, null, order.RootActionId, order.RuleId, state.Turn) { DueTurn = due });
             return null;
+        }
+
+        /// <summary>
+        /// Disables the follow-ups below a parent that no longer runs, with the parent's flags.
+        /// </summary>
+        /// <param name="parent">The parent's place in the plan.</param>
+        private void ShareParentFlags(int parent)
+        {
+            if (!state.Plan[parent].Disabled)
+            {
+                return;
+            }
+
+            List<(string CastId, int State)> disabled = [];
+            CrowdControl.ShareWithFollowUps(state.Plan, parent, disabled);
+            foreach ((string castId, int by) in disabled)
+            {
+                Log(new CastDisabledEvent(state.Turn, castId, state.Plan[parent].DisabledBy is null ? null : by));
+            }
         }
 
         /// <inheritdoc />

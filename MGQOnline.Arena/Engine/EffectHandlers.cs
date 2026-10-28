@@ -2,7 +2,9 @@
 //  EffectHandlers.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Went to a stage by a rule
+//      Paulinchen  2026-10-28: Cast from the enemy the event names when several stand in the slot
+//                            - Timed a use skill cast by its trigger and queued it turns ahead
+//                            - Went to a stage by a rule
 //                            - Raised the lost states and the HP thresholds and damage in a turn of the receivers
 //      Paulinchen  2026-10-24: Found the receivers by the targets of the Trigger -> Effect framework
 //                            - Picked the skill and caster of a use skill effect
@@ -50,7 +52,6 @@ internal static class EffectHandlers
     /// <exception cref="ArgumentOutOfRangeException">The effect is of a kind the engine does not know.</exception>
     public static IReadOnlyList<BattleEvent> Run(IRuleContext context, RuleBook book, QueuedEffect queued) => queued.Effect switch
     {
-        // TE1: the non-cast effects of a skill used row wait for the parent cast to resolve; they run at once for now.
         UseSkillEffect useSkill => UseSkill(context, queued.Fired, useSkill),
         AddStateEffect addState => AddState(context, book, queued.Fired, addState),
         RemoveStateEffect removeState => RemoveState(context, queued.Fired, removeState),
@@ -82,13 +83,7 @@ internal static class EffectHandlers
     {
         RuleSpec rule = fired.Rule;
         BattleEvent cause = fired.Cause;
-
-        // TE1: casts queued two or more turns ahead.
-        if (TimingOf(effect) is not CastTiming timing)
-        {
-            return [];
-        }
-
+        (CastTiming timing, int turnsAhead) = TimingOf(effect, rule.Trigger, context);
         if (CasterOf(context, fired, effect.Caster) is not int caster || PickSkill(context, effect.Skills) is not SkillRef skill)
         {
             context.Log(new WarningEvent(cause.Turn, EngineWarnings.NoTarget, rule.Id));
@@ -118,30 +113,35 @@ internal static class EffectHandlers
             rule.Id,
             actionId,
             followsCause ? EventFacts.RootActionOf(cause) : actionId,
-            followsCause ? EventFacts.CastIdOf(cause) : null);
+            followsCause ? EventFacts.CastIdOf(cause) : null,
+            turnsAhead);
         return context.OrderCast(order) is AfterCastEvent planned ? [planned] : [];
     }
 
     /// <summary>
-    /// Tells which plan a use skill effect's cast goes into.
+    /// Tells which plan a use skill effect's cast goes into: this turn's only from a trigger before or
+    /// during the plan while the plan is still being made, else the next turn's at the earliest.
     /// </summary>
     /// <param name="effect">The effect.</param>
-    /// <returns>The timing, or null for a cast two or more turns ahead.</returns>
-    private static CastTiming? TimingOf(UseSkillEffect effect) => effect.When switch
+    /// <param name="trigger">The rule's trigger.</param>
+    /// <param name="context">The battle, for whether its plan is still being made.</param>
+    /// <returns>The timing, and for a later plan how many turns after the current one it lies.</returns>
+    private static (CastTiming Timing, int TurnsAhead) TimingOf(UseSkillEffect effect, TriggerSpec trigger, IRuleContext context)
     {
-        CastWhen.NextTurn => CastTiming.NextTurn,
-        CastWhen.InTurns => (effect.InTurns ?? 0) switch
+        int turnsAhead = effect.When switch
         {
-            <= 0 => CastTiming.PlanNow,
-            1 => CastTiming.NextTurn,
-            _ => null,
-        },
-        _ => CastTiming.PlanNow,
-    };
+            CastWhen.NextTurn => 1,
+            CastWhen.InTurns => Math.Max(0, effect.InTurns ?? 0),
+            _ => 0,
+        };
+        bool plansNow = context.Planning && trigger is BattleStartTrigger or StageStartTrigger or TurnStartTrigger or TurnTrigger or SkillUsedTrigger;
+        return turnsAhead == 0 && plansNow ? (CastTiming.PlanNow, 1) : (CastTiming.NextTurn, Math.Max(1, turnsAhead));
+    }
 
     /// <summary>
     /// Finds the enemy that casts a use skill effect's skill.
     /// </summary>
+    /// <remarks>Of several standing enemies in the slot, the one the event names casts, else the first in line-up order.</remarks>
     /// <param name="context">The battle.</param>
     /// <param name="fired">The fired rule.</param>
     /// <param name="slot">The caster's slot, or null for the rule's enemy.</param>
@@ -153,16 +153,8 @@ internal static class EffectHandlers
             return fired.Enemy >= 0 ? fired.Enemy : null;
         }
 
-        // TE1: which enemy casts when several stand in the slot; the first for now.
-        foreach (int enemy in context.LivingEnemies)
-        {
-            if (context.SlotOf(enemy) == slot)
-            {
-                return enemy;
-            }
-        }
-
-        return null;
+        int[] standing = [.. context.LivingEnemies.Where(enemy => context.SlotOf(enemy) == slot)];
+        return standing.Contains(fired.Enemy) ? fired.Enemy : standing.Length > 0 ? standing[0] : null;
     }
 
     /// <summary>

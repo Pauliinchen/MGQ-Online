@@ -2,7 +2,10 @@
 //  BattleState.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Kept the damage taken in a turn and the HP percents the units crossed
+//      Paulinchen  2026-10-28: Named the turn a queued cast is due
+//                            - Named the row of a planned cast
+//                            - Kept the effects that wait for a planned cast
+//                            - Kept the damage taken in a turn and the HP percents the units crossed
 //      Paulinchen  2026-10-24: Kept the battle plan's stage and the turn it started in
 //      Paulinchen  2026-10-23: Kept the damage reductions of units and enemies
 //                            - Kept the enemies that join, leave or transform, and the rules of the whole boss
@@ -183,7 +186,7 @@ public sealed class BattleState
     public List<PlannedCast> Plan { get; } = [];
 
     /// <summary>
-    /// Gets the casts queued for the next turn's plan.
+    /// Gets the casts queued for a later turn's plan, the next one's unless a cast names its turn.
     /// </summary>
     public List<QueuedCast> NextTurn { get; } = [];
 
@@ -231,6 +234,11 @@ public sealed class BattleState
     /// Gets the percents of damage in a turn each unit and enemy reached this turn.
     /// </summary>
     internal HashSet<(StateHolder Holder, int Index, int Percent)> DamageInTurnReached { get; } = [];
+
+    /// <summary>
+    /// Gets the effects of skill used rows that wait for the planned cast they fired on, by cast id.
+    /// </summary>
+    internal Dictionary<string, List<QueuedEffect>> AwaitingCasts { get; } = new(System.StringComparer.Ordinal);
 
     /// <summary>
     /// Gets or sets whether the all enemies fell event was logged since an enemy last stood, which the victory waits for.
@@ -640,6 +648,11 @@ public sealed record PlannedCast(
     public IReadOnlyList<int> MayRedirect { get; init; } = [];
 
     /// <summary>
+    /// Gets the row that ordered it, or null for a rolled or grapple cast.
+    /// </summary>
+    public string? RuleId { get; init; }
+
+    /// <summary>
     /// Gets whether crowd control may pick it: neither uninterruptible, unstoppable nor a follow-up.
     /// </summary>
     public bool Stoppable => !Uninterruptible && !Unstoppable && ParentCastId is null;
@@ -666,4 +679,10 @@ public sealed record QueuedCast(
     GridHalf? ParentSide,
     string? RootActionId,
     string RuleId,
-    int QueuedTurn);
+    int QueuedTurn)
+{
+    /// <summary>
+    /// Gets the turn whose plan it goes into, or null for the next plan made.
+    /// </summary>
+    public int? DueTurn { get; init; }
+}

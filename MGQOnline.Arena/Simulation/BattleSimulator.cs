@@ -2,7 +2,10 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Raised the first stage start only when no battle start rule went to a stage
+//      Paulinchen  2026-10-28: Ran the effects of the skill used rows of a cast when it resolves
+//                            - Named the row of each planned cast
+//                            - Planned the queued casts whose turn has come
+//                            - Raised the first stage start only when no battle start rule went to a stage
 //                            - Raised a turn event for each stage the turn rows enter before the enemies plan
 //                            - Raised the first stage's start, one turn event per plan, lost states, unit HP thresholds and damage in a turn
 //      Paulinchen  2026-10-24: Read each enemy's rolled skills from the battle plan's stage
@@ -267,6 +270,7 @@ public sealed partial class BattleSimulator
         state.Turn++;
         state.TurnLogStart = state.Log.Count;
         state.Plan.Clear();
+        state.AwaitingCasts.Clear();
         state.DamageThisTurn.Clear();
         state.DamageInTurnReached.Clear();
         state.Phase = BattlePhase.TurnStart;
@@ -294,12 +298,12 @@ public sealed partial class BattleSimulator
             bool frozen = Overdrive.Freezes(state);
             if (!frozen)
             {
-                foreach (QueuedCast queued in state.NextTurn)
+                foreach (QueuedCast queued in state.NextTurn.Where(queued => IsDue(queued, state.Turn)))
                 {
-                    _drafts.Add(new Draft(queued.Enemy, queued.Skill, queued.Kind, queued.Side, queued.AimSeat, queued.ParentSide, null, queued.RootActionId));
+                    _drafts.Add(new Draft(queued.Enemy, queued.Skill, queued.Kind, queued.Side, queued.AimSeat, queued.ParentSide, null, queued.RootActionId) { RuleId = queued.RuleId });
                 }
 
-                state.NextTurn.Clear();
+                state.NextTurn.RemoveAll(queued => IsDue(queued, state.Turn));
             }
 
             state.Phase = BattlePhase.Plan;
@@ -666,6 +670,7 @@ public sealed partial class BattleSimulator
             Unstoppable = skill.Unstoppable,
             Telegraph = telegraph,
             SkippedRest = draft.SkippedRest,
+            RuleId = draft.RuleId,
         };
         state.Plan.Insert(place, planned);
         return new AfterCastEvent(state.Turn, castId, draft.Enemy, draft.Skill, draft.Kind, draft.ActionId, draft.RootActionId, side);
@@ -806,7 +811,8 @@ public sealed partial class BattleSimulator
     }
 
     /// <summary>
-    /// Resolves one cast: its debris, its hazards, the rules its run fires, its damage, its payload
+    /// Resolves one cast: its debris, its hazards, the effects of its skill used rows that waited for
+    /// it, the rules its run fires, its damage, its payload
     /// states, a unit hit event per unit hit with the states that unit held before the cast and
     /// whether it is the main target, the HP thresholds crossed and damage in a turn reached, the
     /// falls, and the units its debris pushed.
@@ -828,6 +834,12 @@ public sealed partial class BattleSimulator
         _resolvingHits = seats;
         try
         {
+            if (state.AwaitingCasts.Remove(entry.CastId, out List<QueuedEffect>? awaited))
+            {
+                state.Engine.RunAwaited(ContextOf(state), awaited);
+                CheckWon(state);
+            }
+
             Raise(state, new CastResolvedEvent(state.Turn, entry.CastId, entry.Enemy, entry.Skill, seats, seats.Count == 0));
             List<int> fell = [];
             List<BattleEvent> damaged = [];
@@ -1066,6 +1078,14 @@ public sealed partial class BattleSimulator
         skill.Cycle is { } cycle ? cycle.Fires(turn) : !cycleTurn;
 
     /// <summary>
+    /// Tells whether a queued cast goes into a turn's plan.
+    /// </summary>
+    /// <param name="queued">The queued cast.</param>
+    /// <param name="turn">The turn planned.</param>
+    /// <returns>Whether its turn has come, or it waits for the next plan made.</returns>
+    private static bool IsDue(QueuedCast queued, int turn) => queued.DueTurn is not int due || due <= turn;
+
+    /// <summary>
     /// Finds the place right behind an entry and every follow-up below it.
     /// </summary>
     /// <param name="plan">The plan.</param>
@@ -1110,5 +1130,10 @@ public sealed partial class BattleSimulator
         /// Gets the plans of rest a full bank paid to skip, 0 for none.
         /// </summary>
         public int SkippedRest { get; init; }
+
+        /// <summary>
+        /// Gets the row that ordered it, or null for a rolled or grapple cast.
+        /// </summary>
+        public string? RuleId { get; init; }
     }
 }

@@ -2,7 +2,8 @@
 //  RuleEngine.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Matched the fight rows of the stage the battle is in
+//      Paulinchen  2026-10-28: Kept the effects of a skill used row other than its casts until the cast resolves
+//                            - Matched the fight rows of the stage the battle is in
 //                            - Fired a row the Nth or every Nth time its trigger and conditions held
 //                            - Warned of a rule loop only for the dropped events that would fire a row
 //      Paulinchen  2026-10-24: Limited the fires of a row by how often it fires
@@ -17,6 +18,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using MGQOnline.Arena.Events;
 using MGQOnline.Arena.Model;
 
@@ -102,7 +104,22 @@ public sealed class RuleEngine
     }
 
     /// <summary>
-    /// Runs queued effects in order, and queues the effects of the rules the events they raise fire.
+    /// Runs the effects that waited for a cast that resolves now, and every effect that follows from
+    /// them as <see cref="Raise"/> does.
+    /// </summary>
+    /// <param name="context">The battle, resolving the cast.</param>
+    /// <param name="awaited">The effects the battle kept for the cast, in the order they were queued.</param>
+    public void RunAwaited(IRuleContext context, IReadOnlyList<QueuedEffect> awaited)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(awaited);
+        Queue<QueuedEffect> effects = new(awaited.Select(effect => effect with { CastResolving = true }));
+        RunQueue(context, effects);
+    }
+
+    /// <summary>
+    /// Runs queued effects in order, and queues the effects of the rules the events they raise fire;
+    /// the effects of a skill used row other than its casts wait for the cast it fired on.
     /// </summary>
     /// <param name="context">The battle.</param>
     /// <param name="effects">The queue.</param>
@@ -110,6 +127,12 @@ public sealed class RuleEngine
     {
         while (effects.TryDequeue(out QueuedEffect? queued))
         {
+            if (!queued.CastResolving && queued.Effect is not UseSkillEffect && queued.Fired is { Rule.Trigger: SkillUsedTrigger, Cause: AfterCastEvent cast })
+            {
+                context.AwaitCast(cast.CastId, queued);
+                continue;
+            }
+
             foreach (BattleEvent raised in EffectHandlers.Run(context, Book, queued))
             {
                 int depth = queued.Fired.Depth + 1;

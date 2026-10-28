@@ -2,7 +2,8 @@
 //  FakeRuleContext.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Went to a stage
+//      Paulinchen  2026-10-28: Told whether the plan is being made and kept the effects that wait for a cast
+//                            - Went to a stage
 //                            - Named the stage and the turn it started in
 //      Paulinchen  2026-10-24: Told whether a game switch is on
 //      Paulinchen  2026-10-23: Recorded damage reductions
@@ -93,10 +94,21 @@ internal sealed class FakeRuleContext : IRuleContext
     /// <inheritdoc />
     public int StageStartTurn { get; set; } = 1;
 
+    /// <inheritdoc />
+    public bool Planning { get; set; } = true;
+
+    /// <summary>
+    /// Gets the effects that wait for a cast, with the cast's id.
+    /// </summary>
+    public List<(string CastId, QueuedEffect Effect)> Awaiting { get; } = [];
+
     /// <summary>
     /// Gets the stages of the battle plan.
     /// </summary>
     public HashSet<string> Stages { get; } = [RuntimePlan.MainStage];
+
+    /// <inheritdoc />
+    public void AwaitCast(string castId, QueuedEffect effect) => Awaiting.Add((castId, effect));
 
     /// <inheritdoc />
     public StageStartEvent? GoToStage(string stage, string ruleId)

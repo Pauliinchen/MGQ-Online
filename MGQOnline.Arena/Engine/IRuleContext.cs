@@ -2,7 +2,9 @@
 //  IRuleContext.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Went to a stage
+//      Paulinchen  2026-10-28: Kept effects until a planned cast resolves
+//                            - Told whether the plan of the turn is still being made
+//                            - Went to a stage
 //                            - Named the stage and the turn it started in
 //      Paulinchen  2026-10-24: Told whether a game switch is on
 //      Paulinchen  2026-10-23: Added and removed damage reductions
@@ -58,6 +60,20 @@ public interface IRuleContext
     /// Gets the first turn planned in the stage, which the stage clock counts from.
     /// </summary>
     int StageStartTurn { get; }
+
+    /// <summary>
+    /// Gets whether the plan of the turn is still being made, at the battle start, the turn start or the
+    /// plan, so a cast ordered for this turn can join it.
+    /// </summary>
+    bool Planning { get; }
+
+    /// <summary>
+    /// Keeps an effect until a planned cast resolves, when the battle hands it back to the engine; it
+    /// never runs when the cast is disabled or cancelled.
+    /// </summary>
+    /// <param name="castId">The cast's id.</param>
+    /// <param name="effect">The effect.</param>
+    void AwaitCast(string castId, QueuedEffect effect);
 
     /// <summary>
     /// Enters a stage of the battle plan, the one the battle is in included, and logs its start.
@@ -254,7 +270,7 @@ public interface IRuleContext
     IReadOnlyList<GridCell> PlaceHazards(int enemy, HazardPlacement hazard, string? castId, int? seat, string ruleId);
 
     /// <summary>
-    /// Puts a cast into the plan being made or queues it for the next turn's plan, telegraphed either way.
+    /// Puts a cast into the plan being made or queues it for a later turn's plan, telegraphed either way.
     /// </summary>
     /// <param name="order">The cast.</param>
     /// <returns>The after-cast event of a cast planned now, or null for a queued or refused one.</returns>

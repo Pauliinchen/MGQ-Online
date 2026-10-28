@@ -2,7 +2,8 @@
 //  EffectHandlersTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Planned the battle's turn row on the turn event
+//      Paulinchen  2026-10-28: Tested the caster of a slot, the plan a cast goes into and the effects that wait for a cast
+//                            - Planned the battle's turn row on the turn event
 //      Paulinchen  2026-10-24: Tested the effects with the targets of the Trigger -> Effect framework
 //                            - Tested the skill pick, the caster slot and the targets of a party hit
 //      Paulinchen  2026-10-22: Tested placing hazards
@@ -77,6 +78,82 @@ public sealed class EffectHandlersTests
 
         Assert.Equal(2, Assert.Single(context.Orders).Enemy);
         Assert.Equal((EngineWarnings.NoTarget, "gone"), (Assert.Single(context.LoggedOf<WarningEvent>()).Code, context.LoggedOf<WarningEvent>().Single().RuleId));
+    }
+
+    /// <summary>
+    /// Of several standing enemies in the slot, casts from the one the event names, else from the first.
+    /// </summary>
+    [Fact]
+    public void CastsFromTheEnemyTheEventNames()
+    {
+        FakeRuleContext context = new(enemies: 3);
+        context.Slots[1] = "x";
+        context.Slots[2] = "x";
+        RuleEngine engine = new(Book(
+            [
+                Rule("hit", new SkillHitsTrigger(Who.Character, Who.Enemy("x")), [Use(Blast, CastWhen.NextTurn, caster: "x")], owner: RuleOwner.Battle),
+                Rule("start", new TurnStartTrigger(), [Use(Blast, caster: "x")], owner: RuleOwner.Battle),
+            ],
+            enemies: 3));
+
+        engine.Raise(context, new BossHitEvent(1, 2, 0, new GridCell(0, 0), HitKind.Magic, Blast, [], true));
+        engine.Raise(context, new TurnStartEvent(2));
+
+        Assert.Equal([2, 1], context.Orders.Select(order => order.Enemy));
+    }
+
+    /// <summary>
+    /// Plans a cast this turn only from a trigger before or during the plan while the plan is being made,
+    /// else in the next turn's plan.
+    /// </summary>
+    [Fact]
+    public void PlansThisTurnOnlyWhileThePlanIsMade()
+    {
+        RuleEngine engine = EngineOf(
+            Rule("start", new TurnStartTrigger(), [Use(Blast)]),
+            Rule("hit", new SkillHitsTrigger(Who.Owner, Who.Character), [Use(Blast)]));
+
+        engine.Raise(_context, new TurnStartEvent(1));
+        engine.Raise(_context, Hit(1, "c1", Blast, 0));
+        _context.Planning = false;
+        engine.Raise(_context, new TurnStartEvent(2));
+
+        Assert.Equal(
+            [(CastTiming.PlanNow, 1), (CastTiming.NextTurn, 1), (CastTiming.NextTurn, 1)],
+            _context.Orders.Select(order => (order.Timing, order.TurnsAhead)));
+    }
+
+    /// <summary>
+    /// Queues a cast some turns ahead.
+    /// </summary>
+    [Fact]
+    public void QueuesACastSomeTurnsAhead()
+    {
+        UseSkillEffect later = new([new WeightedSkill(Blast)], CastWhen.InTurns, true, false, CastSide.Own, CastAim.Default, InTurns: 3);
+
+        EngineOf(Rule("r", new TurnStartTrigger(), [later])).Raise(_context, new TurnStartEvent(1));
+
+        CastOrder order = Assert.Single(_context.Orders);
+        Assert.Equal((CastTiming.NextTurn, 3), (order.Timing, order.TurnsAhead));
+    }
+
+    /// <summary>
+    /// Keeps the effects of a skill used row other than its casts for the cast it fired on, and runs
+    /// them once the battle hands them back as the cast resolves.
+    /// </summary>
+    [Fact]
+    public void KeepsTheOtherEffectsOfASkillUsedRowForItsCast()
+    {
+        RuleEngine engine = EngineOf(Rule("used", new SkillUsedTrigger(Who.Owner, LightStigmata), [Use(Blast), new AddStateEffect(TargetRef.Owner, 15, Turns: 1)]));
+
+        engine.Raise(_context, new AfterCastEvent(2, "c1", 0, LightStigmata, PlanKind.Rolled));
+
+        Assert.Single(_context.Orders);
+        Assert.Null(_context.StateOf(StateHolder.Boss, 0, 15));
+        (string castId, QueuedEffect awaited) = Assert.Single(_context.Awaiting);
+        engine.RunAwaited(_context, [awaited]);
+        Assert.Equal("c1", castId);
+        Assert.NotNull(_context.StateOf(StateHolder.Boss, 0, 15));
     }
 
     /// <summary>

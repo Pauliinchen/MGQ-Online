@@ -2,6 +2,7 @@
 //  CastOrder.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Queued a cast some turns ahead
 //      Paulinchen  2026-10-24: Moved the cast timing here from the model
 //      Paulinchen  2026-10-21: Created
 //
@@ -27,6 +28,7 @@ namespace MGQOnline.Arena.Engine;
 /// <param name="ActionId">The turn row it is a cast of, or null; with the enemy it keys an alternating side's memory, the skill keys it without one.</param>
 /// <param name="RootActionId">The turn row at the root of its follow-up chain, or null.</param>
 /// <param name="ParentCastId">The cast it follows right behind, or null.</param>
+/// <param name="TurnsAhead">The turns after the current one whose plan a <see cref="CastTiming.NextTurn"/> cast goes into, 1 the next.</param>
 public sealed record CastOrder(
     int Enemy,
     SkillRef Skill,
@@ -40,7 +42,8 @@ public sealed record CastOrder(
     string RuleId,
     string? ActionId = null,
     string? RootActionId = null,
-    string? ParentCastId = null);
+    string? ParentCastId = null,
+    int TurnsAhead = 1);
 
 /// <summary>
 /// Which plan a cast a rule orders goes into.
@@ -53,7 +56,7 @@ public enum CastTiming
     PlanNow,
 
     /// <summary>
-    /// The next turn's plan as a forced entry, telegraphed then.
+    /// A later turn's plan as a forced entry, telegraphed then; the next turn's unless the order names more turns ahead.
     /// </summary>
     NextTurn,
 }

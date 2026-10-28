@@ -2,6 +2,7 @@
 //  FiredRule.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Marked an effect whose skill used row waited for its cast
 //      Paulinchen  2026-10-23: Named the place of a queued effect in its rule
 //      Paulinchen  2026-10-21: Created
 //
@@ -27,4 +28,10 @@ public sealed record FiredRule(RuleSpec Rule, int Enemy, BattleEvent Cause, int 
 /// <param name="Fired">The fired rule.</param>
 /// <param name="Effect">The effect.</param>
 /// <param name="Index">The effect's place in the rule's effects, from 0.</param>
-public sealed record QueuedEffect(FiredRule Fired, EffectSpec Effect, int Index = 0);
+public sealed record QueuedEffect(FiredRule Fired, EffectSpec Effect, int Index = 0)
+{
+    /// <summary>
+    /// Gets whether the cast its skill used row fired on resolves now, so it runs rather than waiting for it.
+    /// </summary>
+    public bool CastResolving { get; init; }
+}
