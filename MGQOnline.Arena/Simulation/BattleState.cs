@@ -128,7 +128,7 @@ public sealed class BattleState
     public string Stage { get; internal set; }
 
     /// <summary>
-    /// Gets the turn the stage started in; the stage turn is <see cref="Turn"/> - StageStartTurn + 1.
+    /// Gets the first turn planned in the stage; the stage turn is <see cref="Turn"/> - StageStartTurn + 1.
     /// </summary>
     public int StageStartTurn { get; internal set; } = 1;
 

@@ -2,7 +2,9 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Raised the first stage's start, one turn event per plan, lost states, unit HP thresholds and damage in a turn
+//      Paulinchen  2026-10-28: Raised the first stage start only when no battle start rule went to a stage
+//                            - Raised a turn event for each stage the turn rows enter before the enemies plan
+//                            - Raised the first stage's start, one turn event per plan, lost states, unit HP thresholds and damage in a turn
 //      Paulinchen  2026-10-24: Read each enemy's rolled skills from the battle plan's stage
 //                            - Rolled every action, since turn rows cast outside the roll
 //                            - Named the states a skill's own hit rows add as the marks it leaves
@@ -108,6 +110,11 @@ public sealed partial class BattleSimulator
     private List<Draft>? _drafts;
 
     /// <summary>
+    /// Whether the enemies of the plan being made plan their casts, so a stage entered now starts with the next turn.
+    /// </summary>
+    private bool _enemiesPlanning;
+
+    /// <summary>
     /// The cast being resolved, or null.
     /// </summary>
     private PlannedCast? _resolving;
@@ -173,7 +180,8 @@ public sealed partial class BattleSimulator
     /// <summary>
     /// Starts a battle: places the party, forces the tier's states on the enemies, gives their
     /// cooldown skills their start rests, rolls the boss's or the game rule's start debris, places the
-    /// start hazards and fires the battle start rules, then the first stage's start rules.
+    /// start hazards and fires the battle start rules, then the first stage's start rules unless a
+    /// battle start rule already went to a stage.
     /// </summary>
     /// <param name="setup">The setup.</param>
     /// <returns>The battle before its first turn.</returns>
@@ -230,7 +238,11 @@ public sealed partial class BattleSimulator
 
         PlaceStartHazards(state);
         Raise(state, new BattleStartEvent(0));
-        Raise(state, new StageStartEvent(0, state.Stage));
+        if (!state.Log.OfType<StageStartEvent>().Any())
+        {
+            Raise(state, new StageStartEvent(0, state.Stage));
+        }
+
         return state;
     }
 
@@ -291,7 +303,8 @@ public sealed partial class BattleSimulator
             }
 
             state.Phase = BattlePhase.Plan;
-            Raise(state, new TurnEvent(state.Turn, state.Stage, state.Turn - state.StageStartTurn + 1));
+            RaiseTurnEvents(state);
+            _enemiesPlanning = true;
             List<EnemyPlan> plans = [];
             foreach (EnemyState enemy in Standing(state))
             {
@@ -306,6 +319,27 @@ public sealed partial class BattleSimulator
         finally
         {
             _drafts = null;
+            _enemiesPlanning = false;
+        }
+    }
+
+    /// <summary>
+    /// Raises the turn event of the plan, and one more for each stage its rules enter before the
+    /// enemies plan, so the rows of that stage plan its first turn too.
+    /// </summary>
+    /// <param name="state">The battle, at the start of its plan.</param>
+    private void RaiseTurnEvents(BattleState state)
+    {
+        HashSet<string> planned = new(StringComparer.Ordinal) { state.Stage };
+        int from = state.Log.Count;
+        Raise(state, new TurnEvent(state.Turn, state.Stage, state.Turn - state.StageStartTurn + 1));
+        while (!state.IsOver
+            && state.Log.Skip(from).OfType<StageStartEvent>().LastOrDefault() is { RuleId: string ruleId } entered
+            && entered.Stage == state.Stage
+            && planned.Add(state.Stage))
+        {
+            from = state.Log.Count;
+            Raise(state, new TurnEvent(state.Turn, state.Stage, state.Turn - state.StageStartTurn + 1, ruleId));
         }
     }
 

@@ -2,7 +2,8 @@
 //  IRuleContext.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Named the stage and the turn it started in
+//      Paulinchen  2026-10-28: Went to a stage
+//                            - Named the stage and the turn it started in
 //      Paulinchen  2026-10-24: Told whether a game switch is on
 //      Paulinchen  2026-10-23: Added and removed damage reductions
 //                            - Brought enemies in, took them out and transformed them
@@ -54,9 +55,17 @@ public interface IRuleContext
     string Stage { get; }
 
     /// <summary>
-    /// Gets the turn the stage started in, which the stage clock counts from.
+    /// Gets the first turn planned in the stage, which the stage clock counts from.
     /// </summary>
     int StageStartTurn { get; }
+
+    /// <summary>
+    /// Enters a stage of the battle plan, the one the battle is in included, and logs its start.
+    /// </summary>
+    /// <param name="stage">The stage id.</param>
+    /// <param name="ruleId">The rule that goes to it.</param>
+    /// <returns>The logged stage start event; null when the plan has no such stage.</returns>
+    StageStartEvent? GoToStage(string stage, string ruleId);
 
     /// <summary>
     /// Gives the enemy slot of an enemy in the fight.

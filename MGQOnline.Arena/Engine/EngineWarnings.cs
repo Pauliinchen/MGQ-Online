@@ -2,6 +2,7 @@
 //  EngineWarnings.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Added the warning of a stage the battle plan lacks
 //      Paulinchen  2026-10-23: Added the warning of an enemy the reserve lacks
 //      Paulinchen  2026-10-21: Created
 //
@@ -25,4 +26,9 @@ public static class EngineWarnings
     /// The code of a join or a transform into an enemy slot the boss lacks; nothing changes.
     /// </summary>
     public const string UnknownEnemy = "unknownEnemy";
+
+    /// <summary>
+    /// The code of a go to stage effect whose stage the battle plan lacks; the stage stays.
+    /// </summary>
+    public const string UnknownStage = "unknownStage";
 }

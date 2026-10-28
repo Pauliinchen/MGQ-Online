@@ -159,7 +159,7 @@ public enum TurnClock
     Battle,
 
     /// <summary>
-    /// The stage turn, 1 the turn the stage started.
+    /// The stage turn, 1 the first turn planned in the stage.
     /// </summary>
     Stage,
 }

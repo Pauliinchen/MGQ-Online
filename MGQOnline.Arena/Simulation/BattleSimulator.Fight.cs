@@ -2,6 +2,7 @@
 //  BattleSimulator.Fight.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Entered a stage of the battle plan
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -15,8 +16,8 @@ using MGQOnline.Arena.Model;
 namespace MGQOnline.Arena.Simulation;
 
 /// <summary>
-/// The simulator's fight changes: enemies that fall, join, leave or transform, and the victory once
-/// no enemy stands.
+/// The simulator's fight changes: enemies that fall, join, leave or transform, the stages entered,
+/// and the victory once no enemy stands.
 /// </summary>
 public sealed partial class BattleSimulator
 {
@@ -158,6 +159,36 @@ public sealed partial class BattleSimulator
         Log(state, transformed);
         DisableEntriesOf(state, index);
         return transformed;
+    }
+
+    /// <summary>
+    /// Enters a stage of the battle plan, which starts its stage clock anew, and logs its start; its
+    /// rolled skills hold for every enemy that plans from now on.
+    /// </summary>
+    /// <remarks>The stage turn 1 is the first turn whose turn rows still fire after the stage is entered:
+    /// the turn being started before its turn rows, the next turn once they fired.</remarks>
+    /// <param name="state">The battle.</param>
+    /// <param name="stage">The stage id.</param>
+    /// <param name="ruleId">The rule that goes to it.</param>
+    /// <returns>The stage start event, logged; null when the plan has no such stage.</returns>
+    private StageStartEvent? EnterStage(BattleState state, string stage, string ruleId)
+    {
+        if (state.Boss.Plan.IndexOf(stage) < 0)
+        {
+            return null;
+        }
+
+        state.Stage = stage;
+        state.StageStartTurn = state.Phase switch
+        {
+            BattlePhase.Setup => 1,
+            BattlePhase.TurnStart => state.Turn,
+            BattlePhase.Plan when !_enemiesPlanning => state.Turn,
+            _ => state.Turn + 1,
+        };
+        StageStartEvent started = new(state.Turn, stage, ruleId);
+        Log(state, started);
+        return started;
     }
 
     /// <summary>

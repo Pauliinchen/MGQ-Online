@@ -2,7 +2,8 @@
 //  BattleSimulator.Rules.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Named the stage and the turn it started in
+//      Paulinchen  2026-10-28: Went to a stage by a rule
+//                            - Named the stage and the turn it started in
 //                            - Kept the damage taken in a turn and the HP percents the units crossed
 //      Paulinchen  2026-10-24: Told the rule engine whether a game switch is on
 //      Paulinchen  2026-10-23: Added and removed damage reductions and reduced every damage by them last
@@ -294,6 +295,9 @@ public sealed partial class BattleSimulator
 
         /// <inheritdoc />
         public int StageStartTurn => state.StageStartTurn;
+
+        /// <inheritdoc />
+        public StageStartEvent? GoToStage(string stage, string ruleId) => simulator.EnterStage(state, stage, ruleId);
 
         /// <inheritdoc />
         public string? SlotOf(int enemy) => state.Enemies.Find(each => each.Index == enemy)?.Slot;

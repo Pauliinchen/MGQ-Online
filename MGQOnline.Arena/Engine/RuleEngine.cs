@@ -2,7 +2,8 @@
 //  RuleEngine.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Fired a row the Nth or every Nth time its trigger and conditions held
+//      Paulinchen  2026-10-28: Matched the fight rows of the stage the battle is in
+//                            - Fired a row the Nth or every Nth time its trigger and conditions held
 //                            - Warned of a rule loop only for the dropped events that would fire a row
 //      Paulinchen  2026-10-24: Limited the fires of a row by how often it fires
 //      Paulinchen  2026-10-23: Matched the fight rules once per event and the enemy rules by enemy slot
@@ -132,8 +133,8 @@ public sealed class RuleEngine
     /// </summary>
     /// <remarks>
     /// An event that names an enemy reaches that enemy's rules only; any other event reaches the rules of
-    /// every living enemy, each enemy in turn. The fight rules come last, once, for the enemy the event
-    /// names or the fallen one.
+    /// every living enemy, each enemy in turn. The fight rules of the stage the battle is in come last,
+    /// once, for the enemy the event names or the fallen one.
     /// </remarks>
     /// <param name="context">The battle.</param>
     /// <param name="battleEvent">The event.</param>
@@ -172,7 +173,7 @@ public sealed class RuleEngine
             yield return new RuleList(enemy, enemy, false, Book.RulesOf(slot));
         }
 
-        yield return new RuleList(EventFacts.SubjectOf(battleEvent) ?? FightEnemy, FightEnemy, true, Book.FightRules);
+        yield return new RuleList(EventFacts.SubjectOf(battleEvent) ?? FightEnemy, FightEnemy, true, Book.FightRulesIn(context.Stage));
     }
 
     /// <summary>

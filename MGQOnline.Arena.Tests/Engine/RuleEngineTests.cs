@@ -2,6 +2,7 @@
 //  RuleEngineTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Tested the rows of the stage the battle is in and going to a stage
 //      Paulinchen  2026-10-24: Tested the engine with rows of the Trigger -> Effect framework
 //      Paulinchen  2026-10-21: Dropped the test of the effect queue seam
 //                            - Created
@@ -153,6 +154,40 @@ public sealed class RuleEngineTests
         engine.Raise(context, new BossHitEvent(1, 1, 0, new GridCell(0, 0), HitKind.Magic, Blast, [], true));
 
         Assert.Equal([0, 2, 2], context.ApChanges.Select(change => change.Enemy));
+    }
+
+    /// <summary>
+    /// Goes to a stage, fires the start rows of that stage, and from then on its rows instead of the
+    /// stage before; the battle rows fire in every stage.
+    /// </summary>
+    [Fact]
+    public void FiresTheRowsOfTheStageTheBattleIsIn()
+    {
+        _context.Stages.UnionWith(["s1", "s2"]);
+        _context.Stage = "s1";
+        RuleEngine engine = EngineOf(
+            Rule("battle", new TurnStartTrigger(), [], owner: RuleOwner.Battle),
+            Rule("go", new TurnStartTrigger(), [new GoToStageEffect("s2")], owner: RuleOwner.OfStage("s1")),
+            Rule("enter", new StageStartTrigger(), [], owner: RuleOwner.OfStage("s2")),
+            Rule("second", new TurnStartTrigger(), [], owner: RuleOwner.OfStage("s2")));
+
+        engine.Raise(_context, new TurnStartEvent(1));
+        engine.Raise(_context, new TurnStartEvent(2));
+
+        Assert.Equal(["battle", "go", "enter", "battle", "second"], FiredIds(_context));
+        Assert.Equal("s2", _context.Stage);
+    }
+
+    /// <summary>
+    /// Warns and stays when a row goes to a stage the battle plan lacks.
+    /// </summary>
+    [Fact]
+    public void StaysWhenTheStageIsUnknown()
+    {
+        EngineOf(Rule("go", new TurnStartTrigger(), [new GoToStageEffect("nowhere")], owner: RuleOwner.Battle)).Raise(_context, new TurnStartEvent(1));
+
+        Assert.Equal(RuntimePlan.MainStage, _context.Stage);
+        Assert.Equal((EngineWarnings.UnknownStage, "go"), (Assert.Single(_context.LoggedOf<WarningEvent>()).Code, _context.LoggedOf<WarningEvent>()[0].RuleId));
     }
 
     /// <summary>

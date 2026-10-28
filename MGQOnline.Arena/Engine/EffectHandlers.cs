@@ -2,7 +2,8 @@
 //  EffectHandlers.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Raised the lost states and the HP thresholds and damage in a turn of the receivers
+//      Paulinchen  2026-10-28: Went to a stage by a rule
+//                            - Raised the lost states and the HP thresholds and damage in a turn of the receivers
 //      Paulinchen  2026-10-24: Found the receivers by the targets of the Trigger -> Effect framework
 //                            - Picked the skill and caster of a use skill effect
 //                            - Left the heal, cancel skill, skip roll, show text and go to stage effects to the engine rework
@@ -63,9 +64,10 @@ internal static class EffectHandlers
         EnemyTransformsEffect transform => Transform(context, queued.Fired, transform),
         DamageReductionEffect reduction => ReduceDamage(context, queued, reduction),
         RemoveDamageReductionEffect remove => RemoveReductions(context, queued.Fired, remove),
+        GoToStageEffect goToStage => GoToStage(context, queued.Fired, goToStage),
 
-        // TE1: heal, cancel skill, skip roll, show text and go to stage do nothing yet.
-        HealEffect or CancelSkillEffect or SkipRollEffect or ShowTextEffect or GoToStageEffect => [],
+        // TE1: heal, cancel skill, skip roll and show text do nothing yet.
+        HealEffect or CancelSkillEffect or SkipRollEffect or ShowTextEffect => [],
         _ => throw new ArgumentOutOfRangeException(nameof(queued), queued.Effect, "The engine does not know this effect."),
     };
 
@@ -469,6 +471,24 @@ internal static class EffectHandlers
             }
         }
 
+        return [];
+    }
+
+    /// <summary>
+    /// Goes to a stage of the battle plan, or warns when the plan lacks it.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="fired">The fired rule.</param>
+    /// <param name="effect">The effect.</param>
+    /// <returns>The stage start event, for the stage start rows of the stage entered.</returns>
+    private static IReadOnlyList<BattleEvent> GoToStage(IRuleContext context, FiredRule fired, GoToStageEffect effect)
+    {
+        if (context.GoToStage(effect.Stage, fired.Rule.Id) is StageStartEvent started)
+        {
+            return [started];
+        }
+
+        context.Log(new WarningEvent(fired.Cause.Turn, EngineWarnings.UnknownStage, fired.Rule.Id));
         return [];
     }
 

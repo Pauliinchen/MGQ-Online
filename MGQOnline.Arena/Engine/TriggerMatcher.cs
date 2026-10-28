@@ -2,7 +2,8 @@
 //  TriggerMatcher.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Matched the battle's and the stages' turn rows once per turn by either clock
+//      Paulinchen  2026-10-28: Matched only the stage rows on the turn event of a stage entered in the plan
+//                            - Matched the battle's and the stages' turn rows once per turn by either clock
 //                            - Matched stage starts, damage in a turn, lost states and the HP of units
 //      Paulinchen  2026-10-24: Matched the event and who triggers of the Trigger -> Effect framework
 //      Paulinchen  2026-10-23: Matched the enemy fell and all enemies fell triggers
@@ -44,7 +45,7 @@ internal static class TriggerMatcher
             (TurnStartTrigger, TurnStartEvent) => true,
             (TurnEndTrigger, TurnEndEvent) => true,
             (StageStartTrigger, StageStartEvent) => true,
-            (TurnTrigger turn, TurnEvent planned) => fight && TurnHolds(turn, planned.Turn, context),
+            (TurnTrigger turn, TurnEvent planned) => fight && (planned.EnteredBy is null || rule.Owner.Kind == OwnerKind.Stage) && TurnHolds(turn, planned.Turn, context),
             (TurnTrigger turn, TurnScheduleEvent planned) => !fight && TurnHolds(turn, planned.Turn, context),
             (SkillUsedTrigger used, AfterCastEvent cast) =>
                 subject.Is(used.By, Boss(cast.Enemy)) && Same(used.Skill, ownSkill, cast.Skill) && HasType(used.SkillType, book.SkillTypesOf(cast.Skill)),

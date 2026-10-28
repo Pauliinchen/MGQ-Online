@@ -2,7 +2,8 @@
 //  BattleEvent.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Added the stage start, turn, unit HP below and damage in turn events
+//      Paulinchen  2026-10-28: Named the rule that entered a stage on its own turn event
+//                            - Added the stage start, turn, unit HP below and damage in turn events
 //      Paulinchen  2026-10-23: Added the damage reduction added, expired and removed events
 //                            - Added the enemy fell, all enemies fell, joined, left and transformed events
 //      Paulinchen  2026-10-22: Added the hazard placed, fired and expired events
@@ -93,12 +94,14 @@ public sealed record TurnEndEvent(int Turn) : BattleEvent(Turn);
 public sealed record StageStartEvent(int Turn, string Stage, string? RuleId = null) : BattleEvent(Turn);
 
 /// <summary>
-/// The plan of a turn is being made, once per turn before any enemy plans; the battle's and the stages' turn rows match it.
+/// The plan of a turn is being made, before any enemy plans; the battle's and the stages' turn rows match it.
 /// </summary>
+/// <remarks>A stage its turn rows enter gets one more for its own rows, so they count the turn as its first.</remarks>
 /// <param name="Turn">The turn planned.</param>
 /// <param name="Stage">The stage the plan is made in.</param>
 /// <param name="StageTurn">The turn counted from the stage's start, 1 its first.</param>
-public sealed record TurnEvent(int Turn, string Stage, int StageTurn) : BattleEvent(Turn);
+/// <param name="EnteredBy">The rule that entered the stage in this plan, whose stage rows alone match; null for the turn's first.</param>
+public sealed record TurnEvent(int Turn, string Stage, int StageTurn, string? EnteredBy = null) : BattleEvent(Turn);
 
 /// <summary>
 /// An enemy's plan of a turn is being made; the turn rows of its traits and skills match it.

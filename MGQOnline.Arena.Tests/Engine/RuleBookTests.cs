@@ -2,6 +2,7 @@
 //  RuleBookTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Handed out the fight rows of each stage
 //      Paulinchen  2026-10-24: Sorted the rows by their owner and kept the stage rows of the start stage
 //      Paulinchen  2026-10-23: Built the book of the whole boss by enemy slot with its fight rules apart
 //      Paulinchen  2026-10-21: Created
@@ -52,31 +53,33 @@ public sealed class RuleBookTests
     }
 
     /// <summary>
-    /// Keeps the stage rows of the stage it is made for, and the battle rows, as fight rows.
+    /// Hands out the battle rows with the rows of one stage as the fight rows of that stage.
     /// </summary>
     [Fact]
-    public void KeepsTheRowsOfItsStage()
+    public void HandsOutTheRowsOfEachStage()
     {
         RuleSpec battle = Marker("battle", new TurnStartTrigger()) with { Owner = RuleOwner.Battle };
         RuleSpec first = Marker("first", new TurnStartTrigger()) with { Owner = RuleOwner.OfStage("s1") };
         RuleSpec second = Marker("second", new TurnStartTrigger()) with { Owner = RuleOwner.OfStage("s2") };
 
-        RuleBook book = new([battle, first, second], ["a"], new Dictionary<string, IReadOnlyList<int>>(), "s1");
+        RuleBook book = new([battle, first, second], ["a"], new Dictionary<string, IReadOnlyList<int>>());
 
-        Assert.Equal([battle, first], book.FightRules);
+        Assert.Equal([battle, first], book.FightRulesIn("s1"));
+        Assert.Equal([battle, second], book.FightRulesIn("s2"));
+        Assert.Equal([battle], book.FightRulesIn("s3"));
         Assert.Empty(book.RulesOf("a"));
     }
 
     /// <summary>
     /// Builds the book of a boss by enemy slot with its turn rows, skill types and HP thresholds, the
-    /// fight rows apart and the stage rows of its first stage only.
+    /// fight rows of every stage apart.
     /// </summary>
     [Fact]
     public void BuildsTheBookOfABoss()
     {
         RuleBook book = RuleBook.ForBoss(Samples.Boss);
 
-        Assert.Equal(["a1b2c3d4", "a1b2c3d4:follow", "5e6f7a8b", "8e9f0a1b", "9f0a1b2c", "e3f4a5b6", "f4a5b6c7"], book.FightRules.Select(rule => rule.Id));
+        Assert.Equal(["a1b2c3d4", "a1b2c3d4:follow", "5e6f7a8b", "8e9f0a1b", "9f0a1b2c", "b0c1d2e3", "c1d2e3f4", "e3f4a5b6", "f4a5b6c7"], book.FightRules.Select(rule => rule.Id));
         Assert.Equal(
             ["77aa0b1c", "1c2d3e4f", "0d9e8f7a", "6a7b8c9d", "1a1a1a1a", "2b2b2b2b", "3c3c3c3c", "4d4d4d4d", "d2e3f4a5", "a5b6c7d8"],
             book.RulesOf(Samples.FirstSlot).Select(rule => rule.Id));
