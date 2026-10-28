@@ -54,7 +54,7 @@ public sealed record TurnPlan(int Turn, IReadOnlyList<EnemyPlan> Enemies)
 /// </summary>
 /// <param name="Enemy">The enemy's index.</param>
 /// <param name="ApStart">The points the plan started with, the bank included.</param>
-/// <param name="ApSpent">The points the rolled entries cost.</param>
+/// <param name="ApSpent">The points its entries cost: the rolled ones and the forced ones that are not free.</param>
 /// <param name="ApBanked">The points banked for the next turn.</param>
 /// <param name="Grapple">The grapple pool's state, 0 for a turn of the roll.</param>
 /// <param name="Frozen">Whether the party's Overdrive freezes the enemy this turn.</param>

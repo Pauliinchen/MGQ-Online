@@ -2,7 +2,8 @@
 //  ScriptTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Tested the HP rows of characters and the lost state rows
+//      Paulinchen  2026-10-28: Tested rule casts that are neither free nor uninterruptible
+//                            - Tested the HP rows of characters and the lost state rows
 //                            - Tested interrupts, cancelled queued casts, skipped rolls and an HP row after a heal
 //                            - Created
 //
@@ -180,6 +181,52 @@ public sealed class ScriptTests
         Assert.Equal([0, 1, 2, 3], fired.Where(rule => rule.RuleId == "low").Select(rule => rule.Seat!.Value).Order());
         Assert.All(fired.Where(rule => rule.RuleId == "low"), rule => Assert.Equal(1, rule.Turn));
         Assert.Equal(8, fired.Count(rule => rule.RuleId == "lost"));
+    }
+
+    /// <summary>
+    /// A row cast that is neither free nor uninterruptible pays its cost from the turn's points, and
+    /// crowd control at the plan may disable it.
+    /// </summary>
+    [Fact]
+    public void PaysForACastThatIsNotFreeAndLetsCrowdControlStopIt()
+    {
+        BattleSimulator simulator = SimFixtures.Simulator(PaidDesign(3));
+        BattleState state = simulator.Start(SimFixtures.Setup());
+
+        EnemyPlan plan = Assert.Single(simulator.Plan(state).Enemies);
+
+        PlannedCast heavy = Assert.Single(plan.Entries);
+        Assert.Equal((3, false, true, (int?)SimFixtures.Stone), (heavy.Cost, heavy.Free, heavy.Disabled, heavy.DisabledBy));
+        Assert.Equal(3, plan.ApSpent);
+    }
+
+    /// <summary>
+    /// A row cast that is not free and costs more than the turn's points stays out of the plan with a warning.
+    /// </summary>
+    [Fact]
+    public void LeavesOutACastThePointsCannotPay()
+    {
+        BattleSimulator simulator = SimFixtures.Simulator(PaidDesign(10));
+        BattleState state = simulator.Start(SimFixtures.Setup());
+
+        TurnPlan plan = simulator.Plan(state);
+
+        Assert.Empty(plan.Entries);
+        WarningEvent warning = Assert.Single(state.Log.OfType<WarningEvent>());
+        Assert.Equal((BattleSimulator.CastUnpaidWarning, "cast"), (warning.Code, warning.RuleId));
+    }
+
+    /// <summary>
+    /// Builds a design whose battle row casts a skill every turn, neither free nor uninterruptible, from an
+    /// enemy the tier keeps stoned and that rolls nothing.
+    /// </summary>
+    /// <param name="cost">The skill's cost.</param>
+    /// <returns>The design.</returns>
+    private static RuntimeDesign PaidDesign(int cost)
+    {
+        UseSkillEffect paid = new([new WeightedSkill(SimFixtures.Heavy)], CastWhen.ThisTurn, false, false, CastSide.Own, CastAim.Default, SimFixtures.Slot);
+        RuleSpec cast = SimFixtures.Rule("cast", new TurnTrigger(1, 1), [paid], owner: RuleOwner.Battle);
+        return SimFixtures.Design([], [SimFixtures.Skill(SimFixtures.Heavy, cost)], [cast], attackWeight: 0, tierStates: [SimFixtures.Stone]);
     }
 
     /// <summary>

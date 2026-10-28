@@ -2,7 +2,8 @@
 //  BattleState.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Kept the turns whose roll a row skipped
+//      Paulinchen  2026-10-28: Told whether a queued cast is free and uninterruptible
+//                            - Kept the turns whose roll a row skipped
 //                            - Named the row that cancelled a planned or queued cast
 //                            - Named the turn a queued cast is due
 //                            - Named the row of a planned cast
@@ -707,4 +708,14 @@ public sealed record QueuedCast(
     /// Gets the row that cancelled it, or null; it enters its plan as cancelled.
     /// </summary>
     public string? CancelledBy { get; init; }
+
+    /// <summary>
+    /// Gets whether it costs no action points.
+    /// </summary>
+    public bool Free { get; init; } = true;
+
+    /// <summary>
+    /// Gets whether crowd control cannot disable it.
+    /// </summary>
+    public bool Uninterruptible { get; init; } = true;
 }

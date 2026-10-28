@@ -2,7 +2,8 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Named the stage and stage turn of each turn plan
+//      Paulinchen  2026-10-28: Paid the cost of a forced rule cast that is not free and let crowd control disable one that is not uninterruptible
+//                            - Named the stage and stage turn of each turn plan
 //                            - Skipped rolls and planned the casts cancelled while queued as cancelled
 //                            - Ran the effects of the skill used rows of a cast when it resolves
 //                            - Named the row of each planned cast
@@ -78,6 +79,11 @@ public sealed partial class BattleSimulator
     /// The warning of a cast the plan had no place for, queued for the next turn instead.
     /// </summary>
     public const string CastQueuedWarning = "castQueued";
+
+    /// <summary>
+    /// The warning of a rule cast that is not free and that the turn's points left could not pay, left out of the plan.
+    /// </summary>
+    public const string CastUnpaidWarning = "castUnpaid";
 
     /// <summary>
     /// The warning of a rule cast of a skill the boss lacks.
@@ -307,7 +313,13 @@ public sealed partial class BattleSimulator
             {
                 foreach (QueuedCast queued in state.NextTurn.Where(queued => IsDue(queued, state.Turn)))
                 {
-                    _drafts.Add(new Draft(queued.Enemy, queued.Skill, queued.Kind, queued.Side, queued.AimSeat, queued.ParentSide, null, queued.RootActionId) { RuleId = queued.RuleId, CancelledBy = queued.CancelledBy });
+                    _drafts.Add(new Draft(queued.Enemy, queued.Skill, queued.Kind, queued.Side, queued.AimSeat, queued.ParentSide, null, queued.RootActionId)
+                    {
+                        RuleId = queued.RuleId,
+                        CancelledBy = queued.CancelledBy,
+                        Free = queued.Free,
+                        Uninterruptible = queued.Uninterruptible,
+                    });
                 }
 
                 state.NextTurn.RemoveAll(queued => IsDue(queued, state.Turn));
@@ -433,9 +445,10 @@ public sealed partial class BattleSimulator
         Raise(state, new TurnScheduleEvent(state.Turn, enemy.Index));
         List<Draft> forced = [.. _drafts!.Where(draft => draft.Enemy == enemy.Index).OrderBy(draft => Array.IndexOf(ForcedOrder, draft.Kind))];
         _drafts!.RemoveAll(draft => draft.Enemy == enemy.Index);
+        int spent = 0;
         foreach (Draft draft in forced)
         {
-            PlanCast(state, draft, 0, true, true);
+            spent += PlanForced(state, draft, points - spent);
         }
 
         points = Math.Max(0, points + enemy.ApThis);
@@ -443,8 +456,7 @@ public sealed partial class BattleSimulator
         int grapple = enemy.States.Exists(held => held.StateId == BindState) ? BindSkillType
             : enemy.States.Exists(held => held.StateId == EternalBindState) ? EternalBindSkillType
             : 0;
-        int spent = 0;
-        int left = points;
+        int left = Math.Max(0, points - spent);
         enemy.RolledTurn = state.Turn;
         if (enemy.RollSkips.Remove(state.Turn, out string? skippedBy))
         {
@@ -454,7 +466,8 @@ public sealed partial class BattleSimulator
         else if (grapple == 0 || !Grapple(state, enemy, grapple))
         {
             grapple = 0;
-            (left, spent) = Roll(state, enemy, points, fullBank);
+            (left, int rolled) = Roll(state, enemy, left, fullBank);
+            spent += rolled;
         }
 
         left = Math.Max(0, left + enemy.ApThis);
@@ -484,6 +497,27 @@ public sealed partial class BattleSimulator
         {
             RollSkippedBy = skippedBy,
         };
+    }
+
+    /// <summary>
+    /// Plans a forced entry; one that is not free pays the skill's cost from the turn's points
+    /// before the roll, as a rolled cast would.
+    /// </summary>
+    /// <param name="state">The battle.</param>
+    /// <param name="draft">The forced cast.</param>
+    /// <param name="points">The turn's points still unspent.</param>
+    /// <returns>The points it cost; 0 when it is free, cancelled or left out because the points fall short.</returns>
+    private int PlanForced(BattleState state, Draft draft, int points)
+    {
+        int cost = draft.Free || draft.CancelledBy is not null || !state.Boss.Skills.TryGetValue(draft.Skill.Key, out RuntimeSkill? skill) ? 0 : Math.Max(1, skill.ApCost);
+        if (cost > points)
+        {
+            Log(state, new WarningEvent(state.Turn, CastUnpaidWarning, draft.RuleId));
+            return 0;
+        }
+
+        PlanCast(state, draft, cost, draft.Free, draft.Uninterruptible);
+        return cost;
     }
 
     /// <summary>
@@ -1158,5 +1192,15 @@ public sealed partial class BattleSimulator
         /// Gets the row that cancelled it while it waited, or null.
         /// </summary>
         public string? CancelledBy { get; init; }
+
+        /// <summary>
+        /// Gets whether a forced cast costs no action points; a rolled or grapple cast pays by its roll.
+        /// </summary>
+        public bool Free { get; init; } = true;
+
+        /// <summary>
+        /// Gets whether crowd control cannot disable a forced cast.
+        /// </summary>
+        public bool Uninterruptible { get; init; } = true;
     }
 }
