@@ -2,6 +2,8 @@
 //  BattleSimulator.Rules.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Named the stage and the turn it started in
+//                            - Kept the damage taken in a turn and the HP percents the units crossed
 //      Paulinchen  2026-10-24: Told the rule engine whether a game switch is on
 //      Paulinchen  2026-10-23: Added and removed damage reductions and reduced every damage by them last
 //                            - Brought enemies in, took them out and transformed them by a rule
@@ -61,6 +63,22 @@ public sealed partial class BattleSimulator
         foreach (BattleEvent battleEvent in battleEvents)
         {
             Log(state, battleEvent);
+        }
+
+        Dispatch(state, battleEvents);
+    }
+
+    /// <summary>
+    /// Lets the rule engine fire the rules that match events already logged and run their effects,
+    /// and decides the victory afterwards.
+    /// </summary>
+    /// <param name="state">The battle.</param>
+    /// <param name="battleEvents">The events in order.</param>
+    private void Dispatch(BattleState state, IReadOnlyList<BattleEvent> battleEvents)
+    {
+        if (battleEvents.Count == 0)
+        {
+            return;
         }
 
         state.Engine.Raise(ContextOf(state), battleEvents);
@@ -141,10 +159,12 @@ public sealed partial class BattleSimulator
     /// <summary>
     /// Deals damage to a unit without logging it, reduced last by its damage reduction.
     /// </summary>
+    /// <param name="state">The battle.</param>
     /// <param name="unit">The unit.</param>
     /// <param name="amount">The damage after everything else that changes it, below 0 for a heal.</param>
-    /// <returns>What it did, or null for a fallen unit.</returns>
-    private static DamageResult? DamageUnit(UnitState unit, long amount)
+    /// <returns>What it did, with the HP percents of the units' rules it crossed below for the first time
+    /// and the percents of damage in a turn it reached; null for a fallen unit.</returns>
+    private static DamageResult? DamageUnit(BattleState state, UnitState unit, long amount)
     {
         if (unit.Fallen)
         {
@@ -154,7 +174,8 @@ public sealed partial class BattleSimulator
         long dealt = DamageReductions.Reduce(amount, EffectiveReduction(unit.Reductions));
         unit.Hp = (int)Math.Clamp(unit.Hp - dealt, 0, unit.MaxHp);
         unit.Fallen = unit.Hp == 0;
-        return new DamageResult(unit.Hp, unit.Fallen, [], dealt);
+        List<int> crossed = [.. state.Engine.Book.UnitHpThresholds.Where(percent => (long)unit.Hp * 100 < (long)percent * unit.MaxHp && unit.HpThresholdsCrossed.Add(percent))];
+        return WithDamageInTurn(state, StateHolder.Unit, unit.Seat, unit.MaxHp, new DamageResult(unit.Hp, unit.Fallen, crossed, dealt));
     }
 
     /// <summary>
@@ -170,7 +191,31 @@ public sealed partial class BattleSimulator
         long dealt = DamageReductions.Reduce(amount, EffectiveReduction(enemy.Reductions));
         enemy.Hp = Math.Clamp(enemy.Hp - dealt, 0, enemy.MaxHp);
         List<int> crossed = [.. state.Engine.Book.HpThresholdsOf(enemy.Slot).Where(percent => enemy.Hp * 100 < percent * enemy.MaxHp && enemy.HpThresholdsCrossed.Add(percent))];
-        return new DamageResult(enemy.Hp, enemy.Fallen, crossed, dealt);
+        return WithDamageInTurn(state, StateHolder.Boss, enemy.Index, enemy.MaxHp, new DamageResult(enemy.Hp, enemy.Fallen, crossed, dealt));
+    }
+
+    /// <summary>
+    /// Adds damage to what a unit or an enemy took this turn and names the percents of damage in a
+    /// turn of the rules it reached for the first time this turn.
+    /// </summary>
+    /// <param name="state">The battle.</param>
+    /// <param name="holder">Whether a unit or an enemy took it.</param>
+    /// <param name="index">The unit's seat or the enemy's index.</param>
+    /// <param name="maxHp">The receiver's max HP.</param>
+    /// <param name="result">What the damage did.</param>
+    /// <returns>The result with the percents reached and the damage taken this turn; as it was while no rule asks.</returns>
+    private static DamageResult WithDamageInTurn(BattleState state, StateHolder holder, int index, long maxHp, DamageResult result)
+    {
+        IReadOnlyList<int> percents = state.Engine.Book.DamageInTurnPercents;
+        if (percents.Count == 0 || result.Amount <= 0)
+        {
+            return result;
+        }
+
+        long taken = state.DamageThisTurn.GetValueOrDefault((holder, index)) + result.Amount;
+        state.DamageThisTurn[(holder, index)] = taken;
+        List<int> reached = [.. percents.Where(percent => (Int128)taken * 100 >= (Int128)percent * maxHp && state.DamageInTurnReached.Add((holder, index, percent)))];
+        return result with { DamageInTurnPercents = reached, TakenThisTurn = taken };
     }
 
     /// <summary>
@@ -243,6 +288,12 @@ public sealed partial class BattleSimulator
 
         /// <inheritdoc />
         public IReadOnlyList<int> Seats => [.. state.Units.Select(unit => unit.Seat)];
+
+        /// <inheritdoc />
+        public string Stage => state.Stage;
+
+        /// <inheritdoc />
+        public int StageStartTurn => state.StageStartTurn;
 
         /// <inheritdoc />
         public string? SlotOf(int enemy) => state.Enemies.Find(each => each.Index == enemy)?.Slot;
@@ -359,7 +410,7 @@ public sealed partial class BattleSimulator
         {
             if (holder == StateHolder.Unit)
             {
-                if (index < 0 || index >= state.Units.Count || DamageUnit(state.Units[index], amount) is not DamageResult dealt)
+                if (index < 0 || index >= state.Units.Count || DamageUnit(state, state.Units[index], amount) is not DamageResult dealt)
                 {
                     return null;
                 }

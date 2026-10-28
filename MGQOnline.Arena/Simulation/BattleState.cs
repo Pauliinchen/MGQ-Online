@@ -2,6 +2,7 @@
 //  BattleState.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Kept the damage taken in a turn and the HP percents the units crossed
 //      Paulinchen  2026-10-24: Kept the battle plan's stage and the turn it started in
 //      Paulinchen  2026-10-23: Kept the damage reductions of units and enemies
 //                            - Kept the enemies that join, leave or transform, and the rules of the whole boss
@@ -222,6 +223,16 @@ public sealed class BattleState
     internal int NextEnemyIndex { get; set; }
 
     /// <summary>
+    /// Gets the damage each unit and enemy took this turn, kept only while a rule asks about damage in a turn.
+    /// </summary>
+    internal Dictionary<(StateHolder Holder, int Index), long> DamageThisTurn { get; } = [];
+
+    /// <summary>
+    /// Gets the percents of damage in a turn each unit and enemy reached this turn.
+    /// </summary>
+    internal HashSet<(StateHolder Holder, int Index, int Percent)> DamageInTurnReached { get; } = [];
+
+    /// <summary>
     /// Gets or sets whether the all enemies fell event was logged since an enemy last stood, which the victory waits for.
     /// </summary>
     internal bool AllEnemiesFell { get; set; }
@@ -351,6 +362,11 @@ public sealed class UnitState
     /// Gets the damage reductions it holds, one per application.
     /// </summary>
     public List<DamageReductionInstance> Reductions { get; } = [];
+
+    /// <summary>
+    /// Gets the HP percents it has crossed below.
+    /// </summary>
+    public HashSet<int> HpThresholdsCrossed { get; } = [];
 }
 
 /// <summary>

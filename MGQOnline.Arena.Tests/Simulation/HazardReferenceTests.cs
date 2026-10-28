@@ -2,6 +2,7 @@
 //  HazardReferenceTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Took the stage start and turn events in the reference log hashes
 //      Paulinchen  2026-10-24: Wrote the ice trail as a row of the Trigger -> Effect framework in the battle plan
 //                            - Took the turn row ids in the golden log hash
 //      Paulinchen  2026-10-23: Started the reference battle with battlefield hazards instead of the tier's and the map's
@@ -31,7 +32,7 @@ public sealed class HazardReferenceTests
     /// <summary>
     /// The golden hash of the hazard reference battle's log.
     /// </summary>
-    private const string GoldenLogSha256 = "d036fc10827108b91d5abda4f50dce90eb60bf10c6a850a6c6c643780463e4d3";
+    private const string GoldenLogSha256 = "1b2255b5684f4561e41d0dcbbdb700b1d68c6af3d60d7bfe6be38b677be283f7";
 
     /// <summary>
     /// The burning hazard's id.

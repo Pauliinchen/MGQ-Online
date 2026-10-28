@@ -2,6 +2,8 @@
 //  TriggerMatcher.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Matched the battle's and the stages' turn rows once per turn by either clock
+//                            - Matched stage starts, damage in a turn, lost states and the HP of units
 //      Paulinchen  2026-10-24: Matched the event and who triggers of the Trigger -> Effect framework
 //      Paulinchen  2026-10-23: Matched the enemy fell and all enemies fell triggers
 //      Paulinchen  2026-10-22: Matched resolved casts by their skill
@@ -41,7 +43,9 @@ internal static class TriggerMatcher
             (BattleStartTrigger, BattleStartEvent) => true,
             (TurnStartTrigger, TurnStartEvent) => true,
             (TurnEndTrigger, TurnEndEvent) => true,
-            (TurnTrigger turn, TurnScheduleEvent planned) => MatchesTurn(turn, planned, context, fight),
+            (StageStartTrigger, StageStartEvent) => true,
+            (TurnTrigger turn, TurnEvent planned) => fight && TurnHolds(turn, planned.Turn, context),
+            (TurnTrigger turn, TurnScheduleEvent planned) => !fight && TurnHolds(turn, planned.Turn, context),
             (SkillUsedTrigger used, AfterCastEvent cast) =>
                 subject.Is(used.By, Boss(cast.Enemy)) && Same(used.Skill, ownSkill, cast.Skill) && HasType(used.SkillType, book.SkillTypesOf(cast.Skill)),
             (SkillHitsTrigger hits, UnitHitEvent hit) =>
@@ -53,35 +57,29 @@ internal static class TriggerMatcher
             (SkillFinishedTrigger finished, CastResolvedEvent cast) =>
                 subject.Is(finished.By, Boss(cast.Enemy)) && Same(finished.Skill, ownSkill, cast.Skill) && HasType(finished.SkillType, book.SkillTypesOf(cast.Skill)),
             (HpBelowTrigger below, BossHpBelowEvent crossed) => below.Percent == crossed.Percent && subject.Is(below.Whom, Boss(crossed.Enemy)),
+            (HpBelowTrigger below, UnitHpBelowEvent crossed) => below.Percent == crossed.Percent && subject.Is(below.Whom, Unit(crossed.Seat)),
+            (DamageInTurnTrigger taken, DamageInTurnEvent reached) => taken.Percent == reached.Percent && subject.Is(taken.Whom, (reached.On, reached.Index)),
             (StateGainedTrigger gained, StateAddedEvent added) => gained.State == added.State && subject.Is(gained.Whom, (added.On, added.Index)),
+            (StateLostTrigger lost, StateRemovedEvent removed) => lost.State == removed.State && subject.Is(lost.Whom, (removed.On, removed.Index)),
             (JoinsTrigger joins, EnemyJoinedEvent joined) => subject.Is(joins.Whom, Boss(joined.Enemy)),
             (FallsTrigger falls, UnitFellEvent fell) => subject.Is(falls.Whom, Unit(fell.Seat)),
             (FallsTrigger falls, EnemyFellEvent fell) => subject.Is(falls.Whom, Boss(fell.Enemy)),
             (AllEnemiesFellTrigger, AllEnemiesFellEvent) => true,
-
-            // TE1: stage start, damage in one turn, lost states and the HP of characters raise no event yet.
             _ => false,
         };
     }
 
     /// <summary>
-    /// Matches a turn trigger against an enemy's plan; a fight row fires on the plan of the first standing enemy only.
+    /// Tells whether the game's turn condition of a turn trigger holds for a planned turn by the trigger's clock.
     /// </summary>
+    /// <remarks>A fight row matches the turn's one plan event and an enemy's row its enemy's plan,
+    /// so a fight row fires once per turn whichever enemies plan.</remarks>
     /// <param name="trigger">The trigger.</param>
-    /// <param name="planned">The plan event.</param>
+    /// <param name="turn">The battle turn planned.</param>
     /// <param name="context">The battle.</param>
-    /// <param name="fight">Whether the row is matched once for the fight.</param>
     /// <returns>Whether the turn condition holds.</returns>
-    private static bool MatchesTurn(TurnTrigger trigger, TurnScheduleEvent planned, IRuleContext context, bool fight)
-    {
-        // TE1: one plan event per turn for the fight rows, and the stage clock; both read the battle turn of the first enemy's plan for now.
-        if (fight && (context.LivingEnemies.Count == 0 || context.LivingEnemies[0] != planned.Enemy))
-        {
-            return false;
-        }
-
-        return context.TurnHolds(trigger.A, trigger.B, planned.Turn);
-    }
+    private static bool TurnHolds(TurnTrigger trigger, int turn, IRuleContext context) =>
+        context.TurnHolds(trigger.A, trigger.B, ConditionEvaluator.TurnOn(trigger.Clock, turn, context));
 
     /// <summary>
     /// Names an enemy.

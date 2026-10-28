@@ -2,6 +2,7 @@
 //  TriggerMatcherTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Tested the turn event, the stage clock, unit HP, damage in a turn, lost states and stage starts
 //      Paulinchen  2026-10-24: Tested the event and who triggers of the Trigger -> Effect framework
 //      Paulinchen  2026-10-22: Tested the cast resolved trigger
 //                            - Tested the main target filter of unit hits
@@ -72,13 +73,27 @@ public sealed class TriggerMatcherTests
     }
 
     /// <summary>
-    /// Fires a battle row's turn trigger once a turn, on the plan of the first standing enemy.
+    /// Fires a battle row's turn trigger on the turn's one plan event and an enemy row's on its enemy's plan.
     /// </summary>
     [Fact]
     public void FiresABattleTurnRowOnceATurn()
     {
-        Assert.True(Matches(new TurnTrigger(2, 0), new TurnScheduleEvent(2, 0), RuleOwner.Battle));
-        Assert.False(Matches(new TurnTrigger(2, 0), new TurnScheduleEvent(2, 1), RuleOwner.Battle));
+        Assert.True(Matches(new TurnTrigger(2, 0), new TurnEvent(2, RuntimePlan.MainStage, 2), RuleOwner.Battle));
+        Assert.False(Matches(new TurnTrigger(2, 0), new TurnScheduleEvent(2, 0), RuleOwner.Battle));
+        Assert.False(Matches(new TurnTrigger(2, 0), new TurnEvent(2, RuntimePlan.MainStage, 2)));
+    }
+
+    /// <summary>
+    /// Counts the stage clock from the turn the stage started in.
+    /// </summary>
+    [Fact]
+    public void CountsTheStageClockFromTheStagesStart()
+    {
+        _context.StageStartTurn = 4;
+
+        Assert.True(Matches(new TurnTrigger(1, 0, TurnClock.Stage), new TurnEvent(4, RuntimePlan.MainStage, 1), RuleOwner.Battle));
+        Assert.False(Matches(new TurnTrigger(1, 0, TurnClock.Stage), new TurnEvent(1, RuntimePlan.MainStage, 1), RuleOwner.Battle));
+        Assert.True(Matches(new TurnTrigger(1, 0), new TurnEvent(1, RuntimePlan.MainStage, 1), RuleOwner.Battle));
     }
 
     /// <summary>
@@ -162,6 +177,21 @@ public sealed class TriggerMatcherTests
         Assert.True(Matches(new StateGainedTrigger(Who.Character, Light), new StateAddedEvent(2, StateHolder.Unit, 1, Light)));
         Assert.False(Matches(new StateGainedTrigger(Who.Owner, Light), new StateAddedEvent(2, StateHolder.Unit, 1, Light)));
         Assert.False(Matches(new StateGainedTrigger(Who.Character, Dark), new StateAddedEvent(2, StateHolder.Unit, 1, Light)));
+    }
+
+    /// <summary>
+    /// Matches the HP of units, damage in a turn and lost states by their values and whom they are about.
+    /// </summary>
+    [Fact]
+    public void MatchesUnitHpDamageInTurnAndLostStates()
+    {
+        Assert.True(Matches(new HpBelowTrigger(Who.Character, 30), new UnitHpBelowEvent(3, 1, 30)));
+        Assert.False(Matches(new HpBelowTrigger(Who.Owner, 30), new UnitHpBelowEvent(3, 1, 30)));
+        Assert.True(Matches(new DamageInTurnTrigger(Who.Owner, 15), new DamageInTurnEvent(3, StateHolder.Boss, 0, 15, 160)));
+        Assert.False(Matches(new DamageInTurnTrigger(Who.Owner, 15), new DamageInTurnEvent(3, StateHolder.Boss, 1, 15, 160)));
+        Assert.True(Matches(new StateLostTrigger(Who.Anyone, Light), new StateRemovedEvent(3, StateHolder.Unit, 2, Light)));
+        Assert.False(Matches(new StateLostTrigger(Who.Anyone, Dark), new StateRemovedEvent(3, StateHolder.Unit, 2, Light)));
+        Assert.True(Matches(new StageStartTrigger(), new StageStartEvent(3, RuntimePlan.MainStage), RuleOwner.Battle));
     }
 
     /// <summary>

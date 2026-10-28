@@ -2,6 +2,7 @@
 //  BattleEvent.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Added the stage start, turn, unit HP below and damage in turn events
 //      Paulinchen  2026-10-23: Added the damage reduction added, expired and removed events
 //                            - Added the enemy fell, all enemies fell, joined, left and transformed events
 //      Paulinchen  2026-10-22: Added the hazard placed, fired and expired events
@@ -29,11 +30,15 @@ namespace MGQOnline.Arena.Events;
 [JsonDerivedType(typeof(BattleStartEvent), "battleStart")]
 [JsonDerivedType(typeof(TurnStartEvent), "turnStart")]
 [JsonDerivedType(typeof(TurnEndEvent), "turnEnd")]
+[JsonDerivedType(typeof(StageStartEvent), "stageStart")]
+[JsonDerivedType(typeof(TurnEvent), "turn")]
 [JsonDerivedType(typeof(TurnScheduleEvent), "turnSchedule")]
 [JsonDerivedType(typeof(AfterCastEvent), "afterCast")]
 [JsonDerivedType(typeof(UnitHitEvent), "unitHit")]
 [JsonDerivedType(typeof(BossHitEvent), "bossHit")]
 [JsonDerivedType(typeof(BossHpBelowEvent), "bossHpBelow")]
+[JsonDerivedType(typeof(UnitHpBelowEvent), "unitHpBelow")]
+[JsonDerivedType(typeof(DamageInTurnEvent), "damageInTurn")]
 [JsonDerivedType(typeof(StateAddedEvent), "stateAdded")]
 [JsonDerivedType(typeof(UnitFellEvent), "unitFell")]
 [JsonDerivedType(typeof(EnemyFellEvent), "enemyFell")]
@@ -80,7 +85,23 @@ public sealed record TurnStartEvent(int Turn) : BattleEvent(Turn);
 public sealed record TurnEndEvent(int Turn) : BattleEvent(Turn);
 
 /// <summary>
-/// An enemy's plan of a turn is being made; turn schedule rules match it.
+/// A stage of the battle plan started: the first at the battle start, any other by a go to stage effect.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="Stage">The stage id.</param>
+/// <param name="RuleId">The rule that went to the stage, or null for the first stage.</param>
+public sealed record StageStartEvent(int Turn, string Stage, string? RuleId = null) : BattleEvent(Turn);
+
+/// <summary>
+/// The plan of a turn is being made, once per turn before any enemy plans; the battle's and the stages' turn rows match it.
+/// </summary>
+/// <param name="Turn">The turn planned.</param>
+/// <param name="Stage">The stage the plan is made in.</param>
+/// <param name="StageTurn">The turn counted from the stage's start, 1 its first.</param>
+public sealed record TurnEvent(int Turn, string Stage, int StageTurn) : BattleEvent(Turn);
+
+/// <summary>
+/// An enemy's plan of a turn is being made; the turn rows of its traits and skills match it.
 /// </summary>
 /// <param name="Turn">The turn planned.</param>
 /// <param name="Enemy">The enemy's index.</param>
@@ -146,6 +167,24 @@ public sealed record BossHitEvent(int Turn, int Enemy, int Attacker, GridCell At
 /// <param name="Enemy">The enemy's index.</param>
 /// <param name="Percent">The HP percent crossed.</param>
 public sealed record BossHpBelowEvent(int Turn, int Enemy, int Percent) : BattleEvent(Turn);
+
+/// <summary>
+/// A unit's HP crossed below a percent for the first time.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="Seat">The unit's seat.</param>
+/// <param name="Percent">The HP percent crossed.</param>
+public sealed record UnitHpBelowEvent(int Turn, int Seat, int Percent) : BattleEvent(Turn);
+
+/// <summary>
+/// The damage a unit or an enemy took this turn reached a percent of its max HP; once per percent and turn.
+/// </summary>
+/// <param name="Turn">The turn.</param>
+/// <param name="On">Whether a unit or an enemy took it.</param>
+/// <param name="Index">The unit's seat or the enemy's index.</param>
+/// <param name="Percent">The percent of the max HP reached.</param>
+/// <param name="Taken">The damage taken this turn so far.</param>
+public sealed record DamageInTurnEvent(int Turn, StateHolder On, int Index, int Percent, long Taken) : BattleEvent(Turn);
 
 /// <summary>
 /// A state was added or refreshed.

@@ -2,6 +2,7 @@
 //  IRuleContext.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Named the stage and the turn it started in
 //      Paulinchen  2026-10-24: Told whether a game switch is on
 //      Paulinchen  2026-10-23: Added and removed damage reductions
 //                            - Brought enemies in, took them out and transformed them
@@ -46,6 +47,16 @@ public interface IRuleContext
     /// Gets the seats of every unit, the fallen ones included.
     /// </summary>
     IReadOnlyList<int> Seats { get; }
+
+    /// <summary>
+    /// Gets the id of the battle plan's stage the battle is in, whose stage rows hold.
+    /// </summary>
+    string Stage { get; }
+
+    /// <summary>
+    /// Gets the turn the stage started in, which the stage clock counts from.
+    /// </summary>
+    int StageStartTurn { get; }
 
     /// <summary>
     /// Gives the enemy slot of an enemy in the fight.

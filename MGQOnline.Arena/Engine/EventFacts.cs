@@ -2,6 +2,7 @@
 //  EventFacts.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Read the enemy and unit of lost states, unit HP thresholds and damage in a turn
 //      Paulinchen  2026-10-23: Read the subject enemy of an event for the fight rules
 //      Paulinchen  2026-10-22: Read the unit of a hazard fire
 //                            - Read the enemy and cast of a resolved cast
@@ -33,6 +34,8 @@ internal static class EventFacts
         BossHitEvent hit => hit.Enemy,
         BossHpBelowEvent below => below.Enemy,
         StateAddedEvent { On: StateHolder.Boss } added => added.Index,
+        StateRemovedEvent { On: StateHolder.Boss } removed => removed.Index,
+        DamageInTurnEvent { On: StateHolder.Boss } taken => taken.Index,
         _ => null,
     };
 
@@ -45,8 +48,8 @@ internal static class EventFacts
     public static int? SubjectOf(BattleEvent battleEvent) => battleEvent is EnemyFellEvent fell ? fell.Enemy : EnemyOf(battleEvent);
 
     /// <summary>
-    /// Gives the unit an event names: the unit hit, given a state or fallen, the attacker of a boss hit,
-    /// or the unit that fired a hazard.
+    /// Gives the unit an event names: the unit hit, given or losing a state, below an HP percent, hurt
+    /// in a turn or fallen, the attacker of a boss hit, or the unit that fired a hazard.
     /// </summary>
     /// <param name="battleEvent">The event.</param>
     /// <returns>The unit's seat, or null.</returns>
@@ -54,6 +57,9 @@ internal static class EventFacts
     {
         UnitHitEvent hit => hit.Seat,
         StateAddedEvent { On: StateHolder.Unit } added => added.Index,
+        StateRemovedEvent { On: StateHolder.Unit } removed => removed.Index,
+        UnitHpBelowEvent below => below.Seat,
+        DamageInTurnEvent { On: StateHolder.Unit } taken => taken.Index,
         UnitFellEvent fell => fell.Seat,
         BossHitEvent hit => hit.Attacker,
         HazardFiredEvent hazard => hazard.Seat,

@@ -2,6 +2,7 @@
 //  EffectHandlers.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Raised the lost states and the HP thresholds and damage in a turn of the receivers
 //      Paulinchen  2026-10-24: Found the receivers by the targets of the Trigger -> Effect framework
 //                            - Picked the skill and caster of a use skill effect
 //                            - Left the heal, cancel skill, skip roll, show text and go to stage effects to the engine rework
@@ -246,18 +247,19 @@ internal static class EffectHandlers
     /// <param name="context">The battle.</param>
     /// <param name="fired">The fired rule.</param>
     /// <param name="effect">The effect.</param>
-    /// <returns>Nothing rules match.</returns>
+    /// <returns>A state removed event per receiver that held it.</returns>
     private static IReadOnlyList<BattleEvent> RemoveState(IRuleContext context, FiredRule fired, RemoveStateEffect effect)
     {
+        List<BattleEvent> raised = [];
         foreach ((StateHolder holder, int index) in Receivers(context, fired, effect.From))
         {
             if (context.RemoveState(holder, index, effect.State))
             {
-                context.Log(new StateRemovedEvent(fired.Cause.Turn, holder, index, effect.State, fired.Rule.Id));
+                raised.Add(Logged(context, new StateRemovedEvent(fired.Cause.Turn, holder, index, effect.State, fired.Rule.Id)));
             }
         }
 
-        return [];
+        return raised;
     }
 
     /// <summary>
@@ -267,8 +269,8 @@ internal static class EffectHandlers
     /// <param name="context">The battle.</param>
     /// <param name="fired">The fired rule.</param>
     /// <param name="effect">The effect.</param>
-    /// <returns>A unit fell event per unit it felled, a boss HP event per percent crossed, an enemy fell
-    /// event per enemy it felled, and the all enemies fell event when none stands any more.</returns>
+    /// <returns>Per receiver its HP below and damage in turn events, then its fall: a unit fell event, or an
+    /// enemy fell event and the all enemies fell event when none stands any more.</returns>
     private static IReadOnlyList<BattleEvent> Damage(IRuleContext context, FiredRule fired, DamageEffect effect)
     {
         int turn = fired.Cause.Turn;
@@ -287,6 +289,11 @@ internal static class EffectHandlers
             }
 
             context.Log(new DamageEvent(turn, holder, index, result.Amount, result.HpAfter, castId, fired.Rule.Id));
+            foreach (BattleEvent damaged in result.Events(turn, holder, index))
+            {
+                raised.Add(Logged(context, damaged));
+            }
+
             if (holder == StateHolder.Unit && result.Fell)
             {
                 raised.Add(Logged(context, new UnitFellEvent(turn, index, castId)));
@@ -294,11 +301,6 @@ internal static class EffectHandlers
 
             if (holder == StateHolder.Boss)
             {
-                foreach (int percent in result.CrossedPercents)
-                {
-                    raised.Add(Logged(context, new BossHpBelowEvent(turn, index, percent)));
-                }
-
                 if (result.Fell)
                 {
                     raised.Add(Logged(context, new EnemyFellEvent(turn, index, context.SlotOf(index) ?? string.Empty, context.EnemyIdOf(index) ?? 0)));

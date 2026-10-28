@@ -2,12 +2,14 @@
 //  ContextValues.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Handed back the HP percents a unit crossed and the percents of damage in a turn reached
 //      Paulinchen  2026-10-23: Handed back the damage dealt after the damage reduction
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
 
 using System.Collections.Generic;
+using MGQOnline.Arena.Events;
 using MGQOnline.Arena.Model;
 
 namespace MGQOnline.Arena.Engine;
@@ -43,7 +45,42 @@ public sealed record StateGrant(StateHolder Holder, int Index, int State, int? T
 /// What damage did.
 /// </summary>
 /// <param name="HpAfter">The HP left.</param>
-/// <param name="Fell">Whether it felled a unit.</param>
-/// <param name="CrossedPercents">The boss HP percents of the rules that it crossed below for the first time, highest first.</param>
+/// <param name="Fell">Whether it felled the receiver.</param>
+/// <param name="CrossedPercents">The HP percents of the rules that it crossed below for the first time, highest first.</param>
 /// <param name="Amount">The damage dealt after the receiver's damage reduction, below 0 for a heal.</param>
-public sealed record DamageResult(long HpAfter, bool Fell, IReadOnlyList<int> CrossedPercents, long Amount);
+public sealed record DamageResult(long HpAfter, bool Fell, IReadOnlyList<int> CrossedPercents, long Amount)
+{
+    /// <summary>
+    /// Gets the percents of the max HP of the rules that the damage taken this turn reached for the first time this turn, lowest first.
+    /// </summary>
+    public IReadOnlyList<int> DamageInTurnPercents { get; init; } = [];
+
+    /// <summary>
+    /// Gets the damage the receiver took this turn, this damage included; 0 while no rule asks.
+    /// </summary>
+    public long TakenThisTurn { get; init; }
+
+    /// <summary>
+    /// Makes the events the damage raises for the rules: an HP below event per percent crossed, then a
+    /// damage in turn event per percent reached.
+    /// </summary>
+    /// <param name="turn">The turn.</param>
+    /// <param name="holder">Whether a unit or an enemy took it.</param>
+    /// <param name="index">The unit's seat or the enemy's index.</param>
+    /// <returns>The events, not yet logged.</returns>
+    public IReadOnlyList<BattleEvent> Events(int turn, StateHolder holder, int index)
+    {
+        List<BattleEvent> raised = [];
+        foreach (int percent in CrossedPercents)
+        {
+            raised.Add(holder == StateHolder.Boss ? new BossHpBelowEvent(turn, index, percent) : new UnitHpBelowEvent(turn, index, percent));
+        }
+
+        foreach (int percent in DamageInTurnPercents)
+        {
+            raised.Add(new DamageInTurnEvent(turn, holder, index, percent, TakenThisTurn));
+        }
+
+        return raised;
+    }
+}

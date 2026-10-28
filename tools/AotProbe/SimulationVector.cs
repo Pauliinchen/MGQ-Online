@@ -2,6 +2,7 @@
 //  SimulationVector.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Took the stage start and turn events in the reference log hashes
 //      Paulinchen  2026-10-24: Took the turn row ids of the battle plan in the reference log hashes
 //      Paulinchen  2026-10-23: Took the hazard reference battle's hash of the battlefield arena
 //      Paulinchen  2026-10-22: Played the hazard reference battle too
@@ -33,12 +34,12 @@ internal static class SimulationVector
     /// <summary>
     /// The SHA-256 of the reference battle's log, as the arena tests hold it.
     /// </summary>
-    public const string LogSha256 = "9fcb07e5767e7f1ed7e80ab2d9aeaf171b762ce90fed378247add294ce04405c";
+    public const string LogSha256 = "50257b81cd45aabfff09bfe4638c4356e50d71f0f1ae72f9e25fb412a1983e13";
 
     /// <summary>
     /// The SHA-256 of the hazard reference battle's log, as the arena tests hold it.
     /// </summary>
-    public const string HazardLogSha256 = "d036fc10827108b91d5abda4f50dce90eb60bf10c6a850a6c6c643780463e4d3";
+    public const string HazardLogSha256 = "1b2255b5684f4561e41d0dcbbdb700b1d68c6af3d60d7bfe6be38b677be283f7";
 
     /// <summary>
     /// The embedded reference design, the arena tests' fixture.

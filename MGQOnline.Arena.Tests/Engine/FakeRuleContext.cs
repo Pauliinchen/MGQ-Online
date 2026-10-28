@@ -2,6 +2,7 @@
 //  FakeRuleContext.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Named the stage and the turn it started in
 //      Paulinchen  2026-10-24: Told whether a game switch is on
 //      Paulinchen  2026-10-23: Recorded damage reductions
 //                            - Brought enemies in, took them out and transformed them
@@ -84,6 +85,12 @@ internal sealed class FakeRuleContext : IRuleContext
 
     /// <inheritdoc />
     public IReadOnlyList<int> Seats => UnitSeats;
+
+    /// <inheritdoc />
+    public string Stage { get; set; } = RuntimePlan.MainStage;
+
+    /// <inheritdoc />
+    public int StageStartTurn { get; set; } = 1;
 
     /// <summary>
     /// Gets the enemy slot of each enemy index whose slot is not <see cref="SlotOfIndex"/>.

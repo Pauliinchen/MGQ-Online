@@ -2,6 +2,7 @@
 //  RuleEngine.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Warned of a rule loop only for the dropped events that would fire a row
 //      Paulinchen  2026-10-24: Limited the fires of a row by how often it fires
 //      Paulinchen  2026-10-23: Matched the fight rules once per event and the enemy rules by enemy slot
 //                            - Queued each effect with its place in its rule
@@ -112,7 +113,11 @@ public sealed class RuleEngine
                 int depth = queued.Fired.Depth + 1;
                 if (depth > MaxDepth)
                 {
-                    context.Log(new WarningEvent(raised.Turn, WarningEvent.RuleLoop, queued.Fired.Rule.Id));
+                    if (CouldFire(context, raised))
+                    {
+                        context.Log(new WarningEvent(raised.Turn, WarningEvent.RuleLoop, queued.Fired.Rule.Id));
+                    }
+
                     continue;
                 }
 
@@ -138,8 +143,24 @@ public sealed class RuleEngine
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(battleEvent);
         List<FiredRule> fired = [];
-        int? named = EventFacts.EnemyOf(battleEvent);
         int? seat = EventFacts.TriggerUnitOf(battleEvent);
+        foreach (RuleList list in ListsFor(context, battleEvent))
+        {
+            Fire(context, battleEvent, depth, seat, list, fired);
+        }
+
+        return fired;
+    }
+
+    /// <summary>
+    /// Lists the rows an event reaches, per enemy and then for the fight.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="battleEvent">The event.</param>
+    /// <returns>The lists in match order.</returns>
+    private IEnumerable<RuleList> ListsFor(IRuleContext context, BattleEvent battleEvent)
+    {
+        int? named = EventFacts.EnemyOf(battleEvent);
         foreach (int enemy in context.LivingEnemies)
         {
             if ((named is int only && only != enemy) || context.SlotOf(enemy) is not string slot)
@@ -147,12 +168,32 @@ public sealed class RuleEngine
                 continue;
             }
 
-            Fire(context, battleEvent, depth, seat, enemy, enemy, false, Book.RulesOf(slot), fired);
+            yield return new RuleList(enemy, enemy, false, Book.RulesOf(slot));
         }
 
-        int subject = EventFacts.SubjectOf(battleEvent) ?? FightEnemy;
-        Fire(context, battleEvent, depth, seat, subject, FightEnemy, true, Book.FightRules, fired);
-        return fired;
+        yield return new RuleList(EventFacts.SubjectOf(battleEvent) ?? FightEnemy, FightEnemy, true, Book.FightRules);
+    }
+
+    /// <summary>
+    /// Tells whether an event matches the trigger of any row it reaches, without checking limits or conditions.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="battleEvent">The event.</param>
+    /// <returns>Whether a row's trigger matches it.</returns>
+    private bool CouldFire(IRuleContext context, BattleEvent battleEvent)
+    {
+        foreach (RuleList list in ListsFor(context, battleEvent))
+        {
+            foreach (RuleSpec rule in list.Rules)
+            {
+                if (TriggerMatcher.Matches(rule, battleEvent, context, Book, list.Enemy, list.Fight))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -162,18 +203,15 @@ public sealed class RuleEngine
     /// <param name="battleEvent">The event.</param>
     /// <param name="depth">How many rule effects led to the event.</param>
     /// <param name="seat">The unit the event names, or null.</param>
-    /// <param name="enemy">The rule's enemy: the caster of its casts and the boss of its effects.</param>
-    /// <param name="ledgerEnemy">The enemy the ledger counts the fires under.</param>
-    /// <param name="fight">Whether the rules are matched once for the fight.</param>
-    /// <param name="rules">The rules in match order.</param>
+    /// <param name="list">The rules with their enemy.</param>
     /// <param name="fired">Receives the fired rules.</param>
-    private void Fire(IRuleContext context, BattleEvent battleEvent, int depth, int? seat, int enemy, int ledgerEnemy, bool fight, IReadOnlyList<RuleSpec> rules, List<FiredRule> fired)
+    private void Fire(IRuleContext context, BattleEvent battleEvent, int depth, int? seat, RuleList list, List<FiredRule> fired)
     {
-        foreach (RuleSpec rule in RuleGroups.Pick(Successes(context, battleEvent, enemy, ledgerEnemy, fight, rules), context.Rules))
+        foreach (RuleSpec rule in RuleGroups.Pick(Successes(context, battleEvent, list.Enemy, list.LedgerEnemy, list.Fight, list.Rules), context.Rules))
         {
-            Record(context, battleEvent, ledgerEnemy, rule);
+            Record(context, battleEvent, list.LedgerEnemy, rule);
             context.Log(new RuleFiredEvent(battleEvent.Turn, rule.Id, depth, seat));
-            fired.Add(new FiredRule(rule, enemy, battleEvent, depth));
+            fired.Add(new FiredRule(rule, list.Enemy, battleEvent, depth));
         }
     }
 
@@ -194,7 +232,7 @@ public sealed class RuleEngine
         {
             if (TriggerMatcher.Matches(rule, battleEvent, context, Book, enemy, fight)
                 && Allows(context.Ledger, rule, battleEvent, ledgerEnemy)
-                && ConditionEvaluator.Holds(rule.Conditions, context, enemy, battleEvent))
+                && ConditionEvaluator.Holds(rule.Conditions, context, enemy, battleEvent, Book))
             {
                 successes.Add(rule);
             }
@@ -254,6 +292,15 @@ public sealed class RuleEngine
     /// <param name="battleEvent">The event.</param>
     /// <returns>The unit's seat, -1 for an event without one.</returns>
     private static int SeatOf(BattleEvent battleEvent) => EventFacts.TriggerUnitOf(battleEvent) ?? -1;
+
+    /// <summary>
+    /// The rows an event reaches with the enemy they are matched for.
+    /// </summary>
+    /// <param name="Enemy">The rows' enemy: the caster of their casts and the boss of their effects.</param>
+    /// <param name="LedgerEnemy">The enemy the ledger counts the fires under.</param>
+    /// <param name="Fight">Whether the rows are matched once for the fight.</param>
+    /// <param name="Rules">The rows in match order.</param>
+    private readonly record struct RuleList(int Enemy, int LedgerEnemy, bool Fight, IReadOnlyList<RuleSpec> Rules);
 
     /// <summary>
     /// Queues the effects of fired rules in order.

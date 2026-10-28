@@ -2,6 +2,7 @@
 //  Targets.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Named the unit or enemy of lost states, unit HP thresholds and damage in a turn
 //      Paulinchen  2026-10-24: Created
 //
 //----------------------------------------------------------------
@@ -48,6 +49,9 @@ internal static class Targets
         UnitHitEvent hit => (StateHolder.Unit, hit.Seat),
         BossHitEvent hit => (StateHolder.Boss, hit.Enemy),
         StateAddedEvent added => (added.On, added.Index),
+        StateRemovedEvent removed => (removed.On, removed.Index),
+        DamageInTurnEvent taken => (taken.On, taken.Index),
+        UnitHpBelowEvent below => (StateHolder.Unit, below.Seat),
         UnitFellEvent fell => (StateHolder.Unit, fell.Seat),
         EnemyFellEvent fell => (StateHolder.Boss, fell.Enemy),
         BossHpBelowEvent below => (StateHolder.Boss, below.Enemy),

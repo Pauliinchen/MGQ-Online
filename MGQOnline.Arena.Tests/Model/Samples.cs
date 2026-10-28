@@ -2,6 +2,7 @@
 //  Samples.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Added the stage start, turn, unit HP below and damage in turn events
 //      Paulinchen  2026-10-24: Gave the boss a battle plan with two stages and rows of every trigger, condition, effect and owner
 //                            - Dropped the marks, mark reactions, scheduled actions and follow-ups
 //                            - Gave the area skill a payload override
@@ -500,7 +501,9 @@ internal static class Samples
         new DebrisPlacedEvent(0, [new GridCell(4, 2), new GridCell(5, 2)], 0, 2, null),
         new HazardPlacedEvent(0, FireId, [new GridCell(7, 2)], 3, 4),
         new StartRestEvent(0, 0, "game:3764", 2),
+        new StageStartEvent(0, OpeningStage),
         new TurnStartEvent(1),
+        new TurnEvent(1, OpeningStage, 1),
         new TurnScheduleEvent(1, 0),
         new AfterCastEvent(1, "c1", 0, Stigmata, PlanKind.Scheduled, "a1b2c3d4", "a1b2c3d4", GridHalf.Left),
         new AfterCastEvent(1, "c2", 0, Blast, PlanKind.FollowUp, null, "a1b2c3d4", GridHalf.Right),
@@ -511,9 +514,11 @@ internal static class Samples
         new HazardFiredEvent(1, FireId, new GridCell(3, 1), 3, HazardTrigger.StepsOnto),
         new BossHitEvent(1, 0, 3, new GridCell(3, 1), HitKind.Physical, SkillRef.OfGame(1), [1], true),
         new BossHpBelowEvent(1, 0, 50),
+        new DamageInTurnEvent(1, StateHolder.Boss, 0, 15, 450_000),
         new UnitHitEvent(1, "c1", 0, Stigmata, 2, new GridCell(1, 0), [302], [301], "a1b2c3d4", true),
         new RuleFiredEvent(1, "77aa0b1c", 0, 2),
         new DamageEvent(1, StateHolder.Unit, 2, 1234, 766, "c1", null),
+        new UnitHpBelowEvent(1, 2, 80),
         new StateAddedEvent(1, StateHolder.Unit, 2, 301, "c1", "game:3764:1c2d3e4f"),
         new StateRemovedEvent(1, StateHolder.Unit, 2, 302, "77aa0b1c"),
         new CastResolvedEvent(1, "c1", 0, Stigmata, [2], false),
@@ -526,6 +531,7 @@ internal static class Samples
         new EnemyJoinedEvent(1, 1, ReserveSlot, 302, true, "9f0a1b2c"),
         new EnemyTransformedEvent(1, 1, ReserveSlot, FirstSlot, 301, 2_500_000, "8e9f0a1b"),
         new EnemyLeftEvent(1, 1, FirstSlot, 301, "8e9f0a1b"),
+        new StageStartEvent(1, SeriousStage, "5e6f7a8b"),
         new DamageReductionAddedEvent(1, StateHolder.Unit, 2, "6a7b8c9d#1", 30, 30, 2),
         new DamageReductionRemovedEvent(1, StateHolder.Boss, 0, "6a7b8c9d"),
         new WarningEvent(1, WarningEvent.RuleLoop, "0d9e8f7a"),

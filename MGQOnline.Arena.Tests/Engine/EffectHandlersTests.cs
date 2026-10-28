@@ -2,6 +2,7 @@
 //  EffectHandlersTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Planned the battle's turn row on the turn event
 //      Paulinchen  2026-10-24: Tested the effects with the targets of the Trigger -> Effect framework
 //                            - Tested the skill pick, the caster slot and the targets of a party hit
 //      Paulinchen  2026-10-22: Tested placing hazards
@@ -35,7 +36,7 @@ public sealed class EffectHandlersTests
     [Fact]
     public void OrdersATurnRowsCastAsItsOwn()
     {
-        EngineOf(Schedule).Raise(_context, new TurnScheduleEvent(2, 0));
+        EngineOf(Schedule).Raise(_context, new TurnEvent(2, RuntimePlan.MainStage, 2));
 
         CastOrder order = Assert.Single(_context.Orders);
         Assert.Equal(new CastOrder(0, LightStigmata, PlanKind.Scheduled, CastTiming.PlanNow, true, true, CastSide.Own, null, null, StigmataAction, StigmataAction, StigmataAction), order);

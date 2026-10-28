@@ -2,6 +2,7 @@
 //  CanonicalGoldenTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Took the stage start, turn, unit HP below and damage in turn events in the battle log golden
 //      Paulinchen  2026-10-24: Took the battle plan and the rows of the Trigger -> Effect framework in the design golden
 //      Paulinchen  2026-10-23: Took the golden design with the battlefield
 //                            - Took the boss's raid and refight in the design golden
@@ -46,7 +47,7 @@ public sealed class CanonicalGoldenTests
     /// <summary>
     /// The SHA-256 of the battle log golden.
     /// </summary>
-    private const string EventsSha256 = "11f382ba315a517edfe0518b4bc763edb9a01056dc042db70655e444ec5c9347";
+    private const string EventsSha256 = "b7785c272d66534532821a19a0a8468a4235ad86d9e5ea7696bce486682ec7ac";
 
     /// <summary>
     /// The sample design writes the golden's bytes.

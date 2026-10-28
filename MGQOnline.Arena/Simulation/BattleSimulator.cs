@@ -2,6 +2,7 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Raised the first stage's start, one turn event per plan, lost states, unit HP thresholds and damage in a turn
 //      Paulinchen  2026-10-24: Read each enemy's rolled skills from the battle plan's stage
 //                            - Rolled every action, since turn rows cast outside the roll
 //                            - Named the states a skill's own hit rows add as the marks it leaves
@@ -172,7 +173,7 @@ public sealed partial class BattleSimulator
     /// <summary>
     /// Starts a battle: places the party, forces the tier's states on the enemies, gives their
     /// cooldown skills their start rests, rolls the boss's or the game rule's start debris, places the
-    /// start hazards and fires the battle start rules.
+    /// start hazards and fires the battle start rules, then the first stage's start rules.
     /// </summary>
     /// <param name="setup">The setup.</param>
     /// <returns>The battle before its first turn.</returns>
@@ -229,14 +230,15 @@ public sealed partial class BattleSimulator
 
         PlaceStartHazards(state);
         Raise(state, new BattleStartEvent(0));
+        Raise(state, new StageStartEvent(0, state.Stage));
         return state;
     }
 
     /// <summary>
     /// Starts the next turn and makes the boss's plan: the turn start with the hazards of the units
-    /// that start it on one, then per living enemy its forced entries, its roll or grapple, its
-    /// follow-ups, its bank and what crowd control and the party's Overdrive do to it. Everything is
-    /// telegraphed.
+    /// that start it on one, the battle's and the stages' turn rows, then per living enemy its forced
+    /// entries, its roll or grapple, its follow-ups, its bank and what crowd control and the party's
+    /// Overdrive do to it. Everything is telegraphed.
     /// </summary>
     /// <param name="state">The battle, after its start or a resolved turn.</param>
     /// <param name="toggles">What the turn starts with besides the battle, or null for nothing.</param>
@@ -253,6 +255,8 @@ public sealed partial class BattleSimulator
         state.Turn++;
         state.TurnLogStart = state.Log.Count;
         state.Plan.Clear();
+        state.DamageThisTurn.Clear();
+        state.DamageInTurnReached.Clear();
         state.Phase = BattlePhase.TurnStart;
         Toggle(state, toggles ?? PlanToggles.None);
         _drafts = [];
@@ -287,6 +291,7 @@ public sealed partial class BattleSimulator
             }
 
             state.Phase = BattlePhase.Plan;
+            Raise(state, new TurnEvent(state.Turn, state.Stage, state.Turn - state.StageStartTurn + 1));
             List<EnemyPlan> plans = [];
             foreach (EnemyState enemy in Standing(state))
             {
@@ -692,7 +697,7 @@ public sealed partial class BattleSimulator
 
     /// <summary>
     /// Lands a party hit on a boss enemy: its damage, the boss hit rules unless the boss is frozen,
-    /// the HP thresholds it crosses, its fall, and its states.
+    /// the HP thresholds it crosses and the damage in a turn it reaches, its fall, and its states.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="enemy">The enemy.</param>
@@ -707,9 +712,9 @@ public sealed partial class BattleSimulator
             Raise(state, new BossHitEvent(state.Turn, enemy.Index, hit.Seat, attacker.Cell, hit.HitType, hit.Skill, hit.SkillTypes, hit.Chosen));
         }
 
-        foreach (int percent in dealt.CrossedPercents)
+        foreach (BattleEvent damaged in dealt.Events(state.Turn, StateHolder.Boss, enemy.Index))
         {
-            Raise(state, new BossHpBelowEvent(state.Turn, enemy.Index, percent));
+            Raise(state, damaged);
         }
 
         if (dealt.Fell)
@@ -756,7 +761,7 @@ public sealed partial class BattleSimulator
                 bool groupEnds = i + 1 >= state.Plan.Count || state.Plan[i + 1].ParentCastId is not { } next || !group.Contains(next);
                 if (groupEnds && groupCast && RootOf(state, group) is { } root)
                 {
-                    MarkLifecycle.ActionEnded(ContextOf(state), state.Turn, root, group);
+                    Dispatch(state, MarkLifecycle.ActionEnded(ContextOf(state), state.Turn, root, group));
                 }
             }
         }
@@ -769,7 +774,8 @@ public sealed partial class BattleSimulator
     /// <summary>
     /// Resolves one cast: its debris, its hazards, the rules its run fires, its damage, its payload
     /// states, a unit hit event per unit hit with the states that unit held before the cast and
-    /// whether it is the main target, the falls, and the units its debris pushed.
+    /// whether it is the main target, the HP thresholds crossed and damage in a turn reached, the
+    /// falls, and the units its debris pushed.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="entry">The cast.</param>
@@ -790,11 +796,13 @@ public sealed partial class BattleSimulator
         {
             Raise(state, new CastResolvedEvent(state.Turn, entry.CastId, entry.Enemy, entry.Skill, seats, seats.Count == 0));
             List<int> fell = [];
+            List<BattleEvent> damaged = [];
             foreach (CastHit hit in hits)
             {
-                if (DamageUnit(state.Units[hit.Seat], hit.Damage) is { } dealt)
+                if (DamageUnit(state, state.Units[hit.Seat], hit.Damage) is { } dealt)
                 {
                     Log(state, new DamageEvent(state.Turn, StateHolder.Unit, hit.Seat, dealt.Amount, dealt.HpAfter, entry.CastId));
+                    damaged.AddRange(dealt.Events(state.Turn, StateHolder.Unit, hit.Seat));
                     if (dealt.Fell)
                     {
                         fell.Add(hit.Seat);
@@ -817,6 +825,11 @@ public sealed partial class BattleSimulator
                 Raise(state, new UnitHitEvent(state.Turn, entry.CastId, entry.Enemy, entry.Skill, hit.Seat, state.Units[hit.Seat].Cell, heldBefore[hit.Seat], leaves, entry.RootActionId, hit.MainTarget));
             }
 
+            foreach (BattleEvent hurt in damaged)
+            {
+                Raise(state, hurt);
+            }
+
             foreach (int seat in fell)
             {
                 Raise(state, new UnitFellEvent(state.Turn, seat, entry.CastId));
@@ -834,19 +847,21 @@ public sealed partial class BattleSimulator
     }
 
     /// <summary>
-    /// Runs the turn end: marks, durations, rests, damage reductions, debris, the hazards of the units that end it on one,
-    /// the turn end rules, the hazards' turns and the Overdrive's count.
+    /// Runs the turn end: marks, durations and the rules of the states they ended, rests, damage
+    /// reductions, debris, the hazards of the units that end it on one, the turn end rules, the
+    /// hazards' turns and the Overdrive's count.
     /// </summary>
     /// <param name="state">The battle.</param>
     private void EndTurn(BattleState state)
     {
         state.Phase = BattlePhase.TurnEnd;
-        MarkLifecycle.TurnEnded(ContextOf(state), state.Turn);
+        List<BattleEvent> lost = [.. MarkLifecycle.TurnEnded(ContextOf(state), state.Turn)];
         foreach (UnitState unit in state.Units)
         {
             foreach (int removed in StateClock.TurnEnd(unit.States))
             {
-                Log(state, new StateRemovedEvent(state.Turn, StateHolder.Unit, unit.Seat, removed));
+                lost.Add(new StateRemovedEvent(state.Turn, StateHolder.Unit, unit.Seat, removed));
+                Log(state, lost[^1]);
             }
         }
 
@@ -854,10 +869,17 @@ public sealed partial class BattleSimulator
         {
             foreach (int removed in StateClock.TurnEnd(enemy.States))
             {
-                Log(state, new StateRemovedEvent(state.Turn, StateHolder.Boss, enemy.Index, removed));
+                lost.Add(new StateRemovedEvent(state.Turn, StateHolder.Boss, enemy.Index, removed));
+                Log(state, lost[^1]);
             }
 
             Cooldowns.CountDown(enemy);
+        }
+
+        Dispatch(state, lost);
+        if (state.IsOver)
+        {
+            return;
         }
 
         ExpireReductions(state);

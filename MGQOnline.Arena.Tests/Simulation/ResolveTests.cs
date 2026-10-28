@@ -2,6 +2,7 @@
 //  ResolveTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Took the stage start and turn events in the reference log hashes
 //      Paulinchen  2026-10-24: Played the halves battle with battle and skill rows of the Trigger -> Effect framework
 //                            - Saved the reference design built when it differs from its fixture
 //                            - Took the turn row ids in the golden log hash
@@ -36,7 +37,7 @@ public sealed class ResolveTests
     /// <summary>
     /// The golden hash of the reference battle's log through the arena's casting part and rule engine.
     /// </summary>
-    private const string GoldenLogSha256 = "9fcb07e5767e7f1ed7e80ab2d9aeaf171b762ce90fed378247add294ce04405c";
+    private const string GoldenLogSha256 = "50257b81cd45aabfff09bfe4638c4356e50d71f0f1ae72f9e25fb412a1983e13";
 
     /// <summary>
     /// The cells of the halves battle's units: four on each half.

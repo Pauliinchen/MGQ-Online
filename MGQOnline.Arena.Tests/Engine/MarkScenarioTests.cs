@@ -2,6 +2,7 @@
 //  MarkScenarioTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Planned the battle's turn rows on the turn event
 //      Paulinchen  2026-10-24: Played the Stigmata as battle and skill rows of the Trigger -> Effect framework
 //      Paulinchen  2026-10-21: Created
 //
@@ -122,7 +123,7 @@ public sealed class MarkScenarioTests
         for (int turn = 1; turn <= 5; turn++)
         {
             int planned = _casts.Count;
-            _engine.Raise(_context, new TurnScheduleEvent(turn, 0));
+            _engine.Raise(_context, new TurnEvent(turn, RuntimePlan.MainStage, turn));
             List<string> castIds = [];
             foreach ((string castId, SkillRef skill, GridHalf side) in _casts.Skip(planned))
             {

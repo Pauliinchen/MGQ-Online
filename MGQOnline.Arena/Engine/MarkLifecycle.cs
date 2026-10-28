@@ -2,6 +2,7 @@
 //  MarkLifecycle.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Handed back the removals of the marks for the lost state rules
 //      Paulinchen  2026-10-24: Let marks wait for the casts of turn rows
 //      Paulinchen  2026-10-21: Created
 //
@@ -62,11 +63,13 @@ public static class MarkLifecycle
     /// <param name="turn">The turn.</param>
     /// <param name="rootActionId">The turn row.</param>
     /// <param name="castIds">The ids of the row's cast and its follow-ups.</param>
-    public static void ActionEnded(IRuleContext context, int turn, string rootActionId, IReadOnlyCollection<string> castIds)
+    /// <returns>The state removed events of the marks it ended, logged, for the rules to match.</returns>
+    public static IReadOnlyList<BattleEvent> ActionEnded(IRuleContext context, int turn, string rootActionId, IReadOnlyCollection<string> castIds)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(rootActionId);
         ArgumentNullException.ThrowIfNull(castIds);
+        List<BattleEvent> removed = [];
         foreach ((StateHolder holder, int index) in Holders(context))
         {
             foreach (HeldState held in context.StatesOf(holder, index).ToArray())
@@ -80,7 +83,7 @@ public static class MarkLifecycle
 
                 if (turn >= clock.MinUntilTurn)
                 {
-                    Remove(context, turn, holder, index, held.State);
+                    Remove(context, turn, holder, index, held.State, removed);
                 }
                 else
                 {
@@ -88,6 +91,8 @@ public static class MarkLifecycle
                 }
             }
         }
+
+        return removed;
     }
 
     /// <summary>
@@ -95,19 +100,23 @@ public static class MarkLifecycle
     /// </summary>
     /// <param name="context">The battle.</param>
     /// <param name="turn">The turn that ends.</param>
-    public static void TurnEnded(IRuleContext context, int turn)
+    /// <returns>The state removed events of the marks it ended, logged, for the rules to match.</returns>
+    public static IReadOnlyList<BattleEvent> TurnEnded(IRuleContext context, int turn)
     {
         ArgumentNullException.ThrowIfNull(context);
+        List<BattleEvent> removed = [];
         foreach ((StateHolder holder, int index) in Holders(context))
         {
             foreach (HeldState held in context.StatesOf(holder, index).ToArray())
             {
                 if (held.Clock is { UntilNextCastOf: null } clock && turn >= clock.MinUntilTurn)
                 {
-                    Remove(context, turn, holder, index, held.State);
+                    Remove(context, turn, holder, index, held.State, removed);
                 }
             }
         }
+
+        return removed;
     }
 
     /// <summary>
@@ -126,11 +135,14 @@ public static class MarkLifecycle
     /// <param name="holder">Whether a unit or an enemy holds it.</param>
     /// <param name="index">The unit's seat or the enemy's index.</param>
     /// <param name="state">The state.</param>
-    private static void Remove(IRuleContext context, int turn, StateHolder holder, int index, int state)
+    /// <param name="removed">Receives the state removed event.</param>
+    private static void Remove(IRuleContext context, int turn, StateHolder holder, int index, int state, List<BattleEvent> removed)
     {
         if (context.RemoveState(holder, index, state))
         {
-            context.Log(new StateRemovedEvent(turn, holder, index, state));
+            StateRemovedEvent gone = new(turn, holder, index, state);
+            context.Log(gone);
+            removed.Add(gone);
         }
     }
 }
