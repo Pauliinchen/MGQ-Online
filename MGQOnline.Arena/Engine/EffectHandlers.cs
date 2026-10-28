@@ -219,7 +219,7 @@ internal static class EffectHandlers
     /// <param name="book">The rule book.</param>
     /// <param name="fired">The fired rule.</param>
     /// <param name="effect">The effect.</param>
-    /// <returns>A state added event per receiver that got it.</returns>
+    /// <returns>A state added event per receiver that gained it; a refresh of a held state raises none.</returns>
     private static IReadOnlyList<BattleEvent> AddState(IRuleContext context, RuleBook book, FiredRule fired, AddStateEffect effect)
     {
         int turn = fired.Cause.Turn;

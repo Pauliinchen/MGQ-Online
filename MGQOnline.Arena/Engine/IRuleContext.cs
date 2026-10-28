@@ -193,7 +193,7 @@ public interface IRuleContext
     /// </summary>
     /// <remarks>A holder keeps one instance per state, as in the game, so a refresh replaces the turns, the clock, the rule and the cast.</remarks>
     /// <param name="grant">The state and how long it lasts.</param>
-    /// <returns>Whether it was added or refreshed; false for a fallen unit or a defeated enemy.</returns>
+    /// <returns>Whether the holder gained it; false for a refresh of a state it held, a fallen unit or a defeated enemy.</returns>
     bool AddState(StateGrant grant);
 
     /// <summary>

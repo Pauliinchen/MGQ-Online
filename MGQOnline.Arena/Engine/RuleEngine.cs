@@ -2,7 +2,8 @@
 //  RuleEngine.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Kept the effects of a skill used row other than its casts until the cast resolves
+//      Paulinchen  2026-10-28: Capped the rule fires of one dispatch and warned of a rule loop once per dispatch
+//                            - Kept the effects of a skill used row other than its casts until the cast resolves
 //                            - Matched the fight rows of the stage the battle is in
 //                            - Fired a row the Nth or every Nth time its trigger and conditions held
 //                            - Warned of a rule loop only for the dropped events that would fire a row
@@ -34,6 +35,13 @@ public sealed class RuleEngine
     /// The deepest event the engine dispatches; rule effects that raise events deeper log a rule loop instead.
     /// </summary>
     public const int MaxDepth = 8;
+
+    /// <summary>
+    /// The most rule fires one dispatch matches; the events raised after them log a rule loop instead.
+    /// </summary>
+    /// <remarks>Rows that reach every unit can set each other off many times per level long before
+    /// the depth guard stops them.</remarks>
+    public const int MaxFires = 500;
 
     /// <summary>
     /// The enemy of a fight rule fired on an event that names no enemy, and the enemy its ledger counts under.
@@ -79,12 +87,13 @@ public sealed class RuleEngine
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(battleEvents);
         Queue<QueuedEffect> effects = new();
+        Dispatch dispatch = new();
         foreach (BattleEvent battleEvent in battleEvents)
         {
-            Enqueue(effects, Match(context, battleEvent, 0));
+            MatchInto(context, dispatch, effects, battleEvent, 0, null);
         }
 
-        RunQueue(context, effects);
+        RunQueue(context, dispatch, effects);
     }
 
     /// <summary>
@@ -100,7 +109,7 @@ public sealed class RuleEngine
         ArgumentNullException.ThrowIfNull(fired);
         Queue<QueuedEffect> effects = new();
         Enqueue(effects, [fired]);
-        RunQueue(context, effects);
+        RunQueue(context, new Dispatch(), effects);
     }
 
     /// <summary>
@@ -114,7 +123,7 @@ public sealed class RuleEngine
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(awaited);
         Queue<QueuedEffect> effects = new(awaited.Select(effect => effect with { CastResolving = true }));
-        RunQueue(context, effects);
+        RunQueue(context, new Dispatch(), effects);
     }
 
     /// <summary>
@@ -122,8 +131,9 @@ public sealed class RuleEngine
     /// the effects of a skill used row other than its casts wait for the cast it fired on.
     /// </summary>
     /// <param name="context">The battle.</param>
+    /// <param name="dispatch">The fires so far of the dispatch the queue belongs to.</param>
     /// <param name="effects">The queue.</param>
-    private void RunQueue(IRuleContext context, Queue<QueuedEffect> effects)
+    private void RunQueue(IRuleContext context, Dispatch dispatch, Queue<QueuedEffect> effects)
     {
         while (effects.TryDequeue(out QueuedEffect? queued))
         {
@@ -135,20 +145,38 @@ public sealed class RuleEngine
 
             foreach (BattleEvent raised in EffectHandlers.Run(context, Book, queued))
             {
-                int depth = queued.Fired.Depth + 1;
-                if (depth > MaxDepth)
-                {
-                    if (CouldFire(context, raised))
-                    {
-                        context.Log(new WarningEvent(raised.Turn, WarningEvent.RuleLoop, queued.Fired.Rule.Id));
-                    }
-
-                    continue;
-                }
-
-                Enqueue(effects, Match(context, raised, depth));
+                MatchInto(context, dispatch, effects, raised, queued.Fired.Depth + 1, queued.Fired.Rule.Id);
             }
         }
+    }
+
+    /// <summary>
+    /// Queues the effects of the rules an event fires, unless the event lies deeper than
+    /// <see cref="MaxDepth"/> or the dispatch already spent its <see cref="MaxFires"/>; then the first such
+    /// event a row would match logs the dispatch's one rule loop warning.
+    /// </summary>
+    /// <param name="context">The battle.</param>
+    /// <param name="dispatch">The fires so far of the dispatch.</param>
+    /// <param name="effects">The queue.</param>
+    /// <param name="battleEvent">The event.</param>
+    /// <param name="depth">How many rule effects led to the event.</param>
+    /// <param name="raisedBy">The rule whose effect raised the event, or null for an event the battle raised.</param>
+    private void MatchInto(IRuleContext context, Dispatch dispatch, Queue<QueuedEffect> effects, BattleEvent battleEvent, int depth, string? raisedBy)
+    {
+        if (depth > MaxDepth || dispatch.Fires >= MaxFires)
+        {
+            if (!dispatch.Warned && CouldFire(context, battleEvent))
+            {
+                dispatch.Warned = true;
+                context.Log(new WarningEvent(battleEvent.Turn, WarningEvent.RuleLoop, raisedBy));
+            }
+
+            return;
+        }
+
+        IReadOnlyList<FiredRule> fired = Match(context, battleEvent, depth);
+        dispatch.Fires += fired.Count;
+        Enqueue(effects, fired);
     }
 
     /// <summary>
@@ -364,6 +392,22 @@ public sealed class RuleEngine
     /// <param name="Fight">Whether the rows are matched once for the fight.</param>
     /// <param name="Rules">The rows in match order.</param>
     private readonly record struct RuleList(int Enemy, int LedgerEnemy, bool Fight, IReadOnlyList<RuleSpec> Rules);
+
+    /// <summary>
+    /// What one dispatch, from a raise, a rule the battle fires or the effects awaiting a cast, has spent.
+    /// </summary>
+    private sealed class Dispatch
+    {
+        /// <summary>
+        /// Gets or sets the rule fires matched so far.
+        /// </summary>
+        public int Fires { get; set; }
+
+        /// <summary>
+        /// Gets or sets whether the dispatch logged its rule loop warning.
+        /// </summary>
+        public bool Warned { get; set; }
+    }
 
     /// <summary>
     /// Queues the effects of fired rules in order.

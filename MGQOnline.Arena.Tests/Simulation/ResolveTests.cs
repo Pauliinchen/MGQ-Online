@@ -2,7 +2,8 @@
 //  ResolveTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Took the stage start and turn events in the reference log hashes
+//      Paulinchen  2026-10-28: Tested that a refreshed state is no gain and dropped its events from the golden log hash
+//                            - Took the stage start and turn events in the reference log hashes
 //      Paulinchen  2026-10-24: Played the halves battle with battle and skill rows of the Trigger -> Effect framework
 //                            - Saved the reference design built when it differs from its fixture
 //                            - Took the turn row ids in the golden log hash
@@ -37,7 +38,7 @@ public sealed class ResolveTests
     /// <summary>
     /// The golden hash of the reference battle's log through the arena's casting part and rule engine.
     /// </summary>
-    private const string GoldenLogSha256 = "50257b81cd45aabfff09bfe4638c4356e50d71f0f1ae72f9e25fb412a1983e13";
+    private const string GoldenLogSha256 = "fd432375be9069dbd31e19b2a1a2f64ee80dad99e82fd49af881201f0844e354";
 
     /// <summary>
     /// The cells of the halves battle's units: four on each half.
@@ -153,7 +154,7 @@ public sealed class ResolveTests
             [],
             [
                 SimFixtures.Rule("seed", new BattleStartTrigger(), [new AddStateEffect(TargetRef.Owner, SimFixtures.LightMark, 1)]),
-                SimFixtures.Rule("loop", new StateGainedTrigger(Who.Owner, SimFixtures.LightMark), [new AddStateEffect(TargetRef.Owner, SimFixtures.LightMark, 1)]),
+                SimFixtures.Rule("loop", new StateGainedTrigger(Who.Owner, SimFixtures.LightMark), [new RemoveStateEffect(TargetRef.Owner, SimFixtures.LightMark), new AddStateEffect(TargetRef.Owner, SimFixtures.LightMark, 1)]),
             ]);
         BattleSimulator simulator = SimFixtures.Simulator(design);
 
@@ -162,6 +163,29 @@ public sealed class ResolveTests
         Assert.Single(state.Log.OfType<WarningEvent>(), warning => warning.Code == WarningEvent.RuleLoop);
         Assert.Equal(RuleEngine.MaxDepth, state.Log.OfType<RuleFiredEvent>().Count(fired => fired.RuleId == "loop"));
         Assert.Single(state.Enemies[0].States);
+    }
+
+    /// <summary>
+    /// A row that gives every character the state it reacts to fires once per character that gains
+    /// it, since a refresh of a held state is no gain.
+    /// </summary>
+    [Fact]
+    public void RaisesNoGainForARefreshedState()
+    {
+        RuntimeDesign design = SimFixtures.Design(
+            [],
+            [],
+            [
+                SimFixtures.Rule("seed", new TurnStartTrigger(), [new AddStateEffect(new TargetRef(TargetKind.EveryCharacter), SimFixtures.DarkMark, Turns: 3)], often: new HowOften(Frequency.Once), owner: RuleOwner.Battle),
+                SimFixtures.Rule("spread", new StateGainedTrigger(Who.Character, SimFixtures.DarkMark), [new AddStateEffect(new TargetRef(TargetKind.EveryCharacter), SimFixtures.DarkMark, Turns: 3)], owner: RuleOwner.Battle),
+            ]);
+        BattleSimulator simulator = SimFixtures.Simulator(design);
+        BattleState state = simulator.Start(SimFixtures.Setup(5));
+
+        simulator.Plan(state);
+
+        Assert.Equal(5, state.Log.OfType<RuleFiredEvent>().Count(fired => fired.RuleId == "spread"));
+        Assert.DoesNotContain(state.Log, battleEvent => battleEvent is WarningEvent);
     }
 
     /// <summary>

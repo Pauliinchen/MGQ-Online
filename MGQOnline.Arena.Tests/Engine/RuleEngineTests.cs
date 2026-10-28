@@ -2,7 +2,8 @@
 //  RuleEngineTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Tested the rows of the stage the battle is in and going to a stage
+//      Paulinchen  2026-10-28: Tested the cap on the rule fires of one dispatch
+//                            - Tested the rows of the stage the battle is in and going to a stage
 //      Paulinchen  2026-10-24: Tested the engine with rows of the Trigger -> Effect framework
 //      Paulinchen  2026-10-21: Dropped the test of the effect queue seam
 //                            - Created
@@ -121,6 +122,24 @@ public sealed class RuleEngineTests
         Assert.Equal(Enumerable.Range(0, RuleEngine.MaxDepth + 1), _context.LoggedOf<RuleFiredEvent>().Select(fired => fired.Depth));
         WarningEvent warning = Assert.Single(_context.LoggedOf<WarningEvent>());
         Assert.Equal((WarningEvent.RuleLoop, "ping"), (warning.Code, warning.RuleId));
+    }
+
+    /// <summary>
+    /// Stops rows that set each other off for every character after the fires one dispatch may
+    /// match, with one rule loop warning.
+    /// </summary>
+    [Fact]
+    public void CapsTheFiresOfOneDispatch()
+    {
+        TargetRef everyone = new(TargetKind.EveryCharacter);
+        RuleEngine engine = EngineOf(
+            Rule("ping", new StateGainedTrigger(Who.Character, 40), [new RemoveStateEffect(everyone, 41), new AddStateEffect(everyone, 41, Turns: 1)]),
+            Rule("pong", new StateGainedTrigger(Who.Character, 41), [new RemoveStateEffect(everyone, 40), new AddStateEffect(everyone, 40, Turns: 1)]));
+
+        engine.Raise(_context, new StateAddedEvent(1, StateHolder.Unit, 0, 40));
+
+        Assert.Equal(RuleEngine.MaxFires, _context.LoggedOf<RuleFiredEvent>().Length);
+        Assert.Equal(WarningEvent.RuleLoop, Assert.Single(_context.LoggedOf<WarningEvent>()).Code);
     }
 
     /// <summary>

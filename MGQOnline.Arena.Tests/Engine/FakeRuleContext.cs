@@ -2,7 +2,8 @@
 //  FakeRuleContext.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Recorded the cancels and skipped rolls
+//      Paulinchen  2026-10-28: Told a refresh of a held state apart from a gain
+//                            - Recorded the cancels and skipped rolls
 //                            - Told whether the plan is being made and kept the effects that wait for a cast
 //                            - Went to a stage
 //                            - Named the stage and the turn it started in
@@ -291,12 +292,10 @@ internal sealed class FakeRuleContext : IRuleContext
         if (held >= 0)
         {
             states[held] = fresh;
-        }
-        else
-        {
-            states.Add(fresh);
+            return false;
         }
 
+        states.Add(fresh);
         return true;
     }
 

@@ -2,7 +2,8 @@
 //  BattleSimulator.Rules.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Armed an HP threshold again once the HP rises above it
+//      Paulinchen  2026-10-28: Raised no state added event for a refresh of a held state
+//                            - Armed an HP threshold again once the HP rises above it
 //                            - Cancelled casts and skipped rolls by a rule
 //                            - Disabled a follow-up planned behind a parent that no longer runs
 //                            - Queued a rule cast for the turn it is due
@@ -100,7 +101,7 @@ public sealed partial class BattleSimulator
 
     /// <summary>
     /// Adds or refreshes a state the battle itself gives, such as a tier's or a skill's, and fires
-    /// the state added rules.
+    /// the state added rules when the holder gained it.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="holder">Who gets it.</param>
@@ -122,7 +123,7 @@ public sealed partial class BattleSimulator
     /// <param name="holder">Who gets it.</param>
     /// <param name="index">The unit's seat or the enemy's index.</param>
     /// <param name="instance">The instance.</param>
-    /// <returns>Whether it was added or refreshed; false for a fallen unit or a defeated enemy.</returns>
+    /// <returns>Whether the holder gained it; false for a refresh of a state it held, a fallen unit or a defeated enemy.</returns>
     private bool PutState(BattleState state, StateHolder holder, int index, StateInstance instance)
     {
         if (StatesOf(state, holder, index, living: true) is not List<StateInstance> states)
@@ -141,7 +142,7 @@ public sealed partial class BattleSimulator
             }
         }
 
-        return true;
+        return added;
     }
 
     /// <summary>
