@@ -2,7 +2,8 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Paid the cost of a forced rule cast that is not free and let crowd control disable one that is not uninterruptible
+//      Paulinchen  2026-10-28: Planned a free rule cast ordered after its caster planned into that plan and queued any other with a warning
+//                            - Paid the cost of a forced rule cast that is not free and let crowd control disable one that is not uninterruptible
 //                            - Named the stage and stage turn of each turn plan
 //                            - Skipped rolls and planned the casts cancelled while queued as cancelled
 //                            - Ran the effects of the skill used rows of a cast when it resolves
@@ -266,7 +267,7 @@ public sealed partial class BattleSimulator
     /// Starts the next turn and makes the boss's plan: the turn start with the hazards of the units
     /// that start it on one, the battle's and the stages' turn rows, then per living enemy its forced
     /// entries, its roll or grapple, its follow-ups, its bank and what crowd control and the party's
-    /// Overdrive do to it. Everything is telegraphed.
+    /// Overdrive do to it, and last the rule casts ordered for an enemy after its plan. Everything is telegraphed.
     /// </summary>
     /// <param name="state">The battle, after its start or a resolved turn.</param>
     /// <param name="toggles">What the turn starts with besides the battle, or null for nothing.</param>
@@ -337,6 +338,7 @@ public sealed partial class BattleSimulator
                 }
             }
 
+            PlanLateCasts(state, plans);
             return new TurnPlan(state.Turn, plans) { Stage = state.Stage, StageTurn = state.Turn - state.StageStartTurn + 1 };
         }
         finally
@@ -497,6 +499,76 @@ public sealed partial class BattleSimulator
         {
             RollSkippedBy = skippedBy,
         };
+    }
+
+    /// <summary>
+    /// Plans the rule casts ordered for this turn after their caster made its plan: a free one goes
+    /// into that plan, right behind its entries, and is frozen with it; any other, and one of an enemy
+    /// that joined during the plan, waits for the next turn with a warning.
+    /// </summary>
+    /// <remarks>The caster's points and its crowd control at the plan were settled with its roll, so a
+    /// cast that costs points waits for the next turn's and a late one escapes that crowd control; the
+    /// cast of a caster that no longer stands is dropped, as its planned entries never run. Casts these
+    /// casts order for this turn wait too, so a row that answers its own cast cannot plan without end.</remarks>
+    /// <param name="state">The battle, after every enemy planned.</param>
+    /// <param name="plans">The enemies' plans in plan order, updated with the casts planned into them.</param>
+    private void PlanLateCasts(BattleState state, List<EnemyPlan> plans)
+    {
+        List<Draft> late = _drafts!;
+        int count = late.Count;
+        for (int i = 0; i < late.Count && !state.IsOver; i++)
+        {
+            Draft draft = late[i];
+            int planned = plans.FindIndex(plan => plan.Enemy == draft.Enemy);
+            if (state.Enemies.Find(enemy => enemy.Index == draft.Enemy) is not EnemyState caster || !IsStanding(state, caster))
+            {
+                continue;
+            }
+
+            if (planned < 0 || !draft.Free || i >= count)
+            {
+                Log(state, new WarningEvent(state.Turn, CastQueuedWarning, draft.RuleId));
+                state.NextTurn.Add(new QueuedCast(draft.Enemy, draft.Skill, draft.Kind == PlanKind.LastStandStart ? PlanKind.LastStandStart : PlanKind.DelayedAnswer, draft.Side, draft.AimSeat, draft.ParentSide, draft.RootActionId, draft.RuleId ?? string.Empty, state.Turn)
+                {
+                    DueTurn = state.Turn + 1,
+                    CancelledBy = draft.CancelledBy,
+                    Free = draft.Free,
+                    Uninterruptible = draft.Uninterruptible,
+                });
+                continue;
+            }
+
+            int place = SegmentEnd(state, plans, planned);
+            int start = plans[planned].Entries.Count > 0 ? state.Plan.FindIndex(entry => entry.CastId == plans[planned].Entries[0].CastId) : place;
+            PlanCast(state, draft, 0, true, draft.Uninterruptible, place);
+            int end = SegmentEnd(state, plans, planned);
+            if (plans[planned].Frozen)
+            {
+                foreach (string castId in Overdrive.Freeze(state.Plan, place, end))
+                {
+                    Log(state, new CastDisabledEvent(state.Turn, castId));
+                }
+            }
+
+            plans[planned] = plans[planned] with { Entries = state.Plan.GetRange(start, end - start) };
+        }
+    }
+
+    /// <summary>
+    /// Finds where an enemy's entries end in the plan: at the first entry of the next enemy plan that has one.
+    /// </summary>
+    /// <param name="state">The battle.</param>
+    /// <param name="plans">The enemies' plans in plan order.</param>
+    /// <param name="index">The enemy's place among them.</param>
+    /// <returns>The place behind its entries.</returns>
+    private static int SegmentEnd(BattleState state, List<EnemyPlan> plans, int index)
+    {
+        foreach (EnemyPlan later in plans.Skip(index + 1).Where(plan => plan.Entries.Count > 0))
+        {
+            return state.Plan.FindIndex(entry => entry.CastId == later.Entries[0].CastId);
+        }
+
+        return state.Plan.Count;
     }
 
     /// <summary>
@@ -672,17 +744,18 @@ public sealed partial class BattleSimulator
     }
 
     /// <summary>
-    /// Plans a cast at the end of the plan and fires its after-cast rules; a cast cancelled while it
-    /// was queued enters cancelled and fires none.
+    /// Plans a cast, at the end of the plan unless a place is given, and fires its after-cast rules; a
+    /// cast cancelled while it was queued enters cancelled and fires none.
     /// </summary>
     /// <param name="state">The battle.</param>
     /// <param name="draft">The cast.</param>
     /// <param name="cost">The points it cost.</param>
     /// <param name="free">Whether it is free.</param>
     /// <param name="uninterruptible">Whether crowd control cannot disable it.</param>
-    private void PlanCast(BattleState state, Draft draft, int cost, bool free, bool uninterruptible)
+    /// <param name="place">Where in the plan it goes, or null for the end.</param>
+    private void PlanCast(BattleState state, Draft draft, int cost, bool free, bool uninterruptible, int? place = null)
     {
-        if (AddCast(state, draft, cost, free, uninterruptible, null, state.Plan.Count) is AfterCastEvent after && draft.CancelledBy is null)
+        if (AddCast(state, draft, cost, free, uninterruptible, null, place ?? state.Plan.Count) is AfterCastEvent after && draft.CancelledBy is null)
         {
             Raise(state, after);
         }

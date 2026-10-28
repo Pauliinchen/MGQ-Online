@@ -2,7 +2,8 @@
 //  ScriptTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Tested rule casts that are neither free nor uninterruptible
+//      Paulinchen  2026-10-28: Tested a rule cast ordered after its caster planned
+//                            - Tested rule casts that are neither free nor uninterruptible
 //                            - Tested the HP rows of characters and the lost state rows
 //                            - Tested interrupts, cancelled queued casts, skipped rolls and an HP row after a heal
 //                            - Created
@@ -214,6 +215,30 @@ public sealed class ScriptTests
         Assert.Empty(plan.Entries);
         WarningEvent warning = Assert.Single(state.Log.OfType<WarningEvent>());
         Assert.Equal((BattleSimulator.CastUnpaidWarning, "cast"), (warning.Code, warning.RuleId));
+    }
+
+    /// <summary>
+    /// A row of the second enemy that casts from the first after the first planned still casts this
+    /// turn, in the first enemy's plan.
+    /// </summary>
+    [Fact]
+    public void PlansACastOrderedAfterItsCasterPlanned()
+    {
+        const string second = "1f1f1f1f";
+        RuleSpec late = new("late", new RuleOwner(OwnerKind.Enemy, second), new TurnTrigger(1, 0), [], [Use(SimFixtures.Heavy, CastWhen.ThisTurn)], HowOften.Every);
+        RuntimeDesign design = Design(late);
+        RuntimeBoss boss = design.Bosses[SimFixtures.BossKey];
+        boss = boss with { Enemies = [boss.Enemies[0], boss.Enemies[0] with { Index = 1, Slot = second }] };
+        BattleSimulator simulator = SimFixtures.Simulator(design with { Bosses = new Dictionary<string, RuntimeBoss> { [SimFixtures.BossKey] = boss } });
+        BattleState state = simulator.Start(SimFixtures.Setup());
+
+        TurnPlan plan = simulator.Plan(state);
+
+        PlannedCast heavy = Assert.Single(plan.Enemies[0].Entries);
+        Assert.Equal((SimFixtures.Heavy, "late"), (heavy.Skill, heavy.RuleId));
+        Assert.Empty(plan.Enemies[1].Entries);
+        Assert.Equal([heavy], state.Plan);
+        Assert.Empty(state.Log.OfType<WarningEvent>());
     }
 
     /// <summary>

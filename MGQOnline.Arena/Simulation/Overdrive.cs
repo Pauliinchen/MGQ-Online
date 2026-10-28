@@ -2,6 +2,7 @@
 //  Overdrive.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Froze the entries up to a given place
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -53,16 +54,17 @@ public static class Overdrive
     }
 
     /// <summary>
-    /// Disables every entry from a place on by the time stop.
+    /// Disables every entry from a place on by the time stop, up to another place or to the plan's end.
     /// </summary>
     /// <param name="plan">The battle's plan.</param>
     /// <param name="from">The place of the first entry it touches.</param>
+    /// <param name="to">The place behind the last entry it touches.</param>
     /// <returns>The ids of the casts it disabled.</returns>
-    public static IReadOnlyList<string> Freeze(IList<PlannedCast> plan, int from)
+    public static IReadOnlyList<string> Freeze(IList<PlannedCast> plan, int from, int to = int.MaxValue)
     {
         ArgumentNullException.ThrowIfNull(plan);
         List<string> frozen = [];
-        for (int i = Math.Max(0, from); i < plan.Count; i++)
+        for (int i = Math.Max(0, from); i < Math.Min(to, plan.Count); i++)
         {
             if (!plan[i].Disabled)
             {
