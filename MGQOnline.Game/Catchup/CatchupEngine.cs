@@ -2,7 +2,8 @@
 //  CatchupEngine.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Created
+//      Paulinchen  2026-10-28: Read the switch of a world chest the game shuts by a switch
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -81,7 +82,15 @@ public sealed class CatchupEngine
 
         foreach (CatchupChest chest in tables.Chests)
         {
-            selves.Add(chest.Key);
+            if (chest.Key.Kind == StoryKeyKind.Switch)
+            {
+                switches.Add(chest.Key.Id);
+            }
+            else
+            {
+                selves.Add(chest.Key);
+            }
+
             switches.UnionWith(chest.Flags);
         }
 

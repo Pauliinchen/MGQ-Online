@@ -904,7 +904,7 @@
   {"op":"add","table":"keys","row":{"key":"s2715","kind":"chest"},"note":"Reviewed: only chest pages turn it on, only the route return turns it off (CHEST_FLAGS)."},
   {"op":"add","table":"keys","row":{"key":"s2717","kind":"chest"},"note":"Reviewed: only chest pages turn it on, only the route return turns it off (CHEST_FLAGS)."},
   {"op":"add","table":"keys","row":{"key":"s2718","kind":"chest"},"note":"Reviewed: only chest pages turn it on, only the route return turns it off (CHEST_FLAGS)."},
-  {"op":"add","table":"keys","row":{"key":"s2719","kind":"shared"},"note":"Reviewed: a story event writes it (map:1556:121:1); the world's story shares it as before."},
+  {"op":"add","table":"keys","row":{"key":"s2719","kind":"shared"},"note":"Reviewed: the Land-Dweller's Sealed Orb chest (map:1556:121:1) shuts itself by this switch; the world's story shares it as the key of that world chest (user decision 2026-10-28)."},
   {"op":"add","table":"keys","row":{"key":"s2720","kind":"shared"},"note":"Reviewed: a story event writes it (map:1146:23:1); the world's story shares it as before."},
   {"op":"add","table":"keys","row":{"key":"s2721","kind":"shared"},"note":"Reviewed: a story event writes it (map:1660:15:1, map:1660:4:1); the world's story shares it as before."},
   {"op":"add","table":"keys","row":{"key":"s2722","kind":"chest"},"note":"Reviewed: only chest pages turn it on, only the route return turns it off (CHEST_FLAGS)."},

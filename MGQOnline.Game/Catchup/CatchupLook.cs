@@ -2,7 +2,10 @@
 //  CatchupLook.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Created
+//      Paulinchen  2026-10-28: Left the player's own values alone where the latest row lies in free order
+//                            - Gave a prize marked by a prize switch as one marked by a prize variable
+//                            - Opened a world chest the game shuts by a switch
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -549,7 +552,7 @@ internal sealed class CatchupLook
     /// </summary>
     /// <param name="row">The chest.</param>
     /// <returns>Its key.</returns>
-    private static string KeyOf(CatchupChest row) => $"c:{row.Key.Id}.{row.Key.Event}.{row.Key.Letter}";
+    private static string KeyOf(CatchupChest row) => row.Key.Kind == StoryKeyKind.Switch ? $"c:{row.Key}" : $"c:{row.Key.Id}.{row.Key.Event}.{row.Key.Letter}";
 
     /// <summary>
     /// Names an actor change in the notes.
@@ -900,7 +903,9 @@ internal sealed class CatchupLook
 
     /// <summary>
     /// Finds the player's own values the story's events set where they still hold what an earlier
-    /// step set: the latest step passed sets them, which the scripts apply where they may.
+    /// step set: the latest step passed sets them, which the scripts apply where they may. A value
+    /// whose latest row lies on a step in free order (the rules' <c>free_order</c>) stays as it is,
+    /// since the rows there cannot tell which region the world played last.
     /// </summary>
     /// <param name="story">The player's story.</param>
     /// <param name="told">The world's story while the player plays it.</param>
@@ -933,6 +938,11 @@ internal sealed class CatchupLook
         foreach ((string, int) key in order)
         {
             CatchupSetting row = latest[key];
+            if (InFreeOrder(row.Place))
+            {
+                continue;
+            }
+
             RubyValue now = row.Kind == "encounters" ? _encounters : _own.Variable(row.Id) is { } number ? number : RubyNil.Value;
             if (now.Equals(ValueOf(row)) || !earlier.TryGetValue(key, out List<RubyValue>? values) || !values.Any(value => value.Equals(now)))
             {
@@ -942,6 +952,14 @@ internal sealed class CatchupLook
             Act("setting", row.Kind == "encounters" ? "encounters" : row.Kind == "variable" ? "v" : "s", row.Id, ValueOf(row), row.Place.Site);
         }
     }
+
+    /// <summary>
+    /// Reports whether a row lies on a step whose regions the world plays in an order of its own.
+    /// </summary>
+    /// <param name="place">The row's place.</param>
+    /// <returns>Whether it does.</returns>
+    private bool InFreeOrder(StoryPlace place) =>
+        place is { Part: { } part, Step: { } step } && _tables.Rules.FreeOrder.Contains(new PartStep(part, step));
 
     /// <summary>
     /// Reads the value a setting row sets.
@@ -1015,13 +1033,13 @@ internal sealed class CatchupLook
 
     /// <summary>
     /// Reports whether a prize row the player's story passed is another player's claim: the player
-    /// holds none of it.
+    /// holds none of it. A prize row has a prize variable or a prize switch among its marks.
     /// </summary>
     /// <param name="row">The row.</param>
     /// <returns>Whether it is.</returns>
     private bool UnclaimedPrize(CatchupReward row)
     {
-        if (row.Kind == "skill" || !row.Place.Marks.Any(mark => mark.Key.Kind == StoryKeyKind.Variable && _tables.PrizeVariables.Contains(mark.Key.Id)))
+        if (row.Kind == "skill" || !row.Place.Marks.Any(IsPrize))
         {
             return false;
         }
@@ -1029,6 +1047,19 @@ internal sealed class CatchupLook
         string item = KindOf(row) + row.Id;
         return _items.ContainsKey(item) && !Held(item);
     }
+
+    /// <summary>
+    /// Reports whether a mark is a prize's: a count of <c>prize_variables</c> or a switch of
+    /// <c>prize_switches</c>.
+    /// </summary>
+    /// <param name="mark">The mark.</param>
+    /// <returns>Whether it is.</returns>
+    private bool IsPrize(StoryMark mark) => mark.Key.Kind switch
+    {
+        StoryKeyKind.Variable => _tables.PrizeVariables.Contains(mark.Key.Id),
+        StoryKeyKind.Switch => _tables.PrizeSwitches.Contains(mark.Key.Id),
+        _ => false,
+    };
 
     /// <summary>
     /// Reports whether the party holds an item, in the bag or worn.
@@ -1109,8 +1140,9 @@ internal sealed class CatchupLook
                 continue;
             }
 
-            bool mine = story.SelfSwitch(row.Key);
-            if (!mine && !(told is not null && told.SelfSwitch(row.Key)))
+            var opened = new StoryMark(row.Key);
+            bool mine = story.Holds(opened);
+            if (!mine && !(told is not null && told.Holds(opened)))
             {
                 continue;
             }
@@ -1129,8 +1161,7 @@ internal sealed class CatchupLook
             TurnOnFlags(row, key);
             if (!mine)
             {
-                Act("open", SelfSwitchOf(row.Key));
-                _own.SetSelfSwitch(row.Key);
+                Open(row.Key);
             }
         }
 
@@ -1294,6 +1325,24 @@ internal sealed class CatchupLook
     {
         Act("set", id, value);
         _own.SetVariable(id, value);
+    }
+
+    /// <summary>
+    /// Shuts a world-wide chest in the player's game: its self switch, or its switch for a chest the
+    /// game shuts by a switch.
+    /// </summary>
+    /// <param name="key">The chest's key.</param>
+    private void Open(StoryKey key)
+    {
+        if (key.Kind == StoryKeyKind.Switch)
+        {
+            Act("switch", key.Id, true);
+            _own.SetSwitch(key.Id, true);
+            return;
+        }
+
+        Act("open", SelfSwitchOf(key));
+        _own.SetSelfSwitch(key);
     }
 
     /// <summary>

@@ -2,7 +2,10 @@
 //  story_catchup.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Kept every chest and the chest flags a party member keeps their own of as tables
+//      Paulinchen  2026-10-28: Took the stretches of the story in free order as a rule
+//                            - Kept the switches of prizes handed out once as a table
+//                            - Took a switch as the key of a world chest the game shuts by a switch
+//                            - Kept every chest and the chest flags a party member keeps their own of as tables
 //                            - Kept the rules, counts, actor changes and prizes of the catch-up as tables
 //      Paulinchen  2026-10-23: Created
 //
@@ -20,12 +23,18 @@
 // marks show that its event ran, false where they only show that the event is there to play.
 
 import { PART } from "./story.js";
-import { EVENT_FIELD, FLAG, ID, MAP, MAPPING_REFUSAL, MAPPING_TABLES, MARKS, SELF_SWITCH_FIELD, SITE_FIELD, STEP, VALUE, listOf, nullable, oneOf, record, whole } from "./story_mapping.js";
+import { EVENT_FIELD, FLAG, ID, MAP, MAPPING_REFUSAL, MAPPING_TABLES, MARKS, SELF_SWITCH_FIELD, SITE_FIELD, STEP, VALUE, listOf, matching, nullable, oneOf, record, whole } from "./story_mapping.js";
 
 /**
  * Reads a part of the story as the relay names it.
  */
 const PART_FIELD = oneOf(Object.values(PART));
+
+/**
+ * Reads a world chest's key: the self switch that shuts it, such as ss127.81.A, or the switch of a
+ * chest the game shuts by a switch, such as s2719.
+ */
+const CHEST_KEY = matching(/^(?:ss[1-9]\d{0,3}\.[1-9]\d{0,4}\.[A-Za-z0-9_]{1,8}|s[1-9]\d{0,4})$/, "a self switch such as ss127.81.A, or a switch such as s2719");
 
 /**
  * Reads a level, such as a join's gate or a class's level.
@@ -111,6 +120,11 @@ const SIDE_REWARDS = Object.freeze({
 const COMMON_EVENT = whole(1, 9999);
 
 /**
+ * Reads a step of a part: `{part, step}`.
+ */
+const PART_STEP = record({ part: PART_FIELD, step: STEP });
+
+/**
  * The rules of the catch-up that were constants of world_catchup.rbx, each with the reader of its
  * value:
  * - `lasting_companions` (LASTING_COMPANIONS): the companions none of whose joins is temporary,
@@ -121,6 +135,8 @@ const COMMON_EVENT = whole(1, 9999);
  * - `orbs_gathered` (ORBS_GATHERED): the main story's step that event sets.
  * - `side_step` (SIDE_STEP): the main story's step the choice of a side leaves.
  * - `side_companions` (SIDE_COMPANIONS): the companion each side brings along.
+ * - `free_order`: the steps of a part whose regions the world plays in an order of its own, which
+ *   the rows cannot tell, so the catch-up leaves the player's own values alone there.
  */
 export const CATCHUP_RULES = Object.freeze({
   lasting_companions: listOf(ID, 0, MAX_IDS),
@@ -129,6 +145,7 @@ export const CATCHUP_RULES = Object.freeze({
   orbs_gathered: STEP,
   side_step: STEP,
   side_companions: record({ alice: ID, ilias: ID }),
+  free_order: listOf(PART_STEP, 0, MAX_IDS),
 });
 
 /**
@@ -208,12 +225,13 @@ export const CATCHUP_TABLES = Object.freeze({
     fields: Object.freeze({ item: ID, amount: amount(999), ...PLACE, ran: FLAG }),
   }),
   // CHESTS: the chests that hold key items, which open once for the whole world, with the chest
-  // flags they turn on for each player.
+  // flags they turn on for each player; each by the self switch that shuts it, or the switch of a
+  // chest the game shuts by a switch.
   chests: Object.freeze({
     store: "story_catchup_chests",
     ordered: true,
     key: (row) => row.key,
-    fields: Object.freeze({ key: SELF_SWITCH_FIELD, items: listOf(ID, 1, MAX_IDS), part: nullable(PART_FIELD), step: nullable(STEP), flags: listOf(ID, 0, MAX_IDS) }),
+    fields: Object.freeze({ key: CHEST_KEY, items: listOf(ID, 1, MAX_IDS), part: nullable(PART_FIELD), step: nullable(STEP), flags: listOf(ID, 0, MAX_IDS) }),
   }),
   // REWARDS: every skill Luka learns and item the story and its side quests give, key items
   // aside (Ruby's :skill, :i, :w and :a).
@@ -305,6 +323,14 @@ export const CATCHUP_TABLES = Object.freeze({
     store: "story_catchup_prize_variables",
     key: (row) => String(row.variable),
     fields: Object.freeze({ variable: ID }),
+  }),
+  // The switches of prizes handed out once, such as the Medal King's one-of-a-kind exchanges, which
+  // the rewards hold as rewards of the switch on: once any player's story turned one on, every
+  // player whose story holds it and who holds none of the prize gets it.
+  prize_switches: Object.freeze({
+    store: "story_catchup_prize_switches",
+    key: (row) => String(row.switch),
+    fields: Object.freeze({ switch: ID }),
   }),
   // coop_story_rewards.rbx SKILLS, ACTORS and ITEMS with SIDED, ROUTE and FINAL: what the game's
   // events give a party member who catches up. `most` is how many of an item the events that move

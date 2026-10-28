@@ -2,7 +2,8 @@
 //  story_seed.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Seeded the reviewed rows of every story table and kept a table the admins emptied empty
+//      Paulinchen  2026-10-28: Counted the seeded rules by the rules the relay knows
+//                            - Seeded the reviewed rows of every story table and kept a table the admins emptied empty
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -107,7 +108,7 @@ test("the seeded rows outlast a restart, which seeds nothing more, not even a ta
   try {
     const mapping = new StoryMapping(second.mapping, { tables: STORY_TABLES });
     assert.deepEqual(await seedStoryTables(mapping, { info: () => assert.fail("nothing to log") }), { rev: emptied.body.rev, seeded: {} });
-    assert.equal((await mapping.rows("rules")).body.rows.length, 6);
+    assert.equal((await mapping.rows("rules")).body.rows.length, Object.keys(CATCHUP_RULES).length);
     assert.deepEqual((await mapping.rows("counts")).body.rows, [], "the emptied table stays empty");
   } finally {
     second.close();

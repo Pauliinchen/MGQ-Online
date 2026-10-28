@@ -24,28 +24,35 @@ left for the user to decide.
 
 | Group | Table | Rows |
 |---|---|---|
-| Chests | [chests](#chests) | 95 |
+| Chests | [chests](#chests) | 107 |
 | Chests | [chest_flags](#chest_flags) | 227 |
-| Chests | [party_chests](#party_chests) | 5,223 |
+| Chests | [party_chests](#party_chests) | 5,303 |
 | Classes | [class_levels](#class_levels) | 2,079 |
-| Rewards | [rewards](#rewards) | 980 |
-| Rewards | [key_items](#key_items) | 162 |
+| Rewards | [rewards](#rewards) | 888 |
+| Rewards | [key_items](#key_items) | 153 |
 | Rewards | [event_rewards](#event_rewards) | 417 |
-| Companions | [joins](#joins) | 663 |
+| Companions | [joins](#joins) | 662 |
 | Companions | [removals](#removals) | 222 |
 | Companions | [lessons](#lessons) | 112 |
 | Companions | [actor_changes](#actor_changes) | 81 |
 | World | [parts](#parts) | 6 |
 | World | [settings](#settings) | 95 |
 | World | [vehicles](#vehicles) | 23 |
-| World | [warp_free_maps](#warp_free_maps) | 122 |
+| World | [warp_free_maps](#warp_free_maps) | 158 |
 | World | [makina](#makina) | 29 |
-| World | [prize_variables](#prize_variables) | 29 |
+| World | [prize_variables](#prize_variables) | 88 |
+| World | [prize_switches](#prize_switches) | 5 |
 | World | [side_events](#side_events) | 19 |
 | Keys | [keys](#keys) | 3,754 |
-| Keys | [events](#events) | 5,237 |
+| Keys | [events](#events) | 251 |
 
-Open decisions for the user, in the sections of: [chests](#chests) (2), [chest_flags](#chest_flags) (3), [party_chests](#party_chests) (2), [class_levels](#class_levels) (2), [rewards](#rewards) (5), [joins](#joins) (3), [lessons](#lessons) (1), [settings](#settings) (1), [warp_free_maps](#warp_free_maps) (2), [side_events](#side_events) (1), [keys](#keys) (6), [events](#events) (2).
+The user decided the review's open questions on 2026-10-28 ("MGQ Online row decisions.md" in the
+workspace); each section lists them under "Decided by the user" with what they changed. The 164
+loot pages that also move the story and the places of the 8 world chests without a part were
+decided after the research the user asked for (the [party_chests](#party_chests) and
+[chests](#chests) sections). Still open: the three warp-free maps left out for their own bans (the
+[warp_free_maps](#warp_free_maps) section), and the defeated-boss rows (BEATEN), which wait for the
+raid rules question C4.
 
 ## Chests
 
@@ -61,10 +68,10 @@ TEST install.
 | Candidates (`fixtures/catchup/generated/chests.json`) | 95 |
 | Confirmed in bulk | 91 |
 | Checked by hand | 4 (and the place of 10 more) |
-| Fixed | 3 |
+| Fixed | 3, and the places of 10 by the user's decision |
 | Dropped | 0 |
-| Added | 0 |
-| Written (`Relay/seed/story/chests.json`) | 95 |
+| Added | 12 (by the user's decisions) |
+| Written (`Relay/seed/story/chests.json`) | 107 |
 
 ### How the rows were checked
 
@@ -104,6 +111,49 @@ so no row is missing.
 
 Each fixed row carries a `note` with its reason.
 
+### Added by the user's decisions (12)
+
+- **s2719** (Monster Realm Sabasa indoors, map 1556 event 121, Sealed Orb of the Land-Dweller
+  767, `[Job]`): the chest gives the orb and turns on switch 2719 ("Treasure Chest: Land-Dweller's
+  Sealed Orb"), whose page 2 shuts it. The user decided on 2026-10-28: "Once opened everyone
+  acquires it." So it is a world chest, keyed by its switch: the relay's `chests` take a switch
+  (`s<id>`) as `key` besides a self switch, and the DLL's catch-up reads that switch for the
+  world's and the player's story and turns it on where it shuts a self switch. Part `mr`, step 51,
+  as its rewards row had it (order 535). The rewards row of the orb is dropped (see the
+  [rewards](#rewards) section), so the orb is not given twice. The switch stays `shared` in `keys`.
+  In a Classic party the leader's switch carries over already, and the member gets the orb with
+  the leader's key items (item type 2, `coop_story.rbx` `fill_items`).
+- **11 of the loot pages that also move the story** (the [party_chests](#party_chests) section),
+  by the user's decision of 2026-10-28 on the research of decision 3 ("accept the proposals"):
+  key items and ores a quest needs that lie in a chest or are a plain pick-up, and two job items.
+  Each opens once for the whole world, as the Lump of Iron and the Gold Ore do already. Each has
+  its `events` row (`shared`, the [events](#events) section), and the row that gave its item to
+  players behind is dropped, so nothing is given twice: 9 `key_items` rows and 2 `rewards` rows
+  (see those sections). Part and step are those rows' places, the order among the rows of the
+  same step by key:
+  - **The five Mitra tablets** (Chaos step 21): ss1271.25.A Sealing (948), ss1353.11.A White
+    (951), ss1377.105.A Sin (950), ss1798.12.A Black (952), ss1830.6.A Shinra (949). Each chest
+    adds 4 to the shared v1350 (tablets remaining) and calls CE 9053 (the tablet's lines); as a
+    world chest it opens, and counts in v1350, once.
+  - **ss67.2.A**, the Magical Thread (518) in Seeker's Cave B3F, which moves the Puppeteer's
+    Tower quest on (v1026 to 3). Its key_items row had no place. The page sends the player away
+    until v1023 and v1026 are at 2, and v1023 reaches 2 at part 2 step 28 (map 351 event 16), so
+    the row sits at part 2 step 28.
+  - **ss1649.14.A**, the Witch's Secret Elixir Recipe (958) in the Chaos Grand Pirate's Cave
+    (Chaos step 21), which moves Vanilla's elixir quest on (v1366, s7062).
+  - **ss205.4.A**, the Witch's Soul (675, `[Job]`) in the Forgotten Tower (Collapsed), part 3
+    step 35.
+  - **ss645.9.A**, Mithril Ore (153) on Mt. Saint Amos, part 1 step 12. Page 1 gives the ore and
+    page 2 asks for self switch A, so the self switch shuts it; the shared switch 2066 (Mythril
+    Possession) only notes the ore for the blacksmith. Its key_items row was marked by 2066, but
+    none of the 11 pages is shut by a plain switch, so none needs a switch key like s2719.
+  - **ss267.7.A**, Orichalcum (156) in the Lava Mining Cave B1F, part 2 step 26 (v1064 to 2).
+  - **ss551.17.B**, King Remina's Soul of the Warrior God (622, `[Job]`), part 2 step 29: B
+    shuts the gift; A only marks Heinrich's talk on Ilias's side and stays the story's.
+
+  None of the 11 is a party chest: in a Classic party their self switches follow the leader's
+  story together with the quest values they move, as before.
+
 ### Part and step
 
 The game reads only `key`, `items` and `flags` of these rows (`CatchupLook.WorldItems`,
@@ -115,7 +165,7 @@ The game reads only `key`, `items` and `flags` of these rows (`CatchupLook.World
 - Every row's step was compared with the progress conditions on its page and branch. Only the
   two Dark Goddess' Castle rows had a step to fix.
 
-The places of these 10 rows were read by hand, and the generated values were kept:
+The places of these 10 rows were read by hand, and the generated values were kept at first:
 
 - **Maps 265, 298, 369, 371, 372** (8 rows: Pornof Mines B2F, Hall of Creation B1F, the Ghost
   Ship) have no part and no step. Each map can be entered from the field in Parts 1 to 3 and
@@ -124,16 +174,49 @@ The places of these 10 rows were read by hand, and the generated values were kep
   Cat) are placed on the Chaos route, at steps 10 and 21. Both maps can be reached from the field
   earlier too. These are questionable, but the game does not read them.
 
-### Open questions for the user
+The user then had them researched and placed them on 2026-10-28 (decision 2): each sits where the
+story first leads to its area. Every dungeon is entered from the field (map 2) or from a town
+without a story condition, so the place is the earliest step where the area's own rows and quests
+sit, held against its enemies' levels; the Final Chapter maps that lead into the same dungeons
+again gave the generator no place or a Chaos one. Each moved row carries a `note`, and the order
+values keep the table's order (by part and step, by key within a step):
 
-1. **A chest shut by a switch, not a self switch, that gives a job item.** Switch 2719 ("Treasure
-   Chest: Land-Dweller's Sealed Orb", map 1556 event 121) is such a chest. It is neither a world
-   chest nor a chest flag. A world chest needs a self switch as its key, so it cannot be one, and
-   the generator never counts a chest of key or unlock items as a chest flag. Should 2719 become
-   a chest flag (each player loots it in their own game), or stay as it is (the world's story
-   shares the switch)?
-2. **Places.** Should the 8 rows without a place, and the two Chaos placements, get a place?
-   They only affect the order the rows are listed in.
+| Row | Item | Was | Now | Order |
+|---|---|---|---|---|
+| ss265.3.A, Pornof Mines B2F | Lump of Iron (151) | none | part 1 step 10 | 880 → 52 |
+| ss288.6.A, Midas Abandoned Mines B1F | Gold Ore (152) | Chaos step 10 | part 1 step 10 | 770 → 56 |
+| ss368.7.A, Hidden Hole | Beckoning Cat of Good Fortune (544) | Chaos step 21 | part 1 step 13 | 870 → 95 |
+| ss369.10.A, Ghost Ship deck | Captain's Cabin Key (534) | none | part 2 step 25 | 910 → 151 |
+| ss371.12.A, Ghost Ship B2F | Purple Orb (541) | none | part 2 step 25 | 920 → 152 |
+| ss371.20.A, Ghost Ship B2F | Pirate Treasure (545) | none | part 2 step 25 | 930 → 153 |
+| ss372.3.A, Ghost Ship cabin | Treasure Vault Key (535) | none | part 2 step 25 | 940 → 154 |
+| ss372.7.A, Ghost Ship cabin | Healing Shell (511) | none | part 2 step 25 | 950 → 155 |
+| ss298.12.A, Hall of Creation B1F | Baptism Seal (621) | none | part 2 step 32 | 890 → 172 |
+| ss298.14.A, Hall of Creation B1F | Spirit Powder (554) | none | part 2 step 32 | 900 → 174 |
+
+- **Pornof Mines and Midas Abandoned Mines** (part 1 step 10): the mines' enemies are level 5 and
+  9, Pornof's own rows sit at part 1 step 10, and the Midas Village smith asks for the Gold Ore
+  on his page for 1001 at 10.
+- **Hidden Hole** (part 1 step 13): reached through Orochi's Cave and the Waterfall; the area is
+  Yamatai's, whose rows start at part 1 step 13, as the joins review placed Yamata no Orochi.
+- **The Ghost Ship** (part 2 step 25): boarded from Gold Port once the Ghost Ship event (v1067)
+  is at 2; the ship's own rows sit at part 2 steps 24 and 25, the crew joining through CE 341 at
+  step 25, and its enemies are level 36.
+- **Hall of Creation** (part 2 step 32): the story leads there in Micaela and Lucifina's revival
+  quest (v1077, map 297 event 13) at part 2 step 32, and its enemies are level 51 to 52.
+
+No chest row is left without a part.
+
+### Decided by the user (2026-10-28)
+
+1. **A chest shut by a switch, not a self switch, that gives a job item** (switch 2719): "Once
+   opened everyone acquires it." It became a world chest keyed by its switch, see Added.
+2. **Places** of the 8 rows without a place and the two Chaos placements: decided after the
+   research, "accept the proposals": Pornof Mines and Midas Abandoned Mines at part 1 step 10,
+   the Hidden Hole at part 1 step 13, the five Ghost Ship chests at part 2 step 25 and the Hall
+   of Creation at part 2 step 32, see Part and step.
+3. **The 164 loot pages that also move the story** (the [party_chests](#party_chests) section):
+   after the research, 11 of them became world chests, see Added.
 
 ### Notes
 
@@ -217,15 +300,14 @@ A switch passed in bulk when all of these hold:
 - **2593** (the remark of common event 421) and similar switches that only a chest's remark
   turns on.
 
-### Open questions for the user
+### Decided by the user (2026-10-28)
 
-1. **The 32 added switches.** Keep these tour chests each player's own (added), or let the
-   world's story share them? The rewards review drops the 32 rewards rows that only these flags
-   mark, since the world never holds a chest flag (the [rewards](#rewards) section, decision 5); sharing the flags
-   brings those rows back.
-2. **2914 dropped.** This switch was each player's own until now and only gates the Sheep Girl's
-   lines. Confirm that the story mapping may decide it.
-3. **2719.** See the [chests](#chests) section.
+1. **The 32 added switches** stay each player's own, as recommended: each player opens their own
+   tour chests, and the Spirit Fox counts each player's own. The 32 rewards rows they alone mark
+   stay dropped.
+2. **2914** is shared ("global"): the world's story keeps the Sheep Girl's sake, as the `keys`
+   rows have it since this review.
+3. **2719** became a world chest keyed by its switch, see the [chests](#chests) section.
 
 ### Notes
 
@@ -244,9 +326,9 @@ of (`coop_story_rewards.rbx` `CHESTS`). Reviewed 2026-10-28 against the TEST ins
 | Confirmed in bulk | 5,180 |
 | Checked by hand | 43 |
 | Fixed | 2 |
-| Dropped | 1 |
-| Added | 1 |
-| Written (`Relay/seed/story/party_chests.json`) | 5,223 |
+| Dropped | 2 (one by the user's decision) |
+| Added | 82 (81 by the user's decision) |
+| Written (`Relay/seed/story/party_chests.json`) | 5,303 |
 
 ### How the rows were checked
 
@@ -298,6 +380,13 @@ The 43 rows that failed any of these were read by hand.
   A marks the first talk, and the choice takes a Yamatai Sake (431) away. The generator read the
   item command as a gift without checking whether it gives or takes. Its switch 2914 is dropped
   from `chest_flags` for the same reason.
+- **ss371.12.A** (Ghost Ship B2F, the Purple Orb chest), by the user's decision of 2026-10-28:
+  "Global. Once opened, all players receive it." In a Classic party the leader's opened chest now
+  carries over, and the member gets the Purple Orb (541, a key item) with the leader's key items
+  (`coop_story.rbx` `fill_items`), so no member opens it late and runs common event 330, which
+  would set the story back to 32. In a Raid World it stays a world chest (`chests`), so a player
+  who did not open it gets the orb from the catch-up and never runs that event either; the
+  catch-up plays the orbs' event only before the story reached 32 (`OrbsDue`).
 
 ### Added (1)
 
@@ -305,29 +394,90 @@ The 43 rows that failed any of these were read by hand.
   (665), on route steps 30 to 42. This is the same kind of one-time gift as A. The candidates
   missed it because the generator keeps only the first letter of a page.
 
+### Added by the user's decision (81)
+
+The user decided the 164 loot pages left out below on 2026-10-28, after the research they asked
+for (decision 3):
+
+- **The 76 pay-outs of the Grand Theater's shows** ("each player gets paid once"): self switch A
+  of page 0 of events 21 to 31 on maps 639, 638, 640, 641, 642 and 637 (stages 1 to 50) and 758,
+  759 and 760 (stages 51 to 76). Each page is an autorun under the switch of its show (s601 to
+  s676) and plays again on every visit, but gives its pay-out only inside "if self switch A is
+  off", and A is the only self switch it turns on; a script checked all 76 against the data. In
+  all they pay 7,000 G (two shows), 57 accessories, and food and consumables with 6 Small Medals
+  among them. Each is a party chest now, and its self switch A is each player's own in a Raid
+  World too: its event turns the shared s2119 off, runs under a shared stage switch and calls CE
+  129, so the derived index shares it, and each has an `events` row (`personal`, `chest: true`,
+  the [events](#events) section). The 87 `rewards` rows of 74 of these pages are dropped (the two
+  gold pay-outs have none; the [rewards](#rewards) section): each player gets the pay-out by
+  staging the show.
+- **5 one-time pick-ups** ("accept the proposals"):
+  - **ss344.4.A**, the small chest of the North Haunted Mansion's doll (a Small Medal), which
+    opens once switch 2070 is on; the shared switch 2073 it turns on only sends the doll away.
+    Its rewards row is dropped.
+  - **ss1714.3.A**, the Noble Rose's one-time Yggdrasil Leaf on the Chaos World Tree 4F. Vanilla's
+    leaf quest (v1365, s7061) runs on its shared keys whatever the self switch says. Its rewards
+    row is dropped.
+  - **ss1502.30.A**, the Chimera Dryads' Great Gem of All Stats in the Remina Research Facility,
+    after their fight. The derived index leaves it each player's own already, so it needs no
+    `events` row.
+  - **ss228.48.B**, the Pocket Castle's Kagetsumugi scene (page 2, Chaos route 21 and later) that
+    gives the CD One Woven From Shadows (1821). It was shared, so only the first player saw it.
+  - **ss1890.28.B**, Furiel's free gift of two Next Cores in the Monster Realm's Ilias Temple. B
+    shuts the gift and opens her trade of Next Cores for Monster Lord Puppet Cores; A only marks
+    the first talk and stays the story's.
+
+  The four whose event the derived index shares have an `events` row (`personal`, `chest: true`).
+
+Each added row carries a `note` with its reason.
+
+### How the stage pay-outs fit the shared stage switches
+
+s601 to s700 stay shared by the user's decision (decision 2 of the [keys](#keys) section). They
+mark the show that is running: CE 121 to 128 turn one on right before the transfer to the stage,
+and the manager (event 202 on maps 624, 1980 and 1755) turns all of them off again. A show's page
+runs whenever its switch is on and the player is on its stage map, so the shared switch only says
+which show plays; whether it pays is up to self switch A alone, inside the page. That self switch
+is each player's own: its own `events` row comes first in the lookup (its own key, then its
+event's, the common event's that wrote it, its map's letter's and its map's; `StoryTable.ClassOf`
+and the relay's `kindOf`), before the derived index. No `events` row names a whole event, a
+letter or a whole map of the nine stage maps, and none names a common event, so nothing makes
+the self switches shared again. The real derivation (`SelfSwitchIndex.Derive` over the new
+`keys` and `events` rows and the TEST install's data) gives the same index as before (18,049 map
+events, all 76 stage events among them, and 2,572 common events), and every party chest's self
+switch is now each player's own except the 94 that are world chests. So the shows play as
+before, and each player who stages a show gets its pay-out once, from their own A.
+
 ### Left out on purpose (not added)
 
 The generator rule leaves out 164 more pages that give loot and turn on a self switch, because
 those pages also change the story. They set variables (25, among them ss67.2.A, the Magical
 Thread, which moves the Puppeteer's Tower quest on), start battles (such as 7 guarded chests on
 map 209), set story switches (such as ss344.4.A, the doll quest's small medal, and ss645.9.A,
-Mithril), or are stage shows that pay once (75, such as maps 638 and 639). The table is for
-chests, and those events belong to the story, so none of them was added.
+Mithril), or are stage shows that pay once (76, such as maps 638 and 639). The table is for
+chests, and those events belong to the story, so none of them was added at first; the user's
+decision then added 81 of them (see above).
 
-### Open questions for the user
+### Decided by the user (2026-10-28)
 
-1. **ss371.12.A, the Purple Orb chest.** Common event 330 sets variable 1001 to 32 whenever all
-   orbs are held, without checking that the story is earlier than 32. Orbs are only taken away
-   by the chapter reset (common event 153). A member who opens this chest late and already holds
-   the other orbs would have their story set back to 32. Keep the row (each member loots the
-   chest in their own game), or drop it so the leader's opened chest carries over?
-2. **Pickup counters.** Variables 1166 (common event 427) and 1351 (common event 9054) count each
-   player's own pedestal pickups. They should be each player's own in the story mapping. That is
-   not this table, so it is noted here only.
+1. **ss371.12.A, the Purple Orb chest**: global, once opened all players receive it. Dropped, see
+   Dropped.
+2. **Pickup counters** v1166, v1351 (and the tour's v1229): each player's own, as recommended and
+   as the `keys` rows have them.
+3. **The 164 loot pages that also move the story** (Left out on purpose), decided after the
+   research: each player gets each stage show's pay-out once (76 party chests, their 87 rewards
+   rows dropped), the 5 proposed pick-ups are party chests (see Added by the user's decision),
+   11 pages are world chests (the [chests](#chests) section), and the other 72 stay story: boss
+   fights, recruits, quest trades and route scenes whose loot reaches players behind through
+   `rewards` or `key_items` rows, and the 15 Lucifina ring pages, which follow decision 13 of the
+   rewards.
 
 ### Notes
 
 - An admin applies `party_chests.json` in three batches (at most 2,000 edits each).
+- After decision 3, every changed file (`chests`, `party_chests`, `events`, `rewards`,
+  `key_items`) passes `readEdit` and `readRow` of the relay unchanged, applies as an admin's
+  batches with the rows read back equal, and the whole folder seeds at one start.
 - The fixed and added rows carry a `note` with their reason.
 - Generator bugs in the Event Checker:
   - `story_rewards.rb` `chest?` and `raid_data.rb` `scan_chest` take the first self switch a page
@@ -355,7 +505,7 @@ as the Event Checker reads it: every common event, every page of every map event
 | Written (Relay/seed/story/class_levels.json) | 2,079 |
 | Confirmed in bulk | 788 |
 | Checked by hand | 1,192 kept rows at 63 sites, plus the 191 dropped and 99 added rows |
-| Fixed | 2, plus the marks of the 40 added rows of map 1462 event 13 (see Added) |
+| Fixed | 2, plus the marks of the 40 added rows of map 1462 event 13 (see Added), and the 51 rows of CE 9022 and map 1462 event 13 by the user's decision |
 | Dropped | 191 |
 | Added | 99 |
 
@@ -418,7 +568,8 @@ as the Event Checker reads it: every common event, every page of every map event
   Each added row takes the place of its join row at the same site (the class commands sit on the
   same branch as the join, right after it), with the highest level its list gives each class:
   - CE 9022 (No-Life King fight): Chrome (134) and Frederica (762), 11 rows; place
-    `[v1143 21, v1316 5]`, `ran` false as the join's.
+    `[v1143 21, v1316 5]`, `ran` false as the join's (both changed by the user's decision, see
+    below).
   - Map 1232 event 243 (Cursed Undersea Temple 1F): Roza (373) and Selene (536), 12 rows; place
     `[v1143 21, ss1232.243.A]`, `ran` true.
   - Map 1267 event 176 (Cursed Undersea Temple 2F): Poseidoness (280) and Kraken (329), 24 rows;
@@ -426,7 +577,8 @@ as the Event Checker reads it: every common event, every page of every map event
   - Map 1268 event 274 (Cursed Undersea Temple 3F): Levia (205), 12 rows;
     `[v1143 21, s3469, ss1268.274.A]`, `ran` true (3469 is that temple's warp crystal).
   - Map 1462 event 13 (Chaos Navy Headquarters, "Start the Decisive Battle"): Ashel (201) and
-    Bonnie (202), 40 rows; `[v1143 21, v1313 4, v1352 5]`, `ran` false as the join's. The join's
+    Bonnie (202), 40 rows; `[v1143 21, v1313 4, v1352 5]`, `ran` false as the join's (`ran`
+    changed by the user's decision, see below). The join's
     generated place said 1313 at 5, but the joins and the class commands sit in the choice "決戦を
     始める" under `1313 == 3`, and nothing in the list sets 1313. The battle leads to the Cursed
     Island (map 1832) and on into the Cursed Undersea Temple, whose 1F autorun (map 1232 event
@@ -448,17 +600,17 @@ the story's order (part, step, route), which keeps the generated rows' order.
   (Tarsa, a temporary member). They set nothing of the world's story; Rigeo's jobs there repeat
   rows the table holds already (maps 45 and 46), apart from Imp and Succubus (175, 176).
 
-### Needs the user's decision
+### Decided by the user (2026-10-28)
 
-1. **CE 9022 and map 1462 event 13 stay inactive.** Their join rows and so the added class rows
-   have `ran` false, so the catch-up applies neither. The data shows when each ran: CE 9022 turns
-   on switch 32, which the strategy meeting (map 1550 event 11) needs to set 1316 to 6; map 1462
-   event 13's battle leads into the Cursed Undersea Temple, whose 1F sets 1313 to 4. Map 1462's
-   rows already carry `[v1143 21, v1313 4, v1352 5]` (see Added); CE 9022's still carry
-   `[v1143 21, v1316 5]`. Should the joins and these class rows get `ran` true, CE 9022's with
-   `[v1143 21, v1316 6]`? Both tables should change together.
-2. **The collaboration scenario's party set-ups** above are left out. Should a Raid World carry
-   them (Rigeo's Imp and Succubus, the other collab members' starting jobs)?
+1. **CE 9022 and map 1462 event 13** move to the points the data shows, as recommended. Their 4
+   join rows and 51 class rows now have `ran` true, and CE 9022's carry `[v1143 21, v1316 6]`
+   instead of `[v1143 21, v1316 5]`. Read again in the data: CE 9022 adds Chrome and Frederica in
+   its branch on 1316 = 5 and turns on switch 32 (command 409); the strategy meeting (map 1550
+   event 11 page 1, switch 32 and 1316 at 5) sets 1316 to 6 (command 393), so 6 shows that CE 9022
+   ran. Map 1462 event 13's marks already showed its battle ran (see Added). Each changed row
+   carries a `note` with its reason.
+2. **The collaboration scenario's party set-ups** stay out of Raid Worlds, as recommended: the
+   collaboration's companions come through their own content and the planned raid shop.
 
 ### Notes
 
@@ -482,8 +634,8 @@ Every skill Luka learns and every item, weapon and armor the story and its side 
 items aside (`REWARDS` of world_catchup_data.rbx). The catch-up gives a row when a story laid over
 the player's (the world's) carries them past the row's place, and only when `ran` is true; a row
 with `ran` false is only noted as done once the player's own story passes it, and gives nothing.
-A prize row (a count of `prize_variables` among its marks) also gives when the player's own story
-is past it and they hold none of the prize.
+A prize row (a count of `prize_variables` or a switch of `prize_switches` among its marks) also
+gives when the player's own story is past it and they hold none of the prize.
 
 Checked against the game's own data in the TEST install
 (`Desktop\Monster Girl Quest Paradox\MGQ Paradox Test\Data`, untranslated 3.06), read with Ruby 3.3
@@ -495,11 +647,11 @@ event (maps 1-999, 1000-1999 and 2000+).
 | | Rows |
 |---|---|
 | Candidates (fixtures/catchup/generated/rewards.json) | 1,089 |
-| Written (Relay/seed/story/rewards.json) | 980 |
+| Written (Relay/seed/story/rewards.json) | 888 |
 | Confirmed in bulk | 571 |
 | Checked by hand | 518 (344 kept unchanged at 56 sites, 18 fixed, 156 dropped), plus the 47 added |
 | Fixed | 18 |
-| Dropped | 156 |
+| Dropped | 248 (92 by the user's decisions) |
 | Added | 47 |
 
 Of the written rows, 322 keep `ran` false and so never give anything. The sampling review of
@@ -634,6 +786,18 @@ marks.
   results; rewards have no take, so the traded item would stay as well. Neither later event checks
   that the player holds it.
 - **1 row bought for gold:** 3 Phoenix Tails in the Nameless Slums (map 185 event 13, "Pay 60G").
+- **1 row of a world chest:** the Sealed Orb of the Land-Dweller (767, map 1556 event 121). The
+  user's decision of 2026-10-28 made its chest a world chest keyed by switch 2719 (see the
+  [chests](#chests) section), which gives the orb; the row would give it a second time.
+- **87 rows of 74 Grand Theater show pay-outs** (maps 637-642 and 758-760; 81 at part 3 step 38,
+  6 at Chaos step 21), by the user's decision of 2026-10-28 ("each player gets paid once"): each
+  pay-out page is a party chest now (the [party_chests](#party_chests) section), so each player
+  gets it once by staging the show.
+- **2 rows of party chests** by the same decision: the doll's Small Medal (map 344 event 4) and the
+  Noble Rose's Yggdrasil Leaf (map 1714 event 3).
+- **2 rows of world chests** by the same decision: the Soul of the Warrior God (622, map 551 event
+  17) and the Witch's Soul (675, map 205 event 4), which their chests give now (the
+  [chests](#chests) section).
 
 ### Added
 
@@ -647,34 +811,32 @@ marks.
 
 All rows were renumbered 10 apart, keeping the generated order.
 
-### Needs the user's decision
+### Decided by the user (2026-10-28)
 
-1. **Lucifina's ring.** The 49 ring rows are dropped, so a player behind the world never gets the
-   accessory of the companion the world gave the ring to. Keeping them needs a mark that asks for
-   1402 to equal a value, which the relay's marks lack. Alternatively one could keep them and
-   accept every ring up to the world's value. Dropping looked the lesser harm.
-2. **Battlefuck prizes for players who keep up.** The added and fixed battlefuck rows reach a
-   player whose story the world's carries past them. A player who keeps up with the world but did
-   not fight a battlefuck gets nothing, as the prize rows of the Colosseum would do for them only
-   through `prize_variables`. Should the battlefuck counters (801-858, 907) become prize
-   variables? That is the prize_variables table's row set.
-3. **The Medal King's one-of-a-kind exchanges** (Heinrich's Sword, Armor, Helm and Shield, Noble
-   Orb; switches 2324-2327 and 2336, shared). Kept: once any player bought one, the exchange no
-   longer offers it, so the rest of the world could only get it from the catch-up. They cost the
-   buyer 30 to 40 medals, which a player behind gets for free. Keep or drop?
-4. **The two traded items** (Fallen Sword Angel Halo, Ancient Sushi) are dropped, so a player
-   carried to between the gift and the trade does not hold them until they play the trade
-   themselves. Keep or drop?
-5. **The 32 tour chest rows** are dropped because the tour chest flags are each player's own
-   (open question 1 of the [chest_flags](#chest_flags) section). If the user lets the world share those flags instead,
-   the 32 flags leave `chest_flags.json` and turn `shared` in `keys.json`, and these rows come
-   back unchanged (rerun the review's build without the tour chest drop).
+1. **Lucifina's ring**: the 49 ring rows stay dropped, as recommended.
+2. **Battlefuck prizes**: "recommended as long as every player gets it". The battlefuck counters
+   801-858 and the wins 907 are prize variables now (59 rows added to `prize_variables`, see that
+   section). All 57 rows they mark give items, weapons or armors and have `ran` true, so every
+   player gets each prize: one the world's story carries past it by the carried review, as before,
+   and one who keeps up with the world, whose story holds the shared count, at the next look once
+   they hold none of the prize.
+3. **The Medal King's one-of-a-kind exchanges** (Heinrich's Sword, Armor, Helmet and Shield, the
+   Noble Orb; switches 2324-2327 and 2336, shared): "once anyone buys, distributed to everyone".
+   The 5 rows stay, and their switches are prize switches, a new table beside `prize_variables`
+   (`prize_switches`, see that section): a prize row now also counts a switch of that table among
+   its marks, so a player whose story holds the switch and who holds none of the prize gets it,
+   as the global prizes of 0.6.9.2 do by their counts.
+4. **The two traded items** stay dropped, as recommended.
+5. **The 32 tour chest rows** stay dropped: the tour chest flags stay each player's own (the
+   [chest_flags](#chest_flags) section, decision 1).
+6. **The loot pages that also move the story** (decision 3 of the
+   [party_chests](#party_chests) section): 91 rows dropped, see Dropped.
 
 ### Notes for other tables
 
 - keys.json now makes v1079 `shared` (it was `one_way`): the game sets 1079 to the queen just
   beaten (1 to 4, in the order the player beats them) and CE 329 reads it right away.
-- prize_variables: see decision 2.
+- prize_variables and prize_switches: see decisions 2 and 3.
 
 ### Notes
 
@@ -690,6 +852,8 @@ All rows were renumbered 10 apart, keeping the generated order.
 - Applied through `StoryMapping.edit` as an admin's batch (980 edits, under `maxEdits` 2,000):
   answered 200, and the rows read back equal the file's.
 - The whole seed folder, with every other reviewed table, seeds together at one start.
+- After decision 3 of the [party_chests](#party_chests) section: 888 edits, each passing
+  `readEdit` and `readRow` unchanged, applied as one batch and read back equal.
 
 ### key_items
 
@@ -709,11 +873,11 @@ and Marshal stubs as the Event Checker reads it.
 | | Rows |
 |---|---|
 | Candidates (fixtures/catchup/generated/key_items.json) | 166 |
-| Written (Relay/seed/story/key_items.json) | 162 |
+| Written (Relay/seed/story/key_items.json) | 153 |
 | Confirmed in bulk | 137 |
 | Checked by hand | 29 (20 kept unchanged at 19 sites, 5 fixed, 4 dropped) |
 | Fixed | 5 |
-| Dropped | 4 |
+| Dropped | 13 (9 by the user's decision) |
 | Added | 0 |
 
 ### How the rows were checked
@@ -784,11 +948,17 @@ The same checks as the rewards review (see the [rewards](#rewards) section), wit
   point, not the story; CE 357 is the story's own take (kept).
 - **Eternal Pledge Ring taken at map 1994 event 8.** Once 1402 is left out (see Fixed) it is the
   same take as the one kept at event 25; the ring is taken once.
+- **9 rows of world chests**, by the user's decision of 2026-10-28 (decision 3 of the
+  [party_chests](#party_chests) section): the five Mitra tablets (948-952), the Witch's Secret
+  Elixir Recipe (958), the Magical Thread (518), Mithril Ore (153) and Orichalcum (156). Their
+  pages are world chests now (the [chests](#chests) section), and this table leaves out chests.
 
-### Needs the user's decision
+### Decided by the user (2026-10-28)
 
-None of its own. The battlefuck counters as prize variables (the [rewards](#rewards) section, decision 2) concern these
-two rows only as far as restock goes, which already gives a key item from the world's story.
+Decision 3 of the [party_chests](#party_chests) section dropped 9 rows, see Dropped. The
+battlefuck counters became prize variables (the [rewards](#rewards) section,
+decision 2); that concerns these two rows only as far as restock goes, which already gives a key
+item from the world's story.
 
 ### Notes
 
@@ -797,7 +967,7 @@ two rows only as far as restock goes, which already gives a key item from the wo
 
 - Every edit has the shape `{"op":"add","table":"key_items","row":{...}}`, and every row passes
   `readRow` of `STORY_TABLES.key_items` unchanged.
-- Seeded alone through `seedStoryTables` into a `StoryMapping` over an in-memory store: 162 rows at
+- Seeded alone through `seedStoryTables` into a `StoryMapping` over an in-memory store: 153 rows at
   rev 1, a second start seeds nothing; applied through `StoryMapping.edit` as one batch: answered
   200, rows read back equal. The whole seed folder seeds together.
 
@@ -891,11 +1061,11 @@ the TEST install's events (`MGQ Paradox Test/Data`) on 2026-10-28.
 | | Rows |
 |---|---|
 | Candidates (fixtures/catchup/generated/joins.json) | 664 |
-| Written (Relay/seed/story/joins.json) | 663 |
+| Written (Relay/seed/story/joins.json) | 662 |
 | Confirmed in bulk | 551 (553 before the sampling review moved two rows to Fixed) |
 | Checked by hand | 113 |
-| Fixed | 11 |
-| Dropped | 1 |
+| Fixed | 11, then 2 more and 4 placed back by the user's decisions |
+| Dropped | 2 (one by the user's decision) |
 | Added | 0 |
 
 ### How the rows were checked
@@ -964,39 +1134,43 @@ Rows the checker could not confirm, and every row the scans named, were read by 
 | Giganto (779), map:387:35:1 | Monster Realm route, step 62 | Part 3, no step, mark 2466 | An optional Tartarus boss. The Hellgondo crater has pages for both routes, so it belongs to neither alone. Switch 2466 turns on right after the join. |
 | Nephilim (780), map:404:30:1 | Monster Realm route, step 62, marks 1141≥2, 1142≥62, 2447, 2740 | Part 3, no step, marks 2740, 2447 | An optional Tartarus boss whose crater is entered from Esta from 1141≥2 (the Angelic Dominion route). The row asked for both routes' progress at once. 2740 (Esta Tartarus entry) and 2447 (turned on right after the join) tell the event ran. |
 | King of Sabasa (526), ce:382 | Monster Realm route, step 62, marks 1142≥62, 1145≥3, 7087, 7088 | Part 3, no step, marks 7085, 7087, 7088 | His revival needs 7087 (set on the Angelic Dominion route) and 7088 (set on the Monster Realm route), so it plays during whichever route comes second. 1145 is cleared by the route return; 7085 turns on right after the join. |
-| Bonnie (202) and Ashel (201), map:1462:13:1 | marks 1143≥21, 1313≥5, 1352≥5 | marks 1143≥21, 1313≥4, 1352≥5 (`ran` stays false) | Found by the sampling review of 2026-10-28. Both joins (commands 205 and 206) sit in the choice "決戦を始める" under `1313 == 3`, and nothing in the list sets 1313, so 1313≥5 contradicted the branch. The battle leads to the Cursed Island (map 1832) and into the Cursed Undersea Temple, whose 1F autorun (map 1232 event 242) sets 1313 to 4 first. The 40 class_levels rows of the same site carry the same marks and changed with them. Whether these rows get `ran` true is decision 1 of the [class_levels](#class_levels) section. |
+| Bonnie (202) and Ashel (201), map:1462:13:1 | marks 1143≥21, 1313≥5, 1352≥5 | marks 1143≥21, 1313≥4, 1352≥5 (`ran` stays false) | Found by the sampling review of 2026-10-28. Both joins (commands 205 and 206) sit in the choice "決戦を始める" under `1313 == 3`, and nothing in the list sets 1313, so 1313≥5 contradicted the branch. The battle leads to the Cursed Island (map 1832) and into the Cursed Undersea Temple, whose 1F autorun (map 1232 event 242) sets 1313 to 4 first. The 40 class_levels rows of the same site carry the same marks and changed with them. By the user's decision of 2026-10-28 (decision 1 of the [class_levels](#class_levels) section) both rows now have `ran` true. |
 
-The optional rows get Part 1 or 3 rather than a route because the catch-up passes a route's rows
-once the route is finished, without their marks, which would hand out an optional companion nobody
-recruited. A part only holds a row back until the world reaches it, so the earliest part the data
-allows, with the event's own switch as the mark, carries the companion exactly when the world
-recruited them. They are ordered at the end of their part.
+The review gave the optional rows Part 1 or 3 rather than a route because the catch-up passes a
+route's rows once the route is finished, without their marks, which hands out an optional companion
+nobody recruited. The user decided on 2026-10-28 that this is wanted ("auto unlock missed
+companions"), so the four optional bosses are placed back on their generated route rows: Yamata no
+Orochi on the Chaos route at step 21 (order 3205), Giganto, Nephilim and the King of Sabasa on the
+Monster Realm route at step 62 (orders 2835 to 2838), each with its generated marks. Every player
+gets them once that route is finished, and earlier where the world's story holds the marks. Each
+carries a `note` with its reason.
+
+Also by the user's decisions, the joins of CE 9022 (Chrome, Frederica) have `ran` true and the marks
+`[v1143 21, v1316 6]`, and those of map 1462 event 13 (Ashel, Bonnie) have `ran` true; see the
+[class_levels](#class_levels) section, decision 1.
 
 ### Dropped
 
 | Row | Reason |
 |---|---|
 | Merlin (522), ce:209 | CE 209 ("Final Chapter 3.0-only processing") is a save repair that only the load fix-ups (CE 114) call, never a story event. The row has no marks and could never pass. |
+| Cassandra (834), map:817:3:8 | By the user's decision of 2026-10-28: the Labyrinth of Chaos super boss joins like the collaboration's companions, through the raid shop later. Her page needs only the Labyrinth's own variable 126, so the row had no marks and no part and could never pass. |
 
 ### Not added
 
 Every join command of the game outside the skipped maps and common events has a row. Temporary
 joins have none, by the table's rule.
 
-### For the user to decide
+### Decided by the user (2026-10-28)
 
-1. **Cassandra (834), map:817:3:8** (Labyrinth of Chaos super boss). Her page needs only the
-   Labyrinth's own variable 126, which is not a story value, so the row has no marks and no part.
-   It never passes and is never carried. Keep it as a record, or drop it?
-2. **The other 21 joins without a part**: 20 collaboration companions (Collab Overworld, maps 861,
-   876, 925, 930, 933) and one recollection scene (map 1974, Alipheese the 15th). The catch-up only
-   notes such joins as done and never brings the companion in (CatchupLook.Review, `Place.Part is
-   null`). Is that the intent for the collaboration's companions?
-3. **Optional companions on the routes.** 111 joins stand on the Angelic Dominion or Monster Realm
-   route. Once a route is finished, StoryRows.Passed passes its rows without their marks, so an
-   optional recruit there (one behind a choice or a superboss) reaches every player even if nobody
-   recruited them. The four optional bosses above are fixed in the rows. Should the rule change,
-   or the other optional route recruits be placed the same way?
+1. **Cassandra (834), map:817:3:8**: dropped (see Dropped); she comes through the raid shop later,
+   like the collaboration's companions.
+2. **The other 21 joins without a part** (20 collaboration companions, one recollection): intended,
+   as recommended. The catch-up notes them as done and never brings them in; the collaboration's
+   companions come through their own content and the planned raid shop.
+3. **Optional companions on the routes**: "auto unlock missed companions". The rule stays: once a
+   route is finished, its optional recruits reach every player, recruited or not. The four optional
+   bosses the review had moved off the routes are placed back (see above).
 
 ### removals
 
@@ -1104,11 +1278,10 @@ table's rule leaves out:
 - 36 in the collaboration chapter (Collab Overworld, maps 848, 852, 858, 872, 935), whose lists
   neither move the story nor share a side quest.
 
-### For the user to decide
+### Decided by the user (2026-10-28)
 
-- **The collaboration chapter's 36 lessons.** They would only matter if the collaboration's
-  companions were carried at all; the catch-up never brings in a join without a part, which all
-  of theirs are (see the [joins](#joins) section, decision 2). Add them only if that changes.
+- **The collaboration chapter's 36 lessons** stay out, as recommended: the collaboration's
+  companions are not carried (the [joins](#joins) section, decision 2).
 
 ### actor_changes
 
@@ -1298,12 +1471,13 @@ and passages. 2 are the resets to the Great Decision
 
 Neither follows the story, so no row was added.
 
-### Needs the user's decision
+### Decided by the user (2026-10-28)
 
-- All 8 rows of the Chaos route's free order sit at step 21. When several of them have passed,
-  the table's order picks the return point, not the order the world played the regions in. The
-  data cannot order them. Keep this, or let the catch-up leave the return point alone on that
-  part of the route?
+- **The Chaos route's free order**: the catch-up leaves the return point alone on that stretch,
+  as recommended. The rows stay as they are; the rules got `free_order`
+  (`[{"part": "chaos", "step": 21}]`, `make_seed.rb` `RULES`, `rules.json`), and the catch-up
+  sets none of the player's own values whose latest row passed lies on such a step
+  (`CatchupLook.Settle`). Once the world passes a later row, that row's value counts again.
 
 ### For the generator (`raid_data.rb`, Event Checker)
 
@@ -1380,8 +1554,8 @@ Reviewed on 2026-10-28 against the game data of the TEST install.
 | Checked by hand | 18 (1 kept, 13 of the dropped, the 4 added) |
 | Fixed | 0 |
 | Dropped | 39 |
-| Added | 4 |
-| Written (`Relay/seed/story/warp_free_maps.json`) | 122 |
+| Added | 4, and 36 by the user's decision |
+| Written (`Relay/seed/story/warp_free_maps.json`) | 158 |
 
 ### How the rows were checked
 
@@ -1449,7 +1623,19 @@ to a placeholder map:
 - **1558** Hellgondo Continent West Tartarus: the corridor map:389:3:1 lifts the ban on the way
   here (2 lifted).
 
-### Needs the user's decision
+### Decided by the user (2026-10-28)
+
+- **The 39 more maps** of the recount: add them, as recommended. 36 were added, each with a
+  `note`. Three were left out by the rule the review used for maps 358 and 1655, since their own
+  story events set the ban while the player stays, and the catch-up lifts a ban on a warp-free
+  map at every look: **7** Iliasville (event 63, Sonya's join, sets it until a later Iliasville
+  event lifts it: events 2, 3, 76, 87 to 90), **280** Navy Headquarters Indoors (event 13 sets
+  it with 1050 = 4, the choice to join the Navy) and **1535** Finoa Indoors, Monster Realm (event
+  27 sets it with 1159 = 4). Lifting it there would let a player warp away in the middle of these
+  events; that call is the user's to confirm.
+- **The majority rule** stays, as recommended.
+
+The recount's report as it stood before the decision:
 
 - The recount finds 39 more maps the game sends the player to with the ban lifted, nearly all
   from a single transfer: 5 Ilias Temple 1F, 7 Iliasville, 13 Monte Carlo, 14 Yamatai Amabie 2,
@@ -1544,8 +1730,8 @@ table holds each prize as a reward of the count past its step (`world_catchup_da
 | Checked by hand | 0 |
 | Fixed | 0 |
 | Dropped | 0 |
-| Added | 0 |
-| Written (`Relay/seed/story/prize_variables.json`) | 29 |
+| Added | 59 (by the user's decision) |
+| Written (`Relay/seed/story/prize_variables.json`) | 88 |
 
 ### How the rows were checked
 
@@ -1563,7 +1749,43 @@ or armor. It found such branches for every row's variable, each with the variabl
 
 The same scan finds such branches on other variables too. All of them are each player's own: the
 companions' "Ally: Presents" (4000 and up), the affection range, and the event variant (129). Or
-they are scratch variables. None belongs in this table, so nothing was added.
+they are scratch variables. None belongs in this table, so nothing was added by the review.
+
+### Added by the user's decision (59)
+
+- **v801-858 and v907**, the battlefucks' progress and wins (user decision of 2026-10-28,
+  "recommended as long as every player gets it"). They are no counts of a prize branch: each
+  battlefuck's victory sets its counter (2, or 3 for 854-857), and CE 6999 gives its prizes at 15,
+  35 and 40 wins. But battlefuck progress and rewards are world-wide (user decision 2026-10-24),
+  and the 57 rewards rows they mark are the battlefucks' prizes, so they count as prize variables:
+  a player whose story holds the world's counter and who holds none of a prize gets it. Each
+  carries a `note`.
+
+### prize_switches
+
+The switches of prizes handed out once, such as the Medal King's one-of-a-kind exchanges, which
+the rewards hold as rewards of the switch on. A prize row with such a switch among its marks gives
+when the player's own story is past it and they hold none of the prize, as for `prize_variables`.
+A new table of 2026-10-28 (`Relay/core/story_catchup.js`, `CatchupTables.PrizeSwitches`), by the
+user's decision "once anyone buys, distributed to everyone".
+
+| | Rows |
+|---|---|
+| Written (`Relay/seed/story/prize_switches.json`) | 5 |
+
+The rows were read in the data: common event 140 (the Medal King's exchange) gives each of these
+prizes and turns on its switch right after (commands 541 and 542, 573 and 574, 605 and 606, 637
+and 638, 669 and 670); with the switch on he only answers that he handed the one item over
+already, so once one player bought it nobody else can:
+
+- **s2324** "Acquired Heinrich's Sword": weapon 112.
+- **s2325** "Acquired Heinrich's Armor": armor 97.
+- **s2326** "Acquired Heinrich's Helmet": armor 226.
+- **s2327** "Acquired Heinrich's Shield": armor 321.
+- **s2336** "Noble Orb Acquired": item 662.
+
+Their rewards rows (common event 140, Part 1 step 13, marks 1001 at 13, 1090 at 3 and the switch,
+`ran` true) are unchanged; the switches stay `shared` in `keys`. Each row carries a `note`.
 
 ### side_events
 
@@ -1615,7 +1837,11 @@ Decision (CE 380), its two resets (CE 267 and 268) and Lucifina's house on the A
 Dominion's moon (map:1010:6). All play at or after the Great Decision, which the table leaves out
 by its rule. Nothing was added.
 
-### Needs the user's decision
+### Decided by the user (2026-10-28)
+
+- **map:437:11** stays, as recommended.
+
+The question as it stood:
 
 - **map:437:11** is the Chaos route's opening conference, which plays after both route endings,
   so after the Great Decision. That puts it outside the table's own rule. The generator counts it
@@ -1843,30 +2069,23 @@ which the rewards review now drops (see the [rewards](#rewards) section).
 
 - **BEATEN** (`MGQ_MpRaidPool::BEATEN`) waits for plan question C4 and the Raid Designer
   redesign. It has no rows here.
-- **s2719** ("Treasure Chest: Land-Dweller's Sealed Orb") stays shared by the bulk rule. Whether
-  it should become a chest flag is open question 1 of the [chests](#chests) section.
+- **s2719** ("Treasure Chest: Land-Dweller's Sealed Orb") stays shared: by the user's decision
+  of 2026-10-28 it is the key of a world chest (the [chests](#chests) section), which the world's
+  story keeps.
 
-### Decisions for the user
+### Decided by the user (2026-10-28)
 
-1. **The 183 keys made personal.** The largest group is the Labyrinth of Chaos (its run state,
-   but also its records v122 Highest Layer, v156 Carnage Highest Floor, v157 Bonus Points and
-   v910 Usagi Points). Confirm that each player keeps their own Labyrinth, records and currency
-   included, or name the keys the world should share.
-2. **The Grand Theater's stages (s601-700)** stay shared, like the Colosseum's prizes. Should a
-   stage one player cleared count as cleared for everyone?
-3. **The Library Flags (375 switches with rows, the 54 added ones among them) and the Warp Flags
-   (129)** stay shared, as before. The library could just as well be each player's own record of
-   what they saw.
-4. **The playthrough counts v911 and v912** stay shared. The ending raises them once (map 1960),
-   and a Raid World is always on its first playthrough.
-5. **The chest kinds taken from the chest reviews**: the 32 tour chest flags, s2914, and the
-   pickup counters v1166, v1351 and v1229. These follow the open questions of the [chest_flags](#chest_flags) section
-   and the [party_chests](#party_chests) section. If the tour chest flags become shared, the 32 rewards rows dropped for
-   them come back (the [rewards](#rewards) section, decision 5).
-6. **s31-39 are personal, not `scene`.** The freeze code called them scene switches, but they
-   are the game's general-purpose scratch switches. The `scene` kind would have the game turn
-   them off whenever no scene runs (`end_left_scenes`), which can break an event that keeps one
-   on between pages.
+Every row stays as written; the user confirmed each recommendation:
+
+1. **The 183 keys made personal** stay personal, the Labyrinth of Chaos's records and currency
+   (v122, v156, v157, v910) among them: each player keeps their own Labyrinth.
+2. **The Grand Theater's stages (s601-700)** stay shared, like the Colosseum's prizes.
+3. **The Library Flags and the Warp Flags** stay shared.
+4. **The playthrough counts v911 and v912** stay shared.
+5. **The chest kinds taken from the chest reviews** stay: the 32 tour chest flags each player's
+   own (`chest`), s2914 shared (the user: "global"), and the pickup counters v1166, v1351 and v1229
+   personal (the [chest_flags](#chest_flags) and [party_chests](#party_chests) sections).
+6. **s31-39** stay personal, not `scene`.
 
 ### Notes
 
@@ -1890,13 +2109,17 @@ install (untranslated 3.06). Every row carries a `note` that gives its reason.
 | Confirmed in bulk | 5,218 |
 | Checked by hand | 19 |
 | Fixed | 3 |
-| Dropped | 1 |
-| Added | 0 |
-| Written (`Relay/seed/story/events.json`) | 5,237 |
+| Dropped | 1, and 5,077 chest rows by the user's decision |
+| Added | 91 (by the user's decision) |
+| Written (`Relay/seed/story/events.json`) | 251 |
 
-What was written: 5,128 chests (`share` `personal`, `chest: true`), 95 world chests and the
-found items' marks (`shared`, 96 in all), and 13 rows of the Navy's and the Pirates' lines
-(`personal`).
+What was written: 51 chests (`share` `personal`, `chest: true`), 95 world chests and the found
+items' marks (`shared`, 96 in all), and 13 rows of the Navy's and the Pirates' lines
+(`personal`). The review wrote 5,128 chest rows; by the user's decision of 2026-10-28 only the 51
+whose event the derived index would otherwise share stay (see the decisions below). Decision 3
+of the [party_chests](#party_chests) section added 80 chest rows (the 76 stage pay-outs and four
+pick-ups whose event the index shares) and 11 world chests, so the file holds 131 chest rows and
+106 world chests now.
 
 ### The candidates
 
@@ -1957,19 +2180,29 @@ events of the Navy's maps would be shared too.
 
 - **ss885.25.A**: not a chest, see above.
 
-### Decisions for the user
+### Decided by the user (2026-10-28)
 
-1. **5,128 chest rows, or only the 51 that need one.** By the index's rule, only 51 ordinary
-   chests would be shared without a row. The other 5,077 would be each player's own anyway. A
-   `chest` row still changes them: their writes go to the relay, which keeps each player's chests
-   (`chest` kind), where a personal self switch stays in the player's own save. This follows the
-   README ("`chest: true` for a chest's self switches"). The smaller table would be 51 rows.
-2. **The open questions of the chest reviews** (the [party_chests](#party_chests) section: the Purple Orb chest
-   ss371.12.A; the [chests](#chests) section: s2719) also decide rows here.
+1. **Only the 51 chest rows that need one**, as recommended: saves stay local for now, so the
+   player's own save keeps every other chest's self switches. The 51 were found by the real
+   derivation, `SelfSwitchIndex.Derive` of `MGQOnline.Game` run over the reviewed `keys` and
+   `events` rows and the TEST install's data (18,049 map events and 2,572 common events in the
+   index): exactly the chest rows whose event it shares, the same 51 the review's estimate named.
+   Among them are the 14 pedestals of map 1457 and two chests of Iliasville Indoors (ss6.50.A,
+   ss6.55.A), whose pages ask for the shared switch 2019. The 5,077 others are dropped; without a row each of
+   them is personal by the index, and the index is the same without them, since only the rows
+   naming a whole event or map (`*`) change it. Each kept row's `note` gives this reason.
+2. **The open questions of the chest reviews**, decided on 2026-10-28: the Purple Orb chest
+   ss371.12.A stays a world chest (`shared` here), and s2719 is a world chest by its switch, which
+   needs no row here.
+3. **The loot pages that also move the story** (decision 3 of the
+   [party_chests](#party_chests) section): a `chest` row for each new party chest whose event the
+   derived index shares (all 76 stage pay-outs and 4 of the 5 pick-ups; the Chimera Dryads' gem
+   is each player's own without one), and a `shared` row for each of the 11 new world chests. The
+   real derivation over the new rows gives the same index as before. The rows were added to this
+   file directly; `rows-scratch/keys/build.rb` does not know them yet.
 
 ### Notes
 
 - The rows come from the review scripts outside the repository (`rows-scratch/keys/build.rb`),
   which read the reviewed chest tables. If those change, the scripts must run again.
-- An admin applies the file in three slices of at most 2,000 edits: 0-1,999, 2,000-3,999 and
-  4,000-5,236.
+- An admin applies the file in one batch (251 edits).

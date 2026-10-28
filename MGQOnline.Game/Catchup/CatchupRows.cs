@@ -2,7 +2,9 @@
 //  CatchupRows.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Added the rewards a party member catches up with, every chest and the chest flags
+//      Paulinchen  2026-10-28: Added the steps of the story in free order to the rules
+//                            - Keyed a world chest the game shuts by a switch by that switch
+//                            - Added the rewards a party member catches up with, every chest and the chest flags
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -74,7 +76,7 @@ public sealed record CatchupKeyItem(int Item, int Amount, StoryPlace Place, bool
 /// <summary>
 /// A chest that holds key items, which opens once for the whole world.
 /// </summary>
-/// <param name="Key">Its self switch.</param>
+/// <param name="Key">The self switch that shuts it, or the switch of a chest the game shuts by a switch.</param>
 /// <param name="Items">The items it holds.</param>
 /// <param name="Part">The part, <see langword="null"/> for none.</param>
 /// <param name="Step">The step, <see langword="null"/> for none.</param>
@@ -221,10 +223,18 @@ public sealed record SideEvent(string Site, SideRewards Alice, SideRewards Ilias
 /// <param name="SideStep">The main story's step the choice of a side leaves.</param>
 /// <param name="AliceCompanion">The companion Alice's side brings along.</param>
 /// <param name="IliasCompanion">The companion Ilias's side brings along.</param>
-public sealed record CatchupRules(IReadOnlyList<int> LastingCompanions, IReadOnlyList<int> Orbs, int? OrbEvent, long? OrbsGathered, long? SideStep, int? AliceCompanion, int? IliasCompanion)
+/// <param name="FreeOrder">The steps of a part whose regions the world plays in an order of its own, which the rows cannot tell.</param>
+public sealed record CatchupRules(IReadOnlyList<int> LastingCompanions, IReadOnlyList<int> Orbs, int? OrbEvent, long? OrbsGathered, long? SideStep, int? AliceCompanion, int? IliasCompanion, IReadOnlyList<PartStep> FreeOrder)
 {
     /// <summary>
     /// The rules while no row came.
     /// </summary>
-    public static readonly CatchupRules Empty = new([], [], null, null, null, null, null);
+    public static readonly CatchupRules Empty = new([], [], null, null, null, null, null, []);
 }
+
+/// <summary>
+/// A step of a part of the story.
+/// </summary>
+/// <param name="Part">The part.</param>
+/// <param name="Step">The step in it.</param>
+public readonly record struct PartStep(string Part, long Step);

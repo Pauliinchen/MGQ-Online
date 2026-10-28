@@ -2,7 +2,10 @@
 //  CatchupTables.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Read the rewards a party member catches up with, every chest and the chest flags
+//      Paulinchen  2026-10-28: Read the steps of the story in free order
+//                            - Read the switches of prizes handed out once
+//                            - Read a world chest the game shuts by a switch
+//                            - Read the rewards a party member catches up with, every chest and the chest flags
 //                            - Kept what the catch-up's engine works out of the tables once
 //                            - Created
 //
@@ -105,6 +108,11 @@ public sealed class CatchupTables
     public IReadOnlyList<int> PrizeVariables { get; private set; } = [];
 
     /// <summary>
+    /// Gets the switches of prizes handed out once.
+    /// </summary>
+    public IReadOnlyList<int> PrizeSwitches { get; private set; } = [];
+
+    /// <summary>
     /// Gets the least a variable holds once a companion is in the roster.
     /// </summary>
     public IReadOnlyList<CompanionValue> CompanionValues { get; private set; } = [];
@@ -172,6 +180,7 @@ public sealed class CatchupTables
             WarpFreeMaps = IdsOf(tables, "warp_free_maps", "map"),
             Makina = Rows(tables, "makina", MakinaOf),
             PrizeVariables = IdsOf(tables, "prize_variables", "variable"),
+            PrizeSwitches = IdsOf(tables, "prize_switches", "switch"),
             CompanionValues = Rows(tables, "companion_values", CompanionValueOf),
             Counts = Rows(tables, "counts", CountOf),
             EventRewards = Rows(tables, "event_rewards", EventRewardOf),
@@ -262,10 +271,39 @@ public sealed class CatchupTables
                 case "side_companions" when value.ValueKind == JsonValueKind.Object && Whole(value, "alice", out long alice) && Whole(value, "ilias", out long ilias):
                     rules = rules with { AliceCompanion = (int)alice, IliasCompanion = (int)ilias };
                     break;
+                case "free_order" when PartStepsOf(value) is { } steps:
+                    rules = rules with { FreeOrder = steps };
+                    break;
             }
         }
 
         return rules;
+    }
+
+    /// <summary>
+    /// Reads a list of steps of parts, each <c>{part, step}</c>.
+    /// </summary>
+    /// <param name="value">The list.</param>
+    /// <returns>The steps, <see langword="null"/> for a value that does not read.</returns>
+    private static List<PartStep>? PartStepsOf(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var steps = new List<PartStep>();
+        foreach (JsonElement entry in value.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object || Text(entry, "part") is not { Length: > 0 } part || !Whole(entry, "step", out long step))
+            {
+                return null;
+            }
+
+            steps.Add(new PartStep(part, step));
+        }
+
+        return steps;
     }
 
     /// <summary>
@@ -313,7 +351,7 @@ public sealed class CatchupTables
     /// <param name="row">The row.</param>
     /// <returns>The chest, <see langword="null"/> for a row that does not read.</returns>
     private static CatchupChest? ChestOf(JsonElement row) =>
-        StoryKey.TryParse(Text(row, "key"), out StoryKey key) && key.Kind == StoryKeyKind.SelfSwitch && Numbers(row, "items", out List<long> items) && items.Count > 0
+        StoryKey.TryParse(Text(row, "key"), out StoryKey key) && key.Kind is StoryKeyKind.SelfSwitch or StoryKeyKind.Switch && Numbers(row, "items", out List<long> items) && items.Count > 0
             && WholeOrNull(row, "step", out long? step) && Numbers(row, "flags", out List<long> flags)
             ? new CatchupChest(key, Ints(items), TextOrNull(row, "part"), step, Ints(flags))
             : null;

@@ -2,7 +2,8 @@
 //  CatchupTablesTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Created
+//      Paulinchen  2026-10-28: Read the free order rule
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -60,6 +61,7 @@ public sealed class CatchupTablesTests
         Assert.Equal([5, 26, 29, 30], rules.LastingCompanions);
         Assert.Equal([537, 538, 540, 541, 542], rules.Orbs);
         Assert.Equal((330, 32L, 7L, 5, 26), (rules.OrbEvent, rules.OrbsGathered, rules.SideStep, rules.AliceCompanion, rules.IliasCompanion));
+        Assert.Equal([new PartStep("chaos", 21)], rules.FreeOrder);
         Assert.Equal(55, table.Gates["2"]);
     }
 

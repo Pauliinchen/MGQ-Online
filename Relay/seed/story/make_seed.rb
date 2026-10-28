@@ -2,7 +2,8 @@
 #  make_seed.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Wrote every chest and the chest flags of a party member's own, and the rewards the DLL hands the scripts, for the tests
+#      Paulinchen  2026-10-28: Wrote the steps of the story in free order as a rule
+#                            - Wrote every chest and the chest flags of a party member's own, and the rewards the DLL hands the scripts, for the tests
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -44,8 +45,10 @@ HAND_KEPT = %w(rules counts companion_values)
 # The rules of world_catchup.rbx, by the rule's name as the relay's `rules` table takes it: the
 # companions none of whose joins is temporary (Alice, and Ilias with her later selves), Part 2's
 # orbs, the common event that moves the story on once the player holds every orb, the main story's
-# step it sets, the step the choice of a side in Iliasville leaves, and the companion each side
-# brings along.
+# step it sets, the step the choice of a side in Iliasville leaves, the companion each side brings
+# along, and the steps whose regions the world plays in an order of its own, where the catch-up
+# leaves the player's return point alone: the Chaos route's free order after the Pocket Castle's
+# revival, step 21 (user decision 2026-10-28).
 RULES = {
   "lasting_companions" => [5, 26, 29, 30],
   "orbs" => [537, 538, 540, 541, 542],
@@ -53,6 +56,7 @@ RULES = {
   "orbs_gathered" => 32,
   "side_step" => 7,
   "side_companions" => { "alice" => 5, "ilias" => 26 },
+  "free_order" => [{ "part" => "chaos", "step" => 21 }],
 }
 
 # The variables that count switches: the Randolphs found (1354), one switch each, and Alice's

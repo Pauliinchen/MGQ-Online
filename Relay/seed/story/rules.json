@@ -6,6 +6,7 @@
     {"rule":"orb_event","value":330},
     {"rule":"orbs_gathered","value":32},
     {"rule":"side_step","value":7},
-    {"rule":"side_companions","value":{"alice":5,"ilias":26}}
+    {"rule":"side_companions","value":{"alice":5,"ilias":26}},
+    {"rule":"free_order","value":[{"part":"chaos","step":21}]}
   ]
 }
