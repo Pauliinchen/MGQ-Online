@@ -2,6 +2,7 @@
 //  SimulationRunner.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Reported the stage, the stage starts, the lines shown and the casts cancelled of each turn
 //      Paulinchen  2026-10-22: Reported the rules fired in each turn
 //      Paulinchen  2026-10-21: Took the concrete party policy seam
 //                            - Created
@@ -44,7 +45,7 @@ public static class SimulationRunner
         {
             TurnPlan plan = simulator.Plan(state);
             TurnResult result = simulator.Resolve(state, policy.Move(state, plan));
-            TurnReport report = ReportOf(state, result);
+            TurnReport report = ReportOf(state, plan, result);
             reports.Add(report);
             idle += result.Cast.Count == 0 ? 1 : 0;
             damage += report.DamagePerUnit.Values.Sum();
@@ -63,9 +64,10 @@ public static class SimulationRunner
     /// Reports a resolved turn.
     /// </summary>
     /// <param name="state">The battle after the turn.</param>
+    /// <param name="plan">The turn's plan.</param>
     /// <param name="result">The turn's result.</param>
     /// <returns>The turn's report.</returns>
-    private static TurnReport ReportOf(BattleState state, TurnResult result)
+    private static TurnReport ReportOf(BattleState state, TurnPlan plan, TurnResult result)
     {
         Dictionary<int, int> hits = [];
         Dictionary<int, long> damage = [];
@@ -93,7 +95,14 @@ public static class SimulationRunner
             [.. result.Events.OfType<ApTurnEvent>()],
             [.. state.Enemies.SelectMany(enemy => enemy.Rest.OrderBy(rest => rest.Key, StringComparer.Ordinal).Select(rest => new SkillRest(enemy.Index, rest.Key, rest.Value)))],
             [.. result.Events.OfType<WarningEvent>().Select(warning => warning.Code)],
-            [.. result.Events.OfType<RuleFiredEvent>()]);
+            [.. result.Events.OfType<RuleFiredEvent>()])
+        {
+            Stage = plan.Stage,
+            StageTurn = plan.StageTurn,
+            StageStarts = [.. result.Events.OfType<StageStartEvent>()],
+            Texts = [.. result.Events.OfType<ShowTextEvent>()],
+            Cancels = [.. result.Events.OfType<CastCancelledEvent>()],
+        };
     }
 
     /// <summary>

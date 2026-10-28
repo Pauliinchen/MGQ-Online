@@ -2,7 +2,8 @@
 //  TurnRecords.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Named the row that skipped an enemy's roll
+//      Paulinchen  2026-10-28: Named the stage a turn was planned in
+//                            - Named the row that skipped an enemy's roll
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -20,6 +21,16 @@ namespace MGQOnline.Arena.Simulation;
 /// <param name="Enemies">Each standing enemy's plan in line-up order.</param>
 public sealed record TurnPlan(int Turn, IReadOnlyList<EnemyPlan> Enemies)
 {
+    /// <summary>
+    /// Gets the stage of the battle plan the enemies planned in.
+    /// </summary>
+    public string Stage { get; init; } = RuntimePlan.MainStage;
+
+    /// <summary>
+    /// Gets the turn counted from that stage's start, 1 its first.
+    /// </summary>
+    public int StageTurn { get; init; } = 1;
+
     /// <summary>
     /// Gets every entry in the order it runs.
     /// </summary>

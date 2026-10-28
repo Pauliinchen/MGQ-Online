@@ -2,7 +2,8 @@
 //  BattleSimulator.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Skipped rolls and planned the casts cancelled while queued as cancelled
+//      Paulinchen  2026-10-28: Named the stage and stage turn of each turn plan
+//                            - Skipped rolls and planned the casts cancelled while queued as cancelled
 //                            - Ran the effects of the skill used rows of a cast when it resolves
 //                            - Named the row of each planned cast
 //                            - Planned the queued casts whose turn has come
@@ -298,7 +299,7 @@ public sealed partial class BattleSimulator
             FireHazards(state, HazardTrigger.StartsTurnOn);
             if (state.IsOver)
             {
-                return new TurnPlan(state.Turn, []);
+                return new TurnPlan(state.Turn, []) { Stage = state.Stage, StageTurn = state.Turn - state.StageStartTurn + 1 };
             }
 
             bool frozen = Overdrive.Freezes(state);
@@ -324,7 +325,7 @@ public sealed partial class BattleSimulator
                 }
             }
 
-            return new TurnPlan(state.Turn, plans);
+            return new TurnPlan(state.Turn, plans) { Stage = state.Stage, StageTurn = state.Turn - state.StageStartTurn + 1 };
         }
         finally
         {

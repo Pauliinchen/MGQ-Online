@@ -2,7 +2,8 @@
 //  StageTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Created
+//      Paulinchen  2026-10-28: Tested the stages and lines of each reported turn
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -55,6 +56,23 @@ public sealed class StageTests
         Assert.Equal([[SimFixtures.Strike], [SimFixtures.Heavy, SimFixtures.Sweep], [SimFixtures.Sweep]], turns);
         Assert.Equal((Serious, 2), (state.Stage, state.StageStartTurn));
         Assert.Equal([(Opening, null), (Serious, "go")], state.Log.OfType<StageStartEvent>().Select(started => (started.Stage, started.RuleId)));
+    }
+
+    /// <summary>
+    /// The report names the stage and stage turn each turn was planned in, the stage starts and the lines
+    /// shown, each with its row.
+    /// </summary>
+    [Fact]
+    public void ReportsTheStagesAndLinesOfEachTurn()
+    {
+        RuleSpec go = SimFixtures.Rule("go", new TurnTrigger(2, 0), [new ShowTextEffect("It gets serious."), new GoToStageEffect(Serious)], owner: RuleOwner.Battle);
+
+        SimulationReport report = SimulationRunner.Run(SimFixtures.Simulator(Design(go)), SimFixtures.Setup(), 3, PartyPolicies.Stay);
+
+        Assert.Equal([(Opening, 1), (Serious, 1), (Serious, 2)], report.Turns.Select(turn => (turn.Stage, turn.StageTurn)));
+        Assert.Equal(new StageStartEvent(2, Serious, "go"), Assert.Single(report.Turns[1].StageStarts));
+        Assert.Equal(new ShowTextEvent(2, "It gets serious.", "go"), Assert.Single(report.Turns[1].Texts));
+        Assert.Empty(report.Turns[2].StageStarts);
     }
 
     /// <summary>

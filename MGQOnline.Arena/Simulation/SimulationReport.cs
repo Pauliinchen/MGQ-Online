@@ -2,6 +2,7 @@
 //  SimulationReport.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Reported the stage, the stage starts, the lines shown and the casts cancelled of each turn
 //      Paulinchen  2026-10-22: Listed the rules fired in a turn with their seats
 //      Paulinchen  2026-10-21: Created
 //
@@ -9,6 +10,7 @@
 
 using System.Collections.Generic;
 using MGQOnline.Arena.Events;
+using MGQOnline.Arena.Model;
 
 namespace MGQOnline.Arena.Simulation;
 
@@ -58,7 +60,33 @@ public sealed record TurnReport(
     IReadOnlyList<ApTurnEvent> Ap,
     IReadOnlyList<SkillRest> Rests,
     IReadOnlyList<string> Warnings,
-    IReadOnlyList<RuleFiredEvent> Rules);
+    IReadOnlyList<RuleFiredEvent> Rules)
+{
+    /// <summary>
+    /// Gets the stage of the battle plan the turn was planned in.
+    /// </summary>
+    public string Stage { get; init; } = RuntimePlan.MainStage;
+
+    /// <summary>
+    /// Gets the turn counted from that stage's start, 1 its first.
+    /// </summary>
+    public int StageTurn { get; init; } = 1;
+
+    /// <summary>
+    /// Gets the stage starts of the turn, each with the row that entered the stage.
+    /// </summary>
+    public IReadOnlyList<StageStartEvent> StageStarts { get; init; } = [];
+
+    /// <summary>
+    /// Gets the lines the rows showed in the turn.
+    /// </summary>
+    public IReadOnlyList<ShowTextEvent> Texts { get; init; } = [];
+
+    /// <summary>
+    /// Gets the casts the rows cancelled in the turn, planned or queued.
+    /// </summary>
+    public IReadOnlyList<CastCancelledEvent> Cancels { get; init; } = [];
+}
 
 /// <summary>
 /// A skill resting after a rolled use.
