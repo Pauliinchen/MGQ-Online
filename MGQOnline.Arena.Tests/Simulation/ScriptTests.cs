@@ -2,7 +2,8 @@
 //  ScriptTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Tested interrupts, cancelled queued casts, skipped rolls and an HP row after a heal
+//      Paulinchen  2026-10-28: Tested the HP rows of characters and the lost state rows
+//                            - Tested interrupts, cancelled queued casts, skipped rolls and an HP row after a heal
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -154,6 +155,31 @@ public sealed class ScriptTests
 
         Assert.Equal([1, 2], state.Log.OfType<RuleFiredEvent>().Where(fired => fired.RuleId == "mend").Select(fired => fired.Turn));
         Assert.Equal(70_000, state.Enemies[0].Hp);
+    }
+
+    /// <summary>
+    /// A character HP row fires once per crossing for each character, and a lost state row when a state
+    /// runs out at the turn end.
+    /// </summary>
+    [Fact]
+    public void FiresOnTheHpOfCharactersAndOnLostStates()
+    {
+        BattleSimulator simulator = SimFixtures.Simulator(Design(
+            SimFixtures.Rule("hurt", new TurnStartTrigger(), [new DamageEffect(TargetRef.EveryCharacter, 10), new AddStateEffect(TargetRef.EveryCharacter, SimFixtures.LightMark, Turns: 1)], owner: RuleOwner.Battle),
+            SimFixtures.Rule("low", new HpBelowTrigger(Who.Character, 95), [], owner: RuleOwner.Battle),
+            SimFixtures.Rule("lost", new StateLostTrigger(Who.Character, SimFixtures.LightMark), [], owner: RuleOwner.Battle)));
+        BattleState state = simulator.Start(SimFixtures.Setup());
+
+        for (int turn = 1; turn <= 2; turn++)
+        {
+            simulator.Plan(state);
+            simulator.Resolve(state, PartyTurn.Idle);
+        }
+
+        List<RuleFiredEvent> fired = [.. state.Log.OfType<RuleFiredEvent>()];
+        Assert.Equal([0, 1, 2, 3], fired.Where(rule => rule.RuleId == "low").Select(rule => rule.Seat!.Value).Order());
+        Assert.All(fired.Where(rule => rule.RuleId == "low"), rule => Assert.Equal(1, rule.Turn));
+        Assert.Equal(8, fired.Count(rule => rule.RuleId == "lost"));
     }
 
     /// <summary>

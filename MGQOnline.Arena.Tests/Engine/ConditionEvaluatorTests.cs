@@ -2,6 +2,7 @@
 //  ConditionEvaluatorTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Tested the hit type of a boss cast's hit
 //      Paulinchen  2026-10-24: Tested the conditions of the Trigger -> Effect framework
 //                            - Tested the main target and chosen action conditions
 //      Paulinchen  2026-10-22: Tested the not in chain condition
@@ -9,6 +10,7 @@
 //
 //----------------------------------------------------------------
 
+using System.Collections.Generic;
 using MGQOnline.Arena.Engine;
 using MGQOnline.Arena.Events;
 using MGQOnline.Arena.Model;
@@ -105,6 +107,20 @@ public sealed class ConditionEvaluatorTests
         Assert.True(Holds(new HitTypeIsCondition(HitKind.Magic), hit));
         Assert.False(Holds(new HitTypeIsCondition(HitKind.Physical), hit));
         Assert.True(Holds(new HitTypeIsCondition(HitKind.Any), new TurnStartEvent(1)));
+    }
+
+    /// <summary>
+    /// Holds hit type is for a boss cast's hit by the game's hit type of its skill.
+    /// </summary>
+    [Fact]
+    public void HoldsHitTypeIsForABossCastsHitBySkill()
+    {
+        RuleBook book = new([], [FakeRuleContext.SlotOfIndex(0)], new Dictionary<string, IReadOnlyList<int>>(), new Dictionary<string, int> { [Blast.Key] = 2 });
+        UnitHitEvent hit = Hit(3, "c1", Blast, 1);
+
+        Assert.True(ConditionEvaluator.Holds([new HitTypeIsCondition(HitKind.Magic)], _context, 0, hit, book));
+        Assert.False(ConditionEvaluator.Holds([new HitTypeIsCondition(HitKind.Physical)], _context, 0, hit, book));
+        Assert.False(ConditionEvaluator.Holds([new HitTypeIsCondition(HitKind.Magic)], _context, 0, Hit(3, "c1", LightStigmata, 1), book));
     }
 
     /// <summary>
