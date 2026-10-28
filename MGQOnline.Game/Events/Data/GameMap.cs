@@ -2,11 +2,13 @@
 //  GameMap.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Told the scratch switches and variables by their names
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
 
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 namespace MGQOnline.Game.Events.Data;
 
@@ -56,7 +58,7 @@ public sealed record MapInfo(int Id, string Name, int ParentId);
 /// </summary>
 /// <param name="Switches">The switch names.</param>
 /// <param name="Variables">The variable names.</param>
-public sealed record GameSystemNames(IReadOnlyList<string> Switches, IReadOnlyList<string> Variables)
+public sealed partial record GameSystemNames(IReadOnlyList<string> Switches, IReadOnlyList<string> Variables)
 {
     /// <summary>
     /// Gets a switch's name.
@@ -71,4 +73,26 @@ public sealed record GameSystemNames(IReadOnlyList<string> Switches, IReadOnlyLi
     /// <param name="id">The variable.</param>
     /// <returns>Its name, empty for one the game does not name.</returns>
     public string Variable(long id) => id >= 0 && id < Variables.Count ? Variables[(int)id] : string.Empty;
+
+    /// <summary>
+    /// Reports whether a switch's name marks it as scratch the game uses while an event runs.
+    /// </summary>
+    /// <param name="id">The switch.</param>
+    /// <returns>Whether it does.</returns>
+    public bool IsScratchSwitch(long id) => ScratchName().IsMatch(Switch(id));
+
+    /// <summary>
+    /// Reports whether a variable's name marks it as scratch the game uses while an event runs.
+    /// </summary>
+    /// <param name="id">The variable.</param>
+    /// <returns>Whether it does.</returns>
+    public bool IsScratchVariable(long id) => ScratchName().IsMatch(Variable(id));
+
+    /// <summary>
+    /// Names of switches and variables the game uses as scratch, in the translation's words and the
+    /// untranslated game's.
+    /// </summary>
+    /// <returns>The pattern.</returns>
+    [GeneratedRegex("general|temp|system only|汎用|一時", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ScratchName();
 }

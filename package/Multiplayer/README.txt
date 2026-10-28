@@ -47,6 +47,7 @@ like this:
    Patch\Multiplayer\Helper.exe
    Patch\Multiplayer\Update.bat
    Patch\Multiplayer\Scripts\*.rbx      (the mod's other scripts)
+   Patch\Multiplayer\Data\events.db     (the game's events, read by the mod)
    ...
 
 Your player name, hotkeys, favourites and worlds go into

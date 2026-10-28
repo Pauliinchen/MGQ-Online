@@ -2,6 +2,7 @@
 //  UpdaterTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Covered the events database in an update
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -88,6 +89,33 @@ public sealed class UpdaterTests : IDisposable
 
         Assert.Equal("new", File.ReadAllText(Path.Combine(_game, @"Patch\Multiplayer\Update.bat")));
         Assert.Equal("# loader", File.ReadAllText(Path.Combine(_game, @"Patch\Multiplayer.rb")));
+    }
+
+    /// <summary>
+    /// Asserts that an update of an install older than the events database adds it in its own
+    /// folder, and that going back to such a release removes it again but keeps the relay mirror
+    /// beside it, which no manifest lists.
+    /// </summary>
+    [Fact]
+    public void Update_AddsTheEventsDatabaseAndKeepsTheMirror()
+    {
+        const string events = @"Patch\Multiplayer\Data\events.db";
+        const string mirror = @"Patch\Multiplayer\Data\story.db";
+        WriteFile(@"Patch\Multiplayer\Multiplayer.dll", "old");
+        WriteFile(@"Patch\Multiplayer\Player.ini", "name");
+        string[] older = [@"Patch\Multiplayer\Multiplayer.dll", @"Patch\Multiplayer\Manifest.txt"];
+        string[] newer = [.. older, "Patch/Multiplayer/Data/events.db"];
+
+        Updater.Extract(Zip(("Patch/Multiplayer/Multiplayer.dll", "new"), ("Patch/Multiplayer/Data/events.db", "events")), _game);
+
+        Assert.Equal(0, Updater.RemoveStaleFiles(_game, older, newer));
+        Assert.Equal("events", File.ReadAllText(Path.Combine(_game, events)));
+
+        WriteFile(mirror, "mirror");
+        Assert.Equal(1, Updater.RemoveStaleFiles(_game, newer, older));
+        Assert.False(File.Exists(Path.Combine(_game, events)));
+        Assert.True(File.Exists(Path.Combine(_game, mirror)));
+        Assert.True(File.Exists(Path.Combine(_game, @"Patch\Multiplayer\Player.ini")));
     }
 
     /// <summary>

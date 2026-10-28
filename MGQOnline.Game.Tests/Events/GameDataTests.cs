@@ -2,6 +2,7 @@
 //  GameDataTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Checked the numbers and script kinds of the commands read
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -96,9 +97,9 @@ public sealed class GameDataTests
 
         List<EventCommand> commands = data.CommonEvents.Where(common => common is not null).SelectMany(common => common!.List).ToList();
 
-        Assert.All(commands.Where(command => command.Code == 401).Take(100), command => Assert.Empty(command.Parameters));
-        Assert.Contains(commands, command => command.Code == EventCodes.Branch && command.Parameters.Count >= 3);
-        Assert.Contains(commands, command => command.Code == EventCodes.Script && command.Text(0).Length > 0);
+        Assert.All(commands.Where(command => command.Code == 401).Take(100), command => Assert.Empty(command.Numbers));
+        Assert.Contains(commands, command => command.Code == EventCodes.Branch && command.Numbers.Length >= 3);
+        Assert.Contains(commands, command => command.Code == EventCodes.Script && command.TextKind == TextKind.Talk);
     }
 
     /// <summary>

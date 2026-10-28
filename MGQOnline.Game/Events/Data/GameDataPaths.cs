@@ -2,6 +2,7 @@
 //  GameDataPaths.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Added the map a transfer names inside the folder of the map that runs it
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -51,6 +52,16 @@ public static class GameDataPaths
     /// <returns>Its path, such as "Data/Map/Data/Map848.rvdata2" for map 1848.</returns>
     public static string Map(int mapId) =>
         FormattableString.Invariant($"{MapFolder(mapId / MapsPerFolder)}/Map{mapId % MapsPerFolder:000}.rvdata2");
+
+    /// <summary>
+    /// Finds the map a Transfer Player command names by number, as the game's <c>command_201</c>
+    /// resolves it for a map event: inside the folder of the event's map.
+    /// </summary>
+    /// <param name="number">The map number the command holds.</param>
+    /// <param name="runningMap">The map whose event runs the command, also through a common event it calls; 0 for a list no map event runs.</param>
+    /// <returns>The map's id, such as 1005 for number 5 run on map 1848.</returns>
+    public static int TransferMap(int number, int runningMap) =>
+        number + runningMap / MapsPerFolder * MapsPerFolder;
 
     /// <summary>
     /// Finds the map list of a folder of maps.

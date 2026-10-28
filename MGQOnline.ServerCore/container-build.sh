@@ -3,6 +3,7 @@
 #  container-build.sh
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Copied MGQOnline.Data
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
@@ -14,8 +15,10 @@ set -eu
 VERSION="${1:-0.0.0-dev}"
 
 # The projects the core is built from, copied without their bin/ and obj/, so no restore of
-# another system meets the Windows one in the mounted folders.
-PROJECTS="MGQOnline.Bridge MGQOnline.Bridge.Native MGQOnline.Game MGQOnline.ServerCore"
+# another system meets the Windows one in the mounted folders. The publish compiles
+# MGQOnline.Data's SQLite amalgamation with the image's clang into a static library it links in
+# (MGQOnline.Data/native/StaticSqlite.targets), so NEEDED below stays libc, libm and ld-linux.
+PROJECTS="MGQOnline.Bridge MGQOnline.Bridge.Native MGQOnline.Data MGQOnline.Game MGQOnline.ServerCore"
 
 rm -rf /work
 mkdir -p /work /out

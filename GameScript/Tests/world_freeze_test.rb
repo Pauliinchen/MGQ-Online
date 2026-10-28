@@ -2,12 +2,13 @@
 #  world_freeze_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Stood in for the freeze's tables the DLL's events database answers
 #      Paulinchen  2026-10-23: Checked each frozen fight as a key of the relay's story tracks instead of a list beside the whole story
 #      Paulinchen  2026-10-17: Created
 #
 #----------------------------------------------------------------
 
-# Covers world_freeze.rbx with battles_raid_bosses.rbx and battles_raid_freeze_data.rbx: a frozen
+# Covers world_freeze.rbx with battles_raid_bosses.rbx and a stand-in of the freeze's tables: a frozen
 # raid boss fight's text written and read back, broken texts dropped, the union by troop, the held
 # keys' index, the fight's key asked of the relay, and the end of a frozen fight by its defeated
 # pools or its BEATEN marker in the player's or the world's story, or by the end of the fight the
@@ -122,7 +123,12 @@ $game_switches = Game_Switches.new
 $game_variables = Game_Variables.new
 
 load_script "battles_raid_bosses"
-load_script "battles_raid_freeze_data"
+# Stands in for battles_raid_freeze.rbx's tables, which the DLL's events database answers: the
+# fights each side plays in the other's stead, Sonya Mazda (868) and Mainyu (869) among them.
+module MGQ_MpRaidFreeze
+  # Reads a table.
+  def self.data(name, default); name == :ALTERNATIVES ? { 672 => [673], 673 => [672], 868 => [869], 869 => [868] } : default; end
+end
 load_script "world_freeze"
 freeze = MGQ_MpWorldFreeze
 

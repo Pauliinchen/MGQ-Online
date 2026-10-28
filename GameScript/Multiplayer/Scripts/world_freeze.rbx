@@ -2,6 +2,7 @@
 #  world_freeze.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Read the fights each side plays in the other's stead from the freeze's tables
 #      Paulinchen  2026-10-23: Sent and took each frozen fight as a key of the relay's story tracks instead of a list beside the whole story
 #      Paulinchen  2026-10-17: Created
 #
@@ -54,7 +55,7 @@ module MGQ_MpWorldFreeze
   # Frames between two looks whether a frozen fight ended, a second.
   CHECK_FRAMES = 60
 
-  # What a site key looks like, see battles_raid_freeze_data.rbx.
+  # What a site key looks like, see MGQ_MpRaidFreeze.tables.
   SITE_KEY = /\A(map:\d+:\d+:\d+|ce:\d+)\z/
 
   # The bytes of a free text written as they are; every other byte is escaped as %XX.
@@ -333,14 +334,14 @@ module MGQ_MpWorldFreeze
   end
 
   # Lists the troops the other side fights in a troop's stead, see
-  # MGQ_MpRaidFreezeData::ALTERNATIVES.
+  # the freeze's ALTERNATIVES (MGQ_MpRaidFreeze.tables).
   #
   # @param troop [Integer] The troop.
   # @return [Array<Integer>] The troops, none for a fight both sides play.
   def self.alternatives(troop)
-    return [] unless defined?(MGQ_MpRaidFreezeData) && MGQ_MpRaidFreezeData.const_defined?(:ALTERNATIVES)
+    return [] unless defined?(MGQ_MpRaidFreeze)
 
-    MGQ_MpRaidFreezeData::ALTERNATIVES[troop] || []
+    MGQ_MpRaidFreeze.data(:ALTERNATIVES, {})[troop] || []
   end
 
   # Finds why a troop's fight ended: the player won a battle against its pools (see

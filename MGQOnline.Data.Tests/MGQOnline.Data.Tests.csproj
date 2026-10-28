@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- An executable that runs its own tests of MGQOnline.Data, see "Tests" in docs/DEVELOPER.md. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <RootNamespace>MGQOnline.Data.Tests</RootNamespace>
+
+    <!-- 32-bit like the game, whose DLL reads the events database. -->
+    <RuntimeIdentifier>win-x86</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
+
+    <!-- Only for its native SQLite library, which the JIT run loads where the publish links SQLite in. -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MGQOnline.Data\MGQOnline.Data.csproj" />
+  </ItemGroup>
+
+  <!-- The shapes Ruby wrote, shared with the scripts' tests, and the relay's story mapping. -->
+  <ItemGroup>
+    <None Include="..\fixtures\events\hash_cases.json" LinkBase="fixtures\events" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\story\mirror.json" LinkBase="fixtures\story" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

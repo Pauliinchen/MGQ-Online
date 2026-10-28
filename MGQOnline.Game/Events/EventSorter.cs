@@ -2,15 +2,16 @@
 //  EventSorter.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Read scripts and jumps by their classified kinds and places
+//                            - Read the common events and scratch flags from an event source
+//                            - Opened the list of the player's own common events
 //      Paulinchen  2026-10-23: Sorted a page that calls a battlefuck event as the player's own
 //                            - Created
 //
 //----------------------------------------------------------------
 
-using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using MGQOnline.Game.Events.Data;
 
 namespace MGQOnline.Game.Events;
@@ -24,9 +25,8 @@ namespace MGQOnline.Game.Events;
 /// Exits hold the story's warnings in such branches, as Iliasville's do, which would make every
 /// exit story long after the warnings passed.
 /// </remarks>
-/// <param name="commonEvents">Finds a common event's commands by id, <see langword="null"/> for none.</param>
-/// <param name="names">The switch and variable names, which tell the game's scratch values.</param>
-public sealed partial class EventSorter(Func<long, IReadOnlyList<EventCommand>?> commonEvents, GameSystemNames names)
+/// <param name="source">The game's events: the common events and the scratch switches and variables.</param>
+public sealed class EventSorter(IEventSource source)
 {
     /// <summary>
     /// How deep called common events are followed; one deeper counts as story.
@@ -69,7 +69,7 @@ public sealed partial class EventSorter(Func<long, IReadOnlyList<EventCommand>?>
     /// Common events that run only in the player's own game, never as the party's story: the game's
     /// map display, its Pocket Castle call, its processing after every battle and its transfer process.
     /// </summary>
-    private static readonly long[] OwnCommonEvents = [2, 3, 5, 114];
+    public static readonly IReadOnlySet<long> OwnCommonEvents = new HashSet<long> { 2, 3, 5, 114 };
 
     /// <summary>
     /// The marks a branch of a choice makes story with.
@@ -217,7 +217,7 @@ public sealed partial class EventSorter(Func<long, IReadOnlyList<EventCommand>?>
     public bool IsScene(IReadOnlyList<EventCommand> list, IEventState state, bool resident = false)
     {
         bool shows = new Run(this, state).Runnable(list).Any(command =>
-            IsMessage(command) || (command.Code == EventCodes.Script && NovelScene().IsMatch(command.Text(0))));
+            IsMessage(command) || (command.Code == EventCodes.Script && command.TextKind == TextKind.Novel));
         return shows && KindOf(list, state, resident) == EventKind.Story;
     }
 
@@ -247,7 +247,7 @@ public sealed partial class EventSorter(Func<long, IReadOnlyList<EventCommand>?>
     /// <returns>The self switch's letter, <see langword="null"/> when the page sets none.</returns>
     public static string? ChestLetter(IReadOnlyList<EventCommand> list) =>
         list.FirstOrDefault(command => command.Code == EventCodes.ControlSelfSwitch && command.Number(1) == 0) is { Code: EventCodes.ControlSelfSwitch } found
-            ? found.Text(0)
+            ? CommandClassifier.LetterOf(found.Number(0))
             : null;
 
     /// <summary>
@@ -262,7 +262,7 @@ public sealed partial class EventSorter(Func<long, IReadOnlyList<EventCommand>?>
     /// </summary>
     /// <param name="id">The common event.</param>
     /// <returns>Its commands, <see langword="null"/> for none.</returns>
-    private IReadOnlyList<EventCommand>? CommonList(long id) => commonEvents(id);
+    private IReadOnlyList<EventCommand>? CommonList(long id) => source.CommonList(id);
 
     /// <summary>
     /// Reports whether marks are a one-time talk's: dialogue and the page's own self switch, nothing
@@ -279,7 +279,7 @@ public sealed partial class EventSorter(Func<long, IReadOnlyList<EventCommand>?>
     /// <param name="state">The live values.</param>
     /// <returns>Whether it is.</returns>
     private bool TemporarySwitch(long id, IEventState state) =>
-        id is < FirstStorySwitch or > LastStorySwitch && (TemporaryName().IsMatch(names.Switch(id)) || state.PersonalSwitch(id));
+        id is < FirstStorySwitch or > LastStorySwitch && (source.IsScratchSwitch(id) || state.PersonalSwitch(id));
 
     /// <summary>
     /// Reports whether a variable is only scratch, or the player's own, such as affection.
@@ -287,43 +287,7 @@ public sealed partial class EventSorter(Func<long, IReadOnlyList<EventCommand>?>
     /// <param name="id">The variable.</param>
     /// <param name="state">The live values.</param>
     /// <returns>Whether it is.</returns>
-    private bool TemporaryVariable(long id, IEventState state) => TemporaryName().IsMatch(names.Variable(id)) || state.PersonalVariable(id);
-
-    /// <summary>
-    /// Scripts a talk may run, such as companions' lines, choices, presents, menus, shops that list
-    /// their goods in a script, and cosmetic scripts like move routes, waits and zooms.
-    /// </summary>
-    /// <returns>The pattern, ASCII classes as Ruby's.</returns>
-    [GeneratedRegex(@"\A[ \t\r\n\f\v]*(actor_label_jump|unlimited_choices|ex_choice_[A-Za-z0-9_]+|present_start|change_friend|gain_medal|gain_coin|play_base_bgm|clear_skill_name|display_skill_name|call_synthesize|call_slot_scene|start_poker|call_party_edit|SceneManager\.call\(Scene_JobChange\)|names = party_members|@?goods(?![A-Za-z0-9_])|[A-Za-z0-9_]+ = RPG::MoveRoute\.new|wait\(|set_(angle|zoom|zoom_anime|swing_anime|circle_anime|cycle)\(|map_zoom|input_keys|check_picture_exist)", RegexOptions.CultureInvariant)]
-    private static partial Regex TalkScript();
-
-    /// <summary>
-    /// Scripts that travel.
-    /// </summary>
-    /// <returns>The pattern.</returns>
-    [GeneratedRegex(@"\A[ \t\r\n\f\v]*(forced_transfer|forced_get_off_vehicle|forced_get_on_airship)", RegexOptions.CultureInvariant)]
-    private static partial Regex TravelScript();
-
-    /// <summary>
-    /// A script that shows a choice and writes the answer into the variable its first argument names.
-    /// </summary>
-    /// <returns>The pattern, the variable's id its first group.</returns>
-    [GeneratedRegex(@"\A[ \t\r\n\f\v]*unlimited_choices\([ \t\r\n\f\v]*([0-9]+)", RegexOptions.CultureInvariant)]
-    private static partial Regex ChoiceScript();
-
-    /// <summary>
-    /// A script that plays a novel scene.
-    /// </summary>
-    /// <returns>The pattern.</returns>
-    [GeneratedRegex(@"\A[ \t\r\n\f\v]*call_novel_scene", RegexOptions.CultureInvariant)]
-    private static partial Regex NovelScene();
-
-    /// <summary>
-    /// Names of switches and variables the game uses as scratch while an event runs.
-    /// </summary>
-    /// <returns>The pattern.</returns>
-    [GeneratedRegex("general|temp|system only|汎用|一時", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex TemporaryName();
+    private bool TemporaryVariable(long id, IEventState state) => source.IsScratchVariable(id) || state.PersonalVariable(id);
 
     /// <summary>
     /// One sort: the live values it reads and the common events it sorted, once per id and depth.
@@ -349,23 +313,17 @@ public sealed partial class EventSorter(Func<long, IReadOnlyList<EventCommand>?>
             HashSet<long> variables = ChoiceVariables(list);
             var kept = new bool[list.Count];
             var starts = new Queue<int>([0]);
-            var jumped = new HashSet<string>(StringComparer.Ordinal);
+            var jumped = new HashSet<long>();
             while (starts.Count > 0)
             {
                 foreach (int place in RunnableFrom(list, starts.Dequeue(), variables))
                 {
                     kept[place] = true;
                     EventCommand command = list[place];
-                    if (command.Code != EventCodes.JumpToLabel || !jumped.Add(command.Text(0)))
+                    long label = command.Number(0);
+                    if (command.Code == EventCodes.JumpToLabel && jumped.Add(label) && label >= 0 && label < list.Count)
                     {
-                        continue;
-                    }
-
-                    string name = command.Text(0);
-                    int label = IndexOf(list, other => other.Code == EventCodes.Label && other.Text(0) == name);
-                    if (label >= 0)
-                    {
-                        starts.Enqueue(label);
+                        starts.Enqueue((int)label);
                     }
                 }
             }
@@ -467,7 +425,7 @@ public sealed partial class EventSorter(Func<long, IReadOnlyList<EventCommand>?>
                     marks |= EventMarks.Says;
                     break;
                 case EventCodes.Script:
-                    marks |= ScriptMarks(ScriptAt(list, index));
+                    marks |= ScriptMarks(command.TextKind);
                     break;
                 case EventCodes.CallCommonEvent:
                     marks |= CommonMarks(command.Number(0), depth + 1);
@@ -492,10 +450,9 @@ public sealed partial class EventSorter(Func<long, IReadOnlyList<EventCommand>?>
             var ids = new HashSet<long>();
             foreach (EventCommand command in list)
             {
-                if (command.Code == EventCodes.Script && ChoiceScript().Match(command.Text(0)) is { Success: true } match
-                    && long.TryParse(match.Groups[1].ValueSpan, out long id))
+                if (command.Code == EventCodes.Script && command.TextKind == TextKind.Choice)
                 {
-                    ids.Add(id);
+                    ids.Add(command.Number(0));
                 }
             }
 
@@ -513,25 +470,6 @@ public sealed partial class EventSorter(Func<long, IReadOnlyList<EventCommand>?>
             {
                 yield return id;
             }
-        }
-
-        /// <summary>
-        /// Finds the first command of a list that matches.
-        /// </summary>
-        /// <param name="list">The commands.</param>
-        /// <param name="match">The test.</param>
-        /// <returns>Its place, -1 for none.</returns>
-        private static int IndexOf(IReadOnlyList<EventCommand> list, Func<EventCommand, bool> match)
-        {
-            for (int place = 0; place < list.Count; place++)
-            {
-                if (match(list[place]))
-                {
-                    return place;
-                }
-            }
-
-            return -1;
         }
 
         /// <summary>
@@ -561,29 +499,16 @@ public sealed partial class EventSorter(Func<long, IReadOnlyList<EventCommand>?>
         }
 
         /// <summary>
-        /// Reads a script command with its continuation lines.
-        /// </summary>
-        /// <param name="list">The commands.</param>
-        /// <param name="index">The script command's place.</param>
-        /// <returns>The script, its lines joined by line breaks.</returns>
-        private static string ScriptAt(IReadOnlyList<EventCommand> list, int index)
-        {
-            var lines = new List<string> { list[index].Text(0) };
-            for (int next = index + 1; next < list.Count && list[next].Code == EventCodes.ScriptLine; next++)
-            {
-                lines.Add(list[next].Text(0));
-            }
-
-            return string.Join('\n', lines);
-        }
-
-        /// <summary>
         /// Marks what a script does: a talk's, travel, or story for any other.
         /// </summary>
-        /// <param name="script">The script.</param>
+        /// <param name="kind">The script's kind.</param>
         /// <returns>Its marks.</returns>
-        private static EventMarks ScriptMarks(string script) =>
-            TravelScript().IsMatch(script) ? EventMarks.Travel : TalkScript().IsMatch(script) ? EventMarks.None : EventMarks.Story;
+        private static EventMarks ScriptMarks(TextKind kind) => kind switch
+        {
+            TextKind.Travel => EventMarks.Travel,
+            TextKind.Talk or TextKind.Choice => EventMarks.None,
+            _ => EventMarks.Story,
+        };
 
         /// <summary>
         /// Lists the places of the commands that can run from a place in a list: to its end from the

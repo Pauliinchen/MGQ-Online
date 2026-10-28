@@ -2,6 +2,8 @@
 #  battles_raid_freeze.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Read the freeze's tables from the DLL's events database in place of battles_raid_freeze_data.rbx
+#                            - Read whether a page shows only during a scene or runs nothing from the DLL's events database
 #      Paulinchen  2026-10-23: Kept the story's writes in a DLL journal instead of copying the whole story
 #                            - Resumed a frozen fight from a vehicle, putting the vehicles back as at the battle
 #      Paulinchen  2026-10-17: Created
@@ -21,8 +23,8 @@
 # game's own interpreter saves no common event it runs inside and resumes after the battle command.
 # A player who has no record of their own, such as one who joined late, gets the world's entry of
 # the fight (world_freeze.rbx), whose press starts the event from its first command, from the spot
-# its trigger starts it on. Which fights freeze and where their bosses wait comes from
-# MGQ_MpRaidFreezeData (battles_raid_freeze_data.rbx).
+# its trigger starts it on. Which fights freeze and where their bosses wait comes from the DLL's
+# events database (the topic raid.sites, see tables).
 module MGQ_MpRaidFreeze
   # The field of $game_system the save keeps the player's frozen fights in, see field.
   FIELD = :@mgq_mp_raid_freeze
@@ -83,6 +85,12 @@ module MGQ_MpRaidFreeze
 
   # The switches of the scenes when the freeze's data lacks them, see scene_page?.
   SCENE_SWITCHES = [31..39]
+
+  # The DLL's topic that tells where the story fights troops, see EventTableTopics.Sites.
+  SITES_TOPIC = "raid.sites"
+
+  # Frames between two asks for the freeze's tables while the DLL gives none, a second.
+  TABLES_FRAMES = 60
 
   # What the log names the kinds of story values by.
   KIND_LETTERS = ["s", "v", "self switch "]
@@ -593,7 +601,7 @@ module MGQ_MpRaidFreeze
   end
 
   # Finds where a battle command's preamble starts: the commands of the same indent right before it
-  # that ready the battle (MGQ_MpRaidFreezeData::PREAMBLE_CODES, or turning BOSS_SWITCH on).
+  # that ready the battle (the freeze's PREAMBLE_CODES, or turning BOSS_SWITCH on).
   #
   # @param list [Array<RPG::EventCommand>] The commands.
   # @param index [Integer] The battle command's index.
@@ -678,7 +686,7 @@ module MGQ_MpRaidFreeze
   end
 
   # Lists the events of a tableau's map whose start is blocked: the given ones and every page of
-  # the map that calls a common event of the fight's frames (MGQ_MpRaidFreezeData::CALLERS), as a
+  # the map that calls a common event of the fight's frames (the freeze's CALLERS), as a
   # row of touch triggers that each start the same cutscene.
   #
   # @param map [Integer] The tableau's map.
@@ -739,7 +747,7 @@ module MGQ_MpRaidFreeze
       now = event.mgq_mp_page
       next false if page.nil?
 
-      !showed || (page != now && now >= 0 && scene_page?(event.mgq_mp_pages[now])) || changed_quiet?(event, page, x, y)
+      !showed || (page != now && now >= 0 && scene_page?(event, now)) || changed_quiet?(event, page, x, y)
     end
   end
 
@@ -762,12 +770,17 @@ module MGQ_MpRaidFreeze
   end
 
   # Reports whether a page shows only during a scene: its conditions name a switch the game's
-  # post-defeat processing turns off (MGQ_MpRaidFreezeData::DEFEAT_WRITES), such as the scene
-  # switches 31 to 39.
+  # post-defeat processing turns off (the freeze's DEFEAT_WRITES), such as the scene switches 31 to
+  # 39. The DLL's events database tells it for a page it holds as the game does (see page_flags).
   #
-  # @param page [RPG::Event::Page, nil] The page.
+  # @param event [Game_Event] The event.
+  # @param place [Integer] The page's place.
   # @return [Boolean] Whether it does.
-  def self.scene_page?(page)
+  def self.scene_page?(event, place)
+    flags = page_flags(event, place)
+    return flags["scene_page"] == true if flags
+
+    page = event.mgq_mp_pages[place]
     condition = page && page.respond_to?(:condition) ? page.condition : nil
     return false unless condition && condition.respond_to?(:switch1_valid)
 
@@ -777,12 +790,27 @@ module MGQ_MpRaidFreeze
     end
   end
 
-  # Reports whether an event's page runs nothing when started, such as a figure only shown.
+  # Reports whether an event's page runs nothing when started, such as a figure only shown. The
+  # DLL's events database tells it for a page it holds as the game does (see page_flags).
   #
   # @param event [Game_Event] The event.
   # @return [Boolean] Whether it does.
   def self.runs_nothing?(event)
+    place = event.mgq_mp_page
+    flags = place >= 0 ? page_flags(event, place) : nil
+    return flags["runs_nothing"] == true if flags
+
     Array(event.list).all? { |command| QUIET_CODES.include?(command.code) }
+  end
+
+  # Reads what the DLL's events database found in a page of the map, see
+  # MGQ_MpCoopEvents.page_flags.
+  #
+  # @param event [Game_Event] The event.
+  # @param place [Integer] The page's place.
+  # @return [Hash, nil] The flags, nil for a page the database does not tell of.
+  def self.page_flags(event, place)
+    MGQ_MpCoopEvents.respond_to?(:page_flags) ? MGQ_MpCoopEvents.page_flags(event, place) : nil
   end
 
   # Picks the event that stands in for the boss: the fight's own event when it shows; else among
@@ -1627,7 +1655,7 @@ module MGQ_MpRaidFreeze
   end
 
   # Puts back what a defeat changed of the story: each value that changed since the defeat started,
-  # except the post-defeat processing's own (MGQ_MpRaidFreezeData::DEFEAT_WRITES) and the player's
+  # except the post-defeat processing's own (the freeze's DEFEAT_WRITES) and the player's
   # own, at its value at the event's start when the event changed it before the battle, else at the
   # defeat's start; and the items. A fight with a record then waits.
   #
@@ -2210,7 +2238,7 @@ module MGQ_MpRaidFreeze
     spot.is_a?(Array) && spot.size == 4 && spot.all? { |value| value.is_a?(Integer) } && spot[0] > 0
   end
 
-  # Reports whether a map is a cutscene map, see MGQ_MpRaidFreezeData::SCENE_MAPS.
+  # Reports whether a map is a cutscene map, see the freeze's SCENE_MAPS.
   #
   # @param map [Integer] The map.
   # @return [Boolean] Whether it is.
@@ -2218,13 +2246,67 @@ module MGQ_MpRaidFreeze
     data(:SCENE_MAPS, []).include?(map)
   end
 
-  # Reads a table of the freeze's data, see battles_raid_freeze_data.rbx.
+  # Reads a table of the freeze's data, see tables.
   #
-  # @param name [Symbol] The constant.
+  # @param name [Symbol] The table: :SITES, :CALLERS, :ALTERNATIVES, :SCENES, :SCENE_MAPS,
+  #   :DEFEAT_EVENTS, :DEFEAT_WRITES, :EXCLUDED_MAPS or :PREAMBLE_CODES.
   # @param default [Object] What stands in while the data is missing.
   # @return [Object] The table.
   def self.data(name, default)
-    defined?(MGQ_MpRaidFreezeData) && MGQ_MpRaidFreezeData.const_defined?(name) ? MGQ_MpRaidFreezeData.const_get(name) : default
+    found = tables[name]
+    found.nil? ? default : found
+  end
+
+  # Reads the freeze's tables from the DLL's events database once per session, for every raid boss
+  # troop: where the story fights each one (SITES: site key, the battle command's index, its indent,
+  # where its preamble starts, whether its map is a cutscene map, and its battle number), the map
+  # pages that reach each common event of them (CALLERS), the fights each side plays in the other's
+  # stead (ALTERNATIVES), how the story enters the fights on cutscene maps (SCENES), the cutscene
+  # maps (SCENE_MAPS), what the game's post-defeat processing writes itself (DEFEAT_EVENTS,
+  # DEFEAT_WRITES), and the rules: the Hades halls (EXCLUDED_MAPS) and the preamble's commands
+  # (PREAMBLE_CODES). A table the database does not tell is left out; while the DLL gives no answer,
+  # it is asked again every TABLES_FRAMES.
+  #
+  # @return [Hash{Symbol => Object}] The tables.
+  def self.tables
+    return @tables if @tables
+    return {} if @tables_failed_at && Graphics.frame_count - @tables_failed_at < TABLES_FRAMES
+
+    MGQ_MpCoopEvents.open_events if MGQ_MpCoopEvents.respond_to?(:open_events)
+    answer = MGQ_Multiplayer::Bridge.call(SITES_TOPIC, "troops" => raid_troops)
+    unless answer.is_a?(Hash)
+      @tables_failed_at = Graphics.frame_count
+      log_once(:no_tables, "the DLL told no sites of the story's raid boss fights: no fight freezes until it does")
+      return {}
+    end
+
+    @tables = tables_of(answer)
+    log(@tables[:SITES] ? "the DLL's events database names #{@tables[:SITES].size} raid boss troop(s) whose story fights freeze" : "the DLL's events database names no sites of the story's raid boss fights: no fight freezes")
+    @tables
+  end
+
+  # Lists the troops of the raid bosses, the story's and the optional ones.
+  #
+  # @return [Array<Integer>] The troops, in order.
+  def self.raid_troops
+    return [] unless defined?(MGQ_MpRaidBosses)
+
+    (MGQ_MpRaidBosses::TROOPS.keys | MGQ_MpRaidBosses::OPTIONAL.keys).sort
+  end
+
+  # Reads the freeze's tables from the DLL's answer, see tables.
+  #
+  # @param answer [Hash] The answer of SITES_TOPIC.
+  # @return [Hash{Symbol => Object}] The tables the answer holds rows of.
+  def self.tables_of(answer)
+    defeat = answer["defeat"].is_a?(Hash) ? answer["defeat"] : {}
+    found = {
+      :SITES => answer["sites"], :CALLERS => answer["callers"], :ALTERNATIVES => answer["alternatives"], :SCENES => answer["scenes"],
+      :SCENE_MAPS => answer["scene_maps"], :DEFEAT_EVENTS => defeat["events"], :EXCLUDED_MAPS => answer["excluded_maps"],
+      :PREAMBLE_CODES => answer["preamble_codes"],
+    }
+    found[:DEFEAT_WRITES] = { :switches => Array(defeat["switches"]), :variables => Array(defeat["variables"]) } unless Array(defeat["events"]).empty?
+    found.reject { |_name, table| !(table.is_a?(Hash) || table.is_a?(Array)) || table.empty? }
   end
 
   # Finds the world's entry of a troop's fight, see MGQ_MpWorldFreeze.entry.

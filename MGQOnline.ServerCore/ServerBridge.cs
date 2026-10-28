@@ -2,6 +2,8 @@
 //  ServerBridge.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Registered the game data topic and the story names topic
+//                            - Named the linked SQLite version in core.runtime
 //      Paulinchen  2026-10-23: Registered the topics both hosts answer
 //                            - Registered the topic that derives the story mapping's index
 //                            - Created
@@ -16,6 +18,7 @@ using System.Runtime.CompilerServices;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Native;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Data.Sqlite;
 using MGQOnline.Game.Topics;
 
 namespace MGQOnline.ServerCore;
@@ -27,7 +30,7 @@ namespace MGQOnline.ServerCore;
 internal static class ServerBridge
 {
     /// <summary>
-    /// The topic that describes the core's runtime, such as the GC heap limit it runs with.
+    /// The topic that describes the core's runtime, such as the GC heap limit it runs with and the SQLite it links.
     /// </summary>
     public const string RuntimeTopic = "core.runtime";
 
@@ -45,7 +48,8 @@ internal static class ServerBridge
     internal static void Install()
     {
         var log = new EventLog();
-        BridgeExports.Install(new BridgeHost(Build, log, context => RegisterTopics(context, log)));
+        var events = new ServerEvents(System.IO.Directory.GetCurrentDirectory, log);
+        BridgeExports.Install(new BridgeHost(Build, log, context => RegisterTopics(context, log, events)));
     }
 
     /// <summary>
@@ -54,22 +58,26 @@ internal static class ServerBridge
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
     /// <param name="log">The core's log.</param>
-    private static void RegisterTopics(BridgeContext context, EventLog log)
+    /// <param name="events">The events database of the game folder, opened once per process.</param>
+    private static void RegisterTopics(BridgeContext context, EventLog log, ServerEvents events)
     {
         log.Attach(context);
         context.Register(RuntimeTopic, (_, _) => DescribeRuntime());
         SharedTopics.Register(context);
-        StoryIndexTopic.Register(context, System.IO.Directory.GetCurrentDirectory);
+        events.Register(context);
+        StoryIndexTopic.Register(context, events, log);
+        StoryNamesTopic.Register(context, () => events.Folder);
     }
 
     /// <summary>
     /// Describes the runtime the core runs on.
     /// </summary>
-    /// <returns>{"heap_limit"=>bytes the GC may use, "server_gc"=>..., "latency"=>the GC's latency mode}.</returns>
+    /// <returns>{"heap_limit"=>bytes the GC may use, "server_gc"=>..., "latency"=>the GC's latency mode, "sqlite"=>the linked SQLite version}.</returns>
     private static RubyHash DescribeRuntime() => new()
     {
         { "heap_limit", GC.GetGCMemoryInfo().TotalAvailableMemoryBytes },
         { "server_gc", GCSettings.IsServerGC },
         { "latency", GCSettings.LatencyMode.ToString() },
+        { "sqlite", SqliteConnection.LibraryVersion },
     };
 }

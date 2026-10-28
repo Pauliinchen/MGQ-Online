@@ -1,0 +1,46 @@
+<Project>
+
+  <!--
+    Links SQLite statically into a NativeAOT publish of a project that references MGQOnline.Data:
+    the publish compiles the checked-in amalgamation (sqlite/sqlite3.c) into a static library for
+    its runtime identifier, and DirectPInvoke binds MGQOnline.Data's imports of e_sqlite3 to it at
+    link time, so no SQLite library ships beside the binary. Windows compiles with the Visual
+    Studio C++ tools NativeAOT links with, other systems with the clang NativeAOT links with.
+  -->
+
+  <PropertyGroup>
+    <SqliteSource>$([MSBuild]::NormalizePath($(MSBuildThisFileDirectory), sqlite, sqlite3.c))</SqliteSource>
+    <SqliteOutputDir>$([MSBuild]::NormalizeDirectory($(MSBuildThisFileDirectory), .., obj, sqlite, $(RuntimeIdentifier)))</SqliteOutputDir>
+    <SqliteLibrary Condition="$(RuntimeIdentifier.StartsWith('win'))">$(SqliteOutputDir)e_sqlite3.lib</SqliteLibrary>
+    <SqliteLibrary Condition="!$(RuntimeIdentifier.StartsWith('win'))">$(SqliteOutputDir)libe_sqlite3.a</SqliteLibrary>
+
+    <!-- Only what reading the events database and writing the relay mirror need: no extensions
+         to load, no WAL, no JSON functions, and temporary tables in memory, since a sandboxed
+         battle child may write no file. -->
+    <SqliteDefines>SQLITE_THREADSAFE=1 SQLITE_DEFAULT_CACHE_SIZE=-64 SQLITE_TEMP_STORE=3 SQLITE_OMIT_LOAD_EXTENSION SQLITE_OMIT_WAL SQLITE_OMIT_JSON SQLITE_OMIT_DEPRECATED SQLITE_OMIT_SHARED_CACHE SQLITE_OMIT_PROGRESS_CALLBACK SQLITE_DQS=0</SqliteDefines>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(PublishAot)' == 'true' and '$(RuntimeIdentifier)' != ''">
+    <DirectPInvoke Include="e_sqlite3" />
+    <NativeLibrary Include="$(SqliteLibrary)" />
+  </ItemGroup>
+
+  <Target Name="BuildStaticSqlite"
+      BeforeTargets="LinkNative"
+      Condition="'$(PublishAot)' == 'true' and '$(RuntimeIdentifier)' != ''"
+      Inputs="$(SqliteSource);$(MSBuildThisFileFullPath)"
+      Outputs="$(SqliteLibrary)">
+    <PropertyGroup>
+      <_SqliteArchitecture>$(RuntimeIdentifier.Substring($([MSBuild]::Add($(RuntimeIdentifier.LastIndexOf('-')), 1))))</_SqliteArchitecture>
+    </PropertyGroup>
+    <ItemGroup>
+      <_SqliteDefine Include="$(SqliteDefines.Split(' '))" />
+    </ItemGroup>
+    <MakeDir Directories="$(SqliteOutputDir)" />
+    <Exec Condition="$(RuntimeIdentifier.StartsWith('win'))"
+        Command="&quot;$(MSBuildThisFileDirectory)build-sqlite.cmd&quot; $(_SqliteArchitecture) &quot;$(SqliteSource)&quot; &quot;$(SqliteLibrary)&quot; &quot;@(_SqliteDefine->'/D%(Identity)', ' ')&quot;" />
+    <Exec Condition="!$(RuntimeIdentifier.StartsWith('win'))"
+        Command="clang -c -O2 -fPIC -w @(_SqliteDefine->'-D%(Identity)', ' ') -o &quot;$(SqliteOutputDir)sqlite3.o&quot; &quot;$(SqliteSource)&quot; &amp;&amp; ar rcs &quot;$(SqliteLibrary)&quot; &quot;$(SqliteOutputDir)sqlite3.o&quot;" />
+  </Target>
+
+</Project>

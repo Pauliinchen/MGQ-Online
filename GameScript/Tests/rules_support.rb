@@ -2,7 +2,9 @@
 #  rules_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Read the seed rows of the relay's story tables, from which the catch-up's tests build their tables
+#      Paulinchen  2026-10-28: Answered the chests, page flags and command index of a map's pages as a DLL without an events database
+#                            - Took the fingerprint the events database is opened with and sorted the pages of a map handed over
+#                            - Read the seed rows of the relay's story tables, from which the catch-up's tests build their tables
 #                            - Answered the rewards a party member catches up with from the test's stand-in of coop_story_rewards.rbx
 #      Paulinchen  2026-10-23: Dropped the stand-in of the directory's tickets, which no script asks for any more
 #                            - Kept the test's one stand-in bridge in $world_bridge
@@ -511,12 +513,41 @@ SORT_VALUE_KINDS = %w(s v ps pv)
 # Answers the event sorter's topics from fixtures/events/script_cases.json: a list the scripts hand
 # over is looked up among the cases with its trigger, command and resident flag; the values it lacks
 # are named as the DLL names them, and those it hands over pick the case. A map event's page or a
-# common event is unknown, as the DLL holds no data in the tests, so the scripts hand the list over.
+# common event is unknown, as the DLL holds no events database in the tests, so the scripts hand
+# the list over; the fingerprint the scripts open the database with is taken and noted. For the
+# same reason the chests, the page flags and the command index of a map's pages answer none.
 #
 # @param fake [FakeBridge] The bridge.
 def answer_events(fake)
+  fake.answer("events.open") do |request|
+    raise FakeBridge::BadRequest, "no fingerprint" unless request["fingerprint"].is_a?(String)
+
+    { "usable" => false, "problem" => "no events database at Patch/Multiplayer/Data/events.db", "differing" => [] }
+  end
   fake.answer("events.sort") { |request| golden_sort(request) }
-  fake.answer("events.kinds") { |request| { "kinds" => Array(request["pages"]).map { nil } } }
+  fake.answer("events.kinds") { |request| golden_kinds(request) }
+  fake.answer("events.chests") { |request| { "letters" => Array(request["rows"]).map { nil } } }
+  fake.answer("events.pages") { |request| { "pages" => Array(request["rows"]).map { nil } } }
+  fake.answer("events.index") { |request| { "indexes" => Array(request["pages"]).map { nil } } }
+end
+
+# Answers the sort of a map's pages from the golden cases, see answer_events: a page named by its
+# length and shape as none, a page handed over as the golden list's kind.
+#
+# @param request [Hash] The request.
+# @return [Hash] The kinds, or the values the pages handed over need.
+def golden_kinds(request)
+  residents = Array(request["residents"])
+  answers = Array(request["pages"]).map do |row|
+    next nil unless row[2].is_a?(Array)
+
+    golden_sort("list" => row[2], "trigger" => nil, "values" => request["values"], "resident" => residents.include?(row[0, 2]) ? true : nil)
+  end
+  needs = {}
+  answers.compact.each { |answer| (answer["needs"] || {}).each { |kind, ids| needs[kind] = (needs[kind] || []) | ids } }
+  return { "needs" => needs } unless needs.empty?
+
+  { "kinds" => answers.map { |answer| answer && answer["list_kind"] } }
 end
 
 # Answers one sort from the golden cases, see answer_events.
@@ -589,10 +620,10 @@ JOURNAL_CASES.each do |entry|
   raise "the stand-in of the journal differs from fixtures/freeze/journal.json: #{entry['name']}" unless journal.since(entry["mark"]) == { "rows" => entry["rows"], "overflow" => false }
 end
 
-# Answers the rewards a party member catches up with from the test's stand-in of the constants of
-# coop_story_rewards.rbx (MGQ_MpCoopStoryRewards), empty without one, as PartyRewards in the DLL
-# writes the tables that replace them (held against fixtures/catchup/party_rewards.json by
-# MGQOnline.Game.Tests); and a Classic world's fetch of the story mapping, which answers nothing.
+# Answers the rewards a party member catches up with from the test's stand-in of the relay's
+# rewards tables in the shapes PartyRewards in the DLL hands them (MGQ_MpCoopStoryRewards, held
+# against fixtures/catchup/party_rewards.json by MGQOnline.Game.Tests), empty without one; and a
+# Classic world's fetch of the story mapping, which answers nothing.
 #
 # @param fake [FakeBridge] The bridge.
 def answer_party_rewards(fake)

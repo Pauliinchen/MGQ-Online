@@ -8,10 +8,10 @@
 #----------------------------------------------------------------
 
 # Writes the rows of the catch-up's tables as the relay's story tables take them (Relay/README.md
-# "Catch-up tables"), from the Ruby rows of world_catchup_data.rbx and the tests' own rows of the
-# same shape. Relay/seed/story/make_seed.rb writes the generated tables with it, and the script
-# tests hand their rows to the catch-up engine with it (fixtures/catchup/engine.rb). It also writes
-# the constants of coop_story_rewards.rbx as the DLL hands them to the scripts (party_rewards).
+# "Catch-up tables"), from the Ruby rows of the generated tables (generated_tables.rb) and the
+# tests' own rows of the same shape, which the script tests hand to the catch-up engine with it
+# (fixtures/catchup/engine.rb). It also writes a stand-in of the rewards tables as the DLL hands them
+# to the scripts (party_rewards).
 
 # The catch-up's rows as the relay keeps them.
 module CatchupRelayRows
@@ -166,8 +166,8 @@ module CatchupRelayRows
   end
 
   # Writes the rewards a party member catches up with as the DLL hands them to the scripts
-  # (story.rewards, PartyRewards of MGQOnline.Game), from the constants coop_story_rewards.rbx keeps
-  # them in or a test's stand-in of them, whose missing constants count as empty.
+  # (story.rewards, PartyRewards of MGQOnline.Game), from a test's stand-in of their constants, whose
+  # missing constants count as empty.
   #
   # @param rewards [Module, nil] The module of the constants, nil for none.
   # @param sites [Array<String>, nil] The side events' sites in the order of GROUPS, nil to leave

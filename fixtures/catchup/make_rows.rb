@@ -8,8 +8,8 @@
 #----------------------------------------------------------------
 
 # Writes the golden cases of the catch-up's row rules next to this file, rows.json, from the
-# catch-up engine as world_catchup.rbx decided it (engine.rb) over the generated tables of
-# world_catchup_data.rbx in fixtures/catchup/generated and the relay's seed rules, with the choices'
+# catch-up engine as world_catchup.rbx decided it (engine.rb) over the generated tables in
+# fixtures/catchup/generated and the relay's seed rules, with the choices'
 # outcomes the DLL names a Raid World player's own, as the script tests answer them
 # (GameScript/Tests/choices_support.rb): for stories at places of the story, which rows of each
 # table the story is past (passed?), alone

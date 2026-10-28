@@ -2,6 +2,7 @@
 #  security_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Read the events database in the sandbox through the core
 #      Paulinchen  2026-10-14: Created
 #
 #----------------------------------------------------------------
@@ -10,9 +11,13 @@ require "socket"
 require_relative "../lib/boot"
 require_relative "../lib/save"
 require_relative "../lib/sandbox"
+require_relative "../lib/core"
+require_relative "../lib/story_index"
 
 # Tries what a crafted save or code inside a battle could do: saves naming Ruby's own classes
-# must be refused, and a sandboxed child must reach nothing (Linux as root for the sandbox part):
+# must be refused, and a sandboxed child must reach nothing but read the game folder, the events
+# database too through the core when BATTLE_CORE_LIBRARY names it, leaving no file beside it
+# (Linux as root for the sandbox part):
 #   ruby security_test.rb <a real save>
 # Read before the boot, which moves into the game folder.
 real = File.binread(ARGV[0])
@@ -78,12 +83,15 @@ if Sandbox.available?
     # Writing to a file is forbidden in the sandbox, and the test's output may be one.
     $stdout.reopen(child_errors)
     $stderr.reopen(child_errors)
+    # As server.rb's enter_child: the chroot hides the library's path.
+    core = Core.load(Core.library)
     begin
       Sandbox.enter(Boot::GAME_DIR)
     rescue Exception => e
       writer.write(Marshal.dump([["enter the sandbox", false, "#{e.class}: #{e.message} at #{e.backtrace&.first}"]]))
       Process.exit!(1)
     end
+    Core.open(core)
     tries = {
       "connect to this machine (127.0.0.1:22)" => -> { TCPSocket.new("127.0.0.1", 22) },
       "connect out (1.1.1.1:443)" => -> { TCPSocket.new("1.1.1.1", 443) },
@@ -102,6 +110,19 @@ if Sandbox.available?
     report << ["runs as nobody", Process.uid == nobody, "uid #{Process.uid}"]
     report << ["sees only the game folder", (Dir.children("/") - %w[Data Patch Server]).empty?, Dir.children("/").sort.join(", ")]
     report << ["still reads the game's maps", (load_data("Data/Map001.rvdata2").is_a?(RPG::Map) rescue false), "Data/Map001.rvdata2"]
+    if Core.ready?
+      index = begin
+        MGQ_Multiplayer::Bridge.call!(StoryIndex::TOPIC, "keys" => [], "events" => [])
+      rescue MGQ_Multiplayer::Bridge::Error => e
+        e.message
+      end
+      report << ["the core reads the events database", index.is_a?(Hash), index.is_a?(Hash) ? "an index of #{index['events'].size} events" : index]
+      data = "/Patch/Multiplayer/Data"
+      beside = Dir.exist?(data) ? Dir.children(data).grep(/\Aevents\.db-/) : []
+      report << ["and leaves no journal or temporary file beside it", beside.empty?, beside.join(", ")]
+    else
+      puts "skipped the events database: no core library shook hands (BATTLE_CORE_LIBRARY)"
+    end
     writer.write(Marshal.dump(report))
     writer.close
     Process.exit!(0)

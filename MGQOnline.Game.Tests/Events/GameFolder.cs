@@ -2,12 +2,14 @@
 //  GameFolder.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Built the events database of the folder
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
 
 using System;
 using System.IO;
+using MGQOnline.Data.Events;
 using MGQOnline.Game.Events.Data;
 
 namespace MGQOnline.Game.Tests.Events;
@@ -29,10 +31,21 @@ internal static class GameFolder
     private static readonly Lazy<GameData?> Data = new(() => Path() is { } folder ? GameData.OfFolder(folder) : null);
 
     /// <summary>
+    /// The events database the generator builds from the folder, in memory, built once for every test.
+    /// </summary>
+    private static readonly Lazy<EventStore?> Store = new(() => Path() is { } folder ? EventDatabases.Of(new GameFolderFiles(folder)) : null);
+
+    /// <summary>
     /// Gets the folder's data, or skips the test without a folder.
     /// </summary>
     /// <returns>The data.</returns>
     public static GameData DataOrSkip() => Data.Value ?? throw SkipException();
+
+    /// <summary>
+    /// Gets the events database of the folder, or skips the test without a folder.
+    /// </summary>
+    /// <returns>The database.</returns>
+    public static EventStore StoreOrSkip() => Store.Value ?? throw SkipException();
 
     /// <summary>
     /// Finds the folder.

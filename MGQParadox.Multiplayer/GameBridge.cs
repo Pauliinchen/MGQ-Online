@@ -2,7 +2,8 @@
 //  GameBridge.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Registered the topics of the catch-up over the tables the story mapping came with
+//      Paulinchen  2026-10-28: Registered the topics that read the events database's rows
+//                            - Registered the topics of the catch-up over the tables the story mapping came with
 //      Paulinchen  2026-10-23: Stopped registering the directory's tickets as topics
 //                            - Handed the world screen's forms and this game's data to its requests
 //                            - Registered the world screen's steps into a world
@@ -73,7 +74,8 @@ internal static unsafe class GameBridge
         RuleTopics.Register(context);
         SharedTopics.Register(context);
         ModTopics.Register(context, services.Parking, services.Directory);
-        EventTopics.Register(context, () => EventTopics.Current);
+        EventTopics.Register(context, () => GameEvents.Current);
+        EventTableTopics.Register(context, () => GameEvents.Current);
         WorldTopics.Register(context);
         OverviewTopics.Register(context);
         LocalWorldTopics.Kept local = LocalWorldTopics.Register(context, services);

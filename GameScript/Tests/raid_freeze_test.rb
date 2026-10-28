@@ -2,7 +2,8 @@
 #  raid_freeze_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Checked writes the DLL refuses, writes the journal looks away from and a defeat whose start the journal lost
+#      Paulinchen  2026-10-28: Answered the freeze's tables as the DLL's events database does
+#                            - Checked writes the DLL refuses, writes the journal looks away from and a defeat whose start the journal lost
 #      Paulinchen  2026-10-23: Ran on the shared stand-in bridge, whose journal keeps the story's writes, and replayed the journal's golden cases
 #                            - Checked a resume from a boat in place of its refusal
 #      Paulinchen  2026-10-17: Created
@@ -16,8 +17,8 @@
 # record from the spot its trigger starts it on, the hidden events passing through; the stand-ins
 # of a fight, its boss and the events only its scene shows while the map's own stay live, and of a
 # cutscene fight; the joiner's spot; and the save field. The interpreter runs real fibers as the
-# game's does; the raid pool, the freeze's data, the world's story and the world's entries are
-# stand-ins; the DLL's write journal is the shared stand-in bridge's (rules_support.rb).
+# game's does; the raid pool, the freeze's tables (as the DLL's events database answers them), the
+# world's story and the world's entries are stand-ins; the DLL's write journal is the shared stand-in bridge's (rules_support.rb).
 
 require_relative "rules_support"
 
@@ -576,10 +577,9 @@ module MGQ_MpRaidPool
   # Answers a boss's name.
   def self.troop_label(troop); key_of(troop); end
 end
-# Stands in for the freeze's data of a few fights.
-module MGQ_MpRaidFreezeData
-  # The map tree roots of cutscene maps.
-  SCENE_ROOTS = ["Events"]
+# Stands in for the DLL's events database: the freeze's tables of a few fights, which the checks
+# change and then have the engine read anew (reread_tables).
+module FreezeTables
   # The Hades halls.
   EXCLUDED_MAPS = [154, 576]
   # A preamble's commands.
@@ -603,8 +603,10 @@ module MGQ_MpRaidFreezeData
   SCENE_MAPS = [728, 746, 747, 749]
   # The post-defeat processing's common events.
   DEFEAT_EVENTS = [11, 112, 900, 902, 3000]
-  # What the post-defeat processing writes itself.
-  DEFEAT_WRITES = { :switches => [22, 31..37], :variables => [11] }
+  # The switches the post-defeat processing writes itself.
+  DEFEAT_SWITCHES = [22, 31, 32, 33, 34, 35, 36, 37]
+  # The variables it writes itself.
+  DEFEAT_VARIABLES = [11]
 end
 # Stands in for the world's entries of frozen fights: $entries by troop, notes kept in $noted, the
 # troops whose fight ended for the world in $final.
@@ -660,6 +662,20 @@ load_script "battles_raid_bosses"
 load_script "battles_raid_freeze"
 open_rules_bridge
 freeze = MGQ_MpRaidFreeze
+$world_bridge.answer("raid.sites") do |request|
+  $sites_asked = request["troops"]
+  { "sites" => FreezeTables::SITES, "callers" => FreezeTables::CALLERS, "alternatives" => {}, "scenes" => FreezeTables::SCENES,
+    "scene_maps" => FreezeTables::SCENE_MAPS, "excluded_maps" => FreezeTables::EXCLUDED_MAPS, "preamble_codes" => FreezeTables::PREAMBLE_CODES,
+    "defeat" => { "events" => FreezeTables::DEFEAT_EVENTS, "switches" => FreezeTables::DEFEAT_SWITCHES, "variables" => FreezeTables::DEFEAT_VARIABLES } }
+end
+
+# Has the engine read the freeze's tables anew, as after a check changed them.
+def reread_tables
+  MGQ_MpRaidFreeze.instance_variable_set(:@tables, nil)
+end
+
+check("the freeze's tables come from the DLL for every raid boss troop", [freeze.data(:SITES, {}).keys.sort, $sites_asked.include?(868), $sites_asked == $sites_asked.sort],
+      [FreezeTables::SITES.keys.sort, true, true])
 
 # Makes a command.
 #
@@ -1023,9 +1039,11 @@ check("a battle that fights no pool as an event's records nothing", [freeze.reco
 reset
 $game_variables[1075] = 14
 $game_switches[4] = true
-kept = MGQ_MpRaidFreezeData::SITES.delete(868)
+kept = FreezeTables::SITES.delete(868)
+reread_tables
 fight_event(13)
-MGQ_MpRaidFreezeData::SITES[868] = kept
+FreezeTables::SITES[868] = kept
+reread_tables
 check("nor one whose site the data lacks", [freeze.record_for(868), $log.grep(/its site map:138:13:1 is not in the data/).size], [nil, 1])
 reset
 $game_map.setup(576)
@@ -1308,8 +1326,9 @@ check("nor when the world's list holds it", $noted, [])
 # that call the common event are blocked, and the resume runs the page from that map's data, its
 # interpreters on that map as at the battle.
 reset
-MGQ_MpRaidFreezeData::SITES[2133] = [["ce:9062", 2, 0, 1, false]]
-MGQ_MpRaidFreezeData::CALLERS[9062] = ["map:138:30:1", "map:138:31:1", "map:777:30:1"]
+FreezeTables::SITES[2133] = [["ce:9062", 2, 0, 1, false]]
+FreezeTables::CALLERS[9062] = ["map:138:30:1", "map:138:31:1", "map:777:30:1"]
+reread_tables
 $data_common_events[9062] = RPG::CommonEvent.new(9062, [
   c(201, 0, 0, 300, 4, 4, 8), c(132, 0), c(301, 0, 0, 2133, false, false), c(123, 0, "A", 0), c(900, 0, :ce9062_after), c(0, 0),
 ])
@@ -1350,18 +1369,21 @@ win
 frames(3)
 check("won, both lists go on, the common event's self switch on the event of map 138 as at the battle",
       [$ran, $game_self_switches[[138, 30, "A"]], freeze.record_for(2133)], [[:ce9062_after, :after_9062], true, nil])
-MGQ_MpRaidFreezeData::SITES.delete(2133)
-MGQ_MpRaidFreezeData::CALLERS.delete(9062)
+FreezeTables::SITES.delete(2133)
+FreezeTables::CALLERS.delete(9062)
+reread_tables
 
 # A common event's fight on a field map blocks every page of that map that calls it.
 reset
-callers = MGQ_MpRaidFreezeData::CALLERS[347]
-MGQ_MpRaidFreezeData::CALLERS[347] = callers + ["map:214:43:1", "map:999:7:1"]
+callers = FreezeTables::CALLERS[347]
+FreezeTables::CALLERS[347] = callers + ["map:214:43:1", "map:999:7:1"]
+reread_tables
 $game_switches[50] = true
 $game_map.setup(214)
 $game_player.moveto(5, 6)
 fight_event(42)
-MGQ_MpRaidFreezeData::CALLERS[347] = callers
+FreezeTables::CALLERS[347] = callers
+reread_tables
 check("a common event's fight blocks its event and the map's other callers of it, none of another map", freeze.record_for(807)["tableau"][2], [42, 43])
 
 # A resume given up before its battle puts back what it changed and brings the player back.

@@ -2,7 +2,9 @@
 #  coop_events_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Checked that a held page asks the DLL whether it is over only once something changed
+#      Paulinchen  2026-10-28: Checked the chests the DLL's events database names and read the rewards' checks from the relay's reviewed rows
+#                            - Checked the length and shape a list is named with, the running map and event, the fingerprint and the second call for a map's pages
+#                            - Checked that a held page asks the DLL whether it is over only once something changed
 #                            - Checked that a player behind starts every story event and talk but one that ends their part
 #                            - Read the frames of a call from the gather stand-in
 #                            - Read the pages waiting from the stand-in of the DLL
@@ -399,9 +401,17 @@ module MGQ_MpActions
 end
 load_script "coop_scope"
 load_script "story_state"
-# The chest flags of coop_story_rewards.rbx, as the game has them; the rest of that table stays out,
-# since these checks build their own stories.
-CHEST_FLAGS = eval(File.read(File.join(SCRIPTS_DIR, "coop_story_rewards.rbx"), :encoding => "UTF-8")[/CHEST_FLAGS = (\[[\d, ]*\])/, 1])
+# Reads the reviewed rows of a story table the relay seeds from (Relay/seed/story, a list of admin
+# edits).
+#
+# @param table [String] The table.
+# @return [Array<Hash>] The rows.
+def reviewed_rows(table)
+  JSON.parse(File.read(File.join(STORY_SEEDS, "#{table}.json"), :encoding => "UTF-8")).map { |edit| edit["row"] }
+end
+# The chest flags as the relay keeps them for the game; its other rewards tables stay out, since
+# these checks build their own stories.
+CHEST_FLAGS = reviewed_rows("chest_flags").map { |row| row["switch"] }
 # Lists the chest flags from CHEST_FLAGS, see MGQ_MpStoryState.chest_flags.
 def MGQ_MpStoryState.chest_flags; CHEST_FLAGS; end
 load_script "coop_story"
@@ -462,7 +472,9 @@ blacksmith = [c(101, "", 0, 0, 2), Command.new(102, 0, [["Synthesis", "Talk"], 2
 story = MGQ_MpStoryState
 check("the awakening switches are the player's own, the story's boss flags from 7000 are not", [6500, 6999, 7015].map { |id| story.personal_switch?(id) }, [true, true, false])
 
-# Chests.
+# Chests, first before the relay's rewards came.
+$world_bridge.answer("story.rewards") { |_known| nil }
+rewards_changed
 $game_map = Game_Map.new
 $game_party = Game_Party.new
 $game_switches = Game_Switches.new
@@ -471,7 +483,15 @@ $game_self_switches = Game_SelfSwitches.new
 chest_page = RPG::Page.new([c(126, 1, 0, 0, 2), c(123, "A", 0)])
 talk_page = RPG::Page.new([c(101, "", 0, 0, 2)])
 $game_map.events = { 5 => Game_Event.new(5, [chest_page]), 6 => Game_Event.new(6, [talk_page]) }
+kinds_asked = []
+$world_bridge.answer("events.kinds") { |request| kinds_asked << request["pages"]; golden_kinds(request) }
 check("the map's chests are found", MGQ_MpCoopEvents.chest_keys, [[3, 5, "A"]])
+check("after asking the DLL's events database for them by each page's length and shape",
+      $world_bridge.calls.select { |topic, _| topic == "events.chests" }.map { |_, bytes| Marshal.load(bytes) },
+      [{ "map" => 3, "rows" => [[5, 0, 2, MGQ_MpCoopEvents.shape(chest_page.list)], [6, 0, 1, MGQ_MpCoopEvents.shape(talk_page.list)]] }])
+check("from one call naming each page by its length and shape and one handing over those the DLL's database holds otherwise",
+      kinds_asked.map { |pages| pages.map { |row| row[2].is_a?(Array) ? row[0, 2] + [row[2].size] : row } },
+      [[[5, 0, 2, MGQ_MpCoopEvents.shape(chest_page.list)], [6, 0, 1, MGQ_MpCoopEvents.shape(talk_page.list)]], [[5, 0, 2], [6, 0, 1]]])
 opened_page = RPG::Page.new([c(101, "", 0, 0, 2)])
 $game_map.events[7] = Game_Event.new(7, [chest_page, opened_page])
 $game_map.events[7].show(1)
@@ -479,6 +499,37 @@ MGQ_MpCoopEvents.instance_variable_set(:@chest_keys_map, nil)
 check("so is a chest that shows its opened page", MGQ_MpCoopEvents.chest_keys, [[3, 5, "A"], [3, 7, "A"]])
 $game_map.events.delete(7)
 MGQ_MpCoopEvents.instance_variable_set(:@chest_keys_map, nil)
+kinds_asked.clear
+$world_bridge.answer("events.chests") { |request| { "letters" => request["rows"].map { |row| row[0] == 5 ? "B" : false } } }
+check("a chest the database names is the self switch it names, with no page sorted, and a page it names no chest is none",
+      [MGQ_MpCoopEvents.chest_keys, kinds_asked], [[[3, 5, "B"]], []])
+$world_bridge.answer("story.rewards") { |_known| CatchupRelayRows.party_rewards(nil).merge("chests" => [[3, 6, "C"], [4, 6, "C"]], "rev" => 2) }
+MGQ_MpStoryState.instance_variable_set(:@rewards_at, nil)
+check("once the relay's rewards came, the map's chests are those of every chest it keeps, a chest behind a branch a new game skips among them",
+      MGQ_MpCoopEvents.chest_keys, [[3, 6, "C"]])
+check("and a chest the database names that the relay's reviewed rows leave out is no player's own",
+      [MGQ_MpCoopEvents.chest_key?([3, 5, "B"]), story.personal_self_switch?([3, 5, "B"])], [false, false])
+# From here the relay keeps the chest of the test's map among every chest of the game.
+answer_party_rewards($world_bridge)
+$world_bridge.answer("story.rewards") { |_known| CatchupRelayRows.party_rewards(nil).merge("chests" => [[3, 5, "A"]], "rev" => 1) }
+rewards_changed
+answer_events($world_bridge)
+MGQ_MpCoopEvents.instance_variable_set(:@chest_keys_map, nil)
+
+# The DLL reads a map event's page or a common event from its events database while the database
+# holds the list as the game does: the scripts name it with its length and shape, the 24-bit hash
+# both sides compute alike. A common event's list and a list handed over name the map and event
+# that run it, inside whose map folder the list's transfers lead.
+shape_cases = JSON.parse(File.read(File.join(RULE_FIXTURES, "events", "hash_cases.json")))["cases"]
+check("the shape of each list of fixtures/events/hash_cases.json is the one the DLL computes",
+      shape_cases.reject { |known| MGQ_MpCoopEvents.shape(known["list"].map { |code, indent, parameters| Command.new(code, indent, parameters) }) == known["shape"] }.map { |known| known["name"] }, [])
+check("a map event's page is named with its length and shape", MGQ_MpCoopEvents.request_for(chest_page.list, $game_map.events[5]),
+      { "map" => 3, "event" => 5, "page" => 0, "size" => 2, "shape" => MGQ_MpCoopEvents.shape(chest_page.list) })
+check("a common event's list with the map and the event that run it", MGQ_MpCoopEvents.request_for($data_common_events[6].list, $game_map.events[5]),
+      { "map" => 3, "event" => 5, "common" => 6, "size" => 2, "shape" => MGQ_MpCoopEvents.shape($data_common_events[6].list) })
+check("a list handed over with the running map and no event", MGQ_MpCoopEvents.request_for([c(101, "", 0, 0, 2)], nil).values_at("map", "event", "list"),
+      [3, 0, [[101, 0, ["", 0, 0, 2]]]])
+check("the DLL had the game data's fingerprint once, before its first question", $world_bridge.calls.count { |topic, _| topic == "events.open" }, 1)
 
 $party = "p1"
 $leader = :me
@@ -1379,7 +1430,7 @@ check("such as when the story takes one", $sent.select { |_, f| f["story"] == "k
 
 # A member who keeps the story catches up with the story's skills, companions and items the leader
 # holds, those of their own side where the sides differ; one without a side chooses first.
-# Stands in for the table of coop_story_rewards.rbx.
+# Stands in for the relay's rewards tables.
 module MGQ_MpCoopStoryRewards
   # The skills Luka learns in events.
   SKILLS = [11, 12, 13]
@@ -1920,25 +1971,26 @@ if tool
   end
 end
 
-# The table the generator wrote holds what the maps from 1000 on give, such as Puruel and Inuel at
-# the Chaos route's snow shrine.
-table = Module.new
-table.module_eval(File.read(File.join(SCRIPTS_DIR, "coop_story_rewards.rbx"), :encoding => "UTF-8"))
-rewards = table::MGQ_MpCoopStoryRewards
-check("the table holds Puruel (516) and Inuel (517), and the companions set_actors brings", [516, 517, 6, 33, 35].map { |id| rewards::ACTORS.include?(id) }, [true] * 5)
+# The relay's reviewed rewards hold what the maps from 1000 on give, such as Puruel and Inuel at the
+# Chaos route's snow shrine.
+event_rewards = reviewed_rows("event_rewards")
+party_chests = reviewed_rows("party_chests").map { |row| map, event, letter = row["key"][2..-1].split("."); [map.to_i, event.to_i, letter] }
+check("the rewards hold Puruel (516) and Inuel (517), and the companions set_actors brings",
+      [516, 517, 6, 33, 35].map { |id| event_rewards.any? { |row| row["kind"] == "companion" && row["id"] == id } }, [true] * 5)
 check("the skills Luka learns on maps from 1000 on, and their chests",
-      [rewards::SKILLS.include?(9799), rewards::CHESTS.any? { |key| key[0] >= 1000 }], [true, true])
+      [event_rewards.any? { |row| row["kind"] == "skill" && row["id"] == 9799 }, party_chests.any? { |key| key[0] >= 1000 }], [true, true])
 sealed_pedestal = [1457, 4, "A"]
 check("a pedestal of the Sealed Chamber the world's story emptied stays full for a player who never looted it",
-      MGQ_MpStoryState.mix([[], [], { sealed_pedestal => true }], [[], [], {}], rewards::CHESTS)[2].key?(sealed_pedestal), false)
+      MGQ_MpStoryState.mix([[], [], { sealed_pedestal => true }], [[], [], {}], party_chests)[2].key?(sealed_pedestal), false)
 
 # The game's Library Flags, "Library Flag: ..." and the untranslated rest, which translations differ
 # in setting, so no event's marks may hold one.
 library_flags = [201..420, 5201..5600]
+side_events = reviewed_rows("side_events")
 check("no event where the sides differ is marked by a Library Flag",
-      rewards::GROUPS.map { |group| group[:marks] }.flatten(2).select { |mark| mark[0] == :s && library_flags.any? { |range| range.include?(mark[1]) } }, [])
+      side_events.map { |row| row["marks"] }.flatten(1).flatten(1).select { |mark| mark[0] == "s" && library_flags.any? { |range| range.include?(mark[1]) } }, [])
 check("so the Strategy Conference is marked by its warp switch and Alice's adult form alone",
-      rewards::GROUPS.find { |group| group[:alice][:actors].include?(34) }[:marks], [[[:s, 5091], [:s, 7089]]])
+      side_events.find { |row| row["alice"]["companions"].include?(34) }["marks"], [[["s", 5091], ["s", 7089]]])
 switch_names = Array.new(5600, "")
 switch_names[2922] = "Library Door"
 switch_names[5249] = "Library Flag: Magical Academy"

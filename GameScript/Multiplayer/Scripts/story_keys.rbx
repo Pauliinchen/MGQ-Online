@@ -2,7 +2,8 @@
 #  story_keys.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Built a Classic party's table anew once the chest flags came with the story mapping
+#      Paulinchen  2026-10-28: Asked the DLL for a Classic party's table, which it builds from the events database and the story mapping
+#                            - Built a Classic party's table anew once the chest flags came with the story mapping
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
@@ -77,6 +78,13 @@ module MGQ_MpStoryKeys
 
   # A Classic party's table, built once it is first needed.
   @classic = nil
+
+  # Whether the DLL was asked for the Classic party's table.
+  @classic_asked = false
+
+  # The serial of the rewards a party member catches up with that the Classic party's table was
+  # asked at.
+  @classic_serial = nil
 
   # Where the writes recorded go: :raid, :classic or nil for nowhere.
   @recording = nil
@@ -164,18 +172,22 @@ module MGQ_MpStoryKeys
     log("recorded #{kept.size} of the #{unsorted.size} writes made before the story mapping came") unless unsorted.empty?
   end
 
-  # A Classic party's table, built by the DLL from the game's database and the chest flags that
-  # came with the story mapping (MGQ_MpStoryState.rewards), again once other ones came.
+  # A Classic party's table, built by the DLL from the game's counts in its events database and the
+  # chest flags of the story mapping it holds (its events database's before one came), asked once
+  # the bridge is open and again once the rewards a party member catches up with changed.
   #
   # @return [Table, nil] The table, nil while the DLL builds none.
   def self.classic_table
-    return @classic if @classic && @classic_serial == MGQ_MpStoryState.rewards_serial
+    serial = MGQ_MpStoryState.rewards_serial
+    return @classic if @classic_asked && @classic_serial == serial
+    return nil unless MGQ_Multiplayer::Bridge.open?
 
-    flags = MGQ_MpStoryState.chest_flags
-    @classic_serial = MGQ_MpStoryState.rewards_serial
-    hash = MGQ_Multiplayer::Bridge.call(CLASSIC_TOPIC, "switches" => $data_system.switches.size, "variables" => $data_system.variables.size,
-                                                       "companions" => $data_actors ? $data_actors.size : 1000, "chest_flags" => flags)
+    hash = MGQ_Multiplayer::Bridge.call(CLASSIC_TOPIC)
+    @classic_asked = true
+    @classic_serial = serial
     @classic = hash ? table_of(hash) : nil
+    log("the DLL builds no Classic party's table, so a Classic party shares no story") unless @classic
+    @classic
   rescue => e
     log_once(:classic_table, "building the Classic party's table failed: #{e.class}: #{e.message}")
     nil

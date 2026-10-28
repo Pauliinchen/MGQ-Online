@@ -2,7 +2,12 @@
 //  StoryTopicsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Checked whether a story event leaves the part before the relay placed the player
+//      Paulinchen  2026-10-28: Checked the relay mirror at the next start, with the relay unreachable, of another relay and without a place to write
+//                            - Built a Classic party's table from the events database and the chest flags of the mapping held
+//                            - Read the events of a mod folder without the events database
+//                            - Handed the topics the event source alone
+//                            - Read the events through an event source
+//                            - Checked whether a story event leaves the part before the relay placed the player
 //                            - Checked the mapping a Classic world fetches and the rewards a party member catches up with
 //                            - Checked that the catch-up reads the tables the mapping came with
 //      Paulinchen  2026-10-23: Created
@@ -17,11 +22,16 @@ using System.Text;
 using System.Text.Json;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Data.Events;
 using MGQOnline.Game.Events;
 using MGQOnline.Game.Events.Data;
+using MGQOnline.Game.Tests.Events;
 using MGQOnline.Game.Topics;
 using MGQParadox.Multiplayer.Network.World;
 using MGQParadox.Multiplayer.Tests.Network.World;
+using MGQParadox.Multiplayer.Tests.Topics;
+using MGQParadox.Multiplayer.Topics;
+using static MGQOnline.Game.Tests.Events.TinyGame;
 
 namespace MGQParadox.Multiplayer.Tests;
 
@@ -159,16 +169,126 @@ public sealed class StoryTopicsTests
     }
 
     /// <summary>
-    /// Asserts that a Classic party's table shares every switch but those each player keeps.
+    /// Asserts that a Classic party's table is built from the events database: one class per switch
+    /// the game has, every one shared but those each player keeps and the chest flags.
     /// </summary>
     [Fact]
     public void ClassicTable_KeepsEachPlayersOwnOutOfTheShared()
     {
-        RubyHash table = Call(StoryTopics.ClassicTopic, new RubyHash { { "switches", 8000 }, { "variables", 4000 }, { "companions", 600 }, { "chest_flags", new RubyArray { 7102 } } }).AsHash();
+        GameEvents events = TinyEvents.Of(new TinyGame().SwitchName(120, "Bridge repaired").Event(1, C(126, 5, 0, 0, 1), C(121, 40, 40, 0), C(123, "A", 0)));
+        _topics.Events = () => events;
+
+        RubyHash table = Call(StoryTopics.ClassicTopic, RubyNil.Value).AsHash();
         byte[] switches = table["switches"].AsBytes().ToArray();
 
-        Assert.Equal((8000, 1, 0, 8, 129), (switches.Length, switches[7096], switches[100], switches[7102], switches[4]));
+        Assert.Equal((121, 1, 0, 8, 129), (switches.Length, switches[120], switches[100], switches[40], switches[4]));
         Assert.Equal(1L, table["self_default"].AsLong());
+    }
+
+    /// <summary>
+    /// Asserts that a Classic party's table takes the chest flags of the mapping held, the reviewed
+    /// ones, over those of the events database.
+    /// </summary>
+    [Fact]
+    public void ClassicTable_TakesTheChestFlagsOfTheMappingHeld()
+    {
+        GameEvents events = TinyEvents.Of(new TinyGame().SwitchName(120, "Bridge repaired").Event(1, C(126, 5, 0, 0, 1), C(121, 40, 40, 0), C(123, "A", 0)));
+        _topics.Events = () => events;
+        _topics.FetchMapping = (_, _) => JsonDocument.Parse("""{"rev": 4, "tables": {"chest_flags": [{"switch": 30}]}, "index": null}""");
+
+        Call(StoryTopics.MappingTopic, "w1");
+        Drain(1);
+        Drain(2);
+        byte[] switches = Call(StoryTopics.ClassicTopic, RubyNil.Value).AsHash()["switches"].AsBytes().ToArray();
+
+        Assert.Equal((8, 1), (switches[30], switches[40]));
+    }
+
+    /// <summary>
+    /// Asserts that a fetch that brought the mapping is kept in the relay mirror, so the next start
+    /// names its revision to the relay and keeps the table when it stayed the same.
+    /// </summary>
+    [Fact]
+    public void Mirror_HandsTheMappingToTheNextStart()
+    {
+        using var game = new TempFolder();
+        GameEvents events = MirroredEvents(game);
+        _topics.Events = () => events;
+        Start(_context, 1);
+        events.Store.Dispose();
+        var context = new BridgeContext(1, new QuietLog());
+        var fetches = new List<long?>();
+        GameEvents next = MirroredEvents(game);
+        Restarted(context, next, "ws://relay.test", known =>
+        {
+            fetches.Add(known);
+            return """{"rev": 7, "same": true}""";
+        });
+        Start(context, 1);
+        RubyValue table = Call(context, StoryTopics.ClassesTopic, RubyNil.Value);
+        next.Store.Dispose();
+
+        Assert.Equal([null], _fetches);
+        Assert.Equal([7], fetches);
+        Assert.Equal(7L, table.AsHash()["rev"].AsLong());
+    }
+
+    /// <summary>
+    /// Asserts that the mapping the relay mirror holds is the table while the relay cannot be reached.
+    /// </summary>
+    [Fact]
+    public void Mirror_HoldsTheMappingWhileTheRelayIsUnreachable()
+    {
+        using var game = new TempFolder();
+        GameEvents events = MirroredEvents(game);
+        _topics.Events = () => events;
+        Start(_context, 1);
+        events.Store.Dispose();
+        var context = new BridgeContext(1, new QuietLog());
+        GameEvents next = MirroredEvents(game);
+        Restarted(context, next, "ws://relay.test", _ => throw new DirectoryException(null, "the relay cannot be reached"));
+        Start(context, 1);
+        RubyValue table = Call(context, StoryTopics.ClassesTopic, RubyNil.Value);
+        next.Store.Dispose();
+
+        Assert.Equal(7L, table.AsHash()["rev"].AsLong());
+    }
+
+    /// <summary>
+    /// Asserts that the mapping of another relay is not taken from the mirror but fetched whole, as
+    /// is every mapping where the game cannot write a mirror.
+    /// </summary>
+    [Fact]
+    public void Mirror_OfAnotherRelayOrNoneFetchesTheMappingWhole()
+    {
+        using var game = new TempFolder();
+        GameEvents events = MirroredEvents(game);
+        _topics.Events = () => events;
+        Start(_context, 1);
+        events.Store.Dispose();
+        var fetches = new List<long?>();
+        string Fetched(long? known)
+        {
+            fetches.Add(known);
+            return Mapping().GetRawText();
+        }
+
+        var elsewhere = new BridgeContext(1, new QuietLog());
+        GameEvents other = MirroredEvents(game);
+        Restarted(elsewhere, other, "ws://other.test", Fetched);
+        Start(elsewhere, 1);
+        other.Store.Dispose();
+        var unwritable = new BridgeContext(1, new QuietLog());
+        string eventsPath = Path.Combine(game.Path, EventSchema.GamePath);
+        var withoutMirror = new GameEvents(() => EventStore.Open(eventsPath, Path.Combine(game.Path, "missing", "story.db")), () => new GameFolderFiles(game.Path), _ => { });
+        Restarted(unwritable, withoutMirror, "ws://relay.test", Fetched);
+        Start(unwritable, 1);
+        RubyValue table = Call(unwritable, StoryTopics.ClassesTopic, RubyNil.Value);
+        bool hasMirror = withoutMirror.Store.HasMirror;
+        withoutMirror.Store.Dispose();
+
+        Assert.Equal([null, null], fetches);
+        Assert.Equal((7L, false), (table.AsHash()["rev"].AsLong(), hasMirror));
     }
 
     /// <summary>
@@ -180,7 +300,8 @@ public sealed class StoryTopicsTests
     public void LeavesPart_HoldsAnyWriteOfThePartBeforeThePlayerIsPlaced()
     {
         using var game = new TempFolder();
-        _topics.Catalog = () => new EventCatalog(GameData.OfFolder(game.Path));
+        var events = new GameEvents(() => EventStore.Open(Path.Combine(game.Path, EventSchema.GamePath)), () => new GameFolderFiles(game.Path), _ => { });
+        _topics.Events = () => events;
         RubyHash Ask(int code, params RubyValue[] parameters) =>
             Call(StoryTopics.LeavesPartTopic, new RubyHash { { "list", new RubyArray { new RubyArray { code, 0, new RubyArray(parameters) }, new RubyArray { 0, 0, new RubyArray() } } } }).AsHash();
 
@@ -212,15 +333,70 @@ public sealed class StoryTopicsTests
     }
 
     /// <summary>
+    /// Writes a tiny game's events database into a game folder and opens it with the relay mirror
+    /// beside it.
+    /// </summary>
+    /// <param name="game">The game folder.</param>
+    /// <returns>The game's events.</returns>
+    private static GameEvents MirroredEvents(TempFolder game)
+    {
+        string events = Path.Combine(game.Path, EventSchema.GamePath);
+        if (!File.Exists(events))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(events)!);
+            TinyEvents.Write(new TinyGame().Event(1, C(121, 451, 451, 0)), events);
+        }
+
+        return new GameEvents(() => EventStore.Open(events, Path.Combine(game.Path, MirrorSchema.GamePath)), () => new GameFolderFiles(game.Path), _ => { });
+    }
+
+    /// <summary>
+    /// Registers the story's topics anew on another context, as the game's next start does.
+    /// </summary>
+    /// <param name="context">The context.</param>
+    /// <param name="events">The game's events.</param>
+    /// <param name="relay">The relay of world w1.</param>
+    /// <param name="fetch">Answers a fetch, given the revision named.</param>
+    private static void Restarted(BridgeContext context, GameEvents events, string relay, Func<long?, string> fetch)
+    {
+        StoryTopics topics = StoryTopics.Register(context, new WorldSession());
+        topics.RelayOf = id => id == "w1" ? new Uri(relay) : null;
+        topics.Run = work => work();
+        topics.Events = () => events;
+        topics.FetchMapping = (_, known) => JsonDocument.Parse(fetch(known));
+    }
+
+    /// <summary>
+    /// Enters world w1 and drains two frames, which fetch the mapping and take its table.
+    /// </summary>
+    /// <param name="context">The context.</param>
+    /// <param name="frame">The first frame.</param>
+    private static void Start(BridgeContext context, long frame)
+    {
+        Call(context, StoryTopics.EnterTopic, new RubyHash { { "world", "w1" }, { "fresh", false }, { "level", RubyNil.Value } });
+        Drain(context, frame);
+        Drain(context, frame + 1);
+    }
+
+    /// <summary>
     /// Calls a topic and reads the value it answers.
     /// </summary>
     /// <param name="topic">The topic.</param>
     /// <param name="request">The request.</param>
     /// <returns>The value, nil for no reply.</returns>
-    private RubyValue Call(string topic, RubyValue request)
+    private RubyValue Call(string topic, RubyValue request) => Call(_context, topic, request);
+
+    /// <summary>
+    /// Calls a topic of a context and reads the value it answers.
+    /// </summary>
+    /// <param name="context">The context.</param>
+    /// <param name="topic">The topic.</param>
+    /// <param name="request">The request.</param>
+    /// <returns>The value, nil for no reply.</returns>
+    private static RubyValue Call(BridgeContext context, string topic, RubyValue request)
     {
         byte[] buffer = new byte[256 * 1024];
-        int length = _context.Call(Encoding.UTF8.GetBytes(topic), request.IsNil ? [] : RubyMarshal.Write(request), buffer);
+        int length = context.Call(Encoding.UTF8.GetBytes(topic), request.IsNil ? [] : RubyMarshal.Write(request), buffer);
         if (length == 0)
         {
             return RubyNil.Value;
@@ -236,10 +412,18 @@ public sealed class StoryTopicsTests
     /// </summary>
     /// <param name="frame">The frame.</param>
     /// <returns>Each event's topic and payload.</returns>
-    private List<(string Topic, RubyValue Payload)> Drain(long frame)
+    private List<(string Topic, RubyValue Payload)> Drain(long frame) => Drain(_context, frame);
+
+    /// <summary>
+    /// Drains a frame of a context.
+    /// </summary>
+    /// <param name="context">The context.</param>
+    /// <param name="frame">The frame.</param>
+    /// <returns>Each event's topic and payload.</returns>
+    private static List<(string Topic, RubyValue Payload)> Drain(BridgeContext context, long frame)
     {
         byte[] buffer = new byte[256 * 1024];
-        int length = _context.Drain(frame, buffer);
+        int length = context.Drain(frame, buffer);
         return length == 0 ? [] : [.. RubyMarshal.Read(buffer.AsSpan(0, length)).AsArray().Select(entry => (entry.AsArray()[0].AsText(), entry.AsArray()[1]))];
     }
 

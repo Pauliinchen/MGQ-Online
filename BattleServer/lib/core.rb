@@ -2,6 +2,7 @@
 #  core.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Handed the core the game data's fingerprint after the handshake
 #      Paulinchen  2026-10-23: Kept why the core is missing, for the battles the server refuses without it
 #                            - Created
 #
@@ -21,6 +22,10 @@ module Core
 
   # The topic of the core's log lines, which the drain hands over as events.
   LOG_TOPIC = "log"
+
+  # The topic that hands the core the game data's fingerprint, which it checks the events database
+  # against before it derives the story mapping's index from it.
+  GAME_DATA_TOPIC = "core.game_data"
 
   # What the server says once it starts without the core.
   REFUSING = "the server refuses MGQ Online's battles"
@@ -63,8 +68,8 @@ module Core
       nil
     end
 
-    # Shakes hands with the core, the first call into it, and writes its log lines into MGQ
-    # Online's log from then on.
+    # Shakes hands with the core, the first call into it, writes its log lines into MGQ Online's
+    # log from then on and hands it the game data's fingerprint.
     #
     # @param backend [#open, #call, #reply, #drain, nil] The core's functions, see load.
     # @param log [IO] Where the server's log goes.
@@ -73,7 +78,10 @@ module Core
       return false unless backend
 
       take_log_lines
-      return true if MGQ_Multiplayer::Bridge.open(backend)
+      if MGQ_Multiplayer::Bridge.open(backend)
+        hand_game_data
+        return true
+      end
 
       @missing = "the core library did not shake hands"
       log.puts("#{@missing}: #{REFUSING}")
@@ -106,6 +114,13 @@ module Core
       @missing = why
       log.puts("#{warn ? 'warning: ' : ''}#{why}: #{REFUSING}")
       nil
+    end
+
+    # Hands the core the fingerprint of the game data MGQ Online read, when it is loaded.
+    def hand_game_data
+      return unless defined?(MGQ_MpWorld::GameData)
+
+      MGQ_Multiplayer::Bridge.call(GAME_DATA_TOPIC, MGQ_MpWorld::GameData.fingerprint)
     end
 
     # Hands the core's log lines in each drain to MGQ Online's log, once per process.

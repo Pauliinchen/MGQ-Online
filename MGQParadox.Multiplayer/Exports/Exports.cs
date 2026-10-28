@@ -2,6 +2,7 @@
 //  Exports.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Logged the SQLite version the DLL links
 //      Paulinchen  2026-10-23: Started the updater under Wine too
 //                            - Deleted the logs of earlier days as the DLL starts
 //                            - Logged the crashes Windows recorded since the previous start and added mp_memory_usage
@@ -32,6 +33,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using MGQOnline.Data.Sqlite;
 using MGQParadox.Multiplayer.Mods;
 using MGQParadox.Multiplayer.Windows;
 
@@ -61,6 +63,7 @@ internal static unsafe partial class Exports
 
             var version = typeof(Exports).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
             Log.Write($"--- multiplayer {version} started ---");
+            Log.Write($"the events database reader runs sqlite {SqliteConnection.LibraryVersion}");
             Log.DeleteOtherDays();
 
             if (NativeMethods.WineVersion() is { } wine)

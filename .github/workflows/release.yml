@@ -52,6 +52,14 @@ jobs:
       - name: Test the bridge
         run: dotnet run --project MGQOnline.Bridge.Tests
 
+      - name: Test the events database
+        env:
+          DOTNET_ROOT_X86: C:\Program Files (x86)\dotnet
+        run: dotnet run --project MGQOnline.Data.Tests
+
+      - name: Test the events database generator
+        run: dotnet run --project MGQOnline.Data.Generator.Tests
+
       - name: Test the game rules
         run: dotnet run --project MGQOnline.Game.Tests
 
@@ -72,7 +80,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release download --repo Pauliinchen/MGQ-Paradox-Mod-Collection --pattern 0_ModConfigRemake.rb --dir package/Patch --clobber
 
-      # The runner's Visual Studio brings the C++ linker NativeAOT needs. The DLL's publish also
+      # The runner's Visual Studio brings the C++ linker NativeAOT needs and the compiler that builds
+      # SQLite from its amalgamation into the DLL (MGQOnline.Data/native). The DLL's publish also
       # publishes Helper.exe (NativeAOT win-x86, the update, the restart and the parked mods'
       # watchdog) with the same version into the package.
       - name: Publish (Release publishes also zip the package)

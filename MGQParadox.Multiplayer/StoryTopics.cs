@@ -2,7 +2,11 @@
 //  StoryTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Told whether a story event would move a player behind past the end of their part
+//      Paulinchen  2026-10-28: Kept the story mapping in the relay mirror and read it back at the first fetch
+//                            - Built a Classic party's table from the counts of the events database and the chest flags of the mapping held
+//                            - Followed the chain of a story event from the events database, from the keys of its list there
+//                            - Followed the chain of a story event over the event source for each request
+//                            - Told whether a story event would move a player behind past the end of their part
 //                            - Answered the telling machine, which takes the relay's telling lock
 //                            - Told the scripts the teller whose ended telling the game has yet to take the track of
 //                            - Fetched the mapping in a Classic world too, and handed the scripts the rewards a party member catches up with
@@ -20,6 +24,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Data.Events;
 using MGQOnline.Game.Catchup;
 using MGQOnline.Game.Events;
 using MGQOnline.Game.Events.Data;
@@ -86,7 +91,7 @@ internal sealed class StoryTopics : IStoryTrackHost
     public const string ClassesTopic = "story.classes";
 
     /// <summary>
-    /// The topic that builds a Classic party's table: {"switches", "variables", "companions", "chest_flags"}.
+    /// The topic that builds a Classic party's table from the events database, see <see cref="ClassicOf"/>.
     /// </summary>
     public const string ClassicTopic = "story.classic_table";
 
@@ -281,7 +286,7 @@ internal sealed class StoryTopics : IStoryTrackHost
     /// <summary>
     /// Gets or sets how the game's events are found; tests hand out their own.
     /// </summary>
-    internal Func<EventCatalog> Catalog { get; set; } = () => EventTopics.Current;
+    internal Func<GameEvents> Events { get; set; } = () => GameEvents.Current;
 
     /// <summary>
     /// Gets or sets how a fetch runs; tests run it at once.
@@ -338,7 +343,7 @@ internal sealed class StoryTopics : IStoryTrackHost
         });
         context.Register(TakeTopic, (_, _) => topics._track.Take() is { } take ? TakeOf(take) : null);
         context.Register(ClassesTopic, (_, _) => topics._table is { } table ? TableOf(table) : null);
-        context.Register(ClassicTopic, (_, request) => ClassicOf(request.AsHash()));
+        context.Register(ClassicTopic, (_, _) => topics.ClassicOf());
         context.Register(TellingStartTopic, (_, request) => topics.TellingStart(request.AsHash()));
         context.Register(TellingCommandTopic, (_, _) => topics.TellingCommandOf());
         context.Register(TellingEndTopic, (_, _) =>
@@ -390,9 +395,9 @@ internal sealed class StoryTopics : IStoryTrackHost
     /// <returns>The answer.</returns>
     private RubyHash LeavesPart(RubyHash request)
     {
-        EventCatalog catalog = Catalog();
-        (IReadOnlyList<EventCommand>? list, _) = EventTopics.ListOf(catalog, request);
-        if (list is null)
+        GameEvents game = Events();
+        IEventSource events = game.Source;
+        if (EventTopics.ListOf(events, game.Store, request) is not { } found)
         {
             return new RubyHash { { "unknown", true } };
         }
@@ -400,7 +405,7 @@ internal sealed class StoryTopics : IStoryTrackHost
         var state = new EventTopics.RequestState(request["values"] as RubyHash);
         int map = request["map"] is RubyInteger mapId ? mapId.AsInt() : 0;
         int eventId = request["event"] is RubyInteger id ? id.AsInt() : 0;
-        IReadOnlyList<VariableSet> sets = catalog.Chains.VariableSetsOf(list, map, eventId, state);
+        IReadOnlyList<VariableSet> sets = new EventChain(events, new EventCommandIndex(events)).VariableSetsOf(found.Keys, map, eventId, state);
         if (state.Needs() is { } needs)
         {
             return needs;
@@ -509,12 +514,28 @@ internal sealed class StoryTopics : IStoryTrackHost
     }
 
     /// <summary>
-    /// Builds a Classic party's table.
+    /// Builds a Classic party's table from the game's counts of switches, variables and actors (a
+    /// companion each) in the events database's meta rows, with the chest flags of the mapping held,
+    /// or the events database's while none is.
     /// </summary>
-    /// <param name="request">{"switches", "variables", "companions", "chest_flags"}.</param>
-    /// <returns>The table, see <see cref="TableOf"/>.</returns>
-    private static RubyHash ClassicOf(RubyHash request) => TableOf(ClassicStoryTable.Build(
-        request["switches"].AsInt(), request["variables"].AsInt(), request["companions"].AsInt(), request["chest_flags"].AsArray().Select(flag => flag.AsInt()).ToList()));
+    /// <remarks>
+    /// The mapping's chest flags are the reviewed ones, which differ from the generated ones the
+    /// events database holds.
+    /// </remarks>
+    /// <returns>The table, see <see cref="TableOf"/>; nil without an events database to read.</returns>
+    private RubyValue ClassicOf()
+    {
+        EventStore store = Events().Store;
+        if (store.Meta is not { } meta)
+        {
+            Log.Write($"story track: a Classic party's table is not built: {store.Problem}");
+            return RubyNil.Value;
+        }
+
+        int Count(string name) => (int)meta.Counts.GetValueOrDefault(name);
+        IReadOnlyList<int> chestFlags = _table is { } table ? table.Catchup.ChestFlags : store.ChestFlags();
+        return TableOf(ClassicStoryTable.Build(Count("switches"), Count("variables"), Count("actors"), chestFlags));
+    }
 
     /// <summary>
     /// Reads the player's level.
@@ -729,12 +750,28 @@ internal sealed class StoryTopics : IStoryTrackHost
     }
 
     /// <summary>
-    /// Fetches the mapping and hands its table to the next frame, or times the next try.
+    /// Fetches the mapping and hands its table to the next frame, or times the next try. While no
+    /// table is held, the relay mirror's goes to the next frame first and its revision to the relay,
+    /// so a relay that answers the same or none still leaves the table; a fetch that brought rows
+    /// is kept in the mirror.
     /// </summary>
     /// <param name="relay">The relay.</param>
     /// <param name="known">The revision held, <see langword="null"/> for none.</param>
     private void FetchFrom(Uri relay, long? known)
     {
+        EventStore store = Events().Store;
+        StoryMirror? mirror = store.Mirror;
+        var stamp = new MirrorStamp(relay.GetLeftPart(UriPartial.Authority), store.Meta?.Build.Fingerprint ?? string.Empty);
+        if (known is null && mirror is not null && Mirrored(mirror, stamp) is { } mirrored)
+        {
+            lock (_gate)
+            {
+                _fetched = mirrored;
+            }
+
+            known = mirrored.Rev;
+        }
+
         StoryTable? table = null;
         bool failed = false;
         try
@@ -745,6 +782,12 @@ internal sealed class StoryTopics : IStoryTrackHost
             if (same)
             {
                 Log.Write($"story track: the story mapping stayed at revision {rev}");
+            }
+            else if (mirror is not null)
+            {
+                Log.Write(mirror.Write(document.RootElement, stamp, DateTime.UtcNow) is { } problem
+                    ? $"story track: {problem}"
+                    : $"story track: kept the story mapping at revision {rev} in the relay mirror");
             }
         }
         catch (Exception ex) when (ex is DirectoryException or JsonException or InvalidOperationException)
@@ -760,6 +803,39 @@ internal sealed class StoryTopics : IStoryTrackHost
             _failures = failed ? _failures + 1 : 0;
             // A mapping that stayed or failed waits, so a relay telling a newer revision is not asked every frame.
             _fetchDelay = failed ? FetchRetryFrames[Math.Min(_failures, FetchRetryFrames.Length) - 1] : table is null ? FetchRetryFrames[^1] : 0;
+        }
+    }
+
+    /// <summary>
+    /// Reads the mapping the relay mirror holds for a relay and the game data.
+    /// </summary>
+    /// <param name="mirror">The mirror.</param>
+    /// <param name="stamp">The relay and the game data.</param>
+    /// <returns>Its table, <see langword="null"/> for none.</returns>
+    private static StoryTable? Mirrored(StoryMirror mirror, MirrorStamp stamp)
+    {
+        MirrorRead read = mirror.Read(stamp);
+        if (read.Note is { } note)
+        {
+            Log.Write($"story track: {note}");
+        }
+
+        if (read.Answer is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(read.Answer);
+            StoryTable table = StoryMapping.Read(document.RootElement);
+            Log.Write($"story track: read the story mapping at revision {table.Rev} from the relay mirror");
+            return table;
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        {
+            Log.Write($"story track: the relay mirror holds no story mapping that reads: {ex.Message}");
+            return null;
         }
     }
 

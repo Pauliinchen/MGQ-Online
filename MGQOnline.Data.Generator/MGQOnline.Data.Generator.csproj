@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The events database's generator: a console tool run by hand on the developer's PC, which reads
+       the untranslated game's data in full and writes Patch/Multiplayer/Data/events.db, see
+       "Events database" in docs/DEVELOPER.md. It runs 64-bit and JIT, never in the game. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>MGQOnline.Data.Generator</RootNamespace>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MGQOnline.Data.Generator.Tests" />
+    <InternalsVisibleTo Include="MGQOnline.Game.Tests" />
+    <InternalsVisibleTo Include="MGQOnline.ServerCore.Tests" />
+    <InternalsVisibleTo Include="MGQParadox.Multiplayer.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Only for its native SQLite library, which the JIT run loads where the publish links SQLite in. -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MGQOnline.Bridge\MGQOnline.Bridge.csproj" />
+    <ProjectReference Include="..\MGQOnline.Data\MGQOnline.Data.csproj" />
+    <ProjectReference Include="..\MGQOnline.Game\MGQOnline.Game.csproj" />
+  </ItemGroup>
+
+</Project>

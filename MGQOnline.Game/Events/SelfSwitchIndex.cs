@@ -2,6 +2,8 @@
 //  SelfSwitchIndex.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Derived the index from the events database
+//                            - Derived the index from an event source
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -11,6 +13,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
+using MGQOnline.Data.Events;
 using MGQOnline.Game.Events.Data;
 
 namespace MGQOnline.Game.Events;
@@ -60,11 +63,86 @@ public sealed partial record SelfSwitchIndex(IReadOnlyList<(int Map, int Event)>
     /// The rows of <c>events</c> for a whole event, a whole map or a whole common event (letter "*")
     /// apply, a map's before an event's; a row for one letter is left to whoever reads the rows.
     /// </summary>
-    /// <param name="data">The game's data.</param>
+    /// <param name="source">The game's events.</param>
     /// <param name="keys">The rows of <c>keys</c>.</param>
     /// <param name="events">The rows of <c>events</c>.</param>
     /// <returns>The index.</returns>
-    public static SelfSwitchIndex Derive(GameData data, IEnumerable<StoryKeyRow> keys, IEnumerable<StoryEventRow> events)
+    public static SelfSwitchIndex Derive(IEventSource source, IEnumerable<StoryKeyRow> keys, IEnumerable<StoryEventRow> events)
+    {
+        (SortedSet<long> switches, SortedSet<long> variables) = SharedKeys(keys);
+        HashSet<long> commons = SharedCommons(source, switches, variables);
+        var shared = new SortedSet<(int Map, int Event)>();
+        var maps = new Dictionary<int, IReadOnlyList<int>>();
+        foreach (int map in source.MapIds)
+        {
+            IReadOnlyList<int> eventIds = source.EventIdsOf(map);
+            maps[map] = eventIds;
+            foreach (int eventId in eventIds)
+            {
+                if (Enumerable.Range(0, source.PageCountOf(map, eventId)).Any(page => SharesKeys(source.PageKeys(map, eventId, page), switches, variables, commons)))
+                {
+                    shared.Add((map, eventId));
+                }
+            }
+        }
+
+        ApplyRows(events.ToList(), shared, commons, map => maps.GetValueOrDefault(map) ?? []);
+        return new SelfSwitchIndex([.. shared], [.. commons.Order()]);
+    }
+
+    /// <summary>
+    /// Derives the index from the mapping's rows and the events database, as
+    /// <see cref="Derive(IEventSource, IEnumerable{StoryKeyRow}, IEnumerable{StoryEventRow})"/> does
+    /// from the game's events, by the database's rows of what each list reads, writes and calls.
+    /// </summary>
+    /// <param name="store">The events database.</param>
+    /// <param name="keys">The rows of <c>keys</c>.</param>
+    /// <param name="events">The rows of <c>events</c>.</param>
+    /// <returns>The index.</returns>
+    public static SelfSwitchIndex Derive(EventStore store, IEnumerable<StoryKeyRow> keys, IEnumerable<StoryEventRow> events)
+    {
+        (SortedSet<long> switches, SortedSet<long> variables) = SharedKeys(keys);
+        IReadOnlyList<ListRow> touching = store.ListsTouching(IdsOf(switches), IdsOf(variables));
+        var commons = new HashSet<long>();
+        var pending = new Queue<long>();
+        foreach (ListRow list in touching)
+        {
+            if (list is { Kind: ListKind.Common, CommonId: { } id } && !OwnCommonEvents.Contains(id) && commons.Add(id))
+            {
+                pending.Enqueue(id);
+            }
+        }
+
+        while (pending.TryDequeue(out long id))
+        {
+            foreach (int caller in store.CallersOf((int)id))
+            {
+                if (!OwnCommonEvents.Contains(caller) && commons.Add(caller))
+                {
+                    pending.Enqueue(caller);
+                }
+            }
+        }
+
+        var shared = new SortedSet<(int Map, int Event)>();
+        foreach (ListRow list in touching.Concat(store.ListsCalling(IdsOf(commons))))
+        {
+            if (list is { Kind: ListKind.Page, MapId: { } map, EventId: { } eventId })
+            {
+                shared.Add((map, eventId));
+            }
+        }
+
+        ApplyRows(events.ToList(), shared, commons, map => [.. store.MapEvents(map).Select(mapEvent => mapEvent.EventId)]);
+        return new SelfSwitchIndex([.. shared], [.. commons.Order()]);
+    }
+
+    /// <summary>
+    /// Reads the keys the mapping shares.
+    /// </summary>
+    /// <param name="keys">The rows of <c>keys</c>.</param>
+    /// <returns>The shared switches and variables.</returns>
+    private static (SortedSet<long> Switches, SortedSet<long> Variables) SharedKeys(IEnumerable<StoryKeyRow> keys)
     {
         var switches = new SortedSet<long>();
         var variables = new SortedSet<long>();
@@ -76,63 +154,31 @@ public sealed partial record SelfSwitchIndex(IReadOnlyList<(int Map, int Event)>
             }
         }
 
-        var index = new EventCommandIndex(data);
-        HashSet<long> commons = SharedCommons(data, index, switches, variables);
-        var shared = new SortedSet<(int Map, int Event)>();
-        var maps = new Dictionary<int, GameMap>();
-        foreach (MapInfo info in data.Maps)
-        {
-            if (data.ReadMap(info.Id) is not { } map)
-            {
-                continue;
-            }
-
-            maps[map.Id] = map;
-            foreach (MapEvent mapEvent in map.Events.Values)
-            {
-                if (mapEvent.Pages.Select(ListKeys.Of).Any(page => page.Touches(switches, variables) || page.Calls.Any(commons.Contains)))
-                {
-                    shared.Add((map.Id, mapEvent.Id));
-                }
-            }
-        }
-
-        ApplyRows(events.ToList(), shared, commons, maps);
-        return new SelfSwitchIndex([.. shared], [.. commons.Order()]);
+        return (switches, variables);
     }
+
+    /// <summary>
+    /// Writes ids as the events database numbers them.
+    /// </summary>
+    /// <param name="ids">The ids, each a key of the mapping's pattern or a common event.</param>
+    /// <returns>The ids.</returns>
+    private static int[] IdsOf(IEnumerable<long> ids) => [.. ids.Where(id => id is > 0 and <= int.MaxValue).Select(id => (int)id)];
 
     /// <summary>
     /// Finds the common events that read or write a shared key, by themselves or through the
     /// common events they call.
     /// </summary>
-    /// <param name="data">The game's data.</param>
-    /// <param name="index">What each common event does by itself.</param>
+    /// <param name="source">The game's events.</param>
     /// <param name="switches">The shared switches.</param>
     /// <param name="variables">The shared variables.</param>
     /// <returns>The common events.</returns>
-    private static HashSet<long> SharedCommons(GameData data, EventCommandIndex index, SortedSet<long> switches, SortedSet<long> variables)
+    private static HashSet<long> SharedCommons(IEventSource source, SortedSet<long> switches, SortedSet<long> variables)
     {
-        var callers = new Dictionary<long, List<long>>();
         var found = new HashSet<long>();
         var pending = new Queue<long>();
-        for (long id = 1; id < data.CommonEvents.Count; id++)
+        foreach (long id in source.CommonIds)
         {
-            if (OwnCommonEvents.Contains(id) || index.Common(id) is not { } keys)
-            {
-                continue;
-            }
-
-            foreach (long called in keys.Calls)
-            {
-                if (!callers.TryGetValue(called, out List<long>? list))
-                {
-                    callers[called] = list = [];
-                }
-
-                list.Add(id);
-            }
-
-            if (keys.Touches(switches, variables) && found.Add(id))
+            if (!OwnCommonEvents.Contains(id) && source.CommonKeys(id) is { } keys && keys.Touches(switches, variables) && found.Add(id))
             {
                 pending.Enqueue(id);
             }
@@ -140,9 +186,9 @@ public sealed partial record SelfSwitchIndex(IReadOnlyList<(int Map, int Event)>
 
         while (pending.TryDequeue(out long id))
         {
-            foreach (long caller in callers.GetValueOrDefault(id) ?? [])
+            foreach (long caller in source.CallersOf(id))
             {
-                if (found.Add(caller))
+                if (!OwnCommonEvents.Contains(caller) && found.Add(caller))
                 {
                     pending.Enqueue(caller);
                 }
@@ -153,13 +199,25 @@ public sealed partial record SelfSwitchIndex(IReadOnlyList<(int Map, int Event)>
     }
 
     /// <summary>
+    /// Reports whether a page shares its event's self switches: it reads or writes a shared key, or
+    /// calls a common event that does.
+    /// </summary>
+    /// <param name="keys">The page's keys, <see langword="null"/> for none.</param>
+    /// <param name="switches">The shared switches.</param>
+    /// <param name="variables">The shared variables.</param>
+    /// <param name="commons">The common events that read or write a shared key.</param>
+    /// <returns>Whether it does.</returns>
+    private static bool SharesKeys(ListKeys? keys, SortedSet<long> switches, SortedSet<long> variables, HashSet<long> commons) =>
+        keys is not null && (keys.Touches(switches, variables) || keys.Calls.Exists(commons.Contains));
+
+    /// <summary>
     /// Applies the rows of <c>events</c> that name whole events, maps or common events.
     /// </summary>
     /// <param name="rows">The rows.</param>
     /// <param name="shared">The map events found, changed in place.</param>
     /// <param name="commons">The common events found, changed in place.</param>
-    /// <param name="maps">The maps read.</param>
-    private static void ApplyRows(List<StoryEventRow> rows, SortedSet<(int Map, int Event)> shared, HashSet<long> commons, Dictionary<int, GameMap> maps)
+    /// <param name="eventsOf">Lists the events of a map.</param>
+    private static void ApplyRows(List<StoryEventRow> rows, SortedSet<(int Map, int Event)> shared, HashSet<long> commons, Func<int, IReadOnlyList<int>> eventsOf)
     {
         IEnumerable<(StoryEventRow Row, Match Key)> parsed = rows.Select(row => (row, EventPattern().Match(row.Key))).Where(pair => pair.Item2.Success && pair.Item2.Groups["letter"].Value == "*");
         foreach ((StoryEventRow row, Match key) in parsed.OrderBy(pair => pair.Key.Groups["event"].Value == "*" ? 0 : 1))
@@ -174,7 +232,7 @@ public sealed partial record SelfSwitchIndex(IReadOnlyList<(int Map, int Event)>
 
             int map = int.Parse(key.Groups["map"].ValueSpan, CultureInfo.InvariantCulture);
             IEnumerable<int> named = key.Groups["event"].Value == "*"
-                ? maps.GetValueOrDefault(map)?.Events.Keys ?? []
+                ? eventsOf(map)
                 : [int.Parse(key.Groups["event"].ValueSpan, CultureInfo.InvariantCulture)];
             foreach (int eventId in named.ToList())
             {

@@ -2,7 +2,8 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Handed the story's last writes over and waited for the world room to send them as the game closes
+#      Paulinchen  2026-10-28: Stopped loading coop_story_rewards.rbx, world_catchup_data.rbx and battles_raid_freeze_data.rbx, which the events database and the relay replace
+#                            - Handed the story's last writes over and waited for the world room to send them as the game closes
 #                            - Wrote how the game closes once its scenes end, since its Main section ends the process before at_exit
 #                            - Named the text encodings, since the game has no Encoding constants
 #      Paulinchen  2026-10-24: Loaded world_overview_mods.rbx after world_overview_pages.rbx
@@ -172,9 +173,9 @@ module MGQ_Multiplayer
   # each other.
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_theme ui_layout ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
-    coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs coop_story_rewards story_state story_keys coop_story coop_castle
-    world world_mods world_mods_parking world_catchup_data world_story world_catchup world_catchup_exp world_opening world_difficulty world_gates world_save_distribution world_text world_screen world_save_export coop_choices
-    battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_raid_freeze_data battles_raid_freeze world_freeze battles_raid_tiers battles_coop_level_sync
+    coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs story_state story_keys coop_story coop_castle
+    world world_mods world_mods_parking world_story world_catchup world_catchup_exp world_opening world_difficulty world_gates world_save_distribution world_text world_screen world_save_export coop_choices
+    battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_raid_freeze world_freeze battles_raid_tiers battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live battles_served
     battles_balance_pvp battles_pvp battles_pvp_backline battles_duel battles_team
     trade ui_trade

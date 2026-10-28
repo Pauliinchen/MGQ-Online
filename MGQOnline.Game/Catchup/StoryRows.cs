@@ -137,9 +137,9 @@ public static class StoryRows
     /// same event's list.
     /// </summary>
     /// <param name="place">The one's place.</param>
-    /// <param name="index">The one's command index in its list.</param>
+    /// <param name="index">The one's command place in its list (see <see cref="CatchupJoin.Index"/>).</param>
     /// <param name="other">The other's place.</param>
-    /// <param name="otherIndex">The other's command index.</param>
+    /// <param name="otherIndex">The other's command place.</param>
     /// <returns>Whether it does.</returns>
     public static bool After(StoryPlace place, int index, StoryPlace other, int otherIndex)
     {

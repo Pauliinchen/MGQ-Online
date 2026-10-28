@@ -2,6 +2,7 @@
 #  core_check.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Required and showed the SQLite version each child runs
 #      Paulinchen  2026-10-23: Made up an id inside the sandbox
 #                            - Created
 #
@@ -113,8 +114,8 @@ module CoreCheck
       count = (ENV["CHECK_CHILDREN"] || 2).to_i
       rows = Array.new(count) { fork_child }.map { |child| Thread.new { watch(*child) } }.map(&:value)
       puts
-      puts("| Child | Outcome | Load ms | Handshake ms | Batch of #{BATCH_ENTRIES} ms | Drain ms | Log lines | Heap limit MB | VmSize MB | VmRSS MB | Threads |")
-      puts("|---|---|---|---|---|---|---|---|---|---|---|")
+      puts("| Child | Outcome | Load ms | Handshake ms | Batch of #{BATCH_ENTRIES} ms | Drain ms | Log lines | Heap limit MB | SQLite | VmSize MB | VmRSS MB | Threads |")
+      puts("|---|---|---|---|---|---|---|---|---|---|---|---|")
       rows.each { |row| puts("| #{row.join(' | ')} |") }
       exit(rows.all? { |row| row[1] == "works" } ? 0 : 1)
     ensure
@@ -171,12 +172,14 @@ module CoreCheck
 
       bridge = MGQ_Multiplayer::Bridge
       runtime = bridge.call("core.runtime")
+      return { error: "the core names no SQLite in core.runtime: #{runtime.inspect}" } unless runtime.is_a?(Hash) && runtime["sqlite"]
+
       id = bridge.call("id.random", { "length" => 8, "radix" => 36 })
       return { error: "the core made up no id: #{id.inspect}" } unless id.to_s =~ /\A[0-9a-z]{8}\z/
 
       batch_ms = timed { bridge.call!("batch", Array.new(BATCH_ENTRIES) { ["core.runtime", nil] }) }
       drain_ms = timed { bridge.frame }
-      CoreTimes::TIMES.merge(batch_ms: batch_ms, drain_ms: drain_ms, log_lines: MGQ_Multiplayer::Log.core_lines, heap_limit: runtime && runtime["heap_limit"])
+      CoreTimes::TIMES.merge(batch_ms: batch_ms, drain_ms: drain_ms, log_lines: MGQ_Multiplayer::Log.core_lines, heap_limit: runtime["heap_limit"], sqlite: runtime["sqlite"])
     rescue StandardError => e
       { error: "#{e.class}: #{e.message}" }
     end
@@ -198,7 +201,7 @@ module CoreCheck
       printer.join
       outcome = result["error"] || "works"
       [pid, outcome, result["load_ms"], result["handshake_ms"], result["batch_ms"], result["drain_ms"], result["log_lines"],
-       result["heap_limit"] && result["heap_limit"] / 1024**2, status[:VmSize] && status[:VmSize] / 1024, status[:VmRSS] && status[:VmRSS] / 1024, status[:Threads]]
+       result["heap_limit"] && result["heap_limit"] / 1024**2, result["sqlite"], status[:VmSize] && status[:VmSize] / 1024, status[:VmRSS] && status[:VmRSS] / 1024, status[:Threads]]
     end
 
     # Waits on a child, killing it after CHILD_SECONDS.

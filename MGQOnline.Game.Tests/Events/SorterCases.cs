@@ -2,6 +2,8 @@
 //  SorterCases.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Classified the cases' commands as the reader does
+//                            - Gave the cases' common events and names as an event source
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -98,19 +100,26 @@ internal static class SorterCases
     }
 
     /// <summary>
-    /// Reads commands from a case's rows.
+    /// Reads commands from a case's rows, classified as the game data's reader does.
     /// </summary>
     /// <param name="rows">The rows: code, indent and parameters of each.</param>
     /// <returns>The commands.</returns>
     public static EventCommand[] CommandsOf(JsonElement rows) =>
-        [.. rows.EnumerateArray().Select(row => new EventCommand(row[0].GetInt32(), row[1].GetInt32(), (RubyArray)ValueOf(row[2])))];
+        CommandClassifier.Classify([.. rows.EnumerateArray().Select(row => new RawCommand(row[0].GetInt32(), row[1].GetInt32(), (RubyArray)ValueOf(row[2])))]);
+
+    /// <summary>
+    /// Gives the common events a case followed and the names it looked at as the sorter reads them.
+    /// </summary>
+    /// <param name="found">The case.</param>
+    /// <returns>The source.</returns>
+    public static IEventSource SourceOf(JsonElement found) => new RecordedSource(CommonsOf(found), NamesOf(found));
 
     /// <summary>
     /// Reads the common events a case followed, by id.
     /// </summary>
     /// <param name="found">The case.</param>
     /// <returns>Each common event's commands.</returns>
-    public static Dictionary<long, EventCommand[]> CommonsOf(JsonElement found)
+    private static Dictionary<long, EventCommand[]> CommonsOf(JsonElement found)
     {
         var commons = new Dictionary<long, EventCommand[]>();
         if (found.TryGetProperty("commons", out JsonElement recorded) && recorded.ValueKind == JsonValueKind.Object)
@@ -132,7 +141,7 @@ internal static class SorterCases
     /// </summary>
     /// <param name="found">The case.</param>
     /// <returns>The names.</returns>
-    public static GameSystemNames NamesOf(JsonElement found) => new(Names(found, "names_s"), Names(found, "names_v"));
+    private static GameSystemNames NamesOf(JsonElement found) => new(Names(found, "names_s"), Names(found, "names_v"));
 
     /// <summary>
     /// Names a kind as the cases do.
@@ -244,5 +253,51 @@ internal static class SorterCases
             found.TryGetProperty(kind, out JsonElement values) && values.TryGetProperty(id.ToString(System.Globalization.CultureInfo.InvariantCulture), out JsonElement value)
                 ? value
                 : null;
+    }
+
+    /// <summary>
+    /// The common events and names a case recorded; it knows no maps.
+    /// </summary>
+    /// <param name="commons">The common events' commands, by id.</param>
+    /// <param name="names">The switch and variable names.</param>
+    private sealed class RecordedSource(Dictionary<long, EventCommand[]> commons, GameSystemNames names) : IEventSource
+    {
+        /// <inheritdoc />
+        public IReadOnlyList<int> MapIds => [];
+
+        /// <inheritdoc />
+        public IReadOnlyList<long> CommonIds => [.. commons.Keys.Order()];
+
+        /// <inheritdoc />
+        public IReadOnlyList<int> EventIdsOf(int map) => [];
+
+        /// <inheritdoc />
+        public int PageCountOf(int map, int eventId) => 0;
+
+        /// <inheritdoc />
+        public EventPage? Page(int map, int eventId, int page) => null;
+
+        /// <inheritdoc />
+        public ListKeys? PageKeys(int map, int eventId, int page) => null;
+
+        /// <inheritdoc />
+        public IReadOnlyList<EventCommand>? CommonList(long id) => commons.GetValueOrDefault(id);
+
+        /// <inheritdoc />
+        public ListKeys? CommonKeys(long id) => CommonList(id) is { } list ? ListKeys.Of(list) : null;
+
+        /// <inheritdoc />
+        public IReadOnlyList<long> CallersOf(long id) => [.. CommonIds.Where(caller => CommonKeys(caller)!.Calls.Contains(id))];
+
+        /// <inheritdoc />
+        public bool IsScratchSwitch(long id) => names.IsScratchSwitch(id);
+
+        /// <inheritdoc />
+        public bool IsScratchVariable(long id) => names.IsScratchVariable(id);
+
+        /// <inheritdoc />
+        public void ReadAhead(int map)
+        {
+        }
     }
 }

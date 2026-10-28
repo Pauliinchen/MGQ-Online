@@ -1,7 +1,9 @@
 //----------------------------------------------------------------
-//  EventCatalogTests.cs
+//  GameDataSourceTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Read ahead through the game data source
+//                            - Read the events through an event source
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -18,10 +20,10 @@ using static MGQOnline.Game.Tests.Events.TinyGame;
 namespace MGQOnline.Game.Tests.Events;
 
 /// <summary>
-/// Covers the catalog's read ahead on another thread over a tiny game: each file read once, a sort
-/// meanwhile waiting for it, and a failed read left to the sort.
+/// Covers the game data source's read ahead on another thread over a tiny game: each file read
+/// once, a sort meanwhile waiting for it, and a failed read left to the sort.
 /// </summary>
-public sealed class EventCatalogTests
+public sealed class GameDataSourceTests
 {
     /// <summary>
     /// How long a sort that should wait is given to finish wrongly.
@@ -41,13 +43,13 @@ public sealed class EventCatalogTests
     public void ReadAhead_ReadsEachFileOnce()
     {
         using var files = new WatchedFiles(Game());
-        var catalog = new EventCatalog(new GameData(files));
+        var source = new GameDataSource(new GameData(files));
 
-        catalog.ReadAhead(1);
-        EventKind kind = SortOf(catalog);
-        catalog.ReadAhead(1);
+        source.ReadAhead(1);
+        EventKind kind = SortOf(source);
+        source.ReadAhead(1);
 
-        Assert.Equal(SortOf(new EventCatalog(Game().Data())), kind);
+        Assert.Equal(SortOf(new GameDataSource(Game().Data())), kind);
         Assert.Equal(1, files.Reads(GameDataPaths.CommonEvents));
         Assert.Equal(1, files.Reads(GameDataPaths.Map(1)));
     }
@@ -61,17 +63,17 @@ public sealed class EventCatalogTests
     {
         CancellationToken cancel = TestContext.Current.CancellationToken;
         using var files = new WatchedFiles(Game()) { Held = GameDataPaths.CommonEvents };
-        var catalog = new EventCatalog(new GameData(files));
+        var source = new GameDataSource(new GameData(files));
 
-        Task ahead = Task.Run(() => catalog.ReadAhead(1), cancel);
+        Task ahead = Task.Run(() => source.ReadAhead(1), cancel);
         Assert.True(files.Holding.Wait(Timeout, cancel));
-        Task<EventKind> sort = Task.Run(() => SortOf(catalog), cancel);
+        Task<EventKind> sort = Task.Run(() => SortOf(source), cancel);
         Task first = await Task.WhenAny(sort, Task.Delay(WrongFinish, cancel));
         files.Release.Set();
 
         Assert.NotSame(sort, first);
         await ahead.WaitAsync(Timeout, cancel);
-        Assert.Equal(SortOf(new EventCatalog(Game().Data())), await sort.WaitAsync(Timeout, cancel));
+        Assert.Equal(SortOf(new GameDataSource(Game().Data())), await sort.WaitAsync(Timeout, cancel));
         Assert.Equal(1, files.Reads(GameDataPaths.CommonEvents));
         Assert.Equal(1, files.Reads(GameDataPaths.Map(1)));
     }
@@ -84,12 +86,12 @@ public sealed class EventCatalogTests
     public void ReadAhead_ThatFails_LeavesTheReadToTheSort()
     {
         using var files = new WatchedFiles(Game()) { Failing = GameDataPaths.CommonEvents };
-        var catalog = new EventCatalog(new GameData(files));
+        var source = new GameDataSource(new GameData(files));
 
-        Assert.Throws<IOException>(() => catalog.ReadAhead(1));
-        EventKind kind = SortOf(catalog);
+        Assert.Throws<IOException>(() => source.ReadAhead(1));
+        EventKind kind = SortOf(source);
 
-        Assert.Equal(SortOf(new EventCatalog(Game().Data())), kind);
+        Assert.Equal(SortOf(new GameDataSource(Game().Data())), kind);
         Assert.Equal(2, files.Reads(GameDataPaths.CommonEvents));
     }
 
@@ -107,9 +109,9 @@ public sealed class EventCatalogTests
     /// <summary>
     /// Sorts the page of event 1 of map 1 in a new game's state.
     /// </summary>
-    /// <param name="catalog">The game's events.</param>
+    /// <param name="source">The game's events.</param>
     /// <returns>The page's kind.</returns>
-    private static EventKind SortOf(EventCatalog catalog) => catalog.Sorter.KindOfPage(catalog.Page(1, 1, 0), new NewGame());
+    private static EventKind SortOf(GameDataSource source) => new EventSorter(source).KindOfPage(source.Page(1, 1, 0), new NewGame());
 
     /// <summary>
     /// A new game's state: every switch off, every variable 0, none the player's own.

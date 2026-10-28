@@ -2,7 +2,12 @@
 #  coop_events.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Asked the DLL whether a teller's page is over only once what it reads changed or its time came
+#      Paulinchen  2026-10-28: Read the chests of a map, the flags of its pages and what pages do through common events from the DLL's events database
+#                            - Named a map event's page and a common event to the DLL with the length and shape of its list
+#                            - Handed the DLL the game data's fingerprint before the first question about events
+#                            - Sorted the pages of a map the DLL's database holds otherwise from their commands in one more call
+#                            - Named the running map and event with a common event's list and a list handed over
+#                            - Asked the DLL whether a teller's page is over only once what it reads changed or its time came
 #                            - Held only the story events and talks that would move a player behind past the end of their part
 #                            - Held a Raid World's story event at its first command for the relay's telling lock in place of the tie hold
 #                            - Kept the pages a teller tells and a viewer shows, with their pace and reading times, in the DLL
@@ -113,7 +118,7 @@
 #----------------------------------------------------------------
 
 # The events of a party. Every event page is sorted by what its commands that can run now do, before
-# it runs, in the DLL (MGQOnline.Game's EventSorter, over the game's event data it reads itself):
+# it runs, in the DLL (MGQOnline.Game's EventSorter, over the events database the mod ships):
 # a talk (conversations, shops, the job change menu), travel (a transfer), a chest (items and its
 # own self switch), a battle without dialogue, or story (everything that moves the story on).
 # Chests are the player's own, and opening one opens it for the whole party: every member who has
@@ -133,6 +138,30 @@ module MGQ_MpCoopEvents
 
   # The DLL's topic that sorts every page of the map's events at once, see EventTopics.Kinds.
   KINDS_TOPIC = "events.kinds"
+
+  # The DLL's topic that takes the game data's fingerprint, which its events database is checked
+  # against, see EventTopics.Open.
+  OPEN_TOPIC = "events.open"
+
+  # The DLL's topic that tells which pages of a map are chests, see EventTableTopics.Chests.
+  CHESTS_TOPIC = "events.chests"
+
+  # The DLL's topic that tells what its events database found in pages of a map, see
+  # EventTableTopics.Pages.
+  PAGES_TOPIC = "events.pages"
+
+  # The DLL's topic that tells the troops and the writes of lists through the common events they
+  # call, see EventTopics.Index.
+  INDEX_TOPIC = "events.index"
+
+  # The codes of the commands a list's shape covers, as MGQOnline.Data's EventSchema.KeptCodes.
+  SHAPE_CODES = [
+    101, 102, 103, 104, 105, 111, 117, 118, 119, 121, 122, 123, 125, 126, 127, 128, 129, 132, 133, 136, 201, 202, 203,
+    206, 222, 282, 283, 285, 301, 303, 353, 354, 355, 402, 403, 404, 411, 412, 999
+  ]
+
+  # The bits a list's shape keeps: 24, so every step stays a Fixnum on the game's 32-bit Ruby.
+  SHAPE_MASK = 0xFFFFFF
 
   # How often a sort hands over the values the DLL names it needs, at most: a branch the values
   # open may read more.
@@ -339,18 +368,20 @@ module MGQ_MpCoopEvents
   end
 
   # Names the list a sort asks for: a map event's page or a common event, which the DLL reads from
-  # the game's data, or the commands themselves for any other list.
+  # its events database while the database holds the list with the same length and shape, or the
+  # commands themselves for any other list. A common event's list and a list handed over name the
+  # running map and event too, inside whose map folder the transfers of an event's list lead.
   #
   # @param list [Array<RPG::EventCommand>] The commands.
-  # @param event [Game_Event, nil] The event whose page the list may be, nil for none.
+  # @param event [Game_Event, nil] The event whose page the list may be, or that runs it; nil for none.
   # @return [Hash] The request.
   def self.request_for(list, event)
     page = event && $game_map ? event.mgq_mp_pages.index { |candidate| candidate.list.equal?(list) } : nil
     id = page ? nil : common_id(list)
     request = if page
-                { "map" => $game_map.map_id, "event" => event.id, "page" => page, "size" => list.size }
+                { "map" => $game_map.map_id, "event" => event.id, "page" => page }.merge(size_and_shape(list))
               elsif id
-                { "common" => id, "size" => list.size }
+                running(event).merge("common" => id).merge(size_and_shape(list))
               else
                 inline_request(list, event)
               end
@@ -358,15 +389,62 @@ module MGQ_MpCoopEvents
     request
   end
 
-  # Hands a list to the DLL whole, for a list the game's data does not hold as the game shows it:
-  # each command's parameters as plain values, anything else as nil.
+  # Hands a list to the DLL whole, for a list its events database does not hold as the game shows
+  # it: each command's parameters as plain values, anything else as nil.
   #
   # @param list [Array<RPG::EventCommand>] The commands.
-  # @param event [Game_Event, nil] The event whose current page the list may be, whose trigger counts then.
+  # @param event [Game_Event, nil] The event whose current page the list may be, whose trigger counts
+  #   then, or that runs it; nil for none.
   # @return [Hash] The request.
   def self.inline_request(list, event)
-    rows = list.map { |command| [command.code, command.indent, plain(command.parameters)] }
-    { "list" => rows, "trigger" => event && list.equal?(event.list) ? event.trigger : nil }
+    running(event).merge("list" => rows_of(list), "trigger" => event && list.equal?(event.list) ? event.trigger : nil)
+  end
+
+  # Names the map and the event that run a list, as a request's fields.
+  #
+  # @param event [Game_Event, nil] The event, nil for none.
+  # @return [Hash] "map" and "event" (0 for none); empty outside a map.
+  def self.running(event)
+    $game_map ? { "map" => $game_map.map_id, "event" => event ? event.id : 0 } : {}
+  end
+
+  # Writes a list's commands as the DLL reads them: [code, indent, plain parameters].
+  #
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @return [Array<Array>] The rows.
+  def self.rows_of(list)
+    list.map { |command| [command.code, command.indent, plain(command.parameters)] }
+  end
+
+  # Finds a list's length and shape, which the DLL compares with its events database's: kept per
+  # list object while its length stays, so a list is hashed once.
+  #
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @return [Hash] "size" and "shape".
+  def self.size_and_shape(list)
+    @shapes ||= {}.compare_by_identity
+    kept = @shapes[list]
+    return kept if kept && kept["size"] == list.size
+
+    @shapes.clear if @shapes.size >= MAX_KEPT_SORTS
+    @shapes[list] = { "size" => list.size, "shape" => shape(list) }
+  end
+
+  # Hashes a list's commands of SHAPE_CODES as MGQOnline.Data's ListShape does: code, indent and
+  # every Integer parameter, in order (fixtures/events/hash_cases.json holds both sides' cases).
+  #
+  # @param list [Array<RPG::EventCommand>] The commands.
+  # @return [Integer] The shape.
+  def self.shape(list)
+    @shape_codes ||= Hash[SHAPE_CODES.map { |code| [code, true] }]
+    list.inject(0) do |hash, command|
+      next hash unless command && @shape_codes[command.code]
+
+      hash = (hash * 31 + command.code) & SHAPE_MASK
+      hash = (hash * 31 + command.indent) & SHAPE_MASK
+      command.parameters.each { |value| hash = (hash * 31 + value) & SHAPE_MASK if value.is_a?(Integer) }
+      hash
+    end
   end
 
   # Turns a parameter into a value that crosses the bridge.
@@ -410,11 +488,12 @@ module MGQ_MpCoopEvents
 
   # Asks a topic of the sorter, handing over the values it names it needs until it has them all.
   #
-  # @param topic [String] SORT_TOPIC or KINDS_TOPIC.
+  # @param topic [String] SORT_TOPIC, KINDS_TOPIC or LEAVES_PART_TOPIC.
   # @param request [Hash] The request, which takes the values.
   # @param needs [Hash] The values the DLL named for this list, by kind, kept and grown here.
   # @return [Hash, nil] The answer, nil when the DLL did not give one.
   def self.ask(topic, request, needs)
+    open_events
     MAX_SORT_ROUNDS.times do
       request["values"] = values_of(needs)
       answer = MGQ_Multiplayer::Bridge.call(topic, request)
@@ -423,6 +502,22 @@ module MGQ_MpCoopEvents
       return nil unless add_needs(needs, answer["needs"])
     end
     nil
+  end
+
+  # Hands the DLL the game data's fingerprint once per session, before its first question about
+  # events, so it reads only the tables of its events database that match this game's data; logs
+  # what the DLL found.
+  def self.open_events
+    return if @events_opened
+
+    @events_opened = true
+    fingerprint = defined?(MGQ_MpWorld::GameData) ? MGQ_MpWorld::GameData.fingerprint : ""
+    answer = MGQ_Multiplayer::Bridge.call(OPEN_TOPIC, "fingerprint" => fingerprint)
+    return log("the DLL did not take the game data's fingerprint") unless answer.is_a?(Hash)
+    return log("the DLL reads no events database: #{answer['problem']}; every list is handed over") unless answer["usable"]
+
+    differing = Array(answer["differing"])
+    log(differing.empty? ? "the DLL's events database matches this game's data" : "the DLL's events database differs from this game's data in #{differing.join(', ')}")
   end
 
   # Adds what the DLL named it needs to the kept needs.
@@ -508,51 +603,204 @@ module MGQ_MpCoopEvents
     index ? { :story => false } : UNSORTED
   end
 
-  # Lists the self switches of the chests on the map.
+  # Lists the self switches of the chests on the map: the map's chests among every chest of the game
+  # the relay keeps (MGQ_MpStoryState.all_chest_keys); before the relay's rewards came, the chests
+  # the DLL's events database names and, among the pages it holds otherwise, those the DLL sorts as
+  # chests. Kept per map until the relay's rewards come in another revision.
+  #
+  # The relay's reviewed rows alone decide once they came, since they drop pages the database names
+  # as chests on purpose, such as a world chest every player shares.
   #
   # @return [Array<Array>] Their keys: map, event and letter.
   def self.chest_keys
-    return @chest_keys if @chest_keys_map == $game_map.map_id
+    relay = defined?(MGQ_MpStoryState) ? MGQ_MpStoryState.rewards : nil
+    stamp = [$game_map.map_id, relay ? relay.rev : nil]
+    return @chest_keys if @chest_keys_map == stamp
 
-    @chest_keys_map = $game_map.map_id
+    @chest_keys_map = stamp
+    return @chest_keys = relay.chests.select { |key| key[0] == $game_map.map_id } if relay
+
     events = $game_map.events.values
-    kinds = page_kinds(events)
-    @chest_keys = events.map { |event| chest_key_of_pages(event, kinds) }.compact
+    letters = chest_letters(page_lists(events))
+    held_otherwise = events.select { |event| (0...event.mgq_mp_pages.size).any? { |place| letters[[event.id, place]].nil? } }
+    kinds = held_otherwise.empty? ? {} : page_kinds(held_otherwise)
+    @chest_keys = events.map { |event| chest_key_of_pages(event, letters, kinds) }.compact
   end
 
   # Finds the self switch an event sets as a chest, on whichever of its pages gives the chest's
   # items, since a chest the player opened shows another page.
   #
   # @param event [Game_Event] The event.
+  # @param letters [Hash] The chest letters of the map's pages, see chest_letters.
   # @param kinds [Hash] The kinds of the map's pages the DLL sorted at once, see page_kinds.
   # @return [Array, nil] Its key, nil when no page is a chest's.
-  def self.chest_key_of_pages(event, kinds = {})
+  def self.chest_key_of_pages(event, letters = {}, kinds = {})
     pages = event.mgq_mp_pages
-    index = (0...pages.size).find { |place| (kinds[[event.id, place]] || kind_of(pages[place].list || [])) == :chest }
-    index ? chest_key(event, pages[index].list) : nil
+    pages.each_index do |place|
+      letter = letters[[event.id, place]]
+      return [$game_map.map_id, event.id, letter] if letter.is_a?(String)
+      next if letter == false
+      return chest_key(event, pages[place].list) if (kinds[[event.id, place]] || kind_of(pages[place].list || [])) == :chest
+    end
+    nil
   end
 
-  # Sorts every page of the map's events in one call to the DLL, by the game's data; a page the
-  # data does not hold as the game shows it is left to kind_of.
+  # Lists the pages of events by their place.
+  #
+  # @param events [Array<Game_Event>] Events of the map.
+  # @return [Hash{Array => Array<RPG::EventCommand>}] Each page's commands by [event, page].
+  def self.page_lists(events)
+    lists = {}
+    events.each { |event| event.mgq_mp_pages.each_with_index { |page, place| lists[[event.id, place]] = page.list || [] } }
+    lists
+  end
+
+  # Writes pages as a map's question to the DLL names them: [event, page, size, shape].
+  #
+  # @param lists [Hash{Array => Array<RPG::EventCommand>}] The pages, see page_lists.
+  # @return [Array<Array>] The rows.
+  def self.page_rows(lists)
+    lists.keys.map { |site| site + size_and_shape(lists[site]).values_at("size", "shape") }
+  end
+
+  # Asks the DLL which pages of the map are chests by its events database.
+  #
+  # @param lists [Hash{Array => Array<RPG::EventCommand>}] The pages, see page_lists.
+  # @return [Hash] By [event, page] the letter of the self switch a chest page turns on, or false for
+  #   a page that is no chest; a page the database lacks or holds otherwise is left out.
+  def self.chest_letters(lists)
+    rows = page_rows(lists)
+    answer = map_question(CHESTS_TOPIC, "rows" => rows)
+    letters = {}
+    Array(answer && answer["letters"]).each_with_index { |letter, place| letters[rows[place][0, 2]] = letter if letter.is_a?(String) || letter == false }
+    letters
+  end
+
+  # Reads what the DLL's events database found in a page of the map's events: kept per map, asked
+  # for every page of the map in one call.
+  #
+  # @param event [Game_Event] The event.
+  # @param place [Integer] The page's place.
+  # @return [Hash, nil] "scene_page", "runs_nothing", "fades_in" and "sets_encounters"; nil for a page
+  #   the database lacks or holds otherwise.
+  def self.page_flags(event, place)
+    unless @page_flags_map == $game_map.map_id
+      @page_flags_map = $game_map.map_id
+      lists = page_lists($game_map.events.values)
+      rows = page_rows(lists)
+      answer = map_question(PAGES_TOPIC, "rows" => rows)
+      @page_flags = {}
+      Array(answer && answer["pages"]).each_with_index { |flags, row| @page_flags[rows[row][0, 2]] = flags if flags.is_a?(Hash) }
+    end
+    @page_flags[[event.id, place]]
+  end
+
+  # Lists the troops whose battles the pages events show start, directly or in the common events
+  # they call, every branch counted, from the DLL's command index: the pages its events database
+  # holds in one call, the others handed over in one more.
+  #
+  # @param events [Array<Game_Event>] Events of the map.
+  # @param skip [Integer, nil] A switch whose common events' troops are left out, such as the
+  #   Colosseum's.
+  # @return [Hash{Integer => Array<Integer>}] Each event's troops, in their order, by its id; an
+  #   event without a page has none.
+  def self.page_troops(events, skip = nil)
+    lists = {}
+    events.each { |event| lists[[event.id, event.mgq_mp_page]] = event.list if event.mgq_mp_page >= 0 && event.list }
+    indexes = page_indexes(lists, skip)
+    troops = {}
+    lists.each_key { |site| troops[site[0]] = indexes[site] ? Array(indexes[site]["troops"]) : [] }
+    troops
+  end
+
+  # Lists what the page an event shows writes, directly or in the common events it calls, every
+  # branch counted, from the DLL's command index.
+  #
+  # @param event [Game_Event] The event.
+  # @return [Array<Array>] Each write: 0 or 1 with the switches' or variables' range, or 2 with the
+  #   self switch's letter; none when the DLL cannot tell.
+  def self.page_writes(event)
+    place = event.mgq_mp_page
+    return [] unless place >= 0 && event.list
+
+    found = page_indexes({ [event.id, place] => event.list }, nil)[[event.id, place]]
+    writes = found ? found["writes"] : nil
+    return [] unless writes.is_a?(Hash)
+
+    ranges = lambda { |kind| Array(writes[kind == 0 ? "s" : "v"]).map { |first, last| [kind, first.to_i..last.to_i] } }
+    ranges.call(0) + ranges.call(1) + Array(writes["ss"]).map { |letter| [2, letter.to_s] }
+  end
+
+  # Asks the DLL's command index of pages of the map, see page_troops.
+  #
+  # @param lists [Hash{Array => Array<RPG::EventCommand>}] The pages, see page_lists.
+  # @param skip [Integer, nil] See page_troops.
+  # @return [Hash] Each answer by [event, page]: "troops" and "writes"; a page the DLL cannot tell of
+  #   is left out.
+  def self.page_indexes(lists, skip)
+    indexes = {}
+    index_pages(page_rows(lists), skip, indexes)
+    held_otherwise = lists.keys.reject { |site| indexes.key?(site) }
+    index_pages(held_otherwise.map { |site| site + [rows_of(lists[site])] }, skip, indexes) unless held_otherwise.empty?
+    indexes
+  end
+
+  # Asks the DLL's command index of pages of the map in one call, see page_indexes.
+  #
+  # @param rows [Array<Array>] The pages: [event, page, size, shape] or [event, page, commands].
+  # @param skip [Integer, nil] See page_troops.
+  # @param indexes [Hash] The answers by [event, page], which takes those of these pages.
+  def self.index_pages(rows, skip, indexes)
+    question = { "pages" => rows }
+    question["skip_turning_on"] = skip if skip
+    answer = map_question(INDEX_TOPIC, question)
+    Array(answer && answer["indexes"]).each_with_index { |found, place| indexes[rows[place][0, 2]] = found if found.is_a?(Hash) }
+  end
+
+  # Asks the DLL a question about pages of the map.
+  #
+  # @param topic [String] CHESTS_TOPIC, PAGES_TOPIC or INDEX_TOPIC.
+  # @param fields [Hash] The question's fields besides the map.
+  # @return [Hash, nil] The answer, nil when the DLL did not give one.
+  def self.map_question(topic, fields)
+    open_events
+    answer = MGQ_Multiplayer::Bridge.call(topic, { "map" => $game_map.map_id }.merge(fields))
+    answer.is_a?(Hash) ? answer : nil
+  end
+
+  # Sorts every page of the map's events in one call to the DLL, by its events database, and the
+  # pages the database does not hold as the game shows them from their commands in one more call;
+  # a page neither sorts is left to kind_of.
   #
   # @param events [Array<Game_Event>] The map's events.
   # @return [Hash] Each page's kind by [event, page].
   def self.page_kinds(events)
-    pages = []
+    lists = {}
     residents = []
     events.each do |event|
       event.mgq_mp_pages.each_with_index do |page, place|
         list = page.list || []
-        pages << [event.id, place, list.size]
+        lists[[event.id, place]] = list
         residents << [event.id, place] if defined?(MGQ_MpCoopCastle) && MGQ_MpCoopCastle.resident?(list)
       end
     end
-    request = { "map" => $game_map.map_id, "pages" => pages }
+    kinds = {}
+    sort_pages(lists.keys.map { |site| site + size_and_shape(lists[site]).values_at("size", "shape") }, residents, kinds)
+    held_otherwise = lists.keys.reject { |site| kinds.key?(site) }
+    sort_pages(held_otherwise.map { |site| site + [rows_of(lists[site])] }, residents, kinds) unless held_otherwise.empty?
+    kinds
+  end
+
+  # Sorts pages of the map in one call to the DLL, see page_kinds.
+  #
+  # @param rows [Array<Array>] The pages: [event, page, size, shape] or [event, page, commands].
+  # @param residents [Array<Array>] The Pocket Castle residents' pages, each [event, page].
+  # @param kinds [Hash] The kinds sorted, by [event, page], which takes those of these pages.
+  def self.sort_pages(rows, residents, kinds)
+    request = { "map" => $game_map.map_id, "pages" => rows }
     request["residents"] = residents unless residents.empty?
     answer = ask(KINDS_TOPIC, request, @needs[[:map, $game_map.map_id]] ||= {})
-    kinds = {}
-    Array(answer && answer["kinds"]).each_with_index { |kind, place| kinds[pages[place][0, 2]] = kind.to_s.to_sym if kind }
-    kinds
+    Array(answer && answer["kinds"]).each_with_index { |kind, place| kinds[rows[place][0, 2]] = kind.to_s.to_sym if kind }
   end
 
   # Reports whether a self switch belongs to a chest on the map, which makes it the player's own.
@@ -1058,18 +1306,18 @@ module MGQ_MpCoopEvents
   # Finds whether a story event would move the player's story past the end of the part they play
   # while behind the world's, as the DLL reads from the keys it and the chain it starts across maps
   # write (issue #48); every other story event runs. The DLL names the switches, variables and self
-  # switches the pages of the chain check (needs, as for sorting), and the answer is kept per list
-  # and part while those stay as they were, since an event that runs by itself starts again every
-  # frame.
+  # switches the pages of the chain check (needs, as for sorting), and the answer is kept per list,
+  # the map and event that run it and the part while those stay as they were, since an event that
+  # runs by itself starts again every frame.
   #
   # @param list [Array<RPG::EventCommand>] The commands.
-  # @param event [Game_Event, nil] The event whose page the list may be, nil for none.
+  # @param event [Game_Event, nil] The event whose page the list may be, or that runs it; nil for none.
   # @return [String, nil] Why it would leave the part, nil when it stays in it; an event the DLL
   #   cannot tell of leaves it.
   def self.leaving_part(list, event = nil)
     request = request_for(list, event)
     table = defined?(MGQ_MpStoryKeys) ? MGQ_MpStoryKeys.raid_table : nil
-    key = [site_key(request, list), list.size, defined?(MGQ_MpWorldStory) ? MGQ_MpWorldStory.part : nil, table ? table.rev : nil]
+    key = [site_key(request, list), list.size, request["map"], request["event"], defined?(MGQ_MpWorldStory) ? MGQ_MpWorldStory.part : nil, table ? table.rev : nil]
     needs = (@part_needs[key[0]] ||= {})
     kept = @leaving[key]
     return kept[1] if kept && kept[0] == values_of(needs)

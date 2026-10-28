@@ -2,7 +2,8 @@
 #  catchup_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Answered the DLL's catch-up topics from the catch-up engine over the tests' tables, and recorded its answers
+#      Paulinchen  2026-10-28: Read the generated tables from fixtures/catchup/generated in place of the deleted world_catchup_data.rbx
+#                            - Answered the DLL's catch-up topics from the catch-up engine over the tests' tables, and recorded its answers
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -10,15 +11,16 @@
 # The game a Raid World's catch-up runs in, for the script tests and the recorder of the catch-up's
 # golden cases (fixtures/catchup/make_engine.rb): stand-ins of the game's objects, the players, the
 # world and the message window, the real story_state.rbx, coop_story.rbx, coop_choices.rbx,
-# world_catchup_data.rbx, world_story.rbx and world_catchup.rbx on a stand-in of the DLL's story
-# topics (story_support.rb) and of its catch-up (fixtures/catchup/engine.rb, over the rows of
-# world_catchup_data.rbx the tests put in place), and helpers that start a game, hand the relay's
+# world_story.rbx and world_catchup.rbx on a stand-in of the DLL's story topics (story_support.rb)
+# and of its catch-up (fixtures/catchup/engine.rb, over the generated tables of
+# fixtures/catchup/generated_tables.rb, which the tests replace with rows of their own), and helpers that start a game, hand the relay's
 # tracks over and run frames.
 
 require_relative "support"
 require_relative "story_support"
 require_relative "../../fixtures/catchup/relay_rows"
 require_relative "../../fixtures/catchup/engine"
+require_relative "../../fixtures/catchup/generated_tables"
 
 $logs = []
 # Stands in for the mod's log: records each line in $logs and prints it.
@@ -390,14 +392,13 @@ answer_story($fake)
 load_script "story_state"
 load_script "coop_story"
 load_script "coop_choices"
-load_script "world_catchup_data"
 load_script "world_story"
 load_script "world_catchup"
 # The world's story mapping: what the Raid personal lists of earlier builds shared, the chest flags
 # each player's own.
 $classes = listed_raid_table_hash("switches" => 8000, "variables" => 4000, "companions" => 1000, "chest_flags" => MGQ_MpStoryState.chest_flags)
 # The catch-up's tables, which the tests replace with rows of their own.
-DATA = MGQ_MpWorldCatchupData
+DATA = GeneratedCatchupTables
 # The generated joins, kept before the tests replace them.
 REAL_JOINS = DATA::JOINS
 # The generated removals, kept before the tests replace them.
@@ -425,8 +426,8 @@ end
 # the DLL holds.
 $catchup = CatchupEngine::Host.new
 
-# The catch-up's tables as the relay hands them with the story mapping: the rows of
-# world_catchup_data.rbx the tests put in place, and the relay's seed rows of the rules, the counts
+# The catch-up's tables as the relay hands them with the story mapping: the rows the tests put in
+# place, and the relay's seed rows of the rules, the counts
 # and the companion values.
 #
 # @return [Array(Hash, CatchupEngine::Tables)] The relay's rows by table, and the tables read.

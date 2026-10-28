@@ -2,6 +2,7 @@
 #  ui_raid_freeze_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Stood in for the DLL's command index and the freeze's tables
 #      Paulinchen  2026-10-17: Created
 #
 #----------------------------------------------------------------
@@ -148,14 +149,33 @@ module MGQ_MpRaidFreeze
   def self.resuming?(troop = nil); troop ? ($resuming || []).include?(troop) : !($resuming || []).empty?; end
   # Notes a resume asked for.
   def self.resume(troop); ($resumed ||= []) << troop; $resume_ok; end
+  # The freeze's data: what the post-defeat processing writes itself.
+  def self.data(name, default); name == :DEFEAT_WRITES ? { :switches => [22, 31..37], :variables => [11] } : default; end
 end
 # The world's frozen fights, its active entries in $entries.
 module MGQ_MpWorldFreeze
   # The active entries.
   def self.entries; $entries; end
 end
-# The freeze's data: what the post-defeat processing writes itself.
-module MGQ_MpRaidFreezeData; DEFEAT_WRITES = { :switches => [22, 31..37], :variables => [11] }; end
+# The DLL's command index of a page: what its commands write, through the common events of
+# $data_common_events it calls.
+module MGQ_MpCoopEvents
+  # Lists what an event's page writes.
+  def self.page_writes(event); writes_in(event.list || [], {}); end
+  # Lists what commands write, each common event once.
+  def self.writes_in(list, seen)
+    list.flat_map do |command|
+      params = command.parameters
+      case command.code
+      when 121 then [[0, params[0]..params[1]]]
+      when 122 then [[1, params[0]..params[1]]]
+      when 123 then [[2, params[0]]]
+      when 117 then seen[params[0]] || !$data_common_events[params[0]] ? [] : (seen[params[0]] = true; writes_in($data_common_events[params[0]].list, seen))
+      else []
+      end
+    end
+  end
+end
 # The notification box, its messages kept in $notices.
 module MGQ_MpNotices; def self.message(_key, text, _frames); $notices << text; end; end
 # The hotkeys, the join hotkey being J.

@@ -15,6 +15,9 @@
 
   <ItemGroup>
     <PackageReference Include="xunit.v3" Version="4.0.0" />
+
+    <!-- Only for its native SQLite library, which the JIT run loads where the publish links SQLite in. -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,6 +26,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MGQOnline.ServerCore\MGQOnline.ServerCore.csproj" />
+
+    <!-- The generator writes the events database of the game folder the story index is derived over. -->
+    <ProjectReference Include="..\MGQOnline.Data.Generator\MGQOnline.Data.Generator.csproj" />
   </ItemGroup>
 
 </Project>

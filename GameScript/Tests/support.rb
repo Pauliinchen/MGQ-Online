@@ -2,7 +2,8 @@
 #  support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Kept the script's own Classic party's table for the test that builds it
+#      Paulinchen  2026-10-28: Stood in for the game's sizes and chest flags the DLL reads from its events database
+#                            - Kept the script's own Classic party's table for the test that builds it
 #      Paulinchen  2026-10-24: Counted the key frames as the tests count the game's
 #      Paulinchen  2026-10-23: Loaded the bridge, closed, with the first script
 #                            - Loaded story_keys.rbx after story_state.rbx, with the Classic party's table the DLL builds
@@ -156,10 +157,11 @@ def load_story_keys
   MGQ_MpStoryKeys.define_singleton_method(:classic_table) { @classic ||= table_of(classic_table_hash(classic_request)) }
 end
 
-# The request of the topic story.classic_table the scripts make, for the game's sizes as a test
-# stands in for them, 10,000 switches and 5,000 variables without a database.
+# What the DLL builds a Classic party's table of (topic story.classic_table, from its events
+# database): the game's sizes as a test stands in for them, 10,000 switches and 5,000 variables
+# without a database, and the chest flags the story mapping brought.
 #
-# @return [Hash] The request.
+# @return [Hash] The sizes and chest flags.
 def classic_request
   { "switches" => $data_system ? $data_system.switches.size : 10_000, "variables" => $data_system ? $data_system.variables.size : 5000,
     "companions" => $data_actors ? $data_actors.size : 1000, "chest_flags" => MGQ_MpStoryState.chest_flags }
@@ -171,13 +173,13 @@ CLASSIC_PERSONAL_SWITCHES = [[0, 0], [22, 22], [73, 73], [94, 94], [95, 95], [97
 # The variables alike, as ClassicStoryTable.PersonalVariables.
 CLASSIC_PERSONAL_VARIABLES = [[0, 0], [9, 9], [21, 23], [46, 48], [55, 57], [59, 59], [129, 129], [150, 150], [200, 201], [1002, 1002], [2000, 2999]]
 
-# Builds a Classic party's table as the DLL's ClassicStoryTable.Build does for a request of the
-# topic story.classic_table: every switch and variable shared, a side switch shared as a side's, but
-# the lists each player keeps, the affection of each companion and the chest flags. It is checked
-# against fixtures/story/classic.json, which MGQOnline.Game.Tests checks the C# against, as this
-# file loads, so it cannot drift from what the DLL builds.
+# Builds a Classic party's table as the DLL's ClassicStoryTable.Build does for the game's sizes and
+# chest flags: every switch and variable shared, a side switch shared as a side's, but the lists
+# each player keeps, the affection of each companion and the chest flags. It is checked against
+# fixtures/story/classic.json, which MGQOnline.Game.Tests checks the C# against, as this file
+# loads, so it cannot drift from what the DLL builds.
 #
-# @param request [Hash] "switches", "variables", "companions" and "chest_flags".
+# @param request [Hash] "switches", "variables", "companions" and "chest_flags", see classic_request.
 # @return [Hash] The table, see story_table_hash.
 def classic_table_hash(request)
   switches = Array.new(request["switches"], 1)

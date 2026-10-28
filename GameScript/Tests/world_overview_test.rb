@@ -2,6 +2,7 @@
 #  world_overview_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Read the place in the story by the ids of its switches and variables
 #      Paulinchen  2026-10-24: Checked the pages of other mods with their tabs, controls, buttons and mouse
 #      Paulinchen  2026-10-23: Checked that the title is asked once
 #                            - Named the world's route by the number of its variable
@@ -202,39 +203,27 @@ rules_bridge = open_rules_bridge
 overview = MGQ_MpWorldOverview
 
 # The player's place in the story: the part, the side and the route.
-$data_system.variables[1001] = "Overall Events Progress"
-$data_system.switches[50] = "Alice Chosen"
-$data_system.variables[1142] = "天界ルート進行度"
 check("the wheel's middle is the overview's globe", [MGQ_MpActions.wheel_options[:CENTER].text, MGQ_MpActions.wheel_options[:CENTER].icon], ["World (F11)", 3988])
 check("before the side is chosen: the part", [overview.story_code, overview.story_text(overview.story_code)], ["1", "Part 1"])
-$game_switches[50] = true
+$game_switches[4] = true
 $game_variables[1001] = 25
 check("Part 2 with a side", [overview.story_code, overview.story_text(overview.story_code)], ["2:alice", "Part 2: Alice side"])
 $game_variables[1001] = 45
 check("Part 3 before a route: still the side", overview.story_text(overview.story_code), "Part 3: Alice side")
-$game_variables[1142] = 3
+$game_variables[1141] = 3
 check("Part 3 with a route", [overview.story_code, overview.story_text(overview.story_code)], ["3:destroyer", "Part 3: Destroyer route"])
-$data_system.variables[1001] = "総合イベント進行度"
-check("the untranslated game's names count too", overview.story_code, "3:destroyer")
-$data_system.variables[1001] = "Overall Events Progress"
-$game_variables[1142] = 0
+$game_variables[1141] = 0
 $game_variables[1001] = 18
-$game_switches[50] = false
+$game_switches[4] = false
 check("progress 18 is still Part 1", overview.story_code, "1")
-$game_switches[50] = true
+$game_switches[4] = true
 check("Part 2 starts at progress 19, with Tartarus Escape", [19, 33].map { |progress| $game_variables[1001] = progress; overview.story_code }, ["2:alice", "2:alice"])
 $game_variables[1001] = 34
 check("Part 3 starts at progress 34, with the Middle Chapter's epilogue", overview.story_code, "3:alice")
-$game_variables[1142] = 3
+$game_variables[1141] = 3
 $game_variables[1001] = 39
 check("before the Great Decision a route already shows", overview.story_code, "3:destroyer")
 check("an unknown place shows nothing", overview.story_text(""), "")
-logged = []
-write = MGQ_Multiplayer::Log.method(:write)
-MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| logged << line }
-check("a name the game lacks reads 0 or off, logged once", [overview.variable(["No Such"]), overview.variable(["No Such"]), overview.switch?(["Nor This"]), logged],
-      [0, 0, false, ["overview: no variable of the game is named No Such, reading 0", "overview: no switch of the game is named Nor This, reading off"]])
-MGQ_Multiplayer::Log.define_singleton_method(:write, write)
 
 # The formation's highest level and the place the player tells.
 $game_party.all_members = [Actor.new(30, true), Actor.new(55, false), Actor.new(99, false)]

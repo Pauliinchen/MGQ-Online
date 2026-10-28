@@ -49,7 +49,36 @@ The relay asks the server for the derived index of the story mapping (see "Story
 mapping that changed rows and as it starts while the index is missing or stale:
 `{"op":"story_index","rowsRev":3,"keys":[{"key":"v1001","kind":"one_way"}],"events":[{"key":"ss231.*.*","share":"personal"}]}`.
 The child that takes the connection hands the rows to the core (`lib/story_index.rb`, the core's
-topic `story.index`), which reads every map and common event of the game folder, about 2.5 s and
-under 256 MB, and answers one line:
+topic `story.index`), which derives the index from the events database the mod ships,
+`Patch/Multiplayer/Data/events.db` under the game folder (opened once per child, read-only and
+unchanging, so it writes nothing beside it in the sandbox; the derive takes about 30 ms and its
+time is logged as `[mgq] core: story.index: derived ... in N ms`), reads the names of the
+story's keys from the game folder's own data (the core's topic `story.names`, a few seconds, the
+translation's names), and answers one line:
 `{"ok":true,"built":3,"events":[[12,3],...],"commons":[40,...],"names":{"switches":{...},"variables":{...},"maps":{...},"events":{"12.3":"EV003",...},"companions":3202}}`.
-Without the core library the answer is `{"ok":false,"error":"..."}` and the relay keeps the index it has.
+Each child hands the core the fingerprint of the game data it loaded as it shakes hands
+(`Core.open`, the core's topic `core.game_data`); the core refuses the index while the events
+database differs from it in the maps or the common events, which the index reads, and logs once
+in which parts it differs. So the events database must be deployed with every release next to
+the core library (see Deploying a release). Without the core library, without the events
+database, or with one that differs, the answer is `{"ok":false,"error":"..."}` and the relay
+keeps the index it has.
+
+## Deploying a release
+
+Every release of MGQ Online installs its game scripts and its events database into the server's
+game folder, since the server serves only games whose scripts match its own and the core reads the
+events database the release ships. Copy the release zip's `Patch` folder to the server (as a
+tarball, for example), unpack it, and run as root:
+
+```
+sudo bash deploy_release.sh /tmp/mgq-0.7.0 0.7.0   # the folder holding the release's Patch folder, and its version
+```
+
+`tools/deploy_release.sh` backs the game folder's `Patch` up to
+`/var/cache/mgq-battle/patch-before-<version>`, installs `Patch/Multiplayer.rb`,
+`Patch/Multiplayer/Scripts/` (removing the scripts the release no longer has) and
+`Patch/Multiplayer/Data/events.db`, root-owned and not writable by others, restarts `mgq-battle`
+and compares every file it installed with the release's; it stops before changing anything when
+the release lacks one of them. `MGQ_BATTLE_GAME`, `MGQ_BATTLE_BACKUPS` and `MGQ_BATTLE_SERVICE`
+name another game folder, backup folder or service. The core library is deployed as above.

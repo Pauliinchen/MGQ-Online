@@ -63,7 +63,7 @@ public static class PartEnd
     /// Finds the first write of an event that moves a story out of its part.
     /// </summary>
     /// <param name="part">The part the player's track is in, see <see cref="StoryParts"/>; <see langword="null"/> or unknown, and any write of the part's variables leaves it.</param>
-    /// <param name="sets">The variables the event and the chain it starts set, see <see cref="EventChain.VariableSetsOf"/>.</param>
+    /// <param name="sets">The variables the event and the chain it starts set, see <see cref="EventChain.VariableSetsOf(ListKeys, int, int, IPageState)"/>.</param>
     /// <param name="kept">Tells whether a variable is kept on the tracks; one each player keeps as their own never moves the part the relay holds.</param>
     /// <returns>The write, <see langword="null"/> when the event stays in the part.</returns>
     public static PartLeave? Leaving(string? part, IEnumerable<VariableSet> sets, Func<long, bool> kept)

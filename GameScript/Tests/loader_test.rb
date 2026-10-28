@@ -2,7 +2,8 @@
 #  loader_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Gave the closing its world room drain topic
+#      Paulinchen  2026-10-28: Checked the freeze's load order without its deleted data script
+#                            - Gave the closing its world room drain topic
 #                            - Checked that the scenes ending on a quit or the window closing write the closing line, and the end once
 #                            - Checked that no script names an Encoding constant
 #      Paulinchen  2026-10-23: Checked that the log's lines wait for the bridge, cross it with the frame and go into the day's file while the mod stays off
@@ -80,8 +81,8 @@ check("the raid tiers load after the Mod Config rows, the push routes, the boss 
       [true, true])
 check("the single player rows load after the Mod Config rows, the world's sync and the scripts whose settings they show",
       %w[ui overworld_sync battles_raid_tiers ui_raid_bar ui_leader_hud].all? { |name| scripts.index(name) < scripts.index("ui_single_player") }, true)
-check("the raid boss freeze loads its data before its engine and the engine before the world's list, all after the pools",
-      %w[battles_raid_pool battles_raid_freeze_data battles_raid_freeze world_freeze].map { |name| scripts.index(name) }.each_cons(2).all? { |a, b| a < b }, true)
+check("the raid boss freeze loads its engine before the world's list, both after the pools",
+      %w[battles_raid_pool battles_raid_freeze world_freeze].map { |name| scripts.index(name) }.each_cons(2).all? { |a, b| a < b }, true)
 check("the frozen fights' stand-ins load after the bars that draw over them and the join hotkey that resumes them",
       %w[battles_coop_join battles_raid_freeze world_freeze ui_raid_bar].all? { |name| scripts.index(name) < scripts.index("ui_raid_freeze") }, true)
 

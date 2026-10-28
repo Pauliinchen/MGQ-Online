@@ -2,6 +2,7 @@
 #  core_library_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Checked the core runs the SQLite of the checked-in amalgamation
 #      Paulinchen  2026-10-23: Checked the ids the core makes up
 #                            - Counted the core's topic that derives the story mapping's index
 #                            - Created
@@ -31,8 +32,11 @@ check("the library loads", backend.nil?, false)
 check("and shakes hands", Core.open(backend), true)
 check("naming the batch and core.runtime", %w[batch core.runtime].all? { |topic| bridge.has?(topic) }, true)
 check("and makes up the ids of the battle server's scripts", bridge.call("id.random", { "length" => 8, "radix" => 36 }).to_s =~ /\A[0-9a-z]{8}\z/ ? true : false, true)
+runtime = bridge.call("core.runtime")
 check("its GC runs with the baked heap limit of 256 MB, workstation and not concurrent",
-      bridge.call("core.runtime"), { "heap_limit" => 256 * 1024**2, "server_gc" => false, "latency" => "Batch" })
+      runtime.reject { |key, _| key == "sqlite" }, { "heap_limit" => 256 * 1024**2, "server_gc" => false, "latency" => "Batch" })
+check("and it runs the SQLite of the checked-in amalgamation", runtime["sqlite"],
+      File.read(File.expand_path("../../MGQOnline.Data/native/sqlite/sqlite3.h", __dir__))[/^#define SQLITE_VERSION\s+"([^"]+)"/, 1])
 check("a batch runs each entry and answers the ones that failed",
       bridge.call("batch", [["core.missing", 1], ["core.runtime", nil]]),
       [{ "topic" => "core.missing", "error" => "unknown_topic", "text" => "There is no topic core.missing." }])

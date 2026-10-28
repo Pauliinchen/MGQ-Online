@@ -2,6 +2,7 @@
 //  GameDataCompare.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Named the parts the events database gates its tables by
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -20,9 +21,19 @@ namespace MGQOnline.Game.Worlds;
 public static class GameDataCompare
 {
     /// <summary>
+    /// The part of the common events: those whose list holds more than the game's first mark.
+    /// </summary>
+    public const string CommonEventsPart = "common events";
+
+    /// <summary>
+    /// The part of the maps: the ids of every map folder's maps.
+    /// </summary>
+    public const string MapsPart = "maps";
+
+    /// <summary>
     /// What a fingerprint covers, in its order, as a difference is called.
     /// </summary>
-    public static readonly IReadOnlyList<string> Parts = ["actors", "classes", "skills", "items", "weapons", "armors", "enemies", "states", "troops", "common events", "maps"];
+    public static readonly IReadOnlyList<string> Parts = ["actors", "classes", "skills", "items", "weapons", "armors", "enemies", "states", "troops", CommonEventsPart, MapsPart];
 
     /// <summary>
     /// Most parts a text names before it counts the rest, unless the caller says otherwise.

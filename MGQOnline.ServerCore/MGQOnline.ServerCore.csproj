@@ -52,4 +52,10 @@
     <UnmanagedEntryPointsAssembly Include="MGQOnline.Bridge.Native" />
   </ItemGroup>
 
+  <!-- The events database's reader, with SQLite linked into the library (see the imported targets). -->
+  <ItemGroup>
+    <ProjectReference Include="..\MGQOnline.Data\MGQOnline.Data.csproj" />
+  </ItemGroup>
+  <Import Project="..\MGQOnline.Data\native\StaticSqlite.targets" />
+
 </Project>

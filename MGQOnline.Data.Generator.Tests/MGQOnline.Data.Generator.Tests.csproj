@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- An executable that runs its own tests of MGQOnline.Data.Generator, see "Tests" in docs/DEVELOPER.md. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <RootNamespace>MGQOnline.Data.Generator.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
+
+    <!-- Only for its native SQLite library, which the JIT run loads. -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MGQOnline.Data.Generator\MGQOnline.Data.Generator.csproj" />
+  </ItemGroup>
+
+  <!-- The game rules' tiny game, written as the game's RPG objects in Marshal. -->
+  <ItemGroup>
+    <Compile Include="..\MGQOnline.Game.Tests\Events\TinyGame.cs" Link="Events\TinyGame.cs" />
+  </ItemGroup>
+
+</Project>

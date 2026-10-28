@@ -2,7 +2,8 @@
 #  story_keys_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-28: Checked that a Classic party's table is built anew once the chest flags came
+#      Paulinchen  2026-10-28: Checked that a Classic party's table is asked of the DLL with nothing of the scripts' own
+#                            - Checked that a Classic party's table is built anew once the chest flags came
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
@@ -229,18 +230,20 @@ $game_switches[7096] = false
 keys.flush
 check("and none once the party's story records no more", $recorded.size, 1)
 
-# A Classic party's table is built with the chest flags known so far, and anew once the rewards a
-# party member catches up with brought other ones.
-built = []
-fake.answer("story.classic_table") { |request| built << request["chest_flags"]; classic_table_hash(request) }
-fake.answer("story.rewards") { |_known| nil }
-rewards_changed
+# A Classic party's table is the DLL's, built with the chest flags of the mapping it holds: asked
+# with nothing of the scripts' own, kept while the rewards a party member catches up with stay, and
+# asked again once they changed, since the DLL then holds another mapping.
+requests = []
+flags = [2045]
+fake.answer("story.classic_table") { |request| requests << request; classic_table_hash(classic_request.merge("chest_flags" => flags)) }
 keys.instance_variable_set(:@classic, nil)
-before = keys.bridge_classic_table
-fake.answer("story.rewards") { |_known| CatchupRelayRows.party_rewards(nil).merge("chest_flags" => [2045], "rev" => 1) }
+keys.instance_variable_set(:@classic_asked, false)
+first = keys.bridge_classic_table
+kept = keys.bridge_classic_table
+flags = [7102]
+fake.answer("story.rewards") { |_known| CatchupRelayRows.party_rewards(nil).merge("chest_flags" => flags, "rev" => 1) }
 rewards_changed
 MGQ_MpStoryState.rewards
-after = keys.bridge_classic_table
-keys.bridge_classic_table
-check("a Classic party's table is built without chest flags before they came, once more when they came, and not again while they stay",
-      [built, before.switches.getbyte(2045), after.switches.getbyte(2045)], [[[], [2045]], 1, 8])
+later = keys.bridge_classic_table
+check("a Classic party's table is asked of the DLL with no request, kept while the rewards stay and asked again once they changed",
+      [requests, first.switches.getbyte(2045), kept.equal?(first), later.switches.getbyte(2045), later.switches.getbyte(7102)], [[nil, nil], 8, true, 1, 8])

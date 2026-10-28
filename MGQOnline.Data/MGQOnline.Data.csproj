@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The events database's reader and writer over an own P/Invoke layer of SQLite. It runs in the
+       NativeAOT win-x86 mod DLL and the linux-x64 battle server core, which link SQLite in
+       statically (native/StaticSqlite.targets), so it stays AOT-clean and uses only the BCL. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>MGQOnline.Data</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsTrimmable>true</IsTrimmable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MGQOnline.Data.Generator" />
+    <InternalsVisibleTo Include="MGQOnline.Data.Tests" />
+  </ItemGroup>
+
+</Project>

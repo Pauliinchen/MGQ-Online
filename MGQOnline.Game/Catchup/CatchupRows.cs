@@ -50,7 +50,7 @@ public sealed record CatchupPart(string Id, string Name, IReadOnlyList<StoryMark
 /// <param name="Place">Where the join stands.</param>
 /// <param name="Gate">The highest base level a player needs.</param>
 /// <param name="Rule">The rule that gave the gate: <c>floor</c>, <c>start</c>, <c>cap</c> or <c>kept</c>.</param>
-/// <param name="Index">The command's index in its list.</param>
+/// <param name="Index">The command's place in its list, which orders it against another row of the list: its ord in the events database.</param>
 /// <param name="Ran">Whether the marks show that the event ran.</param>
 public sealed record CatchupJoin(int Actor, int Persona, StoryPlace Place, int Gate, string Rule, int Index, bool Ran);
 
@@ -61,7 +61,7 @@ public sealed record CatchupJoin(int Actor, int Persona, StoryPlace Place, int G
 /// <param name="Persona">The persona the event removes.</param>
 /// <param name="Place">Where the removal stands.</param>
 /// <param name="First">Whether only a first playthrough takes them, for a removal that lasts.</param>
-/// <param name="Index">The command's index in its list.</param>
+/// <param name="Index">The command's place in its list, which orders it against another row of the list: its ord in the events database.</param>
 public sealed record CatchupRemoval(int Actor, int Persona, StoryPlace Place, bool First, int Index);
 
 /// <summary>

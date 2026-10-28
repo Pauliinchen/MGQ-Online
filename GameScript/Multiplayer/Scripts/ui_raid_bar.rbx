@@ -2,6 +2,7 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Asked the DLL for the troops the map's pages fight in one call
 #      Paulinchen  2026-10-23: Kept the bars off the live map behind menus
 #      Paulinchen  2026-10-17: Showed the bars above the bosses' stand-ins of frozen fights
 #      Paulinchen  2026-10-15: Showed no bars over the Colosseum receptionist
@@ -81,21 +82,8 @@ module MGQ_MpRaidBar
   # Where the game's own HP bar of a boss lies (Basic Enemy HP Bars Lite), which the strip pushes down.
   GAME_BOSS_BAR_Y = -12
 
-  # The event command that starts a battle.
-  BATTLE_CODE = 301
-
-  # The battle command's designation of its troop by id, rather than by a variable or at random.
-  DIRECT_TROOP = 0
-
   # The game's variable of the share of their own HP enemies have at the player's difficulty.
   DIFFICULTY_VARIABLE = 41
-
-  # The event command that calls a common event.
-  CALL_CODE = 117
-
-  # The event command that turns switches on or off, and its value that turns them on.
-  SWITCH_CODE = 121
-  SWITCH_ON = 0
 
   # Steps to a boss's event when the map shows none.
   FAR = 9999
@@ -137,9 +125,6 @@ module MGQ_MpRaidBar
 
   # Each event's command list with the troops it starts, by the event, see troops_of.
   @event_troops = {}
-
-  # The troops each common event starts, by its id, see common_troops.
-  @common_troops = {}
 
   # Enemies' own max HP, by the enemy and the difficulty, see raid_max.
   @base_hp = {}
@@ -328,7 +313,9 @@ module MGQ_MpRaidBar
 
     @event_troops = {} unless @scanned && @scanned[0][0] == stamp[0]
 
-    found = $game_map.events.values.map do |event|
+    events = $game_map.events.values
+    look_up_troops(events)
+    found = events.map do |event|
       troop = troops_of(event).find { |id| shown_troop?(id) }
       troop ? [event, troop] : nil
     end.compact
@@ -336,76 +323,30 @@ module MGQ_MpRaidBar
     found
   end
 
-  # Lists the troops whose battles an event's page starts, through common events too, kept until
-  # its page changes.
+  # Asks the DLL in one call for the troops of the events whose page changed since it last told
+  # them (MGQ_MpCoopEvents.page_troops), the common events that turn the Colosseum's switch on left
+  # out, since their fights reuse the bosses' troops but are no raids.
+  #
+  # @param events [Array<Game_Event>] The map's events.
+  def self.look_up_troops(events)
+    changed = events.select do |event|
+      kept = @event_troops[event]
+      event.list && !(kept && kept[0].equal?(event.list))
+    end
+    return if changed.empty?
+
+    troops = MGQ_MpCoopEvents.page_troops(changed, MGQ_MpRaidPool::COLOSSEUM_SWITCH)
+    changed.each { |event| @event_troops[event] = [event.list, troops[event.id] || []] }
+  end
+
+  # Lists the troops whose battles an event's page starts, through common events too, as the DLL
+  # last told them for its page (see look_up_troops).
   #
   # @param event [Game_Event] The event.
-  # @return [Array<Integer>] The troops, in their order; none for an erased event.
+  # @return [Array<Integer>] The troops, in their order; none for an erased event or one not looked up.
   def self.troops_of(event)
-    list = event.list
-    return [] unless list
-
     kept = @event_troops[event]
-    return kept[1] if kept && kept[0].equal?(list)
-
-    troops = troops_in(list, {})
-    @event_troops[event] = [list, troops]
-    troops
-  end
-
-  # Lists the troops whose battles a list of event commands starts, directly or in the common
-  # events it calls.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @param seen [Hash] The common events looked at already, by id, which a call back to one skips.
-  # @return [Array<Integer>] The troops.
-  def self.troops_in(list, seen)
-    list.each_with_object([]) do |command, troops|
-      params = command.parameters
-      if command.code == BATTLE_CODE && params[0] == DIRECT_TROOP
-        troops << params[1].to_i
-      elsif command.code == CALL_CODE
-        troops.concat(common_troops(params[0].to_i, seen))
-      end
-    end.uniq
-  end
-
-  # Lists the troops whose battles a common event starts, kept since the database never changes.
-  #
-  # A walk that skipped a common event looked at but not kept yet lacks that event's troops, so
-  # only a list that skipped none is kept, or the walk's first, which gathers them all.
-  #
-  # @param id [Integer] The common event.
-  # @param seen [Hash] See troops_in; its :cut entry marks a walk that skipped such an event.
-  # @return [Array<Integer>] The troops.
-  def self.common_troops(id, seen)
-    return @common_troops[id] if @common_troops.key?(id)
-    if seen[id]
-      seen[:cut] = true
-      return []
-    end
-
-    root = seen.empty?
-    outer = seen.delete(:cut)
-    seen[id] = true
-    common = $data_common_events[id]
-    troops = common && common.list && !colosseum?(common.list) ? troops_in(common.list, seen) : []
-    @common_troops[id] = troops if root || !seen[:cut]
-    seen[:cut] = true if outer
-    troops
-  end
-
-  # Reports whether a list of event commands starts a Colosseum battle, whose fights reuse the
-  # bosses' troops but are no raids.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @return [Boolean] Whether the list turns the Colosseum switch on.
-  def self.colosseum?(list)
-    switch = MGQ_MpRaidPool::COLOSSEUM_SWITCH
-    list.any? do |command|
-      params = command.parameters
-      command.code == SWITCH_CODE && params[2] == SWITCH_ON && switch.between?(params[0].to_i, params[1].to_i)
-    end
+    kept && event.list && kept[0].equal?(event.list) ? kept[1] : []
   end
 
   # Reports whether a troop's battle shows a bar: the last phase of a raid boss with pools whose

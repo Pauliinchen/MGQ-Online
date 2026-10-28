@@ -2,6 +2,9 @@
 //  EventSorterTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Sorted the game cases and the tiny game from the events database
+//                            - Classified the hand-made lists
+//                            - Sorted over event sources
 //      Paulinchen  2026-10-23: Checked that a page calling a battlefuck event is the player's own
 //                            - Created
 //
@@ -22,7 +25,8 @@ namespace MGQOnline.Game.Tests.Events;
 
 /// <summary>
 /// Covers the event sorter against the golden cases of coop_events.rbx: every list its tests
-/// sorted, and a few hundred of the game's pages and common events in two states.
+/// sorted, and a few hundred of the game's pages and common events in two states, sorted from the
+/// events database of the game folder.
 /// </summary>
 public sealed class EventSorterTests
 {
@@ -36,8 +40,7 @@ public sealed class EventSorterTests
         IReadOnlyList<JsonElement> cases = SorterCases.Read("script_cases.json");
         foreach ((JsonElement found, int index) in cases.Select((found, index) => (found, index)))
         {
-            Dictionary<long, EventCommand[]> commons = SorterCases.CommonsOf(found);
-            var sorter = new EventSorter(id => commons.GetValueOrDefault(id), SorterCases.NamesOf(found));
+            var sorter = new EventSorter(SorterCases.SourceOf(found));
             string answer = SorterCases.Answer(sorter, found, SorterCases.CommandsOf(found.GetProperty("list")));
             if (answer != SorterCases.Expected(found))
             {
@@ -56,15 +59,15 @@ public sealed class EventSorterTests
     [Fact]
     public void KindOf_SortsAPageThatCallsABattlefuckAsThePlayersOwn()
     {
-        var sorter = new EventSorter(_ => null, new GameSystemNames([], []));
+        var sorter = new EventSorter(EventDatabases.SourceOf(new TinyGame()));
         var state = new QuietState();
-        EventCommand[] battlefuck = [Command(EventCodes.ShowText, 0, "", 0, 0, 2), Command(EventCodes.ControlSwitches, 0, 60, 60, 0), Command(EventCodes.CallCommonEvent, 0, 7001)];
-        EventCommand[] other = [Command(EventCodes.CallCommonEvent, 0, 6998), Command(EventCodes.ControlSwitches, 0, 60, 60, 0)];
-        EventCommand[] questStep =
+        EventCommand[] battlefuck = CommandClassifier.Classify([Command(EventCodes.ShowText, 0, "", 0, 0, 2), Command(EventCodes.ControlSwitches, 0, 60, 60, 0), Command(EventCodes.CallCommonEvent, 0, 7001)]);
+        EventCommand[] other = CommandClassifier.Classify([Command(EventCodes.CallCommonEvent, 0, 6998), Command(EventCodes.ControlSwitches, 0, 60, 60, 0)]);
+        EventCommand[] questStep = CommandClassifier.Classify(
         [
             Command(EventCodes.Branch, 0, 1, 1028, 0, 4, 0), Command(EventCodes.CallCommonEvent, 1, 7001), Command(0, 1), Command(EventCodes.BranchEnd, 0),
             Command(EventCodes.ShowText, 0, "", 0, 0, 2), Command(EventCodes.ControlVariables, 0, 1028, 1028, 0, 0, 6),
-        ];
+        ]);
 
         Assert.Equal(EventKind.Own, sorter.KindOf(battlefuck, state));
         Assert.Equal(EventKind.Story, sorter.KindOf(other, state));
@@ -72,14 +75,16 @@ public sealed class EventSorterTests
     }
 
     /// <summary>
-    /// Asserts that the game's pages and common events sort as the scripts' sorter did, of those
-    /// whose commands the game folder holds as the recording's did.
+    /// Asserts that the game's pages and common events sort from the events database of the game
+    /// folder, which keeps only the commands the rules read, as the scripts' sorter did from the
+    /// whole lists, of those whose commands the folder holds as the recording's did.
     /// </summary>
     [Fact]
-    public void GameCases_SortAsTheScriptsDid()
+    public void GameCases_SortFromTheDatabaseAsTheScriptsDid()
     {
         GameData data = GameFolder.DataOrSkip();
-        var sorter = new EventSorter(id => data.CommonEvent(id)?.List, data.System);
+        var source = new EventStoreSource(GameFolder.StoreOrSkip());
+        var sorter = new EventSorter(source);
         var maps = new Dictionary<int, GameMap?>();
         var mismatches = new List<string>();
         int compared = 0;
@@ -92,7 +97,7 @@ public sealed class EventSorterTests
             }
 
             compared++;
-            string answer = SorterCases.Answer(sorter, found, list);
+            string answer = SorterCases.Answer(sorter, found, KeptListOf(source, site));
             if (answer != SorterCases.Expected(found))
             {
                 mismatches.Add($"{site} ({found.GetProperty("state").GetString()}): {answer} (expected {SorterCases.Expected(found)})");
@@ -109,8 +114,8 @@ public sealed class EventSorterTests
     /// <param name="code">The code.</param>
     /// <param name="indent">The indent.</param>
     /// <param name="parameters">The parameters, numbers and texts.</param>
-    /// <returns>The command.</returns>
-    private static EventCommand Command(int code, int indent, params object[] parameters) =>
+    /// <returns>The command, as read.</returns>
+    private static RawCommand Command(int code, int indent, params object[] parameters) =>
         new(code, indent, new RubyArray(parameters.Select(parameter => parameter is string text ? (RubyValue)text : (RubyValue)(long)(int)parameter)));
 
     /// <summary>
@@ -138,6 +143,19 @@ public sealed class EventSorterTests
         return map is not null && map.Events.TryGetValue(int.Parse(parts[2], CultureInfo.InvariantCulture), out MapEvent? mapEvent) && page < mapEvent.Pages.Count
             ? mapEvent.Pages[page].List
             : null;
+    }
+
+    /// <summary>
+    /// Finds the kept commands of a site in the events database.
+    /// </summary>
+    /// <param name="source">The database's events.</param>
+    /// <param name="site">"map:&lt;map&gt;:&lt;event&gt;:&lt;page&gt;", pages from 1, or "ce:&lt;id&gt;".</param>
+    /// <returns>The commands; the test fails when the database lacks the site.</returns>
+    private static IReadOnlyList<EventCommand> KeptListOf(EventStoreSource source, string site)
+    {
+        int[] parts = [.. site.Split(':').Skip(1).Select(part => int.Parse(part, CultureInfo.InvariantCulture))];
+        IReadOnlyList<EventCommand>? list = site.StartsWith("ce:", StringComparison.Ordinal) ? source.CommonList(parts[0]) : source.Page(parts[0], parts[1], parts[2] - 1)?.List;
+        return list ?? throw new InvalidOperationException($"The events database lacks {site}.");
     }
 
     /// <summary>

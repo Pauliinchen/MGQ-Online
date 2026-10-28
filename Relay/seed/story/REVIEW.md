@@ -21,6 +21,10 @@ left for the user to decide.
   `fixtures/catchup/generated`, which `make_seed.rb` writes from the Ruby constants, since their
   recorded cases were decided over those tables. The reviewed rows reach only the relay.
 - The review scripts are kept outside the repository, in `MGQ-Online-wt/rows-scratch`.
+- The `index` of `joins` and `removals` was reviewed as the command's place in the TEST install's
+  lists; since 2026-10-28 it holds the command's `ord` in the events database, which
+  `MGQOnline.Data.Generator ordinals` wrote from those places with every join and removal of one
+  companion in one list kept in its order (Relay/README.md "Join and removal indexes as ords").
 
 | Group | Table | Rows |
 |---|---|---|

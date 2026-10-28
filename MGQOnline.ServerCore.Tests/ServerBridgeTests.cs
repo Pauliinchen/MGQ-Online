@@ -2,6 +2,7 @@
 //  ServerBridgeTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Covered the SQLite version core.runtime names
 //      Paulinchen  2026-10-23: Covered a battle's players arranged by the core
 //                            - Covered the squad rules the core answers
 //                            - Covered the topics both hosts answer
@@ -90,7 +91,7 @@ public sealed unsafe class ServerBridgeTests
     }
 
     /// <summary>
-    /// Asserts that core.runtime describes the GC with plain values.
+    /// Asserts that core.runtime describes the GC and the SQLite it runs with plain values.
     /// </summary>
     [Fact]
     public void Call_DescribesTheRuntime()
@@ -102,6 +103,7 @@ public sealed unsafe class ServerBridgeTests
         Assert.True(runtime["heap_limit"].AsLong() > 0);
         Assert.False(runtime["server_gc"].AsBool());
         Assert.NotEmpty(runtime["latency"].AsText());
+        Assert.Matches(@"^3\.\d+\.\d+", runtime["sqlite"].AsText());
     }
 
     /// <summary>

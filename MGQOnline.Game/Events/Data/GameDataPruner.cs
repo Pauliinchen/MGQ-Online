@@ -2,6 +2,7 @@
 //  GameDataPruner.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Classified each list of commands as it finished
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -64,7 +65,7 @@ internal sealed class GameDataPruner : MarshalPruner
     /// <inheritdoc />
     public override RubyValue Finish(RubyObject value) => value.ClassName switch
     {
-        "RPG::EventCommand" => Box(new EventCommand(Int(value["code"]), Int(value["indent"]), value["parameters"] as RubyArray ?? EventCommand.NoParameters)),
+        "RPG::EventCommand" => Box(new RawCommand(Int(value["code"]), Int(value["indent"]), value["parameters"] as RubyArray ?? RawCommand.NoParameters)),
         "RPG::Event::Page::Condition" => Box(ConditionOf(value)),
         "RPG::Event::Page" => Box(new EventPage(Content<PageCondition>(value["condition"]) ?? PageCondition.None, Int(value["trigger"]), ListOf(value["list"]))),
         "RPG::Event" => Box(new MapEvent(Int(value["id"]), TextOf(value["name"]), ItemsOf<EventPage>(value["pages"]))),
@@ -76,11 +77,11 @@ internal sealed class GameDataPruner : MarshalPruner
     };
 
     /// <summary>
-    /// Reads a list of commands.
+    /// Reads a list of commands, its texts classified.
     /// </summary>
     /// <param name="value">The list as read: an Array of boxed commands, nil for none.</param>
     /// <returns>The commands.</returns>
-    internal static IReadOnlyList<EventCommand> ListOf(RubyValue value) => ItemsOf<EventCommand>(value);
+    internal static IReadOnlyList<EventCommand> ListOf(RubyValue value) => CommandClassifier.Classify(ItemsOf<RawCommand>(value));
 
     /// <summary>
     /// Reads an Array of boxed values.

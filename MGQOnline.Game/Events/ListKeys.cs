@@ -2,14 +2,16 @@
 //  ListKeys.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Kept the value each variable is set to when it is known before the list runs
+//      Paulinchen  2026-10-28: Read the script keys and self switch letters the classifier found
+//                            - Built the keys from the rows of a list
+//                            - Kept the value each variable is set to when it is known before the list runs
 //                            - Kept the self switches the list turns on and the maps it transfers the player to
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
 
 using System.Collections.Generic;
-using System.Text.RegularExpressions;
+using System.Linq;
 using MGQOnline.Game.Events.Data;
 
 namespace MGQOnline.Game.Events;
@@ -35,7 +37,7 @@ public readonly record struct VariableSet(long From, long To, long? Value);
 /// common events it calls: the keys of the story it reads, the keys and self switches it sets, the
 /// common events it calls and the troops it fights.
 /// </summary>
-public sealed partial class ListKeys
+public sealed class ListKeys
 {
     /// <summary>
     /// Gets the switches the list reads: branches, page conditions and scripts.
@@ -73,7 +75,8 @@ public sealed partial class ListKeys
     public List<string> SelfSwitchesOn { get; } = [];
 
     /// <summary>
-    /// Gets the maps the list transfers the player to by a constant, in their order.
+    /// Gets the maps the list transfers the player to by a constant, by the numbers the commands
+    /// hold (see <see cref="GameDataPaths.TransferMap"/>), in their order.
     /// </summary>
     public List<long> Transfers { get; } = [];
 
@@ -94,34 +97,54 @@ public sealed partial class ListKeys
     public List<(bool Call, long Id)> BattlesAndCalls { get; } = [];
 
     /// <summary>
+    /// Initializes the keys of a list from its rows, see <see cref="ListRows"/>.
+    /// </summary>
+    /// <param name="rows">The rows, each kind in the order of the commands.</param>
+    public ListKeys(ListRows rows)
+    {
+        foreach (ListRead read in rows.Reads)
+        {
+            (read.Variable ? ReadVariables : ReadSwitches).Add(read.Id);
+        }
+
+        foreach (ListWrite write in rows.Writes)
+        {
+            Writes.Add(write.Range);
+            if (write.Range.Variable)
+            {
+                VariableSets.Add(new VariableSet(write.Range.From, write.Range.To, write.Value));
+            }
+
+            if (write.TurnsOn)
+            {
+                TurnsOn.Add(write.Range);
+            }
+        }
+
+        SelfSwitches.AddRange(rows.SelfSwitches.Select(selfSwitch => selfSwitch.Letter));
+        SelfSwitchesOn.AddRange(rows.SelfSwitches.Where(selfSwitch => selfSwitch.TurnsOn).Select(selfSwitch => selfSwitch.Letter));
+        Transfers.AddRange(rows.Transfers.Select(transfer => transfer.MapId));
+        Calls.AddRange(rows.Calls.Select(call => call.CommonId));
+        Troops.AddRange(rows.Battles.Select(battle => battle.TroopId));
+        BattlesAndCalls.AddRange(rows.Calls.Select(call => (call.Place, (true, call.CommonId)))
+            .Concat(rows.Battles.Select(battle => (battle.Place, (false, battle.TroopId))))
+            .OrderBy(pair => pair.Place)
+            .Select(pair => pair.Item2));
+    }
+
+    /// <summary>
     /// Reads what a list does.
     /// </summary>
     /// <param name="list">The commands.</param>
     /// <returns>What it reads and writes.</returns>
-    public static ListKeys Of(IReadOnlyList<EventCommand> list)
-    {
-        var keys = new ListKeys();
-        foreach (EventCommand command in list)
-        {
-            keys.Add(command);
-        }
-
-        return keys;
-    }
+    public static ListKeys Of(IReadOnlyList<EventCommand> list) => new(ListRows.Of(list));
 
     /// <summary>
     /// Reads what a map event's page does: its list and the switches and variable its conditions check.
     /// </summary>
     /// <param name="page">The page.</param>
     /// <returns>What it reads and writes.</returns>
-    public static ListKeys Of(EventPage page)
-    {
-        ListKeys keys = Of(page.List);
-        AddIf(keys.ReadSwitches, page.Condition.Switch1);
-        AddIf(keys.ReadSwitches, page.Condition.Switch2);
-        AddIf(keys.ReadVariables, page.Condition.Variable);
-        return keys;
-    }
+    public static ListKeys Of(EventPage page) => new(ListRows.Of(page));
 
     /// <summary>
     /// Tells whether the list reads or writes a switch or variable of a set.
@@ -132,208 +155,4 @@ public sealed partial class ListKeys
     public bool Touches(SortedSet<long> switches, SortedSet<long> variables) =>
         ReadSwitches.Overlaps(switches) || ReadVariables.Overlaps(variables)
         || Writes.Exists(range => range.From <= range.To && (range.Variable ? variables : switches).GetViewBetween(range.From, range.To).Count > 0);
-
-    /// <summary>
-    /// Adds an id when there is one.
-    /// </summary>
-    /// <param name="ids">The ids.</param>
-    /// <param name="id">The id, <see langword="null"/> for none.</param>
-    private static void AddIf(HashSet<long> ids, long? id)
-    {
-        if (id is { } found)
-        {
-            ids.Add(found);
-        }
-    }
-
-    /// <summary>
-    /// Reads what one command does.
-    /// </summary>
-    /// <param name="command">The command.</param>
-    private void Add(EventCommand command)
-    {
-        switch (command.Code)
-        {
-            case EventCodes.InputNumber or EventCodes.SelectKeyItem or EventCodes.GetLocationInfo:
-                WriteVariable(command.Number(0));
-                if (command.Code == EventCodes.GetLocationInfo && command.Number(2) == 1)
-                {
-                    ReadVariables.UnionWith([command.Number(3), command.Number(4)]);
-                }
-
-                break;
-            case EventCodes.Branch:
-                AddBranch(command);
-                break;
-            case EventCodes.CallCommonEvent:
-                Calls.Add(command.Number(0));
-                BattlesAndCalls.Add((true, command.Number(0)));
-                break;
-            case EventCodes.ControlSwitches:
-                Writes.Add(new KeyRange(false, command.Number(0), command.Number(1)));
-                if (command.Number(2) == 0)
-                {
-                    TurnsOn.Add(new KeyRange(false, command.Number(0), command.Number(1)));
-                }
-
-                break;
-            case EventCodes.ControlVariables:
-                Writes.Add(new KeyRange(true, command.Number(0), command.Number(1)));
-                VariableSets.Add(new VariableSet(command.Number(0), command.Number(1), ConstantSet(command)));
-                AddOperand(command, 3);
-                if (command.Number(3) == 4)
-                {
-                    AddScript(command.Text(4));
-                }
-
-                break;
-            case EventCodes.ControlSelfSwitch:
-                SelfSwitches.Add(command.Text(0));
-                if (command.Number(1) == 0)
-                {
-                    SelfSwitchesOn.Add(command.Text(0));
-                }
-
-                break;
-            case EventCodes.ChangeGold:
-                AddOperand(command, 1);
-                break;
-            case EventCodes.ChangeItems or EventCodes.ChangeWeapons or EventCodes.ChangeArmors:
-                AddOperand(command, 2);
-                break;
-            case EventCodes.TransferPlayer:
-                AddPlace(command, 0, 1, 3);
-                if (command.Number(0) == 0)
-                {
-                    Transfers.Add(command.Number(1));
-                }
-
-                break;
-            case EventCodes.SetVehicleLocation:
-                AddPlace(command, 1, 2, 3);
-                break;
-            case EventCodes.SetEventLocation:
-                AddPlace(command, 1, 2, 2);
-                break;
-            case EventCodes.Battle:
-                if (command.Number(0) == 0)
-                {
-                    Troops.Add(command.Number(1));
-                    BattlesAndCalls.Add((false, command.Number(1)));
-                }
-                else if (command.Number(0) == 1)
-                {
-                    ReadVariables.Add(command.Number(1));
-                }
-
-                break;
-            case EventCodes.Script or EventCodes.ScriptLine:
-                AddScript(command.Text(0));
-                break;
-        }
-    }
-
-    /// <summary>
-    /// Reads a conditional branch's switch or variables.
-    /// </summary>
-    /// <param name="command">The branch.</param>
-    private void AddBranch(EventCommand command)
-    {
-        switch (command.Number(0))
-        {
-            case 0:
-                ReadSwitches.Add(command.Number(1));
-                break;
-            case 1:
-                ReadVariables.Add(command.Number(1));
-                if (command.Number(2) != 0)
-                {
-                    ReadVariables.Add(command.Number(3));
-                }
-
-                break;
-            case 12:
-                AddScript(command.Text(1));
-                break;
-        }
-    }
-
-    /// <summary>
-    /// Reads the variable an operand names, when it names one.
-    /// </summary>
-    /// <param name="command">The command.</param>
-    /// <param name="kind">The place of the operand's kind, 1 for a variable, the operand after it.</param>
-    private void AddOperand(EventCommand command, int kind)
-    {
-        if (command.Number(kind) == 1)
-        {
-            ReadVariables.Add(command.Number(kind + 1));
-        }
-    }
-
-    /// <summary>
-    /// Reads the variables a place by variables names.
-    /// </summary>
-    /// <param name="command">The command.</param>
-    /// <param name="designation">The place of its designation, 1 for variables.</param>
-    /// <param name="first">The place of the first variable.</param>
-    /// <param name="last">The place of the last variable.</param>
-    private void AddPlace(EventCommand command, int designation, int first, int last)
-    {
-        if (command.Number(designation) != 1)
-        {
-            return;
-        }
-
-        for (int place = first; place <= last; place++)
-        {
-            ReadVariables.Add(command.Number(place));
-        }
-    }
-
-    /// <summary>
-    /// Reads the switches and variables a script names by their ids, as read or set.
-    /// </summary>
-    /// <param name="script">The script, or one of its lines.</param>
-    private void AddScript(string script)
-    {
-        foreach (Match match in ScriptKey().Matches(script))
-        {
-            long id = long.Parse(match.Groups["id"].ValueSpan, System.Globalization.CultureInfo.InvariantCulture);
-            bool variable = match.Groups["kind"].Value == "variables";
-            (variable ? ReadVariables : ReadSwitches).Add(id);
-            if (match.Groups["set"].Success)
-            {
-                Writes.Add(new KeyRange(variable, id, id));
-                if (variable)
-                {
-                    VariableSets.Add(new VariableSet(id, id, null));
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Notes a variable the list sets.
-    /// </summary>
-    /// <param name="id">The variable.</param>
-    private void WriteVariable(long id)
-    {
-        Writes.Add(new KeyRange(true, id, id));
-        VariableSets.Add(new VariableSet(id, id, null));
-    }
-
-    /// <summary>
-    /// Reads the value a Control Variables command sets when it sets a constant.
-    /// </summary>
-    /// <param name="command">The command: its operation third (0 sets), its operand's kind fourth (0 for a constant), the constant fifth.</param>
-    /// <returns>The constant, <see langword="null"/> for another operation or operand.</returns>
-    private static long? ConstantSet(EventCommand command) => command.Number(2) == 0 && command.Number(3) == 0 ? command.Number(4) : null;
-
-    /// <summary>
-    /// A switch or variable a script names by its id, set when an assignment follows.
-    /// </summary>
-    /// <returns>The pattern: its kind ("switches" or "variables"), id and whether it is set.</returns>
-    [GeneratedRegex(@"\$game_(?<kind>switches|variables)\[\s*(?<id>[0-9]{1,9})\s*\](?<set>\s*(?:[-+*/%|&]|<<|>>|\|\||&&)?=(?!=))?", RegexOptions.CultureInvariant)]
-    private static partial Regex ScriptKey();
 }

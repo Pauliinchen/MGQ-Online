@@ -2,6 +2,7 @@
 #  ui_raid_freeze.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Read what a page writes from the DLL's command index and the post-defeat processing's writes from the freeze's tables
 #      Paulinchen  2026-10-17: Created
 #
 #----------------------------------------------------------------
@@ -34,18 +35,6 @@ module MGQ_MpRaidFreezeUi
 
   # The event commands a page holds when it runs nothing: its end and comments.
   QUIET_CODES = [0, 108, 408]
-
-  # The event command that calls a common event.
-  CALL_CODE = 117
-
-  # The event command that turns switches on or off.
-  SWITCH_CODE = 121
-
-  # The event command that writes variables.
-  VARIABLE_CODE = 122
-
-  # The event command that turns a self switch of its event on or off.
-  SELF_SWITCH_CODE = 123
 
   # The trigger of an event that runs by itself.
   AUTORUN_TRIGGER = 3
@@ -105,8 +94,6 @@ module MGQ_MpRaidFreezeUi
   # The writes of each list of commands the start of an event looked at, by the list's object id.
   @writes = {}
 
-  # The writes of each common event, by id.
-  @common_writes = {}
 
   # The frame of the last refused start of each event the player started, by map and event.
   @refused = {}
@@ -309,7 +296,7 @@ module MGQ_MpRaidFreezeUi
   end
 
   # Indexes the story values a frozen fight holds by kind, those of the game's post-defeat
-  # processing left out (MGQ_MpRaidFreezeData::DEFEAT_WRITES).
+  # processing left out (the freeze's DEFEAT_WRITES, see MGQ_MpRaidFreeze.data).
   #
   # The game's events use those as scratch values, so a shop or an inn writes them too.
   #
@@ -331,9 +318,9 @@ module MGQ_MpRaidFreezeUi
   # @param key [Integer, Array] Its id or key.
   # @return [Boolean] Whether it does.
   def self.scratch?(kind, key)
-    return false if kind == 2 || !defined?(MGQ_MpRaidFreezeData) || !MGQ_MpRaidFreezeData.const_defined?(:DEFEAT_WRITES)
+    return false if kind == 2 || !defined?(MGQ_MpRaidFreeze)
 
-    Array(MGQ_MpRaidFreezeData::DEFEAT_WRITES[kind == 0 ? :switches : :variables]).any? { |range| range === key }
+    Array(MGQ_MpRaidFreeze.data(:DEFEAT_WRITES, {})[kind == 0 ? :switches : :variables]).any? { |range| range === key }
   end
 
   # Reads a row of a tableau, its values made the types the stand-in takes.
@@ -634,7 +621,7 @@ module MGQ_MpRaidFreezeUi
     writes = tableau.writes
     return nil if writes.all? { |keys| keys.empty? }
 
-    list_writes(event.list).each do |kind, target|
+    page_writes(event).each do |kind, target|
       if kind == 2
         key = [$game_map.map_id, event.id, target]
         return "self switch #{key.join('.')}" if writes[2][key]
@@ -646,44 +633,17 @@ module MGQ_MpRaidFreezeUi
     nil
   end
 
-  # Lists what a list of commands writes, through the common events it calls too.
+  # Lists what the page an event shows writes, through the common events it calls too, as the DLL's
+  # command index tells it (MGQ_MpCoopEvents.page_writes), kept per list of commands.
   #
-  # @param list [Array<RPG::EventCommand>, nil] The commands.
+  # @param event [Game_Event] The event.
   # @return [Array<Array>] Each write: 0 or 1 with the switches' or variables' range, or 2 with the
   #   self switch's letter.
-  def self.list_writes(list)
+  def self.page_writes(event)
+    list = event.list
     return [] unless list
 
-    @writes[list.object_id] ||= scan_writes(list)
-  end
-
-  # Reads what a list of commands writes, see list_writes.
-  #
-  # @param list [Array<RPG::EventCommand>] The commands.
-  # @return [Array<Array>] The writes.
-  def self.scan_writes(list)
-    list.each_with_object([]) do |command, writes|
-      params = command.parameters
-      case command.code
-      when SWITCH_CODE then writes << [0, params[0].to_i..params[1].to_i]
-      when VARIABLE_CODE then writes << [1, params[0].to_i..params[1].to_i]
-      when SELF_SWITCH_CODE then writes << [2, params[0].to_s]
-      when CALL_CODE then writes.concat(common_writes(params[0].to_i))
-      end
-    end
-  end
-
-  # Lists what a common event writes, through the common events it calls too.
-  #
-  # @param id [Integer] The common event.
-  # @return [Array<Array>] The writes, see list_writes.
-  def self.common_writes(id)
-    return @common_writes[id] if @common_writes.key?(id)
-
-    # A common event that calls itself, directly or not, reads as writing nothing more there.
-    @common_writes[id] = []
-    common = $data_common_events ? $data_common_events[id] : nil
-    @common_writes[id] = common && common.list ? scan_writes(common.list) : []
+    @writes[list.object_id] ||= MGQ_MpCoopEvents.page_writes(event)
   end
 
   # Logs a refused start once in REFUSE_FRAMES per event; an event that runs by itself is logged once.
@@ -739,7 +699,6 @@ module MGQ_MpRaidFreezeUi
     @fresh_at = nil
     @played = {}
     @writes = {}
-    @common_writes = {}
     @refused = {}
     @contact = {}
     @resumed_at = nil

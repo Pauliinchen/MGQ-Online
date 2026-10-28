@@ -2,6 +2,7 @@
 #  world_overview.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Read the progress, the routes and the sides by their ids in place of their names
 #      Paulinchen  2026-10-24: Listed the pages of other mods after the own pages and made room for two of their tabs
 #                            - Placed the menu of a page with a head, a list and a pane over the pane or under its buttons
 #                            - Opened the overview outside a world too, as Single player with the Quests page
@@ -83,23 +84,15 @@ module MGQ_MpWorldOverview
   # seconds, since the state is compared every frame.
   READ_FRAMES = 180
 
-  # The story's progress variable, by its name in the translation and in the untranslated game.
-  PROGRESS = ["Overall Events Progress", "総合イベント進行度"]
+  # The story's progress variable ("Overall Events Progress").
+  PROGRESS = 1001
 
-  # The side chosen, by the switch that records the choice, in the translation and in the
-  # untranslated game.
-  SIDES = {
-    "ilias" => ["Ilias Chosen", "イリアス選択"],
-    "alice" => ["Alice Chosen", "アリス選択"],
-  }
+  # The side chosen, by the switch that records the choice ("Ilias Chosen", "Alice Chosen").
+  SIDES = { "ilias" => 5, "alice" => 4 }
 
   # Route of the final chapter, by the variable that counts its progress; the route not being
   # played holds 0.
-  ROUTES = {
-    "chaos" => ["混沌ルート進行度"],
-    "destroyer" => ["天界ルート進行度"],
-    "judgment" => ["魔界ルート進行度"],
-  }
+  ROUTES = { "chaos" => 1143, "destroyer" => 1141, "judgment" => 1142 }
 
   # The topic that finds a player's place in the story as a code, such as "2:alice".
   STORY_TOPIC = "overview.story"
@@ -720,10 +713,10 @@ module MGQ_MpWorldOverview
   #   empty when the DLL did not answer.
   def self.story_code
     routes = {}
-    ROUTES.each { |key, names| routes[key] = variable(names) }
+    ROUTES.each { |key, id| routes[key] = $game_variables[id].to_i }
     sides = {}
-    SIDES.each { |key, names| sides[key] = switch?(names) }
-    MGQ_Multiplayer::Bridge.call(STORY_TOPIC, "p" => variable(PROGRESS), "routes" => routes, "sides" => sides) || ""
+    SIDES.each { |key, id| sides[key] = $game_switches[id] == true }
+    MGQ_Multiplayer::Bridge.call(STORY_TOPIC, "p" => $game_variables[PROGRESS].to_i, "routes" => routes, "sides" => sides) || ""
   rescue => e
     log("reading the story failed: #{e.class}: #{e.message}")
     ""
@@ -738,26 +731,6 @@ module MGQ_MpWorldOverview
     return "" if text.empty?
 
     cached(:story, text) { MGQ_Multiplayer::Bridge.call(STORY_TEXT_TOPIC, text) } || ""
-  end
-
-  # Reads a variable by its names in the translation and the untranslated game.
-  #
-  # @param names [Array<String>] The names.
-  # @return [Integer] Its value, 0 when the game has none of these names.
-  def self.variable(names)
-    id = names.map { |name| $data_system.variables.index(name) }.compact.first
-    log_once([:variable, names], "no variable of the game is named #{names.join(' or ')}, reading 0") unless id
-    id ? $game_variables[id].to_i : 0
-  end
-
-  # Reads a switch by its names in the translation and the untranslated game.
-  #
-  # @param names [Array<String>] The names.
-  # @return [Boolean] Whether it is on, false when the game has none of these names.
-  def self.switch?(names)
-    id = names.map { |name| $data_system.switches.index(name) }.compact.first
-    log_once([:switch, names], "no switch of the game is named #{names.join(' or ')}, reading off") unless id
-    id ? $game_switches[id] == true : false
   end
 
   # Lists the players of the world online, the player first.

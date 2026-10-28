@@ -2,6 +2,7 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Stood in for the DLL's command index of the map's pages, whose walk through common events the DLL's tests check
 #      Paulinchen  2026-10-23: Placed the strip through the stand-in of the layout in C#
 #                            - Stood in for the ids coop.rbx makes up
 #                            - Showed the HUD over the map's sprites
@@ -272,6 +273,8 @@ end
 Command = Struct.new(:code, :parameters)
 # A map event: its page's commands, its looks and where it stands.
 Game_Event = Struct.new(:list, :character_name, :tile_id, :transparent, :opacity, :x, :y)
+# Names a map event by its x, unique on the checks' maps.
+class Game_Event; def id; x; end; end
 # A common event.
 CommonEvent = Struct.new(:list)
 # A character's sprite on the map.
@@ -298,6 +301,26 @@ load_script "battles_raid_tiers"
 # tier.
 REAL_TIERS = MGQ_MpRaidBosses::TIERS.dup
 MGQ_MpRaidBosses::TIERS.replace(REAL_TIERS.keys.each_with_object({}) { |tier, tiers| tiers[tier] = { :mhp => 7.5 } })
+# Stands in for the DLL's command index of the map's pages: the troops each page fights, through
+# the common events of $data_common_events it calls, each once; the asks noted in $troops_asked.
+module MGQ_MpCoopEvents
+  # Lists the troops of the events' pages by event.
+  def self.page_troops(events, skip)
+    ($troops_asked ||= []) << [events.map(&:x), skip]
+    Hash[events.map { |event| [event.id, troops_in(event.list, {})] }]
+  end
+  # Lists the troops of commands.
+  def self.troops_in(list, seen)
+    list.flat_map do |command|
+      id = command.parameters[0]
+      next [command.parameters[1]] if command.code == 301
+      next [] unless command.code == 117 && !seen[id] && $data_common_events[id]
+
+      seen[id] = true
+      troops_in($data_common_events[id].list, seen)
+    end.uniq
+  end
+end
 load_script "ui_raid_bar"
 
 # The bridge to the fake models of the interface, which place the boxes in the layout.
@@ -553,22 +576,10 @@ gate = Game_Event.new([Command.new(117, [20])], "", 0, false, 255, 30, 4)
 $game_map.events = { 1 => harpy, 2 => gate, 3 => Game_Event.new(nil, "$Erased", 0, false, 255, 0, 0) }
 check("the events whose page starts a boss battle, through common events too, a beaten boss left out",
       bar.boss_events.map { |event, troop| [event.x, troop] }, [[10, 71], [30, 1599]])
-# A page that calls a common event.
-calls = lambda { |id| [Command.new(117, [id])] }
-$data_common_events[40] = CommonEvent.new([Command.new(117, [41]), battle(401)])
-$data_common_events[41] = CommonEvent.new([Command.new(117, [40]), battle(411)])
-check("common events that call each other: an event calling one finds the troops of both",
-      bar.troops_in(calls.call(40), {}).sort, [401, 411])
-check("and a later event calling the other alone still finds both", bar.troops_in(calls.call(41), {}).sort, [401, 411])
-$data_common_events[50] = CommonEvent.new([Command.new(117, [51]), Command.new(117, [52]), battle(501)])
-$data_common_events[51] = CommonEvent.new([Command.new(117, [53]), battle(511)])
-$data_common_events[52] = CommonEvent.new([Command.new(117, [53]), battle(521)])
-$data_common_events[53] = CommonEvent.new([Command.new(117, [50]), battle(531)])
-check("two common events calling one that calls back: the first finds every troop", bar.troops_in(calls.call(50), {}).sort, [501, 511, 521, 531])
-check("and the second, cut short in that walk, is not kept short", bar.troops_in(calls.call(52), {}).sort, [501, 511, 521, 531])
-$data_common_events[60] = CommonEvent.new([Command.new(121, [86, 87, 0]), Command.new(117, [61])])
-$data_common_events[61] = CommonEvent.new([battle(812)])
-check("a Colosseum common event shows no bars, though its fights reuse the bosses troops", [bar.troops_in(calls.call(60), {}), bar.troops_in(calls.call(61), {})], [[], [812]])
+check("the DLL is asked once for the pages of the map's events, the Colosseum's common events left out", $troops_asked, [[[10, 30], 87]])
+$frame += MGQ_MpRaidBar::SCAN_FRAMES
+bar.boss_events
+check("and not again while their pages stay", $troops_asked.size, 1)
 check("the steps to a boss's event", [bar.distance_to_boss(71, 12, 13), bar.distance_to_boss(2016, 0, 0)], [3, MGQ_MpRaidBar::FAR])
 $game_map.map_id = MGQ_MpRaidPool::HADES_MAP
 $frame += MGQ_MpRaidBar::SCAN_FRAMES

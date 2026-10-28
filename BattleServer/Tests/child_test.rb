@@ -2,6 +2,7 @@
 #  child_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-28: Covered the game data's fingerprint a child hands the core
 #      Paulinchen  2026-10-23: Covered the battle a child without the core refuses
 #                            - Covered which core library a child loads and the order it loads, closes in and shakes hands
 #                            - Created
@@ -10,8 +11,9 @@
 
 # Tests of how server.rb prepares a battle's child before it plays, with stand-ins for the sandbox
 # and the core library: which library it loads, that it loads it before the sandbox and shakes
-# hands after it, what the client hears when the child cannot be closed in, the core's log, and the
-# relay's refusal of a battle while the core does not answer.
+# hands after it, what the client hears when the child cannot be closed in, the core's log, the
+# game data's fingerprint it hands the core, and the relay's refusal of a battle while the core
+# does not answer.
 
 require "fileutils"
 require "json"
@@ -45,8 +47,8 @@ module Sandbox
   end
 end
 
-# Stands in for the core library behind MGQ_Multiplayer::Bridge::FiddleBackend: loading it and
-# its handshake are noted in $steps, and its first drain hands out a log line.
+# Stands in for the core library behind MGQ_Multiplayer::Bridge::FiddleBackend: loading it, its
+# handshake and each call are noted in $steps, and its first drain hands out a log line.
 class FakeCore
   # The handshake's reply.
   HANDSHAKE = Marshal.dump({ "ok" => true, "value" => { "bridge" => 1, "build" => "0.0.0-dev", "context" => 1, "topics" => ["batch"] } })
@@ -70,6 +72,16 @@ class FakeCore
     $steps << :handshake
     reply[0, HANDSHAKE.bytesize] = HANDSHAKE
     HANDSHAKE.bytesize
+  end
+
+  # Runs a topic, answering nothing.
+  #
+  # @param topic [String] The topic, null-terminated.
+  # @param request [String] The request as Marshal.
+  # @return [Integer] 0, for no reply.
+  def call(_context, topic, request, _length, _reply, _size)
+    $steps << [:call, topic.chomp("\0"), Marshal.load(request)]
+    0
   end
 
   # Takes the events, a log line the first time.
@@ -156,5 +168,20 @@ check("a child without the core refuses MGQ Online's battle, telling the relay w
       [1, "refused", "core", true])
 enter_child(library)
 check("with the core the battle gets past that refusal", host_battle.map { |line| line["code"] }.include?("core"), false)
+
+# Stands in for the game data MGQ Online read on a server of its battles.
+module MGQ_MpWorld
+  # Stands in for its fingerprint.
+  module GameData
+    # Gives the fingerprint.
+    #
+    # @return [String] A fingerprint.
+    def self.fingerprint
+      "1:0a0b0c0d"
+    end
+  end
+end
+check("with MGQ Online loaded the child hands the core the game data's fingerprint after the handshake",
+      [enter_child(library), $steps], [[true, ""], [:load, :sandbox, :handshake, [:call, "core.game_data", "1:0a0b0c0d"]]])
 
 FileUtils.rm_rf(dir)

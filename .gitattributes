@@ -1,5 +1,15 @@
 # batch files must keep Windows line endings
 *.bat text eol=crlf
+*.cmd text eol=crlf
+
+# shell scripts run on Linux, copied there from a Windows checkout
+*.sh text eol=lf
 
 # Marshal fixtures are bytes, compared byte for byte
 *.marshal binary
+
+# the SQLite amalgamation, checked in as released and never diffed
+MGQOnline.Data/native/sqlite/* -text -diff
+
+# the events database the generator writes, shipped as built and never diffed
+package/Multiplayer/Data/*.db binary

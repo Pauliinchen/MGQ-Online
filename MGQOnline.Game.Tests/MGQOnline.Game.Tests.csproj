@@ -22,6 +22,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MGQOnline.Game\MGQOnline.Game.csproj" />
+
+    <!-- The generator writes the events database the rules are tested over, from the tiny game and the game folder. -->
+    <ProjectReference Include="..\MGQOnline.Data.Generator\MGQOnline.Data.Generator.csproj" />
   </ItemGroup>
 
   <!-- The golden cases Ruby wrote, shared with the Ruby side's tests. -->
