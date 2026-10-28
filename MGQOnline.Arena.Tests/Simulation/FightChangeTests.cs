@@ -2,6 +2,7 @@
 //  FightChangeTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-28: Tested a trait row on the fall of its own enemy
 //      Paulinchen  2026-10-24: Wrote the fight changes as rows of the Trigger -> Effect framework
 //      Paulinchen  2026-10-23: Created
 //
@@ -65,7 +66,8 @@ public sealed class FightChangeTests
     }
 
     /// <summary>
-    /// A battle row on an enemy's fall fires once, while the same row as a trait fires for every enemy still standing.
+    /// A battle row on an enemy's fall fires once, while the same row as a trait fires for the fallen
+    /// enemy and every enemy still standing.
     /// </summary>
     [Fact]
     public void FightRuleFiresOncePerFall()
@@ -73,7 +75,23 @@ public sealed class FightChangeTests
         RuleSpec joins = SimFixtures.Rule("reinforce", new FallsTrigger(Who.Enemy(SimFixtures.Slot)), [new EnemyJoinsEffect(SecondSlot)]);
 
         Assert.Equal(1, JoinsAfterFirstFall(joins with { Owner = RuleOwner.Battle }));
-        Assert.Equal(2, JoinsAfterFirstFall(joins));
+        Assert.Equal(3, JoinsAfterFirstFall(joins));
+    }
+
+    /// <summary>
+    /// A trait row on its own enemy's fall fires when that enemy falls.
+    /// </summary>
+    [Fact]
+    public void TraitRowFiresOnItsOwnEnemysFall()
+    {
+        RuleSpec lastWords = SimFixtures.Rule("lastWords", new FallsTrigger(Who.Owner), [new ShowTextEffect("bye")]);
+        BattleSimulator simulator = SimFixtures.Simulator(Design([lastWords]));
+        BattleState state = simulator.Start(SimFixtures.Setup(1));
+
+        simulator.Plan(state);
+        simulator.Resolve(state, Hit(0));
+
+        Assert.Equal("bye", Assert.Single(state.Log.OfType<ShowTextEvent>()).Text);
     }
 
     /// <summary>

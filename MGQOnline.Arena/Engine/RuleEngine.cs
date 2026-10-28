@@ -2,7 +2,8 @@
 //  RuleEngine.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-28: Capped the rule fires of one dispatch and warned of a rule loop once per dispatch
+//      Paulinchen  2026-10-28: Matched the rows of a fallen enemy on its own fall
+//                            - Capped the rule fires of one dispatch and warned of a rule loop once per dispatch
 //                            - Kept the effects of a skill used row other than its casts until the cast resolves
 //                            - Matched the fight rows of the stage the battle is in
 //                            - Fired a row the Nth or every Nth time its trigger and conditions held
@@ -184,8 +185,8 @@ public sealed class RuleEngine
     /// </summary>
     /// <remarks>
     /// An event that names an enemy reaches that enemy's rules only; any other event reaches the rules of
-    /// every living enemy, each enemy in turn. The fight rules of the stage the battle is in come last,
-    /// once, for the enemy the event names or the fallen one.
+    /// every living enemy, each enemy in turn, and an enemy's fall reaches its own rules first. The fight
+    /// rules of the stage the battle is in come last, once, for the enemy the event is about.
     /// </remarks>
     /// <param name="context">The battle.</param>
     /// <param name="battleEvent">The event.</param>
@@ -214,6 +215,11 @@ public sealed class RuleEngine
     private IEnumerable<RuleList> ListsFor(IRuleContext context, BattleEvent battleEvent)
     {
         int? named = EventFacts.EnemyOf(battleEvent);
+        if (battleEvent is EnemyFellEvent fell && !context.LivingEnemies.Contains(fell.Enemy) && context.SlotOf(fell.Enemy) is string fallenSlot)
+        {
+            yield return new RuleList(fell.Enemy, fell.Enemy, false, Book.RulesOf(fallenSlot));
+        }
+
         foreach (int enemy in context.LivingEnemies)
         {
             if ((named is int only && only != enemy) || context.SlotOf(enemy) is not string slot)
