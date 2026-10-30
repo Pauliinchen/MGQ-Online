@@ -2,6 +2,7 @@
 #  pvp_backline_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Opened the bridge to the stand-in of the DLL, which checks the Frontlines and names the stream's kinds
 #      Paulinchen  2026-10-23: Stood in for the bridge, whose events coop.rbx registers for
 #      Paulinchen  2026-10-12: Stood in for the Mod Config settings group
 #      Paulinchen  2026-10-07: Loaded coop.rbx and stood in for the live battle's list of names
@@ -14,7 +15,8 @@
 # the Frontline each game tells the other, what a swap costs the character swapped in, and the
 # characters outside both Frontlines in the host's stream.
 
-require_relative "support"
+require_relative "bridge_support"
+require_relative "live_support"
 
 $log = []
 # Stands in for the mod's base script.
@@ -25,9 +27,12 @@ module MGQ_Multiplayer
   module Link; def self.player_id; "me-id-000"; end; end
   # Stands in for Discord, which is not running.
   module Discord; def self.available?; false; end; end
-  # Stands in for the bridge to the DLL, whose events coop.rbx registers for, ignoring them.
-  module Bridge; def self.on(*); end; end
 end
+# The DLL's side of the bridge, whose live battle checks the Frontlines each game tells.
+load_bridge
+$fake = FakeBridge.new
+answer_live($fake)
+MGQ_Multiplayer::Bridge.open($fake)
 # Stands in for the world's sync, as far as coop.rbx, through which the option registers, asks it.
 module MGQ_MpOverworldSync
   # Stands in for the check for an open world: the player is in none.
@@ -150,8 +155,8 @@ end
 
 # Stands in for the battles, keeping each battle kind's mode.
 module MGQ_MpBattles
-  # Stands in for a battle kind's mode, whose stream carries no messages of its own.
-  module Mode; def stream_kinds; []; end; end
+  # Stands in for a battle kind's mode, whose stream carries the messages the DLL names, as battles.rbx's does.
+  module Mode; def stream_kinds; Array(MGQ_Multiplayer::Bridge.call("live.mode", "op" => "kinds")); end; end
   # Keeps a battle kind's mode.
   #
   # @param name [Symbol] The battle kind.

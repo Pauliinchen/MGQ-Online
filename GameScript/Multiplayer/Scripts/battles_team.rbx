@@ -2,6 +2,8 @@
 #  battles_team.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Left the sides' answers of the duel's mode to the battle modes' defaults
+#                            - Kept who commands the characters of who left in the DLL
 #      Paulinchen  2026-10-23: Named the player by their seat in the battle
 #      Paulinchen  2026-10-12: Took only pairs of seats as who commands the characters of who left
 #                            - Left out the players of a side that do not read
@@ -36,7 +38,8 @@ module MGQ_MpBattlesTeam
   # Whether this game's side is the host's.
   @same_side = false
 
-  # The seat of who commands the characters of each player who left, nil when their side is gone.
+  # The seat of who commands the characters of each player who left, nil when their side is gone,
+  # as the DLL keeps them (MGQOnline.Game's TeamSides); read every frame by commands?.
   @heirs = {}
 
   # The other side's rebuilt characters by their owner's seat and place.
@@ -46,6 +49,9 @@ module MGQ_MpBattlesTeam
 
   # What starts this script's lines in the log.
   LOG_TAG = "team duel"
+
+  # The DLL's topic of the duel's sides (MGQOnline.Game's TeamSides, behind LiveTopics).
+  SIDES_TOPIC = "live.team"
 
   # Reports whether this game's side is the host's.
   #
@@ -78,7 +84,7 @@ module MGQ_MpBattlesTeam
     @own = MGQ_MpBattlesCoop::Player.read_all(own)
     @other = MGQ_MpBattlesCoop::Player.read_all(other)
     @same_side = same_side
-    @heirs = {}
+    sides("prepare", "own" => @own.map(&:seat), "other" => @other.map(&:seat), "same_side" => same_side ? true : false)
     @opponents = {}
     log("sides, the player's #{same_side ? 'hosting' : 'guest'} side: #{side_text(@own)}; the other side: #{side_text(@other)}")
   end
@@ -106,6 +112,19 @@ module MGQ_MpBattlesTeam
   # @return [String] Each player who left and who took their characters over.
   def self.heirs_text
     @heirs.map { |seat, heir| "#{MGQ_MpBattlesSync.who(seat)} by #{heir ? MGQ_MpBattlesSync.who(heir) : 'nobody, their side is gone'}" }.join(", ")
+  end
+
+  # Asks the DLL's sides of the duel a step, and keeps who commands the characters of who left.
+  #
+  # @param op [String] The step, such as "settle".
+  # @param fields [Hash] What it needs.
+  # @return [Hash] What it answers, empty while the DLL does not answer.
+  def self.sides(op, fields = {})
+    reply = MGQ_Multiplayer::Bridge.call(SIDES_TOPIC, { "op" => op }.merge(fields))
+    return {} unless reply.is_a?(Hash)
+
+    @heirs = Hash[Array(reply["heirs"]).map { |seat, heir| [seat, heir] }]
+    reply
   end
 
   # Names who leads the other side, the opponent Discord shows.
@@ -158,14 +177,6 @@ module MGQ_MpBattlesTeam
     log("forming the side failed: #{e.class}: #{e.message}")
   end
 
-  # Reports whether a guest stands on the host's side. Asked by the host.
-  #
-  # @param seat [Integer] The guest's world seat.
-  # @return [Boolean] Whether they do.
-  def self.same_side_as_host?(seat)
-    @own.any? { |player| player.seat == seat }
-  end
-
   # Finds who commands the characters of a player who left.
   #
   # @param seat [Integer] The world seat of the player who left.
@@ -183,54 +194,35 @@ module MGQ_MpBattlesTeam
     MGQ_MpBattlesSync.team? && heir_of(ally.mp_seat) == MGQ_MpBattlesSync.own_seat
   end
 
-  # Lists the players of a side still in the duel: the host and the guests who did not leave.
-  #
-  # @param side [Array<MGQ_MpBattlesCoop::Player>] The side's players.
-  # @return [Array<Integer>] Their seats, in the side's order.
-  def self.staying(side)
-    host = MGQ_MpBattlesSync.own_seat
-    side.map(&:seat).select { |seat| seat == host || MGQ_MpBattlesSync.guests_in.include?(seat) }
-  end
-
-  # Reports whether every player of the other side left. Asked by the host.
+  # Reports whether every player of the other side left, the host and the guests who did not leave,
+  # as the DLL's sides tell. Asked by the host.
   #
   # @return [Boolean] Whether they did.
   def self.other_side_gone?
-    staying(@other).empty?
+    sides("gone", "host" => MGQ_MpBattlesSync.own_seat)["gone"] ? true : false
   end
 
   # As host, hands the characters of the players who left to the first player of their side
-  # still in the duel, told to the guests between two of the host's sends. Called when a command
-  # phase starts.
+  # still in the duel, as the DLL's sides decide, told to the guests between two of the host's
+  # sends. Called when a command phase starts.
   def self.settle
-    changed = false
-    [@own, @other].each do |side|
-      heir = staying(side).first
-      side.map(&:seat).each do |seat|
-        next if staying(side).include?(seat) || @heirs[seat] == heir
-
-        @heirs[seat] = heir
-        changed = true
-      end
-    end
-    return unless changed
+    post = sides("settle", "host" => MGQ_MpBattlesSync.own_seat)["post"]
+    return unless post
 
     MGQ_MpBattlesSync::Recorder.flush if MGQ_MpBattlesSync::Recorder.active?
-    MGQ_MpBattlesSync::Channel.post("team_heirs", MGQ_MpBattlesSync::Wire.line([@heirs.reject { |_, heir| heir.nil? }.to_a.flatten]))
+    MGQ_MpBattlesSync::Channel.post("team_heirs", post)
     say { "characters taken over: #{heirs_text}" }
   rescue => e
     log("settling the sides failed: #{e.class}: #{e.message}")
   end
 
-  # As guest, takes who commands the characters of the players who left.
+  # As guest, takes who commands the characters of the players who left, the pairs of seats the
+  # DLL's sides read of the host's message.
   #
   # @param body [String] Pairs of seats, see settle.
   def self.take_heirs(body)
-    values = MGQ_MpBattlesSync::Wire.parse(body.to_s)
-    pairs = Array(values && values[0]).each_slice(2).select { |pair| pair.size == 2 }
-    seats, broken = pairs.partition { |pair| pair.all? { |seat| seat.is_a?(Integer) } }
-    log_once(:heirs, "dropped who commands the characters of who left where the host sent no pair of seats") if values.nil? || !broken.empty?
-    @heirs = Hash[seats]
+    broken = sides("take", "body" => body.to_s)["broken"]
+    log_once(:heirs, "dropped who commands the characters of who left where the host sent no pair of seats") if broken
     say { "took who commands the characters of who left: #{heirs_text}" }
   rescue => e
     log("taking who commands failed: #{e.class}: #{e.message}")
@@ -239,22 +231,15 @@ end
 
 # What a team duel does differently in a live battle: each game's side is its party, the players
 # of the host's side command the host's party, and who left hands their characters to their side.
+# Which guests stand on the host's side, the players of both sides, who took over whose characters,
+# whether the other side is gone and the heirs' message in the stream are MGQ_MpBattles::Mode's,
+# which the DLL answers from the sides prepare hands it.
 module MGQ_MpBattlesTeam::Mode
   extend MGQ_MpBattles::Mode
 
   # (see MGQ_MpBattles::Mode#same_side?)
   def self.same_side?
     MGQ_MpBattlesTeam.same_side?
-  end
-
-  # (see MGQ_MpBattles::Mode#same_side_as_host?)
-  def self.same_side_as_host?(seat)
-    MGQ_MpBattlesTeam.same_side_as_host?(seat)
-  end
-
-  # (see MGQ_MpBattles::Mode#player_seats)
-  def self.player_seats
-    (MGQ_MpBattlesTeam.own + MGQ_MpBattlesTeam.other).map(&:seat)
   end
 
   # (see MGQ_MpBattles::Mode#host_start)
@@ -272,21 +257,6 @@ module MGQ_MpBattlesTeam::Mode
   # (see MGQ_MpBattles::Mode#settle)
   def self.settle(_scene)
     MGQ_MpBattlesTeam.settle
-  end
-
-  # (see MGQ_MpBattles::Mode#other_side_gone?)
-  def self.other_side_gone?
-    MGQ_MpBattlesTeam.other_side_gone?
-  end
-
-  # (see MGQ_MpBattles::Mode#heir_of)
-  def self.heir_of(seat)
-    MGQ_MpBattlesTeam.heir_of(seat)
-  end
-
-  # (see MGQ_MpBattles::Mode#stream_kinds)
-  def self.stream_kinds
-    ["team_heirs"]
   end
 
   # (see MGQ_MpBattles::Mode#take)

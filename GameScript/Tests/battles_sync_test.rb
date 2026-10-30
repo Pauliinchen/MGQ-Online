@@ -2,6 +2,10 @@
 #  battles_sync_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Checked the recording's stand-in against its golden steps
+#                            - Checked the stand-in of the command plan and the team duel's sides against their golden cases
+#                            - Checked the session's stand-in against its golden cases and the host's waits on it
+#                            - Checked the host's stream through the stand-in of the DLL's intake, held against its golden cases
 #      Paulinchen  2026-10-28: Checked the host's picture and screen calls through the stand-in of the DLL
 #      Paulinchen  2026-10-23: Dropped the check of the battle end kept on file
 #                            - Checked that Cancel during a wait goes back or asks before leaving
@@ -181,16 +185,18 @@ sync.finish
 sync::Hooks.live
 sync.join_world(:host, "s3", [2], "the party")
 sync.battle_started
-sync::Live.instance_variable_set(:@phase_open, true)
-sync.instance_variable_set(:@solo, true)
+session = $live.session
+session.instance_variable_set(:@phase_open, true)
+session.instance_variable_set(:@solo, true)
+sync.take_view(session.view)
 $turns_started = 0
 scene.turn_start
-check("a host left alone plays its turn and closes the phase, so the next one settles who fights on", [$turns_started, sync::Live.instance_variable_get(:@phase_open)], [1, false])
-sync::Live.instance_variable_set(:@phase_open, true)
-sync::Live.instance_variable_set(:@answered, [2])
+check("a host left alone plays its turn and closes the phase, so the next one settles who fights on", [$turns_started, session.instance_variable_get(:@phase_open)], [1, false])
+session.instance_variable_set(:@phase_open, true)
+session.instance_variable_set(:@answered, [2])
 sync.finish
 check("a command phase the battle ended in closes as the battle finishes, its answers forgotten",
-      [sync::Live.instance_variable_get(:@phase_open), sync::Live.instance_variable_get(:@answered), $log.grep(/command phase of turn \d+ closed: the battle ended in it/).size], [false, [], 1])
+      [session.instance_variable_get(:@phase_open), session.instance_variable_get(:@answered), $log.grep(/command phase of turn \d+ closed: the battle ended in it/).size], [false, [], 1])
 
 # A defeat's sprite effect.
 class Game_Troop; attr_accessor :dead_enemies; end
@@ -215,12 +221,28 @@ playback.use_up(Game_Actor.new(1), $data_skills[3])
 playback.use_up(nil, $data_items[5])
 check("the guest uses up the items its own characters used, and nothing else", $consumed, [3])
 
+# Takes events through the DLL's intake of the host's stream, as one send.
+#
+# @param events [Array<Array>] The events.
+# @return [Array<Array>] The events the guest plays.
+taken = lambda do |*events|
+  playback.reset
+  playback.take_send(events.map { |event| sync::Wire.line(event) }.join("\n"))
+  kept = playback.instance_variable_get(:@events)
+  playback.instance_variable_set(:@events, [])
+  kept
+end
+
 # The host's calls the guest makes.
 sync::Hooks.instance_variable_set(:@log_calls, ["display_damage"])
+calls = [["log", "display_damage"], ["log", "display_unheard_of"], ["scene", "process_skill_word"], ["scene", "exit"]]
 check("the guest makes only the calls the hooks list",
-      [playback.callable?("log", "display_damage"), playback.callable?("log", "display_unheard_of"), playback.callable?("scene", "process_skill_word"), playback.callable?("scene", "exit")],
-      [true, false, true, false])
+      taken.call(*calls.map { |receiver, name| ["call", receiver, name, 1, nil, []] }).map { |event| event[2] }, ["display_damage", "process_skill_word"])
 check("never making a symbol of the host's text", Symbol.all_symbols.map(&:to_s).include?("display_unheard_of"), false)
+check("the DLL's intake answers the golden cases as the scripts played them", (check_live_stand_in; true), true)
+check("the DLL's session answers the golden scenario as the scripts did", (check_live_session_stand_in; true), true)
+check("and plans commands and settles a team duel's sides as the scripts did", (check_live_plan_stand_in; true), true)
+check("and records the host's stream as the scripts did", (check_live_recorder_stand_in; true), true)
 
 # How the battle began.
 sync.join_world(:guest, "s6", [0], "Host")
@@ -466,6 +488,11 @@ sync.take(guest, { "battle" => "commands", "bid" => "w9", :payload => "c1" })
 check("after the seats were dealt anew the host sends to the guest's new seat and takes their messages as before",
       [$sent.map(&:first), sync::Channel.take_from("commands", 2), sync.own_seat, sync.player_seats], [[0], "c1", 0, [2]])
 check("and the battle goes on with them", [sync::Channel.world_gone?, sync.guests_in], [false, [2]])
+$world_bridge.answer("live.admit") { |_request| nil }
+$log.clear
+sync.take(guest, { "battle" => "commands", "bid" => "w9", :payload => "c2" })
+check("a message the DLL does not check is left out, logged", [sync::Channel.take_from("commands", 2), $log.grep(/commands: the DLL did not check it/).size], [nil, 1])
+$world_bridge.answer("live.admit") { |request| $live.answer("live.admit", request) }
 guest.away = 900
 $sent.clear
 sync::Channel.post("ready")
@@ -519,7 +546,7 @@ peers.all.replace([peers::Peer.new(2, { "name" => "Player A" }, nil, false), pee
 $my_seat = 0
 sync.join_world(:host, "w4", [2, 3], "the party")
 sync.battle_started
-live.instance_variable_set(:@answered, [])
+session.instance_variable_set(:@answered, [])
 live.forget_waiting
 $sent.clear
 $frames = 0
@@ -542,7 +569,7 @@ sync.finish
 # commands that came, as players press it to choose again; only a confirmed leave leaves.
 sync.join_world(:host, "w4e", [2, 3], "the party")
 sync.battle_started
-live.instance_variable_set(:@answered, [])
+session.instance_variable_set(:@answered, [])
 live.forget_waiting
 $sent.clear
 $frames = 0
@@ -557,7 +584,7 @@ $inject = nil
 $leave = false
 told = $sent.map { |seat, text| [seat, fields_of(text)] }.select { |seat, f| seat == 2 && f["battle"] == "waiting" }.map { |_, f| f[:payload] }
 check("a single Cancel while the host waits for the commands goes back to the host's own, keeping those that came",
-      [answer, $commands_phase, $actor_cleared, live.instance_variable_get(:@answered)], [false, true, true, [2]])
+      [answer, $commands_phase, $actor_cleared, session.instance_variable_get(:@answered)], [false, true, true, [2]])
 check("and leaves nothing, the guests seeing the host choose again",
       [$sent.any? { |_, text| %w(leave forfeit).include?(fields_of(text)["battle"]) }, told.last], [false, "0,3"])
 sync.finish
@@ -586,7 +613,7 @@ sync.finish
 fall_in_wait = lambda do |bid, seats|
   sync.join_world(:host, bid, seats, "the party")
   sync.battle_started
-  live.instance_variable_set(:@answered, [])
+  session.instance_variable_set(:@answered, [])
   $frames = 0
   $judged = 0
   $turns_started = 0
@@ -610,7 +637,8 @@ check("as while it waits for one guest's commands", fall_in_wait.call("w4c", [2]
 check("and the wait ends as won", $log.grep(/ends early in turn \d+: its enemies fell while it waited for commands/).size, 2)
 sync.join_world(:host, "w4d", [2], "the party")
 sync.battle_started
-sync.instance_variable_set(:@solo, true)
+session.instance_variable_set(:@solo, true)
+sync.take_view(session.view)
 $turns_started = 0
 $ending = true
 scene.turn_start
@@ -674,15 +702,19 @@ check("a line longer than the relay delivers is not read", [wire.parse("s" + "x"
 
 # The host's names that fail to read leave every name as it is.
 names = sync::Names
-names.instance_variable_set(:@swaps, { "x" => "y" })
-names.instance_variable_set(:@pattern, /x/)
-parse = wire.method(:parse)
-wire.define_singleton_method(:parse) { |*| raise "broken" }
+$game_party.own = [Game_Actor.new(1)]
+$game_troop.members = [Game_Enemy.new(0, 31)]
+names.setup(wire.line([["x"], []]))
+check("the host's names are swapped for this game's, the host's party being this game's troop in a duel", names.swap("x and Actor1"), "Enemy31 and Actor1")
+party_side = sync.method(:party_side)
+sync.define_singleton_method(:party_side) { raise "broken" }
 $log.clear
-names.setup("anything")
-wire.define_singleton_method(:parse, parse)
+names.setup(wire.line([["x"], []]))
+sync.define_singleton_method(:party_side, party_side)
 check("the host's names that fail to read are shown unswapped, logged once",
       [names.swap("x"), $log.grep(/could not read the host's names, showing them unswapped: RuntimeError: broken/).size], ["x", 1])
+names.setup("[\t[")
+check("as are names whose line does not read", [names.swap("x"), $log.grep(/the host names 0 party and 0 troop characters; swapping none/).size], ["x", 1])
 
 # The guest leaves out a line of the host's stream or a message of the battle's mode that fails,
 # and plays on with the rest.
@@ -691,7 +723,6 @@ sync.join_world(:guest, "h1", [0], "Host")
 sync.battle_started
 playback.reset
 playback.instance_variable_set(:@stats, Hash.new(0))
-wire.define_singleton_method(:parse) { |line, &block| line == "boom" ? raise("boom") : parse.call(line, &block) }
 coop_mode = sync.mode
 take = coop_mode.method(:take)
 coop_mode.define_singleton_method(:take) { |*| raise "bad party" }
@@ -699,10 +730,16 @@ $log.clear
 sync::Channel.receive(0, "coop_party", "anything")
 sync::Channel.receive(0, "events", ["boom", nest.call(9), sync::Wire.line(["turn", 3])].join("\n"))
 event = playback.next_event(scene)
-wire.define_singleton_method(:parse, parse)
 coop_mode.define_singleton_method(:take, take)
 check("the guest plays the good line of a send with bad ones", [event, playback.instance_variable_get(:@stats)[:unreadable], playback.instance_variable_get(:@stats)[:events]], [["turn", 3], 2, 1])
 check("and leaves out a message of the mode that fails, logged once", $log.grep(/left out the host's coop_party, which failed: RuntimeError: bad party/).size, 1)
+
+# A send the DLL does not check keeps only its markers, so the battle goes on.
+$world_bridge.answer("live.take_stream") { |_request| nil }
+playback.reset
+sync::Channel.receive(0, "events", [sync::Wire.line(["turn", 4]), sync::Wire.line(["choose_again", [9]]), sync::Wire.line(["commands"])].join("\n"))
+check("a send the DLL does not check keeps only its markers", [playback.next_event(scene), playback.next_event(scene)], [["commands"], nil])
+$world_bridge.answer("live.take_stream") { |request| $live.answer("live.take_stream", request) }
 
 # A time stop whose character is no battler here ends at once.
 $game_party.od_turn = 0
@@ -737,21 +774,21 @@ end
 # The troop, whose screen is made on first use.
 class Game_Troop; def screen; @screen ||= Game_Screen.new; end; end
 $log.clear
-playback.play(scene, ["picture.show", 3, "cutin_alice.v2", 0, 10, 20.5, 100, 100, 255, 0])
-playback.play(scene, ["picture.move", 3, 0, 10, 20, 100, 100, 0, 0, 30])
+# Plays events as the guest takes them from the host's stream.
+#
+# @param events [Array<Array>] The events.
+played = lambda { |*events| taken.call(*events).each { |event| playback.play(scene, event) } }
+played.call(["picture.show", 3, "cutin_alice.v2", 0, 10, 20.5, 100, 100, 255, 0], ["picture.move", 3, 0, 10, 20, 100, 100, 0, 0, 30])
 check("a cut-in whose name holds a dot shows and moves", $game_troop.screen.pictures[3].done.map(&:first), [:show, :move])
-playback.play(scene, ["picture.show", 3, "MissingFace", 0, 10, 20, 100, 100, 255, 0])
+played.call(["picture.show", 3, "MissingFace", 0, 10, 20, 100, 100, 255, 0])
 check("one this game lacks erases the picture's place instead", $game_troop.screen.pictures[3].done.last, [:erase])
-playback.play(scene, ["picture.show", 4, "cutin", 0, Float::INFINITY, 20, 100, 100, 255, 0])
-playback.play(scene, ["picture.move", 4, 0, 10, 20, 100, 100, 0, 0, -1])
-playback.play(scene, ["picture.show", 4, "../cutin", 0, 10, 20, 100, 100, 255, 0])
-check("a place past the limits, a negative duration or a path is left out", $game_troop.screen.pictures[4].done, [])
-playback.play(scene, ["screen.start_flash", Color.new(255, 255, 255, 170), 20])
-playback.play(scene, ["screen.start_flash", "white", 20])
-playback.play(scene, ["screen.start_shake", 5, 5, 10])
-playback.play(scene, ["screen.start_shake", 50, 5, 10])
+played.call(["picture.show", 4, "cutin", 0, 1e9, 20, 100, 100, 255, 0], ["picture.move", 4, 0, 10, 20, 100, 100, 0, 0, -1],
+            ["picture.show", 4, "../cutin", 0, 10, 20, 100, 100, 255, 0], ["picture.show", 101, "cutin", 0, 10, 20, 100, 100, 255, 0])
+check("a place past the limits, a negative duration, a path or a picture past the screen's is left out", $game_troop.screen.pictures[4].done, [])
+played.call(["screen.start_flash", Color.new(255, 255, 255, 170), 20], ["screen.start_flash", "white", 20], ["screen.start_shake", 5, 5, 10],
+            ["screen.start_shake", 50, 5, 10])
 check("the screen takes a flash of a color and a shake within the editor's range alone",
       $game_troop.screen.done.map(&:first), [:flash, :shake])
 check("and nothing raised, the calls left out logged once",
-      [$log.grep(/could not play/).size, $log.grep(/left out the host's (picture|screen) call/).size], [0, 5])
+      [$log.grep(/could not play/).size, $log.grep(/left out the host's (picture|screen) call/).size], [0, 6])
 sync.finish

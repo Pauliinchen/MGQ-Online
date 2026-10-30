@@ -2,6 +2,7 @@
 #  battles.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Answered what every kind of live battle decides the same way from the DLL
 #      Paulinchen  2026-10-09: Let a mode act before the host sends its stream
 #      Paulinchen  2026-10-07: Logged the rules a battle sets and puts back
 #                            - Let a mode take in a guest leaving the battle
@@ -46,9 +47,24 @@ module MGQ_MpBattles
   # What starts this script's lines in the log.
   LOG_TAG = "battle"
 
+  # The DLL's topic that answers what the kinds of live battle decide the same way (MGQOnline.Game's
+  # LiveTopics): a team duel's sides and who took over whose characters, and the Backline's message.
+  DECIDED_TOPIC = "live.mode"
+
+  # Asks the DLL what the running live battle's kind decides.
+  #
+  # @param op [String] What, such as "same_side".
+  # @param fields [Hash] What it needs.
+  # @return [Object, nil] The answer, nil while the DLL does not answer.
+  def self.decided(op, fields = {})
+    MGQ_Multiplayer::Bridge.call(DECIDED_TOPIC, { "op" => op }.merge(fields))
+  end
+
   # What a kind of live battle does differently from a duel between two players, such as a co-op
   # battle or a team duel. A kind's module extends this and answers what it changes; mode
-  # registers it, and battles_sync.rbx asks the running battle's.
+  # registers it, and battles_sync.rbx asks the running battle's. What every kind decides the same
+  # way, the DLL answers for a team duel's sides and the Backline (see decided); a kind that keeps
+  # a decision of its own, such as a co-op battle, answers it itself.
   module Mode
     # Reports whether this game's party is the host's party.
     #
@@ -57,19 +73,20 @@ module MGQ_MpBattles
       false
     end
 
-    # Reports whether a guest's characters stand in the host's party. Asked by the host.
+    # Reports whether a guest's characters stand in the host's party, as on the host's side of a
+    # team duel. Asked by the host.
     #
-    # @param _seat [Integer] The guest's world seat.
+    # @param seat [Integer] The guest's world seat.
     # @return [Boolean] Whether they do; else they stand in the host's troop.
-    def same_side_as_host?(_seat)
-      false
+    def same_side_as_host?(seat)
+      MGQ_MpBattles.decided("same_side", "seat" => seat) ? true : false
     end
 
-    # Lists the battle's players the live battle was not started with.
+    # Lists the battle's players the live battle was not started with: both sides of a team duel.
     #
     # @return [Array<Integer>] Their world seats.
     def player_seats
-      []
+      Array(MGQ_MpBattles.decided("players"))
     end
 
     # Runs before the battle starts, on host and guest, while the game's role may still change.
@@ -105,11 +122,13 @@ module MGQ_MpBattles
     def before_send
     end
 
-    # Reports whether the host's opponents all left. Asked by the host.
+    # Reports whether the host's opponents all left, every player of a team duel's other side.
+    # Asked by the host.
     #
     # @return [Boolean] Whether they did.
     def other_side_gone?
-      false
+      host = defined?(MGQ_MpBattlesSync) ? MGQ_MpBattlesSync.own_seat : nil
+      MGQ_MpBattles.decided("gone", "host" => host) ? true : false
     end
 
     # Takes in that a guest left the battle. Called by the host.
@@ -151,18 +170,21 @@ module MGQ_MpBattles
     def choose_again(_seats)
     end
 
-    # Tells who commands the characters of a player who left.
+    # Tells who commands the characters of a player who left, the first player of their side still
+    # in a team duel.
     #
-    # @param _seat [Integer] The world seat of the player who left.
+    # @param seat [Integer] The world seat of the player who left.
     # @return [Integer, nil] The world seat of who commands them, nil for nobody else.
-    def heir_of(_seat)
+    def heir_of(seat)
+      MGQ_MpBattles.decided("heir", "seat" => seat)
     end
 
-    # The kinds of the battle's own messages inside the host's stream.
+    # The kinds of the battle's own messages inside the host's stream: who took over whose
+    # characters in a team duel, the host's Frontline in a duel with the Backline.
     #
     # @return [Array<String>] The kinds.
     def stream_kinds
-      []
+      Array(MGQ_MpBattles.decided("kinds"))
     end
 
     # Takes one of the battle's own messages inside the host's stream. Called by the guest.

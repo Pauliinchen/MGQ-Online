@@ -2,6 +2,8 @@
 #  battles_sync_playback.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Read whether the guest fell behind the host's stream from the DLL
+#                            - Took the host's stream through the DLL, which checks its lines and swaps the host's names
 #      Paulinchen  2026-10-28: Checked the host's picture and screen calls in the DLL
 #      Paulinchen  2026-10-23: Named the player by their seat in the battle
 #      Paulinchen  2026-10-15: Noted the enemies a co-op host defeats as fallen, for the player's own recruit
@@ -42,30 +44,20 @@ module MGQ_MpBattlesSync
   # computing its own; in a PvP battle with the host's party as its troop and the host's troop as
   # its party.
   module Playback
-    # Scene waits the host may have called, with a duration.
-    TIMED_WAITS = %w(wait abs_wait)
-
-    # Scene waits the host may have called, until something ends.
-    OPEN_WAITS = %w(wait_for_animation wait_for_effect wait_for_message)
-
     # Sprite effects the host may have started.
     SPRITE_EFFECTS = [:appear, :disappear, :whiten, :blink, :collapse, :boss_collapse, :instant_collapse]
 
-    # Longest wait taken from the host, 10 seconds.
-    MAX_WAIT = 600
+    # The DLL's topic that sets the guest's intake of the host's stream up, see set_up.
+    SETUP_TOPIC = "live.guest_setup"
 
-    # A sound or piece of music the host may play: a path inside the game's Audio folder, as the
-    # game passes it, whose parts are plain names, so it never leads out of that folder.
-    AUDIO_FILE = %r{\AAudio/(?:[\w\- ]+/)+[\w\- ]+(?:\.[\w\- ]+)*\z}
+    # The DLL's topic that takes one send of the host's stream, see take_send.
+    STREAM_TOPIC = "live.take_stream"
 
-    # The volumes the game plays at.
-    VOLUME_RANGE = 0..100
+    # The DLL's topic that swaps the host's names in a text, see Names.swap.
+    SWAP_TOPIC = "live.swap"
 
-    # The pitches the game plays at.
-    PITCH_RANGE = 50..150
-
-    # Longest fade of music taken from the host, in milliseconds, ten seconds.
-    MAX_FADE = 10_000
+    # The kinds of the host's stream that mark where its turn stops, see run.
+    MARKERS = %w(commands end choose_again)
 
     # Plays the host's stream until its next command phase, the player's choosing again or the
     # battle's end.
@@ -122,15 +114,10 @@ module MGQ_MpBattlesSync
           outcome = "the battle's end (#{event[1]})"
           return event
         end
+        # The DLL lets only a choose again through that names this player; the others wait on.
         if event[0] == "choose_again"
-          # Only the players named choose again; the others wait on for the turn.
-          if Array(event[1]).include?(MGQ_MpBattlesSync.own_seat)
-            outcome = "this player choosing again"
-            return event
-          end
-
-          count(:others_choose)
-          next
+          outcome = "this player choosing again"
+          return event
         end
 
         play(scene, event)
@@ -166,11 +153,29 @@ module MGQ_MpBattlesSync
       MGQ_MpBattlesSync.log("played #{turn == 0 ? "the battle's start" : "turn #{turn}"} up to #{outcome}: #{parts.join('; ')}")
     end
 
-    # Forgets events of an earlier battle.
+    # Forgets events of an earlier battle, and sets the DLL's intake of the stream up without the
+    # host's names, which Names.setup hands it once the host's battle is ready.
     def self.reset
       @events = []
       @message_complete = false
       @encounter = nil
+      set_up
+    end
+
+    # Sets the DLL's intake of the host's stream up: the host's names and the guest's own, whether
+    # this game has the translation's name box, the methods the hooks record, the calls the guest
+    # makes itself and the animations this game has.
+    #
+    # @param names [String, nil] The host's names line, see MGQ_MpBattlesSync.names; nil for none.
+    # @param own [Array<Array<String>>] The names of this game's battlers the host's party and troop
+    #   stand for, by place.
+    def self.set_up(names = nil, own = [[], []])
+      lists = { "log" => Hooks::LOG_METHODS, "picture" => Hooks::PICTURE_METHODS, "screen" => Hooks::SCREEN_METHODS,
+                "audio" => Hooks::AUDIO_METHODS }.each_with_object({}) { |(key, names_of), all| all[key] = names_of.map(&:to_s) }
+      logs = MGQ_Multiplayer::Bridge.call(SETUP_TOPIC, "names" => names, "own" => own, "name_box" => defined?(Window_NameMessage) ? true : false,
+                                          "lists" => lists.merge("scene_calls" => Hooks::SCENE_CALL_NAMES, "log_calls" => Hooks.log_calls),
+                                          "animations" => $data_animations ? $data_animations.size : 0)
+      MGQ_MpBattlesSync.log_lines(logs)
     end
 
     # Takes the next event of the host's stream, taking a co-op party's change on the way.
@@ -191,22 +196,50 @@ module MGQ_MpBattlesSync
         end
 
         count(:sends)
-        body.split("\n").each do |line|
-          event = begin
-            Wire.parse(line) { |ref| battler(ref) }
-          rescue
-            nil
-          end
-          if event && event[0].is_a?(String)
-            @events << event
-            count(:events)
-          else
-            count(:unreadable)
-            MGQ_MpBattlesSync.log_once(:unreadable_event, "left out an unreadable line of the host's stream (#{line.size} characters)")
-          end
-        end
+        take_send(body)
       end
       @events.shift
+    end
+
+    # Takes one send of the host's stream: the DLL leaves out the lines that do not read or that this
+    # game refuses and swaps the host's names, and the lines left are read with this game's battlers.
+    #
+    # @param body [String] The send.
+    def self.take_send(body)
+      taken = MGQ_Multiplayer::Bridge.call(STREAM_TOPIC, "body" => body.to_s, "seat" => MGQ_MpBattlesSync.own_seat)
+      return take_markers(body) unless taken.is_a?(Hash)
+
+      MGQ_MpBattlesSync.log_lines(taken["logs"])
+      count(:events, taken["events"].to_i)
+      count(:unreadable, taken["unreadable"].to_i)
+      count(:others_choose, taken["others_choose"].to_i)
+      Array(taken["lines"]).each do |line|
+        event = begin
+          Wire.parse(line) { |ref| battler(ref) }
+        rescue
+          nil
+        end
+        next @events << event if event && event[0].is_a?(String)
+
+        count(:events, -1)
+        count(:unreadable)
+        MGQ_MpBattlesSync.log_once("unreadable_event", "left out an unreadable line of the host's stream (#{line.size} characters)")
+      end
+    end
+
+    # Takes only the markers of a send the DLL did not check, the command phase, the end and a choose
+    # again that names the player, so the battle goes on without what the send showed.
+    #
+    # @param body [String] The send.
+    def self.take_markers(body)
+      MGQ_MpBattlesSync.log_once(:stream_unchecked, "left out what a send of the host's stream showed: the DLL did not check it")
+      body.to_s.split("\n").each do |line|
+        event = Wire.parse(line)
+        next unless event && MARKERS.include?(event[0])
+        next if event[0] == "choose_again" && !Array(event[1]).include?(MGQ_MpBattlesSync.own_seat)
+
+        @events << event
+      end
     end
 
     # Lets the battle's mode take one of its own messages, leaving out one that fails.
@@ -235,7 +268,8 @@ module MGQ_MpBattlesSync
       party ? $game_party.battle_members[$2.to_i] : $game_troop.members[$2.to_i]
     end
 
-    # Plays one event. An event that fails is left out and logged once per kind.
+    # Plays one event the DLL took (see take_send). An event that fails is left out and logged once
+    # per kind.
     #
     # @param scene [Scene_Battle] The battle.
     # @param event [Array] The event's kind and values.
@@ -251,9 +285,9 @@ module MGQ_MpBattlesSync
       when "item_used"
         use_up(*args)
       when /\Alog\./
-        log_window(scene).send(method, *args.map { |arg| arg.is_a?(String) ? Names.swap(arg) : arg }) if recorded?(Hooks::LOG_METHODS, method)
+        log_window(scene).send(method, *args)
       when "popup"
-        log_window(scene).popup.push(Names.swap(args[0].to_s), args[1])
+        log_window(scene).popup.push(args[0].to_s, args[1])
       when "message"
         message(scene, *args)
       when /\Apicture\./
@@ -269,9 +303,9 @@ module MGQ_MpBattlesSync
       when "battler.sprite_effect_type"
         sprite_effect(*args)
       when "skill_name"
-        (args[0] == "troop" ? $game_troop : $game_party).display_skill_name = args[1].is_a?(String) ? Names.swap(args[1]) : nil
+        (args[0] == "troop" ? $game_troop : $game_party).display_skill_name = args[1].is_a?(String) ? args[1] : nil
       when /\Ascene\./
-        wait(scene, method, args[0])
+        wait(scene, method, args)
       when "values"
         values(*args)
         MGQ_MpGame.call(scene, :refresh_status)
@@ -305,20 +339,10 @@ module MGQ_MpBattlesSync
       $game_party.od_user = user
     end
 
-    # Reports whether the hooks record a method, which the guest then plays as the host called it.
-    #
-    # The host's name is compared as text and never made a symbol, see Wire.symbol.
-    #
-    # @param names [Array<Symbol>] The methods the hooks record.
-    # @param method [String] The method the host called.
-    # @return [Boolean] Whether they record it.
-    def self.recorded?(names, method)
-      names.any? { |name| name.to_s == method }
-    end
-
     # Makes a call the host recorded with this game's own texts, see Recorder.call: the battle log
     # or the battle writes the line in this game's language, with the host's action results and
-    # random choices. Its waits are skipped while the guest catches up.
+    # random choices. Its waits are skipped while the guest catches up. The DLL let through only the
+    # calls this game's hooks list.
     #
     # @param scene [Scene_Battle] The battle.
     # @param receiver [String] "log" or "scene".
@@ -328,11 +352,6 @@ module MGQ_MpBattlesSync
     # @param results [Array<Array>] Battlers with their action results.
     # @param args [Array] The method's arguments.
     def self.call(scene, receiver, name, seed, subject, results, *args)
-      unless callable?(receiver, name)
-        # A call the guest leaves out shows nothing, such as a hit's damage numbers.
-        return MGQ_MpBattlesSync.log_once([:left_out, receiver.to_s, name.to_s[0, 40]], "left out the host's #{receiver} call #{name.to_s[0, 40]}")
-      end
-
       Array(results).each do |battler, result|
         MGQ_MpGame.set(battler, :result, result) if battler && result.is_a?(Game_ActionResult)
       end
@@ -346,19 +365,6 @@ module MGQ_MpBattlesSync
         @in_call = false
         srand
         MGQ_MpGame.set(scene, :subject, earlier)
-      end
-    end
-
-    # Tells whether a recorded call names a method the host may have the guest call.
-    #
-    # @param receiver [String] "log" or "scene".
-    # @param name [String] The method.
-    # @return [Boolean] Whether the guest makes the call.
-    def self.callable?(receiver, name)
-      case receiver
-      when "log" then Hooks.log_calls.include?(name)
-      when "scene" then Hooks::SCENE_CALL_NAMES.include?(name)
-      else false
       end
     end
 
@@ -441,7 +447,7 @@ module MGQ_MpBattlesSync
     end
 
     # Starts an animation a battler started by itself on the host, outside the battle's own showing
-    # of one, or mirrors it.
+    # of one, or mirrors it. The DLL let through only an animation this game has.
     #
     # @param field [String] "animation_id" or "animation_mirror".
     # @param battler [Game_Battler, nil] The guest's battler.
@@ -450,7 +456,7 @@ module MGQ_MpBattlesSync
       return if battler.nil? || behind?
       return battler.animation_mirror = value ? true : false if field == "animation_mirror"
 
-      battler.animation_id = value.to_i if $data_animations[value.to_i]
+      battler.animation_id = value.to_i
     end
 
     # Starts a sprite effect the host started.
@@ -491,7 +497,7 @@ module MGQ_MpBattlesSync
     # speaker for a mod that shows battle messages by their side.
     #
     # The first line of a message lets the game move an earlier one on first, unless the guest has
-    # to catch up, so two messages never show as one.
+    # to catch up, so two messages never show as one. The DLL swapped the host's names in its text.
     #
     # @param scene [Scene_Battle] The battle.
     # @param speaker [Game_Battler, nil] Who says it.
@@ -508,66 +514,27 @@ module MGQ_MpBattlesSync
       $game_message.face_index = face_index.to_i
       $game_message.background = background.to_i
       $game_message.position = position.to_i
-      $game_message.add(Names.readable(Names.swap_message(text.to_s)))
+      $game_message.add(text.to_s)
     end
 
-    # Plays a sound or a piece of music as the host did, once its arguments read as the game's own
-    # calls: a file inside the Audio folder, a volume and a pitch the game plays at. A call the
-    # game refuses is left out and logged once per method.
+    # Plays a sound or a piece of music as the host did, a call the DLL found to read as the game's
+    # own. A call that fails is logged once per method.
     #
     # @param method [String] What the host called of Audio.
     # @param args [Array] The call's arguments.
     def self.audio(method, args)
-      return unless recorded?(Hooks::AUDIO_METHODS, method)
-      unless audio_args?(method, args)
-        return MGQ_MpBattlesSync.log_once([:audio_args, method], "left out the host's audio call #{method} with the arguments #{args.inspect[0, 80]}")
-      end
-
       Audio.send(method, *args)
     rescue => e
       MGQ_MpBattlesSync.log_once([:audio, method], "could not play the host's #{method}: #{e.class}: #{e.message}")
     end
 
-    # Reports whether the arguments of one of the host's audio calls read as the game's own: a play
-    # names a file with a volume, a pitch and, for music, a position, a stop takes nothing, a fade
-    # its milliseconds, and the game's own over drive calls only plain values.
-    #
-    # @param method [String] What the host called of Audio.
-    # @param args [Array] The call's arguments.
-    # @return [Boolean] Whether they do.
-    def self.audio_args?(method, args)
-      case method
-      when /_play\z/
-        name, volume, pitch, position = args
-        args.size <= 4 && name.is_a?(String) && name =~ AUDIO_FILE && bounded?(volume, VOLUME_RANGE) && bounded?(pitch, PITCH_RANGE) &&
-          (position.nil? || (method =~ /\Abg/ && position.is_a?(Integer) && position >= 0))
-      when /_stop\z/ then args.empty?
-      when /_fade\z/ then args.size == 1 && bounded?(args[0], 0..MAX_FADE)
-      else args.all? { |arg| arg.nil? || arg == true || arg == false || arg.is_a?(Numeric) }
-      end ? true : false
-    end
-
-    # Reports whether an optional number of an audio call lies within what the game accepts.
-    #
-    # @param value [Object, nil] The number, nil when the call leaves it to the game.
-    # @param range [Range] What the game accepts.
-    # @return [Boolean] Whether it does.
-    def self.bounded?(value, range)
-      value.nil? || (value.is_a?(Integer) && range.include?(value))
-    end
-
-    # Changes a picture, such as a cut-in, once the DLL found it one this game takes, as the
-    # story's pictures are checked (MGQ_MpCoopScene.refusal). A picture this game lacks erases the
-    # picture's place instead.
+    # Changes a picture, such as a cut-in, which the DLL found one this game takes, as the story's
+    # pictures are checked. A picture this game lacks erases the picture's place instead.
     #
     # @param method [String] What the host did with it.
     # @param args [Array] The picture's number, then the method's arguments.
     def self.picture(method, args)
       name = Hooks::PICTURE_METHODS.find { |known| known.to_s == method }
-      refusal = name ? MGQ_MpCoopScene.refusal("picture.#{method}", args) : "no such change"
-      if refusal
-        return MGQ_MpBattlesSync.log_once([:picture, method.to_s[0, 40], refusal], "left out the host's picture call #{method.to_s[0, 40]} with the arguments #{args.inspect[0, 80]}: #{refusal}")
-      end
       number = args[0].to_i
       if name == :show && !MGQ_MpCoopScene.map_graphics?([[:picture, args[1]]])
         $game_troop.screen.pictures[number].erase
@@ -577,19 +544,13 @@ module MGQ_MpBattlesSync
       $game_troop.screen.pictures[number].send(name, *args[1..-1])
     end
 
-    # Changes the battle's screen as the host did, such as a flash, once the DLL found its
-    # arguments ones this game takes, see MGQ_MpCoopScene.refusal.
+    # Changes the battle's screen as the host did, such as a flash, a change the DLL found one this
+    # game takes.
     #
     # @param method [String] What the host did with it.
     # @param args [Array] The change's arguments.
     def self.screen(method, args)
-      name = Hooks::SCREEN_METHODS.find { |known| known.to_s == method }
-      return unless name
-      if (refusal = MGQ_MpCoopScene.refusal("screen.#{method}", args))
-        return MGQ_MpBattlesSync.log_once([:screen_args, name, refusal], "left out the host's screen call #{method} with the arguments #{args.inspect[0, 80]}: #{refusal}")
-      end
-
-      $game_troop.screen.send(name, *args)
+      $game_troop.screen.send(Hooks::SCREEN_METHODS.find { |known| known.to_s == method }, *args)
     end
 
     # Starts an animation on the guest's battlers, unless the guest holds the skip key or has to
@@ -601,7 +562,8 @@ module MGQ_MpBattlesSync
     # @param scene [Scene_Battle] The battle.
     # @param subject [Game_Battler, nil] Who acts, whose weapons an attack animation shows.
     # @param targets [Array] The targets.
-    # @param animation_id [Integer] The animation, below 0 for the subject's attack animation.
+    # @param animation_id [Integer] The animation, which the DLL found this game has, or below 0 for
+    #   the subject's attack animation.
     def self.animation(scene, subject, targets, animation_id)
       return count(:behind) if behind?
       return if MGQ_MpGame.call(scene, :battle_show_skip?)
@@ -621,23 +583,20 @@ module MGQ_MpBattlesSync
     #
     # @return [Boolean] Whether the host's stream piled up, so the guest skips waits to catch up.
     def self.behind?
-      Channel.pending("events") >= BEHIND_SENDS
+      Channel.poll
+      MGQ_MpBattlesSync.behind?
     end
 
     # Waits the way the host's battle waited, at the guest's own battle speed, unless it has to
     # catch up.
     #
     # @param scene [Scene_Battle] The battle.
-    # @param method [String] The wait.
-    # @param duration [Integer, nil] Its frames, for a timed wait.
-    def self.wait(scene, method, duration)
+    # @param method [String] The wait, one the DLL let through.
+    # @param args [Array] Its frames for a timed wait, at most ten seconds; none for an open one.
+    def self.wait(scene, method, args)
       return count(:behind) if behind?
 
-      if TIMED_WAITS.include?(method)
-        scene.send(method, [duration.to_i, MAX_WAIT].min)
-      elsif OPEN_WAITS.include?(method)
-        scene.send(method)
-      end
+      scene.send(method, *args)
     end
 
     # Gives a battler the values the host computed.

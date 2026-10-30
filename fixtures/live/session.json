@@ -1,0 +1,1807 @@
+{
+  "steps": [
+    {
+      "role": "host",
+      "bid": "s1",
+      "seats": [
+        2,
+        3
+      ],
+      "player": "the party",
+      "kind": "coop",
+      "team": false,
+      "op": "join",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "op": "start",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seats": [
+        4
+      ],
+      "op": "expect",
+      "value": [
+        4
+      ],
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 2,
+      "kind": "ready",
+      "body": "",
+      "op": "receive",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+        "received ready (0 bytes) from Ann (seat 2)"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 5,
+      "kind": "ready",
+      "body": "",
+      "op": "receive",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+        "ignored ready from seat 5: not a guest of this battle"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 4,
+      "kind": "commands",
+      "body": "c4",
+      "op": "receive",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+        "received commands (2 bytes) from Cid (seat 4)"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 3,
+      "kind": "events",
+      "body": "e1",
+      "op": "receive",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 3,
+      "kind": "events",
+      "body": "e2",
+      "op": "receive",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 2,
+      "kind": "commands",
+      "body": "c2",
+      "op": "receive",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+        "received commands (2 bytes) from Ann (seat 2)"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 3,
+      "kind": "leave",
+      "body": "",
+      "op": "receive",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+        "received leave (0 bytes) from Bea (seat 3)"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 3,
+      "kind": "events",
+      "body": "e3",
+      "op": "receive",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 3,
+      "kind": "events",
+      "body": "e4",
+      "op": "receive",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "kind": "events",
+      "op": "pending",
+      "value": 4,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "kinds": [
+        "ready"
+      ],
+      "seat": null,
+      "op": "take",
+      "value": "",
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "kinds": [
+        "commands",
+        "events"
+      ],
+      "seat": null,
+      "op": "take",
+      "value": [
+        "commands",
+        "c4"
+      ],
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "kinds": [
+        "commands"
+      ],
+      "seat": 2,
+      "op": "take",
+      "value": "c2",
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "kinds": [
+        "commands"
+      ],
+      "seat": 2,
+      "op": "take",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "count": 60,
+      "in_world": true,
+      "op": "ticks",
+      "value": [
+
+      ],
+      "departed": [
+        [
+          3,
+          1
+        ]
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seats": [
+        2
+      ],
+      "op": "gone",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "count": 60,
+      "in_world": true,
+      "op": "ticks",
+      "value": [
+        "gone"
+      ],
+      "departed": [
+        [
+          2,
+          0
+        ]
+      ],
+      "logs": [
+        "the other side of the battle is gone"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 2,
+      "kind": "forfeit",
+      "body": "",
+      "op": "receive",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+        "received forfeit (0 bytes) from Ann (seat 2)"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "count": 1,
+      "in_world": true,
+      "op": "ticks",
+      "value": [
+        "forfeit"
+      ],
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "count": 1,
+      "in_world": true,
+      "op": "ticks",
+      "value": [
+        "gone"
+      ],
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seats": [
+        2
+      ],
+      "op": "keep",
+      "value": [
+        2
+      ],
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 7,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 7,
+      "kind": "left",
+      "op": "tell",
+      "value": false,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 7,
+      "kind": "joined",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 10,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 11,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 12,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 13,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 14,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 15,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 16,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 17,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 18,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 19,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 20,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 21,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 22,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 23,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 24,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 25,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 26,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 27,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 28,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 29,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 30,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 31,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 32,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 33,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 34,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 35,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 36,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 37,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 38,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 39,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 40,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 41,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 7,
+      "kind": "left",
+      "op": "tell",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "op": "finish",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "role": "guest",
+      "bid": "s2",
+      "seats": [
+        0
+      ],
+      "player": "Host",
+      "kind": "pvp",
+      "team": false,
+      "op": "join",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "op": "start",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "channel": false,
+      "bid": "s1",
+      "kind": "commands",
+      "who_seat": 0,
+      "op": "admit",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+        "ignored a battle message commands from the player (seat 0): it is for another battle"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "channel": true,
+      "bid": "s2",
+      "kind": "commands",
+      "who_seat": 0,
+      "op": "admit",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+        "ignored commands from the battle channel: no served battle runs"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 0,
+      "kind": "broken",
+      "body": "",
+      "op": "receive",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+        "received broken (0 bytes) from the player (seat 0)"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "count": 2,
+      "in_world": true,
+      "op": "ticks",
+      "value": [
+        "broken",
+        "broken"
+      ],
+      "departed": [
+
+      ],
+      "logs": [
+        "the live battle broke off: Host's game broke it off"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "several": false,
+      "op": "ready",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 0,
+      "kind": "ready",
+      "body": "",
+      "op": "receive",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+        "received ready (0 bytes) from the player (seat 0)"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "several": false,
+      "op": "ready",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "op": "finish",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "role": "host",
+      "bid": "s3",
+      "seats": [
+        2,
+        3
+      ],
+      "player": "the party",
+      "kind": "coop",
+      "team": false,
+      "op": "join",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "op": "start",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "op": "ready_reset",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 2,
+      "kind": "ready",
+      "body": "",
+      "op": "receive",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+        "received ready (0 bytes) from Ann (seat 2)"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "several": true,
+      "op": "ready",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "op": "not_ready",
+      "value": [
+        3
+      ],
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 3,
+      "kind": "ready",
+      "body": "",
+      "op": "receive",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+        "received ready (0 bytes) from Bea (seat 3)"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "several": true,
+      "op": "ready",
+      "value": true,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seats": [
+        3,
+        2
+      ],
+      "op": "tell_waiting",
+      "value": [
+        "waiting",
+        "2,3"
+      ],
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seats": [
+        2,
+        3
+      ],
+      "op": "tell_waiting",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seats": [
+
+      ],
+      "op": "tell_waiting",
+      "value": [
+        "waiting",
+        ""
+      ],
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 3,
+      "kind": "leave",
+      "body": "",
+      "op": "receive",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+        "received leave (0 bytes) from Bea (seat 3)"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "count": 60,
+      "in_world": false,
+      "op": "ticks",
+      "value": [
+        "gone"
+      ],
+      "departed": [
+
+      ],
+      "logs": [
+        "the other side of the battle is gone"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "op": "finish",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "role": "guest",
+      "bid": "s4",
+      "seats": [
+        0
+      ],
+      "player": "Host",
+      "kind": "coop",
+      "team": false,
+      "op": "join",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "op": "start",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 0,
+      "kind": "waiting",
+      "body": "0,2,3",
+      "op": "receive",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+        "received waiting (5 bytes) from the player (seat 0)"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "seat": 0,
+      "kind": "waiting",
+      "body": "2,3",
+      "op": "receive",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+        "received waiting (3 bytes) from the player (seat 0)"
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "op": "host_waiting",
+      "value": [
+        "Ann",
+        "Bea"
+      ],
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    },
+    {
+      "op": "finish",
+      "value": null,
+      "departed": [
+
+      ],
+      "logs": [
+
+      ],
+      "who": {
+        "0": "the player (seat 0)",
+        "2": "Ann (seat 2)",
+        "3": "Bea (seat 3)",
+        "4": "Cid (seat 4)",
+        "5": "seat 5"
+      }
+    }
+  ]
+}

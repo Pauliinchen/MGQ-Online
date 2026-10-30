@@ -1,0 +1,359 @@
+{
+  "steps": [
+    {
+      "own": [
+        0,
+        2
+      ],
+      "other": [
+        5,
+        6
+      ],
+      "same_side": true,
+      "op": "join",
+      "value": null,
+      "heirs": [
+
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "seat": 2,
+      "op": "same_side",
+      "value": true,
+      "heirs": [
+
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "seat": 5,
+      "op": "same_side",
+      "value": false,
+      "heirs": [
+
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "settle",
+      "value": null,
+      "heirs": [
+
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "seat": 5,
+      "op": "left",
+      "value": null,
+      "heirs": [
+
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "settle",
+      "value": null,
+      "heirs": [
+        [
+          5,
+          6
+        ]
+      ],
+      "posted": [
+        "[\ti5\ti6\t]"
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "seat": 5,
+      "op": "heir",
+      "value": 6,
+      "heirs": [
+        [
+          5,
+          6
+        ]
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "settle",
+      "value": null,
+      "heirs": [
+        [
+          5,
+          6
+        ]
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "gone",
+      "value": false,
+      "heirs": [
+        [
+          5,
+          6
+        ]
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "seat": 2,
+      "op": "left",
+      "value": null,
+      "heirs": [
+        [
+          5,
+          6
+        ]
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "settle",
+      "value": null,
+      "heirs": [
+        [
+          5,
+          6
+        ],
+        [
+          2,
+          0
+        ]
+      ],
+      "posted": [
+        "[\ti5\ti6\ti2\ti0\t]"
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "seat": 6,
+      "op": "left",
+      "value": null,
+      "heirs": [
+        [
+          5,
+          6
+        ],
+        [
+          2,
+          0
+        ]
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "settle",
+      "value": null,
+      "heirs": [
+        [
+          5,
+          null
+        ],
+        [
+          2,
+          0
+        ]
+      ],
+      "posted": [
+        "[\ti2\ti0\t]"
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "gone",
+      "value": true,
+      "heirs": [
+        [
+          5,
+          null
+        ],
+        [
+          2,
+          0
+        ]
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "own": [
+        5,
+        6
+      ],
+      "other": [
+        0,
+        2
+      ],
+      "same_side": false,
+      "op": "join",
+      "value": null,
+      "heirs": [
+
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "body": "[\ti6\ti5\t]",
+      "op": "take",
+      "value": null,
+      "heirs": [
+        [
+          6,
+          5
+        ]
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "body": "[\ti6\tsx\ti7\ti5\t[\ti8\t]\ti2\t]",
+      "op": "take",
+      "value": null,
+      "heirs": [
+        [
+          7,
+          5
+        ]
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+        "dropped who commands the characters of who left where the host sent no pair of seats"
+      ]
+    },
+    {
+      "body": "[\ti6\ti5\ti6\ti2\t]",
+      "op": "take",
+      "value": null,
+      "heirs": [
+        [
+          6,
+          2
+        ]
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "body": "i5",
+      "op": "take",
+      "value": null,
+      "heirs": [
+
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "body": "[\t]",
+      "op": "take",
+      "value": null,
+      "heirs": [
+
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "body": "[\t[",
+      "op": "take",
+      "value": null,
+      "heirs": [
+
+      ],
+      "posted": [
+
+      ],
+      "logs": [
+        "dropped who commands the characters of who left where the host sent no pair of seats"
+      ]
+    }
+  ]
+}

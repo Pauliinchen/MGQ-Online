@@ -2,6 +2,8 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Answered the live battle's topics
+#                            - Dropped the stand-in of the link's cancel
 #      Paulinchen  2026-10-28: Gave the stand-in of the color its parts
 #      Paulinchen  2026-10-23: Opened the stand-in of the interface's models, which places the boxes
 #                            - Answered the rules' topics through the bridge, such as the squad math
@@ -50,15 +52,15 @@
 # battles_coop.rbx and battles_sync.rbx), fields_of, and the game's objects on map 5.
 
 require_relative "rules_support"
+require_relative "live_support"
 
 
 $sent = []
 $log = []
-# Stands in for the loader's log, Player.ini and the link's cancel, keeping the log's lines in $log.
+# Stands in for the loader's log and Player.ini, keeping the log's lines in $log.
 module MGQ_Multiplayer
   module Log; def self.write(m); $log << m; end; end
   module Player; def self.name; "Me"; end; def self.setting(key); ($player_ini ||= {})[key]; end; end
-  module Link; def self.cancel; $cancelled = true; end; end
 end
 # The graphics this game has, of which it lacks only one face.
 module MGQ_MpOverworld; def self.graphic?(_folder, name); name != "MissingFace"; end; end
@@ -438,8 +440,10 @@ module MGQ_MpOverworldSync
   def self.on_presence(*); end
   def self.label_line(*); end
 end
-# The DLL's side of the bridge, answering the rules' topics, such as the squad math.
+# The DLL's side of the bridge, answering the rules' topics, such as the squad math, and the live
+# battle's.
 open_rules_bridge
+$live = answer_live($world_bridge)
 load_script "ui"
 load_script "ui_layout"
 # Stands in for the confirm box: each question lands in $asked, and $confirm answers the open one

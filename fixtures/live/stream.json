@@ -1,0 +1,4131 @@
+{
+  "lists": {
+    "log": [
+      "add_text",
+      "replace_text",
+      "back_one",
+      "back_to",
+      "clear",
+      "clear_popup"
+    ],
+    "picture": [
+      "show",
+      "move",
+      "rotate",
+      "start_tone_change",
+      "erase"
+    ],
+    "screen": [
+      "start_shake",
+      "start_flash",
+      "start_tone_change",
+      "start_fadeout",
+      "start_fadein",
+      "od_fadein",
+      "od_fadeout"
+    ],
+    "audio": [
+      "se_play",
+      "me_play",
+      "bgm_play",
+      "bgs_play",
+      "se_stop",
+      "me_stop",
+      "bgm_stop",
+      "bgs_stop",
+      "me_fade",
+      "bgm_fade",
+      "bgs_fade",
+      "start_over_drive",
+      "end_over_drive"
+    ],
+    "scene_calls": [
+      "process_skill_word",
+      "display_skill_name"
+    ]
+  },
+  "log_calls": [
+    "display_damage",
+    "display_action_results",
+    "display_use_item"
+  ],
+  "cases": [
+    {
+      "names": "[\tsAlice (Host)\tsLuka\t]\t[\tsSlime\t]",
+      "own": [
+        [
+          "Alice",
+          "Luka (Me)"
+        ],
+        [
+          "Slime Girl"
+        ]
+      ],
+      "name_box": true,
+      "animations": 10,
+      "seat": 1,
+      "name": "the battle log's lines swap the host's names, its other methods are left out",
+      "body": "slog.add_text\tsAlice (Host) hits Slime!\nslog.replace_text\tsLuka falls\ti3\nslog.unknown\tsAlice (Host)",
+      "effects": [
+        [
+          "log",
+          "add_text",
+          [
+            {
+              "s": "Alice hits Slime Girl!"
+            }
+          ]
+        ],
+        [
+          "log",
+          "replace_text",
+          [
+            {
+              "s": "Luka (Me) falls"
+            },
+            {
+              "i": "3"
+            }
+          ]
+        ]
+      ],
+      "events": 3,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 2 party and 1 troop characters; swapping Alice (Host) -> Alice, Luka -> Luka (Me), Slime -> Slime Girl"
+      ]
+    },
+    {
+      "names": "[\tsAlice (Host)\tsAlice\t]\t[\t]",
+      "own": [
+        [
+          "A",
+          "B"
+        ],
+        [
+
+        ]
+      ],
+      "name_box": true,
+      "animations": 10,
+      "seat": 1,
+      "name": "a longer name swaps before a shorter one it starts with",
+      "body": "slog.add_text\tsAlice (Host) and Alice",
+      "effects": [
+        [
+          "log",
+          "add_text",
+          [
+            {
+              "s": "A and B"
+            }
+          ]
+        ]
+      ],
+      "events": 1,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 2 party and 0 troop characters; swapping Alice (Host) -> A, Alice -> B"
+      ]
+    },
+    {
+      "names": "[\tsAlice (Host)\tsLuka\t]\t[\tsSlime\t]",
+      "own": [
+        [
+          "Alice",
+          "Luka (Me)"
+        ],
+        [
+          "Slime Girl"
+        ]
+      ],
+      "name_box": true,
+      "animations": 10,
+      "seat": 1,
+      "name": "a popup swaps its text, a missing one reads as empty",
+      "body": "spopup\tsSlime is down\t:mgq_mp_departure\nspopup\t~\t~",
+      "effects": [
+        [
+          "popup",
+          "Slime Girl is down",
+          {
+            "sym": "mgq_mp_departure"
+          }
+        ],
+        [
+          "popup",
+          "",
+          null
+        ]
+      ],
+      "events": 2,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 2 party and 1 troop characters; swapping Alice (Host) -> Alice, Luka -> Luka (Me), Slime -> Slime Girl"
+      ]
+    },
+    {
+      "names": "[\tsAlice (Host)\tsLuka\t]\t[\tsSlime\t]",
+      "own": [
+        [
+          "Alice",
+          "Luka (Me)"
+        ],
+        [
+          "Slime Girl"
+        ]
+      ],
+      "name_box": true,
+      "animations": 10,
+      "seat": 1,
+      "name": "a message swaps its text but not its name box or speaker line",
+      "body": "smessage\t~\tsFace\ti1\ti0\ti2\ts\\\\n<Alice (Host)>Alice (Host) attacks Slime\nsmessage\t~\ts\ti0\ti0\ti2\ts【Alice (Host)】Slime!\nsmessage\t~\ts\ti0\ti0\ti2\ts\\\\N3<Luka>\\\\n<Slime>Luka【Slime】",
+      "effects": [
+        [
+          "message",
+          "\\n<Alice (Host)>Alice attacks Slime Girl"
+        ],
+        [
+          "message",
+          "【Alice (Host)】Slime Girl!"
+        ],
+        [
+          "message",
+          "\\N3<Luka>\\n<Slime>Luka (Me)【Slime Girl】"
+        ]
+      ],
+      "events": 3,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 2 party and 1 troop characters; swapping Alice (Host) -> Alice, Luka -> Luka (Me), Slime -> Slime Girl"
+      ]
+    },
+    {
+      "names": "[\tsAlice (Host)\tsLuka\t]\t[\tsSlime\t]",
+      "own": [
+        [
+          "Alice",
+          "Luka (Me)"
+        ],
+        [
+          "Slime Girl"
+        ]
+      ],
+      "name_box": false,
+      "animations": 10,
+      "seat": 1,
+      "name": "an untranslated guest reads a name box as a speaker line",
+      "body": "smessage\t~\ts\ti0\ti0\ti2\ts\\\\n<Alice (Host)>Slime, run!\nsmessage\t~\ts\ti0\ti0\ti2\tsPlain Slime",
+      "effects": [
+        [
+          "message",
+          "【Alice (Host)】\nSlime Girl, run!"
+        ],
+        [
+          "message",
+          "Plain Slime Girl"
+        ]
+      ],
+      "events": 2,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 2 party and 1 troop characters; swapping Alice (Host) -> Alice, Luka -> Luka (Me), Slime -> Slime Girl"
+      ]
+    },
+    {
+      "names": "[\tsAlice (Host)\tsLuka\t]\t[\tsSlime\t]",
+      "own": [
+        [
+          "Alice",
+          "Luka (Me)"
+        ],
+        [
+          "Slime Girl"
+        ]
+      ],
+      "name_box": true,
+      "animations": 10,
+      "seat": 1,
+      "name": "the skill's name swaps on either side",
+      "body": "sskill_name\tstroop\tsSlime Tackle\nsskill_name\tsparty\ti5\nsskill_name\tsparty\tsLuka Strike",
+      "effects": [
+        [
+          "skill_name",
+          "troop",
+          "Slime Girl Tackle"
+        ],
+        [
+          "skill_name",
+          "party",
+          null
+        ],
+        [
+          "skill_name",
+          "party",
+          "Luka (Me) Strike"
+        ]
+      ],
+      "events": 3,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 2 party and 1 troop characters; swapping Alice (Host) -> Alice, Luka -> Luka (Me), Slime -> Slime Girl"
+      ]
+    },
+    {
+      "names": "[\tsAlice (Host)\tsLuka\t]\t[\tsSlime\t]",
+      "own": [
+        [
+          "Alice",
+          "Luka (Me)"
+        ],
+        [
+          "Slime Girl"
+        ]
+      ],
+      "name_box": true,
+      "animations": 10,
+      "seat": 1,
+      "name": "the guest makes only the calls its lists name",
+      "body": "scall\tslog\tsdisplay_damage\ti7\t~\t[\t]\nscall\tslog\tsdisplay_unheard_of\ti7\t~\t[\t]\nscall\tsscene\tsprocess_skill_word\ti7\t~\t[\t]\nscall\tsscene\tsexit\ti7\t~\t[\t]\nscall\t~\tsdisplay_damage\ti7\t~\t[\t]\nscall\ti5\tscount\ti7\t~\t[\t]",
+      "effects": [
+        [
+          "call",
+          "log",
+          "display_damage"
+        ],
+        [
+          "call",
+          "scene",
+          "process_skill_word"
+        ]
+      ],
+      "events": 6,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 2 party and 1 troop characters; swapping Alice (Host) -> Alice, Luka -> Luka (Me), Slime -> Slime Girl",
+        "left out the host's log call display_unheard_of",
+        "left out the host's scene call exit",
+        "left out the host's  call display_damage",
+        "left out the host's 5 call count"
+      ]
+    },
+    {
+      "names": "[\tsAlice (Host)\tsLuka\t]\t[\tsSlime\t]",
+      "own": [
+        [
+          "Alice",
+          "Luka (Me)"
+        ],
+        [
+          "Slime Girl"
+        ]
+      ],
+      "name_box": true,
+      "animations": 10,
+      "seat": 1,
+      "name": "pictures the game takes show, others are left out with the reason",
+      "body": "spicture.show\ti3\tscutin_alice.v2\ti0\ti10\tf20.5\ti100\ti100\ti255\ti0\nspicture.move\ti3\ti0\ti10\ti20\ti100\ti100\ti0\ti0\ti30\nspicture.erase\ti3\nspicture.show\ti4\ts../cutin\ti0\ti10\ti20\ti100\ti100\ti255\ti0\nspicture.show\ti0\tscutin\ti0\ti0\ti0\ti100\ti100\ti255\ti0\nspicture.show\ti101\tscutin\ti0\ti0\ti0\ti100\ti100\ti255\ti0\nspicture.move\ti4\ti0\ti10\ti20\ti100\ti100\ti0\ti0\ti-1\nspicture.spin\ti4\nspicture.show\ti5\tscutin\ti0\tf1000000000.0\ti0\ti100\ti100\ti255\ti0",
+      "effects": [
+        [
+          "picture",
+          "show",
+          [
+            {
+              "i": "3"
+            },
+            {
+              "s": "cutin_alice.v2"
+            },
+            {
+              "i": "0"
+            },
+            {
+              "i": "10"
+            },
+            {
+              "f": "4034800000000000"
+            },
+            {
+              "i": "100"
+            },
+            {
+              "i": "100"
+            },
+            {
+              "i": "255"
+            },
+            {
+              "i": "0"
+            }
+          ]
+        ],
+        [
+          "picture",
+          "move",
+          [
+            {
+              "i": "3"
+            },
+            {
+              "i": "0"
+            },
+            {
+              "i": "10"
+            },
+            {
+              "i": "20"
+            },
+            {
+              "i": "100"
+            },
+            {
+              "i": "100"
+            },
+            {
+              "i": "0"
+            },
+            {
+              "i": "0"
+            },
+            {
+              "i": "30"
+            }
+          ]
+        ],
+        [
+          "picture",
+          "erase",
+          [
+            {
+              "i": "3"
+            }
+          ]
+        ]
+      ],
+      "events": 9,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 2 party and 1 troop characters; swapping Alice (Host) -> Alice, Luka -> Luka (Me), Slime -> Slime Girl",
+        "left out the host's picture call show with the arguments [4, \"../cutin\", 0, 10, 20, 100, 100, 255, 0]: '../cutin' is no picture's file name",
+        "left out the host's picture call show with the arguments [0, \"cutin\", 0, 0, 0, 100, 100, 255, 0]: no such change or picture",
+        "left out the host's picture call move with the arguments [4, 0, 10, 20, 100, 100, 0, 0, -1]: arguments this game cannot take",
+        "left out the host's picture call spin with the arguments [4]: no such change",
+        "left out the host's picture call show with the arguments [5, \"cutin\", 0, 1000000000.0, 0, 100, 100, 255, 0]: arguments this game cannot take"
+      ]
+    },
+    {
+      "names": "[\tsAlice (Host)\tsLuka\t]\t[\tsSlime\t]",
+      "own": [
+        [
+          "Alice",
+          "Luka (Me)"
+        ],
+        [
+          "Slime Girl"
+        ]
+      ],
+      "name_box": true,
+      "animations": 10,
+      "seat": 1,
+      "name": "the screen takes a flash and a shake in the editor's range alone, other changes are left out silently",
+      "body": "sscreen.start_flash\tc255,255,255,170\ti20\nsscreen.start_flash\tswhite\ti20\nsscreen.start_shake\ti5\ti5\ti10\nsscreen.start_shake\ti50\ti5\ti10\nsscreen.wobble\ti3\nsscreen.start_fadeout\ti30",
+      "effects": [
+        [
+          "screen",
+          "start_flash",
+          [
+            {
+              "c": [
+                "406fe00000000000",
+                "406fe00000000000",
+                "406fe00000000000",
+                "4065400000000000"
+              ]
+            },
+            {
+              "i": "20"
+            }
+          ]
+        ],
+        [
+          "screen",
+          "start_shake",
+          [
+            {
+              "i": "5"
+            },
+            {
+              "i": "5"
+            },
+            {
+              "i": "10"
+            }
+          ]
+        ],
+        [
+          "screen",
+          "start_fadeout",
+          [
+            {
+              "i": "30"
+            }
+          ]
+        ]
+      ],
+      "events": 6,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 2 party and 1 troop characters; swapping Alice (Host) -> Alice, Luka -> Luka (Me), Slime -> Slime Girl",
+        "left out the host's screen call start_flash with the arguments [\"white\", 20]: arguments this game cannot take",
+        "left out the host's screen call start_shake with the arguments [50, 5, 10]: arguments this game cannot take"
+      ]
+    },
+    {
+      "names": "[\tsAlice (Host)\tsLuka\t]\t[\tsSlime\t]",
+      "own": [
+        [
+          "Alice",
+          "Luka (Me)"
+        ],
+        [
+          "Slime Girl"
+        ]
+      ],
+      "name_box": true,
+      "animations": 10,
+      "seat": 1,
+      "name": "sounds play from the Audio folder within the game's volumes and pitches",
+      "body": "saudio.se_play\tsAudio/SE/Attack1\ti80\ti100\nsaudio.bgm_play\tsAudio/BGM/Battle 1.ogg\ti100\ti100\ti1200\nsaudio.se_play\tsAudio/SE/Attack1\ti101\ti100\nsaudio.se_play\tsAudio/SE/Attack1\ti80\ti40\nsaudio.se_play\tsAudio/SE/Attack1\ti80\ti100\ti5\nsaudio.se_play\tsAudio/../Save/x\ti80\ti100\nsaudio.se_play\tsData/SE/x\ti80\ti100\nsaudio.se_stop\nsaudio.se_stop\ti1\nsaudio.bgm_fade\ti2000\nsaudio.bgm_fade\ti20000\nsaudio.start_over_drive\ti1\t+\nsaudio.start_over_drive\tsx\nsaudio.unheard_of\ti1",
+      "effects": [
+        [
+          "audio",
+          "se_play",
+          [
+            {
+              "s": "Audio/SE/Attack1"
+            },
+            {
+              "i": "80"
+            },
+            {
+              "i": "100"
+            }
+          ]
+        ],
+        [
+          "audio",
+          "bgm_play",
+          [
+            {
+              "s": "Audio/BGM/Battle 1.ogg"
+            },
+            {
+              "i": "100"
+            },
+            {
+              "i": "100"
+            },
+            {
+              "i": "1200"
+            }
+          ]
+        ],
+        [
+          "audio",
+          "se_stop",
+          [
+
+          ]
+        ],
+        [
+          "audio",
+          "bgm_fade",
+          [
+            {
+              "i": "2000"
+            }
+          ]
+        ],
+        [
+          "audio",
+          "start_over_drive",
+          [
+            {
+              "i": "1"
+            },
+            true
+          ]
+        ]
+      ],
+      "events": 14,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 2 party and 1 troop characters; swapping Alice (Host) -> Alice, Luka -> Luka (Me), Slime -> Slime Girl",
+        "left out the host's audio call se_play with the arguments [\"Audio/SE/Attack1\", 101, 100]",
+        "left out the host's audio call se_stop with the arguments [1]",
+        "left out the host's audio call bgm_fade with the arguments [20000]",
+        "left out the host's audio call start_over_drive with the arguments [\"x\"]"
+      ]
+    },
+    {
+      "names": "[\tsAlice (Host)\tsLuka\t]\t[\tsSlime\t]",
+      "own": [
+        [
+          "Alice",
+          "Luka (Me)"
+        ],
+        [
+          "Slime Girl"
+        ]
+      ],
+      "name_box": true,
+      "animations": 10,
+      "seat": 1,
+      "name": "the scene's waits take at most 10 seconds as whole frames, other methods are left out",
+      "body": "sscene.wait\ti30\nsscene.wait\ti9999\nsscene.abs_wait\ts12\nsscene.wait\t~\nsscene.abs_wait\tf2.9\nsscene.wait_for_message\nsscene.wait_for_effect\nsscene.nap\ti5",
+      "effects": [
+        [
+          "scene",
+          "wait",
+          [
+            {
+              "i": "30"
+            }
+          ]
+        ],
+        [
+          "scene",
+          "wait",
+          [
+            {
+              "i": "600"
+            }
+          ]
+        ],
+        [
+          "scene",
+          "abs_wait",
+          [
+            {
+              "i": "12"
+            }
+          ]
+        ],
+        [
+          "scene",
+          "wait",
+          [
+            {
+              "i": "0"
+            }
+          ]
+        ],
+        [
+          "scene",
+          "abs_wait",
+          [
+            {
+              "i": "2"
+            }
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_effect",
+          [
+
+          ]
+        ]
+      ],
+      "events": 8,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 2 party and 1 troop characters; swapping Alice (Host) -> Alice, Luka -> Luka (Me), Slime -> Slime Girl"
+      ]
+    },
+    {
+      "names": "[\tsAlice (Host)\tsLuka\t]\t[\tsSlime\t]",
+      "own": [
+        [
+          "Alice",
+          "Luka (Me)"
+        ],
+        [
+          "Slime Girl"
+        ]
+      ],
+      "name_box": true,
+      "animations": 10,
+      "seat": 1,
+      "name": "animations this game has start, others are left out",
+      "body": "sanimation\t@a0\t[\t@e0\t]\ti5\nsanimation\t@a0\t[\t@e0\t]\ti0\nsanimation\t@a0\t[\t@e0\t]\ti10\nsbattler.animation_id\t@e1\ti9\nsbattler.animation_id\t@e1\ti0\nsbattler.animation_id\t@e1\ti99\nsbattler.animation_id\t@e1\ti-2\nsbattler.animation_id\t@e1\ts3\nsbattler.animation_id\t@e1\tf1.7",
+      "effects": [
+        [
+          "animation_id",
+          5
+        ],
+        [
+          "animation_mirror",
+          false
+        ],
+        [
+          "animation_id",
+          9
+        ],
+        [
+          "animation_id",
+          -2
+        ],
+        [
+          "animation_id",
+          3
+        ],
+        [
+          "animation_id",
+          1
+        ]
+      ],
+      "events": 9,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 2 party and 1 troop characters; swapping Alice (Host) -> Alice, Luka -> Luka (Me), Slime -> Slime Girl"
+      ]
+    },
+    {
+      "names": "[\tsAlice (Host)\tsLuka\t]\t[\tsSlime\t]",
+      "own": [
+        [
+          "Alice",
+          "Luka (Me)"
+        ],
+        [
+          "Slime Girl"
+        ]
+      ],
+      "name_box": true,
+      "animations": 10,
+      "seat": 1,
+      "name": "plain events pass, an unknown kind is left out with the reason",
+      "body": "svalues\t@a0\ti10\ti5\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nstime_stop\ti0\t~\nsturn\ti2\nsemerge\t+\t-\nsitem_used\t@a0\tt3\nsbattler.sprite_effect_type\t@e0\t:collapse\nsbattler.animation_mirror\t@e0\t+\nsfrobnicate\ti1",
+      "effects": [
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "time_stop"
+        ],
+        [
+          "pass",
+          "turn"
+        ],
+        [
+          "pass",
+          "emerge"
+        ],
+        [
+          "pass",
+          "item_used"
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "pass",
+          "battler.animation_mirror"
+        ]
+      ],
+      "events": 8,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 2 party and 1 troop characters; swapping Alice (Host) -> Alice, Luka -> Luka (Me), Slime -> Slime Girl",
+        "left out the host's event frobnicate, which this game does not know"
+      ]
+    },
+    {
+      "names": "[\tsAlice (Host)\tsLuka\t]\t[\tsSlime\t]",
+      "own": [
+        [
+          "Alice",
+          "Luka (Me)"
+        ],
+        [
+          "Slime Girl"
+        ]
+      ],
+      "name_box": true,
+      "animations": 10,
+      "seat": 1,
+      "name": "lines that do not read are counted and left out once",
+      "body": "[\ti1\ni5\n\n\t\nsturn\ti3\nsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\t]",
+      "effects": [
+        [
+          "pass",
+          "turn"
+        ]
+      ],
+      "events": 1,
+      "unreadable": 5,
+      "others_choose": 0,
+      "logs": [
+        "the host names 2 party and 1 troop characters; swapping Alice (Host) -> Alice, Luka -> Luka (Me), Slime -> Slime Girl",
+        "left out an unreadable line of the host's stream (4 characters)"
+      ]
+    },
+    {
+      "names": "[\tsAlice (Host)\tsLuka\t]\t[\tsSlime\t]",
+      "own": [
+        [
+          "Alice",
+          "Luka (Me)"
+        ],
+        [
+          "Slime Girl"
+        ]
+      ],
+      "name_box": true,
+      "animations": 10,
+      "seat": 1,
+      "name": "the markers come through, a choose again only when it names the player",
+      "body": "scommands\nschoose_again\t[\ti2\t]\nschoose_again\t[\ti1\ti2\t]\nschoose_again\ti1\nschoose_again\t~\nsend\tsprocess_victory\ti0\ti0",
+      "effects": [
+        [
+          "marker",
+          "commands"
+        ],
+        [
+          "marker",
+          "choose_again"
+        ],
+        [
+          "marker",
+          "choose_again"
+        ],
+        [
+          "marker",
+          "end"
+        ]
+      ],
+      "events": 6,
+      "unreadable": 0,
+      "others_choose": 2,
+      "logs": [
+        "the host names 2 party and 1 troop characters; swapping Alice (Host) -> Alice, Luka -> Luka (Me), Slime -> Slime Girl"
+      ]
+    },
+    {
+      "names": null,
+      "own": [
+        [
+          "Alice",
+          "Luka (Me)"
+        ],
+        [
+          "Slime Girl"
+        ]
+      ],
+      "name_box": true,
+      "animations": 10,
+      "seat": 1,
+      "name": "without names nothing is swapped",
+      "body": "slog.add_text\tsAlice (Host) hits Slime!",
+      "effects": [
+        [
+          "log",
+          "add_text",
+          [
+            {
+              "s": "Alice (Host) hits Slime!"
+            }
+          ]
+        ]
+      ],
+      "events": 1,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+
+      ]
+    },
+    {
+      "names": "[\t[",
+      "own": [
+        [
+          "Alice"
+        ],
+        [
+          "Slime Girl"
+        ]
+      ],
+      "name_box": true,
+      "animations": 10,
+      "seat": 1,
+      "name": "names that do not read swap nothing",
+      "body": "slog.add_text\tsAlice (Host) hits Slime!",
+      "effects": [
+        [
+          "log",
+          "add_text",
+          [
+            {
+              "s": "Alice (Host) hits Slime!"
+            }
+          ]
+        ]
+      ],
+      "events": 1,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 0 party and 0 troop characters; swapping none"
+      ]
+    },
+    {
+      "name": "served battle 1, send 1",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "svalues\t@a0\ti252\ti32\ti5\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a1\ti266\ti46\ti5\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a2\ti252\ti32\ti5\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a3\ti266\ti46\ti5\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@e0\ti1350\ti60\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@e1\ti1350\ti60\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nstime_stop\ti0\t~\nsemerge\t-\t-\nsscene.wait_for_message\nsscene.wait_for_message\nsscene.wait_for_message\nsscene.wait_for_message\nsvalues\t@a0\ti252\ti32\ti5\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a1\ti266\ti46\ti5\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a2\ti252\ti32\ti5\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a3\ti266\ti46\ti5\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@e0\ti1350\ti60\ti99999\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@e1\ti1350\ti60\ti99999\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscommands",
+      "effects": [
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "time_stop"
+        ],
+        [
+          "pass",
+          "emerge"
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "marker",
+          "commands"
+        ]
+      ],
+      "events": 19,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 1, send 2",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "sturn\ti1\nsscene.wait\ti20",
+      "effects": [
+        [
+          "pass",
+          "turn"
+        ],
+        [
+          "scene",
+          "wait",
+          [
+            {
+              "i": "20"
+            }
+          ]
+        ]
+      ],
+      "events": 2,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 1, send 3",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nsscene.wait_for_message\nsbattler.sprite_effect_type\t@e1\t:whiten\nslog.clear_popup\nscall\tsscene\tsprocess_skill_word\ti592322119\t@e1\t[\t]\tk918\txcount\nscall\tsscene\tsdisplay_skill_name\ti330832979\t@e1\t[\t]\tk918\nsvalues\t@e1\ti1350\ti60\ti99998\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_use_item\ti85122956\t~\t[\t[\t@e1\t{\t:battler\t@e1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t[\t@a1\t{\t:battler\t@a1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e1\t[\t@a1\t]\tk918\nslog.clear_popup\nsanimation\t@e1\t[\t@a1\t]\ti77\nsvalues\t@a1\ti137\ti46\ti5\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_action_results\ti144289456\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti129\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\ti1\ti6\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t[\t@e1\t{\t:battler\t@e1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a1\tk918\t@e1",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "scene",
+          "process_skill_word"
+        ],
+        [
+          "call",
+          "scene",
+          "display_skill_name"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "call",
+          "log",
+          "display_use_item"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "animation_id",
+          77
+        ],
+        [
+          "animation_mirror",
+          false
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "call",
+          "log",
+          "display_action_results"
+        ]
+      ],
+      "events": 12,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 1, send 4",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nslog.clear\nslog.clear_popup\nslog.clear\nslog.clear_popup\nslog.clear\nsskill_name\tsparty\t~\nslog.clear\nsvalues\t@e1\ti1350\ti60\ti99999\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_auto_affected_status\ti744383253\t~\t[\t[\t@e1\t{\t:battler\t@e1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e1\nslog.clear\nscall\tslog\tsdisplay_current_state\ti300251718\t~\t[\t[\t@e1\t{\t:battler\t@e1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e1\nslog.clear\nscall\tslog\tsdisplay_damage\ti690370917\t~\t[\t[\t@e1\t{\t:battler\t@e1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e1\t~\nslog.clear\nsscene.wait_for_message\nsbattler.sprite_effect_type\t@a3\t:whiten\nslog.clear_popup\nscall\tsscene\tsprocess_skill_word\ti477782601\t@a3\t[\t]\tk1\txcount\nscall\tsscene\tsdisplay_skill_name\ti863487066\t@a3\t[\t]\tk1\nscall\tslog\tsdisplay_use_item\ti468388296\t~\t[\t[\t@a3\t{\t:battler\t@a3\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t[\t@e0\t{\t:battler\t@e0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a3\t[\t@e0\t]\tk1\nslog.clear_popup\nsanimation\t@a3\t[\t@e0\t]\ti-1\nsvalues\t@a3\ti266\ti46\ti8\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@e0\ti1143\ti60\ti99999\t[\ti23\t]\t[\ti7\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_action_results\ti6013347\t~\t[\t[\t@e0\t{\t:battler\t@e0\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti207\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\ti23\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\ti1\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t[\t@a3\t{\t:battler\t@a3\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e0\tk1\t@a3",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "skill_name",
+          "party",
+          null
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "log",
+          "display_damage"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "scene",
+          "process_skill_word"
+        ],
+        [
+          "call",
+          "scene",
+          "display_skill_name"
+        ],
+        [
+          "call",
+          "log",
+          "display_use_item"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "call",
+          "log",
+          "display_action_results"
+        ]
+      ],
+      "events": 26,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)",
+        "left out the host's log call display_auto_affected_status",
+        "left out the host's log call display_current_state"
+      ]
+    },
+    {
+      "name": "served battle 1, send 5",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nslog.clear\nslog.clear_popup\nslog.clear\nslog.clear_popup\nslog.clear\nsskill_name\tsparty\t~\nslog.clear\nsend\tsprocess_victory\ti3039\ti39",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "skill_name",
+          "party",
+          null
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "marker",
+          "end"
+        ]
+      ],
+      "events": 9,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 1, send 6",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nslog.clear\nslog.clear_popup\nslog.clear\nslog.clear_popup\nslog.clear\nsskill_name\tsparty\t~\nslog.clear\nscall\tslog\tsdisplay_auto_affected_status\ti921484802\t~\t[\t[\t@a3\t{\t:battler\t@a3\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti-13\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a3\nslog.clear\nscall\tslog\tsdisplay_current_state\ti537036142\t~\t[\t[\t@a3\t{\t:battler\t@a3\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti-13\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a3\nslog.clear\nscall\tslog\tsdisplay_damage\ti657579835\t~\t[\t[\t@a3\t{\t:battler\t@a3\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti-13\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a3\t~",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "skill_name",
+          "party",
+          null
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "log",
+          "display_damage"
+        ]
+      ],
+      "events": 13,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)",
+        "left out the host's log call display_auto_affected_status",
+        "left out the host's log call display_current_state"
+      ]
+    },
+    {
+      "name": "served battle 1, send 7",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "sscene.wait\ti20",
+      "effects": [
+        [
+          "scene",
+          "wait",
+          [
+            {
+              "i": "20"
+            }
+          ]
+        ]
+      ],
+      "events": 1,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 1, send 8",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nsscene.wait_for_message\nsbattler.sprite_effect_type\t@a1\t:whiten\nslog.clear_popup\nscall\tsscene\tsprocess_skill_word\ti287192614\t@a1\t[\t]\tk1\txcount\nscall\tsscene\tsdisplay_skill_name\ti567865440\t@a1\t[\t]\tk1\nscall\tslog\tsdisplay_use_item\ti940688816\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti129\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\ti6\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t[\t@e1\t{\t:battler\t@e1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a1\t[\t@e1\t]\tk1\nslog.clear_popup\nsanimation\t@a1\t[\t@e1\t]\ti-1\nsvalues\t@a1\ti137\ti46\ti8\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_action_results\ti225991597\t~\t[\t[\t@e1\t{\t:battler\t@e1\t:used\t+\t:missed\t+\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\ti1\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t[\t@a1\t{\t:battler\t@a1\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti129\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\ti6\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@e1\tk1\t@a1",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "scene",
+          "process_skill_word"
+        ],
+        [
+          "call",
+          "scene",
+          "display_skill_name"
+        ],
+        [
+          "call",
+          "log",
+          "display_use_item"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "call",
+          "log",
+          "display_action_results"
+        ]
+      ],
+      "events": 11,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 1, send 9",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nslog.clear\nslog.clear_popup\nslog.clear\nslog.clear_popup\nslog.clear\nsskill_name\tsparty\t~\nslog.clear\nsvalues\t@a1\ti150\ti46\ti8\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_auto_affected_status\ti15060550\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti-13\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@a1\nslog.clear\nscall\tslog\tsdisplay_current_state\ti458884984\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti-13\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@a1\nslog.clear\nscall\tslog\tsdisplay_damage\ti440296439\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti-13\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@a1\t~",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "skill_name",
+          "party",
+          null
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "log",
+          "display_damage"
+        ]
+      ],
+      "events": 14,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)",
+        "left out the host's log call display_auto_affected_status",
+        "left out the host's log call display_current_state"
+      ]
+    },
+    {
+      "name": "served battle 1, send 10",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ]
+      ],
+      "events": 1,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 1, send 11",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "sscene.wait_for_message\nsbattler.sprite_effect_type\t@e0\t:whiten\nslog.clear_popup\nscall\tsscene\tsprocess_skill_word\ti114896147\t@e0\t[\t]\tk3705\txcount\nscall\tsscene\tsdisplay_skill_name\ti8702465\t@e0\t[\t]\tk3705\nscall\tslog\tsdisplay_use_item\ti527355208\t~\t[\t[\t@e0\t{\t:battler\t@e0\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti207\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\ti23\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t[\t@a3\t{\t:battler\t@a3\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti-13\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e0\t[\t@a3\t]\tk3705\nslog.clear_popup\nsanimation\t@e0\t[\t@a3\t]\ti1315\nsvalues\t@a3\ti175\ti46\ti8\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_action_results\ti278050494\t~\t[\t[\t@a3\t{\t:battler\t@a3\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti91\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t+\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\ti2\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t[\t@e0\t{\t:battler\t@e0\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti207\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\ti23\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@a3\tk3705\t@e0",
+      "effects": [
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "scene",
+          "process_skill_word"
+        ],
+        [
+          "call",
+          "scene",
+          "display_skill_name"
+        ],
+        [
+          "call",
+          "log",
+          "display_use_item"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "call",
+          "log",
+          "display_action_results"
+        ]
+      ],
+      "events": 10,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 1, send 12",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nslog.clear\nslog.clear_popup\nslog.clear\nslog.clear_popup\nslog.clear\nsskill_name\tsparty\t~\nslog.clear\nscall\tslog\tsdisplay_auto_affected_status\ti805741392\t~\t[\t[\t@e0\t{\t:battler\t@e0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@e0\nslog.clear\nscall\tslog\tsdisplay_current_state\ti743721124\t~\t[\t[\t@e0\t{\t:battler\t@e0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@e0",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "skill_name",
+          "party",
+          null
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ]
+      ],
+      "events": 11,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)",
+        "left out the host's log call display_auto_affected_status",
+        "left out the host's log call display_current_state"
+      ]
+    },
+    {
+      "name": "served battle 1, send 13",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nscall\tslog\tsdisplay_damage\ti541513016\t~\t[\t[\t@e0\t{\t:battler\t@e0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@e0\t~\nslog.clear\nsscene.wait_for_message\nsbattler.sprite_effect_type\t@a0\t:whiten\nslog.clear_popup\nscall\tsscene\tsprocess_skill_word\ti609447955\t@a0\t[\t]\tk1\txcount",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "log",
+          "display_damage"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "scene",
+          "process_skill_word"
+        ]
+      ],
+      "events": 7,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 2, send 1",
+      "names": "[\tsAlice (Player 1)\tsAdramelech (Player 1)\tsAlice (Player 2)\tsAdramelech (Player 2)\t]\t[\tsTwo-Tailed Silver Kitsune A\tsTwo-Tailed Silver Kitsune B\t]",
+      "own": [
+        [
+          "Alice (Player 1) (seen)",
+          "Adramelech (Player 1)",
+          "Alice (Player 2) (seen)",
+          "Adramelech (Player 2)"
+        ],
+        [
+          "Two-Tailed Silver Kitsune A (seen)",
+          "Two-Tailed Silver Kitsune B"
+        ]
+      ],
+      "name_box": false,
+      "animations": 120,
+      "seat": 1,
+      "body": "svalues\t@a0\ti1134656\ti14048\ti597\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a1\ti3657288\ti71944\ti491\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a2\ti1134656\ti14048\ti597\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a3\ti3657288\ti71944\ti491\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@e0\ti4200\ti147\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@e1\ti4200\ti147\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nstime_stop\ti0\t~\nsemerge\t-\t-\nsscene.wait_for_message\nsscene.wait_for_message\nsscene.wait_for_message\nsscene.wait_for_message\nsvalues\t@e0\ti4200\ti147\ti99999\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@e1\ti4200\ti147\ti99999\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsbattler.sprite_effect_type\t@a3\t:whiten\nslog.clear_popup\nscall\tsscene\tsprocess_skill_word\ti726684926\t@a3\t[\t]\tk3106\txinterrupt",
+      "effects": [
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "time_stop"
+        ],
+        [
+          "pass",
+          "emerge"
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "scene",
+          "process_skill_word"
+        ]
+      ],
+      "events": 17,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Alice (Player 1) -> Alice (Player 1) (seen), Alice (Player 2) -> Alice (Player 2) (seen), Two-Tailed Silver Kitsune A -> Two-Tailed Silver Kitsune A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 2, send 2",
+      "names": "[\tsAlice (Player 1)\tsAdramelech (Player 1)\tsAlice (Player 2)\tsAdramelech (Player 2)\t]\t[\tsTwo-Tailed Silver Kitsune A\tsTwo-Tailed Silver Kitsune B\t]",
+      "own": [
+        [
+          "Alice (Player 1) (seen)",
+          "Adramelech (Player 1)",
+          "Alice (Player 2) (seen)",
+          "Adramelech (Player 2)"
+        ],
+        [
+          "Two-Tailed Silver Kitsune A (seen)",
+          "Two-Tailed Silver Kitsune B"
+        ]
+      ],
+      "name_box": false,
+      "animations": 120,
+      "seat": 1,
+      "body": "scall\tsscene\tsdisplay_skill_name\ti418656402\t@a3\t[\t]\tk3106\nscall\tslog\tsdisplay_use_item\ti792100074\t~\t[\t[\t@a3\t{\t:battler\t@a3\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t[\t@e0\t{\t:battler\t@e0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t[\t@e1\t{\t:battler\t@e1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a3\t[\t@e0\t@e1\t]\tk3106\nslog.clear_popup\nsanimation\t@a3\t[\t@e0\t@e1\t]\ti1168\nsvalues\t@e0\ti0\ti147\ti99999\t[\ti1\t]\t[\ti1\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_action_results\ti876897536\t~\t[\t[\t@e0\t{\t:battler\t@e0\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti58084904\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\ti1\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\ti6\t]\t:damage_rate\tf1.5\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.5\t}\t]\t[\t@a3\t{\t:battler\t@a3\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e0\tk3106\t@a3",
+      "effects": [
+        [
+          "call",
+          "scene",
+          "display_skill_name"
+        ],
+        [
+          "call",
+          "log",
+          "display_use_item"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "call",
+          "log",
+          "display_action_results"
+        ]
+      ],
+      "events": 6,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Alice (Player 1) -> Alice (Player 1) (seen), Alice (Player 2) -> Alice (Player 2) (seen), Two-Tailed Silver Kitsune A -> Two-Tailed Silver Kitsune A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 2, send 3",
+      "names": "[\tsAlice (Player 1)\tsAdramelech (Player 1)\tsAlice (Player 2)\tsAdramelech (Player 2)\t]\t[\tsTwo-Tailed Silver Kitsune A\tsTwo-Tailed Silver Kitsune B\t]",
+      "own": [
+        [
+          "Alice (Player 1) (seen)",
+          "Adramelech (Player 1)",
+          "Alice (Player 2) (seen)",
+          "Adramelech (Player 2)"
+        ],
+        [
+          "Two-Tailed Silver Kitsune A (seen)",
+          "Two-Tailed Silver Kitsune B"
+        ]
+      ],
+      "name_box": false,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nslog.clear\nsvalues\t@a3\ti3657288\ti71944\ti491\t[\ti185\t]\t[\ti6\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_added_state\ti664401427\t~\t[\t[\t@a3\t{\t:battler\t@a3\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\ti185\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a3\tz185\nslog.clear_popup\nslog.clear\nslog.clear_popup\nslog.clear\nsskill_name\tsparty\t~\nslog.clear\nscall\tslog\tsdisplay_auto_affected_status\ti670669437\t~\t[\t[\t@a3\t{\t:battler\t@a3\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a3\nslog.clear\nscall\tslog\tsdisplay_current_state\ti732536169\t~\t[\t[\t@a3\t{\t:battler\t@a3\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a3\nslog.clear\nscall\tslog\tsdisplay_damage\ti438075294\t~\t[\t[\t@a3\t{\t:battler\t@a3\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a3\t~\nslog.clear\nsbattler.sprite_effect_type\t@a3\t:whiten\nslog.clear_popup\nscall\tslog\tsdisplay_target_empty\ti817333585\t~\t[\t[\t@a3\t{\t:battler\t@a3\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a3",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "skill_name",
+          "party",
+          null
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "log",
+          "display_damage"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ]
+      ],
+      "events": 19,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Alice (Player 1) -> Alice (Player 1) (seen), Alice (Player 2) -> Alice (Player 2) (seen), Two-Tailed Silver Kitsune A -> Two-Tailed Silver Kitsune A (seen)",
+        "left out the host's log call display_added_state",
+        "left out the host's log call display_auto_affected_status",
+        "left out the host's log call display_current_state",
+        "left out the host's log call display_target_empty"
+      ]
+    },
+    {
+      "name": "served battle 2, send 4",
+      "names": "[\tsAlice (Player 1)\tsAdramelech (Player 1)\tsAlice (Player 2)\tsAdramelech (Player 2)\t]\t[\tsTwo-Tailed Silver Kitsune A\tsTwo-Tailed Silver Kitsune B\t]",
+      "own": [
+        [
+          "Alice (Player 1) (seen)",
+          "Adramelech (Player 1)",
+          "Alice (Player 2) (seen)",
+          "Adramelech (Player 2)"
+        ],
+        [
+          "Two-Tailed Silver Kitsune A (seen)",
+          "Two-Tailed Silver Kitsune B"
+        ]
+      ],
+      "name_box": false,
+      "animations": 120,
+      "seat": 1,
+      "body": "svalues\t@e1\ti0\ti147\ti99999\t[\ti1\t]\t[\ti1\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_action_results\ti130655048\t~\t[\t[\t@e1\t{\t:battler\t@e1\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti55717048\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\ti1\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\ti6\t]\t:damage_rate\tf1.5\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.5\t}\t]\t[\t@a3\t{\t:battler\t@a3\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e1\tk3106\t@a3",
+      "effects": [
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "call",
+          "log",
+          "display_action_results"
+        ]
+      ],
+      "events": 2,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Alice (Player 1) -> Alice (Player 1) (seen), Alice (Player 2) -> Alice (Player 2) (seen), Two-Tailed Silver Kitsune A -> Two-Tailed Silver Kitsune A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 2, send 5",
+      "names": "[\tsAlice (Player 1)\tsAdramelech (Player 1)\tsAlice (Player 2)\tsAdramelech (Player 2)\t]\t[\tsTwo-Tailed Silver Kitsune A\tsTwo-Tailed Silver Kitsune B\t]",
+      "own": [
+        [
+          "Alice (Player 1) (seen)",
+          "Adramelech (Player 1)",
+          "Alice (Player 2) (seen)",
+          "Adramelech (Player 2)"
+        ],
+        [
+          "Two-Tailed Silver Kitsune A (seen)",
+          "Two-Tailed Silver Kitsune B"
+        ]
+      ],
+      "name_box": false,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nscall\tslog\tsdisplay_auto_affected_status\ti255661387\t~\t[\t[\t@a3\t{\t:battler\t@a3\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a3\nslog.clear\nscall\tslog\tsdisplay_current_state\ti788451317\t~\t[\t[\t@a3\t{\t:battler\t@a3\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a3\nslog.clear\nscall\tslog\tsdisplay_damage\ti48863525\t~\t[\t[\t@a3\t{\t:battler\t@a3\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a3\t~\nslog.clear\nsbattler.sprite_effect_type\t@a2\t:whiten\nslog.clear_popup\nscall\tslog\tsdisplay_target_empty\ti12018566\t~\t[\t[\t@a2\t{\t:battler\t@a2\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a2",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "log",
+          "display_damage"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ]
+      ],
+      "events": 10,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Alice (Player 1) -> Alice (Player 1) (seen), Alice (Player 2) -> Alice (Player 2) (seen), Two-Tailed Silver Kitsune A -> Two-Tailed Silver Kitsune A (seen)",
+        "left out the host's log call display_auto_affected_status",
+        "left out the host's log call display_current_state",
+        "left out the host's log call display_target_empty"
+      ]
+    },
+    {
+      "name": "served battle 2, send 6",
+      "names": "[\tsAlice (Player 1)\tsAdramelech (Player 1)\tsAlice (Player 2)\tsAdramelech (Player 2)\t]\t[\tsTwo-Tailed Silver Kitsune A\tsTwo-Tailed Silver Kitsune B\t]",
+      "own": [
+        [
+          "Alice (Player 1) (seen)",
+          "Adramelech (Player 1)",
+          "Alice (Player 2) (seen)",
+          "Adramelech (Player 2)"
+        ],
+        [
+          "Two-Tailed Silver Kitsune A (seen)",
+          "Two-Tailed Silver Kitsune B"
+        ]
+      ],
+      "name_box": false,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nscall\tslog\tsdisplay_auto_affected_status\ti622978793\t~\t[\t[\t@a2\t{\t:battler\t@a2\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a2\nslog.clear\nscall\tslog\tsdisplay_current_state\ti671148407\t~\t[\t[\t@a2\t{\t:battler\t@a2\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a2\nslog.clear\nscall\tslog\tsdisplay_damage\ti102116045\t~\t[\t[\t@a2\t{\t:battler\t@a2\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a2\t~\nslog.clear\nsbattler.sprite_effect_type\t@a2\t:whiten\nslog.clear_popup\nscall\tslog\tsdisplay_target_empty\ti848134471\t~\t[\t[\t@a2\t{\t:battler\t@a2\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a2",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "log",
+          "display_damage"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ]
+      ],
+      "events": 10,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Alice (Player 1) -> Alice (Player 1) (seen), Alice (Player 2) -> Alice (Player 2) (seen), Two-Tailed Silver Kitsune A -> Two-Tailed Silver Kitsune A (seen)",
+        "left out the host's log call display_auto_affected_status",
+        "left out the host's log call display_current_state",
+        "left out the host's log call display_target_empty"
+      ]
+    },
+    {
+      "name": "served battle 2, send 7",
+      "names": "[\tsAlice (Player 1)\tsAdramelech (Player 1)\tsAlice (Player 2)\tsAdramelech (Player 2)\t]\t[\tsTwo-Tailed Silver Kitsune A\tsTwo-Tailed Silver Kitsune B\t]",
+      "own": [
+        [
+          "Alice (Player 1) (seen)",
+          "Adramelech (Player 1)",
+          "Alice (Player 2) (seen)",
+          "Adramelech (Player 2)"
+        ],
+        [
+          "Two-Tailed Silver Kitsune A (seen)",
+          "Two-Tailed Silver Kitsune B"
+        ]
+      ],
+      "name_box": false,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nscall\tslog\tsdisplay_auto_affected_status\ti1041375446\t~\t[\t[\t@a2\t{\t:battler\t@a2\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a2\nslog.clear\nscall\tslog\tsdisplay_current_state\ti1024628535\t~\t[\t[\t@a2\t{\t:battler\t@a2\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a2\nslog.clear\nscall\tslog\tsdisplay_damage\ti1005403396\t~\t[\t[\t@a2\t{\t:battler\t@a2\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a2\t~\nslog.clear\nsbattler.sprite_effect_type\t@a1\t:whiten\nslog.clear_popup\nscall\tslog\tsdisplay_target_empty\ti521874746\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a1",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "log",
+          "display_damage"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ]
+      ],
+      "events": 10,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Alice (Player 1) -> Alice (Player 1) (seen), Alice (Player 2) -> Alice (Player 2) (seen), Two-Tailed Silver Kitsune A -> Two-Tailed Silver Kitsune A (seen)",
+        "left out the host's log call display_auto_affected_status",
+        "left out the host's log call display_current_state",
+        "left out the host's log call display_target_empty"
+      ]
+    },
+    {
+      "name": "served battle 2, send 8",
+      "names": "[\tsAlice (Player 1)\tsAdramelech (Player 1)\tsAlice (Player 2)\tsAdramelech (Player 2)\t]\t[\tsTwo-Tailed Silver Kitsune A\tsTwo-Tailed Silver Kitsune B\t]",
+      "own": [
+        [
+          "Alice (Player 1) (seen)",
+          "Adramelech (Player 1)",
+          "Alice (Player 2) (seen)",
+          "Adramelech (Player 2)"
+        ],
+        [
+          "Two-Tailed Silver Kitsune A (seen)",
+          "Two-Tailed Silver Kitsune B"
+        ]
+      ],
+      "name_box": false,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nscall\tslog\tsdisplay_auto_affected_status\ti873011510\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a1\nslog.clear\nscall\tslog\tsdisplay_current_state\ti324072035\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a1\nslog.clear\nscall\tslog\tsdisplay_damage\ti999916944\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a1\t~\nslog.clear\nsbattler.sprite_effect_type\t@a1\t:whiten\nslog.clear_popup\nscall\tslog\tsdisplay_target_empty\ti903346007\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a1",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "log",
+          "display_damage"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ]
+      ],
+      "events": 10,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Alice (Player 1) -> Alice (Player 1) (seen), Alice (Player 2) -> Alice (Player 2) (seen), Two-Tailed Silver Kitsune A -> Two-Tailed Silver Kitsune A (seen)",
+        "left out the host's log call display_auto_affected_status",
+        "left out the host's log call display_current_state",
+        "left out the host's log call display_target_empty"
+      ]
+    },
+    {
+      "name": "served battle 2, send 9",
+      "names": "[\tsAlice (Player 1)\tsAdramelech (Player 1)\tsAlice (Player 2)\tsAdramelech (Player 2)\t]\t[\tsTwo-Tailed Silver Kitsune A\tsTwo-Tailed Silver Kitsune B\t]",
+      "own": [
+        [
+          "Alice (Player 1) (seen)",
+          "Adramelech (Player 1)",
+          "Alice (Player 2) (seen)",
+          "Adramelech (Player 2)"
+        ],
+        [
+          "Two-Tailed Silver Kitsune A (seen)",
+          "Two-Tailed Silver Kitsune B"
+        ]
+      ],
+      "name_box": false,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nscall\tslog\tsdisplay_auto_affected_status\ti772755940\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a1\nslog.clear\nscall\tslog\tsdisplay_current_state\ti392869337\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a1\nslog.clear\nscall\tslog\tsdisplay_damage\ti880296435\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a1\t~\nslog.clear\nsbattler.sprite_effect_type\t@a0\t:whiten\nslog.clear_popup\nscall\tslog\tsdisplay_target_empty\ti782488669\t~\t[\t[\t@a0\t{\t:battler\t@a0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a0",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "log",
+          "display_damage"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ]
+      ],
+      "events": 10,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Alice (Player 1) -> Alice (Player 1) (seen), Alice (Player 2) -> Alice (Player 2) (seen), Two-Tailed Silver Kitsune A -> Two-Tailed Silver Kitsune A (seen)",
+        "left out the host's log call display_auto_affected_status",
+        "left out the host's log call display_current_state",
+        "left out the host's log call display_target_empty"
+      ]
+    },
+    {
+      "name": "served battle 2, send 10",
+      "names": "[\tsAlice (Player 1)\tsAdramelech (Player 1)\tsAlice (Player 2)\tsAdramelech (Player 2)\t]\t[\tsTwo-Tailed Silver Kitsune A\tsTwo-Tailed Silver Kitsune B\t]",
+      "own": [
+        [
+          "Alice (Player 1) (seen)",
+          "Adramelech (Player 1)",
+          "Alice (Player 2) (seen)",
+          "Adramelech (Player 2)"
+        ],
+        [
+          "Two-Tailed Silver Kitsune A (seen)",
+          "Two-Tailed Silver Kitsune B"
+        ]
+      ],
+      "name_box": false,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nscall\tslog\tsdisplay_auto_affected_status\ti509270432\t~\t[\t[\t@a0\t{\t:battler\t@a0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a0\nslog.clear\nscall\tslog\tsdisplay_current_state\ti87997560\t~\t[\t[\t@a0\t{\t:battler\t@a0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a0\nslog.clear\nscall\tslog\tsdisplay_damage\ti507938505\t~\t[\t[\t@a0\t{\t:battler\t@a0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a0\t~\nslog.clear\nsbattler.sprite_effect_type\t@a0\t:whiten\nslog.clear_popup\nscall\tslog\tsdisplay_target_empty\ti1028083550\t~\t[\t[\t@a0\t{\t:battler\t@a0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a0",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "log",
+          "display_damage"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ]
+      ],
+      "events": 10,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Alice (Player 1) -> Alice (Player 1) (seen), Alice (Player 2) -> Alice (Player 2) (seen), Two-Tailed Silver Kitsune A -> Two-Tailed Silver Kitsune A (seen)",
+        "left out the host's log call display_auto_affected_status",
+        "left out the host's log call display_current_state",
+        "left out the host's log call display_target_empty"
+      ]
+    },
+    {
+      "name": "served battle 3, send 1",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "svalues\t@a0\ti252\ti32\ti5\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a1\ti266\ti46\ti5\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a2\ti252\ti32\ti5\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a3\ti266\ti46\ti5\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@e0\ti1350\ti60\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@e1\ti1350\ti60\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nstime_stop\ti0\t~\nsemerge\t-\t-\nsscene.wait_for_message\nsscene.wait_for_message\nsscene.wait_for_message\nsscene.wait_for_message",
+      "effects": [
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "time_stop"
+        ],
+        [
+          "pass",
+          "emerge"
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ]
+      ],
+      "events": 12,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 3, send 2",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "spopup\tsLate joined the battle.\t[\t:mgq_mp_departure\t:joined\ti3\t]\nsvalues\t@a0\ti252\ti32\ti5\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a1\ti252\ti32\ti5\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a2\ti252\ti32\ti5\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@e0\ti1350\ti60\ti99999\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@e1\ti1350\ti60\ti99999\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscommands",
+      "effects": [
+        [
+          "popup",
+          "Late joined the battle.",
+          [
+            {
+              "sym": "mgq_mp_departure"
+            },
+            {
+              "sym": "joined"
+            },
+            {
+              "i": "3"
+            }
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "marker",
+          "commands"
+        ]
+      ],
+      "events": 7,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 3, send 3",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "sturn\ti1\nsscene.wait\ti20",
+      "effects": [
+        [
+          "pass",
+          "turn"
+        ],
+        [
+          "scene",
+          "wait",
+          [
+            {
+              "i": "20"
+            }
+          ]
+        ]
+      ],
+      "events": 2,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 3, send 4",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nsscene.wait_for_message\nsbattler.sprite_effect_type\t@e1\t:whiten\nslog.clear_popup\nscall\tsscene\tsprocess_skill_word\ti592322119\t@e1\t[\t]\tk918\txcount",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "scene",
+          "process_skill_word"
+        ]
+      ],
+      "events": 5,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 3, send 5",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "scall\tsscene\tsdisplay_skill_name\ti330832979\t@e1\t[\t]\tk918\nsvalues\t@e1\ti1350\ti60\ti99998\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_use_item\ti85122956\t~\t[\t[\t@e1\t{\t:battler\t@e1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t[\t@a1\t{\t:battler\t@a1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e1\t[\t@a1\t]\tk918\nslog.clear_popup\nsanimation\t@e1\t[\t@a1\t]\ti77\nsvalues\t@a1\ti122\ti32\ti5\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_action_results\ti144289456\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti130\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\ti1\ti6\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t[\t@e1\t{\t:battler\t@e1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a1\tk918\t@e1",
+      "effects": [
+        [
+          "call",
+          "scene",
+          "display_skill_name"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "call",
+          "log",
+          "display_use_item"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "animation_id",
+          77
+        ],
+        [
+          "animation_mirror",
+          false
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "call",
+          "log",
+          "display_action_results"
+        ]
+      ],
+      "events": 7,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 3, send 6",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nslog.clear\nslog.clear_popup\nslog.clear\nslog.clear_popup\nslog.clear\nsskill_name\tsparty\t~\nslog.clear\nsvalues\t@e1\ti1350\ti60\ti99999\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_auto_affected_status\ti744383253\t~\t[\t[\t@e1\t{\t:battler\t@e1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e1\nslog.clear\nscall\tslog\tsdisplay_current_state\ti300251718\t~\t[\t[\t@e1\t{\t:battler\t@e1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e1\nslog.clear\nscall\tslog\tsdisplay_damage\ti690370917\t~\t[\t[\t@e1\t{\t:battler\t@e1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e1\t~\nslog.clear\nsscene.wait_for_message\nsbattler.sprite_effect_type\t@e0\t:whiten\nslog.clear_popup\nscall\tsscene\tsprocess_skill_word\ti477782601\t@e0\t[\t]\tk3705\txcount\nscall\tsscene\tsdisplay_skill_name\ti863487066\t@e0\t[\t]\tk3705\nscall\tslog\tsdisplay_use_item\ti611169689\t~\t[\t[\t@e0\t{\t:battler\t@e0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t[\t@a0\t{\t:battler\t@a0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e0\t[\t@a0\t]\tk3705\nslog.clear_popup\nsanimation\t@e0\t[\t@a0\t]\ti1315\nsvalues\t@a0\ti160\ti32\ti5\t[\ti24\t]\t[\ti2\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_action_results\ti414806619\t~\t[\t[\t@a0\t{\t:battler\t@a0\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti92\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\ti24\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t+\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\ti2\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t[\t@e0\t{\t:battler\t@e0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a0\tk3705\t@e0",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "skill_name",
+          "party",
+          null
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "log",
+          "display_damage"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "scene",
+          "process_skill_word"
+        ],
+        [
+          "call",
+          "scene",
+          "display_skill_name"
+        ],
+        [
+          "call",
+          "log",
+          "display_use_item"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "call",
+          "log",
+          "display_action_results"
+        ]
+      ],
+      "events": 25,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)",
+        "left out the host's log call display_auto_affected_status",
+        "left out the host's log call display_current_state"
+      ]
+    },
+    {
+      "name": "served battle 3, send 7",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nslog.clear\nslog.clear_popup\nslog.clear\nslog.clear_popup\nslog.clear\nsskill_name\tsparty\t~\nslog.clear\nsend\tsprocess_defeat\ti3039\ti39",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "skill_name",
+          "party",
+          null
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "marker",
+          "end"
+        ]
+      ],
+      "events": 9,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 3, send 8",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nslog.clear\nslog.clear_popup\nslog.clear\nslog.clear_popup\nslog.clear\nsskill_name\tsparty\t~\nslog.clear\nscall\tslog\tsdisplay_auto_affected_status\ti513144269\t~\t[\t[\t@e0\t{\t:battler\t@e0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e0\nslog.clear\nscall\tslog\tsdisplay_current_state\ti64644298\t~\t[\t[\t@e0\t{\t:battler\t@e0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e0\nslog.clear\nscall\tslog\tsdisplay_damage\ti1037836965\t~\t[\t[\t@e0\t{\t:battler\t@e0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e0\t~\nslog.clear\nsscene.wait_for_message\nsbattler.sprite_effect_type\t@a0\t:whiten\nslog.clear_popup\nscall\tsscene\tsprocess_skill_word\ti755806133\t@a0\t[\t]\tk1\txcount\nscall\tsscene\tsdisplay_skill_name\ti1022883256\t@a0\t[\t]\tk1\nscall\tslog\tsdisplay_use_item\ti23656578\t~\t[\t[\t@a0\t{\t:battler\t@a0\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti92\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\ti24\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t+\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\ti2\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t[\t@e0\t{\t:battler\t@e0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a0\t[\t@e0\t]\tk1\nslog.clear_popup\nsanimation\t@a0\t[\t@e0\t]\ti-1\nsvalues\t@a0\ti160\ti32\ti7\t[\ti24\t]\t[\ti2\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@e0\ti1300\ti60\ti99999\t[\ti23\t]\t[\ti7\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_action_results\ti488362989\t~\t[\t[\t@e0\t{\t:battler\t@e0\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti50\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\ti23\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\ti1\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t[\t@a0\t{\t:battler\t@a0\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti92\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\ti24\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t+\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\ti2\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@e0\tk1\t@a0",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "skill_name",
+          "party",
+          null
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "log",
+          "display_damage"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "scene",
+          "process_skill_word"
+        ],
+        [
+          "call",
+          "scene",
+          "display_skill_name"
+        ],
+        [
+          "call",
+          "log",
+          "display_use_item"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "call",
+          "log",
+          "display_action_results"
+        ]
+      ],
+      "events": 25,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)",
+        "left out the host's log call display_auto_affected_status",
+        "left out the host's log call display_current_state"
+      ]
+    },
+    {
+      "name": "served battle 3, send 9",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nslog.clear\nslog.clear_popup\nslog.clear\nslog.clear_popup\nslog.clear\nsskill_name\tsparty\t~\nslog.clear\nscall\tslog\tsdisplay_auto_affected_status\ti881047783\t~\t[\t[\t@a0\t{\t:battler\t@a0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@a0\nslog.clear\nscall\tslog\tsdisplay_current_state\ti610100590\t~\t[\t[\t@a0\t{\t:battler\t@a0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@a0",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "skill_name",
+          "party",
+          null
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ]
+      ],
+      "events": 11,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)",
+        "left out the host's log call display_auto_affected_status",
+        "left out the host's log call display_current_state"
+      ]
+    },
+    {
+      "name": "served battle 3, send 10",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "sscene.wait\ti20",
+      "effects": [
+        [
+          "scene",
+          "wait",
+          [
+            {
+              "i": "20"
+            }
+          ]
+        ]
+      ],
+      "events": 1,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 3, send 11",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nscall\tslog\tsdisplay_damage\ti111714990\t~\t[\t[\t@a0\t{\t:battler\t@a0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@a0\t~\nslog.clear\nsscene.wait_for_message\nsbattler.sprite_effect_type\t@a1\t:whiten\nslog.clear_popup\nscall\tsscene\tsprocess_skill_word\ti231084562\t@a1\t[\t]\tk1\txcount\nscall\tsscene\tsdisplay_skill_name\ti290452174\t@a1\t[\t]\tk1\nscall\tslog\tsdisplay_use_item\ti565928070\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti130\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\ti6\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t[\t@e0\t{\t:battler\t@e0\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti50\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\ti23\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@a1\t[\t@e0\t]\tk1\nslog.clear_popup\nsanimation\t@a1\t[\t@e0\t]\ti-1\nsvalues\t@a1\ti122\ti32\ti7\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@e0\ti1245\ti60\ti99999\t[\ti23\t]\t[\ti5\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_action_results\ti94734368\t~\t[\t[\t@e0\t{\t:battler\t@e0\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti55\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\ti23\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\ti1\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t[\t@a1\t{\t:battler\t@a1\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti130\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\ti6\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@e0\tk1\t@a1",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "log",
+          "display_damage"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "scene",
+          "process_skill_word"
+        ],
+        [
+          "call",
+          "scene",
+          "display_skill_name"
+        ],
+        [
+          "call",
+          "log",
+          "display_use_item"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "call",
+          "log",
+          "display_action_results"
+        ]
+      ],
+      "events": 14,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)"
+      ]
+    },
+    {
+      "name": "served battle 3, send 12",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nslog.clear\nslog.clear_popup\nslog.clear\nslog.clear_popup\nslog.clear\nsskill_name\tsparty\t~\nslog.clear\nscall\tslog\tsdisplay_auto_affected_status\ti51781501\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@a1\nslog.clear\nscall\tslog\tsdisplay_current_state\ti895691308\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@a1\nslog.clear\nscall\tslog\tsdisplay_damage\ti883163652\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@a1\t~\nslog.clear\nsscene.wait_for_message\nsbattler.sprite_effect_type\t@a2\t:whiten\nslog.clear_popup\nscall\tsscene\tsprocess_skill_word\ti10407095\t@a2\t[\t]\tk1\txcount\nscall\tsscene\tsdisplay_skill_name\ti1056342593\t@a2\t[\t]\tk1\nscall\tslog\tsdisplay_use_item\ti328698060\t~\t[\t[\t@a2\t{\t:battler\t@a2\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t[\t@e0\t{\t:battler\t@e0\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti55\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\ti23\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@a2\t[\t@e0\t]\tk1\nslog.clear_popup\nsanimation\t@a2\t[\t@e0\t]\ti-1\nsvalues\t@a2\ti252\ti32\ti7\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@e0\ti1193\ti60\ti99999\t[\ti23\t]\t[\ti6\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_action_results\ti824470653\t~\t[\t[\t@e0\t{\t:battler\t@e0\t:used\t+\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t+\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti52\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\ti23\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\ti1\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t[\t@a2\t{\t:battler\t@a2\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e0\tk1\t@a2",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "skill_name",
+          "party",
+          null
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "log",
+          "display_damage"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "battler.sprite_effect_type"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "scene",
+          "process_skill_word"
+        ],
+        [
+          "call",
+          "scene",
+          "display_skill_name"
+        ],
+        [
+          "call",
+          "log",
+          "display_use_item"
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "call",
+          "log",
+          "display_action_results"
+        ]
+      ],
+      "events": 25,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)",
+        "left out the host's log call display_auto_affected_status",
+        "left out the host's log call display_current_state"
+      ]
+    },
+    {
+      "name": "served battle 3, send 13",
+      "names": "[\tsMelk (Player 1)\tsElisabeth (Player 1)\tsMelk (Player 2)\tsElisabeth (Player 2)\t]\t[\tsDark Elf Fencer A\tsDark Elf Fencer B\t]",
+      "own": [
+        [
+          "Melk (Player 1) (seen)",
+          "Elisabeth (Player 1)",
+          "Melk (Player 2) (seen)",
+          "Elisabeth (Player 2)"
+        ],
+        [
+          "Dark Elf Fencer A (seen)",
+          "Dark Elf Fencer B"
+        ]
+      ],
+      "name_box": true,
+      "animations": 120,
+      "seat": 1,
+      "body": "slog.clear\nslog.clear\nslog.clear_popup\nslog.clear\nslog.clear_popup\nslog.clear\nsskill_name\tsparty\t~\nslog.clear\nscall\tslog\tsdisplay_auto_affected_status\ti355923574\t~\t[\t[\t@a2\t{\t:battler\t@a2\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a2\nslog.clear\nscall\tslog\tsdisplay_current_state\ti343777782\t~\t[\t[\t@a2\t{\t:battler\t@a2\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a2\nslog.clear\nscall\tslog\tsdisplay_damage\ti992365282\t~\t[\t[\t@a2\t{\t:battler\t@a2\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a2\t~\nslog.clear\nsscene.wait_for_message\nsvalues\t@a0\ti160\ti32\ti7\t[\ti24\t]\t[\ti1\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_auto_affected_status\ti551713258\t~\t[\t[\t@a0\t{\t:battler\t@a0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@a0\nslog.clear\nscall\tslog\tsdisplay_auto_affected_status\ti860259594\t~\t[\t[\t@a1\t{\t:battler\t@a1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@a1\nslog.clear\nscall\tslog\tsdisplay_auto_affected_status\ti132374661\t~\t[\t[\t@a2\t{\t:battler\t@a2\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@a2\nslog.clear\nsvalues\t@e0\ti1193\ti60\ti99999\t[\ti23\t]\t[\ti5\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscall\tslog\tsdisplay_auto_affected_status\ti296875757\t~\t[\t[\t@e0\t{\t:battler\t@e0\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t:element_rate\tf1.0\t}\t]\t]\t@e0\nslog.clear\nscall\tslog\tsdisplay_auto_affected_status\ti343159152\t~\t[\t[\t@e1\t{\t:battler\t@e1\t:used\t-\t:missed\t-\t:evaded\t-\t:critical\t-\t:success\t-\t:blocked\t-\t:ignore_add_state_flag\t-\t:hp_damage\ti0\t:mp_damage\ti0\t:tp_damage\ti0\t:hp_drain\ti0\t:mp_drain\ti0\t:added_states\t[\t]\t:removed_states\t[\t]\t:added_buffs\t[\t]\t:added_debuffs\t[\t]\t:removed_buffs\t[\t]\t:unusable\ti-1\t:predation\t-\t:pleasure\t-\t:hp_restore\ti0\t:mp_restore\ti0\t:stealed\t-\t:stealed_item_empty\t-\t:stealed_items\t[\t]\t:auto_stand\t-\t:invalidate_wall\t-\t:defense_wall\t-\t:over_drive\t-\t:binding_start\ti-1\t:bind_resist\t-\t:nightmare\t-\t:state_boost\t[\t]\t:ex_category_boost\t[\t]\t:elements\t[\t]\t:damage_rate\tf1.0\t:weak_elements\t[\t]\t:hit_count\ti0\t}\t]\t]\t@e1\nslog.clear\nsscene.wait_for_message\nsscene.wait_for_message\nsscene.wait_for_message\nsscene.wait_for_message\nsvalues\t@a0\ti160\ti32\ti7\t[\ti24\t]\t[\ti1\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a1\ti122\ti32\ti7\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a2\ti252\ti32\ti7\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@e0\ti1193\ti60\ti99999\t[\ti23\t]\t[\ti5\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@e1\ti1350\ti60\ti99999\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscommands",
+      "effects": [
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear_popup",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "skill_name",
+          "party",
+          null
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "call",
+          "log",
+          "display_damage"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "log",
+          "clear",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "scene",
+          "wait_for_message",
+          [
+
+          ]
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "pass",
+          "values"
+        ],
+        [
+          "marker",
+          "commands"
+        ]
+      ],
+      "events": 37,
+      "unreadable": 0,
+      "others_choose": 0,
+      "logs": [
+        "the host names 4 party and 2 troop characters; swapping Melk (Player 1) -> Melk (Player 1) (seen), Melk (Player 2) -> Melk (Player 2) (seen), Dark Elf Fencer A -> Dark Elf Fencer A (seen)",
+        "left out the host's log call display_auto_affected_status",
+        "left out the host's log call display_current_state"
+      ]
+    }
+  ]
+}

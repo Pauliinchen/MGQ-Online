@@ -2,6 +2,7 @@
 #  team_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Set the guests ready in an earlier wait on the stand-in of the DLL
 #      Paulinchen  2026-10-12: Checked the commanders a guest takes for the characters of players who left
 #      Paulinchen  2026-10-11: Let the waiting box stand-in take the names waited for and their prefix
 #      Paulinchen  2026-10-06: Checked that team duel players bring no share of the Backline
@@ -145,7 +146,7 @@ $my_seat = 0
 sync.finish
 sync.join_world(:host, "t4", [2, 5, 6], "the duel", :pvp, true)
 team.prepare(own, other, true)
-MGQ_MpBattlesSync::Live.instance_variable_set(:@ready, [5, 6])
+$live.session.instance_variable_set(:@ready, [5, 6])
 MGQ_MpBattlesSync::Channel.receive(2, "ready", "")
 $answers = []
 $game_system = Struct.new(:conf).new({})

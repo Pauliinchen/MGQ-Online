@@ -2,6 +2,11 @@
 #  battles_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Left the frames between two sends of the host's stream to the DLL
+#                            - Planned a guest's commands in the DLL
+#                            - Kept the live battle's session, its seats, messages and endings in the DLL
+#                            - Swapped the host's names in the DLL
+#                            - Deleted the live battle over the PvP link
 #      Paulinchen  2026-10-23: Deleted the recording on file of the mirror match
 #                            - Deleted the unused DROPOUT switch
 #                            - Asked the player before they leave the battle from a wait
@@ -78,9 +83,8 @@
 #----------------------------------------------------------------
 
 # Live battles: the host's game computes the battle and streams what it shows, every guest's game
-# plays that back and sends its own characters' commands. A PvP battle with a friend runs over the
-# link; co-op battles, duels and team duels over the world's room, co-op battles and team duels with
-# several guests.
+# plays that back and sends its own characters' commands. Co-op battles, duels and team duels run
+# over the world's room, co-op battles and team duels with several guests.
 #
 # Each game sees its own team as the party, so the two would draw their random numbers in a
 # different order if both computed.
@@ -89,18 +93,55 @@ module MGQ_MpBattlesSync
   # battle up for the other.
   MESSAGE_FRAMES = 90
 
-  # Frames between two sends of what the host's battle showed, a sixth of a second.
-  SEND_FRAMES = 10
-
   # Frames the guest waits for the host's stream before it says it is waiting.
   QUIET_FRAMES = 20
 
-  # Frames between two looks at whether the link still stands.
-  LINK_CHECK_FRAMES = 60
+  # The DLL's topics of the live battle's session (MGQOnline.Game's LiveSession, behind LiveTopics),
+  # which keeps its players, its messages and its verdicts; this script carries the messages and
+  # acts on the verdicts.
+  JOIN_TOPIC = "live.join"
 
-  # Sends of the host's stream waiting on the guest from which the guest skips waits to catch up,
-  # about two thirds of a second behind.
-  BEHIND_SENDS = 4
+  # See JOIN_TOPIC: changes the session as it starts, finishes, breaks off or loses its other side.
+  CHANGE_TOPIC = "live.change"
+
+  # See JOIN_TOPIC: changes the battle's players.
+  PLAYERS_TOPIC = "live.players"
+
+  # See JOIN_TOPIC: checks a battle message before its sender is known.
+  ADMIT_TOPIC = "live.admit"
+
+  # See JOIN_TOPIC: takes a message that arrived.
+  RECEIVE_TOPIC = "live.receive"
+
+  # See JOIN_TOPIC: takes the oldest message of some kinds.
+  TAKE_TOPIC = "live.take"
+
+  # See JOIN_TOPIC: counts the waiting messages of a kind.
+  PENDING_TOPIC = "live.pending"
+
+  # See JOIN_TOPIC: checks whether the battle ends or its other side is gone.
+  TICK_TOPIC = "live.tick"
+
+  # See JOIN_TOPIC: tells how the battle ends.
+  END_TOPIC = "live.end"
+
+  # See JOIN_TOPIC: the host's waits for its guests.
+  PHASE_TOPIC = "live.phase"
+
+  # See JOIN_TOPIC: tells a departure or a join once.
+  DEPARTURE_TOPIC = "live.departure"
+
+  # See JOIN_TOPIC: plans a guest's commands.
+  PLAN_TOPIC = "live.plan"
+
+  # The roles the DLL names, as this script's symbols.
+  ROLES = { "host" => :host, "guest" => :guest }
+
+  # The kinds the DLL names, as this script's symbols.
+  KINDS = { "coop" => :coop, "pvp" => :pvp }
+
+  # The game's endings the DLL names.
+  PROCESSES = { "process_victory" => :process_victory, "process_defeat" => :process_defeat, "process_abort" => :process_abort }
 
   # The host's settings that leave parts of a battle unshown, which the host turns off for a live
   # battle and puts back as BattleManager.battle_end ends.
@@ -137,29 +178,62 @@ module MGQ_MpBattlesSync
   # What starts this script's lines in the log.
   LOG_TAG = "battle sync"
 
-  # Makes the next battle live, when the link to the friend stands. The mode calls battle_started
-  # once that battle starts.
+  # Logs the lines the DLL's rules of the live battle hand over, each [key, text]: a line with a key
+  # once per key, one without every time.
   #
-  # @param state [Hash] How the connection stands, see MGQ_Multiplayer::Link.state.
-  # @return [Boolean] Whether the battle is live, false for a battle of its own on each side.
-  def self.join(state)
-    return false unless state["link"] == "open" && %w(host guest).include?(state["role"])
+  # @param lines [Array<Array>, nil] The lines.
+  def self.log_lines(lines)
+    Array(lines).each { |key, text| key ? log_once(key, text) : log(text) }
+  end
 
-    @role = state["role"].to_sym
-    @player = MGQ_Multiplayer.clean(state["opponent"])
-    @kind = :pvp
-    @transport = :link
-    @seats = []
-    @battle_id = nil
-    @solo = false
-    @broken = false
-    @battle_running = false
-    Channel.reset
-    log("live PvP battle with #{@player} over the link, as #{@role}")
-    true
-  rescue => e
-    log("could not go live: #{e.class}: #{e.message}")
-    false
+  # Asks the DLL's session a topic and keeps the session's view it answers with, which the battle's
+  # hooks read every frame.
+  #
+  # @param topic [String] The topic, such as JOIN_TOPIC.
+  # @param request [Object] The request.
+  # @return [Object, nil] The reply, nil while the DLL does not answer.
+  def self.session(topic, request = nil)
+    reply = MGQ_Multiplayer::Bridge.call(topic, request)
+    take_view(reply) if reply.is_a?(Hash) && reply.key?("role")
+    reply
+  end
+
+  # Keeps the session's view: the role, who the waits name, the kind, the seats of the other
+  # games, those who left and those expected, the battle's id, and whether the host plays on
+  # alone, the battle broke off, the server hosts it and its scene runs.
+  #
+  # @param view [Hash] The view, as the DLL writes it.
+  def self.take_view(view)
+    @role = ROLES[view["role"]]
+    @player = view["player"].to_s
+    @kind = KINDS[view["kind"]]
+    @team = view["team"] ? true : false
+    @transport = @role ? :world : nil
+    @seats = Array(view["seats"])
+    @left = Array(view["left"])
+    @expected = Array(view["expected"])
+    @battle_id = view["bid"]
+    @solo = view["solo"] ? true : false
+    @broken = view["broken"] ? true : false
+    @served = view["served"] ? true : false
+    @battle_running = view["running"] ? true : false
+    @behind = view["behind"] ? true : false
+  end
+
+  # Keeps whether the guest fell behind the host's stream, as the DLL tells with a message taken in
+  # or out.
+  #
+  # @param behind [Boolean, nil] Whether it did, nil to keep what it last told.
+  def self.behind=(behind)
+    @behind = behind ? true : false unless behind.nil?
+  end
+
+  # Tells whether the guest fell behind the host's stream: four or more of its sends wait, so the
+  # guest skips waits to catch up, as the DLL last told.
+  #
+  # @return [Boolean] Whether it did.
+  def self.behind?
+    @behind ? true : false
   end
 
   # Makes the next battle a live battle over the world's room: a co-op battle, or a duel, which is
@@ -172,20 +246,21 @@ module MGQ_MpBattlesSync
   # @param mode [Symbol] :coop, or :pvp for a duel.
   # @param team [Boolean] Whether the duel is a team duel, see battles_team.rbx.
   def self.join_world(role, battle_id, seats, player, mode = :coop, team = false)
-    @role = role
-    @player = player
-    @kind = mode
-    @team = team
-    @transport = :world
-    @seats = seats.dup
-    @left = []
-    @expected = []
-    @battle_id = battle_id
-    @solo = false
-    @broken = false
+    session(JOIN_TOPIC, "role" => role.to_s, "bid" => battle_id.to_s, "seats" => seats, "player" => player.to_s, "kind" => mode.to_s,
+                        "team" => team ? true : false, "served" => false)
+    joined(role, battle_id, seats, mode, team)
+  end
+
+  # Readies this game's side of a battle the DLL's session joined: no word of a missed battle, the
+  # room's seats named and the messages numbered anew.
+  #
+  # @param role [Symbol] :host or :guest.
+  # @param battle_id [String] The battle's id.
+  # @param seats [Array<Integer>] The other games' seats.
+  # @param mode [Symbol] :coop or :pvp.
+  # @param team [Boolean] Whether the duel is a team duel.
+  def self.joined(role, battle_id, seats, mode, team)
     @missed = nil
-    @battle_running = false
-    @served = false
     Seats.pin_room
     Channel.reset
     kind = mode == :pvp ? (team ? 'team duel' : 'duel') : 'co-op battle'
@@ -201,10 +276,9 @@ module MGQ_MpBattlesSync
   # @param seats [Array<Integer>] The other seats: the players' for the server, the server's for a guest.
   # @param player [String] Who the waits name.
   def self.serve_over_channel(role, battle_id, seats, player)
-    running = @battle_running
-    join_world(role, battle_id, seats, player)
-    @battle_running = running
-    @served = true
+    session(JOIN_TOPIC, "role" => role.to_s, "bid" => battle_id.to_s, "seats" => seats, "player" => player.to_s, "kind" => "coop",
+                        "team" => false, "served" => true)
+    joined(role, battle_id, seats, :coop, false)
     log("battle #{battle_id} goes over the battle channel, as #{role}")
   end
 
@@ -222,8 +296,7 @@ module MGQ_MpBattlesSync
   # @param message [Hash] The message: "battle" its kind, "bid" the battle's id, and the body.
   def self.take_served(seat, message)
     kind = message["battle"].to_s
-    return log_once([:served_dropped, kind[0, 40], @battle_id], "ignored #{kind[0, 40]} from the battle channel: no served battle runs") unless served?
-    return log_once([:served_dropped, kind[0, 40], @battle_id], "ignored #{kind[0, 40]} from the battle channel: it is for another battle") unless message["bid"] == @battle_id
+    return unless admitted?(true, message["bid"], kind, nil)
     return MGQ_MpBattlesServed.take_departure(message[:payload]) if kind == MGQ_MpBattlesServed::DEPARTED && seat == MGQ_MpBattlesServed::SERVER_SEAT
 
     # Every player of the battle hears of one who leaves, through the server.
@@ -233,7 +306,7 @@ module MGQ_MpBattlesSync
 
   # Names a player of the world by their seat for the log.
   #
-  # @param seat [Integer, nil] Their world seat, nil for the friend over the link.
+  # @param seat [Integer, nil] Their world seat, nil for the other player of a duel.
   # @return [String] Their name and seat, such as "Name (seat 2)", "the player (seat 0)" for the
   #   player, the seat alone for a player the game does not know.
   def self.who(seat)
@@ -383,14 +456,14 @@ module MGQ_MpBattlesSync
   # @param seats [Array<Integer>] Their world seats, which the battle knows them by from then on.
   def self.expect(seats)
     seats.each { |seat| peer_at(seat) }
-    @expected = expected | seats
+    session(PLAYERS_TOPIC, "op" => "expect", "seats" => seats)
   end
 
   # Stops letting in the messages of players expected to join, once they joined or gave up.
   #
   # @param seats [Array<Integer>] Their world seats.
   def self.unexpect(seats)
-    @expected = expected - seats
+    session(PLAYERS_TOPIC, "op" => "unexpect", "seats" => seats)
   end
 
   # Lists the players expected to join the running co-op battle late, see expect.
@@ -404,8 +477,7 @@ module MGQ_MpBattlesSync
   #
   # @param seats [Array<Integer>] Their world seats.
   def self.keep_seats(seats)
-    dropped = Array(@seats) - seats
-    @seats = seats.dup
+    dropped = Array((session(PLAYERS_TOPIC, "op" => "keep", "seats" => seats) || {})["dropped"])
     log("guests who joined battle #{@battle_id}: #{seats.empty? ? 'nobody' : seats.map { |seat| who(seat) }.join(', ')}" +
         (dropped.empty? ? "" : "; not joined: #{dropped.map { |seat| who(seat) }.join(', ')}"))
   end
@@ -423,12 +495,18 @@ module MGQ_MpBattlesSync
   #
   # @param seat [Integer] The guest's seat.
   def self.guest_left(seat)
-    return if (@left ||= []).include?(seat)
+    reply = session(PLAYERS_TOPIC, "op" => "left", "seat" => seat)
+    departed(seat, reply["still_in"]) if reply && reply["left_now"]
+  end
 
-    @left << seat
+  # Tells the battle's mode on the host that a guest left, and logs it.
+  #
+  # @param seat [Integer] The guest's seat.
+  # @param still_in [Integer] The guests still in after them.
+  def self.departed(seat, still_in)
     mode.left(seat) if host?
     log("#{who(seat)} left battle #{@battle_id} in turn #{turn}, their characters leave at the next command phase; " \
-        "#{guests_in.size} of #{Array(@seats).size} other players still in")
+        "#{still_in} of #{Array(@seats).size} other players still in")
   end
 
   # Takes a message of a co-op battle or a duel from the world's room. Called by overworld_sync.rbx.
@@ -438,8 +516,8 @@ module MGQ_MpBattlesSync
   def self.take(peer, message)
     kind = message["battle"].to_s
     return unless peer
-    return dropped(kind, peer, "no live battle over the world runs") unless world? && @role
-    return dropped(kind, peer, "it is for another battle") unless message["bid"] == @battle_id
+
+    return unless admitted?(false, message["bid"], kind, who(peer.seat))
 
     seat = seat_of(peer)
     return dropped(kind, peer, "its seat names another player of the battle") unless seat
@@ -452,6 +530,21 @@ module MGQ_MpBattlesSync
     return Channel.receive(seat, kind, message[:payload].to_s) unless number =~ /\A\d{1,9}\z/
 
     Sequence.take(seat, number.to_i, kind, message[:payload].to_s)
+  end
+
+  # Asks the DLL whether a battle message is one of the running live battle's, and logs why not.
+  #
+  # @param channel [Boolean] Whether it came over the battle channel of a battle the server hosts.
+  # @param bid [Object] The battle id it carries.
+  # @param kind [String] The message's kind.
+  # @param who [String, nil] Who sent it, nil over the battle channel.
+  # @return [Boolean] Whether to take it; one the DLL does not check is left out.
+  def self.admitted?(channel, bid, kind, who)
+    refusal = MGQ_Multiplayer::Bridge.call(ADMIT_TOPIC, "channel" => channel, "bid" => bid, "kind" => kind, "who" => who)
+    return true if refusal == false
+
+    refusal ? log_lines([refusal]) : log_once([:unchecked, kind[0, 40]], "ignored a battle message #{kind[0, 40]}: the DLL did not check it")
+    false
   end
 
   # Logs a battle message from the world's room that is left untaken, once per kind, reason and
@@ -476,32 +569,26 @@ module MGQ_MpBattlesSync
 
   # Marks the live battle as started. Called by the mode once its battle scene is on the way.
   def self.battle_started
-    @battle_running = true if @role
+    session(CHANGE_TOPIC, "op" => "start") if @role
   end
 
-  # Ends the live battle and closes the link, stops a recording and puts the host's settings back
-  # when the battle's end has not, such as after a reset or an early end. Called by the mode when it
-  # puts the game back, and after a reset.
+  # Ends the live battle, stops a recording and puts the host's settings back when the battle's end
+  # has not, such as after a reset or an early end. Called by the mode when it puts the game back,
+  # and after a reset. The world's room stays open.
   def self.finish
     Recorder.stop
     Live.end_phase
     restore_settings
     return unless @role
 
-    world = world?
-    log("live battle #{@battle_id || 'over the link'} finished as #{@role} after #{turn} turns" +
-        "#{@broken ? ', broken off' : ''}#{@solo ? ', the computer playing for those who left' : ''}" +
-        "#{world ? '' : ', closing the link'}")
-    @role = nil
-    @team = false
-    @broken = false
-    @battle_running = false
-    @transport = nil
+    log("live battle #{@battle_id} finished as #{@role} after #{turn} turns" +
+        "#{@broken ? ', broken off' : ''}#{@solo ? ', the computer playing for those who left' : ''}")
+    served = @served
+    finished = session(CHANGE_TOPIC, "op" => "finish")
+    # Without the DLL the battle still ends here.
+    @role = @transport = nil unless finished
     Seats.forget
-    MGQ_MpBattlesServed.close if @served && defined?(MGQ_MpBattlesServed)
-    @served = false
-    # The world's room stays open after a co-op battle; only a PvP battle's link ends with it.
-    MGQ_Multiplayer::Link.cancel unless world
+    MGQ_MpBattlesServed.close if served && defined?(MGQ_MpBattlesServed)
   rescue => e
     log("finish failed: #{e.class}: #{e.message}")
   end
@@ -513,7 +600,9 @@ module MGQ_MpBattlesSync
   def self.break_off(reason, tell_friend = true)
     return if @broken || !@role
 
-    @broken = true
+    broke = session(CHANGE_TOPIC, "op" => "break")
+    return unless broke && broke["done"]
+
     log("the live battle broke off: #{reason}")
     Channel.post("broken") if tell_friend
   rescue => e
@@ -648,18 +737,21 @@ module MGQ_MpBattlesSync
     MGQ_MpOverworldSync.tell(seat, fields, body)
   end
 
-  # Ends the battle once the friend is gone: won, or in a co-op battle played on by the computer on
-  # the host.
+  # Ends the battle once the other side is gone, as the DLL decides: in a co-op battle played on by
+  # the computer on the host, taken over by a guest's mode where it can, else won, or without a
+  # winner on the host's side of a team duel whose host left.
   #
   # @param scene [Scene_Battle] The battle.
   # @return [Boolean] true when the battle goes on with the computer.
   def self.friend_gone(scene)
     log("the link to #{@player} ended")
+    verdict = MGQ_Multiplayer::Bridge.call(END_TOPIC, "of" => "gone", "side" => same_side? ? true : false)
+    return false unless verdict.is_a?(Hash)
 
     # A co-op battle plays on on the host once every guest is gone, the host's own full team again
     # from the next command phase (see MGQ_MpBattlesCoop.settle); a guest whose host is gone fights on
     # alone.
-    if host? && coop?
+    if verdict["process"] == "solo"
       @solo = true
       Recorder.stop
       log("the host plays on alone, the computer playing for the guests who left, streaming stopped")
@@ -671,44 +763,45 @@ module MGQ_MpBattlesSync
       return false
     end
 
-    # A team duel's host wins once the other side is empty; a guest on the host's side loses its
-    # host, who computes the duel, so the duel breaks off.
-    if team? && (host? || same_side?)
-      log(host? ? "everyone on the other side left: the host's side wins" : "the host left the team duel: it ends without a winner")
-      $game_message.add(host? ? "Everyone on the other side left." : "#{@player} left the duel.")
-      host? ? BattleManager.process_victory : BattleManager.process_abort
-      return false
-    end
-
-    log("#{@player} left: this game wins")
-    $game_message.add("#{@player} left the battle.")
-    BattleManager.process_victory
+    end_with(verdict["otherwise"])
     false
   end
 
-  # The messages between the games during a live battle: a kind, the rest, and for a co-op battle
-  # the sender's world seat. A PvP battle's go over the link, a kind on the first line; a co-op
-  # battle's over the world's room, marked with the battle's id.
+  # Ends the battle as the DLL decided: logs why, adds its message and calls the game's ending.
+  #
+  # @param verdict [Hash, nil] "process" (such as "process_victory"), "log" and "message".
+  def self.end_with(verdict)
+    return unless verdict.is_a?(Hash)
+
+    log(verdict["log"]) if verdict["log"]
+    $game_message.add(verdict["message"]) if verdict["message"]
+    process = PROCESSES[verdict["process"]]
+    BattleManager.send(process) if process
+  end
+
+  # The messages between the games during a live battle: a kind, the rest and the sender's world
+  # seat, over the world's room or the battle channel, marked with the battle's id. The DLL's
+  # session keeps those that arrived until they are taken.
   module Channel
-    # Forgets messages of an earlier battle.
+    # The endings the DLL names.
+    ENDINGS = { "forfeit" => :forfeit, "broken" => :broken, "gone" => :gone }
+
+    # Forgets the numbers of an earlier battle's messages, as a battle joins; the DLL forgets its
+    # messages.
     def self.reset
-      @messages = []
-      @checked = 0
-      @gone = false
       Sequence.reset
     end
 
-    # Sends a message: over the world's room to each of the battle's other players, see
-    # MGQ_MpBattlesSync.player_seats, else over the link.
+    # Sends a message over the world's room to each of the battle's other players, see
+    # MGQ_MpBattlesSync.player_seats, or over the battle channel.
     #
     # @param kind [String] What it is.
     # @param body [String] The rest.
-    # @return [Boolean] Whether it went out to anyone.
+    # @return [Boolean] Whether it went out to anyone, false without a live battle.
     def self.post(kind, body = "")
       unless MGQ_MpBattlesSync.world?
-        sent = MGQ_Multiplayer::Link.post("#{kind}\n#{body}")
-        noted_post(kind, body, sent ? "over the link" : nil)
-        return sent
+        noted_post(kind, body, nil)
+        return false
       end
 
       if MGQ_MpBattlesSync.served?
@@ -748,32 +841,19 @@ module MGQ_MpBattlesSync
       MGQ_MpBattlesSync.log(whereto ? "sent #{kind} (#{body.to_s.size} bytes) #{whereto}" : "could not send #{kind}: it reached nobody")
     end
 
-    # Logs a message that arrived, except the host's stream, which the playback sums up per turn.
-    #
-    # @param kind [String] What it is.
-    # @param body [String] The rest.
-    # @param seat [Integer, nil] The sender's world seat, nil over the link.
-    def self.noted_receive(kind, body, seat)
-      return if kind == "events"
-
-      MGQ_MpBattlesSync.log("received #{kind[0, 40]} (#{body.to_s.size} bytes) from #{MGQ_MpBattlesSync.who(seat)}")
-    end
-
-    # Takes a message that arrived over the world's room: a guest takes only the host's, the host
-    # only its guests' and those of the players it expects to join (see expect).
+    # Hands a message that arrived over the world's room or the battle channel to the DLL's
+    # session, which takes a guest only the host's, the host only its guests' and those of the
+    # players it expects to join (see expect), and logs it.
     #
     # @param seat [Integer] The sender's world seat.
     # @param kind [String] What it is.
     # @param body [String] The rest.
     def self.receive(seat, kind, body)
-      unless MGQ_MpBattlesSync.seats.include?(seat) || MGQ_MpBattlesSync.expected.include?(seat)
-        return MGQ_MpBattlesSync.log_once([:not_taken, kind[0, 40], seat, MGQ_MpBattlesSync.battle_id],
-                                          "ignored #{kind[0, 40]} from #{MGQ_MpBattlesSync.who(seat)}: " \
-                                          "#{MGQ_MpBattlesSync.role == :host ? 'not a guest of this battle' : 'not the host'}")
-      end
+      reply = MGQ_Multiplayer::Bridge.call(RECEIVE_TOPIC, "seat" => seat, "kind" => kind.to_s, "body" => body.to_s, "who" => MGQ_MpBattlesSync.who(seat))
+      return unless reply
 
-      noted_receive(kind, body, seat)
-      (@messages ||= []) << [kind, body, seat]
+      MGQ_MpBattlesSync.log_lines(reply["logs"])
+      MGQ_MpBattlesSync.behind = reply["behind"]
     end
 
     # Takes the oldest message of a kind that arrived.
@@ -781,9 +861,8 @@ module MGQ_MpBattlesSync
     # @param kind [String] The kind.
     # @return [String, nil] Its body, nil while none arrived.
     def self.take(kind)
-      poll
-      index = @messages.index { |message| message[0] == kind }
-      index ? @messages.delete_at(index)[1] : nil
+      message = taken([kind])
+      message && message[1]
     end
 
     # Takes the oldest message of any of some kinds, which keeps their order among each other.
@@ -791,9 +870,7 @@ module MGQ_MpBattlesSync
     # @param kinds [Array<String>] The kinds.
     # @return [Array<String>, nil] Its kind and body, nil while none arrived.
     def self.take_first(kinds)
-      poll
-      index = @messages.index { |message| kinds.include?(message[0]) }
-      index ? @messages.delete_at(index)[0, 2] : nil
+      taken(kinds)
     end
 
     # Takes the oldest message of a kind one game sent.
@@ -802,26 +879,32 @@ module MGQ_MpBattlesSync
     # @param seat [Integer] The sender's world seat.
     # @return [String, nil] Its body, nil while none arrived.
     def self.take_from(kind, seat)
-      poll
-      index = @messages.index { |message| message[0] == kind && message[2] == seat }
-      index ? @messages.delete_at(index)[1] : nil
+      message = taken([kind], seat)
+      message && message[1]
     end
 
-    # Reports whether the link to the friend has ended, asking every LINK_CHECK_FRAMES calls. In a
-    # co-op battle, the host notes each guest who left and counts the link as ended once none is
-    # left; a guest counts it as ended once the host is gone.
+    # Takes the oldest message of some kinds from the DLL's session, once the messages that came
+    # meanwhile are in.
     #
-    # @return [Boolean] Whether the link has ended.
+    # @param kinds [Array<String>] The kinds.
+    # @param seat [Integer, nil] The sender's world seat, nil for any.
+    # @return [Array<String>, nil] Its kind and body, nil while none arrived.
+    def self.taken(kinds, seat = nil)
+      poll
+      reply = MGQ_Multiplayer::Bridge.call(TAKE_TOPIC, "kinds" => kinds, "seat" => seat)
+      return nil unless reply
+
+      MGQ_MpBattlesSync.behind = reply["behind"]
+      reply["message"]
+    end
+
+    # Reports whether the other side of the battle is gone, looking every 60 checks: the host
+    # notes each guest who left and counts the other side as gone once none is left; a guest
+    # counts it as gone once the host is.
+    #
+    # @return [Boolean] Whether the other side is gone, true without a live battle.
     def self.gone?
-      return true if @gone
-
-      @checked = (@checked || 0) + 1
-      return false if @checked < LINK_CHECK_FRAMES
-
-      @checked = 0
-      @gone = MGQ_MpBattlesSync.world? ? world_gone? : MGQ_Multiplayer::Link.status["link"] != "open"
-      MGQ_MpBattlesSync.log(MGQ_MpBattlesSync.world? ? "the other side of the battle is gone" : "the link is no longer open") if @gone
-      @gone
+      checked("gone") == :gone
     end
 
     # Looks at who of a co-op battle or a duel is still in it: the players who said they leave and
@@ -829,13 +912,7 @@ module MGQ_MpBattlesSync
     #
     # @return [Boolean] Whether the other side is gone: every guest for the host, the host for a guest.
     def self.world_gone?
-      return served_gone? if MGQ_MpBattlesSync.served?
-      return true unless MGQ_MpOverworldSync.in_world?
-
-      take_departures
-      return true if MGQ_MpBattlesSync.host? && MGQ_MpBattlesSync.mode.other_side_gone?
-
-      MGQ_MpBattlesSync.guests_in.empty?
+      checked("world") == :gone
     end
 
     # Looks at who of a battle the server hosts is still in it: the server notes each player who
@@ -844,34 +921,45 @@ module MGQ_MpBattlesSync
     #
     # @return [Boolean] Whether the other side is gone.
     def self.served_gone?
-      return true if MGQ_MpBattlesServed.closed?
-      return false unless MGQ_MpBattlesSync.host?
-
-      take_departures
-      MGQ_MpBattlesSync.guests_in.empty?
+      checked("served") == :gone
     end
 
     # Takes the players who left the battle out of it: those who said they leave, and those the
     # presence of the players tells gone.
     def self.take_departures
-      gone = Seats.take_gone
-      MGQ_MpBattlesSync.guests_in.each do |seat|
-        MGQ_MpBattlesSync.guest_left(seat) if gone.include?(seat) || take_from("leave", seat)
-      end
+      checked("departures")
     end
 
-    # Reports why the friend's game will send nothing more for the battle, taking a forfeit or
+    # Reports why the other games will send nothing more for the battle, taking a forfeit or
     # break-off that arrived.
     #
-    # @return [Symbol, nil] :forfeit when the friend forfeited, :broken when either game broke the
-    #   battle off, :gone when the link ended, nil while the battle goes on.
+    # @return [Symbol, nil] :forfeit when the other side forfeited, :broken when either game broke
+    #   the battle off, :gone when the other side is gone, nil while the battle goes on.
     def self.ending
-      return :forfeit if take("forfeit")
+      checked("ending")
+    end
 
-      MGQ_MpBattlesSync.break_off("#{MGQ_MpBattlesSync.player}'s game broke it off", false) if take("broken")
-      return :broken if MGQ_MpBattlesSync.broken?
+    # Runs one of the DLL's checks of whether the battle ends, with what this game knows of the
+    # world, tells the battle's mode of the guests it took out and lets the mode decide, as the
+    # host, whether every opponent left.
+    #
+    # @param check [String] "ending", "gone", "world", "served" or "departures".
+    # @return [Symbol, nil] :forfeit, :broken or :gone, nil while the battle goes on.
+    def self.checked(check)
+      poll
+      sync = MGQ_MpBattlesSync
+      reply = sync.session(TICK_TOPIC, "check" => check, "in_world" => MGQ_MpOverworldSync.in_world? ? true : false,
+                                       "served_closed" => sync.served? && MGQ_MpBattlesServed.closed? ? true : false, "gone" => Seats.take_gone)
+      return nil unless reply
 
-      gone? ? :gone : nil
+      Array(reply["departed"]).each { |seat, still_in| sync.departed(seat, still_in) }
+      sync.log_lines(reply["logs"])
+      return ENDINGS[reply["ending"]] unless reply["ask"] && sync.host? && sync.mode.other_side_gone?
+      return :gone if check == "world"
+
+      gone = sync.session(CHANGE_TOPIC, "op" => "gone")
+      sync.log_lines(gone && gone["logs"])
+      :gone
     end
 
     # Counts the waiting messages of a kind.
@@ -880,21 +968,14 @@ module MGQ_MpBattlesSync
     # @return [Integer] How many of that kind arrived and wait.
     def self.pending(kind)
       poll
-      @messages.count { |message| message[0] == kind }
+      MGQ_Multiplayer::Bridge.call(PENDING_TOPIC, kind).to_i
     end
 
-    # Moves the messages that arrived over the link into the queue. A co-op battle's arrive through
-    # receive.
+    # Moves the messages of a battle the server hosts into the DLL's session and hands on the held
+    # ones whose gap never closed. The world's arrive through receive.
     def self.poll
-      @messages ||= []
       MGQ_MpBattlesServed.drain if MGQ_MpBattlesSync.served?
-      return Sequence.let_gaps_go if MGQ_MpBattlesSync.world?
-
-      while (text = MGQ_Multiplayer::Link.next_message)
-        kind, body = text.split("\n", 2)
-        noted_receive(kind.to_s, body, nil)
-        @messages << [kind.to_s, body.to_s]
-      end
+      Sequence.let_gaps_go if MGQ_MpBattlesSync.world?
     end
   end
 
@@ -903,10 +984,6 @@ module MGQ_MpBattlesSync
   # in a co-op battle every game has the same party in the same order. Either way a target's index
   # means the same battler on both sides.
   module Commands
-    # Highest target index a command may name, -1 being a random target. A larger number would
-    # fail the host's own turn, which reads it as a place.
-    MAX_TARGET_INDEX = 255
-
     # Most skills chained after one action, far more than any skill type's chain of the game allows.
     MAX_CHAIN = 16
 
@@ -986,9 +1063,12 @@ module MGQ_MpBattlesSync
       command.inspect
     end
 
-    # Gives a guest's characters on the host the guest's commands, see command. A character the
-    # guest named none for keeps what the computer chose. In a co-op battle the guest's swaps come
-    # first, so the commands find the characters the guest sees.
+    # Gives a guest's characters on the host the guest's commands, see command, as the DLL plans
+    # them (MGQOnline.Game's CommandPlan): which places the guest commands, their own or in a team
+    # duel those of a player who left, which they took over, and which commands name a skill or item
+    # and a target the host's turn reads. A character the guest named none for keeps what the
+    # computer chose. In a co-op battle the guest's swaps come first, so the commands find the
+    # characters the guest sees.
     #
     # @param body [String] The commands.
     # @param seat [Integer, nil] The guest's world seat in a co-op battle, whose characters take them.
@@ -1003,12 +1083,14 @@ module MGQ_MpBattlesSync
       # duel, else the host's troop, in the same order.
       same = MGQ_MpBattlesSync.mode.same_side_as_host?(seat)
       battlers = same ? $game_party.battle_members : $game_troop.members
+      plan = MGQ_Multiplayer::Bridge.call(PLAN_TOPIC, "body" => body.to_s, "seat" => seat, "several" => MGQ_MpBattlesSync.several?,
+                                                      "owners" => battlers.map { |battler| battler.respond_to?(:mp_seat) && battler.mp_seat.is_a?(Integer) ? battler.mp_seat : nil },
+                                                      "skills" => $data_skills.size, "items" => $data_items.size)
+      places = plan.is_a?(Hash) ? Array(plan["places"]) : []
       given = []
       battlers.each_with_index do |battler, index|
-        next if MGQ_MpBattlesSync.several? && !commanded_by?(battler, seat)
-
-        list = commands[index]
-        given << "#{MGQ_MpBattlesSync.named(battler)}: #{command(battler, list)}" if list.is_a?(Array)
+        entries = places[index]
+        given << "#{MGQ_MpBattlesSync.named(battler)}: #{command(battler, commands[index], entries)}" if entries
       end
       MGQ_MpBattlesSync.log("gave the commands of #{MGQ_MpBattlesSync.who(seat)} for turn #{MGQ_MpBattlesSync.turn + 1}: " \
                             "#{given.empty? ? 'none for their characters' : given.join('; ')}" +
@@ -1024,15 +1106,17 @@ module MGQ_MpBattlesSync
     # The host rolls a character's extra actions, so the owner's game never decides how often it acts.
     #
     # @param battler [Game_Battler] The character.
-    # @param list [Array<Array>] Its commands, see action.
-    def self.command(battler, list)
-      if list.empty?
+    # @param list [Array<Array>] Its commands as the guest sent them, for the log.
+    # @param entries [Array<Array, nil>] Its commands as the DLL read them, see action; nil for one
+    #   the host cannot read.
+    def self.command(battler, list, entries)
+      if entries.empty?
         MGQ_MpGame.set(battler, :actions, [])
         return "none, its actions taken away"
       end
 
       count = action_count(battler)
-      actions = list.first(count).map { |command| chained_action(battler, command) }.compact
+      actions = entries.first(count).map { |entry| entry && chained_action(battler, entry) }.compact
       MGQ_MpGame.set(battler, :actions, actions) unless actions.empty?
       taken = list.first(count)
       given = actions.empty? ? "none it may give, the computer's actions kept" : taken.map { |command| command_text(command) }.join(", ")
@@ -1050,37 +1134,19 @@ module MGQ_MpBattlesSync
       Array(MGQ_MpGame.get(battler, :actions)).size
     end
 
-    # Reports whether a guest commands a character: their own, or in a team duel one of a player
-    # who left, which they took over.
+    # Turns a command the DLL read into an action with the skills chained after it. The chain ends
+    # at its first skill the character may not give, and the game's own check cuts what the
+    # character's skill types do not chain.
     #
     # @param battler [Game_Battler] The character.
-    # @param seat [Integer] The guest's world seat.
-    # @return [Boolean] Whether they do.
-    def self.commanded_by?(battler, seat)
-      return false unless battler.respond_to?(:mp_seat)
-
-      heir = MGQ_MpBattlesSync.mode.heir_of(battler.mp_seat)
-      battler.mp_seat == seat || (!heir.nil? && heir == seat)
-    end
-
-    # Turns a friend's command into an action with the skills chained after it. The chain ends at its
-    # first command that is no skill or the character may not give, and the game's own check cuts
-    # what the character's skill types do not chain.
-    #
-    # @param battler [Game_Battler] The character.
-    # @param command [Array] "skill" or "item", the id and the target's index, then its chain's commands.
-    # @return [Game_Action, nil] The action, nil for a command it cannot read or the character may not
-    #   give.
-    def self.chained_action(battler, command)
-      first = action(battler, command)
-      chain = command[3] if first
-      return first unless chain.is_a?(Array) && first.respond_to?(:chain_action=)
+    # @param entry [Array] "skill" or "item", the id, the target's index and its chain's commands.
+    # @return [Game_Action, nil] The action, nil for one the character may not give.
+    def self.chained_action(battler, entry)
+      first = action(battler, entry)
+      return first unless first && entry[3].is_a?(Array) && first.respond_to?(:chain_action=)
 
       last = first
-      chain.first(MAX_CHAIN).each do |link|
-        # The game's check reads a chained action's skill type, which an item lacks.
-        break unless link.is_a?(Array) && link[0] == "skill"
-
+      entry[3].each do |link|
         child = action(battler, link, :chain_action)
         break unless child
 
@@ -1091,20 +1157,16 @@ module MGQ_MpBattlesSync
       first
     end
 
-    # Turns a friend's command into an action, without its chain.
+    # Turns a command the DLL read into an action, without its chain.
     #
     # @param battler [Game_Battler] The character.
-    # @param command [Array] "skill" or "item", the id and the target's index.
+    # @param entry [Array] "skill" or "item", the id within its table and the target's index.
     # @param symbol [Symbol] The action's kind: :count for one of the character's actions,
     #   :chain_action for a skill chained after one.
-    # @return [Game_Action, nil] The action, nil for a command it cannot read or the character may not
-    #   give.
-    def self.action(battler, command, symbol = :count)
-      kind, id, target = command
-      return nil unless command.is_a?(Array) && id.is_a?(Integer) && target.is_a?(Integer) && target.between?(-1, MAX_TARGET_INDEX)
-
-      table = { "skill" => $data_skills, "item" => $data_items }.fetch(kind, [])
-      item = id > 0 && id < table.size ? table[id] : nil
+    # @return [Game_Action, nil] The action, nil for one the character may not give.
+    def self.action(battler, entry, symbol = :count)
+      kind, id, target = entry
+      item = (kind == "item" ? $data_items : $data_skills)[id]
       return nil unless item
       return refuse(battler, item) unless allowed?(battler, item)
 
@@ -1114,6 +1176,7 @@ module MGQ_MpBattlesSync
       action.target_index = target
       action
     end
+
 
     # Reports whether a character may be commanded to use a skill or an item: a skill it has, or
     # one of no skill type, as attacking, guarding and struggling are, and an item a battle allows.
@@ -1143,74 +1206,31 @@ module MGQ_MpBattlesSync
     end
   end
 
-  # Turns the host's names into the guest's in what the host's battle wrote: the host's own
-  # characters are the guest's enemies, named with their owner, and the guest's characters are
-  # its own, named without.
+  # The host's names the DLL turns into the guest's in what the host's battle wrote (see
+  # Playback.set_up): the host's own characters are the guest's enemies, named with their owner,
+  # and the guest's characters are its own, named without.
   module Names
-    # A speaker's name box of the translation's message system, "\n<Name>".
-    NAME_BOX = /\\n[1-5cr]?<[^>]*>/i
-
-    # The untranslated game's speaker line, the name in brackets opening a message: "【Name】".
-    NAME_LINE = /\A【[^】]*】/
-
-    # Learns the names from the host's side.
+    # Hands the DLL the names of the host's side, with this game's battlers of the same places.
     #
     # @param body [String] The host's party and troop names, see MGQ_MpBattlesSync.names.
     def self.setup(body)
-      values = Wire.parse(body.to_s) || []
-      party, troop = values
-      @swaps = {}
       # A co-op battle's party and troop stand on the same side on every game, with each
       # player's own characters named without their owner.
       sides = [MGQ_MpBattlesSync.party_side, MGQ_MpBattlesSync.troop_side]
-      own_party, own_troop = MGQ_MpBattlesSync.same_side? ? sides : sides.reverse
-      Array(party).each_with_index { |name, index| add(name, own_party[index]) }
-      Array(troop).each_with_index { |name, index| add(name, own_troop[index]) }
-      names = @swaps.keys.sort_by { |name| -name.size }
-      @pattern = names.empty? ? nil : Regexp.union(names)
-      MGQ_MpBattlesSync.log("the host names #{Array(party).size} party and #{Array(troop).size} troop characters; swapping " +
-                            (@swaps.empty? ? "none" : @swaps.map { |from, to| "#{from} -> #{to}" }.join(", ")))
+      own = MGQ_MpBattlesSync.same_side? ? sides : sides.reverse
+      Playback.set_up(body.to_s, own.map { |battlers| battlers.map { |battler| battler.name.to_s } })
     rescue => e
-      @swaps = {}
-      @pattern = nil
+      Playback.set_up
       MGQ_MpBattlesSync.log_once(:names, "could not read the host's names, showing them unswapped: #{e.class}: #{e.message}")
     end
 
-    # Swaps the names in a text.
+    # Swaps the host's names in a text, as the DLL swaps them in the stream.
     #
     # @param text [String] The host's text.
-    # @return [String] The guest's text.
+    # @return [String] The guest's text, the host's when the DLL does not answer.
     def self.swap(text)
-      @pattern ? text.gsub(@pattern) { |name| @swaps[name] } : text
-    end
-
-    # Swaps the names in a message, but not in its speaker's name box or speaker line, which name a
-    # character without its owner on either side.
-    #
-    # @param text [String] The host's message line.
-    # @return [String] The guest's message line.
-    def self.swap_message(text)
-      speaker = Regexp.union(NAME_BOX, NAME_LINE)
-      text.split(/(#{speaker})/).map { |part| part =~ /\A#{speaker}\z/ ? part : swap(part) }.join
-    end
-
-    # Writes a translated host's name box as the untranslated game's speaker line when this game has
-    # no name box, which would show the code as text.
-    #
-    # @param text [String] A message line.
-    # @return [String] The line as this game shows it.
-    def self.readable(text)
-      return text if defined?(Window_NameMessage)
-
-      text.sub(NAME_BOX) { |box| "【#{box[/<(.*)>/, 1]}】\n" }
-    end
-
-    # Pairs a name of the host's side with the guest's battler.
-    #
-    # @param name [Object] A name of the host's side.
-    # @param battler [Game_Battler, nil] The guest's battler of the same place.
-    def self.add(name, battler)
-      @swaps[name] = battler.name if name.is_a?(String) && !name.empty? && battler && name != battler.name
+      swapped = MGQ_Multiplayer::Bridge.call(Playback::SWAP_TOPIC, text.to_s)
+      swapped.is_a?(String) ? swapped : text
     end
   end
 
@@ -1477,16 +1497,10 @@ module MGQ_MpBattlesSync
   #
   # The battle itself takes a player who left out only at its next command phase.
   module Departures
-    # Battles and seats already told, at most this many kept.
-    KEPT = 32
-
     # What marks the popup of a join or a departure, with its kind and seat: the game shows one popup
     # of a mark at a time, so the host's, which a guest's battle plays back, and the guest's own
     # show once.
     POPUP_MARK = :mgq_mp_departure
-
-    # Battles, seats and kinds already told, oldest first.
-    @told = []
 
     # Tells that a player of the battle left it, as their "leave" says; a "leave" of a player not in
     # it tells nothing.
@@ -1527,7 +1541,8 @@ module MGQ_MpBattlesSync
       tell(peer, "#{peer.state['name']} joined the battle.", :joined)
     end
 
-    # Tells of a player leaving or joining, once per battle and player.
+    # Tells of a player leaving or joining, once per battle and player, as the DLL's session
+    # remembers the last ones told.
     #
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
     # @param text [String] What the player sees.
@@ -1535,11 +1550,8 @@ module MGQ_MpBattlesSync
     #   join and then leave.
     def self.tell(peer, text, kind = :left)
       seat = Seats.of_kept(peer) || peer.seat
-      key = [MGQ_MpBattlesSync.battle_id, seat, kind]
-      return if @told.include?(key)
+      return unless MGQ_Multiplayer::Bridge.call(DEPARTURE_TOPIC, "seat" => seat, "kind" => kind.to_s)
 
-      @told.push(key)
-      @told.shift while @told.size > KEPT
       MGQ_MpBattlesSync.log("told the player: #{text}")
       popup(text, [POPUP_MARK, kind, seat])
       MGQ_MpOverworldSync.notice(text)

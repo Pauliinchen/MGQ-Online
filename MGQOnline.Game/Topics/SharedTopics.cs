@@ -2,6 +2,7 @@
 //  SharedTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Registered the live battle's topics
 //      Paulinchen  2026-10-28: Registered the choice topics
 //                            - Registered the gather topics
 //                            - Registered the scene topics
@@ -49,6 +50,7 @@ public static class SharedTopics
         GatherTopics.Register(context);
         SceneTopics.Register(context);
         PageTopics.Register(context, random);
+        LiveTopics.Register(context);
     }
 
     /// <summary>

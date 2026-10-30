@@ -2,6 +2,7 @@
 #  battles_sync_recorder.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Buffered, counted and sent the host's recording through the DLL, which records a battler's values only when they changed
 #      Paulinchen  2026-10-23: Deleted the recording on file of the mirror match
 #      Paulinchen  2026-10-09: Let the battle's mode act right before each send of the stream
 #      Paulinchen  2026-10-07: Logged the recording's start and end and what each turn streamed
@@ -25,8 +26,10 @@ module MGQ_MpBattlesSync
   # messages, pictures, screen effects, sounds, animations, sprite effects and waits, with the
   # battlers' values after every action, streamed to the guests.
   module Recorder
-    # Events kept before they are sent at once.
-    FLUSH_EVENTS = 200
+    # The DLL's topic of the recording's buffer (MGQOnline.Game's RecorderBuffer, behind LiveTopics),
+    # which keeps the events until they are sent, every 10 frames or once 200 wait, counts them and
+    # records a battler's values only when they changed.
+    RECORD_TOPIC = "live.record"
 
     # Seeds a call's random choices are drawn from.
     SEED_RANGE = 1 << 30
@@ -42,11 +45,7 @@ module MGQ_MpBattlesSync
     def self.start
       @active = true
       @command_phase = false
-      @frame = 0
-      @events = []
-      @values = {}
-      @counts = [0, 0]
-      @totals = [0, 0]
+      record("start")
       MGQ_MpBattlesSync.log("recording the battle for the guests' stream")
     rescue => e
       stop_after(e)
@@ -60,18 +59,18 @@ module MGQ_MpBattlesSync
 
       flush
       @active = false
-      totals = @totals || [0, 0]
-      MGQ_MpBattlesSync.log("recording finished, battle result #{result.inspect}: #{totals[0]} events in #{totals[1]} sends")
+      totals = record("totals")
+      MGQ_MpBattlesSync.log("recording finished, battle result #{result.inspect}: #{totals['events'].to_i} events in #{totals['sends_counted'].to_i} sends")
     rescue => e
       stop_after(e)
     end
 
-    # Counts a frame, and streams what the battle showed every SEND_FRAMES frames.
+    # Counts a frame, and streams what the battle showed every 10 frames, as the DLL's
+    # tick tells.
     def self.tick
       return unless active?
 
-      @frame += 1
-      flush if @frame % SEND_FRAMES == 0
+      send_all(MGQ_Multiplayer::Bridge.call(TICK_TOPIC, "check" => "frame"))
     end
 
     # Records an event, unless a call that the guest makes itself is running.
@@ -81,16 +80,14 @@ module MGQ_MpBattlesSync
     def self.event(kind, *fields)
       return unless active? && !muted?
 
-      @events << Wire.line([kind] + fields)
-      (@counts ||= [0, 0])[0] += 1
-      flush if @events.size >= FLUSH_EVENTS
+      send_all(record("event", "line" => Wire.line([kind] + fields)))
     rescue => e
       stop_after(e)
     end
 
     # Records the values of every battler that changed since the last time.
     #
-    # The next send streams them, every SEND_FRAMES frames, so the guest can tell by the sends
+    # The next send streams them, every 10 frames, so the guest can tell by the sends
     # waiting how far behind it is.
     #
     # @param full [Boolean] true to record every battler's, which corrects anything the guest
@@ -98,14 +95,11 @@ module MGQ_MpBattlesSync
     def self.values(full = false)
       return unless active? && !muted?
 
-      @values = {} if full
-      battlers.each do |battler|
+      entries = battlers.map do |battler|
         current = value_fields(battler)
-        next if @values[battler.object_id] == current
-
-        @values[battler.object_id] = current
-        event("values", battler, *current)
+        [battler.object_id, ref(battler), Wire.line(current)]
       end
+      send_all(record("values", "battlers" => entries, "full" => full ? true : false))
       time_stop
     rescue => e
       stop_after(e)
@@ -123,10 +117,9 @@ module MGQ_MpBattlesSync
       event("commands")
       flush
       turn = MGQ_MpBattlesSync.turn
-      counts = @counts || [0, 0]
+      counts = record("counts")
       MGQ_MpBattlesSync.log("streamed #{turn == 0 ? "the battle's start" : "turn #{turn}"}: " \
-                            "#{counts[0]} events in #{counts[1]} sends, every battler's values anew")
-      @counts = [0, 0]
+                            "#{counts['events'].to_i} events in #{counts['sends_counted'].to_i} sends, every battler's values anew")
     rescue => e
       stop_after(e)
     end
@@ -267,14 +260,28 @@ module MGQ_MpBattlesSync
     # Sends the kept events, first letting the battle's mode tell the guests what its events may
     # name, see MGQ_MpBattles::Mode#before_send.
     def self.flush
-      return if @events.empty?
+      send_all(record("flush"))
+    end
 
-      (@counts ||= [0, 0])[1] += 1
-      (@totals ||= [0, 0])[0] += @events.size
-      @totals[1] += 1
-      MGQ_MpBattlesSync.mode.before_send
-      Channel.post("events", @events.join("\n"))
-      @events = []
+    # Asks the DLL's buffer of the recording a step.
+    #
+    # @param op [String] The step, such as "event".
+    # @param fields [Hash] What it needs.
+    # @return [Hash] What it answers, empty while the DLL does not answer.
+    def self.record(op, fields = {})
+      reply = MGQ_Multiplayer::Bridge.call(RECORD_TOPIC, { "op" => op }.merge(fields))
+      reply.is_a?(Hash) ? reply : {}
+    end
+
+    # Sends what the DLL's buffer let go, each send after the battle's mode told the guests what
+    # its events may name.
+    #
+    # @param reply [Hash, nil] The buffer's reply, its "sends" in order.
+    def self.send_all(reply)
+      Array(reply.is_a?(Hash) ? reply["sends"] : nil).each do |send|
+        MGQ_MpBattlesSync.mode.before_send
+        Channel.post("events", send)
+      end
     end
 
     # Lists the battlers of the battle.
@@ -300,9 +307,9 @@ module MGQ_MpBattlesSync
 
     # Stops recording without sending what is left, such as after a reset.
     def self.stop
-      MGQ_MpBattlesSync.log("recording stopped, #{Array(@events).size} events left unsent") if active?
+      left = record("stop")["events"].to_i
+      MGQ_MpBattlesSync.log("recording stopped, #{left} events left unsent") if active?
       @active = false
-      @events = []
     end
 
     # Stops recording after an error, which stays in the log, and breaks the live

@@ -2,6 +2,8 @@
 #  battles_pvp_backline.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Left the Frontline's message among the stream's kinds to the battle modes' defaults
+#                            - Checked and told the Frontlines through the DLL
 #      Paulinchen  2026-10-12: Listed the option among the settings of the Mod Config
 #      Paulinchen  2026-10-07: Registered the option through coop.rbx and named characters through battles_sync.rbx
 #                            - Logged the Backline's start, both sides' swaps and the commands they take away
@@ -31,6 +33,9 @@ module MGQ_MpBattlesPvp
       WITH_BACKLINE => ["With Backline", "Both players swap their Backline in with the battle's Party command."],
       FRONTLINE_ONLY => ["Frontline Only", "Only the Frontline fights."],
     }
+
+    # The DLL's topic of the Frontlines (MGQOnline.Game's BacklineFront, behind LiveTopics).
+    FRONTS_TOPIC = "live.backline"
 
     # The kind of the message that tells the guest the host's Frontline, inside the host's stream.
     FRONT_MESSAGE = "pvp_front"
@@ -68,7 +73,7 @@ module MGQ_MpBattlesPvp
       @round = nil
       @round_front = nil
       @swapped_in = []
-      @told_front = front_ids
+      fronts("begin", "team" => @all.keys, "front" => front_ids)
       MGQ_MpBattlesPvp.log("the Backline is on: the other side brings #{MGQ_MpBattlesSync.named_list(opponents)}; this side's Frontline #{MGQ_MpBattlesSync.named_list($game_party.battle_members)}; " \
                            "this side's Backline #{MGQ_MpBattlesSync.named_list($game_party.bench_members)}")
     end
@@ -79,7 +84,17 @@ module MGQ_MpBattlesPvp
       @round = nil
       @round_front = nil
       @swapped_in = []
-      @told_front = nil
+      fronts("finish")
+    end
+
+    # Asks the DLL's Frontlines (MGQOnline.Game's BacklineFront) a step.
+    #
+    # @param op [String] The step, such as "take".
+    # @param fields [Hash] What it needs.
+    # @return [Hash] What it answers, empty while the DLL does not answer.
+    def self.fronts(op, fields = {})
+      reply = MGQ_Multiplayer::Bridge.call(FRONTS_TOPIC, { "op" => op }.merge(fields))
+      reply.is_a?(Hash) ? reply : {}
     end
 
     # Finds a character of the other side.
@@ -152,20 +167,20 @@ module MGQ_MpBattlesPvp
       MGQ_MpBattlesPvp.log_once(:swapped, "could not log a swap: #{e.class}: #{e.message}")
     end
 
-    # Puts the other side's Frontline in the troop as the other game tells it. A character swapped in
-    # loses the actions it had left from an earlier round.
+    # Puts the other side's Frontline in the troop as the other game tells it, once the DLL found it
+    # fits the other side's team: as many characters as the troop, each of the team once. A
+    # character swapped in loses the actions it had left from an earlier round.
     #
     # @param ids [Array<Integer>, nil] The actor ids on the other side's Frontline, by place.
     def self.take_front(ids)
       return unless on? && ids.is_a?(Array)
 
       current = $game_troop.members
-      front = ids.map { |id| @all[id] }
-      unless front.size == current.size && !front.include?(nil) && front.uniq.size == front.size
-        return MGQ_MpBattlesPvp.log("left out a Frontline that does not fit the other side's team: #{ids.inspect}")
-      end
-      return if front == current
+      taken = fronts("take", "line" => MGQ_MpBattlesSync::Wire.line([ids]), "troop" => current.map(&:id))
+      return MGQ_MpBattlesPvp.log(taken["unfit"]) if taken["unfit"]
+      return unless taken["front"]
 
+      front = taken["front"].map { |id| @all[id] }
       @swapped_in = front - current
       @swapped_in.each(&:clear_actions)
       MGQ_MpGame.set($game_troop, :enemies, front)
@@ -199,10 +214,9 @@ module MGQ_MpBattlesPvp
       end
       Array(@swapped_in).each(&:clear_actions)
       @swapped_in = []
-      ids = front_ids
-      return if ids == @told_front
+      ids = fronts("settle", "front" => front_ids)["front"]
+      return unless ids
 
-      @told_front = ids
       MGQ_MpBattlesPvp.log("telling the other side this side's new Frontline: #{MGQ_MpBattlesSync.named_list($game_party.battle_members)}")
       MGQ_MpBattlesSync::Recorder.flush if MGQ_MpBattlesSync::Recorder.active?
       MGQ_MpBattlesSync::Channel.post(FRONT_MESSAGE, MGQ_MpBattlesSync::Wire.line([ids]))
@@ -256,7 +270,8 @@ module MGQ_MpBattlesPvp
 
     # What a PvP battle between two players does differently in a live battle while it has the
     # Backline: each game tells the other its Frontline, and the stream names the characters outside
-    # both.
+    # both. The Frontline's message among the stream's kinds is MGQ_MpBattles::Mode's, which the DLL
+    # answers while the Backline is on.
     module Mode
       extend MGQ_MpBattles::Mode
 
@@ -273,11 +288,6 @@ module MGQ_MpBattlesPvp
       # (see MGQ_MpBattles::Mode#share_order)
       def self.share_order
         Backline.settle_round
-      end
-
-      # (see MGQ_MpBattles::Mode#stream_kinds)
-      def self.stream_kinds
-        Backline.on? ? [FRONT_MESSAGE] : []
       end
 
       # (see MGQ_MpBattles::Mode#take)

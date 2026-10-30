@@ -1,0 +1,1114 @@
+{
+  "early": [
+    {
+      "reason": "won",
+      "team": false,
+      "side": false,
+      "missed": false,
+      "effects": [
+        [
+          "win"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: its enemies fell while it waited for commands"
+      ],
+      "result": ":won_result"
+    },
+    {
+      "reason": "won",
+      "team": true,
+      "side": true,
+      "missed": false,
+      "effects": [
+        [
+          "win"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: its enemies fell while it waited for commands"
+      ],
+      "result": ":won_result"
+    },
+    {
+      "reason": "won",
+      "team": true,
+      "side": false,
+      "missed": false,
+      "effects": [
+        [
+          "win"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: its enemies fell while it waited for commands"
+      ],
+      "result": ":won_result"
+    },
+    {
+      "reason": "left",
+      "team": false,
+      "side": false,
+      "missed": false,
+      "effects": [
+        [
+          "forfeit"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: this player left it"
+      ],
+      "result": "false"
+    },
+    {
+      "reason": "left",
+      "team": true,
+      "side": true,
+      "missed": false,
+      "effects": [
+        [
+          "forfeit"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: this player left it"
+      ],
+      "result": "false"
+    },
+    {
+      "reason": "left",
+      "team": true,
+      "side": false,
+      "missed": false,
+      "effects": [
+        [
+          "forfeit"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: this player left it"
+      ],
+      "result": "false"
+    },
+    {
+      "reason": "forfeit",
+      "team": false,
+      "side": false,
+      "missed": false,
+      "effects": [
+        [
+          "message",
+          "Rival forfeited."
+        ],
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: the other side forfeited"
+      ],
+      "result": "false"
+    },
+    {
+      "reason": "forfeit",
+      "team": true,
+      "side": true,
+      "missed": false,
+      "effects": [
+        [
+          "message",
+          "Rival forfeited."
+        ],
+        [
+          "process",
+          "process_defeat"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: the other side forfeited"
+      ],
+      "result": "false"
+    },
+    {
+      "reason": "forfeit",
+      "team": true,
+      "side": false,
+      "missed": false,
+      "effects": [
+        [
+          "message",
+          "Rival forfeited."
+        ],
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: the other side forfeited"
+      ],
+      "result": "false"
+    },
+    {
+      "reason": "broken",
+      "team": false,
+      "side": false,
+      "missed": false,
+      "effects": [
+        [
+          "message",
+          "The battle broke off."
+        ],
+        [
+          "process",
+          "process_abort"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: it broke off"
+      ],
+      "result": "false"
+    },
+    {
+      "reason": "broken",
+      "team": false,
+      "side": false,
+      "missed": true,
+      "effects": [
+        [
+          "say",
+          "Rival's battle ended before you could join."
+        ],
+        [
+          "process",
+          "process_abort"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: it broke off"
+      ],
+      "result": "false"
+    },
+    {
+      "reason": "broken",
+      "team": true,
+      "side": true,
+      "missed": false,
+      "effects": [
+        [
+          "message",
+          "The battle broke off."
+        ],
+        [
+          "process",
+          "process_abort"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: it broke off"
+      ],
+      "result": "false"
+    },
+    {
+      "reason": "broken",
+      "team": true,
+      "side": true,
+      "missed": true,
+      "effects": [
+        [
+          "say",
+          "Rival's battle ended before you could join."
+        ],
+        [
+          "process",
+          "process_abort"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: it broke off"
+      ],
+      "result": "false"
+    },
+    {
+      "reason": "broken",
+      "team": true,
+      "side": false,
+      "missed": false,
+      "effects": [
+        [
+          "message",
+          "The battle broke off."
+        ],
+        [
+          "process",
+          "process_abort"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: it broke off"
+      ],
+      "result": "false"
+    },
+    {
+      "reason": "broken",
+      "team": true,
+      "side": false,
+      "missed": true,
+      "effects": [
+        [
+          "say",
+          "Rival's battle ended before you could join."
+        ],
+        [
+          "process",
+          "process_abort"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: it broke off"
+      ],
+      "result": "false"
+    },
+    {
+      "reason": "gone",
+      "team": false,
+      "side": false,
+      "missed": false,
+      "effects": [
+        [
+          "friend_gone"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: the other side is gone"
+      ],
+      "result": ":gone_result"
+    },
+    {
+      "reason": "gone",
+      "team": true,
+      "side": true,
+      "missed": false,
+      "effects": [
+        [
+          "friend_gone"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: the other side is gone"
+      ],
+      "result": ":gone_result"
+    },
+    {
+      "reason": "gone",
+      "team": true,
+      "side": false,
+      "missed": false,
+      "effects": [
+        [
+          "friend_gone"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: the other side is gone"
+      ],
+      "result": ":gone_result"
+    },
+    {
+      "reason": "other",
+      "team": false,
+      "side": false,
+      "missed": false,
+      "effects": [
+        [
+          "friend_gone"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: other"
+      ],
+      "result": ":gone_result"
+    },
+    {
+      "reason": "other",
+      "team": true,
+      "side": true,
+      "missed": false,
+      "effects": [
+        [
+          "friend_gone"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: other"
+      ],
+      "result": ":gone_result"
+    },
+    {
+      "reason": "other",
+      "team": true,
+      "side": false,
+      "missed": false,
+      "effects": [
+        [
+          "friend_gone"
+        ]
+      ],
+      "logs": [
+        "the live battle ends early in turn 0: other"
+      ],
+      "result": ":gone_result"
+    }
+  ],
+  "guest": [
+    {
+      "result": "process_victory",
+      "side": true,
+      "take_over": false,
+      "effects": [
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the host's battle ended (process_victory), this game fought on the host's side"
+      ]
+    },
+    {
+      "result": "process_victory",
+      "side": true,
+      "take_over": true,
+      "effects": [
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the host's battle ended (process_victory), this game fought on the host's side"
+      ]
+    },
+    {
+      "result": "process_victory",
+      "side": false,
+      "take_over": false,
+      "effects": [
+        [
+          "process",
+          "process_defeat"
+        ]
+      ],
+      "logs": [
+        "the host's battle ended (process_victory), this game fought against the host"
+      ]
+    },
+    {
+      "result": "process_victory",
+      "side": false,
+      "take_over": true,
+      "effects": [
+        [
+          "process",
+          "process_defeat"
+        ]
+      ],
+      "logs": [
+        "the host's battle ended (process_victory), this game fought against the host"
+      ]
+    },
+    {
+      "result": "process_defeat",
+      "side": true,
+      "take_over": false,
+      "effects": [
+        [
+          "process",
+          "process_defeat"
+        ]
+      ],
+      "logs": [
+        "the host's battle ended (process_defeat), this game fought on the host's side"
+      ]
+    },
+    {
+      "result": "process_defeat",
+      "side": true,
+      "take_over": true,
+      "effects": [
+        [
+          "process",
+          "process_defeat"
+        ]
+      ],
+      "logs": [
+        "the host's battle ended (process_defeat), this game fought on the host's side"
+      ]
+    },
+    {
+      "result": "process_defeat",
+      "side": false,
+      "take_over": false,
+      "effects": [
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the host's battle ended (process_defeat), this game fought against the host"
+      ]
+    },
+    {
+      "result": "process_defeat",
+      "side": false,
+      "take_over": true,
+      "effects": [
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the host's battle ended (process_defeat), this game fought against the host"
+      ]
+    },
+    {
+      "result": "process_abort",
+      "side": true,
+      "take_over": false,
+      "effects": [
+        [
+          "take_over"
+        ],
+        [
+          "message",
+          "Rival left the duel."
+        ],
+        [
+          "process",
+          "process_abort"
+        ]
+      ],
+      "logs": [
+        "the host's battle ended (process_abort), this game fought on the host's side",
+        "the host left the team duel: it ends without a winner"
+      ]
+    },
+    {
+      "result": "process_abort",
+      "side": true,
+      "take_over": true,
+      "effects": [
+        [
+          "take_over"
+        ]
+      ],
+      "logs": [
+        "the host's battle ended (process_abort), this game fought on the host's side"
+      ]
+    },
+    {
+      "result": "process_abort",
+      "side": false,
+      "take_over": false,
+      "effects": [
+        [
+          "message",
+          "Rival forfeited."
+        ],
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the host's battle ended (process_abort), this game fought against the host",
+        "Rival gave up or left: this game wins"
+      ]
+    },
+    {
+      "result": "process_abort",
+      "side": false,
+      "take_over": true,
+      "effects": [
+        [
+          "message",
+          "Rival forfeited."
+        ],
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the host's battle ended (process_abort), this game fought against the host",
+        "Rival gave up or left: this game wins"
+      ]
+    },
+    {
+      "result": "process_escape",
+      "side": true,
+      "take_over": false,
+      "effects": [
+        [
+          "take_over"
+        ],
+        [
+          "message",
+          "Rival left the duel."
+        ],
+        [
+          "process",
+          "process_abort"
+        ]
+      ],
+      "logs": [
+        "the host's battle ended (process_escape), this game fought on the host's side",
+        "the host left the team duel: it ends without a winner"
+      ]
+    },
+    {
+      "result": "process_escape",
+      "side": true,
+      "take_over": true,
+      "effects": [
+        [
+          "take_over"
+        ]
+      ],
+      "logs": [
+        "the host's battle ended (process_escape), this game fought on the host's side"
+      ]
+    },
+    {
+      "result": "process_escape",
+      "side": false,
+      "take_over": false,
+      "effects": [
+        [
+          "message",
+          "Rival forfeited."
+        ],
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the host's battle ended (process_escape), this game fought against the host",
+        "Rival gave up or left: this game wins"
+      ]
+    },
+    {
+      "result": "process_escape",
+      "side": false,
+      "take_over": true,
+      "effects": [
+        [
+          "message",
+          "Rival forfeited."
+        ],
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the host's battle ended (process_escape), this game fought against the host",
+        "Rival gave up or left: this game wins"
+      ]
+    }
+  ],
+  "gone": [
+    {
+      "role": "host",
+      "kind": "coop",
+      "team": false,
+      "side": false,
+      "take_over": false,
+      "effects": [
+        [
+          "solo"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "the host plays on alone, the computer playing for the guests who left, streaming stopped"
+      ],
+      "result": true
+    },
+    {
+      "role": "host",
+      "kind": "coop",
+      "team": false,
+      "side": false,
+      "take_over": true,
+      "effects": [
+        [
+          "solo"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "the host plays on alone, the computer playing for the guests who left, streaming stopped"
+      ],
+      "result": true
+    },
+    {
+      "role": "host",
+      "kind": "coop",
+      "team": false,
+      "side": true,
+      "take_over": false,
+      "effects": [
+        [
+          "solo"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "the host plays on alone, the computer playing for the guests who left, streaming stopped"
+      ],
+      "result": true
+    },
+    {
+      "role": "host",
+      "kind": "coop",
+      "team": false,
+      "side": true,
+      "take_over": true,
+      "effects": [
+        [
+          "solo"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "the host plays on alone, the computer playing for the guests who left, streaming stopped"
+      ],
+      "result": true
+    },
+    {
+      "role": "host",
+      "kind": "pvp",
+      "team": false,
+      "side": false,
+      "take_over": false,
+      "effects": [
+        [
+          "take_over"
+        ],
+        [
+          "message",
+          "Rival left the battle."
+        ],
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "Rival left: this game wins"
+      ],
+      "result": false
+    },
+    {
+      "role": "host",
+      "kind": "pvp",
+      "team": false,
+      "side": false,
+      "take_over": true,
+      "effects": [
+        [
+          "take_over"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "this game takes the battle over and fights on alone"
+      ],
+      "result": false
+    },
+    {
+      "role": "host",
+      "kind": "pvp",
+      "team": false,
+      "side": true,
+      "take_over": false,
+      "effects": [
+        [
+          "take_over"
+        ],
+        [
+          "message",
+          "Rival left the battle."
+        ],
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "Rival left: this game wins"
+      ],
+      "result": false
+    },
+    {
+      "role": "host",
+      "kind": "pvp",
+      "team": false,
+      "side": true,
+      "take_over": true,
+      "effects": [
+        [
+          "take_over"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "this game takes the battle over and fights on alone"
+      ],
+      "result": false
+    },
+    {
+      "role": "host",
+      "kind": "pvp",
+      "team": true,
+      "side": false,
+      "take_over": false,
+      "effects": [
+        [
+          "take_over"
+        ],
+        [
+          "message",
+          "Everyone on the other side left."
+        ],
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "everyone on the other side left: the host's side wins"
+      ],
+      "result": false
+    },
+    {
+      "role": "host",
+      "kind": "pvp",
+      "team": true,
+      "side": false,
+      "take_over": true,
+      "effects": [
+        [
+          "take_over"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "this game takes the battle over and fights on alone"
+      ],
+      "result": false
+    },
+    {
+      "role": "host",
+      "kind": "pvp",
+      "team": true,
+      "side": true,
+      "take_over": false,
+      "effects": [
+        [
+          "take_over"
+        ],
+        [
+          "message",
+          "Everyone on the other side left."
+        ],
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "everyone on the other side left: the host's side wins"
+      ],
+      "result": false
+    },
+    {
+      "role": "host",
+      "kind": "pvp",
+      "team": true,
+      "side": true,
+      "take_over": true,
+      "effects": [
+        [
+          "take_over"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "this game takes the battle over and fights on alone"
+      ],
+      "result": false
+    },
+    {
+      "role": "guest",
+      "kind": "coop",
+      "team": false,
+      "side": false,
+      "take_over": false,
+      "effects": [
+        [
+          "take_over"
+        ],
+        [
+          "message",
+          "Rival left the battle."
+        ],
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "Rival left: this game wins"
+      ],
+      "result": false
+    },
+    {
+      "role": "guest",
+      "kind": "coop",
+      "team": false,
+      "side": false,
+      "take_over": true,
+      "effects": [
+        [
+          "take_over"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "this game takes the battle over and fights on alone"
+      ],
+      "result": false
+    },
+    {
+      "role": "guest",
+      "kind": "coop",
+      "team": false,
+      "side": true,
+      "take_over": false,
+      "effects": [
+        [
+          "take_over"
+        ],
+        [
+          "message",
+          "Rival left the battle."
+        ],
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "Rival left: this game wins"
+      ],
+      "result": false
+    },
+    {
+      "role": "guest",
+      "kind": "coop",
+      "team": false,
+      "side": true,
+      "take_over": true,
+      "effects": [
+        [
+          "take_over"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "this game takes the battle over and fights on alone"
+      ],
+      "result": false
+    },
+    {
+      "role": "guest",
+      "kind": "pvp",
+      "team": false,
+      "side": false,
+      "take_over": false,
+      "effects": [
+        [
+          "take_over"
+        ],
+        [
+          "message",
+          "Rival left the battle."
+        ],
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "Rival left: this game wins"
+      ],
+      "result": false
+    },
+    {
+      "role": "guest",
+      "kind": "pvp",
+      "team": false,
+      "side": false,
+      "take_over": true,
+      "effects": [
+        [
+          "take_over"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "this game takes the battle over and fights on alone"
+      ],
+      "result": false
+    },
+    {
+      "role": "guest",
+      "kind": "pvp",
+      "team": false,
+      "side": true,
+      "take_over": false,
+      "effects": [
+        [
+          "take_over"
+        ],
+        [
+          "message",
+          "Rival left the battle."
+        ],
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "Rival left: this game wins"
+      ],
+      "result": false
+    },
+    {
+      "role": "guest",
+      "kind": "pvp",
+      "team": false,
+      "side": true,
+      "take_over": true,
+      "effects": [
+        [
+          "take_over"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "this game takes the battle over and fights on alone"
+      ],
+      "result": false
+    },
+    {
+      "role": "guest",
+      "kind": "pvp",
+      "team": true,
+      "side": false,
+      "take_over": false,
+      "effects": [
+        [
+          "take_over"
+        ],
+        [
+          "message",
+          "Rival left the battle."
+        ],
+        [
+          "process",
+          "process_victory"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "Rival left: this game wins"
+      ],
+      "result": false
+    },
+    {
+      "role": "guest",
+      "kind": "pvp",
+      "team": true,
+      "side": false,
+      "take_over": true,
+      "effects": [
+        [
+          "take_over"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "this game takes the battle over and fights on alone"
+      ],
+      "result": false
+    },
+    {
+      "role": "guest",
+      "kind": "pvp",
+      "team": true,
+      "side": true,
+      "take_over": false,
+      "effects": [
+        [
+          "take_over"
+        ],
+        [
+          "message",
+          "Rival left the duel."
+        ],
+        [
+          "process",
+          "process_abort"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "the host left the team duel: it ends without a winner"
+      ],
+      "result": false
+    },
+    {
+      "role": "guest",
+      "kind": "pvp",
+      "team": true,
+      "side": true,
+      "take_over": true,
+      "effects": [
+        [
+          "take_over"
+        ]
+      ],
+      "logs": [
+        "the link to Rival ended",
+        "this game takes the battle over and fights on alone"
+      ],
+      "result": false
+    }
+  ]
+}

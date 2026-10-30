@@ -1,0 +1,2377 @@
+{
+  "steps": [
+    {
+      "op": "start",
+      "sends": [
+
+      ],
+      "logs": [
+        "recording the battle for the guests' stream"
+      ]
+    },
+    {
+      "battlers": [
+        [
+          0,
+          "a0",
+          "i100\ti10\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0"
+        ],
+        [
+          1,
+          "a1",
+          "i80\ti5\ti3\t[\ti4\t]\t[\ti2\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti1"
+        ],
+        [
+          2,
+          "a2",
+          "i40\ti0\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0"
+        ]
+      ],
+      "full": false,
+      "op": "values",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "tick",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "tick",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "tick",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "tick",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "tick",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "tick",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "tick",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "tick",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "tick",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "tick",
+      "sends": [
+        "before_send",
+        "svalues\t@a0\ti100\ti10\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a1\ti80\ti5\ti3\t[\ti4\t]\t[\ti2\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti1\nsvalues\t@a2\ti40\ti0\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0"
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "tick",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "slog.add_text\tsHit!",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "battlers": [
+        [
+          0,
+          "a0",
+          "i100\ti10\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0"
+        ],
+        [
+          1,
+          "a1",
+          "i70\ti5\ti3\t[\ti4\t]\t[\ti1\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti1"
+        ],
+        [
+          2,
+          "a2",
+          "i40\ti0\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0"
+        ]
+      ],
+      "full": false,
+      "op": "values",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "battlers": [
+        [
+          0,
+          "a0",
+          "i100\ti10\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0"
+        ],
+        [
+          1,
+          "a1",
+          "i70\ti5\ti3\t[\ti4\t]\t[\ti1\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti1"
+        ],
+        [
+          2,
+          "a2",
+          "i40\ti0\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0"
+        ]
+      ],
+      "full": false,
+      "op": "values",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "battlers": [
+        [
+          0,
+          "a0",
+          "i100\ti10\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0"
+        ],
+        [
+          1,
+          "a1",
+          "i70\ti5\ti3\t[\ti4\t]\t[\ti1\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti1"
+        ],
+        [
+          2,
+          "a2",
+          "i40\ti0\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0"
+        ]
+      ],
+      "full": true,
+      "op": "values",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti1",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti2",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti3",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti4",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti5",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti6",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti7",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti8",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti9",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti10",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti11",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti12",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti13",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti14",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti15",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti16",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti17",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti18",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti19",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti20",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti21",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti22",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti23",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti24",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti25",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti26",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti27",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti28",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti29",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti30",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti31",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti32",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti33",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti34",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti35",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti36",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti37",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti38",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti39",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti40",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti41",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti42",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti43",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti44",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti45",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti46",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti47",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti48",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti49",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti50",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti51",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti52",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti53",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti54",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti55",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti56",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti57",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti58",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti59",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti60",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti61",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti62",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti63",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti64",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti65",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti66",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti67",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti68",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti69",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti70",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti71",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti72",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti73",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti74",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti75",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti76",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti77",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti78",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti79",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti80",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti81",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti82",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti83",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti84",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti85",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti86",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti87",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti88",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti89",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti90",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti91",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti92",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti93",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti94",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti95",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti96",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti97",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti98",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti99",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti100",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti101",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti102",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti103",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti104",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti105",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti106",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti107",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti108",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti109",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti110",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti111",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti112",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti113",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti114",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti115",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti116",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti117",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti118",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti119",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti120",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti121",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti122",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti123",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti124",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti125",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti126",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti127",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti128",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti129",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti130",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti131",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti132",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti133",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti134",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti135",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti136",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti137",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti138",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti139",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti140",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti141",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti142",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti143",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti144",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti145",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti146",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti147",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti148",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti149",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti150",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti151",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti152",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti153",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti154",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti155",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti156",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti157",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti158",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti159",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti160",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti161",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti162",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti163",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti164",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti165",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti166",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti167",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti168",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti169",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti170",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti171",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti172",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti173",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti174",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti175",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti176",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti177",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti178",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti179",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti180",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti181",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti182",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti183",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti184",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti185",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti186",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti187",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti188",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti189",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti190",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti191",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti192",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti193",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti194",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti195",
+      "op": "event",
+      "sends": [
+        "before_send",
+        "slog.add_text\tsHit!\nsvalues\t@a1\ti70\ti5\ti3\t[\ti4\t]\t[\ti1\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti1\nsvalues\t@a0\ti100\ti10\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a1\ti70\ti5\ti3\t[\ti4\t]\t[\ti1\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti1\nsvalues\t@a2\ti40\ti0\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsscene.wait\ti1\nsscene.wait\ti2\nsscene.wait\ti3\nsscene.wait\ti4\nsscene.wait\ti5\nsscene.wait\ti6\nsscene.wait\ti7\nsscene.wait\ti8\nsscene.wait\ti9\nsscene.wait\ti10\nsscene.wait\ti11\nsscene.wait\ti12\nsscene.wait\ti13\nsscene.wait\ti14\nsscene.wait\ti15\nsscene.wait\ti16\nsscene.wait\ti17\nsscene.wait\ti18\nsscene.wait\ti19\nsscene.wait\ti20\nsscene.wait\ti21\nsscene.wait\ti22\nsscene.wait\ti23\nsscene.wait\ti24\nsscene.wait\ti25\nsscene.wait\ti26\nsscene.wait\ti27\nsscene.wait\ti28\nsscene.wait\ti29\nsscene.wait\ti30\nsscene.wait\ti31\nsscene.wait\ti32\nsscene.wait\ti33\nsscene.wait\ti34\nsscene.wait\ti35\nsscene.wait\ti36\nsscene.wait\ti37\nsscene.wait\ti38\nsscene.wait\ti39\nsscene.wait\ti40\nsscene.wait\ti41\nsscene.wait\ti42\nsscene.wait\ti43\nsscene.wait\ti44\nsscene.wait\ti45\nsscene.wait\ti46\nsscene.wait\ti47\nsscene.wait\ti48\nsscene.wait\ti49\nsscene.wait\ti50\nsscene.wait\ti51\nsscene.wait\ti52\nsscene.wait\ti53\nsscene.wait\ti54\nsscene.wait\ti55\nsscene.wait\ti56\nsscene.wait\ti57\nsscene.wait\ti58\nsscene.wait\ti59\nsscene.wait\ti60\nsscene.wait\ti61\nsscene.wait\ti62\nsscene.wait\ti63\nsscene.wait\ti64\nsscene.wait\ti65\nsscene.wait\ti66\nsscene.wait\ti67\nsscene.wait\ti68\nsscene.wait\ti69\nsscene.wait\ti70\nsscene.wait\ti71\nsscene.wait\ti72\nsscene.wait\ti73\nsscene.wait\ti74\nsscene.wait\ti75\nsscene.wait\ti76\nsscene.wait\ti77\nsscene.wait\ti78\nsscene.wait\ti79\nsscene.wait\ti80\nsscene.wait\ti81\nsscene.wait\ti82\nsscene.wait\ti83\nsscene.wait\ti84\nsscene.wait\ti85\nsscene.wait\ti86\nsscene.wait\ti87\nsscene.wait\ti88\nsscene.wait\ti89\nsscene.wait\ti90\nsscene.wait\ti91\nsscene.wait\ti92\nsscene.wait\ti93\nsscene.wait\ti94\nsscene.wait\ti95\nsscene.wait\ti96\nsscene.wait\ti97\nsscene.wait\ti98\nsscene.wait\ti99\nsscene.wait\ti100\nsscene.wait\ti101\nsscene.wait\ti102\nsscene.wait\ti103\nsscene.wait\ti104\nsscene.wait\ti105\nsscene.wait\ti106\nsscene.wait\ti107\nsscene.wait\ti108\nsscene.wait\ti109\nsscene.wait\ti110\nsscene.wait\ti111\nsscene.wait\ti112\nsscene.wait\ti113\nsscene.wait\ti114\nsscene.wait\ti115\nsscene.wait\ti116\nsscene.wait\ti117\nsscene.wait\ti118\nsscene.wait\ti119\nsscene.wait\ti120\nsscene.wait\ti121\nsscene.wait\ti122\nsscene.wait\ti123\nsscene.wait\ti124\nsscene.wait\ti125\nsscene.wait\ti126\nsscene.wait\ti127\nsscene.wait\ti128\nsscene.wait\ti129\nsscene.wait\ti130\nsscene.wait\ti131\nsscene.wait\ti132\nsscene.wait\ti133\nsscene.wait\ti134\nsscene.wait\ti135\nsscene.wait\ti136\nsscene.wait\ti137\nsscene.wait\ti138\nsscene.wait\ti139\nsscene.wait\ti140\nsscene.wait\ti141\nsscene.wait\ti142\nsscene.wait\ti143\nsscene.wait\ti144\nsscene.wait\ti145\nsscene.wait\ti146\nsscene.wait\ti147\nsscene.wait\ti148\nsscene.wait\ti149\nsscene.wait\ti150\nsscene.wait\ti151\nsscene.wait\ti152\nsscene.wait\ti153\nsscene.wait\ti154\nsscene.wait\ti155\nsscene.wait\ti156\nsscene.wait\ti157\nsscene.wait\ti158\nsscene.wait\ti159\nsscene.wait\ti160\nsscene.wait\ti161\nsscene.wait\ti162\nsscene.wait\ti163\nsscene.wait\ti164\nsscene.wait\ti165\nsscene.wait\ti166\nsscene.wait\ti167\nsscene.wait\ti168\nsscene.wait\ti169\nsscene.wait\ti170\nsscene.wait\ti171\nsscene.wait\ti172\nsscene.wait\ti173\nsscene.wait\ti174\nsscene.wait\ti175\nsscene.wait\ti176\nsscene.wait\ti177\nsscene.wait\ti178\nsscene.wait\ti179\nsscene.wait\ti180\nsscene.wait\ti181\nsscene.wait\ti182\nsscene.wait\ti183\nsscene.wait\ti184\nsscene.wait\ti185\nsscene.wait\ti186\nsscene.wait\ti187\nsscene.wait\ti188\nsscene.wait\ti189\nsscene.wait\ti190\nsscene.wait\ti191\nsscene.wait\ti192\nsscene.wait\ti193\nsscene.wait\ti194\nsscene.wait\ti195"
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti196",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti197",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti198",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti199",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti200",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti201",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti202",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti203",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti204",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "line": "sscene.wait\ti205",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "flush",
+      "sends": [
+        "before_send",
+        "sscene.wait\ti196\nsscene.wait\ti197\nsscene.wait\ti198\nsscene.wait\ti199\nsscene.wait\ti200\nsscene.wait\ti201\nsscene.wait\ti202\nsscene.wait\ti203\nsscene.wait\ti204\nsscene.wait\ti205"
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "flush",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "battlers": [
+        [
+          0,
+          "a0",
+          "i100\ti10\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0"
+        ],
+        [
+          1,
+          "a1",
+          "i70\ti5\ti3\t[\ti4\t]\t[\ti1\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti1"
+        ],
+        [
+          2,
+          "a2",
+          "i40\ti0\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0"
+        ]
+      ],
+      "line": "scommands",
+      "op": "phase",
+      "sends": [
+        "before_send",
+        "svalues\t@a0\ti100\ti10\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nsvalues\t@a1\ti70\ti5\ti3\t[\ti4\t]\t[\ti1\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti1\nsvalues\t@a2\ti40\ti0\ti0\t[\t]\t[\t]\t[\ti0\ti0\ti0\ti0\ti0\ti0\ti0\ti0\t]\ti0\nscommands"
+      ],
+      "logs": [
+        "streamed the battle's start: 217 events in 4 sends, every battler's values anew"
+      ]
+    },
+    {
+      "line": "sturn\ti1",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "finish",
+      "sends": [
+        "before_send",
+        "sturn\ti1"
+      ],
+      "logs": [
+        "recording finished, battle result 0: 218 events in 5 sends"
+      ]
+    },
+    {
+      "op": "start",
+      "sends": [
+
+      ],
+      "logs": [
+        "recording the battle for the guests' stream"
+      ]
+    },
+    {
+      "line": "sturn\ti1",
+      "op": "event",
+      "sends": [
+
+      ],
+      "logs": [
+
+      ]
+    },
+    {
+      "op": "stop",
+      "sends": [
+
+      ],
+      "logs": [
+        "recording stopped, 1 events left unsent"
+      ]
+    }
+  ]
+}

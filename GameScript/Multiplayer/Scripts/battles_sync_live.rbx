@@ -2,6 +2,7 @@
 #  battles_sync_live.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Kept the host's waits for its guests and the battle's endings in the DLL
 #      Paulinchen  2026-10-23: Deleted the action and turn end events only the recording on file kept
 #                            - Went back to the host's own commands on Cancel during the wait for the guests' commands
 #                            - Told a guest who never got into the battle why instead of the battle breaking off
@@ -356,15 +357,6 @@ module MGQ_MpBattlesSync
 
   # The steps of a live battle that differ between host and guest.
   module Live
-    # Why a live battle ends early, by the reason end_early takes, for the log.
-    END_REASONS = {
-      :left => "this player left it",
-      :forfeit => "the other side forfeited",
-      :broken => "it broke off",
-      :gone => "the other side is gone",
-      :won => "its enemies fell while it waited for commands",
-    }
-
     # What starts the waiting box's names line while the host waits for the players' commands.
     STILL_CHOOSING = "Still choosing: "
 
@@ -373,11 +365,8 @@ module MGQ_MpBattlesSync
     NOT_READY = "Not ready: "
 
     # The message the host tells its guests whom it still waits for with: their seats, joined by
-    # WAITING_SEPARATOR, "" for nobody.
+    # commas, "" for nobody.
     WAITING_KIND = "waiting"
-
-    # What separates the seats in a WAITING_KIND message.
-    WAITING_SEPARATOR = ","
 
     # The game's message_skip_mode of the Instant skip, which passes a message at once while the
     # skip is held.
@@ -414,33 +403,39 @@ module MGQ_MpBattlesSync
     def self.tell_waiting(seats)
       return unless MGQ_MpBattlesSync.world?
 
-      seats = seats.sort
-      return if seats == @told_waiting
+      body = phase("tell", "seats" => seats)
+      Channel.post(WAITING_KIND, body) if body
+    end
 
-      @told_waiting = seats
-      Channel.post(WAITING_KIND, seats.join(WAITING_SEPARATOR))
+    # Asks the DLL's session a step of the host's waits for its guests.
+    #
+    # @param op [String] The step, such as "tell".
+    # @param fields [Hash] What the step needs.
+    # @return [Object, nil] What it answers, nil while the DLL does not answer.
+    def self.phase(op, fields = {})
+      MGQ_Multiplayer::Bridge.call(PHASE_TOPIC, { "op" => op }.merge(fields))
     end
 
     # As guest, names the players the host still waits for, as the host last told (see
     # tell_waiting), the player themself left out: what their own waiting box names while the
-    # host's stream stalls. Over the link nobody, since the friend's game names no seats.
+    # host's stream stalls. Nobody without a live battle.
     #
     # @return [Array<String>] Their names, see MGQ_MpBattlesSync.seat_name.
     def self.host_waits_for
       return [] unless MGQ_MpBattlesSync.world?
 
-      while (body = Channel.take(WAITING_KIND))
-        @host_waiting = body.split(WAITING_SEPARATOR).map { |seat| seat.to_i }
-        MGQ_MpBattlesSync.log("the host still waits for #{@host_waiting.empty? ? 'nobody' : @host_waiting.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
+      Channel.poll
+      waiting = phase("host_waiting") || {}
+      Array(waiting["taken"]).each do |seats|
+        MGQ_MpBattlesSync.log("the host still waits for #{seats.empty? ? 'nobody' : seats.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
       end
-      (Array(@host_waiting) - [MGQ_MpBattlesSync.own_seat]).map { |seat| MGQ_MpBattlesSync.seat_name(seat) }
+      (Array(waiting["seats"]) - [MGQ_MpBattlesSync.own_seat]).map { |seat| MGQ_MpBattlesSync.seat_name(seat) }
     end
 
     # Forgets whom the host told it waits for, as a battle begins, so an earlier battle's word
     # never names anyone.
     def self.forget_waiting
-      @told_waiting = nil
-      @host_waiting = nil
+      phase("forget")
     end
 
     # Moves a battle message on by itself after MESSAGE_FRAMES, at a button, or at once while the
@@ -523,7 +518,7 @@ module MGQ_MpBattlesSync
 
       MGQ_MpBattlesSync.show_everything
       Channel.post("ready", MGQ_MpBattlesSync.names)
-      @ready = []
+      phase("ready_reset")
       forget_waiting
       MGQ_MpBattlesSync.log("host's battle built, waiting for #{guests_text} to be ready")
       ready = wait_telling(scene, Waiting::WAITING_FOR % MGQ_MpBattlesSync.player, NOT_READY, lambda { not_ready }) { all_ready? }
@@ -534,23 +529,22 @@ module MGQ_MpBattlesSync
       true
     end
 
-    # Takes the guests' word that their battle is ready: the one guest's in a PvP battle, every
-    # guest's still in a co-op battle or a team duel. host_start empties the guests ready before
-    # each wait.
+    # Takes the guests' word that their battle is ready, as the DLL's session counts them: the one
+    # guest's in a PvP battle, every guest's still in a co-op battle or a team duel. host_start
+    # empties the guests ready before each wait.
     #
     # @return [Boolean, nil] true once every guest is ready, nil while one is not.
     def self.all_ready?
-      return Channel.take("ready") ? true : nil unless MGQ_MpBattlesSync.several?
-
-      MGQ_MpBattlesSync.guests_in.each { |seat| @ready << seat if !@ready.include?(seat) && Channel.take_from("ready", seat) }
-      not_ready.empty? ? true : nil
+      Channel.poll
+      ready = phase("ready")
+      ready && ready["all"] ? true : nil
     end
 
     # Lists the guests still in the battle whose battle is not ready yet, see all_ready?.
     #
     # @return [Array<Integer>] Their seats.
     def self.not_ready
-      MGQ_MpBattlesSync.guests_in - Array(@ready)
+      Array(phase("not_ready"))
     end
 
     # The guest waits for the host's battle, then plays its start.
@@ -713,47 +707,22 @@ module MGQ_MpBattlesSync
       scene_id.is_a?(Integer) && scene_id > 0 && scene_id < $data_common_events.size && $data_common_events[scene_id] ? true : false
     end
 
-    # Ends the guest's battle the way the host's ended: as it ended in a co-op battle and on the
-    # host's side of a team duel, else seen from the other side.
+    # Ends the guest's battle the way the host's ended, as the DLL decides: as it ended in a co-op
+    # battle and on the host's side of a team duel, else seen from the other side.
     #
     # @param result [String] How the host's battle ended.
     # @param scene [Scene_Battle] The battle.
     def self.guest_end(result, scene)
-      side = MGQ_MpBattlesSync.same_side? ? "on the host's side" : "against the host"
-      MGQ_MpBattlesSync.log("the host's battle ended (#{result}), this game fought #{side}")
-      if MGQ_MpBattlesSync.same_side?
-        return same_end(result) do
-          # When the co-op host got away, the guest fights on alone. In a team duel the host gave up
-          # or left, and with them the game that computes the duel.
-          unless MGQ_MpBattlesSync.mode.take_over(scene)
-            MGQ_MpBattlesSync.log("the host left the team duel: it ends without a winner")
-            $game_message.add("#{MGQ_MpBattlesSync.player} left the duel.")
-            BattleManager.process_abort
-          end
-        end
-      end
+      verdict = MGQ_Multiplayer::Bridge.call(END_TOPIC, "of" => "guest", "result" => result.to_s, "side" => MGQ_MpBattlesSync.same_side? ? true : false)
+      return unless verdict.is_a?(Hash)
 
-      case result
-      when "process_victory" then BattleManager.process_defeat
-      when "process_defeat" then BattleManager.process_victory
-      else
-        MGQ_MpBattlesSync.log("#{MGQ_MpBattlesSync.player} gave up or left: this game wins")
-        $game_message.add("#{MGQ_MpBattlesSync.player} forfeited.")
-        BattleManager.process_victory
-      end
-    end
+      MGQ_MpBattlesSync.log(verdict["first"])
+      # When the co-op host got away, the guest fights on alone. In a team duel the host gave up or
+      # left, and with them the game that computes the duel.
+      return MGQ_MpBattlesSync.end_with(verdict) unless verdict["process"] == "take_over"
+      return if MGQ_MpBattlesSync.mode.take_over(scene)
 
-    # Ends a guest's battle on the host's side as the host's ended: each game wins or loses with its
-    # own rewards or defeat.
-    #
-    # @param result [String] How the host's battle ended.
-    # @yield What follows when the host's battle ended otherwise, as when the host got away.
-    def self.same_end(result)
-      case result
-      when "process_victory" then BattleManager.process_victory
-      when "process_defeat" then BattleManager.process_defeat
-      else yield
-      end
+      MGQ_MpBattlesSync.end_with(verdict["otherwise"])
     end
 
     # The host waits for the guests' commands and gives them to their characters. The wait ends as
@@ -783,10 +752,8 @@ module MGQ_MpBattlesSync
     #
     # @param scene [Scene_Battle] The battle.
     def self.open_phase(scene)
-      return if @phase_open
+      return unless phase("open")
 
-      @phase_open = true
-      @answered = []
       MGQ_MpBattlesSync.log("command phase of turn #{MGQ_MpBattlesSync.turn + 1} opened, #{guests_text} in")
       MGQ_MpBattlesSync.mode.settle(scene)
       # Everyone chooses now, the host too, which a guest done choosing sees while its turn waits.
@@ -807,26 +774,22 @@ module MGQ_MpBattlesSync
 
     # As host, closes the command phase as the turn starts.
     def self.close_phase
-      if @phase_open
-        MGQ_MpBattlesSync.log("command phase closed, turn #{MGQ_MpBattlesSync.turn + 1} starts" +
-                              (MGQ_MpBattlesSync.solo? ? ", the computer playing for those who left" : ""))
-      end
-      @phase_open = false
-      @answered = []
+      return unless phase("close")
+
+      MGQ_MpBattlesSync.log("command phase closed, turn #{MGQ_MpBattlesSync.turn + 1} starts" +
+                            (MGQ_MpBattlesSync.solo? ? ", the computer playing for those who left" : ""))
     end
 
     # As host, closes a command phase the battle ended in, such as by a forfeit or an escape while
     # the players chose, so the next battle's first phase opens anew. Called as the battle ends and
     # as the live battle finishes, which a reset ends it with.
     def self.end_phase
-      MGQ_MpBattlesSync.log("command phase of turn #{MGQ_MpBattlesSync.turn + 1} closed: the battle ended in it") if @phase_open
-      @phase_open = false
-      @answered = []
+      MGQ_MpBattlesSync.log("command phase of turn #{MGQ_MpBattlesSync.turn + 1} closed: the battle ended in it") if phase("close")
     end
 
     # Names the guests still in the live battle for the log.
     #
-    # @return [String] Their seats and names, or the friend over the link.
+    # @return [String] Their seats and names, or who the waits name without a live battle.
     def self.guests_text
       return MGQ_MpBattlesSync.player.to_s unless MGQ_MpBattlesSync.world?
 
@@ -843,8 +806,7 @@ module MGQ_MpBattlesSync
     # @param scene [Scene_Battle] The battle.
     # @return [Boolean] Whether the turn goes on.
     def self.host_guests_commands(scene)
-      @answered ||= []
-      waiting = MGQ_MpBattlesSync.guests_in - @answered
+      waiting = Array(phase("unanswered"))
       unless waiting.empty?
         MGQ_MpBattlesSync.log("waiting for the commands of #{waiting.map { |seat| MGQ_MpBattlesSync.who(seat) }.join(', ')}")
       end
@@ -862,7 +824,7 @@ module MGQ_MpBattlesSync
             MGQ_MpBattlesSync.log("#{MGQ_MpBattlesSync.who(seat)} left, their characters do nothing this turn" +
                                   (commands ? ", the commands they sent before are left out" : ""))
           end
-          @answered << seat
+          phase("answer", "seat" => seat)
           waiting.delete(seat)
         end
         waiting.empty? ? true : nil
@@ -894,7 +856,7 @@ module MGQ_MpBattlesSync
       MGQ_MpBattlesSync.log("commands of seats #{seats.join(', ')} lost their target to a swap, choosing again: #{asked.empty? ? 'nobody' : asked.join(', ')}")
       return host_guests_commands(scene) if asked.empty?
 
-      @answered -= asked
+      phase("unanswer", "seats" => asked)
       # The guests were told the wait was over as it answered; now they choose again, the host too.
       tell_waiting(asked)
       Recorder.event("choose_again", asked)
@@ -947,7 +909,7 @@ module MGQ_MpBattlesSync
       end_early(scene, ending) if ending
     end
 
-    # Ends the battle before its course did.
+    # Ends the battle before its course did, as the DLL decides.
     #
     # @param scene [Scene_Battle] The battle.
     # @param reason [Symbol] :left when this player left, :won when the enemies fell during the
@@ -955,22 +917,21 @@ module MGQ_MpBattlesSync
     # @return [Boolean] true when the battle goes on, with the computer (see
     #   MGQ_MpBattlesSync.friend_gone) or as the game holds its victory back.
     def self.end_early(scene, reason)
-      MGQ_MpBattlesSync.log("the live battle ends early in turn #{MGQ_MpBattlesSync.turn}: #{END_REASONS.fetch(reason, reason.to_s)}")
-      case reason
-      when :won
-        return win(scene)
-      when :left
-        forfeit(scene)
-      when :forfeit
-        $game_message.add("#{MGQ_MpBattlesSync.player} forfeited.")
-        # On the host's side of a team duel, the host's forfeit is the side's.
-        MGQ_MpBattlesSync.team? && MGQ_MpBattlesSync.same_side? ? BattleManager.process_defeat : BattleManager.process_victory
-      when :broken
-        missed = MGQ_MpBattlesSync.take_missed
-        missed ? Departures.say(missed) : $game_message.add("The live battle broke off.")
-        BattleManager.process_abort
+      # On the host's side of a team duel, the host's forfeit is the side's.
+      verdict = MGQ_Multiplayer::Bridge.call(END_TOPIC, "of" => "early", "reason" => reason.to_s, "side" => MGQ_MpBattlesSync.same_side? ? true : false) || {}
+      MGQ_MpBattlesSync.log("the live battle ends early in turn #{MGQ_MpBattlesSync.turn}: #{verdict['reason'] || reason}")
+      case verdict["process"]
+      when "win" then return win(scene)
+      when "forfeit" then forfeit(scene)
+      when "gone", nil then return MGQ_MpBattlesSync.friend_gone(scene)
       else
-        return MGQ_MpBattlesSync.friend_gone(scene)
+        missed = reason == :broken && MGQ_MpBattlesSync.take_missed
+        if missed
+          Departures.say(missed)
+          BattleManager.process_abort
+        else
+          MGQ_MpBattlesSync.end_with(verdict)
+        end
       end
       false
     end

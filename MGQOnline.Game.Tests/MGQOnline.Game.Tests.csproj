@@ -50,6 +50,7 @@
     <None Include="..\fixtures\gather\*.json" LinkBase="fixtures\gather" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\duel\*.json" LinkBase="fixtures\duel" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\scene\*.json" LinkBase="fixtures\scene" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\live\*.json" LinkBase="fixtures\live" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\pages\*.json" LinkBase="fixtures\pages" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\freeze\*.json" LinkBase="fixtures\freeze" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
