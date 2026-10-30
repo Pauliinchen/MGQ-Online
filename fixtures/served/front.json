@@ -1,0 +1,296 @@
+{
+  "source": "e2a51fe5",
+  "battle": "bf3q2k9x",
+  "forward": [
+    {
+      "seat": 4,
+      "states": [
+        [
+          4,
+          [
+            [
+              "id",
+              "id-joiner"
+            ],
+            [
+              "name",
+              "Joiner\tTab"
+            ]
+          ]
+        ],
+        [
+          2,
+          [
+            [
+              "id",
+              "id-friend"
+            ],
+            [
+              "name",
+              "Friend"
+            ]
+          ]
+        ]
+      ],
+      "fields": [
+        [
+          "coop",
+          "hot"
+        ],
+        [
+          "bid",
+          "bf3q2k9x"
+        ],
+        [
+          "troop",
+          "5"
+        ],
+        [
+          "enemies",
+          "31:320:300:0"
+        ],
+        [
+          "seats",
+          "2"
+        ],
+        [
+          "map",
+          "5"
+        ]
+      ],
+      "sent": [
+        [
+          250,
+          "battle=front_in\nbid=bf3q2k9x\n\ni4\t[\t[\ti4\t[\t[\tsid\tsid-joiner\t]\t[\tsname\tsJoiner\\tTab\t]\t]\t]\t[\ti2\t[\t[\tsid\tsid-friend\t]\t[\tsname\tsFriend\t]\t]\t]\t]\t[\t[\tscoop\tshot\t]\t[\tsbid\tsbf3q2k9x\t]\t[\tstroop\ts5\t]\t[\tsenemies\ts31:320:300:0\t]\t[\tsseats\ts2\t]\t[\tsmap\ts5\t]\t]"
+        ]
+      ]
+    },
+    {
+      "seat": 4,
+      "states": [
+        [
+          4,
+          [
+            [
+              "id",
+              "id-joiner"
+            ],
+            [
+              "name",
+              "Joiner\tTab"
+            ]
+          ]
+        ],
+        [
+          2,
+          [
+            [
+              "id",
+              "id-friend"
+            ],
+            [
+              "name",
+              "Friend"
+            ]
+          ]
+        ]
+      ],
+      "fields": [
+        [
+          "coop",
+          "pick"
+        ],
+        [
+          "bid",
+          "bf3q2k9x"
+        ],
+        [
+          "seats",
+          "2,4,9,2"
+        ],
+        [
+          "note",
+          "line\nbreak"
+        ]
+      ],
+      "sent": [
+        [
+          250,
+          "battle=front_in\nbid=bf3q2k9x\n\ni4\t[\t[\ti4\t[\t[\tsid\tsid-joiner\t]\t[\tsname\tsJoiner\\tTab\t]\t]\t]\t[\ti2\t[\t[\tsid\tsid-friend\t]\t[\tsname\tsFriend\t]\t]\t]\t]\t[\t[\tscoop\tspick\t]\t[\tsbid\tsbf3q2k9x\t]\t[\tsseats\ts2,4,9,2\t]\t[\tsnote\tsline\\nbreak\t]\t]"
+        ]
+      ]
+    },
+    {
+      "seat": 7,
+      "states": [
+        [
+          7,
+          [
+            [
+              "name",
+              "No Id"
+            ]
+          ]
+        ]
+      ],
+      "fields": [
+        [
+          "coop",
+          "off"
+        ],
+        [
+          "bid",
+          "bf3q2k9x"
+        ]
+      ],
+      "sent": [
+        [
+          250,
+          "battle=front_in\nbid=bf3q2k9x\n\ni7\t[\t[\ti7\t[\t[\tsname\tsNo Id\t]\t]\t]\t]\t[\t[\tscoop\tsoff\t]\t[\tsbid\tsbf3q2k9x\t]\t]"
+        ]
+      ]
+    }
+  ],
+  "left": {
+    "seat": 4,
+    "sent": [
+      [
+        250,
+        "battle=front_left\nbid=bf3q2k9x\n\ni4"
+      ]
+    ]
+  },
+  "front_out": [
+    {
+      "body": "i4\tsmap_coop=hot_ok\\nbid=bf3q2k9x\\nmmap=5\\n\\n",
+      "world": [
+        [
+          4,
+          "map_coop=hot_ok\nbid=bf3q2k9x\nmmap=5\n\n"
+        ]
+      ]
+    },
+    {
+      "body": "i-1\tscoop=invite\\nbid=bf3q2k9x\\n\\n",
+      "world": [
+        [
+          -1,
+          "coop=invite\nbid=bf3q2k9x\n\n"
+        ]
+      ]
+    },
+    {
+      "body": "i4\tschat=hello\\n\\n",
+      "world": [
+
+      ]
+    },
+    {
+      "body": "s4\tscoop=invite\\n\\n",
+      "world": [
+
+      ]
+    },
+    {
+      "body": "not\ta [line",
+      "world": [
+
+      ]
+    }
+  ],
+  "fields_before": {
+    "rb": "bf3q2k9x",
+    "rbh": "0",
+    "rbn": 0
+  },
+  "front_state": [
+    {
+      "body": "[\t[\tsrbn\ts2\t]\t[\tsother\tsx\t]\t]",
+      "fields": {
+        "rb": "bf3q2k9x",
+        "rbh": "0",
+        "rbn": "2"
+      }
+    },
+    {
+      "body": "[\t[\tsrbn\ts3\t]\t]",
+      "fields": {
+        "rb": "bf3q2k9x",
+        "rbh": "0",
+        "rbn": "3"
+      }
+    },
+    {
+      "body": "[\t]",
+      "fields": {
+        "rb": "bf3q2k9x",
+        "rbh": "0"
+      }
+    }
+  ],
+  "fronts": [
+    {
+      "message": {
+        "coop": "hot",
+        "bid": "bf3q2k9x"
+      },
+      "starter": true,
+      "open": true,
+      "fronts": true
+    },
+    {
+      "message": {
+        "coop": "pick",
+        "bid": "bf3q2k9x"
+      },
+      "starter": true,
+      "open": true,
+      "fronts": true
+    },
+    {
+      "message": {
+        "coop": "off",
+        "bid": "bf3q2k9x"
+      },
+      "starter": true,
+      "open": true,
+      "fronts": true
+    },
+    {
+      "message": {
+        "coop": "decline",
+        "bid": "bf3q2k9x"
+      },
+      "starter": true,
+      "open": true,
+      "fronts": false
+    },
+    {
+      "message": {
+        "coop": "hot",
+        "bid": "other"
+      },
+      "starter": true,
+      "open": true,
+      "fronts": false
+    },
+    {
+      "message": {
+        "coop": "hot",
+        "bid": "bf3q2k9x"
+      },
+      "starter": true,
+      "open": false,
+      "fronts": false
+    },
+    {
+      "message": {
+        "coop": "hot",
+        "bid": "bf3q2k9x"
+      },
+      "starter": false,
+      "open": true,
+      "fronts": false
+    }
+  ]
+}

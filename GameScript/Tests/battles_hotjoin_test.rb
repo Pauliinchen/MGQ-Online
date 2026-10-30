@@ -2,7 +2,8 @@
 #  battles_hotjoin_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Read the players taken in from the joins stand-in
+#      Paulinchen  2026-10-30: Checked that the battle server places joining enemies by the widths of the troop its setup carried
+#                            - Read the players taken in from the joins stand-in
 #                            - Found the running battle an encounter asks through the asking stand-in
 #                            - Handed invites over through the matchmaking's routes
 #                            - Placed enemies through the rules in C#, whose troop limit the stand-in names
@@ -457,6 +458,10 @@ $game_troop.members.push(Game_Enemy.new(1, 61))
 $game_troop.members[1].screen_x = 320
 check("and leaves room beside it", hotjoin.place_anew([[50, 0, 300, 0]], "own7"), [[50, 480, 300, 0]])
 $game_troop.members.pop
+hotjoin.keep_widths("own7", "31:400")
+check("the battle server places them by the widths of the troop its served battle's starter measured",
+      [hotjoin.place_anew([[50, 0, 300, 0]], "own7"), hotjoin.place_anew([[50, 0, 300, 0]], "own8")], [[[50, 560, 300, 0]], [[50, 480, 300, 0]]])
+hotjoin.keep_widths("none", "")
 $sent.clear
 coop.take(latecomer, request.merge("enemies" => Array.new(7) { "50:320:300:0" }.join(";"), "seats" => ""))
 check("an encounter with more enemies than the troop holds joins with those that fit",

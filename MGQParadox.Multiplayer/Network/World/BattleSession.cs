@@ -2,6 +2,7 @@
 //  BattleSession.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Kept the serve's time-out, the refusals that last the session, the channel's open time-out and the starter's front in the world room
 //      Paulinchen  2026-10-15: Created
 //
 //----------------------------------------------------------------
@@ -11,10 +12,12 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using MGQOnline.Game.Battles.Wire;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
 
@@ -68,6 +71,21 @@ internal sealed partial class BattleSession
     public const string UnreachableCode = "unreachable";
 
     /// <summary>
+    /// The code of a serve the relay did not answer within <see cref="ServeTimeout"/>.
+    /// </summary>
+    public const string TimeoutCode = "timeout";
+
+    /// <summary>
+    /// The code of a channel that did not open within <see cref="OpenTimeout"/>.
+    /// </summary>
+    public const string OpenTimeoutCode = "open_timeout";
+
+    /// <summary>
+    /// The header of <see cref="Describe"/> that names the refusal that ended every later serve of this game session.
+    /// </summary>
+    public const string LastingHeader = "lasting";
+
+    /// <summary>
     /// The most players a battle may have, as BATTLE_LIMITS in Relay/core/battles.js says.
     /// </summary>
     public const int MaxPlayers = 16;
@@ -108,6 +126,50 @@ internal sealed partial class BattleSession
     private const int MaxInbox = 10_000;
 
     /// <summary>
+    /// The battle channel's message the starter passes a request to join on in.
+    /// </summary>
+    private const string FrontIn = "front_in";
+
+    /// <summary>
+    /// The battle channel's message the server sends the world's room a message in, which the starter passes on.
+    /// </summary>
+    private const string FrontOut = "front_out";
+
+    /// <summary>
+    /// The battle channel's message the server tells the fields of its state in that the world's players read to join it.
+    /// </summary>
+    private const string FrontState = "front_state";
+
+    /// <summary>
+    /// The battle channel's message the starter tells the server a player left the world in.
+    /// </summary>
+    private const string FrontLeft = "front_left";
+
+    /// <summary>
+    /// The relay's refusals that end every later serve of this game session: it has no battle
+    /// server, serves no battles of this mod's version, its server's MGQ Online or game data differ
+    /// from this game's, or its server lacks its core library. Others, such as a busy server, end
+    /// only that serve.
+    /// </summary>
+    private static readonly HashSet<string> LastingCodes = new(StringComparer.Ordinal) { "no_server", "update", "unsupported", "scripts", "data", "core" };
+
+    /// <summary>
+    /// The co-op messages the starter of a served battle passes on to the server: other players'
+    /// requests to join it with an encounter (hot) or by choice (pick), and their taking one back (off).
+    /// </summary>
+    private static readonly HashSet<string> FrontKinds = new(StringComparer.Ordinal) { "hot", "off", "pick" };
+
+    /// <summary>
+    /// The fields of the server's state the starter tells as its own.
+    /// </summary>
+    private static readonly HashSet<string> FrontFields = new(StringComparer.Ordinal) { "rbn" };
+
+    /// <summary>
+    /// What the front's battle lines are read against: plain values alone.
+    /// </summary>
+    private static readonly WireGame PlainLines = new([], [], new Dictionary<WireTable, int>());
+
+    /// <summary>
     /// Guards every field below.
     /// </summary>
     private readonly object _gate = new();
@@ -146,6 +208,36 @@ internal sealed partial class BattleSession
     /// How many oldest entries the full inbox dropped since it last had room.
     /// </summary>
     private int _dropped;
+
+    /// <summary>
+    /// When the current generation started, which its serve and its opening time out from.
+    /// </summary>
+    private DateTime _since;
+
+    /// <summary>
+    /// The refusal that ended every later serve of this game session; <see langword="null"/> for none.
+    /// </summary>
+    private string? _lasting;
+
+    /// <summary>
+    /// The battle the current generation serves or opens; <see langword="null"/> for none.
+    /// </summary>
+    private string? _battle;
+
+    /// <summary>
+    /// The battle the relay served for this game, until the game opens its channel; <see langword="null"/> for none.
+    /// </summary>
+    private string? _servedBattle;
+
+    /// <summary>
+    /// Whether this game started the battle whose channel it opened, so it stands in for the server in the world's room.
+    /// </summary>
+    private bool _front;
+
+    /// <summary>
+    /// The fields of the server's state the starter tells as its own; <see langword="null"/> before the server told any.
+    /// </summary>
+    private Dictionary<string, string>? _frontState;
 
     /// <summary>
     /// The game's served battle, which the game script uses.
@@ -192,6 +284,26 @@ internal sealed partial class BattleSession
     /// could not be reached; past the last the channel ends as <see cref="LostCode"/>.
     /// </summary>
     public TimeSpan[] RetryDelays { get; init; } = [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)];
+
+    /// <summary>
+    /// How long the relay may take to answer a serve before the starter hosts the battle itself.
+    /// </summary>
+    public TimeSpan ServeTimeout { get; init; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// How long the channel may take to open before the battle counts as gone.
+    /// </summary>
+    public TimeSpan OpenTimeout { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Tells the time, which the serve and the opening time out by; tests move their own.
+    /// </summary>
+    public Func<DateTime> Now { get; init; } = () => DateTime.UtcNow;
+
+    /// <summary>
+    /// Sends a message to the world's room, to a seat or to every other game with -1; tests keep their own.
+    /// </summary>
+    public Func<int, string, bool> WorldSend { get; init; } = (seat, text) => WorldSession.Current.Send(seat, text);
 
     /// <summary>
     /// The states of a served battle as the game script reads them.
@@ -261,8 +373,15 @@ internal sealed partial class BattleSession
 
         lock (_gate)
         {
+            if (_lasting is { } lasting)
+            {
+                Log.Write($"battle {battle} not served: the relay refused battles for this session ({lasting})");
+                return false;
+            }
+
             previous = Restart(BattleState.Serving);
             generation = _generation;
+            _battle = battle;
         }
 
         previous?.Stop();
@@ -298,9 +417,12 @@ internal sealed partial class BattleSession
 
         lock (_gate)
         {
+            var front = battle == _servedBattle;
             previous = Restart(BattleState.Opening);
             generation = _generation;
             stop = _stop.Token;
+            _battle = battle;
+            _front = front;
         }
 
         previous?.Stop();
@@ -338,10 +460,21 @@ internal sealed partial class BattleSession
     }
 
     /// <summary>
-    /// Looks at the oldest inbox entry, without taking it.
+    /// Looks at the oldest inbox entry, without taking it; a channel that did not open in time ends first.
     /// </summary>
     /// <returns>The entry: <c>kind</c> (seat, message or closed), <c>seat</c>, <c>code</c> for closed, and a message's text; or <see langword="null"/> while none waits.</returns>
-    public string? PeekEntry() => _inbox.TryPeek(out var entry) ? entry : null;
+    public string? PeekEntry()
+    {
+        Connection? stale;
+
+        lock (_gate)
+        {
+            stale = TimeOut();
+        }
+
+        stale?.Stop();
+        return _inbox.TryPeek(out var entry) ? entry : null;
+    }
 
     /// <summary>
     /// Takes the oldest inbox entry, if it is still the one <see cref="PeekEntry"/> handed out, since
@@ -366,14 +499,145 @@ internal sealed partial class BattleSession
     }
 
     /// <summary>
-    /// Describes the battle for the game script.
+    /// Describes the battle for the game script; a serve or an opening that took too long ends first.
     /// </summary>
-    /// <returns><c>state</c> (idle, serving, served, refused, opening, open or closed), and <c>code</c> for a refusal or a close.</returns>
+    /// <returns><c>state</c> (idle, serving, served, refused, opening, open or closed), <c>code</c> for a refusal or a close, and <c>lasting</c> once a refusal ended every later serve.</returns>
     public string Describe()
+    {
+        Connection? stale;
+        string described;
+
+        lock (_gate)
+        {
+            stale = TimeOut();
+            described = new Message([new(StateHeader, _state.ToString().ToLowerInvariant()), new(CodeHeader, _code), new(LastingHeader, _lasting)]).Encode();
+        }
+
+        stale?.Stop();
+        return described;
+    }
+
+    /// <summary>
+    /// Tells whether the starter passes a co-op message on to the server: a request to join its
+    /// served battle while the channel is open.
+    /// </summary>
+    /// <param name="coop">The message's co-op kind.</param>
+    /// <param name="battle">The battle it names.</param>
+    /// <returns>Whether it does.</returns>
+    public bool Fronts(string coop, string battle)
     {
         lock (_gate)
         {
-            return new Message([new(StateHeader, _state.ToString().ToLowerInvariant()), new(CodeHeader, _code)]).Encode();
+            return _front && _state == BattleState.Open && FrontKinds.Contains(coop) && battle == _battle;
+        }
+    }
+
+    /// <summary>
+    /// As starter, passes a request to join the served battle on to the server, with the states of
+    /// its players as the world's room told them.
+    /// </summary>
+    /// <param name="seat">The asking player's world seat.</param>
+    /// <param name="states">The id and name of the asking player and of those it brings along, by seat.</param>
+    /// <param name="fields">The request's fields.</param>
+    /// <returns>Whether it went out.</returns>
+    public bool Forward(int seat, IReadOnlyList<(long Seat, IReadOnlyList<(string Key, string Value)> State)> states, IReadOnlyList<(string Key, string Value)> fields)
+    {
+        string? battle;
+
+        lock (_gate)
+        {
+            battle = _battle;
+        }
+
+        return battle != null && Send(ServerSeat, FrontInText(battle, seat, states, fields));
+    }
+
+    /// <summary>
+    /// As starter, tells the server a player left the world, whom it may have taken in.
+    /// </summary>
+    /// <param name="seat">The player's world seat.</param>
+    /// <returns>Whether it went out; nothing goes out unless the game is the open battle's front.</returns>
+    public bool Left(int seat)
+    {
+        string? battle;
+
+        lock (_gate)
+        {
+            battle = _front && _state == BattleState.Open ? _battle : null;
+        }
+
+        return battle != null && Send(ServerSeat, FrontLeftText(battle, seat));
+    }
+
+    /// <summary>
+    /// Hands out the fields of the server's state the starter tells as its own.
+    /// </summary>
+    /// <returns>The fields; <see langword="null"/> before the server told any.</returns>
+    public IReadOnlyDictionary<string, string>? FrontStateNow()
+    {
+        lock (_gate)
+        {
+            return _frontState is { } kept ? new Dictionary<string, string>(kept, StringComparer.Ordinal) : null;
+        }
+    }
+
+    /// <summary>
+    /// Writes the request to join a served battle the starter passes on to the server.
+    /// </summary>
+    /// <param name="battle">The battle's id.</param>
+    /// <param name="seat">The asking player's world seat.</param>
+    /// <param name="states">The players' states by seat.</param>
+    /// <param name="fields">The request's fields.</param>
+    /// <returns>The message.</returns>
+    internal static string FrontInText(string battle, int seat, IReadOnlyList<(long Seat, IReadOnlyList<(string Key, string Value)> State)> states, IReadOnlyList<(string Key, string Value)> fields) =>
+        FrontText(FrontIn, battle, WireWriter.Line(seat, new WireList(states.Select(state => (WireValue)new WireList([state.Seat, Pairs(state.State)])).ToList()), Pairs(fields)));
+
+    /// <summary>
+    /// Writes the word that a player left the world the starter tells the server.
+    /// </summary>
+    /// <param name="battle">The battle's id.</param>
+    /// <param name="seat">The player's world seat.</param>
+    /// <returns>The message.</returns>
+    internal static string FrontLeftText(string battle, int seat) => FrontText(FrontLeft, battle, WireWriter.Line(seat));
+
+    /// <summary>
+    /// Takes a message of the server that is the front's: a message for the world's room, which
+    /// goes there at once when it is a co-op message, or the fields of the server's state.
+    /// </summary>
+    /// <param name="sender">The seat it came from.</param>
+    /// <param name="text">The message.</param>
+    /// <returns>Whether it was the front's; others go to the game script.</returns>
+    internal bool TakeFront(int sender, string text)
+    {
+        string? battle;
+
+        lock (_gate)
+        {
+            battle = _front ? _battle : null;
+        }
+
+        if (battle == null || sender != ServerSeat)
+        {
+            return false;
+        }
+
+        var (fields, body) = FieldsOf(text);
+
+        if (!fields.TryGetValue("bid", out var bid) || bid != battle)
+        {
+            return false;
+        }
+
+        switch (fields.GetValueOrDefault("battle"))
+        {
+            case FrontOut:
+                PassFrontOut(body);
+                return true;
+            case FrontState:
+                TakeFrontState(body);
+                return true;
+            default:
+                return false;
         }
     }
 
@@ -460,6 +724,12 @@ internal sealed partial class BattleSession
 
             _state = refusal == null ? BattleState.Served : BattleState.Refused;
             _code = refusal;
+            _servedBattle = refusal == null ? battle : null;
+
+            if (refusal != null && LastingCodes.Contains(refusal))
+            {
+                _lasting = refusal;
+            }
         }
 
         Log.Write(refusal == null ? $"the battle server took battle {battle}" : $"battle {battle} not served: {refusal}");
@@ -585,7 +855,12 @@ internal sealed partial class BattleSession
             {
                 if (message.Data.Length > 0)
                 {
-                    Enqueue(generation, Entry(MessageKind, message.Data[0], null, Encoding.UTF8.GetString(message.Data, 1, message.Data.Length - 1)));
+                    var sent = Encoding.UTF8.GetString(message.Data, 1, message.Data.Length - 1);
+
+                    if (IsCurrent(generation) && !TakeFront(message.Data[0], sent))
+                    {
+                        Enqueue(generation, Entry(MessageKind, message.Data[0], null, sent));
+                    }
                 }
 
                 continue;
@@ -707,10 +982,137 @@ internal sealed partial class BattleSession
         _code = null;
         _inbox.Clear();
         _dropped = 0;
+        _since = Now();
+        _battle = null;
+        _servedBattle = null;
+        _front = false;
+        _frontState = null;
         var previous = _connection;
         _connection = null;
         return previous;
     }
+
+    /// <summary>
+    /// Ends a serve the relay did not answer within <see cref="ServeTimeout"/>, which the starter
+    /// then hosts, and a channel that did not open within <see cref="OpenTimeout"/>, with a closed
+    /// entry. Called with the gate held.
+    /// </summary>
+    /// <returns>The ended channel's connection, which the caller stops outside the gate.</returns>
+    private Connection? TimeOut()
+    {
+        if (_state == BattleState.Serving && Now() - _since >= ServeTimeout)
+        {
+            // A later answer of the relay belongs to an earlier generation and changes nothing.
+            _generation++;
+            _state = BattleState.Refused;
+            _code = TimeoutCode;
+            Log.Write($"battle {_battle} not served: the relay did not answer within {ServeTimeout.TotalSeconds.ToString(CultureInfo.InvariantCulture)} s");
+            return null;
+        }
+
+        if (_state != BattleState.Opening || Now() - _since < OpenTimeout)
+        {
+            return null;
+        }
+
+        var battle = _battle;
+        var previous = Restart(BattleState.Closed);
+        _code = OpenTimeoutCode;
+        _inbox.Enqueue(Entry(ClosedKind, 0, OpenTimeoutCode, string.Empty));
+        Log.Write($"the battle channel of battle {battle} did not open within {OpenTimeout.TotalSeconds.ToString(CultureInfo.InvariantCulture)} s");
+        return previous;
+    }
+
+    /// <summary>
+    /// Passes a message of the server for the world's room on, a co-op message alone.
+    /// </summary>
+    /// <param name="body">The seat it goes to and the message, as a battle line.</param>
+    private void PassFrontOut(string body)
+    {
+        var values = WireReader.Parse(body, PlainLines);
+        var text = values is { Count: > 1 } && values[1] is WireString { Text: var told } ? told : string.Empty;
+        var (fields, _) = FieldsOf(text);
+        var coop = fields.GetValueOrDefault("coop") ?? fields.GetValueOrDefault("map_coop");
+
+        if (values is not { Count: > 0 } || values[0] is not WireInteger { Value: var seat } || seat < int.MinValue || seat > int.MaxValue || coop == null)
+        {
+            Log.Write("served battle: dropped a message of the battle server for the world's room: it is no co-op message");
+            return;
+        }
+
+        WorldSend((int)seat, text);
+        Log.Write($"served battle: passed the battle server's {coop} on to {(seat < 0 ? "everyone" : $"seat {seat}")}");
+    }
+
+    /// <summary>
+    /// Keeps the fields of the server's state the starter tells as its own.
+    /// </summary>
+    /// <param name="body">The fields as pairs, as a battle line.</param>
+    private void TakeFrontState(string body)
+    {
+        if (WireReader.Parse(body, PlainLines) is not { Count: > 0 } values)
+        {
+            Log.Write("served battle: taking front_state failed: it is no battle line");
+            return;
+        }
+
+        var kept = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var pair in values[0] is WireList { Items: var items } ? items : [])
+        {
+            if (pair is WireList { Items: [WireString { Text: var key }, WireString { Text: var value }] } && FrontFields.Contains(key))
+            {
+                kept[key] = value;
+            }
+        }
+
+        lock (_gate)
+        {
+            _frontState = kept;
+        }
+    }
+
+    /// <summary>
+    /// Reads a message's fields as the game script does: <c>key=value</c> lines up to an empty line,
+    /// a later key taking the place of an earlier one, then the rest.
+    /// </summary>
+    /// <param name="text">The message.</param>
+    /// <returns>The fields and the rest.</returns>
+    private static (Dictionary<string, string> Fields, string Body) FieldsOf(string text)
+    {
+        var end = text.IndexOf("\n\n", StringComparison.Ordinal);
+        var head = end < 0 ? text : text[..end];
+        var fields = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var line in head.Split('\n'))
+        {
+            var separator = line.IndexOf('=');
+
+            if (separator >= 0)
+            {
+                fields[line[..separator]] = line[(separator + 1)..];
+            }
+        }
+
+        return (fields, end < 0 ? string.Empty : text[(end + 2)..]);
+    }
+
+    /// <summary>
+    /// Writes a message of the front: its kind and the battle, then its battle line.
+    /// </summary>
+    /// <param name="kind">The message's kind.</param>
+    /// <param name="battle">The battle's id.</param>
+    /// <param name="line">The battle line.</param>
+    /// <returns>The message.</returns>
+    private static string FrontText(string kind, string battle, string line) => $"battle={kind}\nbid={battle}\n\n{line}";
+
+    /// <summary>
+    /// Writes texts as the battle line's pairs.
+    /// </summary>
+    /// <param name="pairs">The keys and values.</param>
+    /// <returns>A list of two-text lists.</returns>
+    private static WireList Pairs(IReadOnlyList<(string Key, string Value)> pairs) =>
+        new(pairs.Select(pair => (WireValue)new WireList([pair.Key, pair.Value])).ToList());
 
     /// <summary>
     /// Tells whether a generation still runs.

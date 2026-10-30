@@ -2,6 +2,7 @@
 #  server.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Read a co-op battle's mods without the core library before its child's sandbox
 #      Paulinchen  2026-10-23: Refused MGQ Online's battles without the core library, telling the relay why
 #                            - Derived the story mapping's index for the relay
 #                            - Loaded MGQ Online's core library in each battle child before its sandbox and shook hands after it
@@ -338,8 +339,9 @@ module BattleServer
       request = line && JSON.parse(line)
       return nil unless @served && request.is_a?(Hash) && request["op"] == "serve"
 
-      setup = MGQ_MpBattlesServed.read_setup(request["setup"].to_s.unpack1("m").force_encoding("UTF-8"))
-      setup && fetch_mods(setup[:mods])
+      # The core library opens only after the sandbox, so the setup's mods are read without it.
+      mods = MGQ_MpBattlesServed.mods_in(request["setup"].to_s.unpack1("m").force_encoding("UTF-8"))
+      mods && fetch_mods(mods)
     rescue JSON::ParserError
       nil
     end

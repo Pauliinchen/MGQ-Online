@@ -2,14 +2,19 @@
 //  BattleSessionTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Cut the seat lists to one of each rule
+//      Paulinchen  2026-10-30: Checked the serve's time-out, the refusals that last the session, the open time-out and the starter's front against the golden cases
+//                            - Cut the seat lists to one of each rule
 //      Paulinchen  2026-10-15: Created
 //
 //----------------------------------------------------------------
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Sockets;
+using System.Text.Json;
 using System.Threading;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
@@ -20,8 +25,9 @@ namespace MGQParadox.Multiplayer.Tests.Network.World;
 
 /// <summary>
 /// Covers co-op battles the relay's battle server hosts, at a relay inside this process: starting
-/// one for players seated in the world room, the relay's refusals, and the battle's channel with
-/// its seat, messages both ways, end and breaks.
+/// one for players seated in the world room, the relay's refusals and the time-outs, the battle's
+/// channel with its seat, messages both ways, end and breaks, and the starter's front in the
+/// world's room, held against the golden cases of fixtures/served/front.json.
 /// </summary>
 public sealed class BattleSessionTests
 {
@@ -287,6 +293,132 @@ public sealed class BattleSessionTests
     }
 
     /// <summary>
+    /// Asserts that a refusal that lasts the session refuses every later serve at once, and a
+    /// passing one does not.
+    /// </summary>
+    [Fact]
+    public void Serve_LastingRefusal_RefusesLaterServes()
+    {
+        using var world = new TwoPlayers();
+        world.Relay.BattleRefusal = (503, "busy");
+        var battle = world.NewBattle(CreatorKey);
+        Assert.True(battle.Serve(world.Id, Battle, world.Seats, Setup));
+        AwaitState(battle, "refused");
+        Assert.True(battle.Serve(world.Id, Battle, world.Seats, Setup));
+        AwaitState(battle, "refused");
+
+        world.Relay.BattleRefusal = null;
+        world.Relay.HasBattleServer = false;
+        Assert.True(battle.Serve(world.Id, Battle, world.Seats, Setup));
+        AwaitState(battle, "refused");
+
+        Assert.Equal("no_server", Message.Decode(battle.Describe())[BattleSession.LastingHeader]);
+        Assert.False(battle.Serve(world.Id, Battle, world.Seats, Setup));
+    }
+
+    /// <summary>
+    /// Asserts that a serve the relay does not answer in time is refused as timed out, and that a
+    /// channel that does not open in time ends with a closed entry.
+    /// </summary>
+    [Fact]
+    public void ServeAndOpen_RelaySilent_TimeOut()
+    {
+        using var world = new TwoPlayers();
+        using var silent = new SilentRelay();
+        var now = DateTime.UtcNow;
+        var battle = world.NewBattle(CreatorKey, silent.Address, () => now);
+
+        Assert.True(battle.Serve(world.Id, Battle, world.Seats, Setup));
+        now += TimeSpan.FromSeconds(4);
+        Assert.Equal(("serving", string.Empty), StateOf(battle));
+        now += TimeSpan.FromSeconds(1);
+        Assert.Equal(("refused", BattleSession.TimeoutCode), StateOf(battle));
+
+        Assert.True(battle.Open(world.Id, Battle));
+        now += TimeSpan.FromSeconds(10);
+        var closed = Message.Decode(battle.PeekEntry()!);
+
+        Assert.Equal((BattleSession.ClosedKind, BattleSession.OpenTimeoutCode), (closed["kind"], closed["code"]));
+        Assert.Equal(("closed", BattleSession.OpenTimeoutCode), StateOf(battle));
+    }
+
+    /// <summary>
+    /// Asserts that the starter of a served battle stands in for the server in the world's room as
+    /// the script did: the requests it passes on and the word of a player who left, the server's
+    /// co-op messages it passes to the world's room at once, the server's state it keeps, and the
+    /// messages it passes on.
+    /// </summary>
+    [Fact]
+    public void Front_StandsInForTheServerAsTheScriptDid()
+    {
+        JsonElement golden = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "fixtures", "served", "front.json"))).RootElement;
+        string id = golden.GetProperty("battle").GetString()!;
+        foreach (JsonElement forward in golden.GetProperty("forward").EnumerateArray())
+        {
+            var states = forward.GetProperty("states").EnumerateArray()
+                .Select(state => (state[0].GetInt64(), (IReadOnlyList<(string, string)>)PairsOf(state[1]))).ToList();
+            Assert.Equal(forward.GetProperty("sent")[0][1].GetString(), BattleSession.FrontInText(id, forward.GetProperty("seat").GetInt32(), states, PairsOf(forward.GetProperty("fields"))));
+        }
+
+        JsonElement left = golden.GetProperty("left");
+        Assert.Equal(left.GetProperty("sent")[0][1].GetString(), BattleSession.FrontLeftText(id, left.GetProperty("seat").GetInt32()));
+
+        using var world = new TwoPlayers();
+        var passed = new List<(int, string)>();
+        var starter = world.NewBattle(CreatorKey, worldSend: (seat, text) =>
+        {
+            lock (passed)
+            {
+                passed.Add((seat, text));
+            }
+
+            return true;
+        });
+        Assert.False(starter.Fronts("hot", Battle));
+        Assert.True(starter.Serve(world.Id, Battle, world.Seats, Setup));
+        AwaitState(starter, "served");
+        Assert.True(starter.Open(world.Id, Battle));
+        AwaitEntry(starter, BattleSession.SeatKind);
+
+        foreach (JsonElement fronts in golden.GetProperty("fronts").EnumerateArray().Where(each => each.GetProperty("starter").GetBoolean() && each.GetProperty("open").GetBoolean()))
+        {
+            string bid = fronts.GetProperty("message").GetProperty("bid").GetString() == id ? Battle : "other";
+            Assert.Equal(fronts.GetProperty("fronts").GetBoolean(), starter.Fronts(fronts.GetProperty("message").GetProperty("coop").GetString()!, bid));
+        }
+
+        Assert.Null(starter.FrontStateNow());
+        foreach (JsonElement output in golden.GetProperty("front_out").EnumerateArray())
+        {
+            lock (passed)
+            {
+                passed.Clear();
+            }
+
+            world.Relay.SayToBattle(world.Id, Battle, -1, $"battle=front_out\nbid={Battle}\n\n{output.GetProperty("body").GetString()}");
+            world.Relay.SayToBattle(world.Id, Battle, -1, "battle=marker");
+            AwaitEntry(starter, BattleSession.MessageKind);
+            lock (passed)
+            {
+                Assert.Equal(output.GetProperty("world").EnumerateArray().Select(sent => (sent[0].GetInt32(), sent[1].GetString()!)), passed);
+            }
+        }
+
+        foreach (JsonElement state in golden.GetProperty("front_state").EnumerateArray())
+        {
+            world.Relay.SayToBattle(world.Id, Battle, -1, $"battle=front_state\nbid={Battle}\n\n{state.GetProperty("body").GetString()}");
+            world.Relay.SayToBattle(world.Id, Battle, -1, "battle=marker");
+            AwaitEntry(starter, BattleSession.MessageKind);
+            var expected = state.GetProperty("fields").EnumerateObject().Where(field => field.Name is not ("rb" or "rbh")).Select(field => $"{field.Name}={field.Value.GetString()}");
+            Assert.Equal(expected, starter.FrontStateNow()!.Select(field => $"{field.Key}={field.Value}"));
+        }
+
+        world.Relay.SayToBattle(world.Id, Battle, -1, $"battle=front_out\nbid=other\n\n{golden.GetProperty("front_out")[0].GetProperty("body").GetString()}");
+        Assert.Equal("battle=front_out\nbid=other", AwaitEntry(starter, BattleSession.MessageKind).Team.Split("\n\n")[0]);
+        Assert.True(starter.Left(4));
+        WaitUntil(() => world.Relay.TakeBattleMessages(world.Id, Battle).Any(sent => sent.Text == BattleSession.FrontLeftText(Battle, 4)), "the word that a player left");
+    }
+
+    /// <summary>
     /// Reads a battle's state.
     /// </summary>
     /// <param name="battle">The battle.</param>
@@ -362,6 +494,41 @@ public sealed class BattleSessionTests
     }
 
     /// <summary>
+    /// Reads [key, value] pairs of a golden case.
+    /// </summary>
+    /// <param name="pairs">The pairs.</param>
+    /// <returns>The keys and values.</returns>
+    private static List<(string Key, string Value)> PairsOf(JsonElement pairs) =>
+        pairs.EnumerateArray().Select(pair => (pair[0].GetString()!, pair[1].GetString()!)).ToList();
+
+    /// <summary>
+    /// A relay that takes connections and never answers.
+    /// </summary>
+    private sealed class SilentRelay : IDisposable
+    {
+        /// <summary>
+        /// The listener whose connections wait unanswered.
+        /// </summary>
+        private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+
+        /// <summary>
+        /// Starts listening.
+        /// </summary>
+        public SilentRelay()
+        {
+            _listener.Start();
+        }
+
+        /// <summary>
+        /// Gets the relay's address.
+        /// </summary>
+        public Uri Address => new($"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}/");
+
+        /// <inheritdoc />
+        public void Dispose() => _listener.Stop();
+    }
+
+    /// <summary>
     /// A world at a test relay with its creator and another player seated in its room.
     /// </summary>
     private sealed class TwoPlayers : IDisposable
@@ -418,13 +585,34 @@ public sealed class BattleSessionTests
         /// </summary>
         /// <param name="key">The player's key.</param>
         /// <returns>The battle.</returns>
-        public BattleSession NewBattle(string key) => new()
+        public BattleSession NewBattle(string key) => NewBattle(key, null);
+
+        /// <summary>
+        /// Makes one player's served battle in this world, reaching a relay of the test's, on a
+        /// clock of the test's or passing world messages to the test.
+        /// </summary>
+        /// <param name="key">The player's key.</param>
+        /// <param name="relay">The relay's address, <see langword="null"/> for the test relay.</param>
+        /// <param name="now">The clock, <see langword="null"/> for the computer's.</param>
+        /// <param name="worldSend">Takes the messages to the world's room, <see langword="null"/> to drop them.</param>
+        /// <returns>The battle.</returns>
+        public BattleSession NewBattle(string key, Uri? relay, Func<DateTime>? now = null, Func<int, string, bool>? worldSend = null) => new()
         {
-            RelayAddress = _ => Relay.Address,
+            RelayAddress = _ => relay ?? Relay.Address,
             Playing = () => (key, "Player"),
             WorldOf = id => id == Id ? _code : null,
             RetryDelays = [TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(50)],
+            Now = now ?? (() => DateTime.UtcNow),
+            WorldSend = worldSend ?? ((_, _) => false),
         };
+
+        /// <summary>
+        /// Makes one player's served battle in this world that passes world messages to the test.
+        /// </summary>
+        /// <param name="key">The player's key.</param>
+        /// <param name="worldSend">Takes the messages to the world's room.</param>
+        /// <returns>The battle.</returns>
+        public BattleSession NewBattle(string key, Func<int, string, bool> worldSend) => NewBattle(key, null, null, worldSend);
 
         /// <summary>
         /// Starts the battle for both players, as the creator.

@@ -2,7 +2,8 @@
 //  PoolTopicsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Covered the fights' moments and the battle server's outbox
+//      Paulinchen  2026-10-30: Covered a served fight's export and import
+//                            - Covered the fights' moments and the battle server's outbox
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -116,6 +117,46 @@ public sealed class PoolTopicsTests
         Turn("end", "0:360:900:0:7");
         Assert.Null(_context.Ask(PoolTopics.FightTurn, new RubyHash { { "moment", "phase" }, { "reporter", true }, { "enemies", string.Empty } }));
     }
+
+    /// <summary>
+    /// Asserts that a fight's pools go to the battle server as the starter knows them, with the
+    /// count and the side battle, and that the server takes them; a count that is none takes nothing.
+    /// </summary>
+    [Fact]
+    public void ServedFight_ExportsAndImportsItsPools()
+    {
+        Assert.Null(_context.Ask(PoolTopics.FightExport));
+        _ledger.Enter("w1");
+        _ledger.Hear(new PoolWord("Boss#0", 0.5, 6000, false, string.Empty), PoolSource.Fetched);
+        _ledger.Hear(new PoolWord("Boss#1", 0, 9000, true, "Hero"), PoolSource.Fetched);
+        _context.Ask(PoolTopics.FightOpen, new RubyHash
+        {
+            { "world", "w1" }, { "battle", "b1" }, { "keys", new RubyArray(["Boss#0", "Boss#1", "Boss#2"]) }, { "own", 3 }, { "guest", false }, { "side", true },
+        });
+
+        RubyArray fields = _context.Ask(PoolTopics.FightExport)!.AsArray();
+
+        Assert.Equal("3 1 Boss#0/0.5000000000/6000/0/ Boss#1/0.0000000000/9000/1/Hero", FieldsText(fields));
+
+        var server = new PoolLedger(() => _now);
+        var serverContext = new BridgeContext(2, new QuietLog());
+        PoolTopics.Register(serverContext, new PoolOutbox(server));
+        RubyArray taken = serverContext.Ask(PoolTopics.FightImport, new RubyHash { { "world", string.Empty }, { "fields", fields } })!.AsArray();
+
+        Assert.Equal((3L, true), (taken[0].AsLong(), taken[1].AsBool()));
+        Assert.Equal(["Boss#0 0.5 6000 False", "Boss#1 0 9000 True"], server.Pools().Select(pool => FormattableString.Invariant($"{pool.Key} {pool.Left} {pool.Max} {pool.Defeated}")));
+        Assert.Null(serverContext.Ask(PoolTopics.FightImport, new RubyHash { { "world", string.Empty }, { "fields", new RubyArray([0, 0, new RubyArray()]) } }));
+        Assert.Null(serverContext.Ask(PoolTopics.FightImport, new RubyHash { { "world", string.Empty }, { "fields", RubyNil.Value } }));
+    }
+
+    /// <summary>
+    /// Writes a fight's exported fields as a text.
+    /// </summary>
+    /// <param name="fields">The fields.</param>
+    /// <returns>The count, the side flag and each pool's fields.</returns>
+    private static string FieldsText(RubyArray fields) =>
+        $"{fields[0].AsLong()} {fields[1].AsLong()} " + string.Join(" ", fields[2].AsArray().Select(pool => pool.AsArray())
+            .Select(pool => $"{pool[0].AsText()}/{pool[1].AsText()}/{pool[2].AsLong()}/{pool[3].AsLong()}/{pool[4].AsText()}"));
 
     /// <summary>
     /// Asserts that a push's defeat and reset reach the scripts once each, at the next drain.

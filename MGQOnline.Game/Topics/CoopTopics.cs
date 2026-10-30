@@ -2,7 +2,8 @@
 //  CoopTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Collected the joins of a gathered battle, the roster and the players taken in from the live session
+//      Paulinchen  2026-10-30: Kept the widths of a served battle's troop its setup carries
+//                            - Collected the joins of a gathered battle, the roster and the players taken in from the live session
 //                            - Placed enemies by the widths the players who asked to join measured
 //                            - Answered the battle's level, the roster's lines, the troop's repair and the departures
 //                            - Created
@@ -45,6 +46,13 @@ public static class CoopTopics
     /// [id, width] each in, the text out.
     /// </summary>
     public const string WriteWidths = "coop.write_widths";
+
+    /// <summary>
+    /// Keeps the widths of a battle's troop for its placements, as the battle server takes them from
+    /// a served battle's setup: <c>bid</c> and <c>widths</c> (see <see cref="EnemyWidths"/>) in;
+    /// nothing out.
+    /// </summary>
+    public const string KeepWidths = "coop.keep_widths";
 
     /// <summary>
     /// Reads the enemies a request carries, see <see cref="TroopEntries.Read"/>: the text in;
@@ -172,6 +180,12 @@ public static class CoopTopics
         context.Register(Pending, (_, request) => PendingOf(joins, request.AsHash()));
         var widths = new EnemyWidths();
         context.Register(Place, (_, request) => PlaceOf(request.AsHash(), widths));
+        context.Register(KeepWidths, (_, request) =>
+        {
+            RubyHash kept = request.AsHash();
+            widths.Note(TextOf(kept["bid"]) ?? string.Empty, TextOf(kept["widths"]));
+            return null;
+        });
         context.Register(WriteWidths, (_, request) => EnemyWidths.Write(request.AsArray().Select(pair => (pair.AsArray()[0].AsLong(), pair.AsArray()[1].AsLong()))));
         context.Register(ReadEntries, (_, request) => new RubyArray(TroopEntries.Read(request.IsNil ? null : request.AsText())
             .Select(entry => (RubyValue)new RubyArray { entry.Id, entry.X, entry.Y, entry.Mark })));

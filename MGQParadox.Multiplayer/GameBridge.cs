@@ -2,7 +2,8 @@
 //  GameBridge.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Handed the topics both hosts answer the DLL's way to the raid pools
+//      Paulinchen  2026-10-30: Registered the topics of the served battle's front
+//                            - Handed the topics both hosts answer the DLL's way to the raid pools
 //                            - Handed the topics both hosts answer the raid pools the relay requests fill
 //                            - Stopped registering the topics of turning other mods off, which the Mod Framework's session does
 //                            - Registered the topics of trades
@@ -94,6 +95,7 @@ internal static unsafe class GameBridge
         StoryTopics story = StoryTopics.Register(context);
         CatchupTopics.Register(context, () => story.Catchup);
         JournalTopics.Register(context);
+        ServedTopics.Register(context, BattleSession.Current);
         UiTopics.Register(context, new TypedText());
         context.Register(SnapTopic, (_, request) => Snap(request.AsArray()));
     }

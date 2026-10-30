@@ -2,7 +2,12 @@
 #  battles_served_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Joined a served battle late from the outcome the DLL tells
+#      Paulinchen  2026-10-31: Checked that a String held as bytes crosses to C# as text
+#      Paulinchen  2026-10-30: Checked the widths of the troop's pictures in the setup
+#                            - Stood in for the setup C# writes and reads, handed the facts the script collects
+#                            - Checked that a Float or a Symbol among the facts still writes the setup
+#                            - Stood in for the DLL's serve, channel and front, which keep the time-outs, the lasting refusals and the server's messages for the world
+#                            - Joined a served battle late from the outcome the DLL tells
 #      Paulinchen  2026-10-23: Checked the squad rules a setup carries and their defaults
 #                            - Checked that the server keeps a player who drops from the battle channel until gone
 #                            - Checked a served battle that ends before its roster
@@ -23,12 +28,17 @@ require_relative "battle_support"
 require_relative "rules_support"
 
 # Stands in for the DLL's mp_battle_* exports: the calls are kept in $dll_calls, the battle's state
-# is $dll_state, and the entries waiting on the channel are $dll_entries.
+# is $dll_state, which a serve the relay refuses for the session ($lasting) names from then on, and
+# the entries waiting on the channel are $dll_entries.
 module MGQ_Multiplayer
   def self.available?; true; end
   module Link
     def self.function(name)
-      ->(*args) { $dll_calls << [name, args.map { |arg| arg.is_a?(String) ? arg.chomp("\0") : arg }]; name == "mp_battle_open" ? ($dll_opens ? 1 : 0) : 1 }
+      lambda do |*args|
+        $dll_calls << [name, args.map { |arg| arg.is_a?(String) ? arg.chomp("\0") : arg }]
+        $dll_state = "#{$dll_state}\nlasting=#{$lasting}" if name == "mp_battle_serve" && $lasting
+        name == "mp_battle_open" ? ($dll_opens ? 1 : 0) : 1
+      end
     end
     def self.read(name, _size)
       name == "mp_battle_state" ? $dll_state.to_s : $dll_entries.shift.to_s
@@ -50,6 +60,28 @@ module MGQ_MpWorld
   module GameData; def self.fingerprint; "1:data"; end; end
 end
 open_rules_bridge
+# The DLL's front of a served battle: what the scripts hand it is kept, and it passes on hot
+# requests of the battle $front_battle, sends what it is handed, and tells the server's state
+# $front_state.
+$front_calls = []
+$world_bridge.answer("served.fronts") { |request| $front_calls << ["fronts", request]; request["coop"] == "hot" && request["bid"] == $front_battle }
+$world_bridge.answer("served.forward") { |request| $front_calls << ["forward", request]; true }
+$world_bridge.answer("served.left") { |request| $front_calls << ["left", request]; true }
+$world_bridge.answer("served.front_state") { $front_state }
+# The setup C# writes and reads: here the facts the script hands over, kept in $written_facts and
+# as JSON, read back as C# reads them (a mod's files' hashes by path).
+$world_bridge.answer("served.setup.write") { |facts| $written_facts = facts; JSON.generate(facts) }
+$world_bridge.answer("served.setup.read") do |text|
+  begin
+    facts = JSON.parse(text)
+    mods = facts["mods"].select { |mod| mod.is_a?(Array) && mod[0].is_a?(String) && !mod[0].empty? && mod[3].is_a?(Array) }
+    facts["mods"] = mods.map { |key, kind, version, files| [key, kind, version, Hash[files.select { |pair| pair.is_a?(Array) && pair[1].to_s =~ /\A[0-9a-f]{64}\z/ }]] }
+    facts["squad"] = Array(facts["squad"])
+    facts
+  rescue JSON::ParserError
+    nil
+  end
+end
 # The game's switches and variables as the game keeps them, in lists.
 class Game_Switches; def initialize; @data = []; end; def [](i); @data[i] || false; end; def []=(i, v); @data[i] = v; end; end
 class Game_Variables; def initialize; @data = []; end; def [](i); @data[i] || 0; end; def []=(i, v); @data[i] = v; end; end
@@ -103,6 +135,7 @@ end
 
 # A relay without a battle server: the starter hosts, and asks no more this session.
 $dll_state = "state=refused\ncode=no_server"
+$lasting = "no_server"
 answer, = gather_with_friend(scene, friend, join)
 check("a relay without a battle server leaves the battle to the starter, who sends the roster through the world room",
       [answer, sent_kinds.include?("roster"), sent_kinds.include?("serve"), MGQ_MpBattlesSync.role], [nil, true, false, :host])
@@ -112,7 +145,7 @@ check("and no later battle of the session asks again", MGQ_MpBattlesServed.avail
 check("which the log tells", $log.grep(/did not take battle .* \(no_server\): the starter hosts it, and every later battle of this session/).size, 1)
 MGQ_MpBattlesCoop.ended
 MGQ_MpBattlesSync.finish
-MGQ_MpBattlesServed.instance_variable_set(:@lasting_refusal, nil)
+$lasting = nil
 
 # A busy battle server: this battle stays with the starter, the next asks again.
 $dll_state = "state=refused\ncode=busy"
@@ -138,6 +171,8 @@ answer, bid = gather_with_friend(scene, friend, join)
 serve_call = $dll_calls.find { |name, _| name == "mp_battle_serve" }
 check("a battle the server takes makes the starter its guest", [answer, MGQ_MpBattlesSync.role, MGQ_MpBattlesSync.served?, MGQ_MpBattlesServed.starter?], [:guest, :guest, true, true])
 check("asked for with the world, the battle and both players' seats", serve_call[1][0, 3], ["world-1", bid, "0,2"])
+check("the starter hands C# the facts of the setup", JSON.parse(serve_call[1][3]).keys,
+      %w(scripts data troop escape lose map rates enemies players level switches variables raid pool tiers starter squad mods settings widths))
 setup = MGQ_MpBattlesServed.read_setup(serve_call[1][3])
 check("the setup names the troop, how the battle ends, the map and the level",
       [setup[:troop], setup[:escape], setup[:lose], setup[:map], setup[:level], setup[:raid]], [40, true, false, 5, 30, false])
@@ -184,10 +219,13 @@ MGQ_MpBattlesServed.follow(MGQ_MpBattlesSync::Wire.line([bid]))
 check("one for the battle makes the player the server's guest, not its starter",
       [MGQ_MpBattlesSync.role, MGQ_MpBattlesSync.served?, MGQ_MpBattlesServed.starter?, $dll_calls], [:guest, true, false, [["mp_battle_open", ["world-1", bid]]]])
 
-# The channel never opens.
+# The channel never opens: the DLL ends it in time.
 $dll_state = "state=opening"
 $dll_entries.clear
-MGQ_MpBattlesServed::OPEN_FRAMES.times { MGQ_MpBattlesServed.drain }
+MGQ_MpBattlesServed.drain
+check("a channel still opening waits", MGQ_MpBattlesServed.channel, :opening)
+$dll_entries << "kind=closed\nseat=0\ncode=open_timeout\n\n"
+MGQ_MpBattlesServed.drain
 check("a channel that does not open in time ends", [MGQ_MpBattlesServed.channel, $log.grep(/did not open within 10 s/).size], [:closed, 1])
 $dll_calls.clear
 MGQ_MpBattlesSync.finish
@@ -207,46 +245,42 @@ $dll_opens = true
 MGQ_MpBattlesSync.finish
 MGQ_MpBattlesCoop.ended
 
-# The starter as the served battle's front: requests to join go to the server, its answers to the world.
+# The starter as the served battle's front: the DLL decides which requests to join go to the
+# server, sends them with the states and fields the script hands it, and keeps the server's state.
 $dll_state = "state=served"
 _answer, bid = gather_with_friend(scene, friend, join)
+$front_battle = bid
 $dll_entries << "kind=seat\nseat=0\n\n"
 MGQ_MpBattlesServed.drain
 joiner = MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "id-joiner", "name" => "Joiner", "map" => "5", "scene" => "map", "x" => "3" }, nil, false)
 MGQ_MpOverworldSync::Peers.all.push(joiner)
-$dll_calls.clear
+$front_calls.clear
 MGQ_MpBattlesCoop.take(joiner, { "coop" => "hot", "bid" => bid, "troop" => "5", "enemies" => "31:320:300:0", "seats" => "2", "map" => "5" })
-sent = $dll_calls.find { |name, _| name == "mp_battle_send" }
-fields = fields_of(sent[1][1])
-seat, states, request = MGQ_MpBattlesSync::Wire.parse(fields[:payload])
-check("the starter passes a request to join its served battle on to the server", [sent[1][0], fields["battle"], fields["bid"], seat], [250, "front_in", bid, 4])
-check("with the id and name of its player and of those it brings along", states,
-      [[4, [["id", "id-joiner"], ["name", "Joiner"]]], [2, [["id", "id-friend"], ["name", "Friend"]]]])
-check("and the request's fields", MGQ_MpBattlesServed.hash_of(request).values_at("coop", "troop", "seats"), ["hot", "5", "2"])
-$dll_calls.clear
-MGQ_MpBattlesCoop.take(joiner, { "coop" => "hot", "bid" => "other", "troop" => "5" })
+forward = $front_calls.find { |kind, _| kind == "forward" }
+check("the starter asks the DLL whether a request to join its served battle goes to the server, with its kind and battle",
+      $front_calls.first, ["fronts", { "coop" => "hot", "bid" => bid }])
+check("and hands it the asking player's seat, the id and name of its player and of those it brings along, and the request's fields",
+      [forward[1]["seat"], forward[1]["states"], MGQ_MpBattlesServed.hash_of(forward[1]["fields"]).values_at("coop", "troop", "seats")],
+      [4, [[4, [["id", "id-joiner"], ["name", "Joiner"]]], [2, [["id", "id-friend"], ["name", "Friend"]]]], ["hot", "5", "2"]])
+$front_calls.clear
 MGQ_MpBattlesCoop.take(joiner, { "coop" => "decline", "bid" => bid })
-check("a request for another battle, and another kind of message, stay the starter's own", $dll_calls.map(&:first).include?("mp_battle_send"), false)
+check("a message the DLL does not pass on stays the starter's own", $front_calls.map(&:first), ["fronts"])
 
-$sent.clear
-text = "map_coop=hot_ok\nbid=#{bid}\nmmap=5\n\n"
-$dll_entries << "kind=message\nseat=250\n\nbattle=front_out\nbid=#{bid}\n\n" + MGQ_MpBattlesSync::Wire.line([4, text])
-$dll_entries << "kind=message\nseat=250\n\nbattle=front_out\nbid=#{bid}\n\n" + MGQ_MpBattlesSync::Wire.line([4, "chat=hello\n\n"])
-$dll_entries << "kind=message\nseat=2\n\nbattle=front_out\nbid=#{bid}\n\n" + MGQ_MpBattlesSync::Wire.line([4, text])
-MGQ_MpBattlesServed.drain
-check("the server's co-op message goes to the world's room through the starter, nothing else and nobody else's", $sent, [[4, text]])
-
-$dll_entries << "kind=message\nseat=250\n\nbattle=front_state\nbid=#{bid}\n\n" + MGQ_MpBattlesSync::Wire.line([[["rbn", "2"], ["other", "x"]]])
-MGQ_MpBattlesServed.drain
-check("the starter tells the served battle as its own, with the server's count of its players",
-      [MGQ_MpBattlesServed.front_fields(%w(rb rbh)), MGQ_MpBattlesServed.front_fields(%w(rbn))], [{ "rb" => bid, "rbh" => "0" }, { "rbn" => "2" }])
-$dll_calls.clear
+$front_state = nil
+check("the starter tells the served battle as its own, no count of its players before the server told one",
+      [MGQ_MpBattlesServed.front_fields(%w(rb rbh)), MGQ_MpBattlesServed.front_fields(%w(rbn))], [{ "rb" => bid, "rbh" => "0" }, { "rbn" => 0 }])
+$front_state = { "rbn" => "2" }
+check("then with the server's count the DLL kept", MGQ_MpBattlesServed.front_fields(%w(rbn)), { "rbn" => "2" })
+$front_calls.clear
 MGQ_MpBattlesServed.peer_left(joiner)
-left = fields_of($dll_calls.find { |name, _| name == "mp_battle_send" }[1][1])
-check("and tells the server a player left the world", [left["battle"], MGQ_MpBattlesSync::Wire.parse(left[:payload])], ["front_left", [4]])
+check("and tells the server a player left the world", $front_calls, [["left", { "seat" => 4 }]])
+$dll_entries << "kind=message\nseat=2\n\nbattle=front_out\nbid=#{bid}\n\n" + MGQ_MpBattlesSync::Wire.line([4, "map_coop=hot_ok\n\n"])
+MGQ_MpBattlesServed.drain
+check("a front message the DLL left to the script is ignored", $log.grep(/ignored front_out from seat 2/).size, 1)
 MGQ_MpBattlesSync.finish
 MGQ_MpBattlesCoop.ended
-check("a battle that finished has no front", [MGQ_MpBattlesServed.front_fields(%w(rbn)), MGQ_MpBattlesServed.fronts?({ "coop" => "hot", "bid" => bid })], [nil, false])
+$front_calls.clear
+check("a battle that finished has no front", [MGQ_MpBattlesServed.front_fields(%w(rbn)), MGQ_MpBattlesServed.fronts?({ "coop" => "hot", "bid" => bid }), $front_calls], [nil, false, []])
 
 # The battle server takes what its front passes on as the world's room would hand it over.
 module MGQ_MpOverworldSync
@@ -355,7 +389,7 @@ bid = MGQ_MpBattlesSync.battle_id
 MGQ_MpBattlesServed.instance_variable_set(:@server, true)
 MGQ_MpBattlesSync.serve_over_channel(:host, bid, [1, 2], "the players")
 MGQ_MpBattlesServed.instance_variable_set(:@channel, :open)
-MGQ_MpBattlesServed.instance_variable_set(:@in, [1, 2])
+$dll_state = "state=open\nin=1,2\nout="
 $presence_calls = []
 $dll_entries << "kind=out\nseat=1\n\n" << "kind=in\nseat=1\n\n"
 MGQ_MpBattlesServed.drain
@@ -378,6 +412,8 @@ setup = MGQ_MpBattlesServed.read_setup(MGQ_MpBattlesServed.setup_text([MGQ_MpBat
 check("the setup names the world's mods the starter runs, with their files' hashes, and its options of them",
       [setup[:mods], setup[:settings]], [[["teamboostfix", "upload", "1.0", { "Team_Boost_Fix.rb" => "a" * 64 }], ["ownmod", "", "", {}]], "mod_rate=i:2"])
 check("a Classic world's setup carries no squad rules", setup[:squad], nil)
+check("the setup carries the widths of the troop's pictures as the starter measures them, which the battle server has none of",
+      setup[:widths], [[31, 160], [32, 160]])
 $squad = { :luka => false, :formation => 0, :front => 4, :raid_front => 3 }
 setup = MGQ_MpBattlesServed.read_setup(MGQ_MpBattlesServed.setup_text([MGQ_MpBattlesCoop::Player.new(0, "Me", "1,2,3", [], 8)], nil))
 check("a Raid World's carries the world's", setup[:squad], $squad)
@@ -387,10 +423,20 @@ check("and the server plays one whose setup carries none by the defaults",
 MGQ_MpBattlesSync.finish
 MGQ_MpBattlesCoop.ended
 
-# A setup of another format or without a troop.
-check("a setup of another format or without a troop is not read",
-      [MGQ_MpBattlesServed.read_setup(MGQ_MpBattlesSync::Wire.line([2, "", "", 40])), MGQ_MpBattlesServed.read_setup(MGQ_MpBattlesSync::Wire.line([1, "", "", "40"])), MGQ_MpBattlesServed.read_setup("")],
-      [nil, nil, nil])
+# A Float or a Symbol among the facts, which the bridge does not carry.
+BattleManager.setup(40, true, false)
+$game_troop.members[0].screen_x = 320.5
+text = MGQ_MpBattlesServed.setup_text([MGQ_MpBattlesCoop::Player.new(0, "Me", "1,2,3", [[0.25, :guard]], 8)], nil)
+check("a Float or a Symbol among the facts crosses the bridge tagged, so the setup is still written",
+      [text.empty?, $written_facts["enemies"][0][1], $written_facts["players"][0][3]], [false, { "float" => "320.5" }, [[{ "float" => "0.25" }, { "symbol" => "guard" }]]])
+check("and any other object as its text, as the battle line wrote it", MGQ_MpBattlesServed.plain_fact([1, nil, true, "a", (1..2)]), [1, nil, true, "a", "1..2"])
+check("a String the game holds as bytes crosses as text, which C# reads every fact's String as",
+      MGQ_MpBattlesServed.plain_fact(["mod_rate=i:2".force_encoding("ASCII-8BIT")]).map(&:encoding), [Encoding::UTF_8])
+MGQ_MpBattlesSync.finish
+MGQ_MpBattlesCoop.ended
+
+# A setup C# does not read.
+check("a setup C# does not read is none", MGQ_MpBattlesServed.read_setup("not a setup"), nil)
 
 # Outside a world, and on the battle server.
 in_world = MGQ_MpOverworldSync.method(:in_world?)

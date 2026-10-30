@@ -2,7 +2,8 @@
 //  RaidFight.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Created
+//      Paulinchen  2026-10-30: Kept whether the battle is a side battle and its count of enemies, for the battle server
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -50,13 +51,16 @@ public sealed class RaidFight
     /// <param name="battle">The battle's id, under which the relay counts its reports once.</param>
     /// <param name="keys">The pools' keys of the troop's own enemies, by their place in the troop.</param>
     /// <param name="guest">Whether a host's stream governs the battle.</param>
-    public RaidFight(string world, string battle, IReadOnlyList<string> keys, bool guest)
+    /// <param name="side">Whether it is a side battle, the player's own or a host's they join.</param>
+    public RaidFight(string world, string battle, IReadOnlyList<string> keys, bool guest, bool side = false)
     {
         ArgumentNullException.ThrowIfNull(keys);
         World = world ?? throw new ArgumentNullException(nameof(world));
         Battle = battle ?? throw new ArgumentNullException(nameof(battle));
         Members = keys.Select((key, index) => new RaidMember(key, index)).ToList();
         Guest = guest;
+        Side = side;
+        Own = Members.Count;
     }
 
     /// <summary>
@@ -73,6 +77,17 @@ public sealed class RaidFight
     /// Gets the troop's own enemies, each with its pool.
     /// </summary>
     public IReadOnlyList<RaidMember> Members { get; }
+
+    /// <summary>
+    /// Gets whether the battle is a side battle.
+    /// </summary>
+    public bool Side { get; }
+
+    /// <summary>
+    /// Gets how many enemies the troop's setup made, which the battle server is handed; as many as
+    /// the members unless the script names it.
+    /// </summary>
+    public long Own { get; init; }
 
     /// <summary>
     /// Gets the number of the battle's last report, which the relay counts once.

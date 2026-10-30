@@ -2,7 +2,8 @@
 //  PoolTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Ran the fights' moments and handed out the battle server's outbox, in place of counting its own reports
+//      Paulinchen  2026-10-30: Handed a fight's pools to the battle server and took them there
+//                            - Ran the fights' moments and handed out the battle server's outbox, in place of counting its own reports
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -14,6 +15,7 @@ using System.Linq;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Raid;
+using MGQOnline.Game.Ruby;
 
 namespace MGQOnline.Game.Topics;
 
@@ -48,8 +50,9 @@ public static class PoolTopics
 
     /// <summary>
     /// Starts a battle that fights a boss's pools, in place of any other: <c>world</c>,
-    /// <c>battle</c>, <c>keys</c> (the pools of the troop's own enemies by their place) and
-    /// <c>guest</c> (whether a host's stream governs it) in; nothing out.
+    /// <c>battle</c>, <c>keys</c> (the pools of the troop's own enemies by their place), <c>own</c>
+    /// (how many enemies the troop's setup made), <c>guest</c> (whether a host's stream governs it)
+    /// and <c>side</c> (whether it is a side battle) in; nothing out.
     /// </summary>
     public const string FightOpen = "raid.fight.open";
 
@@ -67,6 +70,31 @@ public static class PoolTopics
     /// Ends the battle without reporting: nothing in, nothing out.
     /// </summary>
     public const string FightClose = "raid.fight.close";
+
+    /// <summary>
+    /// Writes what the battle server needs to fight the battle's pools as the player's game would:
+    /// nothing in; [the count of the troop's own enemies, 1 or 0 for a side battle, the pools the
+    /// game knows of them ([key, share left now with ten decimals, max, 1 or 0 for defeated, who
+    /// defeated it] each)] out, nil without a battle.
+    /// </summary>
+    public const string FightExport = "raid.fight.export";
+
+    /// <summary>
+    /// As the battle server, takes the pools of a battle its starter handed over: <c>world</c> and
+    /// <c>fields</c> (as <see cref="FightExport"/> writes them) in; [the count, whether it is a side
+    /// battle] out, nil for a count that is none.
+    /// </summary>
+    public const string FightImport = "raid.fight.import";
+
+    /// <summary>
+    /// The longest key of a pool the battle server takes from its starter: a boss's key and an enemy's place.
+    /// </summary>
+    private const int MaxServedKeyLength = 64;
+
+    /// <summary>
+    /// The most enemies of a troop the battle server takes the count of.
+    /// </summary>
+    private const int MaxOwn = 99;
 
     /// <summary>
     /// The event of a pool a push told defeated for the world, once: <c>key</c> and <c>by</c>.
@@ -133,6 +161,8 @@ public static class PoolTopics
             fight = null;
             return null;
         });
+        context.Register(FightExport, (_, _) => fight is null ? null : Export(fight, relay.Ledger));
+        context.Register(FightImport, (_, request) => Import(relay.Ledger, request.AsHash()));
         context.EveryFrame(each => PostChanges(each, relay.Ledger));
     }
 
@@ -226,7 +256,69 @@ public static class PoolTopics
     /// <param name="request">The request.</param>
     /// <returns>The battle.</returns>
     private static RaidFight Open(RubyHash request) =>
-        new(request["world"].AsText(), request["battle"].AsText(), request["keys"].AsArray().Select(key => key.AsText()).ToList(), request["guest"].AsBool());
+        new(request["world"].AsText(), request["battle"].AsText(), request["keys"].AsArray().Select(key => key.AsText()).ToList(), request["guest"].AsBool(),
+            request["side"] is RubyBool { Flag: true })
+        {
+            Own = request["own"] is RubyInteger { Value: var own } ? (long)own : request["keys"].AsArray().Count,
+        };
+
+    /// <summary>
+    /// Answers <see cref="FightExport"/>.
+    /// </summary>
+    /// <param name="fight">The battle.</param>
+    /// <param name="ledger">The pools.</param>
+    /// <returns>The battle's fields.</returns>
+    private static RubyArray Export(RaidFight fight, PoolLedger ledger)
+    {
+        var pools = new RubyArray();
+        foreach (RaidMember member in fight.Members)
+        {
+            if (ledger.Pool(member.Key) is { } pool)
+            {
+                pools.Add(new RubyArray(
+                [
+                    pool.Key, pool.Left.ToString("F10", CultureInfo.InvariantCulture), (long)Math.Round(pool.Max, MidpointRounding.AwayFromZero), pool.Defeated ? 1 : 0, pool.By,
+                ]));
+            }
+        }
+
+        return new RubyArray([fight.Own, fight.Side ? 1 : 0, pools]);
+    }
+
+    /// <summary>
+    /// Answers <see cref="FightImport"/>.
+    /// </summary>
+    /// <param name="ledger">The pools.</param>
+    /// <param name="request">The request.</param>
+    /// <returns>The count and whether it is a side battle; nil for a count that is none.</returns>
+    private static RubyValue? Import(PoolLedger ledger, RubyHash request)
+    {
+        RubyArray fields = request["fields"] is RubyArray given ? given : new RubyArray();
+        if (fields.Count == 0 || fields[0] is not RubyInteger { Value: var own } || own <= 0 || own > MaxOwn)
+        {
+            return null;
+        }
+
+        ledger.Enter(request["world"].AsText());
+        if (fields.Count > 2 && fields[2] is RubyArray pools)
+        {
+            foreach (RubyValue each in pools)
+            {
+                if (each is not RubyArray { Count: > 0 } pool || pool[0] is not RubyString key || key.AsText() is not { Length: > 0 } name
+                    || name.EnumerateRunes().Count() > MaxServedKeyLength)
+                {
+                    continue;
+                }
+
+                RubyValue Field(int index) => index < pool.Count ? pool[index] : RubyNil.Value;
+                double left = Field(1) is RubyString share ? RubyNumbers.ToF(share.AsBytes().Span) : 0;
+                ledger.Hear(new PoolWord(name, left, Field(2) is RubyInteger { Value: var max } ? (double)max : 0, Field(3) is RubyInteger { Value: var one } && one == 1,
+                    Field(4) is RubyString by ? by.AsText() : string.Empty), PoolSource.Fetched);
+            }
+        }
+
+        return new RubyArray([(long)own, fields.Count > 1 && fields[1] is RubyInteger { Value: var side } && side == 1]);
+    }
 
     /// <summary>
     /// Answers <see cref="FightTurn"/>.

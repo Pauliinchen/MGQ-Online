@@ -2,6 +2,7 @@
 #  child_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Covered the mods a child reads of its setup before the core opens
 #      Paulinchen  2026-10-28: Covered the game data's fingerprint a child hands the core
 #      Paulinchen  2026-10-23: Covered the battle a child without the core refuses
 #                            - Covered which core library a child loads and the order it loads, closes in and shakes hands
@@ -12,8 +13,8 @@
 # Tests of how server.rb prepares a battle's child before it plays, with stand-ins for the sandbox
 # and the core library: which library it loads, that it loads it before the sandbox and shakes
 # hands after it, what the client hears when the child cannot be closed in, the core's log, the
-# game data's fingerprint it hands the core, and the relay's refusal of a battle while the core
-# does not answer.
+# game data's fingerprint it hands the core, the relay's refusal of a battle while the core does
+# not answer, and the mods it reads of its setup before the core opens.
 
 require "fileutils"
 require "json"
@@ -183,5 +184,18 @@ module MGQ_MpWorld
 end
 check("with MGQ Online loaded the child hands the core the game data's fingerprint after the handshake",
       [enter_child(library), $steps], [[true, ""], [:load, :sandbox, :handshake, [:call, "core.game_data", "1:0a0b0c0d"]]])
+
+# MGQ Online's scripts that read a setup's mods, loaded as the game loads them.
+%w[core_log battles_sync_wire battles_served].each { |name| load File.expand_path("../../GameScript/Multiplayer/Scripts/#{name}.rbx", __dir__) }
+MGQ_Multiplayer::Bridge.close
+wanted = []
+ServedMods.define_singleton_method(:fetch) { |mods, _relay, _log = $stderr| wanted << mods; [] }
+# A setup a starter wrote, from the golden cases of the setup.
+setup = JSON.parse(File.read(File.expand_path("../../fixtures/served/setup.json", __dir__)))["writes"][0]["line"]
+BattleServer.instance_variable_set(:@served, true)
+mods = BattleServer.send(:mods_for, JSON.generate("op" => "serve", "bid" => "b1", "setup" => [setup].pack("m0")))
+check("a child gets the mods its setup names before the core opens, with the bridge still closed",
+      [mods, wanted], [[], [[["teamboostfix", "upload", "1.0", { "Team_Boost_Fix.rb" => "a" * 64 }]]]])
+check("and none for a setup of another format", BattleServer.send(:mods_for, JSON.generate("op" => "serve", "bid" => "b1", "setup" => ["not a setup"].pack("m0"))), nil)
 
 FileUtils.rm_rf(dir)

@@ -58,6 +58,7 @@
     <None Include="..\fixtures\trade\*.json" LinkBase="fixtures\trade" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\coop\*.json" LinkBase="fixtures\coop" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\pool\*.json" LinkBase="fixtures\pool" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\served\*.json" LinkBase="fixtures\served" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- The seed rows of the relay's story tables and the game scripts' generated tables, which the

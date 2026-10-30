@@ -2,7 +2,8 @@
 #  coop_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Stood in for the joins the live session holds
+#      Paulinchen  2026-10-30: Stood in for the widths of a served battle's troop the battle server keeps
+#                            - Stood in for the joins the live session holds
 #                            - Stood in for asking a running battle and joining one by choice
 #                            - Handed co-op messages over as the DLL's routes do
 #                            - Stood in for the matchmaking over the tests' world
@@ -62,6 +63,7 @@ module CoopStandIn
     case topic
     when "coop.place" then place_first(request)
     when "coop.write_widths" then request.map { |id, width| "#{id}:#{width}" }.join(";")
+    when "coop.keep_widths" then note_widths(request["bid"].to_s, request["widths"]) && nil
     when "coop.read_entries" then read_entries(request)
     when "coop.write_entries" then request.map { |entry| entry.first(4).join(":") }.join(";")
     when "coop.intake" then intake(request)
@@ -442,7 +444,7 @@ def check_roster_stand_in
 end
 
 # The co-op topics CoopStandIn answers.
-COOP_TOPICS = %w(coop.place coop.write_widths coop.read_entries coop.write_entries coop.intake coop.room coop.level coop.write_roster coop.write_party coop.read_roster
+COOP_TOPICS = %w(coop.place coop.write_widths coop.keep_widths coop.read_entries coop.write_entries coop.intake coop.room coop.level coop.write_roster coop.write_party coop.read_roster
                  coop.read_party coop.read_troop coop.repair coop.settle)
 
 require_relative "match_support"

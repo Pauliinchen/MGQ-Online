@@ -2,7 +2,8 @@
 #  online.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Sent the reports of the core's outbox through the relay's connection
+#      Paulinchen  2026-10-30: Named the seats that came onto and left the battle channel in its state, as the DLL's state does
+#                            - Sent the reports of the core's outbox through the relay's connection
 #                            - Handed the relay's word of the boss pools and the server's own reports to the core's ledger
 #      Paulinchen  2026-10-15: Stood in for the boss pool exports
 #                            - Sent the world room's messages through the battle's starter
@@ -46,6 +47,8 @@ module Online
     # @param bridge [#send_to, #next_entry, #close] The other end, see Bridge.
     def connect(bridge)
       @bridge = bridge
+      @seats_in = []
+      @seats_out = []
     end
 
     # Writes a line of MGQ Online's log.
@@ -63,8 +66,8 @@ module Online
       case name
       when "mp_battle_open" then ->(_world, _battle_id) { 1 }
       when "mp_battle_send" then ->(seat, text) { @bridge && @bridge.send_to(seat, text.chomp("\0")) ? 1 : 0 }
-      when "mp_battle_receive" then reader { @bridge && @bridge.next_entry }
-      when "mp_battle_state" then reader { @bridge && !@bridge.closed? ? "state=open" : "state=closed" }
+      when "mp_battle_receive" then reader { note_seat(@bridge && @bridge.next_entry) }
+      when "mp_battle_state" then reader { "state=#{@bridge && !@bridge.closed? ? 'open' : 'closed'}\nin=#{@seats_in.to_a.join(',')}\nout=#{@seats_out.to_a.join(',')}" }
       when "mp_battle_close" then -> { @bridge&.close; 1 }
       # The server sits in no world room: the battle's starter passes its messages on there.
       when "mp_world_send" then ->(seat, text) { MGQ_MpBattlesServed.front_out(seat, text.chomp("\0")) ? 1 : 0 }
@@ -91,6 +94,23 @@ module Online
     end
 
     private
+
+    # Notes the seat of a player who came onto the battle channel or left it, as its entry passes
+    # to the scripts: those who came stay named, those who left only until they come back.
+    #
+    # @param entry [String, nil] The entry.
+    # @return [String, nil] The entry.
+    def note_seat(entry)
+      kind = entry.to_s[/\Akind=(in|out)\n/, 1]
+      seat = entry.to_s[/^seat=(\d+)$/, 1]
+      return entry unless kind && seat
+
+      seat = seat.to_i
+      (@seats_in ||= []) << seat if kind == "in" && !@seats_in.to_a.include?(seat)
+      @seats_out = @seats_out.to_a - [seat]
+      @seats_out << seat if kind == "out"
+      entry
+    end
 
     # Names the world as MGQ Online's raid pools read it on the server, which the pools' state
     # must name for them to take it.

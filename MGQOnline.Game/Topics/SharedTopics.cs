@@ -2,7 +2,8 @@
 //  SharedTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Handed the raid pools' topics the host's way to the pools, an outbox of the context's own by default
+//      Paulinchen  2026-10-30: Registered the topics of a served battle's setup
+//                            - Handed the raid pools' topics the host's way to the pools, an outbox of the context's own by default
 //                            - Registered the raid pools' topics over the host's ledger
 //                            - Handed the live battle's session to the co-op topics
 //                            - Registered the live battle's topics
@@ -65,6 +66,7 @@ public static class SharedTopics
         PageTopics.Register(context, random);
         CoopTopics.Register(context, LiveTopics.Register(context));
         PoolTopics.Register(context, pools);
+        SetupTopics.Register(context);
     }
 
     /// <summary>

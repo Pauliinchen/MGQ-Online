@@ -2,6 +2,11 @@
 #  battles_served.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Handed the setup's Strings to C# as text
+#      Paulinchen  2026-10-30: Carried the widths of the troop's pictures in the setup, which the battle server places joining enemies by
+#                            - Wrote, read and checked the setup and the scripts' fingerprint through C#
+#                            - Read a setup's mods without C# for the battle server's child before its core opens
+#                            - Left the serve's time-out, the refusals that last the session, the channel's opening and the starter's front to the DLL
 #      Paulinchen  2026-10-23: Asked no battle server again in a session once one lacked its core library
 #                            - Read a setup's squad rules and their defaults through the DLL or the core library
 #                            - Kept the squad rules of a Raid World that names none for the battle server itself
@@ -36,13 +41,24 @@ module MGQ_MpBattlesServed
   # The seat a message to everyone on the battle channel names.
   EVERYONE = -1
 
-  # What the starter tells the server, see setup_text; a server answers a setup of another format
-  # with a refusal, and the starter hosts.
+  # The setup's format, as C# writes it (MGQOnline.Game's ServedSetup.Format), which mods_in reads
+  # without C#.
   FORMAT = 1
 
-  # Frames the starter waits for the relay to start the battle on its server, five seconds; past
-  # them it hosts the battle itself.
-  SERVE_FRAMES = 300
+  # The place of the world's mods among a setup's fields.
+  MODS_FIELD = 18
+
+  # The topic that writes the setup from the starter's facts (MGQOnline.Game's ServedSetup).
+  SETUP_WRITE_TOPIC = "served.setup.write"
+
+  # The topic that reads a setup back; a setup of another format reads as none.
+  SETUP_READ_TOPIC = "served.setup.read"
+
+  # The topic that tells why the battle server refuses a setup.
+  SETUP_CHECK_TOPIC = "served.setup.check"
+
+  # The topic that finds the scripts' fingerprint.
+  FINGERPRINT_TOPIC = "served.fingerprint"
 
   # The topic that reads the squad rules a setup carries, with the defaults for those it lacks;
   # the DLL answers it in the game, the core library on the battle server.
@@ -50,9 +66,6 @@ module MGQ_MpBattlesServed
 
   # The topic that tells the squad rules of a Raid World that names none.
   SQUAD_DEFAULT_TOPIC = "squad.default"
-
-  # Frames a player waits for the battle channel to open before the battle counts as gone.
-  OPEN_FRAMES = 600
 
   # Frames the battle server waits for every player to come onto the battle channel before the
   # battle starts without those who did not.
@@ -64,16 +77,22 @@ module MGQ_MpBattlesServed
   # Bytes the DLL may write the battle channel's state into at first.
   STATE_SIZE = 1_024
 
-  # The relay's answers that end every later try in this game session: it has no battle server,
-  # serves no battles of this mod's version, its server's MGQ Online or game data differ from
-  # this game's, or its server lacks its core library. Others, such as a busy server, end only this
-  # try.
-  LASTING_REFUSALS = %w(no_server update unsupported scripts data core)
+  # The code of the channel's end the DLL gives a channel that did not open in time.
+  OPEN_TIMEOUT_CODE = "open_timeout"
 
-  # The co-op messages the starter of a served battle passes on to the battle server, being its
-  # front in the world's room: other players' requests to join the battle with an encounter (hot)
-  # or by choice (pick), and their taking one back (off).
-  FRONT_KINDS = %w(hot off pick)
+  # The DLL's topic that tells whether the starter passes a co-op message on to the battle server,
+  # being its front in the world's room: other players' requests to join the battle with an
+  # encounter (hot) or by choice (pick), and their taking one back (off).
+  FRONTS_TOPIC = "served.fronts"
+
+  # The DLL's topic that passes such a request on to the battle server.
+  FORWARD_TOPIC = "served.forward"
+
+  # The DLL's topic that tells the battle server a player left the world.
+  LEFT_TOPIC = "served.left"
+
+  # The DLL's topic that hands out the fields of the server's state the starter tells as its own.
+  FRONT_STATE_TOPIC = "served.front_state"
 
   # The battle channel's message the starter passes such a request on in, with its player's state.
   FRONT_IN = "front_in"
@@ -109,13 +128,14 @@ module MGQ_MpBattlesServed
   end
 
   # Reports whether a battle the player starts may go to the battle server: a world is open, the
-  # DLL is there, and the relay has not said it has none.
+  # DLL is there, and the relay has not refused in a way that lasts the session (the DLL's
+  # "lasting").
   #
   # @return [Boolean] Whether it may.
   def self.available?
-    return false if server? || @lasting_refusal
+    return false if server?
 
-    MGQ_Multiplayer.available? && MGQ_MpOverworldSync.in_world?
+    MGQ_Multiplayer.available? && MGQ_MpOverworldSync.in_world? && Link.state["lasting"].to_s.empty?
   rescue
     false
   end
@@ -152,20 +172,17 @@ module MGQ_MpBattlesServed
       return false
     end
 
-    frames = 0
+    # The DLL refuses a serve the relay does not answer within five seconds itself.
     answer = MGQ_MpBattlesSync::Waiting.wait_for(scene, "Starting the battle on the server...") do
-      frames += 1
       state = Link.state
       if state["state"] == "served" then true
       elsif state["state"] == "refused" then [:refused, state["code"].to_s]
-      elsif frames >= SERVE_FRAMES then [:refused, "timeout"]
       end
     end
     unless answer == true
       code = answer.is_a?(Array) ? answer[1] : answer.to_s
-      @lasting_refusal = code if LASTING_REFUSALS.include?(code)
-      log("the server did not take battle #{battle_id} (#{code}): the starter hosts it" +
-          (@lasting_refusal ? ", and every later battle of this session" : ""))
+      lasting = !Link.state["lasting"].to_s.empty?
+      log("the server did not take battle #{battle_id} (#{code}): the starter hosts it" + (lasting ? ", and every later battle of this session" : ""))
       Link.close
       return false
     end
@@ -203,8 +220,6 @@ module MGQ_MpBattlesServed
   #
   # @param battle_id [String] The battle's id.
   def self.open(battle_id)
-    @in = []
-    @opened = 0
     @channel = Link.open(world_id, battle_id) ? :opening : :closed
     log(@channel == :opening ? "opening the battle channel of battle #{battle_id}" : "the DLL did not open the battle channel of battle #{battle_id}")
   end
@@ -218,7 +233,6 @@ module MGQ_MpBattlesServed
     log("closed the battle channel")
     @channel = nil
     @starter = false
-    @front_state = nil
     @told_state = nil
   end
 
@@ -256,23 +270,18 @@ module MGQ_MpBattlesServed
   end
 
   # Moves what came over the battle channel to the battle: messages, players coming and going, and
-  # the channel's end. Called as the battle's messages are taken.
+  # the channel's end, which the DLL also gives a channel that did not open in time. Called as the
+  # battle's messages are taken.
   def self.drain
     return unless @channel
 
     while (entry = Link.next_entry)
       take(entry)
     end
-    return unless @channel == :opening
+    return unless @channel == :opening && Link.state["state"] == "open"
 
-    @opened += 1
-    if Link.state["state"] == "open"
-      @channel = :open
-      log("the battle channel is open")
-    elsif @opened >= OPEN_FRAMES
-      @channel = :closed
-      log("the battle channel did not open within #{OPEN_FRAMES / 60} s")
-    end
+    @channel = :open
+    log("the battle channel is open")
   end
 
   # Takes one entry of the battle channel.
@@ -286,7 +295,6 @@ module MGQ_MpBattlesServed
       @channel = :open
       log("on the battle channel as seat #{seat}")
     when "in"
-      @in << seat unless @in.include?(seat)
       log("seat #{seat} came onto the battle channel")
       MGQ_MpOverworldSync::Peers.come_back(seat) if server?
     when "out"
@@ -296,7 +304,7 @@ module MGQ_MpBattlesServed
       MGQ_MpOverworldSync::Peers.wait_for(seat) if server?
     when "closed"
       @channel = :closed
-      log("the battle channel closed: #{entry['code']}")
+      log(entry["code"] == OPEN_TIMEOUT_CODE ? "the battle channel did not open within 10 s" : "the battle channel closed: #{entry['code']}")
     when "message"
       message = MGQ_Multiplayer::Link.parse(entry[:payload].to_s.dup)
       return take_front(seat, message) if front_message?(message)
@@ -316,8 +324,9 @@ module MGQ_MpBattlesServed
     [FRONT_IN, FRONT_OUT, FRONT_STATE, FRONT_LEFT].include?(message["battle"]) && message["bid"].to_s == MGQ_MpBattlesSync.battle_id.to_s
   end
 
-  # Takes a message of the front: on the server, a request the starter passed on or a player who
-  # left the world; on the starter, a message for the world's room or the server's state.
+  # Takes a message of the front on the server: a request the starter passed on or a player who
+  # left the world. The starter's DLL takes the server's messages for the world's room and its
+  # state itself.
   #
   # @param seat [Integer] Its sender's seat on the battle channel.
   # @param message [Hash] The message.
@@ -327,9 +336,6 @@ module MGQ_MpBattlesServed
 
       return front_in(message[:payload]) if message["battle"] == FRONT_IN
       return front_left(message[:payload]) if message["battle"] == FRONT_LEFT
-    elsif starter? && seat == SERVER_SEAT
-      return take_front_out(message[:payload]) if message["battle"] == FRONT_OUT
-      return take_front_state(message[:payload]) if message["battle"] == FRONT_STATE
     end
     log("ignored #{message['battle']} from seat #{seat}")
   rescue => e
@@ -342,11 +348,14 @@ module MGQ_MpBattlesServed
   # @param message [Hash] The message.
   # @return [Boolean] Whether it does.
   def self.fronts?(message)
-    starter? && @channel == :open && FRONT_KINDS.include?(message["coop"].to_s) && message["bid"].to_s == MGQ_MpBattlesSync.battle_id.to_s
+    return false unless starter? && @channel == :open
+
+    MGQ_Multiplayer::Bridge.call(FRONTS_TOPIC, "coop" => message["coop"].to_s, "bid" => message["bid"].to_s) == true
   end
 
-  # As starter, passes a request to join the served battle on to the battle server, with the
-  # states of its player and of the players it brings along, as the world's room told them.
+  # As starter, passes a request to join the served battle on to the battle server through the
+  # DLL, with the states of its player and of the players it brings along, as the world's room
+  # told them.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who asked.
   # @param message [Hash] The request.
@@ -356,8 +365,8 @@ module MGQ_MpBattlesServed
       [known.seat, pairs(known.state.select { |key, _| FRONT_STATE_KEYS.include?(key) })]
     end
     fields = pairs(message.reject { |key, _| key.is_a?(Symbol) })
-    reached = post([SERVER_SEAT], FRONT_IN, MGQ_MpBattlesSync::Wire.line([peer.seat, states, fields]))
-    log("passed #{message['coop']} of #{MGQ_MpOverworldSync.who(peer)} on to the battle server#{reached.empty? ? ' (not sent)' : ''}")
+    reached = MGQ_Multiplayer::Bridge.call(FORWARD_TOPIC, "seat" => peer.seat, "states" => states, "fields" => fields) == true
+    log("passed #{message['coop']} of #{MGQ_MpOverworldSync.who(peer)} on to the battle server#{reached ? '' : ' (not sent)'}")
   end
 
   # As starter, tells the battle server a player left the world, whom it may have taken in.
@@ -366,7 +375,7 @@ module MGQ_MpBattlesServed
   def self.peer_left(peer)
     return unless starter? && @channel == :open
 
-    post([SERVER_SEAT], FRONT_LEFT, MGQ_MpBattlesSync::Wire.line([peer.seat]))
+    MGQ_Multiplayer::Bridge.call(LEFT_TOPIC, "seat" => peer.seat)
   end
 
   # As the battle server, takes a request the starter passed on as the world's room would have
@@ -406,19 +415,6 @@ module MGQ_MpBattlesServed
     !post([@setup[:starter]], FRONT_OUT, MGQ_MpBattlesSync::Wire.line([seat, text])).empty?
   end
 
-  # As starter, passes a message of the battle server on to the world's room: a co-op message only.
-  #
-  # @param body [String] The seat it goes to and the message, see front_out.
-  def self.take_front_out(body)
-    seat, text = MGQ_MpBattlesSync::Wire.parse(body.to_s)
-    fields = MGQ_Multiplayer::Link.parse(text.to_s.dup)
-    coop = fields["coop"] || fields[MGQ_MpCoop::MAP_PREFIX + "coop"]
-    return log("dropped a message of the battle server for the world's room: it is no co-op message") unless seat.is_a?(Integer) && coop
-
-    MGQ_MpOverworldSync::Link.send_to(seat, text.to_s)
-    log("passed the battle server's #{coop} on to #{seat < 0 ? 'everyone' : MGQ_MpBattlesSync.who(seat)}")
-  end
-
   # As the battle server, tells the starter the fields of its state that the world's players read
   # to join the battle, whenever they changed. Called every FRONT_STATE_FRAMES frames.
   def self.tell_front_state
@@ -431,13 +427,6 @@ module MGQ_MpBattlesServed
     post([@setup[:starter]], FRONT_STATE, MGQ_MpBattlesSync::Wire.line([pairs(fields)]))
   end
 
-  # As starter, keeps the fields of the battle server's state the starter tells as its own.
-  #
-  # @param body [String] The fields, see tell_front_state.
-  def self.take_front_state(body)
-    @front_state = hash_of(MGQ_MpBattlesSync::Wire.parse(body.to_s)[0]).select { |key, _| FRONT_FIELDS.include?(key) }
-  end
-
   # Tells the fields the starter of a served battle tells as its own in place of a script's, so
   # the world's players find the battle and join it through the starter.
   #
@@ -447,7 +436,8 @@ module MGQ_MpBattlesServed
   def self.front_fields(keys)
     return nil unless starter? && @channel == :open
 
-    fields = { "rb" => MGQ_MpBattlesSync.battle_id.to_s, "rbh" => MGQ_MpOverworldSync::Me.seat.to_s }.merge(@front_state || { "rbn" => 0 })
+    told = MGQ_Multiplayer::Bridge.call(FRONT_STATE_TOPIC)
+    fields = { "rb" => MGQ_MpBattlesSync.battle_id.to_s, "rbh" => MGQ_MpOverworldSync::Me.seat.to_s }.merge(told.is_a?(Hash) ? told : { "rbn" => 0 })
     fields.select { |key, _| keys.include?(key) }
   end
 
@@ -496,11 +486,12 @@ module MGQ_MpBattlesServed
     @channel == :closed
   end
 
-  # Lists the players who came onto the battle channel. Asked by the server.
+  # Lists the players who came onto the battle channel, as its state names them ("in"). Asked by
+  # the server.
   #
   # @return [Array<Integer>] Their world seats.
   def self.arrived
-    Array(@in)
+    Link.state["in"].to_s.split(",").map(&:to_i)
   end
 
   # Names the world the game is in, whose players alone may come onto its battles' channels.
@@ -517,11 +508,13 @@ module MGQ_MpBattlesServed
   # starter set them up, the arranged players and the level, the switches and variables the
   # troop's events read, how its boss fights (a Raid World's pools or a tier), the starter's seat,
   # the battle's front in the world's room, a Raid World's squad rules for the players who join
-  # late, and the world's mods the starter runs with their options, which the server runs too.
+  # late, the world's mods the starter runs with their options, which the server runs too, and the
+  # widths of the troop's pictures, which the server has none of to measure. The script collects
+  # them, C# writes the line (SETUP_WRITE_TOPIC).
   #
   # @param players [Array<MGQ_MpBattlesCoop::Player>] The arranged players.
   # @param level [Integer, nil] The battle's level.
-  # @return [String] The setup, a Wire line.
+  # @return [String] The setup, a battle line; empty while the bridge does not answer.
   def self.setup_text(players, level)
     switches = []
     $game_switches.instance_variable_get(:@data).each_with_index { |on, id| switches << id if on == true }
@@ -529,64 +522,88 @@ module MGQ_MpBattlesServed
     $game_variables.instance_variable_get(:@data).each_with_index do |value, id|
       variables << [id, value] if value.is_a?(Integer) && value != 0
     end
-    MGQ_MpBattlesSync::Wire.line([FORMAT, scripts_fingerprint, MGQ_MpWorld::GameData.fingerprint, $game_troop.troop.id,
-                                  MGQ_MpGame.get(BattleManager, :can_escape) ? 1 : 0, MGQ_MpGame.get(BattleManager, :can_lose) ? 1 : 0,
-                                  $game_map.map_id, MGQ_MpBattlesCoop.rates_text, MGQ_MpBattlesCoop.troop_entries,
-                                  players.map(&:to_a), level.to_i, switches, variables, MGQ_MpBattlesCoop.raid? ? 1 : 0,
-                                  defined?(MGQ_MpRaidPool) ? MGQ_MpRaidPool.served_fields : nil,
-                                  defined?(MGQ_MpRaidTiers) && MGQ_MpRaidTiers.fight ? 1 : 0, MGQ_MpOverworldSync::Me.seat,
-                                  (MGQ_MpWorld.squad || {}).map { |key, value| [key.to_s, value] },
-                                  defined?(MGQ_MpWorldMods) ? MGQ_MpWorldMods.served_mods : [],
-                                  defined?(MGQ_MpWorldMods) ? MGQ_MpWorldMods.served_settings : ""])
+    squad = MGQ_MpWorld.squad
+    entries = MGQ_MpBattlesCoop.troop_entries
+    facts = { "scripts" => scripts_fingerprint, "data" => MGQ_MpWorld::GameData.fingerprint, "troop" => $game_troop.troop.id,
+              "escape" => MGQ_MpGame.get(BattleManager, :can_escape) ? true : false, "lose" => MGQ_MpGame.get(BattleManager, :can_lose) ? true : false,
+              "map" => $game_map.map_id, "rates" => MGQ_MpBattlesCoop.rates_text, "enemies" => entries,
+              "players" => players.map(&:to_a), "level" => level, "switches" => switches, "variables" => variables, "raid" => MGQ_MpBattlesCoop.raid? ? true : false,
+              "pool" => defined?(MGQ_MpRaidPool) ? MGQ_MpRaidPool.served_fields : nil, "tiers" => defined?(MGQ_MpRaidTiers) && MGQ_MpRaidTiers.fight ? true : false,
+              "starter" => MGQ_MpOverworldSync::Me.seat, "squad" => squad && squad.map { |key, value| [key.to_s, value] },
+              "mods" => defined?(MGQ_MpWorldMods) ? MGQ_MpWorldMods.served_mods : [], "settings" => defined?(MGQ_MpWorldMods) ? MGQ_MpWorldMods.served_settings : "",
+              "widths" => defined?(MGQ_MpBattlesHotjoin) ? MGQ_MpBattlesHotjoin.widths_of(entries) : nil }
+    MGQ_Multiplayer::Bridge.call(SETUP_WRITE_TOPIC, Hash[facts.map { |name, value| [name, plain_fact(value)] }]).to_s
+  end
+
+  # Turns a fact into values the bridge carries, which has no Floats or Symbols: each of those as a
+  # one-key Hash C# writes back as one, a String as text, any other object as its text, as the
+  # battle line wrote it.
+  #
+  # The game's Ruby leaves some Strings as bytes, such as an empty join, which C# refuses where it
+  # reads a text.
+  #
+  # @param value [Object] The fact.
+  # @return [Object] nil, true, false, an Integer, a String, {"float" => its text}, {"symbol" =>
+  #   its name} or an Array of these.
+  def self.plain_fact(value)
+    case value
+    when nil, true, false, Integer then value
+    when String then value.dup.force_encoding("UTF-8")
+    when Float then { "float" => value.to_s }
+    when Symbol then { "symbol" => value.to_s }
+    when Array then value.map { |item| plain_fact(item) }
+    else value.to_s
+    end
   end
 
   # Finds what this game's MGQ Online scripts are, once per session: a checksum of every script in
   # Multiplayer.rb's order, the line ends left out, which a server with other scripts would host
-  # by another protocol.
+  # by another protocol. C# sums them (FINGERPRINT_TOPIC).
   #
   # @return [String] The checksum, empty when a script could not be read.
   def self.scripts_fingerprint
     return @scripts_fingerprint if @scripts_fingerprint
 
-    sum = 0
-    MGQ_Multiplayer::SCRIPTS.each do |name|
-      text = File.open(MGQ_Multiplayer.path("#{MGQ_Multiplayer::SCRIPTS_DIR}\\#{name}#{MGQ_Multiplayer::SCRIPT_EXTENSION}"), "rb") { |file| file.read }
-      sum = Zlib.crc32(name + "\n" + text.delete("\r"), sum)
+    scripts = MGQ_Multiplayer::SCRIPTS.map do |name|
+      [name, File.open(MGQ_Multiplayer.path("#{MGQ_Multiplayer::SCRIPTS_DIR}\\#{name}#{MGQ_Multiplayer::SCRIPT_EXTENSION}"), "rb") { |file| file.read }]
     end
-    @scripts_fingerprint = format("%08x", sum)
+    @scripts_fingerprint = MGQ_Multiplayer::Bridge.call(FINGERPRINT_TOPIC, scripts).to_s
   rescue => e
     log_once(:scripts_fingerprint, "reading the scripts failed: #{e.class}: #{e.message}")
     @scripts_fingerprint = ""
   end
 
-  # Reads a setup as setup_text wrote it.
+  # Reads a setup as setup_text wrote it, through C# (SETUP_READ_TOPIC).
   #
   # @param text [String] The setup.
   # @return [Hash, nil] :scripts and :data (the starter's fingerprints), :troop, :escape, :lose,
   #   :map, :rates, :enemies, :players, :level, :switches, :variables, :raid, :pool (see
-  #   MGQ_MpRaidPool.served_fields), :tiers, :starter, :squad (see MGQ_MpWorld.squad), :mods (see
-  #   mods_of) and :settings; nil for a setup of another format.
+  #   MGQ_MpRaidPool.served_fields), :tiers, :starter, :squad (see MGQ_MpWorld.squad), :mods
+  #   (each mod's key, kind, version and its files' hashes by path), :settings and :widths (the
+  #   troop's, see setup_text; missing when the starter measured none); nil for a setup of another
+  #   format.
   def self.read_setup(text)
-    format, scripts, data, troop, escape, lose, map, rates, enemies, players, level, switches, variables, raid, pool, tiers, starter, squad, mods, settings = MGQ_MpBattlesSync::Wire.parse(text.to_s)
-    return nil unless format == FORMAT && troop.is_a?(Integer)
+    setup = MGQ_Multiplayer::Bridge.call(SETUP_READ_TOPIC, text.to_s)
+    return nil unless setup.is_a?(Hash)
 
-    { :scripts => scripts.to_s, :data => data.to_s,
-      :troop => troop, :escape => escape == 1, :lose => lose == 1, :map => map.to_i, :rates => rates.to_s,
-      :enemies => Array(enemies), :players => MGQ_MpBattlesCoop::Player.read_all(Array(players)),
-      :level => level.is_a?(Integer) && level > 0 ? level : nil,
-      :switches => Array(switches).select { |id| id.is_a?(Integer) && id > 0 },
-      :variables => Array(variables).select { |pair| pair.is_a?(Array) && pair.size == 2 && pair.all? { |value| value.is_a?(Integer) } },
-      :raid => raid == 1, :pool => pool.is_a?(Array) ? pool : nil, :tiers => tiers == 1, :starter => starter.is_a?(Integer) ? starter : nil,
-      :squad => squad_of(squad), :mods => mods_of(mods), :settings => settings.to_s }
+    read = {}
+    setup.each { |key, value| read[key.to_sym] = value }
+    read[:players] = MGQ_MpBattlesCoop::Player.read_all(read[:players])
+    read[:squad] = squad_of(read[:squad])
+    read
   end
 
-  # Reads the world's mods a setup names, see MGQ_MpWorldMods.served_mods.
+  # Reads the world's mods a setup names without C#, for the battle server's child, which gets them
+  # before its sandbox and so before it opens its core library.
   #
-  # @param list [Object] The mods, as setup_text writes them.
-  # @return [Array<Array>] Each mod's key, kind (empty for one the server cannot get), version and
-  #   files' hashes by path; those of another shape left out.
-  def self.mods_of(list)
-    Array(list).map do |key, kind, version, files|
+  # @param text [String] The setup.
+  # @return [Array<Array>, nil] Each mod's key, kind (empty for one the server cannot get), version
+  #   and files' hashes by path, those of another shape left out; nil for a setup of another format.
+  def self.mods_in(text)
+    fields = MGQ_MpBattlesSync::Wire.parse(text.to_s)
+    return nil unless fields && fields[0] == FORMAT && fields[3].is_a?(Integer)
+
+    Array(fields[MODS_FIELD]).map do |key, kind, version, files|
       next unless key.is_a?(String) && !key.empty? && kind.is_a?(String) && version.is_a?(String) && files.is_a?(Array)
 
       hashes = {}
@@ -595,17 +612,27 @@ module MGQ_MpBattlesServed
     end.compact
   end
 
+  # Tells why the battle server refuses a setup, as C# checks it (SETUP_CHECK_TOPIC) against the
+  # server's own scripts and game data.
+  #
+  # @param text [String] The setup.
+  # @param troop_enemies [Boolean] Whether the setup's troop has enemies in the server's database.
+  # @return [Array(String, String), nil] The refusal's code (setup, scripts or data) and why; nil
+  #   for a setup the server hosts.
+  def self.refusal_of(text, troop_enemies)
+    refusal = MGQ_Multiplayer::Bridge.call(SETUP_CHECK_TOPIC, "text" => text.to_s, "scripts" => scripts_fingerprint,
+                                                             "data" => MGQ_MpWorld::GameData.fingerprint, "troop_enemies" => troop_enemies ? true : false)
+    refusal.is_a?(Array) ? refusal : nil
+  end
+
   # Reads a Raid World's squad rules a setup carries, the defaults for those it lacks (see
   # default_squad).
   #
-  # @param list [Object] The rules, as setup_text writes them.
+  # @param pairs [Array] The rules' [name, value] pairs a setup reads with.
   # @return [Hash, nil] The rules, as MGQ_MpWorld.squad tells them; nil for none, for rules out of
   #   range and while the bridge is closed, as on the battle server before its child's sandbox.
-  def self.squad_of(list)
-    pairs = Array(list).select do |pair|
-      pair.is_a?(Array) && pair.size == 2 && pair[0].is_a?(String) && (pair[1].is_a?(Integer) || pair[1] == true || pair[1] == false)
-    end
-    MGQ_MpWorld.squad_from(MGQ_Multiplayer::Bridge.call(SQUAD_SERVED_TOPIC, pairs))
+  def self.squad_of(pairs)
+    MGQ_MpWorld.squad_from(MGQ_Multiplayer::Bridge.call(SQUAD_SERVED_TOPIC, Array(pairs)))
   end
 
   # Tells the squad rules of a Raid World that names none, which the battle server plays a Raid
@@ -635,6 +662,7 @@ module MGQ_MpBattlesServed
     MGQ_MpRaidTiers.note_invite({ "troop" => setup[:troop], MGQ_MpRaidTiers::INVITE_FIELD => "1" }) if setup[:tiers] && defined?(MGQ_MpRaidTiers)
     BattleManager.setup(setup[:troop], setup[:escape], setup[:lose])
     MGQ_MpRaidPool.serve_fight(setup[:troop], setup[:pool]) if setup[:pool] && defined?(MGQ_MpRaidPool)
+    MGQ_MpBattlesHotjoin.keep_widths(battle_id, setup[:widths]) if setup[:widths] && defined?(MGQ_MpBattlesHotjoin)
     seats = setup[:players].map(&:seat)
     MGQ_MpBattlesSync.serve_over_channel(:host, battle_id, seats, "the players")
     MGQ_MpBattlesSync.battle_started
@@ -709,7 +737,8 @@ module MGQ_MpBattlesServed
     # Reads how the battle stands on the relay and its channel.
     #
     # @return [Hash] "state" ("idle", "serving", "served", "refused", "opening", "open" or
-    #   "closed"), "code" for a refusal or a close.
+    #   "closed"), "code" for a refusal or a close, "lasting" once a refusal ended every later
+    #   serve of the session, and on the battle server "in", the seats that came onto the channel.
     def self.state
       text = MGQ_Multiplayer::Link.read('mp_battle_state', STATE_SIZE)
       text.empty? ? { "state" => "idle" } : MGQ_Multiplayer::Link.parse(text)

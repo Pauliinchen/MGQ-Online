@@ -2,7 +2,8 @@
 //  EnemyWidthsTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Registered the topics over a live session
+//      Paulinchen  2026-10-30: Checked the widths of a served battle's troop its setup carries
+//                            - Registered the topics over a live session
 //                            - Created
 //
 //----------------------------------------------------------------
@@ -56,6 +57,30 @@ public sealed class EnemyWidthsTests
         Assert.Equal(318, first[0].AsArray()[1].AsInt());
         Assert.Equal(522, told[0].AsArray()[1].AsInt());
         Assert.Equal(386, measured[0].AsArray()[1].AsInt());
+    }
+
+    /// <summary>
+    /// Asserts that the widths of the troop a served battle's setup carried stand for the 32 pixels the
+    /// server measures, so an encounter's enemy keeps clear of a wide picture of the troop.
+    /// </summary>
+    [Fact]
+    public void KeepWidths_PlacesByTheTroopsWidthsTheSetupCarried()
+    {
+        var request = new RubyHash
+        {
+            { "bid", "b1" },
+            { "troop", new RubyArray { new RubyArray { 30, 320, ServerWidth, false, false } } },
+            { "queued", new RubyArray() },
+            { "entries", new RubyArray { new RubyArray { 41, 290, 100 } } },
+            { "screen", 640 },
+        };
+        RubyArray measured = _context.Ask(CoopTopics.Place, request)!.AsArray();
+
+        _context.Ask(CoopTopics.KeepWidths, new RubyHash { { "bid", "b1" }, { "widths", "30:300" } });
+        RubyArray kept = _context.Ask(CoopTopics.Place, request)!.AsArray();
+
+        Assert.Equal(386, measured[0].AsArray()[1].AsInt());
+        Assert.Equal(522, kept[0].AsArray()[1].AsInt());
     }
 
     /// <summary>

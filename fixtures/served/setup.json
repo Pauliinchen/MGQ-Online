@@ -1,0 +1,591 @@
+{
+  "source": "e2a51fe5",
+  "writes": [
+    {
+      "facts": {
+        "scripts": "0badf00d",
+        "data": "1:data",
+        "troop": 40,
+        "escape": true,
+        "lose": false,
+        "map": 5,
+        "rates": "100,100,0",
+        "enemies": [
+          [
+            31,
+            320,
+            300,
+            0
+          ],
+          [
+            32,
+            400,
+            310,
+            1
+          ]
+        ],
+        "players": [
+          [
+            0,
+            "Me",
+            "1,2,3",
+            [
+              [
+                100,
+                50
+              ]
+            ],
+            8,
+            0,
+            3,
+            1
+          ],
+          [
+            2,
+            "Friend\tTab",
+            "7",
+            [
+
+            ],
+            8,
+            1,
+            2,
+            0
+          ]
+        ],
+        "level": 30,
+        "switches": [
+          12,
+          4001
+        ],
+        "variables": [
+          [
+            150,
+            3
+          ],
+          [
+            1003,
+            -2
+          ]
+        ],
+        "raid": true,
+        "pool": [
+          1,
+          0,
+          [
+            [
+              "Queen Harpy",
+              "0.5000000000",
+              6000,
+              0,
+              ""
+            ],
+            [
+              "Ilias#1",
+              "0.0000000000",
+              9000,
+              1,
+              "Hero"
+            ]
+          ]
+        ],
+        "tiers": false,
+        "starter": 0,
+        "squad": [
+          [
+            "luka",
+            false
+          ],
+          [
+            "formation",
+            4
+          ],
+          [
+            "front",
+            2
+          ],
+          [
+            "raid_front",
+            1
+          ]
+        ],
+        "mods": [
+          [
+            "teamboostfix",
+            "upload",
+            "1.0",
+            [
+              [
+                "Team_Boost_Fix.rb",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              ]
+            ]
+          ]
+        ],
+        "settings": "mod_rate=i:2"
+      },
+      "line": "i1\ts0badf00d\ts1:data\ti40\ti1\ti0\ti5\ts100,100,0\t[\t[\ti31\ti320\ti300\ti0\t]\t[\ti32\ti400\ti310\ti1\t]\t]\t[\t[\ti0\tsMe\ts1,2,3\t[\t[\ti100\ti50\t]\t]\ti8\ti0\ti3\ti1\t]\t[\ti2\tsFriend\\tTab\ts7\t[\t]\ti8\ti1\ti2\ti0\t]\t]\ti30\t[\ti12\ti4001\t]\t[\t[\ti150\ti3\t]\t[\ti1003\ti-2\t]\t]\ti1\t[\ti1\ti0\t[\t[\tsQueen Harpy\ts0.5000000000\ti6000\ti0\ts\t]\t[\tsIlias#1\ts0.0000000000\ti9000\ti1\tsHero\t]\t]\t]\ti0\ti0\t[\t[\tsluka\t-\t]\t[\tsformation\ti4\t]\t[\tsfront\ti2\t]\t[\tsraid_front\ti1\t]\t]\t[\t[\tsteamboostfix\tsupload\ts1.0\t[\t[\tsTeam_Boost_Fix.rb\tsaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\t]\t]\t]\t]\tsmod_rate=i:2"
+    },
+    {
+      "facts": {
+        "scripts": "",
+        "data": "",
+        "troop": 7,
+        "escape": false,
+        "lose": true,
+        "map": 0,
+        "rates": "",
+        "enemies": [
+
+        ],
+        "players": [
+          [
+            3,
+            "Solo",
+            "",
+            [
+
+            ],
+            4,
+            0,
+            4,
+            0
+          ]
+        ],
+        "level": null,
+        "switches": [
+
+        ],
+        "variables": [
+
+        ],
+        "raid": false,
+        "pool": null,
+        "tiers": true,
+        "starter": 3,
+        "squad": null,
+        "mods": [
+
+        ],
+        "settings": ""
+      },
+      "line": "i1\ts\ts\ti7\ti0\ti1\ti0\ts\t[\t]\t[\t[\ti3\tsSolo\ts\t[\t]\ti4\ti0\ti4\ti0\t]\t]\ti0\t[\t]\t[\t]\ti0\t~\ti1\ti3\t[\t]\t[\t]\ts"
+    },
+    {
+      "facts": {
+        "scripts": "0badf00d",
+        "data": "1:data",
+        "troop": 41,
+        "escape": false,
+        "lose": false,
+        "map": 9,
+        "rates": "",
+        "enemies": [
+          [
+            31,
+            {
+              "float": "320.5"
+            },
+            300,
+            0
+          ]
+        ],
+        "players": [
+          [
+            0,
+            "Me",
+            "1",
+            [
+              [
+                {
+                  "float": "0.25"
+                },
+                {
+                  "symbol": "guard"
+                }
+              ]
+            ],
+            8,
+            0,
+            1,
+            0
+          ]
+        ],
+        "level": null,
+        "switches": [
+
+        ],
+        "variables": [
+
+        ],
+        "raid": false,
+        "pool": null,
+        "tiers": false,
+        "starter": 0,
+        "squad": null,
+        "mods": [
+
+        ],
+        "settings": ""
+      },
+      "line": "i1\ts0badf00d\ts1:data\ti41\ti0\ti0\ti9\ts\t[\t[\ti31\tf320.5\ti300\ti0\t]\t]\t[\t[\ti0\tsMe\ts1\t[\t[\tf0.25\t:guard\t]\t]\ti8\ti0\ti1\ti0\t]\t]\ti0\t[\t]\t[\t]\ti0\t~\ti0\ti0\t[\t]\t[\t]\ts"
+    }
+  ],
+  "reads": [
+    {
+      "line": "i1\ts0badf00d\ts1:data\ti40\ti1\ti0\ti5\ts100,100,0\t[\t[\ti31\ti320\ti300\ti0\t]\t[\ti32\ti400\ti310\ti1\t]\t]\t[\t[\ti0\tsMe\ts1,2,3\t[\t[\ti100\ti50\t]\t]\ti8\ti0\ti3\ti1\t]\t[\ti2\tsFriend\\tTab\ts7\t[\t]\ti8\ti1\ti2\ti0\t]\t]\ti30\t[\ti12\ti4001\t]\t[\t[\ti150\ti3\t]\t[\ti1003\ti-2\t]\t]\ti1\t[\ti1\ti0\t[\t[\tsQueen Harpy\ts0.5000000000\ti6000\ti0\ts\t]\t[\tsIlias#1\ts0.0000000000\ti9000\ti1\tsHero\t]\t]\t]\ti0\ti0\t[\t[\tsluka\t-\t]\t[\tsformation\ti4\t]\t[\tsfront\ti2\t]\t[\tsraid_front\ti1\t]\t]\t[\t[\tsteamboostfix\tsupload\ts1.0\t[\t[\tsTeam_Boost_Fix.rb\tsaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\t]\t]\t]\t]\tsmod_rate=i:2",
+      "setup": {
+        "scripts": "0badf00d",
+        "data": "1:data",
+        "troop": 40,
+        "escape": true,
+        "lose": false,
+        "map": 5,
+        "rates": "100,100,0",
+        "enemies": [
+          [
+            31,
+            320,
+            300,
+            0
+          ],
+          [
+            32,
+            400,
+            310,
+            1
+          ]
+        ],
+        "players": [
+          [
+            0,
+            "Me",
+            "1,2,3",
+            [
+              [
+                100,
+                50
+              ]
+            ],
+            8,
+            0,
+            3,
+            1
+          ],
+          [
+            2,
+            "Friend\tTab",
+            "7",
+            [
+
+            ],
+            8,
+            1,
+            2,
+            0
+          ]
+        ],
+        "level": 30,
+        "switches": [
+          12,
+          4001
+        ],
+        "variables": [
+          [
+            150,
+            3
+          ],
+          [
+            1003,
+            -2
+          ]
+        ],
+        "raid": true,
+        "pool": [
+          1,
+          0,
+          [
+            [
+              "Queen Harpy",
+              "0.5000000000",
+              6000,
+              0,
+              ""
+            ],
+            [
+              "Ilias#1",
+              "0.0000000000",
+              9000,
+              1,
+              "Hero"
+            ]
+          ]
+        ],
+        "tiers": false,
+        "starter": 0,
+        "squad": [
+          [
+            "luka",
+            false
+          ],
+          [
+            "formation",
+            4
+          ],
+          [
+            "front",
+            2
+          ],
+          [
+            "raid_front",
+            1
+          ]
+        ],
+        "mods": [
+          [
+            "teamboostfix",
+            "upload",
+            "1.0",
+            {
+              "Team_Boost_Fix.rb": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ]
+        ],
+        "settings": "mod_rate=i:2"
+      }
+    },
+    {
+      "line": "i1\ts\ts\ti7\ti0\ti1\ti0\ts\t[\t]\t[\t[\ti3\tsSolo\ts\t[\t]\ti4\ti0\ti4\ti0\t]\t]\ti0\t[\t]\t[\t]\ti0\t~\ti1\ti3\t[\t]\t[\t]\ts",
+      "setup": {
+        "scripts": "",
+        "data": "",
+        "troop": 7,
+        "escape": false,
+        "lose": true,
+        "map": 0,
+        "rates": "",
+        "enemies": [
+
+        ],
+        "players": [
+          [
+            3,
+            "Solo",
+            "",
+            [
+
+            ],
+            4,
+            0,
+            4,
+            0
+          ]
+        ],
+        "level": null,
+        "switches": [
+
+        ],
+        "variables": [
+
+        ],
+        "raid": false,
+        "pool": null,
+        "tiers": true,
+        "starter": 3,
+        "squad": [
+
+        ],
+        "mods": [
+
+        ],
+        "settings": ""
+      }
+    },
+    {
+      "line": "i2\ts\ts\ti40",
+      "setup": null
+    },
+    {
+      "line": "i1\ts\ts\ts40",
+      "setup": null
+    },
+    {
+      "line": "",
+      "setup": null
+    },
+    {
+      "line": "i1\ti5\t~\ti40\ti1\ti2\ts9\ti7\tsx\t[\tsbad\t[\ti4\t]\t[\ti5\tsFive\t]\t]\ti-1\t[\ti0\ti3\ts4\ti2\t]\t[\t[\ti1\ti2\t]\t[\ti3\t]\t[\ts4\ti5\t]\t[\ti6\ti7\ti8\t]\t]\ti1\tspool\ti1\ts0\t[\t[\tsluka\t+\t]\t[\tsfront\ts2\t]\t[\tsx\t]\t[\ti3\ti4\t]\t]\t[\t[\tsk\ts\ts1.0\t[\t[\tsa.rb\tsbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\t]\t[\tsc.rb\tsshort\t]\t[\ti1\tsd\t]\t]\t]\t[\ts\tsx\ts1\t[\t]\t]\tsjunk\t[\tsn\tst\tsv\tsnotfiles\t]\t]\ti5",
+      "setup": {
+        "scripts": "5",
+        "data": "",
+        "troop": 40,
+        "escape": true,
+        "lose": false,
+        "map": 9,
+        "rates": "7",
+        "enemies": [
+          "x"
+        ],
+        "players": [
+          "bad",
+          [
+            4
+          ],
+          [
+            5,
+            "Five"
+          ]
+        ],
+        "level": null,
+        "switches": [
+          3,
+          2
+        ],
+        "variables": [
+          [
+            1,
+            2
+          ]
+        ],
+        "raid": true,
+        "pool": null,
+        "tiers": true,
+        "starter": null,
+        "squad": [
+          [
+            "luka",
+            true
+          ]
+        ],
+        "mods": [
+          [
+            "k",
+            "",
+            "1.0",
+            {
+              "a.rb": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            }
+          ]
+        ],
+        "settings": "5"
+      }
+    }
+  ],
+  "checks": [
+    {
+      "line": "i1\ts0badf00d\ts1:data\ti40\ti1\ti0\ti5\ts100,100,0\t[\t[\ti31\ti320\ti300\ti0\t]\t[\ti32\ti400\ti310\ti1\t]\t]\t[\t[\ti0\tsMe\ts1,2,3\t[\t[\ti100\ti50\t]\t]\ti8\ti0\ti3\ti1\t]\t[\ti2\tsFriend\\tTab\ts7\t[\t]\ti8\ti1\ti2\ti0\t]\t]\ti30\t[\ti12\ti4001\t]\t[\t[\ti150\ti3\t]\t[\ti1003\ti-2\t]\t]\ti1\t[\ti1\ti0\t[\t[\tsQueen Harpy\ts0.5000000000\ti6000\ti0\ts\t]\t[\tsIlias#1\ts0.0000000000\ti9000\ti1\tsHero\t]\t]\t]\ti0\ti0\t[\t[\tsluka\t-\t]\t[\tsformation\ti4\t]\t[\tsfront\ti2\t]\t[\tsraid_front\ti1\t]\t]\t[\t[\tsteamboostfix\tsupload\ts1.0\t[\t[\tsTeam_Boost_Fix.rb\tsaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\t]\t]\t]\t]\tsmod_rate=i:2",
+      "scripts": "0badf00d",
+      "data": "1:data",
+      "troop_enemies": true,
+      "refusal": null
+    },
+    {
+      "line": "i1\ts0badf00d\ts1:data\ti40\ti1\ti0\ti5\ts100,100,0\t[\t[\ti31\ti320\ti300\ti0\t]\t[\ti32\ti400\ti310\ti1\t]\t]\t[\t[\ti0\tsMe\ts1,2,3\t[\t[\ti100\ti50\t]\t]\ti8\ti0\ti3\ti1\t]\t[\ti2\tsFriend\\tTab\ts7\t[\t]\ti8\ti1\ti2\ti0\t]\t]\ti30\t[\ti12\ti4001\t]\t[\t[\ti150\ti3\t]\t[\ti1003\ti-2\t]\t]\ti1\t[\ti1\ti0\t[\t[\tsQueen Harpy\ts0.5000000000\ti6000\ti0\ts\t]\t[\tsIlias#1\ts0.0000000000\ti9000\ti1\tsHero\t]\t]\t]\ti0\ti0\t[\t[\tsluka\t-\t]\t[\tsformation\ti4\t]\t[\tsfront\ti2\t]\t[\tsraid_front\ti1\t]\t]\t[\t[\tsteamboostfix\tsupload\ts1.0\t[\t[\tsTeam_Boost_Fix.rb\tsaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\t]\t]\t]\t]\tsmod_rate=i:2",
+      "scripts": "other",
+      "data": "1:data",
+      "troop_enemies": true,
+      "refusal": [
+        "scripts",
+        "the starter's MGQ Online differs from the server's"
+      ]
+    },
+    {
+      "line": "i1\ts0badf00d\ts1:data\ti40\ti1\ti0\ti5\ts100,100,0\t[\t[\ti31\ti320\ti300\ti0\t]\t[\ti32\ti400\ti310\ti1\t]\t]\t[\t[\ti0\tsMe\ts1,2,3\t[\t[\ti100\ti50\t]\t]\ti8\ti0\ti3\ti1\t]\t[\ti2\tsFriend\\tTab\ts7\t[\t]\ti8\ti1\ti2\ti0\t]\t]\ti30\t[\ti12\ti4001\t]\t[\t[\ti150\ti3\t]\t[\ti1003\ti-2\t]\t]\ti1\t[\ti1\ti0\t[\t[\tsQueen Harpy\ts0.5000000000\ti6000\ti0\ts\t]\t[\tsIlias#1\ts0.0000000000\ti9000\ti1\tsHero\t]\t]\t]\ti0\ti0\t[\t[\tsluka\t-\t]\t[\tsformation\ti4\t]\t[\tsfront\ti2\t]\t[\tsraid_front\ti1\t]\t]\t[\t[\tsteamboostfix\tsupload\ts1.0\t[\t[\tsTeam_Boost_Fix.rb\tsaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\t]\t]\t]\t]\tsmod_rate=i:2",
+      "scripts": "0badf00d",
+      "data": "other",
+      "troop_enemies": true,
+      "refusal": [
+        "data",
+        "the starter's game data differs from the server's"
+      ]
+    },
+    {
+      "line": "i1\ts0badf00d\ts1:data\ti40\ti1\ti0\ti5\ts100,100,0\t[\t[\ti31\ti320\ti300\ti0\t]\t[\ti32\ti400\ti310\ti1\t]\t]\t[\t[\ti0\tsMe\ts1,2,3\t[\t[\ti100\ti50\t]\t]\ti8\ti0\ti3\ti1\t]\t[\ti2\tsFriend\\tTab\ts7\t[\t]\ti8\ti1\ti2\ti0\t]\t]\ti30\t[\ti12\ti4001\t]\t[\t[\ti150\ti3\t]\t[\ti1003\ti-2\t]\t]\ti1\t[\ti1\ti0\t[\t[\tsQueen Harpy\ts0.5000000000\ti6000\ti0\ts\t]\t[\tsIlias#1\ts0.0000000000\ti9000\ti1\tsHero\t]\t]\t]\ti0\ti0\t[\t[\tsluka\t-\t]\t[\tsformation\ti4\t]\t[\tsfront\ti2\t]\t[\tsraid_front\ti1\t]\t]\t[\t[\tsteamboostfix\tsupload\ts1.0\t[\t[\tsTeam_Boost_Fix.rb\tsaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\t]\t]\t]\t]\tsmod_rate=i:2",
+      "scripts": "0badf00d",
+      "data": "1:data",
+      "troop_enemies": false,
+      "refusal": [
+        "setup",
+        "troop 40 has no enemies"
+      ]
+    },
+    {
+      "line": "i1\tss\tsd\ti40\ti0\ti0\ti0\ts\t[\t]\t[\t]\ti0\t[\t]\t[\t]\ti0\t~\ti0\ti0",
+      "scripts": "s",
+      "data": "d",
+      "troop_enemies": true,
+      "refusal": [
+        "setup",
+        "a battle without players"
+      ]
+    },
+    {
+      "line": "i1\tss\tsd\ti40\ti0\ti0\ti0\ts\t[\t]\t[\t[\ti0\tsA\t]\t[\ti0\tsB\t]\t]\ti0\t[\t]\t[\t]\ti0\t~\ti0\ti0",
+      "scripts": "s",
+      "data": "d",
+      "troop_enemies": true,
+      "refusal": [
+        "setup",
+        "players on seats [0, 0], not distinct world seats"
+      ]
+    },
+    {
+      "line": "i1\tss\tsd\ti40\ti0\ti0\ti0\ts\t[\t]\t[\t[\ti0\tsA\t]\t[\ti32\tsB\t]\t]\ti0\t[\t]\t[\t]\ti0\t~\ti0\ti0",
+      "scripts": "s",
+      "data": "d",
+      "troop_enemies": true,
+      "refusal": [
+        "setup",
+        "players on seats [0, 32], not distinct world seats"
+      ]
+    },
+    {
+      "line": "i1\tss\tsd\ti40\ti0\ti0\ti0\ts\t[\t]\t[\t[\ti0\tsA\t]\t[\ti1\tsB\t]\t]\ti0\t[\t]\t[\t]\ti0\t~\ti0\ti5",
+      "scripts": "s",
+      "data": "d",
+      "troop_enemies": true,
+      "refusal": [
+        "setup",
+        "the starter on seat 5 is none of the players"
+      ]
+    },
+    {
+      "line": "i1\tss\tsd\ti-1\ti0\ti0\ti0\ts\t[\t]\t[\t[\ti0\tsA\t]\t]\ti0\t[\t]\t[\t]\ti0\t~\ti0\ti0",
+      "scripts": "s",
+      "data": "d",
+      "troop_enemies": true,
+      "refusal": [
+        "setup",
+        "troop -1 has no enemies"
+      ]
+    },
+    {
+      "line": "",
+      "scripts": "s",
+      "data": "d",
+      "troop_enemies": true,
+      "refusal": [
+        "setup",
+        "a setup of another format"
+      ]
+    }
+  ],
+  "fingerprint": {
+    "scripts": [
+      [
+        "core_log",
+        "23206c6f670d0a6d6f64756c6520410d0a656e640d0a"
+      ],
+      [
+        "battles_served",
+        "6d6f64756c65204d47515f4d70426174746c65735365727665640a2020464f524d4154203d20310a656e640a"
+      ],
+      [
+        "battles_raid_pool",
+        "707574732027e382a2e383aae382b9270d0a"
+      ]
+    ],
+    "fingerprint": "03fff98c",
+    "empty": "00000000"
+  }
+}

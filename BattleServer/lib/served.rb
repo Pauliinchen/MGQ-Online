@@ -2,7 +2,8 @@
 #  served.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Handed the core's ledger what the relay told of the boss pools before the scripts read them
+#      Paulinchen  2026-10-30: Checked a setup through the core
+#                            - Handed the core's ledger what the relay told of the boss pools before the scripts read them
 #                            - Sent the reports of a raid boss fight's turns from the core's outbox
 #      Paulinchen  2026-10-23: Took the default squad rules from the core through battles_served.rbx
 #                            - Took the default squad rules from battles_served.rbx
@@ -28,9 +29,6 @@ module ServedBattle
   # Seconds a frame takes while a battle is hosted: the players play the stream back in real
   # time and skip ahead once the host runs far ahead, so the host keeps the game's pace.
   FRAME_SECONDS = 1.0 / 60
-
-  # The highest seat of a world's room, which seats 32 games.
-  WORLD_SEATS = 31
 
   # Frames between two reads of the boss pools the relay told, as the game reads the DLL's.
   POOL_FRAMES = 10
@@ -202,23 +200,22 @@ module ServedBattle
       bridge&.close
     end
 
-    # Reads a setup and refuses one the server cannot host.
+    # Reads a setup and refuses one the server cannot host, as the core checks it
+    # (MGQ_MpBattlesServed.refusal_of): other scripts would host by another protocol, other game
+    # data with other rules; a troop without enemies, no players or players not on distinct world
+    # seats with the starter among them cannot be hosted. Only whether the troop has enemies comes
+    # from the server's database here.
     #
     # @param setup_text [String] What the starter sent, see MGQ_MpBattlesServed.setup_text.
     # @return [Hash] The setup, see MGQ_MpBattlesServed.read_setup.
-    # @raise [Refused] For a setup of another format, a troop without enemies or no players.
+    # @raise [Refused] For a setup the server cannot host.
     def check(setup_text)
       setup = MGQ_MpBattlesServed.read_setup(setup_text)
       raise Refused.new("setup", "a setup of another format") unless setup
-      # Other scripts would host by another protocol, other game data with other rules.
-      raise Refused.new("scripts", "the starter's MGQ Online differs from the server's") unless setup[:scripts] == MGQ_MpBattlesServed.scripts_fingerprint
-      raise Refused.new("data", "the starter's game data differs from the server's") unless setup[:data] == MGQ_MpWorld::GameData.fingerprint
-      raise Refused.new("setup", "troop #{setup[:troop]} has no enemies") unless setup[:troop].positive? && $data_troops[setup[:troop]]&.members&.any?
-      raise Refused.new("setup", "a battle without players") if setup[:players].empty?
 
-      seats = setup[:players].map(&:seat)
-      raise Refused.new("setup", "players on seats #{seats.inspect}, not distinct world seats") unless seats.uniq.size == seats.size && seats.all? { |seat| seat.is_a?(Integer) && (0..WORLD_SEATS).cover?(seat) }
-      raise Refused.new("setup", "the starter on seat #{setup[:starter].inspect} is none of the players") unless seats.include?(setup[:starter])
+      troop = setup[:troop]
+      code, why = MGQ_MpBattlesServed.refusal_of(setup_text, troop.positive? && $data_troops[troop]&.members&.any?)
+      raise Refused.new(code, why) if code
 
       setup
     end

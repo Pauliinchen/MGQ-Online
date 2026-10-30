@@ -2,7 +2,8 @@
 #  relay_bridge_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Checked that the reports of the core's outbox reach the relay
+#      Paulinchen  2026-10-30: Checked the seats the channel's state names as their entries pass to the scripts
+#                            - Checked that the reports of the core's outbox reach the relay
 #                            - Checked that the relay's word of the pools reaches the core's ledger in order
 #      Paulinchen  2026-10-15: Created
 #
@@ -95,6 +96,33 @@ MGQ_Multiplayer::Bridge.outbox << ["w1", "Sara", "rp1", "3\t0.1000000000\t900\t0
 Online.send_reports
 check("the reports the core's fight left go to the relay", JSON.parse(relay.gets),
       { "op" => "boss_report", "key" => "Sara", "battle" => "rp1", "seq" => 3, "delta" => 0.1, "max" => 900, "killed" => false })
+
+# Reads what one of the server's stand-ins for the DLL's read exports writes.
+#
+# @param export [#call] The stand-in.
+# @return [String] The text, empty while none comes.
+def read_through(export)
+  50.times do
+    buffer = "\0" * 1024
+    length = export.call(buffer, buffer.bytesize)
+    return buffer[0, length].force_encoding("UTF-8") if length.positive?
+
+    sleep(0.01)
+  end
+  ""
+end
+
+receive = Online.function("mp_battle_receive")
+state = Online.function("mp_battle_state")
+relay.puts(JSON.generate(op: "in", seat: 5))
+relay.puts(JSON.generate(op: "in", seat: 6))
+relay.puts(JSON.generate(op: "out", seat: 5))
+3.times { read_through(receive) }
+check("the channel's state names the seats that came onto it and those that left it, as their entries passed",
+      read_through(state), "state=open\nin=5,6\nout=5")
+relay.puts(JSON.generate(op: "in", seat: 5))
+read_through(receive)
+check("one who comes back is no longer out", read_through(state).lines.last, "out=")
 
 relay.puts(JSON.generate(op: "close"))
 check("the relay's close ends the channel", next_of(bridge), "kind=closed\nseat=0\ncode=relay\n\n")

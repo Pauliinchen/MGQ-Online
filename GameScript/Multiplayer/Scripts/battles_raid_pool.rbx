@@ -2,7 +2,8 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Reported and synced a fight's turns in C#, keeping the slots' time compares
+#      Paulinchen  2026-10-30: Handed a served fight's pools to the battle server and took them there through C#
+#                            - Reported and synced a fight's turns in C#, keeping the slots' time compares
 #                            - Read the pools from the ledger the DLL and the battle server keep in C#, which counts the own reports and the pushes
 #                            - Raised the stats of the pools' and the tiers' enemies through one wrap with the factors kept per battle
 #      Paulinchen  2026-10-23: Made up a battle's id through coop.rbx
@@ -70,9 +71,6 @@ module MGQ_MpRaidPool
   # The topic that hands out the pools as the ledger knows them now.
   POOLS_TOPIC = "raid.pools"
 
-  # The topic that hands the battle server's ledger a pool the relay or the starter told.
-  HEARD_TOPIC = "raid.pool.heard"
-
   # The event of a pool the relay's push defeated for the world, once.
   DEFEATED_EVENT = "raid.boss_defeated"
 
@@ -87,6 +85,12 @@ module MGQ_MpRaidPool
 
   # The topic that ends that battle without a report.
   FIGHT_CLOSE_TOPIC = "raid.fight.close"
+
+  # The topic that writes what the battle server needs to fight that battle's pools.
+  FIGHT_EXPORT_TOPIC = "raid.fight.export"
+
+  # The topic that takes what the starter wrote on the battle server.
+  FIGHT_IMPORT_TOPIC = "raid.fight.import"
 
   # Frames before the pools' fetch is tried again after the DLL did not start it.
   FETCH_RETRY_FRAMES = 120
@@ -851,8 +855,8 @@ module MGQ_MpRaidPool
   def self.open_fight(fight)
     @report_due = nil
     @sync_due = nil
-    MGQ_Multiplayer::Bridge.call(FIGHT_OPEN_TOPIC, "world" => MGQ_MpWorldStory.world_id.to_s, "battle" => fight.battle,
-                                                   "keys" => fight.members.map(&:key), "guest" => fight.guest ? true : false)
+    MGQ_Multiplayer::Bridge.call(FIGHT_OPEN_TOPIC, "world" => MGQ_MpWorldStory.world_id.to_s, "battle" => fight.battle, "keys" => fight.members.map(&:key),
+                                                   "own" => fight.own.to_i, "guest" => fight.guest ? true : false, "side" => fight.side ? true : false)
   end
 
   # Runs a moment of the battle in C# (FIGHT_TURN_TOPIC, RaidFight.Turn), which reports what the
@@ -1077,44 +1081,32 @@ module MGQ_MpRaidPool
 
   # Writes what the battle server needs to fight the battle's pools as the player's game would: how
   # many enemies the troop's setup made, whether it is a side battle, and each of its pools as the
-  # player's game knows them. Called by MGQ_MpBattlesServed.setup_text.
+  # ledger knows them (FIGHT_EXPORT_TOPIC). Called by MGQ_MpBattlesServed.setup_text.
   #
   # @return [Array, nil] The count, 1 or 0 for a side battle, and each pool's key, share left now
   #   (as text), max, 1 or 0 for defeated and who emptied it; nil for a battle that fights no pool.
   def self.served_fields
-    fight = @fight
-    return nil unless fight
+    return nil unless @fight
 
-    now = Time.now
-    pools = fight.members.map(&:key).select { |key| @pools[key] }.map do |key|
-      pool = @pools[key]
-      [key, format("%.10f", left_now(pool, now)), pool.max.to_i, pool.defeated ? 1 : 0, pool.by.to_s]
-    end
-    [fight.own, fight.side ? 1 : 0, pools]
+    MGQ_Multiplayer::Bridge.call(FIGHT_EXPORT_TOPIC)
   rescue => e
     log("writing the pools for the battle server failed: #{e.class}: #{e.message}")
     nil
   end
 
   # As the battle server, fights the pools of a battle the starter handed over, as its host: the
-  # pools as the starter's game knew them, handed to the core's ledger, then the battle's own enemies with their tier's stats
-  # and the pools' HP. Called by MGQ_MpBattlesServed.host after BattleManager.setup.
+  # pools as the starter's game knew them, taken into the core's ledger (FIGHT_IMPORT_TOPIC), then
+  # the battle's own enemies with their tier's stats and the pools' HP. Called by
+  # MGQ_MpBattlesServed.host after BattleManager.setup.
   #
   # @param troop [Integer] The troop.
   # @param fields [Array] The starter's fields, see served_fields.
   def self.serve_fight(troop, fields)
-    own, side, pools = Array(fields)
-    return log("troop #{troop} fights no pool on the server: the starter's count #{own.inspect} is none") unless own.is_a?(Integer) && own > 0 && own < 100
+    taken = MGQ_Multiplayer::Bridge.call(FIGHT_IMPORT_TOPIC, "world" => MGQ_MpWorldStory.world_id.to_s, "fields" => fields)
+    return log("troop #{troop} fights no pool on the server: the starter's count #{Array(fields)[0].inspect} is none") unless taken.is_a?(Array)
 
-    world = MGQ_MpWorldStory.world_id.to_s
-    Array(pools).each do |key, left, max, defeated, by|
-      next unless key.is_a?(String) && !key.empty? && key.size <= MAX_KEY_LENGTH + 4
-
-      MGQ_Multiplayer::Bridge.call(HEARD_TOPIC, "world" => world, "key" => key, "left" => left.to_s, "max" => max.is_a?(Integer) ? max : 0,
-                                                "defeated" => defeated == 1, "by" => by.to_s, "answer" => false)
-    end
     read_state
-    start(troop, own, :served, side == 1)
+    start(troop, taken[0], :served, taken[1] ? true : false)
   rescue => e
     @fight = nil
     log("fighting the starter's pools failed: #{e.class}: #{e.message}")

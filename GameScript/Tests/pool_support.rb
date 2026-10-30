@@ -2,7 +2,8 @@
 #  pool_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Stood in for the fight that fights the pools, held against its golden turns
+#      Paulinchen  2026-10-30: Stood in for a served fight's export and import
+#                            - Stood in for the fight that fights the pools, held against its golden turns
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -60,7 +61,9 @@ class PoolLedgerStandIn
     fake.answer("raid.pools") { describe }
     fake.answer("raid.pool.heard") { |request| heard(request) }
     fake.answer("raid.pool.reports") { [] }
-    fake.answer("raid.fight.open") { |request| open_fight(request["world"], request["battle"], request["keys"], request["guest"]); nil }
+    fake.answer("raid.fight.open") { |request| open_fight(request["world"], request["battle"], request["keys"], request["guest"], request["side"], request["own"]); nil }
+    fake.answer("raid.fight.export") { @fight && export_fight }
+    fake.answer("raid.fight.import") { |request| import_fight(request["world"], request["fields"]) }
     fake.answer("raid.fight.turn") { |request| turn_of(request) }
     fake.answer("raid.fight.close") { @fight = nil }
   end
@@ -78,8 +81,41 @@ class PoolLedgerStandIn
   # @param battle [String] The battle's id.
   # @param keys [Array<String>] The pools of the troop's own enemies by their place.
   # @param guest [Boolean] Whether a host's stream governs it.
-  def open_fight(world, battle, keys, guest)
+  # @param side [Boolean] Whether it is a side battle.
+  # @param own [Integer, nil] How many enemies the troop's setup made, nil for as many as the keys.
+  def open_fight(world, battle, keys, guest, side = false, own = nil)
     @fight = RaidFightStandIn.new(world, battle, keys, guest)
+    @fight_side = side ? true : false
+    @fight_own = own || keys.size
+  end
+
+  # Writes what the battle server needs to fight the open battle's pools, see PoolTopics.Export.
+  #
+  # @return [Array] The count, 1 or 0 for a side battle and the pools the ledger knows of it.
+  def export_fight
+    pools = @fight.members.map(&:key).select { |key| @pools[key] }.map do |key|
+      left, max, defeated, by = pool(key)
+      [key, format("%.10f", left), max.round, defeated ? 1 : 0, by]
+    end
+    [@fight_own, @fight_side ? 1 : 0, pools]
+  end
+
+  # Takes the pools of a battle its starter handed over, see PoolTopics.Import.
+  #
+  # @param world [String] The world.
+  # @param fields [Array, nil] The starter's fields, see export_fight.
+  # @return [Array, nil] The count and whether it is a side battle; nil for a count that is none.
+  def import_fight(world, fields)
+    own, side, pools = Array(fields)
+    return nil unless own.is_a?(Integer) && own > 0 && own < 100
+
+    enter(world)
+    Array(pools).each do |key, left, max, defeated, by|
+      next unless key.is_a?(String) && !key.empty? && key.size <= 64
+
+      hear(key, left.to_s.to_f, max.is_a?(Integer) ? max : 0, defeated == 1, by.to_s, :fetched)
+    end
+    [own, side == 1]
   end
 
   # Takes a report as the DLL does: through the reporter, counted in the pools once taken.

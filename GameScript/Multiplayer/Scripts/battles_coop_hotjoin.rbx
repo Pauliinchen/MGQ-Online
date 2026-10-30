@@ -2,7 +2,8 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Placed an encounter's enemies and checked requests to join through the rules in C#
+#      Paulinchen  2026-10-30: Kept the widths of a served battle's troop its starter measured for the placements on the battle server
+#                            - Placed an encounter's enemies and checked requests to join through the rules in C#
 #                            - Wrote the roster and the party and read the host's changed troop through the rules in C#
 #                            - Told the widths of the encounter's pictures with a request, which the host places them by
 #                            - Handed the players who stay out of the player's battle to the matchmaking in the DLL
@@ -87,6 +88,9 @@ module MGQ_MpBattlesHotjoin
 
   # The topic that writes the widths of the encounter's pictures a request tells.
   WRITE_WIDTHS_TOPIC = "coop.write_widths"
+
+  # The topic that keeps the widths of a battle's troop for its placements.
+  KEEP_WIDTHS_TOPIC = "coop.keep_widths"
 
   # The topic that writes the troop's enemies a request carries.
   WRITE_ENTRIES_TOPIC = "coop.write_entries"
@@ -277,7 +281,7 @@ module MGQ_MpBattlesHotjoin
     entries = coop.troop_entries
     request = { "facts" => coop.facts, "troop" => troop_id.to_i, "escape" => can_escape ? true : false, "lose" => can_lose ? true : false,
                 "boss" => MGQ_MpRaidBosses.boss?(troop_id) ? true : false, "entries" => entries.map { |entry| Array(entry).map(&:to_i) },
-                "widths" => entries.map { |id, *_| [id.to_i, id_width(id)] }, "stays_out" => stays_out_seats }
+                "widths" => widths_of(entries), "stays_out" => stays_out_seats }
     answer = MGQ_Multiplayer::Bridge.call(ASK_TOPIC, request)
     coop.take_status(answer)
     join = Array(answer.is_a?(Hash) ? answer["actions"] : nil).find { |action| action["kind"] == "join" }
@@ -760,6 +764,25 @@ module MGQ_MpBattlesHotjoin
     picture_width(enemy.battler_name, enemy.battler_hue)
   rescue
     DEFAULT_WIDTH
+  end
+
+  # Lists the widths of enemies' pictures as this game measures them: an encounter's, which a request
+  # to join tells, or the troop's, which a served battle's setup carries.
+  #
+  # @param entries [Array<Array>] The enemies, [id, x, y, mark] each.
+  # @return [Array<Array(Integer, Integer)>] Each enemy's id and its picture's width.
+  def self.widths_of(entries)
+    entries.map { |id, *_| [id.to_i, id_width(id)] }
+  end
+
+  # Keeps the widths of the troop's pictures a served battle's starter measured, so the battle
+  # server, which has no pictures, places the enemies that join the battle by them.
+  #
+  # @param bid [String] The battle's id.
+  # @param widths [String] The widths, as the setup carries them, such as "31:160;52:600".
+  def self.keep_widths(bid, widths)
+    MGQ_Multiplayer::Bridge.call(KEEP_WIDTHS_TOPIC, "bid" => bid.to_s, "widths" => widths.to_s)
+    log("kept the widths of the troop of battle #{bid} its starter measured: #{widths}")
   end
 
   # Measures the picture of an enemy of the database.
