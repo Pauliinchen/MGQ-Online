@@ -2,7 +2,10 @@
 //  WorldRoomTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Registered the duels' topics on the room
+//      Paulinchen  2026-10-30: Registered the topic of the player's squad over the room
+//                            - Registered the topics of the NPCs shared on a map over the room
+//                            - Registered the topics of the teleports between party members over the room
+//                            - Registered the duels' topics on the room
 //      Paulinchen  2026-10-28: Registered the topic that waits for the world room's sends as the game closes
 //      Paulinchen  2026-10-23: Read the event data ahead as the world opens and the map changes
 //                            - Posted a game kept aside and the ids of a player moved or gone
@@ -237,6 +240,9 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
         context.Register(RemoveTopic, (_, request) => topics.Act(() => topics._room.Party.Remove(topics.PeerAt(request))));
         context.EveryFrame(_ => topics.Step());
         DuelTopics.Register(context, topics._room);
+        TeleportTopics.Register(context, topics._room);
+        NpcTopics.Register(context, topics._room);
+        SquadViewTopics.Register(context, topics._room);
         return topics;
     }
 

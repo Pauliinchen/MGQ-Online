@@ -2,6 +2,7 @@
 #  coop_npcs.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Left the Map Owner's sends and the follower's checks to the DLL, and read the events to follow when they changed
 #      Paulinchen  2026-10-23: Left the events to the player's own game while it runs an event the player plays, then placed them
 #      Paulinchen  2026-10-17: Left the events to the player's own game while a frozen raid boss fight resumes
 #      Paulinchen  2026-10-12: Sent a newcomer the whole map again until it went out
@@ -34,12 +35,20 @@
 # way it faces and which page it shows. The others' games stop moving events on their own and walk
 # them where the Map Owner's are. In a Classic world players outside the party, or on other maps,
 # share nothing: each moves their own NPCs. Every map has its own Map Owner, which changes as
-# players come and go; the world's creator plays no part in this.
+# players come and go; the world's creator plays no part in this. Who shares the map and who its
+# Map Owner is this script finds; what the Map Owner sent and to whom, and what a follower takes, are
+# the DLL's (MGQOnline.Game's NpcSync), which this script tells each frame.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopNpcs
-  # Frames between two messages of the Map Owner, a quarter of a second at 60 frames per second.
-  SEND_FRAMES = 15
+  # The topic that tells the DLL who shares the map and its Map Owner, once a frame.
+  UPDATE_TOPIC = "npcs.update"
+
+  # The topic that hands the DLL the Map Owner's events when the frame asks for them.
+  SNAPSHOT_TOPIC = "npcs.snapshot"
+
+  # The topic that reads the Map Owner's events the player's game follows.
+  TARGETS_TOPIC = "npcs.targets"
 
   # Frames an event may fail to walk to its place before it moves there at once.
   STUCK_FRAMES = 60
@@ -50,14 +59,10 @@ module MGQ_MpCoopNpcs
 
   # The player's part on the map: :owner, :follower, or nil while nobody shares it.
   @role = nil
-  # Frames since the Map Owner's last message, see SEND_FRAMES.
-  @frames = 0
-  # The events' states the Map Owner last told everyone, by their id.
-  @sent = {}
-  # When each player the Map Owner sent the whole map came onto it, by their seat.
-  @present = {}
-  # When each player whose whole map failed to go out came onto it, by their seat.
-  @failed = {}
+  # Whether the DLL was last told that someone shares the map, so it hears once nobody does.
+  @shared = false
+  # The revision of the Map Owner's events the player's game read last.
+  @revision = 0
   # The Map Owner's events the player's game follows, see targets.
   @targets = {}
   # Frames each event failed to walk to its place, by its id.
@@ -66,8 +71,6 @@ module MGQ_MpCoopNpcs
   @blockers = []
   # The map the player's part belongs to.
   @map_id = nil
-  # The map whose whole the follower took, before which no part of it is followed.
-  @whole_map = nil
   # Whether the follower's own event ran on the last frame, see playing?.
   @playing = false
 
@@ -125,41 +128,78 @@ module MGQ_MpCoopNpcs
     MGQ_MpCoop::Scope.sync_host(members)
   end
 
-  # Follows the map for one frame: finds the Map Owner, and sends or follows the events. Called
-  # after the map's own update, behind other screens too. A new map starts anew, as a new part
-  # does: what the last map's events did means nothing for this one's.
+  # Follows the map for one frame: finds the Map Owner, tells the DLL, and as a follower walks the
+  # events. Called after the map's own update, behind other screens too. A new map starts anew, as a
+  # new part does: what the last map's events did means nothing for this one's.
   def self.update
     members = peers_here
     map_owner = members.empty? ? nil : owner(members)
     role = map_owner.nil? ? nil : (map_owner == :me ? :owner : :follower)
     note_owner(map_owner, members)
-    change_role(role) if role != @role || $game_map.map_id != @map_id
+    start_anew(role) if role != @role || $game_map.map_id != @map_id
     @blockers = members.map(&:ghost).compact
-
-    case @role
-    when :owner then lead(members)
-    when :follower then follow
-    end
+    tell_frame(map_owner, members) if role || @shared
+    @shared = !role.nil?
+    follow if @role == :follower
   rescue => e
     log_once(:update, "update failed: #{e.class}: #{e.message}")
   end
 
-  # Starts a new part, or the same on a new map, forgetting what the old one sent or followed.
+  # Starts a new part, or the same on a new map, forgetting the old one's events and how they walked.
   #
   # @param role [Symbol, nil] The new part.
-  def self.change_role(role)
-    log("#{@role == :owner ? 'sent' : 'took'} #{@updates} NPC update(s) as #{@role == :owner ? 'the Map Owner' : 'a follower'}, now #{role || 'no part'}") if @updates.to_i > 0
-    @updates = 0
+  def self.start_anew(role)
     @role = role
     @map_id = $game_map.map_id
-    @whole_map = nil
-    @sent = {}
-    @present = {}
-    @failed = {}
     @targets = {}
     @stuck = {}
     @playing = false
-    @frames = SEND_FRAMES
+  end
+
+  # Tells the DLL the frame: the map, its Map Owner and, as the Map Owner, when each player sharing
+  # it came onto it; hands it the events when it asks, and reads those to follow once they changed.
+  #
+  # @param map_owner [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The Map Owner, :me for the
+  #   player, nil while nobody shares the map.
+  # @param members [Array<MGQ_MpOverworldSync::Peers::Peer>] The others sharing the map.
+  def self.tell_frame(map_owner, members)
+    arrivals = {}
+    members.each { |peer| arrivals[peer.seat] = peer.state["since"].to_s } if map_owner == :me
+    owner_seat = map_owner == :me ? -1 : (map_owner && map_owner.seat)
+    answer = MGQ_Multiplayer::Bridge.call(UPDATE_TOPIC, "map" => $game_map.map_id, "owner" => owner_seat, "arrivals" => arrivals)
+    return unless answer.is_a?(Hash)
+
+    send_events if answer["snapshot"]
+    read_targets(map_owner) if answer["revision"] != @revision
+  end
+
+  # Hands the DLL every event of the map, which sends them to a newcomer and on its beat what
+  # changed to everyone, and logs the events whose page changed, which means the story moved on.
+  def self.send_events
+    map = $game_map.map_id
+    events = $game_map.events.map { |id, event| "#{id}:#{event.mgq_mp_npc_state.join(',')}" }.join(";")
+    answer = MGQ_Multiplayer::Bridge.call(SNAPSHOT_TOPIC, "map" => map, "events" => events)
+    return unless answer.is_a?(Hash)
+
+    answer["turned"].each do |id, from, to|
+      log("event #{id}#{MGQ_MpCoop.event_name(id)} on map #{map} turned to page #{to} from #{from}, told the others")
+    end
+  end
+
+  # Reads the Map Owner's events the player's game follows, and places every event at once when a
+  # whole map came while the player follows.
+  #
+  # @param map_owner [MGQ_MpOverworldSync::Peers::Peer, Symbol, nil] The Map Owner.
+  def self.read_targets(map_owner)
+    answer = MGQ_Multiplayer::Bridge.call(TARGETS_TOPIC)
+    return unless answer.is_a?(Hash)
+
+    @revision = answer["revision"]
+    @targets = answer["targets"]
+    return unless answer["whole"] && following?
+
+    log("took all #{@targets.size} event(s) of map #{$game_map.map_id} from #{MGQ_MpOverworldSync.who(map_owner)}, placing them")
+    @targets.each { |id, state| place($game_map.events[id], state) }
   end
 
   # Logs the Map Owner of the player's map once it, or the map, changed, with why it is them.
@@ -181,119 +221,6 @@ module MGQ_MpCoopNpcs
     log("map #{$game_map.map_id}: the Map Owner is #{MGQ_MpOverworldSync.who(owner)} (#{castle}), so the player's game #{owner == :me ? 'moves the NPCs and tells' : 'follows the NPCs of'} #{members.map { |peer| peer.state['name'] }.join(', ')}")
   rescue => e
     log_once(:note_owner, "naming the Map Owner failed: #{e.class}: #{e.message}")
-  end
-
-  # As Map Owner, sends newcomers the whole picture and everyone what changed.
-  #
-  # A follower takes no part of the map before its whole, so a whole map that failed to go out is
-  # sent again until it does.
-  #
-  # @param members [Array<MGQ_MpOverworldSync::Peers::Peer>] The others sharing the map.
-  def self.lead(members)
-    arrivals = {}
-    members.each { |peer| arrivals[peer.seat] = peer.state["since"].to_s }
-    @present.keep_if { |seat, _| arrivals.key?(seat) }
-    @failed.keep_if { |seat, _| arrivals.key?(seat) }
-    @frames += 1
-    beat = @frames >= SEND_FRAMES
-    arrivals.each do |seat, since|
-      next if @present[seat] == since
-      # A failed send waits for the beat, so a connection that is down is not tried every frame.
-      next if @failed[seat] == since && !beat
-
-      send_whole(seat, since)
-    end
-    return unless beat
-
-    @frames = 0
-    now = snapshot
-    changed = now.reject { |id, state| @sent[id] == state }
-    return if changed.empty?
-
-    note_pages(changed)
-    return unless tell(-1, changed, false)
-
-    @sent = now
-    @updates = @updates.to_i + 1
-  end
-
-  # Sends a player who came onto the map every event of it, noting them as told once it went out.
-  #
-  # @param seat [Integer] The player's seat.
-  # @param since [String] When they came onto the map, which tells a later arrival apart.
-  def self.send_whole(seat, since)
-    states = snapshot
-    if tell(seat, states, true)
-      @present[seat] = since
-      @failed.delete(seat)
-      log("sent seat #{seat} all #{states.size} event(s) of map #{$game_map.map_id}")
-    else
-      @failed[seat] = since
-      log_once([:whole_failed, seat, since], "sending seat #{seat} all #{states.size} event(s) of map #{$game_map.map_id} failed, sent again every #{SEND_FRAMES} frames until it goes out")
-    end
-  end
-
-  # Logs the events whose page changed in the Map Owner's update, which means the story moved on.
-  #
-  # @param changed [Hash{Integer => Array<Integer>}] The events that changed, by their id.
-  def self.note_pages(changed)
-    changed.each do |id, state|
-      before = @sent[id]
-      next unless before && before[3] != state[3]
-
-      log("event #{id}#{MGQ_MpCoop.event_name(id)} on map #{$game_map.map_id} turned to page #{state[3]} from #{before[3]}, told the others")
-    end
-  rescue
-  end
-
-  # Reads every event of the map.
-  #
-  # @return [Hash{Integer => Array<Integer>}] Each event's x, y, facing and page by its id.
-  def self.snapshot
-    states = {}
-    $game_map.events.each { |id, event| states[id] = event.mgq_mp_npc_state }
-    states
-  end
-
-  # Sends events' states through the scope's gate to one player or to everyone it reaches, who
-  # ignore it unless they share this map.
-  #
-  # @param seat [Integer] The player's seat, -1 for everyone.
-  # @param states [Hash{Integer => Array<Integer>}] The events' states.
-  # @param full [Boolean] Whether they are all the map's events.
-  # @return [Boolean] Whether it went out.
-  def self.tell(seat, states, full)
-    list = states.map { |id, state| "#{id}:#{state.join(',')}" }.join(";")
-    MGQ_MpCoop::Scope.tell(seat, "npcs", $game_map.map_id, "full" => full ? 1 : 0, "events" => list)
-  end
-
-  # Takes the Map Owner's events. Called by coop.rbx and coop_scope.rbx.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent them.
-  # @param message [Hash] The message's fields.
-  def self.take(peer, message)
-    map = message["npcs"].to_i
-    return log_once([:not_following, map, peer.state["id"]], "ignored NPCs of map #{map} from #{MGQ_MpOverworldSync.who(peer)}: the player's game moves its own (#{@role || 'no part'})") unless @role == :follower
-    return log_once([:other_map, map, $game_map.map_id], "ignored NPCs of map #{map}: the player is on map #{$game_map.map_id}") unless map == $game_map.map_id
-    return log_once([:not_owner, map, peer.state["id"]], "ignored NPCs of map #{map} from #{MGQ_MpOverworldSync.who(peer)}: not the Map Owner") unless owner(peers_here).equal?(peer)
-
-    full = message["full"] == "1"
-    # A part of the map before its whole would leave the other events where the last map had them.
-    return log_once([:before_whole, map, peer.state["id"]], "waits for the whole map #{map} from #{MGQ_MpOverworldSync.who(peer)} before following its events") unless full || @whole_map == map
-
-    @whole_map = map if full
-    @targets = {} if full
-    message["events"].to_s.split(";").each do |entry|
-      id, state = entry.split(":", 2)
-      @targets[id.to_i] = state.to_s.split(",").map(&:to_i)
-    end
-    @updates = @updates.to_i + 1
-    return unless full && following?
-
-    log("took all #{@targets.size} event(s) of map #{map} from #{MGQ_MpOverworldSync.who(peer)}, placing them")
-    @targets.each { |id, state| place($game_map.events[id], state) }
-  rescue => e
-    log_once(:take, "taking events failed: #{e.class}: #{e.message}")
   end
 
   # The Map Owner's events the player's game follows.
@@ -406,16 +333,6 @@ module MGQ_MpCoopNpcs
   def self.member_near?(event)
     @role == :owner && @blockers.any? { |ghost| event.distance_x_from(ghost.x).abs + event.distance_y_from(ghost.y).abs < NEAR_TILES }
   end
-end
-
-# What this script takes part in of the party's messages, through coop.rbx, and of the map's in a
-# Raid World, through coop_scope.rbx.
-
-begin
-  MGQ_MpCoop.route("npcs") { |peer, message| MGQ_MpCoopNpcs.take(peer, message) }
-  MGQ_MpCoop.route_map("npcs") { |peer, message| MGQ_MpCoopNpcs.take(peer, message) }
-rescue => e
-  MGQ_MpCoopNpcs.log("co-op FAILED: #{e.class}: #{e.message}")
 end
 
 # What the party's NPCs ask of an event.

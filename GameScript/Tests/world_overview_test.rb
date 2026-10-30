@@ -2,7 +2,8 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Kept one check of the story's place
+#      Paulinchen  2026-10-30: Answered the teleports' view and the squad from the party's stand-in
+#                            - Kept one check of the story's place
 #      Paulinchen  2026-10-28: Read the place in the story by the ids of its switches and variables
 #      Paulinchen  2026-10-24: Checked the pages of other mods with their tabs, controls, buttons and mouse
 #      Paulinchen  2026-10-23: Checked that the title is asked once
@@ -200,6 +201,8 @@ load_script "world_overview_mods"
 module MGQ_MpEmotes; def self.open?; false; end; end
 load_script "ui_party_box"
 rules_bridge = open_rules_bridge
+require_relative "party_support"
+answer_party(rules_bridge)
 
 overview = MGQ_MpWorldOverview
 
@@ -394,6 +397,7 @@ check("the chat box closes it", [MGQ_MpChat.typing?, overview.open?], [true, fal
 # Only the party's leader invites and removes.
 friend_peer = MGQ_MpOverworldSync::Peers.at(2)
 member_peer = MGQ_MpOverworldSync::Peers.at(3)
+MGQ_MpCoopTeleport.tick(true)
 check("a member may teleport to their leader", MGQ_MpActions.peer_options(friend_peer).map(&:text), ["Teleport to Friend", "Duel"])
 check("and may not invite", [MGQ_MpCoop::Offers.peer_option(member_peer).run, MGQ_MpCoop::Offers.peer_option(member_peer).refusal], [nil, "Only the party's leader invites."])
 $inbox << entry("message", 3, told(other.merge("party" => "me-p2", "id" => "zz-member")))
@@ -416,6 +420,7 @@ overview.instance_variable_set(:@frames, 0)
 overview.tick(true)
 check("a Classic world tells no Frontline level", [MGQ_MpOverworldSync::Me.current.key?("flv"), MGQ_MpPartyBox.map_box?], [false, false])
 $raid = true
+MGQ_MpOverworldSync.tick
 check("in a Raid World the Frontline level is the one Frontline character's, Luka included", overview.front_level, 40)
 own_share = MGQ_MpCoopSquad.method(:own_share)
 MGQ_MpCoopSquad.define_singleton_method(:own_share) { [2, 2] }

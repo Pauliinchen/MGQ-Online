@@ -2,6 +2,7 @@
 #  coop_squad.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Read the own share, the followers' mode and whether squads split from the DLL's view of the party once a frame
 #      Paulinchen  2026-10-23: Asked the DLL or the core library for the squad math, the team fit and the default squad rules
 #      Paulinchen  2026-10-13: Sized a Raid World's team and squads by the world's squad rules
 #                            - Let a Raid World's Luka leave the team when its rules allow it
@@ -65,6 +66,9 @@ module MGQ_MpCoopSquad
   # The topic that picks the companions a team past its cap leaves out.
   PAST_CAP_TOPIC = "squad.past_cap"
 
+  # The topic that reads the player's squad over the party, once a frame.
+  VIEW_TOPIC = "squad.view"
+
   # The names of a squad rule in the topics' answers, by the rule's key in the scripts.
   RULE_NAMES = { :luka => "luka", :formation => "formation", :front => "front", :raid_front => "raid_front" }
 
@@ -107,6 +111,10 @@ module MGQ_MpCoopSquad
   # The player's share, the followers' mode and whether a Raid World is open, as tick last took
   # them, nil outside a world.
   @shown = nil
+
+  # The player's squad as the DLL read it this frame: "share", "mode" and "squads"; nil outside a
+  # world and while the DLL does not answer.
+  @view = nil
 
   # Monochrome copies of picture parts, by the picture's name and the part, see monochrome.
   @monochrome = {}
@@ -275,11 +283,26 @@ module MGQ_MpCoopSquad
   end
 
   # Reports whether the player's characters split into a squad and the cut ones: in a party, and
-  # always in a Raid World.
+  # always in a Raid World, as the DLL read it this frame.
   #
   # @return [Boolean] Whether they do.
   def self.squads?
-    raid? || MGQ_MpCoop.in_party?
+    @view && @view["squads"] ? true : false
+  end
+
+  # Reads the player's squad from the DLL, once a frame while a world is open: their share, how
+  # followers show and whether squads split, over the party and the world's squad rules.
+  #
+  # @param in_world [Boolean] Whether a world is open.
+  def self.read_view(in_world)
+    @view = nil
+    return unless in_world && $game_party
+
+    raid = raid?
+    request = { "max" => $game_party.party_member_max, "own_mode" => own_mode, "raid" => raid, "raid_fight" => raid && raid_fight?,
+                "rules" => raid ? rules_request(rules) : nil }
+    answer = MGQ_Multiplayer::Bridge.call(VIEW_TOPIC, request)
+    @view = answer if answer.is_a?(Hash)
   end
 
   # Orders players as every member's game does: the leader first, then by their ids.
@@ -290,22 +313,14 @@ module MGQ_MpCoopSquad
     (ask(RANK_TOPIC, players.map { |id, leads| [id.to_s, leads ? true : false] }) || []).dup
   end
 
-  # Tells the player's squad: in a Raid World as its rules size it (see raid_share), else their
-  # share in their party.
+  # Tells the player's squad, as the DLL read it this frame: in a Raid World as its rules size it
+  # for the fight (see raid_share), else their share in their party.
   #
   # @return [Array<Integer>, nil] The Frontline's and the Backline's share, nil outside a party in
   #   a Classic world.
   def self.own_share
-    return raid_share if raid?
-    return nil unless MGQ_MpCoop.in_party?
-
-    party = MGQ_MpCoop::Party
-    leader = MGQ_MpCoop.party_leader
-    own_id = MGQ_MpOverworldSync::Me.id
-    players = [[own_id, leader == :me]] + party.members.map { |peer| [peer.state["id"].to_s, peer.equal?(leader)] }
-    order = ranked(players)
-    position = order.index(own_id.to_s)
-    position ? share(position, order.size, $game_party.party_member_max) : nil
+    share = @view && @view["share"]
+    share ? share.dup : nil
   end
 
   # Lists the player's characters in the order their squad takes them; in a Raid World only those
@@ -346,14 +361,13 @@ module MGQ_MpCoopSquad
     index < front + bench ? :bench : :cut
   end
 
-  # Reads how followers show in the party: the leader's choice, the player's own when they lead or
-  # play outside a party.
+  # Reads how followers show in the party, as the DLL read it this frame: the leader's choice, the
+  # player's own when they lead or play outside a party.
   #
   # @return [Integer] ACTIVE_FRONTLINE or LEADERS_ONLY.
   def self.mode
-    leader = MGQ_MpCoop.in_party? ? MGQ_MpCoop.party_leader : :me
-    value = leader == :me || leader.nil? ? own_mode : leader.state["follow"]
-    value.to_s == LEADERS_ONLY.to_s ? LEADERS_ONLY : ACTIVE_FRONTLINE
+    value = @view ? @view["mode"] : own_mode
+    value == LEADERS_ONLY ? LEADERS_ONLY : ACTIVE_FRONTLINE
   end
 
   # Reads the player's own choice of followers in the Mod Config.
@@ -449,14 +463,15 @@ module MGQ_MpCoopSquad
     { "follow" => mode, "trail" => trail }
   end
 
-  # Fits the team to a Raid World, and shows the followers anew once the party, the player's share,
-  # the leader's choice, the world's type or its squad rules changed. Called every frame in every
-  # scene.
+  # Fits the team to a Raid World, reads the squad, and shows the followers anew once the party, the
+  # player's share, the leader's choice, the world's type or its squad rules changed. Called every
+  # frame in every scene.
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
     raid = in_world && raid?
     fit_team(raid)
+    read_view(in_world)
     shown = in_world ? [own_share, mode, raid, raid ? rules : nil] : nil
     return if shown == @shown
 

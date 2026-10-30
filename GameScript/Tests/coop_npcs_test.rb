@@ -2,6 +2,7 @@
 #  coop_npcs_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Checked the frame told to the DLL, the events handed to it and those it gives to follow, and left its rules to MGQOnline.Game.Tests
 #      Paulinchen  2026-10-23: Handed the Map Owner's events to the route past the DLL's map gate
 #                            - Checked that a follower whose own event runs follows no Map Owner meanwhile
 #      Paulinchen  2026-10-17: Checked that a player resuming a frozen raid boss fight follows no Map Owner
@@ -18,14 +19,16 @@
 
 # Covers coop_npcs.rbx where events meet party members: a member blocks an event that walks on its
 # own, but never a story's forced route or an event while the leader's story plays. In a Raid World
-# everyone on the map shares it.
+# everyone on the map shares it. Each frame tells the DLL the map and its Map Owner, hands it the
+# events when it asks and follows the events it gives once they changed (MGQOnline.Game.Tests covers
+# its rules).
 
-require_relative "support"
+require_relative "party_support"
 
-# Stands in for the loader's log, printing its lines.
-module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
-# Stands in for coop.rbx's routes, ignored here.
-module MGQ_MpCoop; def self.route(*); end; end
+# Stands in for the loader's log, printing its lines and keeping them in $npc_log.
+module MGQ_Multiplayer; module Log; def self.write(m); ($npc_log ||= []) << m; puts "  log: #{m}"; end; end; end
+# Stands in for coop.rbx's routes and event names.
+module MGQ_MpCoop; def self.route(*); end; def self.event_name(_id); ""; end; end
 # Stands in for the world's sync's routes, which keep each field's handler in $routes.
 module MGQ_MpOverworldSync; def self.route(field, _gate = nil, &handler); ($routes ||= {})[field] = handler; end; end
 # Stands in for coop_events.rbx, the leader's story playing while $telling is.
@@ -45,15 +48,7 @@ end
 
 load_script "coop_scope"
 load_script "coop_npcs"
-
-# Hands a message to a map route, as the DLL does once it passed the map's gate.
-#
-# @param field [String] The field the script registered.
-# @param peer [Struct] Who sent it.
-# @param message [Hash] The message's fields.
-def take_map(field, peer, message)
-  $routes[MGQ_MpCoop::MAP_PREFIX + field].call(peer, message)
-end
+MGQ_Multiplayer::Bridge.open(answer_party(FakeBridge.new))
 
 # A player's ghost on the map.
 Ghost = Struct.new(:x, :y)
@@ -97,80 +92,82 @@ elsewhere = MGQ_MpOverworldSync::Peers::Peer.new(5, { "map" => "9" }, nil, false
 check("in a Classic world a player outside the party shares nothing", MGQ_MpCoopNpcs.peers_here, [connected])
 # Stands in for world.rbx, a Raid World while $raid is.
 module MGQ_MpWorld; def self.raid?; $raid; end; end
-# Gives the world room stand-in who, tell into $told, the own state and the players present.
+# Gives the world room stand-in who, the own state and the players present.
 module MGQ_MpOverworldSync
   def self.who(peer); peer == :me ? "the player" : peer.state["name"].to_s; end
-  def self.tell(seat, fields); $told << [seat, fields]; true; end
   module Me; def self.map_since; 2000; end; def self.id; "me"; end; end
   module Peers; def self.present; $peers.select { |peer| peer.away.nil? }; end; end
 end
+# Stands in for overworld.rbx's tiles beyond which an event moves to its place at once.
+module MGQ_MpOverworld; CATCH_UP_TILES = 8; end
+# An event that stands, faces, walks and shows its first page.
+class StandingEvent
+  attr_reader :x, :y, :direction
+  def initialize(x, y); @x = x; @y = y; @direction = 2; end
+  def mgq_mp_npc_free?; true; end
+  def mgq_mp_page; 0; end
+  def mgq_mp_npc_state; [@x, @y, @direction, 0]; end
+  def moving?; false; end
+  def moveto(x, y); @x = x; @y = y; end
+  def mgq_mp_npc_face(direction); @direction = direction; end
+  def move_straight(direction); @x += { 4 => -1, 6 => 1 }.fetch(direction, 0); @y += { 2 => 1, 8 => -1 }.fetch(direction, 0); end
+end
 $raid = true
-$told = []
 connected.state.update("id" => "c", "name" => "Member", "since" => "3000")
 stranger.state.update("id" => "s", "name" => "Stranger", "since" => "1000")
 elsewhere.state.update("id" => "e", "name" => "Elsewhere", "since" => "500")
 stranger.ghost = Ghost.new(6, 6)
 $peers = [connected, dropped, stranger, elsewhere]
-npc = Struct.new(:mgq_mp_npc_state).new([2, 3, 2, 0])
+standing = StandingEvent.new(2, 3)
 # Stands in for the map's interpreter, running an event while $running is.
 MapInterpreter = Struct.new(:event_id) { def running?; $running; end }
 $running = false
-$game_map = Struct.new(:map_id, :events, :interpreter).new(5, { 1 => npc }, MapInterpreter.new(12))
+$game_map = Struct.new(:map_id, :events, :interpreter).new(5, { 1 => standing }, MapInterpreter.new(12))
 check("in a Raid World everyone on the map shares it, but not who is elsewhere or away", MGQ_MpCoopNpcs.peers_here, [connected, stranger])
 check("its Map Owner is whoever entered it first, party or not", MGQ_MpCoopNpcs.owner(MGQ_MpCoopNpcs.peers_here), stranger)
 MGQ_MpCoopNpcs.update
+check("each frame tells the DLL the map and the Map Owner's seat", $npc_calls, [["npcs.update", { "map" => 5, "owner" => 4, "arrivals" => {} }]])
 check("so the player's game follows them", MGQ_MpCoopNpcs.following?, true)
 check("and every player on the map blocks an event, not only party members", MGQ_MpCoopNpcs.member_at?(6, 6), true)
-take_map("npcs", stranger, { "map_npcs" => "5", "mmap" => "5", "full" => "0", "events" => "1:3,3,8,0" })
-check("a part of the map before the Map Owner's whole map moves nothing", MGQ_MpCoopNpcs.targets[1], nil)
-take_map("npcs", stranger, { "map_npcs" => "5", "mmap" => "5", "full" => "1", "events" => "1:4,4,8,0" })
-check("the Map Owner's events come through the map's route", MGQ_MpCoopNpcs.targets[1], [4, 4, 8, 0])
-[stranger, connected].each { |peer| peer.state["map"] = "7" }
-$game_map.map_id = 7
+
+# The DLL took the Map Owner's whole map.
+$npc_frame = { "snapshot" => false, "revision" => 1 }
+$npc_targets = { "revision" => 1, "whole" => true, "targets" => { 1 => [9, 9, 8, 0] } }
+$npc_calls.clear
+$npc_log.clear
 MGQ_MpCoopNpcs.update
-check("a follower who comes onto another map, still following, forgets the last map's events", [MGQ_MpCoopNpcs.following?, MGQ_MpCoopNpcs.targets], [true, {}])
-take_map("npcs", stranger, { "map_npcs" => "7", "mmap" => "7", "full" => "0", "events" => "1:9,9,2,0" })
-check("and follows none before the Map Owner's whole map came", MGQ_MpCoopNpcs.targets[1], nil)
-[stranger, connected].each { |peer| peer.state["map"] = "5" }
-$game_map.map_id = 5
+check("a new revision reads the events to follow", [$npc_calls.map(&:first), MGQ_MpCoopNpcs.targets], [["npcs.update", "npcs.targets"], { 1 => [9, 9, 8, 0] }])
+check("and a whole map places every event at once", [standing.x, standing.y, standing.direction, $npc_log.grep(/took all 1 event\(s\) of map 5 from Stranger, placing them/).size], [9, 9, 8, 1])
+$npc_targets = { "revision" => 2, "whole" => false, "targets" => { 1 => [7, 9, 8, 0] } }
+$npc_frame = { "snapshot" => false, "revision" => 2 }
 MGQ_MpCoopNpcs.update
+check("a part walks the event a step toward its place", [standing.x, standing.y], [8, 9])
+$npc_calls.clear
+MGQ_MpCoopNpcs.update
+check("the same revision is not read again", $npc_calls.map(&:first), ["npcs.update"])
+
+# The player came first, so their game moves the events.
 stranger.state["since"] = "9000"
+$npc_frame = { "snapshot" => true, "revision" => 3 }
+$npc_targets = { "revision" => 3, "whole" => false, "targets" => {} }
+$npc_turned = [[1, 0, 1]]
+$npc_calls.clear
+$npc_log.clear
 MGQ_MpCoopNpcs.update
 check("once the player came first, their game moves the events", MGQ_MpCoopNpcs.following?, false)
-check("and sends them to the seats new on the map, then to everyone on it in one message, through the map's gate",
-      $told.map { |seat, fields| [seat, fields["map_npcs"], fields["mmap"], fields.key?("npcs")] },
-      [[2, 5, 5, false], [4, 5, 5, false], [-1, 5, 5, false]])
+check("and tells the DLL when each player sharing the map came onto it",
+      $npc_calls.first, ["npcs.update", { "map" => 5, "owner" => -1, "arrivals" => { 2 => "3000", 4 => "9000" } }])
+check("handing it every event of the map when it asks", $npc_calls[1], ["npcs.snapshot", { "map" => 5, "events" => "1:7,9,8,0" }])
+check("and naming the pages that changed in what went to everyone", $npc_log.grep(/event 1 on map 5 turned to page 1 from 0, told the others/).size, 1)
 
-# A whole map that fails to go out is sent again on the Map Owner's beat until it does.
-# Keeps the log's lines in $npc_log too.
-module MGQ_Multiplayer; module Log; def self.write(m); $npc_log << m; puts "  log: #{m}"; end; end; end
-# Lets a tell fail while $tell_fails is.
-module MGQ_MpOverworldSync; def self.tell(seat, fields); $told << [seat, fields]; !$tell_fails; end; end
-$npc_log = []
-newcomer = MGQ_MpOverworldSync::Peers::Peer.new(6, { "id" => "n", "name" => "Newcomer", "map" => "5", "since" => "9500" }, nil, false, nil)
-$peers << newcomer
-wholes = lambda { $told.count { |seat, fields| seat == 6 && fields["full"] == 1 } }
-$told.clear
-$tell_fails = true
-MGQ_MpCoopNpcs.instance_variable_set(:@frames, 0)
+# Nobody shares the map any more.
+$npc_frame = { "snapshot" => false, "revision" => 3 }
+$peers = []
+$npc_calls.clear
 MGQ_MpCoopNpcs.update
-check("a newcomer is sent the whole map at once", wholes.call, 1)
-(MGQ_MpCoopNpcs::SEND_FRAMES - 2).times { MGQ_MpCoopNpcs.update }
-check("which failed, so it is not sent again every frame", wholes.call, 1)
 MGQ_MpCoopNpcs.update
-check("but again on the next beat", wholes.call, 2)
-check("the failure logged once for the newcomer's arrival", $npc_log.grep(/seat 6 all .* failed/).size, 1)
-$tell_fails = false
-MGQ_MpCoopNpcs::SEND_FRAMES.times { MGQ_MpCoopNpcs.update }
-check("until it goes out", [wholes.call, $npc_log.grep(/sent seat 6 all/).size], [3, 1])
-MGQ_MpCoopNpcs::SEND_FRAMES.times { MGQ_MpCoopNpcs.update }
-check("and then no more", wholes.call, 3)
-newcomer.state["since"] = "9900"
-MGQ_MpCoopNpcs.update
-check("a player who came onto the map again gets it anew at once", wholes.call, 4)
-$peers.delete(newcomer)
+check("the DLL hears once that nobody shares the map", $npc_calls, [["npcs.update", { "map" => 5, "owner" => nil, "arrivals" => {} }]])
 $raid = false
-check("in a Classic world again only the party shares the map", MGQ_MpCoopNpcs.peers_here, [connected])
 
 # A player who resumes a frozen raid boss fight moves the map's events in their own game meanwhile,
 # whose scene put them where they stood at the battle.
@@ -183,7 +180,7 @@ $npc_log.clear
 check("a follower who resumes a frozen fight follows nobody", MGQ_MpCoopNpcs.following?, false)
 MGQ_MpCoopNpcs.follow
 check("and walks no event toward the Map Owner's places, saying so once", [$game_map.events[1].mgq_mp_npc_state, $npc_log.grep(/left the events of map 5 where they are: the player resumes/).size],
-      [[2, 3, 2, 0], 1])
+      [[7, 9, 8, 0], 1])
 $resuming = false
 check("once the resume ended, the follower follows again", MGQ_MpCoopNpcs.following?, true)
 
@@ -192,19 +189,6 @@ check("once the resume ended, the follower follows again", MGQ_MpCoopNpcs.follow
 # the Map Owner's do (issue #57). Another player's story the follower watches leaves them followed.
 # Stands in for coop_scene.rbx, the player watching another player's story while $watching is.
 module MGQ_MpCoopScene; def self.watching?; $watching; end; end
-# Stands in for overworld.rbx's tiles beyond which an event moves to its place at once.
-module MGQ_MpOverworld; CATCH_UP_TILES = 8; end
-# An event that stands, faces, walks and shows its first page.
-class StandingEvent
-  attr_reader :x, :y, :direction
-  def initialize(x, y); @x = x; @y = y; @direction = 2; end
-  def mgq_mp_npc_free?; true; end
-  def mgq_mp_page; 0; end
-  def moving?; false; end
-  def moveto(x, y); @x = x; @y = y; end
-  def mgq_mp_npc_face(direction); @direction = direction; end
-  def move_straight(direction); @x += { 4 => -1, 6 => 1 }.fetch(direction, 0); @y += { 2 => 1, 8 => -1 }.fetch(direction, 0); end
-end
 standing = StandingEvent.new(2, 3)
 $game_map.events[1] = standing
 MGQ_MpCoopNpcs.instance_variable_set(:@targets, { 1 => [5, 3, 4, 0] })

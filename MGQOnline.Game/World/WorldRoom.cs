@@ -2,6 +2,7 @@
 //  WorldRoom.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Let rules in C# take the messages of a field before the scripts
 //      Paulinchen  2026-10-23: Kept a player away whose seat another player took, and told each change of a player's presence
 //                            - Created
 //
@@ -140,6 +141,12 @@ public sealed class WorldRoom
     private readonly List<(string Field, RouteGate Gate)> routes = [];
 
     /// <summary>
+    /// The routes of rules in C# in the order they were added, checked after the party's own and
+    /// before the scripts'.
+    /// </summary>
+    private readonly List<(string Field, RouteGate Gate, Action<Peer, WorldFields> Handler)> takers = [];
+
+    /// <summary>
     /// The keys of the lines logged once.
     /// </summary>
     private readonly HashSet<string> loggedOnce = new(StringComparer.Ordinal);
@@ -270,6 +277,26 @@ public sealed class WorldRoom
     {
         routes.Clear();
         routes.AddRange(list);
+    }
+
+    /// <summary>
+    /// Hands every message marked by a field to a rule in C#, once it passed the field's gate,
+    /// before any script's route of the same field.
+    /// </summary>
+    /// <param name="field">The field, such as "ptp".</param>
+    /// <param name="gate">The gate its messages pass, <see cref="RouteGate.Party"/> or <see cref="RouteGate.Map"/>.</param>
+    /// <param name="handler">Takes who sent a message and its fields.</param>
+    /// <exception cref="ArgumentException">The gate lets a message without a sender pass.</exception>
+    public void Take(string field, RouteGate gate, Action<Peer, WorldFields> handler)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(field);
+        ArgumentNullException.ThrowIfNull(handler);
+        if (gate == RouteGate.None)
+        {
+            throw new ArgumentException("A rule in C# takes messages only past the party's or the map's gate.", nameof(gate));
+        }
+
+        takers.Add((field, gate, handler));
     }
 
     /// <summary>
@@ -845,8 +872,11 @@ public sealed class WorldRoom
     /// <param name="relay">Whether the relay pushed it.</param>
     private void HandOver(Peer? peer, WorldFields message, string body, bool relay)
     {
-        (string Field, RouteGate Gate)? found = null;
-        foreach ((string Field, RouteGate Gate) route in OwnRoutes.Concat(routes))
+        (string Field, RouteGate Gate, Action<Peer, WorldFields>? Handler)? found = null;
+        IEnumerable<(string Field, RouteGate Gate, Action<Peer, WorldFields>? Handler)> candidates = OwnRoutes.Select(route => (route.Field, route.Gate, (Action<Peer, WorldFields>?)null))
+            .Concat(takers.Select(route => (route.Field, route.Gate, (Action<Peer, WorldFields>?)route.Handler)))
+            .Concat(routes.Select(route => (route.Field, route.Gate, (Action<Peer, WorldFields>?)null)));
+        foreach ((string Field, RouteGate Gate, Action<Peer, WorldFields>? Handler) route in candidates)
         {
             if (message.Has(route.Field))
             {
@@ -873,6 +903,13 @@ public sealed class WorldRoom
             string tag = taken.Gate == RouteGate.Party ? "co-op" : "co-op scope";
             string field = taken.Gate == RouteGate.Map ? taken.Field[MapPrefix.Length..] : taken.Field;
             LogOnce($"dropped {field} {reason} {peer?.Id}", $"{tag}: dropped a {field} message from {Who(peer)}: {reason}");
+            return;
+        }
+
+        if (taken.Handler is { } handler)
+        {
+            // Both gates drop a message whose sender told no state yet.
+            handler(peer!, message);
             return;
         }
 

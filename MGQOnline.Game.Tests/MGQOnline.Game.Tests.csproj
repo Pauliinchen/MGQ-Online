@@ -53,6 +53,8 @@
     <None Include="..\fixtures\live\*.json" LinkBase="fixtures\live" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\pages\*.json" LinkBase="fixtures\pages" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\freeze\*.json" LinkBase="fixtures\freeze" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\teleport\*.json" LinkBase="fixtures\teleport" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\fixtures\npcs\*.json" LinkBase="fixtures\npcs" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- The seed rows of the relay's story tables and the game scripts' generated tables, which the

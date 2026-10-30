@@ -2,7 +2,8 @@
 #  overworld_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Dropped the fade checks
+#      Paulinchen  2026-10-30: Answered the teleports' view from the party's stand-in
+#                            - Dropped the fade checks
 #                            - Dropped the checks that restate pixel positions
 #      Paulinchen  2026-10-23: Opened the action wheel by its key and took a choice in the frame after confirm
 #                            - Acted on typing a frame after it, as the text box in C# reports it
@@ -93,6 +94,8 @@
 module DataManager; def self.load_game_without_rescue(index); true; end; def self.setup_new_game; end; end
 
 require_relative "world_support"
+require_relative "party_support"
+answer_party($world_bridge)
 
 # Stands in for the game's sprites, of which this game lacks "$missing".
 module Cache
@@ -1294,6 +1297,7 @@ check("the leader may invite more", MGQ_MpCoop::Party.may_invite?, true)
 MGQ_MpCoop::Party.remove(far)
 check("and removes a member through the DLL", $party_calls.last, ["remove", 4])
 take_party("me-p2", [far], 4)
+MGQ_MpOverworldSync.tick
 check("a member may not invite, and teleports to the leader with the wheel's party choice instead",
       [MGQ_MpCoop::Party.may_invite?, MGQ_MpCoop::Offers.invite_refusal("full"), MGQ_MpActions.wheel_options[PARTY].text.start_with?("Teleport to ")],
       [false, "Only the party's leader invites.", true])

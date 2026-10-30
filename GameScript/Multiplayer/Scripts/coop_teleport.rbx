@@ -2,85 +2,87 @@
 #  coop_teleport.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Left the requests, their answers, their minute and their texts to the DLL, and read its view
 #      Paulinchen  2026-10-11: Named a waiting request in the line above the player's head
 #      Paulinchen  2026-10-10: Created
 #
 #----------------------------------------------------------------
 
-# Teleports between the members of a party, in Classic and Raid Worlds alike. The player asks
-# through their state, which names the member and a number of the request; the party's leader lets
-# every member come at once, any other member first allows it in the notification box or the World
-# overview. The answer tells where they stand, and coop_gather.rbx brings the player over once free.
+# Teleports between the members of a party, in Classic and Raid Worlds alike. The requests are the
+# DLL's (MGQOnline.Game's TeleportRequests): the player asks through their state, which names the
+# member and a number of the request; the party's leader lets every member come at once, any other
+# member first allows it in the notification box or the World overview. The answer tells where they
+# stand, and coop_gather.rbx brings the player over once free. This script hands the DLL the
+# player's place and actions, and reads the view it answers once a frame.
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpCoopTeleport
-  # Frames a request stands, a minute: the member first has to notice it in the notification box or
-  # the World overview.
-  ASK_FRAMES = MGQ_MpCoop::NAMED_INVITE_FRAMES
-
   # Color of a request in the notification box and the World overview.
   ASK_COLOR = MGQ_MpCoop::INVITE_COLOR
 
-  # Field of the party's messages about teleports.
-  FIELD = "ptp"
+  # The topic that asks to teleport to a member.
+  ASK_TOPIC = "tp.ask"
 
-  # Characters of a request's number.
-  NONCE_LENGTH = 6
+  # The topic that lets a member come.
+  ALLOW_TOPIC = "tp.allow"
 
-  # The player's standing request (member id, name, number, frame asked, whether to the leader),
-  # nil for none.
-  @ask = nil
+  # The topic that declines a member's request.
+  DECLINE_TOPIC = "tp.decline"
 
-  # The number of the last request answered, by the id of the member who asked.
-  @answered = {}
+  # The topic that takes the player's request back.
+  STOP_TOPIC = "tp.stop"
+
+  # The topic that forgets the request and the requests answered.
+  FORGET_TOPIC = "tp.forget"
+
+  # The topic that takes the player's place and answers the view.
+  VIEW_TOPIC = "tp.view"
+
+  # The view outside a world and while the DLL does not answer: no request, no offers.
+  NONE = { "tpask" => "", "doing" => nil, "own" => [], "members" => {} }
+
+  # The view as the DLL answered it last.
+  @view = NONE
 
   extend MGQ_MpLog
 
   # What starts this script's lines in the log.
   LOG_TAG = "co-op teleport"
 
-  # Reports whether a member is the party's leader, whom every member may teleport to without
-  # asking.
+  # Takes the view the DLL answered.
   #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
-  # @return [Boolean] Whether they are.
-  def self.leader?(peer)
-    MGQ_MpCoop.party_leader.equal?(peer)
+  # @param view [Hash, nil] The view, see NONE for its fields; nil for none.
+  def self.take_view(view)
+    @view = view.is_a?(Hash) ? view : NONE
   end
 
-  # Reports whether the player stands near a member already.
+  # Asks the DLL for an action, and takes the view it answers.
   #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
-  # @return [Boolean] Whether they do.
-  def self.near?(peer)
-    MGQ_MpCoopGather.near_place?(MGQ_MpCoopGather.own_place, [peer.state["map"].to_i, peer.state["x"].to_i, peer.state["y"].to_i])
+  # Keeps the last view when the action fails, since the DLL then answers the next frame's view only
+  # once it changes.
+  #
+  # @param topic [String] The action's topic.
+  # @param request [Object] What it takes.
+  def self.act(topic, request)
+    view = MGQ_Multiplayer::Bridge.call(topic, request)
+    take_view(view) if view.is_a?(Hash)
   end
 
-  # Reports whether the player's request to a member stands.
+  # Reads what the view offers with a member.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
-  # @return [Boolean] Whether it does.
-  def self.asking?(peer)
-    !@ask.nil? && @ask[:id] == peer.state["id"].to_s
+  # @return [Hash, nil] "text", "refusal", "request", "allow", "call", "notice" and "action"; nil
+  #   for another player than a member.
+  def self.row(peer)
+    @view["members"][peer.seat]
   end
 
   # Asks to teleport to a member: to the party's leader the player comes at once, to anyone else
-  # once they allow it. A newer request replaces the one before.
+  # once they allow it.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
   def self.ask(peer)
-    name = peer.state["name"].to_s
-    if near?(peer)
-      log("no teleport: the player stands near #{name} already")
-      return MGQ_MpOverworldSync.notice("You are with #{name} already.")
-    end
-
-    leader = leader?(peer)
-    log("replaced the request to #{@ask[:name]}") if @ask
-    @ask = { :id => peer.state["id"].to_s, :name => name, :nonce => MGQ_MpCoop.random_id(NONCE_LENGTH),
-             :since => Graphics.frame_count, :leader => leader }
-    log("asked to teleport to #{MGQ_MpOverworldSync.who(peer)}#{leader ? ', the party\'s leader, who lets the player come at once' : ''} (request #{@ask[:nonce]})")
-    MGQ_MpOverworldSync.notice(leader ? "Teleporting to #{name} . . ." : "You asked #{name} to let you teleport to them.")
+    act(ASK_TOPIC, peer.seat)
   rescue => e
     log("asking to teleport failed: #{e.class}: #{e.message}")
   end
@@ -89,10 +91,14 @@ module MGQ_MpCoopTeleport
   #
   # @param reason [String] Why, for the log.
   def self.stop_asking(reason)
-    return unless @ask
+    act(STOP_TOPIC, reason)
+  end
 
-    log("took back the request to #{@ask[:name]}: #{reason}")
-    @ask = nil
+  # Forgets the player's request and the requests answered, as when a save is loaded.
+  #
+  # @param reason [String] Why, for the log.
+  def self.forget(reason)
+    act(FORGET_TOPIC, reason)
   end
 
   # The fields the teleports add to the state the player's game tells the others.
@@ -100,134 +106,56 @@ module MGQ_MpCoopTeleport
   # @return [Hash] "tpask": the id of the member the player asks to teleport to and the request's
   #   number, empty for none.
   def self.state_fields
-    { "tpask" => @ask ? "#{@ask[:id]}:#{@ask[:nonce]}" : "" }
-  end
-
-  # Reads a member's request to teleport to the player, as their state tells it.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
-  # @return [String, nil] The request's number, nil for none or one the player answered.
-  def self.request_of(peer)
-    return nil unless MGQ_MpCoop.in_party? && MGQ_MpCoop::Party.member?(peer.state)
-
-    id, nonce = peer.state["tpask"].to_s.split(":", 2)
-    return nil unless id == MGQ_MpOverworldSync::Me.id.to_s && nonce && !nonce.empty?
-
-    @answered[peer.state["id"].to_s] == nonce ? nil : nonce
-  end
-
-  # As the party's leader, lets a member who asks come at once. Called whenever a player told their
-  # state.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
-  def self.observe(peer)
-    allow(peer) if MGQ_MpCoop.party_leader == :me && request_of(peer)
-  rescue => e
-    log("answering a request failed: #{e.class}: #{e.message}")
+    { "tpask" => @view["tpask"].to_s }
   end
 
   # Lets a member teleport to the player: tells them where the player stands.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
   def self.allow(peer)
-    answer(peer, "allow", MGQ_MpCoopGather.place_fields)
+    act(ALLOW_TOPIC, "seat" => peer.seat, "place" => MGQ_MpCoopGather.place_fields)
   end
 
   # Declines a member's request.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
   def self.decline(peer)
-    answer(peer, "deny", {})
+    act(DECLINE_TOPIC, peer.seat)
   end
 
-  # Answers a member's request, once.
+  # Brings the player to the member who let them come, as the DLL tells.
   #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
-  # @param kind [String] "allow" or "deny".
-  # @param fields [Hash] The answer's other fields.
-  def self.answer(peer, kind, fields)
-    nonce = request_of(peer)
-    return log("did not #{kind} #{MGQ_MpOverworldSync.who(peer)}'s request: it no longer stands") unless nonce
-
-    @answered[peer.state["id"].to_s] = nonce
-    sent = MGQ_MpCoop.tell(peer.seat, FIELD, kind, fields.merge("nonce" => nonce))
-    log("#{kind == 'allow' ? 'allowed' : 'declined'} #{MGQ_MpOverworldSync.who(peer)}'s request #{nonce} to teleport to the player#{sent ? '' : ', which failed to send'}")
-  end
-
-  # Takes a member's answer to the player's request, handed over by coop.rbx.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
-  # @param message [Hash] The message's fields.
-  def self.take(peer, message)
-    kind = message[FIELD]
-    log("got #{kind} from #{MGQ_MpOverworldSync.who(peer)}")
-    unless asking?(peer) && @ask[:nonce] == message["nonce"].to_s
-      return log("ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: not the answer to the player's request")
-    end
-
-    ask = @ask
-    @ask = nil
-    case kind
-    when "allow" then allowed(peer, ask, [message["map"].to_i, message["x"].to_i, message["y"].to_i, message["d"].to_i], message["warp_ban"] == "1")
-    when "deny" then MGQ_MpOverworldSync.notice("#{ask[:name]} declined your teleport.")
-    else log("ignored #{kind} from #{MGQ_MpOverworldSync.who(peer)}: unknown kind")
-    end
+  # @param event [Hash] "name", "map", "x", "y", "d" and "warp_ban".
+  def self.allowed(event)
+    MGQ_MpCoopGather.come_to(event["name"].to_s, [event["map"], event["x"], event["y"], event["d"]], event["warp_ban"] ? true : false)
   rescue => e
-    log("taking #{message[FIELD]} failed: #{e.class}: #{e.message}")
+    log("teleporting failed: #{e.class}: #{e.message}")
   end
 
-  # Brings the player to the member who let them come, unless they stand near already.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
-  # @param ask [Hash] The player's request.
-  # @param place [Array<Integer>] Where the member stands: map, x, y and direction.
-  # @param warp_ban [Boolean] Whether warping is banned there.
-  def self.allowed(peer, ask, place, warp_ban)
-    return log("no teleport: the player stands near #{ask[:name]} already") if MGQ_MpCoopGather.near_place?(MGQ_MpCoopGather.own_place, place)
-
-    MGQ_MpCoopGather.come_to(peer.state["name"].to_s, place, warp_ban)
-    MGQ_MpOverworldSync.notice("Teleporting to #{ask[:name]} . . .") unless ask[:leader]
-  end
-
-  # Takes back the player's request once its member left the party or let it run out, and forgets
-  # everything once the world closes. Called every frame in every scene.
+  # Hands the DLL where the player stands and reads the view once it changed, once a frame while a
+  # world is open. Called every frame in every scene.
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
-    return forget("the world closed") unless in_world
-    return unless @ask
+    return take_view(nil) unless in_world && $game_map && $game_player
 
-    member = MGQ_MpCoop.in_party? && MGQ_MpCoop::Party.members.find { |peer| peer.state["id"].to_s == @ask[:id] }
-    return stop_asking("they are no longer in the party") unless member
-    return if MGQ_MpCoopGather.within?(@ask[:since], ASK_FRAMES)
-
-    MGQ_MpOverworldSync.notice("#{@ask[:name]} did not answer your teleport.")
-    stop_asking("nobody answered in #{ASK_FRAMES / 60} s")
+    view = MGQ_Multiplayer::Bridge.call(VIEW_TOPIC, MGQ_MpCoopGather.place_fields)
+    take_view(view) if view.is_a?(Hash)
   rescue => e
     log_once(:tick, "tick failed: #{e.class}: #{e.message}")
-  end
-
-  # Forgets the player's request and the requests answered, as when the world closes or a save is
-  # loaded.
-  #
-  # @param reason [String] Why, for the log.
-  def self.forget(reason)
-    stop_asking(reason)
-    @answered.clear
   end
 
   # The choice that teleports the player to a member: at once to the party's leader, else by asking.
   # It closes the World overview too.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The member.
-  # @return [MGQ_MpActions::Option] The choice.
+  # @return [MGQ_MpActions::Option, nil] The choice, nil for another player than a member.
   def self.option(peer)
-    name = peer.state["name"].to_s
-    text = leader?(peer) ? "Teleport to #{name}" : "Ask to teleport to #{name}"
-    return MGQ_MpActions::Option.new(text, nil, "You are with #{name} already.", nil, true) if near?(peer)
-    return MGQ_MpActions::Option.new(text, nil, "Your request to #{name} stands.", nil, true) if asking?(peer)
+    found = row(peer)
+    return nil unless found
+    return MGQ_MpActions::Option.new(found["text"], nil, found["refusal"], nil, true) if found["refusal"]
 
-    MGQ_MpActions::Option.new(text, lambda { ask(peer) }, nil, nil, true)
+    MGQ_MpActions::Option.new(found["text"], lambda { ask(peer) }, nil, nil, true)
   end
 
   # What the teleports add to the World overview and the notification box: a member's request, and
@@ -238,7 +166,8 @@ module MGQ_MpCoopTeleport
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
     # @return [Array, nil] The text and its color, nil for none.
     def self.call_of(peer)
-      MGQ_MpCoopTeleport.request_of(peer) ? ["Asks to teleport to you", ASK_COLOR] : nil
+      found = MGQ_MpCoopTeleport.row(peer)
+      found && found["call"] ? [found["call"], ASK_COLOR] : nil
     end
 
     # Tells a member's request for the notification box.
@@ -246,11 +175,11 @@ module MGQ_MpCoopTeleport
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
     # @return [MGQ_MpActions::Notice, nil] The request, nil for none.
     def self.notice_of(peer)
-      nonce = MGQ_MpCoopTeleport.request_of(peer)
-      return nil unless nonce
+      found = MGQ_MpCoopTeleport.row(peer)
+      return nil unless found && found["request"]
 
-      MGQ_MpActions::Notice.new([:teleport, peer.seat], "#{peer.state['name']} asks to teleport to you", ASK_COLOR, "Allow",
-                                lambda { MGQ_MpCoopTeleport.allow(peer) }, lambda { MGQ_MpCoopTeleport.decline(peer) }, nonce)
+      MGQ_MpActions::Notice.new([:teleport, peer.seat], found["notice"], ASK_COLOR, found["action"],
+                                lambda { MGQ_MpCoopTeleport.allow(peer) }, lambda { MGQ_MpCoopTeleport.decline(peer) }, found["request"])
     end
 
     # The choice for a member in the World overview: allowing their request, else teleporting to
@@ -259,8 +188,9 @@ module MGQ_MpCoopTeleport
     # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
     # @return [MGQ_MpActions::Option, nil] The choice, nil for another player than a member.
     def self.peer_option(peer)
-      return nil unless MGQ_MpCoop.in_party? && MGQ_MpCoop::Party.member?(peer.state)
-      return MGQ_MpActions::Option.new("Allow teleport", lambda { MGQ_MpCoopTeleport.allow(peer) }, nil) if MGQ_MpCoopTeleport.request_of(peer)
+      found = MGQ_MpCoopTeleport.row(peer)
+      return nil unless found
+      return MGQ_MpActions::Option.new(found["allow"], lambda { MGQ_MpCoopTeleport.allow(peer) }, nil) if found["request"]
 
       MGQ_MpCoopTeleport.option(peer)
     end
@@ -269,17 +199,15 @@ module MGQ_MpCoopTeleport
     #
     # @return [Array<MGQ_MpActions::Option>] The choices, none without a request.
     def self.own_options
-      return [] unless MGQ_MpCoopTeleport.asking_name
-
-      [MGQ_MpActions::Option.new("Stop asking to teleport", lambda { MGQ_MpCoopTeleport.stop_asking("the player stopped asking") }, nil)]
+      MGQ_MpCoopTeleport.own_texts.map { |text| MGQ_MpActions::Option.new(text, lambda { MGQ_MpCoopTeleport.stop_asking("the player stopped asking") }, nil) }
     end
   end
 
-  # Names the member the player asks to teleport to.
+  # Lists the texts of the choices on the player's own row.
   #
-  # @return [String, nil] Their name, nil without a request.
-  def self.asking_name
-    @ask ? @ask[:name] : nil
+  # @return [Array<String>] The texts.
+  def self.own_texts
+    @view["own"]
   end
 
   # Names what the player is doing for the line above their own head: asking a member to let them
@@ -288,21 +216,20 @@ module MGQ_MpCoopTeleport
   #
   # @return [Array, nil] The doing and when it lapses, nil while no request waits.
   def self.own_doing
-    return nil unless @ask && !@ask[:leader]
-
-    ["Asking #{@ask[:name]} to teleport", MGQ_MpActions.lapse_at(@ask[:since], ASK_FRAMES)]
+    doing = @view["doing"]
+    doing ? [doing["text"], MGQ_MpActions.lapse_in(doing["ends"] - MGQ_Multiplayer::Bridge.frame_number)] : nil
   end
 end
 
-# What this script takes part in of the party's messages and states, through coop.rbx and
-# overworld_sync.rbx, and what it adds to the World overview, the notification box and the line
-# above the player's own head, through ui_actions.rbx.
+# What this script takes part in of the party's states and the DLL's events, through
+# overworld_sync.rbx and the bridge, and what it adds to the World overview, the notification box
+# and the line above the player's own head, through ui_actions.rbx.
 
 begin
-  MGQ_MpCoop.route(MGQ_MpCoopTeleport::FIELD) { |peer, message| MGQ_MpCoopTeleport.take(peer, message) }
   MGQ_MpOverworldSync.state_fields { MGQ_MpCoopTeleport.state_fields }
-  MGQ_MpOverworldSync.on_observe { |peer| MGQ_MpCoopTeleport.observe(peer) }
   MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpCoopTeleport.tick(in_world) }
+  MGQ_Multiplayer::Bridge.on("tp.allowed") { |event| MGQ_MpCoopTeleport.allowed(event) }
+  MGQ_Multiplayer::Bridge.on("tp.notice") { |text| MGQ_MpOverworldSync.notice(text.to_s) }
   MGQ_MpActions.offer(MGQ_MpCoopTeleport::Offers)
   MGQ_MpActions.own_doing_from { MGQ_MpCoopTeleport.own_doing }
 rescue => e
@@ -312,7 +239,7 @@ end
 # Game hooks of this script alone, through core_hooks.rbx.
 
 begin
-  # A loaded save starts the frame count anew, so the request of before it goes.
+  # A loaded save starts the game anew, so the request of before it goes.
   MGQ_MpHooks.after(DataManager.singleton_class, :extract_save_contents, "coop_teleport") { |_contents| MGQ_MpCoopTeleport.forget("a save was loaded") }
 rescue => e
   MGQ_MpCoopTeleport.log("hooks FAILED: #{e.class}: #{e.message}")

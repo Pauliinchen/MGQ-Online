@@ -2,7 +2,8 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Kept one check of the shares
+#      Paulinchen  2026-10-30: Read the share and the followers' mode from the squad's stand-in after each frame's tick
+#                            - Kept one check of the shares
 #      Paulinchen  2026-10-23: Set the parties up through the party's view the DLL posts
 #                            - Left the squad math to the golden cases and checked that the hooks ask for a squad once
 #                            - Answered the ids coop.rbx makes up through the bridge
@@ -258,6 +259,8 @@ module MGQ_MpUi; module Style; BAD = Color.new(255, 96, 96); end; end
 # The first words of the mod's settings in the Mod Config, as ui.rbx names them.
 module MGQ_MpUi; OPTION_PREFIX = "[MGQ Online Settings] " unless const_defined?(:OPTION_PREFIX); end
 rules_bridge = open_rules_bridge
+require_relative "party_support"
+answer_party(rules_bridge)
 load_script "coop"
 load_script "coop_scope"
 load_script "coop_squad"
@@ -288,11 +291,11 @@ check("no trail is told", squad.state_fields["trail"], "")
 friend = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "friend-id", "name" => "Friend", "party" => "me-id-0p1" }, nil, true)
 MGQ_MpOverworldSync::Peers.all << friend
 take_party("me-id-0p1", [friend])
-check("two players: two in front and two behind", squad.own_share, [2, 2])
-check("places in the squad", actors.first(6).map { |a| squad.place_of(a) }, [:front, :front, :bench, :bench, :cut, :cut])
 $game_player.refreshed = 0
 MGQ_MpOverworldSync.tick(true)
 MGQ_MpOverworldSync.tick(true)
+check("two players: two in front and two behind, as the frame's tick read the squad", squad.own_share, [2, 2])
+check("places in the squad", actors.first(6).map { |a| squad.place_of(a) }, [:front, :front, :bench, :bench, :cut, :cut])
 check("followers are shown anew once the share changed", $game_player.refreshed, 1)
 check("only the share of the Frontline follows, as the frame's tick took it", $game_player.followers.map { |f| f.visible? }, [true, false, false])
 check("the trail tells the followers shown", squad.state_fields, { "follow" => 0, "trail" => "Follower1*1" })
@@ -310,6 +313,7 @@ friend.state["party"] = "friend-p"
 friend.state["invite"] = "1"
 take_party("friend-p", [friend], 2)
 friend.state["follow"] = "1"
+MGQ_MpOverworldSync.tick(true)
 check("a member takes the leader's choice", squad.mode, squad::LEADERS_ONLY)
 check("and tells it on", squad.state_fields["follow"], 1)
 check("a member may not choose", NWConst::Config::MOD_CONTENTS.find { |e| e[:key] == squad::FOLLOWERS }[:enable].call, false)
@@ -317,8 +321,8 @@ friend.state["follow"] = "0"
 other = MGQ_MpOverworldSync::Peers::Peer.new(3, { "id" => "a-other", "name" => "Other", "party" => "friend-p" }, nil, true)
 MGQ_MpOverworldSync::Peers.all << other
 take_party("friend-p", [friend, other], 2)
-check("of three, a member who does not lead has one and one", squad.own_share, [1, 1])
 MGQ_MpOverworldSync.tick(true)
+check("of three, a member who does not lead has one and one", squad.own_share, [1, 1])
 check("and so walks alone", $game_player.followers.map { |f| f.visible? }, [false, false, false])
 check("places of a member of three", actors.first(3).map { |a| squad.place_of(a) }, [:front, :bench, :cut])
 check("Discord hears of the party's size", MGQ_MpCoop.status_fields, { "mp_party" => "friend-p", "mp_party_size" => 3, "mp_party_max" => 4 })
@@ -347,6 +351,7 @@ check("so is another party of four seen from outside", party.full?("friend-p"), 
 
 # Leaving the world forgets the cut.
 $open = false
+MGQ_MpOverworldSync.tick(false)
 check("outside a world nothing is cut", [squad.own_share, squad.place_of(actors[7])], [nil, nil])
 check("nor told to Discord", MGQ_MpCoop.status_fields, {})
 
@@ -398,6 +403,7 @@ edit = Foo::PTEdit::Window_PartyMember.new(actors.first(4).map(&:id))
 check("so does the party edit screen", [edit.rows.map { |color, _| color }, edit.contents.fills.map { |f| f[1] }],
       [[[255, 255, 255], [132, 170, 255], [132, 170, 255], [168, 168, 168]], [30]])
 take_party(nil)
+MGQ_MpOverworldSync.tick(true)
 check("outside a party the same", [MGQ_MpCoop.in_party?, squad.own_share, squad.place_of(actors[3])], [false, [1, 2], :cut])
 
 $game_party.in_battle = true
@@ -483,8 +489,8 @@ MGQ_MpOverworldSync.tick(true)
 check("a Frontline as large as the team leaves no cut place", [whole.actors, squad.own_share, actors.first(4).map { |a| squad.place_of(a) }],
       [[1, 2, 3, 4], [4, 0], [:front, :front, :front, :front]])
 $squad = { :luka => false, :formation => squad::ORIGINAL, :front => 1, :raid_front => 1 }
-MGQ_MpOverworldSync.tick(true)
 whole.party_member_max = 9
+MGQ_MpOverworldSync.tick(true)
 check("the original size keeps the game's party size and cuts nobody", [whole.party_member_max, squad.own_share, squad.place_of(actors[3])], [9, [1, 8], :bench])
 
 # Luka may leave the team.

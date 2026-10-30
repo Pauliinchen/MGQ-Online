@@ -2,6 +2,7 @@
 #  coop_teleport_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Checked the script's wiring to the DLL's requests on the stand-in bridge
 #      Paulinchen  2026-10-28: Read the frames of a teleport from the gather stand-in
 #      Paulinchen  2026-10-11: Checked that the line above the head names a request to another member
 #                            - Stood in for the line above the player's head with its doings and lapses
@@ -10,12 +11,13 @@
 #
 #----------------------------------------------------------------
 
-# Covers coop_teleport.rbx: a member teleports to the party's leader at once, to any other member
-# once that member allows it; a request is declined, taken back, replaced, runs out and goes with a
-# loaded save or the world's close.
+# Covers coop_teleport.rbx over the DLL's requests (MGQOnline.Game.Tests covers their rules): the
+# player's place handed over each frame, the offers and the state read from the DLL's view, the
+# actions asked of the DLL, and a member's allow bringing the player over.
 
 require_relative "support"
 require_relative "rules_support"
+require_relative "party_support"
 
 # Stands in for the mod's log, printing each line.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
@@ -68,7 +70,6 @@ module MGQ_MpOverworldSync
   module Me; def self.id; "me"; end; end
   def self.on_tick(&block); ($ticks ||= []) << block; end
   def self.state_fields(&block); $state_fields = block; end
-  def self.on_observe(&block); $observe = block; end
   def self.notice(text); $notices << text; end
   def self.who(peer); peer == :me ? "the player" : peer.state["name"].to_s; end
   def self.in_world?; true; end
@@ -76,8 +77,6 @@ module MGQ_MpOverworldSync
 end
 # Stands in for the party, led by $leader, whose messages land in $sent.
 module MGQ_MpCoop
-  # Frames an invite to a player named from afar stands, as coop.rbx sets it.
-  NAMED_INVITE_FRAMES = 3600
   # Color of the invite line.
   INVITE_COLOR = :invite
   # The party: every player whose state names party "p1".
@@ -89,9 +88,7 @@ module MGQ_MpCoop
   def self.party_leader; $leader; end
   def self.party_leading?; $leader == :me; end
   def self.tell(seat, field, value, fields = {}); $sent << [seat, { field => value }.merge(fields)]; true; end
-  def self.route(field, &handler); $route = [field, handler]; end
-  # Counts up the ids, "n1" first, so the checks know each request's id.
-  def self.random_id(length); $nonce = $nonce.to_i + 1; "n#{$nonce}"; end
+  def self.route(field, &handler); end
 end
 # Stands in for the story state, whose WARP_BAN names the switch that bans warping.
 module MGQ_MpStoryState; WARP_BAN = 100; end
@@ -99,134 +96,69 @@ module MGQ_MpStoryState; WARP_BAN = 100; end
 load_script "coop_scope"
 load_script "coop_gather"
 load_script "coop_teleport"
-open_rules_bridge
+fake = answer_party(open_rules_bridge)
 
 teleport = MGQ_MpCoopTeleport
+tick = lambda { |in_world| $ticks.each { |each| each.call(in_world) } }
 $frame_count = 1000
 $sent = []
 $notices = []
 $game_switches = {}
 $game_map = Game_Map.new
 $game_player = Game_Player.new
-leader = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "l", "name" => "Leader", "party" => "p1", "map" => "9", "x" => "10", "y" => "10" })
-friend = MGQ_MpOverworldSync::Peers::Peer.new(3, { "id" => "f", "name" => "Friend", "party" => "p1", "map" => "7", "x" => "4", "y" => "4" })
-stranger = MGQ_MpOverworldSync::Peers::Peer.new(4, { "id" => "s", "name" => "Stranger", "party" => "p2", "map" => "7", "x" => "4", "y" => "4" })
-$peers = [leader, friend, stranger]
+leader = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "l", "name" => "Leader", "party" => "p1" })
+friend = MGQ_MpOverworldSync::Peers::Peer.new(3, { "id" => "f", "name" => "Friend", "party" => "p1" })
+$peers = [leader, friend]
 $leader = leader
-own_state = lambda { $state_fields.call["tpask"] }
-take = lambda { |peer, fields| $route[1].call(peer, fields.merge(MGQ_MpCoopTeleport::FIELD => fields["kind"])) }
 
-check("the overview offers no teleport to a player outside the party", $offers.peer_option(stranger), nil)
-check("a teleport to the leader needs no asking", [$offers.peer_option(leader).text, $offers.peer_option(friend).text],
-      ["Teleport to Leader", "Ask to teleport to Friend"])
-check("each closes the World overview", $offers.peer_option(friend).leaves, true)
+tick.call(false)
+check("outside a world the script asks the DLL nothing and offers nothing", [$teleport_calls, $offers.peer_option(friend), $state_fields.call], [[], nil, { "tpask" => "" }])
 
-# A member teleports to the leader, whose game lets them come at once.
-$offers.peer_option(leader).run.call
-check("the request names the leader in the player's state", own_state.call, "l:n1")
-check("and says the player teleports", $notices.last, "Teleporting to Leader . . .")
-check("without a line above the player's head, since the leader answers at once", teleport.own_doing, nil)
-check("asking again while it stands is refused", $offers.peer_option(leader).refusal, "Your request to Leader stands.")
-take.call(friend, { "kind" => "allow", "nonce" => "n1", "map" => "5", "x" => "1", "y" => "1", "d" => "2" })
-check("an answer from another member is ignored", own_state.call, "l:n1")
-take.call(leader, { "kind" => "allow", "nonce" => "n0", "map" => "5", "x" => "1", "y" => "1", "d" => "2" })
-check("and one to an older request", own_state.call, "l:n1")
-take.call(leader, { "kind" => "allow", "nonce" => "n1", "map" => "9", "x" => "10", "y" => "10", "d" => "4", "warp_ban" => "1" })
-check("the leader's answer brings the player over once free", [MGQ_MpCoopGather.coming?, MGQ_MpCoopGather.pending_call[:place], MGQ_MpCoopGather.pending_call[:warp_ban]],
-      [true, [9, 10, 10, 4], true])
-check("and ends the request", own_state.call, "")
+tick.call(true)
+check("each frame in a world hands the DLL where the player stands", $teleport_calls.last, ["tp.view", { "map" => 3, "x" => 0, "y" => 0, "d" => 2, "warp_ban" => 0 }])
+check("and offers each member the teleport the view names", [$offers.peer_option(leader).text, $offers.peer_option(friend).text], ["Teleport to Leader", "Ask to teleport to Friend"])
+check("each closing the World overview", $offers.peer_option(friend).leaves, true)
+check("the wheel's teleport to the leader is the same", teleport.option(leader).text, "Teleport to Leader")
+$offers.peer_option(friend).run.call
+check("choosing it asks the DLL by the member's seat", $teleport_calls.last, ["tp.ask", 3])
+
+# The DLL keeps a request of the player and one of the friend's.
+$teleport_view = {
+  "tpask" => "f:n1",
+  "doing" => { "text" => "Asking Friend to teleport", "ends" => MGQ_Multiplayer::Bridge.frame_number + 1800 }, "own" => ["Stop asking to teleport"],
+  "members" => { 3 => { "text" => "Ask to teleport to Friend", "refusal" => "Your request to Friend stands.", "request" => "x1", "allow" => "Allow teleport",
+                        "call" => "Asks to teleport to you", "notice" => "Friend asks to teleport to you", "action" => "Allow" } },
+}
+tick.call(true)
+check("the state tells the request the DLL keeps", $state_fields.call, { "tpask" => "f:n1" })
+check("the line above the head counts it down by the bridge's frames", $doings.map { |doing| doing.call }.compact, [["Asking Friend to teleport", 30.0]])
+check("the wheel's teleport is closed with the DLL's reason", [teleport.option(friend).run, teleport.option(friend).refusal], [nil, "Your request to Friend stands."])
+check("the World overview shows the friend's request", [$offers.call_of(friend), $offers.peer_option(friend).text], [["Asks to teleport to you", :invite], "Allow teleport"])
+notice = $offers.notice_of(friend)
+check("as does the notification box", [notice.key, notice.text, notice.color, notice.action, notice.mark], [[:teleport, 3], "Friend asks to teleport to you", :invite, "Allow", "x1"])
+check("but not for a member without one", $offers.notice_of(leader), nil)
+notice.take.call
+check("allowing hands the DLL the seat and where the player stands", $teleport_calls.last, ["tp.allow", { "seat" => 3, "place" => { "map" => 3, "x" => 0, "y" => 0, "d" => 2, "warp_ban" => 0 } }])
+notice.decline.call
+check("declining hands the DLL the seat", $teleport_calls.last, ["tp.decline", 3])
+fake.answer("tp.allow") { |_request| raise FakeBridge::BadRequest, "No player sits at seat 3." }
+notice.take.call
+check("an action the DLL fails keeps the view it answered last", [$state_fields.call, $offers.notice_of(friend)&.text], [{ "tpask" => "f:n1" }, "Friend asks to teleport to you"])
+answer_teleports(fake)
+$offers.own_options.first.run.call
+check("the own row's choice takes the request back", $teleport_calls.last, ["tp.stop", "the player stopped asking"])
+DataManager.extract_save_contents({})
+check("a loaded save makes the DLL forget it", $teleport_calls.last, ["tp.forget", "a save was loaded"])
+$teleport_view = nil
+
+# A member lets the player come.
+fake.post("tp.allowed", { "name" => "Friend", "map" => 7, "x" => 4, "y" => 4, "d" => 2, "warp_ban" => true })
+fake.post("tp.notice", "Teleporting to Friend . . .")
 $map_free = false
-$frame_count += 20 * 60
-MGQ_MpCoopGather.update
-check("an answer that comes while the player is busy for 20 s still stands", MGQ_MpCoopGather.coming?, true)
+MGQ_Multiplayer::Bridge.frame
+check("the DLL's allow brings the player over once free", [MGQ_MpCoopGather.coming?, MGQ_MpCoopGather.pending_call[:place], MGQ_MpCoopGather.pending_call[:warp_ban]],
+      [true, [7, 4, 4, 2], true])
+check("with the DLL's notice", $notices.last, "Teleporting to Friend . . .")
 $map_free = true
 MGQ_MpCoopGather.update
-check("and teleports the player once free", [$game_player.reserved, MGQ_MpCoopGather.coming?], [[9, 10, 10, 4], false])
-MGQ_MpCoopGather.come_to("Leader", [9, 10, 10, 4], nil)
-$map_free = false
-$frame_count += GatherStandIn::ASKED_LAPSE_FRAMES
-check("one that waits a minute for the player lapses with a notice",
-      [MGQ_MpCoopGather.coming?, MGQ_MpCoopGather.pending_call, $notices.last], [false, nil, "You were too busy to teleport to Leader."])
-$game_player.reserved = nil
-MGQ_MpCoopGather.forget
-
-# As leader, the player lets a member come at once.
-$leader = :me
-friend.state["tpask"] = "me:x1"
-$sent.clear
-$observe.call(friend)
-check("the leader answers a member's request with where they stand", $sent.map { |seat, f| [seat, f["ptp"], f["nonce"], f["map"]] }, [[3, "allow", "x1", 3]])
-$observe.call(friend)
-check("once", $sent.size, 1)
-check("and shows no request to allow", $offers.notice_of(friend), nil)
-stranger.state["tpask"] = "me:y1"
-$observe.call(stranger)
-check("a player outside the party is never answered", $sent.size, 1)
-check("nor shown", [$offers.notice_of(stranger), $offers.call_of(stranger)], [nil, nil])
-
-# Another member's request waits until the player allows it.
-$leader = leader
-friend.state["tpask"] = "me:x2"
-$sent.clear
-$observe.call(friend)
-check("a member who does not lead answers nothing by themselves", $sent, [])
-notice = $offers.notice_of(friend)
-check("the notification box shows the request", [notice.text, notice.action, notice.color], ["Friend asks to teleport to you", "Allow", :invite])
-check("as does the World overview", [$offers.call_of(friend), $offers.peer_option(friend).text], [["Asks to teleport to you", :invite], "Allow teleport"])
-notice.take.call
-check("allowing tells the member where the player stands", $sent.map { |seat, f| [seat, f["ptp"], f["nonce"]] }, [[3, "allow", "x2"]])
-check("after which the request shows no more", [$offers.notice_of(friend), $offers.peer_option(friend).text], [nil, "Ask to teleport to Friend"])
-friend.state["tpask"] = "me:x3"
-$sent.clear
-$offers.notice_of(friend).decline.call
-check("declining tells the member", $sent.map { |seat, f| [seat, f["ptp"], f["nonce"]] }, [[3, "deny", "x3"]])
-friend.state["tpask"] = "me:x4"
-$sent.clear
-$offers.notice_of(friend).take.call
-$offers.notice_of(friend)
-check("a request answered once is never answered twice", $sent.size, 1)
-friend.state["tpask"] = ""
-
-# The player asks another member.
-$offers.peer_option(friend).run.call
-check("asking another member names them in the state", own_state.call, "f:n2")
-check("and says they have to allow it", $notices.last, "You asked Friend to let you teleport to them.")
-check("the line above the player's head names the request with the minute it stands for, through the doings of every script here",
-      $doings.map { |doing| doing.call }, [nil, ["Asking Friend to teleport", 60.0]])
-check("the player's own row may take it back", $offers.own_options.map(&:text), ["Stop asking to teleport"])
-take.call(friend, { "kind" => "deny", "nonce" => "n2" })
-check("a declined request ends with a notice", [own_state.call, $notices.last, MGQ_MpCoopGather.coming?], ["", "Friend declined your teleport.", false])
-$offers.peer_option(friend).run.call
-take.call(friend, { "kind" => "allow", "nonce" => "n3", "map" => "7", "x" => "4", "y" => "4", "d" => "2" })
-check("an allowed one brings the player over", [MGQ_MpCoopGather.pending_call[:name], $notices.last], ["Friend", "Teleporting to Friend . . ."])
-MGQ_MpCoopGather.forget
-
-$offers.peer_option(friend).run.call
-$offers.peer_option(leader).run.call
-check("a newer request replaces the one before", own_state.call, "l:n5")
-$offers.own_options.first.run.call
-check("taking it back clears the state", [own_state.call, $offers.own_options], ["", []])
-
-$offers.peer_option(friend).run.call
-$frame_count += MGQ_MpCoopTeleport::ASK_FRAMES / 2
-check("the line counts the request down", teleport.own_doing, ["Asking Friend to teleport", 30.0])
-$frame_count += MGQ_MpCoopTeleport::ASK_FRAMES / 2
-$ticks.each { |tick| tick.call(true) }
-check("a request nobody answers runs out with a notice", [own_state.call, $notices.last], ["", "Friend did not answer your teleport."])
-check("and leaves the line", teleport.own_doing, nil)
-$offers.peer_option(friend).run.call
-friend.state["party"] = "p2"
-$ticks.each { |tick| tick.call(true) }
-check("one to a member who left the party ends", own_state.call, "")
-friend.state["party"] = "p1"
-$offers.peer_option(friend).run.call
-DataManager.extract_save_contents({})
-check("a loaded save takes it back", own_state.call, "")
-$offers.peer_option(friend).run.call
-$ticks.each { |tick| tick.call(false) }
-check("as does the world's close", own_state.call, "")
-
-$game_map.map_id = 7
-$game_player.x = 5
-$game_player.y = 4
-check("the player standing near a member already cannot teleport to them", [$offers.peer_option(friend).run, $offers.peer_option(friend).refusal], [nil, "You are with Friend already."])
+check("and teleports the player once free", [$game_player.reserved, MGQ_MpCoopGather.coming?], [[7, 4, 4, 2], false])
