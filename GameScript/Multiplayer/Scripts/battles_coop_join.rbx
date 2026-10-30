@@ -2,6 +2,8 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Checked requests to join and told the battle's room through the rules in C#
+#                            - Found what the prompt offers and asked and waited for the battle's host through the DLL
 #      Paulinchen  2026-10-23: Kept the prompt off the live map behind menus
 #      Paulinchen  2026-10-17: Offered the frozen fight of a raid boss near the player
 #      Paulinchen  2026-10-15: Told whether a served battle takes players in by the battle server's state
@@ -19,34 +21,27 @@
 #----------------------------------------------------------------
 
 # Joining a battle by choice in a Raid World: while the player is free on the map and another player
-# within JOIN_DISTANCE fights a battle whose host's state says it takes players in (state_fields), a
+# within three steps fights a battle whose host's state says it takes players in (state_fields), a
 # prompt below the player's character names the hotkey that joins it (Sprite_MpJoinPrompt). Its
-# press asks the battle's host (request), who takes the player in as a late guest without enemies
-# (MGQ_MpBattlesHotjoin.take_in_player), so an event's battle and a boss battle take them too, or
-# refuses, which the player reads in the notification box (take_refusal). Near a raid boss battle
-# that takes the player in no more, such as a full one, the prompt offers a side battle against the
-# same boss instead (side_target), which the player fights as their own (MGQ_MpRaidPool.start_side).
-# Near none of these, a raid boss's frozen fight near the player is offered (freeze_target), which
-# the press resumes (MGQ_MpRaidFreezeUi.join).
+# press asks the battle's host (the DLL's JoinChoice), who takes the player in as a late guest
+# without enemies (MGQ_MpBattlesHotjoin.take_in_player), so an event's battle and a boss battle take
+# them too, or refuses, which the player reads in the notification box. Near a raid boss battle that
+# takes the player in no more, such as a full one, the prompt offers a side battle against the same
+# boss instead (sides), which the player fights as their own (MGQ_MpRaidPool.start_side). Near none
+# of these, a raid boss's frozen fight near the player is offered (freeze_candidate), which the
+# press resumes (MGQ_MpRaidFreezeUi.join).
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpBattlesJoin
-  # Steps another player who fights a battle may be away from the player for its prompt to show,
-  # diagonal steps counted as one.
+  # Steps a raid boss's frozen fight may be away from the player for its prompt to show, as the
+  # DLL's JoinChoice counts a battle's.
   JOIN_DISTANCE = 3
 
-  # Seconds the player stands still waiting for the host's answer.
-  ANSWER_SECONDS = 3
-
-  # Frames the notification box shows a refusal, four seconds.
+  # Frames the notification box shows a message of this script, four seconds.
   NOTICE_FRAMES = 240
 
-  # The notification box's key of this script's messages.
+  # The notification box's key of this script's messages, which the DLL's share.
   NOTICE_KEY = :join_battle
-
-  # What the player reads of a host's refusal, by the reason the host sends.
-  REFUSALS = { "full" => "it is full", "ending" => "it is ending", "gathering" => "it still gathers its players",
-               "pvp" => "it is a PvP battle", "closed" => "it takes nobody in now" }
 
   extend MGQ_MpLog
 
@@ -62,9 +57,12 @@ module MGQ_MpBattlesJoin
 
   # The host's side.
 
+  # The topic that tells the players of the running battle while it takes players in.
+  ROOM_TOPIC = "coop.room"
+
   # The field this script adds to the state the player's game tells the others: in a Raid World
   # "rbn", the players of the battle the player hosts or fights alone, those taken in counted, while
-  # it takes players in, else 0.
+  # it takes players in, else 0, as the rules in C# tell it (topic coop.room).
   #
   # @return [Hash] The field, none in a Classic world.
   def self.state_fields
@@ -73,49 +71,26 @@ module MGQ_MpBattlesJoin
     front = defined?(MGQ_MpBattlesServed) && MGQ_MpBattlesServed.front_fields(%w(rbn))
     return front if front
 
-    { "rbn" => closed_reason ? 0 : players_in }
+    { "rbn" => MGQ_Multiplayer::Bridge.call(ROOM_TOPIC, MGQ_MpBattlesHotjoin.intake_facts).to_i }
   rescue => e
     log_once(:state_fields, "telling whether the battle takes players in failed: #{e.class}: #{e.message}")
     { "rbn" => 0 }
   end
 
-  # Counts the players of the battle the player hosts or fights alone, the player and those taken in
-  # who have not joined yet included.
-  #
-  # @return [Integer] The players.
-  def self.players_in
-    hotjoin = MGQ_MpBattlesHotjoin
-    hotjoin.players_count + hotjoin.pending_seats.size
-  end
-
-  # Tells why the player's battle takes nobody in now.
-  #
-  # @return [Array<String>, nil] The reason the player who asks reads (see REFUSALS) and the one
-  #   for the log, nil when it takes players in.
-  def self.closed_reason
-    sync = MGQ_MpBattlesSync
-    return ["pvp", "a PvP battle runs"] if MGQ_MpBattles.kind == :pvp || (defined?(MGQ_MpBattlesPvp) && MGQ_MpBattlesPvp::Battle.running?)
-
-    bid, host = MGQ_MpBattlesHotjoin.running_battle
-    return ["closed", "the player fights no battle others may join"] unless bid
-    return ["closed", "the player is a guest of battle #{bid}"] unless host == MGQ_MpOverworldSync::Me.seat
-    return ["gathering", "the battle still gathers its players"] if sync.live? && !MGQ_MpBattlesCoop.active?
-    return ["closed", "the computer plays on for those who left"] if sync.live? && sync.solo?
-    return ["ending", "the battle ends"] if BattleManager.respond_to?(:battle_end?) && BattleManager.battle_end?
-
-    count = players_in
-    ["full", "#{count} players fight, as many as a battle takes"] if count >= MGQ_MpBattlesCoop::RAID_PLAYERS
-  end
-
   # Takes another player's request to join the battle the player hosts or fights alone: takes them
-  # in when it can (see refusal), else refuses them.
+  # in when the rules allow it (topic coop.intake), else refuses them with the reason they read
+  # (see the DLL's JoinChoice).
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who asks.
   # @param message [Hash] The request: the battle's id and the map.
   def self.take_request(peer, message)
     return log_once([:classic_request, peer && peer.seat], "ignored a request to join from #{who(peer)}: not a Raid World") unless raid?
 
-    code, reason = refusal(peer.seat, message)
+    answer = MGQ_Multiplayer::Bridge.call(MGQ_MpBattlesHotjoin::INTAKE_TOPIC, "kind" => "choice", "facts" => MGQ_MpBattlesHotjoin.intake_facts,
+                                                                              "seat" => peer.seat, "bid" => message["bid"], "map" => message["map"])
+    return refuse(peer, message, "closed", "the rules did not answer") unless answer
+
+    code, reason = answer["refusal"]
     return refuse(peer, message, code, reason) if code
 
     MGQ_MpBattlesHotjoin.take_in_player(peer)
@@ -123,31 +98,11 @@ module MGQ_MpBattlesJoin
     log("taking a request to join failed: #{e.class}: #{e.message}")
   end
 
-  # Tells why the player's battle cannot take in a player who asks to join it.
-  #
-  # @param seat [Integer] The asking player's seat.
-  # @param message [Hash] The request.
-  # @return [Array<String>, nil] The reason the player who asks reads and the one for the
-  #   log, nil when it can.
-  def self.refusal(seat, message)
-    closed = closed_reason
-    return closed if closed
-
-    sync = MGQ_MpBattlesSync
-    bid = MGQ_MpBattlesHotjoin.running_battle[0]
-    return ["closed", "it asks for battle #{message['bid']}, the player's is #{bid}"] unless message["bid"].to_s == bid.to_s
-    return ["closed", "it asks from map #{message['map']}, the player's is #{$game_map.map_id}"] unless message["map"].to_i == $game_map.map_id
-    # The battle's guests who left stay among its seats, which the next command phase takes out.
-    return ["closed", "its player was in this battle before"] if sync.role && Array(sync.seats).include?(seat)
-
-    ["closed", "its player is taken in already"] if MGQ_MpBattlesHotjoin.pending_seats.include?(seat)
-  end
-
   # Turns down a player's request to join, telling them why.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who asked.
   # @param message [Hash] The request.
-  # @param code [String] The reason they read, see REFUSALS.
+  # @param code [String] The reason they read, see the DLL's JoinChoice.
   # @param reason [String] The reason for the log.
   def self.refuse(peer, message, code, reason)
     MGQ_MpBattlesCoop.tell_map([peer.seat], "pick_no", "bid" => message["bid"].to_s, "why" => code)
@@ -156,84 +111,58 @@ module MGQ_MpBattlesJoin
 
   # The joining side.
 
-  # Finds the battle the prompt offers: of the other players within JOIN_DISTANCE who fight one, as
-  # their states tell (see MGQ_MpBattlesCoop.fights?), the nearest whose battle takes players in
-  # (see open_battle), while the player is free (see busy_reason).
-  #
-  # @return [Array, nil] The battle's host and its id, nil when none or the player is busy.
-  def self.target
-    return nil if busy_reason
+  # The topic of a frame on the map for the prompt, which the DLL's JoinChoice answers.
+  FRAME_TOPIC = "coop.join_frame"
 
-    x = $game_player.x
-    y = $game_player.y
-    near = MGQ_MpCoop::Scope.peers_on($game_map.map_id).select do |peer|
-      MGQ_MpBattlesCoop.fights?(peer) && MGQ_MpBattlesCoop.distance(peer, x, y) <= JOIN_DISTANCE
-    end
-    near = near.sort_by { |peer| [MGQ_MpBattlesCoop.distance(peer, x, y), peer.state["id"].to_s] }
-    near.map { |peer| open_battle(peer) }.compact.first
+  # Tells why the player may not join a battle by choice now, as only the game knows it: the first
+  # reason before the player's own request, which the DLL knows itself, and the first after it.
+  #
+  # @return [Array<String, nil>] The reason before and the reason after, each nil when none holds.
+  def self.busy_reasons
+    before = if !MGQ_MpOverworldSync.in_world? then "no world is open"
+             elsif !raid? then "not a Raid World"
+             elsif !MGQ_MpOverworldSync.map_free? then "the map is not free: an event, a message or a transfer"
+             elsif MGQ_MpBattlesSync.role || MGQ_MpBattles.running? then "the player is in a multiplayer battle"
+             end
+    after = if MGQ_MpHooks.player_held? then "the player stands still for a battle or the story"
+            elsif MGQ_MpChat.typing? then "the chat box is open"
+            elsif MGQ_MpActions::Wheel.open? then "the action wheel is open"
+            elsif MGQ_MpEmotes.open? then "the emote wheel is open"
+            elsif defined?(MGQ_MpWorldOverview) && MGQ_MpWorldOverview.open? then "the World overview is open"
+            elsif MGQ_MpBattlesCoop.trading? || MGQ_MpCoopGather.coming? then "the player trades or is about to teleport"
+            end
+    [before, after]
   end
 
-  # Finds the host of the battle another player fights and whether it takes players in: its host on
-  # the player's map telling the same battle, with fewer than MGQ_MpBattlesCoop::RAID_PLAYERS
-  # players in it (see state_fields).
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player who fights it.
-  # @return [Array, nil] The battle's host and its id, nil when it takes nobody in.
-  def self.open_battle(peer)
-    bid = peer.state["rb"].to_s
-    return nil unless peer.state["rbh"].to_s =~ /\A\d+\z/
-    # The host keeps a guest who left among the battle's seats, so it refuses them (see refusal).
-    return nil if bid == MGQ_MpBattlesSync.battle_id.to_s
-
-    host = MGQ_MpOverworldSync::Peers.at(peer.state["rbh"].to_i)
-    return nil unless host && host.state["map"].to_i == $game_map.map_id && MGQ_MpBattlesCoop.fights?(host) && host.state["rb"].to_s == bid
-
-    host.state["rbn"].to_i.between?(1, MGQ_MpBattlesCoop::RAID_PLAYERS - 1) ? [host, bid] : nil
-  end
-
-  # Tells why the player may not join a battle by choice now.
-  #
-  # @return [String, nil] The first reason that holds, nil when they may.
-  def self.busy_reason
-    return "no world is open" unless MGQ_MpOverworldSync.in_world?
-    return "not a Raid World" unless raid?
-    return "the map is not free: an event, a message or a transfer" unless MGQ_MpOverworldSync.map_free?
-    return "the player is in a multiplayer battle" if MGQ_MpBattlesSync.role || MGQ_MpBattles.running?
-    return "the player waits for an answer" if @asking
-    return "the player stands still for a battle or the story" if MGQ_MpHooks.player_held?
-    return "the chat box is open" if MGQ_MpChat.typing?
-    return "the action wheel is open" if MGQ_MpActions::Wheel.open?
-    return "the emote wheel is open" if MGQ_MpEmotes.open?
-    return "the World overview is open" if defined?(MGQ_MpWorldOverview) && MGQ_MpWorldOverview.open?
-
-    "the player trades or is about to teleport" if MGQ_MpBattlesCoop.trading? || MGQ_MpCoopGather.coming?
-  end
-
-  # Finds the battle the prompt offers and asks its host once the hotkey goes down. Called by the map
-  # every frame.
+  # Tells the DLL of the frame on the map (topic coop.join_frame), which settles the player's request
+  # and finds what the prompt offers while the hotkey is read: a battle near that takes players in,
+  # else a side battle beside a full raid boss battle, else a frozen fight. A press asks the battle's
+  # host there, starts the side battle or resumes the frozen fight here. Called by the map every
+  # frame.
   #
   # The hotkey is read also while the scene changes, which hides the prompt, so a press is seen once.
   #
   # @param changing [Boolean] Whether the map's scene changes.
   def self.on_map(changing)
-    settle
     @target = nil
     @side = nil
     @freeze = nil
-    return unless reads_hotkey?
+    reads = reads_hotkey?
+    pressed = reads && MGQ_MpHotkeys.pressed?(:join_battle) ? true : false
+    request = { "facts" => MGQ_MpBattlesCoop.facts, "reads" => reads, "pressed" => pressed, "changing" => changing ? true : false,
+                "busy" => reads ? busy_reasons : [nil, nil], "sides" => reads ? sides : nil, "freeze" => reads ? freeze_candidate : nil }
+    answer = MGQ_Multiplayer::Bridge.call(FRAME_TOPIC, request)
+    MGQ_MpBattlesCoop.take_status(answer)
+    return unless reads && answer.is_a?(Hash)
 
-    pressed = MGQ_MpHotkeys.pressed?(:join_battle)
-    @target = changing ? nil : target
-    @side = changing || @target ? nil : side_target
-    @freeze = changing || @target || @side ? nil : freeze_target
-    return unless pressed && !changing
-
-    found = @target
-    return request(*found) if found
+    @target = answer["target"]
+    @side = answer["side"]
+    @freeze = answer["freeze"]
+    return if !pressed || changing || answer["asked"]
     return fight_alongside(*@side) if @side
     return MGQ_MpRaidFreezeUi.join(@freeze[0]) if @freeze
 
-    MGQ_MpHotkeys.log_refusal(:join_battle, busy_reason || 'nobody near the player fights a battle that takes players in')
+    MGQ_MpHotkeys.log_refusal(:join_battle, answer["busy_reason"] || 'nobody near the player fights a battle that takes players in')
   rescue => e
     @target = nil
     @side = nil
@@ -241,15 +170,32 @@ module MGQ_MpBattlesJoin
     log("joining a battle by choice failed: #{e.class}: #{e.message}")
   end
 
-  # Finds the frozen fight of a raid boss near the player that the prompt offers to resume, while
-  # no battle near takes the player in or offers a side battle and the player is free (see
-  # busy_reason): the one whose boss's stand-in stands within JOIN_DISTANCE, see ui_raid_freeze.rbx.
+  # Lists the side battles the raid boss battles on the player's map offer, by their hosts' states
+  # (MGQ_MpRaidPool.side_of), with the steps to each boss's event, for the DLL to choose from.
+  #
+  # @return [Array<Array>, nil] Each host's seat, the troop, the host's enemy rates, the steps to the
+  #   boss (nil unknown) and its name; nil without raid boss pools.
+  def self.sides
+    return nil unless defined?(MGQ_MpRaidPool)
+
+    x = $game_player.x
+    y = $game_player.y
+    map = $game_map.map_id
+    MGQ_MpOverworldSync::Peers.all.map do |host|
+      side = host.state["map"].to_i == map ? MGQ_MpRaidPool.side_of(host) : nil
+      next unless side
+
+      steps = defined?(MGQ_MpRaidBar) ? MGQ_MpRaidBar.distance_to_boss(side[0], x, y) : nil
+      [host.seat, side[0].to_i, side[1].to_s, steps, MGQ_MpRaidPool.troop_label(side[0]).to_s]
+    end.compact
+  end
+
+  # Finds the frozen fight of a raid boss near the player, the one whose boss's stand-in stands
+  # within JOIN_DISTANCE, see ui_raid_freeze.rbx, which the prompt offers when nothing else.
   #
   # @return [Array, nil] The troop and the boss's name, nil for none.
-  def self.freeze_target
-    return nil if busy_reason || !defined?(MGQ_MpRaidFreezeUi)
-
-    MGQ_MpRaidFreezeUi.join_target($game_player.x, $game_player.y, JOIN_DISTANCE)
+  def self.freeze_candidate
+    defined?(MGQ_MpRaidFreezeUi) ? MGQ_MpRaidFreezeUi.join_target($game_player.x, $game_player.y, JOIN_DISTANCE) : nil
   end
 
   # Reports whether the Join Battle hotkey is read: only in a Raid World, and only while no other
@@ -282,44 +228,6 @@ module MGQ_MpBattlesJoin
     @freeze ? "Press #{MGQ_MpHotkeys.label(:join_battle)} to fight #{@freeze[1]}" : nil
   end
 
-  # Finds the raid boss battle near the player that the prompt offers a side battle against, while
-  # none takes the player in (see target) and the player is free (see busy_reason): of the boss
-  # battles on the player's map whose host's state names its troop (MGQ_MpRaidPool.side_of), the
-  # nearest with a player in it, or its boss's event, within JOIN_DISTANCE.
-  #
-  # @return [Array, nil] The troop, the host's enemy rates and the boss's name, nil for none.
-  def self.side_target
-    return nil if busy_reason || !defined?(MGQ_MpRaidPool)
-
-    x = $game_player.x
-    y = $game_player.y
-    near = side_battles.map do |peer, troop, rates|
-      steps = MGQ_MpBattlesCoop.distance(peer, x, y)
-      steps = [steps, MGQ_MpRaidBar.distance_to_boss(troop, x, y)].min if defined?(MGQ_MpRaidBar)
-      [steps, peer.state["id"].to_s, troop, rates]
-    end
-    best = near.select { |entry| entry[0] <= JOIN_DISTANCE }.min_by { |entry| entry.first(2) }
-    best ? [best[2], best[3], MGQ_MpRaidPool.troop_label(best[2])] : nil
-  end
-
-  # Lists the players on the player's map who fight a raid boss battle a side battle may fight too,
-  # by its host's state, see MGQ_MpRaidPool.side_of.
-  #
-  # @return [Array<Array>] Each player with the battle's troop and its host's enemy rates.
-  def self.side_battles
-    map = $game_map.map_id
-    MGQ_MpCoop::Scope.peers_on(map).map do |peer|
-      bid = peer.state["rb"].to_s
-      next if !MGQ_MpBattlesCoop.fights?(peer) || peer.state["rbh"].to_s !~ /\A\d+\z/
-
-      host = MGQ_MpOverworldSync::Peers.at(peer.state["rbh"].to_i)
-      next unless host && host.state["map"].to_i == map && host.state["rb"].to_s == bid
-
-      side = MGQ_MpRaidPool.side_of(host)
-      side ? [peer] + side : nil
-    end.compact
-  end
-
   # Starts a side battle against the boss of a battle near the player, telling the player when it
   # cannot start.
   #
@@ -332,85 +240,13 @@ module MGQ_MpBattlesJoin
     notice("Cannot fight #{name} now.") unless MGQ_MpRaidPool.start_side(troop, rates)
   end
 
-  # Asks the host of a battle near the player to take them in, through the map's gate. The player
-  # stands still until the host's invite or refusal comes, ANSWER_SECONDS at most. The player's
-  # party members near are asked along, see MGQ_MpBattlesHotjoin.offer_party_join.
-  #
-  # @param host [MGQ_MpOverworldSync::Peers::Peer] The battle's host.
-  # @param bid [String] The battle's id.
-  # @param along [Boolean] Whether to ask the party along, false for a member who comes along.
-  def self.request(host, bid, along = true)
-    name = host.state["name"].to_s
-    @asking = { :seat => host.seat, :bid => bid, :name => name, :at => Time.now }
-    @gave_up = nil
-    @target = nil
-    MGQ_MpBattlesCoop.tell_map([host.seat], "pick", "bid" => bid, "map" => $game_map.map_id)
-    notice("Asking #{name} to join their battle...", ANSWER_SECONDS * 60)
-    log("asked #{who(host)} to join battle #{bid}, waiting up to #{ANSWER_SECONDS} s")
-    MGQ_MpBattlesHotjoin.offer_party_join(host, bid) if along
-  end
-
   # Reports whether the player waits for the answer of a battle's host they asked to join, standing
-  # still, also once the host's invite came but waits for the player to be free.
+  # still, also once the host's invite came but waits for the player to be free, as the DLL's status
+  # tells.
   #
   # @return [Boolean] Whether they do.
   def self.asking?
-    asking = @asking
-    return false unless !asking.nil? && MGQ_MpBattlesSync.role.nil?
-
-    Time.now - asking[:at] <= ANSWER_SECONDS || MGQ_MpBattlesCoop.invited_by?(asking[:seat], asking[:bid])
-  end
-
-  # Ends the wait for the host's answer once the player joined a battle, through an invite (see
-  # MGQ_MpBattlesCoop.accept), or ANSWER_SECONDS passed without the host's invite. Then the host is
-  # told the player stopped waiting, so it forgets them, and its invite on its way is ignored (see
-  # gave_up?).
-  def self.settle
-    asking = @asking
-    return unless asking
-
-    sync = MGQ_MpBattlesSync
-    if sync.role
-      @asking = nil
-      MGQ_MpNotices.drop(NOTICE_KEY, "the player joins a battle") if defined?(MGQ_MpNotices)
-      return log("joins #{asking[:name]}'s battle #{asking[:bid]} as a late guest") if sync.battle_id.to_s == asking[:bid].to_s
-
-      return log("joins battle #{sync.battle_id} as #{sync.role} instead of #{asking[:name]}'s battle #{asking[:bid]}")
-    end
-    return if Time.now - asking[:at] <= ANSWER_SECONDS || MGQ_MpBattlesCoop.invited_by?(asking[:seat], asking[:bid])
-
-    @asking = nil
-    @gave_up = [asking[:seat], asking[:bid].to_s]
-    MGQ_MpBattlesCoop.tell_map([asking[:seat]], "off", "bid" => asking[:bid])
-    notice("No answer from #{asking[:name]}'s battle.")
-    log("no answer from #{asking[:name]} for battle #{asking[:bid]} within #{ANSWER_SECONDS} s, told them the player stopped waiting")
-  end
-
-  # Reports whether an invite comes from the host the player stopped waiting for, to the battle
-  # they asked to join (see settle), which the host forgot them for.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who invites.
-  # @param message [Hash] The invite.
-  # @return [Boolean] Whether it does.
-  def self.gave_up?(peer, message)
-    gave_up = @gave_up
-    !gave_up.nil? && !peer.nil? && peer.seat == gave_up[0] && message["bid"].to_s == gave_up[1] && message["hot"].to_s == "1"
-  end
-
-  # Takes the refusal of the host the player asked to join, telling the player why.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who refused.
-  # @param message [Hash] The refusal: the battle's id and the reason, see REFUSALS.
-  def self.take_refusal(peer, message)
-    asking = @asking
-    unless asking && peer && peer.seat == asking[:seat] && message["bid"].to_s == asking[:bid].to_s
-      return log("refusal for battle #{message['bid']} from #{who(peer)} ignored: not the battle the player asked to join")
-    end
-
-    @asking = nil
-    why = REFUSALS[message["why"].to_s] || REFUSALS["closed"]
-    notice("Cannot join #{asking[:name]}'s battle: #{why}.")
-    log("#{who(peer)} refused the player for battle #{message['bid']}: #{message['why']}")
+    MGQ_MpBattlesCoop.join_waits? && MGQ_MpBattlesSync.role.nil?
   end
 
   # Shows a message in the notification box, in place of this script's last one.
@@ -429,11 +265,8 @@ module MGQ_MpBattlesJoin
     MGQ_MpOverworldSync.who(peer)
   end
 
-  # Forgets the prompt and a request a reset interrupted.
+  # Forgets the prompt a reset interrupted; the DLL forgets the request with the matchmaking.
   def self.drop
-    log("forgot the request to join #{@asking[:name]}'s battle after a reset") if @asking
-    @asking = nil
-    @gave_up = nil
     @target = nil
     @side = nil
     @freeze = nil

@@ -2,7 +2,9 @@
 #  battle_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Answered the live battle's topics
+#      Paulinchen  2026-10-30: Answered the co-op battles' topics
+#                            - Stood in for the enemies of the database as a list, whose size the troop's repair reads
+#                            - Answered the live battle's topics
 #                            - Dropped the stand-in of the link's cancel
 #      Paulinchen  2026-10-28: Gave the stand-in of the color its parts
 #      Paulinchen  2026-10-23: Opened the stand-in of the interface's models, which places the boxes
@@ -490,4 +492,8 @@ $game_player = Game_Player.new
 $game_party = Game_Party.new
 $game_troop = Game_Troop.new
 $game_troop.members = [Game_Enemy.new(0, 31), Game_Enemy.new(1, 32)]
-$data_enemies = Hash.new { |_, id| id.to_i > 0 && id.to_i < 100 ? Object.new : nil }
+$data_enemies = [nil] + Array.new(99) { Object.new }
+
+# The co-op battles' rules in C# on the same bridge.
+require_relative "coop_support"
+answer_coop($world_bridge)

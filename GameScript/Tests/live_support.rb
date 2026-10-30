@@ -2,7 +2,8 @@
 #  live_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Stood in for what every kind of live battle decides the same way
+#      Paulinchen  2026-10-30: Stood in for a co-op battle's side and stream kinds
+#                            - Stood in for what every kind of live battle decides the same way
 #                            - Stood in for the host's recording, held against its golden steps
 #                            - Stood in for the command plan, a team duel's sides and the Backline's Frontlines
 #                            - Stood in for the live battle's session, held against its golden cases
@@ -99,11 +100,11 @@ class LiveSessionStandIn
   def decided(request)
     team = team?
     case request["op"]
-    when "same_side" then team && Array(@own).include?(request["seat"])
+    when "same_side" then coop? || (team && Array(@own).include?(request["seat"]))
     when "players" then team ? Array(@own) + Array(@other) : []
     when "heir" then team ? heir_of(request["seat"]) : nil
     when "gone" then team && !request["host"].nil? && staying(@other, request["host"]).empty?
-    when "kinds" then team ? ["team_heirs"] : @team_ids ? ["pvp_front"] : []
+    when "kinds" then coop? ? ["coop_party", "coop_troop"] : team ? ["team_heirs"] : @team_ids ? ["pvp_front"] : []
     end
   end
 

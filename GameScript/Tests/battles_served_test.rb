@@ -2,6 +2,7 @@
 #  battles_served_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Joined a served battle late from the outcome the DLL tells
 #      Paulinchen  2026-10-23: Checked the squad rules a setup carries and their defaults
 #                            - Checked that the server keeps a player who drops from the battle channel until gone
 #                            - Checked a served battle that ends before its roster
@@ -290,13 +291,9 @@ check("an invite of a served battle makes the player the server's guest",
 MGQ_MpBattlesSync.finish
 MGQ_MpBattlesCoop.ended
 MGQ_MpBattlesSync.join_world(:guest, "late2", [0], "Friend")
-asking = { :seat => 0, :bid => "late2", :troop => 5, :escape => true, :lose => false, :seats => [] }
-MGQ_MpBattlesHotjoin.instance_variable_set(:@asking, asking)
-MGQ_MpBattlesHotjoin.take_answer(MGQ_MpOverworldSync::Peers::Peer.new(0, { "name" => "Front" }, nil, false), { "bid" => "late2", "escape" => "1", "lose" => "0", "rates" => "", "served" => "1" }, :accepted)
 $dll_calls.clear
-MGQ_MpBattlesHotjoin.join_late(asking)
+MGQ_MpBattlesHotjoin.join_late("escape" => true, "lose" => false, "release" => [], "stays_out" => [], "host" => { "escape" => true, "lose" => false, "rates" => "", "served" => true })
 check("and so does a served battle's answer to the player's encounter", [MGQ_MpBattlesSync.served?, $dll_calls.find { |name, _| name == "mp_battle_open" }], [true, ["mp_battle_open", ["world-1", "late2"]]])
-MGQ_MpBattlesHotjoin.instance_variable_set(:@asking, nil)
 MGQ_MpBattlesSync.finish
 MGQ_MpBattlesCoop.ended
 

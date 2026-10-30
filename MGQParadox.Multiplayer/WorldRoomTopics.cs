@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-30: Handed the room to the areas whose rules take its messages
+//                            - Registered the co-op battles' matchmaking over the room
 //                            - Registered the topic of the player's squad over the room
 //                            - Registered the topics of the NPCs shared on a map over the room
 //                            - Registered the topics of the teleports between party members over the room
@@ -250,6 +251,7 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
         TeleportTopics.Register(context, topics._room);
         NpcTopics.Register(context, topics._room);
         SquadViewTopics.Register(context, topics._room);
+        CoopRoomTopics.Register(context, topics._room);
         return topics;
     }
 

@@ -2,7 +2,9 @@
 //  LiveTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Answered what every kind of live battle decides the same way
+//      Paulinchen  2026-10-30: Handed the session to the co-op battles' joins
+//                            - Answered a co-op battle's side and stream kinds
+//                            - Answered what every kind of live battle decides the same way
 //                            - Buffered the host's recording
 //                            - Planned a guest's commands and kept a team duel's sides and the Backline's Frontlines
 //                            - Answered the live battle's session
@@ -177,7 +179,8 @@ public static class LiveTopics
     /// Registers the topics on a context, over a live battle of the context's own.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
-    public static void Register(BridgeContext context)
+    /// <returns>The live battle's session, whose messages the co-op battles' joins take.</returns>
+    public static LiveSession Register(BridgeContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
         var session = new LiveSession();
@@ -209,6 +212,7 @@ public static class LiveTopics
                 { "logs", Logs(taken.Logs) },
             };
         });
+        return session;
     }
 
     /// <summary>
@@ -501,7 +505,7 @@ public static class LiveTopics
         switch (fields["op"].AsText())
         {
             case "same_side":
-                return team && sides.SameSideAsHost(Seat("seat"));
+                return session.Coop || (team && sides.SameSideAsHost(Seat("seat")));
             case "players":
                 return SeatList(team ? sides.Players : []);
             case "heir":
@@ -509,7 +513,7 @@ public static class LiveTopics
             case "gone":
                 return team && Seat("host") is int host && sides.OtherSideGone(host, session.GuestsIn);
             case "kinds":
-                return new RubyArray(team ? ["team_heirs"] : backline.On ? ["pvp_front"] : Array.Empty<RubyValue>());
+                return new RubyArray(session.Coop ? ["coop_party", "coop_troop"] : team ? ["team_heirs"] : backline.On ? ["pvp_front"] : Array.Empty<RubyValue>());
             default:
                 throw new BridgeRequestException($"The kinds of live battle decide no {fields["op"].AsText()}.");
         }

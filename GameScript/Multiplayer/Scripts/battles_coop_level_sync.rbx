@@ -2,6 +2,7 @@
 #  battles_coop_level_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Worked the battle's level out through the rules in C#
 #      Paulinchen  2026-10-23: Deleted the switch that never turned the level sync off
 #      Paulinchen  2026-10-08: Synced no level in a Raid World
 #      Paulinchen  2026-10-07: Logged the battle's level and each character's sync
@@ -43,31 +44,31 @@ module MGQ_MpCoopLevelSync
   # Whether the player was told this battle that their characters fight at its level.
   @told = false
 
+  # The topic that works the battle's level out.
+  LEVEL_TOPIC = "coop.level"
+
   # The characters whose reason for fighting with their own stats was logged this battle.
   @noted = {}
 
-  # Works out the level of a co-op battle: the highest of the party leader's characters in it, on
-  # its Frontline and Backline. A Raid World's battles have none.
+  # Works out the level of a co-op battle, as the rules in C# work it out (topic coop.level): the
+  # highest of the party leader's characters in it, on its Frontline and Backline. A Raid World's
+  # battles have none.
   #
   # @param players [Array<MGQ_MpBattlesCoop::Player>] The battle's players, as
   #   MGQ_MpBattlesCoop.arrange gives them.
   # @return [Integer, nil] The level, nil in a Raid World or when the leader is not among the players.
   def self.level_for(players)
-    if MGQ_MpCoop::Scope.raid?
-      log("no level: a Raid World's battles sync none")
-      return nil
+    raid = MGQ_MpCoop::Scope.raid?
+    fields = raid ? [] : players.map do |player|
+      leads = MGQ_MpBattlesCoop.leads?(player.seat) ? true : false
+      levels = leads ? MGQ_MpActors::Builds.parse(player.builds.to_s, MGQ_MpBattlesCoop::MOST_CHARACTERS).map(&:base_level) : []
+      [player.seat, leads, player.lines.flatten, levels]
     end
+    answer = MGQ_Multiplayer::Bridge.call(LEVEL_TOPIC, "raid" => raid ? true : false, "players" => fields)
+    return nil unless answer
 
-    leader = players.find { |player| MGQ_MpBattlesCoop.leads?(player.seat) }
-    unless leader
-      log("no level: the party leader is not among the battle's players (seats #{players.map(&:seat).join(', ')})")
-      return nil
-    end
-
-    builds = MGQ_MpActors::Builds.parse(leader.builds.to_s, MGQ_MpBattlesCoop::MOST_CHARACTERS)
-    levels = leader.lines.flatten.map { |place| builds[place] && builds[place].base_level }.compact
-    log("level #{levels.max.inspect}: the highest of the leader's (seat #{leader.seat}) characters in the battle, at levels #{levels.join(', ')}")
-    levels.max
+    log(answer["log"])
+    answer["level"]
   rescue => e
     log("working the level out failed: #{e.class}: #{e.message}")
     nil

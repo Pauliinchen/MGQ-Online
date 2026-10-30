@@ -2,7 +2,9 @@
 //  SharedTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Registered the live battle's topics
+//      Paulinchen  2026-10-30: Handed the live battle's session to the co-op topics
+//                            - Registered the live battle's topics
+//                            - Registered the topics of the co-op battles' intake
 //      Paulinchen  2026-10-28: Registered the choice topics
 //                            - Registered the gather topics
 //                            - Registered the scene topics
@@ -50,7 +52,7 @@ public static class SharedTopics
         GatherTopics.Register(context);
         SceneTopics.Register(context);
         PageTopics.Register(context, random);
-        LiveTopics.Register(context);
+        CoopTopics.Register(context, LiveTopics.Register(context));
     }
 
     /// <summary>

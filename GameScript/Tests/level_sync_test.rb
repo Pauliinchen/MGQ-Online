@@ -2,6 +2,7 @@
 #  level_sync_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Asked the battle's level of the rules in C# on the stand-in bridge
 #      Paulinchen  2026-10-08: Checked that a Raid World's battles have no level
 #      Paulinchen  2026-10-07: Checked that the log tells each character's sync
 #      Paulinchen  2026-10-06: Checked that nothing is synced after the end
@@ -14,6 +15,8 @@
 # its own stats back once the battle ends.
 
 require_relative "support"
+require_relative "bridge_support"
+require_relative "coop_support"
 
 $log = []
 $chat = []
@@ -81,6 +84,10 @@ class Brittle < Game_Actor
 end
 
 load_script "battles_coop_level_sync"
+# The rules in C#, which work the battle's level out.
+level_bridge = FakeBridge.new
+answer_coop(level_bridge)
+MGQ_Multiplayer::Bridge.open(level_bridge)
 SceneManager.run
 sync = MGQ_MpCoopLevelSync
 
