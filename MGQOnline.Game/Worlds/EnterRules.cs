@@ -2,7 +2,8 @@
 //  EnterRules.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Decided entering a world whose data scan has another format
+//      Paulinchen  2026-10-30: Stopped asking the creator of a world entered with mods parked, since none are parked any more
+//                            - Decided entering a world whose data scan has another format
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -116,29 +117,18 @@ public static class EnterRules
     /// Decides whether this game may enter a world as far as its data goes: one whose data differs
     /// from the creator's is kept out of a world for the same data only, and otherwise asked first.
     /// </summary>
-    /// <remarks>
-    /// The creator of a world that turns other mods off is asked to take this game's data while
-    /// they are off, even in a strict world, since the world's scan may hold those mods.
-    /// </remarks>
     /// <param name="name">The world's name.</param>
     /// <param name="differing">The parts of the data that differ, <see langword="null"/> when they cannot be compared.</param>
     /// <param name="strict">Whether only games with the same data may enter.</param>
     /// <param name="mods">The world's mods as written.</param>
     /// <param name="own">Whether the player made the world.</param>
-    /// <param name="parked">Whether this game runs with the mods the world turns off parked.</param>
     /// <param name="accepted">Whether the player said to enter anyway.</param>
-    /// <param name="ownDataText">The question to the creator whose mods are turned off.</param>
     /// <returns>Whether entering goes on, and what the screen does otherwise.</returns>
-    public static (bool Allowed, IReadOnlyList<EnterDone> Did) Data(string name, IReadOnlyList<string>? differing, bool strict, string? mods, bool own, bool parked, bool accepted, string ownDataText)
+    public static (bool Allowed, IReadOnlyList<EnterDone> Did) Data(string name, IReadOnlyList<string>? differing, bool strict, string? mods, bool own, bool accepted)
     {
         if (differing == null || differing.Count == 0)
         {
             return (true, []);
-        }
-
-        if (own && parked && !accepted)
-        {
-            return (false, [new EnterDone(Confirm, ownDataText, "own_data", "Update and enter")]);
         }
 
         if (accepted && !strict)

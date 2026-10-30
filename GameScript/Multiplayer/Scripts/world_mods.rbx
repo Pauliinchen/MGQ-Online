@@ -2,6 +2,11 @@
 #  world_mods.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Locked the options a world sets through the Mod Framework's options, Mod Config Remake's without it
+#                            - Entered a world that turns other mods off with only the mods its session keeps, and started again for one that turns them off now
+#                            - Entered a world's game only right before its save loads or its New Game starts, and handed the DLL the options of the mods that loaded
+#                            - Installed a world's mods through the Mod Framework, and entered the world again after its restart
+#                            - Joined the open world's messages once every script loaded
 #      Paulinchen  2026-10-23: Dropped the creator's hashes, the settings' marker, the settings an edit starts from and those the relay took, which the DLL's requests read themselves
 #                            - Left the download of a world's mods and the summary of its check to the DLL's steps into a world
 #                            - Left the restart for downloaded mods and the world to enter again to the DLL's parking
@@ -62,10 +67,12 @@
 
 # A world's mods: the ones its creator marked as required, which every game that enters must have
 # in the same version, and the creator's settings of every mod it names, which hold while the
-# player is in the world. A game whose copy of a catalog mod is missing or differs may download the
-# world's version, checked file by file against the relay's catalog, then start again and enter
-# the world; a required mod outside the catalog is checked against the hash of the creator's copy.
-# A world shares its creator's Mod Config Remake options as its settings, or leaves every player
+# player is in the world. A game whose copy of a catalog mod is missing or differs may install it
+# through the Mod Framework and enter the world, the mod loading as the player enters; a required
+# mod outside the catalog is checked against the hash of the creator's copy.
+# A world that turns other mods off loads only the mods it names and the personal ones as the
+# player enters it, through the Mod Framework's session. A world shares its creator's Mod Config
+# Remake options as its settings, or leaves every player
 # their own. An admin's game sends every catalog mod's options, and a game the World Admin tool
 # starts writes them into a file and quits.
 #
@@ -124,6 +131,22 @@ module MGQ_MpWorldMods
 
   # An option's name that joins the group above: indented, or behind an arrow.
   INDENTED = /\A(\s|->)/
+
+  # What the world screen says when no Mod Framework installs mods.
+  NO_FRAMEWORK_TEXT = "Mods cannot be installed without the Mod Framework. Install MGQ Online again."
+
+  # The topic that names the mods of a world's session.
+  SESSION_TOPIC = "mods.session"
+
+  # The topic that names the mods of the session the open world turns off now.
+  NOW_OFF_TOPIC = "mods.now_off"
+
+  # The key of the notice of the mods a world leaves out.
+  OFF_NOTICE_KEY = :world_mods_off
+
+  # Frames a player in a world that now turns their mods off is told so before the game starts
+  # again, once the map is free, five seconds.
+  KICK_FRAMES = 300
 
   # The key of this script's lines in the notification box.
   NOTICE_KEY = :world_mod_settings
@@ -194,8 +217,19 @@ module MGQ_MpWorldMods
     end
   end
 
-  # Reads which mods the relay's catalog marks personal, at most once a second, since the parking
-  # asks every frame.
+  # Takes part in the open world's messages: the creator's settings sent live, each player's state,
+  # which tells the settings their game applies, and the relay's word on the world's mods rule.
+  def self.join_world
+    return unless defined?(MGQ_MpOverworldSync)
+
+    MGQ_MpOverworldSync.route(LIVE_FIELD) { |peer, message| MGQ_MpWorldMods.take_live(peer, message) }
+    MGQ_MpOverworldSync.on_observe { |peer| MGQ_MpWorldMods.on_observe(peer) }
+    MGQ_MpOverworldSync.on_leave { |peer| MGQ_MpWorldMods.on_leave(peer) }
+    MGQ_MpOverworldSync.state_fields { MGQ_MpWorldMods.state_fields }
+    MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::MODS_RULE_FIELD) { |_peer, message| MGQ_MpWorldMods.rule_pushed(message) } if defined?(MGQ_MpOverworldSync::MODS_RULE_FIELD)
+  end
+
+  # Reads which mods the relay's catalog marks personal, at most once a second.
   #
   # @return [Array<String>, nil] The keys of the personal mods and of their names, as
   #   MGQ_MpWorld.mod_key makes them; nil while the catalog is unknown.
@@ -235,19 +269,169 @@ module MGQ_MpWorldMods
   #
   # @return [String, nil] The world's id, nil when there is none.
   def self.take_rejoin
-    MGQ_MpModParking.take_rejoin
+    world = @restarted_for
+    @restarted_for = nil
+    world
+  end
+
+  # Notes the mods of the session of the world the world screen enters, which enter_game loads: a
+  # world that turns other mods off keeps only some of them.
+  #
+  # @param listed [MGQ_MpWorld::Directory::ListedWorld, nil] The world as the list has it, nil when
+  #   the list lacks it.
+  def self.note_session(listed)
+    @entering = nil
+    return unless defined?(MGQ_Multiplayer::Stages) && MGQ_Multiplayer::Stages.staged?
+
+    session = listed && listed.other_mods_off ? session_of(listed) : nil
+    @entering = { :name => listed ? listed.name.to_s : "a world", :session => session }
+  rescue => e
+    log("noting the mods of the world's session failed: #{e.class}: #{e.message}")
+  end
+
+  # Enters the game through the Mod Framework for the world noted, right before its save loads or
+  # its New Game starts: the mods of its session load, the player is told which stay off and which
+  # stay on, and the DLL takes the options of the mods that loaded. Earlier, any way back to the
+  # title, such as the one to the world's New Game, would start the game again. The mods that run
+  # from the start of the game are noted first, since once entered every mod counts as running until
+  # the game starts again (rule_pushed).
+  def self.enter_game
+    entering = @entering
+    @entering = nil
+    return unless entering
+
+    @from_start = Mod_Framework::Mods.stays_on if defined?(Mod_Framework::Mods) && Mod_Framework::Mods.respond_to?(:stays_on)
+    session = entering[:session]
+    entered = MGQ_Multiplayer::Stages.enter("the world #{entering[:name]}", session && session["only"])
+    MGQ_MpNotices.message(OFF_NOTICE_KEY, session["text"], KICK_FRAMES) if session && session["text"] && defined?(MGQ_MpNotices)
+    hand_options(true) if entered
+  rescue => e
+    log("entering the game for a world failed: #{e.class}: #{e.message}")
+  end
+
+  # Names the mods of a world's session, which turns other mods off.
+  #
+  # @param listed [MGQ_MpWorld::Directory::ListedWorld] The world.
+  # @return [Hash, nil] "only", "off" and "text", see the DLL's mods.session; nil while unknown,
+  #   when every mod that is on loads.
+  def self.session_of(listed)
+    mods = Mod_Framework::Mods
+    names = Array((mods.plan || {})["load"]).map { |name, _tag| name }
+    session = MGQ_Multiplayer::Bridge.call(SESSION_TOPIC, "world" => listed.name.to_s, "mods" => listed.mods.to_s, "names" => names, "stays_on" => mods.stays_on)
+    log(session.is_a?(Hash) ? "#{listed.name} turns other mods off: its session keeps #{session['only'].join(', ')}" : "#{listed.name} turns other mods off, but the catalog is unknown: every mod that is on loads")
+    session.is_a?(Hash) ? session : nil
+  end
+
+  # Takes the relay's word that the open world's creator or an admin changed whether it turns other
+  # mods off, or its mods: a game whose session runs mods it turns off now is told so and starts
+  # again into the world, without them.
+  #
+  # @param message [Hash] The push: MGQ_MpOverworldSync::MODS_RULE_FIELD with "1" or "0", the
+  #   world's mods under "mods", marked :relay by overworld_sync.rbx.
+  def self.rule_pushed(message)
+    return log("ignored a mods rule push not from the relay") unless message[:relay]
+
+    mods = message["mods"].to_s
+    take_mods(mods)
+    world = MGQ_MpWorld.world
+    return unless world && defined?(Mod_Framework::Mods) && Mod_Framework::Mods.respond_to?(:stays_on)
+
+    running = Mod_Framework::Mods.loaded - Array(@from_start)
+    told = MGQ_Multiplayer::Bridge.call(NOW_OFF_TOPIC, "world" => world.name.to_s, "off" => message[MGQ_MpOverworldSync::MODS_RULE_FIELD].to_s == "1", "mods" => mods, "running" => running)
+    return unless told.is_a?(Hash) && told["text"]
+
+    log("#{world.name} now turns off #{told['off'].join(', ')}, which this session runs")
+    @kick = { :text => told["text"], :frames => KICK_FRAMES, :told => false, :world => world.directory_id, :name => world.name.to_s }
+  rescue => e
+    log("taking the relay's mods rule failed: #{e.class}: #{e.message}")
+  end
+
+  # Tells a player in a world that now turns their mods off, then starts the game again into the
+  # world once the map is free. Called every frame of every scene.
+  def self.follow_kick
+    return unless @kick
+    return @kick = nil unless MGQ_MpWorld.open?
+
+    unless @kick[:told]
+      @kick[:told] = true
+      MGQ_MpNotices.message(OFF_NOTICE_KEY, @kick[:text], KICK_FRAMES) if defined?(MGQ_MpNotices)
+    end
+    @kick[:frames] -= 1
+    return if @kick[:frames] > 0 || !MGQ_MpOverworldSync.map_free?
+
+    kick = @kick
+    @kick = nil
+    restart_for(kick[:world], kick[:name])
+  end
+
+  # Notes the world the Mod Framework started the game again to enter, whose title opens the world
+  # screen on it (MGQ_Multiplayer::Stages::REJOIN_ACTION).
+  #
+  # @param world [String] The world's id.
+  def self.restarted_for(world)
+    @restarted_for = world.to_s
+    log("the game started again to enter world #{MGQ_MpWorld.short(@restarted_for)}")
+  end
+
+  # Installs a world's mods through the Mod Framework, while the game goes on.
+  #
+  # @param rows [Array<Array(String, String)>] Each mod's name, as the world writes it, and its key
+  #   in the relay's catalog.
+  # @yield [ok, text, restart] Runs once the install ended, or at once when it could not start.
+  # @yieldparam ok [Boolean] Whether every mod was installed.
+  # @yieldparam text [String, nil] Why not, for the player.
+  # @yieldparam restart [Boolean] Whether a mod installed runs already, which loads anew only after
+  #   the game starts again.
+  def self.install(rows, &done)
+    return done.call(false, NO_FRAMEWORK_TEXT, false) unless defined?(Mod_Framework::Mods) && Mod_Framework::Mods.respond_to?(:install)
+
+    ids = rows.map { |name, key| framework_id(name, key) }
+    log("installing #{rows.map { |name, _key| name }.join(', ')} through the Mod Framework as #{ids.join(', ')}")
+    Mod_Framework::Mods.install(ids) do |installed, error|
+      running = error ? [] : installed.select { |name| Mod_Framework::Mods.loaded.any? { |loaded| loaded.casecmp(name) == 0 } }
+      log(error ? "installing the world's mods failed: #{error}" : "installed #{installed.join(', ')}#{running.empty? ? '' : ", of which #{running.join(', ')} runs already"}")
+      done.call(error.nil?, error, !running.empty?)
+    end
+  end
+
+  # Names a world's mod as the Mod Framework installs it: the id of the installed mod of that key,
+  # else of the website's or the relay's mod the framework finds for its name, else the relay's.
+  #
+  # @param name [String] The mod's name, as the world writes it.
+  # @param key [String] Its key in the relay's catalog.
+  # @return [String] The id, such as "relay:levelcap".
+  def self.framework_id(name, key)
+    state = Mod_Framework::Mods.state
+    mods = state.is_a?(Hash) ? Array(state["mods"]) : []
+    installed = mods.find { |mod| mod["id"] && [mod["name"], mod["title"]].any? { |each| MGQ_MpWorld.mod_key(each) == key } }
+    return installed["id"] if installed
+
+    found = Array(Mod_Framework::Mods.check([[name, "", ""]])).find { |row| row["kind"] == "install" && !row["target"].to_s.empty? }
+    found ? found["target"] : "relay:#{key}"
+  end
+
+  # Starts the game again to enter a world, once a mod installed for it runs already, which the
+  # Mod Framework loads anew only in a new game session.
+  #
+  # @param world [String] The world's id.
+  # @param name [String] Its name, for the log.
+  # @return [Symbol, nil] :restarting or :closing, see Mod_Framework::Mods.restart; nil without the
+  #   framework.
+  def self.restart_for(world, name)
+    return nil unless defined?(Mod_Framework::Mods) && Mod_Framework::Mods.respond_to?(:restart)
+
+    log("starting the game again to enter #{name} with its mods loaded anew")
+    Mod_Framework::Mods.restart("#{name} needs a mod that runs already loaded anew", MGQ_Multiplayer::Stages::REJOIN_ACTION, world)
   end
 
   # Forgets a world the player backed out of before its new game, and opens the world screen to
-  # enter a world again after a restart, or offers the update once a newer release is out, first
-  # putting back mods parked for the world. Called by the title screen every frame.
+  # enter a world again after a restart, or offers the update once a newer release is out. Called
+  # by the title screen every frame.
   #
   # @param scene [Scene_Title] The title screen.
   def self.on_title_update(scene)
     forget_world if @world && !MGQ_MpWorld.open?
     return if @rejoining || scene.scene_changing?
-    # The title screen first starts the game again or tells why the mods came back.
-    return if defined?(MGQ_MpModParking) && MGQ_MpModParking.title_busy?
 
     id = take_rejoin
     return unless id
@@ -255,8 +439,6 @@ module MGQ_MpWorldMods
 
     if MGQ_Multiplayer.outdated?
       log("not entering world #{MGQ_MpWorld.short(id)} again after the restart: the mod is outdated")
-      return MGQ_MpModParking.give_up(MGQ_Multiplayer.update_message) if defined?(MGQ_MpModParking) && MGQ_MpModParking.holding?
-
       return MGQ_MpWorld.offer_update(scene)
     end
 
@@ -577,9 +759,12 @@ module MGQ_MpWorldMods
     end
   end
 
-  # Hands the DLL this game's Mod Config groups, once a session.
-  def self.hand_options
-    return if @options_handed
+  # Hands the DLL this game's Mod Config groups, once a session, and again once mods loaded on
+  # entering, whose options join them.
+  #
+  # @param again [Boolean] Whether to hand them although they were handed.
+  def self.hand_options(again = false)
+    return if @options_handed && !again
 
     @options_handed = true
     take(MGQ_Multiplayer::Bridge.call(GROUPS_TOPIC, options_table))
@@ -614,14 +799,15 @@ module MGQ_MpWorldMods
     take(MGQ_Multiplayer::Bridge.call(MODS_TOPIC, mods.to_s)) if @world
   end
 
-  # Forgets the world, its locks, the row of Shared Mod Settings and the settings on their way,
-  # whose answer the directory then drops.
+  # Forgets the world, its locks, the row of Shared Mod Settings, the settings on their way, whose
+  # answer the directory then drops, and the mods of its session it did not enter with yet.
   def self.forget_world
     lock([])
     remove_row
     take(MGQ_Multiplayer::Bridge.call(FORGET_WORLD_TOPIC))
     @world = nil
     @in_options = false
+    @entering = nil
   end
 
   # Tells whether the player plays in a world they created.
@@ -702,11 +888,16 @@ module MGQ_MpWorldMods
     applied
   end
 
-  # Tells Mod Config Remake which options the world sets, if it can show that.
+  # Tells the Mod Config which options the world sets: the Mod Framework's options, else Mod Config
+  # Remake, if it can show that.
   #
   # @param keys [Array<Symbol>] The options, none outside a world.
   def self.lock(keys)
-    ModConfigRemake.world_keys = keys if defined?(ModConfigRemake) && ModConfigRemake.respond_to?(:world_keys=)
+    if defined?(Mod_Framework::Options) && Mod_Framework::Options.respond_to?(:world_keys=)
+      Mod_Framework::Options.world_keys = keys
+    elsif defined?(ModConfigRemake) && ModConfigRemake.respond_to?(:world_keys=)
+      ModConfigRemake.world_keys = keys
+    end
   end
 
   # Lets the options be changed again once the game went back to the title screen, unless the world
@@ -717,10 +908,11 @@ module MGQ_MpWorldMods
 
   # Mod Config's row.
 
-  # Adds the row of Shared Mod Settings to Mod Config Remake, once: every player sees whether the
-  # world shares its creator's settings, and only the creator may change it.
+  # Adds the row of Shared Mod Settings to the Mod Config, the Mod Framework's or Mod Config
+  # Remake's, once: every player sees whether the world shares its creator's settings, and only the
+  # creator may change it.
   def self.add_row
-    return unless defined?(ModConfigRemake) && defined?(NWConst::Config::MOD_CONTENTS)
+    return unless (defined?(Mod_Framework::Options) || defined?(ModConfigRemake)) && defined?(NWConst::Config::MOD_CONTENTS)
 
     menu = NWConst::Config::MOD_CONTENTS
     return if menu.any? { |entry| entry[:key] == SHARED_OPTION }
@@ -912,6 +1104,7 @@ module MGQ_MpWorldMods
   def self.tick
     take(MGQ_Multiplayer::Bridge.call(STEP_TOPIC)) if MGQ_MpWorld::Changes.take?(MGQ_MpWorld::Changes::SETTINGS)
     watch_options
+    follow_kick
   rescue => e
     log_once(:tick, "tick failed: #{e.class}: #{e.message}")
   end
@@ -940,14 +1133,14 @@ rescue => e
   MGQ_MpWorldMods.log("title hooks FAILED: #{e.class}: #{e.message}")
 end
 
-# What the world's shared settings take part in of the world, through overworld_sync.rbx.
+# What the world's shared settings take part in of the world, through overworld_sync.rbx, which
+# loads after this script under the Mod Framework.
 
 begin
-  if defined?(MGQ_MpOverworldSync)
-    MGQ_MpOverworldSync.route(MGQ_MpWorldMods::LIVE_FIELD) { |peer, message| MGQ_MpWorldMods.take_live(peer, message) }
-    MGQ_MpOverworldSync.on_observe { |peer| MGQ_MpWorldMods.on_observe(peer) }
-    MGQ_MpOverworldSync.on_leave { |peer| MGQ_MpWorldMods.on_leave(peer) }
-    MGQ_MpOverworldSync.state_fields { MGQ_MpWorldMods.state_fields }
+  if defined?(MGQ_Multiplayer::Stages)
+    MGQ_Multiplayer::Stages.when_loaded("world_mods") { MGQ_MpWorldMods.join_world }
+  else
+    MGQ_MpWorldMods.join_world
   end
 rescue => e
   MGQ_MpWorldMods.log("overworld sync FAILED: #{e.class}: #{e.message}")

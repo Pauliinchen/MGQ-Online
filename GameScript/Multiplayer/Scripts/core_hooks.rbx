@@ -2,6 +2,7 @@
 #  core_hooks.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Let every hook stand aside while the mod sleeps
 #      Paulinchen  2026-10-12: Let around run the original with other arguments
 #      Paulinchen  2026-10-08: Counted and named the distinct methods in report
 #                            - Kept a wrap of around only once the method was wrapped
@@ -51,6 +52,24 @@ module MGQ_MpHooks
 
   # What starts this script's lines in the log.
   LOG_TAG = "hooks"
+
+  # Lets every hook stand aside while a block says so: the methods run as the game's own, without
+  # the blocks and wraps of any script.
+  #
+  # The Mod Framework loads the mod's title part as the game starts, whose hooks would otherwise
+  # reach a game the player entered without the mod.
+  #
+  # @yieldreturn [Boolean] Whether the mod sleeps now.
+  def self.sleep_while(&asleep)
+    @asleep = asleep
+  end
+
+  # Tells whether the hooks stand aside now, see sleep_while.
+  #
+  # @return [Boolean] Whether they do.
+  def self.asleep?
+    @asleep ? @asleep.call == true : false
+  end
 
   # Runs a block before a game method, on the object the method runs on and with its arguments.
   #
@@ -117,6 +136,8 @@ module MGQ_MpHooks
     after_label = "after #{owner}##{name}"
     owner.send(:alias_method, original, name)
     owner.send(:define_method, name) do |*args, &block|
+      next send(original, *args, &block) if MGQ_MpHooks.asleep?
+
       MGQ_MpHooks.run(self, before, before_label, args) unless before.empty?
       result = send(original, *args, &block)
       MGQ_MpHooks.run(self, after, after_label, args) unless after.empty?
@@ -155,6 +176,8 @@ module MGQ_MpHooks
     @arounds += 1
     cell = [body]
     owner.send(:define_method, name) do |*args, &block|
+      next send(original, *args, &block) if MGQ_MpHooks.asleep?
+
       cell[0].call(self, args, lambda { |*given| send(original, *(given.empty? ? args : given), &block) })
     end
     owner.send(:private, name) if was_private

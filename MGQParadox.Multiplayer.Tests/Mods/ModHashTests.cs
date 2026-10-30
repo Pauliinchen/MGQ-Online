@@ -2,6 +2,7 @@
 //  ModHashTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Dropped the release downloads, which the Mod Framework makes
 //      Paulinchen  2026-10-06: Removed the check of CatalogMod.VersionOf
 //                            - Covered zips of a release
 //                            - Created
@@ -41,25 +42,5 @@ public sealed class ModHashTests
     {
         var bytes = Encoding.UTF8.GetBytes("a\r\nb");
         Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(bytes)), ModHash.Of("Heroes/cecil.luka", bytes));
-    }
-
-    /// <summary>
-    /// Asserts that only release files of the admins' GitHub, scripts and zips, are downloaded, sent on only to GitHub's file hosts.
-    /// </summary>
-    [Fact]
-    public void ReleaseDownload_TakesOnlyTheAdminsReleaseFiles()
-    {
-        Assert.True(ReleaseDownload.IsReleaseFile("https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/releases/download/v1.3.5/Level_Cap.rb"));
-        Assert.False(ReleaseDownload.IsReleaseFile("https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/releases/latest/download/Level_Cap.rb"));
-        Assert.False(ReleaseDownload.IsReleaseFile("https://github.com/Someone/Repo/releases/download/v1/Mod.rb"));
-        Assert.False(ReleaseDownload.IsReleaseFile("http://github.com/Pauliinchen/Repo/releases/download/v1/Mod.rb"));
-        Assert.False(ReleaseDownload.IsReleaseFile("https://github.com/Pauliinchen/Repo/releases/download/v1/Mod.exe"));
-        Assert.True(ReleaseDownload.IsReleaseFile("https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/releases/download/v1.4.0/Luka_Replacer.zip"));
-
-        Assert.True(ReleaseDownload.IsFileHost(new Uri("https://release-assets.githubusercontent.com/x")));
-        Assert.True(ReleaseDownload.IsFileHost(new Uri("https://objects.githubusercontent.com/x")));
-        Assert.False(ReleaseDownload.IsFileHost(new Uri("http://objects.githubusercontent.com/x")));
-        Assert.False(ReleaseDownload.IsFileHost(new Uri("https://example.com/x")));
-        Assert.Throws<InvalidOperationException>(() => ReleaseDownload.Get("https://example.com/Mod.rb"));
     }
 }

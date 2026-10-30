@@ -2,6 +2,8 @@
 //  ModCheckTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Covered the mods a world's session loads and those it turns off now
+//                            - Dropped the install, which the Mod Framework does
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -37,11 +39,6 @@ public sealed class ModCheckTopicsTests
     private readonly Dictionary<string, int> _hashed = [];
 
     /// <summary>
-    /// The installs asked for.
-    /// </summary>
-    private readonly List<IReadOnlyList<(string Key, string Target)>> _installs = [];
-
-    /// <summary>
     /// The topics under test.
     /// </summary>
     private readonly TopicCaller _topics;
@@ -60,11 +57,6 @@ public sealed class ModCheckTopicsTests
                 {
                     _hashed[path] = _hashed.GetValueOrDefault(path) + 1;
                     return _files.GetValueOrDefault(path);
-                },
-                mods =>
-                {
-                    _installs.Add(mods);
-                    return true;
                 },
                 (_, _, _) => true,
                 new TopicCaller.NoLog());
@@ -86,7 +78,7 @@ public sealed class ModCheckTopicsTests
         {
             { "known", true },
             { "rows", new RubyArray([new RubyHash { { "name", "Level Cap" }, { "yours", "1.3.5" }, { "worlds", "1.4.0" }, { "key", "levelcap" }, { "target", "Patch/Level_Cap.rb" }, { "text", "Level Cap: yours 1.3.5, the world's 1.4.0" }, { "downloadable", true } }]) },
-            { "summary", "Modded needs mods that are missing or in another version here: Level Cap. Download them and restart?" },
+            { "summary", "Modded needs mods that are missing or in another version here: Level Cap. Download them?" },
         }, check);
         Assert.Equal(1, _hashed["Patch/Level_Cap.rb"]);
 
@@ -96,13 +88,26 @@ public sealed class ModCheckTopicsTests
     }
 
     /// <summary>
-    /// Asserts that the install takes the downloadable rows of the world with their targets.
+    /// Asserts that a world's session keeps the mods it names, the personal ones and this mod, that it
+    /// is unknown while the catalog is, and that a running mod the world now turns off is named.
     /// </summary>
     [Fact]
-    public void Install_TakesTheWorldsDifferingCatalogMods()
+    public void Session_KeepsNamedAndPersonalModsAndNamesThoseTurnedOffNow()
     {
-        Assert.Equal(RubyBool.True, _topics.Call(ModCheckTopics.InstallTopic, new RubyHash { { "mods", "!Level Cap; !Missing" }, { "hashes", "" } }));
-        Assert.Equal([("levelcap", "Patch/Level_Cap.rb")], Assert.Single(_installs));
+        _catalog = _catalog! with { Personal = [new PersonalMod("partysheet", "Party Sheet")] };
+        RubyArray names = new(["Multiplayer", "Level_Cap", "Party_Sheet", "Invasions"]);
+
+        Assert.Equal(new RubyHash
+        {
+            { "only", new RubyArray(["Multiplayer", "Level_Cap", "Party_Sheet"]) },
+            { "off", new RubyArray(["Invasions"]) },
+            { "text", "Strict plays without your other mods: Invasions stays off until you leave it." },
+        }, _topics.Call(ModCheckTopics.SessionTopic, new RubyHash { { "world", "Strict" }, { "mods", "!Level Cap" }, { "names", names }, { "stays_on", new RubyArray() } }));
+        Assert.Equal(new RubyHash { { "off", new RubyArray(["Invasions"]) }, { "text", "Strict now turns off other mods. The game starts again and enters it without them." } },
+            _topics.Call(ModCheckTopics.NowOffTopic, new RubyHash { { "world", "Strict" }, { "off", true }, { "mods", "!Level Cap" }, { "running", names } }));
+
+        _catalog = null;
+        Assert.Equal(RubyNil.Value, _topics.Call(ModCheckTopics.SessionTopic, new RubyHash { { "mods", "!Level Cap" }, { "names", names } }) ?? RubyNil.Value);
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 //  ScreenTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Listed the scripts of the Patch folder without the parking
 //      Paulinchen  2026-10-23: Marked a favourite through the lists, whose topic the DLL dropped
 //                            - Created
 //
@@ -83,10 +84,9 @@ public sealed class ScreenTopicsTests : IDisposable
     {
         PlayerIni player = new(Path.Combine(_mod.Path, PlayerIni.FileName));
         _lists = new WorldLists(player, _mod.Path, () => 0);
-        ModParking parking = new(_game.Path);
         _topics = new TopicCaller(context =>
         {
-            WorldServices services = new(player, new WorldChanges(context), () => WorldDirectory.Current, () => parking, new DirectoryTickets(() => "idle", () => { }));
+            WorldServices services = new(player, new WorldChanges(context), () => WorldDirectory.Current, () => PatchScripts.List(_game.Path), new DirectoryTickets(() => "idle", () => { }));
             LocalWorldTopics.Kept local = LocalWorldTopics.Register(context, services, new LocalWorlds(Path.Combine(_mod.Path, "Worlds"), "Worlds", () => 1_000), _lists);
             _screen = new WorldScreen(new WorldScreenSources(
                 () => ("ready", null, false, _listed),

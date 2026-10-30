@@ -2,6 +2,9 @@
 #  world_screen.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Noted the mods of the world's session for the Mod Framework to load as the world's game loads or starts
+#                            - Dropped giving up an entry for the parked mods
+#                            - Installed a world's mods through the Mod Framework, and started the game again for one that runs already
 #      Paulinchen  2026-10-28: Read the list on the screen's first look even when the list bit was taken earlier in the session
 #      Paulinchen  2026-10-23: Left the lines of what the DLL decides to its log
 #                            - Left a world's favourite, its id copied, its removal from the list and the deletion of its saves to the DLL's steps
@@ -554,7 +557,6 @@ class Scene_MpWorlds < Scene_MenuBase
     when "say" then say(first)
     when "buzz" then Sound.play_buzzer
     when "back" then back_to_list
-    when "give_up" then give_up_parking(first)
     when "confirm" then ask_dll(@confirm_window, first, second)
     when "choices" then ask_dll(@start_window, nil, first)
     when "password" then ask_password(first)
@@ -566,6 +568,8 @@ class Scene_MpWorlds < Scene_MenuBase
     when "edit" then on_edit_world
     when "forget_installed" then MGQ_MpWorldMods.forget_installed
     when "exit" then SceneManager.exit
+    when "install" then install_mods(first)
+    when "restart" then MGQ_MpWorldMods.restart_for(first, @entry ? @entry.name.to_s : first)
     when "save_screen" then MGQ_MpSaveDistribution.choose(:own)
     when "copy_own" then own_start(MGQ_MpWorld::World.new(first), second)
     when "start" then start_world(MGQ_MpWorld::World.new(first), second, third, fourth)
@@ -592,6 +596,18 @@ class Scene_MpWorlds < Scene_MenuBase
     window.start(offered.map { |label, symbol| [label, symbol.to_sym] })
   end
 
+  # Installs the world's mods the DLL's steps name through the Mod Framework, holding the screen
+  # meanwhile, and hands the DLL how it went.
+  #
+  # @param rows [Array<Array(String, String)>] Each mod's name and its key in the relay's catalog.
+  def install_mods(rows)
+    hold_for("mods")
+    MGQ_MpWorldMods.install(rows) do |ok, text, restart|
+      @busy = nil
+      answer("installed", "ok" => ok, "text" => text, "restart" => restart)
+    end
+  end
+
   # Takes the chosen world anew, once the DLL read its mods.
   def take_read_world
     listed = MGQ_MpWorldScreen.world(@entry.id)
@@ -601,18 +617,6 @@ class Scene_MpWorlds < Scene_MenuBase
   # Waits for the DLL's running action, which tells through MGQ_MpWorld::Changes once it ended.
   def follow_steps
     play(MGQ_Multiplayer::Bridge.call(STEP_TOPIC)) if MGQ_MpWorld::Changes.take?(MGQ_MpWorld::Changes::SCREEN)
-  end
-
-  # Puts back the mods turned off for the world the game started again to enter, once that entry
-  # ended without entering it, and goes to the title screen, which tells why and starts the game
-  # again.
-  #
-  # @param reason [String, nil] Why, nil for a question the player backed out of.
-  def give_up_parking(reason)
-    return back_to_list if MGQ_MpWorld.open?
-
-    MGQ_MpModParking.give_up(reason)
-    return_scene
   end
 
   # Tells whether the screen waits for the player, with no action, form, small window, list box or
@@ -686,8 +690,9 @@ class Scene_MpWorlds < Scene_MenuBase
   end
 
   # Enters the chosen world through the DLL's steps (topic screen.enter), which ask, in order,
-  # whether the world takes players now, whether its required mods match, whether the parked mods
-  # fit it, whether the game data matches, and then for its password or where to start.
+  # whether the world takes players now, whether its required mods match, whether the catalog its
+  # other mods turned off need is known, whether the game data matches, and then for its password or
+  # where to start.
   def on_enter
     play(MGQ_Multiplayer::Bridge.call(ENTER_TOPIC, entry_request))
   end
@@ -1632,10 +1637,10 @@ class Scene_MpWorlds < Scene_MenuBase
   def start_world(world, placed, listed, fresh)
     error = placed && MGQ_MpSaveDistribution.check(world)
     unless error
-      # Before the world opens, since loading its save applies its mod settings.
       known = listed ? @entry.listed : nil
       MGQ_MpWorld::Directory.open(known.id) if known
       MGQ_MpWorldMods.enter_world(known, @me, fresh ? true : false)
+      MGQ_MpWorldMods.note_session(known)
       error = MGQ_MpWorld.start(world, self)
       MGQ_MpWorldMods.forget_world if error
     end

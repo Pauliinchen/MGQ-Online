@@ -25,14 +25,14 @@ This is a Patch folder mod ("Type 1"), so the community's mod loader
 must be installed: download "Patch.rb (enable Type 1 mods)" from the MGQ
 wiki and put it into your Patch folder. If you already use other Patch
 folder mods, you have it. The Russian translation brings its own Patch.rb,
-which loads the mod too: keep it and skip the wiki one. It only runs
-scripts right in Patch, so other mods that keep their scripts in a folder
-inside Patch don't load with it, even when a world downloads them.
+which loads the mod too: keep it and skip the wiki one.
 
    https://mgq.miraheze.org/wiki/Paradox_mods#Patch.rb_(enable_Type_1_mods)
 
-Mod Config Remake comes with the mod (Patch\0_ModConfigRemake.rb): with
-it you bind other hotkeys and see which options a world sets.
+The Mod Framework comes with the mod (Patch\!Mod_Framework.rb and
+Patch\Multiplayer\Mod_Framework): it loads your other mods, installs and
+updates them from the title screen, and in Options > Mods you bind other
+hotkeys and see which options a world sets.
 
 
 INSTALL
@@ -42,13 +42,12 @@ Paradox RPG folder (the one that contains Game.exe). It should then look
 like this:
 
    Game.exe
-   Patch\0_ModConfigRemake.rb
+   Patch\!Mod_Framework.rb
    Patch\Multiplayer.rb
    Patch\Multiplayer\Multiplayer.dll
    Patch\Multiplayer\Manifest.txt
    Patch\Multiplayer\README.txt
-   Patch\Multiplayer\Helper.exe
-   Patch\Multiplayer\Update.bat
+   Patch\Multiplayer\Mod_Framework\   (the Mod Framework, which the mod runs on)
    Patch\Multiplayer\Scripts\*.rbx      (the mod's other scripts)
    Patch\Multiplayer\Data\events.db     (the game's events, read by the mod)
    ...
@@ -63,16 +62,17 @@ meanwhile.
 
 UPDATE
 ------
-When a new release is out, "Multiplayer" on the title screen says so
-and offers to update and install it, since everyone needs the same
-version. Until you update, F11 doesn't open PvP battles either.
+The Mod Framework, which comes with the mod, counts the updates waiting
+on "Mod browser" on the title screen and installs them, this mod's too.
+When the relay asks for another release, "Multiplayer" on the title
+screen offers it, since everyone needs the same version. Until you
+update, F11 doesn't open PvP battles either.
 
-Update and install closes the game and runs Patch\Multiplayer\Helper.exe,
-which downloads the release, installs it, removes files an older version
-left behind and shows what's new; then the game starts again in the
-Multiplayer menu. This works under Wine and Proton too. You can also
-close the game and double-click Update.bat yourself. Your player name,
-hotkeys, favourites and worlds are kept.
+The framework closes the game, installs the release, shows what's new
+and starts the game again in the Multiplayer menu. This works under Wine
+and Proton too. If the game cannot start, run Update.bat in
+Patch\Mod_Framework. Your player name, hotkeys, favourites and worlds
+are kept.
 
 To update by hand, close the game and extract the new download over the
 old one; then delete any Patch\Multiplayer\Scripts\*.rbx file the new

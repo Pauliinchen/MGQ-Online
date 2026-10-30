@@ -2,7 +2,8 @@
 //  WorldScreen.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Told the details whether a world's data scan has another format
+//      Paulinchen  2026-10-30: Counted the mods a world turns off without the parking
+//                            - Told the details whether a world's data scan has another format
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -289,9 +290,8 @@ internal sealed record WorldScreenSources(
     /// <param name="local">What the topics of the worlds on this PC keep.</param>
     /// <param name="check">The topics of the required-mods check.</param>
     /// <param name="settings">The shared mod settings.</param>
-    /// <param name="session">The parking session.</param>
     /// <returns>The sources.</returns>
-    public static WorldScreenSources Of(WorldServices services, LocalWorldTopics.Kept local, ModCheckTopics check, SharedSettingsSync settings, ParkingSession session) => new(
+    public static WorldScreenSources Of(WorldServices services, LocalWorldTopics.Kept local, ModCheckTopics check, SharedSettingsSync settings) => new(
         () => services.Directory().ListNow(),
         id => services.Directory().ListedNow(id),
         added =>
@@ -302,10 +302,10 @@ internal sealed record WorldScreenSources(
         () => services.Directory().ActionNow().State,
         local,
         () => Player.Key is { } key ? WorldKeys.PlayerIdOf(key) : string.Empty,
-        () => services.Parking().Installed(),
+        services.Scripts,
         (mods, hashes) => [.. check.Check().Differing(mods, hashes).Select(row => new ScreenModRow(row.Name, row.Yours, row.Text))],
         settings.DetailsText,
-        mods => ParkingRules.Plan(session.Facts(), mods, true) is { } plan ? ParkingRules.ModsOf(plan) : null);
+        mods => SessionMods.TurnedOff(services.Scripts(), mods, services.Directory().CatalogNow().Catalog is { } catalog ? ModTopics.Readable(catalog).Personal : null));
 }
 
 /// <summary>

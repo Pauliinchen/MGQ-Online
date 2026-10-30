@@ -2,6 +2,7 @@
 #  save_export_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Stopped loading the deleted world_mods_parking.rbx
 #      Paulinchen  2026-10-23: Made the worlds on this PC through the stand-ins of the DLL's topics
 #                            - Answered the rules the DLL owns through the bridge from the golden cases
 #      Paulinchen  2026-10-12: Checked the menu taking input after the notice and a menu without commands
@@ -102,7 +103,6 @@ load_script "ui"
 load_script "ui_text_box"
 load_script "world"
 load_script "world_mods"
-load_script "world_mods_parking"
 load_script "world_screen"
 load_script "world_save_export"
 open_rules_bridge

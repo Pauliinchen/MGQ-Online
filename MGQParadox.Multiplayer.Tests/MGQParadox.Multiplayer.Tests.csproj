@@ -29,10 +29,6 @@
   <ItemGroup>
     <ProjectReference Include="..\MGQParadox.Multiplayer\MGQParadox.Multiplayer.csproj" />
 
-    <!-- The helper links some of the DLL's files, so its types go under an alias of their own;
-         its Helper.exe lands next to the tests, which run it as the DLL would. -->
-    <ProjectReference Include="..\MGQOnline.Helper\MGQOnline.Helper.csproj" Aliases="helper" />
-
     <!-- The generator writes the events database of the tiny game the event topics are tested over. -->
     <ProjectReference Include="..\MGQOnline.Data.Generator\MGQOnline.Data.Generator.csproj" />
   </ItemGroup>

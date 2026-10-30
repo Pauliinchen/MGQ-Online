@@ -2,7 +2,8 @@
 #  world_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Checked that the fingerprint counts an entry by its note, features and effects, whatever its name
+#      Paulinchen  2026-10-30: Stopped loading the deleted world_mods_parking.rbx
+#                            - Checked that the fingerprint counts an entry by its note, features and effects, whatever its name
 #                            - Checked the hints of the Raid World form and its formation limits with every other form's
 #                            - Kept one check of each seats and mods topic
 #      Paulinchen  2026-10-23: Checked that the forms' requests go to the DLL and that the screen plays the steps it answers
@@ -167,7 +168,6 @@ load_script "ui_layout"
 load_script "ui_text_box"
 load_script "world"
 load_script "world_mods"
-load_script "world_mods_parking"
 load_script "world_text"
 load_script "world_screen"
 open_rules_bridge

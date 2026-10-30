@@ -2,7 +2,10 @@
 //  WorldEnteringTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Checked that a data scan of another format waits for its creator
+//      Paulinchen  2026-10-30: Checked that a world that turns other mods off waits for the catalog, without the parking
+//                            - Checked the install of a world's mods through the scripts, without a restart
+//                            - Checked that a restart for a mod that runs waits for the world's lock
+//                            - Checked that a data scan of another format waits for its creator
 //      Paulinchen  2026-10-28: Checked that the steps wait for a list not fetched yet
 //      Paulinchen  2026-10-23: Covered the world screen's requests
 //                            - Created
@@ -22,8 +25,8 @@ using MGQParadox.Multiplayer.Topics;
 namespace MGQParadox.Multiplayer.Tests.Topics;
 
 /// <summary>
-/// Covers the world screen's steps into a world as the scripts call them, over a directory, a
-/// parking and a mods check that stand in for theirs.
+/// Covers the world screen's steps into a world as the scripts call them, over a directory and a
+/// mods check that stand in for theirs.
 /// </summary>
 public sealed class WorldEnteringTests : IDisposable
 {
@@ -83,11 +86,6 @@ public sealed class WorldEnteringTests : IDisposable
     private readonly TopicCaller _topics;
 
     /// <summary>
-    /// Whether the parking holds mods for a rejoin.
-    /// </summary>
-    private bool _holding;
-
-    /// <summary>
     /// The world screen's open forms by slot.
     /// </summary>
     private readonly Dictionary<string, Form> _forms = new(StringComparer.Ordinal);
@@ -117,11 +115,7 @@ public sealed class WorldEnteringTests : IDisposable
         WorldLists lists = new(player, _mod.Path, () => 0);
         _lists = lists;
         Area("mods.check", _ => new RubyHash { { "known", true }, { "rows", new RubyArray() }, { "summary", RubyNil.Value } });
-        Area("mods.install", _ => true);
-        Area("parking.change", _ => new RubyHash { { "kind", "none" }, { "plan", new RubyArray() }, { "text", RubyNil.Value }, { "also", "" } });
-        Area("parking.parked_for", _ => new RubyHash { { "parked", false }, { "text", "OWN DATA" } });
-        Area("parking.join", _ => new RubyHash { { "result", "restarting" }, { "text", RubyNil.Value } });
-        Area("parking.restart_for_mods", _ => new RubyHash { { "result", "restarting" }, { "text", RubyNil.Value } });
+        Area("mods.forget", _ => null);
         Area("worlds.invite_take", _ => null);
         Area("mods.creator_hashes", _ => "Mod=abc");
         Area("settings.of", request => request.AsHash()["settings"]);
@@ -137,7 +131,7 @@ public sealed class WorldEnteringTests : IDisposable
                 });
             }
 
-            WorldEntering entering = new(context, _directory, _worlds, lists, () => true, () => _holding, new DirectoryTickets(() => "idle", () => { }), new WorldChanges(context));
+            WorldEntering entering = new(context, _directory, _worlds, lists, () => true, new DirectoryTickets(() => "idle", () => { }), new WorldChanges(context));
             entering.UseRequests(slot => _forms.GetValueOrDefault(slot), () => _data, text =>
             {
                 _copied.Add(text);
@@ -231,27 +225,62 @@ public sealed class WorldEnteringTests : IDisposable
     }
 
     /// <summary>
-    /// Asserts that required mods the catalog has are offered for download, installed on yes, and
-    /// that the game then forgets what Patch held and starts again for them.
+    /// Asserts that required mods the catalog has are offered for download, handed to the scripts to
+    /// install on yes, and that entering goes on once they are installed, with what Patch held forgotten.
     /// </summary>
     [Fact]
-    public void Enter_OffersTheDownloadAndRestartsOnceTheModsAreInstalled()
+    public void Enter_OffersTheDownloadAndGoesOnOnceTheScriptsInstalledTheMods()
     {
+        bool installed = false;
         Area("mods.check", _ => new RubyHash
         {
             { "known", true },
-            { "rows", new RubyArray([new RubyHash { { "name", "Level Cap" }, { "yours", "1.3.5" }, { "downloadable", true } }]) },
-            { "summary", "Plain needs Level Cap. Download them and restart?" },
+            { "rows", installed ? new RubyArray() : new RubyArray([new RubyHash { { "name", "Level Cap" }, { "key", "levelcap" }, { "yours", "1.3.5" }, { "downloadable", true } }]) },
+            { "summary", "Plain needs Level Cap. Download them?" },
         });
-        LocalWorld folder = Folder();
+        _directory.List(World("w1", open: true, mods: "!Level Cap"));
+
+        Assert.Equal(["say Plain needs Level Cap. Download them?", "confirm mods yes,show_mods,cancel"], Enter("w1"));
+        RubyValue? install = _topics.Call(WorldEntering.AnswerTopic, new RubyHash { { "answer", "yes" } });
+        Assert.Equal(new RubyArray([new RubyArray(["install", new RubyArray([new RubyArray(["Level Cap", "levelcap"])])])]), install!.AsHash()["steps"]);
+
+        installed = true;
+        Assert.Equal(["forget_installed", "busy unlock"], Answer("installed", new RubyHash { { "ok", true }, { "text", RubyNil.Value }, { "restart", false } }));
+        Assert.Contains(_asked, asked => asked.Topic == "mods.forget");
+    }
+
+    /// <summary>
+    /// Asserts that a mod installed that runs already starts the game again for the world, only once
+    /// its lock is open and its folder keeps the world code, so the password is not asked again after
+    /// the restart, and that an install that failed keeps the game out with its reason.
+    /// </summary>
+    [Fact]
+    public void Enter_RestartsForAModThatRunsOnceTheLockIsOpenAndRefusesAFailedInstall()
+    {
+        bool installed = false;
+        Area("mods.check", _ => new RubyHash
+        {
+            { "known", true },
+            { "rows", installed ? new RubyArray() : new RubyArray([new RubyHash { { "name", "Level Cap" }, { "key", "levelcap" }, { "yours", "1.3.5" }, { "downloadable", true } }]) },
+            { "summary", "Plain needs Level Cap. Download them?" },
+        });
         _directory.List(World("w1", mods: "!Level Cap"));
 
-        Assert.Equal(["say Plain needs Level Cap. Download them and restart?", "confirm mods yes,show_mods,cancel"], Enter("w1", folder.Id));
-        Assert.Equal(["busy mods"], Answer("yes"));
-        _directory.Finish(null, null);
+        Enter("w1");
+        Answer("yes");
+        installed = true;
+        Assert.Equal(["forget_installed", "password Plain"], Answer("installed", new RubyHash { { "ok", true }, { "restart", true } }));
+        Assert.Equal(["busy unlock"], Answer("password", new RubyHash { { "text", "secret" } }));
+        _directory.Finish(Code, "none");
+        Assert.Equal(["idle", "leave_form", "restart"], Step());
+        Assert.Single(_worlds.All());
 
-        Assert.Equal(["idle", "forget_installed", "exit"], Step());
-        Assert.True(Requested("parking.restart_for_mods")["unlocked"].AsBool());
+        Assert.Equal(["restart"], Enter("w1", _worlds.All()[0].Id));
+
+        installed = false;
+        Enter("w1");
+        Answer("yes");
+        Assert.Equal(["buzz", "say Level Cap could not be installed.", "back"], Answer("installed", new RubyHash { { "ok", false }, { "text", "Level Cap could not be installed." } }));
     }
 
     /// <summary>
@@ -272,22 +301,19 @@ public sealed class WorldEnteringTests : IDisposable
     }
 
     /// <summary>
-    /// Asserts that a world that turns other mods off asks first and parks on yes; one this PC never
-    /// entered opens its lock first, then asks.
+    /// Asserts that a world that turns other mods off keeps the game out while the catalog, which
+    /// tells the personal mods its session keeps, is unknown, and lets it in once it is known.
     /// </summary>
     [Fact]
-    public void Enter_AsksToTurnOtherModsOffOpeningTheLockOfANewWorldFirst()
+    public void Enter_WaitsForTheCatalogOfAWorldThatTurnsOtherModsOff()
     {
-        Area("parking.change", _ => new RubyHash { { "kind", "plan" }, { "plan", new RubyArray(["Patch/Invasions.rb"]) }, { "text", "Restart and join?" }, { "also", "" } });
-        _directory.List(World("w1", off: true));
+        bool known = false;
+        Area("mods.check", _ => new RubyHash { { "known", known }, { "rows", new RubyArray() }, { "summary", RubyNil.Value } });
+        _directory.List(World("w1", open: true, off: true));
 
-        Assert.Equal(["password Plain"], Enter("w1"));
-        Answer("password", new RubyHash { { "text", "secret" } });
-        _directory.Finish(Code, "none");
-        Assert.Equal(["idle", "leave_form", "say Restart and join?", "confirm parking yes,show_mods,cancel"], Step());
-
-        Assert.Equal(["exit"], Answer("yes"));
-        Assert.Equal(new RubyArray(["Patch/Invasions.rb"]), Requested("parking.join")["plan"]);
+        Assert.Equal(["buzz", "say The mod list has not loaded yet. Try again in a moment.", "back"], Enter("w1"));
+        known = true;
+        Assert.Equal(["busy unlock"], Enter("w1"));
     }
 
     /// <summary>
@@ -308,31 +334,43 @@ public sealed class WorldEnteringTests : IDisposable
 
     /// <summary>
     /// Asserts that the world the game started again for is entered once the list holds it, not while
-    /// the list is not fetched yet, and that backing out of it then gives up and puts the mods back.
+    /// the list is not fetched yet.
     /// </summary>
     [Fact]
-    public void Rejoin_EntersOnceListedAndGivesUpWhenThePlayerBacksOut()
+    public void Rejoin_EntersOnceListed()
     {
-        _holding = true;
         _topics.Call(WorldEntering.DoTopic, new RubyHash { { "do", "open" }, { "me", Me }, { "rejoin", "w1" } });
         Assert.Empty(Look("idle", ["w1", null, "Plain", false]));
         Assert.Empty(Look("loading", ["w1", null, "Plain", false]));
 
         _directory.List(World("w1"));
         Assert.Equal(["entry w1", "password Plain"], Look("ready", ["w1", null, "Plain", false]));
-        Assert.Equal(["give_up "], Answer("password_back"));
+        Assert.Empty(Answer("password_back"));
     }
 
     /// <summary>
-    /// Asserts that a rejoin whose world the list lacks says so and gives up with why.
+    /// Asserts that the world the game started again for after its lock was opened is entered from
+    /// its folder, without the password.
     /// </summary>
     [Fact]
-    public void Rejoin_GivesUpWithWhyWhenTheListLacksTheWorld()
+    public void Rejoin_EntersFromTheFolderTheLockMadeWithoutThePassword()
     {
-        _holding = true;
+        LocalWorld folder = Folder();
+        _topics.Call(WorldEntering.DoTopic, new RubyHash { { "do", "open" }, { "me", Me }, { "rejoin", "w1" } });
+        _directory.List(World("w1"));
+
+        Assert.Equal(["entry w1", "start fresh"], Look("ready", ["w1", folder.Id, "Plain", false]));
+    }
+
+    /// <summary>
+    /// Asserts that a rejoin whose world the list lacks says so.
+    /// </summary>
+    [Fact]
+    public void Rejoin_SaysWhenTheListLacksTheWorld()
+    {
         _topics.Call(WorldEntering.DoTopic, new RubyHash { { "do", "open" }, { "me", Me }, { "rejoin", "w1" } });
 
-        Assert.Equal(["say The world you restarted for is not in the list right now.", "give_up The world you restarted for is not in the list right now."], Look("ready"));
+        Assert.Equal(["say The world you restarted for is not in the list right now."], Look("ready"));
     }
 
     /// <summary>
@@ -369,25 +407,6 @@ public sealed class WorldEnteringTests : IDisposable
         _directory.Finish(null, null);
         Assert.Equal(["idle", "start placed"], Step());
         Assert.Equal(["discard", "buzz", "say It broke.", "back"], Answer("start_failed", new RubyHash { { "text", "It broke." }, { "placed", true } }));
-    }
-
-    /// <summary>
-    /// Asserts that the creator of a world entered with its other mods turned off is asked to take this
-    /// game's data, and enters once the world took it.
-    /// </summary>
-    [Fact]
-    public void Enter_HasTheCreatorTakeTheGamesDataAndEntersOnceTaken()
-    {
-        Area("parking.parked_for", _ => new RubyHash { { "parked", true }, { "text", "OWN DATA" } });
-        LocalWorld folder = Folder();
-        _directory.List(World("w1", creator: Me, data: OtherData, strict: true));
-
-        Assert.Equal(["say OWN DATA", "confirm own_data yes,cancel"], Enter("w1", folder.Id));
-        Assert.Equal(["busy data"], Answer("yes"));
-        Assert.Equal($"data w1 {Data}", _directory.Calls.Last());
-        _directory.Finish(null, null);
-
-        Assert.Equal(["idle", "say The data scan of Plain was updated to your game.", "start fresh"], Step());
     }
 
     /// <summary>
@@ -625,7 +644,6 @@ public sealed class WorldEnteringTests : IDisposable
         return kind switch
         {
             "say" or "password" or "busy" or "entry" => $"{kind} {parts[1].AsText()}",
-            "give_up" => $"give_up {(parts[1].IsNil ? "" : parts[1].AsText())}",
             "confirm" => $"confirm {parts[1].AsText()} {string.Join(",", parts[2].AsArray().Select(choice => choice.AsArray()[1].AsText()))}",
             "choices" => $"choices {string.Join(",", parts[1].AsArray().Select(choice => choice.AsArray()[1].AsText()))}",
             "copy_own" => $"copy_own {parts[2].AsInt()}",

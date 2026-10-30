@@ -150,7 +150,7 @@
           "text": "Level Cap: yours 1.3.5, the world's 1.4.0"
         }
       ],
-      "summary": "Modded needs mods that are missing or in another version here: Level Cap. Download them and restart?",
+      "summary": "Modded needs mods that are missing or in another version here: Level Cap. Download them?",
       "log": "mod check of Modded: 1 differ: Level Cap: yours 1.3.5, the world's 1.4.0, downloadable",
       "installed_versions": [
         [
@@ -200,7 +200,7 @@
           "text": "Level Cap: yours unknown, the world's 1.4.0"
         }
       ],
-      "summary": "Modded needs mods that are missing or in another version here: Level Cap. Download them and restart?",
+      "summary": "Modded needs mods that are missing or in another version here: Level Cap. Download them?",
       "log": "mod check of Modded: 1 differ: Level Cap: yours unknown, the world's 1.4.0, downloadable",
       "installed_versions": [
         [
@@ -246,7 +246,7 @@
           "text": "Level Cap: not installed, the world's 1.4.0"
         }
       ],
-      "summary": "Modded needs mods that are missing or in another version here: Level Cap. Download them and restart?",
+      "summary": "Modded needs mods that are missing or in another version here: Level Cap. Download them?",
       "log": "mod check of Modded: 1 differ: Level Cap: not installed, the world's 1.4.0, downloadable",
       "installed_versions": [
         [
@@ -320,7 +320,7 @@
           "text": "Pack: yours unknown, the world's 2"
         }
       ],
-      "summary": "Modded needs mods that are missing or in another version here: Pack. Download them and restart?",
+      "summary": "Modded needs mods that are missing or in another version here: Pack. Download them?",
       "log": "mod check of Modded: 1 differ: Pack: yours unknown, the world's 2, downloadable",
       "installed_versions": [
         [
@@ -359,7 +359,7 @@
           "text": "Pack: not installed, the world's 2"
         }
       ],
-      "summary": "Modded needs mods that are missing or in another version here: Pack. Download them and restart?",
+      "summary": "Modded needs mods that are missing or in another version here: Pack. Download them?",
       "log": "mod check of Modded: 1 differ: Pack: not installed, the world's 2, downloadable",
       "installed_versions": [
         [
@@ -434,7 +434,7 @@
           "text": "Hero: yours 1.0, the world's 1.1"
         }
       ],
-      "summary": "Modded needs mods that are missing or in another version here: Hero. Download them and restart?",
+      "summary": "Modded needs mods that are missing or in another version here: Hero. Download them?",
       "log": "mod check of Modded: 1 differ: Hero: yours 1.0, the world's 1.1, downloadable",
       "installed_versions": [
         [
@@ -712,7 +712,7 @@
           "text": "Level Cap: not installed, the world's 1.4.0"
         }
       ],
-      "summary": "Modded needs mods that are missing or in another version here: Level Cap. Download them and restart?",
+      "summary": "Modded needs mods that are missing or in another version here: Level Cap. Download them?",
       "log": "mod check of Modded: 1 differ: Level Cap: not installed, the world's 1.4.0, downloadable; Missing Mod: installed, not compared (outside the catalog, no creator's hash)",
       "installed_versions": [
         [
@@ -780,7 +780,7 @@
           "text": "Hero: yours 1.0, the world's 1.1"
         }
       ],
-      "summary": "Modded needs mods that are missing or in another version here: Level Cap, Hero. Download them and restart?",
+      "summary": "Modded needs mods that are missing or in another version here: Level Cap, Hero. Download them?",
       "log": "mod check of Modded: 2 differ: Level Cap: yours 1.3.5, the world's 1.4.0, downloadable; Hero: yours 1.0, the world's 1.1, downloadable",
       "installed_versions": [
         [

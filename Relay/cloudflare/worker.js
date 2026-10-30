@@ -2,6 +2,7 @@
 //  worker.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Handed the request's method to the update gate
 //      Paulinchen  2026-10-21: Told every game of a Raid World each pool an admin defeated
 //                            - Told every game of a Raid World the pinned values a story write left out
 //      Paulinchen  2026-10-15: Handed its admins everything it keeps for another relay to take over
@@ -165,7 +166,7 @@ export default {
    */
   async fetch(request, env) {
     const url = new URL(request.url);
-    const outdated = updateRefusal(url, request.headers.get(FEATURES_HEADER), request.headers.get(VERSION_HEADER), env.MIN_VERSION);
+    const outdated = updateRefusal(url, request.headers.get(FEATURES_HEADER), request.headers.get(VERSION_HEADER), env.MIN_VERSION, request.method);
 
     if (outdated) {
       return refuseOutdated(request, outdated);

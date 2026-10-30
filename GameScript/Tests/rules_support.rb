@@ -2,6 +2,8 @@
 #  rules_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Dropped the stand-ins of the parking's topics
+#                            - Dropped the stand-in of mods.install, which the Mod Framework does
 #      Paulinchen  2026-10-28: Answered the chests, page flags and command index of a map's pages as a DLL without an events database
 #                            - Took the fingerprint the events database is opened with and sorted the pages of a map handed over
 #                            - Read the seed rows of the relay's story tables, from which the catch-up's tests build their tables
@@ -653,10 +655,6 @@ require_relative "screen_support"
 # each required mod is installed, as the DLL does without a catalog or the creator's hashes.
 $mod_check = nil
 
-# The installs the mods.install topic was asked for, and whether it starts them.
-$mod_installs = []
-$mod_install_starts = true
-
 # The mods the battle server runs as mods.served answers them, the mods mods.report names and the
 # options mods.options was handed.
 $served_mods = []
@@ -699,7 +697,6 @@ def answer_mod_check(fake)
     stand_in_mod_check(request, installed)
   end
   fake.answer("mods.creator_hashes") { |_mods| $creator_hashes.to_s }
-  fake.answer("mods.install") { |request| $mod_installs << request; $mod_install_starts }
   fake.answer("mods.forget") { nil }
   fake.answer("mods.served") { |_mods| $served_mods }
   fake.answer("mods.report") { $reported_mods }
@@ -762,36 +759,6 @@ def answer_settings(fake)
   fake.answer("settings.leave") { |seat| $settings_calls << ["settings.leave", seat]; nil }
 end
 
-# The parking state the DLL answers while nothing is parked and nothing waits for the title screen.
-PARKING_IDLE = { "holding" => false, "due" => nil, "notice" => nil, "saving_off" => false, "save_text" => "", "moved" => false }
-
-# Answers the parking topics as the DLL does for a game with no mod parked whose worlds turn none
-# of its mods off; the world to enter again after a restart is Player.ini's "rejoin", as the test's
-# stand-in for Player keeps it. A test that parks answers the topics itself.
-#
-# @param fake [FakeBridge] The bridge.
-def answer_parking(fake)
-  fake.answer("parking.change") { { "kind" => "none", "plan" => [], "text" => nil, "also" => "", "claimed" => false, "moved" => false } }
-  fake.answer("parking.plan") { { "plan" => [], "mods" => [] } }
-  fake.answer("parking.parked_for") { { "parked" => false, "text" => "" } }
-  fake.answer("parking.rule") { { "taken" => true, "kick" => nil } }
-  fake.answer("parking.take_kick") { nil }
-  # With nothing parked, the restart for downloaded mods is the plain one, through the test's DLL.
-  fake.answer("parking.restart_for_mods") do |request|
-    MGQ_Multiplayer::Player.store("rejoin", request["world"])
-    next { "result" => "restarting", "text" => nil, "moved" => false } if MGQ_Multiplayer::Link.function("mp_restart_game").call == 1
-
-    MGQ_Multiplayer::Player.store("rejoin", "")
-    { "result" => "by_hand", "text" => "The mods were installed. Close the game and start it again to enter #{request['name']}.", "moved" => false }
-  end
-  fake.answer("parking.take_rejoin") do
-    world = MGQ_Multiplayer::Player.setting("rejoin").to_s
-    MGQ_Multiplayer::Player.store("rejoin", "") unless world.empty?
-    world.empty? ? nil : world
-  end
-  %w(state title_started title_left entered give_up notice_closed tell update_started).each { |topic| fake.answer("parking.#{topic}") { PARKING_IDLE } }
-end
-
 # Opens the scripts' bridge on a FakeBridge that answers the rule topics from the golden cases, or adds
 # those answers to the world room's stand-in bridge when the test loaded it.
 #
@@ -849,7 +816,6 @@ def open_rules_bridge
   answer_local_worlds(fake)
   answer_screen(fake)
   answer_forms(fake)
-  answer_parking(fake)
   answer_screen_steps(fake)
   answer_choices(fake)
   answer_gather(fake)

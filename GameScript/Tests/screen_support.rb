@@ -2,6 +2,7 @@
 #  screen_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Turned off none of the player's mods, without the parking
 #      Paulinchen  2026-10-23: Fetched the list as the DLL's screen does when it opens
 #                            - Created
 #
@@ -60,12 +61,12 @@ class StandInScreenFacts
     MGQ_MpWorldMods.shared?(text)
   end
 
-  # Lists the player's mods a world turns off.
+  # Lists the player's mods a world turns off, none here.
   #
   # @param listed [Object] The world.
   # @return [Array<Array>, nil] The mods.
   def turned_off(listed)
-    MGQ_MpModParking.turned_off_mods(listed)
+    []
   end
 
   # Tells whether a mod's script is installed.
@@ -291,7 +292,7 @@ def answer_screen(fake)
     model, entry, = stand_in_screen_model(request["key"])
     next nil unless model && entry.listed
 
-    lines = request["kind"] == "players" ? model.player_lines(entry.listed.members) : model.mod_lines(entry.listed.mods, StandInScreenFacts.new.differing(entry), MGQ_MpWorldMods.differing(entry.listed), MGQ_MpModParking.turned_off_mods(entry.listed))
+    lines = request["kind"] == "players" ? model.player_lines(entry.listed.members) : model.mod_lines(entry.listed.mods, StandInScreenFacts.new.differing(entry), MGQ_MpWorldMods.differing(entry.listed), [])
     lines.map { |line| ScreenPrototype::Cases.line_value(line) }
   end
 end

@@ -2,7 +2,10 @@
 //  WorldEntering.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Had the creator update a data scan of another format before entering
+//      Paulinchen  2026-10-30: Entered a world that turns other mods off without parking them, which the Mod Framework's session leaves out
+//                            - Had the scripts install a world's mods through the Mod Framework and entered without a restart
+//                            - Started the game again for a mod that runs only once the world's lock is open
+//                            - Had the creator update a data scan of another format before entering
 //      Paulinchen  2026-10-28: Waited for the list while it is not fetched yet as well as while it is being fetched
 //      Paulinchen  2026-10-23: Sent the world screen's requests and took this game's data from the DLL's copy
 //                            - Created
@@ -14,6 +17,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
+using MGQOnline.Game.Mods;
 using MGQOnline.Game.Worlds;
 using MGQParadox.Multiplayer.Network.World;
 
@@ -166,13 +170,13 @@ internal interface IEnteringDirectory
 
 /// <summary>
 /// The world screen's way into a world as steps the scripts play: whether the world takes players
-/// now, its required mods, its other mods turned off, its game data, its password, where a new
-/// player starts, the starting save, the restart for mods, a Discord invite and the entry after a
+/// now, its required mods, the catalog its other mods turned off need, its game data, its password, where a new
+/// player starts, the starting save, the install of its mods, a Discord invite and the entry after a
 /// restart. The scripts hand over the player's choices and what their effects did, and keep the
 /// windows, the forms, the saves and the scenes.
 /// </summary>
 /// <remarks>
-/// It builds on the topics of the areas it asks in-process (mods.check, mods.install, parking.*,
+/// It builds on the topics of the areas it asks in-process (mods.check, mods.forget,
 /// worlds.invite_take), so their texts and rules stay in one place.
 /// </remarks>
 internal sealed partial class WorldEntering
@@ -238,11 +242,6 @@ internal sealed partial class WorldEntering
     private readonly Func<bool> _share;
 
     /// <summary>
-    /// Tells whether the parking holds the mods turned off for the world the game started again for.
-    /// </summary>
-    private readonly Func<bool> _holding;
-
-    /// <summary>
     /// Tells whose answer the directory's action is.
     /// </summary>
     private readonly DirectoryTickets _tickets;
@@ -289,11 +288,6 @@ internal sealed partial class WorldEntering
     private string? _rejoin;
 
     /// <summary>
-    /// Whether the entry is the one the game started again for, whose end without entering puts the mods back.
-    /// </summary>
-    private bool _rejoinEntering;
-
-    /// <summary>
     /// Whether the player said to enter although the game data differs.
     /// </summary>
     private bool _dataAccepted;
@@ -312,22 +306,6 @@ internal sealed partial class WorldEntering
     /// What the question being asked is about, such as "mods".
     /// </summary>
     private string? _confirming;
-
-    /// <summary>
-    /// The scripts parking turns off for the world, none to put the parked ones back.
-    /// </summary>
-    private IReadOnlyList<string> _parkPlan = [];
-
-    /// <summary>
-    /// The question that asks to turn the mods off and start again.
-    /// </summary>
-    private string _parkQuestion = "";
-
-    /// <summary>
-    /// What follows once the world's lock was opened before parking: "ask" asks to turn the mods off,
-    /// "mods" turns them off with the restart for the downloads; <see langword="null"/> enters.
-    /// </summary>
-    private string? _parkAfterUnlock;
 
     /// <summary>
     /// What waits for the world's mods to be read: "enter" or "edit".
@@ -365,9 +343,10 @@ internal sealed partial class WorldEntering
     private bool _fresh;
 
     /// <summary>
-    /// What the screen said last, the reason a give-up tells.
+    /// Whether a mod installed for a world runs already, which loads anew only after the game starts
+    /// again, so every world entered from now on starts the game again first.
     /// </summary>
-    private string? _said;
+    private bool _restartFirst;
 
     /// <summary>
     /// Creates the steps.
@@ -377,17 +356,15 @@ internal sealed partial class WorldEntering
     /// <param name="worlds">The worlds on this PC.</param>
     /// <param name="lists">The player's lists of worlds.</param>
     /// <param name="share">Shares who plays with the worlds.</param>
-    /// <param name="holding">Tells whether the parking holds the mods turned off for a rejoin.</param>
     /// <param name="tickets">Tells whose answer the directory's action is.</param>
     /// <param name="changes">The changes the scripts are told of.</param>
-    public WorldEntering(BridgeContext context, IEnteringDirectory directory, LocalWorlds worlds, WorldLists lists, Func<bool> share, Func<bool> holding, DirectoryTickets tickets, WorldChanges changes)
+    public WorldEntering(BridgeContext context, IEnteringDirectory directory, LocalWorlds worlds, WorldLists lists, Func<bool> share, DirectoryTickets tickets, WorldChanges changes)
     {
         _context = context;
         _directory = directory;
         _worlds = worlds;
         _lists = lists;
         _share = share;
-        _holding = holding;
         _tickets = tickets;
         _changes = changes;
     }
@@ -531,16 +508,10 @@ internal sealed partial class WorldEntering
             {
                 Log($"not entering world {Short(rejoin)} again after the restart: not in the list (list {state})");
                 Say("The world you restarted for is not in the list right now.");
-                if (_holding())
-                {
-                    GiveUp(_said);
-                }
-
                 return;
             }
 
             Log($"entering {Of(found)} again after the restart for its mods");
-            _rejoinEntering = true;
             Begin(found);
             return;
         }
@@ -581,7 +552,6 @@ internal sealed partial class WorldEntering
         _steps.Add(new RubyArray { "entry", _entry.Id });
         _dataAccepted = false;
         _dataTaken = false;
-        _parkAfterUnlock = null;
         Chain();
     }
 
@@ -592,10 +562,8 @@ internal sealed partial class WorldEntering
     private void Enter(RubyHash request)
     {
         Take(request);
-        _rejoinEntering = false;
         _dataAccepted = false;
         _dataTaken = false;
-        _parkAfterUnlock = null;
         Log($"enter {EntryText}");
         Chain();
     }
@@ -612,7 +580,7 @@ internal sealed partial class WorldEntering
 
     /// <summary>
     /// Goes through what entering asks, in order: the world open now, its mods read, its required
-    /// mods, its other mods turned off, its game data, then its folder, lock or password.
+    /// mods, the catalog its other mods turned off need, its game data, then its folder, lock or password.
     /// </summary>
     private void Chain()
     {
@@ -637,7 +605,7 @@ internal sealed partial class WorldEntering
             // The world entered stays opened, so the list in the world carries its mods.
             _directory.Open(listed.Id);
             _fresh = state == "ready";
-            if (!ModsAllow(listed) || !ParkingAllows(listed) || !DataAllows(listed))
+            if (!ModsAllow(listed) || !CatalogAllows(listed) || !DataAllows(listed))
             {
                 return;
             }
@@ -648,6 +616,10 @@ internal sealed partial class WorldEntering
             Log($"not entering {EntryText}: {(entry.Gone ? "no longer in the list" : "the list has not arrived")}");
             Refuse(entry.Gone ? $"{entry.Name} is no longer in the list: it was deleted, or you were removed." : $"{entry.Name} is not in the list right now. Try again once the list has loaded.");
             Back();
+        }
+        else if (entry.Folder != null && listed != null && _restartFirst)
+        {
+            Restart();
         }
         else if (entry.Folder != null)
         {
@@ -729,7 +701,6 @@ internal sealed partial class WorldEntering
         }
 
         List<RubyHash> unavailable = [.. rows.Select(row => row.AsHash()).Where(row => !row["downloadable"].AsBool())];
-        RubyHash? change = unavailable.Count == 0 ? ParkingChange(listed, false) : null;
         string summary = Text(check["summary"]);
         string names = string.Join(", ", rows.Select(row => row.AsHash()["name"].AsText()));
         _confirming = "mods";
@@ -739,18 +710,11 @@ internal sealed partial class WorldEntering
             Refuse($"{_entry.Name} needs mods you do not have: {names}.");
             Back();
         }
-        else if (change != null && change["kind"].AsText() == "elsewhere")
-        {
-            // The restart for the downloads would be wasted: the entry after it is refused for this.
-            Log($"kept out of {EntryText} before downloading its mods: scripts it turns off lie behind a link to another drive");
-            Refuse(Text(change["text"]));
-            Back();
-        }
         else if (unavailable.Count == 0)
         {
-            Log($"offered to download {names} for {EntryText} and restart");
-            Say(summary + (change == null ? "" : Text(change["also"])));
-            Confirm("mods", ("Download and restart", "yes"), ("See the mods", "show_mods"), ("Back", EnterRules.Cancel));
+            Log($"offered to download {names} for {EntryText}");
+            Say(summary);
+            Confirm("mods", ("Download", "yes"), ("See the mods", "show_mods"), ("Back", EnterRules.Cancel));
         }
         else
         {
@@ -764,104 +728,22 @@ internal sealed partial class WorldEntering
     }
 
     /// <summary>
-    /// Decides whether this game may enter as far as other mods go: a world that turns them off is
-    /// entered only with them turned off, which takes a restart, so the player is asked first. A
-    /// world this PC never entered has its lock opened first, so the start after the restart enters
-    /// it without its password.
+    /// Decides whether this game may enter as far as other mods go: a world that turns them off needs
+    /// the catalog, which tells the personal mods its session keeps besides those it names.
     /// </summary>
     /// <param name="listed">The world.</param>
     /// <returns>Whether entering goes on now.</returns>
-    private bool ParkingAllows(ListedWorld listed)
+    private bool CatalogAllows(ListedWorld listed)
     {
-        RubyHash change = ParkingChange(listed, true);
-        string kind = change["kind"].AsText();
-        if (kind == "none")
+        if (!listed.OtherModsOff || _context.Ask("mods.check", new RubyHash { { "mods", listed.About.Mods }, { "hashes", listed.About.ModHashes }, { "world", RubyNil.Value } })!.AsHash()["known"].AsBool())
         {
             return true;
         }
 
-        if (kind != "plan")
-        {
-            Log($"kept out of {EntryText}: it turns other mods off, and the parked mods cannot follow ({kind})");
-            Refuse(Text(change["text"]));
-            Back();
-            return false;
-        }
-
-        _parkPlan = [.. change["plan"].AsArray().Select(path => path.AsText())];
-        _parkQuestion = Text(change["text"]);
-        if (_parkPlan.Count > 0 && _entry!.Folder == null && !listed.Open)
-        {
-            UnlockFirst("ask");
-            return false;
-        }
-
-        AskParking();
-        return false;
-    }
-
-    /// <summary>
-    /// Asks the parking what entering a world needs.
-    /// </summary>
-    /// <param name="listed">The world.</param>
-    /// <param name="claim">Whether scripts parked for another world that this one turns off too are parked for this one.</param>
-    /// <returns>The parking's answer: <c>kind</c>, <c>plan</c>, <c>text</c> and <c>also</c>.</returns>
-    private RubyHash ParkingChange(ListedWorld listed, bool claim) =>
-        _context.Ask("parking.change", new RubyHash { { "world", listed.Id }, { "mods", listed.About.Mods }, { "off", listed.OtherModsOff }, { "name", _entry!.Name }, { "claim", claim } })!.AsHash();
-
-    /// <summary>
-    /// Opens the lock of a world this PC never entered before its mods are turned off.
-    /// </summary>
-    /// <param name="after">"ask" asks to turn the mods off then, "mods" turns them off with the restart for the downloads.</param>
-    private void UnlockFirst(string after)
-    {
-        _parkAfterUnlock = after;
-        string id = _entry!.Id;
-        bool invited = _inviteCodes.TryGetValue(id, out string? code);
-        Log($"opening the lock of {EntryText} {(invited ? "with the Discord invite" : "with its password")} before turning other mods off");
-        if (invited)
-        {
-            StartAction("unlock", () => _directory.UnlockWithCode(code!));
-        }
-        else
-        {
-            AskPassword();
-        }
-    }
-
-    /// <summary>
-    /// Asks whether to turn the other mods off, or the parked ones back on, start again and enter.
-    /// </summary>
-    private void AskParking()
-    {
-        Log(_parkPlan.Count == 0 ? $"{EntryText} allows the mods turned off for another world: asking to put them back and start again to enter it" : $"asking to turn off {string.Join(", ", _parkPlan)} for {EntryText}");
-        Say(_parkQuestion);
-        List<(string, string)> offered = [("Restart and join", "yes")];
-        if (_parkPlan.Count > 0)
-        {
-            offered.Add(("See the mods", "show_mods"));
-        }
-
-        offered.Add(("Back", EnterRules.Cancel));
-        Confirm("parking", [.. offered]);
-    }
-
-    /// <summary>
-    /// Turns the other mods off and starts the game again, which then enters the world.
-    /// </summary>
-    private void ParkAndJoin()
-    {
-        RubyArray plan = new(_parkPlan.Select(path => (RubyValue)path));
-        RubyHash joined = _context.Ask("parking.join", new RubyHash { { "world", _entry!.Id }, { "name", _entry.Name }, { "plan", plan } })!.AsHash();
-        if (joined["result"].AsText() == "restarting")
-        {
-            Log($"closing the game to start it again with other mods turned off for {EntryText}");
-            _steps.Add(new RubyArray { "exit" });
-            return;
-        }
-
-        Refuse(Text(joined["text"]));
+        Log($"kept out of {EntryText}: it turns other mods off, and the catalog that tells the personal mods is unknown");
+        Refuse(SessionMods.Catalog);
         Back();
+        return false;
     }
 
     /// <summary>
@@ -884,16 +766,7 @@ internal sealed partial class WorldEntering
         }
 
         IReadOnlyList<string>? differing = GameDataCompare.Differing(Data, scan);
-        bool parked = false;
-        string ownData = "";
-        if (own && differing is { Count: > 0 })
-        {
-            RubyHash told = _context.Ask("parking.parked_for", new RubyHash { { "world", listed.Id }, { "mods", listed.About.Mods }, { "off", listed.OtherModsOff }, { "name", _entry!.Name } })!.AsHash();
-            parked = told["parked"].AsBool();
-            ownData = Text(told["text"]);
-        }
-
-        (bool allowed, IReadOnlyList<EnterDone> did) = EnterRules.Data(_entry!.Name, differing, listed.About.Strict, listed.About.Mods, own, parked, accepted, ownData);
+        (bool allowed, IReadOnlyList<EnterDone> did) = EnterRules.Data(_entry!.Name, differing, listed.About.Strict, listed.About.Mods, own, accepted);
         Log(differing == null || differing.Count == 0
             ? $"data check of {_entry.Name}: {(differing == null ? "cannot compare (unknown), let in" : "matches")}"
             : $"data check of {_entry.Name}: differs in {string.Join(", ", differing)}; {(allowed ? "player entered anyway" : listed.About.Strict ? "strict" : "asking the player")}");
@@ -984,8 +857,6 @@ internal sealed partial class WorldEntering
                 Confirmed();
                 break;
             case "show_mods":
-                // Seeing the mods ends the entry the game started again for: the player enters again from the list.
-                _rejoinEntering = false;
                 break;
             case EnterRules.Cancel:
             case "back":
@@ -998,11 +869,6 @@ internal sealed partial class WorldEntering
                 StartAction("unlock", () => _directory.Unlock(id, password));
                 break;
             case "password_back":
-                if (_rejoinEntering && _holding())
-                {
-                    GiveUp(null);
-                }
-
                 break;
             case "from_creator":
                 Log("start chosen: the creator's save");
@@ -1037,6 +903,9 @@ internal sealed partial class WorldEntering
             case "start_failed":
                 StartFailed(Text(request["text"]), request["placed"].AsBool());
                 break;
+            case "installed":
+                Installed(request["ok"].AsBool(), Text(request["text"]), !request["restart"].IsNil && request["restart"].AsBool());
+                break;
             default:
                 if (!RequestAnswered(answer, request))
                 {
@@ -1058,11 +927,7 @@ internal sealed partial class WorldEntering
         switch (what)
         {
             case "mods":
-                ListedWorld listed = _directory.Listed(_entry!.Id).World!;
-                StartAction("mods", () => _context.Ask("mods.install", new RubyHash { { "mods", listed.About.Mods }, { "hashes", listed.About.ModHashes } }) is RubyBool { Flag: true });
-                break;
-            case "parking":
-                ParkAndJoin();
+                Install();
                 break;
             case "differing":
                 _dataAccepted = true;
@@ -1077,6 +942,65 @@ internal sealed partial class WorldEntering
             default:
                 throw new BridgeRequestException($"Nothing waits for a confirmation of {what}.");
         }
+    }
+
+    /// <summary>
+    /// Has the scripts install the world's differing mods that the catalog has, through the Mod
+    /// Framework, which they answer with <c>installed</c>.
+    /// </summary>
+    private void Install()
+    {
+        ListedWorld listed = _directory.Listed(_entry!.Id).World!;
+        RubyHash check = _context.Ask("mods.check", new RubyHash { { "mods", listed.About.Mods }, { "hashes", listed.About.ModHashes }, { "world", RubyNil.Value } })!.AsHash();
+        RubyArray rows = new(check["rows"].AsArray().Select(row => row.AsHash()).Where(row => row["downloadable"].AsBool()).Select(row => (RubyValue)new RubyArray { row["name"], row["key"] }));
+        Log($"installing {rows.Count} mod(s) of {EntryText} through the Mod Framework");
+        _steps.Add(new RubyArray { "install", rows });
+    }
+
+    /// <summary>
+    /// Goes on once the scripts installed the world's mods: enters the world, whose mods then load
+    /// as the player enters the game, or starts the game again when a mod installed runs already,
+    /// which only a restart loads anew.
+    /// </summary>
+    /// <remarks>
+    /// The restart waits for the world's lock to open, since the world code its folder keeps lets
+    /// the game that starts again enter without the password or the invite, which no file holds.
+    /// </remarks>
+    /// <param name="ok">Whether every mod was installed.</param>
+    /// <param name="error">Why not, for the player.</param>
+    /// <param name="restart">Whether a mod installed runs already.</param>
+    private void Installed(bool ok, string error, bool restart)
+    {
+        if (!ok)
+        {
+            Log($"the mods of {EntryText} were not installed: {error}");
+            Refuse(error);
+            Back();
+            return;
+        }
+
+        _context.Ask(ModCheckTopics.ForgetTopic);
+        _steps.Add(new RubyArray { "forget_installed" });
+        if (restart)
+        {
+            _restartFirst = true;
+            Log($"installed the mods of {EntryText}, one of which runs already: the game starts again to enter it{(_entry!.Folder == null ? " once its lock is open" : "")}");
+        }
+        else
+        {
+            Log($"installed the mods of {EntryText}, which load as the player enters it");
+        }
+
+        Chain();
+    }
+
+    /// <summary>
+    /// Has the scripts start the game again to enter the world, which this PC has a folder of.
+    /// </summary>
+    private void Restart()
+    {
+        Log($"starting the game again to enter {EntryText}: a mod installed for a world runs already");
+        _steps.Add(new RubyArray { "restart", _entry!.Id });
     }
 
     /// <summary>
@@ -1262,10 +1186,6 @@ internal sealed partial class WorldEntering
             case "read":
                 ModsRead(afterRead);
                 return;
-            case "mods":
-                Log($"installed the mods for {EntryText}");
-                RestartForMods();
-                return;
             case "data":
                 Log($"the data of {EntryText} is this game's now");
                 Say($"The data scan of {_entry!.Name} was updated to your game.");
@@ -1285,15 +1205,12 @@ internal sealed partial class WorldEntering
     }
 
     /// <summary>
-    /// Enters the world whose lock was opened, or asks to turn the mods off, or turns them off with the
-    /// restart for the downloads, when the lock was opened for that.
+    /// Enters the world whose lock was opened.
     /// </summary>
     /// <param name="result">What the action handed back.</param>
     /// <returns>Whether it went on.</returns>
     private bool EnterOpened((string Code, string? World, string? Name, string? Start, bool Choose)? result)
     {
-        string? park = _parkAfterUnlock;
-        _parkAfterUnlock = null;
         if (result?.Start == "pending")
         {
             Log($"not entering {EntryText}: its creator still sets up its starting save");
@@ -1312,63 +1229,16 @@ internal sealed partial class WorldEntering
         }
 
         _changes.Mark(WorldChanges.List);
-        if (park != null)
+        if (_restartFirst)
         {
-            _entry = _entry with { Folder = world.Id };
-            if (park == "mods")
-            {
-                RestartForMods();
-            }
-            else
-            {
-                AskParking();
-            }
-
-            return true;
+            Restart();
+        }
+        else
+        {
+            EnterFolder(world.Id, listed?.Start, listed?.Choose);
         }
 
-        EnterFolder(world.Id, listed?.Start, listed?.Choose);
         return true;
-    }
-
-    /// <summary>
-    /// Starts the game again once the world's mods are installed, turning other mods off in the same
-    /// restart for a world that turns them off; a world this PC never entered has its lock opened first.
-    /// </summary>
-    private void RestartForMods()
-    {
-        _steps.Add(new RubyArray { "forget_installed" });
-        Entry entry = _entry!;
-        ListedWorld? listed = _directory.Listed(entry.Id).World;
-        RubyHash request = new()
-        {
-            { "world", entry.Id },
-            { "name", entry.Name },
-            { "unlocked", entry.Folder != null || listed?.Open == true },
-            { "mods", listed?.About.Mods },
-            { "off", listed == null ? RubyNil.Value : listed.OtherModsOff },
-        };
-        RubyHash restarted = _context.Ask("parking.restart_for_mods", request)!.AsHash();
-        switch (restarted["result"].AsText())
-        {
-            case "unlock":
-                UnlockFirst("mods");
-                break;
-            case "restarting":
-                Log($"closing the game to start it again for the mods of {EntryText}");
-                _steps.Add(new RubyArray { "exit" });
-                break;
-            case "by_hand":
-                Log($"the game could not start itself again, the player restarts it for {EntryText}");
-                Say(Text(restarted["text"]));
-                Back();
-                break;
-            default:
-                Log($"installed the mods of {EntryText}, but other mods could not be turned off, kept off or turned back on: staying on the world screen");
-                Refuse(Text(restarted["text"]));
-                Back();
-                break;
-        }
     }
 
     /// <summary>
@@ -1384,30 +1254,9 @@ internal sealed partial class WorldEntering
     }
 
     /// <summary>
-    /// Goes back to the list, or, once the entry the game started again for ended without entering
-    /// the world, puts the mods turned off for it back.
+    /// Goes back to the list.
     /// </summary>
-    private void Back()
-    {
-        if (_rejoinEntering && _holding())
-        {
-            GiveUp(_said);
-            return;
-        }
-
-        _steps.Add(new RubyArray { "back" });
-    }
-
-    /// <summary>
-    /// Ends the entry the game started again for: the scripts put the mods back and leave the screen.
-    /// </summary>
-    /// <param name="reason">What the screen said last; a question the player backed out of tells none.</param>
-    private void GiveUp(string? reason)
-    {
-        Log("the entry the mods were turned off for ended without entering the world");
-        _rejoinEntering = false;
-        _steps.Add(new RubyArray { "give_up", reason == null || reason.EndsWith('?') ? null : reason });
-    }
+    private void Back() => _steps.Add(new RubyArray { "back" });
 
     /// <summary>
     /// Adds what the rules decided as steps.
@@ -1451,7 +1300,6 @@ internal sealed partial class WorldEntering
     /// <param name="text">The text.</param>
     private void Say(string text)
     {
-        _said = text;
         _steps.Add(new RubyArray { "say", text });
     }
 

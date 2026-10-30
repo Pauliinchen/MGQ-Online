@@ -2,6 +2,7 @@
 //  WorldDirectory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Left installing a world's mods to the Mod Framework
 //      Paulinchen  2026-10-28: Refused seats out of range and squad rules that do not parse before asking the relay
 //      Paulinchen  2026-10-23: Told the DLL itself what the last action handed back
 //                            - Handed out the list as it stands with a revision, for the world screen's model
@@ -592,44 +593,6 @@ internal sealed class WorldDirectory
     }
 
     /// <summary>
-    /// Installs mods of the catalog as last fetched into the game's Patch folder, checking every
-    /// file against the catalog's hash first.
-    /// </summary>
-    /// <param name="mods">Each mod's key, and for a link mod where its script goes, relative to the game's folder.</param>
-    /// <returns><see langword="false"/> while another action runs.</returns>
-    public bool InstallMods(IReadOnlyList<(string Key, string Target)> mods) => Start("mods", () =>
-    {
-        IReadOnlyList<CatalogMod> catalog;
-
-        lock (_gate)
-        {
-            catalog = _catalog?.Mods ?? throw new ActionException("The mod catalog has not been fetched yet.");
-        }
-
-        var chosen = mods.Select(mod => (catalog.FirstOrDefault(entry => entry.Key == mod.Key) ?? throw new ActionException($"The relay has no mod {mod.Key}."), mod.Target)).ToList();
-        Log.Write($"installing {string.Join(", ", chosen.Select(mod => $"{mod.Item1.Key} {mod.Item1.Version} ({mod.Item1.ScriptKind}{(mod.Target.Length > 0 && !mod.Item1.IsZip ? $" to {mod.Target}" : string.Empty)})"))}");
-        var client = Client();
-
-        try
-        {
-            var written = ModInstaller.Install(chosen, mod => Download(client, mod), GameFolder());
-            Log.Write($"installed {string.Join(", ", chosen.Select(mod => $"{mod.Item1.Name} {mod.Item1.Version}"))}: {string.Join(", ", written)}");
-        }
-        catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
-        {
-            Log.Write($"installing the mods failed, nothing changed: {ex.Message}");
-            throw new ActionException(ex.Message);
-        }
-        catch (IOException ex)
-        {
-            Log.Write($"writing the mods failed, the files written were put back: {ex.Message}");
-            throw new ActionException($"The mods could not be written: {ex.Message}");
-        }
-
-        return null;
-    });
-
-    /// <summary>
     /// Sends the Mod Config options of a catalog mod, as the game's copy offers them, on a thread of
     /// its own, outside the actions, so the world screen stays free; how it went is only logged.
     /// </summary>
@@ -662,29 +625,6 @@ internal sealed class WorldDirectory
         });
         return true;
     }
-
-    /// <summary>
-    /// The game's folder, which the mods are installed into; tests point it elsewhere.
-    /// </summary>
-    public Func<string> GameFolder { get; init; } = () => ModFolder.GamePathOf(".");
-
-    /// <summary>
-    /// Downloads a mod, an upload's zip from the relay, a link mod's script from GitHub, and logs its size.
-    /// </summary>
-    /// <param name="client">The relay's client.</param>
-    /// <param name="mod">The mod.</param>
-    /// <returns>The zip or the script.</returns>
-    private byte[] Download(DirectoryClient client, CatalogMod mod)
-    {
-        var bytes = mod.IsUpload ? client.ModFile(mod.Key) : DownloadRelease(mod.FileUrl);
-        Log.Write($"downloaded {mod.Key} {mod.Version} from {(mod.IsUpload ? "the relay" : "GitHub")}: {bytes.Length.ToString(CultureInfo.InvariantCulture)} bytes");
-        return bytes;
-    }
-
-    /// <summary>
-    /// Downloads a link mod's script; tests replace it, since they cannot reach GitHub.
-    /// </summary>
-    public Func<string, byte[]> DownloadRelease { get; init; } = ReleaseDownload.Get;
 
     /// <summary>
     /// Makes a world: a new token, locked with the password, and the world in the directory, with

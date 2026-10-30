@@ -2,6 +2,8 @@
 #  ui_single_player.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Started the game again through the Mod Framework, which goes on from the game kept for it
+#                            - Dropped the parked mods, which no world parks any more
 #      Paulinchen  2026-10-23: Started the game again under Wine or Proton too
 #      Paulinchen  2026-10-13: Created
 #
@@ -15,7 +17,7 @@
 # slot, and the game started again loads it at its title screen and goes on where the player was,
 # so nothing is lost. Inside a world the rows apply as they change, since a restart would leave it.
 #
-# It must work without any connection: the restart is the DLL's local mp_restart_game alone.
+# It must work without any connection: the restart is the Mod Framework's alone.
 module MGQ_MpSinglePlayer
   # The game the player plays on, kept for the restart, as the game's own save writes it.
   RESUME_FILE = "#{MGQ_Multiplayer::MOD_DIR}\\Resume.rvdata2"
@@ -165,7 +167,7 @@ module MGQ_MpSinglePlayer
 
   # Reports whether the map is free for the offer and the save it takes: outside a world, no event
   # runs, no message shows, the player is not on the move between maps, and the game's own saves are
-  # allowed, neither turned off by the game, by a Library replay nor by parked mods.
+  # allowed, neither turned off by the game nor by a Library replay.
   #
   # @return [Boolean] Whether it is.
   def self.quiet?
@@ -176,9 +178,7 @@ module MGQ_MpSinglePlayer
   #
   # @return [Boolean] Whether they are.
   def self.saving_allowed?
-    return false if $game_system.save_disabled || $game_switches[LIBRARY_REPLAY_SWITCH]
-
-    !(defined?(MGQ_MpModParking) && MGQ_MpModParking.respond_to?(:saving_off?) && MGQ_MpModParking.saving_off?)
+    !$game_system.save_disabled && !$game_switches[LIBRARY_REPLAY_SWITCH]
   end
 
   # Tells the player a message in the notification box, which also shows outside a world.
@@ -193,15 +193,14 @@ module MGQ_MpSinglePlayer
   def self.restart
     return notice(SAVE_FAILED_TEXT) unless save_resume
 
-    case MGQ_Multiplayer::Link.function('mp_restart_game').call
-    when 1
-      log("starting the game again, which goes on from #{RESUME_FILE}")
-      SceneManager.exit
-    else
+    unless defined?(Mod_Framework::Mods) && Mod_Framework::Mods.respond_to?(:restart)
       forget_resume
-      log("the game could not start itself again, so it plays on")
-      notice(FAILED_TEXT)
+      log("the game cannot start itself again without the Mod Framework, so it plays on")
+      return notice(FAILED_TEXT)
     end
+
+    log("starting the game again, which goes on from #{RESUME_FILE}")
+    Mod_Framework::Mods.restart("the single player settings changed", MGQ_Multiplayer::Stages::RESUME_ACTION)
   rescue => e
     forget_resume
     log("starting the game again failed: #{e.class}: #{e.message}")
@@ -251,16 +250,12 @@ module MGQ_MpSinglePlayer
   end
 
   # Reports whether the title screen is busy with what comes before a game of the player's own: a
-  # world open or starting its new game, the update offer, or mods parked for a world that the title
-  # screen puts back and restarts for.
+  # world open or starting its new game, or the update offer.
   #
   # @return [Boolean] Whether it is.
   def self.title_busy?
     world = MGQ_MpWorld
-    return true if world.open? || world.new_game_pending? || (defined?(world::UpdateOffer) && world::UpdateOffer.shown?)
-
-    parking = defined?(MGQ_MpModParking) ? MGQ_MpModParking : nil
-    parking ? (parking.title_busy? || parking.restart_due?) : false
+    world.open? || world.new_game_pending? || (defined?(world::Update) && world::Update.asking?) ? true : false
   end
 
   # Puts the game kept in RESUME_FILE aside under KEPT_FILE, so it is neither lost nor loaded again.

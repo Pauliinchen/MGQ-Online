@@ -2,6 +2,7 @@
 //  gate.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Let a GET of the mod catalog and its files pass ungated, as the Mod Framework reads them naming no game version
 //      Paulinchen  2026-10-22: Told which games hold a world's long mods and which read the world list with every world's mods
 //      Paulinchen  2026-10-12: Held the world directory's and the mod catalog's routes to X-MGQ-Features
 //                            - Named the update code on the 400 of a world room refused to a game too old
@@ -103,10 +104,17 @@ const VERSION_PATTERN = /^(\d+(?:\.\d+)*)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?
 /**
  * Tells what a route asks of a game's version.
  *
+ * A GET of the mod catalog asks nothing, since the Mod Framework reads the catalog and its files for every game, naming no game version.
+ *
  * @param {URL} url The request's address.
- * @returns {string | null} GATE.features for the world directory's and the mod catalog's routes, the Raid World admin, story and boss routes included, the trades, the bug reports and the world rooms; GATE.version for the PvP rooms, which released games open without X-MGQ-Features; null for every other route.
+ * @param {string} [method] The request's HTTP method; none counts as a change.
+ * @returns {string | null} GATE.features for the world directory's and the mod catalog's routes, the Raid World admin, story and boss routes included, the trades, the bug reports and the world rooms; GATE.version for the PvP rooms, which released games open without X-MGQ-Features; null for every other route and a GET of the mod catalog.
  */
-export function gateOf(url) {
+export function gateOf(url, method = undefined) {
+  if (routeIs(url, "mods") && method === "GET") {
+    return null;
+  }
+
   if (storyRouteOf(url) || bossRouteOf(url) || routeIs(url, "trades") || routeIs(url, "reports") || routeIs(url, "world") || routeIs(url, "worlds") || routeIs(url, "mods")) {
     return GATE.features;
   }
@@ -224,10 +232,11 @@ export function listsWorldMods(featuresHeader, versionHeader) {
  * @param {string | null | undefined} featuresHeader The request's FEATURES_HEADER.
  * @param {string | null | undefined} versionHeader The request's VERSION_HEADER.
  * @param {string | null | undefined} [minVersion] The relay's MIN_VERSION setting.
+ * @param {string} [method] The request's HTTP method, see gateOf.
  * @returns {{status: number, reason: string, socket: boolean, code: string | null} | null} The refusal, with whether the route is a PvP room's or a world room's, answered as a refused WebSocket, and the code to name in REFUSAL_HEADER, which only a PvP room's and a world room's carry; null when the game may go on.
  */
-export function updateRefusal(url, featuresHeader, versionHeader, minVersion) {
-  if (!tooOld(gateOf(url), featuresHeader, versionHeader, minVersion)) {
+export function updateRefusal(url, featuresHeader, versionHeader, minVersion, method = undefined) {
+  if (!tooOld(gateOf(url, method), featuresHeader, versionHeader, minVersion)) {
     return null;
   }
 

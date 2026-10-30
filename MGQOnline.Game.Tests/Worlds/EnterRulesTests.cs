@@ -2,7 +2,8 @@
 //  EnterRulesTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Checked entering a world whose data scan has another format
+//      Paulinchen  2026-10-30: Left out the golden cases of a world entered with mods parked
+//                            - Checked entering a world whose data scan has another format
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -40,16 +41,17 @@ public sealed class EnterRulesTests
     }
 
     /// <summary>
-    /// Asserts that differing game data lets in, asks or refuses as the screen did.
+    /// Asserts that differing game data lets in, asks or refuses as the screen did, in the cases of
+    /// a game that parked no mods, which none parks any more.
     /// </summary>
     [Fact]
     public void Data_DecidesAsTheScreenDid()
     {
-        foreach (JsonElement entry in _cases.GetProperty("data").EnumerateArray())
+        foreach (JsonElement entry in _cases.GetProperty("data").EnumerateArray().Where(entry => !entry.GetProperty("parked").GetBoolean()))
         {
             JsonElement parts = entry.GetProperty("differing");
             IReadOnlyList<string>? differing = parts.ValueKind == JsonValueKind.Null ? null : [.. parts.EnumerateArray().Select(part => part.GetString()!)];
-            (bool allowed, IReadOnlyList<EnterDone> did) = EnterRules.Data("Haven", differing, entry.GetProperty("strict").GetBoolean(), entry.GetProperty("mods").GetString(), entry.GetProperty("own").GetBoolean(), entry.GetProperty("parked").GetBoolean(), entry.GetProperty("accepted").GetBoolean(), "OWN DATA");
+            (bool allowed, IReadOnlyList<EnterDone> did) = EnterRules.Data("Haven", differing, entry.GetProperty("strict").GetBoolean(), entry.GetProperty("mods").GetString(), entry.GetProperty("own").GetBoolean(), entry.GetProperty("accepted").GetBoolean());
 
             Assert.Equal(entry.GetProperty("allowed").GetBoolean(), allowed);
             Assert.Equal(Golden(entry), Recorded(did));

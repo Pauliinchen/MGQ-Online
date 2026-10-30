@@ -2,6 +2,8 @@
 #  single_player_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Started the game again through the Mod Framework's stand-in
+#                            - Dropped the parked mods, which no world parks any more
 #      Paulinchen  2026-10-23: Dropped the restart by hand under Wine
 #      Paulinchen  2026-10-13: Created
 #
@@ -84,26 +86,26 @@ module SceneManager; def self.exit; $exits += 1; end; end
 # Stands in for RGSS's message box, noting each text in $msgboxes.
 def msgbox(*texts); $msgboxes << texts.join; end
 
-# Stands in for the DLL: there unless $available is false, mp_restart_game noted in $calls and
-# answering $restart_result, or raising $restart_error.
+# Stands in for the DLL, there unless $available is false, and for the action after the Mod
+# Framework's restart.
 module MGQ_Multiplayer
   # Answers whether the DLL is there.
   def self.available?; $available != false; end
-  # Stands in for the DLL's functions.
-  module Link
-    # A function of the DLL, which notes its calls.
-    Function = Struct.new(:name) do
-      # Notes the call in $calls, refusing arguments its signature does not name.
-      def call(*args)
-        check_dll_call(name, args)
-        $calls << name
-        raise $restart_error if $restart_error
+  # The mod's loading: the action after a restart that goes on from the game kept for it.
+  module Stages; RESUME_ACTION = "multiplayer.resume"; end
+end
 
-        $restart_result
-      end
+# Stands in for the Mod Framework's restart: noted in $calls, the game ending after the frame
+# counted in $exits, or raising $restart_error.
+module Mod_Framework
+  module Mods
+    def self.restart(_reason, action = nil, _value = nil)
+      raise $restart_error if $restart_error
+
+      $calls << [:restart, action]
+      $exits += 1
+      :restarting
     end
-    # Answers a function of the DLL.
-    def self.function(name); Function.new(name); end
   end
 end
 
@@ -117,18 +119,8 @@ SceneManager.run
 
 # Stands in for the notification box, noting each message's key and text in $notices.
 module MGQ_MpNotices; def self.message(key, text, _frames = nil); $notices << [key, text]; end; end
-# Stands in for the update offer at the title screen, shown while $update_offer is set.
-module MGQ_MpWorld::UpdateOffer; def self.shown?; $update_offer == true; end; end
-# Stands in for parked mods: saving off while $saving_off is set, the title screen busy while
-# $parking_busy is and a restart due while $parking_restart is.
-module MGQ_MpModParking
-  # Answers whether parked mods turned the game's saves off.
-  def self.saving_off?; $saving_off == true; end
-  # Answers whether the title screen puts parked mods back.
-  def self.title_busy?; $parking_busy == true; end
-  # Answers whether the game restarts for parked mods.
-  def self.restart_due?; $parking_restart == true; end
-end
+# Stands in for the Mod Framework's question of the update at the title screen, asked while $update_offer is set.
+module MGQ_MpWorld::Update; def self.asking?; $update_offer == true; end; end
 # The confirm box: each question noted in $asks with its block in $answer, open while
 # $confirm_open is set.
 MGQ_MpUi::Confirm.define_singleton_method(:ask) { |question, choices, &answer| $asks << [question, choices]; $answer = answer; true }
@@ -210,7 +202,6 @@ def reset
   play
   [$asks, $notices, $msgboxes, $calls, $load_successes].each(&:clear)
   $exits = 0
-  $restart_result = 1
   $restart_error = nil
   $save_error = nil
   $available = nil
@@ -220,9 +211,6 @@ def reset
   $open = false
   $new_game_pending = false
   $update_offer = false
-  $saving_off = false
-  $parking_busy = false
-  $parking_restart = false
   $running = false
   $confirm_open = false
   $map_changing = false
@@ -317,7 +305,6 @@ check("a change inside a world applies as it is and offers nothing, then or late
   "the scene changes" => proc { |on| $map_changing = on },
   "the game turned its saves off" => proc { |on| $game_system.save_disabled = on },
   "a Library replay runs" => proc { |on| $game_switches[sp::LIBRARY_REPLAY_SWITCH] = on },
-  "parked mods turned saving off" => proc { |on| $saving_off = on },
 }.each do |label, set|
   reset
   change
@@ -372,7 +359,7 @@ check("Restart saves the game through the game's own save to the file kept for t
 check("a save the game's count of saves leaves out", $game_system.save_count, 5)
 check("the slot the game saved to last stays, kept in Player.ini, and its files keep their names after",
       [DataManager.last_savefile_index, $player_ini[sp::SLOT_SETTING], DataManager.make_filename(3)], [3, "3", "Save04.rvdata2"])
-check("then the DLL starts the game again and this one ends", [$calls, $exits, $msgboxes, $notices], [["mp_restart_game"], 1, [], []])
+check("then the Mod Framework starts the game again, going on from it, and this one ends", [$calls, $exits, $msgboxes, $notices], [[[:restart, "multiplayer.resume"]], 1, [], []])
 $game_state = "in the Pocket Castle"
 $exits = 0
 restart
@@ -381,9 +368,10 @@ check("a game kept from a restart before goes aside, the new one in its place",
       [kept.size, kept.map { |file| File.open(file, "rb") { |each| Marshal.load(each) } }, File.open(sp::RESUME_FILE, "rb") { |file| Marshal.load(file) }, $exits],
       [1, ["on map 5 at 3, 4"], "in the Pocket Castle", 1])
 reset
-$restart_result = 0
+framework = Object.send(:remove_const, :Mod_Framework)
 restart
-check("a game that could not start itself again removes the save, tells the player in the notification box and plays on",
+Object.const_set(:Mod_Framework, framework)
+check("a game without the Mod Framework, which cannot start itself again, removes the save, tells the player in the notification box and plays on",
       [File.exist?(sp::RESUME_FILE), $notices, $exits], [false, [[sp::NOTICE_KEY, sp::FAILED_TEXT]], 0])
 reset
 $restart_error = RuntimeError.new("no DLL call")
@@ -423,9 +411,7 @@ check("the next visit looks again, slot 0 when none was kept", [$loaded, $load_i
 {
   "a world is open" => proc { |on| $open = on },
   "a world's new game waits" => proc { |on| $new_game_pending = on },
-  "the update offer shows" => proc { |on| $update_offer = on },
-  "parked mods are put back" => proc { |on| $parking_busy = on },
-  "the game restarts for parked mods" => proc { |on| $parking_restart = on },
+  "the Mod Framework asks for the update" => proc { |on| $update_offer = on },
 }.each do |label, set|
   reset
   restart

@@ -2,7 +2,8 @@
 //  GameBridge.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Registered the topics of trades
+//      Paulinchen  2026-10-30: Stopped registering the topics of turning other mods off, which the Mod Framework's session does
+//                            - Registered the topics of trades
 //      Paulinchen  2026-10-28: Registered the topics that read the events database's rows
 //                            - Registered the topics of the catch-up over the tables the story mapping came with
 //      Paulinchen  2026-10-23: Stopped registering the directory's tickets as topics
@@ -68,26 +69,25 @@ internal static unsafe class GameBridge
     /// <param name="context">The context the handshake opened.</param>
     private static void RegisterTopics(BridgeContext context)
     {
-        var services = new WorldServices(new PlayerIni(Path.Combine(ModFolder.Root, PlayerIni.FileName)), new WorldChanges(context), () => WorldDirectory.Current, () => ModParking.Current,
+        var services = new WorldServices(new PlayerIni(Path.Combine(ModFolder.Root, PlayerIni.FileName)), new WorldChanges(context), () => WorldDirectory.Current, () => PatchScripts.List(ModFolder.GamePathOf(".")),
             new DirectoryTickets(() => WorldDirectory.Current.ActionNow().State, WorldDirectory.Current.ClearAction));
         ScriptLog.Register(context);
         SettingsTopics.Register(context, services.Player);
         RuleTopics.Register(context);
         SharedTopics.Register(context);
-        ModTopics.Register(context, services.Parking, services.Directory);
+        ModTopics.Register(context, services.Scripts, services.Directory);
         EventTopics.Register(context, () => GameEvents.Current);
         EventTableTopics.Register(context, () => GameEvents.Current);
         WorldTopics.Register(context);
         OverviewTopics.Register(context);
         LocalWorldTopics.Kept local = LocalWorldTopics.Register(context, services);
-        ModPickTopics.Register(context, services.Parking);
+        ModPickTopics.Register(context, services.Scripts);
         FormTopics forms = FormTopics.Register(context);
         ModCheckTopics check = ModCheckTopics.Register(context, services);
         SharedSettingsSync settings = SharedSettingsSync.Register(context, services);
-        ParkingSession session = ParkingTopics.Register(context, services);
-        WorldScreen screen = new(WorldScreenSources.Of(services, local, check, settings, session));
+        WorldScreen screen = new(WorldScreenSources.Of(services, local, check, settings));
         ScreenTopics.Register(context, screen, services.Changes, () => services.Directory().ListRevision);
-        EnteringTopics.Register(context, services, local.Worlds, local.Lists, session, forms, local.Fingerprint);
+        EnteringTopics.Register(context, services, local.Worlds, local.Lists, forms, local.Fingerprint);
         TradeTopics.Register(context, WorldRoomTopics.Register(context).Room);
         StoryTopics story = StoryTopics.Register(context);
         CatchupTopics.Register(context, () => story.Catchup);

@@ -7,8 +7,9 @@ obj/
 # publish output, the release layout ready to copy into a game folder
 Shipping/
 
-# Mod Config Remake, which the build takes from the Mod Collection
-package/Patch/
+# the Mod Framework, which the build takes from its release or its checkout beside this one
+package/Framework/
+package/MGQ-Mod-Framework-*.zip
 
 # runtime files, in case the game is ever pointed at this folder while testing
 *.log

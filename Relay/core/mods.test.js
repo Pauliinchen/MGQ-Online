@@ -2,7 +2,8 @@
 //  mods.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Left the mod keys to the golden keys
+//      Paulinchen  2026-10-30: Covered the tags and the requirements of the catalog's mods
+//                            - Left the mod keys to the golden keys
 //      Paulinchen  2026-10-23: Checked modKey against the golden keys the game's ModKey passes too
 //      Paulinchen  2026-10-22: Covered a check whose link still leads to the same release
 //                            - Published a new release before holding the schedule's check, which reads only new ones
@@ -606,6 +607,63 @@ test("handleModRequest routes marking a mod personal and adding one by name", as
   assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/victoryscreen/personal"), body({ player: ADMIN, personal: "no" }), none)).status, 400);
   assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/nomod/personal"), body({ player: ADMIN, personal: true }), none)).status, 404);
   assert.equal((await handleModRequest(catalog, "GET", url("/v1/mods/victoryscreen/personal"), body({}), none)).status, 404);
+});
+
+test("only an admin tags a mod, which every game lists, untagged for the games until then", async () => {
+  const { catalog } = await newCatalog({ tag: "v1.4.0", script: "# cap" });
+  await catalog.setLink(ADMIN, "Level Cap", LATEST);
+
+  assert.equal("tag" in (await catalog.list(OTHER)).body.mods[0], false, "so the Mod Framework lets the player tag it");
+  assert.equal((await catalog.list(ADMIN)).body.mods[0].tag, "Regular", "an admin sees the tag it loads by");
+  assert.equal((await catalog.setTag(OTHER, "levelcap", "Title")).status, 403);
+  assert.equal((await catalog.setTag(ADMIN, "nomod", "Title")).status, 404);
+  assert.equal((await catalog.setTag(ADMIN, "levelcap", "Menu")).status, 400, "only the framework's tags");
+
+  const tagged = await catalog.setTag(ADMIN, "levelcap", "title");
+  assert.deepEqual([tagged.status, tagged.body.mod.tag], [200, "Title"], "written as the framework spells it");
+  assert.equal((await catalog.list(OTHER)).body.mods[0].tag, "Title");
+
+  const uploaded = await catalog.upload(ADMIN, "Level Cap", "2.0", (await packed([["Level_Cap.rb", "# two"]])).upload);
+  assert.equal(uploaded.body.mod.tag, "Title", "the tag stays when the kind changes");
+});
+
+test("a version's requirements are listed with it, and a new version starts with those of the one before", async () => {
+  const state = { tag: "v1.3.5", script: "# one" };
+  const { catalog } = await newCatalog(state);
+  await catalog.setLink(ADMIN, "Level Cap", LATEST);
+  const needs = [{ slug: "mod-framework", minVersion: "0.1.0" }];
+
+  assert.deepEqual((await catalog.list(OTHER)).body.mods[0].requires, []);
+  assert.equal((await catalog.setRequires(OTHER, "levelcap", "", needs)).status, 403);
+  assert.equal((await catalog.setRequires(ADMIN, "levelcap", "9.9", needs)).status, 404, "a version the mod never had");
+  for (const bad of ["mod-framework", [{ minVersion: "1.0" }], [{ slug: "x".repeat(65) }], Array(11).fill({ slug: "a" })]) {
+    assert.equal((await catalog.setRequires(ADMIN, "levelcap", "", bad)).status, 400, JSON.stringify(bad).slice(0, 40));
+  }
+
+  const set = await catalog.setRequires(ADMIN, "levelcap", "", [{ slug: " mod-framework ", minVersion: "0.1.0" }, { slug: "party-sheet" }]);
+  const both = [...needs, { slug: "party-sheet", minVersion: "" }];
+  assert.deepEqual([set.status, set.body.mod.requires], [200, both], "the current version's");
+
+  state.tag = "v1.4.0";
+  state.script = "# two";
+  await catalog.checkAll();
+  await catalog.setRequires(ADMIN, "levelcap", "1.3.5", needs);
+  const [mod] = (await catalog.list(OTHER)).body.mods;
+  assert.deepEqual(mod.requires, both, "the new version took them over");
+  assert.deepEqual(mod.versions.map((version) => [version.version, version.requires]), [["1.4.0", both], ["1.3.5", needs]]);
+});
+
+test("handleModRequest routes tagging a mod and setting what a version requires", async () => {
+  const { catalog } = await newCatalog({ tag: "v1.4.0", script: "# cap" });
+  const url = (path) => new URL(`https://relay.test${path}`);
+  const body = (value) => async () => JSON.stringify(value);
+  const none = async () => null;
+  await catalog.setLink(ADMIN, "Level Cap", LATEST);
+
+  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/levelcap/tag"), body({ player: ADMIN, tag: "Data" }), none)).body.mod.tag, "Data");
+  const required = await handleModRequest(catalog, "POST", url("/v1/mods/levelcap/requires"), body({ requires: [{ slug: "mod-framework" }] }), none, ADMIN);
+  assert.deepEqual([required.status, required.body.mod.requires], [200, [{ slug: "mod-framework", minVersion: "" }]]);
+  assert.equal((await handleModRequest(catalog, "POST", url("/v1/mods/levelcap/requires"), body({ player: OTHER, requires: [] }), none)).status, 403);
 });
 
 test("a mod removed during the schedule's check stays removed", async () => {

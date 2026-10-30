@@ -2,6 +2,7 @@
 //  UpdateCheck.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Asked only the relay, since the Mod Framework finds and installs updates
 //      Paulinchen  2026-10-23: Read release versions through ReleaseVersion
 //      Paulinchen  2026-10-22: Asked the relay for the release to play first, an older one too, and GitHub only without its answer
 //      Paulinchen  2026-10-12: Told the version this DLL names to the relay
@@ -24,38 +25,27 @@ using MGQParadox.Multiplayer.Network.World;
 namespace MGQParadox.Multiplayer;
 
 /// <summary>
-/// A release the update check offers.
+/// A release the update check finds to be the one to play.
 /// </summary>
 /// <param name="Version">The release's version without the tag's <c>v</c>, like <c>0.6.8</c>.</param>
 /// <param name="Rollback">Whether it is older than this DLL, a step back the relay asks for.</param>
 internal sealed record ReleaseOffer(string Version, bool Rollback);
 
 /// <summary>
-/// Asks the relay which release the games should run, or GitHub for the latest release without the
-/// relay's answer, once per game session, on a thread of its own.
+/// Asks the relay which release the games should run, once per game session, on a thread of its
+/// own; the game script then asks the Mod Framework for that release, which installs it.
 /// </summary>
 internal static class UpdateCheck
 {
-    /// <summary>
-    /// The latest release, as GitHub's API describes it.
-    /// </summary>
-    private const string LatestReleaseUrl =
-        "https://api.github.com/repos/Pauliinchen/MGQ-Online/releases/latest";
-
     /// <summary>
     /// The relay's route that names the release the games should run.
     /// </summary>
     private const string ReleasePath = "/v1/release";
 
     /// <summary>
-    /// Names the mod to GitHub, which turns away requests without a user agent.
+    /// Names the mod to the relay.
     /// </summary>
     private const string UserAgent = "MGQ-Online";
-
-    /// <summary>
-    /// The property of the release that holds its tag, like <c>v0.1.0</c>.
-    /// </summary>
-    private const string TagProperty = "tag_name";
 
     /// <summary>
     /// The property of the relay's answer that names the release the games should run.
@@ -68,7 +58,7 @@ internal static class UpdateCheck
     private const string DevelopmentVersion = "0.0.0-dev";
 
     /// <summary>
-    /// How long the check waits for the relay, and then for GitHub.
+    /// How long the check waits for the relay.
     /// </summary>
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
 
@@ -83,7 +73,7 @@ internal static class UpdateCheck
     private static ReleaseOffer? _offer;
 
     /// <summary>
-    /// The release to install, once the check found one other than this DLL.
+    /// The release to play, once the check found one other than this DLL.
     /// </summary>
     public static ReleaseOffer? Offer => Volatile.Read(ref _offer);
 
@@ -146,20 +136,6 @@ internal static class UpdateCheck
         string.Equals(informationalVersion.Split('+')[0], DevelopmentVersion, StringComparison.Ordinal);
 
     /// <summary>
-    /// Compares the latest release with the installed version.
-    /// </summary>
-    /// <param name="installed">The version of this DLL.</param>
-    /// <param name="releaseJson">GitHub's description of the latest release.</param>
-    /// <returns>The release's version without its <c>v</c>, or <see langword="null"/> unless it is newer.</returns>
-    internal static string? NewerRelease(Version installed, string releaseJson)
-    {
-        using var release = JsonDocument.Parse(releaseJson);
-        var tag = release.RootElement.GetProperty(TagProperty).GetString()?.TrimStart('v');
-
-        return ReleaseVersion.Parse(tag) is { } latest && latest > ReleaseVersion.Padded(installed) ? tag : null;
-    }
-
-    /// <summary>
     /// Reads the release the relay names for the games to run.
     /// </summary>
     /// <param name="releaseJson">The relay's answer to <c>GET /v1/release</c>.</param>
@@ -174,16 +150,14 @@ internal static class UpdateCheck
     }
 
     /// <summary>
-    /// Picks the release to offer: the relay's, whether newer or older than this DLL, or GitHub's
-    /// latest when it is newer and the relay names none or cannot be asked.
+    /// Picks the release to play: the relay's, whether newer or older than this DLL.
     /// </summary>
     /// <param name="installed">The version of this DLL.</param>
     /// <param name="relay">Asks the relay, see <see cref="CurrentRelease"/>; throws when it cannot be reached.</param>
-    /// <param name="github">Asks GitHub for its latest release's description; throws when it cannot be reached.</param>
-    /// <returns>The release to offer, or <see langword="null"/> when this DLL is the one to run.</returns>
-    internal static ReleaseOffer? Choose(Version installed, Func<string?> relay, Func<string> github)
+    /// <returns>The release to play, or <see langword="null"/> when this DLL is the one to run or the relay names none.</returns>
+    internal static ReleaseOffer? Choose(Version installed, Func<string?> relay)
     {
-        string? current = null;
+        string? current;
 
         try
         {
@@ -191,19 +165,19 @@ internal static class UpdateCheck
         }
         catch (Exception ex)
         {
-            Log.Write($"the relay could not tell the release to play, asking GitHub: {ex.GetBaseException().Message}");
+            Log.Write($"the relay could not tell the release to play: {ex.GetBaseException().Message}");
+            return null;
         }
 
-        if (ReleaseVersion.Parse(current) is { } wanted)
+        if (ReleaseVersion.Parse(current) is not { } wanted)
         {
-            var offer = wanted == ReleaseVersion.Padded(installed) ? null : new ReleaseOffer(current!, wanted < ReleaseVersion.Padded(installed));
-            Log.Write(offer == null ? $"the relay names {current}, which is installed" : $"the relay names {current}, {installed} is installed{(offer.Rollback ? ": a step back" : string.Empty)}");
-            return offer;
+            Log.Write("the relay names no release to play");
+            return null;
         }
 
-        var newer = NewerRelease(installed, github());
-        Log.Write(newer == null ? $"up to date at {installed} by GitHub's latest release" : $"release {newer} is out on GitHub, {installed} is installed");
-        return newer == null ? null : new ReleaseOffer(newer, false);
+        var offer = wanted == ReleaseVersion.Padded(installed) ? null : new ReleaseOffer(current!, wanted < ReleaseVersion.Padded(installed));
+        Log.Write(offer == null ? $"the relay names {current}, which is installed" : $"the relay names {current}, {installed} is installed{(offer.Rollback ? ": a step back" : string.Empty)}");
+        return offer;
     }
 
     /// <summary>
@@ -215,7 +189,7 @@ internal static class UpdateCheck
         new UriBuilder(relay) { Scheme = relay.Scheme == "wss" ? "https" : "http", Port = relay.IsDefaultPort ? -1 : relay.Port, Path = ReleasePath }.Uri;
 
     /// <summary>
-    /// Asks the relay and GitHub and keeps the answer.
+    /// Asks the relay and keeps the answer.
     /// </summary>
     /// <param name="installed">The version of this DLL.</param>
     private static void Run(Version installed)
@@ -226,10 +200,7 @@ internal static class UpdateCheck
             http.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
             var relay = Relays.AddressOf(Relays.Current);
 
-            var offer = Choose(
-                installed,
-                () => relay == null ? null : CurrentRelease(AskRelay(http, ReleaseAddress(relay))),
-                () => http.GetStringAsync(LatestReleaseUrl).GetAwaiter().GetResult());
+            var offer = Choose(installed, () => relay == null ? null : CurrentRelease(AskRelay(http, ReleaseAddress(relay))));
 
             Volatile.Write(ref _offer, offer);
         }

@@ -2,7 +2,8 @@
 #  loader_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Checked that Multiplayer.rb holds ASCII only and logs and shows the errors of its own load
+#      Paulinchen  2026-10-30: Checked the scripts of the first two stages and that a script loads once
+#                            - Checked that Multiplayer.rb holds ASCII only and logs and shows the errors of its own load
 #      Paulinchen  2026-10-28: Checked the freeze's load order without its deleted data script
 #                            - Gave the closing its world room drain topic
 #                            - Checked that the scenes ending on a quit or the window closing write the closing line, and the end once
@@ -82,6 +83,13 @@ check("the raid tiers load after the Mod Config rows, the push routes, the boss 
       [true, true])
 check("the single player rows load after the Mod Config rows, the world's sync and the scripts whose settings they show",
       %w[ui overworld_sync battles_raid_tiers ui_raid_bar ui_leader_hud].all? { |name| scripts.index(name) < scripts.index("ui_single_player") }, true)
+boot = source[/BOOT_SCRIPTS = %w\[(.*?)\]/m, 1].split
+world = source[/WORLD_SCRIPTS = %w\[(.*?)\]/m, 1].split
+title = boot + world
+check("the first stage starts as SCRIPTS does, with the log, the hooks, the hotkeys and the look", boot, scripts.first(boot.size))
+check("the world screens name scripts of SCRIPTS, in their order, past the first stage", world, scripts.select { |name| world.include?(name) && !boot.include?(name) })
+run_hooked = title.select { |name| File.read(File.join(SCRIPTS_DIR, "#{name}.rbx"), :encoding => "BOM|UTF-8").include?("SceneManager.singleton_class, :run") }
+check("no script of the title part follows SceneManager.run, which only the Mod Framework's entering lets set up", run_hooked, [])
 check("the raid boss freeze loads its engine before the world's list, both after the pools",
       %w[battles_raid_pool battles_raid_freeze world_freeze].map { |name| scripts.index(name) }.each_cons(2).all? { |a, b| a < b }, true)
 check("the frozen fights' stand-ins load after the bars that draw over them and the join hotkey that resumes them",
@@ -112,7 +120,8 @@ harness.const_set(:SCRIPTS, %w[good broken missing after])
 log = []
 harness.const_set(:Log, Module.new.tap { |mod| mod.define_singleton_method(:write) { |line| log << line } })
 harness.module_eval(source[/  def self\.path\(name\)\n.*?\n  end\n/m])
-harness.module_eval(source[/  def self\.load_scripts\n.*?\n  end\n/m])
+harness.module_eval(source[/  def self\.load_scripts\(names = SCRIPTS, part = false\)\n.*?\n  end\n/m])
+harness.module_eval(source[/  def self\.load_script\(name, part\)\n.*?\n  end\n/m])
 
 Dir.mktmpdir do |game|
   Dir.chdir(game) do
@@ -124,6 +133,7 @@ Dir.mktmpdir do |game|
     File.write(File.join(folder, "broken.rbx"), "module LoaderTestBroken\n  def self.x(\nend\n")
     File.write(File.join(folder, "after.rbx"), "module LoaderTestAfter; end\n")
     harness.load_scripts
+    harness.load_scripts(%w[good after])
   end
 end
 
@@ -137,7 +147,8 @@ check("a script loads at the top level, past a byte order mark",
 check("the scripts after one that fails or is missing still load", defined?(LoaderTestAfter) ? true : false, true)
 check("a script that does not parse is logged by name", log.any? { |line| line.start_with?("broken.rbx did not load: SyntaxError") }, true)
 check("a missing script is logged by name", log.any? { |line| line.start_with?("missing.rbx did not load: Errno::ENOENT") }, true)
-check("the log counts the scripts loaded and names those that did not", log.last, "loaded 2 of 4 scripts, not broken, missing")
+check("the log counts the scripts loaded and names those that did not", log[-2], "loaded 2 of 4 scripts, not broken, missing")
+check("a script loads once per game session", log.last, "loaded 0 of 0 scripts")
 
 # The log: lines wait for the bridge, then cross it with the frame's batch, each with its time of
 # day; while the mod stays off, the scripts write them into the day's file themselves.
@@ -191,7 +202,7 @@ end
 module LoaderTestFailing
   BOXES = []
   Log = MGQ_Multiplayer::Log
-  def self.start; raise LoadError, "no fiddle"; end
+  module Stages; def self.boot; raise LoadError, "no fiddle"; end; end
   def self.msgbox(text); BOXES << text; end
 end
 LoaderTestFailing.module_eval(source[/  def self\.available\?\n.*?\n  end\n/m])
@@ -202,16 +213,15 @@ Dir.mktmpdir do |game|
     log.instance_variable_set(:@own_file, nil)
     log.write("starting")
     raised = begin
-      eval(source[/^begin\n  MGQ_Multiplayer\.start\n.*?^end\n/m].gsub("MGQ_Multiplayer", "LoaderTestFailing"), TOPLEVEL_BINDING)
-      eval(source[/^begin\n  # After every frame.*?^end\n/m].gsub("MGQ_Multiplayer", "LoaderTestFailing"), TOPLEVEL_BINDING)
+      eval(source[/^begin\n  MGQ_Multiplayer::Stages\.boot\n.*?^end\n/m].gsub("MGQ_Multiplayer", "LoaderTestFailing"), TOPLEVEL_BINDING)
       nil
     rescue Exception => e
       e
     end
     file = File.join("Logs", "Multiplayer #{Time.now.strftime('%Y-%m-%d')}.log")
     lines = File.exist?(file) ? File.binread(file).split("\r\n").map { |line| line.split("  ", 2)[1][/\A[^:]*(: [^:]*)?/] } : []
-    check("an error as Multiplayer.rb loads is never raised, but written into the day's file at once, as is the hooks' missing",
-          [raised, lines], [nil, ["[script] starting", "[script] loading FAILED: LoadError", "[script] hooks FAILED: NameError"]])
+    check("an error as Multiplayer.rb loads is never raised, but written into the day's file at once",
+          [raised, lines], [nil, ["[script] starting", "[script] loading FAILED: LoadError"]])
     check("and told in the game's message box once, without the error", LoaderTestFailing::BOXES, ["Monster Girl Quest! Online failed to load."])
   end
 end

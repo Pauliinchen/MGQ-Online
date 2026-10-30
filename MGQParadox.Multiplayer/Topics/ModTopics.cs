@@ -2,6 +2,7 @@
 //  ModTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Listed the scripts of the Patch folder without the parking
 //      Paulinchen  2026-10-23: Shared the personal mods' keys with the parked mods
 //                            - Handed the catalog to the mods check
 //                            - Read a world's mods text
@@ -28,7 +29,7 @@ namespace MGQParadox.Multiplayer.Topics;
 internal static class ModTopics
 {
     /// <summary>
-    /// Lists every script in Patch, see <see cref="ModParking.Installed"/>: nothing in; an Array of
+    /// Lists every script in Patch, see <see cref="PatchScripts.List"/>: nothing in; an Array of
     /// [key, path relative to the game folder, name without ".rb"] out, nil when Patch could not be read.
     /// </summary>
     public const string Installed = "mods.installed";
@@ -49,11 +50,11 @@ internal static class ModTopics
     /// Registers the topics on a context.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
-    /// <param name="parking">Gives the parking of the game folder, which lists its scripts, once a topic is called.</param>
+    /// <param name="scripts">Lists the scripts of the Patch folder once a topic is called.</param>
     /// <param name="directory">Gives the world directory, which holds the catalog, once a topic is called.</param>
-    public static void Register(BridgeContext context, Func<ModParking> parking, Func<WorldDirectory> directory)
+    public static void Register(BridgeContext context, Func<IReadOnlyList<string>?> scripts, Func<WorldDirectory> directory)
     {
-        context.Register(Installed, (_, _) => parking().Installed() is { } scripts ? new RubyArray(scripts.Select(ScriptOf)) : null);
+        context.Register(Installed, (_, _) => scripts() is { } found ? new RubyArray(found.Select(ScriptOf)) : null);
         context.Register(Catalog, (_, _) => CatalogOf(directory()));
         context.Register(Text, (_, request) => TextOf(request.IsNil ? null : request.AsText()));
     }

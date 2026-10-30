@@ -2,7 +2,16 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Caught, logged and showed the errors of its own load
+#      Paulinchen  2026-10-30: Loaded the world screens under the Mod Framework only as the player picks Multiplayer, a Discord invite or a restart opens them
+#                            - Took a Discord invite from the game again at the title after the restart
+#                            - Opened the world screen and went on from a game kept for a restart after the Mod Framework started the game again
+#                            - Dropped mp_update_game and mp_restart_game, since the Mod Framework installs updates and starts the game again
+#                            - Stopped loading world_mods_parking.rbx and entered a world with only the mods its session keeps
+#                            - Told whether the Mod Framework counts the game as entered
+#                            - Entered a world again after the Mod Framework started the game again for its mods
+#                            - Stopped loading ui_mod_browser.rbx and dropped the mp_mod_browser_* exports, since the Mod Framework browses the mods
+#                            - Loaded as a Title mod of the Mod Framework, the rest of the scripts as the player enters the game
+#                            - Caught, logged and showed the errors of its own load
 #                            - Dropped the byte order mark
 #      Paulinchen  2026-10-28: Stopped loading coop_story_rewards.rbx, world_catchup_data.rbx and battles_raid_freeze_data.rbx, which the events database and the relay replace
 #                            - Handed the story's last writes over and waited for the world room to send them as the game closes
@@ -154,7 +163,7 @@
 # What every way of playing together shares: the connection with a friend through
 # Patch/Multiplayer/Multiplayer.dll, the game running on while its window is in the background,
 # keys the game's own Input does not know, and the Discord mod, when it is installed. It also loads
-# the mod's other scripts, see SCRIPTS.
+# the mod's other scripts, see SCRIPTS and Stages.
 module MGQ_Multiplayer
   # Folder inside the game's Patch folder that holds the DLL, the other scripts and everything the
   # mod writes but its logs.
@@ -176,13 +185,22 @@ module MGQ_Multiplayer
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui ui_theme ui_layout ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
     coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs story_state story_keys coop_story coop_castle
-    world world_mods world_mods_parking world_story world_catchup world_catchup_exp world_opening world_difficulty world_gates world_save_distribution world_text world_screen world_save_export coop_choices
+    world world_mods world_story world_catchup world_catchup_exp world_opening world_difficulty world_gates world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_raid_freeze world_freeze battles_raid_tiers battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live battles_served
     battles_balance_pvp battles_pvp battles_pvp_backline battles_duel battles_team
     trade ui_trade
-    world_overview world_overview_pages world_overview_mods ui_party_box ui_edge_arrows ui_raid_bar ui_raid_freeze ui_leader_hud ui_single_player ui_notices ui_bug_report ui_mod_browser
+    world_overview world_overview_pages world_overview_mods ui_party_box ui_edge_arrows ui_raid_bar ui_raid_freeze ui_leader_hud ui_single_player ui_notices ui_bug_report
   ]
+
+  # The scripts that load under the Mod Framework as the game starts: the log, the hooks, the
+  # hotkeys and the look the title screen wears too. The first of SCRIPTS, in their order.
+  BOOT_SCRIPTS = %w[core_log core_hooks core_game_access core_hotkeys ui ui_theme ui_layout ui_text_box]
+
+  # The scripts of the world screens, which list, create and join worlds, loaded under the Mod
+  # Framework once the player picks Multiplayer, or a Discord invite or a restart opens them. With
+  # BOOT_SCRIPTS they are the title part; the rest of SCRIPTS loads as the player enters the game.
+  WORLD_SCRIPTS = %w[world world_mods world_save_distribution world_text world_screen world_save_export]
 
   # Extension of the scripts, which the mod loader skips, since only this script may load them.
   SCRIPT_EXTENSION = ".rbx"
@@ -362,22 +380,74 @@ module MGQ_Multiplayer
     "#{LOG_DIR}\\#{name}"
   end
 
-  # Loads the mod's other scripts in the order of SCRIPTS. One that is missing or fails is logged,
-  # and the others load all the same.
-  def self.load_scripts
-    failed = []
-    SCRIPTS.each do |name|
-      file = path("#{SCRIPTS_DIR}\\#{name}#{SCRIPT_EXTENSION}")
-      begin
-        eval(File.read(file, encoding: "BOM|UTF-8"), TOPLEVEL_BINDING, file)
-      # A script that does not parse raises a SyntaxError, which is no StandardError.
-      rescue Exception => e
-        failed << name
-        Log.write("#{name}#{SCRIPT_EXTENSION} did not load: #{e.class}: #{e.message} (#{e.backtrace.to_a.first})")
-      end
-    end
+  # Loads some of the mod's other scripts in the order of SCRIPTS, each once per game session. One
+  # that is missing or fails is logged, and the others load all the same.
+  #
+  # @param names [Array<String>] The scripts, all of SCRIPTS by default.
+  # @param part [Boolean] Whether they belong to the title part, which the Mod Framework loads and
+  #   counts as in use (Mods.load_part).
+  def self.load_scripts(names = SCRIPTS, part = false)
+    @loaded ||= []
+    wanted = SCRIPTS.select { |name| names.include?(name) && !@loaded.include?(name) }
+    @loaded.concat(wanted)
+    failed = wanted.reject { |name| load_script(name, part) }
     MGQ_MpHooks.report if defined?(MGQ_MpHooks)
-    Log.write("loaded #{SCRIPTS.size - failed.size} of #{SCRIPTS.size} scripts#{failed.empty? ? '' : ", not #{failed.join(', ')}"}")
+    Log.write("loaded #{wanted.size - failed.size} of #{wanted.size} scripts#{failed.empty? ? '' : ", not #{failed.join(', ')}"}")
+  end
+
+  # Loads one of the mod's other scripts at the top level.
+  #
+  # @param name [String] The script, as SCRIPTS names it.
+  # @param part [Boolean] Whether the Mod Framework loads it, see load_scripts.
+  # @return [Boolean] Whether it loaded; the log tells why not.
+  def self.load_script(name, part)
+    if part
+      loaded = ::Mod_Framework::Mods.load_part("#{SCRIPTS_DIR}/#{name}#{SCRIPT_EXTENSION}")
+      Log.write("#{name}#{SCRIPT_EXTENSION} did not load, the Mod Framework's log tells why") unless loaded
+      return loaded
+    end
+
+    file = path("#{SCRIPTS_DIR}\\#{name}#{SCRIPT_EXTENSION}")
+    eval(File.read(file, encoding: "BOM|UTF-8"), TOPLEVEL_BINDING, file)
+    true
+  # A script that does not parse raises a SyntaxError, which is no StandardError.
+  rescue Exception => e
+    Log.write("#{name}#{SCRIPT_EXTENSION} did not load: #{e.class}: #{e.message} (#{e.backtrace.to_a.first})")
+    false
+  end
+
+  # Registers the mod's own hooks once its first scripts loaded, through core_hooks.rbx.
+  #
+  # @param run [Boolean] Whether to follow the game's SceneManager.run too, which only a mod that
+  #   loads before the game runs can: it guards the input as the game starts running and writes how
+  #   the game closes as its scenes end. Under the Mod Framework the game runs already, so the
+  #   input is guarded at once and the framework's Run.on_close writes how the game closes.
+  def self.install_hooks(run)
+    # After every frame, counts it for the keys, sends what the scripts staged for the bridge and
+    # takes its events, tells the Discord mod how the connection stands, polls for an update and
+    # logs the hooks registered since the last frame. Graphics.update runs every frame in every
+    # scene, so all happen wherever the player is.
+    MGQ_MpHooks.after(Graphics.singleton_class, :update, "Multiplayer") do
+      MGQ_Multiplayer::Key.next_frame
+      MGQ_Multiplayer::Bridge.frame
+      MGQ_Multiplayer::Discord.tick
+      MGQ_Multiplayer::UpdateCheck.tick
+      MGQ_MpHooks.report
+    end
+    return Background.guard_input unless run
+
+    # Guards the input as the game starts running. The game's plugins load after the Patch folder,
+    # the gamepad one wrapping Input, so the guard wraps Input once every plugin is in.
+    MGQ_MpHooks.before(SceneManager.singleton_class, :run, "Multiplayer") do
+      MGQ_Multiplayer.note_run
+      MGQ_Multiplayer::Background.guard_input
+    end
+
+    # The scenes ending, as a quit, the window closing or an error ends them, write how the game
+    # closes and every line left while the game still runs, before its error box or its end.
+    MGQ_MpHooks.around(SceneManager.singleton_class, :run, "Multiplayer") { |_manager, _args, original| MGQ_Multiplayer.run_game(original) }
+  rescue Exception => e
+    load_failed("hooks", e)
   end
 
   # Writes what failed as this file loaded into the log at once and shows it in the game's message
@@ -411,6 +481,193 @@ module MGQ_Multiplayer
     cleaned.empty? ? fallback : cleaned
   rescue
     fallback
+  end
+
+  # How the mod loads. Under the Mod Framework it is a Title mod in three stages: as the game starts
+  # the DLL, the look (BOOT_SCRIPTS) and the title's Multiplayer command; the world screens
+  # (WORLD_SCRIPTS) once the player picks it, or a Discord invite or a restart opens them; the rest
+  # of SCRIPTS as the player enters the game, New Game, a save's load or a world. Without the
+  # framework, as on the battle server, everything loads as the game's loader runs this file.
+  module Stages
+    # Who the mod's registrations with the Mod Framework name.
+    TAG = "MGQ Online"
+
+    # The title screen's command that opens the world screen.
+    COMMAND = "Multiplayer"
+
+    # The Mod Framework's action after a restart that enters a world again, its id the value.
+    REJOIN_ACTION = "multiplayer.rejoin"
+
+    # The Mod Framework's action after a restart that opens the world screen, such as after an
+    # update of the mod.
+    OPEN_ACTION = "multiplayer.open"
+
+    # The Mod Framework's action after a restart that goes on from the game kept for it, see
+    # MGQ_MpSinglePlayer.restart.
+    RESUME_ACTION = "multiplayer.resume"
+
+    # The Mod Framework's action after a restart that takes a Discord invite taken during the game
+    # again, its join secret the value, see MGQ_MpWorld::Invite.receive.
+    INVITE_ACTION = "multiplayer.invite"
+
+    # The blocks that wait for every script to load, each [tag, block].
+    @waiting = []
+
+    # Tells whether the Mod Framework loads the mod.
+    #
+    # @return [Boolean] Whether it is installed and booted with the calls this file uses.
+    def self.framework?
+      defined?(::Mod_Framework::Mods) && defined?(::Mod_Framework::Run) && ::Mod_Framework::Mods.respond_to?(:title_command) ? true : false
+    end
+
+    # Tells whether the mod loads in stages, under the Mod Framework.
+    #
+    # @return [Boolean] Whether it does.
+    def self.staged?
+      @staged == true
+    end
+
+    # Loads the mod as the game's loader, or the Mod Framework, runs this file: in stages under the
+    # framework, else all of it.
+    def self.boot
+      return load_all unless framework?
+
+      @staged = true
+      Log.write("loading as a Title mod of the Mod Framework: the title part as the game starts, the rest as the player enters the game")
+      ::Mod_Framework::Mods.title_command(COMMAND, :after => :continue, :enabled => lambda { |_window| MGQ_Multiplayer.available? }) { |_window| MGQ_Multiplayer::Stages.open_worlds }
+      ::Mod_Framework::Mods.on_enter(TAG) { MGQ_Multiplayer::Stages.load_rest }
+      ::Mod_Framework::Run.on_close(TAG) { MGQ_Multiplayer.closing($!) }
+      ::Mod_Framework::Mods.after_restart(REJOIN_ACTION, TAG) { |world| MGQ_Multiplayer::Stages.rejoin(world) }
+      ::Mod_Framework::Mods.after_restart(OPEN_ACTION, TAG) { |_value| MGQ_Multiplayer::Stages.open_worlds }
+      ::Mod_Framework::Mods.after_restart(RESUME_ACTION, TAG) { |_value| MGQ_Multiplayer::Stages.enter("the game kept for a restart") }
+      ::Mod_Framework::Mods.after_restart(INVITE_ACTION, TAG) { |code| MGQ_Multiplayer::Stages.invite(code) }
+      ::Mod_Framework::Run.on_start(TAG, :first => true) { MGQ_Multiplayer::Stages.load_title }
+    end
+
+    # Loads all of the mod at once and has its hooks follow the game's start, as without the
+    # Mod Framework.
+    def self.load_all
+      MGQ_Multiplayer.start
+      MGQ_Multiplayer.load_scripts
+      everything_loaded
+      MGQ_Multiplayer.install_hooks(true)
+    end
+
+    # Loads the first stage as the game starts running, before its first scene: starts the DLL and
+    # loads BOOT_SCRIPTS. Every hook then sleeps while the player is in a game entered without the
+    # mod, such as one turned off at the title.
+    def self.load_title
+      MGQ_Multiplayer.start
+      MGQ_Multiplayer.load_scripts(BOOT_SCRIPTS, true)
+      MGQ_MpHooks.sleep_while { MGQ_Multiplayer::Stages.asleep? }
+      MGQ_Multiplayer.install_hooks(false)
+    end
+
+    # Loads the rest of SCRIPTS as the player enters the game with the mod. The Mod Framework runs
+    # it inside its entering, which lets the hooks the scripts put on SceneManager.run set up.
+    def self.load_rest
+      MGQ_Multiplayer.load_scripts
+      everything_loaded
+    end
+
+    # Loads the world screens once, which the title part brings to the title, and writes this
+    # game's data for whoever reads it from outside the game.
+    def self.load_world
+      return unless staged? && !@world_loaded
+
+      @world_loaded = true
+      MGQ_Multiplayer.load_scripts(WORLD_SCRIPTS, true)
+      MGQ_MpWorld::GameData.write_file if defined?(MGQ_MpWorld::GameData)
+    end
+
+    # Opens the world screen from the title's Multiplayer command, or after the restart an update
+    # of the mod made.
+    def self.open_worlds
+      load_world
+      MGQ_MpWorld.open_world_screen(SceneManager.scene)
+    end
+
+    # Enters a world again after the restart the Mod Framework made for its mods.
+    #
+    # @param world [String] The world's id.
+    def self.rejoin(world)
+      load_world
+      MGQ_MpWorldMods.restarted_for(world)
+    end
+
+    # Takes a Discord invite into a world again at the title, which the restart on the way back to
+    # the title carried, so the title opens the world screen for it.
+    #
+    # @param code [String] The invite's join secret.
+    def self.invite(code)
+      load_world
+      MGQ_MpWorld::Invite.receive(code.to_s)
+    end
+
+    # Tells whether the way back to the title starts the game again, as the Mod Framework does once
+    # the player entered the game.
+    #
+    # @return [Boolean] Whether it does, false without the framework.
+    def self.restart_needed?
+      staged? && ::Mod_Framework::Mods.restart_needed? ? true : false
+    end
+
+    # Tells whether the Mod Framework counts the game as entered in this game session, which only a
+    # restart undoes.
+    #
+    # @return [Boolean] Whether it does, false without the framework.
+    def self.entered?
+      staged? && ::Mod_Framework::Mods.entered? ? true : false
+    end
+
+    # Tells the Mod Framework that the player enters the game through the mod, for a world, before
+    # its game is set up or loaded, so the mods of the session load first. New Game and a save's
+    # load tell it themselves.
+    #
+    # @param reason [String] What enters, for the log.
+    # @param only [Array<String>, nil] The names of the mods of the session, such as those a world
+    #   that turns other mods off keeps; nil for every mod that is on.
+    # @return [Boolean] Whether this entered, false without the framework or once entered.
+    def self.enter(reason, only = nil)
+      staged? ? ::Mod_Framework::Mods.enter(reason, only ? { :only => only } : {}) : false
+    end
+
+    # Tells whether the hooks sleep: the player entered the game without the mod, whose title part
+    # loaded as the game started.
+    #
+    # @return [Boolean] Whether they do.
+    def self.asleep?
+      staged? && !@everything_loaded && ::Mod_Framework::Mods.entered?
+    end
+
+    # Runs a block once every script loaded, at once when they did: a script of the title part
+    # that joins a later script's registry, such as the open world's messages.
+    #
+    # @param tag [String] Who waits, for the log.
+    # @yield Runs once.
+    def self.when_loaded(tag, &block)
+      return call(tag, block) if @everything_loaded
+
+      @waiting << [tag, block]
+    end
+
+    # Notes that every script loaded and runs the blocks that waited for it.
+    def self.everything_loaded
+      @everything_loaded = true
+      waiting = @waiting
+      @waiting = []
+      waiting.each { |tag, block| call(tag, block) }
+    end
+
+    # Runs a block that waited, logging its failure.
+    #
+    # @param tag [String] Who waited.
+    # @param block [Proc] The block.
+    def self.call(tag, block)
+      block.call
+    rescue => e
+      Log.write("#{tag} failed once every script loaded: #{e.class}: #{e.message}")
+    end
   end
 
   # The scripts' log: each line goes to the DLL's log of the day, Logs/Multiplayer <day>.log, which
@@ -748,8 +1005,6 @@ module MGQ_Multiplayer
       'mp_newer_version' => READ_ARGUMENTS,
       'mp_set_player_name' => 'p',
       'mp_player_id' => READ_ARGUMENTS,
-      'mp_restart_game' => 'v',
-      'mp_update_game' => 'v',
       'mp_update_rollback' => 'v',
       'mp_dev_build' => 'v',
       'mp_memory_usage' => READ_ARGUMENTS,
@@ -780,13 +1035,6 @@ module MGQ_Multiplayer
       'mp_world_open' => 'p',
       'mp_world_close' => 'v',
       'mp_world_send' => 'lp',
-
-      # The Mods screen of the title screen.
-      'mp_mod_browser_refresh' => 'v',
-      'mp_mod_browser_list' => READ_ARGUMENTS,
-      'mp_mod_browser_apply' => 'p',
-      'mp_mod_browser_open_page' => 'p',
-      'mp_mod_browser_details' => 'p',
 
       # The mods a world that turns other mods off does not name, parked outside Patch.
 
@@ -1360,8 +1608,8 @@ module MGQ_Multiplayer
     end
   end
 
-  # Asks the relay for the release to play, or GitHub for the latest release, once per game session,
-  # on a thread of the DLL's own, see MGQ_Multiplayer.outdated?.
+  # Asks the relay for the release to play once per game session, on a thread of the DLL's own,
+  # see MGQ_Multiplayer.outdated?; MGQ_MpWorld::Update has the Mod Framework install it.
   module UpdateCheck
     # Frames between two looks at the DLL, half a second at 60 frames per second.
     CHECK_FRAMES = 30
@@ -1824,6 +2072,8 @@ module MGQ_Multiplayer
 
       invite = MGQ_Discord::Bridge.take_invite
       if invite
+        # An invite into a world opens the world screen, which may not have loaded yet at the title.
+        Stages.load_world
         world = defined?(MGQ_MpWorld) && MGQ_MpWorld::Invite.receive(invite)
         Link.receive_invite(invite) unless world
         Log.write(world ? "took a Discord invite into a world" : "took a Discord invite to a PvP battle")
@@ -1908,40 +2158,10 @@ end
 # The Russian translation's own loader catches no error a mod raises, so this file catches its own,
 # which would otherwise end the game.
 begin
-  MGQ_Multiplayer.start
-  MGQ_Multiplayer.load_scripts
+  MGQ_Multiplayer::Stages.boot
   # The last resort for a game whose Main section lets Ruby end: the log writes how it closes and
   # every line left. The game's own Main section never gets here, see MGQ_Multiplayer.run_game.
   at_exit { MGQ_Multiplayer.closing($!) }
 rescue Exception => e
   MGQ_Multiplayer.load_failed("loading", e)
-end
-
-# Game hooks, through core_hooks.rbx.
-
-begin
-  # After every frame, counts it for the keys, sends what the scripts staged for the bridge and
-  # takes its events, tells the Discord mod how the connection stands, polls for an update and logs
-  # the hooks registered since the last frame. Graphics.update runs every frame in every scene, so
-  # all happen wherever the player is.
-  MGQ_MpHooks.after(Graphics.singleton_class, :update, "Multiplayer") do
-    MGQ_Multiplayer::Key.next_frame
-    MGQ_Multiplayer::Bridge.frame
-    MGQ_Multiplayer::Discord.tick
-    MGQ_Multiplayer::UpdateCheck.tick
-    MGQ_MpHooks.report
-  end
-
-  # Guards the input as the game starts running. The game's plugins load after the Patch folder,
-  # the gamepad one wrapping Input, so the guard wraps Input once every plugin is in.
-  MGQ_MpHooks.before(SceneManager.singleton_class, :run, "Multiplayer") do
-    MGQ_Multiplayer.note_run
-    MGQ_Multiplayer::Background.guard_input
-  end
-
-  # The scenes ending, as a quit, the window closing or an error ends them, write how the game
-  # closes and every line left while the game still runs, before its error box or its end.
-  MGQ_MpHooks.around(SceneManager.singleton_class, :run, "Multiplayer") { |_manager, _args, original| MGQ_Multiplayer.run_game(original) }
-rescue Exception => e
-  MGQ_Multiplayer.load_failed("hooks", e)
 end

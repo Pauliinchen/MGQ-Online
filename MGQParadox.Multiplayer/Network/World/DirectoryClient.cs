@@ -2,6 +2,7 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Dropped the download of an uploaded mod, which the Mod Framework installs
 //      Paulinchen  2026-10-23: Moved the squad settings into MGQOnline.Game
 //                            - Named the default difficulty, the difficulties' names, the default squad settings and the formation sizes for the game script
 //                            - Named the Raid World stories played on tracks in the X-MGQ-Features header and kept the story mapping's address
@@ -610,27 +611,6 @@ internal sealed partial class DirectoryClient
         // Relays before kept took every version's options, and answered without saying so.
         var kept = !root.TryGetProperty("kept", out var answer) || answer.ValueKind != JsonValueKind.False;
         return (kept, root.TryGetProperty("mod", out var mod) && mod.ValueKind == JsonValueKind.Object ? Text(mod, "optionsVersion") : string.Empty);
-    }
-
-    /// <summary>
-    /// Downloads an uploaded mod's zip.
-    /// </summary>
-    /// <param name="key">The mod's key.</param>
-    /// <returns>The zip.</returns>
-    /// <exception cref="DirectoryException">The relay could not be reached, has no such mod, or answered with an error.</exception>
-    public byte[] ModFile(string key)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri($"{_mods}/{Uri.EscapeDataString(key)}/file"));
-        using var response = Exchange(request, TransferHttp, $"mod file {key}");
-
-        try
-        {
-            return response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
-        {
-            throw new DirectoryException(null, ex.GetBaseException().Message);
-        }
     }
 
     /// <summary>

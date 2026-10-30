@@ -2,6 +2,7 @@
 //  ModCheck.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Offered the download of a world's mods without a restart
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -251,7 +252,7 @@ public sealed class ModCheck
     public static string Summary(string world, IReadOnlyList<ModCheckRow> rows)
     {
         IEnumerable<string> names = rows.Select(row => row.Downloadable ? row.Name : $"{row.Name} (get it from its author)");
-        string action = rows.All(row => row.Downloadable) ? " Download them and restart?" : "";
+        string action = rows.All(row => row.Downloadable) ? " Download them?" : "";
         return $"{world} needs mods that are missing or in another version here: {string.Join(", ", names)}.{action}";
     }
 

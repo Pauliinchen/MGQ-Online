@@ -2,6 +2,10 @@
 #  world_mods_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Checked that the Mod Framework's options lock the options a world sets
+#                            - Checked the session of a world that turns other mods off and the restart once its rule turns off a mod that runs
+#                            - Stopped loading the deleted world_mods_parking.rbx
+#                            - Checked the install of a world's mods through the Mod Framework and the entry again after its restart
 #      Paulinchen  2026-10-23: Left what an edit says of the shared settings and which settings it changes to the DLL's tests
 #                            - Checked that the screen plays the DLL's steps of the download offer and the entry after a restart
 #                            - Read the list box's lines through the stand-ins of the world screen's model
@@ -168,6 +172,10 @@ module MGQ_MpOverworldSync
   def self.who(peer); peer ? peer.state["name"] : "nobody"; end
   # Another player: their seat and their state.
   module Peers; Peer = Struct.new(:seat, :state); end
+  # The field of the relay's push of the world's mods rule.
+  MODS_RULE_FIELD = "mods_rule_value"
+  # The map is free while $map_busy is not set.
+  def self.map_free?; !$map_busy; end
 end
 # The notification box: keeps its notices in $notices.
 module MGQ_MpNotices
@@ -206,6 +214,13 @@ $ini = {}
 # The mod's base script: always available, never outdated, with a player named Me whose Player.ini
 # lives in $ini.
 module MGQ_Multiplayer
+  # How the mod loads, all of it at once here: the action after a restart that enters a world again.
+  module Stages
+    REJOIN_ACTION = "multiplayer.rejoin"
+    def self.staged?; false; end
+    def self.enter(_reason); false; end
+    def self.when_loaded(_tag); yield; end
+  end
   # The message of an update.
   UPDATE_MESSAGE = "Update."
   # Gives the update message as it is.
@@ -286,7 +301,6 @@ load_script "ui"
 load_script "ui_text_box"
 load_script "world"
 load_script "world_mods"
-load_script "world_mods_parking"
 load_script "world_text"
 load_script "world_screen"
 open_rules_bridge
@@ -362,25 +376,43 @@ listed.mods = "!Level Cap"
 listed.mod_hashes = "Other Mod=#{'e' * 64}"
 $mod_check = lambda do |request|
   checked << request
-  { "known" => true, "rows" => [level_cap], "summary" => "Modded needs mods that are missing or in another version here: Level Cap. Download them and restart?" }
+  { "known" => true, "rows" => [level_cap], "summary" => "Modded needs mods that are missing or in another version here: Level Cap. Download them?" }
 end
-offer = "Modded needs mods that are missing or in another version here: Level Cap. Download them and restart?"
+offer = "Modded needs mods that are missing or in another version here: Level Cap. Download them?"
 scene = new_scene
 scene.instance_variable_set(:@entry, MGQ_MpWorld::Entry.new("w1", "Modded", listed, nil, false, false))
-$screen_steps = [["say", offer], ["confirm", "mods", [["Download and restart", "yes"], ["See the mods", "show_mods"], ["Back", "cancel"]]]]
+$screen_steps = [["say", offer], ["confirm", "mods", [["Download", "yes"], ["See the mods", "show_mods"], ["Back", "cancel"]]]]
 scene.on_enter
 check("the DLL's steps offer to download the mods, to see them, or to go back", [said(scene), scene.instance_variable_get(:@confirm_window).choices.map { |choice| choice[1] }], [offer, [:yes, :show_mods, :cancel]])
-$screen_steps = [["busy", "mods"]]
-scene.on_confirmed
-check("download goes back to the DLL, whose action then holds the screen", [screen_requests("screen.answer").last, scene.instance_variable_get(:@busy)], [{ "answer" => "yes" }, "mods"])
-$exited = false
+
+# The Mod Framework installs the mods: one of the game's mods is installed already, the world's
+# is one it finds on the website.
+module Mod_Framework
+  module Mods
+    class << self
+      attr_accessor :installing, :restarted
+      def state; { "mods" => [{ "name" => "Party_Sheet", "title" => "Party Sheet", "id" => "site:party-sheet" }] }; end
+      def check(saved); [{ "kind" => "install", "name" => saved[0][0], "target" => "site:level-cap" }]; end
+      def install(ids, &done); @installing = [ids, done]; true; end
+      def loaded; ["Level_Cap"]; end
+      def restart(_reason, action, value); @restarted = [action, value]; :restarting; end
+    end
+  end
+end
 $installed_forgotten = 0
 MGQ_MpWorldMods.singleton_class.send(:alias_method, :tested_forget_installed, :forget_installed)
 MGQ_MpWorldMods.define_singleton_method(:forget_installed) { $installed_forgotten += 1; tested_forget_installed }
-MGQ_MpWorld::Changes.note(MGQ_MpWorld::Changes::SCREEN)
-$screen_steps = [["idle"], ["forget_installed"], ["exit"]]
-scene.follow_steps
-check("once installed, the scripts forget what Patch held and the game closes to start again", [$installed_forgotten, $exited, scene.instance_variable_get(:@busy)], [1, true, nil])
+$screen_steps = [["install", [["Level Cap", "levelcap"]]]]
+scene.on_confirmed
+ids, done = Mod_Framework::Mods.installing
+check("download hands the framework the mod by the id it finds for it, holding the screen meanwhile",
+      [screen_requests("screen.answer").last, ids, scene.instance_variable_get(:@busy)], [{ "answer" => "yes" }, ["site:level-cap"], "mods"])
+check("an installed mod goes by the framework's id of it", MGQ_MpWorldMods.framework_id("Party Sheet", "partysheet"), "site:party-sheet")
+$screen_steps = [["forget_installed"], ["restart", "w1"]]
+done.call(["Level_Cap"], nil)
+check("once installed the DLL hears it, a mod installed running already, and the scripts forget what Patch held",
+      [screen_requests("screen.answer").last, $installed_forgotten], [{ "answer" => "installed", "ok" => true, "text" => nil, "restart" => true }, 1])
+check("the framework then starts the game again to enter the world", Mod_Framework::Mods.restarted, ["multiplayer.rejoin", "w1"])
 
 # A mod only its author has.
 listed.mods = "!Other Mod"
@@ -399,18 +431,70 @@ check("the mods box shows the difference", screen_detail.mod_lines(listed.mods, 
 $mod_check = nil
 listed.mod_hashes = ""
 
-# Entering again after the restart.
-$ini["rejoin"] = "w1"
+# Entering again after the restart the Mod Framework made for a world's mods.
+mods.restarted_for("w1")
 $called = nil
 title = Scene_Title.new
 mods.on_title_update(title)
-check("the title screen opens the world screen once to enter the world again", [$called, mods.rejoining, $ini["rejoin"]], [Scene_MpWorlds, "w1", ""])
+check("the title screen opens the world screen once to enter the world again", [$called, mods.rejoining, mods.take_rejoin], [Scene_MpWorlds, "w1", nil])
 scene = new_scene
 scene.instance_variable_set(:@me, "me")
 MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, "1:x")
 scene.open_steps
 MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
 check("the world screen hands the DLL the world to enter again, which it enters once the list holds it", [screen_requests("screen.do").last["rejoin"], mods.rejoining], ["w1", nil])
+
+# A world that turns other mods off: the Mod Framework enters the game with the mods of its session.
+entered = []
+sessions = []
+MGQ_Multiplayer::Stages.define_singleton_method(:staged?) { true }
+MGQ_Multiplayer::Stages.define_singleton_method(:enter) { |reason, only = nil| entered << [reason, only]; true }
+Mod_Framework::Mods.define_singleton_method(:plan) { { "load" => [["Multiplayer", "Title"], ["Level_Cap", "Regular"], ["Invasions", "Regular"]] } }
+Mod_Framework::Mods.define_singleton_method(:stays_on) { ["Wide_Text"] }
+$world_bridge.answer("mods.session") { |request| sessions << request; { "only" => ["Multiplayer", "Level_Cap"], "off" => ["Invasions"], "text" => "Strict plays without your other mods." } }
+strict = listed.dup
+strict.name = "Strict"
+strict.mods = "!Level Cap"
+strict.other_mods_off = true
+$notices.clear
+mods.note_session(strict)
+check("the world screen only notes the mods of the session", [entered, $notices], [[], []])
+handed = lambda { ($settings_calls || []).count { |name, _| name == "settings.options" } }
+before = handed.call
+mods.enter_game
+check("a world that turns other mods off enters with only the mods of its session, and the player hears which stay off",
+      [entered.last, sessions.last.values_at("world", "mods", "names", "stays_on"), $notices.last],
+      [["the world Strict", ["Multiplayer", "Level_Cap"]], ["Strict", "!Level Cap", ["Multiplayer", "Level_Cap", "Invasions"], ["Wide_Text"]], [:world_mods_off, "Strict plays without your other mods."]])
+check("then the DLL takes the options again, those of the mods that loaded among them", handed.call, before + 1)
+mods.enter_game
+check("and the world enters once", entered.size, 1)
+loose = listed.dup
+loose.other_mods_off = false
+mods.note_session(loose)
+mods.enter_game
+check("a world that allows other mods enters with every mod that is on", [entered.last, sessions.size], [["the world Modded", nil], 1])
+
+# Its creator turns other mods off while the player is in it: a mod the session runs that it now
+# turns off starts the game again into the world, once the player was told and the map is free.
+nows = []
+Mod_Framework::Mods.define_singleton_method(:loaded) { ["Multiplayer", "Invasions", "Wide_Text"] }
+# Once entered, every mod that loaded runs until the game starts again.
+Mod_Framework::Mods.define_singleton_method(:stays_on) { ["Multiplayer", "Invasions", "Wide_Text"] }
+$world_bridge.answer("mods.now_off") { |request| nows << request; { "off" => ["Invasions"], "text" => "Strict now turns off other mods." } }
+MGQ_MpWorld.instance_variable_set(:@world, Struct.new(:directory_id, :name).new("w1", "Strict"))
+Mod_Framework::Mods.restarted = nil
+mods.rule_pushed({ "mods_rule_value" => "1", "mods" => "!Level Cap" })
+check("a push not from the relay is left alone", nows, [])
+mods.rule_pushed({ "mods_rule_value" => "1", "mods" => "!Level Cap", :relay => true })
+check("the relay's push asks which mods the session runs that the world turns off now", nows.last.values_at("world", "off", "mods", "running"), ["Strict", true, "!Level Cap", ["Multiplayer", "Invasions"]])
+$map_busy = true
+(mods::KICK_FRAMES + 1).times { mods.follow_kick }
+check("the player is told, and the game waits while the map is busy", [$notices.last, Mod_Framework::Mods.restarted], [[:world_mods_off, "Strict now turns off other mods."], nil])
+$map_busy = false
+mods.follow_kick
+check("then starts again into the world", Mod_Framework::Mods.restarted, ["multiplayer.rejoin", "w1"])
+MGQ_MpWorld.instance_variable_set(:@world, nil)
+MGQ_Multiplayer::Stages.define_singleton_method(:staged?) { false }
 
 # The settings a world shares. The DLL decides which hold, sends them and words the notices
 # (SharedSettingsSync, covered by its own tests); this script hands it the creator's options and
@@ -565,3 +649,9 @@ check("and the player's options of them", mods.served_settings.split(";").map { 
 mods.forget_world
 check("outside a world it gets none", [mods.served_mods, mods.served_settings], [[], ""])
 check("nothing failed but the broken dumps", ($log || []).grep(/FAILED|failed/).reject { |line| line.include?("broken entry") || line.include?("is not loaded") || line.include?("Too many requests") }, [])
+
+# The Mod Framework's options lock the options a world sets in place of Mod Config Remake.
+module Mod_Framework; module Options; class << self; attr_accessor :world_keys; end; end; end
+ModConfigRemake.world_keys = nil
+mods.lock([:mod_level_cap])
+check("the Mod Framework's options lock the options a world sets, Mod Config Remake's then none", [Mod_Framework::Options.world_keys, ModConfigRemake.world_keys], [[:mod_level_cap], nil])

@@ -83,14 +83,7 @@ They are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save.
 
 ## Mods
 
-*Mods* on the title screen, below *Multiplayer*, installs, updates and removes mods without leaving the game. It counts the updates waiting, such as *Mods (2)*.
-
-- **What it shows.** Every mod of the [website](https://mgqonline.org/mods) and the developer's mods on GitHub as cards, three to a row, those with an update first: a screenshot (a spoiler's blurred), a badge (*Update*, *Changed* when your copy matches no known version, for example because you edited it, or *Installed*), the name and newest version, who made it and what it does. The bar at the top counts the updates and holds *Update all*, which updates every mod marked *Update* (never a changed copy), and *Refresh*.
-- **The bar and the mods.** Up and Down pick the bar or the mods as a whole, Enter moves inside; Esc or Numpad 0 inside goes back to picking one, so the bar is one step away from any mod. Esc or Numpad 0 while picking leaves the screen.
-- **List or cards, and search.** *List view* in the bar shows the mods as rows (a small screenshot, name, version, author and summary), *Card view* as cards again; the screen remembers your choice. Down from the bar's buttons reaches *Search*; type in place: the mods filter as you type, by name, author, summary or where they come from, every word you type must match. Enter or Up keeps the filter and goes back to the buttons, Esc or Numpad 0 clears it; the search belongs to the bar, so Esc on the buttons leaves the bar. The bar then counts the mods found, such as *3 of 10 mods*.
-- **A mod's page.** Enter on a card opens its page: the screenshot, unblurred, its author, where it comes from, your version, the newest, its size, and below them its description while it is not installed, else what changed in the newest version (Up and Down scroll it). The buttons: *Install*, *Update to …*, *Replace with …* for a changed copy (asks first, your changes are lost), *Remove* (asks first), *Open page*, which opens its page on the website in your browser, and *Back*.
-- **Restart.** Mods load as the game starts, so after a change the screen offers to start the game again. *Later* keeps playing; the change loads on your next start. Under Wine or Proton you start the game again yourself.
-- **Safe downloads.** The list of the website is signed, and every downloaded file is checked against the list before anything is written; a download that differs changes nothing. Mods only ever go into the `Patch` folder, and never touch MGQ Online's own files. While other mods are turned off for a world, changes wait until you restart.
+The [Mod Framework](https://github.com/Pauliinchen/MGQ-Mod-Framework), which comes with MGQ Online, installs, updates and removes the mods of the [website](https://mgqonline.org/mods) from the title screen: *Mod browser* lists them and counts the updates waiting, *Mods* turns your mods on and off.
 
 ## Worlds
 
@@ -133,7 +126,7 @@ Confirm on a world and pick *Enter the world*.
 - Type its password the first time, unless it has none; your game remembers it after that.
 - You continue from your latest save in that world. The first time, you start at the opening or from the creator's save, or choose where to start if the creator lets you. A save can run code on your PC, so take a creator's save only from creators you trust: before taking it, the game warns you and offers *Take*, *Start at the beginning* or *Back*.
 - A world is only entered once the list has loaded, since the list tells what the world asks of your game.
-- **Through Discord** (with the Discord mod): while you play in a world, friends can be invited through the **+** in a Discord chat or ask to join from your profile. Accepting starts their game if it's closed and enters the world from the title screen, without its password; a friend in the middle of a game is told to go back to the title screen. Discord offers no invite while the party it shows is full.
+- **Through Discord** (with the Discord mod): while you play in a world, friends can be invited through the **+** in a Discord chat or ask to join from your profile. Accepting starts their game if it's closed and enters the world from the title screen, without its password; a friend in the middle of a game is told to go back to the title screen, which starts the game again and then opens the world. Discord offers no invite while the party it shows is full.
 
 ### Creating a world
 
@@ -170,7 +163,7 @@ The creator can change Max Players, Mods, *Shared Mod Settings*, *Turn off other
 
 ### Mods of a world
 
-*Mods* in the create or edit form opens a list of the mods in your `Patch` folder, all unlisted at first. The mod loader, this mod and Mod Config Remake aren't in it, since every player has them.
+*Mods* in the create or edit form opens a list of the mods in your `Patch` folder, all unlisted at first. The mod loader, this mod, the Mod Framework and Mod Config Remake aren't in it.
 
 - **Enter** or a click on a mod lists or unlists it. *List all your mods* at the top lists every one at once, and then *Unlist all your mods* unlists them again.
 - Each mod has two buttons at the right, under the columns *Required* and *Essential*, reached with the right arrow or a click: the red **!** makes it required, the orange **?** essential. A filled button shows how a mod is named; pressing it again makes the mod only listed.
@@ -188,30 +181,23 @@ The details show each mod in a box of its own, as many as fit the row, and count
 
 **Same version for everyone.** The relay keeps a catalog of mods its admins added, with each one's current version.
 
-- When you enter a world, each required mod is compared with the catalog. If one is missing or another version, the world screen says which and offers *Download and restart*: it fetches the world's version, checks every file, puts it into your `Patch` folder, restarts the game and enters the world. *See the mods* lists your version and the world's.
+- When you enter a world, each required mod is compared with the catalog. If one is missing or another version, the world screen says which and offers *Download*: the Mod Framework fetches the world's version, checks every file and puts it into your `Patch` folder, and you enter the world, the mod loading as you do. Only a mod that runs already, such as one that changes the title screen, needs the game to start again first, which happens by itself and enters the world. *See the mods* lists your version and the world's.
 - A required mod the catalog doesn't know is compared with the creator's copy. If yours differs, get the creator's version from the mod's author; nothing downloads it for you.
 - A new version only reaches players the next time they enter.
-- The Russian translation's own `Patch.rb` only runs scripts right in `Patch`. A mod that keeps its scripts in a folder inside `Patch` doesn't load there, even after *Download and restart*, though the world screen counts it as installed.
 
 **The creator's settings.** With *Shared Mod Settings* ticked in the create or edit form, or switched *On* in *Mod Config → MGQ Online Settings → Shared Mod Settings* while the creator plays in the world, the creator's options of the world's mods, required or listed, are the world's settings. Every player in the world gets them at once, and again whenever the creator changes an option; the notification box says what the world sets, and the menu shows those options greyed out as set by the world. Every player sees the row, but only the creator can switch it. Hotkeys and other personal options stay yours, and your own saves keep your own settings. The relay's admins can see and change a world's settings too; the creator's game then takes the admin's settings and tells the creator what changed.
 
 ### Turning off other mods
 
-A world with *Turn off other mods* is played with the mods it names and nothing else. While you're in it, your game turns off every mod in your `Patch` folder that the world doesn't name in its mods, whether listed, required or essential, unless the relay's admins mark it **personal**. The mod loader, this mod and Mod Config Remake always stay on.
-
-A script in a folder inside `Patch` belongs to the mod that folder is named after: `Patch\Luka_Replacer\heroes.rb` is Luka Replacer's, so it stays on when the world names Luka Replacer and is turned off with it otherwise. A script right in `Patch` is the mod its file is named after. Only scripts are moved; a mod's other files stay where they are.
+A world with *Turn off other mods* is played with the mods it names and nothing else. When you enter it, the Mod Framework loads only the mods the world names, whether listed, required or essential, and those MGQ Online's admins mark **personal**; the rest of your mods stay off until you leave the world. Nothing is moved in your `Patch` folder, and your Mods screen keeps your choices. This mod and the mod loader always stay on.
 
 - **Personal mods** stay on in every world, named or not, such as mods that only change how the game looks. The relay's admins decide which mods are personal.
+- **Mods that run from the start of the game**, such as the framework's own and mods that change the title screen as a whole, can't be left out; the notification box names them as you enter ("Wide Text is part of the framework and stays on.").
 - **The world's details** say *Other mods: turned off (2 of yours)* or *Other mods: allowed*. The mods box lists *Your mods turned off here* below the world's mods, one line per mod, saying how many scripts it has when there are several.
-- **Entering** such a world while you have mods it turns off asks first: "These mods are turned off while you play in \<world>: ... Restart and join?". *See the mods* lists them, *Back* enters nothing. *Restart and join* moves them out of `Patch` into the `Parked mods` folder of your game folder, starts the game again and enters the world. The `Parked mods` folder only exists while mods are turned off; the game removes it once they're all back and it holds nothing else. When the world also needs a mod downloaded, one restart does both. The world is only entered once the mod catalog has loaded, since the catalog tells which mods are personal.
-- **Your mods come back** when you go back to the title screen: "Your mods are back after a restart." shows and the game starts again on the title screen. They also come back when the game closes any other way, a crash included: a small helper waits in the background and puts them back once the game is gone, and the next start of the game checks again ("The game closed while mods were turned off. Your mods are back after a restart.").
-- **When the creator or an admin changes the rule** while you're in the world, ticking *Turn off other mods* or changing the mods, and you now have mods on that the world turns off, the notification box says "\<world> now turns off other mods. Enter it again to play." and a few seconds later, once you're free on the map, the game goes to the title screen, as *To Title* does: anything you haven't saved is lost. Entering again turns the mods off.
-- **Two games from the same game folder** never move mods under each other. While one of them has mods turned off, the other can't turn them on or off, and leaving a world there says "Another game of this folder has mods turned off. They come back when it closes."
-- **A mod you put back into `Patch` yourself** while it was turned off is never overwritten: the turned-off copy goes to `Parked mods\Conflicts\<date and time>` instead. So does a turned-off mod whose file changed while it was turned off. The title screen then says how many went there ("2 of your mods went to Parked mods/Conflicts because another file took their place in Patch."). Leave the `Parked mods` folder alone while the game runs.
-- **Mods behind a link:** a mod script in `Patch` that lies on another drive behind a link (a junction) is never turned off. A world that would turn it off can't be entered while it is installed: the world screen says how many such scripts there are and names the first.
-- **Saving is off** outside a world while your other mods are turned off, such as after they could not come back on leaving a world: a save you make shows "Saving is off until your other mods are back. Start the game again to bring them back.", and the autosave is skipped. Saving inside a world works as usual.
-- **A world's mods downloaded** while your other mods could not be turned off, or kept off, for the restart: the game stays on the world screen and asks you to try again, instead of restarting with your mods half turned off.
-- **Updating the mod** while mods are turned off: they come back once the updater has started. If the updater can't start, they stay off until the next start of the game.
+- **Entering** such a world tells you in the notification box which of your mods stay off ("\<world> plays without your other mods: ... stay off until you leave it."). The world is only entered once the mod catalog has loaded, since the catalog tells which mods are personal.
+- **Your mods come back** when you leave the world: going back to the title screen starts the game again with your own mods.
+- **When the creator or an admin changes the rule** while you're in the world, ticking *Turn off other mods* or changing the mods, and a mod you run is now turned off, the notification box says "\<world> now turns off other mods. The game starts again and enters it without them." and a few seconds later, once you're free on the map, the game starts again and enters the world: anything you haven't saved is lost.
+- **Mods an older version turned off:** a `Parked mods` folder an older version left in your game folder is emptied back into `Patch` the next time the game starts; mods in its `Conflicts` folder stay for you to sort.
 
 ### Game data
 
@@ -452,7 +438,7 @@ Your games meet at the mod's **relay**, a small server that passes their data on
 
 | Message or problem | What to do |
 |---|---|
-| *Multiplayer* says a new version is out | Press Enter for *update and install*: the game closes, updates the mod and starts again in the Multiplayer menu. Or close the game and run `Patch\Multiplayer\Update.bat`. A Discord invite, or the return to a world after a mod download, shows the same offer while the mod is outdated; after updating, enter the world again yourself. |
+| *Multiplayer* says a new version is out | Pick *Update and restart* in the Mod Framework's question: the game closes, the mod updates and the game starts again in the Multiplayer menu. Or close the game and run `Update.bat` in `Patch\Mod_Framework`. A Discord invite, or the return to a world after its mods were installed, asks the same while the mod is outdated; after updating, enter the world again yourself. |
 | "Your friend's game is not hosting with this join code right now" | Your friend stopped hosting, or hosted again, which makes a new join code: ask for the new one. Or their game is reconnecting to the relay: try again in a minute. |
 | "Nobody joined in time, so hosting stopped" | Hosting waits 30 minutes for a friend. Host again for a new join code. |
 | "Your team is too large to send" | Your party has more characters, skills or equipment than one PvP exchange carries. Leave a few characters out of the party and try again. |
@@ -463,13 +449,6 @@ Your games meet at the mod's **relay**, a small server that passes their data on
 | "\<world> only takes matching game data" | Its creator left *Allow data mismatch* unticked, and your mods differ from theirs. The world's details name what differs and the mods it needs. |
 | "\<world> needs ...: no such script in your Patch folder" | The world requires a mod you don't have. Install it, then enter again. |
 | "The mod catalog has not loaded yet" | The world turns other mods off, and only the catalog tells which of your mods are personal. Wait until the world list has loaded and enter again. |
-| "Your Patch folder could not be read" | The world turns other mods off, and the game couldn't list the scripts in your `Patch` folder. The log says why; try again, or restart the game. |
-| "Another game of this folder has mods turned off" | Another game started from the same game folder turned mods off for its world. They come back when that game closes. |
-| "Your mods were turned off or on since the game started" | Mods were moved while the game ran, so it no longer runs the mods its `Patch` folder holds. Close the game, start it again, then enter. |
-| "Some of your mods could not be turned back on" | They could not be moved back, such as while another program had them open. They wait in the `Parked mods` folder of your game folder, and the next start of the game tries again. If they stay there, close the game and move them back into `Patch` by hand, keeping their folders. |
-| "... lie on another drive behind a link in Patch and cannot be turned off" | The world turns other mods off, and a mod it turns off sits behind a link (a junction) to another drive. Put the mod's files into `Patch` itself, or take the link out, and enter again. |
-| "The mods were installed, but your other mods could not be turned off or kept off" | The world's mods are in place, but the game could not move your other mods for the restart, such as while another program had them open. Enter the world again. |
-| "Saving is off until your other mods are back" | Your other mods are still turned off outside a world. Close the game and start it again: they come back, and saving works again. |
 | "Player.ini could not be read; close programs that hold it" | Another program, such as an antivirus, a cloud sync or an editor, holds `Patch\Multiplayer\Player.ini`. Your player key and settings in it stay as they are, but the game saves no setting and enters no world until it can read the file again, which it tries every second. Close the program, or check that the file is not damaged. |
 | "Update MGQ Online to play online." | The relay no longer serves your version of the mod. Install the newest MGQ Online release. |
 | "The relay turned the request down. Update the mod." | The relay does not let your version of the mod into this world, such as when it no longer serves it. Install the newest MGQ Online release. |

@@ -2,7 +2,8 @@
 //  UpdateCheckTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Read the release version, the relay version and the development stamp in one theory
+//      Paulinchen  2026-10-30: Dropped GitHub, which the Mod Framework asks for updates
+//                            - Read the release version, the relay version and the development stamp in one theory
 //                            - Cut the release tags to one of each kind
 //      Paulinchen  2026-10-23: Read the release version through ReleaseVersion
 //      Paulinchen  2026-10-22: Covered the release the relay names, a step back too, and GitHub without its answer
@@ -45,20 +46,6 @@ public sealed class UpdateCheckTests
     }
 
     /// <summary>
-    /// Asserts that only a newer release is reported, without the tag's <c>v</c>.
-    /// </summary>
-    /// <param name="installed">The installed version.</param>
-    /// <param name="tag">The latest release's tag.</param>
-    /// <param name="expected">The reported version, or <see langword="null"/>.</param>
-    [Theory]
-    [InlineData("0.1.0", "v0.1.10", "0.1.10")]
-    [InlineData("0.1.0", "v0.1.0", null)]
-    [InlineData("0.2.0", "v0.1.0", null)]
-    [InlineData("0.1.0", "nightly", null)]
-    public void NewerRelease_ReportsOnlyANewerTag(string installed, string tag, string? expected) =>
-        Assert.Equal(expected, UpdateCheck.NewerRelease(Version.Parse(installed), $$"""{"id":1,"tag_name":"{{tag}}","assets":[]}"""));
-
-    /// <summary>
     /// Asserts that the relay's answer names a release only as dotted numbers.
     /// </summary>
     /// <param name="json">The relay's answer.</param>
@@ -72,7 +59,7 @@ public sealed class UpdateCheckTests
         Assert.Equal(expected, UpdateCheck.CurrentRelease(json));
 
     /// <summary>
-    /// Asserts that the relay's release is offered, an older one as a step back, without asking GitHub.
+    /// Asserts that the relay's release is the one to play, an older one as a step back.
     /// </summary>
     /// <param name="installed">The installed version.</param>
     /// <param name="current">The release the relay names.</param>
@@ -82,27 +69,21 @@ public sealed class UpdateCheckTests
     [InlineData("0.6.8", "0.6.7.7", true)]
     public void Choose_OffersTheRelaysRelease(string installed, string current, bool rollback)
     {
-        var offer = UpdateCheck.Choose(Version.Parse(installed), () => current, () => throw new InvalidOperationException("GitHub was asked."));
+        var offer = UpdateCheck.Choose(Version.Parse(installed), () => current);
 
         Assert.Equal(new ReleaseOffer(current, rollback), offer);
     }
 
     /// <summary>
-    /// Asserts that the relay naming the installed release offers nothing, even while GitHub has a newer one.
+    /// Asserts that nothing is to play but this DLL while the relay names it, names none or cannot be
+    /// reached.
     /// </summary>
     [Fact]
-    public void Choose_TheRelaysReleaseInstalled_OffersNothing() =>
-        Assert.Null(UpdateCheck.Choose(Version.Parse("0.6.8"), () => "0.6.8.0", () => Latest("v0.6.9")));
-
-    /// <summary>
-    /// Asserts that GitHub's newer latest release is offered while the relay names none or cannot be reached.
-    /// </summary>
-    [Fact]
-    public void Choose_WithoutTheRelaysRelease_AsksGitHub()
+    public void Choose_WithoutAnotherReleaseFromTheRelay_FindsNone()
     {
-        Assert.Equal(new ReleaseOffer("0.6.9", false), UpdateCheck.Choose(Version.Parse("0.6.8"), () => null, () => Latest("v0.6.9")));
-        Assert.Equal(new ReleaseOffer("0.6.9", false), UpdateCheck.Choose(Version.Parse("0.6.8"), () => throw new HttpRequestException("unreachable"), () => Latest("v0.6.9")));
-        Assert.Null(UpdateCheck.Choose(Version.Parse("0.6.8"), () => null, () => Latest("v0.6.7.7")));
+        Assert.Null(UpdateCheck.Choose(Version.Parse("0.6.8"), () => "0.6.8.0"));
+        Assert.Null(UpdateCheck.Choose(Version.Parse("0.6.8"), () => null));
+        Assert.Null(UpdateCheck.Choose(Version.Parse("0.6.8"), () => throw new HttpRequestException("unreachable")));
     }
 
     /// <summary>
@@ -114,11 +95,4 @@ public sealed class UpdateCheckTests
         Assert.Equal("https://relay.mgqonline.org/v1/release", UpdateCheck.ReleaseAddress(new Uri("wss://relay.mgqonline.org")).ToString());
         Assert.Equal("http://127.0.0.1:8080/v1/release", UpdateCheck.ReleaseAddress(new Uri("ws://127.0.0.1:8080")).ToString());
     }
-
-    /// <summary>
-    /// Describes a latest release as GitHub does, as far as the check reads it.
-    /// </summary>
-    /// <param name="tag">The release's tag.</param>
-    /// <returns>The description.</returns>
-    private static string Latest(string tag) => $$"""{"id":1,"tag_name":"{{tag}}","assets":[]}""";
 }

@@ -2,6 +2,7 @@
 //  mods.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Let admins tag a mod and set what each version requires, which the games list
 //      Paulinchen  2026-10-22: Downloaded a link mod's file only when its link leads to a new release
 //      Paulinchen  2026-10-12: Stopped reading a release file from GitHub once it passes its size limit
 //                            - Read a mod again after its link was checked and kept only the check's result
@@ -56,6 +57,8 @@ export const MOD_LIMITS = Object.freeze({
   maxChoices: 64,
   maxOptionText: 200,
   maxOptionsBytes: 64 * 1024,
+  maxRequires: 10,
+  maxSlugLength: 64,
   // The most characters a JSON body of the catalog's routes may have, unless a route says otherwise.
   maxJsonLength: 8192,
 });
@@ -75,6 +78,17 @@ export const OTHER_VERSION = "?";
  * The kind of a mod known by its name alone, with nothing to download, which exists to be personal.
  */
 export const NAME_ONLY = "name";
+
+/**
+ * The tags the Mod Framework loads a mod by, as it spells them.
+ */
+export const MOD_TAGS = Object.freeze(["Framework", "Title", "Regular", "Data"]);
+
+/**
+ * The tag an admin sees for a mod no admin tagged, which the Mod Framework loads as the player
+ * enters the game.
+ */
+export const DEFAULT_TAG = "Regular";
 
 /**
  * A release file on the admins' GitHub, a script or a zip, with the release's tag and the file's name.
@@ -223,7 +237,7 @@ export class ModCatalog {
     }
 
     const existing = await this.store.getMod(modKey(cleaned));
-    const entry = existing?.kind === "link" ? { ...existing, name: cleaned, link } : newEntry(modKey(cleaned), cleaned, "link", existing?.personal === true);
+    const entry = existing?.kind === "link" ? { ...existing, name: cleaned, link } : newEntry(modKey(cleaned), cleaned, "link", existing?.personal === true, existing?.tag);
     entry.link = link;
     await this.checkLink(entry, true);
 
@@ -270,7 +284,7 @@ export class ModCatalog {
       }
     }
 
-    const entry = newEntry(key, name, "link", current?.personal === true);
+    const entry = newEntry(key, name, "link", current?.personal === true, current?.tag);
     entry.link = link;
     return { entry };
   }
@@ -323,7 +337,7 @@ export class ModCatalog {
     }
 
     const existing = await this.store.getMod(modKey(cleaned));
-    const entry = existing?.kind === "upload" ? { ...existing, name: cleaned } : newEntry(modKey(cleaned), cleaned, "upload", existing?.personal === true);
+    const entry = existing?.kind === "upload" ? { ...existing, name: cleaned } : newEntry(modKey(cleaned), cleaned, "upload", existing?.personal === true, existing?.tag);
 
     if (existing && existing.kind !== "upload") {
       await this.store.removeMod(existing.key);
@@ -362,6 +376,75 @@ export class ModCatalog {
     }
 
     entry.personal = personal;
+    await this.store.putMod(entry);
+    return { status: 200, body: { mod: adminView(entry) } };
+  }
+
+  /**
+   * Tags a mod, which tells the Mod Framework when it loads.
+   *
+   * @param {unknown} key The asking player's key.
+   * @param {string} modKeyOf The mod's key.
+   * @param {unknown} tag One of MOD_TAGS, in any case.
+   * @returns {Promise<{status: number, body: object}>} The mod, or why it was refused.
+   */
+  async setTag(key, modKeyOf, tag) {
+    if (!(await this.isAdmin(key))) {
+      return forbidden();
+    }
+
+    const entry = await this.store.getMod(modKeyOf);
+
+    if (!entry) {
+      return noMod();
+    }
+
+    const spelled = MOD_TAGS.find((known) => typeof tag === "string" && known.toLowerCase() === tag.trim().toLowerCase());
+
+    if (!spelled) {
+      return badRequest(`the tag must be one of ${MOD_TAGS.join(", ")}`);
+    }
+
+    entry.tag = spelled;
+    await this.store.putMod(entry);
+    return { status: 200, body: { mod: adminView(entry) } };
+  }
+
+  /**
+   * Sets the mods a version of a mod requires, each by its website slug and the lowest version
+   * it needs.
+   *
+   * @param {unknown} key The asking player's key.
+   * @param {string} modKeyOf The mod's key.
+   * @param {unknown} version The version, empty for the current one.
+   * @param {unknown} requires The requirements, each with `slug` and an optional `minVersion`.
+   * @returns {Promise<{status: number, body: object}>} The mod, or why it was refused.
+   */
+  async setRequires(key, modKeyOf, version, requires) {
+    if (!(await this.isAdmin(key))) {
+      return forbidden();
+    }
+
+    const entry = await this.store.getMod(modKeyOf);
+
+    if (!entry) {
+      return noMod();
+    }
+
+    const cleaned = cleanRequires(requires, this.limits);
+
+    if (typeof cleaned === "string") {
+      return badRequest(cleaned);
+    }
+
+    const named = cleanText(version, this.limits.maxVersionLength) || entry.version;
+    const target = (entry.versions ?? []).find((known) => known.version === named);
+
+    if (!target) {
+      return notFound("version");
+    }
+
+    target.requires = cleaned;
     await this.store.putMod(entry);
     return { status: 200, body: { mod: adminView(entry) } };
   }
@@ -948,13 +1031,51 @@ function copyCheck(target, checked) {
  */
 function remember(entry, version, files, now, limits) {
   const same = JSON.stringify(entry.files) === JSON.stringify(files) && entry.version === version;
+  const requires = requiresOf(entry);
 
   entry.version = version;
   entry.files = files;
 
   if (!same) {
-    entry.versions = [{ version, files, seen: now }, ...(entry.versions ?? []).filter((old) => JSON.stringify(old.files) !== JSON.stringify(files))].slice(0, limits.maxVersions);
+    entry.versions = [{ version, files, seen: now, requires }, ...(entry.versions ?? []).filter((old) => JSON.stringify(old.files) !== JSON.stringify(files))].slice(0, limits.maxVersions);
   }
+}
+
+/**
+ * Tells what a mod's current version requires.
+ *
+ * @param {object} entry The mod.
+ * @returns {Array<{slug: string, minVersion: string}>} The requirements, none before any were set.
+ */
+function requiresOf(entry) {
+  return (entry.versions ?? []).find((known) => known.version === entry.version)?.requires ?? [];
+}
+
+/**
+ * Checks and tidies the requirements an admin sets for a version.
+ *
+ * @param {unknown} requires The requirements.
+ * @param {typeof MOD_LIMITS} limits The limits.
+ * @returns {Array<{slug: string, minVersion: string}> | string} The requirements, or what is wrong.
+ */
+function cleanRequires(requires, limits) {
+  if (!Array.isArray(requires) || requires.length > limits.maxRequires) {
+    return `the requirements must be a list of at most ${limits.maxRequires}`;
+  }
+
+  const cleaned = [];
+
+  for (const needed of requires) {
+    const slug = cleanText(needed?.slug, limits.maxSlugLength + 1);
+
+    if (!slug || [...slug].length > limits.maxSlugLength) {
+      return `a requirement needs a slug of 1 to ${limits.maxSlugLength} characters`;
+    }
+
+    cleaned.push({ slug, minVersion: cleanText(needed.minVersion, limits.maxVersionLength) });
+  }
+
+  return cleaned;
 }
 
 /**
@@ -998,14 +1119,17 @@ function isChecked(entry) {
  * @param {string} name The mod's name.
  * @param {"link" | "upload" | "name"} kind How the mod reaches the relay, or NAME_ONLY for a mod known by its name alone.
  * @param {boolean} [personal] Whether the mod is personal.
+ * @param {string} [tag] The tag of the mod it replaces, none for an untagged one.
  * @returns {object} The entry.
  */
-function newEntry(key, name, kind, personal = false) {
-  return { key, name, kind, link: "", fileUrl: "", version: "", files: {}, versions: [], size: 0, checked: 0, error: "", personal };
+function newEntry(key, name, kind, personal = false, tag = undefined) {
+  const entry = { key, name, kind, link: "", fileUrl: "", version: "", files: {}, versions: [], size: 0, checked: 0, error: "", personal };
+  return tag ? { ...entry, tag } : entry;
 }
 
 /**
- * Makes the view of a mod every game may see.
+ * Makes the view of a mod every game may see, its tag only once an admin tagged it, so the Mod
+ * Framework still lets the player tag a mod no admin did.
  *
  * @param {object} entry The mod.
  * @returns {object} The view.
@@ -1017,12 +1141,14 @@ export function publicView(entry) {
     kind: entry.kind,
     version: entry.version,
     files: entry.files,
-    versions: (entry.versions ?? []).map(({ version, files }) => ({ version, files })),
+    versions: (entry.versions ?? []).map(({ version, files, requires }) => ({ version, files, requires: requires ?? [] })),
     fileUrl: entry.kind === "link" ? entry.fileUrl : "",
     archive: entry.kind === "link" && entry.archive === true,
     options: entry.options ?? [],
     optionsVersion: entry.optionsVersion ?? "",
     personal: entry.personal === true,
+    ...(entry.tag ? { tag: entry.tag } : {}),
+    requires: requiresOf(entry),
   };
 }
 
@@ -1033,7 +1159,7 @@ export function publicView(entry) {
  * @returns {object} The view.
  */
 function adminView(entry) {
-  return { ...publicView(entry), link: entry.link, size: entry.size, checked: entry.checked, error: entry.error };
+  return { ...publicView(entry), tag: entry.tag ?? DEFAULT_TAG, link: entry.link, size: entry.size, checked: entry.checked, error: entry.error };
 }
 
 /**
@@ -1140,6 +1266,14 @@ export async function handleModRequest(catalog, method, url, readBody, readBytes
 
   if (parts.length === 4 && parts[3] === "name" && method === "POST") {
     return json((body) => catalog.setName(fromBody(body), parts[2], body?.name));
+  }
+
+  if (parts.length === 4 && parts[3] === "tag" && method === "POST") {
+    return json((body) => catalog.setTag(fromBody(body), parts[2], body?.tag));
+  }
+
+  if (parts.length === 4 && parts[3] === "requires" && method === "POST") {
+    return json((body) => catalog.setRequires(fromBody(body), parts[2], body?.version, body?.requires));
   }
 
   if (parts.length === 4 && parts[3] === "file" && method === "GET") {

@@ -2,7 +2,8 @@
 #  bug_report_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Expected the whole version the mod loader names
+#      Paulinchen  2026-10-30: Stopped loading the deleted world_mods_parking.rbx
+#                            - Expected the whole version the mod loader names
 #                            - Dropped the default hotkey and the export signatures
 #      Paulinchen  2026-10-23: Made the worlds on this PC through the stand-ins of the DLL's topics
 #                            - Handed the screenshot to C# by the Bitmap's address, the walk to its pixels gone there
@@ -199,7 +200,6 @@ load_script "ui"
 load_script "ui_text_box"
 load_script "world"
 load_script "world_mods"
-load_script "world_mods_parking"
 load_script "world_text"
 load_script "world_screen"
 open_rules_bridge

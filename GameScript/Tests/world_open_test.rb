@@ -2,7 +2,12 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Kept one check of each squad and seats topic
+#      Paulinchen  2026-10-30: Checked that the Mod Framework's restart carries an invite taken during a game
+#                            - Checked that a world enters the game only right before its save loads or its New Game starts
+#                            - Checked that backing out of a world's New Game after entering starts the game again into the world screen
+#                            - Checked that an outdated game asks the Mod Framework for the release to play
+#                            - Stopped loading the deleted world_mods_parking.rbx
+#                            - Kept one check of each squad and seats topic
 #                            - Left the hints fitting their lines to world_data_test.rb
 #      Paulinchen  2026-10-28: Checked that the title screen opens the world screen for an invite once
 #                            - Checked that a later screen of the session reads the list on its first look
@@ -222,7 +227,6 @@ load_script "ui"
 load_script "ui_text_box"
 load_script "world"
 load_script "world_mods"
-load_script "world_mods_parking"
 load_script "world_text"
 load_script "world_screen"
 fake = open_rules_bridge
@@ -714,26 +718,9 @@ title.instance_variable_set(:@list, [{ :symbol => :continue }])
 MGQ_MpWorld.add_title_command(title)
 check("and finds the title command enabled", title.instance_variable_get(:@list)[1].values_at(:symbol, :enabled), [:mgq_mp_world, true])
 
-# The update offer over the title's commands.
+# The update over the title's commands, which the Mod Framework offers and installs.
 
-# Stands in for a message box, which draws on nothing and keeps what it shows.
-class Sprite_MpMessageBox
-  # Whether it shows.
-  attr_accessor :visible
-  # The texts it shows.
-  attr_reader :shown
-
-  # Makes the box.
-  def initialize; end
-
-  # Shows texts.
-  def show(*args); @shown = args; @visible = true; end
-
-  # Frees nothing.
-  def dispose; end
-end
-
-# The title's commands, which keep their handlers.
+# The title's commands, which keep their handlers and take input or not.
 class TitleMenu
   # Whether they take input.
   attr_reader :active
@@ -744,6 +731,9 @@ class TitleMenu
   # Takes input.
   def activate; @active = true; end
 
+  # Takes no input.
+  def deactivate; @active = false; end
+
   # Keeps a handler.
   def set_handler(symbol, handler); handlers[symbol] = handler; end
 
@@ -751,79 +741,39 @@ class TitleMenu
   def handlers; @handlers ||= {}; end
 end
 
-# Stands in for closing the game, noted in $exited.
-module SceneManager; def self.exit; $exited = true; end; end
+# The Mod Framework's update, which keeps each question and its block in $required.
+module Mod_Framework
+  module Mods
+    def self.require(name, version, options = {}, &done); $required << [name, version, options, done]; :asking; end
+  end
+end
+# The action after the framework's restart that opens the world screen, and the way back to the
+# title, which starts no game again until a test says so.
+module MGQ_Multiplayer; module Stages; OPEN_ACTION = "multiplayer.open" unless const_defined?(:OPEN_ACTION); def self.restart_needed?; false; end; end; end
+$required = []
 title_scene = Scene_Title.new
 title_scene.instance_variable_set(:@command_window, TitleMenu.new)
 title_scene.create_command_window
 check("the title screen's Multiplayer command gets its handler once the commands are made", title_scene.instance_variable_get(:@command_window).handlers.keys, [:mgq_mp_world])
-offer = MGQ_MpWorld::UpdateOffer
+update = MGQ_MpWorld::Update
 $called = nil
-$calls.clear
 MGQ_MpWorld.open_world_screen(title_scene)
-check("picking Multiplayer offers the update in place of the world screen and holds the buttons",
-      [$called, offer.shown?, offer.instance_variable_get(:@box).shown[0], $capture], [nil, true, "Monster Girl Quest! Online 9.9.9 is out", :update_offer])
-offer.update
-check("and stays while nothing is pressed", [offer.shown?, $calls], [true, []])
-$pressed = :B
-offer.update
-$pressed = nil
-check("cancel closes it and gives the buttons back to the title's commands", [offer.shown?, $capture, title_scene.instance_variable_get(:@command_window).active], [false, nil, true])
+name, version, options, done = $required.last
+check("picking Multiplayer asks the Mod Framework for the release to play in place of the world screen, holding the title's commands",
+      [$called, name, version, options, update.asking?, title_scene.instance_variable_get(:@command_window).active],
+      [nil, "mgq-online", "9.9.9", { :exact => false, :reason => MGQ_MpWorld::Update::REASON, :action => "multiplayer.open" }, true, false])
+done.call(:declined)
+check("declining gives the title's commands back", [update.asking?, title_scene.instance_variable_get(:@command_window).active], [false, true])
 MGQ_MpWorld.open_world_screen(title_scene)
-MGQ_Multiplayer::Key.define_singleton_method(:pressed?) { |code| code == 0x2D }
-offer.update
-MGQ_Multiplayer::Key.define_singleton_method(:pressed?) { |_code| false }
-check("the numpad's 0 closes it too, also with Num Lock off", [offer.shown?, $capture], [false, nil])
-MGQ_MpWorld.open_world_screen(title_scene)
-$pressed = :C
-offer.update
-$pressed = nil
-check("confirm starts the updater and closes the game", [$calls.map(&:first), $exited], [["mp_update_game"], true])
-$exited = nil
-offer.hide
-# Keeps the DLL's function stand-in as working_function, to bring it back after the updaters that fail.
-module MGQ_Multiplayer; module Link; class << self; alias working_function function; end; end; end
-MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| Struct.new(:name) { def call(*); 0; end }.new(name) }
-MGQ_MpWorld.open_world_screen(title_scene)
-$pressed = :C
-offer.update
-check("an updater that cannot start keeps the game open and tells how to update by hand",
-      [$exited, offer.shown?, offer.instance_variable_get(:@box).shown[1]], [nil, true, "The updater could not start. Close the game and run Patch\\Multiplayer\\Update.bat to update."])
-offer.update
-$pressed = nil
-check("confirm then closes the box", offer.shown?, false)
-MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| working_function(name) }
-offer.hide
+$required.last[3].call(:restarting)
+check("an update that restarts the game leaves them waiting", title_scene.instance_variable_get(:@command_window).active, false)
 $rollback = true
 MGQ_MpWorld.open_world_screen(title_scene)
-check("a step back the relay asks for is offered as the version to play",
-      offer.instance_variable_get(:@box).shown[0, 3], ["Monster Girl Quest! Online 9.9.9 is the version to play", MGQ_MpWorld::UpdateOffer::ROLLBACK_TEXT, MGQ_MpWorld::UpdateOffer::ROLLBACK_HINT])
-$calls.clear
-$pressed = :C
-offer.update
-$pressed = nil
-check("confirm starts the updater for it and closes the game, as for an update", [$calls.map(&:first), $exited], [["mp_update_game"], true])
-$exited = nil
-offer.hide
-MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| Struct.new(:name) { def call(*); 0; end }.new(name) }
-MGQ_MpWorld.open_world_screen(title_scene)
-$pressed = :C
-offer.update
-$pressed = nil
-check("an updater that cannot start names the version to install by hand",
-      offer.instance_variable_get(:@box).shown[1], "The updater could not start. Close the game and run Patch\\Multiplayer\\Update.bat --version 9.9.9 from a console.")
-MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| working_function(name) }
-offer.hide
+check("a step back the relay asks for is asked for as exactly that version", $required.last[2].values_at(:exact, :reason), [true, MGQ_MpWorld::Update::ROLLBACK_REASON])
+$required.last[3].call(:declined)
 check("and the world refusal says so too", MGQ_MpWorld.start(MGQ_MpWorld::World.allocate, nil), "9.9.9 is the version to play now.")
 $rollback = false
 $outdated = false
-
-# The game started again by the updater opens the world screen once.
-ENV[MGQ_MpWorld::OPEN_AFTER_UPDATE] = "1"
-$called = nil
-check("after the update the title screen opens the world screen", [MGQ_MpWorld.open_after_update(title_scene), $called], [true, Scene_MpWorlds])
-$called = nil
-check("but only once", [MGQ_MpWorld.open_after_update(title_scene), $called, ENV[MGQ_MpWorld::OPEN_AFTER_UPDATE]], [false, nil, nil])
 
 # A world's new game that asks something first, such as a hero, and the player backing out of it.
 
@@ -873,6 +823,51 @@ MGQ_MpWorld.on_title_update(asking)
 check("a new game that started keeps the world", MGQ_MpWorld.open?, true)
 MGQ_MpWorld.instance_variable_set(:@world, nil)
 
+# A world entered under the Mod Framework, which restarts the game on every way back to the title
+# once the player entered: the world enters only right before its save loads, or at the title right
+# before its New Game, never before the world screen goes back to the title.
+entered = []
+module MGQ_Multiplayer; module Stages; end; end
+MGQ_Multiplayer::Stages.define_singleton_method(:staged?) { true }
+MGQ_Multiplayer::Stages.define_singleton_method(:enter) { |reason, only = nil| entered << [reason, only]; true }
+leaving = new_scene
+leaving.define_singleton_method(:return_scene) { $went_back = entered.empty? ? :title : :restart }
+MGQ_MpWorld.singleton_class.send(:alias_method, :tested_enter, :enter)
+MGQ_MpWorld.define_singleton_method(:enter) { |world| @world = world }
+modded = MGQ_MpWorld::Directory::ListedWorld.new("w1", 4, 0, "creator", 0, "Creator", "Modded", "none", [], false, false, true, false, false, "", "", "", "", "")
+fresh = local_world("abcdef012345", {})
+fresh.define_singleton_method(:latest_save) { nil }
+MGQ_MpWorldMods.note_session(modded)
+MGQ_MpWorld.start(fresh, leaving)
+check("a world without a save goes back to the title for its new game before it enters, so the title does not restart the game", [$went_back, entered], [:title, []])
+starting = Scene_Title.new
+starting.instance_variable_set(:@command_window, TitleCommands.new)
+MGQ_MpWorld.on_title_update(starting)
+check("the title enters the game for the world right before its New Game", [entered, starting.asked?], [[["the world Modded", nil]], true])
+restarts = []
+Mod_Framework::Mods.define_singleton_method(:restart) { |reason, action = nil, value = nil| restarts << [action, value]; :restarting }
+MGQ_Multiplayer::Stages.define_singleton_method(:entered?) { true }
+starting.instance_variable_get(:@command_window).activate
+MGQ_MpWorld.on_title_update(starting)
+check("backing out of that New Game's question leaves the world and starts the game again into the world screen, so none of its mods stays loaded",
+      [MGQ_MpWorld.open?, restarts], [false, [["multiplayer.open", nil]]])
+MGQ_Multiplayer::Stages.define_singleton_method(:entered?) { false }
+MGQ_MpWorld.instance_variable_set(:@pending, nil)
+
+entered.clear
+saved = local_world("abcdef012345", {})
+saved.define_singleton_method(:latest_save) { 2 }
+loads = []
+DataManager.define_singleton_method(:load_game) { |index| loads << [index, entered.size]; true }
+# Finishes a load as the game's load screen does, which the world's load does too.
+class Scene_Load; def on_load_success; end; end
+MGQ_MpWorldMods.note_session(modded)
+check("a world with a save enters the game right before the save loads",
+      [MGQ_MpWorld.start(saved, leaving), loads, entered], [nil, [[2, 1]], [["the world Modded", nil]]])
+MGQ_MpWorld.singleton_class.send(:alias_method, :enter, :tested_enter)
+MGQ_MpWorld.instance_variable_set(:@world, nil)
+MGQ_Multiplayer::Stages.define_singleton_method(:staged?) { false }
+
 # A Discord invite into a world, which carries the world code.
 $invite_world_id = "w3"
 added = []
@@ -888,6 +883,21 @@ check("the title screen opens the world screen for it", $called, Scene_MpWorlds)
 $called = nil
 MGQ_MpWorld.on_title_update(asking)
 check("and only once, since the screen takes the invite from the DLL", $called, nil)
+
+# An invite taken during a game the Mod Framework entered, whose way back to the title starts the
+# game again: the restart carries it to the title of the game that starts again.
+module MGQ_Multiplayer; module Stages; INVITE_ACTION = "multiplayer.invite" unless const_defined?(:INVITE_ACTION); end; end
+carried = []
+Mod_Framework::Mods.define_singleton_method(:carry_after_restart) { |name, value = nil| carried << [name, value] }
+MGQ_Multiplayer::Stages.define_singleton_method(:restart_needed?) { false }
+MGQ_MpWorld::Invite.receive("mgqmp2;abcdefghjkmnpqrs;r1;4")
+check("an invite taken where the way back to the title needs no restart waits for the title alone", carried, [])
+MGQ_Multiplayer::Stages.define_singleton_method(:restart_needed?) { true }
+MGQ_MpWorld::Invite.receive("mgqmp2;abcdefghjkmnpqrs;r1;4")
+check("one taken in a game the framework entered goes with the restart the way back to the title makes",
+      carried, [["multiplayer.invite", "mgqmp2;abcdefghjkmnpqrs;r1;4"]])
+MGQ_Multiplayer::Stages.define_singleton_method(:restart_needed?) { false }
+MGQ_MpWorld::Invite.drop
 
 # The DLL takes the invite and enters the world once the list holds it (WorldEnteringTests).
 invited = new_scene
@@ -919,31 +929,26 @@ $screen_waiting = false
 # An outdated game offers the update on the title screen where it would open the world screen on
 # its own: for a Discord invite, and to enter a world again after a restart for its mods.
 
-# The title's commands also take no input.
-class TitleMenu; def deactivate; @active = false; end; end
 $outdated = true
 offering = Scene_Title.new
 offering.instance_variable_set(:@command_window, TitleMenu.new)
-offer.hide
+offering.instance_variable_get(:@command_window).activate
 MGQ_MpWorld::Invite.receive("mgqmp2;abcdefghjkmnpqrs;r1;4")
 $called = nil
+$required.clear
 MGQ_MpWorld.on_title_update(offering)
-check("an outdated game offers the update for a Discord invite instead of opening the world screen, and drops the invite",
-      [$called, offer.shown?, offer.instance_variable_get(:@box).shown[0], offering.instance_variable_get(:@command_window).active, MGQ_Multiplayer::Bridge.call("worlds.invite_take")],
-      [nil, true, "Monster Girl Quest! Online 9.9.9 is out", false, nil])
-$pressed = :B
-offer.update
-$pressed = nil
-check("closing it gives the title's commands back", [offer.shown?, offering.instance_variable_get(:@command_window).active], [false, true])
-$player_ini = { "rejoin" => "w1" }
-MGQ_Multiplayer::Player.define_singleton_method(:setting) { |key| $player_ini[key] }
-MGQ_Multiplayer::Player.define_singleton_method(:store) { |key, value| $player_ini[key] = value.to_s }
+check("an outdated game asks for the update for a Discord invite instead of opening the world screen, and drops the invite",
+      [$called, $required.size, update.asking?, offering.instance_variable_get(:@command_window).active, MGQ_Multiplayer::Bridge.call("worlds.invite_take")],
+      [nil, 1, true, false, nil])
+$required.last[3].call(:declined)
+check("declining it gives the title's commands back", [update.asking?, offering.instance_variable_get(:@command_window).active], [false, true])
+MGQ_MpWorldMods.restarted_for("w1")
 # The title screen stays.
 class Scene_Title; def scene_changing?; false; end; end
 MGQ_MpWorldMods.on_title_update(offering)
 check("so does an outdated game started again to enter a world, which it then no longer enters on its own",
-      [$called, offer.shown?, MGQ_MpWorldMods.rejoining, $player_ini["rejoin"]], [nil, true, nil, ""])
-offer.hide
+      [$called, $required.size, MGQ_MpWorldMods.rejoining, MGQ_MpWorldMods.take_rejoin], [nil, 2, nil, nil])
+$required.last[3].call(:declined)
 $outdated = false
 
 # What the lines at the top say.

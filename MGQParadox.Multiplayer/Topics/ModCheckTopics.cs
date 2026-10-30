@@ -2,6 +2,8 @@
 //  ModCheckTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Told the mods a world's session loads and those it turns off now
+//                            - Left installing a world's mods to the Mod Framework
 //      Paulinchen  2026-10-23: Handed the world screen the check
 //                            - Created
 //
@@ -21,8 +23,8 @@ namespace MGQParadox.Multiplayer.Topics;
 
 /// <summary>
 /// The bridge topics through which the scripts check a world's required mods against the relay's
-/// catalog and this game's copies (<see cref="ModCheck"/>), install the world's versions, send an
-/// admin's Mod Config options and list the mods the battle server runs.
+/// catalog and this game's copies (<see cref="ModCheck"/>), tell the mods a world's session loads
+/// (<see cref="SessionMods"/>), send an admin's Mod Config options and list the mods the battle server runs.
 /// </summary>
 internal sealed class ModCheckTopics
 {
@@ -40,12 +42,6 @@ internal sealed class ModCheckTopics
     /// the "name=hash" pairs out.
     /// </summary>
     public const string CreatorHashesTopic = "mods.creator_hashes";
-
-    /// <summary>
-    /// Installs the world's versions of its differing catalog mods: <c>mods</c> and <c>hashes</c> in;
-    /// true when the installation started, its end then in <c>mp_dir_action</c>.
-    /// </summary>
-    public const string InstallTopic = "mods.install";
 
     /// <summary>
     /// Forgets the scripts in Patch and their hashes, as the world screen opens or after an install or
@@ -73,6 +69,25 @@ internal sealed class ModCheckTopics
     public const string OptionsTopic = "mods.options";
 
     /// <summary>
+    /// Tells the mods a game session in a world that turns other mods off loads, see
+    /// <see cref="SessionMods.Of"/>: <c>world</c> (its name), <c>mods</c> (the world's, as written),
+    /// <c>names</c> (the player's mods as the Mod Framework names them) and <c>stays_on</c> (those that
+    /// run from the start of the game) in; <c>only</c>, <c>off</c> and <c>text</c> (what the player is
+    /// told, see <see cref="SessionMods.Entered"/>) out, nil while the catalog is unknown and a mod
+    /// the world does not name might be personal.
+    /// </summary>
+    public const string SessionTopic = "mods.session";
+
+    /// <summary>
+    /// Tells the mods of a session that its world turns off now that its rule or mods changed, see
+    /// <see cref="SessionMods.NowTurnedOff"/>: <c>world</c> (its name), <c>off</c> (whether the world
+    /// turns other mods off now), <c>mods</c> and <c>running</c> (the mods the session loaded but those
+    /// that run from the start) in; <c>off</c> (the names, none while the catalog is unknown) and
+    /// <c>text</c> (what the player is told, nil for none) out.
+    /// </summary>
+    public const string NowOffTopic = "mods.now_off";
+
+    /// <summary>
     /// Reads the catalog as last fetched, <see langword="null"/> before the first.
     /// </summary>
     private readonly Func<ModCatalog?> _catalog;
@@ -86,11 +101,6 @@ internal sealed class ModCheckTopics
     /// Hashes a file relative to the game folder, <see langword="null"/> when it is missing or cannot be read.
     /// </summary>
     private readonly Func<string, string?> _hash;
-
-    /// <summary>
-    /// Installs mods of the catalog, each key with its target; false while another action runs.
-    /// </summary>
-    private readonly Func<IReadOnlyList<(string Key, string Target)>, bool> _install;
 
     /// <summary>
     /// Sends a mod's options; false without a player.
@@ -138,15 +148,13 @@ internal sealed class ModCheckTopics
     /// <param name="catalog">Reads the catalog as last fetched.</param>
     /// <param name="installed">Lists the scripts in Patch.</param>
     /// <param name="hash">Hashes a file relative to the game folder.</param>
-    /// <param name="install">Installs mods of the catalog.</param>
     /// <param name="sendOptions">Sends a mod's options.</param>
     /// <param name="log">Where the lines go.</param>
-    public ModCheckTopics(Func<ModCatalog?> catalog, Func<IReadOnlyList<string>?> installed, Func<string, string?> hash, Func<IReadOnlyList<(string Key, string Target)>, bool> install, Func<string, string, IReadOnlyList<ModOption>, bool> sendOptions, IBridgeLog log)
+    public ModCheckTopics(Func<ModCatalog?> catalog, Func<IReadOnlyList<string>?> installed, Func<string, string?> hash, Func<string, string, IReadOnlyList<ModOption>, bool> sendOptions, IBridgeLog log)
     {
         _catalog = catalog;
         _installed = installed;
         _hash = hash;
-        _install = install;
         _sendOptions = sendOptions;
         _log = log;
     }
@@ -161,9 +169,8 @@ internal sealed class ModCheckTopics
     {
         ModCheckTopics topics = new(
             () => services.Directory().CatalogNow().Catalog,
-            () => services.Parking().Installed(),
+            services.Scripts,
             HashOf,
-            mods => services.Directory().InstallMods(mods),
             (key, version, options) => services.Directory().SendModOptions(key, version, options),
             context.Log);
         topics.Register(context, services.Changes);
@@ -193,7 +200,6 @@ internal sealed class ModCheckTopics
 
         context.Register(CheckTopic, (_, request) => CheckOf(request.AsHash()));
         context.Register(CreatorHashesTopic, (_, request) => Check().CreatorHashes(Text(request), _log.Write));
-        context.Register(InstallTopic, (_, request) => Install(request.AsHash()));
         context.Register(ForgetTopic, (_, _) =>
         {
             Forget();
@@ -201,6 +207,8 @@ internal sealed class ModCheckTopics
             return null;
         });
         context.Register(ServedTopic, (_, request) => new RubyArray(Served(Text(request)).Select(ServedValue)));
+        context.Register(SessionTopic, (_, request) => SessionOf(request.AsHash()));
+        context.Register(NowOffTopic, (_, request) => NowOffOf(request.AsHash()));
         context.Register(ReportTopic, (_, _) => Report());
         context.Register(OptionsTopic, (_, request) => SendOptions(request.AsHash()));
     }
@@ -311,18 +319,46 @@ internal sealed class ModCheckTopics
     }
 
     /// <summary>
-    /// Answers <see cref="InstallTopic"/>.
+    /// Answers <see cref="SessionTopic"/>.
     /// </summary>
-    /// <param name="request">The world's mods and hashes.</param>
-    /// <returns>Whether the installation started.</returns>
-    private RubyValue Install(RubyHash request)
+    /// <param name="request">The world's mods and the player's.</param>
+    /// <returns>The session's mods and those it leaves out; nil while unknown.</returns>
+    private RubyValue? SessionOf(RubyHash request)
     {
-        List<ModCheckRow> rows = [.. Check().Differing(Text(request["mods"]), Text(request["hashes"])).Where(row => row.Downloadable)];
-        string described = string.Join(", ", rows.Select(row => $"{row.Name} {row.Yours} -> {row.Worlds}{(row.Target != null ? $" into {row.Target}" : "")}"));
-        bool started = rows.Count > 0 && _install([.. rows.Select(row => (row.Key!, row.Target ?? ""))]);
-        _log.Write(started ? $"downloading {described}" : $"the download of {(rows.Count > 0 ? described : "no mod")} could not start");
-        return started;
+        SessionPlan? plan = SessionMods.Of(TextsOf(request["names"]), Text(request["mods"]), Personal());
+        if (plan == null)
+        {
+            _log.Write("the mods of a world's session are unknown until the catalog loads");
+            return null;
+        }
+
+        string text = SessionMods.Entered(Text(request["world"]), plan.Off, TextsOf(request["stays_on"]));
+        return new RubyHash { { "only", ModTopics.Texts(plan.Only) }, { "off", ModTopics.Texts(plan.Off) }, { "text", text.Length == 0 ? null : text } };
     }
+
+    /// <summary>
+    /// Answers <see cref="NowOffTopic"/>.
+    /// </summary>
+    /// <param name="request">The world's name, its rule and mods, and the mods the session runs.</param>
+    /// <returns>The mods it turns off now and what the player is told.</returns>
+    private RubyHash NowOffOf(RubyHash request)
+    {
+        IReadOnlyList<string> off = SessionMods.NowTurnedOff(request["off"].AsBool(), TextsOf(request["running"]), Text(request["mods"]), Personal());
+        return new RubyHash { { "off", ModTopics.Texts(off) }, { "text", off.Count == 0 ? null : SessionMods.NowOff(Text(request["world"])) } };
+    }
+
+    /// <summary>
+    /// Lists the keys of the catalog's personal mods.
+    /// </summary>
+    /// <returns>The keys; <see langword="null"/> while the catalog is unknown.</returns>
+    private IReadOnlyCollection<string>? Personal() => _catalog() is { } catalog ? ModTopics.Readable(catalog).Personal : null;
+
+    /// <summary>
+    /// Reads a list of texts that may be nil.
+    /// </summary>
+    /// <param name="value">The list.</param>
+    /// <returns>The texts, none for nil.</returns>
+    private static IReadOnlyList<string> TextsOf(RubyValue value) => value.IsNil ? [] : [.. value.AsArray().Select(item => item.AsText())];
 
     /// <summary>
     /// Answers <see cref="ReportTopic"/>.

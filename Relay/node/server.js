@@ -2,6 +2,7 @@
 //  server.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Handed the request's method to the update gate
 //      Paulinchen  2026-10-28: Filled the story tables that hold no rows yet from the seed files at start
 //      Paulinchen  2026-10-23: Kept the story mapping, answered its admin routes and handed it to games
 //                            - Asked the battle server for the derived story index after every change of rows and at start
@@ -729,7 +730,7 @@ export function createRelay({
       logged(101);
       seat(webSocket);
     });
-    const outdated = updateRefusal(new URL(request.url, "http://relay"), headerOf(request, FEATURES_HEADER), headerOf(request, VERSION_HEADER), release.min);
+    const outdated = updateRefusal(new URL(request.url, "http://relay"), headerOf(request, FEATURES_HEADER), headerOf(request, VERSION_HEADER), release.min, request.method);
 
     if (outdated) {
       turnAway(outdated.status, outdated.reason, outdated.code);
@@ -817,7 +818,7 @@ export function createRelay({
    */
   async function answerDirectory(request, response) {
     const url = new URL(request.url, "http://relay");
-    const outdated = updateRefusal(url, headerOf(request, FEATURES_HEADER), headerOf(request, VERSION_HEADER), release.min);
+    const outdated = updateRefusal(url, headerOf(request, FEATURES_HEADER), headerOf(request, VERSION_HEADER), release.min, request.method);
 
     if (outdated) {
       await refuseOutdated(request, response, outdated);

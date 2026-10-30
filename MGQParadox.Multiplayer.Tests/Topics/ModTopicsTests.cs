@@ -2,6 +2,7 @@
 //  ModTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Listed the scripts of the Patch folder without the parking
 //      Paulinchen  2026-10-23: Covered the mods text topic
 //                            - Gave the topics the world directory too
 //                            - Created
@@ -38,8 +39,7 @@ public sealed class ModTopicsTests : IDisposable
     /// </summary>
     public ModTopicsTests()
     {
-        ModParking parking = new(_game.Path);
-        _topics = new TopicCaller(context => ModTopics.Register(context, () => parking, () => WorldDirectory.Current));
+        _topics = new TopicCaller(context => ModTopics.Register(context, () => PatchScripts.List(_game.Path), () => WorldDirectory.Current));
     }
 
     /// <summary>

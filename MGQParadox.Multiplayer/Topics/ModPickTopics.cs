@@ -2,6 +2,7 @@
 //  ModPickTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Listed the scripts of the Patch folder without the parking
 //      Paulinchen  2026-10-23: Named each mod's label and colour
 //                            - Created
 //
@@ -16,7 +17,6 @@ using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Mods;
 using MGQOnline.Game.Worlds;
-using MGQParadox.Multiplayer.Mods;
 
 namespace MGQParadox.Multiplayer.Topics;
 
@@ -49,13 +49,13 @@ internal static class ModPickTopics
     /// Registers the topics on a context.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
-    /// <param name="parking">Gives the parking of the game folder, which lists the scripts in Patch.</param>
-    public static void Register(BridgeContext context, Func<ModParking> parking)
+    /// <param name="scripts">Lists the scripts of the Patch folder.</param>
+    public static void Register(BridgeContext context, Func<IReadOnlyList<string>?> scripts)
     {
         ModPick? pick = null;
         context.Register(Open, (_, request) =>
         {
-            pick = new ModPick(request.AsHash()["text"].IsNil ? null : request.AsHash()["text"].AsText(), InstalledNames(parking().Installed()), ModKey.Of);
+            pick = new ModPick(request.AsHash()["text"].IsNil ? null : request.AsHash()["text"].AsText(), InstalledNames(scripts()), ModKey.Of);
             return ViewOf(pick);
         });
         context.Register(Act, (_, request) => pick == null ? null : new RubyHash { { "answer", Run(pick, request.AsHash()) }, { "pick", ViewOf(pick) } });
@@ -75,7 +75,7 @@ internal static class ModPickTopics
     internal static IReadOnlyList<string> InstalledNames(IReadOnlyList<string>? scripts) =>
         [.. (scripts ?? [])
             .Select(path => Path.GetFileName(path))
-            .Where(file => !ModParking.EveryPlayerHas(ModKey.Of(file)))
+            .Where(file => !SessionMods.SharedKeys.Contains(ModKey.Of(file)))
             .DistinctBy(ModKey.Of, StringComparer.Ordinal)
             .Select(Path.GetFileNameWithoutExtension)
             .OfType<string>()

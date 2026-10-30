@@ -2,6 +2,7 @@
 #  hooks_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Checked that the hooks stand aside while the mod sleeps
 #      Paulinchen  2026-10-12: Checked around with other arguments
 #      Paulinchen  2026-10-08: Checked the hook report and a wrap of a method defined later
 #                            - Checked that the hooks are logged as one line per script, once
@@ -144,3 +145,13 @@ check("who holds the player is logged once when it changes", $log.grep(/player h
 $held = false
 Game_Player.new.movable?
 check("and the release too", $log.grep(/player free again, released by one/).size, 1)
+
+# Asleep: the player entered the game without the mod, whose title part hooked the game already.
+$calls.clear
+$asleep = true
+MGQ_MpHooks.sleep_while { $asleep }
+check("while asleep a before and after hook and an around stand aside, the methods run as the game's",
+      [Scene_Test.new.update(2), Scene_Late.new.value, $calls], [4, 1, [[:update, 2]]])
+$asleep = false
+$calls.clear
+check("awake they run again", [Scene_Test.new.update(2), Scene_Late.new.value, $calls.size], [4, 2, 5])

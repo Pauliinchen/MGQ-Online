@@ -95,7 +95,7 @@ module MGQ_MpOverworldSync
   RAID_BOSSES_FIELD = "raid_bosses_value"
 
   # The field of the relay's push that a world's creator or an admin changed whether it turns other
-  # mods off, or its mods, with "1" or "0" and the mods under "mods", which world_mods_parking.rbx
+  # mods off, or its mods, with "1" or "0" and the mods under "mods", which world_mods.rbx
   # registers its route for.
   MODS_RULE_FIELD = "mods_rule_value"
 

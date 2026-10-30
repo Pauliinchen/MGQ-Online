@@ -2,6 +2,7 @@
 //  WorldModsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Dropped the installs, which the Mod Framework does
 //      Paulinchen  2026-10-23: Checked the catalog as the game script takes it through the bridge, a link not read yet left out
 //      Paulinchen  2026-10-22: Covered the list without the worlds' mods, which carries those of the world opened or read
 //      Paulinchen  2026-10-13: Expected the raid bosses setting of a Classic world at the end of its line
@@ -205,50 +206,6 @@ public sealed class WorldModsTests
 
         relay.KeptModOptionsVersion = "1.5.0";
         Assert.Equal((false, "1.5.0"), client.SetModOptions("levelcap", CreatorKey, "1.3.5", options));
-    }
-
-    /// <summary>
-    /// Asserts that installing a link mod takes its script from the release and checks it.
-    /// </summary>
-    [Fact]
-    public void InstallMods_LinkMod_WritesTheCheckedScript()
-    {
-        using var relay = new TestRelay();
-        using var game = new TempFolder();
-        relay.CatalogMods.Add(LinkEntry("1.4.0", ModHash.Of("Level_Cap.rb", Script), ["1.4.0", ModHash.Of("Level_Cap.rb", Script)]));
-        var player = new WorldDirectory { RelayAddress = _ => relay.Address, Playing = () => (CreatorKey, "Player"), GameFolder = () => game.Path, DownloadRelease = _ => Script };
-
-        ListState(player);
-        var installed = Act(player, directory => directory.InstallMods([("levelcap", "Patch/Level_Cap.rb")]));
-
-        Assert.Equal("done", installed["state"]);
-        Assert.Equal(Script, File.ReadAllBytes(Path.Combine(game.Path, "Patch", "Level_Cap.rb")));
-    }
-
-    /// <summary>
-    /// Asserts that installing an uploaded mod fetches its zip from the relay, and that a mod the
-    /// catalog lacks fails with a reason.
-    /// </summary>
-    [Fact]
-    public void InstallMods_Upload_FetchesTheZipFromTheRelay()
-    {
-        using var relay = new TestRelay();
-        using var game = new TempFolder();
-        var pack = Encoding.UTF8.GetBytes("pack");
-        relay.ModFiles["pack"] = ModInstallerTests.Zip(("Pack/a.luka", pack));
-        relay.CatalogMods.Add(new JsonObject
-        {
-            ["key"] = "pack", ["name"] = "Pack", ["kind"] = "upload", ["version"] = "2", ["fileUrl"] = string.Empty,
-            ["files"] = new JsonObject { ["Pack/a.luka"] = ModHash.Of("a.luka", pack) },
-            ["versions"] = new JsonArray(),
-        });
-        var player = new WorldDirectory { RelayAddress = _ => relay.Address, Playing = () => (CreatorKey, "Player"), GameFolder = () => game.Path };
-
-        ListState(player);
-
-        Assert.Equal("done", Act(player, directory => directory.InstallMods([("pack", string.Empty)]))["state"]);
-        Assert.Equal(pack, File.ReadAllBytes(Path.Combine(game.Path, "Patch", "Pack", "a.luka")));
-        Assert.Contains("no mod", Act(player, directory => directory.InstallMods([("missing", string.Empty)]))["error"]);
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 //  gate.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Tested that a GET of the mod catalog and its files asks nothing, as the Mod Framework reads them
 //      Paulinchen  2026-10-22: Tested which games hold a world's long mods and which read the world list with every world's mods
 //      Paulinchen  2026-10-12: Tested that the world directory, the mod catalog and the Raid World admin routes ask for X-MGQ-Features
 //                            - Tested the update code on the 400 of a world room and the World Admin tool passing with 0.0.0-dev
@@ -44,6 +45,15 @@ test("the routes games and the World Admin tool use and the world rooms ask for 
   }
 });
 
+test("a GET of the mod catalog and its files asks nothing, while its changes and a request of no method stay held", () => {
+  assert.equal(gateOf(at("/v1/mods"), "GET"), null);
+  assert.equal(gateOf(at("/v1/mods/levelcap/file"), "GET"), null);
+  assert.equal(gateOf(at("/v1/mods"), "POST"), GATE.features);
+  assert.equal(gateOf(at("/v1/mods/levelcap/upload"), "POST"), GATE.features);
+  assert.equal(gateOf(at("/v1/worlds"), "GET"), GATE.features, "the world directory stays held");
+  assert.equal(updateRefusal(at("/v1/mods"), null, null, "0.9.0", "GET"), null, "the Mod Framework, which names no game version");
+  assert.notEqual(updateRefusal(at("/v1/mods/levelcap/tag"), null, null, "0.9.0", "POST"), null);
+});
 test("versions are read with their build data and suffix, only 0.0.0-dev counts as a development build, and versions compare by their numbers", () => {
   assert.deepEqual(parseVersion("0.6.5+0123abc"), { parts: [0, 6, 5], development: false });
   assert.deepEqual(parseVersion(" 0.6.2.1 "), { parts: [0, 6, 2, 1], development: false });

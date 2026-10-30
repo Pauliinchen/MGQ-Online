@@ -2,6 +2,7 @@
 //  server.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Tested that a read of the mod catalog passes without headers, as the Mod Framework sends it
 //      Paulinchen  2026-10-23: Tested the story mapping's admin routes, their log and the games' read of the mapping
 //                            - Tested a Raid World's story tracks over the world room: sync, writes, pushes, telling locks, the mapping's revision
 //                            - Tested that a stopping relay closes every connection as a service restart and logs it
@@ -1182,7 +1183,7 @@ test("a game without X-MGQ-Features, or naming a version below the lowest, is tu
   assert.deepEqual([posted.status, await posted.json()], [426, { error: UPDATE_NEEDED }], "the refusal comes once the body is drained");
 
   const mods = directoryBase.replace("/v1/worlds", "/v1/mods");
-  assert.deepEqual([(await fetch(directoryBase)).status, (await fetch(mods)).status], [426, 426], "a game before 0.6.0 or an older World Admin tool build");
+  assert.deepEqual([(await fetch(directoryBase)).status, (await fetch(mods)).status], [426, 200], "a game before 0.6.0 or an older World Admin tool build, while the Mod Framework reads the mod catalog without headers");
   assert.equal((await fetch(`${directoryBase}/${room}/raid?player=${ADMIN}`, { headers: { [VERSION_HEADER]: "0.0.0-dev" } })).status, 426, "the Raid World admin routes ask for X-MGQ-Features too");
   assert.deepEqual([(await gameFetch(directoryBase)).status, (await gameFetch(mods)).status], [200, 200]);
   assert.equal((await fetch(`${directoryBase}/${room}/raid?player=${ADMIN}`, { headers: ADMIN_TOOL })).status, 404, "the World Admin tool passes");
@@ -1203,10 +1204,10 @@ test("the MIN_VERSION setting raises the lowest version a game may name, which o
       [426, 426, 426, 200, 200, 200, 200],
     );
     assert.equal(await status(trades, GAME), 426, "a game naming no version counts as 0.6.4");
-    assert.deepEqual([await status(`http://${at}/v1/worlds`, {}), await status(`http://${at}/v1/mods`, {}), await status(`http://${at}/v1/worlds`, { [VERSION_HEADER]: "0.6.9" })], [426, 426, 426], "the world directory and the mod catalog too");
+    assert.deepEqual([await status(`http://${at}/v1/worlds`, {}), await status(`http://${at}/v1/mods`, {}), await status(`http://${at}/v1/worlds`, { [VERSION_HEADER]: "0.6.9" })], [426, 200, 426], "the world directory too, but not a read of the mod catalog");
     assert.deepEqual([await status(`http://${at}/v1/worlds`, ADMIN_TOOL), await status(`http://${at}/v1/mods`, ADMIN_TOOL)], [200, 200], "the World Admin tool names 0.0.0-dev");
     assert.deepEqual([await status(`http://${at}/v1/worlds`, { ...GAME, [VERSION_HEADER]: "0.7.0" }), await status(`http://${at}/v1/mods`, { ...GAME, [VERSION_HEADER]: "0.7.1" })], [200, 200]);
-    assert.deepEqual([await status(`http://${at}/v1/worlds`, { [VERSION_HEADER]: "0.7.0" }), await status(`http://${at}/v1/mods`, { [VERSION_HEADER]: "0.7.1" })], [426, 426], "they ask for X-MGQ-Features too");
+    assert.deepEqual([await status(`http://${at}/v1/worlds`, { [VERSION_HEADER]: "0.7.0" }), (await fetch(`http://${at}/v1/mods`, { method: "POST", headers: { [VERSION_HEADER]: "0.7.1" } })).status], [426, 426], "they ask for X-MGQ-Features too, a change of the mod catalog included");
     assert.deepEqual(await openWithHeaders(`ws://${at}/v1/room/${roomId(134)}?role=host`, {}), { status: 426, refusal: UPDATE_NEEDED }, "a released game's PvP room");
     assert.deepEqual(await openWithHeaders(`ws://${at}/v1/world/${roomId(133)}?name=Old&auth=${AUTH}`, { [PLAYER_HEADER]: playerKey(81), ...GAME }), { status: 400, refusal: "update" }, "a released game's world room");
   } finally {

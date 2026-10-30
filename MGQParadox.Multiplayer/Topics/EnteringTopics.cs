@@ -2,6 +2,7 @@
 //  EnteringTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Entered without the parking
 //      Paulinchen  2026-10-23: Built the world screen's requests from its forms
 //                            - Created
 //
@@ -10,7 +11,6 @@
 using System;
 using System.Collections.Generic;
 using MGQOnline.Bridge;
-using MGQParadox.Multiplayer.Mods;
 using MGQParadox.Multiplayer.Network.World;
 using MGQParadox.Multiplayer.Windows;
 
@@ -18,7 +18,7 @@ namespace MGQParadox.Multiplayer.Topics;
 
 /// <summary>
 /// Registers the world screen's steps (<see cref="WorldEntering"/>) over the world directory, the
-/// worlds on this PC and the parking.
+/// worlds on this PC.
 /// </summary>
 internal static class EnteringTopics
 {
@@ -29,12 +29,11 @@ internal static class EnteringTopics
     /// <param name="services">What the topics of worlds share.</param>
     /// <param name="worlds">The worlds on this PC.</param>
     /// <param name="lists">The player's lists of worlds.</param>
-    /// <param name="parking">The parking's session.</param>
     /// <param name="forms">The world screen's open forms, whose values the requests are built from.</param>
     /// <param name="fingerprint">Gives this game's data fingerprint.</param>
-    public static void Register(BridgeContext context, WorldServices services, LocalWorlds worlds, WorldLists lists, ParkingSession parking, FormTopics forms, Func<string> fingerprint)
+    public static void Register(BridgeContext context, WorldServices services, LocalWorlds worlds, WorldLists lists, FormTopics forms, Func<string> fingerprint)
     {
-        WorldEntering entering = new(context, new Directory(services.Directory), worlds, lists, services.Player.Share, () => parking.Holding, services.Tickets, services.Changes);
+        WorldEntering entering = new(context, new Directory(services.Directory), worlds, lists, services.Player.Share, services.Tickets, services.Changes);
         entering.UseRequests(forms.FormIn, fingerprint, Clipboard.SetText);
         entering.Register();
     }

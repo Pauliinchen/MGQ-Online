@@ -2,6 +2,7 @@
 #  start_choice_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Stopped loading the deleted world_mods_parking.rbx
 #      Paulinchen  2026-10-23: Checked that a new world goes to the DLL and that the screen plays the steps it answers
 #                            - Checked that the screen plays the DLL's steps of where to start and hands back the player's choice
 #                            - Read the details and the texts through the stand-ins of the world screen's model
@@ -131,7 +132,6 @@ load_script "ui"
 load_script "ui_text_box"
 load_script "world"
 load_script "world_mods"
-load_script "world_mods_parking"
 load_script "world_text"
 load_script "world_screen"
 open_rules_bridge

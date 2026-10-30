@@ -2,6 +2,7 @@
 //  worker.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Tested that a read of the mod catalog passes without headers, as the Mod Framework sends it
 //      Paulinchen  2026-10-15: Tested the migration routes through the directory and a world room
 //                            - Tested that every battle on the battle server is refused
 //      Paulinchen  2026-10-12: Tested the schedules and the release notice to world rooms with players online
@@ -755,8 +756,10 @@ test("the Worker turns a game without X-MGQ-Features or below MIN_VERSION away b
   await worker.fetch(new Request(`https://relay.test/v1/room/${ROOM}?role=host`, { headers: upgrade }), released);
   await worker.fetch(new Request(`https://relay.test/v1/world/${WORLD}?name=New&auth=${AUTH}`, { headers: { ...upgrade, [PLAYER_HEADER]: playerKey(1), [FEATURES_HEADER]: "raid" } }), released);
   await worker.fetch(new Request("https://relay.test/v1/worlds"), released);
+  assert.deepEqual(reached, [`room:${ROOM}`, `world:${WORLD}`], "a request without X-MGQ-Features stays refused on the world directory");
   await worker.fetch(new Request("https://relay.test/v1/mods"), released);
-  assert.deepEqual(reached, [`room:${ROOM}`, `world:${WORLD}`], "a request without X-MGQ-Features stays refused on the world directory and the mod catalog");
+  await worker.fetch(new Request("https://relay.test/v1/mods/levelcap/file"), env);
+  assert.deepEqual(reached.splice(2), ["directory:directory", "directory:directory"], "a read of the mod catalog and its files passes without headers, as the Mod Framework sends it");
   await worker.fetch(new Request("https://relay.test/v1/worlds", { headers: { [FEATURES_HEADER]: "raid" } }), released);
   await worker.fetch(new Request("https://relay.test/v1/mods", { headers: { [FEATURES_HEADER]: "raid" } }), released);
   await worker.fetch(new Request(`https://relay.test/v1/worlds/${WORLD}/raid?player=${playerKey(1)}`, { headers: { [FEATURES_HEADER]: "admin", [VERSION_HEADER]: "0.0.0-dev" } }), released);
