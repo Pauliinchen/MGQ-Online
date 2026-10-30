@@ -2,6 +2,7 @@
 #  raid_tiers_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Read the stats through the pools' wrap
 #      Paulinchen  2026-10-23: Stood in for the ids coop.rbx makes up
 #      Paulinchen  2026-10-13: Created
 #
@@ -486,11 +487,11 @@ start([[:battle, 2219]])
 chaos = enemy
 check("a tier 0 boss gets 50 times its max HP and 5 times both defenses", [tiered, chaos.mhp, chaos.hp, chaos.def, chaos.mdf], [[2219, 1, 0], 50000, 50000, 500, 500])
 other = Game_Enemy.new(0, 9)
-check("an enemy outside the battle keeps its own", [other.mhp, other.def, tiers.stat(other, :def, 100)], [1000, 100, 100])
+check("an enemy outside the battle keeps its own", [other.mhp, other.def, MGQ_MpRaidPool::Stats.stat(other, :def, 100)], [1000, 100, 100])
 reset
 tiers.choose(true)
 start([[:battle, 71]])
-check("a tier that names no defense leaves it", [enemy.def, enemy.mdf, tiers.stat(enemy, :def, 40)], [40, 40, 40])
+check("a tier that names no defense leaves it", [enemy.def, enemy.mdf, MGQ_MpRaidPool::Stats.stat(enemy, :def, 40)], [40, 40, 40])
 
 # Co-op battles: the invite says whether the boss fights at its tier, and a guest follows it.
 reset

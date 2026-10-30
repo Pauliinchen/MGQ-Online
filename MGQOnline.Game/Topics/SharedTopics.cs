@@ -2,7 +2,9 @@
 //  SharedTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Handed the live battle's session to the co-op topics
+//      Paulinchen  2026-10-30: Handed the raid pools' topics the host's way to the pools, an outbox of the context's own by default
+//                            - Registered the raid pools' topics over the host's ledger
+//                            - Handed the live battle's session to the co-op topics
 //                            - Registered the live battle's topics
 //                            - Registered the topics of the co-op battles' intake
 //      Paulinchen  2026-10-28: Registered the choice topics
@@ -18,6 +20,7 @@ using System;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Ids;
+using MGQOnline.Game.Raid;
 
 namespace MGQOnline.Game.Topics;
 
@@ -39,10 +42,18 @@ public static class SharedTopics
     private const int DefaultRadix = 36;
 
     /// <summary>
+    /// Registers the topics on a context, with randomness and raid pools of the context's own, the
+    /// pools on the clock's milliseconds and their reports in an outbox, as the battle server's core has them.
+    /// </summary>
+    /// <param name="context">The context the handshake opened.</param>
+    public static void Register(BridgeContext context) => Register(context, new PoolOutbox(new PoolLedger(() => Environment.TickCount64)));
+
+    /// <summary>
     /// Registers the topics on a context, with randomness of the context's own.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
-    public static void Register(BridgeContext context)
+    /// <param name="pools">The host's way to the raid pools.</param>
+    public static void Register(BridgeContext context, IRaidRelay pools)
     {
         ArgumentNullException.ThrowIfNull(context);
         Random random = new();
@@ -53,6 +64,7 @@ public static class SharedTopics
         SceneTopics.Register(context);
         PageTopics.Register(context, random);
         CoopTopics.Register(context, LiveTopics.Register(context));
+        PoolTopics.Register(context, pools);
     }
 
     /// <summary>

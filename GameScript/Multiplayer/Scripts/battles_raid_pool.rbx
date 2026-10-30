@@ -2,6 +2,9 @@
 #  battles_raid_pool.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Reported and synced a fight's turns in C#, keeping the slots' time compares
+#                            - Read the pools from the ledger the DLL and the battle server keep in C#, which counts the own reports and the pushes
+#                            - Raised the stats of the pools' and the tiers' enemies through one wrap with the factors kept per battle
 #      Paulinchen  2026-10-23: Made up a battle's id through coop.rbx
 #                            - Removed retrying?, which only the tests read
 #                            - Won a refight of a boss the world's story beat already at once
@@ -44,13 +47,15 @@
 # The raid bosses of a Raid World: each story boss is one fight the whole world shares, its enemies'
 # stats raised by the factors of its tier (MGQ_MpRaidBosses::TIERS). Its pool at the relay
 # (Relay/core/bosses.js) keeps how much of its HP is left, as a share of its max, and refills by
-# REGEN_PER_MINUTE of it every minute. Every battle against the boss fights the same HP: as its
-# actions end, at most every REPORT_SECONDS, and at each command phase the battle reports what it
-# dealt since the last report; as each command phase opens, and every INPUT_SYNC_SECONDS while it
-# waits for commands, it also takes the pool's HP, so a boss falls only once the world wore its pool
-# down. A battle that empties the pool, or fights on as another empties it, wins as the game's own
+# the share a minute the relay names. Every battle against the boss fights the same HP: as its
+# actions end, at most every two seconds, and at each command phase the battle reports what it
+# dealt since the last report; as each command phase opens, and every five seconds while it waits
+# for commands, it also takes the pool's HP, so a boss falls only once the world wore its pool
+# down. The fight's reports and HP are C#'s (MGQOnline.Game's RaidFight, see turn). A battle that empties the pool, or fights on as another empties it, wins as the game's own
 # battles win, and the story goes on through the event that started it, without waiting for the
-# relay.
+# relay. What the game knows of the pools is the C# ledger's (MGQOnline.Game's PoolLedger, topic
+# POOLS_TOPIC), which the DLL fills with the relay's word and the player's own reports, and the
+# battle server's core with what the relay tells the server.
 #
 # A battle fights a pool when the player plays the story of a Raid World, the event of the map
 # started it with its battle command, and its troop is the last phase of a boss fight of
@@ -59,40 +64,32 @@
 # that takes nobody in may fight the same pool in a side battle of their own (start_side). Classic
 # worlds are never touched.
 module MGQ_MpRaidPool
-  # Share of its max HP a pool gains back every minute, also while battles fight it, as the relay
-  # counts it.
-  REGEN_PER_MINUTE = 0.03
-
-  # Least seconds between two reports of a battle as its actions end; a command phase and the
-  # battle's end report at once. Keeps a player's reports within the relay's two a second
-  # (Relay/core/bosses.js) for a boss of up to four enemies.
-  REPORT_SECONDS = 2
-
-  # Seconds between two takes of the pools' HP while a battle waits for its players' commands.
-  INPUT_SYNC_SECONDS = 5
-
-  # Frames between two reads of the DLL's state of the pools.
+  # Frames between two reads of the pools from the ledger.
   STATE_FRAMES = 10
 
-  # Bytes the DLL may write the pools' state into at first.
-  STATE_SIZE = 4096
+  # The topic that hands out the pools as the ledger knows them now.
+  POOLS_TOPIC = "raid.pools"
 
-  # Share of a pool's max by which the DLL's line of a pool must differ from the one it gave before
-  # to tell anything new, beyond the regeneration since; the DLL rounds the share it writes.
-  LINE_TOLERANCE = 0.0006
+  # The topic that hands the battle server's ledger a pool the relay or the starter told.
+  HEARD_TOPIC = "raid.pool.heard"
 
-  # Smallest share of a pool's max a report carries.
-  MIN_DELTA = 1.0e-12
+  # The event of a pool the relay's push defeated for the world, once.
+  DEFEATED_EVENT = "raid.boss_defeated"
 
-  # Share of its max a pool the relay keeps standing has at least here: the relay and the DLL round
-  # the share to 6 decimals, so the last HP of a large pool arrive as 0.
-  MIN_LEFT = 1.0e-9
+  # The event of a pool an admin's reset fills again, once.
+  BACK_EVENT = "raid.boss_back"
+
+  # The topic that opens a battle that fights a boss's pools in C#.
+  FIGHT_OPEN_TOPIC = "raid.fight.open"
+
+  # The topic that runs a moment of that battle, see turn.
+  FIGHT_TURN_TOPIC = "raid.fight.turn"
+
+  # The topic that ends that battle without a report.
+  FIGHT_CLOSE_TOPIC = "raid.fight.close"
 
   # Frames before the pools' fetch is tried again after the DLL did not start it.
   FETCH_RETRY_FRAMES = 120
-
-  # Most reports the player's game counts as not answered yet, as many as the DLL queues.
-  MAX_PENDING = 1000
 
   # The switch the Hades rematches turn on around their battles.
   HADES_SWITCH = 97
@@ -259,23 +256,14 @@ module MGQ_MpRaidPool
   # The frame the pools were last read from the DLL.
   @read_at = 0
 
-  # The world's pools by their key, as the player's game knows them.
+  # The world's pools by their key, as the ledger told them at the last read.
   @pools = {}
 
-  # The last line read of each pool by its key.
-  @lines = {}
-
-  # The enemies of the battle that already have their tier's stats.
-  @scaled = []
-
-  # The troop of the battle whose enemies were scaled last.
-  @scaled_troop = nil
+  # The share of a pool's max every pool gains back a minute, as the ledger told it.
+  @regen = 0.0
 
   # The bosses already told defeated for the whole world, by their key.
   @announced = {}
-
-  # The keys of the pools this game reported to most recently, at most MAX_PENDING.
-  @pending = []
 
   extend MGQ_MpLog
 
@@ -290,22 +278,15 @@ module MGQ_MpRaidPool
   # @!attribute battle [String] The battle's id, under which the relay counts its reports once.
   # @!attribute own [Integer] How many enemies the troop's setup made, which come first in the troop.
   # @!attribute members [Array<Member>] The troop's own enemies, each with its pool.
-  # @!attribute seq [Integer] The number of the battle's last report, which the relay counts once.
   # @!attribute side [Boolean] Whether it is a side battle, see start_side.
-  # @!attribute guest [Boolean] Whether a host's stream governed it when last looked at, see
-  #   reporting?.
-  Fight = Struct.new(:key, :name, :troop, :battle, :own, :members, :seq, :side, :guest)
+  # @!attribute guest [Boolean] Whether a host's stream governed it when C# last looked, see turn.
+  Fight = Struct.new(:key, :name, :troop, :battle, :own, :members, :side, :guest)
 
   # One of the troop's own enemies in a battle that fights a boss's pools.
   #
   # @!attribute key [String] Its pool's key at the relay.
   # @!attribute index [Integer] Its place in the troop.
-  # @!attribute base [Integer, nil] Its HP as last taken from the pool or reported, nil before.
-  # @!attribute killed [Boolean] Whether its death was reported.
-  # @!attribute held [Boolean] Whether the DLL refused its last report, so its HP waits for the next
-  #   instead of taking the pool's.
-  # @!attribute enemy [Game_Enemy, nil] The enemy whose HP the base is, nil before.
-  Member = Struct.new(:key, :index, :base, :killed, :held, :enemy)
+  Member = Struct.new(:key, :index)
 
   # A pool as the player's game knows it.
   #
@@ -316,11 +297,94 @@ module MGQ_MpRaidPool
   # @!attribute at [Time] When :left held.
   Pool = Struct.new(:left, :max, :defeated, :by, :at)
 
+  # The stats a boss's tier raises (MGQ_MpRaidBosses::TIERS) of the battle's own enemies, for the
+  # pools and for the tiers outside Raid Worlds (battles_raid_tiers.rbx) alike: one wrap of each
+  # stat of Game_Enemy, with the tier's factors kept for the battle.
+  #
+  # The game asks for the stats many times a frame, so a stat looks its enemy up by its object and
+  # never reads the tier tables; the factor is applied on every call instead of stored, since the
+  # game computes the stat anew each time, from the difficulty and the enemy's states, so it always
+  # comes after the difficulty.
+  module Stats
+    # The battle's raised enemies by their object's id.
+    @enemies = {}
+
+    # The factors of the battle's tier by stat, those of 1 left out.
+    @factors = {}
+
+    # The tier the factors are of, nil before any battle.
+    @tier = nil
+
+    # Forgets the battle's enemies, as a new battle is set up and at the title screen.
+    def self.forget
+      @enemies = {}
+      @factors = {}
+      @tier = nil
+    end
+
+    # Gives a battle's own enemies their tier's stats, each new one keeping the share of its max
+    # HP it had; an enemy the list leaves out loses them.
+    #
+    # @param enemies [Array<Game_Enemy>] The battle's own enemies.
+    # @param tier [Integer, nil] Their boss's tier, nil for one without.
+    def self.scale(enemies, tier)
+      take_tier(tier)
+      fresh = enemies.reject { |enemy| scaled?(enemy) }
+      shares = fresh.map { |enemy| enemy.mhp.to_i > 0 ? enemy.hp.to_f / enemy.mhp : 1.0 }
+      @enemies = {}
+      enemies.each { |enemy| @enemies[enemy.__id__] = enemy }
+      fresh.each_with_index { |enemy, index| enemy.hp = MGQ_MpRaidPool.hp_of(shares[index], enemy.mhp) unless enemy.dead? }
+    end
+
+    # Keeps the factors of a tier for the battle.
+    #
+    # @param tier [Integer, nil] The tier.
+    def self.take_tier(tier)
+      return if @tier && tier == @tier
+
+      @tier = tier
+      @factors = MGQ_MpRaidBosses::TIERS.fetch(tier, {}).reject { |_stat, factor| factor == 1 }
+    end
+
+    # Reports whether an enemy has its tier's stats.
+    #
+    # @param enemy [Game_Enemy] The enemy.
+    # @return [Boolean] Whether it has.
+    def self.scaled?(enemy)
+      @enemies[enemy.__id__].equal?(enemy)
+    end
+
+    # Finds one of an enemy's stats: for an enemy of the battle that has its tier's stats, its own
+    # times the tier's factor of the stat, rounded half away from zero.
+    #
+    # @param enemy [Game_Enemy] The enemy.
+    # @param stat [Symbol] The stat, such as :mhp.
+    # @param own [Integer] The stat as the game computes it.
+    # @return [Integer] The stat.
+    def self.stat(enemy, stat, own)
+      return own if @enemies.empty? || !@enemies[enemy.__id__].equal?(enemy)
+
+      factor = @factors[stat]
+      factor ? (own * factor).round : own
+    end
+
+    # Wraps each stat any tier changes as the game starts running, see MGQ_MpRaidBosses.tier_stats.
+    #
+    # @param log [#log] Who logs a stat the game's enemies lack.
+    def self.install(log)
+      ([:mhp] + MGQ_MpRaidBosses.tier_stats).each do |stat|
+        next log.log("tiers change #{stat}, which the game's enemies lack") unless Game_Enemy.method_defined?(stat)
+
+        MGQ_MpHooks.around(Game_Enemy, stat, "battles_raid_pool") { |enemy, _args, original| Stats.stat(enemy, stat, original.call) }
+      end
+    end
+  end
+
   # Forgets every battle and what the relay told, as at the title screen.
   def self.forget
     @fight = nil
-    @reported_at = nil
-    @synced_at = nil
+    @report_due = nil
+    @sync_due = nil
     @lost = nil
     @invited = nil
     @side = nil
@@ -333,11 +397,10 @@ module MGQ_MpRaidPool
     @tried_at = 0
     @world = nil
     @pools = {}
-    @lines = {}
-    @scaled = []
-    @scaled_troop = nil
+    @regen = 0.0
+    Stats.forget
     @announced = {}
-    @pending = []
+    MGQ_Multiplayer::Bridge.call(FIGHT_CLOSE_TOPIC)
   end
 
   # Reports whether the pools apply: the player plays the story of a Raid World.
@@ -372,7 +435,7 @@ module MGQ_MpRaidPool
     @pools.dup
   end
 
-  # Finds the share of a pool's max HP left now, with what it gained back since it was told.
+  # Finds the share of a pool's max HP left now, with what it gained back since the ledger told it.
   #
   # @param pool [Pool] The pool.
   # @param now [Time] The moment.
@@ -380,7 +443,7 @@ module MGQ_MpRaidPool
   def self.left_now(pool, now = Time.now)
     return 0.0 if pool.defeated
 
-    [pool.left.to_f + REGEN_PER_MINUTE * (now - pool.at) / 60.0, 1.0].min
+    [pool.left.to_f + @regen * [now - pool.at, 0].max / 60.0, 1.0].min
   end
 
   # Finds an enemy's HP for a share of its max HP: at least 1 while any is left.
@@ -500,7 +563,7 @@ module MGQ_MpRaidPool
     @side = nil
     @fight = nil
     @lost = nil
-    @scaled = []
+    Stats.forget
     return win_at_once(troop_id.to_i) if won
 
     unless kind
@@ -526,8 +589,9 @@ module MGQ_MpRaidPool
     key = key_of(troop)
     return log("troop #{troop} fights no pool: its key is none the relay takes") unless key
 
-    members = member_keys(key, own).each_with_index.map { |member_key, index| Member.new(member_key, index, nil, false) }
-    @fight = Fight.new(key, troop_name(own), troop, new_battle_id, own, members, 0, side, kind == :guest || !reporter?)
+    members = member_keys(key, own).each_with_index.map { |member_key, index| Member.new(member_key, index) }
+    @fight = Fight.new(key, troop_name(own), troop, new_battle_id, own, members, side, kind == :guest || !reporter? ? true : false)
+    open_fight(@fight)
     take_on(@fight)
     log("battle #{@fight.battle} (#{kind}) against #{@fight.name} (troop #{troop}, tier #{MGQ_MpRaidBosses.tier(troop)}) fights the pool(s) #{members.map(&:key).join(', ')}: " \
         "#{members.map { |member| enemy_text(member) }.join(', ')}")
@@ -541,9 +605,11 @@ module MGQ_MpRaidPool
     @lost = nil
     return unless lost
 
-    members = lost.members.map { |member| Member.new(member.key, member.index, nil, false) }
-    @fight = Fight.new(lost.key, lost.name, lost.troop, new_battle_id, lost.own, members, 0, lost.side, !reporter?)
+    members = lost.members.map { |member| Member.new(member.key, member.index) }
+    @fight = Fight.new(lost.key, lost.name, lost.troop, new_battle_id, lost.own, members, lost.side, !reporter?)
     @set_up_kind = lost.side ? :side : :event
+    Stats.forget
+    open_fight(@fight)
     take_on(@fight)
     log("the retry of the battle against #{@fight.name} fights its pools as battle #{@fight.battle}")
   end
@@ -744,21 +810,16 @@ module MGQ_MpRaidPool
   # @param fight [Fight] The battle.
   def self.take_on(fight)
     scale_enemies(fight)
-    sync(fight)
+    turn(fight, "start")
   end
 
-  # Gives a battle's own enemies their tier's stats, see stat, each new one keeping the share of its
-  # max HP it had. Done again at each command phase and as a guest builds its troop anew from
+  # Gives a battle's own enemies their tier's stats (see Stats), each new one keeping the share of
+  # its max HP it had. Done again at each command phase and as a guest builds its troop anew from
   # the host's (see rescale).
   #
   # @param fight [Fight] The battle.
   def self.scale_enemies(fight)
-    enemies = own_enemies(fight.own).compact
-    fresh = enemies.reject { |enemy| scaled?(enemy) }
-    shares = fresh.map { |enemy| enemy.mhp.to_i > 0 ? enemy.hp.to_f / enemy.mhp : 1.0 }
-    @scaled = enemies
-    @scaled_troop = fight.troop
-    fresh.each_with_index { |enemy, index| enemy.hp = hp_of(shares[index], enemy.mhp) unless enemy.dead? }
+    Stats.scale(own_enemies(fight.own).compact, MGQ_MpRaidBosses.tier(fight.troop))
   end
 
   # Gives the enemies of a troop built anew in the battle that fights a pool their tier's stats
@@ -770,34 +831,9 @@ module MGQ_MpRaidPool
     return unless fight
 
     scale_enemies(fight)
-    sync(fight) unless fight.guest
+    turn(fight, "start")
   rescue => e
     log("raising the max HP of the troop built anew failed: #{e.class}: #{e.message}")
-  end
-
-  # Reports whether an enemy has its tier's stats.
-  #
-  # @param enemy [Game_Enemy] The enemy.
-  # @return [Boolean] Whether it has.
-  def self.scaled?(enemy)
-    @scaled.any? { |scaled| scaled.equal?(enemy) }
-  end
-
-  # Finds one of an enemy's stats: for an enemy of a battle that fights a pool, its own times the
-  # factor its boss's tier gives the stat (MGQ_MpRaidBosses.factor).
-  #
-  # The factor is applied on every call instead of stored, since the game computes the stat anew
-  # each time, from the difficulty and the enemy's states, so it always comes after the difficulty.
-  #
-  # @param enemy [Game_Enemy] The enemy.
-  # @param stat [Symbol] The stat, such as :mhp.
-  # @param own [Integer] The stat as the game computes it.
-  # @return [Integer] The stat.
-  def self.stat(enemy, stat, own)
-    return own if @scaled.empty? || !scaled?(enemy)
-
-    factor = MGQ_MpRaidBosses.factor(@scaled_troop, stat)
-    factor == 1 ? own : (own * factor).round
   end
 
   # Reports whether the player's game reports the battle's pools: as its host, alone or once it
@@ -808,79 +844,55 @@ module MGQ_MpRaidPool
     MGQ_MpBattlesSync.role != :guest
   end
 
-  # Gives the battle's own enemies the HP of their pools, and kills those whose pool is empty. An
-  # enemy that is dead keeps its death; one whose pool the relay told nothing of, or whose last
-  # report the DLL refused, keeps its HP. A guest's enemies keep the HP of their host's stream.
+  # Opens a battle that fights a boss's pools in C# (FIGHT_OPEN_TOPIC, MGQOnline.Game's RaidFight),
+  # in place of any other.
   #
   # @param fight [Fight] The battle.
-  # @param only_kill [Boolean] Whether only enemies whose pool is empty change.
-  # @return [Boolean] Whether it killed one.
-  def self.sync(fight, only_kill = false)
-    return false if fight.guest
+  def self.open_fight(fight)
+    @report_due = nil
+    @sync_due = nil
+    MGQ_Multiplayer::Bridge.call(FIGHT_OPEN_TOPIC, "world" => MGQ_MpWorldStory.world_id.to_s, "battle" => fight.battle,
+                                                   "keys" => fight.members.map(&:key), "guest" => fight.guest ? true : false)
+  end
 
+  # Runs a moment of the battle in C# (FIGHT_TURN_TOPIC, RaidFight.Turn), which reports what the
+  # battle dealt and gives its own enemies their pools' HP: hands it the enemies, sets the HP it hands
+  # back, kills the enemies whose pool is empty, keeps when the next report and sync may come, and
+  # reads the pools again after a report.
+  #
+  # @param fight [Fight] The battle.
+  # @param moment [String] "start", "phase", "action", "wait", "turn_end", "end", "take_over" or "role".
+  # @return [Hash] C#'s reply ("killed" whether an empty pool killed an enemy, "guest", ...); empty
+  #   while the bridge does not answer.
+  def self.turn(fight, moment)
     enemies = $game_troop.members
-    killed = false
-    now = Time.now
-    fight.members.each do |member|
+    text = fight.members.map do |member|
       enemy = enemies[member.index]
+      enemy ? "#{member.index}:#{enemy.hp.to_i}:#{enemy.mhp.to_i}:#{enemy.dead? ? 1 : 0}:#{enemy.__id__}" : nil
+    end.compact.join(";")
+    reply = MGQ_Multiplayer::Bridge.call(FIGHT_TURN_TOPIC, "moment" => moment, "reporter" => reporter?, "enemies" => text)
+    return {} unless reply.is_a?(Hash)
+
+    Array(reply["actions"]).each do |index, hp|
+      enemy = enemies[index]
       next unless enemy
 
-      pool = @pools[member.key]
-      unless pool && !enemy.dead?
-        # Set only once, since a later base would swallow what the battle dealt since its last report.
-        rebase(member, enemy) if member.base.nil? && !only_kill
-        next
-      end
-
-      left = left_now(pool, now)
-      next if only_kill && left > 0
-
-      target = hp_of(left, enemy.mhp)
-      if target <= 0
+      if hp > 0
+        enemy.hp = hp
+      else
         kill(enemy)
-        killed = true
-      elsif member.held
-        next
-      elsif enemy.hp != target
-        enemy.hp = target
       end
-      rebase(member, enemy)
     end
-    killed
-  end
-
-  # Takes an enemy's HP as the base its next report counts from.
-  #
-  # @param member [Member] The enemy's place in the battle.
-  # @param enemy [Game_Enemy] The enemy at the place.
-  # @param hp [Integer] The HP.
-  def self.rebase(member, enemy, hp = enemy.hp)
-    member.base = hp
-    member.enemy = enemy
-  end
-
-  # Reports whether the player's game reports the battle's pools now, noting whether a host's stream
-  # governs the battle. The first time a battle a host governed is the player's to report, as the
-  # player takes it over, every enemy's base becomes its HP at that moment, since the host reported
-  # what came before.
-  #
-  # @param fight [Fight] The battle.
-  # @return [Boolean] Whether it does.
-  def self.reporting?(fight)
-    unless reporter?
-      fight.guest = true
-      return false
+    Array(reply["rebuilt"]).each do |index|
+      enemy = enemies[index]
+      log("#{enemy.name} at place #{index} was built anew since its HP was last taken: it reports nothing until it takes its pool's HP") if enemy
     end
-    return true unless fight.guest
-
-    fight.guest = false
-    fight.members.each do |member|
-      enemy = $game_troop.members[member.index]
-      rebase(member, enemy) if enemy
-      member.held = false
-    end
-    log("battle #{fight.battle} is the player's to report from here: #{fight.members.map { |member| enemy_text(member) }.join(', ')}")
-    true
+    fight.guest = reply["guest"] ? true : false
+    log("battle #{fight.battle} is the player's to report from here: #{fight.members.map { |member| enemy_text(member) }.join(', ')}") if reply["took_over"]
+    @report_due = reply["report_in"] ? Time.now + reply["report_in"] / 1000.0 : nil
+    @sync_due = reply["sync_in"] ? Time.now + reply["sync_in"] / 1000.0 : nil
+    read_state if reply["reported"]
+    reply
   end
 
   # Makes a battle the player took over from its host the player's to report from the enemies' HP
@@ -890,7 +902,7 @@ module MGQ_MpRaidPool
   # otherwise fold the damage of that start into the base.
   def self.taken_over
     fight = @fight
-    reporting?(fight) if fight
+    turn(fight, "take_over") if fight
   rescue => e
     log("taking the battle over for its reports failed: #{e.class}: #{e.message}")
   end
@@ -919,34 +931,29 @@ module MGQ_MpRaidPool
     return unless fight
 
     scale_enemies(fight)
-    return unless reporting?(fight)
-
-    report(fight)
-    @synced_at = Time.now
-    BattleManager.judge_win_loss if sync(fight) && $game_troop.all_dead?
+    BattleManager.judge_win_loss if turn(fight, "phase")["killed"] && $game_troop.all_dead?
   rescue => e
     log_once(:command_phase, "reporting the turn and taking the pools' HP failed: #{e.class}: #{e.message}")
   end
 
-  # Takes the pools' HP every INPUT_SYNC_SECONDS while the battle waits for its players' commands,
-  # so its bar and enemies show the other battles' blows and the regeneration meanwhile. Nothing
-  # of the battle's own runs then, so the HP undoes none of its damage. A battle whose enemies all
-  # fall wins, as at the command phase, or by the answer of a live battle's wait for the other
-  # players' commands while one is open; a guest's keeps its host's HP and falls with its host's.
-  # Called after Scene_Battle#update_basic, every frame.
+  # Takes the pools' HP every few seconds while the battle waits for its players' commands, so its
+  # bar and enemies show the other battles' blows and the regeneration meanwhile. Nothing of the
+  # battle's own runs then, so the HP undoes none of its damage. A battle whose enemies all fall
+  # wins, as at the command phase, or by the answer of a live battle's wait for the other players'
+  # commands while one is open; a guest's keeps its host's HP and falls with its host's. Called
+  # after Scene_Battle#update_basic, every frame, so it only compares the time C# named and tells
+  # C# of a role that changed.
   #
   # The host's wait runs inside Scene_Battle#turn_start, which would start the turn on a battle
   # already won here.
   def self.waiting_for_commands
     fight = @fight
-    return unless fight && reporting?(fight) && MGQ_MpGame.get(BattleManager, :phase) == :input
+    return unless fight
 
-    now = Time.now
-    @synced_at ||= now
-    return if now - @synced_at < INPUT_SYNC_SECONDS
-
-    @synced_at = now
-    return unless sync(fight) && $game_troop.all_dead?
+    turn(fight, "role") if reporter? == fight.guest
+    return if fight.guest || MGQ_MpGame.get(BattleManager, :phase) != :input
+    return if @sync_due && Time.now < @sync_due
+    return unless turn(fight, "wait")["killed"] && $game_troop.all_dead?
     return log("every enemy fell while the live battle waits for commands: the wait wins the battle") if waiting?
 
     BattleManager.judge_win_loss
@@ -962,15 +969,15 @@ module MGQ_MpRaidPool
     defined?(MGQ_MpBattlesSync::Waiting) && MGQ_MpBattlesSync::Waiting.respond_to?(:active?) && MGQ_MpBattlesSync::Waiting.active? ? true : false
   end
 
-  # Reports what the battle dealt as one of its actions ends, at most every REPORT_SECONDS, so the
+  # Reports what the battle dealt as one of its actions ends, at most every two seconds, so the
   # other games see a long turn's damage. Its enemies take the pools' HP only at the command phase,
   # which would otherwise undo the turn's damage. Called after Scene_Battle#process_action.
   def self.action_done
     fight = @fight
-    return unless fight && reporting?(fight)
-    return if @reported_at && Time.now - @reported_at < REPORT_SECONDS
+    return unless fight
+    return if @report_due && Time.now < @report_due
 
-    report(fight)
+    turn(fight, "action")
   rescue => e
     log_once(:action_done, "reporting an action failed: #{e.class}: #{e.message}")
   end
@@ -979,9 +986,7 @@ module MGQ_MpRaidPool
   # then counts. Called before Scene_Battle#turn_end.
   def self.turn_ended
     fight = @fight
-    return unless fight && reporting?(fight)
-
-    sync(fight, true)
+    turn(fight, "turn_end") if fight
   rescue => e
     log_once(:turn_end, "taking the empty pools failed: #{e.class}: #{e.message}")
   end
@@ -997,88 +1002,13 @@ module MGQ_MpRaidPool
     @fight = nil
     return unless fight
 
-    reporting = reporting?(fight)
-    report(fight) if reporting
+    turn(fight, "end")
     @lost = fight if result == 2
     note_rewarded(fight.key) if result == 0 && fight.side
     log("battle #{fight.battle} against #{fight.name} ended #{{ 0 => 'won', 1 => 'escaped', 2 => 'lost' }.fetch(result, result.inspect)}" \
-        "#{reporting ? '' : ', its host reports'}: #{fight.members.map { |member| enemy_text(member) }.join(', ')}")
+        "#{fight.guest ? ', its host reports' : ''}: #{fight.members.map { |member| enemy_text(member) }.join(', ')}")
   rescue => e
     log("reporting the battle's end failed: #{e.class}: #{e.message}")
-  end
-
-  # Reports what each of the battle's own enemies lost since its HP was last taken or reported,
-  # as a share of its max HP, and its death. A report the DLL refuses is added to the next.
-  #
-  # @param fight [Fight] The battle.
-  def self.report(fight)
-    @reported_at = Time.now
-    world = MGQ_MpWorldStory.world_id.to_s
-    enemies = $game_troop.members
-    fight.members.each do |member|
-      enemy = enemies[member.index]
-      next if member.killed || enemy.nil?
-      next if rebuilt?(member, enemy)
-
-      max = enemy.mhp.to_i
-      next unless max > 0
-
-      dead = enemy.dead? ? true : false
-      # A base above the max HP now is a max the game lowered since, which took the HP down with it.
-      base = [member.base || max, max].min
-      # An HP above the max is a max the game lowered without taking the HP down, as the higher
-      # difficulties' boss rate the battle's start sets, which the game's next change of the HP cuts.
-      hp = [enemy.hp, max].min
-      delta = [[(base - hp).to_f / max, -1.0].max, 1.0].min
-      next if !dead && delta.abs < MIN_DELTA
-
-      seq = fight.seq + 1
-      text = "#{seq}\t#{format('%.10f', delta)}\t#{max}\t#{dead ? 1 : 0}"
-      unless Relay.report(world, member.key, fight.battle, text)
-        member.held = true
-        log_once([:refused, fight.battle], "the DLL took no report of battle #{fight.battle}: what it dealt goes with the next")
-        next
-      end
-
-      fight.seq = seq
-      rebase(member, enemy, hp)
-      member.killed = dead
-      member.held = false
-      @pending << member.key
-      @pending.shift if @pending.size > MAX_PENDING
-      note_own(member.key, delta, max, dead)
-      log("battle #{fight.battle} reports #{member.key} ##{seq}: #{format('%.6f', delta)} of #{max}#{dead ? ', killed' : ''}")
-    end
-  end
-
-  # Reports whether an enemy was built anew since its HP was last taken, such as a troop rebuilt
-  # from its host's, and takes its HP as the base then, so its full HP never counts as healing the
-  # pool; the next sync gives it the pool's.
-  #
-  # @param member [Member] The enemy's place in the battle.
-  # @param enemy [Game_Enemy] The enemy at the place now.
-  # @return [Boolean] Whether it was.
-  def self.rebuilt?(member, enemy)
-    return false if member.enemy.nil? || member.enemy.equal?(enemy)
-
-    rebase(member, enemy)
-    log("#{enemy.name} at place #{member.index} was built anew since its HP was last taken: it reports nothing until it takes its pool's HP")
-    true
-  end
-
-  # Counts the player's own report in the pool as the player's game knows it, so a command phase
-  # before the relay's answer keeps what the battle dealt.
-  #
-  # @param key [String] The pool's key.
-  # @param delta [Float] The share of its max reported lost.
-  # @param max [Integer] The battle's max HP of the enemy, the pool's while the relay told none.
-  # @param dead [Boolean] Whether the enemy died.
-  def self.note_own(key, delta, max, dead)
-    now = Time.now
-    pool = @pools[key]
-    left = pool ? left_now(pool, now) - delta : 1.0 - delta
-    empty = dead || left <= 0 || (pool && pool.defeated)
-    @pools[key] = Pool.new(empty ? 0.0 : [left, 1.0].min, pool && pool.max > 0 ? pool.max : max, empty ? true : false, pool && pool.by, now)
   end
 
   # Describes an enemy of the battle for the log.
@@ -1167,7 +1097,7 @@ module MGQ_MpRaidPool
   end
 
   # As the battle server, fights the pools of a battle the starter handed over, as its host: the
-  # pools as the starter's game knew them, then the battle's own enemies with their tier's stats
+  # pools as the starter's game knew them, handed to the core's ledger, then the battle's own enemies with their tier's stats
   # and the pools' HP. Called by MGQ_MpBattlesServed.host after BattleManager.setup.
   #
   # @param troop [Integer] The troop.
@@ -1176,12 +1106,14 @@ module MGQ_MpRaidPool
     own, side, pools = Array(fields)
     return log("troop #{troop} fights no pool on the server: the starter's count #{own.inspect} is none") unless own.is_a?(Integer) && own > 0 && own < 100
 
-    now = Time.now
+    world = MGQ_MpWorldStory.world_id.to_s
     Array(pools).each do |key, left, max, defeated, by|
       next unless key.is_a?(String) && !key.empty? && key.size <= MAX_KEY_LENGTH + 4
 
-      @pools[key] = Pool.new(share_of(left.to_s, defeated == 1), integer(max) || 0, defeated == 1, by.to_s.empty? ? nil : by.to_s, now)
+      MGQ_Multiplayer::Bridge.call(HEARD_TOPIC, "world" => world, "key" => key, "left" => left.to_s, "max" => max.is_a?(Integer) ? max : 0,
+                                                "defeated" => defeated == 1, "by" => by.to_s, "answer" => false)
     end
+    read_state
     start(troop, own, :served, side == 1)
   rescue => e
     @fight = nil
@@ -1339,30 +1271,28 @@ module MGQ_MpRaidPool
     end
   end
 
-  # Takes the relay's push that a pool changed, which every report and an admin's reset send to the
-  # whole world. A pool the push empties is told in the chat log.
+  # Takes the ledger's word that the relay's push defeated a pool for the world, once, and tells
+  # the chat log and the notification box once every pool of its boss is empty.
   #
-  # @param message [Hash] The push: MGQ_MpOverworldSync::BOSS_FIELD with the pool's key, "left"
-  #   with the share of its max left, "max", "defeated" 1 or 0, "by" who emptied it, and :relay,
-  #   which no player's message carries.
-  def self.pushed(message)
-    return log("ignored a boss push not from the relay") unless message[:relay]
-
-    key = message[MGQ_MpOverworldSync::BOSS_FIELD].to_s
-    left = message["left"].to_s
-    return log("ignored a boss push without a key or share: #{key.inspect} #{left.inspect}") if key.empty? || left !~ /\A\d+(\.\d+)?\z/
-
-    was = @pools[key]
-    defeated = message["defeated"].to_s == "1"
-    share = share_of(left, defeated)
-    return log("ignored the relay's push of #{key} at #{left}: the player's own reports since are not answered yet") if behind?(key, share, defeated)
-
-    by = message["by"].to_s
-    @pools[key] = Pool.new(share, integer(message["max"]) || (was ? was.max : 0), defeated, by.empty? ? (was && was.by) : by, Time.now)
-    log("the relay tells the pool #{key} holds #{left} of #{message['max']}#{defeated ? ', defeated' : ''}")
-    defeated ? announce(key) : back_up(key)
+  # @param payload [Hash] The event: "key" and "by", who defeated it.
+  def self.told_defeated(payload)
+    key = payload["key"].to_s
+    read_state
+    log("the relay tells the pool #{key} is defeated#{payload['by'].to_s.empty? ? '' : " by #{payload['by']}"}")
+    announce(key)
   rescue => e
-    log("taking the relay's push failed: #{e.class}: #{e.message}")
+    log("taking the defeat of a pool failed: #{e.class}: #{e.message}")
+  end
+
+  # Takes the ledger's word that an admin's reset filled a pool again, once.
+  #
+  # @param payload [Hash] The event: "key".
+  def self.told_back(payload)
+    key = payload["key"].to_s
+    log("the relay tells the pool #{key} stands again")
+    back_up(key)
+  rescue => e
+    log("taking the reset of a pool failed: #{e.class}: #{e.message}")
   end
 
   # Tells the chat log and the notification box that a boss is defeated for the whole world, once
@@ -1412,43 +1342,6 @@ module MGQ_MpRaidPool
     @troops_by_key[boss]
   end
 
-  # Reads a whole number the relay sent.
-  #
-  # @param text [Object] The number as text.
-  # @return [Integer, nil] The number, nil for none.
-  def self.integer(text)
-    text = text.to_s
-    return text.to_i if text =~ /\A\d+\z/
-    return text.to_f.round if text =~ /\A\d+(\.\d+)?(e\+?\d+)?\z/i
-
-    nil
-  end
-
-  # Reads the share of a pool's max HP left the relay or the DLL told: at least MIN_LEFT while the
-  # pool stands, at most all of it.
-  #
-  # @param left [String] The share as text.
-  # @param defeated [Boolean] Whether the pool is empty for good.
-  # @return [Float] The share, 0 to 1.
-  def self.share_of(left, defeated)
-    defeated ? 0.0 : [[left.to_f, MIN_LEFT].max, 1.0].min
-  end
-
-  # Reports whether word of a pool is older than the player's own reports the relay has not answered
-  # yet: more HP than the player's game counts while such a report waits. A pool that fills up again
-  # after an admin's reset is never older.
-  #
-  # @param key [String] The pool's key.
-  # @param left [Float] The share of its max left the word tells.
-  # @param defeated [Boolean] Whether the word tells it empty for good.
-  # @return [Boolean] Whether it is older.
-  def self.behind?(key, left, defeated)
-    was = @pools[key]
-    return false unless was && @pending.include?(key) && !defeated && !was.defeated && left < 1.0
-
-    left > left_now(was) + LINE_TOLERANCE
-  end
-
   # Follows the pools for one frame: fetches them as the player enters the world or a map, and reads
   # what the DLL learned now and then. Called every frame through overworld_sync.rbx.
   #
@@ -1475,9 +1368,7 @@ module MGQ_MpRaidPool
     if @world != place[0]
       @world = place[0]
       @pools = {}
-      @lines = {}
       @announced = {}
-      @pending = []
     end
     return if place == @tried && @clock - @tried_at < FETCH_RETRY_FRAMES
 
@@ -1486,42 +1377,20 @@ module MGQ_MpRaidPool
     @fetched = place if Relay.fetch(place[0])
   end
 
-  # Reads the pools the DLL knows of the player's world, taking each line that tells something new
-  # (see take_line), and forgets the player's reports it answered.
+  # Reads the pools the ledger knows of the player's world as they stand now, in place of those
+  # read before.
   def self.read_state
     @read_at = @clock
-    state = Relay.state
-    return unless state["world"].to_s == MGQ_MpWorldStory.world_id.to_s
+    state = MGQ_Multiplayer::Bridge.call(POOLS_TOPIC)
+    return unless state.is_a?(Hash) && state["world"].to_s == MGQ_MpWorldStory.world_id.to_s
 
-    @pending = @pending.last(state["report_queued"].to_i)
     now = Time.now
-    state[:payload].to_s.split("\n").each do |line|
-      fields = line.split("\t")
-      take_line(fields, now) if fields.size >= 4 && !fields[0].empty?
+    @regen = state["regen"].to_s.to_f
+    pools = {}
+    Array(state["pools"]).each do |key, left, max, defeated, by|
+      pools[key] = Pool.new(left.to_s.to_f, max.to_i, defeated == true, by.to_s.empty? ? nil : by.to_s, now) if key.is_a?(String)
     end
-  end
-
-  # Takes a pool the DLL knows when it tells something new: the first line of the pool, or one that
-  # differs from the last line taken beyond the regeneration since. A line the DLL keeps telling
-  # unchanged would take back what the player's own reports dealt meanwhile (see note_own), and so
-  # would one older than them (see behind?), which is weighed again at the next read.
-  #
-  # A line within LINE_TOLERANCE is never noted, so small changes in a row count once they add up.
-  #
-  # @param fields [Array<String>] The line: key, share left now, max, defeated and who emptied it.
-  # @param now [Time] When the line was read.
-  def self.take_line(fields, now)
-    key, left, max, defeated, by = fields
-    line = Pool.new(share_of(left, defeated == "1"), integer(max) || 0, defeated == "1", by.to_s.empty? ? nil : by, now)
-    taken = @lines[key]
-    return if taken && taken.defeated == line.defeated && taken.max == line.max && (left_now(taken, now) - line.left).abs <= LINE_TOLERANCE
-    return if behind?(key, line.left, line.defeated)
-
-    @lines[key] = line
-    was = @pools[key]
-    line.by ||= was && was.by
-    @pools[key] = line
-    log("the DLL tells the pool #{key} holds #{left} of #{max}#{line.defeated ? ', defeated' : ''}") unless was && was.left == line.left && was.defeated == line.defeated
+    @pools = pools
   end
 
   # Adds a line of the game's own to the chat log.
@@ -1536,11 +1405,7 @@ module MGQ_MpRaidPool
   #
   # It installs after battles_sync_live.rbx's hooks, so its command phase wrap runs before theirs.
   def self.install
-    ([:mhp] + MGQ_MpRaidBosses.tier_stats).each do |stat|
-      next log("tiers change #{stat}, which the game's enemies lack") unless Game_Enemy.method_defined?(stat)
-
-      MGQ_MpHooks.around(Game_Enemy, stat, "battles_raid_pool") { |enemy, _args, original| MGQ_MpRaidPool.stat(enemy, stat, original.call) }
-    end
+    Stats.install(self)
 
     MGQ_MpHooks.around(Scene_Battle, :start_party_command_selection, "battles_raid_pool") do |scene, _args, original|
       MGQ_MpRaidPool.command_phase unless scene.scene_changing?
@@ -1590,44 +1455,25 @@ module MGQ_MpRaidPool
       MGQ_MpRaidPool.log("fetching the pools failed: #{e.class}: #{e.message}")
       false
     end
-
-    # Queues a report of a battle, which the DLL sends in order and tries again until the relay
-    # answers.
-    #
-    # @param world [String] The world's id.
-    # @param key [String] The pool's key.
-    # @param battle [String] The battle's id.
-    # @param text [String] "seq\tdelta\tmax\tkilled", see MGQ_MpRaidPool.report.
-    # @return [Boolean] Whether the DLL queued it.
-    def self.report(world, key, battle, text)
-      MGQ_Multiplayer::Link.function('mp_raid_boss_report').call(world + "\0", key + "\0", battle + "\0", text + "\0") == 1
-    rescue => e
-      MGQ_MpRaidPool.log("reporting failed: #{e.class}: #{e.message}")
-      false
-    end
-
-    # Reads the pools the DLL knows.
-    #
-    # @return [Hash] The headers (see docs/DEVELOPER.md), the pools' lines under :payload; empty
-    #   before any request.
-    def self.state
-      text = MGQ_Multiplayer::Link.read('mp_raid_boss_state', STATE_SIZE)
-      text.empty? ? {} : MGQ_Multiplayer::Link.parse(text)
-    rescue => e
-      MGQ_MpRaidPool.log_once([:state, e.class], "reading the pools' state failed: #{e.class}: #{e.message}")
-      {}
-    end
   end
 end
 
 # What this script takes part in of the world, through overworld_sync.rbx.
 
 begin
-  MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::BOSS_FIELD) { |_peer, message| MGQ_MpRaidPool.pushed(message) }
   MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpRaidPool.tick(in_world) }
   MGQ_MpOverworldSync.state_fields { MGQ_MpRaidPool.state_fields }
 rescue => e
   MGQ_MpRaidPool.log("overworld sync FAILED: #{e.class}: #{e.message}")
+end
+
+# The ledger's defeats and resets, through the bridge.
+
+begin
+  MGQ_Multiplayer::Bridge.on(MGQ_MpRaidPool::DEFEATED_EVENT) { |payload| MGQ_MpRaidPool.told_defeated(payload) }
+  MGQ_Multiplayer::Bridge.on(MGQ_MpRaidPool::BACK_EVENT) { |payload| MGQ_MpRaidPool.told_back(payload) }
+rescue => e
+  MGQ_MpRaidPool.log("bridge events FAILED: #{e.class}: #{e.message}")
 end
 
 # Game hooks shared with other scripts, through core_hooks.rbx.

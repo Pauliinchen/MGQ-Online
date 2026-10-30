@@ -1,0 +1,990 @@
+{
+  "source": "e2a51fe5",
+  "regen_per_minute": 0.03,
+  "min_left": 1.0e-09,
+  "scenarios": [
+    {
+      "name": "a pool gains its share a minute back, at most all of it",
+      "steps": [
+        {
+          "op": "push",
+          "key": "Alpha",
+          "left": "0.5",
+          "max": 1000,
+          "defeated": false,
+          "by": "",
+          "view": [
+            [
+              "Alpha",
+              "0.5000000000",
+              1000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "wait",
+          "ms": 60000,
+          "view": [
+            [
+              "Alpha",
+              "0.5300000000",
+              1000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "wait",
+          "ms": 20000,
+          "view": [
+            [
+              "Alpha",
+              "0.5400000000",
+              1000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "wait",
+          "ms": 1800000,
+          "view": [
+            [
+              "Alpha",
+              "1.0000000000",
+              1000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a standing pool keeps its least share, a defeat empties it and names who, a reset fills it",
+      "steps": [
+        {
+          "op": "push",
+          "key": "Alpha",
+          "left": "0",
+          "max": 900,
+          "defeated": false,
+          "by": "",
+          "view": [
+            [
+              "Alpha",
+              "0.0000000010",
+              900,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "push",
+          "key": "Alpha",
+          "left": "0",
+          "max": 900,
+          "defeated": true,
+          "by": "Hero",
+          "view": [
+            [
+              "Alpha",
+              "0.0000000000",
+              900,
+              true,
+              "Hero"
+            ]
+          ],
+          "told": [
+            "Alpha"
+          ],
+          "events": [
+            [
+              "defeated",
+              "Alpha"
+            ]
+          ]
+        },
+        {
+          "op": "wait",
+          "ms": 60000,
+          "view": [
+            [
+              "Alpha",
+              "0.0000000000",
+              900,
+              true,
+              "Hero"
+            ]
+          ],
+          "told": [
+            "Alpha"
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "push",
+          "key": "Alpha",
+          "left": "1",
+          "max": 900,
+          "defeated": false,
+          "by": "",
+          "view": [
+            [
+              "Alpha",
+              "1.0000000000",
+              900,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+            [
+              "back",
+              "Alpha"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "the player's own reports count at once, on a pool the relay told of or not",
+      "steps": [
+        {
+          "op": "own",
+          "key": "Beta",
+          "delta": 0.25,
+          "max": 800,
+          "dead": false,
+          "view": [
+            [
+              "Beta",
+              "0.7500000000",
+              800,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "push",
+          "key": "Gamma",
+          "left": "0.6",
+          "max": 5000,
+          "defeated": false,
+          "by": "",
+          "view": [
+            [
+              "Beta",
+              "0.7500000000",
+              800,
+              false,
+              ""
+            ],
+            [
+              "Gamma",
+              "0.6000000000",
+              5000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "own",
+          "key": "Gamma",
+          "delta": 0.1,
+          "max": 4000,
+          "dead": false,
+          "view": [
+            [
+              "Beta",
+              "0.7500000000",
+              800,
+              false,
+              ""
+            ],
+            [
+              "Gamma",
+              "0.5000000000",
+              5000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "wait",
+          "ms": 120000,
+          "view": [
+            [
+              "Beta",
+              "0.8100000000",
+              800,
+              false,
+              ""
+            ],
+            [
+              "Gamma",
+              "0.5600000000",
+              5000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "own",
+          "key": "Gamma",
+          "delta": -0.5,
+          "max": 4000,
+          "dead": false,
+          "view": [
+            [
+              "Beta",
+              "0.8100000000",
+              800,
+              false,
+              ""
+            ],
+            [
+              "Gamma",
+              "1.0000000000",
+              5000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        }
+      ]
+    },
+    {
+      "name": "an own kill or an own report on a defeated pool leaves it defeated",
+      "steps": [
+        {
+          "op": "own",
+          "key": "Beta",
+          "delta": 0.05,
+          "max": 800,
+          "dead": true,
+          "view": [
+            [
+              "Beta",
+              "0.0000000000",
+              800,
+              true,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "push",
+          "key": "Gamma",
+          "left": "0",
+          "max": 300,
+          "defeated": true,
+          "by": "Hero",
+          "view": [
+            [
+              "Beta",
+              "0.0000000000",
+              800,
+              true,
+              ""
+            ],
+            [
+              "Gamma",
+              "0.0000000000",
+              300,
+              true,
+              "Hero"
+            ]
+          ],
+          "told": [
+            "Gamma"
+          ],
+          "events": [
+            [
+              "defeated",
+              "Gamma"
+            ]
+          ]
+        },
+        {
+          "op": "own",
+          "key": "Gamma",
+          "delta": 0.2,
+          "max": 300,
+          "dead": false,
+          "view": [
+            [
+              "Beta",
+              "0.0000000000",
+              800,
+              true,
+              ""
+            ],
+            [
+              "Gamma",
+              "0.0000000000",
+              300,
+              true,
+              "Hero"
+            ]
+          ],
+          "told": [
+            "Gamma"
+          ],
+          "events": [
+
+          ]
+        }
+      ]
+    },
+    {
+      "name": "word of more HP than the player's own unanswered reports leave is older and ignored",
+      "steps": [
+        {
+          "op": "push",
+          "key": "Beta",
+          "left": "0.8",
+          "max": 5000,
+          "defeated": false,
+          "by": "",
+          "view": [
+            [
+              "Beta",
+              "0.8000000000",
+              5000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "own",
+          "key": "Beta",
+          "delta": 0.3,
+          "max": 5000,
+          "dead": false,
+          "view": [
+            [
+              "Beta",
+              "0.5000000000",
+              5000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "push",
+          "key": "Beta",
+          "left": "0.8",
+          "max": 5000,
+          "defeated": false,
+          "by": "",
+          "view": [
+            [
+              "Beta",
+              "0.5000000000",
+              5000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "push",
+          "key": "Beta",
+          "left": "0.4",
+          "max": 5000,
+          "defeated": false,
+          "by": "",
+          "view": [
+            [
+              "Beta",
+              "0.4000000000",
+              5000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "settle",
+          "key": "Beta",
+          "view": [
+            [
+              "Beta",
+              "0.4000000000",
+              5000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "push",
+          "key": "Beta",
+          "left": "0.9",
+          "max": 5000,
+          "defeated": false,
+          "by": "",
+          "view": [
+            [
+              "Beta",
+              "0.9000000000",
+              5000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a defeat and a reset are taken while a report waits",
+      "steps": [
+        {
+          "op": "push",
+          "key": "Gamma",
+          "left": "0.6",
+          "max": 7000,
+          "defeated": false,
+          "by": "",
+          "view": [
+            [
+              "Gamma",
+              "0.6000000000",
+              7000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "own",
+          "key": "Gamma",
+          "delta": 0.1,
+          "max": 7000,
+          "dead": false,
+          "view": [
+            [
+              "Gamma",
+              "0.5000000000",
+              7000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "push",
+          "key": "Gamma",
+          "left": "0",
+          "max": 7000,
+          "defeated": true,
+          "by": "Rival",
+          "view": [
+            [
+              "Gamma",
+              "0.0000000000",
+              7000,
+              true,
+              "Rival"
+            ]
+          ],
+          "told": [
+            "Gamma"
+          ],
+          "events": [
+            [
+              "defeated",
+              "Gamma"
+            ]
+          ]
+        },
+        {
+          "op": "own",
+          "key": "Gamma",
+          "delta": 0.1,
+          "max": 7000,
+          "dead": false,
+          "view": [
+            [
+              "Gamma",
+              "0.0000000000",
+              7000,
+              true,
+              "Rival"
+            ]
+          ],
+          "told": [
+            "Gamma"
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "push",
+          "key": "Gamma",
+          "left": "1",
+          "max": 7000,
+          "defeated": false,
+          "by": "",
+          "view": [
+            [
+              "Gamma",
+              "1.0000000000",
+              7000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+            [
+              "back",
+              "Gamma"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "each unanswered report of a pool holds older word back until the last is answered",
+      "steps": [
+        {
+          "op": "push",
+          "key": "Delta",
+          "left": "0.9",
+          "max": 2000,
+          "defeated": false,
+          "by": "",
+          "view": [
+            [
+              "Delta",
+              "0.9000000000",
+              2000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "own",
+          "key": "Delta",
+          "delta": 0.2,
+          "max": 2000,
+          "dead": false,
+          "view": [
+            [
+              "Delta",
+              "0.7000000000",
+              2000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "own",
+          "key": "Delta",
+          "delta": 0.2,
+          "max": 2000,
+          "dead": false,
+          "view": [
+            [
+              "Delta",
+              "0.5000000000",
+              2000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "settle",
+          "key": "Delta",
+          "view": [
+            [
+              "Delta",
+              "0.5000000000",
+              2000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "push",
+          "key": "Delta",
+          "left": "0.7",
+          "max": 2000,
+          "defeated": false,
+          "by": "",
+          "view": [
+            [
+              "Delta",
+              "0.5000000000",
+              2000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "settle",
+          "key": "Delta",
+          "view": [
+            [
+              "Delta",
+              "0.5000000000",
+              2000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "push",
+          "key": "Delta",
+          "left": "0.7",
+          "max": 2000,
+          "defeated": false,
+          "by": "",
+          "view": [
+            [
+              "Delta",
+              "0.7000000000",
+              2000,
+              false,
+              ""
+            ]
+          ],
+          "told": [
+
+          ],
+          "events": [
+
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a push defeats and fills each pool of its own once",
+      "steps": [
+        {
+          "op": "push",
+          "key": "Alpha",
+          "left": "0",
+          "max": 900,
+          "defeated": true,
+          "by": "Hero",
+          "view": [
+            [
+              "Alpha",
+              "0.0000000000",
+              900,
+              true,
+              "Hero"
+            ]
+          ],
+          "told": [
+            "Alpha"
+          ],
+          "events": [
+            [
+              "defeated",
+              "Alpha"
+            ]
+          ]
+        },
+        {
+          "op": "push",
+          "key": "Alpha",
+          "left": "0",
+          "max": 900,
+          "defeated": true,
+          "by": "Hero",
+          "view": [
+            [
+              "Alpha",
+              "0.0000000000",
+              900,
+              true,
+              "Hero"
+            ]
+          ],
+          "told": [
+            "Alpha"
+          ],
+          "events": [
+
+          ]
+        },
+        {
+          "op": "push",
+          "key": "Beta",
+          "left": "0",
+          "max": 900,
+          "defeated": true,
+          "by": "",
+          "view": [
+            [
+              "Alpha",
+              "0.0000000000",
+              900,
+              true,
+              "Hero"
+            ],
+            [
+              "Beta",
+              "0.0000000000",
+              900,
+              true,
+              ""
+            ]
+          ],
+          "told": [
+            "Alpha",
+            "Beta"
+          ],
+          "events": [
+            [
+              "defeated",
+              "Beta"
+            ]
+          ]
+        },
+        {
+          "op": "push",
+          "key": "Alpha",
+          "left": "1",
+          "max": 900,
+          "defeated": false,
+          "by": "",
+          "view": [
+            [
+              "Alpha",
+              "1.0000000000",
+              900,
+              false,
+              ""
+            ],
+            [
+              "Beta",
+              "0.0000000000",
+              900,
+              true,
+              ""
+            ]
+          ],
+          "told": [
+            "Beta"
+          ],
+          "events": [
+            [
+              "back",
+              "Alpha"
+            ]
+          ]
+        },
+        {
+          "op": "push",
+          "key": "Alpha",
+          "left": "1",
+          "max": 900,
+          "defeated": false,
+          "by": "",
+          "view": [
+            [
+              "Alpha",
+              "1.0000000000",
+              900,
+              false,
+              ""
+            ],
+            [
+              "Beta",
+              "0.0000000000",
+              900,
+              true,
+              ""
+            ]
+          ],
+          "told": [
+            "Beta"
+          ],
+          "events": [
+
+          ]
+        }
+      ]
+    }
+  ]
+}

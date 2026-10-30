@@ -2,6 +2,7 @@
 #  battles_raid_tiers.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Raised the stats through the pools' wrap with the factors kept per battle
 #      Paulinchen  2026-10-13: Created
 #
 #----------------------------------------------------------------
@@ -56,8 +57,7 @@ module MGQ_MpRaidTiers
     @invited = nil
     @at_command = false
     @retrying = false
-    @scaled = []
-    @scaled_tier = nil
+    MGQ_MpRaidPool::Stats.forget
   end
 
   # Reports whether the story bosses fight as raid bosses now: never in a Raid World, whose pools
@@ -188,8 +188,6 @@ module MGQ_MpRaidTiers
     @invited = nil
     @fight = nil
     @lost = nil
-    @scaled = []
-    @scaled_tier = nil
     unless kind
       reason = explain ? refusal(troop) || ($game_map.interpreter.event_id > 0 ? nil : "a common event of its own started it") : nil
       return reason ? log("troop #{troop} keeps its boss as the game has it: #{reason}") : nil
@@ -205,17 +203,12 @@ module MGQ_MpRaidTiers
     log("deciding on troop #{troop_id} failed: #{e.class}: #{e.message}")
   end
 
-  # Gives a battle's own enemies their tier's stats (see stat), each new one keeping the share of
-  # its max HP it had.
+  # Gives a battle's own enemies their tier's stats (see MGQ_MpRaidPool::Stats), each new one
+  # keeping the share of its max HP it had.
   #
   # @param fight [Fight] The battle.
   def self.scale(fight)
-    enemies = MGQ_MpRaidPool.own_enemies(fight.own).compact
-    fresh = enemies.reject { |enemy| scaled?(enemy) }
-    shares = fresh.map { |enemy| enemy.mhp.to_i > 0 ? enemy.hp.to_f / enemy.mhp : 1.0 }
-    @scaled = enemies
-    @scaled_tier = fight.tier
-    fresh.each_with_index { |enemy, index| enemy.hp = MGQ_MpRaidPool.hp_of(shares[index], enemy.mhp) unless enemy.dead? }
+    MGQ_MpRaidPool::Stats.scale(MGQ_MpRaidPool.own_enemies(fight.own).compact, fight.tier)
   end
 
   # Gives the enemies of a troop a guest built anew from its host's their tier's stats before the
@@ -226,29 +219,6 @@ module MGQ_MpRaidTiers
     scale(fight) if fight
   rescue => e
     log("raising the troop built anew failed: #{e.class}: #{e.message}")
-  end
-
-  # Reports whether an enemy has its tier's stats.
-  #
-  # @param enemy [Game_Enemy] The enemy.
-  # @return [Boolean] Whether it has.
-  def self.scaled?(enemy)
-    @scaled.any? { |scaled| scaled.equal?(enemy) }
-  end
-
-  # Finds one of an enemy's stats: for an enemy of a battle whose boss fights at its tier, its own
-  # times the tier's factor (MGQ_MpRaidBosses::TIERS), applied on every call since the game computes
-  # the stat anew each time.
-  #
-  # @param enemy [Game_Enemy] The enemy.
-  # @param stat [Symbol] The stat, such as :mhp.
-  # @param own [Integer] The stat as the game computes it.
-  # @return [Integer] The stat.
-  def self.stat(enemy, stat, own)
-    return own if @scaled.empty? || !scaled?(enemy)
-
-    factor = MGQ_MpRaidBosses::TIERS.fetch(@scaled_tier, {}).fetch(stat, 1)
-    factor == 1 ? own : (own * factor).round
   end
 
   # Ends the battle whose boss fights at its tier, keeping a lost one for the game's retry. Called
@@ -314,15 +284,9 @@ module MGQ_MpRaidTiers
     log("taking the relay's raid bosses failed: #{e.class}: #{e.message}")
   end
 
-  # Installs the stat hooks on methods the game's plugins may define anew, as the game starts
-  # running.
+  # Installs the battle hooks on methods the game's plugins may define anew, as the game starts
+  # running; the stats are battles_raid_pool.rbx's wrap.
   def self.install
-    ([:mhp] + MGQ_MpRaidBosses.tier_stats).each do |stat|
-      next log("tiers change #{stat}, which the game's enemies lack") unless Game_Enemy.method_defined?(stat)
-
-      MGQ_MpHooks.around(Game_Enemy, stat, "battles_raid_tiers") { |enemy, _args, original| MGQ_MpRaidTiers.stat(enemy, stat, original.call) }
-    end
-
     MGQ_MpHooks.before(BattleManager.singleton_class, :battle_end, "battles_raid_tiers") { |result| MGQ_MpRaidTiers.battle_ended(result) }
 
     return unless BattleManager.respond_to?(:retry_battle)

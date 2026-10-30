@@ -2,6 +2,7 @@
 //  DirectoryClient.Bosses.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Left the share a pool gains back to the ledger
 //      Paulinchen  2026-10-10: Read boss pools as shares of a raid max HP with who defeated them, and reported turns by sequence number
 //      Paulinchen  2026-10-09: Sent boss requests with the usual timeout and logged pool fetches only when their outcome changes
 //                            - Created
@@ -123,15 +124,6 @@ internal sealed record BossPool(string Key, double Left, double Max, bool Defeat
         var by = !defeated ? string.Empty : Text(element, "defeatedBy") is { Length: > 0 } defeater ? defeater : Text(element, "by");
         return new BossPool(Text(element, "key"), defeated ? 0 : Math.Clamp(Decimal(element, "left"), 0, 1), Math.Max(0, Decimal(element, "max")), defeated, by);
     }
-
-    /// <summary>
-    /// Tells the share left a while after the relay answered, filled up at a rate, at most full.
-    /// </summary>
-    /// <param name="elapsed">How long ago the relay answered.</param>
-    /// <param name="regenPerMinute">The share it fills up by per minute.</param>
-    /// <returns>The share left, 0 to 1; 0 for a defeated boss.</returns>
-    public double LeftAfter(TimeSpan elapsed, double regenPerMinute) =>
-        Defeated ? 0 : Math.Min(1, Left + (Math.Max(0, elapsed.TotalMinutes) * regenPerMinute));
 
     /// <summary>
     /// Reads a number of the answer.

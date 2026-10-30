@@ -2,6 +2,8 @@
 //  RaidBossesTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Waited for the world room's word in the pools, which no longer reach the game script as entries
+//                            - Checked that a report counts in the ledger before the relay answers
 //      Paulinchen  2026-10-10: Covered the pools as shares of a raid max HP
 //                            - Covered a busy relay, the full queue, stale answers and fetches, 0 HP and empty reports
 //                            - Covered a report the relay fails every try of
@@ -10,8 +12,10 @@
 //----------------------------------------------------------------
 
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using MGQOnline.Game.Raid;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
 using MGQParadox.Multiplayer.Network.World;
@@ -79,14 +83,32 @@ public sealed class RaidBossesTests
         Assert.Equal(("done", "0", "Queen Harpy", "b-1", "1"), (reported["report"], reported["report_queued"], reported["report_key"], reported["report_battle"], reported["report_seq"]));
         Assert.Equal("Queen Harpy\t0.75\t5000000\t0\t\n", reported.Team);
 
-        var entry = AwaitEntry(session, WorldSession.BossKind);
-        Assert.Equal(("Queen Harpy", "0.75", "5000000", "0"), (entry[WorldSession.KeyHeader], entry[WorldSession.LeftHeader], entry[WorldSession.MaxHeader], entry[WorldSession.DefeatedHeader]));
-        Assert.Equal("Queen Harpy\t0.75\t5000000\t0\t\n", Message.Decode(heard.Describe()).Team);
+        WaitUntil(() => Message.Decode(heard.Describe()).Team == "Queen Harpy\t0.75\t5000000\t0\t\n", "the world room's word");
         session.Close();
 
         Assert.True(other.Fetch(IdOf(code)));
         Assert.Equal("Queen Harpy\t0.75\t5000000\t0\t\n", Await(other, "fetch", "done").Team);
         Assert.Equal(1, relay.BossReports);
+    }
+
+    /// <summary>
+    /// Asserts that a turn counts in the pools the game script reads as it is queued, before the
+    /// relay answers, and the answer leaves it so.
+    /// </summary>
+    [Fact]
+    public void Report_CountsBeforeTheRelayAnswers()
+    {
+        using var relay = new TestRelay { BossClock = () => Fixed };
+        var code = MakeWorld(relay, WorldType.Raid);
+        var bosses = NewBosses(relay, CreatorKey, code);
+        var hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        relay.BossAnswerHold = hold;
+
+        Assert.True(bosses.Report(IdOf(code), "Lilith", "b1", "1\t0.25\t1000\t0"));
+        Assert.Equal(new PoolView("Lilith", 0.75, 1000, false, string.Empty), bosses.Ledger.Pools().Single());
+        hold.SetResult();
+
+        Assert.Equal("Lilith\t0.75\t1000\t0\t\n", AwaitReports(bosses).Team);
     }
 
     /// <summary>
@@ -381,20 +403,17 @@ public sealed class RaidBossesTests
 
         Assert.True(bosses.Report(IdOf(code), "Black Alice #2", "b1", "1\t0.5\t7000\t1"));
         AwaitReports(bosses);
-        AwaitEntry(session, WorldSession.BossKind);
 
         relay.Tell(IdOf(code), $"{WorldSession.BossKind} 0.5 7000");
         relay.Tell(IdOf(code), $"{WorldSession.BossKind} 0.5 7000 2 Black Alice #2");
         relay.Tell(IdOf(code), $"{WorldSession.BossKind} x 7000 0 Black Alice #2");
         relay.Tell(IdOf(code), $"{WorldSession.BossKind} 0 7000 1 Black Alice #2");
         relay.Tell(IdOf(code), $"{WorldSession.BossKind} 0.4 8000 0 Ilias #0");
-        var defeated = AwaitEntry(session, WorldSession.BossKind);
-        var ilias = AwaitEntry(session, WorldSession.BossKind);
+        WaitUntil(() => Message.Decode(bosses.Describe()).Team.Contains("Ilias", StringComparison.Ordinal), "the world room's word");
         session.Close();
 
-        Assert.Equal(("Black Alice #2", "0", "1"), (defeated[WorldSession.KeyHeader], defeated[WorldSession.LeftHeader], defeated[WorldSession.DefeatedHeader]));
-        Assert.Equal(("Ilias #0", "0.4", "8000"), (ilias[WorldSession.KeyHeader], ilias[WorldSession.LeftHeader], ilias[WorldSession.MaxHeader]));
         Assert.Equal("Black Alice #2\t0\t7000\t1\tCreator\nIlias #0\t0.4\t8000\t0\t\n", Message.Decode(bosses.Describe()).Team);
+        Assert.Equal([new PoolChange("Black Alice #2", true, "Creator")], bosses.Ledger.TakeChanges());
     }
 
     /// <summary>
@@ -509,35 +528,6 @@ public sealed class RaidBossesTests
         Message? described = null;
         WaitUntil(() => (described = Message.Decode(bosses.Describe()))["report"] is { Length: > 0 } now && now != "busy", "the reports");
         return described!;
-    }
-
-    /// <summary>
-    /// Waits for an inbox entry of a kind, taking the others before it.
-    /// </summary>
-    /// <param name="session">The connection to the world.</param>
-    /// <param name="kind">The kind.</param>
-    /// <returns>The entry.</returns>
-    private static Message AwaitEntry(WorldSession session, string kind)
-    {
-        Message? found = null;
-
-        WaitUntil(() =>
-        {
-            while (session.PeekMessage() is { } entry)
-            {
-                session.TakeMessage(entry);
-
-                if (Message.Decode(entry)["kind"] == kind)
-                {
-                    found = Message.Decode(entry);
-                    return true;
-                }
-            }
-
-            return false;
-        }, $"a {kind} entry");
-
-        return found!;
     }
 
     /// <summary>

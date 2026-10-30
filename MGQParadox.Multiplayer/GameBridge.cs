@@ -2,7 +2,9 @@
 //  GameBridge.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Stopped registering the topics of turning other mods off, which the Mod Framework's session does
+//      Paulinchen  2026-10-30: Handed the topics both hosts answer the DLL's way to the raid pools
+//                            - Handed the topics both hosts answer the raid pools the relay requests fill
+//                            - Stopped registering the topics of turning other mods off, which the Mod Framework's session does
 //                            - Registered the topics of trades
 //      Paulinchen  2026-10-28: Registered the topics that read the events database's rows
 //                            - Registered the topics of the catch-up over the tables the story mapping came with
@@ -74,7 +76,7 @@ internal static unsafe class GameBridge
         ScriptLog.Register(context);
         SettingsTopics.Register(context, services.Player);
         RuleTopics.Register(context);
-        SharedTopics.Register(context);
+        SharedTopics.Register(context, RaidBosses.Current);
         ModTopics.Register(context, services.Scripts, services.Directory);
         EventTopics.Register(context, () => GameEvents.Current);
         EventTableTopics.Register(context, () => GameEvents.Current);

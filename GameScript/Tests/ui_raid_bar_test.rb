@@ -2,7 +2,8 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Dropped the checks that restate pixel positions
+#      Paulinchen  2026-10-30: Told the pools through the stand-in of the pools' ledger in C#
+#                            - Dropped the checks that restate pixel positions
 #      Paulinchen  2026-10-28: Stood in for the DLL's command index of the map's pages, whose walk through common events the DLL's tests check
 #      Paulinchen  2026-10-23: Placed the strip through the stand-in of the layout in C#
 #                            - Stood in for the ids coop.rbx makes up
@@ -325,8 +326,9 @@ end
 load_script "ui_raid_bar"
 
 # The bridge to the fake models of the interface, which place the boxes in the layout.
-require_relative "bridge_support"
+require_relative "pool_support"
 open_fake_ui { ["", 0] }
+$pools = PoolLedgerStandIn.new($world_bridge) { (Time.now.to_f * 1000).round }
 SceneManager.run
 
 bar = MGQ_MpRaidBar
@@ -342,16 +344,19 @@ def reset
   $data_common_events = []
   $frame += MGQ_MpRaidBar::SCAN_FRAMES
   MGQ_MpRaidPool.forget
+  $pools.reset
   MGQ_MpUi.top_room = 0
 end
 
-# Has the relay push a pool.
+# Has the relay push a pool, which the pools read at once.
 #
 # @param key [String] The pool's key.
 # @param left [String] The share of its max left.
 # @param max [String] Its max HP.
 def push(key, left, max)
-  $routes[MGQ_MpOverworldSync::BOSS_FIELD].call(nil, { MGQ_MpOverworldSync::BOSS_FIELD => key, "left" => left, "max" => max, "defeated" => "0", :relay => true })
+  $pools.enter("w1")
+  $pools.hear(key, left.to_f, max.to_i, false, "", :pushed)
+  MGQ_MpRaidPool.read_state
 end
 
 # A battle command of an event's page.

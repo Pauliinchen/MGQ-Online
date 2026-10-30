@@ -2,6 +2,8 @@
 #  served.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Handed the core's ledger what the relay told of the boss pools before the scripts read them
+#                            - Sent the reports of a raid boss fight's turns from the core's outbox
 #      Paulinchen  2026-10-23: Took the default squad rules from the core through battles_served.rbx
 #                            - Took the default squad rules from battles_served.rbx
 #                            - Updated the windows and sprites on every sixth frame while the battle waits for its players
@@ -122,6 +124,19 @@ module ServedBattle
       # Outside a world the tick forgets every player and the seat, which the server holds for the
       # players its starter passed on and the battle channel.
       wrap.around(MGQ_MpOverworldSync.singleton_class, :tick, :served) { nil }
+      # What the relay told of the pools waits on the bridge's reading thread until the scripts read them.
+      if defined?(MGQ_MpRaidPool)
+        wrap.around(MGQ_MpRaidPool.singleton_class, :read_state, :served) do |_pool, original, args, _block|
+          Online.flush_pools
+          original.call(*args)
+        end
+        # The core has no network: a fight's turn leaves its reports in the core's outbox.
+        wrap.around(MGQ_MpRaidPool.singleton_class, :turn, :served) do |_pool, original, args, _block|
+          reply = original.call(*args)
+          Online.send_reports
+          reply
+        end
+      end
       # The players the battle takes in late may come onto its channel from then on.
       wrap.around(MGQ_MpBattlesSync.singleton_class, :expect, :served) do |_sync, original, args, _block|
         original.call(*args)
@@ -226,9 +241,8 @@ module ServedBattle
       MGQ_MpWorldMods.apply_values(MGQ_MpWorldMods.settings_from(text))
     end
 
-    # Takes the boss pools the relay told every POOL_FRAMES frames while the battle fights a Raid
-    # World's pools, as the game takes the DLL's: what the server's reports did and other battles'
-    # blows.
+    # Reads the boss pools every POOL_FRAMES frames while the battle fights a Raid World's pools, as
+    # the game reads them: what the server's reports did and other battles' blows the relay told.
     def read_pools
       return unless (Graphics.frame_count % POOL_FRAMES).zero? && defined?(MGQ_MpRaidPool) && MGQ_MpRaidPool.fight
 

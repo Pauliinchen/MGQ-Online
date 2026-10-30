@@ -2,6 +2,8 @@
 //  RaidBosses.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Kept the pools in the ledger the game and the battle server share, which counts the game's own reports at once
+//                            - Took the reports of the fights in C# as the game's way to the pools
 //      Paulinchen  2026-10-10: Kept each boss pool as a share of its raid max HP, filled up by 3 % a minute, and took pools the world room tells
 //                            - Queued every reported turn and sent them in order, retrying each with the same sequence number
 //                            - Kept a pool the world room told while a request ran over the older one its answer carried
@@ -17,6 +19,7 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading;
+using MGQOnline.Game.Raid;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
 
@@ -25,15 +28,11 @@ namespace MGQParadox.Multiplayer.Network.World;
 /// <summary>
 /// A Raid World's boss pools at the relay as the game script uses them: fetching every pool and
 /// reporting what each turn of a boss battle did to its pool. The pools come from fetches, report
-/// answers and the world room, and the game script reads them filled up to the moment it asks.
+/// answers and the world room into <see cref="Ledger"/>, which the game script reads through
+/// <see cref="MGQOnline.Game.Topics.PoolTopics"/>.
 /// </summary>
-internal sealed class RaidBosses
+internal sealed class RaidBosses : IRaidRelay
 {
-    /// <summary>
-    /// The share of a raid max HP a pool fills up by per minute, unless the relay names another.
-    /// </summary>
-    public const double RegenPerMinute = 0.03;
-
     /// <summary>
     /// How many times a report is tried again while the relay cannot be reached or is busy before it
     /// is dropped: about two minutes of the default <see cref="RetryDelays"/>.
@@ -55,11 +54,6 @@ internal sealed class RaidBosses
     /// The longest battle id, as the relay takes it.
     /// </summary>
     private const int MaxBattleLength = 64;
-
-    /// <summary>
-    /// The largest raid max HP the relay takes.
-    /// </summary>
-    private const double MaxRaidHp = 1e18;
 
     /// <summary>
     /// The most reports that wait to be sent; more are refused.
@@ -88,11 +82,6 @@ internal sealed class RaidBosses
     private readonly object _gate = new();
 
     /// <summary>
-    /// The pools known, by key.
-    /// </summary>
-    private readonly SortedDictionary<string, Known> _pools = new(StringComparer.Ordinal);
-
-    /// <summary>
     /// The reports waiting to be sent, oldest first; the first one is on its way while <see cref="_sending"/>.
     /// </summary>
     private readonly Queue<Pending> _queue = new();
@@ -103,19 +92,9 @@ internal sealed class RaidBosses
     private bool _sending;
 
     /// <summary>
-    /// Counts every pool taken, so an answer can tell which pools were told while its request ran.
-    /// </summary>
-    private long _stamp;
-
-    /// <summary>
     /// The world whose pools are kept; <see langword="null"/> before the first request or word of a pool.
     /// </summary>
     private string? _world;
-
-    /// <summary>
-    /// The share of a raid max HP every pool fills up by per minute.
-    /// </summary>
-    private double _regen = RegenPerMinute;
 
     /// <summary>
     /// How the last fetch went, <see langword="null"/> before the first in this world.
@@ -133,9 +112,22 @@ internal sealed class RaidBosses
     private Pending? _answered;
 
     /// <summary>
+    /// Initializes the pools of no world yet.
+    /// </summary>
+    public RaidBosses()
+    {
+        Ledger = new PoolLedger(() => Now().Ticks / TimeSpan.TicksPerMillisecond);
+    }
+
+    /// <summary>
     /// The game's Raid World boss pools, which the game script uses.
     /// </summary>
     public static RaidBosses Current { get; } = new();
+
+    /// <summary>
+    /// Gets the pools as the game knows them, which the game script reads.
+    /// </summary>
+    public PoolLedger Ledger { get; }
 
     /// <summary>
     /// Looks up a relay's address by its id.
@@ -195,26 +187,15 @@ internal sealed class RaidBosses
         {
             var outcome = Attempt("fetching the boss pools", RetryDelays.Length, () =>
             {
-                var sent = StampNow();
+                var sent = Ledger.Stamp;
                 var list = client.GetBosses(world, asker.Key, asker.Auth);
 
                 lock (_gate)
                 {
                     if (_world == world)
                     {
-                        var now = Now();
-                        var told = list.Pools.Where(pool => IsKey(pool.Key)).ToList();
-                        _regen = list.RegenPerMinute ?? RegenPerMinute;
-
-                        foreach (var gone in _pools.Where(known => known.Value.Stamp <= sent).Select(known => known.Key).Except(told.Select(pool => pool.Key)).ToList())
-                        {
-                            _pools.Remove(gone);
-                        }
-
-                        foreach (var pool in told)
-                        {
-                            Take(pool, now, sent);
-                        }
+                        Ledger.TakeRegen(list.RegenPerMinute);
+                        Ledger.Fetched(list.Pools.Where(pool => IsKey(pool.Key)).Select(WordOf).ToList(), sent);
                     }
                 }
 
@@ -234,9 +215,10 @@ internal sealed class RaidBosses
     }
 
     /// <summary>
-    /// Queues a report of what a battle's turn did to a boss's pool. The reports are sent in order,
-    /// each again with the same sequence number while the relay cannot be reached or is busy, which
-    /// the relay takes once, and dropped after <see cref="MaxReportRetries"/> tries again.
+    /// Queues a report of what a battle's turn did to a boss's pool and counts it in the
+    /// <see cref="Ledger"/> at once. The reports are sent in order, each again with the same
+    /// sequence number while the relay cannot be reached or is busy, which the relay takes once,
+    /// and dropped after <see cref="MaxReportRetries"/> tries again.
     /// </summary>
     /// <param name="world">The world the game is in.</param>
     /// <param name="key">The pool's key: 1 to 64 characters without control characters or spaces at either end.</param>
@@ -270,6 +252,7 @@ internal sealed class RaidBosses
 
             Enter(world);
             _queue.Enqueue(new Pending(world, key, turn, client, asker));
+            Ledger.Own(key, turn.Delta, turn.Max, turn.Killed);
 
             if (_sending)
             {
@@ -282,6 +265,9 @@ internal sealed class RaidBosses
         Threads.Start("MultiplayerBossReport", SendQueued);
         return true;
     }
+
+    /// <inheritdoc />
+    public IReadOnlyList<QueuedReport> TakeOutbox() => [];
 
     /// <summary>
     /// Takes the word of the world room that a boss pool changed at the relay.
@@ -298,8 +284,7 @@ internal sealed class RaidBosses
         lock (_gate)
         {
             Enter(world);
-            var by = pool.By.Length == 0 && pool.Defeated && _pools.TryGetValue(pool.Key, out var known) ? known.Pool.By : pool.By;
-            _pools[pool.Key] = new Known(pool with { By = by }, Now(), ++_stamp);
+            Ledger.Hear(WordOf(pool), PoolSource.Pushed);
         }
     }
 
@@ -307,7 +292,7 @@ internal sealed class RaidBosses
     /// Describes the pools known and how the requests stand, for the game script.
     /// </summary>
     /// <returns>See docs/DEVELOPER.md, "Raid boss pools on the relay": header lines, an empty line, then one
-    /// "key\tleft\tmax\tdefeated\tby" line per pool, its share left filled up to now; empty before the first request or word of a pool.</returns>
+    /// "key\tleft\tmax\tdefeated\tby" line per pool as the <see cref="Ledger"/> has it now; empty before the first request or word of a pool.</returns>
     public string Describe()
     {
         lock (_gate)
@@ -317,7 +302,7 @@ internal sealed class RaidBosses
                 return string.Empty;
             }
 
-            var headers = new List<KeyValuePair<string, string?>> { new("world", _world), new("regen", Fraction(_regen)) };
+            var headers = new List<KeyValuePair<string, string?>> { new("world", _world), new("regen", Fraction(Ledger.RegenPerMinute)) };
 
             if (_fetch is { } fetch)
             {
@@ -341,12 +326,11 @@ internal sealed class RaidBosses
                 headers.Add(new("report_seq", answered.Turn.Seq.ToString(CultureInfo.InvariantCulture)));
             }
 
-            var now = Now();
             var lines = new StringBuilder();
 
-            foreach (var (pool, at, _) in _pools.Values)
+            foreach (var pool in Ledger.Pools())
             {
-                lines.Append(pool.Key).Append('\t').Append(Fraction(pool.LeftAfter(now - at, _regen))).Append('\t').Append(Whole(pool.Max))
+                lines.Append(pool.Key).Append('\t').Append(Fraction(pool.Left)).Append('\t').Append(Whole(pool.Max))
                     .Append('\t').Append(pool.Defeated ? '1' : '0').Append('\t').Append(OnOneField(pool.By)).Append('\n');
             }
 
@@ -378,74 +362,50 @@ internal sealed class RaidBosses
 
             var outcome = Attempt(what, MaxReportRetries, () =>
             {
-                var sent = StampNow();
+                var sent = Ledger.Stamp;
                 var answer = next.Client.ReportBoss(next.World, next.Asker.Key, next.Asker.Auth, next.Key, next.Turn);
                 var newer = false;
 
                 lock (_gate)
                 {
-                    if (_world == next.World && answer.Pool.Key == next.Key)
+                    if (_world == next.World)
                     {
-                        newer = !Take(answer.Pool, Now(), sent);
+                        Ledger.Settled(next.Key);
+                        newer = answer.Pool.Key == next.Key && !Ledger.Hear(WordOf(answer.Pool), PoolSource.Answered, sent);
                     }
 
                     _answered = next;
                 }
 
                 var how = answer.Repeat ? "taken before" : answer.Pool.Defeated ? "the boss is defeated" : "taken";
-                var kept = newer ? ", the world room told a newer pool" : string.Empty;
+                var kept = newer ? ", the game knows a newer pool" : string.Empty;
                 return new Outcome(Done, $"{how}, {Fraction(answer.Pool.Left)} of {Whole(answer.Pool.Max)} left{kept}");
             });
+
+            lock (_gate)
+            {
+                if (outcome.State == Failed && _world == next.World)
+                {
+                    Ledger.Settled(next.Key);
+                }
+
+                _queue.Dequeue();
+                _report = outcome;
+            }
 
             if (outcome.State == Failed)
             {
                 Log.Write($"{what} in {Log.Short(next.World)} dropped, going on with the next report");
             }
-
-            lock (_gate)
-            {
-                _queue.Dequeue();
-                _report = outcome;
-            }
         }
     }
 
     /// <summary>
-    /// Tells which pools are known as a request is sent.
+    /// Makes the ledger's word of a pool the relay handed out.
     /// </summary>
-    /// <returns>The stamp of the pool taken last.</returns>
-    private long StampNow()
-    {
-        lock (_gate)
-        {
-            return _stamp;
-        }
-    }
-
-    /// <summary>
-    /// Takes a pool of an answer unless the world room told it while the request ran; runs under the lock.
-    /// </summary>
-    /// <remarks>The relay tells a change before it answers and the two travel apart, so the answer
-    /// may be older than the word already heard.</remarks>
-    /// <param name="pool">The pool as the answer carried it.</param>
-    /// <param name="now">The time the answer came.</param>
-    /// <param name="sent">The stamp when the request was sent, see <see cref="StampNow"/>.</param>
-    /// <returns>Whether the pool was taken; <see langword="false"/> when a newer one is known, which only gains the name of who defeated it.</returns>
-    private bool Take(BossPool pool, DateTime now, long sent)
-    {
-        if (_pools.TryGetValue(pool.Key, out var known) && known.Stamp > sent)
-        {
-            if (known.Pool is { Defeated: true, By.Length: 0 } && pool is { Defeated: true, By.Length: > 0 })
-            {
-                _pools[pool.Key] = known with { Pool = known.Pool with { By = pool.By } };
-            }
-
-            return false;
-        }
-
-        _pools[pool.Key] = new Known(pool, now, ++_stamp);
-        return true;
-    }
+    /// <param name="pool">The pool.</param>
+    /// <returns>The word.</returns>
+    private static PoolWord WordOf(BossPool pool) => new(pool.Key, pool.Left, pool.Max, pool.Defeated, pool.By);
 
     /// <summary>
     /// Finds who asks the relay of a world, and the client that reaches it.
@@ -476,8 +436,7 @@ internal sealed class RaidBosses
         }
 
         _world = world;
-        _pools.Clear();
-        _regen = RegenPerMinute;
+        Ledger.Enter(world);
         _fetch = null;
     }
 
@@ -522,23 +481,10 @@ internal sealed class RaidBosses
     /// Reads a turn the game script reports.
     /// </summary>
     /// <param name="battle">The battle's id.</param>
-    /// <param name="text">"seq\tdelta\tmax\tkilled".</param>
+    /// <param name="text">"seq\tdelta\tmax\tkilled", see <see cref="PoolReport.Read"/>.</param>
     /// <returns>The turn; <see langword="null"/> when it is not as it should be.</returns>
-    private static BossTurn? TurnOf(string battle, string text)
-    {
-        var fields = text.Split('\t');
-
-        if (fields.Length != 4
-            || !long.TryParse(fields[0], NumberStyles.None, CultureInfo.InvariantCulture, out var seq)
-            || !double.TryParse(fields[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var delta) || !double.IsFinite(delta) || Math.Abs(delta) > 1
-            || !double.TryParse(fields[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var max) || !double.IsFinite(max) || max <= 0 || max > MaxRaidHp
-            || fields[3] is not ("0" or "1"))
-        {
-            return null;
-        }
-
-        return new BossTurn(battle, seq, delta, max, fields[3] == "1");
-    }
+    private static BossTurn? TurnOf(string battle, string text) =>
+        PoolReport.Read(text) is { } report ? new BossTurn(battle, report.Seq, report.Delta, report.Max, report.Killed) : null;
 
     /// <summary>
     /// Tells whether a boss key is one the relay takes.
@@ -610,14 +556,6 @@ internal sealed class RaidBosses
     /// <param name="Key">The player's key.</param>
     /// <param name="Auth">The auth key made from the world's token.</param>
     private sealed record Asker(string Key, string Auth);
-
-    /// <summary>
-    /// A pool as it is known.
-    /// </summary>
-    /// <param name="Pool">The pool.</param>
-    /// <param name="At">When it was told, which it fills up from.</param>
-    /// <param name="Stamp">Its place among the pools taken, see <see cref="_stamp"/>.</param>
-    private sealed record Known(BossPool Pool, DateTime At, long Stamp);
 
     /// <summary>
     /// A report waiting to be sent.

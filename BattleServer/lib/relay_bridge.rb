@@ -2,6 +2,7 @@
 #  relay_bridge.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Kept what the relay told of the boss pools for the core's ledger
 #      Paulinchen  2026-10-15: Reported boss pools to the relay and kept what it told of them
 #                            - Let the players a battle takes in late onto its channel
 #                            - Created
@@ -26,7 +27,7 @@ class RelayBridge
   # Bytes a line from the relay may take, a player's largest message in base64 with room to spare.
   MAX_LINE = 1024 * 1024
 
-  # The boss pools the server learned from the relay, see Online::BossPools.
+  # What the relay told of the boss pools, for the core's ledger, see Online::BossPools.
   attr_reader :bosses
 
   # Starts the bridge on the relay's connection, reading it on a thread of its own.
@@ -60,10 +61,7 @@ class RelayBridge
   # @return [Boolean] Whether it went out.
   def report(key, battle, text)
     report = Online::BossPools.report_of(text)
-    return false unless report && tell(op: "boss_report", key: key, battle: battle, **report)
-
-    @bosses.sent
-    true
+    report && tell(op: "boss_report", key: key, battle: battle, **report) ? true : false
   end
 
   # Takes the next entry, as the DLL writes it, see Online::Bridge#push.

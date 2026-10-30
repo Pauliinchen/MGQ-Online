@@ -1,0 +1,59 @@
+{
+  "regenPerMinute": 0.03,
+  "cases": [
+    {
+      "left": 0.5,
+      "defeated": false,
+      "after": 0,
+      "share": "0.5"
+    },
+    {
+      "left": 0.5,
+      "defeated": false,
+      "after": 60000,
+      "share": "0.53"
+    },
+    {
+      "left": 0.5,
+      "defeated": false,
+      "after": 1234,
+      "share": "0.500617"
+    },
+    {
+      "left": 0.123456789,
+      "defeated": false,
+      "after": 7777777,
+      "share": "1"
+    },
+    {
+      "left": 0.999,
+      "defeated": false,
+      "after": 2001,
+      "share": "1"
+    },
+    {
+      "left": 0.25,
+      "defeated": false,
+      "after": -30000,
+      "share": "0.25"
+    },
+    {
+      "left": 0.000001,
+      "defeated": false,
+      "after": 1,
+      "share": "0.0000015"
+    },
+    {
+      "left": 0.4,
+      "defeated": true,
+      "after": 600000,
+      "share": "0"
+    },
+    {
+      "left": 0.1,
+      "defeated": false,
+      "after": 1800000,
+      "share": "1"
+    }
+  ]
+}

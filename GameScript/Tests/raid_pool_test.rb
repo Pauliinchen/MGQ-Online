@@ -2,6 +2,9 @@
 #  raid_pool_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Ran the fights' turns through the stand-in of the fight in C#
+#                            - Told the pools through the stand-in of the pools' ledger in C#, which counts the own reports
+#                            - Checked that the stats' factors are kept per battle
 #      Paulinchen  2026-10-23: Stood in for the ids coop.rbx makes up
 #                            - Dropped the check of the removed retrying?
 #                            - Checked that a refight of a boss the story beat is won at once
@@ -38,16 +41,14 @@
 # invite's and the state's fields, the pushes and fetching the pools. Events run in fibers as the
 # game's interpreter runs them.
 
-require_relative "support"
+require_relative "pool_support"
 
 # Stands in for the mod's base script, whose log prints each line.
 module MGQ_Multiplayer; module Log; def self.write(m); puts "  log: #{m}"; end; end; end
 $calls = []
-$state = ""
 $report_result = 1
 $chat = []
 $notices = []
-$routes = {}
 $ticks = []
 $state_fields = []
 $ran = []
@@ -65,7 +66,8 @@ $now = Time.at(1_000_000)
 # regain nothing meanwhile.
 def Time.now; $now; end
 
-# The DLL: each call is noted, and the pools' state is what $state holds.
+# The DLL: each call is noted, and a fetch it takes reaches the pools' ledger ($pools) as the DLL's
+# does; the fight's reports go through $pools' reporter, which notes them as calls too.
 module MGQ_Multiplayer
   # Stands in for the DLL link.
   module Link
@@ -77,33 +79,21 @@ module MGQ_Multiplayer
       # @return [Integer] $report_result, 1 when the DLL took the call.
       def call(*args)
         check_dll_call(name, args)
-        $calls << [name, args.map { |arg| arg.is_a?(String) ? arg.chomp("\0") : arg }]
+        args = args.map { |arg| arg.is_a?(String) ? arg.chomp("\0") : arg }
+        $calls << [name, args]
+        return $report_result unless $report_result == 1
+
+        $pools.enter(args[0]) if name == "mp_raid_bosses_fetch"
         $report_result
       end
     end
     # Answers a function of the DLL.
     def self.function(name); Function.new(name); end
-    # Answers the pools' state, $state, as the DLL hands it over.
-    def self.read(name, size); check_dll_call(name, ["", size]); $state.dup.force_encoding("ASCII-8BIT"); end
-    # Reads the DLL's description as Link.parse does: key=value lines, an empty line, the payload.
-    #
-    # @param text [String] The text.
-    # @return [Hash] The fields, with the payload under :payload.
-    def self.parse(text)
-      head, payload = text.force_encoding("UTF-8").split("\n\n", 2)
-      state = { :payload => payload.to_s }
-      head.to_s.split("\n").each { |line| key, value = line.split("=", 2); state[key] = value if value }
-      state
-    end
   end
 end
-# Stands in for the world's sync, keeping its routes in $routes, its frame blocks in $ticks and the
-# state's blocks in $state_fields.
+# Stands in for the world's sync, keeping its frame blocks in $ticks and the state's blocks in
+# $state_fields.
 module MGQ_MpOverworldSync
-  # The field of the relay's push of a pool.
-  BOSS_FIELD = "boss_key"
-  # Keeps a field's handler in $routes.
-  def self.route(field, &block); $routes[field] = block; end
   # Keeps a block to run each frame in $ticks.
   def self.on_tick(&block); $ticks << block; end
   # Keeps a block of the player's state fields in $state_fields.
@@ -360,6 +350,16 @@ MGQ_MpRaidBosses::TIERS.replace(REAL_TIERS.keys.each_with_object({}) { |tier, ti
 pool = MGQ_MpRaidPool
 SceneManager.run
 
+# The DLL's pools' ledger behind the bridge, on the clock in milliseconds.
+$fake = FakeBridge.new
+MGQ_Multiplayer::Bridge.open($fake)
+$pools = PoolLedgerStandIn.new($fake) { (Time.now.to_f * 1000).round }
+$pools.reporter = lambda do |world, key, battle, text|
+  $calls << ["mp_raid_boss_report", [world, key, battle, text]]
+  $report_result == 1
+end
+check_pool_stand_in
+
 # Starts the game's objects anew and forgets every battle and pool.
 def reset
   $game_switches = Game_Switches.new
@@ -375,7 +375,7 @@ def reset
   $setups = []
   $phases = []
   $given_back = 0
-  $state = ""
+  $pools.reset
   $report_result = 1
   $raid = true
   $mode = :world
@@ -427,8 +427,30 @@ end
 # @param max [String] Its max HP.
 # @param defeated [Boolean] Whether it is empty for good.
 def push(key, left, max = "6000", defeated = false)
-  $routes[MGQ_MpOverworldSync::BOSS_FIELD].call(nil, { MGQ_MpOverworldSync::BOSS_FIELD => key, "left" => left, "max" => max, "defeated" => defeated ? "1" : "0",
-                                                         "by" => defeated ? "Someone" : "", :relay => true })
+  $pools.enter("w1")
+  $pools.hear(key, left.to_f, max.to_i, defeated, defeated ? "Someone" : "", :pushed)
+  $pools.frame
+  MGQ_MpRaidPool.read_state
+end
+
+# Has the relay tell a pool in a fetch, or the battle server learn another battle's change; the
+# pools read it at their next read.
+#
+# @param key [String] The pool's key.
+# @param left [String] The share of its max left.
+# @param world [String] The world.
+def told(key, left, world = "w1")
+  $pools.enter(world)
+  $pools.hear(key, left.to_f, 6000, false, "", :fetched)
+end
+
+# Has the relay answer the oldest of the player's own reports of a pool.
+#
+# @param key [String] The pool's key.
+# @param left [String] The share of its max left after it.
+def answer(key, left)
+  $pools.settled(key)
+  $pools.hear(key, left.to_f, 6000, false, "", :answered)
 end
 
 # Lets some seconds pass.
@@ -518,8 +540,11 @@ check("tiers name only stats the game has", bosses::TIERS.values.map(&:keys).fla
 check("a tier gives max HP its factor and leaves the stats it does not name", [bosses.factor(71, :mhp), bosses.factor(71, :atk), bosses.factor(31, :mhp)], [7.5, 1, 1])
 kept = bosses::TIERS[9]
 bosses::TIERS[9] = kept.merge(:atk => 2)
-check("another stat a tier names takes its factor after the game computed it", [pool.stat(enemy, :atk, 101), pool.stat(Game_Enemy.new(0, 6), :atk, 101)], [202, 101])
-check("and the max HP its own", pool.stat(enemy, :mhp, 800), 6000)
+check("the factors are the battle's: a tier changed meanwhile counts from the next battle on", pool::Stats.stat(enemy, :atk, 101), 101)
+pool::Stats.forget
+pool.scale_enemies(fight)
+check("another stat a tier names takes its factor after the game computed it", [pool::Stats.stat(enemy, :atk, 101), pool::Stats.stat(Game_Enemy.new(0, 6), :atk, 101)], [202, 101])
+check("and the max HP its own", pool::Stats.stat(enemy, :mhp, 800), 6000)
 bosses::TIERS[9] = kept
 bosses::TIERS.replace(REAL_TIERS)
 check("the real tiers: 50 times the max HP at tier 0, 5 less each tier down to 5 times at tier 9",
@@ -561,21 +586,21 @@ pass(6000)
 $scene.start_party_command_selection
 check("never past its max", enemy.hp, 6000)
 
-# The DLL's state of the pools: a line that tells nothing new never takes back the player's own
-# blows the relay has not answered yet.
-$state = "world=w1\n\nQueen Harpy\t0.9\t6000\t0\t\n"
+# The pools are read every few frames: what the relay told counts, and the player's own report
+# counts at once, before the relay answers.
+told("Queen Harpy", "0.9")
 ticks
-check("the DLL's first line of a pool counts", [pool.pool("Queen Harpy").left, pool.pool("Queen Harpy").max], [0.9, 6000])
+check("what the relay told of a pool counts at the next read", [pool.pool("Queen Harpy").left, pool.pool("Queen Harpy").max], [0.9, 6000])
 $scene.start_party_command_selection
 enemy.hp = 4800
 $scene.turn_end
 ticks
 $scene.start_party_command_selection
-check("the same line again keeps the player's own report", enemy.hp, 4800)
-$state = "world=w1\n\nQueen Harpy\t0.7\t6000\t0\t\n"
+check("the player's own report counts before the relay answers", enemy.hp, 4800)
+told("Queen Harpy", "0.7")
 ticks
 $scene.start_party_command_selection
-check("a line that changed counts", enemy.hp, 4200)
+check("another battle's blow the relay told counts", enemy.hp, 4200)
 
 # A pool the relay emptied kills the boss, and the battle wins.
 push("Queen Harpy", "0", "6000", true)
@@ -703,7 +728,7 @@ check("the guest's battle fights the invite's pool", [pool.fight && pool.fight.k
 $scene.start_party_command_selection
 # The host's action dealt half the boss's HP, which the host reported as it ended.
 enemy.hp = 3000
-pass(MGQ_MpRaidPool::REPORT_SECONDS)
+pass(RaidFightStandIn::REPORT_MS / 1000)
 $scene.process_action
 next_turn
 check("a guest reports nothing", reports, [])
@@ -719,7 +744,7 @@ $role = :guest
 BattleManager.setup(71)
 enemy.hp = 4800
 $role = nil
-pass(MGQ_MpRaidPool::REPORT_SECONDS)
+pass(RaidFightStandIn::REPORT_MS / 1000)
 $scene.process_action
 check("a takeover seen first as an action ends reports nothing of the host's either", reports, [])
 enemy.hp = 4200
@@ -745,7 +770,7 @@ $role = :guest
 BattleManager.setup(71)
 $scene.start_party_command_selection
 BattleManager.instance_variable_set(:@phase, :input)
-pass(MGQ_MpRaidPool::INPUT_SYNC_SECONDS)
+pass(RaidFightStandIn::WAIT_SYNC_MS / 1000)
 $scene.update_basic
 $scene.turn_end
 check("a guest never kills the boss by its own view of the pool, its host's stream does", [enemy.dead?, enemy.hp, $won, $collapsed], [false, 6000, [], []])
@@ -809,14 +834,10 @@ $game_map.map_id = 6
 ticks(1)
 check("and again on another map", $calls.count { |name, _| name == "mp_raid_bosses_fetch" }, 2)
 
-# The relay's pushes count, others are ignored.
+# The relay's pushes count.
 reset
-$routes[MGQ_MpOverworldSync::BOSS_FIELD].call(nil, { MGQ_MpOverworldSync::BOSS_FIELD => "Queen Harpy", "left" => "0", "defeated" => "1" })
-check("a push not from the relay is ignored", [pool.pool("Queen Harpy"), $chat], [nil, []])
 push("EX-Kyubi", "0.25", "3750")
 check("a push counts the pool as told", [pool.pool("EX-Kyubi").left, pool.pool("EX-Kyubi").max, pool.pool("EX-Kyubi").defeated], [0.25, 3750, false])
-push("EX-Kyubi", "nonsense")
-check("a push without a share is ignored", pool.pool("EX-Kyubi").left, 0.25)
 push("EX-Kyubi", "0", "3750", true)
 check("an empty pool of a fight of its own tells its boss's name", [$chat.last, pool.pool("EX-Kyubi").by], ["EX-Kyubi is defeated for the whole world.", "Someone"])
 
@@ -853,25 +874,25 @@ check("which goes with the next report", [reports.last[2], enemy.hp], ["1\t0.100
 push("Queen Harpy", "0.5")
 $scene.start_party_command_selection
 check("a push older than an unanswered report is ignored", enemy.hp, 2400)
-$state = "world=w1\nreport_queued=1\n\nQueen Harpy\t0.5\t6000\t0\t\n"
+told("Queen Harpy", "0.5")
 ticks
 $scene.start_party_command_selection
-check("so is the DLL's line while the report waits", enemy.hp, 2400)
-$state = "world=w1\n\nQueen Harpy\t0.45\t6000\t0\t\n"
+check("so is a fetch's word while the report waits", enemy.hp, 2400)
+answer("Queen Harpy", "0.45")
 ticks
 $scene.start_party_command_selection
-check("the line counts once the relay answered", enemy.hp, 2700)
+check("the relay's answer counts", enemy.hp, 2700)
 enemy.hp = 2100
 $scene.start_party_command_selection
 push("Queen Harpy", "1")
 $scene.start_party_command_selection
 check("an admin's reset counts at once", enemy.hp, 6000)
 
-# The DLL's pools of another world are ignored.
+# The ledger's pools of another world are ignored.
 reset
-$state = "world=w2\n\nQueen Harpy\t0.2\t6000\t0\t\n"
+told("Queen Harpy", "0.2", "w2")
 ticks
-check("the DLL's pools of another world are ignored", pool.pool("Queen Harpy"), nil)
+check("the ledger's pools of another world are ignored", pool.pool("Queen Harpy"), nil)
 
 # A pool whose share rounds to 0 while it stands never kills the boss.
 reset
@@ -938,14 +959,14 @@ check("a battle that fights no pool keeps its enemy's max HP", enemy.mhp, 800)
 reset
 start([[:var, 1001, 40], [:battle, 71], [:mark, :after]])
 $scene.start_party_command_selection
-pass(MGQ_MpRaidPool::REPORT_SECONDS)
+pass(RaidFightStandIn::REPORT_MS / 1000)
 enemy.hp = 5400
 $scene.process_action
 check("an action reports what it dealt", reports.map { |_key, _battle, text| text }, ["1	0.1000000000	6000	0"])
 enemy.hp = 4800
 $scene.process_action
-check("the next one within REPORT_SECONDS waits", reports.size, 1)
-pass(MGQ_MpRaidPool::REPORT_SECONDS)
+check("the next one within two seconds waits", reports.size, 1)
+pass(RaidFightStandIn::REPORT_MS / 1000)
 $scene.process_action
 check("and goes out once they passed, with all it dealt since", reports.last[2], "2	0.1000000000	6000	0")
 $scene.start_party_command_selection
@@ -955,7 +976,7 @@ $scene.start_party_command_selection
 check("but still reports at once, however soon", reports.last[2], "3	0.0500000000	6000	0")
 pool.forget
 enemy.hp = 4000
-pass(MGQ_MpRaidPool::REPORT_SECONDS)
+pass(RaidFightStandIn::REPORT_MS / 1000)
 $scene.process_action
 check("a battle that fights no pool reports nothing", reports.size, 3)
 
@@ -967,17 +988,17 @@ BattleManager.instance_variable_set(:@phase, :input)
 push("Queen Harpy", "0.5")
 $scene.update_basic
 check("another battle's blows wait while the battle waits for commands", enemy.hp, 6000)
-pass(MGQ_MpRaidPool::INPUT_SYNC_SECONDS)
+pass(RaidFightStandIn::WAIT_SYNC_MS / 1000)
 $scene.update_basic
-check("until INPUT_SYNC_SECONDS passed, then the enemy takes the pool's HP with its regeneration", enemy.hp, 3015)
+check("until five seconds passed, then the enemy takes the pool's HP with its regeneration", enemy.hp, 3015)
 BattleManager.instance_variable_set(:@phase, :turn)
 push("Queen Harpy", "0.2")
-pass(MGQ_MpRaidPool::INPUT_SYNC_SECONDS)
+pass(RaidFightStandIn::WAIT_SYNC_MS / 1000)
 $scene.update_basic
 check("never while a turn runs", enemy.hp, 3015)
 BattleManager.instance_variable_set(:@phase, :input)
 push("Queen Harpy", "0", "6000", true)
-pass(MGQ_MpRaidPool::INPUT_SYNC_SECONDS)
+pass(RaidFightStandIn::WAIT_SYNC_MS / 1000)
 $scene.update_basic
 check("a pool emptied meanwhile fells the boss and wins the battle", [enemy.dead?, $won], [true, [71]])
 BattleManager.instance_variable_set(:@phase, nil)
@@ -990,7 +1011,7 @@ $scene.start_party_command_selection
 BattleManager.instance_variable_set(:@phase, :input)
 $waiting = true
 push("Queen Harpy", "0", "6000", true)
-pass(MGQ_MpRaidPool::INPUT_SYNC_SECONDS)
+pass(RaidFightStandIn::WAIT_SYNC_MS / 1000)
 $scene.update_basic
 check("a pool emptied while the host waits for commands fells the boss, the wait winning the battle", [enemy.dead?, $won], [true, []])
 $waiting = false
@@ -1022,16 +1043,14 @@ next_turn
 check("a boss whose max HP halves under its HP reports nothing, and takes the pool's share of the new max", [reports, enemy.hp], [[], 2250])
 $data_enemies[1].params[0] = 800
 
-# Small changes of the DLL's line in a row count once they add up beyond LINE_TOLERANCE.
+# A small change the relay tells counts as it is: the ledger takes each word once, so nothing
+# tells a pool twice.
 reset
-$state = "world=w1\n\nQueen Harpy\t0.9\t6000\t0\t\n"
+told("Queen Harpy", "0.9")
 ticks
-$state = "world=w1\n\nQueen Harpy\t0.8996\t6000\t0\t\n"
+told("Queen Harpy", "0.8996")
 ticks
-check("a line within LINE_TOLERANCE of the last one taken tells nothing new", pool.pool("Queen Harpy").left, 0.9)
-$state = "world=w1\n\nQueen Harpy\t0.8992\t6000\t0\t\n"
-ticks
-check("the next small change counts against the last line taken, so the two add up", pool.pool("Queen Harpy").left, 0.8992)
+check("a change however small counts at the next read", pool.pool("Queen Harpy").left, 0.8996)
 
 # A side battle runs none of its troop's battle events and gives its boss's rewards only once.
 reset

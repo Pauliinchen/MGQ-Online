@@ -2,6 +2,7 @@
 //  WorldSession.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Handed a changed boss pool to RaidBosses alone, whose ledger the game script reads
 //      Paulinchen  2026-10-28: Waited for the writer to send what was queued as the world closes and as the game ends
 //      Paulinchen  2026-10-23: Took the squad settings from MGQOnline.Game
 //                            - Kept the story tracks' frames apart for the DLL's story, sent its frames and counted the connections
@@ -149,30 +150,10 @@ internal sealed class WorldSession
     private const int MaxTrackFrames = 1024;
 
     /// <summary>
-    /// The kind of an inbox entry that tells a Raid World's boss pool changed at the relay, and the
-    /// word that starts the relay's text frame saying so, as Relay/README.md names it.
+    /// The word that starts the relay's text frame that tells a Raid World's boss pool changed at
+    /// the relay, as Relay/README.md names it.
     /// </summary>
     public const string BossKind = "boss";
-
-    /// <summary>
-    /// The boss's key, in a <see cref="BossKind"/> entry.
-    /// </summary>
-    public const string KeyHeader = "key";
-
-    /// <summary>
-    /// The share of the pool's raid max HP left, 0 to 1, in a <see cref="BossKind"/> entry.
-    /// </summary>
-    public const string LeftHeader = "left";
-
-    /// <summary>
-    /// The pool's raid max HP, a whole number, in a <see cref="BossKind"/> entry.
-    /// </summary>
-    public const string MaxHeader = "max";
-
-    /// <summary>
-    /// 1 when the boss is defeated for the world, else 0, in a <see cref="BossKind"/> entry.
-    /// </summary>
-    public const string DefeatedHeader = "defeated";
 
     /// <summary>
     /// The kind of an inbox entry that tells a Raid World's creator or an admin changed its
@@ -1198,8 +1179,8 @@ internal sealed class WorldSession
     }
 
     /// <summary>
-    /// Hands the relay's word that a Raid World's boss pool changed to the game script and to the boss
-    /// pools it reads.
+    /// Hands the relay's word that a Raid World's boss pool changed to the boss pools, whose ledger
+    /// the game script reads.
     /// </summary>
     /// <param name="generation">The open this belongs to.</param>
     /// <param name="connection">The connection.</param>
@@ -1229,14 +1210,6 @@ internal sealed class WorldSession
             }
 
             world = Relays.WorldRoomOf(open.Token);
-            Enqueue(new Message(
-            [
-                new(Message.Kind, BossKind),
-                new(KeyHeader, heard.Key),
-                new(LeftHeader, heard.Left.ToString("0.######", CultureInfo.InvariantCulture)),
-                new(MaxHeader, Math.Round(heard.Max).ToString("0", CultureInfo.InvariantCulture)),
-                new(DefeatedHeader, defeated ? "1" : "0"),
-            ]).Encode());
         }
 
         Bosses.Heard(world, heard);
