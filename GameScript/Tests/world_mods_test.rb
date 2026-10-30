@@ -2,7 +2,8 @@
 #  world_mods_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Checked that the Mod Framework's options lock the options a world sets
+#      Paulinchen  2026-10-30: Checked the game data measured again and compared once the world's mods loaded, and the warning of a difference
+#                            - Checked that the Mod Framework's options lock the options a world sets
 #                            - Checked the session of a world that turns other mods off and the restart once its rule turns off a mod that runs
 #                            - Stopped loading the deleted world_mods_parking.rbx
 #                            - Checked the install of a world's mods through the Mod Framework and the entry again after its restart
@@ -452,6 +453,10 @@ MGQ_Multiplayer::Stages.define_singleton_method(:enter) { |reason, only = nil| e
 Mod_Framework::Mods.define_singleton_method(:plan) { { "load" => [["Multiplayer", "Title"], ["Level_Cap", "Regular"], ["Invasions", "Regular"]] } }
 Mod_Framework::Mods.define_singleton_method(:stays_on) { ["Wide_Text"] }
 $world_bridge.answer("mods.session") { |request| sessions << request; { "only" => ["Multiplayer", "Level_Cap"], "off" => ["Invasions"], "text" => "Strict plays without your other mods." } }
+data_checks = []
+$data_warning = nil
+MGQ_MpWorld::GameData.define_singleton_method(:measure_entered) { "2:with the world's mods" }
+$world_bridge.answer("worlds.data_check") { |request| data_checks << request; $data_warning }
 strict = listed.dup
 strict.name = "Strict"
 strict.mods = "!Level Cap"
@@ -473,6 +478,19 @@ loose.other_mods_off = false
 mods.note_session(loose)
 mods.enter_game
 check("a world that allows other mods enters with every mod that is on", [entered.last, sessions.size], [["the world Modded", nil], 1])
+check("each entry has the DLL compare the game data, measured again once the world's mods loaded, with the world's",
+      [data_checks.size, data_checks.last], [2, { "world" => loose.id, "data" => "2:with the world's mods" }])
+$data_warning = "Your game differs from the creator's of Modded. Some things may not work as in their game."
+$notices.clear
+mods.note_session(loose)
+mods.enter_game
+check("a game whose data differs reads why in the notification box and plays on", $notices, [[:world_data_differs, $data_warning]])
+$data_warning = nil
+MGQ_Multiplayer::Stages.define_singleton_method(:staged?) { false }
+mods.note_session(loose)
+mods.enter_game
+check("so does one without the Mod Framework, whose mods all loaded at the start", data_checks.size, 4)
+MGQ_Multiplayer::Stages.define_singleton_method(:staged?) { true }
 
 # Its creator turns other mods off while the player is in it: a mod the session runs that it now
 # turns off starts the game again into the world, once the player was told and the map is free.

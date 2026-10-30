@@ -2,7 +2,9 @@
 #  world_data_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Stopped loading the deleted world_mods_parking.rbx
+#      Paulinchen  2026-10-30: Checked that the measure once the world's mods loaded leaves the title's fingerprint
+#                            - Expected the forms and the details without the game data's fields and comparison
+#                            - Stopped loading the deleted world_mods_parking.rbx
 #                            - Checked that the fingerprint counts an entry by its note, features and effects, whatever its name
 #                            - Checked the hints of the Raid World form and its formation limits with every other form's
 #                            - Kept one check of each seats and mods topic
@@ -350,6 +352,14 @@ check("many parts are counted past the first four", MGQ_MpWorld::GameData.text(%
 check("few are all named", MGQ_MpWorld::GameData.text(%w[skills maps]), "skills, maps")
 modded = MGQ_MpWorld::GameData.fingerprint
 
+# The measure once a world's mods loaded, which the battle server, measuring without them, never takes.
+$data_items << DataEntry.new("Mod Potion", "<Mod Potion>")
+entered = MGQ_MpWorld::GameData.measure_entered
+check("a world's mod that adds an item shows in the measure taken once the world's mods loaded", MGQ_MpWorld::GameData.differing(entered), ["items"])
+check("while the fingerprint the DLL keeps and served battles carry stays the title's, so the server still hosts them",
+      [MGQ_MpWorld::GameData.fingerprint, $game_fingerprint], [modded, modded])
+$data_items.pop
+
 # GameData.ini, which the title screen writes once per session for the World Admin tool.
 written = []
 MGQ_Multiplayer::Ini.define_singleton_method(:write) { |path, values| written << [path, values]; true }
@@ -385,10 +395,10 @@ MGQ_MpWorld::GameData.instance_variable_set(:@fingerprint, nil)
 # The form.
 form = MGQ_MpWorld::WorldForm.create(:new_world)
 form[:name] = "Modded Run"
-check("a new world needs no description, no mods, and keeps differing games out until told otherwise", [form.problem, form[:description], form[:mods], form[:mismatch]], [nil, "", "", false])
+check("a new world needs no description and no mods", [form.problem, form[:description], form[:mods]], [nil, "", ""])
 description = form.fields.find { |field| field.key == :description }
 check("the description is a box of several lines in a panel of its own", [description.kind, description.lines, description.group, description.max_chars], [:area, 4, "Description", 1000])
-check("the mods and the mismatch checkbox share the Game data panel", [:mods, :mismatch].map { |key| field = form.fields.find { |candidate| candidate.key == key }; [field.kind, field.label, field.group] }, [[:mods, "Mods", "Game data"], [:check, "Allow data mismatch", "Game data"]])
+check("the mods and Shared Mod Settings share the Game data panel", [:mods, :shared].map { |key| field = form.fields.find { |candidate| candidate.key == key }; [field.kind, field.label, field.group] }, [[:mods, "Mods", "Game data"], [:check, "Shared Mod Settings", "Game data"]])
 check("the world type and the starting point share the World panel", form.fields.select { |field| field.group == "World" }.map { |field| field.label },
       ["Name", "Password", "Max Players", "Hidden", "World type", "Shared save", "Player's choice", "Save", "Raid Bosses"])
 form[:type] = 1
@@ -434,15 +444,15 @@ $screen_steps = [["busy", "create"]]
 scene.create_world
 check("making a world has the DLL make it, with no files without a shared save", [screen_requests("screen.do").last.values_at("do", "start"), scene.instance_variable_get(:@busy)], [["create", []], "create"])
 shared_field = strict_form.fields.find { |field| field.key == :shared }
-check("Shared Mod Settings sits beside Allow data mismatch, unticked, and says what it does to players",
-      [shared_field.kind, shared_field.label, shared_field.group, shared_field.side, strict_form.fields.find { |field| field.key == :mismatch }.side, MGQ_MpWorld::WorldForm.create(:new_world)[:shared], shared_field.hint],
-      [:check, "Shared Mod Settings", "Game data", :right, :left, false, "Ticked: every player plays with your mod options here. Unticked: each keeps their own."])
-$screen_steps = [["buzz"], ["say", "Your game data could not be read. Tick Allow data mismatch."], ["resume_form"]]
+check("Shared Mod Settings has its row to itself, unticked, and says what it does to players, with no checkbox of the game data beside it",
+      [shared_field.kind, shared_field.label, shared_field.group, shared_field.side, strict_form.fields.any? { |field| field.key == :mismatch }, MGQ_MpWorld::WorldForm.create(:new_world)[:shared], shared_field.hint],
+      [:check, "Shared Mod Settings", "Game data", nil, false, false, "Ticked: every player plays with your mod options here. Unticked: each keeps their own."])
+$screen_steps = [["buzz"], ["say", "The request could not be started. Try again in a moment."], ["resume_form"]]
 scene = new_scene
 scene.instance_variable_set(:@form_symbol, :new_world)
 scene.create_world
 check("a world the DLL refuses leaves the form open with why", [said(scene), scene.instance_variable_get(:@resume_form), scene.instance_variable_get(:@busy)],
-      ["Your game data could not be read. Tick Allow data mismatch.", true, nil])
+      ["The request could not be started. Try again in a moment.", true, nil])
 $dll["mp_dir_list"] = "state=ready\n\n" \
   "world\tw1\t4\t0\tc\t0\tC\tStrict\tnone\t0\t0\t1\t0\t1\t#{plain}\tNo mods\tUnmodded only.\t\t\tclassic\toff\t\t0\t\t0\n" \
   "world\tw2\t4\t0\tc\t0\tC\tLoose\tnone\t0\t0\t1\t0\t0\t#{plain}\tSome Mod\tA slow run through part one of the story with friends.\t\t\tclassic\toff\t\t0\t\t0\n" \
@@ -532,13 +542,13 @@ detail, texts = new_detail(386, 336)
 panels = detail.panels(entries[1], "me")
 check("the details come in panels: the world, its game data, its players", panels.map { |panel| panel.title }, ["World", "Game data", "Players"])
 check("the mods a world needs", cell_of(panels, "Mods").text, "Some Mod")
-check("a game that differs is told in what, in the warning color", [cell_of(panels, "Your game").text, cell_of(panels, "Your game").color], ["Differs: skills, maps", :warn])
-check("a world for every game warns those that differ", panels[1].note, "differing games are warned")
+check("a game is told that its data is compared with the creator's as it enters, not at the title, which lacks the world's mods",
+      [cell_of(panels, "Your game").text, cell_of(panels, "Your game").color], ["Compared with the creator's as you enter", :normal])
+check("and that a game that differs is only warned", panels[1].note, "differing games are warned")
 panels = detail.panels(entries[2], "me")
-check("a game that matches is told so, and the world's rule", [cell_of(panels, "Your game").text, cell_of(panels, "Your game").color, panels[1].note], ["Matches the creator's", :good, "same data only"])
+check("whatever the world's old rule for games that differ", [cell_of(panels, "Your game").text, panels[1].note], ["Compared with the creator's as you enter", "differing games are warned"])
 check("a world that names no mod says so", cell_of(panels, "Mods").text, "No mod named")
 panels = detail.panels(entries[3], "me")
-check("a world that does not tell is not compared", [cell_of(panels, "Your game").text, panels[1].note], ["Not compared: the world does not tell", nil])
 check("a world without shared mod settings says each player keeps their own", [panels[1].rows[1][0].label, panels[1].rows[1][0].text, panels[1].rows[1][0].color], [nil, "Mod settings: each player's own", :normal])
 sharing = MGQ_MpWorld::Entry.new("w2", "Loose", listed[1].dup, nil, false, false)
 sharing.listed.settings = "@shared=o:1;mod_level_cap=i:0"
@@ -793,9 +803,8 @@ check("the details show required mods first, fine when installed and wrong when 
 matching = listed[2].dup
 matching.mods = "?Mod E; !Mod B"
 matching_entry = MGQ_MpWorld::Entry.new("w3", "Same", matching, nil, false, false)
-check("an essential mod is fine while this game's data matches the world's", [matching_entry.differing, cell_of(detail.panels(matching_entry, "me"), "Mods").chip_colors], [[], { "Mod B" => :good, "Mod E" => :good }])
-check("the list box says so, or that the data differs", [screen_detail.mod_lines("?Mod E", []), screen_detail.mod_lines("?Mod E", ["skills"])], [[[:head, "Mods (1)"], [:item, "Mod E", :good, "essential, data matches"]], [[:head, "Mods (1)"], [:item, "Mod E", :gold, "essential, data differs"]]])
-check("the list box says which are installed and which nothing checks", screen_detail.mod_lines("Mod A; ?Mod E; !Mod B; !Mod C"), [[:head, "Mods (4)"], [:item, "Mod B", :good, "required, installed"], [:item, "Mod C", :bad, "required, missing"], [:item, "Mod E", :gold, "essential, not checked"], [:item, "Mod A", :plain, nil]])
+check("an essential mod stays gold, since the game data is compared only as the player enters", cell_of(detail.panels(matching_entry, "me"), "Mods").chip_colors, { "Mod B" => :good, "Mod E" => :gold })
+check("the list box says which are installed and which are checked as the player enters", screen_detail.mod_lines("Mod A; ?Mod E; !Mod B; !Mod C"), [[:head, "Mods (4)"], [:item, "Mod B", :good, "required, installed"], [:item, "Mod C", :bad, "required, missing"], [:item, "Mod E", :gold, "essential, checked as you enter"], [:item, "Mod A", :plain, nil]])
 
 # A world the list names without its mods, as the relay lists it for this version.
 unread_world = listed[1].dup
@@ -1047,28 +1056,18 @@ pane.restore("w2")
 pane.entries = [Place.new("w1"), Place.new("w2")]
 check("the world chosen before the text or save screen gets the cursor back", [pane.inside?, pane.current_ext, worlds.active], [true, Place.new("w2"), true])
 
-# The creator updates a world's game data.
+# The creator's game makes its data the world's as they enter.
 detail, = new_detail(386, 336)
-check("the creator of a world whose data differs from their game may update it", [cell_of(detail.panels(entries[1], "c"), "Your game").target, detail.panels(entries[1], "c")[1].note], [:data, "confirm on Your game: update"])
-check("another player may not", cell_of(detail.panels(entries[1], "me"), "Your game").target, nil)
-check("nor the creator while their game matches", cell_of(detail.panels(entries[2], "c"), "Your game").target, nil)
-check("the creator of a world that tells no data may set theirs", [cell_of(detail.panels(entries[3], "c"), "Your game").target, cell_of(detail.panels(entries[3], "c"), "Your game").text], [:data, "Not compared. Confirm to set yours"])
+check("the creator reads that their game's data becomes the world's as they enter, with nothing to confirm",
+      [cell_of(detail.panels(entries[1], "c"), "Your game").text, cell_of(detail.panels(entries[1], "c"), "Your game").target], ["Becomes the world's as you enter", nil])
 detail.show(screen_entry(entries[1].dup, false, "c"), true)
-check("the row is one of what the details open, below the mods", detail.targets, [:mods, :data, :players, :description])
-scene = new_scene
-scene.instance_variable_set(:@me, "c")
-scene.instance_variable_get(:@list_window).define_singleton_method(:current_ext) { entries[1] }
-$screen_steps = [["say", "Take your game's data as that of Loose?"], ["confirm", "update_data", [["Update it", "yes"], ["Back", "cancel"]]]]
-scene.open_target(:data)
-check("confirming on it asks the DLL, which asks first", [screen_requests("screen.do").last.values_at("do", "id", "ask", "me"), scene.instance_variable_get(:@confirm_window).choices.map { |choice| choice[1] }],
-      [["update_data", "w2", true, "c"], [:yes, :cancel]])
-scene.on_confirmed
-check("and the player's yes goes back to it", screen_requests("screen.answer").last, { "answer" => "yes" })
+check("so the details open the mods, the players and the description", detail.targets, [:mods, :players, :description])
 
 # The edit form of a world's creator.
 own_edit = MGQ_MpWorld::WorldForm.edit(:edit_world, listed[1], true)
-check("the creator's edit form has a button that updates the data scan", [own_edit.fields.map { |field| field.key }, own_edit.fields[3].kind, own_edit.fields[3].label, own_edit.fields[3].group], [[:seats, :raid_bosses, :mods, :data, :shared, :other_mods_off, :description, :confirm], :button, "Update current data scan", "Game data"])
-check("and Shared Mod Settings, unticked while the world leaves every player their own", [own_edit.fields[4].kind, own_edit.fields[4].label, own_edit.fields[4].group, own_edit[:shared]], [:check, "Shared Mod Settings", "Game data", false])
+check("the creator's edit form has Shared Mod Settings, unticked while the world leaves every player their own, and no button of the game data",
+      [own_edit.fields.map { |field| field.key }, own_edit.fields[3].kind, own_edit.fields[3].label, own_edit.fields[3].group, own_edit[:shared]],
+      [[:seats, :raid_bosses, :mods, :shared, :other_mods_off, :description, :confirm], :check, "Shared Mod Settings", "Game data", false])
 check("another editor's form does not", MGQ_MpWorld::WorldForm.edit(:edit_world, listed[1], false).fields.map { |field| field.key }, [:seats, :raid_bosses, :mods, :other_mods_off, :description, :confirm])
 scene = new_scene
 scene.instance_variable_set(:@me, "c")
@@ -1078,19 +1077,10 @@ form_window.define_singleton_method(:form=) { |form| @form = form }
 form_window.define_singleton_method(:select) { |index| @index = index }
 form_window.define_singleton_method(:field) { @form.fields[@index] }
 scene.on_edit_world
-form_window.select(3)
-$screen_steps = [["busy", "data"]]
-scene.on_field
-check("the button has the DLL take this game's data at once, without asking", [screen_requests("screen.do").last.values_at("do", "id", "ask"), scene.instance_variable_get(:@confirm_window).choices, scene.instance_variable_get(:@busy)],
-      [["update_data", "w2", false], nil, "data"])
-MGQ_MpWorld::Changes.note(MGQ_MpWorld::Changes::SCREEN)
-$screen_steps = [["idle"], ["say", "The data scan of Loose was updated to your game."], ["back"]]
-scene.follow_steps
-check("and leaves the form open", [scene.form.title, said(scene), scene.instance_variable_get(:@busy)], ["Edit Loose", "The data scan of Loose was updated to your game.", nil])
-form_window.select(7)
+form_window.select(6)
 $screen_steps = [["busy", "edit"]]
 scene.on_field
-check("the form's own button still has the DLL save the other changes, the shared settings with them", screen_requests("screen.do").last["do"], "edit")
+check("the form's own button has the DLL save the changes, the shared settings with them", screen_requests("screen.do").last["do"], "edit")
 entries[1].listed.settings = ""
 
 # What the screen draws again: the same world only once the list or what its details read changed.

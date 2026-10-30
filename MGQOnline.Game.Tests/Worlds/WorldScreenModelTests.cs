@@ -2,7 +2,8 @@
 //  WorldScreenModelTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Dropped the comparison of the screen texts with their copy in screen.json
+//      Paulinchen  2026-10-30: Read no game data comparison into the facts, which the details no longer make
+//                            - Dropped the comparison of the screen texts with their copy in screen.json
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -120,13 +121,10 @@ public sealed class WorldScreenModelTests
     {
         JsonElement facts = entry.GetProperty("facts");
         HashSet<string> installed = [.. Texts(facts.GetProperty("installed"))];
-        JsonElement differing = facts.GetProperty("differing");
         JsonElement off = facts.GetProperty("turned_off");
         return new ScreenFacts(
             Text(entry, "me"),
             Flag(entry, "admin"),
-            differing.ValueKind == JsonValueKind.Null ? null : Texts(differing),
-            Text(facts, "differing_text"),
             installed.Contains,
             [.. facts.GetProperty("rows").EnumerateArray().Select(row => new ScreenModRow(Text(row, "name"), Text(row, "yours"), Text(row, "text")))],
             Text(facts, "settings_text"),

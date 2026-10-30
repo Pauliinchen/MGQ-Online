@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-30: Entered without the parking
+//                            - Built the requests without this game's data, which entering compares once the world's mods loaded
 //      Paulinchen  2026-10-23: Built the world screen's requests from its forms
 //                            - Created
 //
@@ -30,11 +31,10 @@ internal static class EnteringTopics
     /// <param name="worlds">The worlds on this PC.</param>
     /// <param name="lists">The player's lists of worlds.</param>
     /// <param name="forms">The world screen's open forms, whose values the requests are built from.</param>
-    /// <param name="fingerprint">Gives this game's data fingerprint.</param>
-    public static void Register(BridgeContext context, WorldServices services, LocalWorlds worlds, WorldLists lists, FormTopics forms, Func<string> fingerprint)
+    public static void Register(BridgeContext context, WorldServices services, LocalWorlds worlds, WorldLists lists, FormTopics forms)
     {
         WorldEntering entering = new(context, new Directory(services.Directory), worlds, lists, services.Player.Share, services.Tickets, services.Changes);
-        entering.UseRequests(forms.FormIn, fingerprint, Clipboard.SetText);
+        entering.UseRequests(forms.FormIn, Clipboard.SetText);
         entering.Register();
     }
 

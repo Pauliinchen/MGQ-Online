@@ -2,13 +2,16 @@
 #  screen_prototype.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Told that the game data is compared as the player enters
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
 
 # What world_screen.rbx showed of a world before the world screen's model moved to WorldScreenModel
 # in MGQOnline.Game, kept as it was: its methods copied unchanged but for what they asked the other
-# scripts, which they ask a facts object instead (see Model#initialize). make_fixtures.rb records
+# scripts, which they ask a facts object instead (see Model#initialize), and for the game data's row
+# and the essential mods' marks, which follow the DLL since it compares the game data only once the
+# world's mods loaded. make_fixtures.rb records
 # fixtures/screen/screen.json from it, and the script tests answer the screen.* topics through it,
 # checked against that file as GameScript/Tests/screen_support.rb loads.
 module ScreenPrototype
@@ -193,33 +196,18 @@ module ScreenPrototype
       end
     end
 
-    # Tells the mods a world needs, its mod settings, whether it turns other mods off, whether the
-    # player's game data matches that of its creator, and which games may enter.
+    # Tells the mods a world needs, its mod settings, whether it turns other mods off, and that the
+    # player's game data is compared with its creator's as they enter.
     #
     # @param entry [MGQ_MpWorld::Entry] The world, which the directory lists.
-    # @param me [String, nil] The player's id, who may update the game data of a world of their own.
+    # @param me [String, nil] The player's id, whose game data becomes that of a world of their own.
     # @return [Panel] The panel.
     def data_panel(entry, me = nil)
       listed = entry.listed
       mods = ScreenPrototype.mods_of(listed.mods)
-      differing = @facts.differing(entry)
-      # The creator's game is the world's measure: once it differs, or the world tells none, they
-      # may take it as the world's.
-      update = listed.creator_id == me && (differing.nil? || !differing.empty?) ? :data : nil
-      game = if differing.nil?
-               Cell.new("Your game", update ? "Not compared. Confirm to set yours" : "Not compared: the world does not tell", :normal, update)
-             elsif differing.empty?
-               Cell.new("Your game", "Matches the creator's", :good)
-             else
-               Cell.new("Your game", "Differs: #{@facts.data_text(differing, NAMED_PARTS)}", :warn, update)
-             end
-      note = if update
-               "confirm on Your game: update"
-             elsif listed.strict
-               "same data only"
-             elsif differing
-               "differing games are warned"
-             end
+      differing = nil
+      game = Cell.new("Your game", listed.creator_id == me ? "Becomes the world's as you enter" : "Compared with the creator's as you enter", :normal)
+      note = "differing games are warned"
       return Panel.new("Game data", note, [[Cell.new("Mods", "Reading . . .", :normal)], [game]]) if listed.mods_unread
 
       colors = mod_colors(listed.mods, differing, @facts.rows(listed))
@@ -261,13 +249,7 @@ module ScreenPrototype
                      end
       end
       ScreenPrototype.essential_mods(text).each do |mod|
-        marks[mod] = if differing.nil?
-                       [:gold, "essential, not checked"]
-                     elsif differing.empty?
-                       [:good, "essential, data matches"]
-                     else
-                       [:gold, "essential, data differs"]
-                     end
+        marks[mod] = [:gold, "essential, checked as you enter"]
       end
       marks
     end

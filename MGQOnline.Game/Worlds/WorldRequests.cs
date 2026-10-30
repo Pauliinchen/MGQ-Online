@@ -2,6 +2,7 @@
 //  WorldRequests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Dropped the refusal of a world that keeps differing games out without this game's data
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -27,11 +28,6 @@ public sealed record WorldEdit(int? Difficulty, WorldSquad? Squad, bool? RaidBos
 /// </summary>
 public static class WorldRequests
 {
-    /// <summary>
-    /// What a new world that keeps differing games out gets when this game's data cannot be read.
-    /// </summary>
-    public const string DataUnreadText = "Your game data could not be read. Tick Allow data mismatch.";
-
     /// <summary>
     /// What a request that could not start says.
     /// </summary>

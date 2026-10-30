@@ -2,7 +2,8 @@
 //  WorldEntering.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Entered a world that turns other mods off without parking them, which the Mod Framework's session leaves out
+//      Paulinchen  2026-10-30: Compared this game's data with a world's once the world's mods loaded, warning of a difference instead of asking or keeping the game out
+//                            - Entered a world that turns other mods off without parking them, which the Mod Framework's session leaves out
 //                            - Had the scripts install a world's mods through the Mod Framework and entered without a restart
 //                            - Started the game again for a mod that runs only once the world's lock is open
 //                            - Had the creator update a data scan of another format before entering
@@ -170,10 +171,11 @@ internal interface IEnteringDirectory
 
 /// <summary>
 /// The world screen's way into a world as steps the scripts play: whether the world takes players
-/// now, its required mods, the catalog its other mods turned off need, its game data, its password, where a new
+/// now, its required mods, the catalog its other mods turned off need, its password, where a new
 /// player starts, the starting save, the install of its mods, a Discord invite and the entry after a
-/// restart. The scripts hand over the player's choices and what their effects did, and keep the
-/// windows, the forms, the saves and the scenes.
+/// restart; and the check of this game's data once the world's mods loaded. The scripts hand over
+/// the player's choices and what their effects did, and keep the windows, the forms, the saves and
+/// the scenes.
 /// </summary>
 /// <remarks>
 /// It builds on the topics of the areas it asks in-process (mods.check, mods.forget,
@@ -200,11 +202,18 @@ internal sealed partial class WorldEntering
     public const string StepTopic = "screen.step";
 
     /// <summary>
-    /// Runs a command of the screen: <c>do</c> (open, look, update_data, read_for_edit, close) and
+    /// Runs a command of the screen: <c>do</c> (open, look, read_for_edit, close) and
     /// what it needs in; <c>steps</c> and <c>waiting</c> (whether the screen waits for the list to
     /// enter a world) out.
     /// </summary>
     public const string DoTopic = "screen.do";
+
+    /// <summary>
+    /// Compares this game's data, measured once the world's mods loaded, with the world's data scan:
+    /// <c>world</c> (its directory id) and <c>data</c> (this game's fingerprint) in; the warning the
+    /// player reads out, nil for none. The creator's game makes its data the world's instead.
+    /// </summary>
+    public const string DataCheckTopic = "worlds.data_check";
 
     /// <summary>
     /// The folder the worlds' folders are in, from the game folder, as the scripts name them.
@@ -288,21 +297,6 @@ internal sealed partial class WorldEntering
     private string? _rejoin;
 
     /// <summary>
-    /// Whether the player said to enter although the game data differs.
-    /// </summary>
-    private bool _dataAccepted;
-
-    /// <summary>
-    /// Whether the world took this game's data, which the list holds the old scan of until fetched again.
-    /// </summary>
-    private bool _dataTaken;
-
-    /// <summary>
-    /// Whether the world is entered once it took this game's data.
-    /// </summary>
-    private bool _enterAfterData;
-
-    /// <summary>
     /// What the question being asked is about, such as "mods".
     /// </summary>
     private string? _confirming;
@@ -378,6 +372,7 @@ internal sealed partial class WorldEntering
         _context.Register(AnswerTopic, (_, request) => Answered(() => Answer(request.AsHash())));
         _context.Register(StepTopic, (_, _) => Answered(Step));
         _context.Register(DoTopic, (_, request) => Do(request.AsHash()));
+        _context.Register(DataCheckTopic, (_, request) => DataChecked(request.AsHash()));
         _context.EveryFrame(_ =>
         {
             if (_busy != null && !_toldEnded && _directory.Action().State != "busy")
@@ -407,18 +402,6 @@ internal sealed partial class WorldEntering
             {
                 case "look":
                     Look(request);
-                    break;
-                case "update_data":
-                    Take(request);
-                    if (request["ask"].AsBool())
-                    {
-                        AskDataUpdate();
-                    }
-                    else
-                    {
-                        UpdateData(false);
-                    }
-
                     break;
                 case "read_for_edit":
                     Take(request);
@@ -550,8 +533,6 @@ internal sealed partial class WorldEntering
     {
         _entry = new Entry(row[0].AsText(), row[1].IsNil ? null : row[1].AsText(), row[2].AsText(), row[3].AsBool());
         _steps.Add(new RubyArray { "entry", _entry.Id });
-        _dataAccepted = false;
-        _dataTaken = false;
         Chain();
     }
 
@@ -562,8 +543,6 @@ internal sealed partial class WorldEntering
     private void Enter(RubyHash request)
     {
         Take(request);
-        _dataAccepted = false;
-        _dataTaken = false;
         Log($"enter {EntryText}");
         Chain();
     }
@@ -580,7 +559,7 @@ internal sealed partial class WorldEntering
 
     /// <summary>
     /// Goes through what entering asks, in order: the world open now, its mods read, its required
-    /// mods, the catalog its other mods turned off need, its game data, then its folder, lock or password.
+    /// mods, the catalog its other mods turned off need, then its folder, lock or password.
     /// </summary>
     private void Chain()
     {
@@ -605,7 +584,7 @@ internal sealed partial class WorldEntering
             // The world entered stays opened, so the list in the world carries its mods.
             _directory.Open(listed.Id);
             _fresh = state == "ready";
-            if (!ModsAllow(listed) || !CatalogAllows(listed) || !DataAllows(listed))
+            if (!ModsAllow(listed) || !CatalogAllows(listed))
             {
                 return;
             }
@@ -747,31 +726,60 @@ internal sealed partial class WorldEntering
     }
 
     /// <summary>
-    /// Decides whether this game may enter as far as its data goes.
+    /// Compares this game's data, measured once the world's mods loaded, with the world's data scan,
+    /// whatever the world's type: a game that differs is warned and plays on, and the creator's game
+    /// makes its data the world's.
     /// </summary>
-    /// <param name="listed">The world.</param>
-    /// <returns>Whether entering goes on now.</returns>
-    private bool DataAllows(ListedWorld listed)
+    /// <param name="request"><c>world</c> and <c>data</c>.</param>
+    /// <returns>The warning, nil for none.</returns>
+    private RubyValue? DataChecked(RubyHash request)
     {
-        string? scan = _dataTaken ? Data : listed.About.Data;
-        bool accepted = _dataAccepted;
-        _dataAccepted = false;
-        bool own = listed.CreatorId == _me;
-        if (GameDataCompare.OtherFormat(Data, scan))
+        string id = Text(request["world"]);
+        string data = Text(request["data"]);
+        ListedWorld? listed = _directory.Listed(id).World;
+        if (listed == null || data.Length == 0)
         {
-            (bool entering, IReadOnlyList<EnterDone> done) = EnterRules.OtherScan(_entry!.Name, listed.About.Strict, own);
-            Log($"data check of {_entry.Name}: its scan has another format; {(own ? "asking the creator to update it" : entering ? "let in" : "strict, kept out until its creator updates it")}");
-            Play(done);
-            return entering;
+            Log($"data check of world {Short(id)}: {(listed == null ? "the list lacks it" : "this game's data could not be read")}, not compared");
+            return null;
         }
 
-        IReadOnlyList<string>? differing = GameDataCompare.Differing(Data, scan);
-        (bool allowed, IReadOnlyList<EnterDone> did) = EnterRules.Data(_entry!.Name, differing, listed.About.Strict, listed.About.Mods, own, accepted);
-        Log(differing == null || differing.Count == 0
-            ? $"data check of {_entry.Name}: {(differing == null ? "cannot compare (unknown), let in" : "matches")}"
-            : $"data check of {_entry.Name}: differs in {string.Join(", ", differing)}; {(allowed ? "player entered anyway" : listed.About.Strict ? "strict" : "asking the player")}");
-        Play(did);
-        return allowed;
+        string? scan = listed.About.Data;
+        if (_me.Length > 0 && listed.CreatorId == _me)
+        {
+            TakeData(listed, data, scan);
+            return null;
+        }
+
+        IReadOnlyList<string>? differing = GameDataCompare.Differing(data, scan);
+        Log(differing == null ? $"data check of {listed.Name}: not compared, {(GameDataCompare.OtherFormat(data, scan) ? "its scan has another format" : "it has no scan")} until its creator enters"
+            : differing.Count == 0 ? $"data check of {listed.Name}: matches"
+            : $"data check of {listed.Name}: differs in {string.Join(", ", differing)}, the player is warned");
+        return EnterRules.DataWarning(listed.Name, differing) is { } warning ? warning : null;
+    }
+
+    /// <summary>
+    /// Makes the creator's game data the world's data scan while it differs, without waiting for the
+    /// answer, which nobody takes.
+    /// </summary>
+    /// <param name="listed">The world.</param>
+    /// <param name="data">The creator's game data.</param>
+    /// <param name="scan">The world's data scan.</param>
+    private void TakeData(ListedWorld listed, string data, string? scan)
+    {
+        if (data == scan)
+        {
+            Log($"data check of {listed.Name}: the creator's game matches the world's scan");
+            return;
+        }
+
+        if (!_tickets.Free() || !_directory.SetData(listed.Id, data))
+        {
+            Log($"data check of {listed.Name}: the world's scan could not be replaced with the creator's game data now, it is tried again on the next entry");
+            return;
+        }
+
+        _tickets.Release(_tickets.Claim());
+        Log($"data check of {listed.Name}: the creator's game data becomes the world's scan{(string.IsNullOrEmpty(scan) ? ", which it had none of" : "")}");
     }
 
     /// <summary>
@@ -781,44 +789,6 @@ internal sealed partial class WorldEntering
     {
         Log($"asking for the password of {EntryText}");
         _steps.Add(new RubyArray { "password", _entry!.Name });
-    }
-
-    /// <summary>
-    /// Asks the creator whether the world takes their game's data as it is now.
-    /// </summary>
-    private void AskDataUpdate()
-    {
-        if (Data.Length == 0)
-        {
-            Log($"not asking to update the data of {EntryText}: this game's data could not be read");
-            Refuse("Your game data could not be read.");
-            Back();
-            return;
-        }
-
-        Say($"Take your game's data as that of {_entry!.Name}? Games that differ from yours are then warned or kept out.");
-        Confirm("update_data", ("Update it", "yes"), ("Back", EnterRules.Cancel));
-    }
-
-    /// <summary>
-    /// Makes the world take this game's data, then enters it when the entry asked for it.
-    /// </summary>
-    /// <param name="enter">Whether the world is entered afterwards.</param>
-    private void UpdateData(bool enter)
-    {
-        _enterAfterData = enter;
-        if (Data.Length == 0)
-        {
-            _enterAfterData = false;
-            Log($"not updating the data of {EntryText}: this game's data could not be read");
-            Refuse("Your game data could not be read.");
-            Back();
-            return;
-        }
-
-        string id = _entry!.Id;
-        string data = Data;
-        StartAction("data", () => _directory.SetData(id, data));
     }
 
     /// <summary>
@@ -928,16 +898,6 @@ internal sealed partial class WorldEntering
         {
             case "mods":
                 Install();
-                break;
-            case "differing":
-                _dataAccepted = true;
-                Chain();
-                break;
-            case "own_data":
-                UpdateData(true);
-                break;
-            case "update_data":
-                UpdateData(false);
                 break;
             default:
                 throw new BridgeRequestException($"Nothing waits for a confirmation of {what}.");
@@ -1110,7 +1070,6 @@ internal sealed partial class WorldEntering
     {
         if (!start())
         {
-            _enterAfterData = false;
             _afterRead = null;
             Log($"the {kind} request could not be started");
             Refuse(NotStartedText);
@@ -1142,8 +1101,6 @@ internal sealed partial class WorldEntering
 
         string kind = _busy;
         _busy = null;
-        bool enterAfterData = _enterAfterData;
-        _enterAfterData = false;
         string? afterRead = _afterRead;
         _afterRead = null;
         var result = _directory.Result();
@@ -1186,18 +1143,6 @@ internal sealed partial class WorldEntering
             case "read":
                 ModsRead(afterRead);
                 return;
-            case "data":
-                Log($"the data of {EntryText} is this game's now");
-                Say($"The data scan of {_entry!.Name} was updated to your game.");
-                if (enterAfterData && _directory.Listed(_entry.Id).World != null)
-                {
-                    // The list holds the old scan until it is fetched again.
-                    _dataTaken = true;
-                    Chain();
-                    return;
-                }
-
-                break;
         }
 
         _directory.Refresh(_lists.Added());
@@ -1357,11 +1302,6 @@ internal sealed partial class WorldEntering
     /// <summary>
     /// Gets whether the screen waits for the list to enter the world the game started again for or a Discord invite names.
     /// </summary>
-    /// <summary>
-    /// Gets this game's data fingerprint, empty before the scripts handed it.
-    /// </summary>
-    private string Data => _fingerprint();
-
     private bool Waiting => _rejoin != null || _invited != null;
 
     /// <summary>

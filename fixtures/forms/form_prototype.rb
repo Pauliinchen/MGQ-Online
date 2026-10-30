@@ -2,12 +2,14 @@
 #  form_prototype.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Dropped Allow data mismatch and Update current data scan, as WorldForms did
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
 
 # The world screen's forms as world.rbx held them before their schema moved to WorldForms in
-# MGQOnline.Game (commit 2a2c2159, MGQ_MpWorld::Form), kept unchanged as FormPrototype::Form: the
+# MGQOnline.Game (commit 2a2c2159, MGQ_MpWorld::Form), kept unchanged as FormPrototype::Form but for
+# the game data's fields, which went once the game data was compared only as the player enters: the
 # source make_fixtures.rb records world.json from, and the stand-in the script tests answer the
 # form.* topics with, checked against world.json as GameScript/Tests/form_support.rb loads.
 
@@ -344,8 +346,7 @@ module FormPrototype
                   :needs => lambda { |form| form.from_save? }, :shows => lambda { |form| form.type == RAID }),
         limits_field(5, :right, lambda { |form| form.type == RAID }),
         Field.new(:mods, :mods, "Mods", 6, "The mods of the world: listed, required to enter or essential. Enter picks them.", :group => "Game data"),
-        Field.new(:mismatch, :check, "Allow data mismatch", 7, "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.", :side => :left, :group => "Game data"),
-        Field.new(:shared, :check, "Shared Mod Settings", 7, SHARED_HINT, :side => :right, :group => "Game data"),
+        Field.new(:shared, :check, "Shared Mod Settings", 7, SHARED_HINT, :group => "Game data"),
         Field.new(:other_mods_off, :check, "Turn off other mods", 8, OTHER_MODS_HINT, :group => "Game data"),
         # The row of a Raid World's Save comes off its description, so the form keeps to one page.
         Field.new(:description, :area, "What the world is about", 9, "Shown in the world's details. Optional.", :max_chars => MAX_DESCRIPTION_CHARS, :optional => true, :lines => DESCRIPTION_LINES, :group => "Description",
@@ -355,7 +356,7 @@ module FormPrototype
         Field.new(:confirm, :button, "Create the world", 10, "Creates the world. You enter it from the list."),
       ]
       new("Create a new world", fields, { :name => "", :password => "", :seats => FormPrototype.default_seats.to_s, :hidden => false, :type => 0, :share => 0, :from_save => false, :save => nil, :choose => false, :description => "", :mods => "",
-                                          :mismatch => false, :shared => false, :difficulty => FormPrototype.difficulties.index(FormPrototype.default_difficulty), :other_mods_off => false, :raid_bosses => false }.merge(squad_values(FormPrototype.default_squad)))
+                                          :shared => false, :difficulty => FormPrototype.difficulties.index(FormPrototype.default_difficulty), :other_mods_off => false, :raid_bosses => false }.merge(squad_values(FormPrototype.default_squad)))
     end
 
     # The button of a Raid World's form that opens the form of its squad rules, see limits.
@@ -407,8 +408,7 @@ module FormPrototype
         Field.new(:confirm, :button, "Save the changes", 7, "Changes the world for everyone."),
       ]
       if own
-        fields.insert(2, Field.new(:data, :button, "Update current data scan", 3, "Scans your game's data as it is now and makes it the world's, such as after a mod update.", :group => "Game data"),
-                         Field.new(:shared, :check, "Shared Mod Settings", 4, SHARED_HINT, :group => "Game data"))
+        fields.insert(2, Field.new(:shared, :check, "Shared Mod Settings", 4, SHARED_HINT, :group => "Game data"))
       end
       choices = listed.difficulty.nil? ? [PER_PLAYER] + FormPrototype.difficulty_names : FormPrototype.difficulty_names
       if listed.type == RAID

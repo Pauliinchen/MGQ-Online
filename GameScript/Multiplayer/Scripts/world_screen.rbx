@@ -2,7 +2,8 @@
 #  world_screen.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Noted the mods of the world's session for the Mod Framework to load as the world's game loads or starts
+#      Paulinchen  2026-10-30: Dropped the creator's update of the game data and handing this game's data over, since entering compares it once the world's mods loaded
+#                            - Noted the mods of the world's session for the Mod Framework to load as the world's game loads or starts
 #                            - Dropped giving up an entry for the parked mods
 #                            - Installed a world's mods through the Mod Framework, and started the game again for one that runs already
 #      Paulinchen  2026-10-28: Read the list on the screen's first look even when the list bit was taken earlier in the session
@@ -496,7 +497,6 @@ class Scene_MpWorlds < Scene_MenuBase
   # Tells the DLL the screen opened (topic screen.do, open), with the world the game started again
   # for, which the DLL then enters once the list holds it, as it does a Discord invite's world.
   def open_steps
-    MGQ_MpWorld::GameData.hand_fingerprint
     play(dll_do("open", "rejoin" => MGQ_MpWorldMods.rejoining, "me" => @me.to_s))
     MGQ_MpWorldMods.rejoined
   end
@@ -840,17 +840,12 @@ class Scene_MpWorlds < Scene_MenuBase
     @list_window.activate
   end
 
-  # Opens the list box for what the details point at, or asks the creator to update the world's
-  # game data.
+  # Opens the list box for what the details point at.
   #
-  # @param target [Symbol] :mods, :data, :players or :description.
+  # @param target [Symbol] :mods, :players or :description.
   def open_target(target)
     @entry = @list_window.current_ext
-    return open_box(target) unless target == :data
-
-    @list_window.deactivate
-    log_screen("the creator asks to update the data of #{entry_text}")
-    play(dll_do("update_data", entry_request.merge("ask" => true)))
+    open_box(target)
   end
 
   # Finds what of the details the mouse clicked, while the list or the details take the input.
@@ -1064,7 +1059,6 @@ class Scene_MpWorlds < Scene_MenuBase
       MGQ_MpSaveDistribution.choose(:world)
     when :button
       case field.key
-      when :data then play(dll_do("update_data", entry_request.merge("ask" => false)))
       when :limits then open_limits
       when :done then close_limits
       else send_form
@@ -1556,7 +1550,6 @@ class Scene_MpWorlds < Scene_MenuBase
   # only this game can name.
   def create_world
     values = @forms[:new_world]
-    MGQ_MpWorld::GameData.hand_fingerprint
     files = values.from_save? && values[:save] ? MGQ_MpSaveDistribution.files_of(values[:save]) : []
     play(dll_do("create", "start" => files))
   end
@@ -2339,12 +2332,11 @@ class Window_MpWorldDetail < Window_Base
     end
   end
 
-  # Lists what the details shown open, from the top: the mods, the creator's update of the game
-  # data, the players, the description.
+  # Lists what the details shown open, from the top: the mods, the players, the description.
   #
-  # @return [Array<Symbol>] :mods, :data, :players and :description, those the world shown has.
+  # @return [Array<Symbol>] :mods, :players and :description, those the world shown has.
   def targets
-    [:mods, :data, :players, :description].select { |target| @targets[target] }
+    [:mods, :players, :description].select { |target| @targets[target] }
   end
 
   # Puts the cursor on what the details open, or takes it away.

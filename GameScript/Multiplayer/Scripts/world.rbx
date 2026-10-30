@@ -2,7 +2,8 @@
 #  world.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Carried a Discord invite taken during a game through the Mod Framework's restart
+#      Paulinchen  2026-10-30: Measured the game data again once a world's mods loaded
+#                            - Carried a Discord invite taken during a game through the Mod Framework's restart
 #                            - Asked the Mod Framework for the release to play in place of the update offer
 #                            - Entered the game through the Mod Framework with the mods of the world's session right before its save loads or its New Game starts
 #                            - Started the game again into the world screen once the player backed out of a world's New Game after entering
@@ -1019,7 +1020,7 @@ module MGQ_MpWorld
     def self.fingerprint
       return @fingerprint if @fingerprint
 
-      @fingerprint = "#{FORMAT}:" + ids.map { |list| format("%08x", Zlib.crc32(list.join(","))) }.join(".")
+      @fingerprint = measure
       MGQ_MpWorld.log("this game's data: #{@fingerprint}")
       @fingerprint
     rescue => e
@@ -1039,6 +1040,29 @@ module MGQ_MpWorld
       MGQ_Multiplayer::Ini.write(FILE, "fingerprint" => text, "written" => Time.now.to_i)
     rescue => e
       MGQ_MpWorld.log("writing #{FILE} failed: #{e.class}: #{e.message}")
+    end
+
+    # Measures this game's data anew once the Mod Framework loaded a world's mods, which add entries
+    # the measure at the title lacks, for the world's data check alone.
+    #
+    # It leaves fingerprint as the title measured it, since the battle server measures its data
+    # without the world's mods and refuses a served battle whose setup carries another.
+    #
+    # @return [String] The fingerprint, see fingerprint; empty when the data could not be read.
+    def self.measure_entered
+      entered = measure
+      MGQ_MpWorld.log("this game's data with the world's mods: #{entered}")
+      entered
+    rescue => e
+      MGQ_MpWorld.log_once(:entered_fingerprint, "reading the game data with the world's mods failed: #{e.class}: #{e.message}")
+      ""
+    end
+
+    # Measures this game's data as it is now.
+    #
+    # @return [String] FORMAT, then a checksum per part.
+    def self.measure
+      "#{FORMAT}:" + ids.map { |list| format("%08x", Zlib.crc32(list.join(","))) }.join(".")
     end
 
     # Lists the ids that exist of each part.
@@ -1139,7 +1163,7 @@ module MGQ_MpWorld
     # @!attribute choose [Boolean] Whether each new player chooses where to start.
     # @!attribute open [Boolean] Whether it has no password.
     # @!attribute featured [Boolean] Whether it is one of the relay's own worlds, which an admin made.
-    # @!attribute strict [Boolean] Whether only games with the same data as its creator's may enter.
+    # @!attribute strict [Boolean] Whether its creator asked to keep games with other data out, which no rule reads since a difference is only warned of.
     # @!attribute data [String] Its creator's game data, see GameData.fingerprint; empty when unknown.
     # @!attribute mods [String] The mods it needs, as its creator wrote them.
     # @!attribute description [String] What it is about, as its creator wrote it.

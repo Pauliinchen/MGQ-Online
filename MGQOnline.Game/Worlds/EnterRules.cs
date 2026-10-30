@@ -2,14 +2,14 @@
 //  EnterRules.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Stopped asking the creator of a world entered with mods parked, since none are parked any more
+//      Paulinchen  2026-10-30: Warned of a game whose data differs once the world's mods loaded instead of asking or keeping it out
+//                            - Stopped asking the creator of a world entered with mods parked, since none are parked any more
 //                            - Decided entering a world whose data scan has another format
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
 
 using System.Collections.Generic;
-using MGQOnline.Game.Mods;
 
 namespace MGQOnline.Game.Worlds;
 
@@ -22,15 +22,15 @@ namespace MGQOnline.Game.Worlds;
 /// <see cref="EnterRules.Back"/>, <see cref="EnterRules.Confirm"/>, <see cref="EnterRules.Choices"/>,
 /// <see cref="EnterRules.Fetch"/> or <see cref="EnterRules.Start"/>.</param>
 /// <param name="Text">What is said or asked, <see langword="null"/> when nothing is.</param>
-/// <param name="What">What a confirmation is about, such as "differing".</param>
+/// <param name="What">What a confirmation is about, such as "mods".</param>
 /// <param name="Yes">The command that confirms.</param>
 /// <param name="Offered">The choices offered, each label with its answer.</param>
 public sealed record EnterDone(string Kind, string? Text = null, string? What = null, string? Yes = null, IReadOnlyList<(string Label, string Answer)>? Offered = null);
 
 /// <summary>
 /// The rules the world screen enters a world by, as world_screen.rbx and world_save_distribution.rbx
-/// had them: whether the world takes players now, whether this game's data may enter, and where a
-/// new player starts.
+/// had them: whether the world takes players now and where a new player starts; and what a game
+/// whose data differs from the creator's is told once the world's mods loaded.
 /// </summary>
 public static class EnterRules
 {
@@ -114,56 +114,21 @@ public static class EnterRules
     }
 
     /// <summary>
-    /// Decides whether this game may enter a world as far as its data goes: one whose data differs
-    /// from the creator's is kept out of a world for the same data only, and otherwise asked first.
+    /// Tells a player whose game data differs from the creator's, measured once the world's mods
+    /// loaded, in what; the player plays on, whatever the world's type.
     /// </summary>
+    /// <remarks>
+    /// Only the game entered with the world's mods has the data to compare, and going back to the
+    /// title from there would start the game again, so a difference is never a reason to keep a
+    /// player out.
+    /// </remarks>
     /// <param name="name">The world's name.</param>
     /// <param name="differing">The parts of the data that differ, <see langword="null"/> when they cannot be compared.</param>
-    /// <param name="strict">Whether only games with the same data may enter.</param>
-    /// <param name="mods">The world's mods as written.</param>
-    /// <param name="own">Whether the player made the world.</param>
-    /// <param name="accepted">Whether the player said to enter anyway.</param>
-    /// <returns>Whether entering goes on, and what the screen does otherwise.</returns>
-    public static (bool Allowed, IReadOnlyList<EnterDone> Did) Data(string name, IReadOnlyList<string>? differing, bool strict, string? mods, bool own, bool accepted)
-    {
-        if (differing == null || differing.Count == 0)
-        {
-            return (true, []);
-        }
-
-        if (accepted && !strict)
-        {
-            return (true, []);
-        }
-
-        IReadOnlyList<string> needed = ModsText.Names(mods);
-        string needs = needed.Count == 0 ? "" : $" It needs: {string.Join(", ", needed)}.";
-        if (strict)
-        {
-            return (false, Refused(own ? $"{name} only takes matching game data. Update it under Your game in its details." : $"{name} only takes matching game data.{needs}"));
-        }
-
-        return (false, [new EnterDone(Confirm, $"Your game data differs.{needs} Enter anyway?", "differing", "Enter anyway")]);
-    }
-
-    /// <summary>
-    /// Decides whether this game may enter a world whose data scan another version of the mod made,
-    /// which cannot be compared: its creator is asked to take their game's data first, and other
-    /// games are kept out of a world for the same data only until the creator did.
-    /// </summary>
-    /// <param name="name">The world's name.</param>
-    /// <param name="strict">Whether only games with the same data may enter.</param>
-    /// <param name="own">Whether the player made the world.</param>
-    /// <returns>Whether entering goes on, and what the screen does otherwise.</returns>
-    public static (bool Allowed, IReadOnlyList<EnterDone> Did) OtherScan(string name, bool strict, bool own)
-    {
-        if (own)
-        {
-            return (false, [new EnterDone(Confirm, $"The data scan of {name} was made by another version of the mod. Take your game's data as it is now and enter?", "own_data", "Update and enter")]);
-        }
-
-        return strict ? (false, Refused($"{name} only takes matching game data. Its data scan waits for its creator to update it.")) : (true, []);
-    }
+    /// <returns>The warning, <see langword="null"/> when the data matches or cannot be compared.</returns>
+    public static string? DataWarning(string name, IReadOnlyList<string>? differing) =>
+        differing == null || differing.Count == 0
+            ? null
+            : $"Your game differs from the creator's of {name}. Some things may not work as in their game.";
 
     /// <summary>
     /// Decides where a player starts in a world this PC has a folder of: asked where while new to a

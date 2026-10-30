@@ -2,7 +2,8 @@
 //  WorldScreenModel.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Told a data scan of another format in the details
+//      Paulinchen  2026-10-30: Told in the details that the game data is compared as the player enters, no longer at the title
+//                            - Told a data scan of another format in the details
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -45,7 +46,7 @@ public sealed record ScreenSquad(bool Luka, int Formation, int Front, int RaidFr
 /// <param name="Choose">Whether each new player chooses where to start.</param>
 /// <param name="Open">Whether it has no password.</param>
 /// <param name="Featured">Whether it is one of the relay's own worlds.</param>
-/// <param name="Strict">Whether only games with its creator's data may enter.</param>
+/// <param name="Strict">Whether its creator asked to keep games with other data out, which no rule reads since a difference is only warned of.</param>
 /// <param name="Mods">The mods it needs, as its creator wrote them.</param>
 /// <param name="Type">Its type, "classic" or "raid".</param>
 /// <param name="Share">How a Raid World shares companions: "off", "story" or "all".</param>
@@ -135,27 +136,21 @@ public sealed record ScreenRules(Func<int, string?> DifficultyName, Func<int, st
 /// </summary>
 /// <param name="Me">The player's id.</param>
 /// <param name="Admin">Whether the player is one of the relay's admins.</param>
-/// <param name="Differing">What of this game's data differs from the creator's; none when it matches, <see langword="null"/> when not compared.</param>
-/// <param name="DifferingText">The parts that differ named in a sentence.</param>
 /// <param name="Installed">Tells whether a mod's script is installed.</param>
 /// <param name="Rows">The required mods this game has in another version or lacks.</param>
 /// <param name="SettingsText">The details' line of the shared mod settings.</param>
 /// <param name="SettingsShared">Whether the world shares its creator's mod settings.</param>
 /// <param name="TurnedOff">The player's mods the world turns off with their scripts counted; <see langword="null"/> while unknown.</param>
 /// <param name="Added">The hidden worlds the player added by their ids.</param>
-/// <param name="OtherScan">Whether another version of the mod made the world's data scan, which cannot be compared.</param>
 public sealed record ScreenFacts(
     string Me,
     bool Admin,
-    IReadOnlyList<string>? Differing,
-    string DifferingText,
     Func<string, bool> Installed,
     IReadOnlyList<ScreenModRow> Rows,
     string SettingsText,
     bool SettingsShared,
     IReadOnlyList<(string Name, int Scripts)>? TurnedOff,
-    IReadOnlyCollection<string> Added,
-    bool OtherScan = false);
+    IReadOnlyCollection<string> Added);
 
 /// <summary>
 /// A value of the details on a darker box.
@@ -245,7 +240,6 @@ public static class WorldScreenModel
         new("ban", "Removing the player . . ."),
         new("edit", "Saving the changes . . ."),
         new("find", "Looking for the world . . ."),
-        new("data", "Updating the game data . . ."),
         new("start", "Fetching the starting save . . ."),
         new("mods", "Downloading the mods . . ."),
         new("settings", "Saving the mod settings . . ."),
@@ -428,8 +422,8 @@ public static class WorldScreenModel
 
     /// <summary>
     /// Tells how a world's marked mods are marked: a required one good while this game has it in the
-    /// world's version, gold in another and bad while it lacks it; an essential one good while the
-    /// game data matches, gold otherwise.
+    /// world's version, gold in another and bad while it lacks it; an essential one gold, since the
+    /// game data is compared only as the player enters.
     /// </summary>
     /// <remarks>
     /// A mod marked twice keeps its first place with its last mark, as a Ruby Hash did.
@@ -462,7 +456,7 @@ public static class WorldScreenModel
 
         foreach (string mod in ModsText.Essential(text))
         {
-            Mark(mod, facts.Differing == null ? ("gold", "essential, not checked") : facts.Differing.Count == 0 ? ("good", "essential, data matches") : ("gold", "essential, data differs"));
+            Mark(mod, ("gold", "essential, checked as you enter"));
         }
 
         return marks;
@@ -510,28 +504,21 @@ public static class WorldScreenModel
     }
 
     /// <summary>
-    /// Tells the mods a world needs, its mod settings, whether it turns other mods off, whether the
-    /// player's game data matches its creator's, and which games may enter.
+    /// Tells the mods a world needs, its mod settings, whether it turns other mods off, and that the
+    /// player's game data is compared with its creator's as they enter.
     /// </summary>
+    /// <remarks>
+    /// The title has loaded none of the world's mods, so a comparison there would name the entries
+    /// they add as differences.
+    /// </remarks>
     /// <param name="listed">The world in the directory.</param>
     /// <param name="facts">What the details read beyond the world.</param>
     /// <returns>The panel.</returns>
     private static ScreenPanel DataPanel(ScreenListed listed, ScreenFacts facts)
     {
         IReadOnlyList<string> mods = ModsText.Names(listed.Mods);
-        IReadOnlyList<string>? differing = facts.Differing;
-
-        // The creator's game is the world's measure: once it differs, or the world tells none, they
-        // may take it as the world's.
-        string? update = listed.CreatorId == facts.Me && (differing == null || differing.Count > 0) ? "data" : null;
-        ScreenCell game = differing == null
-            ? new ScreenCell("Your game", update != null ? "Not compared. Confirm to set yours" : facts.OtherScan ? "Not compared: the scan waits for its creator" : "Not compared: the world does not tell", "normal", update)
-            : differing.Count == 0
-                ? new ScreenCell("Your game", "Matches the creator's", "good")
-                : new ScreenCell("Your game", "Differs: " + facts.DifferingText, "warn", update);
-        string? note = update != null ? "confirm on Your game: update"
-            : listed.Strict ? facts.OtherScan ? "kept out until its creator updates the scan" : "same data only"
-            : differing != null ? "differing games are warned" : null;
+        ScreenCell game = new("Your game", listed.CreatorId == facts.Me ? "Becomes the world's as you enter" : "Compared with the creator's as you enter", "normal");
+        const string note = "differing games are warned";
         if (listed.ModsUnread)
         {
             return new ScreenPanel("Game data", note, [[new ScreenCell("Mods", "Reading . . .", "normal")], [game]]);

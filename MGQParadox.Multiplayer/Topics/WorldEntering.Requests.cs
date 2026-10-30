@@ -2,6 +2,7 @@
 //  WorldEntering.Requests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Made a new world without a data scan and without keeping differing games out, since its creator's game sets the scan as they enter
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -46,11 +47,6 @@ internal sealed partial class WorldEntering
     private Func<string, Form?> _form = _ => null;
 
     /// <summary>
-    /// Gives this game's data fingerprint, empty before the scripts handed it.
-    /// </summary>
-    private Func<string> _fingerprint = () => "";
-
-    /// <summary>
     /// Puts a text on the clipboard, answering whether it did.
     /// </summary>
     private Func<string, bool> _copy = _ => false;
@@ -81,15 +77,13 @@ internal sealed partial class WorldEntering
     private (string Id, string Name)? _target;
 
     /// <summary>
-    /// Lets the requests read the screen's forms and this game's data, and reach the clipboard.
+    /// Lets the requests read the screen's forms and reach the clipboard.
     /// </summary>
     /// <param name="form">Gives the form open in a slot.</param>
-    /// <param name="fingerprint">Gives this game's data fingerprint.</param>
     /// <param name="copy">Puts a text on the clipboard, answering whether it did.</param>
-    public void UseRequests(Func<string, Form?> form, Func<string> fingerprint, Func<string, bool> copy)
+    public void UseRequests(Func<string, Form?> form, Func<string, bool> copy)
     {
         _form = form;
-        _fingerprint = fingerprint;
         _copy = copy;
     }
 
@@ -286,8 +280,8 @@ internal sealed partial class WorldEntering
     }
 
     /// <summary>
-    /// Makes the world the new world's form describes, unless it keeps differing games out and this
-    /// game's data cannot be read, which would let every game in.
+    /// Makes the world the new world's form describes, without a data scan: its creator's game sets
+    /// it once the world's mods loaded as they enter, which the title cannot measure.
     /// </summary>
     /// <param name="request">The starting save's files, [name, path] each, none for a world without one.</param>
     private void Create(RubyHash request)
@@ -295,23 +289,13 @@ internal sealed partial class WorldEntering
         Form form = FormIn(NewWorldSlot);
         WorldFormValues values = WorldForms.ValuesOf(form, FormTopics.Rules);
         string name = form.TextOf("name");
-        string data = _fingerprint();
-        bool strict = !form.IsTicked("mismatch");
-        if (strict && data.Length == 0)
-        {
-            Log($"not creating {name}: it keeps differing games out, and this game's data could not be read");
-            Refuse(WorldRequests.DataUnreadText);
-            _steps.Add(new RubyArray { "resume_form" });
-            return;
-        }
-
         List<(string Name, string Path)> files = request["start"].IsNil ? [] : [.. request["start"].AsArray().Select(file => (file.AsArray()[0].AsText(), file.AsArray()[1].AsText()))];
         bool raid = values.Type == WorldType.Raid;
         string mods = form.TextOf("mods");
         string? squad = raid ? SquadText(values.Squad) : null;
         int? difficulty = raid ? values.Difficulty ?? WorldDifficulty.Default : null;
         _creating = new Creating(name, values.Type, values.Share, difficulty, squad, !raid && values.RaidBosses, files, null);
-        WorldAbout about = new(form.TextOf("description"), mods, data, strict, CreatorHashes(mods), form.IsTicked("shared") ? SharedSettings.WithMarker("") : "");
+        WorldAbout about = new(form.TextOf("description"), mods, "", false, CreatorHashes(mods), form.IsTicked("shared") ? SharedSettings.WithMarker("") : "");
         int seats = SeatsOf(form);
         StartRequest("create", () => _directory.Create(name, form.TextOf("password"), seats, form.IsTicked("hidden"), values.Choose, files, about, values.Type, values.Share, difficulty, values.OtherModsOff, squad, raid ? null : values.RaidBosses));
     }

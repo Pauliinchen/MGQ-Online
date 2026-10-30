@@ -2,7 +2,8 @@
 //  WorldEnteringTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Checked that a world that turns other mods off waits for the catalog, without the parking
+//      Paulinchen  2026-10-30: Checked the game data once the world's mods loaded, warned of or taken as the creator's, in place of the question and the refusal on entering
+//                            - Checked that a world that turns other mods off waits for the catalog, without the parking
 //                            - Checked the install of a world's mods through the scripts, without a restart
 //                            - Checked that a restart for a mod that runs waits for the world's lock
 //                            - Checked that a data scan of another format waits for its creator
@@ -96,11 +97,6 @@ public sealed class WorldEnteringTests : IDisposable
     private readonly WorldLists _lists;
 
     /// <summary>
-    /// This game's data fingerprint as the scripts handed it.
-    /// </summary>
-    private string _data = Data;
-
-    /// <summary>
     /// The texts put on the clipboard.
     /// </summary>
     private readonly List<string> _copied = [];
@@ -132,7 +128,7 @@ public sealed class WorldEnteringTests : IDisposable
             }
 
             WorldEntering entering = new(context, _directory, _worlds, lists, () => true, new DirectoryTickets(() => "idle", () => { }), new WorldChanges(context));
-            entering.UseRequests(slot => _forms.GetValueOrDefault(slot), () => _data, text =>
+            entering.UseRequests(slot => _forms.GetValueOrDefault(slot), text =>
             {
                 _copied.Add(text);
                 return true;
@@ -213,15 +209,54 @@ public sealed class WorldEnteringTests : IDisposable
     }
 
     /// <summary>
-    /// Asserts that a game whose data differs is asked first, and that its yes goes on to the lock.
+    /// Asserts that a game whose data differs enters as any other, the world's type and its creator's
+    /// old wish to keep such games out alike, since the data is compared only once its mods loaded.
     /// </summary>
     [Fact]
-    public void Enter_AsksAGameWhoseDataDiffersAndGoesOnOnItsYes()
+    public void Enter_LetsAGameWhoseDataDiffersIn()
     {
-        _directory.List(World("w1", open: true, data: OtherData, mods: "Some Mod"));
+        _directory.List(World("w1", open: true, data: OtherData, strict: true));
 
-        Assert.Equal(["say Your game data differs. It needs: Some Mod. Enter anyway?", "confirm differing yes,cancel"], Enter("w1"));
-        Assert.Equal(["busy unlock"], Answer("yes"));
+        Assert.Equal(["busy unlock"], Enter("w1"));
+    }
+
+    /// <summary>
+    /// Asserts that the check once the world's mods loaded warns a game whose data differs, in plain
+    /// words, and says nothing to one that matches or cannot be compared.
+    /// </summary>
+    [Fact]
+    public void DataCheck_WarnsAGameWhoseDataDiffersAndNothingElse()
+    {
+        _directory.List(World("w1", data: OtherData, strict: true));
+        Assert.Equal("Your game differs from the creator's of Plain. Some things may not work as in their game.", DataCheck("w1", Data)!.AsText());
+
+        _directory.List(World("w1", data: Data));
+        Assert.Null(DataCheck("w1", Data));
+        _directory.List(World("w1", data: OtherFormatData));
+        Assert.Null(DataCheck("w1", Data));
+        _directory.List(World("w1", data: ""));
+        Assert.Null(DataCheck("w1", Data));
+        Assert.Null(DataCheck("w2", Data));
+        Assert.DoesNotContain(_directory.Calls, call => call.StartsWith("data", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Asserts that the creator's game makes its data, measured once the world's mods loaded, the
+    /// world's data scan while it differs, and is never warned.
+    /// </summary>
+    [Fact]
+    public void DataCheck_MakesTheCreatorsDataTheWorldsScan()
+    {
+        _directory.List(World("w1", creator: Me, data: ""));
+
+        Assert.Null(DataCheck("w1", OtherData));
+        Assert.Equal($"data w1 {OtherData}", _directory.Calls.Last());
+
+        _directory.Clear();
+        _directory.Calls.Clear();
+        _directory.List(World("w1", creator: Me, data: OtherData));
+        Assert.Null(DataCheck("w1", OtherData));
+        Assert.Empty(_directory.Calls);
     }
 
     /// <summary>
@@ -410,26 +445,6 @@ public sealed class WorldEnteringTests : IDisposable
     }
 
     /// <summary>
-    /// Asserts that the creator of a world whose data scan another version of the mod made is asked
-    /// to update it before entering, and that other games are kept out of it meanwhile while it is
-    /// for the same data only.
-    /// </summary>
-    [Fact]
-    public void Enter_HasTheCreatorUpdateAScanOfAnotherFormatAndKeepsOthersOutMeanwhile()
-    {
-        _directory.List(World("w1", open: true, data: OtherFormatData, strict: true));
-        Assert.Equal(["buzz", "say Plain only takes matching game data. Its data scan waits for its creator to update it.", "back"], Enter("w1"));
-
-        LocalWorld folder = Folder();
-        _directory.List(World("w1", creator: Me, data: OtherFormatData, strict: true));
-        Assert.Equal(["say The data scan of Plain was made by another version of the mod. Take your game's data as it is now and enter?", "confirm own_data yes,cancel"], Enter("w1", folder.Id));
-        Assert.Equal(["busy data"], Answer("yes"));
-        Assert.Equal($"data w1 {Data}", _directory.Calls.Last());
-        _directory.Finish(null, null);
-        Assert.Equal(["idle", "say The data scan of Plain was updated to your game.", "start fresh"], Step());
-    }
-
-    /// <summary>
     /// Asserts that a new world is made from the form, kept as a favourite and pointed at, and that
     /// its starting save is copied in by the scripts first when it has one.
     /// </summary>
@@ -442,7 +457,7 @@ public sealed class WorldEnteringTests : IDisposable
         form.Set("mods", "!Mod");
 
         Assert.Equal(["busy create"], Do("create"));
-        Assert.Equal("create Haven 6 classic/off d= s= b=False c=False Mod=abc strict []", _directory.Calls.Last());
+        Assert.Equal("create Haven 6 classic/off d= s= b=False c=False Mod=abc loose data=[] []", _directory.Calls.Last());
         _directory.Finish(Code, "none");
         Assert.Equal(["idle", "fresh_form", "close_form", "select", "say Haven was created. Confirm to enter it.", "back"], Step());
         Assert.Equal(["w1"], _lists.Favourites());
@@ -463,22 +478,7 @@ public sealed class WorldEnteringTests : IDisposable
         _forms["new_world"].Set("raid_bosses", true);
         _forms["new_world"].Set("shared", true);
         Do("create");
-        Assert.Equal("create Raid 4 raid/off d=0 s=0 4 1 1 b= c=False Mod=abc strict [@shared=o:1]", _directory.Calls.Last());
-    }
-
-    /// <summary>
-    /// Asserts that a world keeping differing games out is not made while this game's data is unknown.
-    /// </summary>
-    [Fact]
-    public void Create_RefusesAStrictWorldWithoutThisGamesData()
-    {
-        _data = "";
-        _forms["new_world"] = WorldForms.OpenCreate(FormTopics.Rules);
-        _forms["new_world"].Set("name", "Haven");
-        _forms["new_world"].Set("seats", "4");
-
-        Assert.Equal(["buzz", "say Your game data could not be read. Tick Allow data mismatch.", "resume_form"], Do("create"));
-        Assert.DoesNotContain(_directory.Calls, call => call.StartsWith("create", StringComparison.Ordinal));
+        Assert.Equal("create Raid 4 raid/off d=0 s=0 4 1 1 b= c=False Mod=abc loose data=[] [@shared=o:1]", _directory.Calls.Last());
     }
 
     /// <summary>
@@ -590,6 +590,14 @@ public sealed class WorldEnteringTests : IDisposable
         sent["answer"] = answer;
         return Steps(_topics.Call(WorldEntering.AnswerTopic, sent));
     }
+
+    /// <summary>
+    /// Checks this game's data once the world's mods loaded.
+    /// </summary>
+    /// <param name="world">The world's id.</param>
+    /// <param name="data">This game's data fingerprint.</param>
+    /// <returns>The warning, <see langword="null"/> for none.</returns>
+    private RubyValue? DataCheck(string world, string data) => _topics.Call(WorldEntering.DataCheckTopic, new RubyHash { { "world", world }, { "data", data } });
 
     /// <summary>
     /// Follows the running action.
@@ -767,7 +775,7 @@ public sealed class WorldEnteringTests : IDisposable
 
         /// <inheritdoc />
         public bool Create(string name, string password, int seats, bool hidden, bool choose, IReadOnlyList<(string Name, string Path)> start, WorldAbout about, string type, string share, int? difficulty, bool otherModsOff, string? squad, bool? raidBosses) =>
-            Started($"create {name} {seats} {type}/{share} d={difficulty} s={squad} b={raidBosses} c={choose} {about.ModHashes} {(about.Strict ? "strict" : "loose")} [{about.Settings}]");
+            Started($"create {name} {seats} {type}/{share} d={difficulty} s={squad} b={raidBosses} c={choose} {about.ModHashes} {(about.Strict ? "strict" : "loose")} data=[{about.Data}] [{about.Settings}]");
 
         /// <inheritdoc />
         public bool Edit(string id, int seats, string description, string mods, string? modHashes, int? difficulty, bool? otherModsOff, string? squad, bool? raidBosses) =>

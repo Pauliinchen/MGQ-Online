@@ -2,7 +2,8 @@
 #  raid_difficulty_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Left the hints fitting their lines to world_data_test.rb
+#      Paulinchen  2026-10-30: Expected the forms without the game data's fields
+#                            - Left the hints fitting their lines to world_data_test.rb
 #      Paulinchen  2026-10-23: Left the calls a new world and an edit hand the directory to the DLL's tests
 #                            - Left where a Raid World's new player starts to the DLL's tests
 #                            - Opened the world screen's forms through the DLL
@@ -235,7 +236,7 @@ raid_save = field_of(form, :save)
 check("a Raid World has no Player's choice, Sharing companions on its row, its own Shared save beside the Difficulty, and its Save below",
       [starting.map { |field| form.fields.include?(field) }, field_of(form, :share).row, [raid_from_save.kind, raid_from_save.row, raid_from_save.side],
        [picked.row, picked.side, form.enabled?(picked)], [raid_save.row, raid_save.side, raid_save.label_width], form.fields.size],
-      [[false, false], 3, [:check, 4, :left], [4, :right, true], [5, :left, 40], 16])
+      [[false, false], 3, [:check, 4, :left], [4, :right, true], [5, :left, 40], 15])
 check("which offers the game's difficulties and starts on NORMAL", [picked.kind, picked.choices, form.difficulty],
       [:switch, ["VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD", "HELL", "PARADOX"], 0])
 check("Shared save ticked before stays ticked, the player's choice does not, and the form asks for the save", [form.from_save?, form.choose?, form.problem],
@@ -244,7 +245,7 @@ form.turn(picked, 1)
 check("its switch turns to the next difficulty", [form.difficulty, MGQ_MpWorld.difficulty_name(form.difficulty)], [1, "HARD"])
 form[:type] = 0
 check("back on Classic the Save and Raid Bosses take their place again", [field_of(form, :difficulty), field_of(form, :save) == save, field_of(form, :raid_bosses) == raid_bosses, form.fields.size],
-      [nil, true, true, 15])
+      [nil, true, true, 14])
 
 
 # The creator's edit form has the Difficulty for a Raid World only.
@@ -252,7 +253,7 @@ listed = MGQ_MpWorld::Directory::ListedWorld.new("r1", 4, 0, "me", 0, "Me", "Rai
 edit = MGQ_MpWorld::WorldForm.edit(:edit_world, listed, true)
 check("a Raid World's edit form has the Difficulty switch below Max Players, on its difficulty",
       [edit.fields.map { |field| field.key }, field_of(edit, :seats).side, field_of(edit, :difficulty).side, field_of(edit, :difficulty).choices.size, edit.difficulty],
-      [[:seats, :difficulty, :limits, :mods, :data, :shared, :other_mods_off, :description, :confirm], nil, :left, 7, 2])
+      [[:seats, :difficulty, :limits, :mods, :shared, :other_mods_off, :description, :confirm], nil, :left, 7, 2])
 listed.difficulty = nil
 unset = MGQ_MpWorld::WorldForm.edit(:edit_world, listed, false)
 check("on Per player for a Raid World that sets none yet, its first outcome", [field_of(unset, :difficulty).choices.first, unset[:difficulty], unset.difficulty], ["Per player", 0, nil])

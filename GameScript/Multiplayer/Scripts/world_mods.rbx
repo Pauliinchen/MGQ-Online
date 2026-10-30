@@ -2,7 +2,8 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-30: Locked the options a world sets through the Mod Framework's options, Mod Config Remake's without it
+#      Paulinchen  2026-10-30: Checked the game data once the world's mods loaded and warned in the notification box of a difference
+#                            - Locked the options a world sets through the Mod Framework's options, Mod Config Remake's without it
 #                            - Entered a world that turns other mods off with only the mods its session keeps, and started again for one that turns them off now
 #                            - Entered a world's game only right before its save loads or its New Game starts, and handed the DLL the options of the mods that loaded
 #                            - Installed a world's mods through the Mod Framework, and entered the world again after its restart
@@ -144,6 +145,12 @@ module MGQ_MpWorldMods
   # The key of the notice of the mods a world leaves out.
   OFF_NOTICE_KEY = :world_mods_off
 
+  # The topic that compares this game's data with the world's once its mods loaded.
+  DATA_CHECK_TOPIC = "worlds.data_check"
+
+  # The key of the notice of a game whose data differs from the world creator's.
+  DATA_NOTICE_KEY = :world_data_differs
+
   # Frames a player in a world that now turns their mods off is told so before the game starts
   # again, once the map is free, five seconds.
   KICK_FRAMES = 300
@@ -274,27 +281,27 @@ module MGQ_MpWorldMods
     world
   end
 
-  # Notes the mods of the session of the world the world screen enters, which enter_game loads: a
-  # world that turns other mods off keeps only some of them.
+  # Notes the world the world screen enters, with the mods of its session, which enter_game loads:
+  # a world that turns other mods off keeps only some of them, and only under the Mod Framework.
   #
   # @param listed [MGQ_MpWorld::Directory::ListedWorld, nil] The world as the list has it, nil when
   #   the list lacks it.
   def self.note_session(listed)
     @entering = nil
-    return unless defined?(MGQ_Multiplayer::Stages) && MGQ_Multiplayer::Stages.staged?
-
-    session = listed && listed.other_mods_off ? session_of(listed) : nil
-    @entering = { :name => listed ? listed.name.to_s : "a world", :session => session }
+    staged = defined?(MGQ_Multiplayer::Stages) && MGQ_Multiplayer::Stages.staged?
+    session = staged && listed && listed.other_mods_off ? session_of(listed) : nil
+    @entering = { :name => listed ? listed.name.to_s : "a world", :session => session, :world => listed && listed.id.to_s }
   rescue => e
     log("noting the mods of the world's session failed: #{e.class}: #{e.message}")
   end
 
   # Enters the game through the Mod Framework for the world noted, right before its save loads or
   # its New Game starts: the mods of its session load, the player is told which stay off and which
-  # stay on, and the DLL takes the options of the mods that loaded. Earlier, any way back to the
-  # title, such as the one to the world's New Game, would start the game again. The mods that run
-  # from the start of the game are noted first, since once entered every mod counts as running until
-  # the game starts again (rule_pushed).
+  # stay on, the DLL takes the options of the mods that loaded, and the game's data, which those
+  # mods changed, is compared with the world's (check_data). Earlier, any way back to the title,
+  # such as the one to the world's New Game, would start the game again. The mods that run from the
+  # start of the game are noted first, since once entered every mod counts as running until the
+  # game starts again (rule_pushed).
   def self.enter_game
     entering = @entering
     @entering = nil
@@ -305,8 +312,26 @@ module MGQ_MpWorldMods
     entered = MGQ_Multiplayer::Stages.enter("the world #{entering[:name]}", session && session["only"])
     MGQ_MpNotices.message(OFF_NOTICE_KEY, session["text"], KICK_FRAMES) if session && session["text"] && defined?(MGQ_MpNotices)
     hand_options(true) if entered
+    check_data(entering[:world], entering[:name])
   rescue => e
     log("entering the game for a world failed: #{e.class}: #{e.message}")
+  end
+
+  # Measures this game's data again once the world's mods loaded and has the DLL compare it with the
+  # world's: a game that differs reads in the notification box in what and plays on, whatever the
+  # world's type, since going back to the title now would start the game again; the creator's game
+  # makes its data the world's.
+  #
+  # @param world [String, nil] The world's directory id, nil when the list lacks it.
+  # @param name [String] Its name, for the log.
+  def self.check_data(world, name)
+    return log("not comparing the game data with #{name}'s: the list lacks it") unless world
+
+    warning = MGQ_Multiplayer::Bridge.call(DATA_CHECK_TOPIC, "world" => world, "data" => MGQ_MpWorld::GameData.measure_entered)
+    return unless warning.is_a?(String)
+
+    log("this game's data differs from that of #{name}'s creator: the player is told and plays on")
+    MGQ_MpNotices.message(DATA_NOTICE_KEY, warning, NOTICE_FRAMES) if defined?(MGQ_MpNotices)
   end
 
   # Names the mods of a world's session, which turns other mods off.

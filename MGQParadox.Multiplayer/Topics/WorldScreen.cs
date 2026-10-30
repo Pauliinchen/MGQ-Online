@@ -2,7 +2,8 @@
 //  WorldScreen.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Counted the mods a world turns off without the parking
+//      Paulinchen  2026-10-30: Stopped comparing the game data in the details, which the title has without the world's mods
+//                            - Counted the mods a world turns off without the parking
 //                            - Told the details whether a world's data scan has another format
 //      Paulinchen  2026-10-23: Created
 //
@@ -37,11 +38,6 @@ internal sealed class WorldScreen
     /// What a row's key starts with for a world on this PC whose world.ini names no directory id.
     /// </summary>
     public const string FolderKey = "folder:";
-
-    /// <summary>
-    /// Most parts of the game data a row of the details names before it counts the rest.
-    /// </summary>
-    private const int NamedParts = 2;
 
     /// <summary>
     /// Where the screen's facts come from.
@@ -174,20 +170,16 @@ internal sealed class WorldScreen
     {
         ListedWorld? listed = item.Listed;
         string me = _sources.Me();
-        IReadOnlyList<string>? differing = listed == null ? null : GameDataCompare.Differing(_sources.Local.Fingerprint(), listed.About.Data);
         HashSet<string>? installed = _sources.Installed() is { } scripts ? [.. scripts.Select(path => ModKey.Of(Path.GetFileName(path)))] : null;
         return new ScreenFacts(
             me,
             _sources.List().Admin,
-            differing,
-            differing is { Count: > 0 } ? GameDataCompare.Text(differing, NamedParts) : string.Empty,
             name => installed == null || installed.Contains(ModKey.Of(name)),
             listed == null || listed.ModsUnread ? [] : _sources.Rows(listed.About.Mods, listed.About.ModHashes),
             listed == null ? string.Empty : _sources.SettingsText(listed.About.Settings, listed.CreatorId, listed.CreatorName, me),
             listed != null && SharedSettings.IsShared(listed.About.Settings),
             listed is { OtherModsOff: true } ? _sources.TurnedOff(listed.About.Mods) : null,
-            _sources.Local.Lists.Added(),
-            listed != null && GameDataCompare.OtherFormat(_sources.Local.Fingerprint(), listed.About.Data));
+            _sources.Local.Lists.Added());
     }
 
     /// <summary>

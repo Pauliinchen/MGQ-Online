@@ -2,7 +2,8 @@
 //  EnterRulesTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Left out the golden cases of a world entered with mods parked
+//      Paulinchen  2026-10-30: Checked the warning of a game whose data differs in place of the data's golden cases
+//                            - Left out the golden cases of a world entered with mods parked
 //                            - Checked entering a world whose data scan has another format
 //      Paulinchen  2026-10-23: Created
 //
@@ -16,7 +17,8 @@ using MGQOnline.Game.Worlds;
 namespace MGQOnline.Game.Tests.Worlds;
 
 /// <summary>
-/// Covers the rules a world is entered by against what world_screen.rbx did (fixtures/entering/rules.json).
+/// Covers the rules a world is entered by against what world_screen.rbx did (fixtures/entering/rules.json,
+/// whose data cases record the question and the refusal that the warning replaced).
 /// </summary>
 public sealed class EnterRulesTests
 {
@@ -41,21 +43,16 @@ public sealed class EnterRulesTests
     }
 
     /// <summary>
-    /// Asserts that differing game data lets in, asks or refuses as the screen did, in the cases of
-    /// a game that parked no mods, which none parks any more.
+    /// Asserts that a game whose data differs is warned in plain words, the first parts by name, and
+    /// that one that matches or cannot be compared is not.
     /// </summary>
     [Fact]
-    public void Data_DecidesAsTheScreenDid()
+    public void DataWarning_NamesWhatDiffersAndNothingElse()
     {
-        foreach (JsonElement entry in _cases.GetProperty("data").EnumerateArray().Where(entry => !entry.GetProperty("parked").GetBoolean()))
-        {
-            JsonElement parts = entry.GetProperty("differing");
-            IReadOnlyList<string>? differing = parts.ValueKind == JsonValueKind.Null ? null : [.. parts.EnumerateArray().Select(part => part.GetString()!)];
-            (bool allowed, IReadOnlyList<EnterDone> did) = EnterRules.Data("Haven", differing, entry.GetProperty("strict").GetBoolean(), entry.GetProperty("mods").GetString(), entry.GetProperty("own").GetBoolean(), entry.GetProperty("accepted").GetBoolean());
-
-            Assert.Equal(entry.GetProperty("allowed").GetBoolean(), allowed);
-            Assert.Equal(Golden(entry), Recorded(did));
-        }
+        Assert.Equal("Your game differs from the creator's of Haven. Some things may not work as in their game.",
+            EnterRules.DataWarning("Haven", ["skills", "items", "states", "maps", "troops"]));
+        Assert.Null(EnterRules.DataWarning("Haven", []));
+        Assert.Null(EnterRules.DataWarning("Haven", null));
     }
 
     /// <summary>
@@ -67,23 +64,6 @@ public sealed class EnterRulesTests
     {
         Assert.Equal([true, false, false, false], new[] { "1:a.b", "2:c.d", "", null }.Select(other => GameDataCompare.OtherFormat("2:a.b", other)));
         Assert.False(GameDataCompare.OtherFormat("", "1:a.b"));
-    }
-
-    /// <summary>
-    /// Asserts that the creator of a world whose data scan has another format is asked to update it,
-    /// and that other games are kept out only while the world is for the same data only.
-    /// </summary>
-    [Fact]
-    public void OtherScan_AsksTheCreatorAndKeepsOthersOutOfAStrictWorld()
-    {
-        (bool ownAllowed, IReadOnlyList<EnterDone> own) = EnterRules.OtherScan("Haven", true, true);
-        (bool strictAllowed, IReadOnlyList<EnterDone> strict) = EnterRules.OtherScan("Haven", true, false);
-        (bool lenientAllowed, IReadOnlyList<EnterDone> lenient) = EnterRules.OtherScan("Haven", false, false);
-
-        Assert.Equal((false, EnterRules.Confirm, "own_data"), (ownAllowed, own.Single().Kind, own.Single().What));
-        Assert.False(strictAllowed);
-        Assert.Equal([EnterRules.Buzz, EnterRules.Say, EnterRules.Back], strict.Select(done => done.Kind));
-        Assert.Equal((true, 0), (lenientAllowed, lenient.Count));
     }
 
     /// <summary>

@@ -193,29 +193,11 @@
             "enabled": true
           },
           {
-            "key": "mismatch",
-            "kind": "check",
-            "label": "Allow data mismatch",
-            "row": 7,
-            "side": "left",
-            "max_chars": null,
-            "allowed": null,
-            "optional": false,
-            "group": "Game data",
-            "lines": 1,
-            "hint": "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.",
-            "choices": [
-
-            ],
-            "label_width": null,
-            "enabled": true
-          },
-          {
             "key": "shared",
             "kind": "check",
             "label": "Shared Mod Settings",
             "row": 7,
-            "side": "right",
+            "side": null,
             "max_chars": null,
             "allowed": null,
             "optional": false,
@@ -295,7 +277,6 @@
           "choose": false,
           "description": "",
           "mods": "",
-          "mismatch": false,
           "shared": false,
           "difficulty": 2,
           "other_mods_off": false,
@@ -549,29 +530,11 @@
             "enabled": true
           },
           {
-            "key": "mismatch",
-            "kind": "check",
-            "label": "Allow data mismatch",
-            "row": 7,
-            "side": "left",
-            "max_chars": null,
-            "allowed": null,
-            "optional": false,
-            "group": "Game data",
-            "lines": 1,
-            "hint": "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.",
-            "choices": [
-
-            ],
-            "label_width": null,
-            "enabled": true
-          },
-          {
             "key": "shared",
             "kind": "check",
             "label": "Shared Mod Settings",
             "row": 7,
-            "side": "right",
+            "side": null,
             "max_chars": null,
             "allowed": null,
             "optional": false,
@@ -651,7 +614,6 @@
           "choose": false,
           "description": "",
           "mods": "",
-          "mismatch": false,
           "shared": false,
           "difficulty": 2,
           "other_mods_off": true,
@@ -884,29 +846,11 @@
             "enabled": true
           },
           {
-            "key": "mismatch",
-            "kind": "check",
-            "label": "Allow data mismatch",
-            "row": 7,
-            "side": "left",
-            "max_chars": null,
-            "allowed": null,
-            "optional": false,
-            "group": "Game data",
-            "lines": 1,
-            "hint": "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.",
-            "choices": [
-
-            ],
-            "label_width": null,
-            "enabled": true
-          },
-          {
             "key": "shared",
             "kind": "check",
             "label": "Shared Mod Settings",
             "row": 7,
-            "side": "right",
+            "side": null,
             "max_chars": null,
             "allowed": null,
             "optional": false,
@@ -986,7 +930,6 @@
           "choose": false,
           "description": "",
           "mods": "",
-          "mismatch": false,
           "shared": false,
           "difficulty": 2,
           "other_mods_off": false,
@@ -1244,29 +1187,11 @@
             "enabled": true
           },
           {
-            "key": "mismatch",
-            "kind": "check",
-            "label": "Allow data mismatch",
-            "row": 7,
-            "side": "left",
-            "max_chars": null,
-            "allowed": null,
-            "optional": false,
-            "group": "Game data",
-            "lines": 1,
-            "hint": "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.",
-            "choices": [
-
-            ],
-            "label_width": null,
-            "enabled": true
-          },
-          {
             "key": "shared",
             "kind": "check",
             "label": "Shared Mod Settings",
             "row": 7,
-            "side": "right",
+            "side": null,
             "max_chars": null,
             "allowed": null,
             "optional": false,
@@ -1346,7 +1271,6 @@
           "choose": false,
           "description": "",
           "mods": "",
-          "mismatch": false,
           "shared": false,
           "difficulty": 2,
           "other_mods_off": true,
@@ -1578,29 +1502,11 @@
             "enabled": true
           },
           {
-            "key": "mismatch",
-            "kind": "check",
-            "label": "Allow data mismatch",
-            "row": 7,
-            "side": "left",
-            "max_chars": null,
-            "allowed": null,
-            "optional": false,
-            "group": "Game data",
-            "lines": 1,
-            "hint": "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.",
-            "choices": [
-
-            ],
-            "label_width": null,
-            "enabled": true
-          },
-          {
             "key": "shared",
             "kind": "check",
             "label": "Shared Mod Settings",
             "row": 7,
-            "side": "right",
+            "side": null,
             "max_chars": null,
             "allowed": null,
             "optional": false,
@@ -1680,7 +1586,6 @@
           "choose": false,
           "description": "",
           "mods": "",
-          "mismatch": false,
           "shared": false,
           "difficulty": 2,
           "other_mods_off": false,
@@ -1925,29 +1830,11 @@
             "enabled": true
           },
           {
-            "key": "mismatch",
-            "kind": "check",
-            "label": "Allow data mismatch",
-            "row": 7,
-            "side": "left",
-            "max_chars": null,
-            "allowed": null,
-            "optional": false,
-            "group": "Game data",
-            "lines": 1,
-            "hint": "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.",
-            "choices": [
-
-            ],
-            "label_width": null,
-            "enabled": true
-          },
-          {
             "key": "shared",
             "kind": "check",
             "label": "Shared Mod Settings",
             "row": 7,
-            "side": "right",
+            "side": null,
             "max_chars": null,
             "allowed": null,
             "optional": false,
@@ -2027,7 +1914,6 @@
           "choose": true,
           "description": "",
           "mods": "",
-          "mismatch": false,
           "shared": false,
           "difficulty": 2,
           "other_mods_off": false,
@@ -2301,29 +2187,11 @@
             "enabled": true
           },
           {
-            "key": "mismatch",
-            "kind": "check",
-            "label": "Allow data mismatch",
-            "row": 7,
-            "side": "left",
-            "max_chars": null,
-            "allowed": null,
-            "optional": false,
-            "group": "Game data",
-            "lines": 1,
-            "hint": "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.",
-            "choices": [
-
-            ],
-            "label_width": null,
-            "enabled": true
-          },
-          {
             "key": "shared",
             "kind": "check",
             "label": "Shared Mod Settings",
             "row": 7,
-            "side": "right",
+            "side": null,
             "max_chars": null,
             "allowed": null,
             "optional": false,
@@ -2403,7 +2271,6 @@
           "choose": true,
           "description": "",
           "mods": "",
-          "mismatch": false,
           "shared": false,
           "difficulty": 4,
           "other_mods_off": true,
@@ -2633,29 +2500,11 @@
             "enabled": true
           },
           {
-            "key": "mismatch",
-            "kind": "check",
-            "label": "Allow data mismatch",
-            "row": 7,
-            "side": "left",
-            "max_chars": null,
-            "allowed": null,
-            "optional": false,
-            "group": "Game data",
-            "lines": 1,
-            "hint": "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.",
-            "choices": [
-
-            ],
-            "label_width": null,
-            "enabled": true
-          },
-          {
             "key": "shared",
             "kind": "check",
             "label": "Shared Mod Settings",
             "row": 7,
-            "side": "right",
+            "side": null,
             "max_chars": null,
             "allowed": null,
             "optional": false,
@@ -2735,7 +2584,6 @@
           "choose": false,
           "description": "",
           "mods": "",
-          "mismatch": false,
           "shared": false,
           "difficulty": 2,
           "other_mods_off": false,
@@ -2918,7 +2766,6 @@
           "choose": false,
           "description": "",
           "mods": "",
-          "mismatch": false,
           "shared": false,
           "difficulty": 2,
           "other_mods_off": true,
@@ -3048,24 +2895,6 @@
             "group": "Game data",
             "lines": 1,
             "hint": "The mods of the world: listed, required to enter or essential. Enter picks them.",
-            "choices": [
-
-            ],
-            "label_width": null,
-            "enabled": true
-          },
-          {
-            "key": "data",
-            "kind": "button",
-            "label": "Update current data scan",
-            "row": 3,
-            "side": null,
-            "max_chars": null,
-            "allowed": null,
-            "optional": false,
-            "group": "Game data",
-            "lines": 1,
-            "hint": "Scans your game's data as it is now and makes it the world's, such as after a mod update.",
             "choices": [
 
             ],
@@ -3614,24 +3443,6 @@
             "group": "Game data",
             "lines": 1,
             "hint": "The mods of the world: listed, required to enter or essential. Enter picks them.",
-            "choices": [
-
-            ],
-            "label_width": null,
-            "enabled": true
-          },
-          {
-            "key": "data",
-            "kind": "button",
-            "label": "Update current data scan",
-            "row": 3,
-            "side": null,
-            "max_chars": null,
-            "allowed": null,
-            "optional": false,
-            "group": "Game data",
-            "lines": 1,
-            "hint": "Scans your game's data as it is now and makes it the world's, such as after a mod update.",
             "choices": [
 
             ],

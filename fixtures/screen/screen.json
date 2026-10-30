@@ -202,7 +202,7 @@
                   ],
                   [
                     "Ess",
-                    "good"
+                    "gold"
                   ]
                 ]
               }
@@ -230,8 +230,8 @@
             [
               {
                 "label": "Your game",
-                "text": "Matches the creator's",
-                "color": "good",
+                "text": "Compared with the creator's as you enter",
+                "color": "normal",
                 "target": null,
                 "chips": null,
                 "chip_colors": null
@@ -345,8 +345,8 @@
         [
           "item",
           "Ess",
-          "good",
-          "essential, data matches"
+          "gold",
+          "essential, checked as you enter"
         ],
         [
           "item",
@@ -555,7 +555,7 @@
         },
         {
           "title": "Game data",
-          "note": "confirm on Your game: update",
+          "note": "differing games are warned",
           "target": null,
           "rows": [
             [
@@ -571,9 +571,9 @@
             [
               {
                 "label": "Your game",
-                "text": "Differs: skills and maps",
-                "color": "warn",
-                "target": "data",
+                "text": "Becomes the world's as you enter",
+                "color": "normal",
+                "target": null,
                 "chips": null,
                 "chip_colors": null
               }
@@ -913,7 +913,7 @@
         },
         {
           "title": "Game data",
-          "note": null,
+          "note": "differing games are warned",
           "target": null,
           "rows": [
             [
@@ -956,7 +956,7 @@
             [
               {
                 "label": "Your game",
-                "text": "Not compared: the world does not tell",
+                "text": "Compared with the creator's as you enter",
                 "color": "normal",
                 "target": null,
                 "chips": null,
@@ -1246,7 +1246,7 @@
         },
         {
           "title": "Game data",
-          "note": "confirm on Your game: update",
+          "note": "differing games are warned",
           "target": null,
           "rows": [
             [
@@ -1284,9 +1284,9 @@
             [
               {
                 "label": "Your game",
-                "text": "Not compared. Confirm to set yours",
+                "text": "Becomes the world's as you enter",
                 "color": "normal",
-                "target": "data",
+                "target": null,
                 "chips": null,
                 "chip_colors": null
               }
@@ -1500,7 +1500,7 @@
         },
         {
           "title": "Game data",
-          "note": "confirm on Your game: update",
+          "note": "differing games are warned",
           "target": null,
           "rows": [
             [
@@ -1543,9 +1543,9 @@
             [
               {
                 "label": "Your game",
-                "text": "Differs: items",
-                "color": "warn",
-                "target": "data",
+                "text": "Becomes the world's as you enter",
+                "color": "normal",
+                "target": null,
                 "chips": null,
                 "chip_colors": null
               }
@@ -1637,7 +1637,7 @@
           "item",
           "Data Pack",
           "gold",
-          "essential, data differs"
+          "essential, checked as you enter"
         ]
       ]
     },
@@ -1853,8 +1853,8 @@
             [
               {
                 "label": "Your game",
-                "text": "Differs: skills",
-                "color": "warn",
+                "text": "Compared with the creator's as you enter",
+                "color": "normal",
                 "target": null,
                 "chips": null,
                 "chip_colors": null
@@ -2250,8 +2250,8 @@
             [
               {
                 "label": "Your game",
-                "text": "Matches the creator's",
-                "color": "good",
+                "text": "Compared with the creator's as you enter",
+                "color": "normal",
                 "target": null,
                 "chips": null,
                 "chip_colors": null

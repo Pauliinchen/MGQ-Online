@@ -2,6 +2,7 @@
 //  WorldForms.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Dropped Allow data mismatch and Update current data scan, since the game data is compared only as the player enters
 //      Paulinchen  2026-10-23: Told whether Enter sends a form
 //                            - Created
 //
@@ -244,8 +245,7 @@ public static class WorldForms
             new("save", FieldKind.Save, "Save", 5, SaveHint) { Side = FieldSide.Left, Group = WorldGroup, LabelWidth = SaveLabelWidth, Needs = fromSave, Shows = IsRaid },
             LimitsButton(5, FieldSide.Right) with { Shows = IsRaid },
             new("mods", FieldKind.Mods, "Mods", 6, ModsHint) { Group = DataGroup },
-            new("mismatch", FieldKind.Check, "Allow data mismatch", 7, "Ticked: games with other data are warned. Unticked: kept out. Fixed once created.") { Side = FieldSide.Left, Group = DataGroup },
-            new("shared", FieldKind.Check, "Shared Mod Settings", 7, SharedHint) { Side = FieldSide.Right, Group = DataGroup },
+            new("shared", FieldKind.Check, "Shared Mod Settings", 7, SharedHint) { Group = DataGroup },
             new("other_mods_off", FieldKind.Check, "Turn off other mods", 8, OtherModsHint) { Group = DataGroup, Follows = IsRaid },
             Description(9, DescriptionLines) with { Shows = IsClassic },
             Description(9, RaidDescriptionLines) with { Shows = IsRaid },
@@ -254,7 +254,7 @@ public static class WorldForms
         Dictionary<string, object?> values = new(StringComparer.Ordinal)
         {
             ["name"] = "", ["password"] = "", ["seats"] = rules.DefaultSeats.ToString(CultureInfo.InvariantCulture), ["hidden"] = false, ["type"] = 0, ["share"] = 0,
-            ["from_save"] = false, ["save"] = null, ["choose"] = false, ["description"] = "", ["mods"] = "", ["mismatch"] = false, ["shared"] = false,
+            ["from_save"] = false, ["save"] = null, ["choose"] = false, ["description"] = "", ["mods"] = "", ["shared"] = false,
             ["difficulty"] = IndexOf(rules.Difficulties.Select(difficulty => difficulty.Value), rules.DefaultDifficulty) is var index and >= 0 ? index : null, ["other_mods_off"] = false, ["raid_bosses"] = false,
         };
         AddSquad(values, rules, rules.DefaultSquad);
@@ -266,7 +266,7 @@ public static class WorldForms
     /// </summary>
     /// <param name="rules">What a world's settings may be.</param>
     /// <param name="world">The world, as the form opens on it.</param>
-    /// <param name="own">Whether the player made the world, and so may replace its game data and choose whether it shares their mod settings.</param>
+    /// <param name="own">Whether the player made the world, and so may choose whether it shares their mod settings.</param>
     /// <returns>The form, filled in as the world is.</returns>
     public static Form OpenEdit(WorldFormRules rules, EditedWorld world, bool own)
     {
@@ -282,7 +282,6 @@ public static class WorldForms
         {
             fields.InsertRange(2,
             [
-                new("data", FieldKind.Button, "Update current data scan", 3, "Scans your game's data as it is now and makes it the world's, such as after a mod update.") { Group = DataGroup },
                 new("shared", FieldKind.Check, "Shared Mod Settings", 4, SharedHint) { Group = DataGroup },
             ]);
         }

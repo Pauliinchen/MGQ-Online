@@ -2,6 +2,7 @@
 //  LocalWorldTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Stopped handing the world screen this game's data, which entering compares once the world's mods loaded
 //      Paulinchen  2026-10-23: Dropped the topics of deleting, adding, removing and favouring worlds, which the screen steps do in the DLL
 //                            - Handed the world screen the worlds, the lists and the game data the topics keep, which makes the entries itself
 //                            - Created
@@ -37,8 +38,7 @@ internal static class LocalWorldTopics
     /// </summary>
     /// <param name="Worlds">The worlds on this PC.</param>
     /// <param name="Lists">The player's lists of worlds.</param>
-    /// <param name="Fingerprint">Gives this game's data fingerprint, empty before the scripts handed it.</param>
-    internal sealed record Kept(LocalWorlds Worlds, WorldLists Lists, Func<string> Fingerprint);
+    internal sealed record Kept(LocalWorlds Worlds, WorldLists Lists);
 
     /// <summary>
     /// Lists the worlds on this PC: nothing in; an Array of worlds out.
@@ -174,7 +174,7 @@ internal static class LocalWorldTopics
         });
         context.Register(DataDiffering, (_, request) => GameDataCompare.Differing(fingerprint, request.IsNil ? null : request.AsText()) is { } parts ? Texts(parts) : null);
         context.Register(DataText, (_, request) => GameDataCompare.Text([.. request.AsHash()["parts"].AsArray().Select(part => part.AsText())], request.AsHash()["named"].AsInt()));
-        return new Kept(worlds, lists, () => fingerprint);
+        return new Kept(worlds, lists);
     }
 
     /// <summary>

@@ -117,7 +117,7 @@ The worlds box lists every public world, the hidden worlds you joined and the hi
 
 Worlds you played that the relay no longer lists, such as one its creator deleted, come last.
 
-With the cursor on a world, the right side shows its details: who made it, its password (*None*, *Needed*, or *Known* once this PC entered it with the password), its players, how new players start, the mods it needs, whether your game data matches the creator's, and its description. The right arrow moves into the details; up and down pick the mods, *Your game*, the players or the description, and confirm (or a click) opens the full list or text. Every player who ever joined is listed, those online first. The left arrow or cancel goes back to the list.
+With the cursor on a world, the right side shows its details: who made it, its password (*None*, *Needed*, or *Known* once this PC entered it with the password), its players, how new players start, the mods it needs, that your game data is compared with the creator's as you enter, and its description. The right arrow moves into the details; up and down pick the mods, the players or the description, and confirm (or a click) opens the full list or text. Every player who ever joined is listed, those online first. The left arrow or cancel goes back to the list.
 
 ### Entering a world
 
@@ -145,7 +145,6 @@ Confirm on a world and pick *Enter the world*.
 | Raid Bosses | Classic World only: the story bosses fight as raid bosses of their tier, far stronger, without shared HP, see [Raid bosses](CLASSIC_WORLDS.md#raid-bosses). |
 | Difficulty | Raid World only: the difficulty every player plays on, see [Creating a Raid World](RAID_WORLDS.md#creating-a-raid-world). |
 | Mods | The mods of the world, picked from a list of yours. See [Mods of a world](#mods-of-a-world). |
-| Allow data mismatch | Unticked at first: a game whose data differs from yours can't enter. Ticked, it is warned and may enter anyway. See [Game data](#game-data). |
 | Shared Mod Settings | Ticked: every player in the world plays with your options of its mods. Unticked: each keeps their own. See [Mods of a world](#mods-of-a-world). |
 | Turn off other mods | While a player is in the world, their mods the world doesn't name are off. Ticked at first for a Raid World, unticked for a Classic one, until you tick or untick it yourself. See [Turning off other mods](#turning-off-other-mods). |
 | Description | What the world is about, up to 1000 characters. |
@@ -172,7 +171,7 @@ The creator can change Max Players, Mods, *Shared Mod Settings*, *Turn off other
 |---|---|
 | Listed | Only tells the players; keeps nobody out. |
 | Required | A game needs a script `Name.rb` in its `Patch` folder, in the world's version, to enter. Case, spaces, underscores and hyphens don't matter. Shows first: green when you have the world's version, gold when yours is another, red when you don't have it. |
-| Essential | For mods that are data files without a script. Keeps nobody out by itself; green while your game data matches the world's, gold otherwise. |
+| Essential | For mods that are data files without a script. Keeps nobody out; shows in gold. |
 
 - *Add a mod by name* names a mod you don't have yourself, such as a mod of data files: its row becomes a text box, **Enter** adds the name you typed, **Esc** or numpad **0** goes back. Such a mod stays in the list when unlisted; **Del** removes it.
 - The mods take 16,000 characters at most, far more than any real list; the top right of the list says when a change would pass that. **Esc** or numpad **0** goes back to the form, which shows them as the world keeps them: `!` in front of a required mod, `?` in front of an essential one.
@@ -202,9 +201,9 @@ A world with *Turn off other mods* is played with the mods it names and nothing 
 ### Game data
 
 - **What is compared:** which actors, classes, skills, items, weapons, armors, enemies, states, troops, common events and maps exist; names don't count. A mod that adds or removes any is noticed; a mod that only changes numbers isn't. A translated game, English or Russian, still matches the untranslated one.
-- **A game that differs:** the world's details say whether your game matches the creator's and, if not, in what. Entering then asks first, or is refused when the creator left *Allow data mismatch* unticked. Worlds made before this check say nothing and take every game. A world scanned by an older version of the mod can't be compared either: its creator is asked to update the scan when they enter, and until then the world takes every game, or none but the creator's when *Allow data mismatch* is unticked.
-- **Updating your world's data:** when a mod you play with gets an update, your game no longer matches your own world. Move onto *Your game* in the world's details and confirm, or press *Update current data scan* in *Edit the world*: the world takes your game's data as it is now, and everyone else has to match it again. Only the creator can do this.
-- **In a world that turns other mods off**, the creator's scan may have been made with mods on that the world now turns off. When the creator enters it with them off and the data differs, the game asks to take the game's data as it is now first.
+- **When it is compared:** as you enter a world. Every world type works the same way.
+- **A game that differs** enters all the same: the notification box names what differs ("Your game differs from the creator's of \<world>. Some things may not work as in their game.") and you play on. Nothing restarts for it. A world whose creator has not entered it since it was made is not compared yet.
+- **The creator's game is the measure:** each time the creator enters their world, its data becomes the world's, so after a mod update everyone else is compared with the creator's game as it is now. Nothing needs confirming.
 
 ## On the map
 
@@ -446,7 +445,7 @@ Your games meet at the mod's **relay**, a small server that passes their data on
 | "This join code comes from another version of the mod" | One of you has an older version; both need the same one. |
 | "Your friend's game uses a relay this version does not know" | Your friend has a newer version of the mod; update yours. |
 | "\<world> is not in the list right now" | The world list hasn't loaded yet or couldn't be fetched; the top of the world screen says which. Try again once it has loaded. |
-| "\<world> only takes matching game data" | Its creator left *Allow data mismatch* unticked, and your mods differ from theirs. The world's details name what differs and the mods it needs. |
+| "Your game data differs from the creator's of \<world> in ..." | Your mods add or remove entries the creator's don't, or the other way round. You play on; the world's details list the mods it needs. |
 | "\<world> needs ...: no such script in your Patch folder" | The world requires a mod you don't have. Install it, then enter again. |
 | "The mod catalog has not loaded yet" | The world turns other mods off, and only the catalog tells which of your mods are personal. Wait until the world list has loaded and enter again. |
 | "Player.ini could not be read; close programs that hold it" | Another program, such as an antivirus, a cloud sync or an editor, holds `Patch\Multiplayer\Player.ini`. Your player key and settings in it stay as they are, but the game saves no setting and enters no world until it can read the file again, which it tries every second. Close the program, or check that the file is not damaged. |

@@ -2,7 +2,8 @@
 //  GameBridge.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Registered the topics of the served battle's front
+//      Paulinchen  2026-10-30: Registered the world screen's steps without this game's data, which entering compares once the world's mods loaded
+//                            - Registered the topics of the served battle's front
 //                            - Handed the topics both hosts answer the DLL's way to the raid pools
 //                            - Handed the topics both hosts answer the raid pools the relay requests fill
 //                            - Stopped registering the topics of turning other mods off, which the Mod Framework's session does
@@ -90,7 +91,7 @@ internal static unsafe class GameBridge
         SharedSettingsSync settings = SharedSettingsSync.Register(context, services);
         WorldScreen screen = new(WorldScreenSources.Of(services, local, check, settings));
         ScreenTopics.Register(context, screen, services.Changes, () => services.Directory().ListRevision);
-        EnteringTopics.Register(context, services, local.Worlds, local.Lists, forms, local.Fingerprint);
+        EnteringTopics.Register(context, services, local.Worlds, local.Lists, forms);
         TradeTopics.Register(context, WorldRoomTopics.Register(context).Room);
         StoryTopics story = StoryTopics.Register(context);
         CatchupTopics.Register(context, () => story.Catchup);
