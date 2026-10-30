@@ -1,0 +1,5553 @@
+{
+  "scenarios": [
+    {
+      "name": "challenge runs out",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map"
+              }
+            ],
+            [
+              "invite",
+              null
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: challenges the players nearby"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              1,
+              ""
+            ],
+            "doing": [
+              "Challenging to a duel",
+              899
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "wait",
+              897
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              1,
+              ""
+            ],
+            "doing": [
+              "Challenging to a duel",
+              1
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "invite",
+              "friend"
+            ],
+            [
+              "wait",
+              2
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: challenges the players nearby and player friend anywhere"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              1,
+              "friend"
+            ],
+            "doing": [
+              "Challenging to a duel",
+              3597
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "stop"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: stops challenging"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "accepted as challenger",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 40,
+                "y": 4,
+                "d": 2,
+                "scene": "map"
+              }
+            ],
+            [
+              "invite",
+              "friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: challenges the players nearby and player friend anywhere"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              1,
+              "friend"
+            ],
+            "doing": [
+              "Challenging to a duel",
+              3599
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "accept"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=start\nbid=b1\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ]
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=accept from Friend (seat 2) (53 bytes)",
+              "duel: stops challenging",
+              "duel: sent duel=start bid=b1 to Friend (seat 2) (32 bytes)",
+              "duel: duel b1 with Friend (seat 2) waits to start from the map as host, their team of 2"
+            ],
+            "pending": {
+              "role": "host",
+              "bid": "b1",
+              "seat": 2,
+              "members": [
+                "member=7;friend",
+                "member=8;friend"
+              ],
+              "backline": false,
+              "own": null,
+              "other": null,
+              "same_side": null
+            },
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "on_map",
+              false
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: duel b1 with Friend as host"
+            ],
+            "pending": null,
+            "started": "b1",
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "accepted as challenged",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map",
+                "challenge": 1
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "accept",
+              2
+            ],
+            [
+              "wait",
+              119
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=accept\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ]
+            ],
+            "notices": [
+              "You accepted Friend's duel."
+            ],
+            "logs": [
+              "duel: sent duel=accept to Friend (seat 2) (32 bytes)",
+              "duel: accepted Friend (seat 2)'s duel, waiting up to 6 s for their answer",
+              "overworld sync: notice: You accepted Friend's duel."
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Waiting for Friend's duel",
+              240
+            ],
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "start",
+                "bid": "c1"
+              },
+              "sgame-1\tsbackline=1\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=start bid=c1 from Friend (seat 2) (53 bytes)",
+              "duel: duel c1 with Friend (seat 2) waits to start from the map as guest, their team of 2, with the Backline"
+            ],
+            "pending": {
+              "role": "guest",
+              "bid": "c1",
+              "seat": 2,
+              "members": [
+                "member=7;friend",
+                "member=8;friend"
+              ],
+              "backline": true,
+              "own": null,
+              "other": null,
+              "same_side": null
+            },
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "on_map",
+              false
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: duel c1 with Friend as guest with the Backline"
+            ],
+            "pending": null,
+            "started": "c1",
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "challenge lines",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 40,
+                "y": 4,
+                "d": 2,
+                "scene": "map",
+                "challenge": 1,
+                "challenge_to": "someone"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                false,
+                false,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 40,
+                "y": 4,
+                "d": 2,
+                "scene": "map",
+                "challenge": 1,
+                "challenge_to": "someone,me"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                false,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map",
+                "challenge": 1,
+                "challenge_backline": 1
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "backline",
+      "steps": [
+        {
+          "ops": [
+            [
+              "backline",
+              true
+            ],
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map"
+              }
+            ],
+            [
+              "invite",
+              null
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: challenges the players nearby with the Backline"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              1,
+              ""
+            ],
+            "doing": [
+              "Challenging to a duel",
+              899
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "accept"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=start\nbid=b1\n\nsgame-1\tsbackline=1\\nmember=1;me"
+              ]
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=accept from Friend (seat 2) (53 bytes)",
+              "duel: stops challenging",
+              "duel: sent duel=start bid=b1 to Friend (seat 2) (32 bytes)",
+              "duel: duel b1 with Friend (seat 2) waits to start from the map as host, their team of 2, with the Backline"
+            ],
+            "pending": {
+              "role": "host",
+              "bid": "b1",
+              "seat": 2,
+              "members": [
+                "member=7;friend",
+                "member=8;friend"
+              ],
+              "backline": true,
+              "own": null,
+              "other": null,
+              "same_side": null
+            },
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "on_map",
+              false
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: duel b1 with Friend as host with the Backline"
+            ],
+            "pending": null,
+            "started": "b1",
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "declined",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 40,
+                "y": 4,
+                "d": 2,
+                "scene": "map",
+                "challenge": 1,
+                "challenge_to": "me"
+              }
+            ],
+            [
+              "decline",
+              2,
+              "no"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=decline\nreason=no\n\n"
+              ]
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: sent duel=decline reason=no to Friend (seat 2)",
+              "duel: declined Friend (seat 2): no"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                false,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "invite",
+              "friend"
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "decline",
+                "reason": "no"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+              "Friend declined your challenge."
+            ],
+            "logs": [
+              "duel: challenges the players nearby and player friend anywhere",
+              "duel: took duel=decline reason=no from Friend (seat 2) (0 bytes)",
+              "overworld sync: notice: Friend declined your challenge.",
+              "duel: Friend (seat 2) could not duel: declined your challenge (no), no longer challenged by name"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              1,
+              ""
+            ],
+            "doing": [
+              "Challenging to a duel",
+              3599
+            ],
+            "challengers": [
+              [
+                2,
+                true,
+                false,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "decline",
+                "reason": "busy"
+              }
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "decline",
+                "reason": "odd"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+              "Friend is busy.",
+              "Friend cannot duel now."
+            ],
+            "logs": [
+              "duel: took duel=decline reason=busy from Friend (seat 2) (0 bytes)",
+              "overworld sync: notice: Friend is busy.",
+              "duel: Friend (seat 2) could not duel: is busy (busy)",
+              "duel: took duel=decline reason=odd from Friend (seat 2) (0 bytes)",
+              "overworld sync: notice: Friend cannot duel now.",
+              "duel: Friend (seat 2) could not duel: cannot duel now (odd)"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              1,
+              ""
+            ],
+            "doing": [
+              "Challenging to a duel",
+              3598
+            ],
+            "challengers": [
+              [
+                2,
+                true,
+                false,
+                false
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "unanswered",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map",
+                "challenge": 1
+              }
+            ],
+            [
+              "invite",
+              null
+            ],
+            [
+              "accept",
+              2
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=accept\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ]
+            ],
+            "notices": [
+              "You accepted Friend's duel."
+            ],
+            "logs": [
+              "duel: challenges the players nearby",
+              "duel: stopped challenging: accepted Friend (seat 2)'s duel",
+              "duel: sent duel=accept to Friend (seat 2) (32 bytes)",
+              "duel: accepted Friend (seat 2)'s duel, waiting up to 6 s for their answer",
+              "overworld sync: notice: You accepted Friend's duel."
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Waiting for Friend's duel",
+              359
+            ],
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "wait",
+              358
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Waiting for Friend's duel",
+              0
+            ],
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+              "Friend did not answer the duel."
+            ],
+            "logs": [
+              "overworld sync: notice: Friend did not answer the duel.",
+              "duel: Friend did not answer the accepted duel within 6 s"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "busy",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map",
+                "challenge": 1
+              }
+            ],
+            [
+              "free",
+              false
+            ],
+            [
+              "accept",
+              2
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+              "Finish what you are doing first."
+            ],
+            "logs": [
+              "duel: could not accept Friend (seat 2)'s duel: the player is busy",
+              "overworld sync: notice: Finish what you are doing first."
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "invite",
+              null
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "accept"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=decline\nreason=busy\n\n"
+              ]
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: challenges the players nearby",
+              "duel: took duel=accept from Friend (seat 2) (53 bytes)",
+              "duel: sent duel=decline reason=busy to Friend (seat 2)",
+              "duel: declined Friend (seat 2): busy"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              1,
+              ""
+            ],
+            "doing": [
+              "Challenging to a duel",
+              899
+            ],
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "free",
+              true
+            ],
+            [
+              "stop"
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "accept"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=decline\nreason=gone\n\n"
+              ]
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: stops challenging",
+              "duel: took duel=accept from Friend (seat 2) (53 bytes)",
+              "duel: sent duel=decline reason=gone to Friend (seat 2)",
+              "duel: declined Friend (seat 2): gone"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "start",
+                "bid": "s1"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=cancel\nbid=s1\nreason=busy\n\n"
+              ],
+              [
+                2,
+                "battle=broken\nbid=s1\n\n"
+              ]
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=start bid=s1 from Friend (seat 2) (53 bytes)",
+              "duel: start of duel s1 from Friend (seat 2) refused: the player accepted no duel of theirs",
+              "duel: calls duel s1 off for Friend (seat 2): busy, and breaks its battle off",
+              "duel: sent duel=cancel bid=s1 reason=busy to Friend (seat 2)"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "accept",
+              2
+            ],
+            [
+              "free",
+              false
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "start",
+                "bid": "s2"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=accept\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ],
+              [
+                2,
+                "duel=cancel\nbid=s2\nreason=busy\n\n"
+              ],
+              [
+                2,
+                "battle=broken\nbid=s2\n\n"
+              ]
+            ],
+            "notices": [
+              "You accepted Friend's duel.",
+              "The duel with Friend could not start."
+            ],
+            "logs": [
+              "duel: sent duel=accept to Friend (seat 2) (32 bytes)",
+              "duel: accepted Friend (seat 2)'s duel, waiting up to 6 s for their answer",
+              "overworld sync: notice: You accepted Friend's duel.",
+              "duel: took duel=start bid=s2 from Friend (seat 2) (53 bytes)",
+              "duel: start of duel s2 from Friend (seat 2) refused: the player is busy",
+              "duel: calls duel s2 off for Friend (seat 2): busy, and breaks its battle off",
+              "duel: sent duel=cancel bid=s2 reason=busy to Friend (seat 2)",
+              "overworld sync: notice: The duel with Friend could not start."
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "fingerprint and team",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map",
+                "challenge": 1
+              }
+            ],
+            [
+              "invite",
+              null
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "accept"
+              },
+              "sgame-2\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=decline\nreason=data\n\n"
+              ]
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: challenges the players nearby",
+              "duel: took duel=accept from Friend (seat 2) (53 bytes)",
+              "duel: sent duel=decline reason=data to Friend (seat 2)",
+              "duel: declined Friend (seat 2): data"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              1,
+              ""
+            ],
+            "doing": [
+              "Challenging to a duel",
+              899
+            ],
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "accept"
+              },
+              "sgame-1\tsbackline=0\\nnobody"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=decline\nreason=team\n\n"
+              ]
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=accept from Friend (seat 2) (27 bytes)",
+              "duel: sent duel=decline reason=team to Friend (seat 2)",
+              "duel: declined Friend (seat 2): team"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              1,
+              ""
+            ],
+            "doing": [
+              "Challenging to a duel",
+              898
+            ],
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "accept"
+              },
+              "?broken\t["
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=decline\nreason=data\n\n"
+              ]
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=accept from Friend (seat 2) (9 bytes)",
+              "duel: sent duel=decline reason=data to Friend (seat 2)",
+              "duel: declined Friend (seat 2): data"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              1,
+              ""
+            ],
+            "doing": [
+              "Challenging to a duel",
+              897
+            ],
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "accept",
+              2
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "start",
+                "bid": "s3"
+              },
+              "sgame-2\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=accept\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ],
+              [
+                2,
+                "duel=cancel\nbid=s3\nreason=data\n\n"
+              ],
+              [
+                2,
+                "battle=broken\nbid=s3\n\n"
+              ]
+            ],
+            "notices": [
+              "You accepted Friend's duel."
+            ],
+            "logs": [
+              "duel: stopped challenging: accepted Friend (seat 2)'s duel",
+              "duel: sent duel=accept to Friend (seat 2) (32 bytes)",
+              "duel: accepted Friend (seat 2)'s duel, waiting up to 6 s for their answer",
+              "overworld sync: notice: You accepted Friend's duel.",
+              "duel: took duel=start bid=s3 from Friend (seat 2) (53 bytes)",
+              "duel: start of duel s3 from Friend (seat 2) refused: plays another version of the game (data)",
+              "duel: calls duel s3 off for Friend (seat 2): data, and breaks its battle off",
+              "duel: sent duel=cancel bid=s3 reason=data to Friend (seat 2)"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "accept",
+              2
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "start",
+                "bid": "s4"
+              },
+              "sgame-1\tsbackline=0\\n"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=accept\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ],
+              [
+                2,
+                "duel=cancel\nbid=s4\nreason=team\n\n"
+              ],
+              [
+                2,
+                "battle=broken\nbid=s4\n\n"
+              ]
+            ],
+            "notices": [
+              "You accepted Friend's duel."
+            ],
+            "logs": [
+              "duel: sent duel=accept to Friend (seat 2) (32 bytes)",
+              "duel: accepted Friend (seat 2)'s duel, waiting up to 6 s for their answer",
+              "overworld sync: notice: You accepted Friend's duel.",
+              "duel: took duel=start bid=s4 from Friend (seat 2) (21 bytes)",
+              "duel: start of duel s4 from Friend (seat 2) refused: could not start the duel (team)",
+              "duel: calls duel s4 off for Friend (seat 2): team, and breaks its battle off",
+              "duel: sent duel=cancel bid=s4 reason=team to Friend (seat 2)"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "withdrawn",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map",
+                "challenge": 1
+              }
+            ],
+            [
+              "accept",
+              2
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "start",
+                "bid": "w1"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=accept\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ]
+            ],
+            "notices": [
+              "You accepted Friend's duel."
+            ],
+            "logs": [
+              "duel: sent duel=accept to Friend (seat 2) (32 bytes)",
+              "duel: accepted Friend (seat 2)'s duel, waiting up to 6 s for their answer",
+              "overworld sync: notice: You accepted Friend's duel.",
+              "duel: took duel=start bid=w1 from Friend (seat 2) (53 bytes)",
+              "duel: duel w1 with Friend (seat 2) waits to start from the map as guest, their team of 2"
+            ],
+            "pending": {
+              "role": "guest",
+              "bid": "w1",
+              "seat": 2,
+              "members": [
+                "member=7;friend",
+                "member=8;friend"
+              ],
+              "backline": false,
+              "own": null,
+              "other": null,
+              "same_side": null
+            },
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "free",
+              false
+            ],
+            [
+              "on_map",
+              false
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=cancel\nbid=w1\nreason=busy\n\n"
+              ],
+              [
+                2,
+                "battle=broken\nbid=w1\n\n"
+              ]
+            ],
+            "notices": [
+              "The duel could not start."
+            ],
+            "logs": [
+              "duel: withdraws from duel w1 (guest): busy",
+              "duel: calls duel w1 off for Friend (seat 2): busy, and breaks its battle off",
+              "duel: sent duel=cancel bid=w1 reason=busy to Friend (seat 2)",
+              "overworld sync: notice: The duel could not start.",
+              "duel: duel w1 given up, the player got busy"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "free",
+              true
+            ],
+            [
+              "accept",
+              2
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "start",
+                "bid": "w2"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=accept\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ]
+            ],
+            "notices": [
+              "You accepted Friend's duel."
+            ],
+            "logs": [
+              "duel: sent duel=accept to Friend (seat 2) (32 bytes)",
+              "duel: accepted Friend (seat 2)'s duel, waiting up to 6 s for their answer",
+              "overworld sync: notice: You accepted Friend's duel.",
+              "duel: took duel=start bid=w2 from Friend (seat 2) (53 bytes)",
+              "duel: duel w2 with Friend (seat 2) waits to start from the map as guest, their team of 2"
+            ],
+            "pending": {
+              "role": "guest",
+              "bid": "w2",
+              "seat": 2,
+              "members": [
+                "member=7;friend",
+                "member=8;friend"
+              ],
+              "backline": false,
+              "own": null,
+              "other": null,
+              "same_side": null
+            },
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "on_map",
+              true
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=cancel\nbid=w2\nreason=off\n\n"
+              ],
+              [
+                2,
+                "battle=broken\nbid=w2\n\n"
+              ]
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: duel w2 with Friend as guest",
+              "duel: withdraws from duel w2 (guest): off",
+              "duel: calls duel w2 off for Friend (seat 2): off, and breaks its battle off",
+              "duel: sent duel=cancel bid=w2 reason=off to Friend (seat 2)",
+              "duel: duel w2 called off, its battle could not start"
+            ],
+            "pending": null,
+            "started": "w2",
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "call-offs",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map",
+                "challenge": 1
+              }
+            ],
+            [
+              "accept",
+              2
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "start",
+                "bid": "x1"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "cancel",
+                "bid": "x1",
+                "reason": "off"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=accept\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ]
+            ],
+            "notices": [
+              "You accepted Friend's duel.",
+              "Friend called the duel off."
+            ],
+            "logs": [
+              "duel: sent duel=accept to Friend (seat 2) (32 bytes)",
+              "duel: accepted Friend (seat 2)'s duel, waiting up to 6 s for their answer",
+              "overworld sync: notice: You accepted Friend's duel.",
+              "duel: took duel=start bid=x1 from Friend (seat 2) (53 bytes)",
+              "duel: duel x1 with Friend (seat 2) waits to start from the map as guest, their team of 2",
+              "duel: took duel=cancel bid=x1 reason=off from Friend (seat 2) (0 bytes)",
+              "overworld sync: notice: Friend called the duel off.",
+              "duel: Friend (seat 2) called duel x1 off (off): dropped the duel waiting to start"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "on_map",
+              false
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "accept",
+              2
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "start",
+                "bid": "x2"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=accept\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ]
+            ],
+            "notices": [
+              "You accepted Friend's duel."
+            ],
+            "logs": [
+              "duel: sent duel=accept to Friend (seat 2) (32 bytes)",
+              "duel: accepted Friend (seat 2)'s duel, waiting up to 6 s for their answer",
+              "overworld sync: notice: You accepted Friend's duel.",
+              "duel: took duel=start bid=x2 from Friend (seat 2) (53 bytes)",
+              "duel: duel x2 with Friend (seat 2) waits to start from the map as guest, their team of 2"
+            ],
+            "pending": {
+              "role": "guest",
+              "bid": "x2",
+              "seat": 2,
+              "members": [
+                "member=7;friend",
+                "member=8;friend"
+              ],
+              "backline": false,
+              "own": null,
+              "other": null,
+              "same_side": null
+            },
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "on_map",
+              false
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: duel x2 with Friend as guest"
+            ],
+            "pending": null,
+            "started": "x2",
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "cancel",
+                "bid": "x2",
+                "reason": "busy"
+              }
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "cancel",
+                "bid": "x0",
+                "reason": "team"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+              "Friend is busy."
+            ],
+            "logs": [
+              "duel: took duel=cancel bid=x2 reason=busy from Friend (seat 2) (0 bytes)",
+              "overworld sync: notice: Friend is busy.",
+              "duel: Friend (seat 2) called duel x2 off (busy): its battle breaks off",
+              "duel: took duel=cancel bid=x0 reason=team from Friend (seat 2) (0 bytes)",
+              "duel: call-off of duel x0 from Friend (seat 2) ignored: no such duel of the player's"
+            ],
+            "pending": null,
+            "started": "x2",
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "cancel",
+                "bid": "",
+                "reason": "late"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=cancel bid= reason=late from Friend (seat 2) (0 bytes)",
+              "duel: call-off of duel  from Friend (seat 2) ignored: no such duel of the player's"
+            ],
+            "pending": null,
+            "started": "x2",
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "challenger leaves",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map",
+                "challenge": 1
+              }
+            ],
+            [
+              "accept",
+              2
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=accept\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ]
+            ],
+            "notices": [
+              "You accepted Friend's duel."
+            ],
+            "logs": [
+              "duel: sent duel=accept to Friend (seat 2) (32 bytes)",
+              "duel: accepted Friend (seat 2)'s duel, waiting up to 6 s for their answer",
+              "overworld sync: notice: You accepted Friend's duel."
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Waiting for Friend's duel",
+              359
+            ],
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "gone",
+              2
+            ],
+            [
+              "message",
+              7,
+              {
+                "duel": "start",
+                "bid": "g1"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ],
+            [
+              "wait",
+              359
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+              "Friend did not answer the duel."
+            ],
+            "logs": [
+              "duel: took duel=start bid=g1 from an unknown player (53 bytes)",
+              "duel: dropped a duel message from a player without a state yet",
+              "overworld sync: notice: Friend did not answer the duel.",
+              "duel: Friend did not answer the accepted duel within 6 s"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "world closes",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map",
+                "challenge": 1
+              }
+            ],
+            [
+              "accept",
+              2
+            ],
+            [
+              "invite",
+              "friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=accept\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ]
+            ],
+            "notices": [
+              "You accepted Friend's duel."
+            ],
+            "logs": [
+              "duel: sent duel=accept to Friend (seat 2) (32 bytes)",
+              "duel: accepted Friend (seat 2)'s duel, waiting up to 6 s for their answer",
+              "overworld sync: notice: You accepted Friend's duel.",
+              "duel: challenges the players nearby and player friend anywhere"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              1,
+              "friend"
+            ],
+            "doing": [
+              "Waiting for Friend's duel",
+              359
+            ],
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "world",
+              false
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: forgot every challenge and answer, the world closed",
+              "duel: stops challenging"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "world",
+              true
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "start",
+                "bid": "z1"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=cancel\nbid=z1\nreason=busy\n\n"
+              ],
+              [
+                2,
+                "battle=broken\nbid=z1\n\n"
+              ]
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=start bid=z1 from Friend (seat 2) (53 bytes)",
+              "duel: start of duel z1 from Friend (seat 2) refused: the player accepted no duel of theirs",
+              "duel: calls duel z1 off for Friend (seat 2): busy, and breaks its battle off",
+              "duel: sent duel=cancel bid=z1 reason=busy to Friend (seat 2)"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "team duel",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map"
+              }
+            ],
+            [
+              "state",
+              3,
+              {
+                "id": "pal",
+                "name": "Pal",
+                "map": 5,
+                "x": 30,
+                "y": 30,
+                "d": 2,
+                "scene": "map"
+              }
+            ],
+            [
+              "party",
+              "me-p",
+              [
+                3
+              ],
+              -1
+            ],
+            [
+              "state",
+              3,
+              {
+                "id": "pal",
+                "name": "Pal",
+                "map": 5,
+                "x": 30,
+                "y": 30,
+                "d": 2,
+                "scene": "map",
+                "party": "me-p"
+              }
+            ],
+            [
+              "invite",
+              null
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: challenges the players nearby"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              1,
+              ""
+            ],
+            "doing": [
+              "Challenging to a duel",
+              899
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "accept"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                3,
+                "duel=team\nbid=b1\n\n"
+              ],
+              [
+                2,
+                "duel=team\nbid=b1\n\n"
+              ]
+            ],
+            "notices": [
+              "Getting both sides ready for the duel . . ."
+            ],
+            "logs": [
+              "duel: took duel=accept from Friend (seat 2) (53 bytes)",
+              "duel: stops challenging",
+              "duel: sent duel=team bid=b1 to Pal (seat 3)",
+              "duel: sent duel=team bid=b1 to Friend (seat 2)",
+              "overworld sync: notice: Getting both sides ready for the duel . . .",
+              "duel: team duel b1: calling Pal (seat 3) for the own side, Friend (seat 2) for the other side, waiting up to 10 s"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Getting the sides ready",
+              599
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              3,
+              {
+                "duel": "ready",
+                "bid": "b1"
+              },
+              "sgame-1\tsmember=3;pal\ti8"
+            ],
+            [
+              "wait",
+              10
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=ready bid=b1 from Pal (seat 3) (24 bytes)",
+              "duel: Pal (seat 3) is ready for team duel b1"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Getting the sides ready",
+              588
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "ready",
+                "bid": "b1"
+              },
+              "sgame-1\tsmember=7;friend\\nmember=8;friend\ti8"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                3,
+                "duel=start\nbid=b1\nteam=1\n\n[\t[\ti0\tsMe\tsmember=1;me\\nmember=2;me\t[\t]\ti8\t[\ti0\ti1\t]\ti2\ti0\t]\t[\ti3\tsPal\tsmember=3;pal\t[\t]\ti8\t[\ti0\t]\ti1\ti0\t]\t]\t[\t[\ti2\tsFriend\tsmember=7;friend\\nmember=8;friend\t[\t]\ti8\t[\ti0\ti1\t]\ti2\ti0\t]\t]"
+              ],
+              [
+                2,
+                "duel=start\nbid=b1\nteam=1\n\n[\t[\ti0\tsMe\tsmember=1;me\\nmember=2;me\t[\t]\ti8\t[\ti0\ti1\t]\ti2\ti0\t]\t[\ti3\tsPal\tsmember=3;pal\t[\t]\ti8\t[\ti0\t]\ti1\ti0\t]\t]\t[\t[\ti2\tsFriend\tsmember=7;friend\\nmember=8;friend\t[\t]\ti8\t[\ti0\ti1\t]\ti2\ti0\t]\t]"
+              ]
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=ready bid=b1 from Friend (seat 2) (44 bytes)",
+              "duel: Friend (seat 2) is ready for team duel b1",
+              "duel: team duel b1 gathered after 13 frames: ready Pal (seat 3), Friend (seat 2);not ready nobody",
+              "duel: sent duel=start bid=b1 team=1 to Pal (seat 3) (185 bytes)",
+              "duel: sent duel=start bid=b1 team=1 to Friend (seat 2) (185 bytes)",
+              "duel: team duel b1 waits to start from the map as host, 2 players against 1"
+            ],
+            "pending": {
+              "role": "team",
+              "bid": "b1",
+              "seat": null,
+              "members": null,
+              "backline": false,
+              "own": [
+                [
+                  0,
+                  "Me",
+                  "member=1;me\nmember=2;me",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0,
+                    1
+                  ],
+                  2,
+                  0
+                ],
+                [
+                  3,
+                  "Pal",
+                  "member=3;pal",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0
+                  ],
+                  1,
+                  0
+                ]
+              ],
+              "other": [
+                [
+                  2,
+                  "Friend",
+                  "member=7;friend\nmember=8;friend",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0,
+                    1
+                  ],
+                  2,
+                  0
+                ]
+              ],
+              "same_side": true
+            },
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "on_map",
+              false
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: team duel b1 as host, 2 against 1"
+            ],
+            "pending": null,
+            "started": "b1",
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "team duel runs out",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map"
+              }
+            ],
+            [
+              "state",
+              3,
+              {
+                "id": "pal",
+                "name": "Pal",
+                "map": 5,
+                "x": 30,
+                "y": 30,
+                "d": 2,
+                "scene": "map"
+              }
+            ],
+            [
+              "party",
+              "me-p",
+              [
+                3
+              ],
+              -1
+            ],
+            [
+              "state",
+              3,
+              {
+                "id": "pal",
+                "name": "Pal",
+                "map": 5,
+                "x": 30,
+                "y": 30,
+                "d": 2,
+                "scene": "map",
+                "party": "me-p"
+              }
+            ],
+            [
+              "invite",
+              null
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: challenges the players nearby"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              1,
+              ""
+            ],
+            "doing": [
+              "Challenging to a duel",
+              899
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "accept"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                3,
+                "duel=team\nbid=b1\n\n"
+              ],
+              [
+                2,
+                "duel=team\nbid=b1\n\n"
+              ]
+            ],
+            "notices": [
+              "Getting both sides ready for the duel . . ."
+            ],
+            "logs": [
+              "duel: took duel=accept from Friend (seat 2) (53 bytes)",
+              "duel: stops challenging",
+              "duel: sent duel=team bid=b1 to Pal (seat 3)",
+              "duel: sent duel=team bid=b1 to Friend (seat 2)",
+              "overworld sync: notice: Getting both sides ready for the duel . . .",
+              "duel: team duel b1: calling Pal (seat 3) for the own side, Friend (seat 2) for the other side, waiting up to 10 s"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Getting the sides ready",
+              599
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "ready",
+                "bid": "b1"
+              },
+              "sgame-1\tsmember=7;friend\ti8"
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "ready",
+                "bid": "b1"
+              },
+              "sgame-1\tsmember=7;friend\t[\ti8\t]"
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "ready",
+                "bid": "b1"
+              },
+              "sgame-1\tsmember=7;friend\ts8"
+            ],
+            [
+              "message",
+              3,
+              {
+                "duel": "ready",
+                "bid": "b9"
+              },
+              "sgame-1\tsmember=3;pal\ti8"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=ready bid=b1 from Friend (seat 2) (27 bytes)",
+              "duel: Friend (seat 2) is ready for team duel b1",
+              "duel: took duel=ready bid=b1 from Friend (seat 2) (31 bytes)",
+              "duel: took a party_member_max sent as Array by Friend (seat 2) as 0",
+              "duel: Friend (seat 2) is ready for team duel b1",
+              "duel: took duel=ready bid=b1 from Friend (seat 2) (27 bytes)",
+              "duel: took a party_member_max sent as String by Friend (seat 2) as 0",
+              "duel: Friend (seat 2) is ready for team duel b1",
+              "duel: took duel=ready bid=b9 from Pal (seat 3) (24 bytes)",
+              "duel: ready for duel b9 from Pal (seat 3) ignored: the player gathers no such duel"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Getting the sides ready",
+              598
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "wait",
+              598
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=start\nbid=b1\nteam=1\n\n[\t[\ti0\tsMe\tsmember=1;me\\nmember=2;me\t[\t]\ti8\t[\ti0\ti1\t]\ti2\ti0\t]\t]\t[\t[\ti2\tsFriend\tsmember=7;friend\t[\t]\ti0\t[\ti0\t]\ti1\ti0\t]\t]"
+              ],
+              [
+                3,
+                "duel=cancel\nreason=late\n\n"
+              ]
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: team duel b1 gathered after 601 frames: ready Friend (seat 2);not ready Pal (seat 3)",
+              "duel: sent duel=start bid=b1 team=1 to Friend (seat 2) (119 bytes)",
+              "duel: sent duel=cancel reason=late to Pal (seat 3)",
+              "duel: team duel b1 waits to start from the map as host, 1 players against 1"
+            ],
+            "pending": {
+              "role": "team",
+              "bid": "b1",
+              "seat": null,
+              "members": null,
+              "backline": false,
+              "own": [
+                [
+                  0,
+                  "Me",
+                  "member=1;me\nmember=2;me",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0,
+                    1
+                  ],
+                  2,
+                  0
+                ]
+              ],
+              "other": [
+                [
+                  2,
+                  "Friend",
+                  "member=7;friend",
+                  [
+
+                  ],
+                  0,
+                  [
+                    0
+                  ],
+                  1,
+                  0
+                ]
+              ],
+              "same_side": true
+            },
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "invite",
+              null
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "accept"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ],
+            [
+              "wait",
+              600
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                3,
+                "duel=team\nbid=b2\n\n"
+              ],
+              [
+                2,
+                "duel=team\nbid=b2\n\n"
+              ],
+              [
+                3,
+                "duel=cancel\nreason=off\n\n"
+              ],
+              [
+                2,
+                "duel=cancel\nreason=off\n\n"
+              ]
+            ],
+            "notices": [
+              "Getting both sides ready for the duel . . .",
+              "Nobody of Friend's side was ready, the duel is off."
+            ],
+            "logs": [
+              "duel: challenges the players nearby",
+              "duel: took duel=accept from Friend (seat 2) (53 bytes)",
+              "duel: stops challenging",
+              "duel: sent duel=team bid=b2 to Pal (seat 3)",
+              "duel: sent duel=team bid=b2 to Friend (seat 2)",
+              "overworld sync: notice: Getting both sides ready for the duel . . .",
+              "duel: team duel b2: calling Pal (seat 3) for the own side, Friend (seat 2) for the other side, waiting up to 10 s",
+              "duel: team duel b2 gathered after 601 frames: ready nobody;not ready Pal (seat 3), Friend (seat 2)",
+              "overworld sync: notice: Nobody of Friend's side was ready, the duel is off.",
+              "duel: team duel b2 is off: nobody of Friend's side was ready",
+              "duel: sent duel=cancel reason=off to Pal (seat 3)",
+              "duel: sent duel=cancel reason=off to Friend (seat 2)"
+            ],
+            "pending": {
+              "role": "team",
+              "bid": "b1",
+              "seat": null,
+              "members": null,
+              "backline": false,
+              "own": [
+                [
+                  0,
+                  "Me",
+                  "member=1;me\nmember=2;me",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0,
+                    1
+                  ],
+                  2,
+                  0
+                ]
+              ],
+              "other": [
+                [
+                  2,
+                  "Friend",
+                  "member=7;friend",
+                  [
+
+                  ],
+                  0,
+                  [
+                    0
+                  ],
+                  1,
+                  0
+                ]
+              ],
+              "same_side": true
+            },
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "team duel players leave",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map"
+              }
+            ],
+            [
+              "state",
+              3,
+              {
+                "id": "pal",
+                "name": "Pal",
+                "map": 5,
+                "x": 30,
+                "y": 30,
+                "d": 2,
+                "scene": "map"
+              }
+            ],
+            [
+              "party",
+              "me-p",
+              [
+                3
+              ],
+              -1
+            ],
+            [
+              "state",
+              3,
+              {
+                "id": "pal",
+                "name": "Pal",
+                "map": 5,
+                "x": 30,
+                "y": 30,
+                "d": 2,
+                "scene": "map",
+                "party": "me-p"
+              }
+            ],
+            [
+              "invite",
+              null
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: challenges the players nearby"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              1,
+              ""
+            ],
+            "doing": [
+              "Challenging to a duel",
+              899
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "accept"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                3,
+                "duel=team\nbid=b1\n\n"
+              ],
+              [
+                2,
+                "duel=team\nbid=b1\n\n"
+              ]
+            ],
+            "notices": [
+              "Getting both sides ready for the duel . . ."
+            ],
+            "logs": [
+              "duel: took duel=accept from Friend (seat 2) (53 bytes)",
+              "duel: stops challenging",
+              "duel: sent duel=team bid=b1 to Pal (seat 3)",
+              "duel: sent duel=team bid=b1 to Friend (seat 2)",
+              "overworld sync: notice: Getting both sides ready for the duel . . .",
+              "duel: team duel b1: calling Pal (seat 3) for the own side, Friend (seat 2) for the other side, waiting up to 10 s"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Getting the sides ready",
+              599
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              3,
+              {
+                "duel": "ready",
+                "bid": "b1"
+              },
+              "sgame-1\tsmember=3;pal\ti8"
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "ready",
+                "bid": "b1"
+              },
+              "sgame-1\tsmember=7;friend\ti8"
+            ],
+            [
+              "gone",
+              3
+            ],
+            [
+              "party",
+              "me-p",
+              [
+
+              ],
+              -1
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                3,
+                "duel=start\nbid=b1\nteam=1\n\n[\t[\ti3\ts?\tsmember=3;pal\t[\t]\ti8\t[\ti0\t]\ti1\ti0\t]\t[\ti0\tsMe\tsmember=1;me\\nmember=2;me\t[\t]\ti8\t[\ti0\ti1\t]\ti2\ti0\t]\t]\t[\t[\ti2\tsFriend\tsmember=7;friend\t[\t]\ti8\t[\ti0\t]\ti1\ti0\t]\t]"
+              ],
+              [
+                2,
+                "duel=start\nbid=b1\nteam=1\n\n[\t[\ti3\ts?\tsmember=3;pal\t[\t]\ti8\t[\ti0\t]\ti1\ti0\t]\t[\ti0\tsMe\tsmember=1;me\\nmember=2;me\t[\t]\ti8\t[\ti0\ti1\t]\ti2\ti0\t]\t]\t[\t[\ti2\tsFriend\tsmember=7;friend\t[\t]\ti8\t[\ti0\t]\ti1\ti0\t]\t]"
+              ]
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=ready bid=b1 from Pal (seat 3) (24 bytes)",
+              "duel: Pal (seat 3) is ready for team duel b1",
+              "duel: took duel=ready bid=b1 from Friend (seat 2) (27 bytes)",
+              "duel: Friend (seat 2) is ready for team duel b1",
+              "duel: team duel b1 gathered after 2 frames: ready seat 3, Friend (seat 2);not ready nobody",
+              "duel: sent duel=start bid=b1 team=1 to seat 3 (163 bytes)",
+              "duel: sent duel=start bid=b1 team=1 to Friend (seat 2) (163 bytes)",
+              "duel: team duel b1 waits to start from the map as host, 2 players against 1"
+            ],
+            "pending": {
+              "role": "team",
+              "bid": "b1",
+              "seat": null,
+              "members": null,
+              "backline": false,
+              "own": [
+                [
+                  3,
+                  "?",
+                  "member=3;pal",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0
+                  ],
+                  1,
+                  0
+                ],
+                [
+                  0,
+                  "Me",
+                  "member=1;me\nmember=2;me",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0,
+                    1
+                  ],
+                  2,
+                  0
+                ]
+              ],
+              "other": [
+                [
+                  2,
+                  "Friend",
+                  "member=7;friend",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0
+                  ],
+                  1,
+                  0
+                ]
+              ],
+              "same_side": true
+            },
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "state",
+              3,
+              {
+                "id": "pal",
+                "name": "Pal",
+                "map": 5,
+                "x": 30,
+                "y": 30,
+                "d": 2,
+                "scene": "map"
+              }
+            ],
+            [
+              "party",
+              "me-p",
+              [
+                3
+              ],
+              -1
+            ],
+            [
+              "state",
+              3,
+              {
+                "id": "pal",
+                "name": "Pal",
+                "map": 5,
+                "x": 30,
+                "y": 30,
+                "d": 2,
+                "scene": "map",
+                "party": "me-p"
+              }
+            ],
+            [
+              "invite",
+              null
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "accept"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                3,
+                "duel=team\nbid=b2\n\n"
+              ],
+              [
+                2,
+                "duel=team\nbid=b2\n\n"
+              ]
+            ],
+            "notices": [
+              "Getting both sides ready for the duel . . ."
+            ],
+            "logs": [
+              "duel: challenges the players nearby",
+              "duel: took duel=accept from Friend (seat 2) (53 bytes)",
+              "duel: stops challenging",
+              "duel: sent duel=team bid=b2 to Pal (seat 3)",
+              "duel: sent duel=team bid=b2 to Friend (seat 2)",
+              "overworld sync: notice: Getting both sides ready for the duel . . .",
+              "duel: team duel b2: calling Pal (seat 3) for the own side, Friend (seat 2) for the other side, waiting up to 10 s"
+            ],
+            "pending": {
+              "role": "team",
+              "bid": "b1",
+              "seat": null,
+              "members": null,
+              "backline": false,
+              "own": [
+                [
+                  3,
+                  "?",
+                  "member=3;pal",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0
+                  ],
+                  1,
+                  0
+                ],
+                [
+                  0,
+                  "Me",
+                  "member=1;me\nmember=2;me",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0,
+                    1
+                  ],
+                  2,
+                  0
+                ]
+              ],
+              "other": [
+                [
+                  2,
+                  "Friend",
+                  "member=7;friend",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0
+                  ],
+                  1,
+                  0
+                ]
+              ],
+              "same_side": true
+            },
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Getting the sides ready",
+              599
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              3,
+              {
+                "duel": "ready",
+                "bid": "b2"
+              },
+              "sgame-1\tsmember=3;pal\ti8"
+            ],
+            [
+              "gone",
+              2
+            ],
+            [
+              "wait",
+              600
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                3,
+                "duel=cancel\nreason=off\n\n"
+              ],
+              [
+                2,
+                "duel=cancel\nreason=off\n\n"
+              ]
+            ],
+            "notices": [
+              "Nobody of Friend's side was ready, the duel is off."
+            ],
+            "logs": [
+              "duel: took duel=ready bid=b2 from Pal (seat 3) (24 bytes)",
+              "duel: Pal (seat 3) is ready for team duel b2",
+              "duel: team duel b2 gathered after 601 frames: ready Pal (seat 3);not ready seat 2",
+              "overworld sync: notice: Nobody of Friend's side was ready, the duel is off.",
+              "duel: team duel b2 is off: nobody of Friend's side was ready",
+              "duel: sent duel=cancel reason=off to Pal (seat 3)",
+              "duel: sent duel=cancel reason=off to seat 2"
+            ],
+            "pending": {
+              "role": "team",
+              "bid": "b1",
+              "seat": null,
+              "members": null,
+              "backline": false,
+              "own": [
+                [
+                  3,
+                  "?",
+                  "member=3;pal",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0
+                  ],
+                  1,
+                  0
+                ],
+                [
+                  0,
+                  "Me",
+                  "member=1;me\nmember=2;me",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0,
+                    1
+                  ],
+                  2,
+                  0
+                ]
+              ],
+              "other": [
+                [
+                  2,
+                  "Friend",
+                  "member=7;friend",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0
+                  ],
+                  1,
+                  0
+                ]
+              ],
+              "same_side": true
+            },
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map"
+              }
+            ],
+            [
+              "invite",
+              null
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "accept"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                3,
+                "duel=team\nbid=b3\n\n"
+              ],
+              [
+                2,
+                "duel=team\nbid=b3\n\n"
+              ]
+            ],
+            "notices": [
+              "Getting both sides ready for the duel . . ."
+            ],
+            "logs": [
+              "duel: challenges the players nearby",
+              "duel: took duel=accept from Friend (seat 2) (53 bytes)",
+              "duel: stops challenging",
+              "duel: sent duel=team bid=b3 to Pal (seat 3)",
+              "duel: sent duel=team bid=b3 to Friend (seat 2)",
+              "overworld sync: notice: Getting both sides ready for the duel . . .",
+              "duel: team duel b3: calling Pal (seat 3) for the own side, Friend (seat 2) for the other side, waiting up to 10 s"
+            ],
+            "pending": {
+              "role": "team",
+              "bid": "b1",
+              "seat": null,
+              "members": null,
+              "backline": false,
+              "own": [
+                [
+                  3,
+                  "?",
+                  "member=3;pal",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0
+                  ],
+                  1,
+                  0
+                ],
+                [
+                  0,
+                  "Me",
+                  "member=1;me\nmember=2;me",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0,
+                    1
+                  ],
+                  2,
+                  0
+                ]
+              ],
+              "other": [
+                [
+                  2,
+                  "Friend",
+                  "member=7;friend",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0
+                  ],
+                  1,
+                  0
+                ]
+              ],
+              "same_side": true
+            },
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Getting the sides ready",
+              599
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "free",
+              false
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                3,
+                "duel=cancel\nreason=off\n\n"
+              ],
+              [
+                2,
+                "duel=cancel\nreason=off\n\n"
+              ]
+            ],
+            "notices": [
+              "The duel is off."
+            ],
+            "logs": [
+              "duel: team duel b3 is off: the player got busy",
+              "duel: sent duel=cancel reason=off to Pal (seat 3)",
+              "duel: sent duel=cancel reason=off to Friend (seat 2)",
+              "overworld sync: notice: The duel is off."
+            ],
+            "pending": {
+              "role": "team",
+              "bid": "b1",
+              "seat": null,
+              "members": null,
+              "backline": false,
+              "own": [
+                [
+                  3,
+                  "?",
+                  "member=3;pal",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0
+                  ],
+                  1,
+                  0
+                ],
+                [
+                  0,
+                  "Me",
+                  "member=1;me\nmember=2;me",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0,
+                    1
+                  ],
+                  2,
+                  0
+                ]
+              ],
+              "other": [
+                [
+                  2,
+                  "Friend",
+                  "member=7;friend",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0
+                  ],
+                  1,
+                  0
+                ]
+              ],
+              "same_side": true
+            },
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "team duel fingerprint",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map"
+              }
+            ],
+            [
+              "state",
+              3,
+              {
+                "id": "pal",
+                "name": "Pal",
+                "map": 5,
+                "x": 30,
+                "y": 30,
+                "d": 2,
+                "scene": "map"
+              }
+            ],
+            [
+              "party",
+              "me-p",
+              [
+                3
+              ],
+              -1
+            ],
+            [
+              "state",
+              3,
+              {
+                "id": "pal",
+                "name": "Pal",
+                "map": 5,
+                "x": 30,
+                "y": 30,
+                "d": 2,
+                "scene": "map",
+                "party": "me-p"
+              }
+            ],
+            [
+              "invite",
+              null
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: challenges the players nearby"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              1,
+              ""
+            ],
+            "doing": [
+              "Challenging to a duel",
+              899
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "accept"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                3,
+                "duel=team\nbid=b1\n\n"
+              ],
+              [
+                2,
+                "duel=team\nbid=b1\n\n"
+              ]
+            ],
+            "notices": [
+              "Getting both sides ready for the duel . . ."
+            ],
+            "logs": [
+              "duel: took duel=accept from Friend (seat 2) (53 bytes)",
+              "duel: stops challenging",
+              "duel: sent duel=team bid=b1 to Pal (seat 3)",
+              "duel: sent duel=team bid=b1 to Friend (seat 2)",
+              "overworld sync: notice: Getting both sides ready for the duel . . .",
+              "duel: team duel b1: calling Pal (seat 3) for the own side, Friend (seat 2) for the other side, waiting up to 10 s"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Getting the sides ready",
+              599
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              3,
+              {
+                "duel": "ready",
+                "bid": "b1"
+              },
+              "sgame-2\tsmember=3;pal\ti8"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                3,
+                "duel=decline\nreason=data\n\n"
+              ]
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=ready bid=b1 from Pal (seat 3) (24 bytes)",
+              "duel: sent duel=decline reason=data to Pal (seat 3)",
+              "duel: declined Pal (seat 3): data"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Getting the sides ready",
+              598
+            ],
+            "challengers": [
+
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "team duel other party",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map",
+                "party": "friend-p"
+              }
+            ],
+            [
+              "state",
+              3,
+              {
+                "id": "pal",
+                "name": "Pal",
+                "map": 5,
+                "x": 30,
+                "y": 30,
+                "d": 2,
+                "scene": "map"
+              }
+            ],
+            [
+              "state",
+              4,
+              {
+                "id": "mate",
+                "name": "Mate",
+                "map": 5,
+                "x": 31,
+                "y": 31,
+                "d": 2,
+                "scene": "map",
+                "party": "friend-p"
+              }
+            ],
+            [
+              "party",
+              "me-p",
+              [
+                3
+              ],
+              -1,
+              {
+                "parties": {
+                  "me-p": [
+                    2,
+                    -1
+                  ],
+                  "friend-p": [
+                    2,
+                    2
+                  ]
+                }
+              }
+            ],
+            [
+              "state",
+              3,
+              {
+                "id": "pal",
+                "name": "Pal",
+                "map": 5,
+                "x": 30,
+                "y": 30,
+                "d": 2,
+                "scene": "map",
+                "party": "me-p"
+              }
+            ],
+            [
+              "invite",
+              null
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: challenges the players nearby"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              1,
+              ""
+            ],
+            "doing": [
+              "Challenging to a duel",
+              899
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "accept"
+              },
+              "sgame-1\tsbackline=0\\nmember=7;friend\\nmember=8;friend"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                3,
+                "duel=team\nbid=b1\n\n"
+              ],
+              [
+                2,
+                "duel=team\nbid=b1\n\n"
+              ]
+            ],
+            "notices": [
+              "Getting both sides ready for the duel . . ."
+            ],
+            "logs": [
+              "duel: took duel=accept from Friend (seat 2) (53 bytes)",
+              "duel: stops challenging",
+              "duel: sent duel=team bid=b1 to Pal (seat 3)",
+              "duel: sent duel=team bid=b1 to Friend (seat 2)",
+              "overworld sync: notice: Getting both sides ready for the duel . . .",
+              "duel: team duel b1: calling Pal (seat 3) for the own side, Friend (seat 2) for the other side, waiting up to 10 s"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Getting the sides ready",
+              599
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              4,
+              {
+                "duel": "ready",
+                "bid": "b1"
+              },
+              "sgame-1\tsmember=9;mate\ti8"
+            ],
+            [
+              "message",
+              3,
+              {
+                "duel": "side",
+                "bid": "b1",
+                "seats": "4"
+              }
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "side",
+                "bid": "b1",
+                "seats": "4,9,3,4"
+              }
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "side",
+                "bid": "b7",
+                "seats": "4"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=ready bid=b1 from Mate (seat 4) (25 bytes)",
+              "duel: Mate (seat 4) is ready for team duel b1, kept until their leader names them",
+              "duel: took duel=side bid=b1 seats=4 from Pal (seat 3) (0 bytes)",
+              "duel: side of duel b1 from Pal (seat 3) ignored: not the player who accepted the gathered duel",
+              "duel: took duel=side bid=b1 seats=4,9,3,4 from Friend (seat 2) (0 bytes)",
+              "duel: Mate (seat 4) joins the other side, ready already",
+              "duel: seat 9 left out of the other side: not in the world",
+              "duel: Pal (seat 3) left out of the other side: called already",
+              "duel: took duel=side bid=b7 seats=4 from Friend (seat 2) (0 bytes)",
+              "duel: side of duel b7 from Friend (seat 2) ignored: not the player who accepted the gathered duel"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Getting the sides ready",
+              598
+            ],
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "ready",
+                "bid": "b1"
+              },
+              "sgame-1\tsmember=7;friend\\nmember=8;friend\ti8"
+            ],
+            [
+              "message",
+              3,
+              {
+                "duel": "ready",
+                "bid": "b1"
+              },
+              "sgame-1\tsmember=3;pal\ti8"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                4,
+                "duel=start\nbid=b1\nteam=1\n\n[\t[\ti0\tsMe\tsmember=1;me\\nmember=2;me\t[\t]\ti8\t[\ti0\ti1\t]\ti2\ti0\t]\t[\ti3\tsPal\tsmember=3;pal\t[\t]\ti8\t[\ti0\t]\ti1\ti0\t]\t]\t[\t[\ti2\tsFriend\tsmember=7;friend\\nmember=8;friend\t[\t]\ti8\t[\ti0\ti1\t]\ti2\ti0\t]\t[\ti4\tsMate\tsmember=9;mate\t[\t]\ti8\t[\ti0\t]\ti1\ti0\t]\t]"
+              ],
+              [
+                2,
+                "duel=start\nbid=b1\nteam=1\n\n[\t[\ti0\tsMe\tsmember=1;me\\nmember=2;me\t[\t]\ti8\t[\ti0\ti1\t]\ti2\ti0\t]\t[\ti3\tsPal\tsmember=3;pal\t[\t]\ti8\t[\ti0\t]\ti1\ti0\t]\t]\t[\t[\ti2\tsFriend\tsmember=7;friend\\nmember=8;friend\t[\t]\ti8\t[\ti0\ti1\t]\ti2\ti0\t]\t[\ti4\tsMate\tsmember=9;mate\t[\t]\ti8\t[\ti0\t]\ti1\ti0\t]\t]"
+              ],
+              [
+                3,
+                "duel=start\nbid=b1\nteam=1\n\n[\t[\ti0\tsMe\tsmember=1;me\\nmember=2;me\t[\t]\ti8\t[\ti0\ti1\t]\ti2\ti0\t]\t[\ti3\tsPal\tsmember=3;pal\t[\t]\ti8\t[\ti0\t]\ti1\ti0\t]\t]\t[\t[\ti2\tsFriend\tsmember=7;friend\\nmember=8;friend\t[\t]\ti8\t[\ti0\ti1\t]\ti2\ti0\t]\t[\ti4\tsMate\tsmember=9;mate\t[\t]\ti8\t[\ti0\t]\ti1\ti0\t]\t]"
+              ]
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=ready bid=b1 from Friend (seat 2) (44 bytes)",
+              "duel: Friend (seat 2) is ready for team duel b1",
+              "duel: took duel=ready bid=b1 from Pal (seat 3) (24 bytes)",
+              "duel: Pal (seat 3) is ready for team duel b1",
+              "duel: team duel b1 gathered after 3 frames: ready Mate (seat 4), Friend (seat 2), Pal (seat 3);not ready nobody",
+              "duel: sent duel=start bid=b1 team=1 to Mate (seat 4) (233 bytes)",
+              "duel: sent duel=start bid=b1 team=1 to Friend (seat 2) (233 bytes)",
+              "duel: sent duel=start bid=b1 team=1 to Pal (seat 3) (233 bytes)",
+              "duel: team duel b1 waits to start from the map as host, 2 players against 2"
+            ],
+            "pending": {
+              "role": "team",
+              "bid": "b1",
+              "seat": null,
+              "members": null,
+              "backline": false,
+              "own": [
+                [
+                  0,
+                  "Me",
+                  "member=1;me\nmember=2;me",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0,
+                    1
+                  ],
+                  2,
+                  0
+                ],
+                [
+                  3,
+                  "Pal",
+                  "member=3;pal",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0
+                  ],
+                  1,
+                  0
+                ]
+              ],
+              "other": [
+                [
+                  2,
+                  "Friend",
+                  "member=7;friend\nmember=8;friend",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0,
+                    1
+                  ],
+                  2,
+                  0
+                ],
+                [
+                  4,
+                  "Mate",
+                  "member=9;mate",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0
+                  ],
+                  1,
+                  0
+                ]
+              ],
+              "same_side": true
+            },
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "on_map",
+              false
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: team duel b1 as host, 2 against 2"
+            ],
+            "pending": null,
+            "started": "b1",
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "team duel called",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map",
+                "challenge": 1
+              }
+            ],
+            [
+              "state",
+              3,
+              {
+                "id": "pal",
+                "name": "Pal",
+                "map": 5,
+                "x": 30,
+                "y": 30,
+                "d": 2,
+                "scene": "map"
+              }
+            ],
+            [
+              "party",
+              "me-p",
+              [
+                3
+              ],
+              -1
+            ],
+            [
+              "state",
+              3,
+              {
+                "id": "pal",
+                "name": "Pal",
+                "map": 5,
+                "x": 30,
+                "y": 30,
+                "d": 2,
+                "scene": "map",
+                "party": "me-p"
+              }
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "team",
+                "bid": "g8"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=team bid=g8 from Friend (seat 2) (0 bytes)",
+              "duel: call to team duel g8 from Friend (seat 2) ignored: neither the challenger the player accepted nor their leader"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                true
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "accept",
+              2
+            ],
+            [
+              "free",
+              false
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "team",
+                "bid": "g9"
+              }
+            ],
+            [
+              "wait",
+              5
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=accept\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ],
+              [
+                3,
+                "duel_call=g9\nparty=me-p\nseat=2\n\n"
+              ],
+              [
+                2,
+                "duel=side\nbid=g9\nseats=3\n\n"
+              ]
+            ],
+            "notices": [
+              "You accepted Friend's duel.",
+              "Friend's duel is a team duel. Get ready on the map."
+            ],
+            "logs": [
+              "duel: sent duel=accept to Friend (seat 2) (32 bytes)",
+              "duel: accepted Friend (seat 2)'s duel, waiting up to 6 s for their answer",
+              "overworld sync: notice: You accepted Friend's duel.",
+              "duel: took duel=team bid=g9 from Friend (seat 2) (0 bytes)",
+              "overworld sync: notice: Friend's duel is a team duel. Get ready on the map.",
+              "duel: called to Friend (seat 2)'s team duel g9, answers once free on the map",
+              "duel: passed the call to team duel g9 on to the party: Pal (seat 3)",
+              "duel: sent duel=side bid=g9 seats=3 to Friend (seat 2)"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                true
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "free",
+              true
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=ready\nbid=g9\n\nsgame-1\tsmember=1;me\\nmember=2;me\ti8"
+              ]
+            ],
+            "notices": [
+              "Ready for the duel. Waiting for the others . . ."
+            ],
+            "logs": [
+              "duel: sent duel=ready bid=g9 to Friend (seat 2) (36 bytes)",
+              "overworld sync: notice: Ready for the duel. Waiting for the others . . ."
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Ready for the duel",
+              953
+            ],
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                true
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              3,
+              {
+                "duel": "start",
+                "bid": "g9",
+                "team": "1"
+              },
+              "[\t[\ti2\tsFriend\tsmember=7;friend\t[\t]\ti8\t[\ti0\t]\ti4\ti0\t]\t]\t[\t[\ti0\tsMe\tsmember=1;me\t[\t]\ti8\t[\ti0\t]\ti2\ti0\t]\t[\ti3\tsPal\tsmember=3;pal\t[\t]\ti8\t[\ti0\t]\ti2\ti0\t]\t]"
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "start",
+                "bid": "g7",
+                "team": "1"
+              },
+              "[\t[\ti2\tsFriend\tsmember=7;friend\t[\t]\ti8\t[\ti0\t]\ti4\ti0\t]\t]\t[\t[\ti0\tsMe\tsmember=1;me\t[\t]\ti8\t[\ti0\t]\ti2\ti0\t]\t[\ti3\tsPal\tsmember=3;pal\t[\t]\ti8\t[\ti0\t]\ti2\ti0\t]\t]"
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "start",
+                "bid": "g9",
+                "team": "1"
+              },
+              "[\t[\ti2\tsFriend\tsmember=7;friend\t[\t]\ti8\t[\ti0\t]\ti4\ti0\t]\t]\t[\t[\ti0\tsMe\tsmember=1;me\t[\t]\ti8\t[\ti0\t]\ti2\ti0\t]\t[\ti3\tsPal\tsmember=3;pal\t[\t]\ti8\t[\ti0\t]\ti2\ti0\t]\t]"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=start bid=g9 team=1 from Pal (seat 3) (149 bytes)",
+              "duel: start of team duel g9 from Pal (seat 3) ignored: the player was not called to it",
+              "duel: took duel=start bid=g7 team=1 from Friend (seat 2) (149 bytes)",
+              "duel: start of team duel g7 from Friend (seat 2) ignored: the player was not called to it",
+              "duel: took duel=start bid=g9 team=1 from Friend (seat 2) (149 bytes)",
+              "duel: team duel g9 waits to start from the map as guest on the other side, 2 players against 1"
+            ],
+            "pending": {
+              "role": "team",
+              "bid": "g9",
+              "seat": 2,
+              "members": null,
+              "backline": false,
+              "own": [
+                [
+                  0,
+                  "Me",
+                  "member=1;me",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0
+                  ],
+                  2,
+                  0
+                ],
+                [
+                  3,
+                  "Pal",
+                  "member=3;pal",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0
+                  ],
+                  2,
+                  0
+                ]
+              ],
+              "other": [
+                [
+                  2,
+                  "Friend",
+                  "member=7;friend",
+                  [
+
+                  ],
+                  8,
+                  [
+                    0
+                  ],
+                  4,
+                  0
+                ]
+              ],
+              "same_side": false
+            },
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                true
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "on_map",
+              false
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: team duel g9 as guest, 2 against 1"
+            ],
+            "pending": null,
+            "started": "g9",
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                true
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "team duel start refused",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map",
+                "challenge": 1
+              }
+            ],
+            [
+              "accept",
+              2
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "team",
+                "bid": "g10"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=accept\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ],
+              [
+                2,
+                "duel=ready\nbid=g10\n\nsgame-1\tsmember=1;me\\nmember=2;me\ti8"
+              ]
+            ],
+            "notices": [
+              "You accepted Friend's duel.",
+              "Friend's duel is a team duel. Get ready on the map.",
+              "Ready for the duel. Waiting for the others . . ."
+            ],
+            "logs": [
+              "duel: sent duel=accept to Friend (seat 2) (32 bytes)",
+              "duel: accepted Friend (seat 2)'s duel, waiting up to 6 s for their answer",
+              "overworld sync: notice: You accepted Friend's duel.",
+              "duel: took duel=team bid=g10 from Friend (seat 2) (0 bytes)",
+              "overworld sync: notice: Friend's duel is a team duel. Get ready on the map.",
+              "duel: called to Friend (seat 2)'s team duel g10, answers once free on the map",
+              "duel: sent duel=ready bid=g10 to Friend (seat 2) (36 bytes)",
+              "overworld sync: notice: Ready for the duel. Waiting for the others . . ."
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Ready for the duel",
+              959
+            ],
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "free",
+              false
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "start",
+                "bid": "g10",
+                "team": "1"
+              },
+              "[\t[\ti2\tsFriend\tsmember=7;friend\t[\t]\ti8\t[\ti0\t]\ti4\ti0\t]\t]\t[\t[\ti0\tsMe\tsmember=1;me\t[\t]\ti8\t[\ti0\t]\ti2\ti0\t]\t[\ti3\tsPal\tsmember=3;pal\t[\t]\ti8\t[\ti0\t]\ti2\ti0\t]\t]"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "battle=leave\nbid=g10\n\n"
+              ]
+            ],
+            "notices": [
+              "The duel with Friend started without you."
+            ],
+            "logs": [
+              "duel: took duel=start bid=g10 team=1 from Friend (seat 2) (149 bytes)",
+              "duel: leaves team duel g10 at its start: the player is busy, their side takes their characters",
+              "overworld sync: notice: The duel with Friend started without you."
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "free",
+              true
+            ],
+            [
+              "accept",
+              2
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "team",
+                "bid": "g11"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=accept\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ],
+              [
+                2,
+                "duel=ready\nbid=g11\n\nsgame-1\tsmember=1;me\\nmember=2;me\ti8"
+              ]
+            ],
+            "notices": [
+              "You accepted Friend's duel.",
+              "Friend's duel is a team duel. Get ready on the map.",
+              "Ready for the duel. Waiting for the others . . ."
+            ],
+            "logs": [
+              "duel: sent duel=accept to Friend (seat 2) (32 bytes)",
+              "duel: accepted Friend (seat 2)'s duel, waiting up to 6 s for their answer",
+              "overworld sync: notice: You accepted Friend's duel.",
+              "duel: took duel=team bid=g11 from Friend (seat 2) (0 bytes)",
+              "overworld sync: notice: Friend's duel is a team duel. Get ready on the map.",
+              "duel: called to Friend (seat 2)'s team duel g11, answers once free on the map",
+              "duel: sent duel=ready bid=g11 to Friend (seat 2) (36 bytes)",
+              "overworld sync: notice: Ready for the duel. Waiting for the others . . ."
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Ready for the duel",
+              959
+            ],
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "start",
+                "bid": "g11",
+                "team": "1"
+              },
+              "?too long\t]"
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "battle=leave\nbid=g11\n\n"
+              ]
+            ],
+            "notices": [
+              "The duel with Friend could not start."
+            ],
+            "logs": [
+              "duel: took duel=start bid=g11 team=1 from Friend (seat 2) (11 bytes)",
+              "duel: leaves team duel g11 at its start: its sides did not read (11 bytes), their side takes their characters",
+              "overworld sync: notice: The duel with Friend could not start."
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "accept",
+              2
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "team",
+                "bid": "g12"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=accept\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ],
+              [
+                2,
+                "duel=ready\nbid=g12\n\nsgame-1\tsmember=1;me\\nmember=2;me\ti8"
+              ]
+            ],
+            "notices": [
+              "You accepted Friend's duel.",
+              "Friend's duel is a team duel. Get ready on the map.",
+              "Ready for the duel. Waiting for the others . . ."
+            ],
+            "logs": [
+              "duel: sent duel=accept to Friend (seat 2) (32 bytes)",
+              "duel: accepted Friend (seat 2)'s duel, waiting up to 6 s for their answer",
+              "overworld sync: notice: You accepted Friend's duel.",
+              "duel: took duel=team bid=g12 from Friend (seat 2) (0 bytes)",
+              "overworld sync: notice: Friend's duel is a team duel. Get ready on the map.",
+              "duel: called to Friend (seat 2)'s team duel g12, answers once free on the map",
+              "duel: sent duel=ready bid=g12 to Friend (seat 2) (36 bytes)",
+              "overworld sync: notice: Ready for the duel. Waiting for the others . . ."
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Ready for the duel",
+              959
+            ],
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "start",
+                "bid": "g12",
+                "team": "1"
+              },
+              ""
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=start bid=g12 team=1 from Friend (seat 2) (0 bytes)",
+              "duel: team duel g12 waits to start from the map as guest on the other side, 0 players against 0"
+            ],
+            "pending": {
+              "role": "team",
+              "bid": "g12",
+              "seat": 2,
+              "members": null,
+              "backline": false,
+              "own": [
+
+              ],
+              "other": [
+
+              ],
+              "same_side": false
+            },
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "team duel call lapses",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map",
+                "challenge": 1
+              }
+            ],
+            [
+              "accept",
+              2
+            ],
+            [
+              "free",
+              false
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "team",
+                "bid": "g13"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=accept\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ]
+            ],
+            "notices": [
+              "You accepted Friend's duel.",
+              "Friend's duel is a team duel. Get ready on the map."
+            ],
+            "logs": [
+              "duel: sent duel=accept to Friend (seat 2) (32 bytes)",
+              "duel: accepted Friend (seat 2)'s duel, waiting up to 6 s for their answer",
+              "overworld sync: notice: You accepted Friend's duel.",
+              "duel: took duel=team bid=g13 from Friend (seat 2) (0 bytes)",
+              "overworld sync: notice: Friend's duel is a team duel. Get ready on the map.",
+              "duel: called to Friend (seat 2)'s team duel g13, answers once free on the map"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "wait",
+              958
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: forgot the call to Friend's team duel g13: it never started"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "free",
+              true
+            ],
+            [
+              "accept",
+              2
+            ],
+            [
+              "message",
+              2,
+              {
+                "duel": "team",
+                "bid": "g14"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                2,
+                "duel=accept\n\nsgame-1\tsbackline=0\\nmember=1;me"
+              ],
+              [
+                2,
+                "duel=ready\nbid=g14\n\nsgame-1\tsmember=1;me\\nmember=2;me\ti8"
+              ]
+            ],
+            "notices": [
+              "You accepted Friend's duel.",
+              "Friend's duel is a team duel. Get ready on the map.",
+              "Ready for the duel. Waiting for the others . . ."
+            ],
+            "logs": [
+              "duel: sent duel=accept to Friend (seat 2) (32 bytes)",
+              "duel: accepted Friend (seat 2)'s duel, waiting up to 6 s for their answer",
+              "overworld sync: notice: You accepted Friend's duel.",
+              "duel: took duel=team bid=g14 from Friend (seat 2) (0 bytes)",
+              "overworld sync: notice: Friend's duel is a team duel. Get ready on the map.",
+              "duel: called to Friend (seat 2)'s team duel g14, answers once free on the map",
+              "duel: sent duel=ready bid=g14 to Friend (seat 2) (36 bytes)",
+              "overworld sync: notice: Ready for the duel. Waiting for the others . . ."
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Ready for the duel",
+              959
+            ],
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel": "cancel",
+                "reason": "off"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+              "Friend called the duel off."
+            ],
+            "logs": [
+              "duel: took duel=cancel reason=off from Friend (seat 2) (0 bytes)",
+              "overworld sync: notice: Friend called the duel off.",
+              "duel: Friend (seat 2) called duel  off (off): dropped the call to the team duel"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+              [
+                2,
+                true,
+                true,
+                false
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "team duel passed call",
+      "steps": [
+        {
+          "ops": [
+            [
+              "state",
+              2,
+              {
+                "id": "friend",
+                "name": "Friend",
+                "map": 5,
+                "x": 4,
+                "y": 4,
+                "d": 2,
+                "scene": "map",
+                "party": "friend-p"
+              }
+            ],
+            [
+              "state",
+              3,
+              {
+                "id": "pal",
+                "name": "Pal",
+                "map": 5,
+                "x": 30,
+                "y": 30,
+                "d": 2,
+                "scene": "map",
+                "party": "friend-p"
+              }
+            ],
+            [
+              "party",
+              "friend-p",
+              [
+                2,
+                3
+              ],
+              2
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              3,
+              {
+                "duel": "team",
+                "bid": "g20"
+              }
+            ],
+            [
+              "message",
+              3,
+              {
+                "duel_call": "g21",
+                "party": "friend-p",
+                "seat": "2"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took duel=team bid=g20 from Pal (seat 3) (0 bytes)",
+              "duel: call to team duel g20 from Pal (seat 3) ignored: neither the challenger the player accepted nor their leader",
+              "duel: took the call to team duel g21 from Pal (seat 3), challenger seat 2",
+              "duel: passed call ignored: Pal (seat 3) does not lead the player's party"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel_call": "g22",
+                "party": "friend-p",
+                "seat": "9"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+
+            ],
+            "notices": [
+
+            ],
+            "logs": [
+              "duel: took the call to team duel g22 from Friend (seat 2), challenger seat 9",
+              "duel: passed call ignored: the challenger at seat 9 is not in the world"
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": null,
+            "challengers": [
+
+            ]
+          }
+        },
+        {
+          "ops": [
+            [
+              "message",
+              2,
+              {
+                "duel_call": "g23",
+                "party": "friend-p",
+                "seat": "3"
+              }
+            ]
+          ],
+          "outcome": {
+            "sent": [
+              [
+                3,
+                "duel=ready\nbid=g23\n\nsgame-1\tsmember=1;me\\nmember=2;me\ti8"
+              ]
+            ],
+            "notices": [
+              "Pal's duel is a team duel. Get ready on the map.",
+              "Ready for the duel. Waiting for the others . . ."
+            ],
+            "logs": [
+              "duel: took the call to team duel g23 from Friend (seat 2), challenger seat 3",
+              "overworld sync: notice: Pal's duel is a team duel. Get ready on the map.",
+              "duel: called to Pal (seat 3)'s team duel g23, answers once free on the map",
+              "duel: sent duel=ready bid=g23 to Pal (seat 3) (36 bytes)",
+              "overworld sync: notice: Ready for the duel. Waiting for the others . . ."
+            ],
+            "pending": null,
+            "started": null,
+            "challenge": [
+              0,
+              ""
+            ],
+            "doing": [
+              "Ready for the duel",
+              959
+            ],
+            "challengers": [
+
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
