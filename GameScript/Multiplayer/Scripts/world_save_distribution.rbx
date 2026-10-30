@@ -2,6 +2,7 @@
 #  world_save_distribution.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Refused a fetched starting save that names classes other than the game's before loading it
 #      Paulinchen  2026-10-23: Dropped the starting save's files as text, which the DLL takes as pairs
 #                            - Left whether a new player is asked, warned or fetches the starting save to the DLL's steps into a world
 #      Paulinchen  2026-10-14: Fetched a Raid World's starting save in every build
@@ -40,6 +41,9 @@ module MGQ_MpSaveDistribution
 
   # What Marshal says when a save holds an object of a class the game lacks.
   MISSING_CLASS = /undefined class\/module (\S+)/
+
+  # What the player reads when a fetched starting save names a class that is not the game's.
+  REFUSED_TEXT = "The starting save could not be loaded."
 
   # What the save screen says, by what the save is chosen for: a new world's starting save, or
   # the player's own start in a world whose players choose.
@@ -142,14 +146,16 @@ module MGQ_MpSaveDistribution
   # @param world [MGQ_MpWorld::World] The world on this PC.
   # @return [String, nil] Why it cannot be loaded, nil when it can.
   def self.check(world)
-    [SAVE_NAME, SYSTEM_NAME].each do |name|
-      path = "#{world.save_folder}/#{name}"
-      next unless File.exist?(path)
-
-      File.open(path, "rb") { |file| Marshal.load(file) until file.eof? }
-    end
+    paths = [SAVE_NAME, SYSTEM_NAME].map { |name| "#{world.save_folder}/#{name}" }.select { |path| File.exist?(path) }
+    # Both files pass the class check before Marshal reads either.
+    paths.each { |path| ClassCheck.new(File.open(path, "rb") { |file| file.read }).check }
+    paths.each { |path| File.open(path, "rb") { |file| Marshal.load(file) until file.eof? } }
     log("the starting save of world #{world.id} loads in this game")
     nil
+  rescue ClassCheck::Refused => e
+    log("the starting save of world #{world.id} was refused: #{e.message}")
+    discard(world)
+    REFUSED_TEXT
   rescue => e
     log("the starting save of world #{world.id} cannot be loaded: #{e.class}: #{e.message}")
     discard(world)
@@ -168,6 +174,201 @@ module MGQ_MpSaveDistribution
     log("threw away the starting save of world #{world.id}: #{deleted.empty? ? 'no files there' : deleted.join(', ')}")
   rescue => e
     log("could not delete the starting save: #{e.class}: #{e.message}")
+  end
+
+  # Walks Marshal streams without building anything and refuses one that names a class of Ruby's
+  # own, so a starting save from another player cannot make the objects Marshal.load runs code of.
+  # It follows the battle server's SaveCheck entry for entry; save_distribution_test.rb holds the
+  # two to the same verdicts.
+  #
+  # The game's Ruby (1.9.2) has no byteslice, and the client cannot note Ruby's own classes before
+  # the game's scripts load, as the server does, so RUBY_OWN names them.
+  class ClassCheck
+    # Raised for a stream that is not Marshal or names a class that is not the game's.
+    class Refused < StandardError; end
+
+    # The Marshal version every stream starts with.
+    VERSION = "\x04\x08"
+
+    # How deep objects may nest; the game's saves stay far below.
+    MAX_DEPTH = 500
+
+    # Ruby's own classes a save may hold: plain values without code of their own.
+    CORE = %w[Object String Array Hash Range Float Integer Symbol Time Regexp Rational Complex]
+
+    # The outermost names of Ruby's own classes and modules, those of its libraries and those of
+    # the game's Ruby included; a save may name none of them, nor anything inside them.
+    RUBY_OWN = %w[
+      ArgumentError Array BasicObject Bignum Binding Class ClosedQueueError Comparable Complex
+      ConditionVariable Continuation Data Dir EOFError Encoding EncodingError Enumerable Enumerator
+      Errno Exception FalseClass Fiber FiberError File FileTest Fixnum Float FloatDomainError
+      FrozenError GC Hash IO IOError IndexError Integer Interrupt Kernel KeyError LoadError
+      LocalJumpError Marshal MatchData Math Method Module Mutex NameError NilClass
+      NoMatchingPatternError NoMatchingPatternKeyError NoMemoryError NoMethodError
+      NotImplementedError Numeric Object ObjectSpace Proc Process Queue Ractor Random Range
+      RangeError Rational Refinement Regexp RegexpError RubyVM RuntimeError ScriptError
+      SecurityError Set Signal SignalException SizedQueue StandardError StopIteration String Struct
+      Symbol SyntaxError SystemCallError SystemExit SystemStackError Thread ThreadError ThreadGroup
+      Time TracePoint TrueClass TypeError UnboundMethod UncaughtThrowError UnicodeNormalize Warning
+      ZeroDivisionError
+      BasicSocket BigDecimal Bundler CGI CSV DRb Date DateTime Delegator DidYouMean Digest DL ERB
+      Etc Fiddle FileUtils Gem IPAddr JSON Logger Monitor MonitorMixin Net OpenSSL OpenStruct
+      Pathname Psych REXML Ripper SimpleDelegator Socket SortedSet StringIO Syck Tempfile URI
+      WIN32OLE Win32 Win32API YAML Zlib
+    ]
+
+    # A class name the game's scripts can define: constants only.
+    CLASS_NAME = /\A[A-Z]\w*(::[A-Z]\w*)*\z/
+
+    # Starts a check of a byte stream.
+    #
+    # @param bytes [String] One or more Marshal streams one after another, as a save file is.
+    def initialize(bytes)
+      @bytes = bytes.dup.force_encoding("ASCII-8BIT")
+      @pos = 0
+    end
+
+    # Walks every stream in the bytes and refuses one that names a class that is not the game's or
+    # uses a kind of entry no save needs.
+    #
+    # @return [ClassCheck] The check.
+    def check
+      until @pos >= @bytes.bytesize
+        refuse("not a Marshal stream") unless @bytes[@pos, 2] == VERSION
+        @pos += 2
+        @symbols = []
+        entry(0)
+      end
+      self
+    end
+
+    # Tells whether a save may name a class: a plain value of Ruby's, or any name outside Ruby's
+    # own, which Marshal.load refuses by itself when the game lacks it.
+    #
+    # @param name [String] The class's name.
+    # @return [Boolean] Whether it may.
+    def self.admitted?(name)
+      CORE.include?(name) || (name =~ CLASS_NAME && !RUBY_OWN.include?(name.split("::").first)) ? true : false
+    end
+
+    private
+
+    # Reads one entry and everything inside it.
+    #
+    # @param depth [Integer] How deep it nests.
+    def entry(depth)
+      refuse("nested too deep") if depth > MAX_DEPTH
+      type = byte.chr
+      case type
+      when "0", "T", "F" then nil
+      when "i" then long
+      when ":" then @symbols << bytes
+      when ";" then symbol_at(long)
+      when "@" then long
+      when "I"
+        entry(depth + 1)
+        long.times { symbol; entry(depth + 1) }
+      when "e"
+        admit(symbol, "extended by")
+        entry(depth + 1)
+      when "[" then long.times { entry(depth + 1) }
+      when "l"
+        byte
+        shorts = long
+        refuse("a length past the end") if shorts < 0 || @pos + shorts * 2 > @bytes.bytesize
+        @pos += shorts * 2
+      when "c", "m", "M" then admit(bytes, "class reference")
+      when "f", '"' then bytes
+      when "/"
+        bytes
+        byte
+      when "{", "}"
+        (long * 2).times { entry(depth + 1) }
+        entry(depth + 1) if type == "}"
+      when "S", "o"
+        admit(symbol, type == "S" ? "struct" : "object")
+        long.times { symbol; entry(depth + 1) }
+      when "C"
+        admit(symbol, "subclass")
+        entry(depth + 1)
+      when "u"
+        admit(symbol, "_load")
+        bytes
+      when "U"
+        admit(symbol, "marshal_load")
+        entry(depth + 1)
+      else
+        refuse("an entry of kind #{type.inspect}, which no save holds")
+      end
+    end
+
+    # Refuses a class that is not the game's.
+    #
+    # @param name [String] The class's name.
+    # @param kind [String] What the stream does with it.
+    def admit(name, kind)
+      name = name.dup.force_encoding("UTF-8")
+      refuse("#{kind} of #{name}, which is not the game's") unless ClassCheck.admitted?(name)
+    end
+
+    # Reads a symbol or a link to an earlier one.
+    #
+    # @return [String] The symbol's name.
+    def symbol
+      case byte.chr
+      when ":" then bytes.tap { |name| @symbols << name }
+      when ";" then symbol_at(long)
+      else refuse("a symbol where one belongs")
+      end
+    end
+
+    # An earlier symbol by its index.
+    #
+    # @param index [Integer] The index.
+    # @return [String] The symbol's name.
+    def symbol_at(index)
+      @symbols[index] || refuse("a link to symbol #{index}, which does not exist")
+    end
+
+    # Reads a length and that many bytes.
+    #
+    # @return [String] The bytes.
+    def bytes
+      length = long
+      refuse("a length past the end") if length < 0 || @pos + length > @bytes.bytesize
+      @bytes[@pos, length].tap { @pos += length }
+    end
+
+    # Reads one of Marshal's packed integers.
+    #
+    # @return [Integer] The integer.
+    def long
+      first = byte
+      first -= 256 if first > 127
+      return 0 if first == 0
+      return first - 5 if first > 4
+      return first + 5 if first < -4
+
+      count = first.abs
+      value = 0
+      count.times { |i| value |= byte << (8 * i) }
+      first < 0 ? value - (1 << (8 * count)) : value
+    end
+
+    # Reads one byte.
+    #
+    # @return [Integer] The byte.
+    def byte
+      refuse("the stream ends early") if @pos >= @bytes.bytesize
+      @bytes.getbyte(@pos).tap { @pos += 1 }
+    end
+
+    # Refuses the save.
+    #
+    # @param reason [String] Why.
+    def refuse(reason)
+      raise Refused, "the save was refused: #{reason} (at byte #{@pos})"
+    end
   end
 end
 
