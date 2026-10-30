@@ -2,6 +2,9 @@
 #  trade.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Let the DLL ask the relay for the trades to recover, by the save loaded
+#                            - Told the relay of a trade the save holds through the DLL
+#                            - Kept the trade's handshake, session and commit in the DLL, the items, the save and the screen here
 #      Paulinchen  2026-10-23: Made up a trade's id through coop.rbx
 #                            - Named the one log of the day where a trade not applied in full tells why
 #      Paulinchen  2026-10-12: Sent the offer and confirmation again on the relay's beat after a failed send
@@ -45,22 +48,14 @@
 # map picked in the World overview. Once the other accepts, both games open the trade screen
 # (ui_trade.rbx), where each player puts together an offer and confirms both offers.
 #
-# Nothing changes hands until the relay committed the trade in one step, so a game that drops
-# halfway can never keep both sides; it must never interrupt the game, so its per-frame work and
-# message handling rescue.
+# The DLL keeps the trade itself (MGQOnline.Game's TradeMachine): the handshake, both offers as
+# text, their revisions and confirmations, and the relay's commit. This script keeps the items, the
+# bag, the save and the screen, reads the trade through the view the DLL posts, and applies a
+# trade the relay committed. It must never interrupt the game, so its per-frame work rescues.
 module MGQ_MpTrade
   # Color of the trade line above a ghost's name and of the trade's notices, the one every request
   # and offer shares.
   TRADE_COLOR = MGQ_MpActions::LINE_COLOR
-
-  # Frames an accepted trade waits for the other player's game to open it, six seconds.
-  ANSWER_FRAMES = 360
-
-  # Frames a trade waits for the other player once their connection dropped, the world's rejoin time.
-  AWAY_FRAMES = MGQ_MpOverworldSync::REJOIN_FRAMES
-
-  # Frames between two looks at the relay's answer, a quarter of a second.
-  POLL_FRAMES = 15
 
   # Frames a message about the trade stays on the trade screen, four seconds.
   NOTE_FRAMES = 240
@@ -71,44 +66,28 @@ module MGQ_MpTrade
   # Trades the save remembers as applied, so a recovered trade is applied once.
   KEPT_TRADES = 50
 
-  # Frames before the relay is asked again for trades to recover when the DLL could not ask yet,
-  # as before the world's connection opened, five seconds.
-  RETRY_FRAMES = 300
+  # What the scripts hand the DLL as the reason the player is busy while the map is not free.
+  MAP_NOT_FREE = "the map is not free"
 
-  # Bytes the DLL may write the list of trades to recover into at first.
-  PENDING_SIZE = 16384
+  # The bridge topics of the trade, see the DLL's TradeTopics.
+  TICK_TOPIC = "trade.tick"
+  ACCEPT_TOPIC = "trade.accept"
+  DECLINE_TOPIC = "trade.decline"
+  OFFER_TOPIC = "trade.offer"
+  CONFIRM_TOPIC = "trade.confirm"
+  CANCEL_TOPIC = "trade.cancel"
+  DONE_TOPIC = "trade.done"
 
-  # Most bytes of both offers as the relay compares them (see agreed_text); mirrors
-  # TradeSeal.MaxOffersBytes in the DLL, which refuses longer offers.
-  MAX_OFFERS_BYTES = 32 * 1024
-
-  # What the player sees when both offers together are too long for the relay.
-  TOO_LARGE_TEXT = "The offers hold too many items for one trade. Take some out."
-
-  # The kinds of trade message a game answers with a cancel when it has no such trade, never a
-  # cancel itself, so two games never answer each other's cancels.
-  ANSWERED_STRAYS = ["offer", "confirm", "unconfirm"]
-
-  # Why a trade could not open or ended, by the reason a message carries.
-  REASONS = {
-    "busy" => "is busy",
-    "gone" => "stopped offering a trade",
-    "no" => "declined your trade",
-    "off" => "cancelled the trade",
-    "relay" => "could not reach the relay",
-    "invalid" => "found the trade's id not valid",
-  }
-
-  # What the player sees when the other player's game found the trade's id not valid, which names
-  # no fault of either player.
-  INVALID_TEXT = "The trade could not open."
-
-  # What the relay answered, by its reason, for a trade it did not commit.
-  RELAY_REASONS = {
-    "expired" => "The trade timed out before both games confirmed it.",
-    "differ" => "The offers changed while the trade was confirmed. Confirm again.",
-    "cancelled" => "The trade was cancelled.",
-  }
+  # The bridge events of the trade, see the DLL's TradeTopics.
+  VIEW_EVENT = "trade.view"
+  OPEN_SCREEN_EVENT = "trade.open_screen"
+  THEIR_OFFER_EVENT = "trade.their_offer"
+  NOTE_EVENT = "trade.note"
+  CLOSED_EVENT = "trade.closed"
+  STOP_OFFERING_EVENT = "trade.stop_offering"
+  DECLINED_EVENT = "trade.declined"
+  APPLY_EVENT = "trade.apply"
+  RECOVER_EVENT = "trade.recover"
 
   # One player's side of a trade: gold, and items with their amounts.
   #
@@ -138,7 +117,8 @@ module MGQ_MpTrade
   # @!attribute amount [Integer] How many, one for an enchanted or socketed copy.
   Entry = Struct.new(:token, :item, :amount)
 
-  # A trade between the player and one other player.
+  # A trade between the player and one other player, as the DLL's view tells it, with both offers
+  # as this game's items.
   #
   # @!attribute id [String] The trade's id, 24 hexadecimal characters, made by the player who offered it.
   # @!attribute partner [String] The other player's id.
@@ -149,22 +129,23 @@ module MGQ_MpTrade
   # @!attribute my_rev [Integer] How often the player changed their offer.
   # @!attribute their_rev [Integer] How often the other player changed theirs.
   # @!attribute confirmed [Boolean] Whether the player confirmed both offers as they stand.
-  # @!attribute their_confirm [Array, nil] The revisions the other player confirmed, theirs then the player's.
+  # @!attribute their_confirmed [Boolean] Whether the other player confirmed both offers as they stand.
   # @!attribute stage [Symbol] :open while both put the offers together, :committing while the
-  #   relay decides, :closed once it ended.
-  # @!attribute away [Integer] Frames the other player has been away.
+  #   relay decides.
   # @!attribute relay_id [String, nil] The id the relay knows the confirmed offers by.
   # @!attribute leaving [String, nil] The notice the trade closes with once the relay cancelled the
   #   commit, set when a player cancelled while the relay decided; nil while nobody did.
   # @!attribute unsent [Integer, nil] Failed tries to send the player's offer and confirmation state
   #   again since a message to the other player could not go out; nil while every message went out.
+  # @!attribute refusal [String, nil] Why the player cannot confirm as far as the trade goes, the
+  #   bag aside; nil while they can.
   Session = Struct.new(:id, :partner, :name, :mine, :theirs, :their_text, :my_rev, :their_rev, :confirmed,
-                       :their_confirm, :stage, :away, :relay_id, :leaving, :unsent) do
+                       :their_confirmed, :stage, :relay_id, :leaving, :unsent, :refusal) do
     # Reports whether the other player confirmed the offers as they stand now.
     #
     # @return [Boolean] Whether they did.
     def their_confirmed?
-      their_confirm == [their_rev, my_rev]
+      their_confirmed ? true : false
     end
 
     # Reports whether both players confirmed the offers as they stand now.
@@ -178,7 +159,8 @@ module MGQ_MpTrade
   # The player's trade offer to the players nearby or named.
   @invite = MGQ_MpCoop::Invite.new
 
-  # Another player's trade the player accepted, as :id, :name and :frames waited; nil while none.
+  # Another player's trade the player accepted, as the DLL's view tells it: "id", "name" and
+  # "ends", the bridge frame the wait runs out at; nil while none.
   @accepted = nil
 
   # The trade the player takes part in, see session.
@@ -187,11 +169,11 @@ module MGQ_MpTrade
   # Whether the map opens the trade screen on its next update.
   @open_screen = false
 
-  # Frames since the last look at the relay or the last retry of an unsent message.
-  @poll = 0
-
   # The message about the trade and its frames left, see note.
   @note = nil
+
+  # What the DLL was handed last, see tell_frame.
+  @told = nil
 
   extend MGQ_MpLog
 
@@ -264,8 +246,16 @@ module MGQ_MpTrade
   #
   # @return [String, nil] The reason, nil while they may.
   def self.busy_reason
-    return "the map is not free" unless MGQ_MpOverworldSync.map_free?
+    return MAP_NOT_FREE unless MGQ_MpOverworldSync.map_free?
     return "already in trade #{short(@session.id)}" if @session
+
+    held_reason
+  end
+
+  # Tells why the player may not open a trade besides the map and the trade itself.
+  #
+  # @return [String, nil] The reason, nil while nothing else holds them.
+  def self.held_reason
     return "held by the story" if MGQ_MpHooks.player_held?
     return "in a battle (#{MGQ_MpBattlesSync.role})" if defined?(MGQ_MpBattlesSync) && !MGQ_MpBattlesSync.role.nil?
     return "in a battle" if defined?(MGQ_MpBattles) && MGQ_MpBattles.running?
@@ -292,38 +282,6 @@ module MGQ_MpTrade
     "player #{id.to_s[0, 8]}"
   end
 
-  # Logs a trade message sent or received, summarized: its kind, the player, the trade and the
-  # fields besides those, and the size of its body.
-  #
-  # @param verb [String] "sent" or "got".
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
-  # @param fields [Hash] The message's fields.
-  # @param body [String] What follows the fields.
-  def self.log_message(verb, peer, fields, body = "")
-    rest = fields.reject { |key, _| key == "trade" || key == "tid" || key == :payload }.map { |key, value| "#{key}=#{value}" }
-    rest << "#{body.to_s.bytesize} bytes" unless body.to_s.empty?
-    trade = fields["tid"] ? ", trade #{short(fields['tid'])}" : ""
-    log("#{verb} #{fields['trade']} #{verb == 'sent' ? 'to' : 'from'} #{MGQ_MpOverworldSync.who(peer)}#{trade}#{rest.empty? ? '' : ': ' + rest.join(', ')}")
-  rescue => e
-    log("logging a trade message failed: #{e.class}: #{e.message}")
-  end
-
-  # Sends a trade message to another player and logs it.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
-  # @param fields [Hash] The message's fields.
-  # @param body [String] What follows the fields.
-  # @return [Boolean] Whether it went out.
-  def self.send_message(peer, fields, body = "")
-    sent = MGQ_MpOverworldSync.tell(peer.seat, fields, body)
-    if sent
-      log_message("sent", peer, fields, body)
-    else
-      log("could not send #{fields['trade']} to #{MGQ_MpOverworldSync.who(peer)}: the world's connection is down") unless @quiet
-    end
-    sent
-  end
-
   # Offers a trade to the players nearby, and to a player anywhere on the map when named.
   #
   # @param target_id [String, nil] The id of a player the offer reaches wherever on the map they stand.
@@ -338,29 +296,25 @@ module MGQ_MpTrade
     @invite.stop
   end
 
-  # Forgets every offer and trade, as when the world closes. A trade the relay is deciding is
-  # recovered the next time the world opens.
+  # Forgets every offer and trade, as when the world closes; the DLL forgets its side as the world
+  # closes, and a trade the relay is deciding is recovered the next time the world opens.
   def self.reset
-    log("left the world: dropped trade #{short(@session.id)} with #{@session.name} (#{@session.stage})") if @session
-    log("left the world: stopped waiting for #{@accepted[:name]} to open the trade") if @accepted
     stop
     @accepted = nil
     @session = nil
     @open_screen = false
     @note = nil
+    @told = nil
     Saving.slot = nil
     Recovery.reset
   end
 
-  # Tells a message about the trade: as a notice, and on the trade screen, which the notices on the
-  # map do not reach, for NOTE_FRAMES.
+  # Tells a message about the trade on the trade screen, which the notices on the map do not
+  # reach, for NOTE_FRAMES.
   #
   # @param text [String] The message.
-  # @return [nil] Nothing.
-  def self.say(text)
+  def self.note=(text)
     @note = [text, NOTE_FRAMES]
-    MGQ_MpOverworldSync.notice(text)
-    nil
   end
 
   # The message about the trade the trade screen shows now.
@@ -371,7 +325,7 @@ module MGQ_MpTrade
   end
 
   # The fields the trade adds to the state the player's game tells the others. They are not named
-  # "trade", which marks the messages this script takes.
+  # "trade", which marks the messages of a trade.
   #
   # @return [Hash] The fields.
   def self.state_fields
@@ -391,14 +345,17 @@ module MGQ_MpTrade
   #
   # @return [Array, nil] The doing and when it lapses, nil while nothing waits.
   def self.own_doing
-    return ["Waiting for #{@accepted[:name]}'s trade", MGQ_MpActions.lapse_in(ANSWER_FRAMES - @accepted[:frames])] if @accepted
+    if @accepted
+      left = @accepted["ends"].to_i - MGQ_Multiplayer::Bridge.frame_number
+      return ["Waiting for #{@accepted['name']}'s trade", MGQ_MpActions.lapse_in(left)]
+    end
     return ["Offering a trade", MGQ_MpActions.lapse_in(@invite.frames_left)] if inviting?
 
     nil
   end
 
-  # Lets the offer run out, follows the trade and recovers trades the relay committed. Called every
-  # frame in every scene.
+  # Lets the offer and the trade screen's message run out and hands the DLL what it needs of the
+  # player. Called every frame in every scene.
   #
   # @param in_world [Boolean] Whether a world is open.
   def self.tick(in_world)
@@ -406,108 +363,107 @@ module MGQ_MpTrade
 
     log("the trade offer ran out") if @invite.count_down
     @note = nil if @note && (@note[1] -= 1) <= 0
-    if @accepted && (@accepted[:frames] += 1) > ANSWER_FRAMES
-      log("#{@accepted[:name]} did not open the trade within #{ANSWER_FRAMES / 60} s, stopped waiting")
-      MGQ_MpOverworldSync.notice("#{@accepted[:name]} did not open the trade.")
-      @accepted = nil
-    end
-    tick_session if @session
-    Recovery.tick
+    tell_frame
   end
 
-  # Follows the other player and the relay's answer.
-  def self.tick_session
+  # Hands the DLL, once it changed, why the player is busy (the trade itself aside), the player's
+  # own offer and the world's id, which the DLL decides on as the other player's messages come,
+  # and whether the map is the scene and which save is loaded, by which it asks the relay for the
+  # trades to recover.
+  def self.tell_frame
+    return unless dll_ready?
+
+    busy = MGQ_MpOverworldSync.map_free? ? held_reason : MAP_NOT_FREE
+    frame = { "busy" => busy, "inviting" => inviting?, "targets" => targets.dup, "world" => world_id,
+              "on_map" => SceneManager.scene.is_a?(Scene_Map), "save" => Recovery.save_key }
+    return if frame == @told
+
+    @told = frame
+    MGQ_Multiplayer::Bridge.stage(TICK_TOPIC, frame)
+  end
+
+  # Takes the trade's view, which the DLL posts whenever it changed and answers after every action.
+  #
+  # @param view [Hash] "session" (nil for none) and "accepted" (nil for none), see the DLL's TradeTopics.
+  def self.take_view(view)
+    return unless view.is_a?(Hash)
+
+    @accepted = view["accepted"]
+    state = view["session"]
+    return @session = nil unless state
+
     session = @session
-    if session.stage == :committing
-      tick_commit(session)
-    else
-      peer = partner_peer
-      away = session.away
-      session.away = peer && !peer.away ? 0 : session.away + 1
-      log("#{session.name} is away, waiting up to #{AWAY_FRAMES / 60} s") if away == 0 && session.away > 0
-      if away > 0 && session.away == 0
-        log("#{session.name} is back after #{away} frames")
-        resend_state(session, "#{session.name} is back")
-      elsif session.away == 0
-        retry_unsent(session)
-      end
-      close("#{session.name} left.") if session.away > AWAY_FRAMES
-    end
+    session = begin_session(state) unless session && session.id == state["id"]
+    before = [session.my_rev, session.stage]
+    session.my_rev = state["my_rev"].to_i
+    session.their_rev = state["their_rev"].to_i
+    session.confirmed = state["confirmed"] ? true : false
+    session.their_confirmed = state["their_confirmed"] ? true : false
+    session.stage = state["stage"] == "committing" ? :committing : :open
+    session.relay_id = state["relay_id"]
+    session.leaving = state["leaving"]
+    session.unsent = state["unsent"]
+    session.refusal = state["refusal"]
+    log_view_changes(session, before[0], before[1])
   end
 
-  # Sends the other player the player's offer and confirmation again, since what was sent while
-  # they were away or while messages could not go out may be lost. The other game ignores an offer
-  # revision it has and a confirmation state it holds.
-  #
-  # A lost "unconfirm" would let the other game commit on the player's old confirmation alone and
-  # wait for the relay to time it out.
+  # Logs what changed of the player's side of the trade, with the items as this game names them.
   #
   # @param session [Session] The trade.
-  # @param why [String] Why they go out again, for the log.
-  # @return [Boolean] Whether every message went out, which clears the trade's mark of a message
-  #   that could not.
-  def self.resend_state(session, why)
-    return false unless session.stage == :open
+  # @param rev [Integer] The player's offer's revision before.
+  # @param stage [Symbol] The stage before.
+  def self.log_view_changes(session, rev, stage)
+    log("my offer r#{session.my_rev}: #{Items.summary(session.mine)}; both confirmations taken back") if session.my_rev > rev.to_i
+    return unless session.stage == :committing && stage != :committing
 
-    sent = [session.my_rev > 0 ? tell("offer", { "rev" => session.my_rev }, Items.write_offer(session.mine)) : true,
-            session.confirmed ? tell("confirm", { "mine" => session.my_rev, "yours" => session.their_rev }) : tell("unconfirm")]
-    return false unless sent.all? { |one| one == true }
-
-    session.unsent = nil
-    log("sent my offer r#{session.my_rev} and my confirmation state (#{session.confirmed ? 'confirmed' : 'not confirmed'}) again: #{why}")
-    true
+    log("both confirmed, trade #{short(session.id)} (my r#{session.my_rev}, their r#{session.their_rev}) sent to the relay: I give #{Items.summary(session.mine)}; I get #{Items.summary(session.theirs)}")
   end
 
-  # Marks the trade once a message to the other player could not go out, so the player's offer and
-  # confirmation state go out again once messages do (retry_unsent).
+  # Starts a trade with empty offers.
   #
-  # @param session [Session] The trade.
-  def self.mark_unsent(session)
-    return if session.unsent
-
-    session.unsent = 0
-    log("trade #{short(session.id)}: my offer and confirmation state go out again once messages to #{session.name} do")
+  # @param state [Hash] "id", "partner" and "name".
+  # @return [Session] The trade.
+  def self.begin_session(state)
+    @session = Session.new(state["id"].to_s, state["partner"].to_s, state["name"].to_s, Offer.new(0, []), Offer.new(0, []), "",
+                           0, 0, false, false, :open, nil, nil, nil, nil)
   end
 
-  # Tries to send the player's offer and confirmation state again on the relay's beat while the
-  # trade is marked for a message that could not go out, until they go out.
+  # Starts the trade the DLL opened and has the map open its screen.
   #
-  # Only the first failed try logs its messages, since the world's connection may stay down for long.
-  #
-  # @param session [Session] The trade, open and with the other player in the world.
-  def self.retry_unsent(session)
-    return unless session.unsent && (@poll += 1) >= POLL_FRAMES
-
-    @poll = 0
-    tries = session.unsent + 1
-    @quiet = tries > 1
-    session.unsent = tries unless resend_state(session, "messages to #{session.name} go out again after #{tries} #{tries == 1 ? 'try' : 'tries'}")
-  ensure
-    @quiet = false
+  # @param state [Hash] "id", "partner" and "name".
+  def self.open_screen(state)
+    begin_session(state)
+    @open_screen = true
   end
 
-  # Finds the other player of the trade, who may have come back on another seat.
+  # Takes the other player's offer as it stands now.
   #
-  # @return [MGQ_MpOverworldSync::Peers::Peer, nil] The player, nil while they are gone.
-  def self.partner_peer
-    return nil unless @session
+  # @param event [Hash] "rev" and "text".
+  def self.take_their_offer(event)
+    session = @session
+    return unless session
 
-    MGQ_MpOverworldSync::Peers.all.find { |peer| peer.state["id"].to_s == @session.partner }
+    session.their_rev = event["rev"].to_i
+    session.their_text = event["text"].to_s
+    session.theirs = Items.read_offer(session.their_text)
+    log("#{session.name}'s offer r#{session.their_rev}: #{Items.summary(session.theirs)}; both confirmations taken back")
   end
 
-  # Sends a trade message to the other player.
-  #
-  # @param fields [Hash] The message's fields besides "trade" and "tid".
-  # @param kind [String] What the message is.
-  # @param body [String] What follows the fields.
-  # @return [Boolean, nil] Whether it went out, nil when the other player is not in the world.
-  def self.tell(kind, fields = {}, body = "")
-    peer = partner_peer
-    return log("not sent #{kind}: #{@session ? @session.name + ' is not in the world' : 'there is no trade'}") unless peer && @session
+  # Forgets the trade that ended and closes its screen.
+  def self.closed
+    @session = nil
+    @open_screen = false
+    @note = nil
+  end
 
-    sent = send_message(peer, { "trade" => kind, "tid" => @session.id }.merge(fields), body)
-    mark_unsent(@session) unless sent
-    sent
+  # Follows another player who could not trade: the offer they accepted no longer waits in the
+  # notification box, and one who declined is no longer named by the player's offer.
+  #
+  # @param event [Hash] "seat", "id", "reason" and "accepted".
+  def self.declined(event)
+    # ui_notices.rbx loads after this script.
+    MGQ_MpNotices.release([:trade, event["seat"]]) if event["accepted"] && defined?(MGQ_MpNotices)
+    @invite.drop(event["id"]) if event["reason"] == "no"
   end
 
   # Accepts another player's trade offer: tells them, and waits for their game to open the trade. An
@@ -525,220 +481,17 @@ module MGQ_MpTrade
       log("stopped offering a trade: accepted #{peer.state['name']}'s")
       @invite.stop
     end
-    send_message(peer, { "trade" => "accept" })
-    @accepted = { :id => peer.state["id"].to_s, :name => peer.state["name"].to_s, :frames => 0 }
-    log("accepted #{peer.state['name']}'s trade, waiting up to #{ANSWER_FRAMES / 60} s for their game to open it")
-    MGQ_MpOverworldSync.notice("You accepted #{peer.state['name']}'s trade.")
+    take_view(MGQ_Multiplayer::Bridge.call(ACCEPT_TOPIC, peer.seat))
   end
 
-  # Turns another player down, telling them why.
+  # Turns another player's trade offer down, telling them why.
   #
   # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
-  # @param reason [String] A key of REASONS.
-  # @param id [String, nil] The trade's id, for a trade that was opened.
-  # @param why [String, nil] What led to it, for the log.
+  # @param reason [String] Why, such as "no".
   # @return [nil] Nothing.
-  def self.decline(peer, reason, id = nil, why = nil)
-    fields = { "trade" => "decline", "reason" => reason }
-    fields["tid"] = id if id
-    send_message(peer, fields)
-    log("declined #{peer.state['name']}: #{reason}#{why ? " (#{why})" : ''}")
+  def self.decline(peer, reason)
+    take_view(MGQ_Multiplayer::Bridge.call(DECLINE_TOPIC, { "seat" => peer.seat, "reason" => reason }))
     nil
-  end
-
-  # Takes a trade message. Called by overworld_sync.rbx.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent it.
-  # @param message [Hash] The message's fields, its body under :payload.
-  def self.take(peer, message)
-    return log_once([:no_peer, message["trade"]], "ignored a trade #{message['trade']} from a seat with no player") unless peer
-
-    log_message("got", peer, message, message[:payload].to_s)
-    case message["trade"]
-    when "accept" then take_accept(peer)
-    when "open" then take_open(peer, message["tid"].to_s)
-    when "decline" then take_decline(peer, message["reason"].to_s, message["tid"])
-    else take_in_session(peer, message)
-    end
-  rescue => e
-    log("taking a trade message failed: #{e.class}: #{e.message}")
-  end
-
-  # Takes a message of the running trade, from its other player.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
-  # @param message [Hash] The message's fields, its body under :payload.
-  def self.take_in_session(peer, message)
-    session = @session
-    other = session.nil? || session.id != message["tid"].to_s
-    stray = if session.nil? then "there is no trade"
-            elsif session.id != message["tid"].to_s then "it names trade #{short(message['tid'])}, not #{short(session.id)}"
-            elsif session.partner != peer.state["id"].to_s then "#{peer.state['name']} is not the other player of the trade"
-            end
-    if stray
-      log("ignored #{peer.state['name']}'s trade #{message['trade']}: #{stray}")
-      return answer_stray(peer, message) if other
-      return
-    end
-
-    case message["trade"]
-    when "offer" then take_offer(session, message["rev"].to_i, message[:payload].to_s)
-    when "confirm" then take_confirm(session, message["mine"].to_i, message["yours"].to_i)
-    when "unconfirm" then take_unconfirm(session)
-    when "cancel" then take_cancel(session, message["reason"].to_s)
-    else log("ignored #{peer.state['name']}'s trade #{message['trade']}: unknown kind")
-    end
-  end
-
-  # Answers a message of a trade the player's game no longer has with a cancel, so the other
-  # player's trade closes instead of waiting for an answer that never comes.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] Who sent it.
-  # @param message [Hash] The message's fields.
-  def self.answer_stray(peer, message)
-    id = message["tid"].to_s
-    return if id.empty? || !ANSWERED_STRAYS.include?(message["trade"].to_s)
-
-    log("answered #{peer.state['name']}'s #{message['trade']} of trade #{short(id)} with a cancel: the player has no such trade")
-    send_message(peer, { "trade" => "cancel", "tid" => id, "reason" => "off" })
-  end
-
-  # As the player who offered the trade, opens it with the player who accepted.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player who accepted.
-  def self.take_accept(peer)
-    unless @invite.covers?(peer.state) && same_map?(peer)
-      return decline(peer, "gone", nil, inviting? ? "the offer does not reach them or they are not on the map" : "no trade offered")
-    end
-    busy = busy_reason
-    return decline(peer, "busy", nil, busy) if busy
-
-    stop
-    id = MGQ_MpCoop.random_id(24, 16)
-    send_message(peer, { "trade" => "open", "tid" => id })
-    begin_session(id, peer)
-  end
-
-  # As the player who accepted, opens the trade the other player opened.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player who offered it.
-  # @param id [String] The trade's id.
-  def self.take_open(peer, id)
-    unless @accepted && @accepted[:id] == peer.state["id"].to_s
-      log("refused trade #{short(id)} from #{peer.state['name']}: the player accepted no trade of theirs")
-      return send_message(peer, { "trade" => "cancel", "tid" => id, "reason" => "busy" })
-    end
-
-    @accepted = nil
-    unless id =~ /\A[0-9a-f]{24}\z/
-      MGQ_MpOverworldSync.notice("The trade with #{peer.state['name']} could not open.")
-      return decline(peer, "invalid", id, "the trade id #{MGQ_MpLog.short(id, 30)} is not valid")
-    end
-
-    busy = busy_reason
-    if busy
-      # The player accepted it, so they wait for the screen, such as one who opened the menu meanwhile.
-      MGQ_MpOverworldSync.notice("The trade with #{peer.state['name']} could not open: finish what you are doing first.")
-      return decline(peer, "busy", id, busy)
-    end
-
-    begin_session(id, peer)
-  end
-
-  # Starts a trade and has the map open its screen.
-  #
-  # @param id [String] The trade's id.
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
-  def self.begin_session(id, peer)
-    @session = Session.new(id, peer.state["id"].to_s, peer.state["name"].to_s, Offer.new(0, []), Offer.new(0, []), "",
-                           0, 0, false, nil, :open, 0, nil, nil, nil)
-    @open_screen = true
-    log("trade #{short(id)} opened with #{@session.name} (seat #{peer.seat})")
-  end
-
-  # Tells why the other player could not trade.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The other player.
-  # @param reason [String] A key of REASONS.
-  # @param id [String, nil] The trade's id, for a trade that was opened.
-  def self.take_decline(peer, reason, id)
-    if @accepted && @accepted[:id] == peer.state["id"].to_s
-      @accepted = nil
-      # ui_notices.rbx loads after this script.
-      MGQ_MpNotices.release([:trade, peer.seat]) if defined?(MGQ_MpNotices)
-    end
-    @invite.drop(peer.state["id"]) if reason == "no"
-    log("#{peer.state['name']} #{REASONS.fetch(reason, 'cannot trade now')} (#{reason}#{id ? ", trade #{short(id)}" : ''})")
-    text = decline_text(peer.state["name"], reason)
-    if @session && id && @session.id == id && @session.stage == :open
-      close(text)
-    else
-      MGQ_MpOverworldSync.notice(text)
-    end
-  end
-
-  # Writes what the player sees when the other player could not trade.
-  #
-  # @param name [String] The other player's name.
-  # @param reason [String] Why, a key of REASONS; another build's unknown reason says they cannot
-  #   trade now.
-  # @return [String] The notice.
-  def self.decline_text(name, reason)
-    reason == "invalid" ? INVALID_TEXT : "#{name} #{REASONS.fetch(reason, 'cannot trade now')}."
-  end
-
-  # Takes the other player's offer as it stands now, which takes back both confirmations.
-  #
-  # @param session [Session] The trade.
-  # @param rev [Integer] How often they changed it.
-  # @param text [String] The offer as text.
-  def self.take_offer(session, rev, text)
-    return log("ignored #{session.name}'s offer revision #{rev}: revision #{session.their_rev} is newer") if rev <= session.their_rev
-
-    abandon_commit(session, "#{session.name} changed their offer")
-    session.their_rev = rev
-    session.their_text = text
-    session.theirs = Items.read_offer(text)
-    session.their_confirm = nil
-    session.confirmed = false
-    log("#{session.name}'s offer r#{rev}: #{Items.summary(session.theirs)}; both confirmations taken back")
-  end
-
-  # Takes the other player's confirmation, and commits once both confirmed the same offers.
-  #
-  # @param session [Session] The trade.
-  # @param mine [Integer] The revision of their own offer they confirmed.
-  # @param yours [Integer] The revision of the player's offer they confirmed.
-  def self.take_confirm(session, mine, yours)
-    session.their_confirm = [mine, yours]
-    current = session.their_confirmed? ? "the offers as they stand" : "older offers (now their r#{session.their_rev}, mine r#{session.my_rev})"
-    waiting = session.stage != :open ? ", the trade is #{session.stage}" : session.confirmed ? "" : ", waiting for my confirmation"
-    log("#{session.name} confirmed their r#{mine} and my r#{yours}: #{current}#{waiting}")
-    commit(session) if session.stage == :open && session.agreed?
-  end
-
-  # Takes back the other player's confirmation, and a commit the relay has not decided, since the
-  # other game no longer stands by it.
-  #
-  # @param session [Session] The trade.
-  def self.take_unconfirm(session)
-    session.their_confirm = nil
-    log("#{session.name} took back their confirmation")
-    abandon_commit(session, "#{session.name} took back their confirmation")
-  end
-
-  # Ends the trade the other player cancelled: at once while it is open, through the relay while it
-  # decides, which still completes a trade both games committed already.
-  #
-  # @param session [Session] The trade.
-  # @param reason [String] A key of REASONS.
-  def self.take_cancel(session, reason)
-    text = "#{session.name} #{REASONS.fetch(reason, 'cancelled the trade')}."
-    return close(text) unless session.stage == :committing
-
-    log("#{session.name} cancelled (#{reason}) while the relay decides, waiting for its answer")
-    session.leaving ||= text
-    abandon_commit(session, "#{session.name} cancelled")
   end
 
   # Changes how many of an item the player offers.
@@ -783,15 +536,12 @@ module MGQ_MpTrade
     offer_changed(session)
   end
 
-  # Tells the other player the player's new offer, which takes back both confirmations.
+  # Hands the DLL the player's new offer, which takes back both confirmations and tells the other
+  # player.
   #
   # @param session [Session] The trade.
   def self.offer_changed(session)
-    session.my_rev += 1
-    session.confirmed = false
-    session.their_confirm = nil
-    log("my offer r#{session.my_rev}: #{Items.summary(session.mine)}; both confirmations taken back")
-    tell("offer", { "rev" => session.my_rev }, Items.write_offer(session.mine))
+    take_view(MGQ_Multiplayer::Bridge.call(OFFER_TOPIC, Items.write_offer(session.mine)))
   end
 
   # Tells why the player cannot confirm now.
@@ -800,11 +550,8 @@ module MGQ_MpTrade
   def self.confirm_refusal
     session = @session
     return "There is no trade." unless session
-    return "The relay is deciding the trade." if session.stage != :open
-    return "Both offers are empty." if session.mine.empty? && session.theirs.empty?
-    return TOO_LARGE_TEXT if agreed_text(session).bytesize > MAX_OFFERS_BYTES
 
-    Items.receive_refusal(session.theirs, session.name, session.mine)
+    session.refusal || Items.receive_refusal(session.theirs, session.name, session.mine)
   end
 
   # Confirms both offers as they stand, or takes the confirmation back. The trade goes to the relay
@@ -813,49 +560,16 @@ module MGQ_MpTrade
     session = @session
     return unless session && session.stage == :open
 
-    if session.confirmed
-      session.confirmed = false
-      log("took back my confirmation")
-      return tell("unconfirm")
-    end
-
-    refusal = confirm_refusal
-    if refusal
-      log("not confirming: #{refusal}")
-      return say(refusal)
-    end
-
-    session.confirmed = true
-    log("confirmed my r#{session.my_rev} and #{session.name}'s r#{session.their_rev}#{session.their_confirmed? ? ', as they did' : ', waiting for them'}")
-    tell("confirm", { "mine" => session.my_rev, "yours" => session.their_rev })
-    commit(session) if session.agreed?
+    refusal = session.confirmed ? nil : Items.receive_refusal(session.theirs, session.name, session.mine)
+    take_view(MGQ_Multiplayer::Bridge.call(CONFIRM_TOPIC, refusal))
   end
 
   # Cancels the trade: at once while it is open, through the relay while it decides, which still
   # completes a trade both games committed already.
   def self.cancel
-    session = @session
-    return unless session
-    return log("cancel pressed again, still waiting for the relay") if session.leaving
+    return unless @session
 
-    log("cancelling trade #{short(session.id)}#{session.stage == :committing ? ' while the relay decides, waiting for its answer' : ''}")
-    tell("cancel", { "reason" => "off" })
-    return close("You cancelled the trade.") unless session.stage == :committing
-
-    session.leaving = "You cancelled the trade."
-    abandon_commit(session, "the player cancelled")
-  end
-
-  # Ends the trade, with a notice, and closes its screen.
-  #
-  # @param text [String] The notice.
-  def self.close(text)
-    log("trade #{short(@session && @session.id)} closed: #{text}")
-    @session.stage = :closed if @session
-    @session = nil
-    @open_screen = false
-    @note = nil
-    MGQ_MpOverworldSync.notice(text)
+    take_view(MGQ_Multiplayer::Bridge.call(CANCEL_TOPIC))
   end
 
   # The open world's id in the directory, by which the relay knows the world's players. The world's
@@ -866,134 +580,35 @@ module MGQ_MpTrade
     MGQ_MpOverworldSync.in_world? ? MGQ_MpWorld.world.directory_id.to_s : ""
   end
 
-  # Writes both offers as the relay compares them: each player's id and offer, ordered by id, so
-  # both games write the same text.
+  # Tells the relay, through the DLL, that the save holds a trade the player's game applied.
   #
-  # @param session [Session] The trade.
-  # @return [String] The text, one line.
-  def self.agreed_text(session)
-    sides = [[MGQ_MpOverworldSync::Me.id.to_s, Items.write_offer(session.mine)], [session.partner, session.their_text]]
-    sides.sort_by { |id, _| id }.map { |id, text| "#{id}=#{text}" }.join("|")
+  # @param id [String] The trade's id at the relay.
+  def self.done(id)
+    MGQ_Multiplayer::Bridge.call(DONE_TOPIC, id)
   end
 
-  # Names the confirmed offers for the relay: the trade's id and both revisions, ordered by player
-  # id, so both games name them alike and a later confirmation is a trade of its own.
-  #
-  # @param session [Session] The trade.
-  # @return [String] 32 hexadecimal characters.
-  def self.relay_id(session)
-    revs = [[MGQ_MpOverworldSync::Me.id.to_s, session.my_rev], [session.partner, session.their_rev]]
-    session.id + revs.sort_by { |id, _| id }.map { |_, rev| format("%04x", rev % 65536) }.join
-  end
-
-  # Hands the confirmed offers to the relay, which commits them once the other game sent the same.
-  #
-  # @param session [Session] The trade.
-  def self.commit(session)
-    session.relay_id = relay_id(session)
-    revisions = "my r#{session.my_rev}, their r#{session.their_rev}"
-    unless Relay.commit(world_id, session.relay_id, session.partner, agreed_text(session))
-      log("trade #{short(session.id)} (#{revisions}) could not be handed to the relay, my confirmation taken back")
-      session.confirmed = false
-      tell("unconfirm")
-      return say("The trade could not reach the relay.")
-    end
-
-    session.stage = :committing
-    @poll = 0
-    @relay_seen = nil
-    log("both confirmed, trade #{short(session.id)} (#{revisions}) sent to the relay: I give #{Items.summary(session.mine)}; I get #{Items.summary(session.theirs)}")
-  end
-
-  # Takes back a commit the relay has not decided, as when the other player changed their offer.
-  #
-  # @param session [Session] The trade.
-  # @param why [String] What took it back, for the log.
-  def self.abandon_commit(session, why)
-    return unless session.stage == :committing
-
-    log("asking the relay to cancel the commit of trade #{short(session.id)}: #{why}")
-    Relay.cancel(world_id, session.relay_id)
-  end
-
-  # Follows the relay's answer to the commit.
-  #
-  # @param session [Session] The trade.
-  def self.tick_commit(session)
-    return if (@poll += 1) < POLL_FRAMES
-
-    @poll = 0
-    state = Relay.state
-    log_relay_state(state, session)
-    return unless state["trade"] == session.relay_id
-
-    case state["state"]
-    when "committed" then complete(session)
-    when "cancelled"
-      return close(session.leaving) if session.leaving
-
-      reopen(session, RELAY_REASONS.fetch(state["reason"].to_s, "The trade was cancelled."))
-    when "failed" then give_up(session)
-    end
-  end
-
-  # Logs how the relay's commit stands, once each time it changes.
-  #
-  # @param state [Hash] What Relay.state read.
-  # @param session [Session] The trade.
-  def self.log_relay_state(state, session)
-    seen = [state["trade"], state["state"], state["reason"], state["error"]]
-    return if seen == @relay_seen
-
-    @relay_seen = seen
-    which = state["trade"].to_s.empty? ? "no trade" : "trade #{short(state['trade'])}"
-    other = state["trade"] == session.relay_id ? "" : " (not this commit yet)"
-    extra = [state["reason"] && "reason #{state['reason']}", state["error"] && "error #{state['error'].to_s[0, 160]}"].compact
-    log("relay: #{which} #{state['state'] || 'unknown'}#{other}#{extra.empty? ? '' : ', ' + extra.join(', ')}")
-  rescue => e
-    log("logging the relay's answer failed: #{e.class}: #{e.message}")
-  end
-
-  # Ends a trade whose commit failed: cancels it at the relay, so the other game cannot commit it
-  # alone later, tells the other player and asks the relay again for trades to recover.
-  #
-  # @param session [Session] The trade.
-  def self.give_up(session)
-    log("the commit of trade #{short(session.id)} failed, cancelling it at the relay and asking again for trades to recover")
-    Relay.cancel(world_id, session.relay_id)
-    tell("cancel", { "reason" => "relay" })
-    Recovery.check_again
-    close("The trade could not reach the relay. If it went through, it completes the next time you enter the world.")
-  end
-
-  # Opens the trade again after the relay turned the commit down, with both confirmations taken
-  # back. The player's offer is told again under a new revision, since confirming the same
-  # revisions again would name the trade the relay cancelled.
-  #
-  # @param session [Session] The trade.
-  # @param text [String] Why, as a notice.
-  def self.reopen(session, text)
-    log("trade #{short(session.id)} reopened: #{text}")
-    session.stage = :open
-    session.relay_id = nil
-    offer_changed(session)
-    say(text)
-  end
-
-  # Completes the trade the relay committed: applies it once, saves, and tells the relay once the
+  # Completes a trade the relay committed: applies it once, saves, and tells the relay once the
   # save holds it.
   #
-  # @param session [Session] The trade.
-  def self.complete(session)
-    log("the relay committed trade #{short(session.id)} with #{session.name}, applying it")
-    session.stage = :closed
-    id = session.relay_id
-    unless Recovery.apply_once(id, session.mine, session.theirs)
-      return close("The trade with #{session.name} could not be applied in full, see Logs\\Multiplayer.log.")
-    end
-
-    saved = Recovery.finish
-    close(saved ? "Trade with #{session.name} complete, game saved." : "Trade with #{session.name} complete. Save your game, the trade could not.")
+  # @param event [Hash] "id" (the trade's id at the relay), "name", "mine" and "theirs".
+  def self.complete(event)
+    id = event["id"].to_s
+    name = event["name"].to_s
+    session = @session
+    # The trade's own offers keep the items this game picked, so a copy given is the one offered.
+    kept = session && Items.write_offer(session.mine) == event["mine"]
+    mine = kept ? session.mine : Items.read_offer(event["mine"])
+    theirs = session && session.their_text == event["theirs"] ? session.theirs : Items.read_offer(event["theirs"])
+    closed
+    text = if !Recovery.apply_once(id, mine, theirs)
+             "The trade with #{name} did not complete in full."
+           elsif Recovery.finish
+             "Trade with #{name} complete, game saved."
+           else
+             "Trade with #{name} complete. Save your game."
+           end
+    log("trade #{short(id)} closed: #{text}")
+    MGQ_MpOverworldSync.notice(text)
   end
 
   # Applies the trades waiting to be recovered, and opens the trade screen from the map once a
@@ -1327,8 +942,8 @@ module MGQ_MpTrade
   end
 
   # Trades the relay committed that the player's game has not applied: after a crash, a lost
-  # connection, or a save loaded from before the trade. The relay's answer waits until the player is
-  # free on the map; then each is noted in the save, applied once per save, and saved; the relay
+  # connection, or a save loaded from before the trade. The DLL asks the relay once per save; its
+  # answer waits until the player is free on the map; then each is noted in the save, applied once per save, and saved; the relay
   # hears that it is done only once a save holds it.
   module Recovery
     # Notes a trade in the save and applies it, unless the save has it, and keeps it unsaved until
@@ -1376,7 +991,7 @@ module MGQ_MpTrade
       end
       held.each do |id|
         MGQ_MpTrade.log("telling the relay trade #{MGQ_MpTrade.short(id)} is done, the save holds it")
-        Relay.done(MGQ_MpTrade.world_id, id)
+        MGQ_MpTrade.done(id)
       end
     end
 
@@ -1403,59 +1018,31 @@ module MGQ_MpTrade
       MGQ_MpGame.set($game_system, :trades, trades.last(KEPT_TRADES))
     end
 
-    # Has the relay asked again on the next frame on the map.
-    def self.check_again
-      MGQ_MpTrade.log("will ask the relay again for trades to recover")
-      @checked = nil
-    end
-
-    # Forgets what was asked and what is unsaved, as when the world closes; a fetch running still
-    # ends in the DLL, and the relay keeps the unsaved trades for the next time.
+    # Forgets the trades waiting and what is unsaved, as when the world closes; the relay keeps the
+    # unsaved trades for the next time.
     def self.reset
-      @checked = nil
-      @fetching = false
       @recovered = nil
-      @wait = 0
       @unsaved = []
     end
 
-    # Asks the relay once per save loaded in the world, from the map, and keeps what it answers for
-    # apply_waiting. Called every frame in every scene.
-    def self.tick
-      return poll if @fetching
-      return if @recovered
-      return unless SceneManager.scene.is_a?(Scene_Map) && MGQ_MpTrade.session.nil?
-      return log_unavailable unless MGQ_MpTrade.available?
-
-      key = save_key
-      return if @checked == key
-      return if (@wait = @wait.to_i - 1) > 0
-
-      @fetching = Relay.fetch(MGQ_MpTrade.world_id)
-      if @fetching
-        MGQ_MpTrade.log("asking the relay for trades to recover in world #{MGQ_MpTrade.short(key[0])}")
-        @checked = key
-      else
-        MGQ_MpTrade.log_once([:fetch_later, key], "could not ask the relay for trades to recover yet, trying every #{RETRY_FRAMES / 60} s")
-        @wait = RETRY_FRAMES
-      end
-    end
-
-    # Logs once why trades cannot run in the open world, so none are recovered.
-    def self.log_unavailable
-      ready = MGQ_MpTrade.dll_ready?
-      MGQ_MpTrade.log_once([:unavailable, ready], ready ? "no trades: this world was made before the world list" : "no trades: the mod's DLL is missing or out of date")
-    end
-
-    # Tells which save in which world the relay is asked for.
+    # Keeps the trades the DLL found the relay committed for the save it asked for, for apply_waiting.
     #
-    # @return [Array] The world's id and the object id of the loaded save's Game_System.
+    # @param event [Hash] "save", the save they were asked for, and "trades", each [id at the relay,
+    #   the other player's id, the player's offer, the other's offer].
+    def self.take(event)
+      @recovered = [event["save"], Array(event["trades"])]
+    end
+
+    # Tells the loaded save apart from another, as the DLL asks the relay once per save.
+    #
+    # @return [Integer] The object id of the loaded save's Game_System.
     def self.save_key
-      [MGQ_MpTrade.world_id, $game_system.object_id]
+      $game_system.object_id
     end
 
     # Applies the trades the relay listed once the player is free on the map, and drops them when
-    # another save was loaded meanwhile. Called by the map every frame.
+    # another save was loaded meanwhile, which the DLL asks the relay for anew. Called by the map
+    # every frame.
     def self.apply_waiting
       return unless @recovered
 
@@ -1463,7 +1050,6 @@ module MGQ_MpTrade
       unless key == save_key
         MGQ_MpTrade.log("dropped #{trades.size} trade(s) to recover: another save was loaded meanwhile, asking the relay again")
         @recovered = nil
-        @checked = nil
         return
       end
 
@@ -1471,129 +1057,36 @@ module MGQ_MpTrade
       return MGQ_MpTrade.log_once([:recovery_waits, key], "#{trades.size} trade(s) to recover wait until the player is free on the map (#{reason})") if reason
 
       @recovered = nil
-      trades.each { |id, text| recover(id, text) }
+      trades.each { |id, partner, mine, theirs| recover(id, partner, mine, theirs) }
     rescue => e
       MGQ_MpTrade.log("recovering trades failed: #{MGQ_MpLog.failure(e)} at #{Array(e.backtrace).first}")
-    end
-
-    # Keeps the relay's answer once it came, and asks again later when it failed.
-    def self.poll
-      state, trades = Relay.pending
-      return if state == "busy"
-
-      @fetching = false
-      unless state == "done"
-        @checked = nil
-        @wait = RETRY_FRAMES
-        return MGQ_MpTrade.log("asking for trades to recover failed (#{state}), asking again in #{RETRY_FRAMES / 60} s")
-      end
-
-      MGQ_MpTrade.log("the relay lists #{trades.size} trade(s) to recover#{trades.empty? ? '' : ': ' + trades.map { |id, _| MGQ_MpTrade.short(id) }.join(', ')}")
-      @recovered = [@checked, trades] unless trades.empty?
     end
 
     # Applies a trade the relay committed, unless the save has it, and saves; the relay hears of a
     # trade the save holds.
     #
     # @param id [String] The trade's id at the relay.
-    # @param text [String] Both offers, see MGQ_MpTrade.agreed_text.
-    def self.recover(id, text)
+    # @param partner [String] The other player's id.
+    # @param mine [String] The player's offer, see Items.write_offer.
+    # @param theirs [String] The other player's offer.
+    def self.recover(id, partner, mine, theirs)
       if applied?(id)
         if unsaved.include?(id)
           MGQ_MpTrade.log("recovery skipped trade #{MGQ_MpTrade.short(id)}: applied, waiting for a save that holds it")
         else
           MGQ_MpTrade.log("recovery skipped trade #{MGQ_MpTrade.short(id)}: the save holds it, telling the relay it is done")
-          Relay.done(MGQ_MpTrade.world_id, id)
+          MGQ_MpTrade.done(id)
         end
         return
       end
 
-      sides = Hash[text.split("|").map { |side| side.split("=", 2) }]
-      me = MGQ_MpOverworldSync::Me.id.to_s
-      partner = (sides.keys - [me]).first
-      return MGQ_MpTrade.log("recovery skipped trade #{MGQ_MpTrade.short(id)}: it does not name this player") unless sides.key?(me) && partner
       MGQ_MpTrade.log("recovering trade #{MGQ_MpTrade.short(id)} with #{MGQ_MpTrade.name_of(partner)}")
-      applied = apply_once(id, Items.read_offer(sides[me]), Items.read_offer(sides[partner]))
+      applied = apply_once(id, Items.read_offer(mine), Items.read_offer(theirs))
       return MGQ_MpOverworldSync.notice("A trade that was cut off did not complete in full.") unless applied
 
       saved = finish
       MGQ_MpOverworldSync.notice(saved ? "A trade that was cut off completed, game saved." : "A trade that was cut off completed. Save your game.")
       MGQ_MpTrade.log("recovered trade #{MGQ_MpTrade.short(id)}#{saved ? ', game saved' : ', not saved yet'}")
-    end
-  end
-
-  # Patch/Multiplayer/Multiplayer.dll's trades at the relay.
-  module Relay
-    # Hands both offers to the relay, which commits them once the other game sent the same.
-    #
-    # @param world [String] The world's id.
-    # @param id [String] The trade's id at the relay.
-    # @param partner [String] The other player's id.
-    # @param text [String] Both offers, see MGQ_MpTrade.agreed_text.
-    # @return [Boolean] Whether it started.
-    def self.commit(world, id, partner, text)
-      MGQ_Multiplayer::Link.function('mp_trade_commit').call(world + "\0", id + "\0", partner + "\0", text + "\0") == 1
-    rescue => e
-      MGQ_MpTrade.log("committing failed: #{e.class}: #{e.message}")
-      false
-    end
-
-    # Cancels a trade the relay has not committed.
-    #
-    # @param world [String] The world's id.
-    # @param id [String, nil] The trade's id at the relay.
-    def self.cancel(world, id)
-      return unless id
-
-      MGQ_Multiplayer::Link.function('mp_trade_cancel').call(world + "\0", id + "\0")
-    rescue => e
-      MGQ_MpTrade.log("cancelling failed: #{e.class}: #{e.message}")
-    end
-
-    # Reads how the last commit stands.
-    #
-    # @return [Hash] "trade", "state" ("sending", "waiting", "committed", "cancelled" or "failed"),
-    #   and "reason" or "error" where they apply; none while there is no commit.
-    def self.state
-      MGQ_Multiplayer::Link.parse(MGQ_Multiplayer::Link.read('mp_trade_state', 1024))
-    rescue => e
-      MGQ_MpTrade.log_once([:state_failed, e.class], "reading the commit failed: #{e.class}: #{e.message}")
-      { "state" => "failed" }
-    end
-
-    # Tells the relay the player's game applied a trade.
-    #
-    # @param world [String] The world's id.
-    # @param id [String] The trade's id at the relay.
-    def self.done(world, id)
-      MGQ_Multiplayer::Link.function('mp_trade_done').call(world + "\0", id + "\0")
-    rescue => e
-      MGQ_MpTrade.log("telling the relay failed: #{e.class}: #{e.message}")
-    end
-
-    # Asks the relay for the committed trades the player's game has not applied.
-    #
-    # @param world [String] The world's id.
-    # @return [Boolean] Whether it started.
-    def self.fetch(world)
-      MGQ_Multiplayer::Link.function('mp_trade_pending').call(world + "\0") == 1
-    rescue => e
-      MGQ_MpTrade.log("asking for trades failed: #{e.class}: #{e.message}")
-      false
-    end
-
-    # Reads the relay's answer to fetch.
-    #
-    # @return [Array] The state ("busy", "done" or "failed") and, once done, each trade's id and
-    #   both offers.
-    def self.pending
-      lines = MGQ_Multiplayer::Link.read('mp_trade_pending_list', PENDING_SIZE).force_encoding("UTF-8").split("\n")
-      state = lines.first.to_s.sub(/\Astate=/, "")
-      trades = lines.map { |line| /\Atrade=([0-9a-f]{32})\t(.*)\z/.match(line) }.compact.map { |match| [match[1], match[2]] }
-      [state, trades]
-    rescue => e
-      MGQ_MpTrade.log("reading the trades failed: #{e.class}: #{e.message}")
-      ["failed", []]
     end
   end
 
@@ -1678,15 +1171,32 @@ module MGQ_MpTrade
   end
 end
 
-# What trades take part in of the world's messages, through overworld_sync.rbx.
+# What trades take part in of the world, through overworld_sync.rbx; the DLL takes the trade's
+# messages itself.
 
 begin
-  MGQ_MpOverworldSync.route("trade") { |peer, message| MGQ_MpTrade.take(peer, message) }
   MGQ_MpOverworldSync.on_tick { |in_world| MGQ_MpTrade.tick(in_world) }
   MGQ_MpOverworldSync.state_fields { MGQ_MpTrade.state_fields }
   MGQ_MpOverworldSync.label_line { |peer| MGQ_MpTrade.label_line(peer) }
 rescue => e
   MGQ_MpTrade.log("overworld sync FAILED: #{e.class}: #{e.message}")
+end
+
+# The trade's events from the DLL.
+
+begin
+  bridge = MGQ_Multiplayer::Bridge
+  bridge.on(MGQ_MpTrade::VIEW_EVENT) { |view| MGQ_MpTrade.take_view(view) }
+  bridge.on(MGQ_MpTrade::OPEN_SCREEN_EVENT) { |state| MGQ_MpTrade.open_screen(state) }
+  bridge.on(MGQ_MpTrade::THEIR_OFFER_EVENT) { |event| MGQ_MpTrade.take_their_offer(event) }
+  bridge.on(MGQ_MpTrade::NOTE_EVENT) { |text| MGQ_MpTrade.note = text }
+  bridge.on(MGQ_MpTrade::CLOSED_EVENT) { MGQ_MpTrade.closed }
+  bridge.on(MGQ_MpTrade::STOP_OFFERING_EVENT) { MGQ_MpTrade.stop }
+  bridge.on(MGQ_MpTrade::DECLINED_EVENT) { |event| MGQ_MpTrade.declined(event) }
+  bridge.on(MGQ_MpTrade::APPLY_EVENT) { |event| MGQ_MpTrade.complete(event) }
+  bridge.on(MGQ_MpTrade::RECOVER_EVENT) { |event| MGQ_MpTrade::Recovery.take(event) }
+rescue => e
+  MGQ_MpTrade.log("bridge events FAILED: #{e.class}: #{e.message}")
 end
 
 # What trades add to the action wheel, the World overview and the notification box, through

@@ -2,6 +2,7 @@
 //  TradeSeal.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Took the most bytes of the offers from the trade of the DLL
 //      Paulinchen  2026-10-07: Sealed the offers through SealedBox
 //      Paulinchen  2026-10-06: Created
 //
@@ -11,6 +12,7 @@ using System;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using MGQOnline.Game.Trade;
 
 namespace MGQParadox.Multiplayer.Network.World;
 
@@ -21,9 +23,9 @@ namespace MGQParadox.Multiplayer.Network.World;
 internal static class TradeSeal
 {
     /// <summary>
-    /// Most bytes the offers may have, in UTF-8.
+    /// Most bytes the offers may have, in UTF-8, the one limit the trade of the DLL confirms by.
     /// </summary>
-    public const int MaxOffersBytes = 32 * 1024;
+    public const int MaxOffersBytes = TradeOffers.MaxOffersBytes;
 
     /// <summary>
     /// Separates the trades' key from anything else ever derived from the same token.

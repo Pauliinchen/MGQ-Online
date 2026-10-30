@@ -2,7 +2,8 @@
 //  WorldRoomTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-30: Registered the topic of the player's squad over the room
+//      Paulinchen  2026-10-30: Handed the room to the areas whose rules take its messages
+//                            - Registered the topic of the player's squad over the room
 //                            - Registered the topics of the NPCs shared on a map over the room
 //                            - Registered the topics of the teleports between party members over the room
 //                            - Registered the duels' topics on the room
@@ -203,10 +204,16 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     }
 
     /// <summary>
+    /// Gets the room, which the areas whose rules take world room messages share.
+    /// </summary>
+    internal WorldRoom Room => _room;
+
+    /// <summary>
     /// Registers the topics and the frame step on a context, over the game's world connection.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
-    public static void Register(BridgeContext context) => Register(context, WorldSession.Current, EventTopics.ReadAhead);
+    /// <returns>The room's topics.</returns>
+    public static WorldRoomTopics Register(BridgeContext context) => Register(context, WorldSession.Current, EventTopics.ReadAhead);
 
     /// <summary>
     /// Registers the topics and the frame step on a context.
@@ -214,7 +221,7 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
     /// <param name="context">The context the handshake opened.</param>
     /// <param name="session">The world connection.</param>
     /// <param name="readAhead">Reads the event data of a map ahead, as the world opens and on every other map.</param>
-    /// <returns>The room's topics, for tests.</returns>
+    /// <returns>The room's topics.</returns>
     internal static WorldRoomTopics Register(BridgeContext context, WorldSession session, Action<long> readAhead)
     {
         var topics = new WorldRoomTopics(context, session, readAhead);

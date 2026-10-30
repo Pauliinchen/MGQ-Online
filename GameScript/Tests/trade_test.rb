@@ -2,6 +2,9 @@
 #  trade_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Checked the trades to recover the DLL hands over
+#                            - Checked that the relay hears of a saved trade through the DLL
+#                            - Checked the trade through the DLL's view and events, and the clamps before an offer goes to it
 #      Paulinchen  2026-10-23: Checked that a trade's id leaves the game's rand as it was
 #      Paulinchen  2026-10-17: Checked the trade's place on the wheel next to the teleport to the story
 #      Paulinchen  2026-10-12: Checked the offer and confirmation going out again once a failed message does
@@ -25,11 +28,11 @@
 #                            - Created
 #
 #----------------------------------------------------------------
-
-# Covers trades, trade.rbx with the action wheel: offering and accepting a trade, both offers and
-# their confirmations, the commit through the relay, applying a trade, the save after it, items
-# that may not be traded, enchanted copies, and recovering a trade the relay committed. The DLL's
-# trade functions stand in.
+# Covers trades, trade.rbx with the action wheel: offering and accepting a trade, what the DLL is
+# handed each frame, the clamps of an offer before the DLL gets it, the DLL's view and events,
+# applying and saving a trade the relay committed, items that may not be traded, enchanted copies,
+# and recovering a trade the relay committed. The DLL's trade stands in on the fake bridge, its
+# rules covered by MGQOnline.Game.Tests.
 
 require_relative "world_support"
 
@@ -154,34 +157,12 @@ module MGQ_MpActors
   end
 end
 
-# The DLL's trade functions.
+# The DLL, always there and up to date.
 module MGQ_Multiplayer
   # The DLL is always there.
   def self.available?; true; end
   # The game is never outdated.
   def self.outdated?; false; end
-  # The link to the DLL: each call is checked against its signature and recorded in $dll.
-  module Link
-    # A DLL function whose calls are checked, recorded in $dll and answered with 1.
-    #
-    # @param name [String] The export.
-    # @return [Proc] The function.
-    def self.function(name)
-      lambda do |*args|
-        check_dll_call(name, args)
-        $dll << [name] + args.map { |arg| arg.to_s.chomp("\0") }
-        1
-      end
-    end
-    # The relay's answer about a trade from $relay_state, and the trades to recover from $pending_list.
-    #
-    # @param name [String] The export.
-    # @param _size [Integer] The buffer's size.
-    # @return [String] The answer.
-    def self.read(name, _size)
-      name == "mp_trade_state" ? $relay_state : $pending_list
-    end
-  end
 end
 # The open world, with its folder id and its directory id.
 module MGQ_MpWorld; World = Struct.new(:id, :directory_id); def self.world; World.new("f1", "w1"); end; end
@@ -193,11 +174,8 @@ module SceneManager; def self.call(scene); $called << scene; end; end
 $dll = []
 $saved = []
 $called = []
-$relay_state = ""
-$pending_list = "state=done\n\n"
 $game_party = Game_Party.new
 $game_system = Game_System.new
-
 load_script "trade"
 
 trade = MGQ_MpTrade
@@ -207,12 +185,47 @@ $game_party.gain_item(potion, 5)
 $game_party.gain_item(key, 1)
 $game_party.gain_gold(100)
 
-# Reads the trade messages this game sent.
-#
-# @return [Array<Array>] Each one's seat and fields, its body under :payload.
-def trade_sent
-  $sent.map { |seat, text| [seat, MGQ_Multiplayer::Link.parse(text)] }.select { |_, fields| fields["trade"] }
+# The trade's id in these checks.
+TID = "0123456789abcdef01234567"
+
+# The DLL's trade, standing in: each action is recorded in $trade_calls and answered with
+# $trade_view, an offer bumping the player's revision; what the scripts tell each frame goes to
+# $trade_ticks.
+$trade_calls = []
+$trade_ticks = []
+$trade_view = { "session" => nil, "accepted" => nil }
+%w[accept decline confirm cancel].each do |action|
+  $world_bridge.answer("trade.#{action}") { |request| $trade_calls << [action, request]; $trade_view }
 end
+$world_bridge.answer("trade.offer") do |offer|
+  $trade_calls << ["offer", offer]
+  session = $trade_view["session"]
+  $trade_view = $trade_view.merge("session" => session.merge("my_rev" => session["my_rev"] + 1, "confirmed" => false)) if session
+  $trade_view
+end
+$world_bridge.answer("trade.tick") { |frame| $trade_ticks << frame; nil }
+# The relay hears through the DLL that a save holds a trade, recorded in $dll.
+$world_bridge.answer("trade.done") { |id| $dll << ["trade.done", id]; nil }
+
+# Writes the DLL's view of an open trade with Friend.
+#
+# @param fields [Hash] The session's fields that differ.
+# @return [Hash] The view.
+def open_view(fields = {})
+  session = { "id" => TID, "partner" => "friend", "name" => "Friend", "stage" => "open", "my_rev" => 0, "their_rev" => 0, "confirmed" => false,
+              "their_confirmed" => false, "relay_id" => nil, "leaving" => nil, "unsent" => nil, "refusal" => nil }
+  { "session" => session.merge(fields), "accepted" => nil }
+end
+
+# Plays an event of the DLL's trade, taken at the next drain.
+#
+# @param topic [String] The event.
+# @param payload [Object] Its payload.
+def from_dll(topic, payload)
+  $world_bridge.post(topic, payload)
+  MGQ_Multiplayer::Bridge.frame
+end
+
 # Lets the trade follow its frames, as the world does every frame.
 #
 # @param frames [Integer] How many.
@@ -250,64 +263,114 @@ check("the overview offers no trade with a player on another map", MGQ_MpTrade::
 $inbox << entry("message", 2, told(friend))
 MGQ_MpOverworldSync.tick
 
-# The other player accepts, and both open the trade.
-$sent.clear
-$inbox << entry("message", 2, "trade=accept\n\n")
-srand(7)
-unmoved = rand
-srand(7)
-MGQ_MpOverworldSync.tick
-opened = trade_sent.last
-check("an accepted offer opens the trade with an id", [opened[1]["trade"], opened[1]["tid"].to_s =~ /\A[0-9a-f]{24}\z/ ? true : false, trade.inviting?, trade.own_doing], ["open", true, false, nil])
-check("which the DLL made up, leaving the game's rand, which drives the battles' replay seeds, where it was", rand, unmoved)
-tid = opened[1]["tid"]
+# What the DLL is handed each frame, once it changed.
+MGQ_Multiplayer::Bridge.frame
+check("the DLL is handed the offer and the world, the player free",
+      $trade_ticks.last, { "busy" => nil, "inviting" => true, "targets" => [], "world" => "w1", "on_map" => true, "save" => $game_system.object_id })
+$trade_ticks.clear
+ticks
+MGQ_Multiplayer::Bridge.frame
+check("and nothing while nothing changed", $trade_ticks, [])
+SceneManager.scene = Scene_Item.new
+ticks
+MGQ_Multiplayer::Bridge.frame
+check("a menu keeps the map from being free", $trade_ticks.last["busy"], "the map is not free")
+SceneManager.scene = Scene_Map.new
+
+# Accepting another player's trade.
+SceneManager.scene = Scene_Item.new
+trade.accept(peer)
+check("a player not free on the map cannot accept", [$trade_calls, MGQ_MpOverworldSync::Status.lines.last], [[], "Finish what you are doing first."])
+SceneManager.scene = Scene_Map.new
+$trade_view = { "session" => nil, "accepted" => { "id" => "friend", "name" => "Friend", "ends" => MGQ_Multiplayer::Bridge.frame_number + 360 } }
+trade.accept(peer)
+check("accepting stops the player's own offer and has the DLL accept it", [trade.inviting?, $trade_calls.last], [false, ["accept", 2]])
+check("then waits for the trade above the player's head, as long as the DLL waits", doing_shown, "Waiting for Friend's trade (6 s)")
+120.times { MGQ_Multiplayer::Bridge.frame }
+check("counting the bridge's frames down", doing_shown, "Waiting for Friend's trade (4 s)")
+
+# The trade opens.
+trade.invite
+$trade_view = open_view
+from_dll("trade.stop_offering", nil)
+from_dll("trade.open_screen", { "id" => TID, "partner" => "friend", "name" => "Friend" })
+from_dll("trade.view", $trade_view)
+check("a trade that opened stops the player's offer and starts with empty offers",
+      [trade.inviting?, trade.session.id, trade.session.mine, trade.own_doing], [false, TID, MGQ_MpTrade::Offer.new(0, []), nil])
+$called.clear
 trade.on_map
 check("the map opens the trade screen", $called, [Scene_MpTrade])
 
-# Both offers.
-$sent.clear
+# Both offers: the bag and the party's gold hold an offer back before the DLL gets it.
+$trade_calls.clear
 trade.set_amount(key, 1)
-check("key items stay out of an offer", trade.session.mine.entries, [])
+check("key items stay out of an offer", [trade.session.mine.entries, $trade_calls], [[], []])
 trade.set_amount(potion, 9)
 check("an offer takes at most what the bag holds", trade.session.mine.entries.map(&:amount), [5])
 trade.set_amount(potion, 3)
 trade.set_gold(500)
 check("and at most the party's gold", trade.session.mine.gold, 100)
 trade.set_gold(0)
-check("each change is told with its revision", trade_sent.map { |_, f| [f["trade"], f["rev"], f[:payload]] },
-      [["offer", "1", "g0;i1*5"], ["offer", "2", "g0;i1*3"], ["offer", "3", "g100;i1*3"], ["offer", "4", "g0;i1*3"]])
-$inbox << entry("message", 2, "trade=offer\ntid=#{tid}\nrev=1\n\ng50;w2*1")
-MGQ_MpOverworldSync.tick
-check("the other player's offer is read", [trade.session.theirs.gold, trade.session.theirs.entries.map { |e| [e.item, e.amount] }], [50, [[spear, 1]]])
+trade.set_gold(0)
+check("each change goes to the DLL as the offer reads, an unchanged one not",
+      $trade_calls, [["offer", "g0;i1*5"], ["offer", "g0;i1*3"], ["offer", "g100;i1*3"], ["offer", "g0;i1*3"]])
+check("whose answer counts the revisions", trade.session.my_rev, 4)
+from_dll("trade.their_offer", { "rev" => 1, "text" => "g50;w2*1" })
+check("the other player's offer is read as this game's items", [trade.session.theirs.gold, trade.session.theirs.entries.map { |e| [e.item, e.amount] }], [50, [[spear, 1]]])
 
-# Confirming and committing.
-$sent.clear
+# Confirming.
+$trade_calls.clear
 trade.toggle_confirm
-check("confirming names both revisions", trade_sent.last[1].values_at("trade", "mine", "yours"), ["confirm", "4", "1"])
-$inbox << entry("message", 2, "trade=offer\ntid=#{tid}\nrev=2\n\ng60;w2*1")
-MGQ_MpOverworldSync.tick
-check("a change of the other offer takes the confirmation back", trade.session.confirmed, false)
+check("confirming hands the DLL what the bag cannot take, here nothing", $trade_calls, [["confirm", nil]])
+from_dll("trade.their_offer", { "rev" => 2, "text" => "g0;i2*1" })
 trade.toggle_confirm
-$inbox << entry("message", 2, "trade=confirm\ntid=#{tid}\nmine=2\nyours=3\n\n")
-MGQ_MpOverworldSync.tick
-check("a confirmation of older offers does not commit", trade.session.stage, :open)
-$dll.clear
-$inbox << entry("message", 2, "trade=confirm\ntid=#{tid}\nmine=2\nyours=4\n\n")
-MGQ_MpOverworldSync.tick
-relay_id = tid + "0002" + "0004"
-check("both confirmed: the offers go to the relay, ordered by player id", [trade.session.stage, $dll.last],
-      [:committing, ["mp_trade_commit", "w1", relay_id, "friend", "friend=g60;w2*1|me=g0;i1*3"]])
-check("the relay's id names the revisions, so a later confirmation is a trade of its own", relay_id.size, 32)
+check("or why it cannot", $trade_calls.last, ["confirm", "Friend's offer holds key items."])
+check("which the confirm button tells too", trade.confirm_refusal, "Friend's offer holds key items.")
+from_dll("trade.view", open_view("my_rev" => 4, "their_rev" => 2, "refusal" => "The offers hold too many items for one trade. Take some out."))
+check("after the trade's own reasons", trade.confirm_refusal, "The offers hold too many items for one trade. Take some out.")
+from_dll("trade.view", open_view("my_rev" => 4, "their_rev" => 2, "confirmed" => true))
+$trade_calls.clear
+trade.toggle_confirm
+check("taking a confirmation back checks nothing", $trade_calls, [["confirm", nil]])
+from_dll("trade.note", "Both offers are empty.")
+check("a message for the trade screen is kept", trade.note, "Both offers are empty.")
+ticks(MGQ_MpTrade::NOTE_FRAMES)
+check("for a few seconds", trade.note, nil)
+lines = logged_lines { from_dll("trade.view", open_view("my_rev" => 4, "their_rev" => 2, "stage" => "committing", "relay_id" => "#{TID}00020004")) }
+check("both confirmed: the relay decides, which is logged with the items",
+      [trade.session.stage, lines.grep(/both confirmed, trade 01234567 \(my r4, their r2\) sent to the relay: I give 0 gold, i1 Potion x3; I get 0 gold, i2 Royal Key x1/).size],
+      [:committing, 1])
+$trade_calls.clear
 trade.set_amount(potion, 1)
-check("nothing changes while the relay decides", trade.session.mine.entries.map(&:amount), [3])
+check("nothing changes while the relay decides", [trade.session.mine.entries.map(&:amount), $trade_calls], [[3], []])
 
-# The relay commits.
-$relay_state = "trade=#{relay_id}\nstate=committed"
-ticks(MGQ_MpTrade::POLL_FRAMES)
+# The relay commits: the trade is applied and saved.
+relay_id = "#{TID}00020004"
+$dll.clear
+from_dll("trade.apply", { "id" => relay_id, "name" => "Friend", "mine" => "g0;i1*3", "theirs" => "g60;w2*1" })
 check("the trade moves the items and gold", [$game_party.item_number(potion), $game_party.item_number(spear), $game_party.gold], [2, 1, 160])
 check("the save notes it, saves into the slot loaded last and tells the relay",
-      [$game_system.instance_variable_get(:@mgq_mp_trades), $saved, $dll.last], [[relay_id], [2], ["mp_trade_done", "w1", relay_id]])
+      [$game_system.instance_variable_get(:@mgq_mp_trades), $saved, $dll.last], [[relay_id], [2], ["trade.done", relay_id]])
 check("the trade ends with a notice", [trade.session, MGQ_MpOverworldSync::Status.lines.last], [nil, "Trade with Friend complete, game saved."])
+$save_fails = true
+$dll.clear
+from_dll("trade.apply", { "id" => "#{TID}00030005", "name" => "Friend", "mine" => "g0", "theirs" => "g0" })
+check("a trade the save could not hold stays undone at the relay",
+      [$dll.map(&:first), MGQ_MpOverworldSync::Status.lines.last], [[], "Trade with Friend complete. Save your game."])
+$save_fails = false
+DataManager.save_game(1)
+check("until the next save in the world holds it", $dll.map(&:first), ["trade.done"])
+DataManager.load_game_without_rescue(2)
+
+# Other players who could not trade, and a trade that ended.
+trade.invite("friend")
+from_dll("trade.declined", { "seat" => 2, "id" => "friend", "reason" => "no", "accepted" => false })
+check("a player who declined is no longer named by the offer", trade.targets, [])
+from_dll("trade.open_screen", { "id" => TID, "partner" => "friend", "name" => "Friend" })
+from_dll("trade.note", "The trade could not be completed. Try again.")
+from_dll("trade.closed", nil)
+check("a trade that ended forgets its screen and its message", [trade.session, trade.note, trade.instance_variable_get(:@open_screen)], [nil, nil, false])
+trade.stop
 
 # What may not be taken.
 offer = MGQ_MpTrade::Items.read_offer("g0;i2*1")
@@ -340,205 +403,64 @@ MGQ_MpTrade::Items.apply(MGQ_MpTrade::Items.read_offer("g0;#{token}*1"), MGQ_MpT
 check("applying gives the own copy away and keeps the other's as the party's own",
       [$game_party.item_number(sword), $game_party.added.map(&:rolls), $game_party.weapons.select(&:uniq_item?).map(&:rolls)], [0, [8], [8]])
 
-# Declining, leaving, and a relay that turns the commit down.
-trade.invite
-$sent.clear
-$inbox << entry("message", 2, "trade=accept\n\n")
-MGQ_MpOverworldSync.tick
-tid = trade_sent.last[1]["tid"]
-$inbox << entry("message", 2, "trade=cancel\ntid=#{tid}\nreason=off\n\n")
-MGQ_MpOverworldSync.tick
-check("the other player cancels", [trade.session, MGQ_MpOverworldSync::Status.lines.last], [nil, "Friend cancelled the trade."])
-trade.invite
-trade.accept(peer)
-check("accepting a trade stops the player's own offer and waits for the trade above the player's head, six seconds at most",
-      [trade.inviting?, doing_shown], [false, "Waiting for Friend's trade (6 s)"])
-ticks(2 * 60)
-check("counting them down", doing_shown, "Waiting for Friend's trade (4 s)")
-SceneManager.scene = Scene_Item.new
-$sent.clear
-$inbox << entry("message", 2, "trade=open\ntid=#{'b' * 24}\n\n")
-MGQ_MpOverworldSync.tick
-check("a trade the player accepted but cannot open now, here in the menu, is turned down with a notice",
-      [trade.session, trade_sent.map { |_, f| [f["trade"], f["reason"]] }, MGQ_MpOverworldSync::Status.lines.last],
-      [nil, [["decline", "busy"]], "The trade with Friend could not open: finish what you are doing first."])
-check("which ends the wait above the player's head", trade.own_doing, nil)
-SceneManager.scene = Scene_Map.new
-trade.accept(peer)
-$sent.clear
-$inbox << entry("message", 2, "trade=open\ntid=not-an-id\n\n")
-MGQ_MpOverworldSync.tick
-check("a trade id that is not valid is turned down as invalid, telling the player only that it could not open",
-      [trade.session, trade_sent.map { |_, f| [f["trade"], f["reason"]] }, MGQ_MpOverworldSync::Status.lines.last],
-      [nil, [["decline", "invalid"]], "The trade with Friend could not open."])
-trade.invite
-$inbox << entry("message", 2, "trade=accept\n\n")
-MGQ_MpOverworldSync.tick
-tid = trade_sent.last[1]["tid"]
-$inbox << entry("message", 2, "trade=decline\ntid=#{tid}\nreason=invalid\n\n")
-MGQ_MpOverworldSync.tick
-check("the player who offered it sees that the trade could not open, not that the other is busy",
-      [trade.session, MGQ_MpOverworldSync::Status.lines.last], [nil, "The trade could not open."])
-$inbox << entry("message", 2, "trade=decline\nreason=newer\n\n")
-MGQ_MpOverworldSync.tick
-check("a reason of another build says the other player cannot trade now", MGQ_MpOverworldSync::Status.lines.last, "Friend cannot trade now.")
-trade.invite
-$sent.clear
-$inbox << entry("message", 2, "trade=accept\n\n")
-MGQ_MpOverworldSync.tick
-tid = trade_sent.last[1]["tid"]
-trade.set_amount(potion, 1)
-trade.toggle_confirm
-$inbox << entry("message", 2, "trade=confirm\ntid=#{tid}\nmine=0\nyours=1\n\n")
-MGQ_MpOverworldSync.tick
-expired_id = trade.session.relay_id
-$relay_state = "trade=#{expired_id}\nstate=cancelled\nreason=expired"
-$sent.clear
-ticks(MGQ_MpTrade::POLL_FRAMES)
-check("an expired commit opens the trade again, unconfirmed",
-      [trade.session.stage, trade.session.confirmed, MGQ_MpOverworldSync::Status.lines.last], [:open, false, "The trade timed out before both games confirmed it."])
-check("and tells the own offer again under a new revision", trade_sent.map { |_, f| [f["trade"], f["rev"]] }, [["offer", "2"]])
-trade.toggle_confirm
-$inbox << entry("message", 2, "trade=confirm\ntid=#{tid}\nmine=0\nyours=2\n\n")
-MGQ_MpOverworldSync.tick
-check("so confirming again names a trade of its own at the relay", [trade.session.stage, trade.session.relay_id == expired_id], [:committing, false])
-$relay_state = "trade=#{trade.session.relay_id}\nstate=cancelled\nreason=cancelled"
-ticks(MGQ_MpTrade::POLL_FRAMES)
-$inbox << entry("out", 2)
-MGQ_MpOverworldSync.tick
-ticks(MGQ_MpTrade::AWAY_FRAMES + 1)
-check("a player gone longer than the rejoin time ends the trade", [trade.session, MGQ_MpOverworldSync::Status.lines.last], [nil, "Friend left."])
 
 # Recovering a trade the relay committed, after a save was loaded that has the first trade.
 $game_system = Game_System.new
 $game_system.instance_variable_set(:@mgq_mp_trades, [relay_id])
 $dll.clear
 $saved.clear
+$trade_ticks.clear
 before = [$game_party.item_number(potion), $game_party.gold]
-$pending_list = "state=busy\n\n"
 ticks
-check("the map asks the relay for trades to recover once per save", $dll.map(&:first), ["mp_trade_pending"])
-$pending_list = "state=done\n\ntrade=#{'a' * 32}\tfriend=g5;i1*1|me=g0;i1*1\ntrade=#{relay_id}\tfriend=g60;w2*1|me=g0;i1*3"
-ticks
-check("the relay's answer waits for the map's own frame",
-      [[$game_party.item_number(potion), $game_party.gold], $dll.map(&:first), $saved], [before, ["mp_trade_pending"], []])
+MGQ_Multiplayer::Bridge.frame
+check("the DLL is told the save loaded, by which it asks the relay once per save", $trade_ticks.last.values_at("on_map", "save"), [true, $game_system.object_id])
+from_dll("trade.recover", { "save" => $game_system.object_id, "trades" => [["a" * 32, "friend", "g0;i1*1", "g5;i1*1"], [relay_id, "friend", "g0;i1*3", "g60;w2*1"]] })
+check("the trades the DLL found wait for the map's own frame",
+      [[$game_party.item_number(potion), $game_party.gold], $dll.map(&:first), $saved], [before, [], []])
 trade.on_map
 check("where a trade the save lacks is applied, one it has only told the relay",
       [[$game_party.item_number(potion), $game_party.gold], $dll.map(&:first), $saved],
-      [[before[0], before[1] + 5], ["mp_trade_pending", "mp_trade_done", "mp_trade_done"], [2]])
-ticks
+      [[before[0], before[1] + 5], ["trade.done", "trade.done"], [2]])
 trade.on_map
-check("and the relay is not asked again for the same save", $dll.size, 3)
+check("and only once", $dll.size, 2)
 
 # Trades to recover wait until the player is free on the map.
 $game_system = Game_System.new
 $dll.clear
 $saved.clear
 before = $game_party.gold
-$pending_list = "state=busy\n\n"
-ticks
 SceneManager.scene = Scene_Battle.new
-$pending_list = "state=done\n\ntrade=#{'d' * 32}\tfriend=g7|me=g0"
-ticks(3)
+from_dll("trade.recover", { "save" => $game_system.object_id, "trades" => [["d" * 32, "friend", "g0", "g7"]] })
 trade.on_map
-check("an answer that comes in a battle applies and saves nothing there", [$game_party.gold, $dll.map(&:first), $saved], [before, ["mp_trade_pending"], []])
+check("trades found in a battle apply and save nothing there", [$game_party.gold, $dll, $saved], [before, [], []])
 SceneManager.scene = Scene_Map.new
 $game_message.busy = true
-ticks
 trade.on_map
-check("nor on the map while a message shows", [$game_party.gold, $dll.map(&:first), $saved], [before, ["mp_trade_pending"], []])
+check("nor on the map while a message shows", [$game_party.gold, $dll, $saved], [before, [], []])
 $game_message.busy = false
 trade.on_map
-check("but on the next frame the player is free on the map, saved once",
-      [$game_party.gold, $dll.map(&:first), $saved], [before + 7, ["mp_trade_pending", "mp_trade_done"], [2]])
-trade.on_map
-check("and only once", [$game_party.gold, $dll.size, $saved], [before + 7, 2, [2]])
+check("but on the next frame the player is free on the map, saved once", [$game_party.gold, $dll.map(&:first), $saved], [before + 7, ["trade.done"], [2]])
 
 # Trades to recover that wait while another save is loaded.
-$game_system = Game_System.new
 $dll.clear
 $saved.clear
-$pending_list = "state=done\n\ntrade=#{'e' * 32}\tfriend=g9|me=g0"
 $game_message.busy = true
-ticks(2)
+from_dll("trade.recover", { "save" => $game_system.object_id, "trades" => [["e" * 32, "friend", "g0", "g9"]] })
 trade.on_map
 $game_system = Game_System.new
 $game_message.busy = false
 trade.on_map
-check("are dropped once another save was loaded", [$game_party.gold, $dll.map(&:first), $saved], [before + 7, ["mp_trade_pending"], []])
-ticks(2)
-trade.on_map
-check("and the relay is asked again for the new save, whose trades then apply",
-      [$game_party.gold, $dll.map(&:first), $saved], [before + 16, ["mp_trade_pending", "mp_trade_pending", "mp_trade_done"], [2]])
+check("are dropped once another save was loaded, which the DLL asks the relay for anew", [$game_party.gold, $dll, $saved], [before + 7, [], []])
 
 # Trades to recover that wait as the world closes.
-$game_system = Game_System.new
-$dll.clear
-$pending_list = "state=done\n\ntrade=#{'f' * 32}\tfriend=g4|me=g0"
 $game_message.busy = true
-ticks(2)
+from_dll("trade.recover", { "save" => $game_system.object_id, "trades" => [["f" * 32, "friend", "g0", "g4"]] })
 trade.on_map
 trade.tick(false)
 $game_message.busy = false
 trade.on_map
-check("are forgotten once the world closed", [$game_party.gold, $dll.map(&:first), MGQ_MpTrade::Recovery.instance_variable_get(:@recovered)], [before + 16, ["mp_trade_pending"], nil])
+check("are forgotten once the world closed", [$game_party.gold, $dll, MGQ_MpTrade::Recovery.instance_variable_get(:@recovered)], [before + 7, [], nil])
 DataManager.load_game_without_rescue(2)
-$pending_list = "state=done\n\n"
-ticks(2)
-
-# Opens a trade the other player accepted, offers a potion, and has both confirm it, which commits it.
-#
-# @return [String] The trade's id at the relay.
-def committed_trade
-  MGQ_MpTrade.invite
-  $sent.clear
-  $inbox << entry("message", 2, "trade=accept\n\n")
-  MGQ_MpOverworldSync.tick
-  tid = trade_sent.last[1]["tid"]
-  MGQ_MpTrade.set_amount($data_items[1], 1)
-  MGQ_MpTrade.toggle_confirm
-  $inbox << entry("message", 2, "trade=confirm\ntid=#{tid}\nmine=0\nyours=#{MGQ_MpTrade.session.my_rev}\n\n")
-  MGQ_MpOverworldSync.tick
-  $dll.clear
-  $sent.clear
-  MGQ_MpTrade.session.relay_id
-end
-
-# Cancels while the relay decides.
-$pending_list = "state=done\n\n"
-$inbox << entry("in", 2) << entry("message", 2, told(friend))
-MGQ_MpOverworldSync.tick
-id = committed_trade
-trade.cancel
-check("a cancel while the relay decides tells the other player and the relay, and waits for its answer",
-      [trade_sent.last[1].values_at("trade", "reason"), $dll.map(&:first), trade.session.stage], [["cancel", "off"], ["mp_trade_cancel"], :committing])
-$relay_state = "trade=#{id}\nstate=cancelled\nreason=cancelled"
-ticks(MGQ_MpTrade::POLL_FRAMES)
-check("which ends the trade instead of opening it again", [trade.session, MGQ_MpOverworldSync::Status.lines.last], [nil, "You cancelled the trade."])
-id = committed_trade
-$inbox << entry("message", 2, "trade=cancel\ntid=#{trade.session.id}\nreason=off\n\n")
-MGQ_MpOverworldSync.tick
-check("the other player's cancel while the relay decides cancels the commit there", [trade.session.leaving, $dll.map(&:first)], ["Friend cancelled the trade.", ["mp_trade_cancel"]])
-$relay_state = "trade=#{id}\nstate=cancelled\nreason=cancelled"
-ticks(MGQ_MpTrade::POLL_FRAMES)
-check("and ends the trade once the relay cancelled it", [trade.session, MGQ_MpOverworldSync::Status.lines.last], [nil, "Friend cancelled the trade."])
-id = committed_trade
-$relay_state = "trade=#{id}\nstate=failed\nerror=The relay could not be reached."
-ticks(MGQ_MpTrade::POLL_FRAMES)
-check("a failed commit is cancelled at the relay and told to the other player",
-      [$dll.map(&:first) - ["mp_trade_pending"], trade_sent.last[1].values_at("trade", "reason"), trade.session], [["mp_trade_cancel"], ["cancel", "relay"], nil])
-
-# A trade the save cannot hold.
-ticks
-id = committed_trade
-$save_fails = true
-$relay_state = "trade=#{id}\nstate=committed"
-ticks(MGQ_MpTrade::POLL_FRAMES)
-check("a trade the save could not hold stays undone at the relay",
-      [$dll.map(&:first), MGQ_MpOverworldSync::Status.lines.last], [[], "Trade with Friend complete. Save your game, the trade could not."])
-$save_fails = false
-DataManager.save_game(1)
-check("until the next save in the world holds it", $dll.map(&:first), ["mp_trade_done"])
 
 # A trade that fails partway.
 def $game_party.gain_item(item, amount, *rest)
@@ -553,162 +475,6 @@ check("a trade that fails partway is applied once only",
       [results, [$game_party.item_number(potion), $game_party.gold]], [[false, true], [before[0] - 1, before[1] - 10]])
 $bag_breaks = false
 
-# Asking the relay again after a failed fetch.
-$game_system = Game_System.new
-$pending_list = "state=failed\nerror=The relay could not be reached.\n\n"
-$dll.clear
-ticks(2)
-ticks(MGQ_MpTrade::RETRY_FRAMES)
-check("a failed fetch is asked again later", $dll.map(&:first), ["mp_trade_pending", "mp_trade_pending"])
-$pending_list = "state=done\n\n"
-ticks
-
-# Messages for the trade screen, which the map's notices do not reach.
-trade.invite
-$sent.clear
-$inbox << entry("message", 2, "trade=accept\n\n")
-MGQ_MpOverworldSync.tick
-trade.toggle_confirm
-check("a refused confirmation is kept for the trade screen", trade.note, "Both offers are empty.")
-ticks(MGQ_MpTrade::NOTE_FRAMES)
-check("for a few seconds", trade.note, nil)
-trade.toggle_confirm
-trade.cancel
-check("and forgotten once the trade ends", trade.note, nil)
-
-# The other player away and back while the trade is open: what may have been lost goes out again.
-
-# Opens a trade the other player accepted.
-#
-# @return [String] The trade's id.
-def opened_trade
-  MGQ_MpTrade.invite
-  $sent.clear
-  $inbox << entry("message", 2, "trade=accept\n\n")
-  MGQ_MpOverworldSync.tick
-  trade_sent.last[1]["tid"]
-end
-# Has the other player's connection drop for a moment, then come back.
-#
-# @param state [Hash] Their state as they tell it once back.
-def away_and_back(state)
-  $inbox << entry("out", 2)
-  MGQ_MpOverworldSync.tick
-  ticks(30)
-  $sent.clear
-  $inbox << entry("in", 2) << entry("message", 2, told(state))
-  MGQ_MpOverworldSync.tick
-  ticks
-end
-# The trade messages sent, as kind, revision, confirmed revisions and payload.
-resent = lambda { trade_sent.map { |_, f| f.values_at("trade", "rev", "mine", "yours", :payload) } }
-$game_party.gain_item(potion, 1)
-tid = opened_trade
-trade.set_amount(potion, 1)
-trade.toggle_confirm
-away_and_back(friend)
-check("the other player back, the last offer and the confirmation go out again",
-      resent.call, [["offer", "1", nil, nil, "g0;i1*1"], ["confirm", nil, "1", "0", ""]])
-trade.toggle_confirm
-away_and_back(friend)
-check("unconfirmed, the confirmation taken back goes out again", resent.call, [["offer", "1", nil, nil, "g0;i1*1"], ["unconfirm", nil, nil, nil, ""]])
-# Sends that fail while $send_fails.
-module MGQ_MpOverworldSync::Link; def self.send_to(target, text); $sent << [target, text]; !$send_fails; end; end
-$send_fails = true
-lines = logged_lines { trade.set_amount(potion, 0) }
-check("a message that cannot go out is logged so, not as sent",
-      [lines.grep(/could not send offer to Friend/).size, lines.grep(/sent offer/).size], [1, 0])
-$send_fails = false
-trade.cancel
-id = committed_trade
-away_and_back(friend)
-check("nothing goes out again while the relay decides", trade_sent, [])
-$relay_state = "trade=#{id}\nstate=cancelled\nreason=cancelled"
-trade.cancel
-ticks(MGQ_MpTrade::POLL_FRAMES)
-
-# Messages that could not go out go out again once messages do.
-tid = opened_trade
-trade.set_amount(potion, 1)
-trade.instance_variable_set(:@poll, 0)
-$send_fails = true
-lines = logged_lines { trade.toggle_confirm; ticks(MGQ_MpTrade::POLL_FRAMES * 3) }
-check("a confirm that cannot go out marks the trade, whose tries to send again log their messages only the first time",
-      [trade.session.unsent, lines.grep(/go out again once messages to Friend do/).size, lines.grep(/could not send confirm/).size], [3, 1, 2])
-$send_fails = false
-$sent.clear
-ticks(MGQ_MpTrade::POLL_FRAMES - 1)
-check("the next try waits for the relay's beat", trade_sent, [])
-lines = logged_lines { ticks }
-check("then the last offer and the confirmation go out again and the mark is cleared",
-      [resent.call, trade.session.unsent, lines.grep(/again: messages to Friend go out again after 4 tries/).size],
-      [[["offer", "1", nil, nil, "g0;i1*1"], ["confirm", nil, "1", "0", ""]], nil, 1])
-$sent.clear
-ticks(MGQ_MpTrade::POLL_FRAMES * 2)
-check("and nothing more goes out once they did", trade_sent, [])
-$send_fails = true
-trade.toggle_confirm
-$send_fails = false
-$sent.clear
-ticks(MGQ_MpTrade::POLL_FRAMES)
-check("a lost unconfirm goes out again, at the first try that works", [resent.call, trade.session.unsent],
-      [[["offer", "1", nil, nil, "g0;i1*1"], ["unconfirm", nil, nil, nil, ""]], nil])
-$send_fails = true
-trade.set_amount(potion, 0)
-$send_fails = false
-away_and_back(friend)
-check("the other player back clears the mark once the offer and confirmation state went out",
-      [resent.call, trade.session.unsent], [[["offer", "2", nil, nil, "g0"], ["unconfirm", nil, nil, nil, ""]], nil])
-trade.cancel
-$send_fails = true
-id = committed_trade
-check("a confirm that could not go out while the relay decides on it", [trade.session.stage, trade.session.unsent], [:committing, 0])
-$send_fails = false
-$sent.clear
-ticks(MGQ_MpTrade::POLL_FRAMES * 2)
-check("is not tried again before the relay answers", trade_sent, [])
-$relay_state = "trade=#{id}\nstate=cancelled\nreason=cancelled"
-trade.cancel
-ticks(MGQ_MpTrade::POLL_FRAMES)
-
-# Messages of a trade the game does not have.
-$sent.clear
-$inbox << entry("message", 2, "trade=offer\ntid=#{'c' * 24}\nrev=3\n\ng10")
-MGQ_MpOverworldSync.tick
-check("an offer of a trade the game does not have is answered with a cancel",
-      trade_sent.map { |seat, f| [seat, f.values_at("trade", "tid", "reason")] }, [[2, ["cancel", "c" * 24, "off"]]])
-$sent.clear
-$inbox << entry("message", 2, "trade=cancel\ntid=#{'c' * 24}\nreason=off\n\n")
-MGQ_MpOverworldSync.tick
-check("but a cancel is never answered, so two games never answer each other", trade_sent, [])
-tid = opened_trade
-$sent.clear
-$inbox << entry("message", 2, "trade=confirm\ntid=#{'d' * 24}\nmine=1\nyours=0\n\n")
-MGQ_MpOverworldSync.tick
-check("as is a confirm of an older trade while another runs, which stays open",
-      [trade_sent.map { |_, f| f.values_at("trade", "tid") }, trade.session.id], [[["cancel", "d" * 24]], tid])
-
-# Offers too long for the relay.
-many = lambda { |count| "g0" + ";w2*1" * count }
-$sent.clear
-trade.set_amount(potion, 1)
-$inbox << entry("message", 2, "trade=offer\ntid=#{tid}\nrev=1\n\n#{many.call(6550)}")
-MGQ_MpOverworldSync.tick
-$dll.clear
-trade.toggle_confirm
-check("offers longer than the relay takes cannot be confirmed, the player told to take some out",
-      [trade.agreed_text(trade.session).bytesize > MGQ_MpTrade::MAX_OFFERS_BYTES, trade.session.confirmed, trade.note, $dll],
-      [true, false, "The offers hold too many items for one trade. Take some out.", []])
-$inbox << entry("message", 2, "trade=offer\ntid=#{tid}\nrev=2\n\n#{many.call(6549)}")
-MGQ_MpOverworldSync.tick
-trade.toggle_confirm
-$inbox << entry("message", 2, "trade=confirm\ntid=#{tid}\nmine=2\nyours=1\n\n")
-MGQ_MpOverworldSync.tick
-check("offers just short of it still go to the relay",
-      [trade.agreed_text(trade.session).bytesize, trade.session.stage, $dll.map(&:first)], [MGQ_MpTrade::MAX_OFFERS_BYTES - 3, :committing, ["mp_trade_commit"]])
-$relay_state = "trade=#{trade.session.relay_id}\nstate=cancelled\nreason=cancelled"
-trade.cancel
-ticks(MGQ_MpTrade::POLL_FRAMES)
 
 # A world made before the world list.
 # A world without a directory id.

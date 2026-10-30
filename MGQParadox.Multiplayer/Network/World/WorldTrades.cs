@@ -2,6 +2,7 @@
 //  WorldTrades.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Answered the trade of the DLL with how the commit and the fetch stand
 //      Paulinchen  2026-10-07: Logged each commit, its replacement, refused starts, a lost relay once per commit and each trade fetched
 //                            - Woke a commit's wait when a newer commit replaces it and waited on the gate before each new try
 //      Paulinchen  2026-10-06: Started its threads through Threads and read who plays through Player.Current
@@ -16,22 +17,24 @@ using System.IO;
 using System.Net;
 using System.Text;
 using System.Threading;
+using MGQOnline.Game.Trade;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
 
 namespace MGQParadox.Multiplayer.Network.World;
 
 /// <summary>
-/// Trades between two players of a world as the game script uses them: committing one trade at a
-/// time with the relay until both sides committed or it ended, cancelling, marking a trade done once
-/// applied and saved, and fetching the committed trades not yet done, for recovery. Each runs on a
-/// thread of its own, and the game script reads how the commit and the fetch stand.
+/// Trades between two players of a world as the trade of the DLL (TradeMachine) and the game script
+/// use them: committing one trade at a time with the relay until both sides committed or it ended,
+/// cancelling, marking a trade done once applied and saved, and fetching the committed trades not
+/// yet done, for recovery. Each runs on a thread of its own, and the trade reads how the commit and
+/// the fetch stand.
 /// </summary>
 /// <remarks>
 /// The offers are sealed with a key from the token of the world the game is in, so only games
 /// that hold the token read them; the relay only compares their hashes.
 /// </remarks>
-internal sealed class WorldTrades
+internal sealed class WorldTrades : ITradeRelay
 {
     /// <summary>
     /// What the game script reads as the state of the commit or the fetch.
@@ -91,7 +94,7 @@ internal sealed class WorldTrades
     /// <summary>
     /// The running or last commit, <see langword="null"/> before the first.
     /// </summary>
-    private CommitState? _commit;
+    private TradeCommitState? _commit;
 
     /// <summary>
     /// The trade of the running commit that the game script asked to cancel, <see langword="null"/> while it did not.
@@ -159,7 +162,7 @@ internal sealed class WorldTrades
     /// <returns><see langword="false"/> without a player, outside that world, or for offers that are empty, too long or not on one line.</returns>
     public bool Commit(string world, string trade, string partner, string offers)
     {
-        if (!IsOneField(offers) || offers.Length == 0 || Encoding.UTF8.GetByteCount(offers) > TradeSeal.MaxOffersBytes)
+        if (!IsOneField(offers) || offers.Length == 0 || TradeOffers.IsTooLarge(offers))
         {
             Log.Write($"trade {Log.Short(trade)} not committed: the offers are empty, too long or not on one line");
             return false;
@@ -172,13 +175,13 @@ internal sealed class WorldTrades
         }
 
         int generation;
-        CommitState? replaced;
+        TradeCommitState? replaced;
 
         lock (_gate)
         {
             replaced = _commit;
             generation = ++_commitGeneration;
-            _commit = new CommitState(trade, "sending");
+            _commit = new TradeCommitState(trade, "sending");
             _cancelWanted = null;
             Monitor.PulseAll(_gate);
         }
@@ -321,6 +324,15 @@ internal sealed class WorldTrades
         return true;
     }
 
+    /// <inheritdoc />
+    public TradeCommitState? CommitNow()
+    {
+        lock (_gate)
+        {
+            return _commit;
+        }
+    }
+
     /// <summary>
     /// Describes the running or last commit for the game script.
     /// </summary>
@@ -343,6 +355,25 @@ internal sealed class WorldTrades
             };
 
             return new Message(headers).Encode();
+        }
+    }
+
+    /// <inheritdoc />
+    public TradePendingState PendingNow()
+    {
+        lock (_gate)
+        {
+            if (_fetching)
+            {
+                return new TradePendingState("busy", []);
+            }
+
+            if (_fetchError != null)
+            {
+                return new TradePendingState("failed", []);
+            }
+
+            return _pending == null ? new TradePendingState(string.Empty, []) : new TradePendingState("done", _pending);
         }
     }
 
@@ -486,7 +517,7 @@ internal sealed class WorldTrades
         {
             if (generation == _commitGeneration)
             {
-                _commit = new CommitState(trade, state, reason is { Length: > 0 } ? reason : null, error);
+                _commit = new TradeCommitState(trade, state, reason is { Length: > 0 } ? reason : null, error);
             }
         }
     }
@@ -625,15 +656,6 @@ internal sealed class WorldTrades
         InvalidDataException data => data.Message,
         _ => $"Something went wrong: {ex.GetBaseException().Message}",
     };
-
-    /// <summary>
-    /// How a commit stands, as the game script reads it.
-    /// </summary>
-    /// <param name="Trade">The trade's id.</param>
-    /// <param name="State">"sending", "waiting", "committed", "cancelled" or "failed".</param>
-    /// <param name="Reason">Why the trade was cancelled, or <see langword="null"/>.</param>
-    /// <param name="Error">Why the commit failed, or <see langword="null"/>.</param>
-    private sealed record CommitState(string Trade, string State, string? Reason = null, string? Error = null);
 
     /// <summary>
     /// What a commit sends.
