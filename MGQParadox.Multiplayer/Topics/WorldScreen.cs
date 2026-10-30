@@ -2,6 +2,7 @@
 //  WorldScreen.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Told the details whether a world's data scan has another format
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -184,7 +185,8 @@ internal sealed class WorldScreen
             listed == null ? string.Empty : _sources.SettingsText(listed.About.Settings, listed.CreatorId, listed.CreatorName, me),
             listed != null && SharedSettings.IsShared(listed.About.Settings),
             listed is { OtherModsOff: true } ? _sources.TurnedOff(listed.About.Mods) : null,
-            _sources.Local.Lists.Added());
+            _sources.Local.Lists.Added(),
+            listed != null && GameDataCompare.OtherFormat(_sources.Local.Fingerprint(), listed.About.Data));
     }
 
     /// <summary>

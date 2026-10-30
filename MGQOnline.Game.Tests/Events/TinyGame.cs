@@ -2,6 +2,7 @@
 //  TinyGame.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Wrote entries of named parts with a note, features or effects
 //      Paulinchen  2026-10-28: Wrote troops, named database entries, further map folders and common event ids unlike their places
 //                            - Wrote events with pages of their own on any map, names of switches, variables and common events, and entries with fields
 //                            - Wrote events of other maps that run by themselves
@@ -77,6 +78,11 @@ internal sealed class TinyGame : IGameDataFiles
     /// The names of the entries of named parts of the database, by file: class and names by id from 1.
     /// </summary>
     private readonly SortedDictionary<string, (string ClassName, string[] Names)> _named = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// What the entries of named parts of the database hold, by file: class and what each holds by id from 1.
+    /// </summary>
+    private readonly SortedDictionary<string, (string ClassName, string[] Holds)> _holding = new(StringComparer.Ordinal);
 
     /// <summary>
     /// The maps the map lists name by id: their names and the maps above them.
@@ -248,6 +254,20 @@ internal sealed class TinyGame : IGameDataFiles
     }
 
     /// <summary>
+    /// Adds the entries of a named part of the database by what each holds besides its name, such
+    /// as the skills.
+    /// </summary>
+    /// <param name="path">Its file, such as "Data/Skills.rvdata2".</param>
+    /// <param name="className">The entries' class, such as "RPG::Skill".</param>
+    /// <param name="holds">What each entry holds by id from 1: "note", "features", "effects", or empty for its name alone.</param>
+    /// <returns>The game, for more.</returns>
+    public TinyGame Holding(string path, string className, params string[] holds)
+    {
+        _holding[path] = (className, holds);
+        return this;
+    }
+
+    /// <summary>
     /// Names a map in its folder's map list; it has a file only once it has events.
     /// </summary>
     /// <param name="id">The map.</param>
@@ -308,8 +328,27 @@ internal sealed class TinyGame : IGameDataFiles
             _files[path] = Dump(w => w.Array(names.Length + 1, id => id == 0 ? w.Nil() : w.Object(className, ("name", () => w.Text(names[id - 1])))));
         }
 
+        foreach ((string path, (string className, string[] holds)) in _holding)
+        {
+            _files[path] = Dump(w => w.Array(holds.Length + 1, id => id == 0 ? w.Nil() : WriteHolding(w, className, holds[id - 1])));
+        }
+
         return this;
     }
+
+    /// <summary>
+    /// Writes an entry of a named part with a name and what it holds.
+    /// </summary>
+    /// <param name="w">The writer.</param>
+    /// <param name="className">Its class.</param>
+    /// <param name="holds">What it holds besides its name: "note", "features", "effects", or empty for nothing.</param>
+    /// <returns>Nothing; a value for the conditional writes.</returns>
+    private static bool WriteHolding(Writer w, string className, string holds) => w.Object(
+        className,
+        ("name", () => w.Text("Entry")),
+        ("note", () => w.Text(holds == "note" ? "<tag>" : string.Empty)),
+        ("features", () => w.Array(holds == "features" ? 1 : 0, _ => w.Object("RPG::BaseItem::Feature", ("code", () => w.Int(11))))),
+        ("effects", () => w.Array(holds == "effects" ? 1 : 0, _ => w.Object("RPG::UsableItem::Effect", ("code", () => w.Int(11))))));
 
     /// <summary>
     /// Writes a map event.

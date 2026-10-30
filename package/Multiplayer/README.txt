@@ -17,14 +17,17 @@ The player guide explains everything the mod does:
 
 REQUIREMENTS
 ------------
-Monster Girl Quest! Paradox RPG 3.06, with or without the English
-translation. Everyone needs the same game version and the same version
-of this mod.
+Monster Girl Quest! Paradox RPG 3.06, untranslated or with the English
+or Russian translation. Everyone needs the same game version and the
+same version of this mod.
 
 This is a Patch folder mod ("Type 1"), so the community's mod loader
 must be installed: download "Patch.rb (enable Type 1 mods)" from the MGQ
 wiki and put it into your Patch folder. If you already use other Patch
-folder mods, you have it.
+folder mods, you have it. The Russian translation brings its own Patch.rb,
+which loads the mod too: keep it and skip the wiki one. It only runs
+scripts right in Patch, so other mods that keep their scripts in a folder
+inside Patch don't load with it, even when a world downloads them.
 
    https://mgq.miraheze.org/wiki/Paradox_mods#Patch.rb_(enable_Type_1_mods)
 

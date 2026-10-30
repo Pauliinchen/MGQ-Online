@@ -2,6 +2,7 @@
 //  GameSource.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Read whether each entry holds anything instead of whether it has a name
 //      Paulinchen  2026-10-28: Read the entries of the named parts and the names of switches and variables
 //                            - Created
 //
@@ -152,11 +153,11 @@ internal sealed class GameSource(IGameDataFiles files)
     }
 
     /// <summary>
-    /// Reads whether each entry of a named part has a name.
+    /// Reads whether each entry of a named part holds anything.
     /// </summary>
     /// <param name="path">The part's file, such as "Data/Actors.rvdata2".</param>
-    /// <returns>Per id whether it has a name, <see langword="null"/> where the game has no entry.</returns>
-    public IReadOnlyList<bool?> ReadNamed(string path) => [.. ReadEntries(path).Select(entry => entry?.HasName)];
+    /// <returns>Per id whether it holds a note, features or effects, <see langword="null"/> where the game has no entry.</returns>
+    public IReadOnlyList<bool?> ReadInUse(string path) => [.. ReadEntries(path).Select(entry => entry?.InUse)];
 
     /// <summary>
     /// Reads the names of the switches and variables, which the build reads flags from and never writes.

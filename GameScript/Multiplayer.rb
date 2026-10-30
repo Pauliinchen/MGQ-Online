@@ -1,7 +1,9 @@
-﻿#----------------------------------------------------------------
+#----------------------------------------------------------------
 #  Multiplayer.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Caught, logged and showed the errors of its own load
+#                            - Dropped the byte order mark
 #      Paulinchen  2026-10-28: Stopped loading coop_story_rewards.rbx, world_catchup_data.rbx and battles_raid_freeze_data.rbx, which the events database and the relay replace
 #                            - Handed the story's last writes over and waited for the world room to send them as the game closes
 #                            - Wrote how the game closes once its scenes end, since its Main section ends the process before at_exit
@@ -376,6 +378,27 @@ module MGQ_Multiplayer
     end
     MGQ_MpHooks.report if defined?(MGQ_MpHooks)
     Log.write("loaded #{SCRIPTS.size - failed.size} of #{SCRIPTS.size} scripts#{failed.empty? ? '' : ", not #{failed.join(', ')}"}")
+  end
+
+  # Writes what failed as this file loaded into the log at once and shows it in the game's message
+  # box, the first time only.
+  #
+  # Nothing else would write the log: the start may not have settled it, and the hooks that write
+  # it each frame and as the game closes may be missing.
+  #
+  # @param stage [String] What failed, such as "loading".
+  # @param error [Exception] The error.
+  def self.load_failed(stage, error)
+    line = "#{stage} FAILED: #{error.class}: #{error.message} (#{Array(error.backtrace).first})"
+    Log.write(line)
+    Log.settle(available?)
+    Log.flush
+    return if @load_failed
+
+    @load_failed = true
+    msgbox("Monster Girl Quest! Online failed to load.") if respond_to?(:msgbox, true)
+  rescue Exception
+    nil
   end
 
   # Keeps a name someone else chose short, on one line and free of message codes.
@@ -1882,11 +1905,17 @@ module MGQ_Multiplayer
   end
 end
 
-MGQ_Multiplayer.start
-MGQ_Multiplayer.load_scripts
-# The last resort for a game whose Main section lets Ruby end: the log writes how it closes and
-# every line left. The game's own Main section never gets here, see MGQ_Multiplayer.run_game.
-at_exit { MGQ_Multiplayer.closing($!) }
+# The Russian translation's own loader catches no error a mod raises, so this file catches its own,
+# which would otherwise end the game.
+begin
+  MGQ_Multiplayer.start
+  MGQ_Multiplayer.load_scripts
+  # The last resort for a game whose Main section lets Ruby end: the log writes how it closes and
+  # every line left. The game's own Main section never gets here, see MGQ_Multiplayer.run_game.
+  at_exit { MGQ_Multiplayer.closing($!) }
+rescue Exception => e
+  MGQ_Multiplayer.load_failed("loading", e)
+end
 
 # Game hooks, through core_hooks.rbx.
 
@@ -1913,6 +1942,6 @@ begin
   # The scenes ending, as a quit, the window closing or an error ends them, write how the game
   # closes and every line left while the game still runs, before its error box or its end.
   MGQ_MpHooks.around(SceneManager.singleton_class, :run, "Multiplayer") { |_manager, _args, original| MGQ_Multiplayer.run_game(original) }
-rescue => e
-  MGQ_Multiplayer::Log.write("hooks FAILED: #{e.class}: #{e.message}")
+rescue Exception => e
+  MGQ_Multiplayer.load_failed("hooks", e)
 end

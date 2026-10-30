@@ -2,6 +2,7 @@
 #  world_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Checked that the fingerprint counts an entry by its note, features and effects, whatever its name
 #      Paulinchen  2026-10-23: Checked that the forms' requests go to the DLL and that the screen plays the steps it answers
 #                            - Left the data check and the mods read on entering to the DLL's tests and checked the steps the screen plays
 #                            - Took the entries, the details and the list box's lines from the stand-ins of the world screen's model
@@ -254,8 +255,41 @@ def said(scene)
   scene.instance_variable_get(:@info_window).lines[1]
 end
 
-# An entry of the game's database.
-Named = Struct.new(:name)
+# An entry of the game's database: its name, its note and the features its file holds.
+class DataEntry
+  attr_reader :name, :note
+
+  # Creates the entry.
+  #
+  # @param name [String] Its name.
+  # @param note [String] Its note.
+  # @param features [Array] The features its file holds.
+  def initialize(name, note = "", features = [])
+    @name = name
+    @note = note
+    @features = features
+  end
+end
+
+# A skill or an item of the game's database, which holds effects too.
+class DataUsable < DataEntry
+  # Creates the entry.
+  #
+  # @param name [String] Its name.
+  # @param note [String] Its note.
+  # @param features [Array] The features its file holds.
+  # @param effects [Array] The effects its file holds.
+  def initialize(name, note = "", features = [], effects = [])
+    super(name, note, features)
+    @effects = effects
+  end
+
+  # Stands in for the game's reader, which adds the note's effects and fails before the game
+  # analysed the entry.
+  def effects
+    raise NoMethodError, "the game never analysed this entry"
+  end
+end
 
 # A troop of the game's database.
 Troop = Struct.new(:members)
@@ -273,14 +307,14 @@ end
 
 # Sets up a small database, which the fingerprint is read from anew.
 #
-# @param skills [Array<String>] The skills' names, an empty one for an unused place.
+# @param skills [Array<DataUsable>] The skills by id from 1.
 # @param maps [Array<Integer>] The main folder's maps' ids.
 # @param more_maps [Array<Integer>] The second folder's maps' ids.
 def game_data(skills, maps, more_maps = [1])
-  entries = lambda { |names| [nil] + names.map { |name| Named.new(name) } }
+  entries = lambda { |names| [nil] + names.map { |name| DataEntry.new(name, "<#{name}>") } }
   $data_actors = entries.call(%w[Luka Alice])
   $data_classes = entries.call(%w[Hero])
-  $data_skills = entries.call(skills)
+  $data_skills = [nil] + skills
   $data_items = entries.call(%w[Herb])
   $data_weapons = entries.call(%w[Sword])
   $data_armors = entries.call(%w[Shirt])
@@ -294,20 +328,20 @@ def game_data(skills, maps, more_maps = [1])
 end
 
 # The fingerprint.
-game_data(["Slash", "", "Fire"], [2, 1])
+game_data([DataUsable.new("Slash", "<power 2>"), DataUsable.new(""), DataUsable.new("Fire", "", [], [:damage])], [2, 1])
 plain = MGQ_MpWorld::GameData.fingerprint
-check("the fingerprint names its format and a checksum per part", plain =~ /\A1:[0-9a-f]{8}(\.[0-9a-f]{8}){10}\z/ ? true : false, true)
+check("the fingerprint names its format and a checksum per part", plain =~ /\A2:[0-9a-f]{8}(\.[0-9a-f]{8}){10}\z/ ? true : false, true)
 check("a game matches itself", MGQ_MpWorld::GameData.differing(plain), [])
-game_data(["Schlag", "", "Feuer"], [1, 2])
-check("a translated game matches the untranslated one", MGQ_MpWorld::GameData.differing(plain), [])
-game_data(["Slash", "Mod Skill", "Fire"], [1, 2, 488])
-check("a mod's new skill and map are told apart, by name", MGQ_MpWorld::GameData.differing(plain), ["skills", "maps"])
-game_data(["Slash", "", "Fire"], [1, 2], [1, 5])
+game_data([DataUsable.new("Schlag", "<power 2>"), DataUsable.new("Leer", " \r\n"), DataUsable.new("Feuer", "", [], [:damage])], [1, 2])
+check("a translated game matches the untranslated one, even where it names an empty place", MGQ_MpWorld::GameData.differing(plain), [])
+game_data([DataUsable.new("Slash", "<power 2>"), DataUsable.new("Mod Skill", "", [:feature]), DataUsable.new("Fire", "", [], [:damage])], [1, 2, 488])
+check("a mod's new skill and map are told apart, by what the skill holds", MGQ_MpWorld::GameData.differing(plain), ["skills", "maps"])
+game_data([DataUsable.new("Slash", "<power 2>"), DataUsable.new(""), DataUsable.new("Fire", "", [], [:damage])], [1, 2], [1, 5])
 check("so is a map in a further map folder", MGQ_MpWorld::GameData.differing(plain), ["maps"])
 check("whose maps count on from a thousand", MGQ_MpWorld::GameData.map_ids, [1, 2, 1001, 1005])
-game_data(["Slash", "Mod Skill", "Fire"], [1, 2, 488])
+game_data([DataUsable.new("Slash", "<power 2>"), DataUsable.new("Mod Skill", "", [:feature]), DataUsable.new("Fire", "", [], [:damage])], [1, 2, 488])
 check("a world without game data is not compared", [MGQ_MpWorld::GameData.differing(""), MGQ_MpWorld::GameData.differing(nil)], [nil, nil])
-check("nor one of another format", MGQ_MpWorld::GameData.differing(plain.sub("1:", "2:")), nil)
+check("nor one of another format", MGQ_MpWorld::GameData.differing(plain.sub("2:", "1:")), nil)
 check("nor a damaged one", MGQ_MpWorld::GameData.differing("1:abc"), nil)
 check("or past as many as asked", MGQ_MpWorld::GameData.text(%w[actors classes skills items], 2), "actors, classes and 2 more")
 check("many parts are counted past the first four", MGQ_MpWorld::GameData.text(%w[actors classes skills items weapons armors]), "actors, classes, skills, items and 2 more")

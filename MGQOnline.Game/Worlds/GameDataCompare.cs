@@ -2,6 +2,7 @@
 //  GameDataCompare.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Told a fingerprint of another format apart
 //      Paulinchen  2026-10-28: Named the parts the events database gates its tables by
 //      Paulinchen  2026-10-23: Created
 //
@@ -60,6 +61,16 @@ public static class GameDataCompare
 
         return Enumerable.Range(0, Parts.Count).Where(index => mineSums[index] != otherSums[index]).Select(index => Parts[index]).ToList();
     }
+
+    /// <summary>
+    /// Tells whether another game's fingerprint was made in another format than this game's, such
+    /// as by an older version of the mod, so the two cannot be compared until it is made again.
+    /// </summary>
+    /// <param name="mine">This game's fingerprint, empty when its data could not be read.</param>
+    /// <param name="other">The other game's fingerprint, empty or <see langword="null"/> when unknown.</param>
+    /// <returns>Whether both name a format and the formats differ.</returns>
+    public static bool OtherFormat(string mine, string? other) =>
+        !string.IsNullOrEmpty(other) && Split(mine) is var (format, _) && Split(other) is var (otherFormat, _) && format != otherFormat;
 
     /// <summary>
     /// Names parts in a sentence, the first few by name.

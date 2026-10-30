@@ -2,6 +2,7 @@
 #  bug_report_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Expected the whole version the mod loader names
 #      Paulinchen  2026-10-23: Made the worlds on this PC through the stand-ins of the DLL's topics
 #                            - Handed the screenshot to C# by the Bitmap's address, the walk to its pixels gone there
 #                            - Typed through the stand-in text box
@@ -280,7 +281,7 @@ check("the exports have the contract's signatures",
 # The facts and details.
 SceneManager.scene = Scene_Map.new
 check("the public facts: the game, the world and where, the DLL adding the mod's version",
-      report.facts(SceneManager.scene), [["Game", "3.06, translated"], ["World", "Raid, Test World"], ["Where", "Scene_Map, map 154"]])
+      report.facts(SceneManager.scene), [["Game", "v3.06.00, translated"], ["World", "Raid, Test World"], ["Where", "Scene_Map, map 154"]])
 $listing[2][0].hidden = true
 check("a hidden world keeps its name out of the public facts", report.facts(SceneManager.scene)[1], ["World", "Raid, a hidden world"])
 $listing = ["loading", "", []]
@@ -300,6 +301,8 @@ $patch_ver = nil
 check("the untranslated game, and a game without the loader's version", report.game_text, "unknown version, untranslated")
 $data_system.variables = []
 check("a game whose progress variable has neither name", report.game_text, "unknown version, translation unknown")
+$patch_ver = "v3.06.00.ru.0.2.1"
+check("a translation's own loader, with the version it names", report.game_text, "v3.06.00.ru.0.2.1, translation unknown")
 $data_system.variables = [nil, "Overall Events Progress"]
 $patch_ver = "v3.06.00"
 world = MGQ_MpWorld.world

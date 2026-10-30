@@ -2,6 +2,7 @@
 //  EventTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Kept the database fingerprint format in the differing game data
 //      Paulinchen  2026-10-28: Checked the command index of a map's pages at once
 //                            - Sorted over the events database of a tiny game, by length and shape, and checked its gate
 //                            - Handed the topics the event source alone
@@ -113,12 +114,13 @@ public sealed class EventTopicsTests
     [Fact]
     public void Open_LeavesOutTheTablesOfTheDifferingParts()
     {
-        string[] sums = _events.Store.Meta!.Build.Fingerprint[2..].Split('.');
+        string[] halves = _events.Store.Meta!.Build.Fingerprint.Split(':');
+        string[] sums = halves[1].Split('.');
         sums[9] = "ffffffff";
         ListRow list = _events.Store.CommonList(40)!.Value;
         var common = new RubyHash { { "common", 40 }, { "size", list.CountAll }, { "shape", list.Shape } };
 
-        RubyHash opened = _topics.Call(EventTopics.Open, new RubyHash { { "fingerprint", "1:" + string.Join(".", sums) } })!.AsHash();
+        RubyHash opened = _topics.Call(EventTopics.Open, new RubyHash { { "fingerprint", halves[0] + ":" + string.Join(".", sums) } })!.AsHash();
 
         Assert.Equal(new RubyHash { { "usable", true }, { "problem", RubyNil.Value }, { "differing", new RubyArray { "common events" } } }, opened);
         Assert.Equal(new RubyHash { { "unknown", true } }, _topics.Call(EventTopics.Sort, common));

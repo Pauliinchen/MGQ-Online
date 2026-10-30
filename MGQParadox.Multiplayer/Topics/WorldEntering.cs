@@ -2,6 +2,7 @@
 //  WorldEntering.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Had the creator update a data scan of another format before entering
 //      Paulinchen  2026-10-28: Waited for the list while it is not fetched yet as well as while it is being fetched
 //      Paulinchen  2026-10-23: Sent the world screen's requests and took this game's data from the DLL's copy
 //                            - Created
@@ -870,10 +871,19 @@ internal sealed partial class WorldEntering
     /// <returns>Whether entering goes on now.</returns>
     private bool DataAllows(ListedWorld listed)
     {
-        IReadOnlyList<string>? differing = GameDataCompare.Differing(Data, _dataTaken ? Data : listed.About.Data);
+        string? scan = _dataTaken ? Data : listed.About.Data;
         bool accepted = _dataAccepted;
         _dataAccepted = false;
         bool own = listed.CreatorId == _me;
+        if (GameDataCompare.OtherFormat(Data, scan))
+        {
+            (bool entering, IReadOnlyList<EnterDone> done) = EnterRules.OtherScan(_entry!.Name, listed.About.Strict, own);
+            Log($"data check of {_entry.Name}: its scan has another format; {(own ? "asking the creator to update it" : entering ? "let in" : "strict, kept out until its creator updates it")}");
+            Play(done);
+            return entering;
+        }
+
+        IReadOnlyList<string>? differing = GameDataCompare.Differing(Data, scan);
         bool parked = false;
         string ownData = "";
         if (own && differing is { Count: > 0 })
@@ -885,7 +895,7 @@ internal sealed partial class WorldEntering
 
         (bool allowed, IReadOnlyList<EnterDone> did) = EnterRules.Data(_entry!.Name, differing, listed.About.Strict, listed.About.Mods, own, parked, accepted, ownData);
         Log(differing == null || differing.Count == 0
-            ? $"data check of {_entry.Name}: {(differing == null ? "cannot compare (unknown or other format), let in" : "matches")}"
+            ? $"data check of {_entry.Name}: {(differing == null ? "cannot compare (unknown), let in" : "matches")}"
             : $"data check of {_entry.Name}: differs in {string.Join(", ", differing)}; {(allowed ? "player entered anyway" : listed.About.Strict ? "strict" : "asking the player")}");
         Play(did);
         return allowed;

@@ -2,6 +2,7 @@
 //  WorldEnteringTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Checked that a data scan of another format waits for its creator
 //      Paulinchen  2026-10-28: Checked that the steps wait for a list not fetched yet
 //      Paulinchen  2026-10-23: Covered the world screen's requests
 //                            - Created
@@ -45,6 +46,11 @@ public sealed class WorldEnteringTests : IDisposable
     /// A creator's data fingerprint that differs from this game's in its maps.
     /// </summary>
     private const string OtherData = "1:00000000.00000000.00000000.00000000.00000000.00000000.00000000.00000000.00000000.00000000.11111111";
+
+    /// <summary>
+    /// A creator's data fingerprint that another version of the mod made.
+    /// </summary>
+    private const string OtherFormatData = "0:00000000.00000000.00000000.00000000.00000000.00000000.00000000.00000000.00000000.00000000.00000000";
 
     /// <summary>
     /// The mod folder under test.
@@ -381,6 +387,26 @@ public sealed class WorldEnteringTests : IDisposable
         Assert.Equal($"data w1 {Data}", _directory.Calls.Last());
         _directory.Finish(null, null);
 
+        Assert.Equal(["idle", "say The data scan of Plain was updated to your game.", "start fresh"], Step());
+    }
+
+    /// <summary>
+    /// Asserts that the creator of a world whose data scan another version of the mod made is asked
+    /// to update it before entering, and that other games are kept out of it meanwhile while it is
+    /// for the same data only.
+    /// </summary>
+    [Fact]
+    public void Enter_HasTheCreatorUpdateAScanOfAnotherFormatAndKeepsOthersOutMeanwhile()
+    {
+        _directory.List(World("w1", open: true, data: OtherFormatData, strict: true));
+        Assert.Equal(["buzz", "say Plain only takes matching game data. Its data scan waits for its creator to update it.", "back"], Enter("w1"));
+
+        LocalWorld folder = Folder();
+        _directory.List(World("w1", creator: Me, data: OtherFormatData, strict: true));
+        Assert.Equal(["say The data scan of Plain was made by another version of the mod. Take your game's data as it is now and enter?", "confirm own_data yes,cancel"], Enter("w1", folder.Id));
+        Assert.Equal(["busy data"], Answer("yes"));
+        Assert.Equal($"data w1 {Data}", _directory.Calls.Last());
+        _directory.Finish(null, null);
         Assert.Equal(["idle", "say The data scan of Plain was updated to your game.", "start fresh"], Step());
     }
 

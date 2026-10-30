@@ -2,6 +2,7 @@
 //  EnterRules.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Decided entering a world whose data scan has another format
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -153,6 +154,25 @@ public static class EnterRules
         }
 
         return (false, [new EnterDone(Confirm, $"Your game data differs.{needs} Enter anyway?", "differing", "Enter anyway")]);
+    }
+
+    /// <summary>
+    /// Decides whether this game may enter a world whose data scan another version of the mod made,
+    /// which cannot be compared: its creator is asked to take their game's data first, and other
+    /// games are kept out of a world for the same data only until the creator did.
+    /// </summary>
+    /// <param name="name">The world's name.</param>
+    /// <param name="strict">Whether only games with the same data may enter.</param>
+    /// <param name="own">Whether the player made the world.</param>
+    /// <returns>Whether entering goes on, and what the screen does otherwise.</returns>
+    public static (bool Allowed, IReadOnlyList<EnterDone> Did) OtherScan(string name, bool strict, bool own)
+    {
+        if (own)
+        {
+            return (false, [new EnterDone(Confirm, $"The data scan of {name} was made by another version of the mod. Take your game's data as it is now and enter?", "own_data", "Update and enter")]);
+        }
+
+        return strict ? (false, Refused($"{name} only takes matching game data. Its data scan waits for its creator to update it.")) : (true, []);
     }
 
     /// <summary>

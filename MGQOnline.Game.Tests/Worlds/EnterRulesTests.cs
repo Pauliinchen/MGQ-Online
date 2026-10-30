@@ -2,6 +2,7 @@
 //  EnterRulesTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Checked entering a world whose data scan has another format
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -53,6 +54,34 @@ public sealed class EnterRulesTests
             Assert.Equal(entry.GetProperty("allowed").GetBoolean(), allowed);
             Assert.Equal(Golden(entry), Recorded(did));
         }
+    }
+
+    /// <summary>
+    /// Asserts that a data scan of another format is told apart from an unknown one and from one
+    /// that differs.
+    /// </summary>
+    [Fact]
+    public void OtherFormat_TellsAScanOfAnotherFormat()
+    {
+        Assert.Equal([true, false, false, false], new[] { "1:a.b", "2:c.d", "", null }.Select(other => GameDataCompare.OtherFormat("2:a.b", other)));
+        Assert.False(GameDataCompare.OtherFormat("", "1:a.b"));
+    }
+
+    /// <summary>
+    /// Asserts that the creator of a world whose data scan has another format is asked to update it,
+    /// and that other games are kept out only while the world is for the same data only.
+    /// </summary>
+    [Fact]
+    public void OtherScan_AsksTheCreatorAndKeepsOthersOutOfAStrictWorld()
+    {
+        (bool ownAllowed, IReadOnlyList<EnterDone> own) = EnterRules.OtherScan("Haven", true, true);
+        (bool strictAllowed, IReadOnlyList<EnterDone> strict) = EnterRules.OtherScan("Haven", true, false);
+        (bool lenientAllowed, IReadOnlyList<EnterDone> lenient) = EnterRules.OtherScan("Haven", false, false);
+
+        Assert.Equal((false, EnterRules.Confirm, "own_data"), (ownAllowed, own.Single().Kind, own.Single().What));
+        Assert.False(strictAllowed);
+        Assert.Equal([EnterRules.Buzz, EnterRules.Say, EnterRules.Back], strict.Select(done => done.Kind));
+        Assert.Equal((true, 0), (lenientAllowed, lenient.Count));
     }
 
     /// <summary>

@@ -29,8 +29,8 @@ Worlds, Raid Worlds, parties and co-op battles are a **prototype**: expect bugs,
 
 ## Requirements
 
-- **Monster Girl Quest! Paradox RPG 3.06**, with or without the English translation. Everyone needs the same game version and the same version of this mod. A translated and an untranslated game can play together; each shows battles in its own language.
-- **The community's mod loader:** the `Patch.rb` from [*Patch.rb (enable Type 1 mods)*](https://mgq.miraheze.org/wiki/Paradox_mods#Patch.rb_(enable_Type_1_mods)) on the MGQ wiki, in your `Patch` folder.
+- **Monster Girl Quest! Paradox RPG 3.06**, untranslated or with the English or Russian translation. Everyone needs the same game version and the same version of this mod. A translated and an untranslated game can play together; each shows battles in its own language.
+- **The community's mod loader:** the `Patch.rb` from [*Patch.rb (enable Type 1 mods)*](https://mgq.miraheze.org/wiki/Paradox_mods#Patch.rb_(enable_Type_1_mods)) on the MGQ wiki, in your `Patch` folder. The Russian translation brings its own `Patch.rb`, which loads the mod too: keep it and skip the wiki one. It only runs scripts right in `Patch`, so other mods that keep their scripts in a folder inside `Patch` don't load with it, even when a world downloads them.
 
 Optional:
 

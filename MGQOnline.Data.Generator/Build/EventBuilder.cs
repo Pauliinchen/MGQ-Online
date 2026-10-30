@@ -2,6 +2,7 @@
 //  EventBuilder.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Counted the entries of the named parts by what they hold and the two skills the game appends
 //      Paulinchen  2026-10-28: Derived the flags, the chests and the raid tables after the lists
 //                            - Took the translations' names of the cutscene roots too
 //                            - Created
@@ -45,7 +46,7 @@ internal static class EventBuilder
     /// <summary>
     /// The generator's version, which grows with each change of what it writes.
     /// </summary>
-    public const int Version = 1;
+    public const int Version = 2;
 
     /// <summary>
     /// The command that marks a common event, which the game puts first in every common event's list.
@@ -164,14 +165,14 @@ internal static class EventBuilder
         var ids = new List<IReadOnlyList<int>>();
         foreach ((string part, string path) in GameSource.NamedParts)
         {
-            IReadOnlyList<bool?> named = source.ReadNamed(path);
-            actors = part == "actors" ? named.Count : actors;
+            IReadOnlyList<bool?> used = source.ReadInUse(path);
+            actors = part == "actors" ? used.Count : actors;
             if (part == "skills")
             {
-                named = [.. named, .. Enumerable.Repeat((bool?)false, GameFingerprint.AppendedSkills)];
+                used = [.. used, .. Enumerable.Repeat((bool?)true, GameFingerprint.AppendedSkills)];
             }
 
-            ids.Add(GameFingerprint.Existing(named, hasName => hasName == true));
+            ids.Add(GameFingerprint.Existing(used, inUse => inUse == true));
         }
 
         ids.Add(GameFingerprint.Existing(troops, troop => troop.Members.Count > 0));

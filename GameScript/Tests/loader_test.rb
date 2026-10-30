@@ -2,6 +2,7 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Checked that Multiplayer.rb holds ASCII only and logs and shows the errors of its own load
 #      Paulinchen  2026-10-28: Checked the freeze's load order without its deleted data script
 #                            - Gave the closing its world room drain topic
 #                            - Checked that the scenes ending on a quit or the window closing write the closing line, and the end once
@@ -126,6 +127,11 @@ Dir.mktmpdir do |game|
   end
 end
 
+# The Russian translation's own loader reads Multiplayer.rb as it is, without dropping a byte
+# order mark.
+first_wide = File.binread(File.expand_path("../Multiplayer.rb", __dir__)).bytes.index { |byte| byte > 0x7f }
+check("Multiplayer.rb holds ASCII only, so no byte order mark", first_wide, nil)
+
 check("a script loads at the top level, past a byte order mark",
       [defined?(LoaderTestGood::VALUE) ? LoaderTestGood::VALUE : nil, [].respond_to?(:loader_test_good?)], [1, true])
 check("the scripts after one that fails or is missing still load", defined?(LoaderTestAfter) ? true : false, true)
@@ -176,6 +182,37 @@ Dir.mktmpdir do |game|
     lines = File.binread(file).split("\r\n").map { |line| line.split("  ", 2)[1] }
     check("while the mod stays off, the lines and the reason go into the day's file directly, marked as the scripts'",
           [lines, flushes[0]], [["[script] starting", "[script] not started: the mod is turned off", "[script] loaded 70 of 70 scripts"], 1])
+  end
+end
+
+# The Russian translation's own loader catches no error the file raises, so the file catches the
+# errors of its own load, here one the start raises before it settled the log, which leaves the
+# hooks that write the log missing too.
+module LoaderTestFailing
+  BOXES = []
+  Log = MGQ_Multiplayer::Log
+  def self.start; raise LoadError, "no fiddle"; end
+  def self.msgbox(text); BOXES << text; end
+end
+LoaderTestFailing.module_eval(source[/  def self\.available\?\n.*?\n  end\n/m])
+LoaderTestFailing.module_eval(source[/  def self\.load_failed\(stage, error\)\n.*?\n  end\n/m])
+Dir.mktmpdir do |game|
+  Dir.chdir(game) do
+    log.instance_variable_set(:@early, [])
+    log.instance_variable_set(:@own_file, nil)
+    log.write("starting")
+    raised = begin
+      eval(source[/^begin\n  MGQ_Multiplayer\.start\n.*?^end\n/m].gsub("MGQ_Multiplayer", "LoaderTestFailing"), TOPLEVEL_BINDING)
+      eval(source[/^begin\n  # After every frame.*?^end\n/m].gsub("MGQ_Multiplayer", "LoaderTestFailing"), TOPLEVEL_BINDING)
+      nil
+    rescue Exception => e
+      e
+    end
+    file = File.join("Logs", "Multiplayer #{Time.now.strftime('%Y-%m-%d')}.log")
+    lines = File.exist?(file) ? File.binread(file).split("\r\n").map { |line| line.split("  ", 2)[1][/\A[^:]*(: [^:]*)?/] } : []
+    check("an error as Multiplayer.rb loads is never raised, but written into the day's file at once, as is the hooks' missing",
+          [raised, lines], [nil, ["[script] starting", "[script] loading FAILED: LoadError", "[script] hooks FAILED: NameError"]])
+    check("and told in the game's message box once, without the error", LoaderTestFailing::BOXES, ["Monster Girl Quest! Online failed to load."])
   end
 end
 

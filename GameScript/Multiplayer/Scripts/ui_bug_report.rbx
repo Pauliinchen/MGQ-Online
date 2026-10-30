@@ -2,6 +2,7 @@
 #  ui_bug_report.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Named the game version as the mod loader names it, a translation's own loader included
 #      Paulinchen  2026-10-23: Walked to the screenshot's pixels in C#, handing it the Bitmap's address
 #                            - Typed into the form through the text box in C#
 #                            - Handed the log's lines to the DLL before a report reads its log
@@ -581,12 +582,14 @@ module MGQ_MpBugReport
     "unknown"
   end
 
-  # Names the game's version and whether it is translated.
+  # Names the game's version as the mod loader names it, and whether it is translated.
   #
-  # @return [String] Such as "3.06, translated".
+  # The Russian translation's own loader adds its version to the game's.
+  #
+  # @return [String] Such as "v3.06.00, translated".
   def self.game_text
-    version = $patch_ver.to_s[/\d+\.\d+/]
-    "#{version || 'unknown version'}, #{translation}"
+    version = $patch_ver.to_s.strip
+    "#{version.empty? ? 'unknown version' : version}, #{translation}"
   end
 
   # Tells whether the game is translated, by the name of the story's progress variable.

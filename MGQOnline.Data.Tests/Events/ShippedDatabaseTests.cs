@@ -2,6 +2,7 @@
 //  ShippedDatabaseTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Pinned the fingerprint of format 2
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -22,7 +23,7 @@ public sealed class ShippedDatabaseTests
     /// The fingerprint of the untranslated game 3.06, which the shipped file is generated from and
     /// which the running game writes to <c>Patch/Multiplayer/GameData.ini</c>.
     /// </summary>
-    private const string GameFingerprint = "1:2a67edfc.b37774cb.8e0f83fc.689408b8.70745247.23764a70.8bf4c4a4.e8cacada.d37476e0.2deb6f76.05a2612e";
+    private const string GameFingerprint = "2:2a67edfc.e66a7e3b.780f63eb.e0cc106c.91029dff.d15da834.01b68542.e8cacada.d37476e0.2deb6f76.05a2612e";
 
     /// <summary>
     /// The shipped file's path below the repository.

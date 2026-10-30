@@ -2,6 +2,7 @@
 //  SourceTypes.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Kept whether an entry holds a note, features or effects instead of whether it has a name
 //      Paulinchen  2026-10-28: Kept common event names, item descriptions and enemy notes
 //                            - Created
 //
@@ -150,14 +151,14 @@ internal sealed record SourceTroopPage(SourceTroopCondition Condition, int Span,
 internal sealed record SourceTroop(int Id, IReadOnlyList<SourceMember> Members, IReadOnlyList<SourceTroopPage> Pages);
 
 /// <summary>
-/// An entry of a named part of the database, such as an actor or an item: whether it has a name,
-/// and the texts the build reads flags from and never writes.
+/// An entry of a named part of the database, such as an actor or an item: whether it holds
+/// anything, and the texts the build reads flags from and never writes.
 /// </summary>
-/// <param name="HasName">Whether its name is not empty.</param>
+/// <param name="InUse">Whether it holds a note, features or effects.</param>
 /// <param name="ItemType">An item's type, 2 for a key item; 0 for any other entry.</param>
 /// <param name="Description">An item's, weapon's or armor's description; empty for any other entry.</param>
-/// <param name="Note">An enemy's note; empty for any other entry.</param>
-internal sealed record SourceEntry(bool HasName, int ItemType, string Description, string Note);
+/// <param name="Note">Its note.</param>
+internal sealed record SourceEntry(bool InUse, int ItemType, string Description, string Note);
 
 /// <summary>
 /// A map as its folder's MapInfos.rvdata2 lists it.

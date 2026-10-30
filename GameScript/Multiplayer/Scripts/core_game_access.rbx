@@ -2,6 +2,7 @@
 #  core_game_access.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Named the features and effects a database entry's file holds
 #      Paulinchen  2026-10-23: Named the world's story a save built on
 #                            - Named whether a vehicle is driven
 #      Paulinchen  2026-10-17: Named what a frozen raid boss fight keeps and puts back
@@ -74,6 +75,10 @@ module MGQ_MpGame
 
     # Game_Battler: its battle counters, which hold its barriers.
     :counters => :@cnt,
+
+    # A database entry: the features and effects its file holds, without those of its note.
+    :features => :@features,
+    :effects => :@effects,
 
     # An enchanted item, and an enemy's extra data.
     :plus_num => :@plus_num,

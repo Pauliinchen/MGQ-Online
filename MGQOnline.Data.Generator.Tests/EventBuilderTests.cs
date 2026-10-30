@@ -2,6 +2,7 @@
 //  EventBuilderTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Expected the fingerprint of format 2, which counts entries by what they hold and the two skills the game appends
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -218,15 +219,16 @@ public sealed class EventBuilderTests
 
     /// <summary>
     /// Asserts that the fingerprint is the one world.rbx's rule writes for the tiny game, its golden
-    /// string computed once with Ruby's Zlib.crc32 over the ids that exist of each part.
+    /// string computed once with Ruby's Zlib.crc32 over the ids that exist of each part: an entry
+    /// holding a note, features or effects whatever its name, and the two skills the game appends.
     /// </summary>
     [Fact]
     public void Fingerprint_MatchesTheScriptsRule()
     {
-        const string golden = "1:5c095c0d.00000000.83dcefb7.00000000.00000000.00000000.00000000.00000000.83dcefb7.5c095c0d.98b1fb33";
+        const string golden = "2:5c095c0d.00000000.11894deb.00000000.00000000.00000000.00000000.00000000.83dcefb7.5c095c0d.98b1fb33";
         TinyGame game = new TinyGame()
-            .Named("Data/Actors.rvdata2", "RPG::Actor", "Luka", string.Empty, "Alice")
-            .Named("Data/Skills.rvdata2", "RPG::Skill", "Attack")
+            .Holding("Data/Actors.rvdata2", "RPG::Actor", "note", string.Empty, "features")
+            .Holding("Data/Skills.rvdata2", "RPG::Skill", "effects")
             .Troop(1, [5])
             .Troop(2, [])
             .Common(1, C(121, 1, 1, 0))

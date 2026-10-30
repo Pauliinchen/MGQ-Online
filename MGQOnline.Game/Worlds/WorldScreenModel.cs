@@ -2,6 +2,7 @@
 //  WorldScreenModel.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Told a data scan of another format in the details
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -142,6 +143,7 @@ public sealed record ScreenRules(Func<int, string?> DifficultyName, Func<int, st
 /// <param name="SettingsShared">Whether the world shares its creator's mod settings.</param>
 /// <param name="TurnedOff">The player's mods the world turns off with their scripts counted; <see langword="null"/> while unknown.</param>
 /// <param name="Added">The hidden worlds the player added by their ids.</param>
+/// <param name="OtherScan">Whether another version of the mod made the world's data scan, which cannot be compared.</param>
 public sealed record ScreenFacts(
     string Me,
     bool Admin,
@@ -152,7 +154,8 @@ public sealed record ScreenFacts(
     string SettingsText,
     bool SettingsShared,
     IReadOnlyList<(string Name, int Scripts)>? TurnedOff,
-    IReadOnlyCollection<string> Added);
+    IReadOnlyCollection<string> Added,
+    bool OtherScan = false);
 
 /// <summary>
 /// A value of the details on a darker box.
@@ -522,11 +525,13 @@ public static class WorldScreenModel
         // may take it as the world's.
         string? update = listed.CreatorId == facts.Me && (differing == null || differing.Count > 0) ? "data" : null;
         ScreenCell game = differing == null
-            ? new ScreenCell("Your game", update != null ? "Not compared. Confirm to set yours" : "Not compared: the world does not tell", "normal", update)
+            ? new ScreenCell("Your game", update != null ? "Not compared. Confirm to set yours" : facts.OtherScan ? "Not compared: the scan waits for its creator" : "Not compared: the world does not tell", "normal", update)
             : differing.Count == 0
                 ? new ScreenCell("Your game", "Matches the creator's", "good")
                 : new ScreenCell("Your game", "Differs: " + facts.DifferingText, "warn", update);
-        string? note = update != null ? "confirm on Your game: update" : listed.Strict ? "same data only" : differing != null ? "differing games are warned" : null;
+        string? note = update != null ? "confirm on Your game: update"
+            : listed.Strict ? facts.OtherScan ? "kept out until its creator updates the scan" : "same data only"
+            : differing != null ? "differing games are warned" : null;
         if (listed.ModsUnread)
         {
             return new ScreenPanel("Game data", note, [[new ScreenCell("Mods", "Reading . . .", "normal")], [game]]);

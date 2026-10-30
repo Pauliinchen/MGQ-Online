@@ -2,6 +2,7 @@
 //  GameFingerprint.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-30: Counted an entry by its note, features and effects, never its name, in format 2
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -25,11 +26,11 @@ internal static class GameFingerprint
     /// <summary>
     /// The fingerprint's format, which world.rbx's FORMAT names.
     /// </summary>
-    public const string Format = "1";
+    public const string Format = "2";
 
     /// <summary>
     /// How many skills the game appends to the skills it loads (145 - Module.rb, the turn's end
-    /// revive and the revive); they have no name, so no fingerprint counts them.
+    /// revive and the revive); they have effects, so the fingerprint counts them.
     /// </summary>
     public const int AppendedSkills = 2;
 
@@ -50,7 +51,7 @@ internal static class GameFingerprint
     /// Writes the fingerprint of its parts.
     /// </summary>
     /// <param name="parts">The parts, in their order.</param>
-    /// <returns>The fingerprint, such as "1:2a67edfc.b37774cb".</returns>
+    /// <returns>The fingerprint, such as "2:2a67edfc.e66a7e3b".</returns>
     public static string Text(IEnumerable<FingerprintPart> parts) => Format + ":" + string.Join(".", parts.Select(part => part.Crc));
 
     /// <summary>

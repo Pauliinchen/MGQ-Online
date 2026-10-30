@@ -2,6 +2,7 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-30: Counted an entry of the game data by its note, features and effects, never its name
 #      Paulinchen  2026-10-28: Closed the world's story before its room, so a world left for the title screen keeps its last writes
 #                            - Dropped the invite as the title screen opens the world screen for it
 #      Paulinchen  2026-10-23: Dropped the list's refresh, the favourites, the hidden worlds added and removed, the deleted saves and the clipboard copy the DLL's steps do now
@@ -1042,7 +1043,7 @@ module MGQ_MpWorld
   # so a mod that adds or removes any is noticed.
   module GameData
     # The fingerprint's format, which both games must share to be compared.
-    FORMAT = 1
+    FORMAT = 2
 
     # Most parts a text names before it counts the rest.
     NAMED_PARTS = 4
@@ -1063,8 +1064,7 @@ module MGQ_MpWorld
 
     # Finds the fingerprint of this game's data, once per session.
     #
-    # It reads whether an entry has a name, never the name itself, so a translated game matches
-    # the untranslated one as long as both name the same entries.
+    # It reads no name, since translations name entries the untranslated game leaves unnamed.
     #
     # @return [String] FORMAT, then a checksum per part; empty when the data could not be read.
     def self.fingerprint
@@ -1096,10 +1096,22 @@ module MGQ_MpWorld
     #
     # @return [Array<Array<Integer>>] The ids, per part in the order of PARTS.
     def self.ids
-      named = [$data_actors, $data_classes, $data_skills, $data_items, $data_weapons, $data_armors, $data_enemies, $data_states].map do |entries|
-        existing(entries) { |entry| !entry.name.to_s.empty? }
+      used = [$data_actors, $data_classes, $data_skills, $data_items, $data_weapons, $data_armors, $data_enemies, $data_states].map do |entries|
+        existing(entries) { |entry| used?(entry) }
       end
-      named + [existing($data_troops) { |troop| !troop.members.empty? }, existing($data_common_events) { |event| event.list.size > 1 }, map_ids]
+      used + [existing($data_troops) { |troop| !troop.members.empty? }, existing($data_common_events) { |event| event.list.size > 1 }, map_ids]
+    end
+
+    # Tells whether an entry of the database holds anything: a note, features or effects.
+    #
+    # It reads the features and effects as the data file holds them, since the game's readers add
+    # what the note gives and need the game's analysis, which an entry a mod adds may lack.
+    #
+    # @param entry [RPG::BaseItem] The entry.
+    # @return [Boolean] Whether it does.
+    def self.used?(entry)
+      !entry.note.to_s.strip.empty? || !MGQ_MpGame.get(entry, :features).to_a.empty? ||
+        (entry.respond_to?(:effects) && !MGQ_MpGame.get(entry, :effects).to_a.empty?)
     end
 
     # Lists the ids of the maps, as the game numbers them: those of each further map folder a
