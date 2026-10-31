@@ -2,7 +2,9 @@
 #  battles_served_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Checked that a String held as bytes crosses to C# as text
+#      Paulinchen  2026-10-31: Checked that the battle server counts the players of its battle without itself
+#                            - Checked that the battle server tells the starter its front state again once the starter comes onto the channel
+#                            - Checked that a String held as bytes crosses to C# as text
 #      Paulinchen  2026-10-30: Checked the widths of the troop's pictures in the setup
 #                            - Stood in for the setup C# writes and reads, handed the facts the script collects
 #                            - Checked that a Float or a Symbol among the facts still writes the setup
@@ -351,6 +353,7 @@ BattleManager.setup(40, true, false)
 bid = MGQ_MpBattlesSync.battle_id
 MGQ_MpBattlesServed.instance_variable_set(:@server, true)
 MGQ_MpBattlesSync.serve_over_channel(:host, bid, [1, 2], "the players")
+check("the server counts the players of its battle for those who would join it, not itself", MGQ_MpBattlesHotjoin.players_count, 2)
 $dll_calls.clear
 MGQ_MpBattlesSync.take_served(1, { "battle" => "leave", "bid" => bid, :payload => "" })
 departed = $dll_calls.select { |name, _| name == "mp_battle_send" }.map { |_, args| [args[0], fields_of(args[1])["battle"], MGQ_MpBattlesSync::Wire.parse(fields_of(args[1])[:payload])] }
@@ -398,6 +401,17 @@ check("the server hands a player's drop from the battle channel and their return
 check("and keeps them in the battle meanwhile", [MGQ_MpBattlesSync::Channel.served_gone?, MGQ_MpBattlesSync.guests_in], [false, [1, 2]])
 MGQ_MpBattlesSync::Seats.presence(MGQ_MpOverworldSync::Peers::Peer.new(1, { "name" => "Me" }, nil, false), :gone)
 check("until the presence tells they are gone", [MGQ_MpBattlesSync::Channel.served_gone?, MGQ_MpBattlesSync.guests_in], [false, [2]])
+MGQ_MpBattlesServed.instance_variable_set(:@setup, { :starter => 1 })
+$dll_calls.clear
+MGQ_MpBattlesServed.tell_front_state
+MGQ_MpBattlesServed.tell_front_state
+$dll_entries << "kind=in\nseat=1\n\n"
+MGQ_MpBattlesServed.drain
+MGQ_MpBattlesServed.tell_front_state
+told = $dll_calls.select { |name, args| name == "mp_battle_send" && fields_of(args[1])["battle"] == "front_state" }.map { |_, args| args[0] }
+check("the server tells the starter its unchanged front state again once the starter comes onto the battle channel, as a tell before may not have reached it",
+      told, [1, 1])
+MGQ_MpBattlesServed.instance_variable_set(:@setup, nil)
 MGQ_MpBattlesServed.instance_variable_set(:@server, nil)
 MGQ_MpBattlesSync.finish
 MGQ_MpBattlesCoop.ended

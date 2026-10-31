@@ -2,6 +2,7 @@
 #  battles_coop_hotjoin.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Left the battle server out of the count of its battle's players
 #      Paulinchen  2026-10-30: Kept the widths of a served battle's troop its starter measured for the placements on the battle server
 #                            - Placed an encounter's enemies and checked requests to join through the rules in C#
 #                            - Wrote the roster and the party and read the host's changed troop through the rules in C#
@@ -652,11 +653,15 @@ module MGQ_MpBattlesHotjoin
     pending("count").to_i > 0
   end
 
-  # Counts the players of the battle the player hosts, the player included.
+  # Counts the players of the battle the player hosts, the player included unless the game is the
+  # battle server, which plays for nobody.
   #
   # @return [Integer] The players.
   def self.players_count
-    MGQ_MpBattlesSync.role == :host ? MGQ_MpBattlesSync.guests_in.size + 1 : 1
+    return 1 unless MGQ_MpBattlesSync.role == :host
+
+    server = defined?(MGQ_MpBattlesServed) && MGQ_MpBattlesServed.server?
+    MGQ_MpBattlesSync.guests_in.size + (server ? 0 : 1)
   end
 
   # Lists the seats of the players taken in who have not joined yet.

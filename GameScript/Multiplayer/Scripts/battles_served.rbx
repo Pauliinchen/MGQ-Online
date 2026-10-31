@@ -2,7 +2,8 @@
 #  battles_served.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Handed the setup's Strings to C# as text
+#      Paulinchen  2026-10-31: Told the starter the front state again once a player comes onto the battle channel
+#                            - Handed the setup's Strings to C# as text
 #      Paulinchen  2026-10-30: Carried the widths of the troop's pictures in the setup, which the battle server places joining enemies by
 #                            - Wrote, read and checked the setup and the scripts' fingerprint through C#
 #                            - Read a setup's mods without C# for the battle server's child before its core opens
@@ -296,7 +297,12 @@ module MGQ_MpBattlesServed
       log("on the battle channel as seat #{seat}")
     when "in"
       log("seat #{seat} came onto the battle channel")
-      MGQ_MpOverworldSync::Peers.come_back(seat) if server?
+      return unless server?
+
+      MGQ_MpOverworldSync::Peers.come_back(seat)
+      # The relay drops a send to a seat not yet on the channel, so the starter may have missed
+      # the last front state; tell it again.
+      @told_state = nil
     when "out"
       log("seat #{seat} left the battle channel")
       # On the server, which sits in no world's room, the channel tells the players' presence: away
