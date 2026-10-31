@@ -2,6 +2,8 @@
 #  start_choice_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Dropped the stand-in of the title screen's commands, which no script hooks any more
+#      Paulinchen  2026-10-31: Loaded ui_online.rbx and ui_boxes.rbx in place of the scripts the Mod Framework took over
 #      Paulinchen  2026-10-30: Stopped loading the deleted world_mods_parking.rbx
 #      Paulinchen  2026-10-23: Checked that a new world goes to the DLL and that the screen plays the steps it answers
 #                            - Checked that the screen plays the DLL's steps of where to start and hands back the player's choice
@@ -68,8 +70,6 @@ class Sprite; def initialize(*); end; end
 Rect = Struct.new(:x, :y, :width, :height)
 # The game's title screen, which does nothing.
 class Scene_Title; def start; end; def create_command_window; end; def update; end; def terminate; end; end
-# The title screen's commands, which list nothing.
-class Window_TitleCommand; def make_command_list; end; end
 # The game's system sounds: each one played is added to $sounds.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
 # The game's scene manager: the scene called is recorded in $called.
@@ -128,8 +128,8 @@ module MGQ_Multiplayer
 end
 
 load_script "world_save_distribution"
-load_script "ui"
-load_script "ui_text_box"
+load_script "ui_online"
+load_script "ui_boxes"
 load_script "world"
 load_script "world_mods"
 load_script "world_text"

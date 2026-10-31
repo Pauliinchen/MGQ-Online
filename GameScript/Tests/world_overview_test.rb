@@ -2,7 +2,9 @@
 #  world_overview_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Expected the plainer texts the player reads
+#      Paulinchen  2026-10-31: Expected the game's cancel key in the hints and answered the question box through its stand-in
+#                            - Kept the boxes' places in the Mod Framework's settings
+#                            - Expected the plainer texts the player reads
 #      Paulinchen  2026-10-30: Answered the teleports' view and the squad from the party's stand-in
 #                            - Kept one check of the story's place
 #      Paulinchen  2026-10-28: Read the place in the story by the ids of its switches and variables
@@ -64,7 +66,7 @@ require_relative "rules_support"
 module MGQ_Multiplayer
   # Stands in for the mouse: at $mouse, clicked once while $click is set, its wheel's notches in
   # $wheel.
-  module Mouse
+  module Mod_Framework::UI::Mouse
     # Answers where the mouse is, as $mouse says.
     def self.position; $mouse; end
     # Answers whether the mouse was clicked, taking $click.
@@ -192,8 +194,6 @@ module MGQ_MpBattlesDuel
   def self.call_of(_peer); nil; end
 end
 MGQ_MpActions.offer(MGQ_MpBattlesDuel)
-load_script "ui_theme" unless defined?(MGQ_MpUi::Theme)
-load_script "ui_layout" unless defined?(MGQ_MpUi::Layout)
 load_script "world_catchup_exp"
 load_script "world_overview"
 load_script "world_overview_pages"
@@ -245,7 +245,7 @@ check("a player's row", [friend_row.level, friend_row.story, friend_row.ping[0],
 # F11 opens the overview, the arrows pick a player, and confirm opens and takes their menu.
 $pressed = 0x7A
 overview.on_map
-check("F11 opens it and holds the buttons", [overview.open?, MGQ_Multiplayer::Capture.on?], [true, true])
+check("F11 opens it and holds the buttons", [overview.open?, Mod_Framework::UI::Capture.on?], [true, true])
 check("on the player's own row", overview.view[:selected], 1)
 overview.on_map
 $buttons << :DOWN
@@ -281,7 +281,7 @@ overview.on_map
 overview.define_singleton_method(:rows, rows)
 check("an update reads the players once, and keeps the view for the picture", [reads, overview.shown_view[:menu].size], [1, 1])
 2.times { $buttons << :B; overview.on_map }
-check("cancel closes the menu, then the overview", [overview.open?, MGQ_Multiplayer::Capture.on?], [false, false])
+check("cancel closes the menu, then the overview", [overview.open?, Mod_Framework::UI::Capture.on?], [false, false])
 
 # The emote wheel keeps the overview shut, and a player nothing is offered with gets a menu that
 # says so.
@@ -576,10 +576,10 @@ crowd = overview::Pane.new("Level 25", nil, group.call("Moving on from Part 2") 
 laid = lambda { Sprite_MpWorldOverview.pane_layout(crowd).map { |kind, (items, columns)| kind == :items ? [items.size, columns] : kind } }
 check("in the box's least width the pane sets each group in as many columns as its longest name fits",
       laid.call, [[1, 1], :gap, [3, 3], [2, 3], :gap, [2, 3]])
-$player_ini["ui_overview"] = "0,32,640,404"
+Mod_Framework::Settings.store("ui_overview", "0,32,640,404")
 MGQ_MpUi::Layout.instance_variable_get(:@stored).delete(:overview)
 check("in the widest box more of them share a row, at most four", laid.call, [[1, 1], :gap, [3, 3], [2, 3], :gap, [2, 4]])
-$player_ini.delete("ui_overview")
+Mod_Framework::Settings.forget("ui_overview")
 MGQ_MpUi::Layout.instance_variable_get(:@stored).delete(:overview)
 mixed = overview.level_pane(overview::Level.new(25, [$unlocks[1].dup.tap { |part| part.got = true; part.due = false }, $unlocks[2]], false, true))
 check("a level whose unlocks differ keeps each one's note", [mixed.title, mixed.lines.map { |_, item| item && item.note }.compact.uniq], ["Level 25", ["Done", "Due"]])
@@ -1020,7 +1020,7 @@ sprite.draw(overview.view)
 style = MGQ_MpUi::Style
 check("the title says the world's type and difficulty after its name, the party at the right, then the tabs",
       sprite.bitmap.texts.first(4), ["Party 2 / 4", "Test World | Raid | Hard", "Players", "World"])
-check("the hint names Left and Right, picking, reading on and the numpad's 0", sprite.bitmap.texts.last, "Left or right: page   Up or down: pick   Page Up or Down: read on   Esc, Numpad 0 or F11: close")
+check("the hint names Left and Right, picking, reading on and the numpad's 0", sprite.bitmap.texts.last, "Left or right: page   Up or down: pick   Page Up or Down: read on   X, Numpad 0 or F11: close")
 # Counts the marks drawn in gold.
 gold_marks = lambda { sprite.bitmap.drawn.count { |kind, args| kind == :fill && args[4].equal?(style::GOLD) } }
 check("the invite from afar still waits on the Players page, which marks its tab in gold while the World page shows", [overview.view[:calls], gold_marks.call], [true, 1])
@@ -1056,12 +1056,12 @@ layout = MGQ_MpUi::Layout
 sprite_class = Sprite_MpWorldOverview
 # Keeps a placement in Player.ini as the layout stores it, nil for none, and forgets the one read.
 place_box = lambda do |text|
-  text ? $player_ini["ui_overview"] = text : $player_ini.delete("ui_overview")
+  text ? Mod_Framework::Settings.store("ui_overview", text) : Mod_Framework::Settings.forget("ui_overview")
   layout.instance_variable_get(:@stored).delete(:overview)
 end
 place_box.call(nil)
 check("the overview is a box the player moves and resizes both ways, never smaller than what its columns, tabs (two of other mods' pages among them), lines and menu need",
-      [layout.instance_variable_get(:@boxes)[:overview].to_a, [sprite_class::PLAYERS_WIDTH, sprite_class::TABS_WIDTH]],
+      [registered_box(:overview), [sprite_class::PLAYERS_WIDTH, sprite_class::TABS_WIDTH]],
       [["World overview", 560, 232, :both], [560, 492]])
 check("it starts at the list box's place with its lines", [sprite_class.box.to_a, sprite_class.list_rows], [[40, 32, 560, 404], 13])
 place_box.call("20,150,600,300")
@@ -1157,14 +1157,14 @@ story = narrow.bitmap.drawn.find { |kind, text, _| kind == :text && text == "Par
 check("narrowest, the Players page draws the title, both tabs, its lines with the story column at its least before the ping, and the whole hint smaller",
       [texts.first(4), texts.include?("Me (you)"), story && story[3..4], narrow.bitmap.drawn.count { |kind, _, _, x| kind == :text && x == ping_left } > 0, texts.last, narrow.bitmap.font.size, inside_box.call(narrow.bitmap)],
       [["Party 2 / 4", "Test World | Raid | Hard", "Players", "World"], true, [sprite_class::COLUMNS[:story], sprite_class::STORY_WIDTH], true,
-       "Left or right: page   Enter: invite, duel or trade   Esc, Numpad 0 or F11: close", style::TINY_SIZE, true])
+       "Left or right: page   Enter: invite, duel or trade   X, Numpad 0 or F11: close", style::TINY_SIZE, true])
 overview.turn_to(:world, "the test")
 overview.on_map
 narrow.draw(overview.view)
 check("narrowest, the World page draws the title, every tab, its head, its list and the whole hint smaller, all inside the box",
       [narrow.bitmap.texts.first(6), narrow.bitmap.texts.include?("Test World"), narrow.bitmap.texts.last, narrow.bitmap.font.size, inside_box.call(narrow.bitmap)],
       [["Party 2 / 4", "Test World | Raid | Hard", "Players", "World", "Quests", "Unlocks"], true,
-       "Left or right: page   Up or down: pick   Page Up or Down: read on   Esc, Numpad 0 or F11: close", style::TINY_SIZE, true])
+       "Left or right: page   Up or down: pick   Page Up or Down: read on   X, Numpad 0 or F11: close", style::TINY_SIZE, true])
 wide = Sprite_MpWorldOverview.allocate
 wide.bitmap = Bitmap.new(sprite_class::MIN_WIDTH + 100, sprite_class::MIN_HEIGHT)
 wide.draw_player(overview.rows.find { |row| row.ping }, 0, false)
@@ -1185,20 +1185,10 @@ MGQ_MpCoop::Party.define_singleton_method(:remove) { |peer| removed << peer.seat
 MGQ_MpCoop::Offers.peer_option(member_peer).run.call
 check("removing a member asks first, naming them", [confirm.open?, confirm.instance_variable_get(:@question), confirm.instance_variable_get(:@yes), confirm.instance_variable_get(:@no)],
       [true, "Remove member from the party?", "Remove", "Keep"])
-$frame += 1
-# The frame the box opened in reads no key.
-confirm.tick
-ui_frame
-$pressed = MGQ_MpHotkeys.code(:decline)
-2.times { confirm.tick; ui_frame }
+answer_confirm(false)
 check("no keeps them", [confirm.open?, removed], [false, []])
 MGQ_MpCoop::Offers.peer_option(member_peer).run.call
-$frame += 1
-# The frame the box opened in reads no key.
-confirm.tick
-ui_frame
-$pressed = MGQ_MpHotkeys.code(:accept)
-2.times { confirm.tick; ui_frame }
+answer_confirm(true)
 check("yes removes them", removed, [3])
 MGQ_MpCoop::Party.define_singleton_method(:remove, remove)
 overview.turn_to(:players, "the test")
@@ -1216,36 +1206,21 @@ $buttons << :B
 overview.on_map
 check("the overview reads no key while the box asks", [overview.open?, $buttons], [true, [:B]])
 $buttons.clear
-$frame += 1
-# The frame the box opened in reads no key.
-confirm.tick
-ui_frame
-$pressed = MGQ_MpHotkeys.code(:decline)
-2.times { confirm.tick; ui_frame }
+answer_confirm(false)
 check("no keeps the party", [confirm.open?, MGQ_MpCoop::Party.id.nil?], [false, false])
 leave_option = MGQ_MpCoop::Offers.party_options(true).first
 $buttons << :C
 overview.on_map
 $buttons << :C
 overview.on_map
-$frame += 1
-# The frame the box opened in reads no key.
-confirm.tick
-ui_frame
-$pressed = MGQ_MpHotkeys.code(:accept)
 $party_answer = party_view(nil)
-2.times { confirm.tick; ui_frame }
+answer_confirm(true)
 $party_answer = nil
 check("yes leaves it through the DLL", [confirm.open?, $party_calls.last, MGQ_MpCoop::Party.id], [false, ["leave", nil], nil])
 overview.close
 leave_option.run.call
 notices = MGQ_MpOverworldSync::Status.lines.size
-# The frame the box opened in reads no key.
-confirm.tick
-ui_frame
-$pressed = MGQ_MpHotkeys.code(:accept)
-$frame += 1
-2.times { confirm.tick; ui_frame }
+answer_confirm(true)
 check("yes once the party dissolved under the box leaves nothing, so nothing says so", [confirm.open?, MGQ_MpOverworldSync::Status.lines.size], [false, notices])
 
 # Pages of other mods: a mod adds one to ModPages, which shows as a tab while it has something to
@@ -1311,6 +1286,8 @@ overview.on_map
 $buttons << :C
 overview.on_map
 check("confirm on an entry moves the cursor onto the first control of its pane", overview.view[:focused], [:control, :jobs])
+check("the hint in the pane names the keys that go back, the bound cancel key first", Sprite_MpWorldOverview.allocate.hint_of(overview.view),
+      "Up or down: pick   Left or right: change   Enter: press   X, Numpad 0 or Ctrl: back")
 $buttons << :LEFT
 overview.on_map
 check("Left changes the control through the page, and the page stays", [$mod_adjusted.last, $sounds.last, overview.page], [[1, :jobs, -1], "cursor", :mod_0])

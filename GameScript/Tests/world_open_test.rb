@@ -2,7 +2,11 @@
 #  world_open_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Expected the plainer texts the player reads
+#      Paulinchen  2026-11-01: Reached the update over the title's commands through the world screen's opening alone, the Mod Framework adding Multiplayer
+#                            - Checked that the title's commands stay off while the update question is still coming
+#      Paulinchen  2026-10-31: Typed through the Mod Framework's text box, reading the typing from $mgq_text_input
+#                            - Checked that a gamepad's cancel leaves a form's text box
+#                            - Expected the plainer texts the player reads
 #      Paulinchen  2026-10-30: Checked that the Mod Framework's restart carries an invite taken during a game
 #                            - Checked that a world enters the game only right before its save loads or its New Game starts
 #                            - Checked that backing out of a world's New Game after entering starts the game again into the world screen
@@ -91,8 +95,6 @@ class Sprite; def initialize(*); end; end
 Rect = Struct.new(:x, :y, :width, :height)
 # Stands in for the title screen, whose steps do nothing.
 class Scene_Title; def start; end; def create_command_window; end; def close_command_window; end; def update; end; def terminate; end; end
-# Stands in for the title's commands, which list none.
-class Window_TitleCommand; def make_command_list; end; end
 # Stands in for the sounds: each one played goes into $sounds.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
 
@@ -178,7 +180,7 @@ module MGQ_Multiplayer
 
   # Stands in for holding the buttons: the owner holding them is in $capture, the button pressed in
   # $pressed.
-  module Capture
+  module Mod_Framework::UI::Capture
     # Holds the buttons for an owner.
     def self.start(owner); $capture = owner; end
 
@@ -193,7 +195,7 @@ module MGQ_Multiplayer
   end
 
   # Stands in for the mouse, never clicked.
-  module Mouse; def self.clicked?; false; end; end
+  module Mod_Framework::UI::Mouse; def self.clicked?; false; end; end
 
   # Stands in for the DLL: each call is checked against its signature and noted in $calls, and what
   # it reads is in $dll.
@@ -224,8 +226,8 @@ module MGQ_Multiplayer
 end
 
 load_script "world_save_distribution"
-load_script "ui"
-load_script "ui_text_box"
+load_script "ui_online"
+load_script "ui_boxes"
 load_script "world"
 load_script "world_mods"
 load_script "world_text"
@@ -341,17 +343,8 @@ check("and a busy step holds the input while the DLL's action runs", [scene.inst
 
 # What typing in place needs.
 module MGQ_Multiplayer
-  # Stands in for the DLL's hook of the game's window, which passes on what the player types.
-  module Background; def self.running?; true; end; end
-
   # Stands in for the keyboard, with no key pressed.
-  module Key; def self.pressed?(_code); false; end; def self.triggered?(code); pressed?(code); end; end
-
-  # Stands in for typing through the DLL: whether it types is in $typing, the text typed in $typed.
-  module Link
-    # Turns typing on or off.
-    def self.typing(on); $typing = on; end
-  end
+  module Mod_Framework::UI::Key; def self.pressed?(_code); false; end; def self.triggered?(code); pressed?(code); end; end
 end
 
 # Stands in for the game's buttons, none pressed.
@@ -407,12 +400,12 @@ scene.instance_variable_set(:@entry, entries[2])
 $called = nil
 $screen_steps = [["password", "Plain"]]
 scene.on_enter
-check("the password step asks for it in a form typed in place", [$called, scene.form.title, scene.form.editing, $typing], [nil, "Enter Plain", :password, true])
+check("the password step asks for it in a form typed in place", [$called, scene.form.title, scene.form.editing, $mgq_text_input], [nil, "Enter Plain", :password, true])
 $typed = "secret"
 scene.update_typing
 ui_frame
 scene.update_typing
-check("Enter hands the password to the DLL", [screen_requests("screen.answer").last, $typing], [{ "answer" => "password", "text" => "secret" }, false])
+check("Enter hands the password to the DLL", [screen_requests("screen.answer").last, $mgq_text_input], [{ "answer" => "password", "text" => "secret" }, false])
 $screen_steps = [["password", "Plain"]]
 scene.on_enter
 scene.stop_typing
@@ -714,14 +707,10 @@ check("a Raid World draws its Save's label narrower, asking for a save while non
 $outdated = true
 $calls.clear
 check("an outdated game enters no world", [MGQ_MpWorld.start(local_world("abcdef012345", {}), new_scene), MGQ_MpWorld.open?, $calls], ["Update.", false, []])
-title = Window_TitleCommand.new
-title.instance_variable_set(:@list, [{ :symbol => :continue }])
-MGQ_MpWorld.add_title_command(title)
-check("and finds the title command enabled", title.instance_variable_get(:@list)[1].values_at(:symbol, :enabled), [:mgq_mp_world, true])
 
 # The update over the title's commands, which the Mod Framework offers and installs.
 
-# The title's commands, which keep their handlers and take input or not.
+# The title's commands, which take input or not.
 class TitleMenu
   # Whether they take input.
   attr_reader :active
@@ -734,12 +723,6 @@ class TitleMenu
 
   # Takes no input.
   def deactivate; @active = false; end
-
-  # Keeps a handler.
-  def set_handler(symbol, handler); handlers[symbol] = handler; end
-
-  # The handlers by symbol.
-  def handlers; @handlers ||= {}; end
 end
 
 # The Mod Framework's update, which keeps each question and its block in $required.
@@ -754,8 +737,6 @@ module MGQ_Multiplayer; module Stages; OPEN_ACTION = "multiplayer.open" unless c
 $required = []
 title_scene = Scene_Title.new
 title_scene.instance_variable_set(:@command_window, TitleMenu.new)
-title_scene.create_command_window
-check("the title screen's Multiplayer command gets its handler once the commands are made", title_scene.instance_variable_get(:@command_window).handlers.keys, [:mgq_mp_world])
 update = MGQ_MpWorld::Update
 $called = nil
 MGQ_MpWorld.open_world_screen(title_scene)
@@ -774,6 +755,20 @@ check("a step back the relay asks for is asked for as exactly that version", $re
 $required.last[3].call(:declined)
 check("and the world refusal says so too", MGQ_MpWorld.start(MGQ_MpWorld::World.allocate, nil), "9.9.9 is the version to play now.")
 $rollback = false
+# The Mod Framework waiting for the mod lists before it asks, its question opening a frame later.
+module Mod_Framework
+  module Mods
+    def self.require(name, version, options = {}, &done); $required << [name, version, options, done]; :waiting; end
+  end
+end
+title_scene.instance_variable_get(:@command_window).activate
+asked = $required.size
+answer = MGQ_MpWorld.open_world_screen(title_scene)
+check("a question still coming leaves the title's commands off, the framework told not to give them back",
+      [answer, update.asking?, title_scene.instance_variable_get(:@command_window).active], [:off, true, false])
+check("and opening the world screen again meanwhile asks no second time", [MGQ_MpWorld.open_world_screen(title_scene), $required.size], [:off, asked + 1])
+$required.last[3].call(:declined)
+check("its answer gives them back", [update.asking?, title_scene.instance_variable_get(:@command_window).active], [false, true])
 $outdated = false
 
 # A world's new game that asks something first, such as a hero, and the player backing out of it.
@@ -1077,7 +1072,7 @@ behind = list.takes_wheel?
 state[:active] = true
 state[:index] = 0
 check("the worlds without a cursor scroll while the pane takes the input, not behind a form, and always with the cursor",
-      [worlds.pane.equal?(pane), taking, behind, list.takes_wheel?, Window_MpWorldList.include?(MGQ_MpUi::ScrollingWindow)], [true, [true, true], false, true, true])
+      [worlds.pane.equal?(pane), taking, behind, list.takes_wheel?, Window_MpWorldList.include?(MGQ_MpScrollingWindow)], [true, [true, true], false, true, true])
 pane.activate
 
 # The ask is logged, a world asked for before and not shown yet named as the one giving way.
@@ -1106,7 +1101,7 @@ $screen_steps = [["busy", "find"]]
 scene.update_typing
 ui_frame
 scene.update_typing
-check("Enter in the world id has the DLL look the world up", [scene.sends_on_enter?, screen_requests("screen.do").last["do"], scene.instance_variable_get(:@busy), $typing], [true, "find", "find", false])
+check("Enter in the world id has the DLL look the world up", [scene.sends_on_enter?, screen_requests("screen.do").last["do"], scene.instance_variable_get(:@busy), $mgq_text_input], [true, "find", "find", false])
 check("and the action holds the form's cursor, so its button cannot send it again meanwhile", [scene.instance_variable_get(:@resume_form), form_window.active], [false, false])
 scene.instance_variable_set(:@busy, nil)
 two = MGQ_MpWorld::Form.new("Two", [
@@ -1125,6 +1120,18 @@ scene.update_typing
 ui_frame
 scene.update_typing
 check("a form with two text boxes keeps the text with Enter and is sent from its button", [scene.sends_on_enter?, two[:first], two.editing, $calls, scene.instance_variable_get(:@busy)], [false, "x", nil, [], nil])
+
+# A gamepad's cancel leaves a text box, as the keyboard's does, and opens no letters screen.
+form_window.select(0)
+scene.start_typing(two.fields.first)
+scene.update_typing
+$called = nil
+$pressed = :B
+Input.define_singleton_method(:trigger?) { |button| $pressed == button }
+scene.update_typing
+Input.define_singleton_method(:trigger?) { |_button| false }
+$pressed = nil
+check("a gamepad's cancel leaves a form's text box with its text as it was, no letters screen opened", [two.editing, two[:first], $called, $mgq_text_input], [nil, "x", nil, false])
 scene.instance_variable_set(:@forms, {})
 check("without a form Enter sends nothing", scene.sends_on_enter?, false)
 

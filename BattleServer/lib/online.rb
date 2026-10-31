@@ -2,7 +2,8 @@
 #  online.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Dropped the stand-in for the deleted mp_raid_boss_report export
+#      Paulinchen  2026-10-31: Started the game first, where the Mod Framework loads MGQ Online's title part, then entered it, which loads the rest
+#                            - Dropped the stand-in for the deleted mp_raid_boss_report export
 #      Paulinchen  2026-10-30: Named the seats that came onto and left the battle channel in its state, as the DLL's state does
 #                            - Sent the reports of the core's outbox through the relay's connection
 #                            - Handed the relay's word of the boss pools and the server's own reports to the core's ledger
@@ -12,10 +13,10 @@
 #
 #----------------------------------------------------------------
 
-# MGQ Online on the battle server: its scripts load from the game folder's Patch folder like any
-# other mod, as in the game (see boot.rb), but without the DLL. This takes the DLL's place for
-# the battle channel and a Raid World's boss pools, which the relay carries to the server and the
-# core's ledger keeps, and makes MGQ Online's log the server's.
+# MGQ Online on the battle server: its scripts load from the game folder's Patch folder through the
+# Mod Framework it ships inside, as in the game (see boot.rb), but without either DLL. This takes
+# the DLL's place for the battle channel and a Raid World's boss pools, which the relay carries to
+# the server and the core's ledger keeps, and makes MGQ Online's log the server's.
 module Online
   # Bytes of a log line MGQ Online writes that the server's log keeps.
   LOG_LINE_BYTES = 2_000
@@ -27,19 +28,22 @@ module Online
     # The battle channel's other end: the relay, or a test's stand-in.
     attr_reader :bridge
 
-    # Puts the server's stand-ins in place, once the game's scripts and MGQ Online loaded, and
-    # runs the hooks MGQ Online's scripts install as the game starts.
+    # Starts the game, where the Mod Framework loads MGQ Online's title part, puts the server's
+    # stand-ins in place, and enters the game through the framework, which loads the rest of MGQ
+    # Online and runs the hooks its scripts install as the game starts; a server never enters a
+    # game otherwise.
     #
     # @param log [IO] Where MGQ Online's log goes.
     def install(log = $stderr)
-      raise "MGQ Online did not load: the game folder's Patch folder has no Multiplayer.rb" unless defined?(MGQ_Multiplayer::Link)
-
       @log = log
+      start_game
+      raise "MGQ Online did not load: the game folder's Patch folder has no Multiplayer.rb or no Mod Framework" unless defined?(MGQ_Multiplayer::Link)
+
       MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| Online.write_log(line) }
       MGQ_Multiplayer::Log.define_singleton_method(:flush) { nil }
       MGQ_Multiplayer.define_singleton_method(:available?) { true }
       MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| Online.function(name) }
-      start_game
+      ::Mod_Framework::Mods.enter("the battle server")
     end
 
     # Hands the battle channel to a bridge: what the server sends goes there, what it takes comes

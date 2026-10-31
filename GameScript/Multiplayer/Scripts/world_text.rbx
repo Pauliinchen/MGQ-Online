@@ -2,6 +2,8 @@
 #  world_text.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Typed through the Mod Framework's text box alone
+#                            - Left with the Mod Framework's cancel and named its keys in the hint
 #      Paulinchen  2026-10-23: Typed into the text screen through the text box in C#, the game's letters too
 #      Paulinchen  2026-10-12: Scrolled a text longer than its box
 #                            - Scrolled the description with the mouse wheel and drew its scrollbar
@@ -18,14 +20,17 @@
 # game's own letters appear below once a gamepad is used, or from the start when the keyboard
 # cannot reach the game. It hands what was typed to MGQ_MpWorld.text_result.
 class Scene_MpText < Scene_MenuBase
+  # What the box says while the keyboard types, the keys that go back filled in.
+  KEYBOARD_HINT = "Type on the keyboard. Enter confirms, %s goes back."
+
   # Sets what the text is for and how it looks.
   #
   # @param kind [Symbol, Array] What the text is for, handed back with it.
   # @param caption [String] What the screen says it is for.
   # @param default [String] The text it starts with.
   # @param options [Hash] :max_chars, how long the text may be; and whichever of :masked (shown as
-  #   stars), :allowed (the characters it takes), :letters (the letters shown at once) and :area
-  #   (broken over several lines) apply.
+  #   stars), :allowed (the characters it takes), :digits (a text of digits, where the numpad's 0
+  #   types a 0), :letters (the letters shown at once) and :area (broken over several lines) apply.
   def prepare(kind, caption, default, options)
     @kind = kind
     @caption = caption
@@ -41,8 +46,7 @@ class Scene_MpText < Scene_MenuBase
     @input_window = Window_MpTextInput.new(@edit_window)
     @input_window.set_handler(:ok, method(:on_input_ok))
     @input_window.set_handler(:cancel, method(:on_input_cancel))
-    MGQ_Multiplayer::Link.typing(true)
-    MGQ_Multiplayer::Background.running? && !@options[:letters] ? hide_letters : show_letters
+    Mod_Framework.available? && !@options[:letters] ? hide_letters : show_letters
     MGQ_MpWorld.log("text screen opened for #{@caption}, #{@input_window.visible ? 'with the letters for a gamepad' : 'typed on the keyboard'}")
   end
 
@@ -55,7 +59,9 @@ class Scene_MpText < Scene_MenuBase
   def update
     editor = @edit_window.editor
     taken = editor.take
-    keyboard = taken.keys > 0 || taken.chars > 0
+    return on_input_cancel if cancelled?
+
+    keyboard =taken.keys > 0 || taken.chars > 0
     @input_window.keyboard_used = keyboard
 
     if !keyboard && !@input_window.visible && MGQ_MpWorld.gamepad_pressed?
@@ -85,11 +91,26 @@ class Scene_MpText < Scene_MenuBase
     play(sounds.include?(:buzzer) ? :buzzer : sounds.compact.last)
   end
 
+  # Tells whether the player cancelled in this frame, by the Mod Framework's cancel of the text's
+  # field. The gamepad's cancel is left to the letters, which erase a letter with it.
+  #
+  # @return [Boolean] Whether the player did.
+  def cancelled?
+    Mod_Framework::UI.cancel?(field_kind) && !(@input_window.visible && Input.trigger?(:B))
+  end
+
+  # Tells the Mod Framework's cancel what the text takes.
+  #
+  # @return [Symbol, nil] :digits for a text of digits, where the numpad's 0 types a 0; nil else.
+  def field_kind
+    @options[:digits] ? :digits : nil
+  end
+
   # Hides the letters and puts the box in the middle of the screen.
   def hide_letters
     @input_window.hide
     @input_window.deactivate
-    @edit_window.hint = "Type on the keyboard. Enter confirms, Esc goes back."
+    @edit_window.hint = format(KEYBOARD_HINT, Mod_Framework::UI.cancel_keys(field_kind))
     @edit_window.y = (Graphics.height - @edit_window.height) / 2
   end
 
@@ -135,7 +156,6 @@ class Scene_MpText < Scene_MenuBase
 
   # Stops taking what is typed.
   def terminate
-    MGQ_Multiplayer::Link.typing(false)
     @edit_window.editor.close
     super
   end
@@ -233,7 +253,7 @@ class Window_MpTextEdit < Window_NameEdit
   def scroll_by_wheel
     return false unless area?
 
-    notches = MGQ_Multiplayer::Mouse.wheel
+    notches = Mod_Framework::UI::Mouse.wheel
     return false if notches == 0 || !pointed_at?
 
     scrolled = [[@scrolled_up + notches * WHEEL_LINES, 0].max, following_top].min
@@ -248,7 +268,7 @@ class Window_MpTextEdit < Window_NameEdit
   #
   # @return [Boolean] Whether it does.
   def pointed_at?
-    position = MGQ_Multiplayer::Mouse.position
+    position = Mod_Framework::UI::Mouse.position
     position ? position[0] >= x && position[0] < x + width && position[1] >= y && position[1] < y + height : false
   end
 

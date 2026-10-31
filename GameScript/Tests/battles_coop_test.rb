@@ -2,6 +2,7 @@
 #  battles_coop_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Took a player's color from MGQ_MpPlayerColor
 #      Paulinchen  2026-10-30: Handed invites, requests and stand-stills over through the matchmaking's routes
 #                            - Checked the matchmaking's wiring on its stand-in, its notices as the DLL's events
 #                            - Checked an id past this game's database through the troop the guest takes
@@ -184,7 +185,7 @@ status = Window_BattleStatus.new
 own_drawn = status.draw_actor_name(party[0], 4, 0, 100)
 ally_drawn = status.draw_actor_name(party[2], 4, 24, 100)
 check("the status window names the player's own character in their color and another player's by its own name in its owner's",
-      [own_drawn, ally_drawn, status.drawn.map { |x, y, width, height, text, color| [x, y, width, height, text, color.equal?(MGQ_MpUi::Style::OWN), color.equal?(MGQ_MpUi::PlayerColor.of(friend))] }],
+      [own_drawn, ally_drawn, status.drawn.map { |x, y, width, height, text, color| [x, y, width, height, text, color.equal?(MGQ_MpUi::Style::OWN), color.equal?(MGQ_MpPlayerColor.of(friend))] }],
       [nil, nil, [[4, 0, 100, 24, "Actor1", true, false], [4, 24, 100, 24, "Actor7", false, true]]])
 party[2].hp = 24
 check("a character in crisis is left to the game's colors, as is one drawn without a width", [status.draw_actor_name(party[2], 4, 24, 100), status.draw_actor_name(party[0], 4, 0), status.drawn.size], [:original, :original, 2])

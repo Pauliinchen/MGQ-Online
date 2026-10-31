@@ -2,7 +2,8 @@
 #  single_player_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Checked that the restart question starts on Restart
+#      Paulinchen  2026-10-31: Read the single player group from MGQ_Multiplayer::SP_PREFIX
+#                            - Checked that the restart question starts on Restart
 #      Paulinchen  2026-10-30: Started the game again through the Mod Framework's stand-in
 #                            - Dropped the parked mods, which no world parks any more
 #      Paulinchen  2026-10-23: Dropped the restart by hand under Wine
@@ -149,7 +150,7 @@ end
 #
 # @return [Array<Hash>] The rows.
 def sp_rows
-  NWConst::Config::MOD_CONTENTS.select { |each| each[:name].to_s.start_with?(MGQ_MpUi::SP_PREFIX) }
+  NWConst::Config::MOD_CONTENTS.select { |each| each[:name].to_s.start_with?(MGQ_Multiplayer::SP_PREFIX) }
 end
 
 # Forgets the settings each script read from Player.ini, which then is empty.

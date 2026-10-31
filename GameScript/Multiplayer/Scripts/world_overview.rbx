@@ -2,6 +2,7 @@
 #  world_overview.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the keys and the mouse, named the cancel key and placed its box through the Mod Framework
 #      Paulinchen  2026-10-28: Read the progress, the routes and the sides by their ids in place of their names
 #      Paulinchen  2026-10-24: Listed the pages of other mods after the own pages and made room for two of their tabs
 #                            - Placed the menu of a page with a head, a list and a pane over the pane or under its buttons
@@ -393,7 +394,7 @@ module MGQ_MpWorldOverview
     @view = view
     players = @view[:lines].count { |kind, _| kind == :player }
     log("opened through #{via}, #{@in_world ? "#{players} player(s) online" : 'outside a world'}")
-    MGQ_Multiplayer::Capture.start(:overview)
+    Mod_Framework::UI::Capture.start(:overview)
   end
 
   # Closes the overview, if it is open, and gives the buttons back.
@@ -406,7 +407,7 @@ module MGQ_MpWorldOverview
     @open = false
     @menu = nil
     @view = nil
-    MGQ_Multiplayer::Capture.stop(:overview)
+    Mod_Framework::UI::Capture.stop(:overview)
   end
 
   # Reports whether the overview may open: on the map, in a world or outside one, with no event,
@@ -510,7 +511,7 @@ module MGQ_MpWorldOverview
   # @param forth [Symbol] The arrow that steps on, :DOWN or :RIGHT.
   # @return [Integer] 1 on, -1 back, 0 while neither repeats.
   def self.axis_step(back, forth)
-    capture = MGQ_Multiplayer::Capture
+    capture = Mod_Framework::UI::Capture
     capture.repeat?(forth) ? 1 : capture.repeat?(back) ? -1 : 0
   end
 
@@ -967,7 +968,7 @@ module MGQ_MpWorldOverview
   # @param players [Array<Integer>] The lines that are players.
   def self.update_list(view, players)
     return if closed_by_cancel?
-    return open_menu(view[:lines][view[:selected]][1]) if MGQ_Multiplayer::Capture.trigger?(:C)
+    return open_menu(view[:lines][view[:selected]][1]) if Mod_Framework::UI::Capture.trigger?(:C)
     return if turn_by_keys
 
     step = axis_step(:UP, :DOWN)
@@ -985,7 +986,7 @@ module MGQ_MpWorldOverview
   # @param view [Hash] What the overview shows, see view.
   def self.update_menu(view)
     return (Sound.play_cancel; log("menu closed with cancel"); @menu = nil) if MGQ_MpUi.cancel?
-    return choose(view[:menu][@menu], view[:lines][view[:selected]][1]) if MGQ_Multiplayer::Capture.trigger?(:C)
+    return choose(view[:menu][@menu], view[:lines][view[:selected]][1]) if Mod_Framework::UI::Capture.trigger?(:C)
 
     step = axis_step(:UP, :DOWN)
     return if step == 0
@@ -1033,8 +1034,8 @@ module MGQ_MpWorldOverview
   # @param view [Hash] What the overview shows, see view.
   # @param players [Array<Integer>] The lines that are players.
   def self.mouse(view, players)
-    position = MGQ_Multiplayer::Mouse.position
-    clicked = MGQ_Multiplayer::Mouse.clicked?
+    position = Mod_Framework::UI::Mouse.position
+    clicked = Mod_Framework::UI::Mouse.clicked?
     moved = position && position != @mouse
     @mouse = position
     return unless position
@@ -1205,17 +1206,18 @@ class Sprite_MpWorldOverview < Sprite
   MIN_HEIGHT = [LIST_TOP + MIN_ROWS * ROW + MARGIN + HINT_HEIGHT, LIST_TOP + MGQ_MpUi::Style::GAP + PORTRAIT + SPLIT_GAP + SPLIT_ROWS * ROW + MARGIN + HINT_HEIGHT,
                 MENU_ROWS * ROW + HINT_HEIGHT].max
 
-  # The hint at the bottom of the Players page, with the overview's hotkey.
-  PLAYERS_HINT = ["Left or right: page", "Enter: invite, duel or trade", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP)
+  # The hint at the bottom of the Players page, before the close hint.
+  PLAYERS_HINT = ["Left or right: page", "Enter: invite, duel or trade"]
 
-  # The hint at the bottom of every other page, with the overview's hotkey.
-  PAGE_HINT = ["Left or right: page", "Up or down: pick", "Page Up or Down: read on", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP)
+  # The hint at the bottom of every other page, before the close hint.
+  PAGE_HINT = ["Left or right: page", "Up or down: pick", "Page Up or Down: read on"]
 
-  # The hint at the bottom of another mod's page.
-  MOD_HINT = ["Left or right: page", "Up or down: pick", "Enter: select", MGQ_MpUi::Style.close_hint("%s")].join(MGQ_MpUi::Style::HINT_GAP)
+  # The hint at the bottom of another mod's page, before the close hint.
+  MOD_HINT = ["Left or right: page", "Up or down: pick", "Enter: select"]
 
-  # The hint at the bottom of another mod's page while the cursor is in its pane.
-  MOD_PANE_HINT = ["Up or down: pick", "Left or right: change", "Enter: press", "Ctrl: back"].join(MGQ_MpUi::Style::HINT_GAP)
+  # The hint at the bottom of another mod's page while the cursor is in its pane, before the keys
+  # that go back.
+  MOD_PANE_HINT = ["Up or down: pick", "Left or right: change", "Enter: press"]
 
   # Tells where the box starts on the screen: the list box's place.
   #
@@ -1413,15 +1415,16 @@ class Sprite_MpWorldOverview < Sprite
   # or the one of its pane while the cursor is in it.
   #
   # @param view [Hash] The view drawn, see MGQ_MpWorldOverview.page_view.
-  # @return [String] The hint, with the overview's hotkey.
+  # @return [String] The hint, with the keys that close it: the game's cancel key as the player
+  #   bound it, the numpad's 0 and the overview's hotkey; in the pane the keys that go back.
   def hint_of(view)
-    return MOD_PANE_HINT if view[:focused]
+    return (MOD_PANE_HINT + [Mod_Framework::UI.cancel_hint("back", "Ctrl")]).join(Mod_Framework::UI::Style::HINT_GAP) if view[:focused]
 
     hint = if view[:page] == :players then PLAYERS_HINT
            elsif MGQ_MpWorldOverview::PAGES.assoc(view[:page]) then PAGE_HINT
            else MOD_HINT
            end
-    hint % MGQ_MpHotkeys.label(:overview)
+    (hint + [Mod_Framework::UI.close_hint(MGQ_MpHotkeys.label(:overview))]).join(Mod_Framework::UI::Style::HINT_GAP)
   end
 
   # Draws the world's name with its type and difficulty, the name cut before the player's party,
@@ -1493,7 +1496,7 @@ class Sprite_MpWorldOverview < Sprite
     inset = Sprite_MpListBox::PICK_INSET
     bitmap.fill_rect(inset, y, bitmap.width - 2 * inset, ROW, style::PICKED) if picked
     draw_icons(row, y)
-    color = MGQ_MpUi::PlayerColor.of(row.player, row.member)
+    color = MGQ_MpPlayerColor.of(row.player, row.member)
     style.use_font(bitmap, style::TEXT_SIZE, color)
     name_width = COLUMNS[:party] - COLUMNS[:name] - style::GAP
     bitmap.draw_text(COLUMNS[:name], y, name_width, ROW, MGQ_MpUi.cut(bitmap, row.name, name_width))
@@ -1563,11 +1566,11 @@ rescue => e
   MGQ_MpWorldOverview.log("action wheel FAILED: #{e.class}: #{e.message}")
 end
 
-# The overview's box among those the player moves and resizes, through ui_layout.rbx.
+# The overview's box among those the player moves and resizes, through the Mod Framework's layout.
 
 begin
-  MGQ_MpUi::Layout.register(Sprite_MpWorldOverview::LAYOUT_ID, Sprite_MpWorldOverview::LAYOUT_NAME, Sprite_MpWorldOverview::MIN_WIDTH,
-                            Sprite_MpWorldOverview::MIN_HEIGHT, :both)
+  Mod_Framework::UI::Layout.register(Sprite_MpWorldOverview::LAYOUT_ID, Sprite_MpWorldOverview::LAYOUT_NAME,
+                                     :min_size => [Sprite_MpWorldOverview::MIN_WIDTH, Sprite_MpWorldOverview::MIN_HEIGHT])
 rescue => e
   MGQ_MpWorldOverview.log("layout FAILED: #{e.class}: #{e.message}")
 end

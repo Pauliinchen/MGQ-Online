@@ -2,7 +2,11 @@
 #  Multiplayer.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Loaded story_replay.rbx after story_keys.rbx
+#      Paulinchen  2026-10-31: Named the lowest Mod Framework the mod runs with, and stayed off without it, logging why when it is older or runs without its DLL
+#                            - Took the keys, the mouse, the typing and the game running behind other windows from the Mod Framework
+#                            - Loaded ui_online.rbx and ui_boxes.rbx where ui.rbx and the interface scripts the Mod Framework took over stood
+#                            - Handed the look, the places and the Accept and Decline keys over to the Mod Framework's settings
+#                            - Loaded story_replay.rbx after story_keys.rbx
 #                            - Dropped the PvP link, the trade, raid boss report and directory refresh exports and mp_report_snap, which no script calls
 #                            - Stopped handing the PvP link's state to the Discord mod
 #      Paulinchen  2026-10-30: Loaded the world screens under the Mod Framework only as the player picks Multiplayer, a Discord invite or a restart opens them
@@ -164,10 +168,13 @@
 #----------------------------------------------------------------
 
 # What every way of playing together shares: the connection with a friend through
-# Patch/Multiplayer/Multiplayer.dll, the game running on while its window is in the background,
-# keys the game's own Input does not know, and the Discord mod, when it is installed. It also loads
-# the mod's other scripts, see SCRIPTS and Stages.
+# Patch/Multiplayer/Multiplayer.dll and the Discord mod, when it is installed. It also loads the
+# mod's other scripts, see SCRIPTS and Stages; their input, look and places come from the Mod
+# Framework, which ships inside the mod.
 module MGQ_Multiplayer
+  # The lowest Mod Framework the mod runs with, defined before any script loads.
+  MOD_FRAMEWORK_REQUIRED = "0.1.0"
+
   # Folder inside the game's Patch folder that holds the DLL, the other scripts and everything the
   # mod writes but its logs.
   MOD_DIR = "Patch\\Multiplayer"
@@ -186,7 +193,7 @@ module MGQ_Multiplayer
   # hooks once the game runs, the last loaded first, so their order decides how those hooks wrap
   # each other.
   SCRIPTS = %w[
-    core_log core_hooks core_game_access core_hotkeys ui ui_theme ui_layout ui_text_box core_actors core_async overworld_sync ui_wheel ui_actions ui_chat ui_emotes overworld
+    core_log core_hooks core_game_access core_hotkeys ui_online ui_boxes core_actors core_async overworld_sync ui_actions ui_chat ui_emotes overworld
     coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs story_state story_keys story_replay coop_story coop_castle
     world world_mods world_story world_catchup world_catchup_exp world_opening world_difficulty world_gates world_save_distribution world_text world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_raid_freeze world_freeze battles_raid_tiers battles_coop_level_sync
@@ -197,8 +204,8 @@ module MGQ_Multiplayer
   ]
 
   # The scripts that load under the Mod Framework as the game starts: the log, the hooks, the
-  # hotkeys and the look the title screen wears too. The first of SCRIPTS, in their order.
-  BOOT_SCRIPTS = %w[core_log core_hooks core_game_access core_hotkeys ui ui_theme ui_layout ui_text_box]
+  # hotkeys and the boxes the title screen shows too. The first of SCRIPTS, in their order.
+  BOOT_SCRIPTS = %w[core_log core_hooks core_game_access core_hotkeys ui_online ui_boxes]
 
   # The scripts of the world screens, which list, create and join worlds, loaded under the Mod
   # Framework once the player picks Multiplayer, or a Discord invite or a restart opens them. With
@@ -231,13 +238,43 @@ module MGQ_Multiplayer
   # Tells whether the mod can run.
   #
   # @return [Boolean] Whether the mod is on, its DLL is in the mod folder and the bridge to it
-  #   opened, which a stand-in DLL, an older one or one of another bridge version never lets happen.
+  #   opened, which a stand-in DLL, an older one or one of another bridge version never lets happen,
+  #   and the Mod Framework of at least MOD_FRAMEWORK_REQUIRED runs with its DLL.
   def self.available?
-    @available == true
+    @available == true && framework_ready?
   end
 
-  # Starts the DLL, opens the bridge to it and keeps the game running in the background, once per
-  # game session.
+  # Tells whether the Mod Framework the mod needs runs with its DLL.
+  #
+  # @return [Boolean] Whether one of at least MOD_FRAMEWORK_REQUIRED does.
+  def self.framework_ready?
+    framework_gap.nil?
+  end
+
+  # Tells why the Mod Framework the mod needs does not run, for the log.
+  #
+  # @return [String, nil] The reason, nil when one of at least MOD_FRAMEWORK_REQUIRED runs with its
+  #   DLL.
+  def self.framework_gap
+    return "the Mod Framework is not installed" unless defined?(::Mod_Framework)
+
+    framework = ::Mod_Framework
+    unless framework.respond_to?(:at_least?) && framework.at_least?(MOD_FRAMEWORK_REQUIRED)
+      booted = framework.const_defined?(:VERSION, false) ? framework::VERSION : "of an unknown version"
+      return "it needs the Mod Framework #{MOD_FRAMEWORK_REQUIRED} or newer, and the one installed is #{booted}"
+    end
+    return "the Mod Framework #{framework::VERSION} runs without its DLL" unless framework.respond_to?(:available?) && framework.available?
+
+    nil
+  end
+
+  # Writes why the mod stays off though its DLL started: the Mod Framework it needs does not run.
+  def self.log_framework_gap
+    gap = @available == true ? framework_gap : nil
+    Log.write("Monster Girl Quest! Online is off: #{gap}") if gap
+  end
+
+  # Starts the DLL and opens the bridge to it, once per game session.
   def self.start
     return if @started
     @started = true
@@ -246,7 +283,6 @@ module MGQ_Multiplayer
     Log.settle(@available)
     return unless @available
 
-    Background.start
     UpdateCheck.start
   rescue => e
     Log.write("start failed: #{e.class}: #{e.message}")
@@ -286,32 +322,6 @@ module MGQ_Multiplayer
     Log.flush
   end
 
-  # Runs the game's scenes to their end and writes how the game closes while it still runs: on a
-  # quit the scenes return, the window closing or an error throws out of them, and after each the
-  # game's Main section (the WF-RGSS Exit-EX plugin) ends the process through ExitProcess, which
-  # runs no at_exit.
-  #
-  # @param original [Proc] Runs SceneManager.run.
-  # @return [Object] What it returns.
-  def self.run_game(original)
-    result = original.call
-  rescue Exception => e
-    closing(e) unless reset?(e)
-    raise
-  else
-    closing(nil)
-    result
-  end
-
-  # Tells whether an error is the game's reset by F12, which starts its scenes again and ends
-  # nothing.
-  #
-  # @param error [Exception] The error.
-  # @return [Boolean] Whether it is.
-  def self.reset?(error)
-    defined?(RGSSReset) && error.is_a?(RGSSReset) ? true : false
-  end
-
   # Tells whether another release of the mod is the one to play, a newer one or a step back the
   # relay asks for, which worlds, duels and trades turn themselves off for, so two games speaking a
   # protocol a refactor changed never meet.
@@ -331,12 +341,6 @@ module MGQ_Multiplayer
     return "the game closes: it was quit (exit status #{error.status})" if error.is_a?(SystemExit)
 
     "the game closes after an error: #{error.class}: #{error.message.to_s[0, 200]} at #{Array(error.backtrace).first}"
-  end
-
-  # Notes that the game's scenes start running, which only F12 makes happen a second time.
-  def self.note_run
-    @runs = @runs.to_i + 1
-    Log.write("F12 reset the game: its scenes start again from the title (run #{@runs}), the mod keeps its hooks and state") if @runs > 1
   end
 
   # Reads the version of the release to install, once the check found one.
@@ -419,36 +423,17 @@ module MGQ_Multiplayer
     false
   end
 
-  # Registers the mod's own hooks once its first scripts loaded, through core_hooks.rbx.
-  #
-  # @param run [Boolean] Whether to follow the game's SceneManager.run too, which only a mod that
-  #   loads before the game runs can: it guards the input as the game starts running and writes how
-  #   the game closes as its scenes end. Under the Mod Framework the game runs already, so the
-  #   input is guarded at once and the framework's Run.on_close writes how the game closes.
-  def self.install_hooks(run)
-    # After every frame, counts it for the keys, sends what the scripts staged for the bridge and
-    # takes its events, tells the Discord mod how the connection stands, polls for an update and
-    # logs the hooks registered since the last frame. Graphics.update runs every frame in every
-    # scene, so all happen wherever the player is.
+  # Registers the mod's own hooks once its first scripts loaded, through core_hooks.rbx: after every
+  # frame, sends what the scripts staged for the bridge and takes its events, tells the Discord mod
+  # how the connection stands, polls for an update and logs the hooks registered since the last
+  # frame. Graphics.update runs every frame in every scene, so all happen wherever the player is.
+  def self.install_hooks
     MGQ_MpHooks.after(Graphics.singleton_class, :update, "Multiplayer") do
-      MGQ_Multiplayer::Key.next_frame
       MGQ_Multiplayer::Bridge.frame
       MGQ_Multiplayer::Discord.tick
       MGQ_Multiplayer::UpdateCheck.tick
       MGQ_MpHooks.report
     end
-    return Background.guard_input unless run
-
-    # Guards the input as the game starts running. The game's plugins load after the Patch folder,
-    # the gamepad one wrapping Input, so the guard wraps Input once every plugin is in.
-    MGQ_MpHooks.before(SceneManager.singleton_class, :run, "Multiplayer") do
-      MGQ_Multiplayer.note_run
-      MGQ_Multiplayer::Background.guard_input
-    end
-
-    # The scenes ending, as a quit, the window closing or an error ends them, write how the game
-    # closes and every line left while the game still runs, before its error box or its end.
-    MGQ_MpHooks.around(SceneManager.singleton_class, :run, "Multiplayer") { |_manager, _args, original| MGQ_Multiplayer.run_game(original) }
   rescue Exception => e
     load_failed("hooks", e)
   end
@@ -486,11 +471,11 @@ module MGQ_Multiplayer
     fallback
   end
 
-  # How the mod loads. Under the Mod Framework it is a Title mod in three stages: as the game starts
-  # the DLL, the look (BOOT_SCRIPTS) and the title's Multiplayer command; the world screens
+  # How the mod loads: a Title mod of the Mod Framework in three stages: as the game starts the
+  # DLL, the boxes and hotkeys (BOOT_SCRIPTS) and the title's Multiplayer command; the world screens
   # (WORLD_SCRIPTS) once the player picks it, or a Discord invite or a restart opens them; the rest
   # of SCRIPTS as the player enters the game, New Game, a save's load or a world. Without the
-  # framework, as on the battle server, everything loads as the game's loader runs this file.
+  # framework the mod stays off, since every script draws and reads its keys through it.
   module Stages
     # Who the mod's registrations with the Mod Framework name.
     TAG = "MGQ Online"
@@ -513,6 +498,14 @@ module MGQ_Multiplayer
     # again, its join secret the value, see MGQ_MpWorld::Invite.receive.
     INVITE_ACTION = "multiplayer.invite"
 
+    # What the log says once, when the Mod Framework is missing.
+    NO_FRAMEWORK = "Monster Girl Quest! Online needs the Mod Framework #{MOD_FRAMEWORK_REQUIRED} or newer, which is not installed"
+
+    # The settings of Player.ini the Mod Framework keeps since the look, the places and the Accept
+    # and Decline hotkeys became its own, under the same names: the look, the window color, every
+    # place (ui_<id>) and the two keys.
+    HANDED_OVER = /\A(ui_\w+|window_color|key_accept|key_decline)\z/
+
     # The blocks that wait for every script to load, each [tag, block].
     @waiting = []
 
@@ -530,8 +523,8 @@ module MGQ_Multiplayer
       @staged == true
     end
 
-    # Loads the mod as the game's loader, or the Mod Framework, runs this file: in stages under the
-    # framework, else all of it.
+    # Loads the mod as the Mod Framework runs this file, in stages; without the framework the mod
+    # stays off.
     def self.boot
       return load_all unless framework?
 
@@ -547,23 +540,61 @@ module MGQ_Multiplayer
       ::Mod_Framework::Run.on_start(TAG, :first => true) { MGQ_Multiplayer::Stages.load_title }
     end
 
-    # Loads all of the mod at once and has its hooks follow the game's start, as without the
-    # Mod Framework.
+    # Stays off without the Mod Framework, which every script needs, and says why in the log once.
     def self.load_all
-      MGQ_Multiplayer.start
-      MGQ_Multiplayer.load_scripts
-      everything_loaded
-      MGQ_Multiplayer.install_hooks(true)
+      Log.write(NO_FRAMEWORK)
+      Log.settle(false)
     end
 
-    # Loads the first stage as the game starts running, before its first scene: starts the DLL and
-    # loads BOOT_SCRIPTS. Every hook then sleeps while the player is in a game entered without the
-    # mod, such as one turned off at the title.
+    # Loads the first stage as the game starts running, before its first scene: starts the DLL,
+    # logs why the mod stays off when the Mod Framework cannot carry it, hands the settings the Mod
+    # Framework took over to it, keeps the game running behind other windows and loads
+    # BOOT_SCRIPTS. Every hook then sleeps while the player is in a game entered without the mod,
+    # such as one turned off at the title.
     def self.load_title
       MGQ_Multiplayer.start
+      MGQ_Multiplayer.log_framework_gap
+      hand_over_settings
+      ::Mod_Framework.keep_running = true if MGQ_Multiplayer.available?
       MGQ_Multiplayer.load_scripts(BOOT_SCRIPTS, true)
       MGQ_MpHooks.sleep_while { MGQ_Multiplayer::Stages.asleep? }
-      MGQ_Multiplayer.install_hooks(false)
+      MGQ_Multiplayer.install_hooks
+    end
+
+    # Hands the settings of Player.ini the Mod Framework keeps now (HANDED_OVER) over to its
+    # settings, once, before its own start reads them; Player.ini forgets them only once the
+    # framework kept them, else the next start tries again. Once handed over, a later start forgets
+    # any of them Player.ini still holds, the framework keeping its own.
+    def self.hand_over_settings
+      settings = ::Mod_Framework::Settings
+      return unless Player.readable? && settings.respond_to?(:take_over)
+
+      handed = {}
+      Player.keys_under("").each { |key| handed[key] = Player.setting(key) if key =~ HANDED_OVER }
+      return if handed.empty?
+
+      names = handed.keys.join(', ')
+      if settings.migrated?(TAG)
+        Log.write("Player.ini #{forget_handed(handed) ? 'forgot' : 'could not forget'} #{names}, which the Mod Framework keeps")
+        return
+      end
+
+      unless settings.take_over(TAG, handed)
+        Log.write("the Mod Framework did not take #{names} over, Player.ini keeps them for the next start")
+        return
+      end
+
+      Log.write("handed #{names} over to the Mod Framework#{forget_handed(handed) ? '' : ', but Player.ini could not forget them'}")
+    rescue => e
+      Log.write("handing the settings over to the Mod Framework FAILED: #{e.class}: #{e.message}")
+    end
+
+    # Forgets the handed settings in Player.ini, in one write.
+    #
+    # @param handed [Hash] The values by setting.
+    # @return [Boolean] Whether Player.ini forgot them.
+    def self.forget_handed(handed)
+      Player.change(Hash[handed.keys.map { |key| [key, nil] }])
     end
 
     # Loads the rest of SCRIPTS as the player enters the game with the mod. The Mod Framework runs
@@ -992,17 +1023,12 @@ module MGQ_Multiplayer
     EXPORTS = {
       # The DLL itself, the player and the update check.
       'mp_start' => 'v',
-      'mp_keep_running' => 'v',
       'mp_check_for_update' => 'v',
       'mp_newer_version' => READ_ARGUMENTS,
       'mp_player_id' => READ_ARGUMENTS,
       'mp_update_rollback' => 'v',
       'mp_dev_build' => 'v',
       'mp_memory_usage' => READ_ARGUMENTS,
-
-      # The keyboard and the mouse wheel.
-      'mp_typing' => 'l',
-      'mp_mouse_wheel' => 'v',
 
       # The world directory.
       'mp_dir_open' => 'p',
@@ -1040,29 +1066,11 @@ module MGQ_Multiplayer
       function('mp_start').call
     end
 
-    # Keeps the game running while another application is active.
-    #
-    # @return [Boolean] Whether the game keeps running.
-    def self.keep_running
-      function('mp_keep_running').call == 1
-    end
-
     # Reads the id everyone sees for the player, as the world directory lists it.
     #
     # @return [String] The id, "" before the player was set.
     def self.player_id
       read('mp_player_id', 64)
-    end
-
-    # Starts or stops taking what the player types on the keyboard, and says so in
-    # $mgq_text_input, which other mods' hotkeys read from Windows check, since the capture of
-    # the game's Input cannot reach them.
-    #
-    # @param on [Boolean] Whether to take it.
-    def self.typing(on)
-      Log.write(on ? "keyboard typing on" : "keyboard typing off") if on != $mgq_text_input
-      $mgq_text_input = on
-      function('mp_typing').call(on ? 1 : 0)
     end
 
     # Reads a description an export of the DLL writes: key=value lines, an empty line, the payload.
@@ -1531,392 +1539,6 @@ module MGQ_Multiplayer
     end
   end
 
-  # Keeps the game running while another window is in front, which RGSS pauses it for otherwise, so
-  # neither player holds the other up, and ignores the buttons meanwhile.
-  module Background
-    # The Input methods that report buttons, with what each reports while none is pressed.
-    IDLE_INPUT = { :press? => false, :trigger? => false, :repeat? => false, :dir4 => 0, :dir8 => 0 }
-
-    # Has the DLL keep the game running.
-    def self.start
-      @running = Link.keep_running
-      Log.write(@running ? "hooked the game's window: it keeps running in the background and the keyboard types" : "could not keep the game running in the background")
-    rescue => e
-      Log.write("background start failed: #{e.class}: #{e.message}")
-    end
-
-    # Reports whether the DLL hooked the game's window, which keeps the game running and passes on
-    # what the player types.
-    #
-    # @return [Boolean] Whether the window is hooked.
-    def self.running?
-      @running == true
-    end
-
-    # Has Input report no buttons while another window is in front or while a screen of the mod
-    # holds them (Capture), through core_hooks.rbx.
-    #
-    # The keyboard only reaches the window in front, but gamepads reach every game, so a pad played
-    # in another game would play this one too.
-    def self.guard_input
-      return if @input_guarded
-
-      input = Input.singleton_class
-      MGQ_MpHooks.before(input, :update, "Multiplayer") do
-        MGQ_Multiplayer::Background.refresh
-        MGQ_Multiplayer::Capture.next_frame
-        MGQ_Multiplayer::Key.read_watched
-      end
-      IDLE_INPUT.each do |method, idle|
-        MGQ_MpHooks.around(input, method, "background") { |_input, _args, original| MGQ_Multiplayer::Background.passes? ? original.call : idle }
-      end
-      @input_guarded = true
-      Log.write("guarded the game's Input")
-    end
-
-    # Reports whether Input answers as the game's own would: while the game is in front, no screen
-    # of the mod gave the buttons back in this frame, and none holds them unless it asks past the
-    # capture.
-    #
-    # @return [Boolean] Whether it does.
-    def self.passes?
-      in_front? && !Capture.released? && (!Capture.on? || Capture.reading?)
-    end
-
-    # Asks Windows whether the window in front belongs to this game, once per frame.
-    #
-    # Input.update calls it, since the game's Graphics.frame_count raises until the game first sets it.
-    def self.refresh
-      in_front = begin
-        Windows.game_in_front?
-      rescue
-        true
-      end
-      Log.write(in_front ? "the game's window came to the front" : "another window came to the front, the buttons wait") if !@in_front.nil? && in_front != @in_front
-      @in_front = in_front
-    end
-
-    # Reports whether the window in front belongs to this game, as Windows said at the last
-    # Input.update.
-    #
-    # @return [Boolean] true before the input is guarded or while Windows cannot tell.
-    def self.in_front?
-      @in_front != false
-    end
-  end
-
-  # Takes the buttons away from the game while a screen of the mod reads them, such as a menu drawn
-  # over the map, under which the player would walk or open the game's menu otherwise.
-  module Capture
-    # The screens that hold the buttons, each until it gives them back, so one screen closing never
-    # hands the buttons to the game under another.
-    @owners = []
-
-    # Takes the buttons for a screen.
-    #
-    # @param owner [Symbol] The screen, such as :wheel.
-    def self.start(owner)
-      return if @owners.include?(owner)
-
-      @owners.push(owner)
-      Log.write("buttons taken by #{owner}, held by #{@owners.join(', ')}")
-    end
-
-    # Gives the buttons back for a screen. The game gets them once no other screen holds them, from
-    # the next frame on.
-    #
-    # @param owner [Symbol] The screen.
-    def self.stop(owner)
-      return unless @owners.delete(owner)
-
-      @released = true if @owners.empty?
-      Log.write("buttons given back by #{owner}, #{@owners.empty? ? 'the game has them again from the next frame' : "still held by #{@owners.join(', ')}"}")
-    end
-
-    # Reports whether the last screen gave the buttons back in this frame.
-    #
-    # The press that closed the screen, such as the Escape that closed the chat box, still reads
-    # as pressed until the next Input.update, where a battle's wait would take it as leaving.
-    #
-    # @return [Boolean] Whether it did.
-    def self.released?
-      @released == true
-    end
-
-    # Starts a frame, in which buttons given back in the frame before reach the game again. Called
-    # before every Input.update.
-    def self.next_frame
-      @released = false
-    end
-
-    # Reports whether a screen holds the buttons.
-    #
-    # @return [Boolean] Whether one does.
-    def self.on?
-      !@owners.empty?
-    end
-
-    # Reports whether a screen of the mod asks Input past the capture right now.
-    #
-    # @return [Boolean] Whether one does.
-    def self.reading?
-      @reading == true
-    end
-
-    # Reports whether a button went down, past the capture, while the game window is in front.
-    #
-    # @param button [Symbol] The game's button, such as :C or :UP.
-    # @return [Boolean] Whether it went down.
-    def self.trigger?(button)
-      read(:trigger?, button)
-    end
-
-    # Reports whether a button is held, past the capture, while the game window is in front.
-    #
-    # @param button [Symbol] The game's button, such as :UP.
-    # @return [Boolean] Whether it is held.
-    def self.press?(button)
-      read(:press?, button)
-    end
-
-    # Reports whether a button went down or repeats while held, past the capture, while the game
-    # window is in front.
-    #
-    # @param button [Symbol] The game's button, such as :LEFT.
-    # @return [Boolean] Whether it went down or repeats.
-    def self.repeat?(button)
-      read(:repeat?, button)
-    end
-
-    # Asks Input about a button past the capture, while the game window is in front.
-    #
-    # @param method [Symbol] :press?, :trigger? or :repeat?.
-    # @param button [Symbol] The game's button.
-    # @return [Boolean] What Input answers.
-    def self.read(method, button)
-      return false unless Background.in_front?
-
-      @reading = true
-      Input.send(method, button)
-    ensure
-      @reading = false
-    end
-  end
-
-  # Keys the game's own Input does not know, read from Windows.
-  module Key
-    # Set in a key state while the key is down.
-    DOWN = 0x8000
-
-    # Frames counted by next_frame.
-    @frame = 0
-
-    # The keys told frame by frame, see triggered?: each code with whether it was down at the last
-    # Input.update and whether it went down then.
-    @watched = {}
-
-    # Counts a frame for pressed?. Called after every Graphics.update, which runs once a frame,
-    # unlike Input.update.
-    def self.next_frame
-      @frame += 1
-    end
-
-    # Tells the frames counted by next_frame, which run on the title screen too, where the game's
-    # Graphics.frame_count raises.
-    #
-    # @return [Integer] The frames.
-    def self.frame
-      @frame
-    end
-
-    # Reads the watched keys. Called before every Input.update.
-    def self.read_watched
-      @watched.each do |code, state|
-        down = raw_down?(code)
-        state[:went_down] = down && !state[:down]
-        state[:down] = down
-      end
-    end
-
-    # Reads keys at every Input.update from now on, so triggered? can tell their presses.
-    #
-    # @param codes [Array<Integer>] Windows' codes of the keys.
-    def self.watch(*codes)
-      codes.each { |code| @watched[code] ||= { :down => false, :went_down => false } }
-    end
-
-    # Reports whether a key went down at the last Input.update, while the game window is in front,
-    # as Input.trigger? tells the game's buttons: the same answer however often it is asked in that
-    # frame.
-    #
-    # The game's windows call Input.update again as they cancel, which ends the press, so a key that
-    # is also a button of the game never cancels twice.
-    #
-    # @param code [Integer] Windows' code of the key, watched from its first ask on.
-    # @return [Boolean] Whether the key went down.
-    def self.triggered?(code)
-      watch(code)
-      @watched[code][:went_down] && Background.in_front?
-    end
-
-    # Reports whether a key went down since the last call for it, while the game window is in front.
-    #
-    # Windows reports the key whichever window has the focus, so a press in another window is
-    # ignored.
-    #
-    # @param code [Integer] Windows' code of the key, such as 0x7A for F11.
-    # @return [Boolean] Whether the key went down.
-    def self.pressed?(code)
-      @down ||= {}
-      @asked ||= {}
-      down = raw_down?(code)
-      # A key asked about only while a screen is open may have been let go while none was.
-      pressed = down && !(@down[code] && @asked[code] >= @frame - 1)
-      @down[code] = down
-      @asked[code] = @frame
-      pressed && Background.in_front?
-    end
-
-    # Reports whether a key is held, while the game window is in front, without taking its press
-    # from pressed?.
-    #
-    # @param code [Integer] Windows' code of the key, such as 0x12 for Alt.
-    # @return [Boolean] Whether the key is down.
-    def self.down?(code)
-      raw_down?(code) && Background.in_front?
-    end
-
-    # Asks Windows whether a key is down, whichever window is in front.
-    #
-    # @param code [Integer] Windows' code of the key.
-    # @return [Boolean] Whether it is down.
-    def self.raw_down?(code)
-      (Windows.api('user32', 'GetAsyncKeyState', 'i', 'i').call(code) & DOWN) != 0
-    end
-    private_class_method :raw_down?
-  end
-
-  # The mouse over the game's window, read from Windows: where it points on the game's screen, and
-  # its left button.
-  module Mouse
-    # Windows' code of the left mouse button.
-    LEFT_BUTTON = 0x01
-
-    # Tells where the mouse points on the game's screen, while the game window is in front.
-    #
-    # The window may be larger than the game's screen, which RGSS stretches over it.
-    #
-    # @return [Array<Integer>, nil] x and y in the game's pixels, nil outside the window or while
-    #   another window is in front.
-    def self.position
-      return nil unless Background.in_front?
-
-      window = Windows.api('user32', 'GetForegroundWindow', 'v', 'l').call
-      point = [0, 0].pack('l2')
-      return nil if Windows.api('user32', 'GetCursorPos', 'p', 'i').call(point) == 0
-
-      Windows.api('user32', 'ScreenToClient', 'lp', 'i').call(window, point)
-      rect = [0, 0, 0, 0].pack('l4')
-      Windows.api('user32', 'GetClientRect', 'lp', 'i').call(window, rect)
-      x, y = point.unpack('l2')
-      width, height = rect.unpack('l4')[2, 2]
-      return nil if width <= 0 || height <= 0 || x < 0 || y < 0 || x >= width || y >= height
-
-      [x * Graphics.width / width, y * Graphics.height / height]
-    rescue
-      nil
-    end
-
-    # Reports whether the left button went down since the last call, while the game window is in
-    # front and the player does not arrange the mod's boxes.
-    #
-    # @return [Boolean] Whether it went down.
-    def self.clicked?
-      # Asked even while arranging, so a press held over the end of it is not taken as a new one.
-      pressed = Key.pressed?(LEFT_BUTTON)
-      pressed && !arranging?
-    end
-
-    # Reports whether the left button is held, while the game window is in front and the player does
-    # not arrange the mod's boxes.
-    #
-    # @return [Boolean] Whether it is.
-    def self.held?
-      Key.down?(LEFT_BUTTON) && !arranging?
-    end
-
-    # The DLL's export that hands out the wheel's notches.
-    WHEEL_EXPORT = 'mp_mouse_wheel'
-
-    # Tells how many notches the wheel turned since the last frame, read once a frame of
-    # Key.frame, so every box that asks in a frame gets the same; 0 while another window is in
-    # front, while the player arranges the mod's boxes, or without the export.
-    #
-    # Notches gathered while nobody asked in the frame before are dropped, so a box that opens
-    # never scrolls by an earlier turn.
-    #
-    # @return [Integer] The notches, positive up, away from the player, negative down.
-    def self.wheel
-      frame = Key.frame
-      unless frame == @wheel_frame
-        notches = take_wheel
-        notches = 0 unless @wheel_frame == frame - 1
-        @wheel_frame = frame
-        @wheel = notches
-      end
-      Background.in_front? && !arranging? ? @wheel : 0
-    rescue
-      0
-    end
-
-    # Takes the notches the DLL gathered since it was last asked, telling the log once when it
-    # cannot.
-    #
-    # @return [Integer] The notches, 0 without the export.
-    def self.take_wheel
-      return 0 if @wheel_missing
-
-      Link.function(WHEEL_EXPORT).call
-    rescue => e
-      @wheel_missing = true
-      Log.write("mouse wheel unavailable: #{e.class}: #{e.message}")
-      0
-    end
-    private_class_method :take_wheel
-
-    # Tells whether the mouse moves and resizes the mod's boxes instead of clicking, see
-    # ui_layout.rbx.
-    #
-    # @return [Boolean] Whether it does.
-    def self.arranging?
-      defined?(MGQ_MpUi::Layout) && MGQ_MpUi::Layout.arranging? ? true : false
-    end
-  end
-
-  # The Windows functions the script calls directly.
-  module Windows
-    # Asks Windows whether the game is in front.
-    #
-    # @return [Boolean] Whether the window in front belongs to this game.
-    def self.game_in_front?
-      owner = [0].pack('L')
-      api('user32', 'GetWindowThreadProcessId', 'lp', 'l').call(api('user32', 'GetForegroundWindow', 'v', 'l').call, owner)
-      owner.unpack('L')[0] == api('kernel32', 'GetCurrentProcessId', 'v', 'l').call
-    end
-
-    # Loads a Windows function.
-    #
-    # @param library [String] The Windows library.
-    # @param name [String] The function.
-    # @param arguments [String] Its arguments, in Win32API notation.
-    # @param result [String] Its result, in Win32API notation.
-    # @return [Win32API] The function, loaded once.
-    def self.api(library, name, arguments, result)
-      @functions ||= {}
-      @functions[name] ||= Win32API.new(library, name, arguments, result)
-    end
-  end
-
   # Takes the world invites the player accepted and the player's name from the Discord mod through
   # MGQ_Discord::Bridge when it is installed. Everything here does nothing without it.
   module Discord
@@ -1993,7 +1615,8 @@ end
 begin
   MGQ_Multiplayer::Stages.boot
   # The last resort for a game whose Main section lets Ruby end: the log writes how it closes and
-  # every line left. The game's own Main section never gets here, see MGQ_Multiplayer.run_game.
+  # every line left. The game's own Main section never gets here; the Mod Framework's Run.on_close
+  # writes it there.
   at_exit { MGQ_Multiplayer.closing($!) }
 rescue Exception => e
   MGQ_Multiplayer.load_failed("loading", e)

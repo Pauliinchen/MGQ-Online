@@ -2,7 +2,7 @@
 #  bridge_support.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Started the confirm box with its yes choice picked when asked
+#      Paulinchen  2026-10-31: Opened the Mod Framework's bridge on the same FakeBridge, its interface events drained there, and stood in for its question box
 #      Paulinchen  2026-10-23: Stood in for the layout
 #                            - Stood in for the confirm box
 #                            - Stood in for the wheels
@@ -58,6 +58,11 @@ class FakeBridge
 
   # @return [Array<Integer>] The buffer size of each mp_call and mp_reply.
   attr_reader :sizes
+
+  # @return [Integer, nil] The context the Mod Framework's bridge opened, which stays open beside
+  #   the newest one and whose drain takes the events of the interface (topics starting "ui."); nil
+  #   hands every event to whichever drains.
+  attr_accessor :ui_context
 
   # Creates the stand-in with no topic but the batch.
   #
@@ -193,7 +198,7 @@ class FakeBridge
     @sizes << size
     return hand(:call, @raw[name], reply, size) if @raw.key?(name)
 
-    envelope = context == @context ? envelope_of(name, bytes) : error("bad_request", "There is no bridge context #{context}.")
+    envelope = context == @context || context == @ui_context ? envelope_of(name, bytes) : error("bad_request", "There is no bridge context #{context}.")
     envelope.nil? ? 0 : hand(:call, Marshal.dump(envelope), reply, size)
   end
 
@@ -210,18 +215,18 @@ class FakeBridge
 
   # mp_drain.
   #
-  # @param _context [Integer] The context.
+  # @param context [Integer] The context.
   # @param frame [Integer] The scripts' frame.
   # @param buffer [String] The drain buffer.
   # @param size [Integer] Its size.
   # @return [Integer] As the export.
-  def drain(_context, frame, buffer, size)
+  def drain(context, frame, buffer, size)
     @frames << frame
     return take(:drain, buffer, size) if @parked[:drain]
-    return 0 if @events.empty?
 
-    events = @events
-    @events = []
+    events, @events = @ui_context ? @events.partition { |topic, _| topic.start_with?("ui.") == (context == @ui_context) } : [@events, []]
+    return 0 if events.empty?
+
     hand(:drain, Marshal.dump(events), buffer, size)
   end
 
@@ -345,7 +350,7 @@ class FakeUi
   def initialize(fake)
     @models = {}
     @ticks = []
-    fake.answer(MGQ_MpUi::Tick::TOPIC) do |inputs|
+    fake.answer(Mod_Framework::UI::Tick::TOPIC) do |inputs|
       @ticks << inputs
       inputs.each { |name, input| @models[name].call(input) if @models[name] }
       nil
@@ -368,7 +373,7 @@ end
 # End and Delete move or remove. The rest of EditModel (the part shown, the lines, the blinking)
 # is MGQOnline.Game.Tests', so a box here shows no view and always its cursor.
 class FakeEdit
-  # The key bits, see MGQ_MpUi::TextEdit::ARROW_BITS and KEY_BITS.
+  # The key bits, see Mod_Framework::UI::TextEdit::ARROW_BITS and KEY_BITS.
   LEFT, RIGHT, HOME, END_KEY, DELETE = 1, 2, 16, 32, 64
 
   # Answers the box's topics and takes its input from the tick.
@@ -381,12 +386,12 @@ class FakeEdit
     @typed = typed
     @boxes = {}
     @last = 0
-    fake.answer(MGQ_MpUi::TextEdit::OPEN) { |request| open(request) }
-    fake.answer(MGQ_MpUi::TextEdit::CLOSE) { |id| @boxes.delete(id); nil }
-    fake.answer(MGQ_MpUi::TextEdit::SET) { |request| set(request); nil }
-    fake.answer(MGQ_MpUi::TextEdit::VIEW) { |request| (@box = @boxes[request["id"]]) ? state : nil }
-    fake.answer(MGQ_MpUi::TextEdit::TYPE) { |request| type_now(request) }
-    ui.model(MGQ_MpUi::TextEdit::MODEL) { |input| tick(input) }
+    fake.answer(Mod_Framework::UI::TextEdit::OPEN) { |request| open(request) }
+    fake.answer(Mod_Framework::UI::TextEdit::CLOSE) { |id| @boxes.delete(id); nil }
+    fake.answer(Mod_Framework::UI::TextEdit::SET) { |request| set(request); nil }
+    fake.answer(Mod_Framework::UI::TextEdit::VIEW) { |request| (@box = @boxes[request["id"]]) ? state : nil }
+    fake.answer(Mod_Framework::UI::TextEdit::TYPE) { |request| type_now(request) }
+    ui.model(Mod_Framework::UI::TextEdit::MODEL) { |input| tick(input) }
   end
 
   # The open boxes by id; a test may keep several windows of boxes, where the game opens one at a
@@ -454,7 +459,7 @@ class FakeEdit
     follow(input[1]) if input[1] >= 0
     return if outcomes.empty? && keys.to_i == 0 && text.to_s.empty? && before == [@box[:text], @box[:cursor]]
 
-    @fake.post(MGQ_MpUi::TextEdit::EVENT, state.merge("outcomes" => outcomes, "keys" => keys.to_i, "chars" => text.to_s.size))
+    @fake.post(Mod_Framework::UI::TextEdit::EVENT, state.merge("outcomes" => outcomes, "keys" => keys.to_i, "chars" => text.to_s.size))
   end
 
   # Leaves out the character of the key that opened the box once, and what is typed while Alt is
@@ -522,38 +527,51 @@ class FakeEdit
   end
 end
 
-# Opens the bridge to the test's one FakeBridge, $world_bridge, made here unless the world room's or
-# the rules' stand-ins made it, adding the frame's tick, the text box, typing what a block hands
-# out, the wheels, the confirm box and the layout.
+# Opens the bridges, MGQ Online's and the Mod Framework's, to the test's one FakeBridge,
+# $world_bridge, made here unless the world room's or the rules' stand-ins made it, adding the
+# frame's tick, the text box, typing what a block hands out, the wheels, the layout, the
+# framework's settings in $framework_ini and a stand-in for its question box.
 #
 # @yieldreturn [Array(String, Integer)] What was typed since the last take, and the keys pressed.
 # @return [Array(FakeBridge, FakeUi, FakeEdit)] The bridge, the tick and the box.
 def open_fake_ui(&typed)
   fake = ($world_bridge ||= FakeBridge.new)
   ui = FakeUi.new(fake)
-  edit = defined?(MGQ_MpUi::TextEdit) ? FakeEdit.new(fake, ui, &typed) : nil
-  FakeWheels.new(fake, ui) if defined?(MGQ_MpWheel)
-  FakeConfirm.new(fake, ui) if defined?(MGQ_MpUi::Confirm)
-  FakeLayout.new(fake) if defined?(MGQ_MpUi::Layout)
+  edit = FakeEdit.new(fake, ui, &typed)
+  FakeWheels.new(fake, ui)
+  FakeLayout.new(fake)
+  answer_framework_ini(fake)
+  StandInConfirm.install
+  open_framework(fake)
   MGQ_Multiplayer::Bridge.open(fake)
   reregister_boxes
+  wheel = Mod_Framework::UI::Wheel
+  wheel.instance_variable_get(:@definitions).each_key { |name| wheel.send(:send_definition, name) }
   [fake, ui, edit]
+end
+
+# Answers the Mod Framework's settings file on a FakeBridge from $framework_ini, as the DLL reads
+# and writes Patch/Mod_Framework/Mod_Framework.ini, unless the test answers them itself.
+#
+# @param fake [FakeBridge] The bridge.
+def answer_framework_ini(fake)
+  $framework_ini ||= {}
+  fake.answer("ini.read") { |(_path)| $framework_ini.dup } unless fake.instance_variable_get(:@handlers).key?("ini.read")
+  fake.answer("ini.write") { |(_path, values)| $framework_ini = values.dup; true } unless fake.instance_variable_get(:@handlers).key?("ini.write")
 end
 
 # Registers the boxes the scripts registered while the bridge was still closed once more, as the
 # game, whose bridge opens before the scripts load, has them registered in C#.
 def reregister_boxes
-  return unless defined?(MGQ_MpUi::Layout)
-
-  layout = MGQ_MpUi::Layout
-  layout.instance_variable_get(:@boxes).dup.each { |id, box| layout.register(id, box.name, box.min_width, box.min_height, box.resize) }
+  $layout_registrations.dup.each { |id, (name, options)| Mod_Framework::UI::Layout.register(id, name, options) }
 end
 
-# Ends a frame as Graphics.update does in the game: the frame's tick goes over in the batch, and
-# the drain hands back the models' events, which their owners act on in the next frame. Counts the
-# frames in $ui_frames, as Key.next_frame does before the drain.
+# Ends a frame as Graphics.update and the next Input.update do in the game: the frame ends, the
+# frame's tick goes over in the batch, and the drains hand back the models' events, which their
+# owners act on in the next frame. Counts the frames in $ui_frames.
 def ui_frame
-  MGQ_MpUi::Tick.send_frame
+  Mod_Framework::UI::Tick.end_frame
+  Mod_Framework::UI::Tick.send_frame
   $ui_frames = $ui_frames.to_i + 1
   MGQ_Multiplayer::Bridge.frame
 end
@@ -562,11 +580,18 @@ end
 # map leaves free and closes it, as cancel does and a map that no longer leaves it free, the arrows
 # held point at once, without the grace of a diagonal, at the direction with a choice, else the
 # action wheel's middle or the emote wheel's last pick, and confirm takes the pick, closing the
-# emote wheel. The places come from fixtures/ui/wheel.json; the grace and the rest of WheelModel are
-# MGQOnline.Game.Tests'.
+# emote wheel. The places are those of the Mod Framework's wheel fixtures; the grace and the rest of
+# WheelModel are the framework's tests'.
 class FakeWheels
-  # The places of each count of choices, as the scripts placed them.
-  PLACES = JSON.parse(File.read(File.expand_path("../../fixtures/ui/wheel.json", __dir__), :encoding => "UTF-8"))["places"]
+  # The directions, clockwise from the top, as Mod_Framework::UI::Wheel::DIRECTIONS names them.
+  DIRECTIONS = %w[UP UP_RIGHT RIGHT DOWN_RIGHT DOWN DOWN_LEFT LEFT UP_LEFT]
+
+  # The places of each count of choices, by the count, as WheelPlaces spreads them.
+  PLACES = { 1 => %w[UP], 2 => %w[UP DOWN], 3 => %w[UP DOWN_RIGHT DOWN_LEFT], 4 => %w[UP RIGHT DOWN LEFT], 5 => %w[UP RIGHT DOWN_RIGHT DOWN_LEFT LEFT],
+             6 => %w[UP UP_RIGHT DOWN_RIGHT DOWN DOWN_LEFT UP_LEFT], 7 => %w[UP UP_RIGHT RIGHT DOWN_RIGHT DOWN_LEFT LEFT UP_LEFT], 8 => DIRECTIONS }
+
+  # The names of MGQ Online's two wheels, with whether each has a middle choice.
+  WHEELS = { "mgq_online_action_wheel" => true, "mgq_online_emote_wheel" => false }
 
   # The directions, by the row and the column the arrows point to.
   STEPS = { [-1, 0] => 0, [-1, 1] => 1, [0, 1] => 2, [1, 1] => 3, [1, 0] => 4, [1, -1] => 5, [0, -1] => 6, [-1, -1] => 7 }
@@ -577,11 +602,13 @@ class FakeWheels
   # @param ui [FakeUi] The tick.
   def initialize(fake, ui)
     @fake = fake
-    @wheels = { "wheel" => { :center => true }, "emotes" => { :center => false } }
-    directions = JSON.parse(File.read(File.expand_path("../../fixtures/ui/wheel.json", __dir__), :encoding => "UTF-8"))["directions"]
-    fake.answer(MGQ_MpWheel::PLACES) { |request| places(request[0]).map { |name| directions.index(name) } }
-    fake.answer(MGQ_MpWheel::CLOSE) { |request| @wheels[request[0]][:open] = false; nil }
-    @directions = directions
+    @wheels = {}
+    WHEELS.each { |name, center| @wheels[name] = { :center => center } }
+    wheel = Mod_Framework::UI::Wheel
+    fake.answer(wheel::DEFINE) { |request| WHEELS.key?(request[0]) }
+    fake.answer(wheel::PLACES) { |request| places(request[0]).map { |name| DIRECTIONS.index(name) } }
+    fake.answer(wheel::CLOSE) { |request| @wheels[request[0]][:open] = false; nil }
+    @directions = DIRECTIONS
     @wheels.each_key { |name| ui.model(name) { |input| tick(name, input) } }
   end
 
@@ -592,14 +619,13 @@ class FakeWheels
   # @param count [Integer] The count.
   # @return [Array<String>] The directions' names.
   def places(count)
-    entry = PLACES.find { |item| item["count"] == count }
-    entry ? entry["places"] : []
+    PLACES[count] || []
   end
 
   # Takes a wheel's frame.
   #
   # @param name [String] The wheel.
-  # @param input [Array] [free, key, cancel, confirm, arrows, count].
+  # @param input [Array] [free, key, cancel, confirm, arrows, count, ring].
   def tick(name, input)
     wheel = @wheels[name]
     free, key, cancel, confirm, arrows, count = input
@@ -614,7 +640,7 @@ class FakeWheels
       return unless key
 
       wheel[:open] = true
-      wheel[:selected] = wheel[:center] ? MGQ_MpWheel::CENTER : nil
+      wheel[:selected] = wheel[:center] ? Mod_Framework::UI::Wheel::CENTER : nil
       return post(name, wheel, "cues" => ["cursor"])
     end
     if key || cancel
@@ -626,7 +652,7 @@ class FakeWheels
     column = (arrows & 8 != 0 ? 1 : 0) - (arrows & 4 != 0 ? 1 : 0)
     held = STEPS[[row, column]]
     pointed = wheel[:selected]
-    pointed = places(count).include?(@directions[held]) ? held : wheel[:center] ? MGQ_MpWheel::CENTER : wheel[:selected] if held
+    pointed = places(count).include?(@directions[held]) ? held : wheel[:center] ? Mod_Framework::UI::Wheel::CENTER : wheel[:selected] if held
     moved = pointed != wheel[:selected]
     wheel[:selected] = pointed
     return post(name, wheel, "cues" => moved ? ["cursor"] : []) if moved && !confirm
@@ -642,58 +668,46 @@ class FakeWheels
   # @param wheel [Hash] Its state.
   # @param fields [Hash] What the event adds.
   def post(name, wheel, fields)
-    @fake.post(MGQ_MpWheel::EVENT, { "wheel" => name, "open" => wheel[:open] == true, "selected" => wheel[:selected], "cues" => [] }.merge(fields))
+    @fake.post(Mod_Framework::UI::Wheel::EVENT, { "wheel" => name, "open" => wheel[:open] == true, "selected" => wheel[:selected], "cues" => [] }.merge(fields))
   end
 end
 
-# The confirm box on a FakeBridge, as ConfirmModel keeps it: one box at a time, nothing read in its
-# first tick, the accept hotkey, then the decline hotkey, cancel and confirm answering it, left or
-# right moving the pick.
-class FakeConfirm
-  # Answers the box's topics and takes its keys from the tick.
-  #
-  # @param fake [FakeBridge] The bridge.
-  # @param ui [FakeUi] The tick.
-  def initialize(fake, ui)
-    @fake = fake
-    @last = 0
-    fake.answer(MGQ_MpUi::Confirm::ASK) { |request| @open ? nil : (@picked = request == true; @fresh = true; @open = (@last += 1)) }
-    fake.answer(MGQ_MpUi::Confirm::CLOSE) { |request| @open = nil if @open == request[0]; nil }
-    ui.model(MGQ_MpUi::Confirm::MODEL) { |input| tick(*input) }
-  end
+# The Mod Framework's question box, as far as its askers' tests need it: one question at a time,
+# kept in $asked, whose block answer_confirm calls; the box itself is the framework's tests'.
+module StandInConfirm
+  # Stands in for the question box from now on.
+  def self.install
+    confirm = Mod_Framework::UI::Confirm
+    confirm.define_singleton_method(:ask) do |question, choices = ["Yes", "No"], _options = {}, &answer|
+      next false if @block
 
-  private
-
-  # Reads a frame's keys.
-  #
-  # @param id [Integer] The box.
-  # @param accept [Boolean] The accept hotkey.
-  # @param decline [Boolean] The decline hotkey.
-  # @param cancel [Boolean] Cancel.
-  # @param confirm [Boolean] Confirm.
-  # @param sideways [Boolean] Left or right.
-  def tick(id, accept, decline, cancel, confirm, sideways)
-    return unless @open && @open == id
-    return @fresh = false if @fresh
-
-    if accept then answer(true, "accept")
-    elsif decline then answer(false, "decline")
-    elsif cancel then answer(false, "cancel")
-    elsif confirm then answer(@picked, "confirm")
-    elsif sideways
-      @picked = !@picked
-      @fake.post(MGQ_MpUi::Confirm::EVENT, "id" => @open, "picked" => @picked, "cues" => ["cursor"])
+      ($asked ||= []) << [question, choices]
+      @question, @yes, @no = question, choices[0], choices[1]
+      @block = answer
+      true
     end
+    confirm.define_singleton_method(:open?) { !@block.nil? }
+    confirm.define_singleton_method(:close) { |_reason = nil| StandInConfirm.answer(false) }
   end
 
-  # Answers the box.
+  # Answers the open question, if one is open, as the player does.
   #
   # @param yes [Boolean] The answer.
-  # @param by [String] What answered.
-  def answer(yes, by)
-    @fake.post(MGQ_MpUi::Confirm::EVENT, "id" => @open, "picked" => @picked, "answer" => yes, "by" => by, "cues" => [yes ? "ok" : "cancel"])
-    @open = nil
+  def self.answer(yes)
+    confirm = Mod_Framework::UI::Confirm
+    block = confirm.instance_variable_get(:@block)
+    return unless block
+
+    confirm.instance_variable_set(:@block, nil)
+    block.call(yes)
   end
+end
+
+# Answers the question box's open question, see StandInConfirm.
+#
+# @param yes [Boolean] The answer.
+def answer_confirm(yes)
+  StandInConfirm.answer(yes)
 end
 
 # The layout on a FakeBridge, as far as the boxes' tests need it: a box lies where Player.ini keeps
@@ -706,9 +720,9 @@ class FakeLayout
   def initialize(fake)
     @boxes = {}
     @stored = {}
-    layout = MGQ_MpUi::Layout
+    layout = Mod_Framework::UI::Layout
     fake.answer(layout::REGISTER) do |request|
-      id, _name, width, height, resize, text = request
+      id, _name, width, height, _max_width, _max_height, resize, _movable, text = request
       @boxes[id] = [width, height, resize]
       !(@stored[id] = parse(text)).nil?
     end
@@ -722,7 +736,7 @@ class FakeLayout
 
   private
 
-  # Reads a place Player.ini keeps.
+  # Reads a place the framework's settings keep.
   #
   # @param text [String, nil] "x,y,width,height".
   # @return [Array<Integer>, nil] The place, nil for none.

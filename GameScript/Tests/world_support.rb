@@ -2,6 +2,7 @@
 #  world_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Stood in for the Mod Framework's window, keys, mouse and capture, which the scripts read now
 #      Paulinchen  2026-10-23: Counted the frames ui_frame ended
 #                            - Typed through the stand-in text box at the end of each frame
 #                            - Played the world room's inbox into the scripts' mirror through world_room_support.rb
@@ -146,43 +147,43 @@ class Color
   # Keeps the color's values.
   def initialize(red = nil, green = nil, blue = nil, alpha = nil); @red = red; @green = green; @blue = blue; @alpha = alpha; end
 end
+# Stands in for the game window: in front while $in_front is set.
+module Mod_Framework::UI::Tick; def self.in_front?; $in_front; end; end
+# Stands in for the keyboard: the key $pressed names is pressed once, and $down lists the keys
+# held.
+module Mod_Framework::UI::Key
+  # Answers whether a key is pressed, once: the code in $pressed, or B when $pressed is true.
+  def self.pressed?(code); p = $pressed == code || ($pressed == true && code == 0x42); $pressed = false if p; p; end
+  # Answers whether a key is held, as $down lists it.
+  def self.down?(code); ($down || []).include?(code); end
+  # Answers as pressed? does.
+  def self.triggered?(code); pressed?(code); end
+  # Counts the frames ui_frame ended.
+  def self.frame; $ui_frames.to_i; end
+end
+# Stands in for the mouse: held while $mouse_held is true, at $mouse, its wheel's notches in $wheel.
+module Mod_Framework::UI::Mouse; def self.held?; $mouse_held == true; end; def self.position; $mouse; end; def self.wheel; $wheel.to_i; end; end
+# Stands in for holding the game's buttons, held while any screen holds them; $held lists the
+# buttons held and $buttons those pressed, each read once.
+module Mod_Framework::UI::Capture
+  @owners = []
+  # Holds the buttons for a screen.
+  def self.start(owner); @owners.push(owner) unless @owners.include?(owner); end
+  # Lets a screen's hold go.
+  def self.stop(owner); @owners.delete(owner); end
+  # Answers whether any screen holds the buttons.
+  def self.on?; !@owners.empty?; end
+  # Answers whether a button is held, as $held lists it.
+  def self.press?(button); ($held || []).include?(button); end
+  # Answers whether a button was pressed, taking it from $buttons.
+  def self.trigger?(button); $buttons.delete(button) ? true : false; end
+  # Answers whether a button repeats, taking it from $buttons.
+  def self.repeat?(button); $buttons.delete(button) ? true : false; end
+end
 # Stands in for the parts of Multiplayer.rb the scripts call.
 module MGQ_Multiplayer
-  # Stands in for the game window: in front while $in_front is set, always running.
-  module Background; def self.in_front?; $in_front; end; def self.running?; true; end; end
-  # Stands in for the keyboard: the key $pressed names is pressed once, and $down lists the keys
-  # held.
-  module Key
-    # Answers whether a key is pressed, once: the code in $pressed, or B when $pressed is true.
-    def self.pressed?(code); p = $pressed == code || ($pressed == true && code == 0x42); $pressed = false if p; p; end
-    # Answers whether a key is held, as $down lists it.
-    def self.down?(code); ($down || []).include?(code); end
-    # Answers as pressed? does.
-    def self.triggered?(code); pressed?(code); end
-    # Counts the frames ui_frame ended.
-    def self.frame; $ui_frames.to_i; end
-  end
-  # Stands in for the mouse: held while $mouse_held is true, at $mouse, its wheel's notches in $wheel.
-  module Mouse; def self.held?; $mouse_held == true; end; def self.position; $mouse; end; def self.wheel; $wheel.to_i; end; end
   # Stands in for the log, which prints each line.
   module Log; def self.write(m); puts "  log: #{m}"; end; end
-  # Stands in for holding the game's buttons, held while any screen holds them; $held lists the
-  # buttons held and $buttons those pressed, each read once.
-  module Capture
-    @owners = []
-    # Holds the buttons for a screen.
-    def self.start(owner); @owners.push(owner) unless @owners.include?(owner); end
-    # Lets a screen's hold go.
-    def self.stop(owner); @owners.delete(owner); end
-    # Answers whether any screen holds the buttons.
-    def self.on?; !@owners.empty?; end
-    # Answers whether a button is held, as $held lists it.
-    def self.press?(button); ($held || []).include?(button); end
-    # Answers whether a button was pressed, taking it from $buttons.
-    def self.trigger?(button); $buttons.delete(button) ? true : false; end
-    # Answers whether a button repeats, taking it from $buttons.
-    def self.repeat?(button); $buttons.delete(button) ? true : false; end
-  end
   # Stands in for Player.ini: the player named Me, the settings in $player_ini and the notice of an
   # unreadable file in $player_ini_notice.
   module Player
@@ -195,13 +196,10 @@ module MGQ_Multiplayer
     # Hands out the notice in $player_ini_notice once.
     def self.take_notice; notice = $player_ini_notice; $player_ini_notice = nil; notice; end
   end
-  # Stands in for the DLL's link: the player's id is always me, and whether the player types goes
-  # to $typing_on.
+  # Stands in for the DLL's link: the player's id is always me.
   module Link
     # Answers the player's id.
     def self.player_id; "me"; end
-    # Records whether the player types in $typing_on.
-    def self.typing(on); $typing_on = on; end
     # Reads a description as the DLL writes it: key=value lines, an empty line, the payload.
     #
     # @param text [String] The description.
@@ -222,12 +220,9 @@ require_relative "world_room_support"
 $inbox = WorldInbox.new
 
 load_script "core_hotkeys"
-load_script "ui"
-load_script "ui_theme"
-load_script "ui_layout"
-load_script "ui_text_box"
+load_script "ui_online"
+load_script "ui_boxes"
 load_script "overworld_sync"
-load_script "ui_wheel"
 load_script "ui_actions"
 load_script "ui_chat"
 load_script "overworld"

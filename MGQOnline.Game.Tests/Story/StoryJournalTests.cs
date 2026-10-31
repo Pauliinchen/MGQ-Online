@@ -2,6 +2,7 @@
 //  StoryJournalTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Called the topics through TopicContext
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -10,7 +11,6 @@ using System.Linq;
 using System.Text.Json;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Story;
-using MGQOnline.Game.Tests.Ui;
 using MGQOnline.Game.Topics;
 
 namespace MGQOnline.Game.Tests.Story;
@@ -30,12 +30,12 @@ public sealed class StoryJournalTests
     {
         foreach (JsonElement entry in Fixtures.Read("freeze", "journal.json").GetProperty("cases").EnumerateArray())
         {
-            var ui = new UiContext();
-            JournalTopics.Register(ui.Context);
+            var topics = new TopicContext();
+            JournalTopics.Register(topics.Context);
             long mark = entry.GetProperty("mark").GetInt64();
-            ui.Value(JournalTopics.JournalTopic, new RubyHash { { "entries", ValueOf(entry.GetProperty("entries")) }, { "keep", mark } });
+            topics.Value(JournalTopics.JournalTopic, new RubyHash { { "entries", ValueOf(entry.GetProperty("entries")) }, { "keep", mark } });
 
-            RubyHash answer = ui.Value(JournalTopics.SinceTopic, mark).AsHash();
+            RubyHash answer = topics.Value(JournalTopics.SinceTopic, mark).AsHash();
 
             Assert.Equal(ValueOf(entry.GetProperty("rows")), answer["rows"]);
             Assert.Equal(RubyBool.False, answer["overflow"]);

@@ -2,6 +2,7 @@
 #  trade_ui_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Dressed the help window through the Mod Framework's theme, as its hook of Window_Base#update does
 #      Paulinchen  2026-10-24: Updated the help window through the game's window base, which every window's look follows
 #      Paulinchen  2026-10-12: Checked cuts with few measures
 #                            - Checked the lists scrolled with the mouse wheel
@@ -79,8 +80,8 @@ end
 class Sprite; def initialize(*); end; end
 # Player.ini without settings.
 module MGQ_Multiplayer; module Player; def self.setting(_key); nil; end; end; end
-load_script "ui"
-load_script "ui_theme"
+load_script "ui_online"
+load_script "ui_boxes"
 load_script "ui_trade"
 
 # Draws an offer's first row in a window as wide as one half of the trade screen.
@@ -187,15 +188,17 @@ class HelpWindow < Window_Base
   # Tints the window in the game's window color.
   def update_tone; tone.set(9, 9, 9, 0); end
 end
-MGQ_MpUi::Theme.define_singleton_method(:skin) { :preset_skin }
+MGQ_MpUi::Theme.define_singleton_method(:skin_for) { |_palette| :preset_skin }
 help = HelpWindow.new
 help.update
 scene.wear_theme(help)
 check("the help window wears the look at once: the preset's skin, the back's opacity and no tint", [help.windowskin, help.back_opacity, help.tone.values], [:preset_skin, MGQ_MpUi::Style::BACK.alpha, [0, 0, 0, 0]])
 help.update
+MGQ_MpUi::Theme.dress(help)
 check("and keeps no tint as it updates", help.tone.values, [0, 0, 0, 0])
 MGQ_MpUi::Theme.apply("Monarch", "a test")
 help.update
+MGQ_MpUi::Theme.dress(help)
 check("a new look dresses it anew as it updates", help.back_opacity, 235)
 
 # A list laid out as the game's Window_Selectable lays it out: one column, rows of 24 pixels and a
@@ -258,11 +261,11 @@ check("an empty list still makes a picture of one row", empty.heights.last, 24)
 
 # The lists scrolled with the mouse wheel, the cursor drawn where its row lies in the new picture.
 # The mouse at $mouse, with $wheel notches.
-module MGQ_Multiplayer; module Mouse; def self.position; $mouse; end; def self.wheel; $wheel.to_i; end; end; end
+module Mod_Framework::UI::Mouse; def self.position; $mouse; end; def self.wheel; $wheel.to_i; end; end
 # A list as the trade lists are: it keeps the rows shown in its picture and scrolls with the wheel.
 class WheelList < ListStandIn
   include MGQ_MpTradeUi::VisibleRows
-  include MGQ_MpUi::ScrollingWindow
+  include MGQ_MpScrollingWindow
   # The cursor's row and whether it takes input.
   attr_accessor :index, :active
   # The cursor's top in the window.
@@ -287,7 +290,7 @@ class WheelList < ListStandIn
   def update_cursor; @cursor_top = item_rect(@index).y - oy; end
 end
 check("both trade lists scroll with the wheel and show a scrollbar",
-      [Window_MpTradeBag, Window_MpTradeOffer].map { |window| window.include?(MGQ_MpUi::ScrollingWindow) }, [true, true])
+      [Window_MpTradeBag, Window_MpTradeOffer].map { |window| window.include?(MGQ_MpScrollingWindow) }, [true, true])
 list = WheelList.new(1000)
 list.index = 0
 list.active = true

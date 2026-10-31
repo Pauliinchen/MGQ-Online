@@ -2,6 +2,8 @@
 #  world_data_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Dropped the stand-in of the title screen's commands, which no script hooks any more
+#      Paulinchen  2026-10-31: Typed through the Mod Framework's text box, reading the typing from $mgq_text_input
 #      Paulinchen  2026-10-30: Checked that the measure once the world's mods loaded leaves the title's fingerprint
 #                            - Expected the forms and the details without the game data's fields and comparison
 #                            - Stopped loading the deleted world_mods_parking.rbx
@@ -100,8 +102,6 @@ class Sprite; def initialize(*); end; end
 Rect = Struct.new(:x, :y, :width, :height)
 # The game's title screen, which does nothing.
 class Scene_Title; def start; end; def create_command_window; end; def update; end; def terminate; end; end
-# The title screen's commands, which list nothing.
-class Window_TitleCommand; def make_command_list; end; end
 # The game's system sounds: each one played is added to $sounds.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
 # The game's input: the buttons in $buttons are pressed this frame, those in $held are held.
@@ -148,8 +148,6 @@ module MGQ_Multiplayer
     def self.function(name); Function.new(name, dll_signature(name)); end
     # The DLL's value of a name, from $dll.
     def self.read(name, _size); $dll[name].to_s; end
-    # Records in $typing whether the player types.
-    def self.typing(on); $typing = on; end
     # Reads a DLL answer: its name=value lines up to a blank line, and the rest as :payload.
     #
     # @param text [String] The answer.
@@ -165,9 +163,8 @@ end
 
 
 load_script "world_save_distribution"
-load_script "ui"
-load_script "ui_layout"
-load_script "ui_text_box"
+load_script "ui_online"
+load_script "ui_boxes"
 load_script "world"
 load_script "world_mods"
 load_script "world_text"
@@ -613,14 +610,14 @@ $background = true
 # and $wheel.
 module MGQ_Multiplayer
   # The capture: a button repeats while in $held and triggers as Input says.
-  module Capture; def self.repeat?(button); $held.include?(button); end; def self.trigger?(button); Input.trigger?(button); end; end
+  module Mod_Framework::UI::Capture; def self.repeat?(button); $held.include?(button); end; def self.trigger?(button); Input.trigger?(button); end; end
   # Windows' keys: the one in $key_down is pressed and triggered.
-  module Key; def self.pressed?(code); $key_down == code; end; def self.triggered?(code); pressed?(code); end; def self.down?(code); pressed?(code); end; end
+  module Mod_Framework::UI::Key; def self.pressed?(code); $key_down == code; end; def self.triggered?(code); pressed?(code); end; def self.down?(code); pressed?(code); end; end
   # The mouse: its position from $mouse, a click from $click taken once, the wheel's notches from
   # $wheel.
-  module Mouse; def self.position; $mouse; end; def self.clicked?; $click ? ($click = false; true) : false; end; def self.wheel; $wheel.to_i; end; end
-  # Whether the game runs in the background, from $background.
-  module Background; def self.running?; $background; end; end
+  module Mod_Framework::UI::Mouse; def self.position; $mouse; end; def self.clicked?; $click ? ($click = false; true) : false; end; def self.wheel; $wheel.to_i; end; end
+  # Whether the Mod Framework's DLL works, which takes the keyboard, from $background.
+  def Mod_Framework.available?; $background; end
 end
 # Lines that keep each character's place.
 widths = lambda { |part| part.size * 10 }
@@ -641,7 +638,7 @@ check("a place in the text is on the line that starts at or before it", [spans, 
 require_relative "bridge_support"
 drawn = []
 cursors = []
-font = Struct.new(:size, :color, :bold).new(18, "normal_color", false)
+font = Struct.new(:size, :color, :bold, :italic).new(18, "normal_color", false, false)
 canvas = Struct.new(:font).new(font)
 bars = []
 canvas.define_singleton_method(:fill_rect) do |*args|
@@ -668,7 +665,7 @@ shown = nil
 text_fake.answer(MGQ_MpUi::Glyphs::TOPIC) { |_request| nil }
 text_fake.answer(MGQ_MpUi::TextEdit::OPEN) { |_request| 1 }
 text_fake.answer(MGQ_MpUi::TextEdit::VIEW) { |request| views << request; { "id" => 1, "text" => form[:description], "cursor" => 49, "shown" => true, "view" => shown } }
-MGQ_Multiplayer::Bridge.open(text_fake)
+open_framework(text_fake)
 form[:description] = "A slow run through part one of the story with friends, with every side quest on the way."
 form.editing = :description
 form.edit = MGQ_MpUi::TextEdit.new(form[:description])
@@ -922,12 +919,12 @@ check("the whole description opens in the list box, broken into lines", [box.not
 kept = MGQ_MpUi::Layout.instance_variable_get(:@stored)
 before = box.lines.size
 box.selected = before - 1
-MGQ_Multiplayer::Player.define_singleton_method(:setting) { |key| key == "ui_list_box" ? "0,0,640,300" : nil }
+Mod_Framework::Settings.store("ui_list_box", "0,0,640,300")
 kept.delete(:list_box)
 scene.rewrap_description
 check("a list box the player widened breaks the description anew to its width, the pick kept on a line",
       [box.lines.map { |line| line[1] }.join(" "), [before, box.lines.size], box.selected], ["A slow run through part one of the story with friends.", [3, 2], 1])
-MGQ_Multiplayer::Player.define_singleton_method(:setting) { |_key| nil }
+Mod_Framework::Settings.forget("ui_list_box")
 kept.delete(:list_box)
 
 # The left side: the worlds above the commands.
@@ -1149,13 +1146,13 @@ Dir.mktmpdir do |folder|
     ui_frame
     scene.update_mod_pick
     ui_frame
-    check("while it is picked, the hint names Delete", view.hint, Scene_MpWorlds::MOD_PICK_ADDED_HINT)
+    check("while it is picked, the hint names Delete", view.hint, Scene_MpWorlds.mod_pick_hint(true))
     $key_down = 0x2E
     scene.update_mod_pick
     ui_frame
     $key_down = nil
     check("Delete removes it from the list, and the pick stays on an item", [view.lines.map { |line| line[1] }, view.lines[view.selected][0], view.hint],
-          [["List all your mods", "Your mods (4)", "battle_dialogue", "Level_Cap", "Party Sheet", "Zeta", "Add a mod by name . . ."], :item, Scene_MpWorlds::MOD_PICK_HINT])
+          [["List all your mods", "Your mods (4)", "battle_dialogue", "Level_Cap", "Party Sheet", "Zeta", "Add a mod by name . . ."], :item, Scene_MpWorlds.mod_pick_hint])
     view.pick(2)
     $key_down = 0x2E
     scene.update_mod_pick
@@ -1193,7 +1190,7 @@ Dir.mktmpdir do |folder|
     scene.open_mod_pick
     view = scene.instance_variable_get(:@mod_view)
     scene.act_on_mod(:add, 0)
-    check("adding a mod by name turns its row into a text box typed on the keyboard", [$typing, view.lines.last[1], view.lines.last[5][1], $called], [true, "Name:", "", nil])
+    check("adding a mod by name turns its row into a text box typed on the keyboard", [$mgq_text_input, view.lines.last[1], view.lines.last[5][1], $called], [true, "Name:", "", nil])
     $typed = "New Mod"
     scene.update_mod_pick
     ui_frame
@@ -1204,7 +1201,7 @@ Dir.mktmpdir do |folder|
     scene.update_mod_pick
     ui_frame
     scene.update_mod_pick
-    check("Enter adds the mod, picked, and the keyboard goes back to the game", [form[:mods], view.lines[view.selected][1], $typing, view.lines.last[1]], ["New Mod", "New Mod", false, "Add a mod by name . . ."])
+    check("Enter adds the mod, picked, and the keyboard goes back to the game", [form[:mods], view.lines[view.selected][1], $mgq_text_input, view.lines.last[1]], ["New Mod", "New Mod", false, "Add a mod by name . . ."])
     $held = [:C]
     scene.update_mod_pick
     ui_frame
@@ -1217,14 +1214,14 @@ Dir.mktmpdir do |folder|
     scene.update_mod_pick
     ui_frame
     scene.update_mod_pick
-    check("Escape goes back without adding", [form[:mods], $typing], ["New Mod", false])
+    check("Escape goes back without adding", [form[:mods], $mgq_text_input], ["New Mod", false])
     scene.act_on_mod(:add, 0)
     $typed = "0"
     $key_down = 0x60
     scene.update_mod_pick
     ui_frame
     $key_down = nil
-    check("so does the numpad's 0, typing nothing", [form[:mods], $typing, scene.instance_variable_get(:@mod_edit)], ["New Mod", false, nil])
+    check("so does the numpad's 0, typing nothing", [form[:mods], $mgq_text_input, scene.instance_variable_get(:@mod_edit)], ["New Mod", false, nil])
     scene.close_mod_pick
 
     form[:mods] = ""
@@ -1237,7 +1234,7 @@ Dir.mktmpdir do |folder|
     scene.update_mod_pick
     ui_frame
     $buttons = nil
-    check("the typing hint stays while a mod's name is typed", [view.hint, $typing], [Scene_MpWorlds::TYPING_HINT, true])
+    check("the typing hint stays while a mod's name is typed", [view.hint, $mgq_text_input], [Scene_MpWorlds.typing_hint, true])
     $typed = "\e"
     scene.update_mod_pick
     ui_frame
@@ -1310,7 +1307,7 @@ $returned = nil
 scene.update_typing
 ui_frame
 scene.update_typing
-check("Enter in the name's text box keeps the name and leaves the form, the screen still open", [named, scene.form, $returned, $typing], ["Bob", nil, nil, false])
+check("Enter in the name's text box keeps the name and leaves the form, the screen still open", [named, scene.form, $returned, $mgq_text_input], ["Bob", nil, nil, false])
 scene.instance_variable_get(:@forms)[:rename] = MGQ_MpWorld::WorldForm.rename(:rename, "")
 scene.instance_variable_set(:@form_symbol, :rename)
 MGQ_MpWorld.text_result = [[:field, :name], "Pad Name"]
@@ -1330,7 +1327,7 @@ form_window.form = create
 seats = create.fields.index { |field| field.key == :seats }
 form_window.select(seats)
 scene.start_typing(create.fields[seats])
-check("a text box of digits leaves the numpad's 0 out of its hint", said(scene), Scene_MpWorlds::NUMBER_TYPING_HINT)
+check("a text box of digits leaves the numpad's 0 out of its hint", said(scene), Scene_MpWorlds.typing_hint(true))
 $typed = "0"
 $key_down = 0x60
 scene.update_typing

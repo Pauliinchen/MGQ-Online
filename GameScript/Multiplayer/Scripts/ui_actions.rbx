@@ -2,6 +2,7 @@
 #  ui_actions.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Defined and steered its wheel through the Mod Framework
 #      Paulinchen  2026-10-23: Left the action wheel's rules to C#, taking a choice in the frame after confirm
 #                            - Kept the own line and the action wheel off the live map behind menus
 #      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
@@ -193,12 +194,12 @@ module MGQ_MpActions
   end
 
   # Adds a choice to the action wheel's ring, which spreads its choices over the directions the
-  # arrows point to (MGQ_MpWheel.places). A ring holds one choice per direction at most.
+  # arrows point to (Mod_Framework::UI::Wheel.places). A ring holds one choice per direction at most.
   #
   # @param order [Integer] Its place on the ring, clockwise from the top: the lower, the earlier.
   # @yieldreturn [Option] The choice the wheel shows now.
   def self.wheel_choice(order, &option)
-    if @choices.size >= MGQ_MpWheel::DIRECTIONS.size
+    if @choices.size >= Mod_Framework::UI::Wheel::DIRECTIONS.size
       log("action wheel: no room for a choice of order #{order}")
       return
     end
@@ -216,9 +217,9 @@ module MGQ_MpActions
 
   # The directions of the ring's choices, in their order.
   #
-  # @return [Array<Symbol>] Directions of MGQ_MpWheel::DIRECTIONS.
+  # @return [Array<Symbol>] Directions of Mod_Framework::UI::Wheel::DIRECTIONS.
   def self.wheel_places
-    MGQ_MpWheel.places(@choices.size)
+    Mod_Framework::UI::Wheel.places(@choices.size)
   end
 
   # Lets a script say the line above the player's own head, in place of every other.
@@ -371,7 +372,7 @@ module MGQ_MpActions
     CENTER = :CENTER
 
     # The wheel's name in the tick and its events.
-    NAME = "wheel"
+    NAME = "mgq_online_action_wheel"
 
     # Whether the wheel is open.
     @open = false
@@ -391,7 +392,7 @@ module MGQ_MpActions
 
     # The direction whose choice is picked.
     #
-    # @return [Symbol] One of MGQ_MpWheel::DIRECTIONS, or CENTER.
+    # @return [Symbol] One of Mod_Framework::UI::Wheel::DIRECTIONS, or CENTER.
     def self.selected
       @selected
     end
@@ -404,7 +405,7 @@ module MGQ_MpActions
     def self.follow(free, key)
       return unless @open || (free == true && key)
 
-      MGQ_MpWheel.put(NAME, free, key, MGQ_MpActions.wheel_places.size, @open)
+      Mod_Framework::UI::Wheel.put(NAME, free, key, MGQ_MpActions.wheel_places.size, @open)
     end
 
     # Takes the wheel's event: opened, closed, the pick moved or a choice taken.
@@ -413,23 +414,23 @@ module MGQ_MpActions
     def self.take_event(event)
       was = @open
       @open = event["open"] == true
-      @selected = MGQ_MpWheel.direction_of(event["selected"], CENTER) || CENTER
+      @selected = Mod_Framework::UI::Wheel.direction_of(event["selected"], CENTER) || CENTER
       MGQ_MpUi::Tick.play(event)
       if @open && !was
-        MGQ_Multiplayer::Capture.start(:wheel)
+        Mod_Framework::UI::Capture.start(:wheel)
         MGQ_MpActions.log("action wheel opened: #{choices_text}")
       elsif was && !@open
-        MGQ_Multiplayer::Capture.stop(:wheel)
+        Mod_Framework::UI::Capture.stop(:wheel)
         MGQ_MpActions.log("action wheel closed: #{event['reason']}")
       end
-      @take = [@selected, MGQ_Multiplayer::Key.frame] if event.key?("take")
+      @take = [@selected, Mod_Framework::UI::Key.frame] if event.key?("take")
     end
 
     # Takes the choice confirm picked in the frame before, closing the wheel once it was taken.
     def self.take_pending
       direction, frame = @take
       @take = nil
-      return unless direction && @open && frame >= MGQ_Multiplayer::Key.frame - 1
+      return unless direction && @open && frame >= Mod_Framework::UI::Key.frame - 1
 
       MGQ_MpActions.choose(MGQ_MpActions.wheel_options[direction]) { close("took the #{direction} choice") }
     end
@@ -452,8 +453,8 @@ module MGQ_MpActions
       return unless @open
 
       @open = false
-      MGQ_Multiplayer::Capture.stop(:wheel)
-      MGQ_Multiplayer::Bridge.call(MGQ_MpWheel::CLOSE, [NAME])
+      Mod_Framework::UI::Capture.stop(:wheel)
+      Mod_Framework.bridge.call(Mod_Framework::UI::Wheel::CLOSE, [NAME])
       MGQ_MpActions.log("action wheel closed#{reason ? ": #{reason}" : ''}")
     end
   end
@@ -624,7 +625,7 @@ class Sprite_MpActionWheel < Sprite
     @shown = drawn
     bitmap.clear
     options.each { |direction, option| draw_box(direction, option) }
-    MGQ_MpWheel.draw_hint(bitmap, @hint.x, @hint.y, @hint.width, :wheel)
+    Mod_Framework::UI::Wheel.draw_hint(bitmap, @hint.x, @hint.y, @hint.width, MGQ_MpHotkeys.label(:wheel))
   end
 
   # Lays the boxes out, with the hint's room under them, and sizes the picture to them, when the
@@ -644,9 +645,9 @@ class Sprite_MpActionWheel < Sprite
       box.x -= left
       box.y -= top
     end
-    @hint = Rect.new(0, bottom - top, right - left, MGQ_MpWheel::HINT_HEIGHT)
+    @hint = Rect.new(0, bottom - top, right - left, Mod_Framework::UI::Wheel::HINT_HEIGHT)
     bitmap.dispose if bitmap
-    self.bitmap = Bitmap.new(right - left, bottom - top + MGQ_MpWheel::HINT_HEIGHT)
+    self.bitmap = Bitmap.new(right - left, bottom - top + Mod_Framework::UI::Wheel::HINT_HEIGHT)
     self.ox = -left
     self.oy = -top
     @shown = nil
@@ -705,7 +706,9 @@ begin
   # scene change is in the way.
   MGQ_MpHooks.after(Scene_Map, :update_scene, "ui_actions") { MGQ_MpActions.on_map unless scene_changing? }
 
-  MGQ_Multiplayer::Bridge.on(MGQ_MpWheel::EVENT) { |event| MGQ_MpActions::Wheel.take_event(event) if event["wheel"] == MGQ_MpActions::Wheel::NAME }
+  # The wheel in C#, which the Mod Framework holds, and what it reports.
+  Mod_Framework::UI::Wheel.define(MGQ_MpActions::Wheel::NAME, :center => true)
+  Mod_Framework.bridge.on(Mod_Framework::UI::Wheel::EVENT) { |event| MGQ_MpActions::Wheel.take_event(event) if event["wheel"] == MGQ_MpActions::Wheel::NAME }
 
   # After the map's sprites, the line above the player's head and the action wheel.
   MGQ_MpHooks.after(Spriteset_Map, :update, "ui_actions") do

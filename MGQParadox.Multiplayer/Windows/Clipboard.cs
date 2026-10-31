@@ -2,6 +2,7 @@
 //  Clipboard.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Found the game's window itself, since the Mod Framework hooks it
 //      Paulinchen  2026-10-07: Logged clipboard failures with the Windows error
 //                            - Found the game's window through GameWindow
 //      Paulinchen  2026-10-06: Read the clipboard's text no further than its memory goes
@@ -25,6 +26,11 @@ internal static unsafe partial class Clipboard
     private const uint UnicodeText = 13;
 
     /// <summary>
+    /// The class RGSS registers its window under.
+    /// </summary>
+    private const string GameWindowClass = "RGSS Player";
+
+    /// <summary>
     /// Memory the clipboard can take over.
     /// </summary>
     private const uint Moveable = 0x2;
@@ -39,7 +45,7 @@ internal static unsafe partial class Clipboard
     /// <returns><see langword="true"/> when the clipboard holds it.</returns>
     public static bool SetText(string text)
     {
-        if (!OpenClipboard(GameWindow.Find()))
+        if (!OpenClipboard(FindGameWindow()))
         {
             LogError("could not be opened to write");
             return false;
@@ -223,4 +229,45 @@ internal static unsafe partial class Clipboard
     [LibraryImport("kernel32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool GlobalUnlock(nint memory);
+
+    /// <summary>
+    /// Finds the window of this game, not of another game running next to it, which owns the
+    /// clipboard while the mod writes it.
+    /// </summary>
+    /// <returns>The window, or 0 when there is none.</returns>
+    private static nint FindGameWindow()
+    {
+        var process = (uint)Environment.ProcessId;
+        nint window = 0;
+        while ((window = FindWindowExW(0, window, GameWindowClass, null)) != 0)
+        {
+            GetWindowThreadProcessId(window, out var owner);
+            if (owner == process)
+            {
+                return window;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Finds a top-level window by its class.
+    /// </summary>
+    /// <param name="parent">0 for top-level windows.</param>
+    /// <param name="after">The window to continue after, 0 to start with the first.</param>
+    /// <param name="className">The window class.</param>
+    /// <param name="title">The window title, <see langword="null"/> for any.</param>
+    /// <returns>The window, or 0 when no more match.</returns>
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial nint FindWindowExW(nint parent, nint after, string className, string? title);
+
+    /// <summary>
+    /// Finds the process that owns a window.
+    /// </summary>
+    /// <param name="window">The window.</param>
+    /// <param name="process">The id of the process.</param>
+    /// <returns>The id of the thread that created the window.</returns>
+    [LibraryImport("user32.dll")]
+    private static partial uint GetWindowThreadProcessId(nint window, out uint process);
 }

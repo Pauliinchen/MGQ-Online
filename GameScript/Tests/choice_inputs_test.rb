@@ -2,7 +2,8 @@
 #  choice_inputs_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Checked that a catch-up asks only the choices up to where the player started keeping the leader's story
+#      Paulinchen  2026-10-31: Stood in for the Mod Framework's cancel
+#                            - Checked that a catch-up asks only the choices up to where the player started keeping the leader's story
 #                            - Created
 #
 #----------------------------------------------------------------
@@ -31,11 +32,11 @@ module DataManager; def self.extract_save_contents(_contents); end; def self.set
 # The game's buttons down in this frame, kept in $buttons.
 module Input; def self.repeat?(button); ($buttons || []).include?(button); end; def self.trigger?(button); repeat?(button); end; end
 # Windows' key codes down in this frame, kept in $codes.
-module MGQ_Multiplayer; module Key; def self.triggered?(code); ($codes || []).include?(code); end; end; end
-# The mod's cancel: the game's cancel button, or the numpad's 0 with Num Lock on (0x60) or off (0x2D).
-module MGQ_MpUi
-  def self.numpad_cancel?; !(($codes || []) & [0x60, 0x2D]).empty?; end
-  def self.cancel?; ($buttons || []).include?(:B) || numpad_cancel?; end
+module Mod_Framework::UI::Key; def self.triggered?(code); ($codes || []).include?(code); end; end
+# The Mod Framework's cancel: the game's cancel button, or the numpad's 0 with Num Lock on (0x60)
+# or off (0x2D).
+module Mod_Framework::UI
+  def self.cancel?; ($buttons || []).include?(:B) || !(($codes || []) & [0x60, 0x2D]).empty?; end
 end
 # The game's scene manager: the map is shown, and the scenes called are kept in $scenes.
 module SceneManager; def self.scene; Scene_Map.new; end; def self.call(scene); ($scenes ||= []) << scene; end; end
@@ -52,6 +53,7 @@ $game_actors = { 5 => Companion.new("Alice") }
 # The map, with its display name.
 $game_map = Struct.new(:display_name).new("Iliasburg")
 
+load_script "ui_online"
 load_script "coop_choices"
 
 # The DLL's model of the inputs, as far as its answers: confirm answers the number or the row under

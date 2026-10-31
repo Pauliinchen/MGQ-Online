@@ -2,7 +2,10 @@
 #  notices_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Checked that a message posted while the box hides counts its time only once it shows
+#      Paulinchen  2026-10-31: Read Accept and Decline as the Mod Framework's hotkeys and checked the accept key while a question box is open
+#                            - Checked the notice that the Mod Framework's settings cannot be read
+#                            - Kept the boxes' places in the Mod Framework's settings
+#                            - Checked that a message posted while the box hides counts its time only once it shows
 #      Paulinchen  2026-10-30: Dropped the fade checks
 #      Paulinchen  2026-10-23: Told the invites that reach the player and the party's actions through the DLL's party view
 #      Paulinchen  2026-10-22: Checked the relay's announcement in the box's rows, in place of the one before
@@ -124,8 +127,8 @@ MGQ_MpHotkeys.bind(:accept, 0x20)
 MGQ_MpHotkeys.bind(:decline, 0x0D)
 notices.tick(true)
 check("the keys stay whole with a rebound key's longer name, given the room they need", shown.call[1], "key 32: Accept   key 13: Decline")
-$player_ini.delete("key_accept")
-$player_ini.delete("key_decline")
+Mod_Framework::Settings.forget("key_accept")
+Mod_Framework::Settings.forget("key_decline")
 notices.tick(true)
 check("and read the default keys again once they are back", shown.call[1], "Y: Accept   N: Decline")
 
@@ -205,6 +208,10 @@ $mgq_text_input = true
 typed = logged_lines { accept.call }
 check("the keys type instead while the player types, the letter left out of the log", [$duel_answer, typed.grep(/ignored/)], [nil, []])
 $mgq_text_input = false
+Mod_Framework::UI::Confirm.ask("Leave the world?") { |_yes| }
+accept.call
+check("with the question box open, the accept key answers the question only", [$duel_answer, Mod_Framework::UI::Confirm.open?], [nil, true])
+StandInConfirm.answer(false)
 accept.call
 check("otherwise the accept key accepts the challenge on the map", $duel_answer, [:accept, "Cid"])
 $duel_answer = nil
@@ -283,14 +290,14 @@ offered = lambda { offer = layout.instance_variable_get(:@offers).find { |each| 
 size = lambda { [box.call.bitmap.width, box.call.bitmap.height] }
 many = lambda { |count| (1..count).each { |n| notices.message([:many, n], "Message #{n}") } }
 drop_many = lambda { (1..12).each { |n| notices.drop([:many, n]) } }
-registered = layout.instance_variable_get(:@boxes)[:notices]
+registered = registered_box(:notices)
 check("the box is movable as Notifications, resizable both ways, never narrower than the keys beside a readable name nor lower than two rows",
-      registered.to_a, ["Notifications", Sprite_MpNoticeBox::ACTION_WIDTH + Sprite_MpNoticeBox::MIN_TEXT_WIDTH + 2 * Sprite_MpNoticeBox::EDGE, 2 * Sprite_MpNoticeBox::ROW + 4, :both])
+      registered, ["Notifications", Sprite_MpNoticeBox::ACTION_WIDTH + Sprite_MpNoticeBox::MIN_TEXT_WIDTH + 2 * Sprite_MpNoticeBox::EDGE, 2 * Sprite_MpNoticeBox::ROW + 4, :both])
 many.call(2)
 notices.tick(true)
 check("at its default it lies at the top left, WIDTH wide and MAX_ROWS high, offered to the layout where it lies",
       [box.call.x, box.call.y, size.call, offered.call], [8, 8, [390, 114], [8, 8, 390, 114]])
-MGQ_MpUi.top_room = 30
+MGQ_MpHud.top_room = 30
 notices.tick(true)
 check("a strip at the top moves its default down", [box.call.y, offered.call[1]], [38, 38])
 $leader_hud_room = 100
@@ -301,7 +308,7 @@ hud_bottom = 30 + hud_margin + (100 - hud_margin - hud_below)
 check("its top lies the HUD's gap of 4 pixels below the HUD's bottom", box.call.y - hud_bottom, hud_below)
 $leader_hud_room = 0
 
-$player_ini["ui_notices"] = "100,200,500,160"
+Mod_Framework::Settings.store("ui_notices", "100,200,500,160")
 stored.clear
 drop_many.call
 many.call(9)
@@ -314,14 +321,14 @@ notices.tick(true)
 check("its width gives a long notification more room, whole here though the default would cut it",
       [box.call.bitmap.places.first[3], shown.call.first, box.call.bitmap.text_size(wide).width > Sprite_MpNoticeBox::WIDTH - 2 * Sprite_MpNoticeBox::EDGE], [500 - 2 * Sprite_MpNoticeBox::EDGE, wide, true])
 
-$player_ini["ui_notices"] = "0,0,10,10"
+Mod_Framework::Settings.store("ui_notices", "0,0,10,10")
 stored.clear
 $inbox << entry("message", 3, told(cid))
 MGQ_MpOverworldSync.tick
 places = box.call.bitmap.places
 keys = places.find { |text, _, _, _| text == "Y: Accept   N: Decline" }
 challenge = places.first
-min_width = registered.min_width
+min_width = registered[1]
 check("made smaller than its least, it keeps its least size", [size.call, offered.call], [[min_width, 48], [0, 0, min_width, 48]])
 check("where the keys stay whole at the right and the challenge, cut beside them, still names its sender",
       [keys.nil?, keys && keys[1] + keys[3], challenge[0].start_with?("Cid "), challenge[0].end_with?(MGQ_MpUi::ELLIPSIS), box.call.bitmap.text_size(challenge[0]).width <= challenge[3],
@@ -334,7 +341,14 @@ check("a preset change draws the box anew, its frame with the preset's rim", box
 MGQ_MpUi::Theme.apply("Legacy", "a test")
 notices.tick(true)
 check("and back without it", box.call.bitmap.fills.size, 5)
-$player_ini.delete("ui_notices")
+Mod_Framework::Settings.forget("ui_notices")
 stored.clear
-MGQ_MpUi.top_room = 0
+MGQ_MpHud.top_room = 0
 drop_many.call
+
+# The notice that the Mod Framework's settings, which keep the look, the places and Accept and
+# Decline, cannot be read shows in the box once, as Player.ini's does.
+Mod_Framework::Settings.instance_variable_set(:@refused, true)
+2.times { notices.tick(true) }
+posted = notices.instance_variable_get(:@messages).select { |entry| entry[:key] == MGQ_MpNotices::FRAMEWORK_INI_KEY }
+check("the notice that the Mod Framework's settings cannot be read shows in the box, posted once", posted.map { |entry| entry[:text] }, [Mod_Framework::Settings::NOTICE])

@@ -2,6 +2,8 @@
 #  ui_chat_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Kept the boxes' places in the Mod Framework's settings
+#                            - Checked the boxes registered with the Mod Framework's layout
 #      Paulinchen  2026-10-30: Dropped the checks of a missing method and of two equal constants
 #      Paulinchen  2026-10-23: Acted on typing a frame after it, as the text box in C# reports it
 #                            - Read the lines sent through the DLL's chat.send, and the names the DLL numbers
@@ -457,8 +459,9 @@ forget_places = lambda { layout.instance_variable_get(:@stored).clear; layout.in
 high = lambda { |rows| log_class::TAB_ROW + log_class::ROW * (rows + 1) }
 
 check("the map's, the battle's and the menus' log are boxes of their own, resized both ways, no smaller than the tabs, the hints and the list of names need",
-      [:chat, :battle_chat, :menu_chat].map { |id| box = layout.instance_variable_get(:@boxes)[id]; box && [box.name, box.min_width, box.min_height, box.resize] },
-      [["Chat", 400, high.call(MGQ_MpChat::SUGGESTIONS), :both], ["Battle chat", 400, high.call(MGQ_MpChat::SUGGESTIONS), :both], ["Menu chat", 400, high.call(MGQ_MpChat::SUGGESTIONS), :both]])
+      [:chat, :battle_chat, :menu_chat].map { |id| $layout_registrations[id] },
+      [["Chat", { :min_size => [400, high.call(MGQ_MpChat::SUGGESTIONS)] }], ["Battle chat", { :min_size => [400, high.call(MGQ_MpChat::SUGGESTIONS)] }],
+       ["Menu chat", { :min_size => [400, high.call(MGQ_MpChat::SUGGESTIONS)] }]])
 
 $player_ini.delete("chat_size")
 chat.instance_variable_set(:@size, nil)
@@ -479,20 +482,20 @@ check("one smaller than the least size starts at the least", offered.call(:chat)
 $player_ini["chat_size"] = "450x8"
 chat.instance_variable_set(:@size, nil)
 
-$player_ini["ui_chat"] = "100,40,520,200"
+Mod_Framework::Settings.store("ui_chat", "100,40,520,200")
 forget_places.call
 map_log.update
 check("a place kept as ui_chat is honored, with the whole rows that fit its height, the picture standing on its bottom",
       [offered.call(:chat), map_log.instance_variable_get(:@rows), map_log.x, map_log.y], [[100, 51, 520, high.call(8)], 8, 100, 51])
-$player_ini["ui_chat"] = "100,40,520,#{high.call(9) - 1}"
+Mod_Framework::Settings.store("ui_chat", "100,40,520,#{high.call(9) - 1}")
 forget_places.call
 map_log.update
 check("a pixel short of another row keeps the rows", map_log.instance_variable_get(:@rows), 8)
-$player_ini["ui_chat"] = "100,40,520,#{high.call(9)}"
+Mod_Framework::Settings.store("ui_chat", "100,40,520,#{high.call(9)}")
 forget_places.call
 map_log.update
 check("a whole row more adds one", [map_log.instance_variable_get(:@rows), offered.call(:chat)], [9, [100, 40, 520, high.call(9)]])
-$player_ini["ui_chat"] = "0,0,50,20"
+Mod_Framework::Settings.store("ui_chat", "0,0,50,20")
 forget_places.call
 map_log.update
 check("a kept place smaller than the least is drawn at the least", [offered.call(:chat), map_log.instance_variable_get(:@rows)], [[0, 0, 400, high.call(5)], 5])
@@ -518,7 +521,7 @@ chat.open_help
 map_log.update
 spots = map_log.instance_variable_get(:@tab_spots)
 check("the help tab's hint fits too, and every tab, the help tab at the far right, without overlapping",
-      [hint_fits.call(log_class::HELP_HINT), spots.map(&:first), spots.each_cons(2).all? { |(_, left, width), (_, right, _)| left + width <= right }, spots.last[1] + spots.last[2]],
+      [hint_fits.call("#{log_class::HELP_HINT} #{Mod_Framework::UI.close_hint}"), spots.map(&:first), spots.each_cons(2).all? { |(_, left, width), (_, right, _)| left + width <= right }, spots.last[1] + spots.last[2]],
       [style::TINY_SIZE, MGQ_MpChat::TABS + [:help], true, 400])
 chat.select_tab(:all, "in the test")
 
@@ -547,7 +550,7 @@ check("a player's menu lies in the preset's box",
 chat.close_menu("in the test")
 
 # The layout alone moves and resizes the log.
-$player_ini["ui_chat"] = "100,40,520,200"
+Mod_Framework::Settings.store("ui_chat", "100,40,520,200")
 forget_places.call
 map_log.update
 before = offered.call(:chat)
@@ -570,7 +573,7 @@ $player_ini["chat_size"] = "450x14"
 chat.instance_variable_set(:@size, nil)
 battle_log.update
 check("its default draws only the rows that fit above the battle's windows", offered.call(:battle_chat), [8, 480 - 200 - high.call(12), 450, high.call(12)])
-$player_ini["ui_battle_chat"] = "200,10,420,150"
+Mod_Framework::Settings.store("ui_battle_chat", "200,10,420,150")
 forget_places.call
 battle_log.update
 map_log.update
@@ -619,11 +622,11 @@ SceneManager.scene = Object.new
 chat.tick(true)
 check("another scene closes it", chat.typing?, false)
 SceneManager.scene = shop
-MGQ_Multiplayer::Capture.start(:confirm)
+Mod_Framework::UI::Capture.start(:confirm)
 $pressed = MGQ_MpHotkeys.code(:chat)
 shop.update_basic
 check("while a question of the mod holds the buttons there, the chat key waits", chat.typing?, false)
-MGQ_Multiplayer::Capture.stop(:confirm)
+Mod_Framework::UI::Capture.stop(:confirm)
 # A mod loaded later, such as Party Sheet, wraps every scene's basics for its hotkey.
 class Scene_Base; alias test_later_update_basic update_basic; def update_basic(*args); $later_mod = true; test_later_update_basic(*args); end; end
 $later_mod = false

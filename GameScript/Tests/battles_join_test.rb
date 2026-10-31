@@ -2,7 +2,8 @@
 #  battles_join_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Expected the plainer texts the player reads
+#      Paulinchen  2026-10-31: Stood in for the Mod Framework's keys
+#                            - Expected the plainer texts the player reads
 #      Paulinchen  2026-10-30: Read the players taken in from the joins stand-in
 #                            - Read what the prompt offers from a map frame and asked by the hotkey
 #                            - Handed messages through the map's gate over as the matchmaking's routes do
@@ -93,7 +94,7 @@ $down = []
 # The player's settings from $settings and the hotkeys held in $down.
 module MGQ_Multiplayer
   module Player; def self.setting(key); ($settings || {})[key]; end; end
-  module Key; def self.pressed?(code); $down.include?(code); end; end
+  module Mod_Framework::UI::Key; def self.pressed?(code); $down.include?(code); end; end
 end
 
 # Stand-ins for the map's sprites, which the prompt draws with.

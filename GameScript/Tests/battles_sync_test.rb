@@ -2,6 +2,8 @@
 #  battles_sync_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Answered the leave question a frame later, as the Mod Framework collects it at the wait's frame
+#                            - Checked that the numpad's 0 with Num Lock off asks before leaving, the offer naming the keys that cancel
 #      Paulinchen  2026-10-30: Checked the recording's stand-in against its golden steps
 #                            - Checked the stand-in of the command plan and the team duel's sides against their golden cases
 #                            - Checked the session's stand-in against its golden cases and the host's waits on it
@@ -396,14 +398,15 @@ offer_turn = waiting::LEAVE_FRAMES + 2
 answer = waiting.wait_for(scene, "Slow") do
   turns += 1
   seen << $windows.last.contents.lines[2] if [2, 61, 62, 122, offer_turn].include?(turns)
-  # Cancel before the offer, then at the offer answered "Stay", then again answered "Leave".
-  $leave = [5, offer_turn, offer_turn + 3].include?(turns)
-  $confirm = { offer_turn + 2 => false, offer_turn + 4 => true }[turns]
+  # Cancel before the offer, then at the offer answered "Stay", then again answered "Leave"; an
+  # answer reaches the wait at its next frame.
+  $leave = [5, offer_turn, offer_turn + 4].include?(turns)
+  $confirm = { offer_turn + 2 => false, offer_turn + 5 => true }[turns]
   nil
 end
 check("the seconds are drawn once a second until the leave offer takes the line, and only a confirmed leave leaves",
       [answer, seen, $windows.last.contents.draws[2], $asked],
-      [:left, ["0 s", "0 s", "1 s", "2 s", waiting::LEAVE_TEXT], waiting::LEAVE_FRAMES / MGQ_MpUi::FRAMES_PER_SECOND + 1,
+      [:left, ["0 s", "0 s", "1 s", "2 s", "X or Numpad 0 leaves the battle."], waiting::LEAVE_FRAMES / MGQ_MpUi::FRAMES_PER_SECOND + 1,
        [[waiting::LEAVE_QUESTION, waiting::LEAVE_CHOICES]] * 2])
 check("the offer, the question, staying and the leave are logged",
       [$log.grep(/still waiting after 10 s \(Slow\), Cancel now asks whether to leave the battle/).size, $log.grep(/asked the player whether to leave/).size,
@@ -441,31 +444,31 @@ check("close disposes the box and returns nil, also for none", [waiting.close(bo
 # lines need.
 layout = MGQ_MpUi::Layout
 stored = layout.instance_variable_get(:@stored)
-registered = lambda { layout.instance_variable_get(:@boxes)[:waiting_box].to_a }
+registered = lambda { registered_box(:waiting_box) }
 offered = lambda { (offer = layout.instance_variable_get(:@offers).find { |o| o.id == :waiting_box }) && offer.rect.to_a }
-place = lambda { |text| $player_ini = text ? { "ui_waiting_box" => text } : {}; stored.delete(:waiting_box) }
-leave_width = waiting::BACK_TEXT.size * 8 + 2 * waiting::PADDING
+place = lambda { |text| text ? Mod_Framework::Settings.store("ui_waiting_box", text) : Mod_Framework::Settings.forget("ui_waiting_box"); stored.delete(:waiting_box) }
+leave_width = waiting.offer(waiting::BACK_TEXT).size * 8 + 2 * waiting::PADDING
 box = waiting.open("Now")
 check("the waiting box is known to the layout by its name, resized in width alone, as wide at least as its leave offer needs",
       [registered.call, offered.call], [["Waiting box", leave_width, waiting::HEIGHT, :width], [140, 120, 360, 96]])
 waiting.close(box)
-long = "Waiting for the party's commands..."
+long = "Waiting for the whole party's commands..."
 box = waiting.open(long)
 check("and as its text needs, as far as its width where it starts", [registered.call[1], waiting.least_width(box.window.contents, ["x" * 100])], [long.size * 8 + 24, waiting::WIDTH])
 waiting.close(box)
 
 place.call("10,300,500,0")
-box = waiting.open("Waiting for Host...", lambda { ["Player A", "Player B"] }, "Still choosing: ")
+box = waiting.open("Waiting for Host...", lambda { ["Player A", "Player B", "Player C"] }, "Still choosing: ")
 waiting.refresh(box, 0)
 window = box.window
-check("a waiting box kept in Player.ini opens there at its width, draws its lines and offers itself to the layout",
+check("a waiting box kept in the framework's settings opens there at its width, draws its lines and offers itself to the layout",
       [[window.x, window.y, window.width, window.height], window.contents.lines, offered.call],
-      [[10, 300, 500, 96], { 0 => "Waiting for Host...", 1 => "Still choosing: Player A, Player B", 2 => "0 s" }, [10, 300, 500, 96]])
-place.call("10,300,280,0")
+      [[10, 300, 500, 96], { 0 => "Waiting for Host...", 1 => "Still choosing: Player A, Player B, Player C", 2 => "0 s" }, [10, 300, 500, 96]])
+place.call("10,300,340,0")
 waiting.refresh(box, 1)
 lines = window.contents.lines
 check("a new width makes new contents with every line drawn anew, the names cut to it",
-      [window.width, window.contents.width, lines[0], lines[1].start_with?("Still choosing: ") && lines[1].end_with?(MGQ_MpUi::ELLIPSIS), lines[2]], [280, 256, "Waiting for Host...", true, "0 s"])
+      [window.width, window.contents.width, lines[0], lines[1].start_with?("Still choosing: ") && lines[1].end_with?(MGQ_MpUi::ELLIPSIS), lines[2]], [340, 316, "Waiting for Host...", true, "0 s"])
 place.call("10,300,100,0")
 waiting.refresh(box, 2)
 check("never narrower than its text and the leave offer need whole", [window.width, window.contents.lines[2]], [leave_width, "0 s"])
@@ -590,22 +593,29 @@ check("and leaves nothing, the guests seeing the host choose again",
 sync.finish
 
 sync.join_world(:host, "w4f", [2], "the party")
-wait_back = lambda do |leave|
+# The numpad's 0 with Num Lock off, which $numpad_off presses.
+key = Mod_Framework::UI::Key
+triggered = key.method(:triggered?)
+key.define_singleton_method(:triggered?) { |code| (code == Mod_Framework::UI::NUMPAD_ZERO[1] && $numpad_off) || triggered.call(code) }
+wait_back = lambda do |leave, numpad = false|
   $asked = []
   $frames = 0
   $inject = lambda do |frame|
-    $leave = frame == waiting::LEAVE_FRAMES + 2
+    $leave = !numpad && frame == waiting::LEAVE_FRAMES + 2
+    $numpad_off = numpad && frame == waiting::LEAVE_FRAMES + 2
     $confirm = leave if frame == waiting::LEAVE_FRAMES + 4
   end
   answer = waiting.wait_for(scene, "Waiting for the party's commands...", nil, waiting::WAITING_PREFIX, true) { nil }
   $inject = nil
   $leave = false
+  $numpad_off = false
   $confirm = nil
   [answer, $asked, $windows.last.contents.lines[2]]
 end
 check("past the offer Cancel asks first, and choosing again goes back",
-      wait_back.call(false), [:back, [[waiting::LEAVE_QUESTION, waiting::BACK_CHOICES]], waiting::BACK_TEXT])
+      wait_back.call(false), [:back, [[waiting::LEAVE_QUESTION, waiting::BACK_CHOICES]], "X or Numpad 0 chooses again or leaves."])
 check("while a confirmed leave leaves", wait_back.call(true)[0], :left)
+check("the numpad's 0 with Num Lock off asks as Cancel does", wait_back.call(true, true)[0, 2], [:left, [[waiting::LEAVE_QUESTION, waiting::BACK_CHOICES]]])
 sync.finish
 
 # Enemies that fall while the host waits for the commands, as a Raid World's pools kill them, win

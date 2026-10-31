@@ -2,7 +2,8 @@
 #  ui_single_player.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
+#      Paulinchen  2026-10-31: Kept its rows through the Mod Framework
+#                            - Worded what the player reads plainly, leaving causes and internals to the log
 #                            - Started the restart question on Restart
 #      Paulinchen  2026-10-30: Started the game again through the Mod Framework, which goes on from the game kept for it
 #                            - Dropped the parked mods, which no world parks any more
@@ -11,7 +12,7 @@
 #
 #----------------------------------------------------------------
 
-# The Mod Config group of single player, MGQ Online SP (MGQ_MpUi::SP_PREFIX): its rows in their
+# The Mod Config group of single player, MGQ Online SP (MGQ_Multiplayer::SP_PREFIX): its rows in their
 # order, the interface first (the Leader HUD and the raid bosses' bars, see ui_leader_hud.rbx and
 # ui_raid_bar.rbx), then Raid Bosses (battles_raid_tiers.rbx), each kept by its own script. Once the
 # player changed one in a game of their own outside a world, the map offers to start the game
@@ -97,10 +98,10 @@ module MGQ_MpSinglePlayer
   # to start the game again.
   def self.add_options
     added = rows.map do |key, name, help, read, write|
-      MGQ_MpUi.add_option(key, name, help, lambda { [MGQ_MpLeaderHud::ON, MGQ_MpLeaderHud::OFF] }, read,
-                          lambda { |value| changed(key, read.call, value, write) }, MGQ_MpUi::SP_PREFIX)
+      Mod_Framework::Options.keep(key, MGQ_Multiplayer::SP_PREFIX + name, help, lambda { [MGQ_MpLeaderHud::ON, MGQ_MpLeaderHud::OFF] }, read,
+                                  lambda { |value| changed(key, read.call, value, write) })
     end
-    log(added.all? ? "added MGQ Online SP to the Mod Config" : "no MGQ Online SP in the Mod Config: it needs a Mod Config Remake that knows rows the mod keeps")
+    log(added.all? ? "added MGQ Online SP to Options > Mods" : "no MGQ Online SP in Options > Mods, see the Mod Framework's log")
   end
 
   # Takes a row's value picked, noting a change made in a game of the player's own outside a world;

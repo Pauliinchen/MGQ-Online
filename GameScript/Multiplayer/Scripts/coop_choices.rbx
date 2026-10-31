@@ -2,7 +2,8 @@
 #  coop_choices.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Asked the player the question a replay waits on
+#      Paulinchen  2026-10-31: Read the keys and the mouse through the Mod Framework
+#                            - Asked the player the question a replay waits on
 #                            - Asked a number, a key item or a present a replay waits on, on a screen of its own
 #                            - Left every choice a stream hands the run of to the replay
 #      Paulinchen  2026-10-28: Asked the DLL for the choices, their outcomes and which keys are the player's own
@@ -1027,9 +1028,9 @@ class Scene_MpStoryChoices < Scene_MenuBase
 
   # Takes a click: on a switch it turns it, on a button it presses it.
   def follow_mouse
-    return unless MGQ_Multiplayer::Mouse.clicked?
+    return unless Mod_Framework::UI::Mouse.clicked?
 
-    position = MGQ_Multiplayer::Mouse.position
+    position = Mod_Framework::UI::Mouse.position
     return unless position
 
     x = position[0] - @form_window.x - @form_window.padding
@@ -1132,7 +1133,7 @@ class Window_MpStoryQuestion < Window_Base
     @lines = lines.last(MESSAGE_LINES)
     # Marked as the mod's window here rather than by include, so this script also loads without
     # ui.rbx, as its tests load it.
-    extend(MGQ_MpUi::Theme::Skinned)
+    extend(Mod_Framework::UI::Themed)
     super(x, y, width, height)
   end
 
@@ -1294,10 +1295,7 @@ class Scene_MpStoryQuestion < Scene_MenuBase
   # Windows' codes of the number row's digit keys, with the digit each types. The numpad types no
   # digit, as its 0 closes the screen of a number.
   DIGIT_KEYS = Hash[(0..9).map { |digit| [0x30 + digit, digit] }]
-  MGQ_Multiplayer::Key.watch(*DIGIT_KEYS.keys)
-
-  # Windows' codes of the numpad's 0, with Num Lock on and off.
-  NUMPAD_ZERO_KEYS = [0x60, 0x2D]
+  Mod_Framework::UI::Key.watch(*DIGIT_KEYS.keys)
 
   # Builds the windows and has the DLL open the question.
   def start
@@ -1345,7 +1343,7 @@ class Scene_MpStoryQuestion < Scene_MenuBase
   def held_since_open?
     return false unless @fresh
 
-    @fresh = Input.press?(:C) || Input.press?(:B) || MGQ_Multiplayer::Mouse.held? || NUMPAD_ZERO_KEYS.any? { |code| MGQ_Multiplayer::Key.down?(code) }
+    @fresh = Input.press?(:C) || Input.press?(:B) || Mod_Framework::UI::Mouse.held? || Mod_Framework::UI::NUMPAD_ZERO.any? { |code| Mod_Framework::UI::Key.down?(code) }
   end
 
   # Reads the step the keys and the pad take: arrows, a typed digit on a number, confirm, and
@@ -1357,9 +1355,9 @@ class Scene_MpStoryQuestion < Scene_MenuBase
     number = @question[:input]["kind"] == "number"
     arrows = number ? [[:UP, "up"], [:DOWN, "down"], [:LEFT, "left"], [:RIGHT, "right"]] : [[:UP, "up"], [:DOWN, "down"]]
     arrows.each { |key, action| return [action, 0, 0, Input.trigger?(key)] if Input.repeat?(key) }
-    DIGIT_KEYS.each { |code, digit| return ["digit", digit, 0, false] if MGQ_Multiplayer::Key.triggered?(code) } if number
+    DIGIT_KEYS.each { |code, digit| return ["digit", digit, 0, false] if Mod_Framework::UI::Key.triggered?(code) } if number
     return ["ok", 0, 0, false] if Input.trigger?(:C)
-    return ["later", 0, 0, false] if number && MGQ_MpUi.numpad_cancel?
+    return ["later", 0, 0, false] if number && Mod_Framework::UI::NUMPAD_ZERO.map { |code| Mod_Framework::UI::Key.triggered?(code) }.any?
     return ["cancel", 0, 0, false] if !number && MGQ_MpUi.cancel?
 
     nil
@@ -1371,9 +1369,9 @@ class Scene_MpStoryQuestion < Scene_MenuBase
   #
   # @return [Array, nil] The step's action, place, notches and wrap; nil for none.
   def mouse_step
-    clicked = MGQ_Multiplayer::Mouse.clicked?
-    notches = MGQ_Multiplayer::Mouse.wheel
-    position = MGQ_Multiplayer::Mouse.position
+    clicked = Mod_Framework::UI::Mouse.clicked?
+    notches = Mod_Framework::UI::Mouse.wheel
+    position = Mod_Framework::UI::Mouse.position
     return nil unless position && @window.over?(position)
 
     spot = @window.hit(position)

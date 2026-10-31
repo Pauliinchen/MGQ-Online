@@ -2,6 +2,7 @@
 #  ui_leader_hud_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Kept the boxes' places in the Mod Framework's settings
 #      Paulinchen  2026-10-30: Dropped the checks that restate pixel positions
 #      Paulinchen  2026-10-23: Kept the HUD in the corner through Player.ini, the drag gone to C#
 #      Paulinchen  2026-10-13: Expected the single player row from ui_single_player.rbx, not from the HUD
@@ -172,14 +173,14 @@ small = box_class.layout(hud::SMALL)
 large_height = box_class.height(large)
 
 check("the box is movable as Leader HUD, never resized, at least as large as the Small size",
-      layout.instance_variable_get(:@boxes)[:leader_hud].to_a, ["Leader HUD", 170, box_class.height(small), :none])
+      registered_box(:leader_hud), ["Leader HUD", 170, box_class.height(small), :none])
 check("its rows in the Mod Config: on and off, then the size, both kept by the mod",
       NWConst::Config::MOD_CONTENTS.select { |row| row[:mod_stored] }.map { |row| [row[:key], row[:values].call] }.last(2),
       [[:mp_leader_hud, ["On", "Off"]], [:mp_leader_hud_size, ["Large", "Small"]]])
 check("both in the Settings, the single player row left to ui_single_player.rbx",
       [NWConst::Config::MOD_CONTENTS.select { |row| row[:mod_stored] }.last(2).map { |row| row[:name] },
        NWConst::Config::MOD_CONTENTS.any? { |row| row[:key] == hud::SP_SHOWN_OPTION }],
-      [[MGQ_MpUi::OPTION_PREFIX + hud::SHOWN_OPTION_NAME, MGQ_MpUi::OPTION_PREFIX + hud::SIZE_OPTION_NAME], false])
+      [[MGQ_Multiplayer::OPTION_PREFIX + hud::SHOWN_OPTION_NAME, MGQ_Multiplayer::OPTION_PREFIX + hud::SIZE_OPTION_NAME], false])
 
 # The Large size shows the face, the name, the level, both bars with their numbers and the levels'
 # progress.
@@ -296,30 +297,30 @@ hud.show_sp(true)
 # Its place under a strip at the top and where the player left it, as high as the Legacy preset's
 # frame leaves it.
 large_height = box_class.height(large)
-MGQ_MpUi.top_room = 30
+MGQ_MpHud.top_room = 30
 box.update
 check("a strip at the top moves its default down", [box.y, offered.call[1], hud.room], [38, 38, 8 + large_height + 4])
-$player_ini["ui_leader_hud"] = "300,200,10,10"
+Mod_Framework::Settings.store("ui_leader_hud", "300,200,10,10")
 stored.clear
 box.update
 check("a place the player left it in holds whatever the strip, as large as its size, and takes no room at the top left",
       [box.x, box.y, offered.call, hud.room], [300, 200, [300, 200, 240, large_height], 0])
-$player_ini.delete("ui_leader_hud")
+Mod_Framework::Settings.forget("ui_leader_hud")
 stored.clear
-MGQ_MpUi.top_room = 0
+MGQ_MpHud.top_room = 0
 
 # Dragged into the bottom right corner in the Small size, the HUD stays on the screen in either size;
 # the preset's frame is thinner than at the start, when the layout learned the HUD's least size.
 hud.resize("Small")
 small_height = box_class.height(small)
 # A drag into the bottom right corner, which C# keeps (LayoutModel), leaves a place there.
-$player_ini["ui_leader_hud"] = "2000,2000,170,#{small_height}"
+Mod_Framework::Settings.store("ui_leader_hud", "2000,2000,170,#{small_height}")
 layout.instance_variable_get(:@stored).clear
 box.update
 check("the Small size kept past the bottom right corner stays there, wholly on the screen", offered.call, [640 - 170, 480 - small_height, 170, small_height])
 hud.resize("Large")
 box.update
 check("the Large size from there stays wholly on the screen", offered.call, [640 - 240, 480 - large_height, 240, large_height])
-$player_ini.delete("ui_leader_hud")
+Mod_Framework::Settings.forget("ui_leader_hud")
 stored.clear
 $mouse = nil

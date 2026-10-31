@@ -2,6 +2,7 @@
 #  ui_raid_bar_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Kept the strip's place in the Mod Framework's settings
 #      Paulinchen  2026-10-30: Told the pools through the stand-in of the pools' ledger in C#
 #                            - Dropped the checks that restate pixel positions
 #      Paulinchen  2026-10-28: Stood in for the DLL's command index of the map's pages, whose walk through common events the DLL's tests check
@@ -187,9 +188,9 @@ end
 # The left Alt and the mouse, which the layout reads, never held or pointing.
 module MGQ_Multiplayer
   # Windows' keys, none held.
-  module Key; def self.down?(_code); false; end; end
+  module Mod_Framework::UI::Key; def self.down?(_code); false; end; end
   # The mouse, off the screen.
-  module Mouse; def self.position; nil; end; end
+  module Mod_Framework::UI::Mouse; def self.position; nil; end; end
 end
 # The game's cursor sound, which plays nothing.
 module Sound; def self.play_cursor; end; end
@@ -293,9 +294,8 @@ end
 
 # The game's scene base, which does nothing.
 class Scene_Base; def update; end; def start; end; end
-load_script "ui"
-load_script "ui_theme"
-load_script "ui_layout"
+load_script "ui_online"
+load_script "ui_boxes"
 load_script "battles_raid_bosses"
 load_script "battles_raid_pool"
 load_script "battles_raid_tiers"
@@ -345,7 +345,7 @@ def reset
   $frame += MGQ_MpRaidBar::SCAN_FRAMES
   MGQ_MpRaidPool.forget
   $pools.reset
-  MGQ_MpUi.top_room = 0
+  MGQ_MpHud.top_room = 0
 end
 
 # Has the relay push a pool, which the pools read at once.
@@ -394,12 +394,13 @@ def plates_of(sprite)
   sprite.bitmap.fills.select { |_x, _y, _w, _h, color| color.equal?(MGQ_MpUi::Style::PLATE) }.map { |x, y, w, h, _color| [x, y, w, h] }
 end
 
-# Puts the strip where Player.ini keeps it, as the player left it with Alt, or back where it starts.
+# Puts the strip where the framework's settings keep it, as the player left it with Alt, or back
+# where it starts.
 #
 # @param placement [String, nil] The setting, "x,y,width,height", nil for where it starts.
 def place_strip(placement)
   MGQ_MpUi::Layout.reset(:raid_bar, "a test")
-  $settings["ui_raid_bar"] = placement if placement
+  Mod_Framework::Settings.store("ui_raid_bar", placement) if placement
 end
 
 # What the layout was offered this frame, and forgets it, as its tick does.
@@ -512,7 +513,7 @@ check("a long title of the strip is cut before the hint's room on either side, s
 
 # The strip where the player puts it.
 check("the strip is one box of the layout, resized in width alone, as narrow as its title line needs with the hint at either side of the longest title",
-      [MGQ_MpUi::Layout.instance_variable_get(:@boxes)[:raid_bar].to_a, Sprite_MpRaidBar.min_strip_width], [["Raid boss bar", 322, 86, :width], 322])
+      [registered_box(:raid_bar), Sprite_MpRaidBar.min_strip_width], [["Raid boss bar", 322, 86, :width], 322])
 reset
 pool.note_invite("troop" => "836", "pool" => "3")
 BattleManager.setup(836)
@@ -607,40 +608,40 @@ check("a bar above the boss whose event shows", [overhead.size, overhead[harpy].
 check("with its title and its name over a thin gauge without numbers, 240 wide for a boss of one enemy",
       [overhead[harpy].bitmap.texts, overhead[harpy].bitmap.gauges.size, overhead[harpy].bitmap.width, overhead[harpy].ox],
       [[[0, "Tier 9 Raid Boss", 16, 1], [0, "Queen Harpy", 18, 1]], 2, 240, 120])
-check("no strip while a boss's event shows", [bars.instance_variable_get(:@strip), MGQ_MpUi.top_room], [nil, 0])
+check("no strip while a boss's event shows", [bars.instance_variable_get(:@strip), MGQ_MpHud.top_room], [nil, 0])
 $game_map.events.delete(1)
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
 spriteset.update
 strip = bars.instance_variable_get(:@strip)
 check("a boss without an event that shows gets the strip at the top", [overhead.size, strip.visible, strip.viewport], [0, true, :top])
-check("which tells the boxes at the top its room", MGQ_MpUi.top_room, 86)
+check("which tells the boxes at the top its room", MGQ_MpHud.top_room, 86)
 check("the layout grabs it at the top", offers, [[:raid_bar, [0, 0, 640, 86], MGQ_MpUi::Z[:labels]]])
 place_strip("100,120,400,86")
 spriteset.update
-check("moved down and narrower, it lies there and leaves the boxes at the top their room", [strip.x, strip.y, strip.bitmap.width, MGQ_MpUi.top_room], [100, 120, 400, 0])
+check("moved down and narrower, it lies there and leaves the boxes at the top their room", [strip.x, strip.y, strip.bitmap.width, MGQ_MpHud.top_room], [100, 120, 400, 0])
 check("its row of gauges takes the strip's width less the margins once that is less than the share of the screen, shared by the gauges", strip.bitmap.gauges.each_slice(2).map(&:first), [[6, 191], [203, 96]])
 check("where the layout grabs it", offers, [[:raid_bar, [100, 120, 400, 86], MGQ_MpUi::Z[:labels]]])
 place_strip("0,2,640,86")
 spriteset.update
-check("within a few pixels of the top, the boxes there make room for it to its bottom", MGQ_MpUi.top_room, 88)
+check("within a few pixels of the top, the boxes there make room for it to its bottom", MGQ_MpHud.top_room, 88)
 place_strip(nil)
 spriteset.update
 gate.character_name = "!Flame"
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
 spriteset.update
-check("a marker counts as the boss's sprite, under its feet when the screen has no room above", [overhead.size, overhead[gate].y, strip.visible, MGQ_MpUi.top_room], [1, 52, false, 0])
+check("a marker counts as the boss's sprite, under its feet when the screen has no room above", [overhead.size, overhead[gate].y, strip.visible, MGQ_MpHud.top_room], [1, 52, false, 0])
 check("the bar of a boss of several enemies is 480 wide, a name and a thin gauge per enemy",
       [overhead[gate].bitmap.width, overhead[gate].ox, overhead[gate].bitmap.texts, overhead[gate].bitmap.gauges.each_slice(2).map(&:first)],
       [480, 240, [[0, "Archangel", 16, 1], [2, "Metatronne", 18, 1], [243, "Sandalphone", 18, 1]], [[2, 235], [243, 118]]])
 $raid = false
 spriteset.update
-check("no bars outside a Raid World's story", [overhead.size, MGQ_MpUi.top_room], [0, 0])
+check("no bars outside a Raid World's story", [overhead.size, MGQ_MpHud.top_room], [0, 0])
 $raid = true
 gate.character_name = ""
 $frame += MGQ_MpRaidBar::SCAN_FRAMES
 spriteset.update
 spriteset.dispose
-check("the strip's room is free once the map's sprites go", MGQ_MpUi.top_room, 0)
+check("the strip's room is free once the map's sprites go", MGQ_MpHud.top_room, 0)
 remade = Sprite_MpRaidBar.new(:characters, true)
 remade.show(one("Queen Harpy", 1, 1))
 first = remade.bitmap

@@ -2,7 +2,8 @@
 #  battles_coop.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Checked a rebuilt character before its battle start states, as its owner's game measured it
+#      Paulinchen  2026-10-31: Took a player's color from MGQ_MpPlayerColor
+#                            - Checked a rebuilt character before its battle start states, as its owner's game measured it
 #      Paulinchen  2026-10-30: Decided offers, held encounters, the stand-still and the encounter's steps through the matchmaking in the DLL
 #                            - Wrote and read the roster and the party, repaired the host's troop and settled departures through the rules in C#
 #                            - Kept invites, requests to lead and rivals in the DLL, which takes their messages and hands the rest over
@@ -2620,7 +2621,7 @@ module MGQ_MpBattlesCoop
 
   # Draws a character's name in the status window of a co-op battle: the player's own in
   # MGQ_MpUi::Style::OWN, another player's character by its own name, without its owner, in its
-  # owner's MGQ_MpUi::PlayerColor. A character in crisis or knocked out is left to the game, which
+  # owner's MGQ_MpPlayerColor. A character in crisis or knocked out is left to the game, which
   # colors it (hp_color: below a quarter of its max HP, which covers 0); so is every character
   # outside a co-op battle, and one drawn without a width.
   #
@@ -2633,7 +2634,7 @@ module MGQ_MpBattlesCoop
     return original.call unless active? && actor && width && actor.hp >= actor.mhp / 4
 
     ally = actor.is_a?(Game_MpAlly)
-    window.change_color(ally ? MGQ_MpUi::PlayerColor.of(MGQ_MpBattlesSync.peer_at(actor.mp_seat) || actor.owner) : MGQ_MpUi::Style::OWN)
+    window.change_color(ally ? MGQ_MpPlayerColor.of(MGQ_MpBattlesSync.peer_at(actor.mp_seat) || actor.owner) : MGQ_MpUi::Style::OWN)
     window.draw_text(x, y, width, window.line_height, MGQ_MpUi.cut(window, ally ? actor.base_name : actor.name, width))
     nil
   rescue => e

@@ -2,6 +2,7 @@
 #  ui_party_box_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Kept the boxes' places in the Mod Framework's settings
 #      Paulinchen  2026-10-30: Dropped the fade checks
 #                            - Dropped the checks that restate pixel positions
 #      Paulinchen  2026-10-23: Stood in for the part the Great Decision lies in, not the parts' starts
@@ -64,7 +65,7 @@ module Cache; def self.system(_name); :iconset; end; end
 # Reopens the stand-ins of Multiplayer.rb.
 module MGQ_Multiplayer
   # Stands in for the mouse, resting at the top left, never clicked.
-  module Mouse
+  module Mod_Framework::UI::Mouse
     # Answers the top left.
     def self.position; [0, 0]; end
     # Answers that the mouse is never clicked.
@@ -177,7 +178,7 @@ box.draw_map(map_rows)
 stranger_name = text.call("Stranger")
 check("the map box is titled with how many are on the map, the size hint at the right too", [texts.call.first, texts.call.include?("Tab: size")], ["Map 3", true])
 check("a stranger is named in plain white, which the keyboard of their typing precedes",
-      [stranger_name.color.equal?(MGQ_MpUi::PlayerColor.of(stranger)), stranger_name.color.equal?(style::TEXT), box.bitmap.icons.map(&:first).include?(MGQ_MpOverworld::TYPING_ICON)],
+      [stranger_name.color.equal?(MGQ_MpPlayerColor.of(stranger)), stranger_name.color.equal?(style::TEXT), box.bitmap.icons.map(&:first).include?(MGQ_MpOverworld::TYPING_ICON)],
       [true, true, true])
 check("the member stays green and the player's own line yellow", [named.call(long_name).color.equal?(style::MEMBER), text.call("Me").color.equal?(style::OWN)], [true, true])
 
@@ -204,7 +205,7 @@ MGQ_Multiplayer::Log.define_singleton_method(:write, writer)
 check("the log names each listed player's color and whether they lead or are away, once per change", logged,
       ["party box: party box lists #{long_name} (leader, member), Me (own)",
        "party box: party box lists #{long_name} (leader, dim, away), Me (own)",
-       "party box: map box lists Me (own), #{long_name} (leader, member), Stranger (#{MGQ_MpUi::PlayerColor.label(stranger)})",
+       "party box: map box lists Me (own), #{long_name} (leader, member), Stranger (#{MGQ_MpPlayerColor.label(stranger)})",
        "party box: party box hidden"])
 
 # The size hotkey does nothing while the player types.
@@ -248,17 +249,17 @@ read = lambda { box_class::READ_FRAMES.times { box.update } }
 width = box_class::WIDTH
 edge = box_class::EDGE
 check("the box is movable as Party box, widened only, never narrower than its columns nor lower than a line",
-      layout.instance_variable_get(:@boxes)[:party_box].to_a, ["Party box", width, box_class::ROW + 4, :width])
+      registered_box(:party_box), ["Party box", width, box_class::ROW + 4, :width])
 MGQ_MpWorldOverview.define_singleton_method(:party_rows) { party }
 read.call
 party_height = box_class::ROW + box_class::PLAYER_ROW * 2 + 4
 check("at its default it lies at the top right, as tall as the party, offered to the layout where it lies",
       [box.x, box.y, offered.call], [640 - width - box_class::MARGIN, 8, [640 - width - box_class::MARGIN, 8, width, party_height]])
-MGQ_MpUi.top_room = 30
+MGQ_MpHud.top_room = 30
 box.update
 check("a strip at the top moves its default down", [box.y, offered.call[1]], [38, 38])
 
-$player_ini["ui_party_box"] = "100,50,400,10"
+Mod_Framework::Settings.store("ui_party_box", "100,50,400,10")
 stored.clear
 box.update
 level = text.call("Lv 100")
@@ -271,7 +272,7 @@ check("the extra width goes to the names and the places, the level staying besid
 box.draw_map(map_rows)
 check("the map box takes the width too", [box.bitmap.fills.first[2], text.call("Lv 20").x, text.call("80 ms").right], [400, columns[:level] + 400 - width, 400 - edge])
 
-$player_ini["ui_party_box"] = "300,50,100,10"
+Mod_Framework::Settings.store("ui_party_box", "300,50,100,10")
 stored.clear
 box.update
 level = text.call("Lv 100")
@@ -280,7 +281,7 @@ name = named.call(long_name)
 check("made narrower than its least, it keeps its columns' width, where the name, the level and the ping still never meet",
       [offered.call[2], name.right <= level.x, level.right <= ping_text.x, ping_text.right], [width, true, true, width - edge])
 
-$player_ini["ui_party_box"] = "100,50,400,10"
+Mod_Framework::Settings.store("ui_party_box", "100,50,400,10")
 stored.clear
 MGQ_MpPartyBox.instance_variable_set(:@small, true)
 box.update
@@ -294,6 +295,6 @@ check("a preset change draws the box anew once it reads the party, its frame wit
 MGQ_MpUi::Theme.apply("Legacy", "a test")
 read.call
 check("and back without it", box.bitmap.fills.size, 5)
-$player_ini.delete("ui_party_box")
+Mod_Framework::Settings.forget("ui_party_box")
 stored.clear
-MGQ_MpUi.top_room = 0
+MGQ_MpHud.top_room = 0

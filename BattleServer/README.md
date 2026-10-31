@@ -77,8 +77,10 @@ sudo bash deploy_release.sh /tmp/mgq-0.7.0 0.7.0   # the folder holding the rele
 
 `tools/deploy_release.sh` backs the game folder's `Patch` up to
 `/var/cache/mgq-battle/patch-before-<version>`, installs `Patch/Multiplayer.rb`,
-`Patch/Multiplayer/Scripts/` (removing the scripts the release no longer has) and
-`Patch/Multiplayer/Data/events.db`, root-owned and not writable by others, restarts `mgq-battle`
+`Patch/Multiplayer/Mod.ini`, `Patch/Multiplayer/Scripts/` (removing the scripts the release no
+longer has), the Mod Framework MGQ Online ships inside (`Patch/!Mod_Framework.rb` and
+`Patch/Multiplayer/Mod_Framework/`) and `Patch/Multiplayer/Data/events.db`, root-owned and not
+writable by others, restarts `mgq-battle`
 and compares every file it installed with the release's; it stops before changing anything when
 the release lacks one of them. `MGQ_BATTLE_GAME`, `MGQ_BATTLE_BACKUPS` and `MGQ_BATTLE_SERVICE`
 name another game folder, backup folder or service. The core library is deployed as above.

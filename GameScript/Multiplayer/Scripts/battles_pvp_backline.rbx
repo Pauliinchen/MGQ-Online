@@ -2,6 +2,8 @@
 #  battles_pvp_backline.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Added the option's row through the Mod Framework's options
+#      Paulinchen  2026-10-31: Took the group of its row from MGQ_Multiplayer::OPTION_PREFIX
 #      Paulinchen  2026-10-30: Left the Frontline's message among the stream's kinds to the battle modes' defaults
 #                            - Checked and told the Frontlines through the DLL
 #      Paulinchen  2026-10-12: Listed the option among the settings of the Mod Config
@@ -28,7 +30,7 @@ module MGQ_MpBattlesPvp
     # The option's value that leaves the Backline out.
     FRONTLINE_ONLY = 1
 
-    # The option's values by their name and help in the Mod Config. The first one is the default.
+    # The option's values by their name and help in Options > Mods.
     OPTION_VALUES = {
       WITH_BACKLINE => ["With Backline", "Both players swap their Backline in with the battle's Party command."],
       FRONTLINE_ONLY => ["Frontline Only", "Only the Frontline fights."],
@@ -51,10 +53,12 @@ module MGQ_MpBattlesPvp
       value.to_i != FRONTLINE_ONLY
     end
 
-    # Adds the option to the Mod Config, or to the game's options without it.
+    # Adds the option's row to Options > Mods, with the Backline by default.
     def self.register
-      MGQ_MpCoop.register_option(OPTION, "#{MGQ_MpUi::OPTION_PREFIX}PvP Backline",
-                                 "Whether the PvP battles you host and the duels you challenge to have the Backline.", OPTION_VALUES)
+      added = Mod_Framework::Options.add(OPTION, "#{MGQ_Multiplayer::OPTION_PREFIX}PvP Backline",
+                                         "Whether the PvP battles you host and the duels you challenge to have the Backline.\r\n←/→ Toggle",
+                                         OPTION_VALUES, WITH_BACKLINE)
+      MGQ_MpBattlesPvp.log(added ? "added the PvP Backline to Options > Mods" : "no PvP Backline in Options > Mods, see the Mod Framework's log")
     end
 
     # Reports whether the running PvP battle has the Backline.

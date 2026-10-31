@@ -2,6 +2,7 @@
 #  ui_edge_arrows_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Took a player's color from MGQ_MpPlayerColor and the strip at the top from MGQ_MpHud
 #      Paulinchen  2026-10-30: Dropped the checks that restate pixel positions
 #      Paulinchen  2026-10-11: Checked that a preset change draws an arrow anew
 #                            - Checked that a player outside the party gets a plain white arrow
@@ -205,9 +206,9 @@ check("to the upper right, nearer the top: the top edge", Arrows.point(320, 240,
 check("a line from inside the margin stays on the edge", Arrows.point(320, 5, 320, -100), [320, 14, -90])
 check("a line that starts past the far edge, the player's sprite scrolled off, stays on the edge too", Arrows.point(700, 240, 900, 240), [626, 240, 0])
 check("two equal points give no arrow", Arrows.point(320, 240, 320, 240), nil)
-MGQ_MpUi.top_room = 40
+MGQ_MpHud.top_room = 40
 check("a strip at the top moves the top edge down", Arrows.point(320, 240, 320, -100), [320, 54, -90])
-MGQ_MpUi.top_room = 0
+MGQ_MpHud.top_room = 0
 check("the angle is stepped to tens, halves away from zero", [36, 14, -144, 185, 0].map { |angle| Arrows.step_angle(angle) }, [40, 10, -140, 190, 0])
 
 # The triangle's rows.
@@ -298,7 +299,7 @@ $raid = true
 stranger = arrive(3, "bb-stranger", "Long Name Player Seven", 3, 40)
 spriteset.update
 check("the next player takes the kept sprite, in plain white as a player outside the party",
-      [pool.arrows.size, arrow.id, arrow.shown?, arrow.bitmap.fills.count { |fill| fill[4].equal?(MGQ_MpUi::PlayerColor.of(stranger)) }, MGQ_MpUi::PlayerColor.of(stranger).equal?(MGQ_MpUi::Style::TEXT), MGQ_MpUi::PlayerColor.label(stranger)],
+      [pool.arrows.size, arrow.id, arrow.shown?, arrow.bitmap.fills.count { |fill| fill[4].equal?(MGQ_MpPlayerColor.of(stranger)) }, MGQ_MpPlayerColor.of(stranger).equal?(MGQ_MpUi::Style::TEXT), MGQ_MpPlayerColor.label(stranger)],
       [1, "bb-stranger", true, Arrows::LENGTH + 1, true, "plain"])
 check("a long name is cut to its width before the tiles", arrow.bitmap.texts.map { |text| text[3] }, ["Long Nam#{MGQ_MpUi::ELLIPSIS} 36"])
 walk(member, 40, 4)

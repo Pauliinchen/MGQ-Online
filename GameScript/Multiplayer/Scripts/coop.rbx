@@ -2,6 +2,7 @@
 #  coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Dropped register_option, the rows going into the Mod Framework's options
 #      Paulinchen  2026-10-23: Left the party, its invites and its message gate to the DLL, reading its view each frame
 #                            - Made up ids through the DLL instead of the game's rand
 #      Paulinchen  2026-10-17: Offered the teleport to the story on the action wheel
@@ -131,24 +132,6 @@ module MGQ_MpCoop
   # @return [String] The id, empty while the DLL does not answer.
   def self.random_id(length, radix = 36)
     MGQ_Multiplayer::Bridge.call(RANDOM_ID_TOPIC, { "length" => length, "radix" => radix }).to_s
-  end
-
-  # Adds an option with a few values to the Mod Config Remake's menu, or to the game's options
-  # without it, before the menu's last entry.
-  #
-  # @param key [Symbol] The option's key in $game_system.conf.
-  # @param name [String] The option's name in the menu.
-  # @param help [String] What the menu says about it.
-  # @param values [Hash{Integer => Array<String>}] Each value's name and help, the first the default.
-  # @param fields [Hash] More of the entry's fields, such as :enable.
-  def self.register_option(key, name, help, values, fields = {})
-    config = NWConst::Config
-    menu = config.const_defined?(:MOD_CONTENTS) ? config::MOD_CONTENTS : config::CONTENTS
-    menu.insert(-2, { :key => key, :name => name, :sub => true, :help => "#{help}\r\n←/→ Toggle" }.merge(fields))
-    config::DATA[key] = values.keys
-    config::DATA_TEXT[key] = {}
-    values.each { |value, (label, text)| config::DATA_TEXT[key][value] = { :name => label, :help => text } }
-    config::DEFAULT[key] = values.keys.first
   end
 
   # Sends a message of the party to one member or to everyone, who ignore it outside the party.

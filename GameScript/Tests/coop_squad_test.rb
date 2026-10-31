@@ -2,6 +2,8 @@
 #  coop_squad_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Checked the followers' row in Options > Mods, which the Mod Framework keeps
+#      Paulinchen  2026-10-31: Took the mod's prefix and the style from ui_online.rbx and the Mod Framework
 #      Paulinchen  2026-10-30: Read the share and the followers' mode from the squad's stand-in after each frame's tick
 #                            - Kept one check of the shares
 #      Paulinchen  2026-10-23: Set the parties up through the party's view the DLL posts
@@ -254,10 +256,8 @@ module MGQ_MpActions
   def self.wheel_choice(*); end
   def self.own_doing_from; end
 end
-# Stands in for the shared style, with its bad color.
-module MGQ_MpUi; module Style; BAD = Color.new(255, 96, 96); end; end
-# The first words of the mod's settings in the Mod Config, as ui.rbx names them.
-module MGQ_MpUi; OPTION_PREFIX = "[MGQ Online Settings] " unless const_defined?(:OPTION_PREFIX); end
+# The first words of the mod's settings in Options > Mods, and the framework's style.
+load_script "ui_online"
 rules_bridge = open_rules_bridge
 require_relative "party_support"
 answer_party(rules_bridge)
@@ -301,7 +301,12 @@ check("only the share of the Frontline follows, as the frame's tick took it", $g
 check("the trail tells the followers shown", squad.state_fields, { "follow" => 0, "trail" => "Follower1*1" })
 
 # The leader's choice of followers.
-check("the option is in the Mod Config, and the leader may choose", NWConst::Config::MOD_CONTENTS.find { |e| e[:key] == squad::FOLLOWERS }[:enable].call, true)
+followers = NWConst::Config::MOD_CONTENTS.find { |e| e[:key] == squad::FOLLOWERS }
+check("the option is in Options > Mods with its name, help, values and default",
+      [followers[:name], followers[:help], NWConst::Config::DATA_TEXT[squad::FOLLOWERS].map { |value, text| [value, text[:name]] }, NWConst::Config::DEFAULT[squad::FOLLOWERS]],
+      ["[MGQ Online Settings] Party Followers", "Who walks behind the players of a party. The party's leader decides for everyone.\r\n←/→ Toggle",
+       [[0, "Active Frontline"], [1, "Leaders Only"]], squad::ACTIVE_FRONTLINE])
+check("and the leader may choose", Mod_Framework::Options.enabled?(followers), true)
 $game_system.conf[squad::FOLLOWERS] = squad::LEADERS_ONLY
 MGQ_MpOverworldSync.tick(true)
 check("leaders only hides every follower", $game_player.followers.map { |f| f.visible? }, [false, false, false])
@@ -316,7 +321,7 @@ friend.state["follow"] = "1"
 MGQ_MpOverworldSync.tick(true)
 check("a member takes the leader's choice", squad.mode, squad::LEADERS_ONLY)
 check("and tells it on", squad.state_fields["follow"], 1)
-check("a member may not choose", NWConst::Config::MOD_CONTENTS.find { |e| e[:key] == squad::FOLLOWERS }[:enable].call, false)
+check("a member may not choose", Mod_Framework::Options.enabled?(followers), false)
 friend.state["follow"] = "0"
 other = MGQ_MpOverworldSync::Peers::Peer.new(3, { "id" => "a-other", "name" => "Other", "party" => "friend-p" }, nil, true)
 MGQ_MpOverworldSync::Peers.all << other

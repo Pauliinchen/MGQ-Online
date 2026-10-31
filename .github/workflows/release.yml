@@ -70,10 +70,8 @@ jobs:
         with:
           ruby-version: '3.3'
 
-      - name: Test the scripts
-        run: ruby GameScript/Tests/run.rb
-
-      # The Mod Framework ships inside the mod, the release the project's FrameworkVersion names.
+      # The Mod Framework ships inside the mod, the release the project's FrameworkVersion names; the
+      # scripts' tests load its scripts from package/Framework.
       - name: Fetch the Mod Framework
         shell: pwsh
         env:
@@ -82,6 +80,9 @@ jobs:
           $version = (dotnet msbuild MGQParadox.Multiplayer -getProperty:FrameworkVersion).Trim()
           gh release download "v$version" --repo Pauliinchen/MGQ-Mod-Framework --pattern "MGQ-Mod-Framework-$version.zip" --dir package --clobber
           Expand-Archive "package/MGQ-Mod-Framework-$version.zip" -DestinationPath package/Framework -Force
+
+      - name: Test the scripts
+        run: ruby GameScript/Tests/run.rb
 
       # The runner's Visual Studio brings the C++ linker NativeAOT needs and the compiler that builds
       # SQLite from its amalgamation into the DLL (MGQOnline.Data/native).

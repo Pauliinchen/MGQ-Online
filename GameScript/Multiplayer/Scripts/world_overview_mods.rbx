@@ -2,6 +2,7 @@
 #  world_overview_mods.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the game's buttons past the capture through the Mod Framework
 #      Paulinchen  2026-10-24: Created
 #
 #----------------------------------------------------------------
@@ -248,10 +249,10 @@ module MGQ_MpWorldOverview
   # @param entry [ModEntry] The entry whose pane it is.
   # @param view [Hash] The page's view, see split_view.
   def self.update_focus(page, entry, view)
-    return leave_or_focus_pane(page, entry, view) if MGQ_MpUi.cancel? || MGQ_Multiplayer::Capture.trigger?(:CTRL)
+    return leave_or_focus_pane(page, entry, view) if MGQ_MpUi.cancel? || Mod_Framework::UI::Capture.trigger?(:CTRL)
 
     kind, value = view[:focused]
-    return press_button(entry, value) if kind == :button && MGQ_Multiplayer::Capture.trigger?(:C)
+    return press_button(entry, value) if kind == :button && Mod_Framework::UI::Capture.trigger?(:C)
 
     targets = view[:targets]
     step = axis_step(:UP, :DOWN)
@@ -411,7 +412,7 @@ module MGQ_MpWorldOverview
   # @param options [Array<MGQ_MpActions::Option>] The menu's choices.
   def self.update_mod_menu(entry, options)
     return back_in_mod_menu if MGQ_MpUi.cancel?
-    return choose_in_mod_menu(entry, @menu) if MGQ_Multiplayer::Capture.trigger?(:C)
+    return choose_in_mod_menu(entry, @menu) if Mod_Framework::UI::Capture.trigger?(:C)
 
     step = axis_step(:UP, :DOWN)
     return if step == 0 || options.empty?

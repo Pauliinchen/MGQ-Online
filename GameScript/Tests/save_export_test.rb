@@ -2,6 +2,8 @@
 #  save_export_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Checked Copy to my game in the game's menu through the Mod Framework and its message
+#      Paulinchen  2026-10-31: Loaded ui_online.rbx and ui_boxes.rbx in place of the scripts the Mod Framework took over
 #      Paulinchen  2026-10-30: Stopped loading the deleted world_mods_parking.rbx
 #      Paulinchen  2026-10-23: Made the worlds on this PC through the stand-ins of the DLL's topics
 #                            - Answered the rules the DLL owns through the bridge from the golden cases
@@ -17,7 +19,7 @@
 
 # Covers world_save_export.rbx: copying a world's latest save into the first free slot of the
 # player's own game with its thumbnail, into the own Save folder also while a world is open, a full
-# Save folder, and the game menu's command and notice.
+# Save folder, and the game menu's command and its message.
 
 require_relative "support"
 require_relative "rules_support"
@@ -30,25 +32,64 @@ class Scene_Base; def return_scene; end; def update; end; def terminate; end; en
 class Scene_MenuBase < Scene_Base; end
 # Stands in for the game's load screen.
 class Scene_Load < Scene_Base; end
-# Stands in for the game's menu, whose commands the export hooks into.
-class Scene_Menu < Scene_MenuBase; def create_command_window; end; end
 # Stands in for the game's base window.
 class Window_Base; def initialize(*); end; end
 # Stands in for the game's selectable windows.
 class Window_Selectable < Window_Base; end
 # Stands in for the game's command windows.
 class Window_Command < Window_Selectable; end
-# Stands in for the game menu's commands, which it keeps in commands.
+# Stands in for the game menu's commands, which make their list as the game's do, keep their
+# handlers and take the keys or not.
 class Window_MenuCommand < Window_Command
-  attr_reader :commands
-  # Stands in for the game's extra commands: starts the list with the Library.
-  def add_original_commands; @commands = [["Library", :library, true]]; end
-  # Adds a command to the list.
+  # @return [Boolean] Whether it takes the keys.
+  attr_reader :active
+
+  # Makes the list of the game's commands, Library and Config among them, Save near its end.
+  def make_command_list
+    @list = [:item, :skill, :library, :config, :save, :game_end].map { |symbol| { :name => symbol.to_s, :symbol => symbol, :enabled => true, :ext => nil } }
+  end
+
+  # Lists the symbols of its commands.
   #
-  # @param name [String] Its name.
-  # @param symbol [Symbol] Its handler's symbol.
-  # @param enabled [Boolean] Whether it can be chosen.
-  def add_command(name, symbol, enabled = true); @commands << [name, symbol, enabled]; end
+  # @return [Array<Symbol>] The symbols.
+  def symbols; @list.map { |entry| entry[:symbol] }; end
+
+  # Finds a command.
+  #
+  # @param symbol [Symbol] Its symbol.
+  # @return [Hash, nil] The command.
+  def entry(symbol); @list.find { |each| each[:symbol] == symbol }; end
+
+  # Keeps a handler.
+  #
+  # @param symbol [Symbol] Its command.
+  # @param handler [Proc] The handler.
+  def set_handler(symbol, handler); handlers[symbol] = handler; end
+
+  # Tells whether a command has a handler.
+  #
+  # @param symbol [Symbol] The command.
+  # @return [Boolean] Whether it has.
+  def handle?(symbol); handlers.key?(symbol); end
+
+  # Lists the handlers by symbol.
+  #
+  # @return [Hash{Symbol => Proc}] The handlers.
+  def handlers; @handlers ||= {}; end
+
+  # Takes the keys.
+  def activate; @active = true; end
+
+  # Takes no keys.
+  def deactivate; @active = false; end
+
+  # Goes, as at a scene change.
+  def dispose; @disposed = true; end
+
+  # Tells whether it went.
+  #
+  # @return [Boolean] Whether it did.
+  def disposed?; @disposed == true; end
 end
 # Stands in for the game's name entry.
 class Window_NameEdit < Window_Base; end
@@ -62,8 +103,6 @@ class Sprite; def initialize(*); end; end
 Rect = Struct.new(:x, :y, :width, :height)
 # Stands in for the game's title screen.
 class Scene_Title; def start; end; def create_command_window; end; def update; end; def terminate; end; end
-# Stands in for the title screen's commands.
-class Window_TitleCommand; def make_command_list; end; end
 # Stands in for the game's sounds, which play nothing.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { } }; end
 # Stands in for the game's scenes, calling none.
@@ -99,8 +138,8 @@ module MGQ_Multiplayer
 end
 
 load_script "world_save_distribution"
-load_script "ui"
-load_script "ui_text_box"
+load_script "ui_online"
+load_script "ui_boxes"
 load_script "world"
 load_script "world_mods"
 load_script "world_screen"
@@ -139,75 +178,37 @@ Dir.mktmpdir do |root|
     check("and nothing into the world's", File.exist?("#{world.save_folder}/Save03.rvdata2"), false)
 
     check("a full Save folder says so", MGQ_MpSaveExport.export(world), "Your own game has no free save slot. Delete one of your saves first.")
+    FileUtils.rm("Save/Save03.rvdata2")
 
-    # The game's menu offers Copy to my game inside a world.
-    menu = Window_MenuCommand.new
-    menu.add_original_commands
-    check("the menu has no Copy to my game outside a world", menu.commands.map { |command| command[1] }, [:library])
+    # The game's menu, made as the game makes it, with the commands the Mod Framework adds once
+    # the game runs.
+    rule = Mod_Framework::UI::Adopt.rules.find { |each| each.target == Window_MenuCommand }
+    make_menu = lambda do
+      menu = Window_MenuCommand.new
+      menu.make_command_list
+      Mod_Framework::UI::Adopt.edit_commands(menu)
+      rule.install_handlers(menu)
+      menu
+    end
+    check("the menu has no Copy to my game outside a world", make_menu.call.symbols, [:item, :skill, :library, :config, :save, :game_end])
 
     MGQ_MpWorld.instance_variable_set(:@world, world)
-    menu.add_original_commands
-    check("inside a world it comes after the game's own commands", menu.commands.last, ["Copy to my game", :mgq_mp_save_export, true])
+    menu = make_menu.call
+    check("inside a world it comes after the game's own commands, before Save, and can be picked",
+          [menu.symbols, menu.entry(:mgq_mp_save_export).values_at(:name, :enabled)],
+          [[:item, :skill, :library, :config, :mgq_mp_save_export, :save, :game_end], ["Copy to my game", true]])
+
+    # Picking it shows how the copy went in the framework's message.
+    shown = []
+    Mod_Framework::UI::Message.define_singleton_method(:show) { |title, text| shown << [title, text]; nil }
+    menu.handlers[:mgq_mp_save_export].call
+    saved = File.mtime("#{world.save_folder}/AutoSave01.rvdata2").strftime("%Y-%m-%d %H:%M")
+    check("picking it copies the save and shows how it went", shown.last, ["Copy to my game", "Your save of Free from #{saved} is now save 3 of your own game."])
 
     empty = local_world("0123456789ab", "code" => "code", "name" => "Empty")
     MGQ_MpWorld.instance_variable_set(:@world, empty)
-    menu.add_original_commands
-    check("greyed out until the player saved in the world", menu.commands.last[2], false)
+    check("greyed out until the player saved in the world", make_menu.call.entry(:mgq_mp_save_export)[:enabled], false)
     MGQ_MpWorld.instance_variable_set(:@world, nil)
     check("the menu reports no open world", MGQ_MpSaveExport.export_open_world, "No world is open.")
   end
 end
-
-handlers = {}
-menu_scene = Scene_Menu.new
-menu_scene.instance_variable_set(:@command_window, Struct.new(:handlers) { def set_handler(symbol, handler); handlers[symbol] = handler; end }.new(handlers))
-menu_scene.create_command_window
-check("the menu's handler is in place once its commands are made", handlers.keys, [:mgq_mp_save_export])
-
-# The menu's commands take input again once the notice closes, or once it could not open.
-
-# Stands in for the menu's commands, noting in active whether they take input.
-class MenuCommands
-  attr_reader :active
-  # Lets the commands take input.
-  def activate; @active = true; end
-  # Answers whether the window is gone: never.
-  def disposed?; false; end
-end
-# Stands in for a notice the player closed, noting in disposed whether it went.
-ClosedNotice = Struct.new(:disposed) do
-  # Answers whether the player closed the notice: always.
-  def closed?; true; end
-  # Takes the notice off the screen.
-  def dispose; self.disposed = true; end
-end
-commands = MenuCommands.new
-menu_scene.instance_variable_set(:@command_window, commands)
-menu_scene.instance_variable_set(:@mgq_mp_save_export_notice, closed = ClosedNotice.new(false))
-menu_scene.update
-check("a closed notice goes and the menu's commands take input again",
-      [closed.disposed, menu_scene.instance_variable_get(:@mgq_mp_save_export_notice), commands.active], [true, nil, true])
-logged = []
-MGQ_Multiplayer::Log.define_singleton_method(:write) { |line| logged << line }
-failing = Window_MpSaveExportNotice.method(:new)
-Window_MpSaveExportNotice.define_singleton_method(:new) { |*_| raise "no picture" }
-commands = MenuCommands.new
-menu_scene.instance_variable_set(:@command_window, commands)
-check("a notice that cannot open gives the menu's commands back", [MGQ_MpSaveExport.open_notice(menu_scene), commands.active], [nil, true])
-bare = Scene_Menu.new
-check("and a menu without commands gets nothing back, never an error", MGQ_MpSaveExport.open_notice(bare), nil)
-bare.create_command_window
-bare.instance_variable_set(:@mgq_mp_save_export_notice, ClosedNotice.new(false))
-bare.update
-check("a menu without commands makes its commands and closes the notice without a failing hook",
-      [logged.grep(/world_save_export failed/), logged.grep(/has no @command_window/).size, bare.instance_variable_get(:@mgq_mp_save_export_notice)], [[], 1, nil])
-Window_MpSaveExportNotice.define_singleton_method(:new, failing)
-
-# The notice ignores the press that opened it.
-
-# Stands in for the game's input, with OK pressed in every frame.
-module Input; def self.trigger?(button); button == :C; end; end
-notice = Window_MpSaveExportNotice.allocate
-notice.instance_variable_set(:@frames, 0)
-check("the notice stays open in the frame OK opened it", notice.closed?, false)
-check("and closes on the next OK", notice.closed?, true)

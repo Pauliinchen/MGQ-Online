@@ -2,6 +2,7 @@
 #  ui_leader_hud.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Kept its rows and its place through the Mod Framework
 #      Paulinchen  2026-10-23: Kept the HUD off the live map behind menus
 #      Paulinchen  2026-10-13: Turned the HUD on and off in single player by a row of its own in MGQ Online SP
 #      Paulinchen  2026-10-12: Let other boxes draw a face or a map sprite as the HUD does
@@ -201,7 +202,7 @@ module MGQ_MpLeaderHud
     scene = SceneManager.scene
     return unless scene.is_a?(Scene_Map)
 
-    offset = @room > 0 ? MGQ_MpUi.top_room + @room : 0
+    offset = @room > 0 ? MGQ_MpHud.top_room + @room : 0
     TOP_LEFT_WINDOWS.each do |field|
       window = MGQ_MpGame.get(scene, field)
       next unless window && !window.disposed?
@@ -244,10 +245,11 @@ module MGQ_MpLeaderHud
 
   # Offers turning the HUD on and off and its size as rows of the Mod Config, kept in Player.ini.
   def self.add_options
-    shown = MGQ_MpUi.add_option(SHOWN_OPTION, SHOWN_OPTION_NAME, SHOWN_OPTION_HELP, lambda { [ON, OFF] },
-                                lambda { shown? ? ON : OFF }, lambda { |value| show(value == ON) })
-    MGQ_MpUi.add_option(SIZE_OPTION, SIZE_OPTION_NAME, SIZE_OPTION_HELP, lambda { SIZES }, lambda { size }, lambda { |value| resize(value) })
-    log(shown ? "added the Leader HUD to the Mod Config" : "no Leader HUD in the Mod Config: it needs a Mod Config Remake that knows rows the mod keeps")
+    prefix = MGQ_Multiplayer::OPTION_PREFIX
+    shown = Mod_Framework::Options.keep(SHOWN_OPTION, prefix + SHOWN_OPTION_NAME, SHOWN_OPTION_HELP, lambda { [ON, OFF] },
+                                        lambda { shown? ? ON : OFF }, lambda { |value| show(value == ON) })
+    Mod_Framework::Options.keep(SIZE_OPTION, prefix + SIZE_OPTION_NAME, SIZE_OPTION_HELP, lambda { SIZES }, lambda { size }, lambda { |value| resize(value) })
+    log(shown ? "added the Leader HUD to Options > Mods" : "no Leader HUD in Options > Mods, see the Mod Framework's log")
   end
 end
 
@@ -262,7 +264,7 @@ class Sprite_MpLeaderHud < Sprite
   LAYOUT_NAME = "Leader HUD"
 
   # Room between the box and the top and left edges of the screen at its default, below a strip of
-  # the mod at the top (see MGQ_MpUi.top_room).
+  # the mod at the top (see MGQ_MpHud.top_room).
   MARGIN = 8
 
   # Room between the box and a box below it at the top left, such as the notification box.
@@ -347,7 +349,7 @@ class Sprite_MpLeaderHud < Sprite
     return if @registered == MGQ_MpUi::Theme.serial
 
     small = layout(MGQ_MpLeaderHud::SMALL)
-    MGQ_MpUi::Layout.register(LAYOUT, LAYOUT_NAME, small.width, height(small), :none)
+    Mod_Framework::UI::Layout.register(LAYOUT, LAYOUT_NAME, :min_size => [small.width, height(small)], :resizable => false)
     @registered = MGQ_MpUi::Theme.serial
   end
 
@@ -386,7 +388,7 @@ class Sprite_MpLeaderHud < Sprite
     @motion.place(rect.x, rect.y)
     @motion.update
     MGQ_MpUi::Layout.offer(LAYOUT, rect.x, rect.y, rect.width, rect.height, z) if @motion.shown?
-    MGQ_MpLeaderHud.room = @motion.shown? && !MGQ_MpUi::Layout.moved?(LAYOUT) ? rect.y + rect.height + BELOW - MGQ_MpUi.top_room : 0
+    MGQ_MpLeaderHud.room = @motion.shown? && !MGQ_MpUi::Layout.moved?(LAYOUT) ? rect.y + rect.height + BELOW - MGQ_MpHud.top_room : 0
   rescue => e
     MGQ_MpLeaderHud.room = 0
     MGQ_MpLeaderHud.log_once(:draw, "drawing the Leader HUD failed: #{e.class}: #{e.message}")
@@ -399,7 +401,7 @@ class Sprite_MpLeaderHud < Sprite
   # @return [Rect] The place, see MGQ_MpUi::Layout.rect.
   def layout_rect(layout)
     Sprite_MpLeaderHud.register_layout
-    default = Rect.new(MARGIN, MARGIN + MGQ_MpUi.top_room, layout.width, Sprite_MpLeaderHud.height(layout))
+    default = Rect.new(MARGIN, MARGIN + MGQ_MpHud.top_room, layout.width, Sprite_MpLeaderHud.height(layout))
     rect = MGQ_MpUi::Layout.rect(LAYOUT, default)
     Rect.new(rect.x, rect.y, default.width, default.height)
   end

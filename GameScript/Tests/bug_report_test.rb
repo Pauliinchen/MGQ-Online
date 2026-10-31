@@ -2,7 +2,10 @@
 #  bug_report_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Expected the plainer texts the player reads
+#      Paulinchen  2026-11-01: Dropped the stand-in of the title screen's commands, which no script hooks any more
+#      Paulinchen  2026-10-31: Read the hotkey's help from MGQ_MpHotkeys::HOTKEYS
+#                            - Stood in for the Mod Framework's DLL and read the typing from $mgq_text_input
+#                            - Expected the plainer texts the player reads
 #      Paulinchen  2026-10-30: Stopped loading the deleted world_mods_parking.rbx
 #                            - Expected the whole version the mod loader names
 #                            - Dropped the default hotkey and the export signatures
@@ -68,8 +71,6 @@ class Color; def initialize(*); end; end
 class Sprite; def initialize(*); end; end
 # A rectangle as the game's Rect holds it.
 Rect = Struct.new(:x, :y, :width, :height)
-# Stands in for the game's title menu.
-class Window_TitleCommand; def make_command_list; end; end
 # Stands in for the game's data manager.
 module DataManager; def self.save_system; end; end
 # Stands in for the game's sounds, recording each one played in $sounds.
@@ -102,20 +103,6 @@ module Graphics
   end
 end
 
-# A Windows function, recording its name in $windows; RtlMoveMemory copies from $memory.
-WindowsFunction = Struct.new(:name, :arguments) do
-  def call(*args)
-    $windows << name
-    case name
-    when "RtlMoveMemory"
-      buffer, address, length = args
-      bytes = $memory[address].to_s
-      buffer[0, length] = bytes[0, length].ljust(length, "\0")
-      0
-    end
-  end
-end
-
 # Stands in for the mod's base script and its DLL.
 module MGQ_Multiplayer
   DLL = "Multiplayer.dll"
@@ -137,16 +124,16 @@ module MGQ_Multiplayer
     def self.setting(key); $player_ini[key]; end
     def self.store(key, value); $player_ini[key] = value.to_s; true; end
   end
-  # Stands in for the background runner, the keyboard working while $running holds.
-  module Background; def self.running?; $running; end; def self.in_front?; true; end; end
+  # Stands in for the Mod Framework's DLL, the keyboard working while $running holds.
+  def Mod_Framework.available?; $running; end
   # Stands in for the hotkeys' keyboard: $pressed is pressed once, the numpad's 0 while $numpad.
-  module Key
+  module Mod_Framework::UI::Key
     def self.watch(*_codes); end
     def self.pressed?(code); $pressed == code ? (($pressed = nil) || true) : false; end
     def self.triggered?(code); code == 0x60 && $numpad; end
   end
   # Stands in for the captured input, each button in $buttons triggered once.
-  module Capture
+  module Mod_Framework::UI::Capture
     def self.start(_owner); end
     def self.stop(_owner); end
     def self.trigger?(button); $buttons.delete(button) ? true : false; end
@@ -155,10 +142,8 @@ module MGQ_Multiplayer
     def self.on?; false; end
   end
   # Stands in for the mouse, never clicked.
-  module Mouse; def self.clicked?; false; end; end
-  # Stands in for the Windows API, handing out WindowsFunction.
-  module Windows; def self.api(_library, name, arguments, _result); WindowsFunction.new(name, arguments); end; end
-  # Stands in for the DLL's link, recording each call in $calls and the typing in $typing_on.
+  module Mod_Framework::UI::Mouse; def self.clicked?; false; end; end
+  # Stands in for the DLL's link, recording each call in $calls.
   module Link
     # A DLL export, checked against the contract and answering from $results.
     Function = Struct.new(:name, :signature) do
@@ -167,7 +152,6 @@ module MGQ_Multiplayer
     def self.function(name); Function.new(name, dll_signature(name)); end
     def self.read(name, _size); name == "mp_report_state" ? $state.dup : ""; end
     def self.player_id; "0123abcd"; end
-    def self.typing(on); $typing_on = on; end
     # Reads a message into its header fields, its body under :payload.
     def self.parse(text)
       head, payload = text.split("\n\n", 2)
@@ -183,7 +167,6 @@ $held = []
 $buttons = []
 $called = []
 $bitmaps = []
-$windows = []
 $calls = []
 $results = {}
 $state = ""
@@ -197,8 +180,8 @@ $typed = ""
 
 load_script "core_hotkeys"
 load_script "world_save_distribution"
-load_script "ui"
-load_script "ui_text_box"
+load_script "ui_online"
+load_script "ui_boxes"
 load_script "world"
 load_script "world_mods"
 load_script "world_text"
@@ -271,7 +254,7 @@ end
 # Drops the form waiting to open and forgets every call, so a check reads only what follows.
 def reset
   MGQ_MpBugReport.take_opening
-  [$called, $calls, $notices, $chat, $sounds, $windows, $log].each(&:clear)
+  [$called, $calls, $notices, $chat, $sounds, $log].each(&:clear)
 end
 
 # The registrations.
@@ -625,13 +608,13 @@ check("the lines above the form say who sees what, then the field's hint", info.
 # The form window deactivates itself before it calls on_field, as the game's windows do.
 window.active = false
 scene.on_field
-check("confirm on the title types into it in place", [$typing_on, form.editing, info.lines[1]], [true, :title, Scene_MpWorlds::TYPING_HINT])
+check("confirm on the title types into it in place, the hint naming the keys that go back", [$mgq_text_input, form.editing, info.lines[1]], [true, :title, Scene_MpWorlds.typing_hint])
 $typed = "Formation stays shut\r"
 $held = [:C]
 scene.update
 ui_frame
 scene.update
-check("Enter keeps what was typed and stops the typing", [form[:title], form.editing, $typing_on], ["Formation stays shut", nil, false])
+check("Enter keeps what was typed and stops the typing", [form[:title], form.editing, $mgq_text_input], ["Formation stays shut", nil, false])
 scene.update
 ui_frame
 check("the form waits until the press that ended the typing is let go", window.active, false)
@@ -706,4 +689,4 @@ check("without the keyboard the box is not typed into, and the form says why",
 $running = true
 
 # The texts.
-check("the hotkey's help names it a hotkey", MGQ_MpHotkeys::BINDINGS[:bug_report].help.start_with?("The hotkey"), true)
+check("the hotkey's help names it a hotkey", MGQ_MpHotkeys::HOTKEYS[:bug_report].help.start_with?("The hotkey"), true)

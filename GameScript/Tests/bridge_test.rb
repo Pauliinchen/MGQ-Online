@@ -2,6 +2,7 @@
 #  bridge_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Checked that the mod runs only beside a Mod Framework of at least the version it requires, with its DLL
 #      Paulinchen  2026-10-23: Stood in for the log's hand-over once the start decided
 #                            - Checked that only a handshake turns the mod on
 #                            - Created
@@ -61,12 +62,13 @@ module MGQ_Multiplayer
   module Log; def self.settle(_open); end; end
   # Stands in for the DLL's start, noted in $steps.
   module Link; def self.start; $steps << :mp_start; 1; end; end
-  # Stands in for keeping the game running in the background, noted in $steps.
-  module Background; def self.start; $steps << :background; end; end
   # Stands in for the update check, noted in $steps.
   module UpdateCheck; def self.start; $steps << :update_check; end; end
 end
+MGQ_Multiplayer.module_eval(source[/  MOD_FRAMEWORK_REQUIRED = .*\n/])
 MGQ_Multiplayer.module_eval(source[/  def self\.available\?\n.*?\n  end\n/m])
+MGQ_Multiplayer.module_eval(source[/  def self\.framework_ready\?\n.*?\n  end\n/m])
+MGQ_Multiplayer.module_eval(source[/  def self\.framework_gap\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  def self\.start\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  def self\.open_dll\n.*?\n  end\n/m])
 
@@ -99,8 +101,17 @@ Dir.mktmpdir do |game|
     check("a DLL of another bridge version keeps the mod off",
           start_mod(FakeBridge.new(MGQ_Multiplayer::Bridge::VERSION + 1)),
           [false, "bridge: the mod stays off, the DLL refused the handshake: The scripts speak bridge version 1, the core version 2.", [:mp_start]])
-    check("a handshake turns the mod on and only then starts the rest",
-          start_mod(FakeBridge.new), [true, "started Patch\\Multiplayer\\Multiplayer.dll", [:mp_start, :background, :update_check]])
+    Mod_Framework.available = true
+    check("a handshake turns the mod on beside the Mod Framework and only then starts the rest",
+          start_mod(FakeBridge.new), [true, "started Patch\\Multiplayer\\Multiplayer.dll", [:mp_start, :update_check]])
+    Mod_Framework.available = false
+    check("without the Mod Framework's DLL the mod stays off", MGQ_Multiplayer.available?, false)
+    Mod_Framework.available = true
+    at_least = Mod_Framework.method(:at_least?)
+    Mod_Framework.define_singleton_method(:at_least?) { |version| version.to_s == "0.0.9" }
+    check("so it does beside a Mod Framework older than the one it requires", [MGQ_Multiplayer::MOD_FRAMEWORK_REQUIRED, MGQ_Multiplayer.available?], ["0.1.0", false])
+    Mod_Framework.define_singleton_method(:at_least?, at_least)
+    Mod_Framework.available = false
   end
 end
 

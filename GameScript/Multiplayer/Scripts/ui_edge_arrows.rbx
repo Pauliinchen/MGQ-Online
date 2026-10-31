@@ -2,6 +2,7 @@
 #  ui_edge_arrows.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Took a player's color from MGQ_MpPlayerColor and the strip at the top from MGQ_MpHud
 #      Paulinchen  2026-10-23: Kept the arrows off the live map behind menus
 #      Paulinchen  2026-10-12: Read the map's viewport through MGQ_MpGame
 #      Paulinchen  2026-10-11: Drew an arrow's plate anew once the preset changes
@@ -139,11 +140,11 @@ module MGQ_MpEdgeArrows
   end
 
   # Tells the rect the arrows' centers stay in: the screen less MARGIN on each side, and less the strip
-  # of the mod at the top (see MGQ_MpUi.top_room).
+  # of the mod at the top (see MGQ_MpHud.top_room).
   #
   # @return [Array(Integer, Integer, Integer, Integer)] Left, top, right and bottom.
   def self.edge_rect
-    [MARGIN, MARGIN + MGQ_MpUi.top_room, Graphics.width - MARGIN, Graphics.height - MARGIN]
+    [MARGIN, MARGIN + MGQ_MpHud.top_room, Graphics.width - MARGIN, Graphics.height - MARGIN]
   end
 
   # Finds where an arrow sits and which way it points: where the line from one point of the screen
@@ -253,7 +254,7 @@ module MGQ_MpEdgeArrows
       who = @shown[target.id]
       unless who
         who = MGQ_MpOverworldSync.who(target.peer)
-        log("an arrow for #{who} appeared, #{target.tiles} tiles away, in #{MGQ_MpUi::PlayerColor.label(target.peer)}")
+        log("an arrow for #{who} appeared, #{target.tiles} tiles away, in #{MGQ_MpPlayerColor.label(target.peer)}")
       end
       now[target.id] = who
     end
@@ -385,7 +386,7 @@ class Sprite_MpEdgeArrow < Sprite
 
     @id = target.id
     angle = MGQ_MpEdgeArrows.step_angle(point[2])
-    color = MGQ_MpUi::PlayerColor.of(target.peer)
+    color = MGQ_MpPlayerColor.of(target.peer)
     key = [@id, target.name, target.tiles, angle, color, MGQ_MpUi::Theme.serial]
     unless key == @drawn
       @drawn = key

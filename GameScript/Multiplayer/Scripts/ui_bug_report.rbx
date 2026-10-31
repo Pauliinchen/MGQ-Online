@@ -2,7 +2,8 @@
 #  ui_bug_report.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
+#      Paulinchen  2026-10-31: Typed and cancelled through the Mod Framework
+#                            - Worded what the player reads plainly, leaving causes and internals to the log
 #      Paulinchen  2026-10-30: Named the game version as the mod loader names it, a translation's own loader included
 #      Paulinchen  2026-10-23: Walked to the screenshot's pixels in C#, handing it the Bitmap's address
 #                            - Typed into the form through the text box in C#
@@ -759,7 +760,7 @@ class Scene_MpBugReport < Scene_MenuBase
 
   # Stops taking what is typed, and forgets the screenshot unless the report went.
   def terminate
-    MGQ_Multiplayer::Link.typing(false) if @form && @form.editing
+    @form.edit.close if @form && @form.edit
     MGQ_MpBugReport.closed(@report, @left || "the screen closed")
     super
   end
@@ -800,24 +801,23 @@ class Scene_MpBugReport < Scene_MenuBase
   #
   # @param field [MGQ_MpWorld::Form::Field] The box.
   def start_typing(field)
-    return refuse(MGQ_MpBugReport::NO_KEYBOARD_REFUSAL) unless MGQ_Multiplayer::Background.running?
+    return refuse(MGQ_MpBugReport::NO_KEYBOARD_REFUSAL) unless Mod_Framework.available?
 
     @form.editing = field.key
     @form.edit = MGQ_MpUi::TextEdit.new(@form[field.key], :max_chars => field.max_chars, :allowed => field.allowed)
     @typed_before = @form[field.key]
-    MGQ_Multiplayer::Link.typing(true)
     @form_window.refresh
-    say(Scene_MpWorlds::TYPING_HINT)
+    say(Scene_MpWorlds.typing_hint)
     MGQ_MpBugReport.log("typing into #{field.label}")
   end
 
   # Acts on what was typed and hands the editor the keys that move the cursor and the mouse wheel.
-  # The numpad's 0 leaves the box, as Escape does.
+  # Cancel leaves the box, as Escape does.
   def update_typing
     field = @form_window.field
     editor = @form.edit
     taken = editor.take
-    return type(field, :escape) if MGQ_MpUi.numpad_cancel?
+    return type(field, :escape) if Mod_Framework::UI.cancel?
 
     taken.outcomes.each do |outcome|
       type(field, outcome)
@@ -864,7 +864,6 @@ class Scene_MpBugReport < Scene_MenuBase
 
   # Stops typing and hands the cursor back to the form.
   def stop_typing
-    MGQ_Multiplayer::Link.typing(false)
     @form.edit.close if @form.edit
     @form.editing = nil
     @form.edit = nil

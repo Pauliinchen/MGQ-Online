@@ -2,6 +2,7 @@
 #  world_screen.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Typed and cancelled through the Mod Framework, and named the keys that cancel as the player bound them
 #      Paulinchen  2026-10-30: Dropped the creator's update of the game data and handing this game's data over, since entering compares it once the world's mods loaded
 #                            - Noted the mods of the world's session for the Mod Framework to load as the world's game loads or starts
 #                            - Dropped giving up an entry for the parked mods
@@ -284,11 +285,8 @@ end
 # middle. Creating a world, adding a hidden one, the player's name, changing a world and a world's
 # password are forms that take the right side.
 class Scene_MpWorlds < Scene_MenuBase
-  # What the screen says while a text box is typed into.
-  TYPING_HINT = "Type on the keyboard. Arrows, Home, End move the cursor. Enter keeps it, Esc or Numpad 0 goes back."
-
-  # What the screen says while a text box of digits is typed into, where the numpad's 0 types a 0.
-  NUMBER_TYPING_HINT = "Type on the keyboard. Arrows, Home, End move the cursor. Enter keeps it, Esc goes back."
+  # What the screen says while a text box is typed into, the keys that go back filled in.
+  TYPING_HINT = "Type on the keyboard. Arrows, Home, End move the cursor. Enter keeps it, %s goes back."
 
   # The kinds of text boxes that take only digits, where the numpad's 0 types a 0.
   NUMBER_KINDS = [:number, :id]
@@ -317,11 +315,27 @@ class Scene_MpWorlds < Scene_MenuBase
   # Lines of a world's description one notch of the mouse wheel scrolls in the list box.
   DESCRIPTION_WHEEL_LINES = 3
 
-  # What the bottom of the mod picker says.
-  MOD_PICK_HINT = "Enter: list or unlist    →: ! required, ? essential    Esc or Numpad 0: done"
+  # What the bottom of the mod picker says, the keys that cancel filled in.
+  MOD_PICK_HINT = "Enter: list or unlist    →: ! required, ? essential    %s: done"
 
   # What the bottom of the mod picker says while a mod added by name is picked.
-  MOD_PICK_ADDED_HINT = "Enter: list or unlist    →: ! required, ? essential    Del: remove    Esc or Numpad 0: done"
+  MOD_PICK_ADDED_HINT = "Enter: list or unlist    →: ! required, ? essential    Del: remove    %s: done"
+
+  # Tells what the screen says while a text box is typed into, with the keys that go back.
+  #
+  # @param digits [Boolean] Whether the box takes only digits, where the numpad's 0 types a 0.
+  # @return [String] The hint.
+  def self.typing_hint(digits = false)
+    format(TYPING_HINT, Mod_Framework::UI.cancel_keys(digits ? :digits : nil))
+  end
+
+  # Tells what the bottom of the mod picker says, with the keys that cancel.
+  #
+  # @param added [Boolean] Whether a mod added by name is picked, which Delete removes.
+  # @return [String] The hint.
+  def self.mod_pick_hint(added = false)
+    format(added ? MOD_PICK_ADDED_HINT : MOD_PICK_HINT, Mod_Framework::UI.cancel_keys)
+  end
 
   # The titles of the mod picker's button columns.
   MOD_PICK_COLUMNS = ["Required", "Essential"]
@@ -458,7 +472,8 @@ class Scene_MpWorlds < Scene_MenuBase
   # Stops taking what is typed, should the screen close while a text box is typed into, and frees
   # the list box.
   def terminate
-    MGQ_Multiplayer::Link.typing(false) if (form && form.editing) || @mod_edit
+    form.edit.close if form && form.edit
+    @mod_edit.close if @mod_edit
     dll_do("close") if @busy
     MGQ_MpWorldScreen.close
     @list_box.dispose if @list_box
@@ -863,14 +878,14 @@ class Scene_MpWorlds < Scene_MenuBase
   #
   # @return [Array<Integer>, nil] x and y, nil outside the window or without the mouse.
   def mouse_position
-    MGQ_Multiplayer::Mouse.position
+    Mod_Framework::UI::Mouse.position
   end
 
   # Reports whether the left mouse button went down since the last call.
   #
   # @return [Boolean] Whether it went down.
   def mouse_clicked?
-    MGQ_Multiplayer::Mouse.clicked?
+    Mod_Framework::UI::Mouse.clicked?
   end
 
   # Opens the list of the chosen world's players to remove one.
@@ -1087,36 +1102,35 @@ class Scene_MpWorlds < Scene_MenuBase
   #
   # @param field [MGQ_MpWorld::Form::Field] The text box.
   def start_typing(field)
-    return ask_field(field, false) unless MGQ_Multiplayer::Background.running?
+    return ask_field(field, false) unless Mod_Framework.available?
     return unless form
 
     form.editing = field.key
     form.edit = MGQ_MpUi::TextEdit.new(form[field.key], :max_chars => field.max_chars, :allowed => field.allowed, :mask => field.kind == :password ? "*" : nil)
     @typed_before = form[field.key]
     @typing_frames = 0
-    MGQ_Multiplayer::Link.typing(true)
     @form_window.refresh
-    say(NUMBER_KINDS.include?(field.kind) ? NUMBER_TYPING_HINT : TYPING_HINT)
+    say(Scene_MpWorlds.typing_hint(NUMBER_KINDS.include?(field.kind)))
   end
 
   # Acts on what was typed into the text box and hands its editor the keys that move the cursor
   # and the mouse wheel, or moves the typing to the text screen, whose letters a gamepad can pick,
-  # once a button is pressed that did not come from the keyboard.
+  # once a button other than cancel is pressed that did not come from the keyboard.
   def update_typing
     field = @form_window.field
     editor = form.edit
     taken = editor.take
     @typing_frames += 1
 
+    # Cancel leaves the box, a gamepad's too; in a box of digits the numpad's 0 types a 0 while
+    # Num Lock is on.
+    return type(field, :escape) if Mod_Framework::UI.cancel?(NUMBER_KINDS.include?(field.kind) ? :digits : nil)
+
     # The press that started the typing is still reported in its first frame.
     if taken.keys == 0 && taken.chars == 0 && @typing_frames > 1 && MGQ_MpWorld.gamepad_pressed?
       stop_typing
       return ask_field(field, true)
     end
-
-    # The numpad's 0 cancels everywhere else in the game, so it leaves the box instead of typing a
-    # 0, unless the box takes only digits.
-    return type(field, :escape) if !NUMBER_KINDS.include?(field.kind) && MGQ_MpUi.numpad_cancel?
 
     taken.outcomes.each do |outcome|
       type(field, outcome)
@@ -1170,7 +1184,6 @@ class Scene_MpWorlds < Scene_MenuBase
 
   # Stops typing into the text box and hands the cursor back to the form.
   def stop_typing
-    MGQ_Multiplayer::Link.typing(false)
     return unless form
 
     form.edit.close if form.edit
@@ -1186,7 +1199,8 @@ class Scene_MpWorlds < Scene_MenuBase
   # @param field [MGQ_MpWorld::Form::Field] The text box.
   # @param letters [Boolean] Whether to show the game's letters at once, for a gamepad.
   def ask_field(field, letters)
-    ask_text([:field, field.key], field.label, form[field.key], :masked => field.kind == :password, :max_chars => field.max_chars, :allowed => field.allowed, :letters => letters, :area => field.kind == :area)
+    ask_text([:field, field.key], field.label, form[field.key], :masked => field.kind == :password, :max_chars => field.max_chars, :allowed => field.allowed, :digits => NUMBER_KINDS.include?(field.kind),
+             :letters => letters, :area => field.kind == :area)
   end
 
   # Fills in a text box from the text screen, if the text is valid.
@@ -1216,7 +1230,7 @@ class Scene_MpWorlds < Scene_MenuBase
   def open_mod_pick
     @mod_pick = MGQ_MpWorld::ModPick.new(form[:mods])
     log_screen("opened the mod picker on \"#{form[:mods]}\": #{@mod_pick.entries.size} mod(s)")
-    @mod_view = Sprite_MpListBox::View.of("Mods of the world", nil, [], MOD_PICK_HINT)
+    @mod_view = Sprite_MpListBox::View.of("Mods of the world", nil, [], Scene_MpWorlds.mod_pick_hint)
     @form_window.deactivate
     @mod_pick_hold = true
     show_mod_pick
@@ -1232,7 +1246,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @mod_view.note = nil
     @mod_view.pick(lines[line][0] == :item ? line : @mod_view.items.first)
     @mod_view.column = 0 unless mod_buttons?
-    @mod_view.hint = added_mod_picked? ? MOD_PICK_ADDED_HINT : MOD_PICK_HINT unless @mod_edit
+    @mod_view.hint = Scene_MpWorlds.mod_pick_hint(added_mod_picked?) unless @mod_edit
   end
 
   # Tells whether the item picked is a mod added by name, which Delete removes.
@@ -1308,7 +1322,7 @@ class Scene_MpWorlds < Scene_MenuBase
     @mod_view.column = 0 if Sprite_MpListBox.scroll_by_wheel(@mod_view) && !mod_buttons?
     move_mod_column(1) if Input.repeat?(:RIGHT)
     move_mod_column(-1) if Input.repeat?(:LEFT)
-    remove_added_mod if MGQ_Multiplayer::Key.pressed?(MGQ_MpUi::TextEdit::DELETE_KEY)
+    remove_added_mod if Mod_Framework::UI::Key.pressed?(MGQ_MpUi::TextEdit::DELETE_KEY)
 
     position = mouse_position
     clicked = mouse_clicked?
@@ -1326,7 +1340,7 @@ class Scene_MpWorlds < Scene_MenuBase
     return close_mod_pick if MGQ_MpUi.cancel? || (clicked && position && !Sprite_MpListBox.inside?(position[0], position[1]))
 
     act_on_mod(@mod_targets[@mod_view.selected], @mod_view.column.to_i) if Input.trigger?(:C) || (clicked && on_item)
-    @mod_view.hint = added_mod_picked? ? MOD_PICK_ADDED_HINT : MOD_PICK_HINT unless @mod_edit
+    @mod_view.hint = Scene_MpWorlds.mod_pick_hint(added_mod_picked?) unless @mod_edit
     @list_box.show(@mod_view)
   end
 
@@ -1371,12 +1385,11 @@ class Scene_MpWorlds < Scene_MenuBase
   # Turns the last row of the picker into a text box for a mod's name, typed on the keyboard, or
   # opens the text screen when the keyboard cannot reach the game.
   def start_mod_typing
-    return ask_mod_name(false) unless MGQ_Multiplayer::Background.running?
+    return ask_mod_name(false) unless Mod_Framework.available?
 
     @mod_edit = MGQ_MpUi::TextEdit.new("", :max_chars => MGQ_MpWorld::MAX_MODS_CHARS)
     @mod_typing_frames = 0
-    MGQ_Multiplayer::Link.typing(true)
-    @mod_view.hint = TYPING_HINT
+    @mod_view.hint = Scene_MpWorlds.typing_hint
     show_mod_pick
   end
 
@@ -1387,24 +1400,21 @@ class Scene_MpWorlds < Scene_MenuBase
     ask_text(:mod_name, "The mod's name", "", :max_chars => MGQ_MpWorld::MAX_MODS_CHARS, :letters => letters)
   end
 
-  # Acts on what was typed into the name's text box: Enter adds the mod, Escape or the numpad's 0
-  # goes back to the picker, and a button that did not come from the keyboard moves the typing to
+  # Acts on what was typed into the name's text box: Enter adds the mod, cancel goes back to the
+  # picker, and a button other than cancel that did not come from the keyboard moves the typing to
   # the text screen, whose letters a gamepad can pick.
   def update_mod_typing
     taken = @mod_edit.take
     @mod_typing_frames += 1
+    return finish_mod_typing(nil) if Mod_Framework::UI.cancel?
 
     # The press that started the typing is still reported in its first frame.
     if taken.keys == 0 && taken.chars == 0 && @mod_typing_frames > 1 && MGQ_MpWorld.gamepad_pressed?
-      MGQ_Multiplayer::Link.typing(false)
       @mod_edit.close
       @mod_edit = nil
       show_mod_pick
       return ask_mod_name(true)
     end
-
-    # The numpad's 0 cancels everywhere else in the game, so it leaves the box instead of typing a 0.
-    return finish_mod_typing(nil) if MGQ_MpUi.numpad_cancel?
 
     taken.outcomes.each do |outcome|
       case outcome
@@ -1424,7 +1434,6 @@ class Scene_MpWorlds < Scene_MenuBase
   #
   # @param name [String, nil] The name, nil when the player went back.
   def finish_mod_typing(name)
-    MGQ_Multiplayer::Link.typing(false)
     @mod_edit.close
     @mod_edit = nil
     @mod_pick_hold = true
@@ -1446,7 +1455,7 @@ class Scene_MpWorlds < Scene_MenuBase
     return refuse_in_pick(error) if error
 
     @mod_view.pick(@mod_targets.index(@mod_pick.entries.size - 1))
-    @mod_view.hint = MOD_PICK_ADDED_HINT
+    @mod_view.hint = Scene_MpWorlds.mod_pick_hint(true)
   end
 
   # Says in the mod picker's title row why a change was refused, since the box covers the lines
@@ -1978,9 +1987,10 @@ class MpWorldListPane
     end
   end
 
-  # Backs out of the window with the cursor when the numpad's 0 went down while it takes the input.
+  # Backs out of the window with the cursor when the numpad's 0 went down while it takes the input;
+  # the game's own cancel reaches the window itself.
   def back_out_with_numpad
-    return unless focused.active && MGQ_MpUi.numpad_cancel?
+    return unless focused.active && Mod_Framework::UI::NUMPAD_ZERO.map { |code| Mod_Framework::UI::Key.triggered?(code) }.any?
 
     Sound.play_cancel
     back_out
@@ -2027,8 +2037,8 @@ class Window_MpWorldList < Window_Command
   COUNT_WIDTH = 52
 
   include MGQ_MpBoxCursor
-  include MGQ_MpUi::Theme::Skinned
-  include MGQ_MpUi::ScrollingWindow
+  include Mod_Framework::UI::Themed
+  include MGQ_MpScrollingWindow
 
   # The pane the list belongs to, which tells whether the list may scroll while the cursor is
   # around it.
@@ -2118,7 +2128,7 @@ end
 # in place while the worlds scroll.
 class Window_MpWorldCommands < Window_Command
   include MGQ_MpBoxCursor
-  include MGQ_MpUi::Theme::Skinned
+  include Mod_Framework::UI::Themed
 
   # Creates the window at the bottom left of the screen.
   def initialize
@@ -2212,7 +2222,7 @@ end
 # player's game compares with its creator's, its players, and its description at the bottom.
 class Window_MpWorldDetail < Window_Base
   include MGQ_MpWorldPanels
-  include MGQ_MpUi::Theme::Skinned
+  include Mod_Framework::UI::Themed
 
   # A group of rows under a heading.
   #
@@ -2491,8 +2501,8 @@ end
 # A small command window in the middle of the screen, closed until needed, whose commands are
 # set as it opens.
 class Window_MpChoice < Window_Command
-  include MGQ_MpUi::Theme::Skinned
-  include MGQ_MpUi::ScrollingWindow
+  include Mod_Framework::UI::Themed
+  include MGQ_MpScrollingWindow
 
   # Width of the window.
   WIDTH = 360
@@ -2555,7 +2565,7 @@ end
 # right between two fields on one row, and turn a switch.
 class Window_MpWorldForm < Window_Selectable
   include MGQ_MpWorldPanels
-  include MGQ_MpUi::Theme::Skinned
+  include Mod_Framework::UI::Themed
 
   # Width of the labels in front of the text boxes.
   LABEL_WIDTH = 84
@@ -2808,7 +2818,7 @@ class Window_MpWorldForm < Window_Selectable
     field = self.field
     return 0 unless field && field.kind == :area && @form.editing == field.key
 
-    notches = MGQ_Multiplayer::Mouse.wheel
+    notches = Mod_Framework::UI::Mouse.wheel
     return 0 if notches == 0 || !pointed_at_item?(index)
 
     -notches * AREA_WHEEL_LINES
@@ -2819,7 +2829,7 @@ class Window_MpWorldForm < Window_Selectable
   # @param index [Integer] The field's index.
   # @return [Boolean] Whether it does.
   def pointed_at_item?(index)
-    position = MGQ_Multiplayer::Mouse.position
+    position = Mod_Framework::UI::Mouse.position
     return false unless position
 
     rect = item_rect(index)

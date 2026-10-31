@@ -2,7 +2,11 @@
 #  world_mods_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Checked that the world's settings come from the relay alone
+#      Paulinchen  2026-11-01: Checked the row of Shared Mod Settings shown only in a world, changed only by its creator and never set by a world
+#                            - Dropped the stand-in of the title screen's commands, which no script hooks any more
+#      Paulinchen  2026-10-31: Listed MGQ Online's hotkey by the row the Mod Framework gives it
+#                            - Read the options a world sets from the Mod Framework, which the mod runs with
+#                            - Checked that the world's settings come from the relay alone
 #      Paulinchen  2026-10-30: Checked the game data measured again and compared once the world's mods loaded, and the warning of a difference
 #                            - Checked that the Mod Framework's options lock the options a world sets
 #                            - Checked the session of a world that turns other mods off and the restart once its rule turns off a mod that runs
@@ -84,8 +88,6 @@ module Graphics; def self.update; end; end
 Rect = Struct.new(:x, :y, :width, :height)
 # The game's title screen, which does nothing.
 class Scene_Title; def start; end; def create_command_window; end; def update; end; def terminate; end; def scene_changing?; false; end; end
-# The title screen's commands, which list nothing.
-class Window_TitleCommand; def make_command_list; end; end
 # The game's system sounds: each one played is added to $sounds.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") { $sounds << s } }; end
 # The game's input: the buttons in $buttons are pressed this frame.
@@ -138,16 +140,11 @@ module NWConst
       { :key => :mod_party_sheet_size, :name => "     -> Size", :sub => true, :values => lambda { [2, 4] } },
       { :key => :tab_opt, :name => "[Tab\tMod] Opt\tion", :sub => true, :values => [1, 2] },
       { :key => :mod_mp_backline, :name => "[MGQ Online Settings] PvP Backline", :sub => true },
-      { :key => :mp_key_chat, :name => "[MGQ Online Hotkeys] Chat", :keybind => true },
+      { :key => :mf_key_mgq_online_chat, :name => "[MGQ Online Hotkeys] Chat", :keybind => true },
       { :key => :global_thing, :name => "Global Thing", :sub => true },
       { :key => :return, :name => "Return", :sub => false },
     ]
   end
-end
-# Mod Config Remake's lock: the options a world sets.
-module ModConfigRemake
-  # The keys of the options a world sets, which the player cannot change.
-  class << self; attr_accessor :world_keys; end
 end
 
 # Stand-ins for the world room, which keep what is told and who takes what, and for the
@@ -301,8 +298,8 @@ end
 
 load_script "world_save_distribution"
 load_script "core_hotkeys"
-load_script "ui"
-load_script "ui_text_box"
+load_script "ui_online"
+load_script "ui_boxes"
 load_script "world"
 load_script "world_mods"
 load_script "world_text"
@@ -529,8 +526,8 @@ check("the marker is no option", mods.settings_from("@shared=o:1;mod_level_cap=i
 
 module MGQ_MpWorld; def self.open?; $world_open; end; end
 row_key = MGQ_MpWorldMods::SHARED_OPTION
-# The row of Shared Mod Settings in Mod Config.
-row = lambda { NWConst::Config::MOD_CONTENTS.find { |entry| entry[:key] == row_key } }
+# The row of Shared Mod Settings as Options > Mods shows it, nil while it does not show.
+row = lambda { Mod_Framework::Options.shown_rows.find { |entry| entry[:key] == row_key } }
 creator = MGQ_MpOverworldSync::Peers::Peer.new(2, { "id" => "creator", "name" => "Creator", "mod_settings" => "abc" })
 # A listed world with Level Cap and Party Sheet, of a creator and with mod settings.
 world = lambda { |creator_id, settings| MGQ_MpWorld::Directory::ListedWorld.new("w1", 4, 0, creator_id, 0, "Creator", "Modded", "none", [], false, false, true, false, false, "", "!Level Cap; Party Sheet", "", "", settings) }
@@ -543,21 +540,24 @@ check("the details say what the DLL says of a world's settings", [mods.details_t
 check("handing it this game's Mod Config groups once, each option's key, its name as its row shows it and the names of its values",
       asked.call("settings.options").map { |name, options| [name, options.first] },
       [["Level Cap", ["mod_level_cap", "Level Cap", [["i:1", "On"], ["i:0", "Off"]]]], ["Party Sheet", ["mod_party_sheet_hotkey", "Hotkey", []]], ["Tab\tMod", ["tab_opt", "Opt\tion", []]],
-       ["MGQ Online Settings", ["mod_mp_backline", "PvP Backline", []]], ["MGQ Online Hotkeys", ["mp_key_chat", "Chat", []]]])
+       ["MGQ Online Settings", ["mod_mp_backline", "PvP Backline", []]], ["MGQ Online Hotkeys", ["mf_key_mgq_online_chat", "Chat", []]]])
 Scene_Title.new.start
 $world_open = true
-check("outside a world Mod Config has no row of Shared Mod Settings", row.call, nil)
+check("the row of Shared Mod Settings is in Options > Mods once from the start", NWConst::Config::MOD_CONTENTS.count { |entry| entry[:key] == row_key }, 1)
+check("but outside a world it does not show", row.call, nil)
 mods.enter_world(world.call("creator", shared), "me")
 check("entering a world hands the DLL the world as the list has it", asked.call("settings.enter"),
       { "world" => { "id" => "w1", "name" => "Modded", "creator_id" => "creator", "creator_name" => "Creator", "mods" => "!Level Cap; Party Sheet", "settings" => shared }, "me" => "me", "fresh" => true })
-check("and adds the row to the group of Monster Girl Quest! Online's settings, personal, with On and Off",
-      [row.call[:name], row.call[:sub], row.call[:personal], NWConst::Config::DATA[row_key], NWConst::Config::DATA_TEXT[row_key].map { |value, text| [value, text[:name]] }, NWConst::Config::MOD_CONTENTS.last[:key]],
-      ["[MGQ Online Settings] Shared Mod Settings", true, true, [1, 0], [[1, "On"], [0, "Off"]], :return])
+check("and shows the row in the group of Monster Girl Quest! Online's settings, personal, with On and Off, Off at first",
+      [row.call[:name], row.call[:sub], row.call[:personal], NWConst::Config::DATA[row_key], NWConst::Config::DATA_TEXT[row_key].map { |value, text| [value, text[:name]] }, NWConst::Config::DEFAULT[row_key]],
+      ["[MGQ Online Settings] Shared Mod Settings", true, true, [1, 0], [[1, "On"], [0, "Off"]], 0])
+check("a player who did not create the world may not change it, and its help names the creator",
+      [Mod_Framework::Options.enabled?(row.call), row.call[:help].call], [false, "Creator created this world and chose this. While On, the world's mod options are set for you here."])
 $game_system.conf = { :mod_level_cap => 1, :mod_party_sheet_theme => :light, :mod_party_sheet_hotkey => 0x51, :global_thing => 5, :mod_level_cap_look => 1 }
-ModConfigRemake.world_keys = nil
+Mod_Framework::Options.world_keys = nil
 DataManager.load_game(1)
-check("a save loaded in the world takes its settings, and Mod Config Remake shows them as set by the world",
-      [$game_system.conf[:mod_level_cap], $game_system.conf[:mod_party_sheet_theme], ModConfigRemake.world_keys], [0, :dark, [:mod_level_cap, :mod_party_sheet_theme]])
+check("a save loaded in the world takes its settings, and Options > Mods shows them as set by the world",
+      [$game_system.conf[:mod_level_cap], $game_system.conf[:mod_party_sheet_theme], Mod_Framework::Options.world_keys], [0, :dark, [:mod_level_cap, :mod_party_sheet_theme]])
 check("but none of a mod the player lacks, of the game's own options, of a key binding or of an option marked personal",
       [$game_system.conf[:mod_party_sheet_hotkey], $game_system.conf[:global_thing], $game_system.conf[:mod_level_cap_look], $game_system.conf.key?(:mod_missing)], [0x51, 5, 1, false])
 check("and the DLL hears which options were set, and no creator's options from another player", asked.call("settings.loaded"),
@@ -565,13 +565,13 @@ check("and the DLL hears which options were set, and no creator's options from a
 $loaded = nil
 DataManager.singleton_class.send(:alias_method, :plugin_load_game, :load_game)
 DataManager.define_singleton_method(:load_game) { |index| load_game_without_rescue(index) }
-ModConfigRemake.world_keys = nil
+Mod_Framework::Options.world_keys = nil
 DataManager.load_game(1)
-check("a load_game a translation plugin replaced still takes the world's settings", [$loaded, ModConfigRemake.world_keys], [true, [:mod_level_cap, :mod_party_sheet_theme]])
+check("a load_game a translation plugin replaced still takes the world's settings", [$loaded, Mod_Framework::Options.world_keys], [true, [:mod_level_cap, :mod_party_sheet_theme]])
 DataManager.singleton_class.send(:alias_method, :load_game, :plugin_load_game)
-ModConfigRemake.world_keys = nil
+Mod_Framework::Options.world_keys = nil
 DataManager.setup_new_game
-check("so does a new game in a world", ModConfigRemake.world_keys, [:mod_level_cap, :mod_party_sheet_theme])
+check("so does a new game in a world", Mod_Framework::Options.world_keys, [:mod_level_cap, :mod_party_sheet_theme])
 
 $notices.clear
 $settings_steps << [["notify", ["Creator shares mod settings here: 2 options", "of Level Cap and Party Sheet are set for you."]], ["row", true]]
@@ -587,19 +587,20 @@ mods.take(MGQ_Multiplayer::Bridge.call("settings.step"))
 check("they apply at once, and the DLL hears which options were set", [$game_system.conf[:mod_level_cap], asked.call("settings.applied")], [1, { "keys" => ["mod_level_cap"] }])
 $settings_steps << [["unlock"]]
 mods.take(MGQ_Multiplayer::Bridge.call("settings.step"))
-check("once the world no longer shares them, the locks are lifted and the values stay", [ModConfigRemake.world_keys, $game_system.conf[:mod_level_cap]], [[], 1])
+check("once the world no longer shares them, the locks are lifted and the values stay", [Mod_Framework::Options.world_keys, $game_system.conf[:mod_level_cap]], [[], 1])
 Scene_Title.new.start
-check("the title screen takes the row away and lets every option be changed again", [row.call, ModConfigRemake.world_keys, asked.call("settings.forget")], [nil, [], nil])
+check("the title screen hides the row and lets every option be changed again", [row.call, Mod_Framework::Options.world_keys, asked.call("settings.forget")], [nil, [], nil])
 
 # The creator's own world.
 mods.enter_world(world.call("me", "@shared=o:1;mod_level_cap=i:1"), "me")
-check("the creator may change the row, whose help says what it does to the others", [row.call[:enable].call, row.call[:help].call.start_with?("Whether every player in this world plays with your options")], [true, true])
+check("the creator may change the row, whose help says what it does to the others",
+      [Mod_Framework::Options.enabled?(row.call), row.call[:help].call.start_with?("Whether every player in this world plays with your options")], [true, true])
 $game_system.conf = { :mod_level_cap => 0, :mod_level_cap_limits => 1, :mod_party_sheet_theme => :dark }
 DataManager.load_game(1)
 check("loading in their own world applies its settings and hands the DLL their options of the world's mods, no key bindings, buttons or personal ones, and every option this game has",
       [asked.call("settings.loaded")["pairs"], asked.call("settings.loaded")["known"].size],
       [[["mod_level_cap", "mod_level_cap=i:1"], ["mod_level_cap_limits", "mod_level_cap_limits=i:1"], ["mod_party_sheet_theme", "mod_party_sheet_theme=y:dark"]], NWConst::Config::MOD_CONTENTS.size])
-check("and leaves their options unlocked", ModConfigRemake.world_keys, [])
+check("and leaves their options unlocked", Mod_Framework::Options.world_keys, [])
 $settings_calls.clear
 $scene = Scene_Config.new
 Scene_Base.new.update
@@ -613,15 +614,6 @@ check("turning the row off hands the DLL the switch", asked.call("settings.want"
 check("the creator's game tells no player the settings, which the relay does", $told, [])
 Scene_Title.new.start
 check("the title screen forgets whose world it was", [row.call, mods.own_world?], [nil, false])
-
-# Mod Config without entries.
-contents = NWConst::Config.send(:remove_const, :MOD_CONTENTS)
-NWConst::Config.const_set(:MOD_CONTENTS, [])
-mods.enter_world(world.call("creator", ""), "me")
-check("the row joins a Mod Config without entries too", NWConst::Config::MOD_CONTENTS.map { |entry| entry[:key] }, [row_key])
-Scene_Title.new.start
-NWConst::Config.send(:remove_const, :MOD_CONTENTS)
-NWConst::Config.const_set(:MOD_CONTENTS, contents)
 
 # A world's settings are noted only once its entry goes on.
 strict = MGQ_MpWorld::Directory::ListedWorld.new("w2", 4, 0, "creator", 0, "Creator", "Strict", "none", [], false, false, true, false, true, "1:x", "", "", "", "@shared=o:1;mod_level_cap=i:0")
@@ -662,8 +654,7 @@ mods.forget_world
 check("outside a world it gets none", [mods.served_mods, mods.served_settings], [[], ""])
 check("nothing failed but the broken dumps", ($log || []).grep(/FAILED|failed/).reject { |line| line.include?("broken entry") || line.include?("is not loaded") || line.include?("Too many requests") }, [])
 
-# The Mod Framework's options lock the options a world sets in place of Mod Config Remake.
-module Mod_Framework; module Options; class << self; attr_accessor :world_keys; end; end; end
-ModConfigRemake.world_keys = nil
+# The Mod Framework's options lock the options a world sets.
+Mod_Framework::Options.world_keys = nil
 mods.lock([:mod_level_cap])
-check("the Mod Framework's options lock the options a world sets, Mod Config Remake's then none", [Mod_Framework::Options.world_keys, ModConfigRemake.world_keys], [[:mod_level_cap], nil])
+check("the Mod Framework's options lock the options a world sets", Mod_Framework::Options.world_keys, [:mod_level_cap])

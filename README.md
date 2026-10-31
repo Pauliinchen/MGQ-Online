@@ -48,7 +48,7 @@ You then have `!Mod_Framework.rb` and `Multiplayer.rb` in your `Patch` folder, a
 
 While the mod is installed, the game keeps running when its window is in the background. A gamepad does nothing meanwhile.
 
-**Update:** the Mod Framework counts the updates waiting on *Mod browser* and installs them, this mod's too. When a new release is needed, *Multiplayer* on the title screen offers it; until then PvP battles stay off too. The framework closes the game, installs the release, shows what's new and starts the game again in the Multiplayer menu; under Wine and Proton too. If the game cannot start, run `Update.bat` in `Patch\Mod_Framework`. Your name, hotkeys, favourites and worlds are kept.
+**Update:** the Mod Framework counts the updates waiting on *Browser* in the title's Mods box and installs them, this mod's too. When a new release is needed, *Multiplayer* on the title screen offers it; until then PvP battles stay off too. The framework closes the game, installs the release, shows what's new and starts the game again in the Multiplayer menu; under Wine and Proton too. If the game cannot start, run `Update.bat` in `Patch\Mod_Framework`. Your name, hotkeys, favourites and worlds are kept.
 
 **Uninstall:** close the game and delete `Multiplayer.rb` and the `Multiplayer` folder in `Patch`. Keep `Patch\Multiplayer\Worlds` if you want to play your worlds again later.
 
@@ -73,7 +73,7 @@ While the mod is installed, the game keeps running when its window is in the bac
 | **J** | Join the battle of a player next to you in a Raid World, fight a raid boss alongside a full boss battle, or fight a raid boss again where it beat you |
 | **F3** | Report a bug, with a screenshot and your logs, anywhere but the title and game over screens |
 
-Rebind them in *Options → Mods → MGQ Online Hotkeys*; the mod's other options are in *MGQ Online Settings*.
+Rebind them in *Options → Mods → MGQ Online Hotkeys*, Y and N in *Mod Framework Hotkeys*; the mod's other options are in *MGQ Online Settings*.
 
 ## Documentation
 

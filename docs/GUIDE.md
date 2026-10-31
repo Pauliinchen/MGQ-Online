@@ -31,21 +31,23 @@ Everything Monster Girl Quest! Online does, for players. To install the mod, see
 | **J** | Joins the battle of a player next to you in a Raid World, fights a raid boss alongside a full boss battle, or fights a raid boss again where it beat you, while the prompt below your character shows. |
 | **F3** | Opens the bug report, with a screenshot taken at the press. Works anywhere but the title and game over screens: in a menu it opens at once, in a battle after the battle, and on a busy map once you're free. |
 
-This guide names the default hotkeys. To bind others, open *Options → Mods → MGQ Online Hotkeys*, confirm the hotkey's row (*Action Wheel*, *Chat*, *World Overview*, *Accept Notification*, *Decline Notification*, *Emote Wheel*, *Party Box Size*, *Leader HUD Size*, *Join Battle* or *Report a Bug*) and press the new key; **Esc** keeps the old one.
+This guide names the default hotkeys. To bind others, open *Options → Mods → MGQ Online Hotkeys*, confirm the hotkey's row (*Action Wheel*, *Chat*, *World Overview*, *Emote Wheel*, *Party Box Size*, *Leader HUD Size*, *Join Battle* or *Report a Bug*; *Accept Notification* and *Decline Notification* are under *Mod Framework Hotkeys*, since they answer the question boxes of every mod) and press the new key; **Esc** keeps the old one. Keys you bound to Accept and Decline before this version move there by themselves.
 
 - Keys the game uses itself can't be bound: the arrows, Enter, Space, Esc, Z, X, Shift, Ctrl, A, S, D, Q, W, Page Up, Page Down, numpad 0, 2, 4, 6 and 8, F1, F2, F5 to F9 and F12. Neither can a key another hotkey already uses.
 - Your hotkeys are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save and every world, and the texts in the game name the hotkeys you bound.
 
 ## Interface
 
-**Look.** *Options → Mods → MGQ Online Settings → Interface Look* sets the colors of every box, frame and window of the mod and of the game's own windows:
+**Look.** *Options → Mods → Mod Framework → Interface Look* sets the colors of every box, frame and window of the mod and of the game's own windows, for every mod built on the Mod Framework alike:
 
 - **Monarch** (the default): dark maroon with a gold edge in a black rim, gold titles and dark gold tabs, the look of the raid boss bar.
 - **Legacy**: black glass with a thin grey edge and grey tabs, the look the mod had before.
 - **Game's Default**: the game's own windows in the game's *Window Color* (*Options → Window Color*), and the mod's boxes in the same colors. A change of the Window Color shows at once.
-- **Same in every save.** The look, *Look on Game Windows* and the game's *Window Color* are kept for the whole install (in `Patch\Multiplayer\Player.ini`), not in each save: once you set a Window Color in *Options*, every save and new game shows it.
+- **Same in every save.** The look, *Look on Game Windows* and the game's *Window Color* are kept for the whole install (in the Mod Framework's settings), not in each save: once you set a Window Color in *Options*, every save and new game shows it.
 
 With Monarch or Legacy the game's Window Color has no effect. *Look on Game Windows* (On by default) turns this off: with Off the game's own windows keep the game's Window Color, and only the mod's windows and boxes wear the look. The raid boss bar's red HP stays red in every look.
+
+**Closing.** Every screen, box, wheel and question of the mod closes with the game's cancel key as you bound it in *F1* (**X** and **Esc** unless you changed them) and with numpad **0**, Num Lock on or off; the hints name the key you bound. While you type into a text box, **Esc** and numpad **0** close it, and a letter you bound to cancel types its letter.
 
 **Scrolling.** The mouse wheel scrolls the list or text it points at: the world list and its choices, the players, mods and description boxes, the mod picker, the trade offers and your bag, the open chat log (three rows a notch), a description you type, and every page of the World overview. A thin scrollbar shows beside each of them while it holds more than fits.
 
@@ -66,8 +68,8 @@ The boxes you can move: the chat (on the map, in battles and in shops, the casin
 
 - A box never gets smaller than it needs to show everything it holds, and never leaves the screen.
 - While **Alt** is held, the mouse only moves and resizes; clicks don't reach the boxes.
-- *Options → Mods → MGQ Online Settings → Interface Positions* says *Moved* while any box is moved; pick *Default* to put every box back.
-- The look and the places are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save and every world, and a world that sets its mods' options never changes them.
+- *Options → Mods → Mod Framework → Interface Positions* says *Moved* while any box is moved; pick *Default* to put every box back, those of other mods too.
+- The look and the places are kept in the Mod Framework's settings, so they hold in every save and every world, and a world that sets its mods' options never changes them. The first start after the update takes your look, Window Color and places over from `Patch\Multiplayer\Player.ini`.
 
 ## Single player
 
@@ -83,7 +85,7 @@ They are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save.
 
 ## Mods
 
-The [Mod Framework](https://github.com/Pauliinchen/MGQ-Mod-Framework), which comes with MGQ Online, installs, updates and removes the mods of the [website](https://mgqonline.org/mods) from the title screen: *Mod browser* lists them and counts the updates waiting, *Mods* turns your mods on and off.
+The [Mod Framework](https://github.com/Pauliinchen/MGQ-Mod-Framework), which comes with MGQ Online, installs, updates and removes the mods of the [website](https://mgqonline.org/mods) from the title screen. In the Mods box left of the title commands, *Browser* lists them and counts the updates waiting, *List* turns your mods on and off, and *Configuration* sets their options.
 
 ## Worlds
 
@@ -174,7 +176,7 @@ The creator can change Max Players, Mods, *Shared Mod Settings*, *Turn off other
 | Essential | For mods that are data files without a script. Keeps nobody out; shows in gold. |
 
 - *Add a mod by name* names a mod you don't have yourself, such as a mod of data files: its row becomes a text box, **Enter** adds the name you typed, **Esc** or numpad **0** goes back. Such a mod stays in the list when unlisted; **Del** removes it.
-- The mods take 16,000 characters at most; the top right of the list says when a change would pass that. **Esc** or numpad **0** goes back to the form, which shows them as the world keeps them: `!` in front of a required mod, `?` in front of an essential one.
+- The mods take 16,000 characters at most; the top right of the list says when a change would pass that. The cancel key or numpad **0** goes back to the form, which shows them as the world keeps them: `!` in front of a required mod, `?` in front of an essential one.
 
 The details show each mod in a box of its own, as many as fit the row, and count the rest in a last box.
 
@@ -313,7 +315,7 @@ The box at the top left, on the map and in menus, lists the invites that reach y
 
 **Y** accepts the first of them (a challenge only on the map), **N** declines it: the other player reads that you declined, and it stays away until they invite you anew.
 
-**Questions.** Some choices ask first, in a box in the middle of the screen: leaving your party, removing a member, cancelling a trade. The box names its two answers; the safe one starts picked. **Y** takes the first answer, **N**, **Esc** or numpad **0** the second; **Left** and **Right** move the pick and confirm takes the picked one; a hint under the answers says so. While the box is open, the hotkeys below it do nothing, so a **Y** never answers an invite by mistake.
+**Questions.** Some choices ask first, in a box in the middle of the screen: leaving your party, removing a member, cancelling a trade. The box names its two answers; the safe one starts picked. **Y** takes the first answer, **N**, the cancel key or numpad **0** the second; **Left** and **Right** move the pick and confirm takes the picked one; a hint under the answers says so. While the box is open, the hotkeys below it do nothing, so a **Y** never answers an invite by mistake.
 
 ## Parties
 
@@ -387,7 +389,7 @@ Trade items and gold with another player on your map. Nothing changes hands unti
 - **Put your offer together:** pick *Items*, *Weapons*, *Armor* or *Stones* for your bag. **Right** and **Left** offer one more or one fewer, **R** and **L** ten, and confirm offers all or none. *Gold* sets the gold digit by digit: **Left** and **Right** pick a digit, **Up** and **Down** change it. The other player's offer shows on the right as they change it. *Offers* moves into the offers to look through a long one: **Up** and **Down** scroll, **Left** and **Right** switch between yours and theirs, cancel goes back.
 - **What can be traded:** everything in your bag but key items, also enchanted and socketed equipment, which arrives with all its enchantments and stones. Equipped items and items in the storehouse aren't offered; unequip or take them out first. A trade holds a few hundred enchanted copies at most; past that, confirming says "The offers hold too many items for one trade. Take some out."
 - **Confirm** once both offers are right. Any change to either offer takes both confirmations back. Once you both confirmed, the trade completes, both games save, and the screen closes: "Trade with \<player> complete, game saved". The save goes into the slot you last saved or loaded in the world, or the first free one.
-- **Cancel**, **Esc** or numpad **0** asks first ("Cancel the trade with \<player>? Both offers are lost."): *Cancel trade* ends the trade for both of you, *Keep trading* goes back to it. It also ends when the other player leaves the world for longer than 15 seconds.
+- **Cancel**, the cancel key or numpad **0** asks first ("Cancel the trade with \<player>? Both offers are lost."): *Cancel trade* ends the trade for both of you, *Keep trading* goes back to it. It also ends when the other player leaves the world for longer than 15 seconds.
 - **A cut-off trade:** if your game or connection drops right as the trade completes, it completes the next time you enter the world.
 
 ## PvP battles

@@ -35,7 +35,6 @@
     <None Include="..\fixtures\story\*.json" LinkBase="fixtures\story" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\peers\*.json" LinkBase="fixtures\peers" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\squad\*.json" LinkBase="fixtures\squad" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\fixtures\ui\*.json" LinkBase="fixtures\ui" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\events\*.json" LinkBase="fixtures\events" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\overview\*.json" LinkBase="fixtures\overview" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\world\*.json" LinkBase="fixtures\world" CopyToOutputDirectory="PreserveNewest" />

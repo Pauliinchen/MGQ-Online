@@ -2,7 +2,11 @@
 #  loader_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Checked that a script calls every export of the table
+#      Paulinchen  2026-11-01: Checked that no script hooks the game's command windows or puts rows into the options itself
+#      Paulinchen  2026-10-31: Checked that the mod names the lowest Mod Framework before any script loads, that it stays off, logged, with an older one
+#                              or one without its DLL, that no script or test names what moved into the framework, that the input's exports are gone and that the served scripts' fingerprint names no framework script
+#                            - Dropped the checks of the keys, the mouse, the capture and the guard of Input, which the Mod Framework's tests cover
+#                            - Checked that a script calls every export of the table
 #      Paulinchen  2026-10-30: Checked the scripts of the first two stages and that a script loads once
 #                            - Checked that Multiplayer.rb holds ASCII only and logs and shows the errors of its own load
 #      Paulinchen  2026-10-28: Checked the freeze's load order without its deleted data script
@@ -68,11 +72,10 @@ check("core_actors loads before the scripts whose classes build on Game_MpActor"
       %w[battles_coop battles_pvp].all? { |name| scripts.index("core_actors") < scripts.index(name) }, true)
 check("the registries load before the scripts that join them",
       [scripts.index("overworld_sync") < scripts.index("ui_actions"), scripts.index("coop") < scripts.index("coop_events")], [true, true])
-check("the wheels' shared reading of the arrows loads before both wheels", %w[ui_actions ui_emotes].all? { |name| scripts.index("ui_wheel") < scripts.index(name) }, true)
 check("the scripts whose constants the World overview shares load before it",
       %w[ui_actions overworld battles_pvp].all? { |name| scripts.index(name) < scripts.index("world_overview") }, true)
 check("a family's base script loads before its other scripts",
-      %w[ui world battles battles_sync battles_pvp coop].all? { |base| scripts.select { |name| name.start_with?("#{base}_") }.all? { |name| scripts.index(base) < scripts.index(name) } }, true)
+      %w[world battles battles_sync battles_pvp coop].all? { |base| scripts.select { |name| name.start_with?("#{base}_") }.all? { |name| scripts.index(base) < scripts.index(name) } }, true)
 check("the party's gathering loads after the events that hand it its messages, the castle after the story it reads",
       [scripts.index("coop_events") < scripts.index("coop_gather"), scripts.index("coop_story") < scripts.index("coop_castle")], [true, true])
 check("the story's state model loads before the story scripts that build on it",
@@ -80,14 +83,14 @@ check("the story's state model loads before the story scripts that build on it",
 check("the battle scripts keep the order their late hooks rely on",
       %w[battles battles_coop battles_sync].map { |name| scripts.index(name) }.each_cons(2).all? { |a, b| a < b }, true)
 check("the raid tiers load after the Mod Config rows, the push routes, the boss table and the pools whose rules they share, and before the bars that draw them",
-      [%w[ui overworld_sync battles_raid_bosses battles_raid_pool].all? { |name| scripts.index(name) < scripts.index("battles_raid_tiers") }, scripts.index("battles_raid_tiers") < scripts.index("ui_raid_bar")],
+      [%w[ui_online overworld_sync battles_raid_bosses battles_raid_pool].all? { |name| scripts.index(name) < scripts.index("battles_raid_tiers") }, scripts.index("battles_raid_tiers") < scripts.index("ui_raid_bar")],
       [true, true])
 check("the single player rows load after the Mod Config rows, the world's sync and the scripts whose settings they show",
-      %w[ui overworld_sync battles_raid_tiers ui_raid_bar ui_leader_hud].all? { |name| scripts.index(name) < scripts.index("ui_single_player") }, true)
+      %w[ui_online overworld_sync battles_raid_tiers ui_raid_bar ui_leader_hud].all? { |name| scripts.index(name) < scripts.index("ui_single_player") }, true)
 boot = source[/BOOT_SCRIPTS = %w\[(.*?)\]/m, 1].split
 world = source[/WORLD_SCRIPTS = %w\[(.*?)\]/m, 1].split
 title = boot + world
-check("the first stage starts as SCRIPTS does, with the log, the hooks, the hotkeys and the look", boot, scripts.first(boot.size))
+check("the first stage starts as SCRIPTS does, with the log, the hooks, the hotkeys and the boxes", boot, scripts.first(boot.size))
 check("the world screens name scripts of SCRIPTS, in their order, past the first stage", world, scripts.select { |name| world.include?(name) && !boot.include?(name) })
 run_hooked = title.select { |name| File.read(File.join(SCRIPTS_DIR, "#{name}.rbx"), :encoding => "BOM|UTF-8").include?("SceneManager.singleton_class, :run") }
 check("no script of the title part follows SceneManager.run, which only the Mod Framework's entering lets set up", run_hooked, [])
@@ -96,9 +99,46 @@ check("the raid boss freeze loads its engine before the world's list, both after
 check("the frozen fights' stand-ins load after the bars that draw over them and the join hotkey that resumes them",
       %w[battles_coop_join battles_raid_freeze world_freeze ui_raid_bar].all? { |name| scripts.index(name) < scripts.index("ui_raid_freeze") }, true)
 
+# The Mod Framework: the lowest version the mod runs with is named before any script loads, and
+# nothing the framework took over is named by a script or a test any more.
+required_at = source.index("MOD_FRAMEWORK_REQUIRED = ")
+check("the lowest Mod Framework is named before the scripts and before the mod loads them",
+      [source[/MOD_FRAMEWORK_REQUIRED = "([\d.]+)"/, 1], required_at < source.index("SCRIPTS = %w["), required_at < source.index("MGQ_Multiplayer::Stages.boot")],
+      ["0.1.0", true, true])
+moved = ["MGQ_Multiplayer::Key", "MGQ_Multiplayer::Capture", "MGQ_Multiplayer::Mouse", "MGQ_Multiplayer::Windows", "MGQ_Multiplayer::Background",
+         "Link.typing", "mp_typing", "mp_mouse_wheel", "mp_keep_running", "MGQ_MpWheel", "Sprite_MpConfirmBox", "Confirm.tick", "Theme::Skinned",
+         "numpad_cancel?", "NUMPAD_CANCEL_KEYS", "CLOSE_KEYS", "Style.close_hint", "MGQ_MpUi::PlayerColor", "MGQ_MpUi::OPTION_PREFIX",
+         "MGQ_MpUi::SP_PREFIX", "MGQ_MpUi.top_room", "MGQ_MpUi.add_option", "MGQ_MpUi::ScrollingWindow", ":mp_ui_positions", ":mp_ui_preset", ":mp_ui_game_windows", "module MGQ_MpUi",
+         "MGQ_MpHotkeys::BINDINGS", ":mp_key_"]
+# The hints name the cancel key as the player bound it, never Escape or the numpad's 0 alone.
+hinted = ["Esc or Numpad 0", "\"Numpad 0"]
+mod_files = Dir[File.join(SCRIPTS_DIR, "*.rbx")] + [File.expand_path("../Multiplayer.rb", __dir__)]
+swept = mod_files + Dir[File.join(__dir__, "*.rb")] - [File.expand_path(__FILE__)]
+named = swept.flat_map do |file|
+  code = File.read(file, :encoding => "BOM|UTF-8").lines.reject { |line| line.strip.start_with?("#") }.join
+  (moved + (mod_files.include?(file) ? hinted : [])).select { |name| code.include?(name) }.map { |name| "#{File.basename(file)}: #{name}" }
+end
+check("no script or test names what moved into the Mod Framework", named, [])
+# The title's and the menu's commands and the options rows go through the Mod Framework.
+own_ways = [/MGQ_MpHooks\.\w+\(\s*:*Window_(Title|Menu)Command\b/, /add_original_commands/, /MOD_CONTENTS\.insert/, /register_option/, /\badd_option\b/]
+own_commands = mod_files.flat_map do |file|
+  code = File.read(file, :encoding => "BOM|UTF-8").lines.reject { |line| line.strip.start_with?("#") }.join
+  own_ways.select { |way| code =~ way }.map { |way| "#{File.basename(file)}: #{way.source}" }
+end
+check("no script hooks the title's or the menu's commands or puts options rows in itself", own_commands, [])
+csharp = Dir[File.expand_path("../../{MGQOnline.Game,MGQParadox.Multiplayer,MGQOnline.Game.Tests,MGQParadox.Multiplayer.Tests}/**/*.cs", __dir__)].reject { |file| file =~ %r{/(bin|obj)/} }
+in_csharp = csharp.flat_map do |file|
+  code = File.read(file, :encoding => "BOM|UTF-8").lines.reject { |line| line.strip.start_with?("//") }.join
+  names = %w[UiTopics GameWindow Keyboard MouseWheel AltMenuGuard].select { |name| code =~ /\b#{name}\b/ }
+  names << "MGQOnline.Game.Ui" if code.include?("MGQOnline.Game.Ui") && !File.basename(file).start_with?("ScreenshotWalk") && !code.include?("ScreenshotWalk")
+  names.map { |name| "#{File.basename(file)}: #{name}" }
+end
+check("no C# file names the interface's models, the window hook or the keyboard the Mod Framework holds", in_csharp, [])
+
 # The DLL's export table: each export once, and every call of the scripts names one of them.
 table_names = source[/    EXPORTS = \{.*?\n    \}\n/m].scan(/^      '(mp_[a-z_]+)' =>/).flatten
 check("every export is in the table once", table_names.select { |name| table_names.count(name) > 1 }.uniq, [])
+check("the table names none of the input's exports, which the Mod Framework took over", table_names & %w[mp_keep_running mp_typing mp_mouse_wheel], [])
 calls = (Dir[File.join(SCRIPTS_DIR, "*.rbx")] + [File.expand_path("../Multiplayer.rb", __dir__)]).flat_map do |file|
   File.read(file, encoding: "UTF-8").scan(/(function|read)\('(mp_[a-z_]+)'/)
 end.uniq
@@ -210,7 +250,9 @@ module LoaderTestFailing
   module Stages; def self.boot; raise LoadError, "no fiddle"; end; end
   def self.msgbox(text); BOXES << text; end
 end
+LoaderTestFailing.module_eval(source[/  MOD_FRAMEWORK_REQUIRED = .*\n/])
 LoaderTestFailing.module_eval(source[/  def self\.available\?\n.*?\n  end\n/m])
+LoaderTestFailing.module_eval(source[/  def self\.framework_ready\?\n.*?\n  end\n/m])
 LoaderTestFailing.module_eval(source[/  def self\.load_failed\(stage, error\)\n.*?\n  end\n/m])
 Dir.mktmpdir do |game|
   Dir.chdir(game) do
@@ -231,144 +273,47 @@ Dir.mktmpdir do |game|
   end
 end
 
+# The gate: a booted Mod Framework that is older than the mod needs, or whose DLL does not run,
+# keeps the mod off, and the log says why in one line.
+module LoaderTestGate
+  LINES = []
+  module Log; def self.write(line); LINES << line; end; end
+end
+LoaderTestGate.module_eval(source[/  MOD_FRAMEWORK_REQUIRED = .*\n/])
+%w[available? framework_ready? framework_gap log_framework_gap].each do |name|
+  LoaderTestGate.module_eval(source[/  def self\.#{Regexp.escape(name)}\n.*?\n  end\n/m])
+end
+
+# Runs the gate as the title stage does once the mod's DLL started, with the framework's DLL on or
+# off and the framework at a version.
+#
+# @param version [String] The booted framework's version.
+# @param dll [Boolean] Whether the framework's DLL runs.
+# @return [Array] Whether the mod is available and the lines the gate wrote.
+def gate_with(version, dll)
+  framework_dll = Mod_Framework.instance_variable_get(:@available)
+  framework_version = Mod_Framework::VERSION
+  Mod_Framework.send(:remove_const, :VERSION)
+  Mod_Framework.const_set(:VERSION, version)
+  Mod_Framework.available = dll
+  LoaderTestGate::LINES.clear
+  LoaderTestGate.instance_variable_set(:@available, true)
+  LoaderTestGate.log_framework_gap
+  [LoaderTestGate.available?, LoaderTestGate::LINES.dup]
+ensure
+  Mod_Framework.send(:remove_const, :VERSION)
+  Mod_Framework.const_set(:VERSION, framework_version)
+  Mod_Framework.available = framework_dll
+end
+
+check("a booted framework older than the mod needs keeps the mod off, logged once",
+      gate_with("0.0.9", true), [false, ["Monster Girl Quest! Online is off: it needs the Mod Framework 0.1.0 or newer, and the one installed is 0.0.9"]])
+check("one whose DLL does not run keeps the mod off, logged once",
+      gate_with("0.1.0", false), [false, ["Monster Girl Quest! Online is off: the Mod Framework 0.1.0 runs without its DLL"]])
+check("one new enough with its DLL lets the mod run and writes nothing", gate_with("0.1.0", true), [true, []])
+
 # The rest of this file writes no log.
 MGQ_Multiplayer::Log.define_singleton_method(:write) { |_message| }
-
-# The buttons: every screen of the mod that holds them keeps them until it gives them back, and
-# Input answers nothing past the guard but what a screen asks past the capture.
-MGQ_Multiplayer.module_eval(source[/  module Capture\n.*?\n  end\n/m])
-MGQ_Multiplayer.module_eval(source[/  module Background\n.*?\n  end\n/m])
-# Stands in for whether the game's window is in front, kept in $front.
-module MGQ_Multiplayer; module Windows; def self.game_in_front?; $front; end; end; end
-# Stands in for the game's input: C always held, the updates counted in $input_updates.
-module Input
-  def self.update; $input_updates = ($input_updates || 0) + 1; end
-  def self.press?(button); button == :C; end
-  def self.trigger?(button); button == :C; end
-  def self.repeat?(button); button == :C; end
-  def self.dir4; 2; end
-  def self.dir8; 2; end
-end
-load File.join(SCRIPTS_DIR, "core_log.rbx")
-load File.join(SCRIPTS_DIR, "core_hooks.rbx")
-capture = MGQ_Multiplayer::Capture
-background = MGQ_Multiplayer::Background
-$front = true
-background.guard_input
-background.guard_input
-Input.update
-check("the guard leaves Input as it is while the game is in front", [Input.press?(:C), Input.trigger?(:C), Input.dir4, $input_updates], [true, true, 2, 1])
-capture.start(:overview)
-capture.start(:emotes)
-capture.stop(:emotes)
-check("a screen closing leaves the buttons with another that holds them", [capture.on?, Input.trigger?(:C), Input.dir8], [true, false, 0])
-check("which still reads them past the capture", [capture.trigger?(:C), capture.press?(:C), capture.repeat?(:C), Input.trigger?(:C)], [true, true, true, false])
-capture.stop(:overview)
-check("the last one gives them back, but the press that closed it never reaches the game in the same frame", [capture.on?, Input.trigger?(:C), capture.trigger?(:C)], [false, false, false])
-Input.update
-check("the game has them again from the next frame", Input.trigger?(:C), true)
-$front = false
-Input.update
-check("another window in front takes every button away", [Input.press?(:C), capture.trigger?(:C)], [false, false])
-$front = true
-Input.update
-
-# A watched key, told frame by frame as Input.trigger? tells the game's buttons, such as the
-# numpad's 0, which is the game's cancel button too with Num Lock on.
-MGQ_Multiplayer.module_eval(source[/  module Key\n.*?\n  end\n/m])
-# Stands in for the Windows key state a watched key is read through.
-module MGQ_Multiplayer
-  module Windows
-    # A stand-in for GetAsyncKeyState, the keys in $keys_down held.
-    KeyState = Struct.new(:name) { def call(code); $keys_down.include?(code) ? -32_768 : 0; end }
-    # Hands out the key state stand-in.
-    def self.api(_library, name, _arguments, _result); KeyState.new(name); end
-  end
-end
-key = MGQ_Multiplayer::Key
-$keys_down = []
-key.watch(0x60)
-Input.update
-$keys_down = [0x60]
-Input.update
-check("a watched key that went down reads as pressed however often the frame asks", [key.triggered?(0x60), key.triggered?(0x60)], [true, true])
-Input.update
-check("the Input.update of a game window's cancel ends the press", key.triggered?(0x60), false)
-Input.update
-check("so the key held into the next frame cancels no second screen", key.triggered?(0x60), false)
-$keys_down = []
-Input.update
-$keys_down = [0x60]
-Input.update
-check("letting it go and pressing it again counts", key.triggered?(0x60), true)
-$front = false
-Input.update
-$keys_down = []
-Input.update
-$keys_down = [0x60]
-Input.update
-check("but not while another window is in front", key.triggered?(0x60), false)
-$front = true
-$keys_down = []
-Input.update
-check("a key asked for the first time reads as not pressed until the next frame", [key.triggered?(0x2D), key.instance_variable_get(:@watched).key?(0x2D)], [false, true])
-$keys_down = [0x41]
-first = key.pressed?(0x41)
-Input.update
-Input.update
-key.next_frame
-check("a held key reads as one press, though a game window's cancel runs Input.update twice in a frame", [first, key.pressed?(0x41)], [true, false])
-$keys_down = []
-key.next_frame
-key.next_frame
-key.next_frame
-$keys_down = [0x41]
-check("a key nobody asked about for frames reads as pressed again", key.pressed?(0x41), true)
-
-# The mouse wheel: the DLL's notches read once a frame, the same for every box that asks, dropped
-# after a frame nobody asked in, and none while the game is behind, the boxes are arranged or the
-# DLL lacks the export.
-MGQ_Multiplayer.module_eval(source[/  module Mouse\n.*?\n  end\n/m])
-# Stands in for ui_layout.rbx, the boxes arranged while $arranging is.
-module MGQ_MpUi; module Layout; def self.arranging?; $arranging == true; end; end; end
-$wheel_turned = []
-$wheel_reads = 0
-wheel_export = Object.new
-wheel_export.define_singleton_method(:call) do |*args|
-  check_dll_call("mp_mouse_wheel", args)
-  $wheel_reads += 1
-  $wheel_turned.shift || 0
-end
-# Stands in for the link, whose function each check sets.
-module MGQ_Multiplayer; module Link; end; end
-MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| name == "mp_mouse_wheel" ? wheel_export : raise("no #{name}") }
-mouse = MGQ_Multiplayer::Mouse
-key.next_frame
-mouse.wheel
-$wheel_turned = [2, -1, 3]
-key.next_frame
-check("the notches since the last frame, the same for every box that asks in it, read from the DLL once",
-      [mouse.wheel, mouse.wheel, $wheel_reads], [2, 2, 2])
-key.next_frame
-check("a turn towards the player is negative", mouse.wheel, -1)
-key.next_frame
-key.next_frame
-check("a turn gathered while nobody asked in the frame before is dropped", [mouse.wheel, $wheel_reads], [0, 4])
-$wheel_turned = [1, 1]
-key.next_frame
-$arranging = true
-check("none while the player arranges the boxes", mouse.wheel, 0)
-$arranging = false
-key.next_frame
-$front = false
-Input.update
-check("none while another window is in front", mouse.wheel, 0)
-$front = true
-Input.update
-MGQ_Multiplayer::Link.define_singleton_method(:function) { |name| raise "no #{name}" }
-key.next_frame
-lines = logged_lines { 3.times { key.next_frame; mouse.wheel } }
-check("none without the export, which the log tells once", [mouse.wheel, lines.size], [0, 1])
 
 # The log's last line: how the game closes.
 MGQ_Multiplayer.module_eval(source[/  def self\.closing_text\(error.*?\n  end\n/m])
@@ -382,21 +327,6 @@ check("the log's last line tells a game that ended from one quit and one an erro
       ["the game closes", "the game closes: it was quit (exit status 0)", "the game closes after an error: ArgumentError: bad at "])
 MGQ_Multiplayer.const_set(:ROOM_DRAIN_TOPIC, "world.drain") unless defined?(MGQ_Multiplayer::ROOM_DRAIN_TOPIC)
 MGQ_Multiplayer.module_eval(source[/  def self\.closing\(error\)\n.*?\n  end\n/m])
-MGQ_Multiplayer.module_eval(source[/  def self\.reset\?\(error\)\n.*?\n  end\n/m])
-MGQ_Multiplayer.module_eval(source[/  def self\.run_game\(original\)\n.*?\n  end\n/m])
-lines = logged_lines { MGQ_Multiplayer.run_game(lambda { :ran }) }
-check("the scenes returning, as a quit ends them, write the closing line while the game still runs, since its end runs no at_exit",
-      lines, ["the game closes"])
-ended = nil
-lines = logged_lines do
-  begin
-    MGQ_Multiplayer.run_game(lambda { raise SystemExit.new(0) })
-  rescue SystemExit => e
-    ended = e
-  end
-end
-check("the window closing, a SystemExit out of the scenes, writes it too and lets the game end",
-      [lines, ended.class], [["the game closes: it was quit (exit status 0)"], SystemExit])
 lines = logged_lines { [error, error, nil, nil].each { |ended| MGQ_Multiplayer.closing(ended) } }
 check("an error the game's error box shows is written once, though the game's end names it again, and the end itself once",
       lines.map { |line| line[/\A[^:]*/] }, ["the game closes after an error", "the game closes"])
@@ -441,3 +371,18 @@ check("three more times at most, after which it reads as none", [reader.read("mp
 answers.replace(["0.6.9.2"])
 read = reader.read("mp_newer_version", 64)
 check("a text reads as the text the bridge takes, not as the bytes the DLL wrote", [read, read.encoding.name], ["0.6.9.2", "UTF-8"])
+
+# The bridges: MGQ Online's stays pinned to Multiplayer.dll's version, whatever the Mod Framework's
+# bridge speaks with its own DLL.
+newer = FakeBridge.new(2)
+framework_lines = []
+Mod_Framework::Log.define_singleton_method(:write) { |line| framework_lines << line; nil }
+Mod_Framework.bridge.open(newer)
+check("a framework DLL of a newer bridge leaves MGQ Online's bridge at its own version",
+      [MGQ_Multiplayer::Bridge::VERSION, Mod_Framework.bridge.open?, MGQ_Multiplayer::Bridge.open(FakeBridge.new(1))], [1, false, true])
+
+# The served battles' fingerprint: the CRC of MGQ Online's own scripts, none of the framework's.
+framework_scripts = File.read(File.join(FRAMEWORK_DIR, "loader.rbx"), :encoding => "BOM|UTF-8")[/SCRIPTS = %w\[(.*?)\]/m, 1].split
+served = File.read(File.join(SCRIPTS_DIR, "battles_served.rbx"), :encoding => "UTF-8")[/  def self\.scripts_fingerprint\n.*?\n  end\n/m]
+check("the served scripts' fingerprint reads MGQ Online's own scripts, which name none of the framework's",
+      [served.include?("MGQ_Multiplayer::SCRIPTS.map"), scripts & framework_scripts], [true, []])

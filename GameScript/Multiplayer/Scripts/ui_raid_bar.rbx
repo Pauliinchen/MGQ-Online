@@ -2,6 +2,7 @@
 #  ui_raid_bar.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Placed its strip through the Mod Framework's layout
 #      Paulinchen  2026-10-28: Asked the DLL for the troops the map's pages fight in one call
 #      Paulinchen  2026-10-23: Kept the bars off the live map behind menus
 #      Paulinchen  2026-10-17: Showed the bars above the bosses' stand-ins of frozen fights
@@ -29,7 +30,7 @@
 # above each event that starts a boss battle and each boss's stand-in of a frozen fight (see
 # ui_raid_freeze.rbx), or the same strip at the top of the screen while no
 # such event shows, which the notification and party boxes then make room for (see
-# MGQ_MpUi.top_room). The player moves the strip and resizes it in width with Alt (see
+# MGQ_MpHud.top_room). The player moves the strip and resizes it in width with Alt (see
 # MGQ_MpUi::Layout), one place for the map's and the battle's. A bar shows while the relay keeps
 # the boss's pool, or the story has not beaten it; its max HP is the relay's once it told one, else
 # the boss's own at the player's difficulty, scaled by its tier.
@@ -541,9 +542,9 @@ module MGQ_MpRaidBar
       end.compact
       update_overhead(shown)
       rect = update_strip(shown.empty? && !pairs.empty? ? pairs.first[1] : nil)
-      MGQ_MpUi.top_room = rect && MGQ_MpRaidBar.at_top?(rect) ? rect.y + STRIP_HEIGHT : 0
+      MGQ_MpHud.top_room = rect && MGQ_MpRaidBar.at_top?(rect) ? rect.y + STRIP_HEIGHT : 0
     rescue => e
-      MGQ_MpUi.top_room = 0
+      MGQ_MpHud.top_room = 0
       MGQ_MpRaidBar.log_once(:map, "drawing the boss bars failed: #{e.class}: #{e.message}")
     end
 
@@ -1096,7 +1097,8 @@ end
 # The strip's box, and the game hooks, through core_hooks.rbx.
 
 begin
-  MGQ_MpUi::Layout.register(MGQ_MpRaidBar::STRIP_BOX, MGQ_MpRaidBar::STRIP_BOX_NAME, Sprite_MpRaidBar.min_strip_width, MGQ_MpRaidBar::STRIP_HEIGHT, :width)
+  Mod_Framework::UI::Layout.register(MGQ_MpRaidBar::STRIP_BOX, MGQ_MpRaidBar::STRIP_BOX_NAME, :min_size => [Sprite_MpRaidBar.min_strip_width, MGQ_MpRaidBar::STRIP_HEIGHT],
+                                     :resizable => :width)
 
   # After the battle's sprites, the strip of a battle that fights a boss's pools.
   MGQ_MpHooks.after(Spriteset_Battle, :update, "ui_raid_bar") { (@mgq_mp_raid_bar ||= Sprite_MpRaidBar.new(nil, false)).update_battle }
@@ -1119,7 +1121,7 @@ begin
   MGQ_MpHooks.before(Spriteset_Map, :dispose, "ui_raid_bar") do
     @mgq_mp_raid_bars.dispose if @mgq_mp_raid_bars
     @mgq_mp_raid_bars = nil
-    MGQ_MpUi.top_room = 0
+    MGQ_MpHud.top_room = 0
   end
 
   # The game's own HP bar of a boss moves below the battle's strip, as the game draws it.

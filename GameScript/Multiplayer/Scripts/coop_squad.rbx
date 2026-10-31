@@ -2,6 +2,8 @@
 #  coop_squad.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Added the followers' row through the Mod Framework's options
+#      Paulinchen  2026-10-31: Took the group of its row from MGQ_Multiplayer::OPTION_PREFIX
 #      Paulinchen  2026-10-30: Read the own share, the followers' mode and whether squads split from the DLL's view of the party once a frame
 #      Paulinchen  2026-10-23: Asked the DLL or the core library for the squad math, the team fit and the default squad rules
 #      Paulinchen  2026-10-13: Sized a Raid World's team and squads by the world's squad rules
@@ -84,7 +86,7 @@ module MGQ_MpCoopSquad
   # Followers' value that shows the players alone.
   LEADERS_ONLY = 1
 
-  # Followers' values by their name and help in the Mod Config. The first one is the default.
+  # Followers' values by their name and help in Options > Mods.
   FOLLOWER_VALUES = {
     ACTIVE_FRONTLINE => ["Active Frontline", "Each player's own share of the Frontline walks behind them."],
     LEADERS_ONLY => ["Leaders Only", "The players walk alone."],
@@ -650,12 +652,12 @@ module MGQ_MpCoopSquad
     "unknown (#{e.class})"
   end
 
-  # Adds the followers' option to the Mod Config, or to the game's options without it, which only
-  # the party's leader may change.
+  # Adds the followers' row to Options > Mods, which only the party's leader may change.
   def self.register
-    MGQ_MpCoop.register_option(FOLLOWERS, "#{MGQ_MpUi::OPTION_PREFIX}Party Followers",
-                               "Who walks behind the players of a party. The party's leader decides for everyone.", FOLLOWER_VALUES,
-                               :enable => lambda { !MGQ_MpCoop.in_party? || MGQ_MpCoop.party_leader == :me })
+    added = Mod_Framework::Options.add(FOLLOWERS, "#{MGQ_Multiplayer::OPTION_PREFIX}Party Followers",
+                                       "Who walks behind the players of a party. The party's leader decides for everyone.\r\n←/→ Toggle",
+                                       FOLLOWER_VALUES, ACTIVE_FRONTLINE, :enabled => lambda { !MGQ_MpCoop.in_party? || MGQ_MpCoop.party_leader == :me })
+    log(added ? "added the Party Followers to Options > Mods" : "no Party Followers in Options > Mods, see the Mod Framework's log")
   end
 
   # Draws the line under the squad's last character, on top of a row of the first cut character.

@@ -2,6 +2,7 @@
 #  boot.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Booted the Mod Framework's entry file with MGQ Online
 #      Paulinchen  2026-10-15: Wrapped the game's methods with alias_method instead of prepended modules
 #                            - Took slashes in the game's Windows paths outside Windows
 #                            - Discarded the folders the game or a mod makes
@@ -37,10 +38,11 @@ module Boot
   # What Patch.rb looks for in PATCH_DIR: every script, sorted.
   PATCH_SCRIPTS = "#{PATCH_DIR}/**/*.rb".freeze
 
-  # The mods a server of MGQ Online's battles loads as it starts, MGQ Online itself and Mod Config
-  # Remake, which it ships with; every other mod comes with the world of each battle (see
-  # ServedMods), so a mod of the server's own never changes another world's battles.
-  SERVED_BOOT_MODS = %r{\A#{PATCH_DIR}/(Multiplayer|Patch|\d*_?ModConfigRemake)\.rb\z}i
+  # The mods a server of MGQ Online's battles loads as it starts, MGQ Online itself with the Mod
+  # Framework it ships inside, whose entry file boots it, and Mod Config Remake; every other mod
+  # comes with the world of each battle (see ServedMods), so a mod of the server's own never
+  # changes another world's battles.
+  SERVED_BOOT_MODS = %r{\A#{PATCH_DIR}/(!Mod_Framework|Multiplayer|Patch|\d*_?ModConfigRemake)\.rb\z}i
 
   # The saves' writers the server turns off: it never writes the game's saves, which belong to
   # the players.

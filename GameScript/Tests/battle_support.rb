@@ -2,6 +2,7 @@
 #  battle_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Stood in for the Mod Framework's question box, answered at the battle's waits as the framework collects it
 #      Paulinchen  2026-10-30: Answered the co-op battles' topics
 #                            - Stood in for the enemies of the database as a list, whose size the troop's repair reads
 #                            - Answered the live battle's topics
@@ -366,7 +367,7 @@ class Scene_Battle
   attr_accessor :changing
   def scene_changing?; @changing; end
   # A wait that never ends fails the test instead of hanging it.
-  def update_for_wait; $frames += 1; raise "a wait ran past #{WAIT_LIMIT} frames" if $frames > WAIT_LIMIT; $inject.call($frames) if $inject; end
+  def update_for_wait; $frames += 1; raise "a wait ran past #{WAIT_LIMIT} frames" if $frames > WAIT_LIMIT; $inject.call($frames) if $inject; Mod_Framework::UI::Confirm.collect; end
   def no_change_all_dead_on_bench?; :original; end
   def bench_member_ok; :original; end
   def bench_member_cancel; $bench_cancelled = true; end
@@ -446,14 +447,15 @@ end
 # battle's.
 open_rules_bridge
 $live = answer_live($world_bridge)
-load_script "ui"
-load_script "ui_layout"
-# Stands in for the confirm box: each question lands in $asked, and $confirm answers the open one
-# in a tick, true for yes, false for no, nil to keep it open.
-module MGQ_MpUi::Confirm
-  def self.ask(question, choices, &answer); ($asked ||= []) << [question, choices]; @block = answer; true; end
+load_script "ui_online"
+load_script "ui_boxes"
+# Stands in for the Mod Framework's question box: each question lands in $asked, and $confirm
+# answers the open one at the next wait, as the framework collects it at every frame, true for yes,
+# false for no, nil to keep it open.
+module Mod_Framework::UI::Confirm
+  def self.ask(question, choices = ["Yes", "No"], &answer); ($asked ||= []) << [question, choices]; @block = answer; true; end
   def self.open?; !@block.nil?; end
-  def self.tick; return if @block.nil? || $confirm.nil?; block = @block; @block = nil; block.call($confirm); end
+  def self.collect; return if @block.nil? || $confirm.nil?; block = @block; @block = nil; block.call($confirm); end
   def self.close(_reason = nil); block = @block; @block = nil; block.call(false) if block; end
 end
 load_script "coop_scope"

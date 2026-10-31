@@ -2,6 +2,7 @@
 #  overworld.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Placed the world status through the Mod Framework's layout
 #      Paulinchen  2026-10-23: Kept the status line off the live map behind menus
 #      Paulinchen  2026-10-12: Read the map's viewports and character sprites through MGQ_MpGame
 #      Paulinchen  2026-10-11: Made the line at the bottom left movable and widenable with the left Alt held
@@ -523,7 +524,7 @@ class Sprite_MpGhostFollower < Sprite_Character
   end
 end
 
-# A ghost's name above its head in its player's color (see MGQ_MpUi::PlayerColor), with an icon
+# A ghost's name above its head in its player's color (see MGQ_MpPlayerColor), with an icon
 # for what its player does, and above it the line a script gives through overworld_sync.rbx, such
 # as an invite.
 class Sprite_MpGhostLabel < Sprite
@@ -581,7 +582,7 @@ class Sprite_MpGhostLabel < Sprite
     line(0, above[0], above[1]) if above
     icons = [MGQ_MpOverworld::STATE_ICONS[state["scene"]], badge && badge[1] ? MGQ_MpOverworld::CROWN_ICON : nil].compact
     extras = [badge && [badge[0], peer.member ? MGQ_MpUi::Style::MEMBER : SIZE_COLOR], MGQ_MpOverworld.ping_label(state["ping"])].compact
-    draw_name(name, icons, MGQ_MpUi::PlayerColor.of(peer), extras)
+    draw_name(name, icons, MGQ_MpPlayerColor.of(peer), extras)
     taken
   end
 
@@ -804,7 +805,8 @@ end
 # ui_layout.rbx.
 
 begin
-  MGQ_MpUi::Layout.register(Sprite_MpWorldStatus::LAYOUT, Sprite_MpWorldStatus::LAYOUT_NAME, Sprite_MpWorldStatus::MIN_WIDTH, Sprite_MpWorldStatus::ROW * Sprite_MpWorldStatus::ROWS, :width)
+  Mod_Framework::UI::Layout.register(Sprite_MpWorldStatus::LAYOUT, Sprite_MpWorldStatus::LAYOUT_NAME,
+                                     :min_size => [Sprite_MpWorldStatus::MIN_WIDTH, Sprite_MpWorldStatus::ROW * Sprite_MpWorldStatus::ROWS], :resizable => :width)
 rescue => e
   MGQ_MpOverworld.log("layout FAILED: #{e.class}: #{e.message}")
 end

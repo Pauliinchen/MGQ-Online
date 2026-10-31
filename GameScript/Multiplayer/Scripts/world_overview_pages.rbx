@@ -2,6 +2,7 @@
 #  world_overview_pages.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Kept its row and read the mouse through the Mod Framework
 #      Paulinchen  2026-10-24: Laid the pages of other mods out like the World page, with buttons and controls in the pane
 #      Paulinchen  2026-10-23: Took the World page's note of the world from the DLL
 #                            - Asked the catch-up for each member's factor as text
@@ -416,8 +417,8 @@ module MGQ_MpWorldOverview
     return update_mod_menu(picked, view[:menu]) if view[:menu]
     return update_focus(page, picked, view) if view[:focused]
     return if closed_by_cancel? || turn_by_keys
-    return toggle(page, picked) if picked.is_a?(Fold) && MGQ_Multiplayer::Capture.trigger?(:C)
-    return focus_pane(page, picked) if picked.is_a?(ModEntry) && MGQ_Multiplayer::Capture.trigger?(:C)
+    return toggle(page, picked) if picked.is_a?(Fold) && Mod_Framework::UI::Capture.trigger?(:C)
+    return focus_pane(page, picked) if picked.is_a?(ModEntry) && Mod_Framework::UI::Capture.trigger?(:C)
 
     step = axis_step(:UP, :DOWN)
     return pick_entry(page, (view[:pick] + step) % picks.size) if step != 0 && picks.size > 1
@@ -500,8 +501,8 @@ module MGQ_MpWorldOverview
   # @param page [Symbol] The page.
   # @param view [Hash] The page's view, see split_view.
   def self.mouse_split(page, view)
-    position = MGQ_Multiplayer::Mouse.position
-    clicked = MGQ_Multiplayer::Mouse.clicked?
+    position = Mod_Framework::UI::Mouse.position
+    clicked = Mod_Framework::UI::Mouse.clicked?
     turned = wheel
     moved = position && position != @mouse
     @mouse = position
@@ -542,7 +543,7 @@ module MGQ_MpWorldOverview
   #
   # @return [Integer] Up positive, down negative; 0 without a wheel.
   def self.wheel
-    mouse = MGQ_Multiplayer::Mouse
+    mouse = Mod_Framework::UI::Mouse
     mouse.respond_to?(:wheel) ? mouse.wheel.to_i : 0
   rescue
     0
@@ -840,9 +841,9 @@ module MGQ_MpWorldOverview
 
   # Offers the Quests page's portraits as a row of the Mod Config, kept in Player.ini.
   def self.add_options
-    added = MGQ_MpUi.add_option(PORTRAIT_OPTION, PORTRAIT_OPTION_NAME, PORTRAIT_OPTION_HELP, lambda { PORTRAITS }, lambda { portraits },
-                                lambda { |choice| choose_portraits(choice) })
-    log(added ? "added the Quest Portraits to the Mod Config" : "no Quest Portraits in the Mod Config: it needs a Mod Config Remake that knows rows the mod keeps")
+    added = Mod_Framework::Options.keep(PORTRAIT_OPTION, MGQ_Multiplayer::OPTION_PREFIX + PORTRAIT_OPTION_NAME, PORTRAIT_OPTION_HELP, lambda { PORTRAITS },
+                                        lambda { portraits }, lambda { |choice| choose_portraits(choice) })
+    log(added ? "added the Quest Portraits to Options > Mods" : "no Quest Portraits in Options > Mods, see the Mod Framework's log")
   end
 
   # Finds the picture that shows faintly behind the Quests page: Amira's in the Library.

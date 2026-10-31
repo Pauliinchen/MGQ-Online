@@ -2,7 +2,9 @@
 #  ui_notices.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Counted a message's time only while the box shows
+#      Paulinchen  2026-10-31: Showed the notice that the Mod Framework's settings cannot be read
+#                            - Read the capture and placed its box through the Mod Framework
+#                            - Counted a message's time only while the box shows
 #      Paulinchen  2026-10-22: Showed the relay's announcements, broken into the box's rows
 #      Paulinchen  2026-10-12: Put the box at its default 4 pixels below the Leader HUD
 #                            - Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
@@ -61,6 +63,9 @@ module MGQ_MpNotices
 
   # Frames the notice that Player.ini cannot be read shows, ten seconds.
   PLAYER_INI_FRAMES = 600
+
+  # What the notice that the Mod Framework's settings cannot be read is about.
+  FRAMEWORK_INI_KEY = :framework_ini
 
   # What the rows of the relay's announcement are about, each with its row's number.
   ANNOUNCEMENT_KEY = :announcement
@@ -190,13 +195,16 @@ module MGQ_MpNotices
     log_once(:tick, "tick failed: #{e.class}: #{e.message}")
   end
 
-  # Posts the notice that Player.ini cannot be read, once the box shows, so it never runs out unseen
-  # on the title screen.
+  # Posts the notices that Player.ini or the Mod Framework's settings, which keep the look, the
+  # places and Accept and Decline, cannot be read, once the box shows, so neither runs out unseen on
+  # the title screen.
   def self.post_player_ini_notice
     return unless shown?
 
     text = MGQ_Multiplayer::Player.take_notice
     message(PLAYER_INI_KEY, text, PLAYER_INI_FRAMES) if text
+    framework = Mod_Framework::Settings.take_notice
+    message(FRAMEWORK_INI_KEY, framework, PLAYER_INI_FRAMES) if framework
   end
 
   # Reports whether the box may show in the scene running: on the map while the World overview is
@@ -239,7 +247,7 @@ module MGQ_MpNotices
   # @param answer [Symbol] :take or :decline.
   # @return [Boolean] Whether they may.
   def self.answerable?(list, answer)
-    return true unless $mgq_text_input || MGQ_Multiplayer::Capture.on?
+    return true unless $mgq_text_input || Mod_Framework::UI::Capture.on?
 
     MGQ_MpHotkeys.log_refusal(ANSWER_HOTKEYS[answer], "a screen of the mod holds the buttons") unless list.empty?
     false
@@ -285,7 +293,7 @@ class Sprite_MpNoticeBox < Sprite
   ROW = 22
 
   # Room between the box and the top and left edges of the screen at its default, below a strip of
-  # the mod at the top (see MGQ_MpUi.top_room).
+  # the mod at the top (see MGQ_MpHud.top_room).
   MARGIN = 8
 
   # Room between the box's edges and its rows.
@@ -320,7 +328,7 @@ class Sprite_MpNoticeBox < Sprite
   # @return [Rect] The place, see MGQ_MpUi::Layout.rect.
   def self.rect
     hud = MGQ_MpLeaderHud.room
-    default = Rect.new(MARGIN, MGQ_MpUi.top_room + (hud > 0 ? hud : MARGIN), WIDTH, ROW * MGQ_MpNotices::MAX_ROWS + 2 * SPACING)
+    default = Rect.new(MARGIN, MGQ_MpHud.top_room + (hud > 0 ? hud : MARGIN), WIDTH, ROW * MGQ_MpNotices::MAX_ROWS + 2 * SPACING)
     MGQ_MpUi::Layout.rect(LAYOUT, default)
   end
 
@@ -464,7 +472,7 @@ end
 # Where the box lies, which the player changes with the left Alt held, through ui_layout.rbx.
 
 begin
-  MGQ_MpUi::Layout.register(Sprite_MpNoticeBox::LAYOUT, Sprite_MpNoticeBox::LAYOUT_NAME, Sprite_MpNoticeBox::MIN_WIDTH, Sprite_MpNoticeBox::MIN_HEIGHT, :both)
+  Mod_Framework::UI::Layout.register(Sprite_MpNoticeBox::LAYOUT, Sprite_MpNoticeBox::LAYOUT_NAME, :min_size => [Sprite_MpNoticeBox::MIN_WIDTH, Sprite_MpNoticeBox::MIN_HEIGHT])
 rescue => e
   MGQ_MpNotices.log("layout FAILED: #{e.class}: #{e.message}")
 end

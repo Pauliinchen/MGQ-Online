@@ -2,6 +2,7 @@
 #  overworld_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Placed the wheel's choices and read the capture and the typing through the Mod Framework
 #      Paulinchen  2026-10-30: Answered the teleports' view from the party's stand-in
 #                            - Dropped the fade checks
 #                            - Dropped the checks that restate pixel positions
@@ -192,7 +193,7 @@ tag.show(shown, peer)
 check("a player typing shows the keyboard, which is no bubble of an event, the one the party box takes from the row",
       [icons_drawn, MGQ_MpOverworld::TYPING_ICON == MGQ_MpOverworld::STATE_ICONS["event"], MGQ_MpOverworld::STATE_ICONS["typing"]],
       [[MGQ_MpOverworld::TYPING_ICON], false, MGQ_MpOverworld::TYPING_ICON])
-check("a player outside the party is named in plain white", [color_of.call("Friend").equal?(MGQ_MpUi::PlayerColor.of(peer)), color_of.call("Friend").equal?(MGQ_MpUi::Style::TEXT)], [true, true])
+check("a player outside the party is named in plain white", [color_of.call("Friend").equal?(MGQ_MpPlayerColor.of(peer)), color_of.call("Friend").equal?(MGQ_MpUi::Style::TEXT)], [true, true])
 icons_drawn.clear
 $inbox << entry("message", 2, told(friend.merge("scene" => "event")))
 MGQ_MpOverworldSync.tick
@@ -279,7 +280,7 @@ check("every state but walking has an icon", (%w[battle event menu items equip s
 def wheel(*buttons)
   $pressed = true
   map_frame
-  directions = buttons & MGQ_MpWheel::DIRECTIONS
+  directions = buttons & Mod_Framework::UI::Wheel::DIRECTIONS
   $held = directions.map { |direction| arrows(direction) }.flatten
   $buttons.concat(buttons - directions)
   map_frame
@@ -295,7 +296,7 @@ end
 def option(direction); o = MGQ_MpActions.wheel_options[direction]; [o.text, !o.run.nil?]; end
 # Finds the arrows held to point at a direction.
 #
-# @param direction [Symbol] One of MGQ_MpWheel::DIRECTIONS.
+# @param direction [Symbol] One of Mod_Framework::UI::Wheel::DIRECTIONS.
 # @return [Array<Symbol>] The arrows.
 def arrows(direction)
   { :UP => [:UP], :UP_RIGHT => [:UP, :RIGHT], :RIGHT => [:RIGHT], :DOWN_RIGHT => [:DOWN, :RIGHT], :DOWN => [:DOWN],
@@ -313,7 +314,7 @@ check("a Classic world has no story to teleport to", option(STORY), ["Teleport t
 check("chat offered, and a direction without a choice has none", [option(CHAT), MGQ_MpActions.wheel_options.key?(:DOWN_RIGHT)], [["Chat (T)", true], false])
 $pressed = true
 map_frame
-check("B opens the wheel and holds the buttons", [MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [true, true])
+check("B opens the wheel and holds the buttons", [MGQ_MpActions::Wheel.open?, Mod_Framework::UI::Capture.on?], [true, true])
 check("the wheel opens on its middle", MGQ_MpActions::Wheel.selected, :CENTER)
 $held = [:UP]
 $buttons << :C
@@ -326,7 +327,7 @@ check("the arrows held pick the choice they point at", MGQ_MpActions::Wheel.sele
 $held = []
 $pressed = true
 map_frame
-check("B closes the wheel and gives the buttons back", [MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [false, false])
+check("B closes the wheel and gives the buttons back", [MGQ_MpActions::Wheel.open?, Mod_Framework::UI::Capture.on?], [false, false])
 $pressed = true
 map_frame
 $buttons << :B
@@ -437,7 +438,7 @@ wheel_sprite.show(head)
 hint = wheel_sprite.bitmap.texts.last
 check("open, the wheel draws around the player with the hint under its boxes, fading in",
       [wheel_sprite.visible, wheel_sprite.opacity.between?(1, 254), wheel_sprite.x, wheel_sprite.y, hint[3], hint[4], hint[5].equal?(MGQ_MpUi::Style::HEADING), hint[6]],
-      [true, true, 200, 300, "Esc, Numpad 0 or B: close", MGQ_MpUi::Style::TINY_SIZE, true, 1])
+      [true, true, 200, 300, "X, Numpad 0 or B: close", MGQ_MpUi::Style::TINY_SIZE, true, 1])
 ring = MGQ_MpActions.wheel_options.values.reject { |choice| choice.icon }
 check("a choice's text is in the text's color while it can be taken, dim while not, the choices without an icon all drawn",
       wheel_sprite.bitmap.texts[0...-1].map { |_, _, _, _, _, color, _| color.equal?(MGQ_MpUi::Style::TEXT) ? :text : color.equal?(MGQ_MpUi::Style::DIM) ? :dim : :other }.sort,
@@ -524,7 +525,7 @@ $pressed = true
 map_frame
 SceneManager.scene = Scene_Battle.new
 MGQ_MpOverworldSync.tick
-check("leaving the map closes the wheel", [MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [false, false])
+check("leaving the map closes the wheel", [MGQ_MpActions::Wheel.open?, Mod_Framework::UI::Capture.on?], [false, false])
 SceneManager.scene = Scene_Map.new
 $open = false
 MGQ_MpOverworldSync.tick
@@ -538,7 +539,7 @@ MGQ_MpOverworldSync.tick
 chat = MGQ_MpChat
 $pressed = 0x54
 map_frame
-check("T opens the chat box and holds the buttons", [chat.typing?, $typing_on, MGQ_Multiplayer::Capture.on?], [true, true, true])
+check("T opens the chat box and holds the buttons", [chat.typing?, $mgq_text_input, Mod_Framework::UI::Capture.on?], [true, true, true])
 check("the others see the player types", MGQ_MpOverworldSync::Me.scene, "typing")
 $typed = "t"
 map_frame
@@ -590,7 +591,7 @@ chat.choose(:map)
 $chats.clear
 $typed = "\r"
 2.times { map_frame }
-check("enter sends and closes, in the frame after it was typed", [chat.typing?, $typing_on, MGQ_Multiplayer::Capture.on?], [false, false, false])
+check("enter sends and closes, in the frame after it was typed", [chat.typing?, $mgq_text_input, Mod_Framework::UI::Capture.on?], [false, false, false])
 check("the line goes to the DLL for the map chat, with the player's map", $chats, [{ "channel" => "map", "text" => "hi there", "map" => 5 }])
 check("own line in the log and bubble", [chat.log_lines.last, chat.bubble(:me)], ["[Map] Me: hi there", "hi there"])
 check("the map chat is not mirrored to the relay", $said, [])
@@ -640,7 +641,7 @@ message_from(nil, { MGQ_MpOverworldSync::MODS_RULE_FIELD => "1", "mods" => "!Lev
 check("with every field the push carries", $pushes.last, [nil, "1", "!Level Cap; Party Sheet", true])
 
 wheel(CHAT, :C)
-check("the wheel opens the chat box", [chat.typing?, MGQ_MpActions::Wheel.open?, MGQ_Multiplayer::Capture.on?], [true, false, true])
+check("the wheel opens the chat box", [chat.typing?, MGQ_MpActions::Wheel.open?, Mod_Framework::UI::Capture.on?], [true, false, true])
 $typed = "never sent\e"
 2.times { map_frame }
 check("escape closes without sending", [chat.typing?, chat.log_lines.last], [false, "[Admin] Global: welcome all"])
@@ -671,7 +672,7 @@ check("but shows again while typing", chat.log_lines.size, 7)
 battle = Scene_Battle.new
 SceneManager.scene = battle
 MGQ_MpOverworldSync.tick
-check("a battle keeps the chat box open", [chat.typing?, MGQ_Multiplayer::Capture.on?], [true, true])
+check("a battle keeps the chat box open", [chat.typing?, Mod_Framework::UI::Capture.on?], [true, true])
 $typed = "in battle\r"
 battle.update_basic
 ui_frame
@@ -682,7 +683,7 @@ battle.update_basic
 check("T opens the chat box in a battle too", chat.typing?, true)
 SceneManager.scene = Scene_Item.new
 MGQ_MpOverworldSync.tick
-check("a menu closes the chat box", [chat.typing?, MGQ_Multiplayer::Capture.on?], [false, false])
+check("a menu closes the chat box", [chat.typing?, Mod_Framework::UI::Capture.on?], [false, false])
 SceneManager.scene = Scene_Map.new
 chat.system("Friend left the battle.")
 check("the game's own lines go to the log too", chat.log_lines.last, "* Friend left the battle.")
@@ -729,7 +730,7 @@ $typed = "\e"
 map.update
 ui_frame
 map.update
-check("and closes, giving the buttons back to the message", [chat.typing?, MGQ_Multiplayer::Capture.on?], [false, false])
+check("and closes, giving the buttons back to the message", [chat.typing?, Mod_Framework::UI::Capture.on?], [false, false])
 chat.start_typing
 # The frame the box opened in takes what was typed by then.
 ui_frame
@@ -912,11 +913,11 @@ check("a line of the map chat is in its color, its tag and its text, another pla
 chat.start_typing
 $sounds.clear
 $typed = "0"
-$pressed = MGQ_MpUi::NUMPAD_CANCEL_KEYS[0]
+$pressed = Mod_Framework::UI::NUMPAD_ZERO[0]
 map_frame
-check("the numpad's 0 closes the chat box as it closes the game's windows, typing nothing", [chat.typing?, MGQ_Multiplayer::Capture.on?, $sounds], [false, false, ["cancel"]])
+check("the numpad's 0 closes the chat box as it closes the game's windows, typing nothing", [chat.typing?, Mod_Framework::UI::Capture.on?, $sounds], [false, false, ["cancel"]])
 chat.start_typing
-$pressed = MGQ_MpUi::NUMPAD_CANCEL_KEYS[1]
+$pressed = Mod_Framework::UI::NUMPAD_ZERO[1]
 map_frame
 check("as does its Insert with Num Lock off", chat.typing?, false)
 
@@ -939,7 +940,7 @@ log_sprite.define_singleton_method(:y=) { |_| }
 log_sprite.define_singleton_method(:bitmap=) { |_| }
 canvas.define_singleton_method(:dispose) {}
 Bitmap.define_singleton_method(:new) { |*_| canvas }
-{ :@wrapped => {}, :@tab_spots => [], :@size => [400, 6], :@width => 400, :@rows => 6, :@bottom_room => 96, :@resting_z => 100 }.each do |name, value|
+{ :@wrapped => {}, :@tab_spots => [], :@size => [400, 6], :@width => 400, :@rows => 6, :@bottom_room => 96, :@resting_z => 100, :@layout_id => :chat }.each do |name, value|
   log_sprite.instance_variable_set(name, value)
 end
 last_row = lambda do
@@ -1025,7 +1026,7 @@ $mouse_held = true
 log_sprite.update
 $mouse_held = false
 log_sprite.update
-$pressed = MGQ_MpUi::NUMPAD_CANCEL_KEYS[0]
+$pressed = Mod_Framework::UI::NUMPAD_ZERO[0]
 map_frame
 check("as does the numpad's 0", [chat.menu, chat.typing?], [nil, true])
 chat.select_tab(:all, "in the test")
@@ -1040,7 +1041,7 @@ fresh.define_singleton_method(:viewport) { depth }
 fresh.define_singleton_method(:x) { 8 }
 fresh.define_singleton_method(:y) { 200 }
 fresh.define_singleton_method(:y=) { |_| }
-{ :@wrapped => {}, :@tab_spots => [], :@name_spots => [], :@bottom_room => 96, :@resting_z => 100, :@menu_sprite => menu_sprite }.each { |name, value| fresh.instance_variable_set(name, value) }
+{ :@wrapped => {}, :@tab_spots => [], :@name_spots => [], :@bottom_room => 96, :@resting_z => 100, :@menu_sprite => menu_sprite, :@layout_id => :chat }.each { |name, value| fresh.instance_variable_set(name, value) }
 chat.start_typing
 $mouse = [20, 210]
 $mouse_held = true
@@ -1128,7 +1129,7 @@ go = chat.menu_options.map(&:text).index("Go along")
 log_sprite.instance_variable_set(:@menu_shown, nil)
 parts.clear
 log_sprite.draw_menu(chat)
-check("a player's menu says how to close it", parts.map { |_, text, _| text }.last, Sprite_MpChatLog::MENU_HINT)
+check("a player's menu says how to close it", parts.map { |_, text, _| text }.last, Mod_Framework::UI.close_hint)
 check("and builds its choices once per frame", chat.menu_options.equal?(chat.menu_options), true)
 $mouse = [menu_sprite.x + 1, menu_sprite.y + Sprite_MpChatLog::ROW * (go + 1) + 1]
 $mouse_held = true
@@ -1157,7 +1158,7 @@ SceneManager.scene = Scene_Map.new
 chat.close_menu("in the test")
 MGQ_MpActions.offers.delete(leaving)
 chat.open_menu(friend_line, [100, 300])
-$pressed = MGQ_MpUi::NUMPAD_CANCEL_KEYS[0]
+$pressed = Mod_Framework::UI::NUMPAD_ZERO[0]
 map_frame
 $typed = "0"
 map_frame
@@ -1253,19 +1254,19 @@ MGQ_MpActions::Wheel.close
 mirror = { :UP_RIGHT => :UP_LEFT, :RIGHT => :LEFT, :DOWN_RIGHT => :DOWN_LEFT }
 mirror.merge!(mirror.invert)
 check("every count of choices comes out mirror-symmetric",
-      (1..8).all? { |count| places = MGQ_MpWheel.places(count); places.map { |d| mirror[d] || d }.sort == places.sort }, true)
+      (1..8).all? { |count| places = Mod_Framework::UI::Wheel.places(count); places.map { |d| mirror[d] || d }.sort == places.sort }, true)
 check("four take the sides, five the two lower diagonals for the bottom, six a hexagon",
-      [MGQ_MpWheel.places(4), MGQ_MpWheel.places(5), MGQ_MpWheel.places(6)],
+      [Mod_Framework::UI::Wheel.places(4), Mod_Framework::UI::Wheel.places(5), Mod_Framework::UI::Wheel.places(6)],
       [[:UP, :RIGHT, :DOWN, :LEFT], [:UP, :RIGHT, :DOWN_RIGHT, :DOWN_LEFT, :LEFT], [:UP, :UP_RIGHT, :DOWN_RIGHT, :DOWN, :DOWN_LEFT, :UP_LEFT]])
-boxes = Sprite_MpActionWheel.layout(MGQ_MpWheel.places(4))
+boxes = Sprite_MpActionWheel.layout(Mod_Framework::UI::Wheel.places(4))
 check("four choices sit where the wheel always had them",
       [:UP, :RIGHT, :DOWN, :LEFT, :CENTER].map { |d| [boxes[d].x, boxes[d].y] }, [[-100, -94], [20, -37], [-100, 4], [-220, -37], [-13, -37]])
-boxes = Sprite_MpActionWheel.layout(MGQ_MpWheel.places(6))
+boxes = Sprite_MpActionWheel.layout(Mod_Framework::UI::Wheel.places(6))
 check("the top and bottom boxes clear the diagonal ones beside the player",
       [boxes[:UP].y + boxes[:UP].height <= boxes[:UP_RIGHT].y, boxes[:DOWN].y >= boxes[:DOWN_RIGHT].y + boxes[:DOWN_RIGHT].height], [true, true])
 before = MGQ_MpActions.wheel_places.size
-(MGQ_MpWheel::DIRECTIONS.size - before + 1).times { |index| MGQ_MpActions.wheel_choice(100 + index) { MGQ_MpActions::NO_OPTION } }
-check("a ring holds eight choices at most", MGQ_MpActions.wheel_places.size, MGQ_MpWheel::DIRECTIONS.size)
+(Mod_Framework::UI::Wheel::DIRECTIONS.size - before + 1).times { |index| MGQ_MpActions.wheel_choice(100 + index) { MGQ_MpActions::NO_OPTION } }
+check("a ring holds eight choices at most", MGQ_MpActions.wheel_places.size, Mod_Framework::UI::Wheel::DIRECTIONS.size)
 MGQ_MpActions.instance_variable_get(:@choices).reject! { |order, _, _| order >= 100 }
 
 # Invites the DLL finds reaching the player, and the player's own, which the DLL keeps.
@@ -1386,7 +1387,7 @@ stored = layout.instance_variable_get(:@stored)
 status_class = Sprite_MpWorldStatus
 status_height = status_class::ROW * status_class::ROWS
 check("the status line is movable as World status, widened only, never narrower than two thirds of its default nor lower than its rows",
-      layout.instance_variable_get(:@boxes)[:world_status].to_a, ["World status", status_class::WIDTH * 2 / 3, status_height, :width])
+      registered_box(:world_status), ["World status", status_class::WIDTH * 2 / 3, status_height, :width])
 kept_notices = MGQ_MpOverworldSync::Status.instance_variable_get(:@notices).dup
 MGQ_MpOverworldSync::Status.instance_variable_set(:@notices, [])
 MGQ_MpOverworldSync::Status.notice(long)
@@ -1397,17 +1398,17 @@ line_rows = lambda { line.bitmap.texts.map { |_, _, _, text, *| text } }
 fitting = lambda { line.bitmap.texts.all? { |x, _, width, text, *| text.size * 9 <= width && x + width <= line.bitmap.width } }
 check("at its default it lies at the bottom left, offered to the layout where it lies, its rows fitting it",
       [line.x, line.y, line.bitmap.width, line_offer.call, line_rows.call.size, fitting.call], [8, 480 - status_height - 8, 400, [8, 480 - status_height - 8, 400, status_height], 3, true])
-$player_ini["ui_world_status"] = "20,10,600,30"
+Mod_Framework::Settings.store("ui_world_status", "20,10,600,30")
 stored.clear
 line.update
 check("a place the player left it in holds, kept on the screen, its rows as they were, a wider line breaking the notice into fewer rows",
       [line.x, line.y, line.bitmap.width, line.bitmap.height, line_rows.call.size, fitting.call, line_rows.call.join(" ")], [20, 10, 600, status_height, 2, true, long])
-$player_ini["ui_world_status"] = "0,10,100,30"
+Mod_Framework::Settings.store("ui_world_status", "0,10,100,30")
 stored.clear
 line.update
 check("made narrower than its least, it keeps its least width, where the newest rows still fit",
       [line.bitmap.width, line_offer.call[2], fitting.call, line_rows.call.size], [status_class::WIDTH * 2 / 3, status_class::WIDTH * 2 / 3, true, 4])
-$player_ini.delete("ui_world_status")
+Mod_Framework::Settings.forget("ui_world_status")
 stored.clear
 MGQ_MpOverworldSync::Status.instance_variable_set(:@notices, kept_notices)
 Bitmap.define_singleton_method(:new, handed_out)

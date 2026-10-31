@@ -2,7 +2,8 @@
 #  ui_chat.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
+#      Paulinchen  2026-10-31: Typed, cancelled, named the cancel key and placed its boxes through the Mod Framework
+#                            - Worded what the player reads plainly, leaving causes and internals to the log
 #      Paulinchen  2026-10-23: Acted on what was typed a frame later, as the text box in C# reports it
 #                            - Sent the lines of every chat through the DLL
 #                            - Removed history and log_lines, which only the tests read
@@ -229,7 +230,7 @@ module MGQ_MpChat
           "Tabs: click one, or Alt with Left or Right. All shows every chat.",
           "Alt and a drag with the mouse move or resize the chat, Alt and a double click put it back.",
           "Alt with Up or Down brings back the lines you sent. Ctrl+V pastes.",
-          "Up, Down, Page Up, Page Down and the mouse wheel scroll. Enter sends, Esc or the numpad's 0 closes."]
+          "Up, Down, Page Up, Page Down and the mouse wheel scroll. Enter sends, #{Mod_Framework::UI::ESCAPE_NAME} or #{Mod_Framework::UI::NUMPAD_NAME} closes."]
 
   # What the log shows before a line of a chat, the global chat showing none. A whisper the player
   # sent shows whom it went to instead.
@@ -703,7 +704,7 @@ module MGQ_MpChat
   #
   # @return [Boolean] Whether it does.
   def self.available?
-    MGQ_Multiplayer::Background.running?
+    Mod_Framework.available?
   end
 
   # The action wheel's chat choice.
@@ -757,8 +758,7 @@ module MGQ_MpChat
     @scroll = 0
     @history_at = nil
     @draft = nil
-    MGQ_Multiplayer::Link.typing(true)
-    MGQ_Multiplayer::Capture.start(:chat)
+    Mod_Framework::UI::Capture.start(:chat)
     log("chat box opened #{key ? 'with its key' : 'from the action wheel'} in #{SceneManager.scene.class.name}")
   end
 
@@ -773,14 +773,13 @@ module MGQ_MpChat
     @scroll = 0
     @menu = nil
     leave_help
-    MGQ_Multiplayer::Link.typing(false)
-    MGQ_Multiplayer::Capture.stop(:chat)
+    Mod_Framework::UI::Capture.stop(:chat)
     log("chat box closed#{reason ? ": #{reason}" : ''}")
   end
 
   # Acts on what was typed into the chat box since the last frame, then hands the editor the keys
-  # that type nothing, unless Alt picks the tabs with them, and scrolls the chat log. The numpad's
-  # 0 closes the open menu, else the box.
+  # that type nothing, unless Alt picks the tabs with them, and scrolls the chat log. Cancel (the
+  # numpad's 0, Escape or a gamepad's) closes the open menu, else the box.
   #
   # What the box takes leaves out the character of the key that opened it, which arrives after the
   # box opened, and what is typed while the left Alt is held and just after it was let go, which
@@ -788,17 +787,17 @@ module MGQ_MpChat
   # (KEY_ECHO_FRAMES, ALT_CODE_FRAMES, kept by the editor).
   def self.update_typing
     taken = @edit.take
-    if MGQ_MpUi.numpad_cancel?
+    if Mod_Framework::UI.cancel?
       unless @menu
-        # Its 0 arrives as the number row's, so what came with it is dropped; a 0 coming later
-        # finds the typing off, which forgets it.
-        stop_typing("Numpad 0")
+        # The numpad's 0 arrives as the number row's, so what came with it is dropped; a 0 coming
+        # later finds the typing off, which forgets it.
+        stop_typing("cancel")
         Sound.play_cancel
         return
       end
 
       Sound.play_cancel
-      close_menu("Numpad 0")
+      close_menu("cancel")
       # Its 0 arrives as the number row's, in this frame or a later one, and the box stays open.
       @edit.echo(ZERO_KEY, KEY_ECHO_FRAMES)
     end
@@ -810,7 +809,7 @@ module MGQ_MpChat
     # send the line nor close the box.
     outcomes -= [:enter, :escape] if @menu_typed && !@menu
 
-    tab_key = MGQ_Multiplayer::Key.pressed?(TAB_KEY)
+    tab_key = Mod_Framework::UI::Key.pressed?(TAB_KEY)
     edited = false
     outcomes.each do |outcome|
       next tab_key = true if outcome == :tab
@@ -860,7 +859,7 @@ module MGQ_MpChat
   #
   # @return [Boolean] Whether Alt is held, which leaves the arrows to the tabs and the lines sent.
   def self.alt_keys
-    keys = MGQ_Multiplayer::Key
+    keys = Mod_Framework::UI::Key
     tab_step = (keys.pressed?(RIGHT_KEY) ? 1 : 0) - (keys.pressed?(LEFT_KEY) ? 1 : 0)
     line_step = (keys.pressed?(DOWN_KEY) ? 1 : 0) - (keys.pressed?(UP_KEY) ? 1 : 0)
     return false unless keys.down?(ALT_KEY)
@@ -884,13 +883,13 @@ module MGQ_MpChat
   #
   # @return [Integer] 1 for down, -1 for up, 0 for neither or both.
   def self.arrow_step
-    capture = MGQ_Multiplayer::Capture
+    capture = Mod_Framework::UI::Capture
     (capture.repeat?(:DOWN) ? 1 : 0) - (capture.repeat?(:UP) ? 1 : 0)
   end
 
   # Scrolls the chat log while the box is open: up and down a row, Page Up and Page Down a page.
   def self.update_scroll
-    keys = MGQ_Multiplayer::Key
+    keys = Mod_Framework::UI::Key
     step = -arrow_step
     step += PAGE_ROWS if keys.pressed?(PAGE_UP_KEY)
     step -= PAGE_ROWS if keys.pressed?(PAGE_DOWN_KEY)
@@ -1347,7 +1346,7 @@ module MGQ_MpChat
     chat_key = MGQ_MpHotkeys.pressed?(:chat)
     return stop_typing("no world is open") unless MGQ_MpOverworldSync.in_world?
 
-    held = menus && MGQ_Multiplayer::Capture.on?
+    held = menus && Mod_Framework::UI::Capture.on?
     if typing?
       update_typing
     elsif chat_key && available? && !held
@@ -1502,7 +1501,7 @@ class Sprite_MpChatLog < Sprite
   TAB_PAD = 6
 
   # Narrowest the log gets: wide enough for the tabs with the help tab and for the widest hint,
-  # HELP_HINT in the tiny font after the help tab's label.
+  # HELP_HINT and the close hint in the tiny font after the help tab's label.
   MIN_WIDTH = 400
 
   # Fewest rows of lines the log keeps: as many as the list of fitting names, which lies on the rows
@@ -1573,11 +1572,8 @@ class Sprite_MpChatLog < Sprite
   # What the empty chat box says while Alt is held.
   ALT_HINT = "←→: tab   ↑↓: sent   Drag: move, resize"
 
-  # What the chat box says on the help tab, where nobody types.
-  HELP_HINT = "Pick another tab to chat. #{MGQ_MpUi::Style.close_hint}"
-
-  # What a player's menu says below its choices.
-  MENU_HINT = MGQ_MpUi::Style.close_hint
+  # What the chat box says on the help tab, where nobody types, before the close hint.
+  HELP_HINT = "Pick another tab to chat."
 
   # Room at the right of the rows for the scrollbar.
   SCROLLBAR_ROOM = 14
@@ -1636,7 +1632,7 @@ class Sprite_MpChatLog < Sprite
     scroll = chat.limit_scroll(lines.size < entries.size ? chat.scroll : [rows.size - @rows, 0].max)
     shown = rows[0, rows.size - scroll].last(@rows)
     total = typing ? rows.size + entries[0, entries.size - lines.size].inject(0) { |sum, line| sum + rows_of(line).size } : 0
-    alt = typing && MGQ_Multiplayer::Key.down?(MGQ_MpChat::ALT_KEY)
+    alt = typing && Mod_Framework::UI::Key.down?(MGQ_MpChat::ALT_KEY)
     # A line of the closed log fades over its last frames, so those count as a change.
     fades = shown.map { |_row, line, _first| typing ? nil : [line.left, MGQ_MpUi::Style::FADE_FRAMES].min }
     offer_place if typing || !shown.empty?
@@ -1730,7 +1726,7 @@ class Sprite_MpChatLog < Sprite
   #
   # @param chat [Module] MGQ_MpChat.
   def follow_mouse(chat)
-    mouse = MGQ_Multiplayer::Mouse
+    mouse = Mod_Framework::UI::Mouse
     held = mouse.held?
     went_down = held && !@held
     @held = held
@@ -1794,7 +1790,7 @@ class Sprite_MpChatLog < Sprite
     measure.font.bold = true
     title = measure.text_size(menu[:name]).width
     measure.font.bold = false
-    width = ([title, measure.text_size(MENU_HINT).width] + options.map { |option| measure.text_size(option.text).width }).max + TAB_PAD * 2
+    width = ([title, measure.text_size(Mod_Framework::UI.close_hint).width] + options.map { |option| measure.text_size(option.text).width }).max + TAB_PAD * 2
     @menu_choices = options.size
     @menu_sprite.bitmap.dispose if @menu_sprite.bitmap
     picture = @menu_sprite.bitmap = Bitmap.new(width, ROW * (options.size + 2))
@@ -1814,7 +1810,7 @@ class Sprite_MpChatLog < Sprite
       picture.draw_text(TAB_PAD, top, width - TAB_PAD * 2, ROW, option.text)
     end
     picture.font.color = style::DIM
-    picture.draw_text(TAB_PAD, ROW * (options.size + 1), width - TAB_PAD * 2, ROW, MENU_HINT)
+    picture.draw_text(TAB_PAD, ROW * (options.size + 1), width - TAB_PAD * 2, ROW, Mod_Framework::UI.close_hint)
     @menu_sprite.x = [[menu[:at][0], Graphics.width - width].min, 0].max
     @menu_sprite.y = [menu[:at][1] - picture.height, 0].max
   end
@@ -1983,7 +1979,7 @@ class Sprite_MpChatLog < Sprite
   end
 
   # Picks the color of a line's sender's name: NAME_COLORS by whose it is, plain text for anyone
-  # else, as MGQ_MpUi::PlayerColor names a player outside the party.
+  # else, as MGQ_MpPlayerColor names a player outside the party.
   #
   # @param line [MGQ_MpChat::Line] The line.
   # @return [Color] The color.
@@ -2026,7 +2022,7 @@ class Sprite_MpChatLog < Sprite
     @box_left = draw_part(TEXT_LEFT, y, label, help ? style::TEXT : CHANNEL_COLORS.fetch(channel, style::TEXT)) + 4
     editor = chat.editor
 
-    draw_hint(help ? HELP_HINT : alt ? ALT_HINT : BOX_HINT, y) if editor.text.empty?
+    draw_hint(help ? "#{HELP_HINT} #{Mod_Framework::UI.close_hint}" : alt ? ALT_HINT : BOX_HINT, y) if editor.text.empty?
 
     MGQ_MpUi::TextBox.draw_line(bitmap, Rect.new(@box_left, y, @width - @box_left - TEXT_LEFT, ROW), editor) unless help
   end
@@ -2078,11 +2074,11 @@ class Sprite_MpChatLog < Sprite
   end
 end
 
-# The chat log's boxes, which Alt and the mouse move and resize, through ui_layout.rbx.
+# The chat log's boxes, which Alt and the mouse move and resize, through the Mod Framework's layout.
 
 begin
   Sprite_MpChatLog::BOXES.each do |id, name|
-    MGQ_MpUi::Layout.register(id, name, Sprite_MpChatLog::MIN_WIDTH, Sprite_MpChatLog::MIN_HEIGHT, :both)
+    Mod_Framework::UI::Layout.register(id, name, :min_size => [Sprite_MpChatLog::MIN_WIDTH, Sprite_MpChatLog::MIN_HEIGHT])
   end
 rescue => e
   MGQ_MpChat.log("layout FAILED: #{e.class}: #{e.message}")

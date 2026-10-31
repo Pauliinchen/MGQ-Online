@@ -2,6 +2,7 @@
 #  emotes_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Expected the game's cancel key in the wheel's hint and read the Mod Framework's capture
 #      Paulinchen  2026-10-30: Dropped the fade checks
 #      Paulinchen  2026-10-23: Left the wheel's pointing to C# and checked what the script does with its events
 #      Paulinchen  2026-10-12: Checked the log of the emote hotkey while typing and when refused
@@ -65,14 +66,14 @@ play_emote = lambda do |arrows|
 end
 $pressed = MGQ_MpHotkeys.code(:emotes)
 emote_frame.call
-check("E opens the emote wheel on the map, which holds the buttons and points at none", [emotes.open?, MGQ_Multiplayer::Capture.on?, emotes.selected], [true, true, nil])
+check("E opens the emote wheel on the map, which holds the buttons and points at none", [emotes.open?, Mod_Framework::UI::Capture.on?, emotes.selected], [true, true, nil])
 $held = [:UP, :RIGHT]
 emote_frame.call
 check("the arrows held point at the emote of their direction", emotes.selected, 1)
 $held = []
 $buttons << :C
 emote_frame.call
-check("confirm closes the wheel and gives the buttons back", [emotes.open?, MGQ_Multiplayer::Capture.on?], [false, false])
+check("confirm closes the wheel and gives the buttons back", [emotes.open?, Mod_Framework::UI::Capture.on?], [false, false])
 $sent.clear
 emote_frame.call
 check("the frame after plays the picked emote, a balloon above the player", $game_player.balloon_id, 1)
@@ -128,18 +129,18 @@ MGQ_MpChat.stop_typing
 # Stands in for the World overview, open while $overview_open is.
 module MGQ_MpWorldOverview; def self.open?; $overview_open; end; end
 $overview_open = true
-MGQ_Multiplayer::Capture.start(:overview)
+Mod_Framework::UI::Capture.start(:overview)
 $pressed = MGQ_MpHotkeys.code(:emotes)
 refused = logged_lines { emotes.on_map }
-check("the World overview keeps the wheel shut", [emotes.open?, MGQ_Multiplayer::Capture.on?], [false, true])
+check("the World overview keeps the wheel shut", [emotes.open?, Mod_Framework::UI::Capture.on?], [false, true])
 check("which the log says under the hotkeys", refused.grep(/ignored/), ["keys: hotkey E (Emote Wheel) ignored: the World overview is open"])
 $overview_open = false
 emotes.on_map
 $pressed = MGQ_MpHotkeys.code(:emotes)
 emotes.on_map
 emotes.close
-check("a wheel that opened and closed under another screen leaves its hold", MGQ_Multiplayer::Capture.on?, true)
-MGQ_Multiplayer::Capture.stop(:overview)
+check("a wheel that opened and closed under another screen leaves its hold", Mod_Framework::UI::Capture.on?, true)
+Mod_Framework::UI::Capture.stop(:overview)
 
 # The wheel's picture: its boxes in the shared style, the picked emote's name below the ring and
 # the hint under it, fading in on open and out on close with the picture kept. Pictures measure
@@ -176,7 +177,7 @@ wheel.show(player)
 hint = wheel.bitmap.texts.last
 check("open, the wheel draws around the player, None named below the ring and the hint under it, fading in",
       [wheel.visible, wheel.opacity.between?(1, 254), wheel.x, wheel.y, wheel.bitmap.texts[-2][1], hint[1], hint[2], hint[3].equal?(style::HEADING)],
-      [true, true, 100, 120, "None", "Esc, Numpad 0 or E: close", style::TINY_SIZE, true])
+      [true, true, 100, 120, "None", "X, Numpad 0 or E: close", style::TINY_SIZE, true])
 boxes = MGQ_MpEmotes::EMOTES.size + 1
 check("the hint lies under the name's line, and the boxes fill with the style's colors, None picked, each in its frame",
       [hint[0], wheel.bitmap.fills.all? { |color| [style::BACK, style::PICKED, style::EDGE].any? { |known| color.equal?(known) } },
@@ -191,7 +192,7 @@ wheel.show(player)
 MGQ_MpHotkeys.bind(:emotes, 0xBA)
 wide = Sprite_MpEmoteWheel.new(nil)
 wide.show(player)
-check("a rebound key's longer name leaves the hint whole, wider than the wheel, never cut", wide.bitmap.texts.last[1], "Esc, Numpad 0 or key 186: close")
+check("a rebound key's longer name leaves the hint whole, wider than the wheel, never cut", wide.bitmap.texts.last[1], "X, Numpad 0 or key 186: close")
 $player_ini.delete("key_emotes")
 $held = [:RIGHT]
 emote_frame.call

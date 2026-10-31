@@ -2,6 +2,7 @@
 #  battles_coop_join.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Compared the Join Battle key with every hotkey through MGQ_MpHotkeys.names
 #      Paulinchen  2026-10-30: Checked requests to join and told the battle's room through the rules in C#
 #                            - Found what the prompt offers and asked and waited for the battle's host through the DLL
 #      Paulinchen  2026-10-23: Kept the prompt off the live map behind menus
@@ -207,10 +208,10 @@ module MGQ_MpBattlesJoin
 
     code = MGQ_MpHotkeys.code(:join_battle)
     # A key's press goes to the first who reads it in a frame, which would take it from the other.
-    other = MGQ_MpHotkeys::BINDINGS.keys.find { |action| action != :join_battle && MGQ_MpHotkeys.code(action) == code }
+    other = MGQ_MpHotkeys.names.find { |name| name != :join_battle && MGQ_MpHotkeys.code(name) == code }
     return true unless other
 
-    log_once([:shared_key, other, code], "the Join Battle hotkey #{MGQ_MpHotkeys.label(:join_battle)} is off: #{MGQ_MpHotkeys::BINDINGS[other].name} has the same key")
+    log_once([:shared_key, other, code], "the Join Battle hotkey #{MGQ_MpHotkeys.label(:join_battle)} is off: #{MGQ_MpHotkeys.name_of(other)} has the same key")
     false
   end
 

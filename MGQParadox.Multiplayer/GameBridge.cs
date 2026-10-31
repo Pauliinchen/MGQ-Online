@@ -2,7 +2,9 @@
 //  GameBridge.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-31: Registered the topics of the bug report's request
+//      Paulinchen  2026-10-31: Opened the registration of the topics to the tests
+//                            - Left the interface's models, the keyboard and the window to the Mod Framework, keeping the bug report's screenshot
+//                            - Registered the topics of the bug report's request
 //                            - Left the freeze journal topics to the topics both hosts answer
 //                            - Left the trades' topics to the world room's, which registers every area over the room
 //      Paulinchen  2026-10-30: Registered the world screen's steps without this game's data, which entering compares once the world's mods loaded
@@ -48,12 +50,10 @@ using MGQOnline.Bridge.Native;
 using MGQOnline.Bridge.Ruby;
 using MGQOnline.Game.Topics;
 using MGQOnline.Game.Ui;
-using MGQOnline.Game.Ui.Text;
 using MGQParadox.Multiplayer.Mods;
 using MGQParadox.Multiplayer.Network.World;
 using MGQParadox.Multiplayer.Reports;
 using MGQParadox.Multiplayer.Topics;
-using MGQParadox.Multiplayer.Windows;
 
 namespace MGQParadox.Multiplayer;
 
@@ -74,7 +74,7 @@ internal static unsafe class GameBridge
     /// Registers the DLL's topics on a new context; each area adds its own as it moves to the bridge.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
-    private static void RegisterTopics(BridgeContext context)
+    internal static void RegisterTopics(BridgeContext context)
     {
         var services = new WorldServices(new PlayerIni(Path.Combine(ModFolder.Root, PlayerIni.FileName)), new WorldChanges(context), () => WorldDirectory.Current, () => PatchScripts.List(ModFolder.GamePathOf(".")),
             new DirectoryTickets(() => WorldDirectory.Current.ActionNow().State, WorldDirectory.Current.ClearAction));
@@ -99,7 +99,6 @@ internal static unsafe class GameBridge
         StoryTopics story = StoryTopics.Register(context);
         CatchupTopics.Register(context, () => story.Catchup);
         ServedTopics.Register(context, BattleSession.Current);
-        UiTopics.Register(context, new TypedText());
         context.Register(SnapTopic, (_, request) => Snap(request.AsArray()));
         ReportTopics.Register(context, BugReports.Current);
     }
@@ -128,15 +127,6 @@ internal static unsafe class GameBridge
 
         long pixels = ScreenshotWalk.PixelsOf(address, at => *(uint*)(nint)at);
         return BugReports.Current.Snap(new ReadOnlySpan<byte>((void*)(nint)pixels, width * height * ScreenshotWalk.PixelBytes), width, height);
-    }
-
-    /// <summary>
-    /// Hands the text box of the interface what the player types into the game's window.
-    /// </summary>
-    private sealed class TypedText : ITypedText
-    {
-        /// <inheritdoc />
-        public (string Text, int Keys) Take() => Keyboard.Take();
     }
 
     /// <summary>

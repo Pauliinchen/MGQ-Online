@@ -2,6 +2,7 @@
 #  ui_party_box.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Placed its box through the Mod Framework's layout
 #      Paulinchen  2026-10-23: Kept the box off the live map behind menus
 #      Paulinchen  2026-10-12: Logged a refused hotkey through MGQ_MpHotkeys.log_refusal
 #                            - Read the map's viewport through MGQ_MpGame
@@ -12,7 +13,7 @@
 #                            - Kept the level and the ping apart in their own columns and cut a long name to its column
 #                            - Left placing the box to its motion
 #                            - Drew the icon of what each player does before their name
-#                            - Named each line in its player's color through MGQ_MpUi::PlayerColor
+#                            - Named each line in its player's color through MGQ_MpPlayerColor
 #                            - Marked a member whose connection is down
 #                            - Logged each listed player's color and whether they are away
 #                            - Capped the map box's lines through MGQ_MpUi.capped, keeping the player's own line
@@ -165,13 +166,13 @@ module MGQ_MpPartyBox
   end
 
   # Picks the color of a player's name in the box: MGQ_MpUi::Style::DIM while their connection is
-  # down, else the one MGQ_MpUi::PlayerColor gives: the player's own, a party member's, and in the
+  # down, else the one MGQ_MpPlayerColor gives: the player's own, a party member's, and in the
   # map box plain text for anyone else.
   #
   # @param row [MGQ_MpWorldOverview::Row] The player.
   # @return [Color] The color.
   def self.color_of(row)
-    away?(row) ? MGQ_MpUi::Style::DIM : MGQ_MpUi::PlayerColor.of(row.player, row.member)
+    away?(row) ? MGQ_MpUi::Style::DIM : MGQ_MpPlayerColor.of(row.player, row.member)
   end
 
   # Names the color of a player's name for the log, see color_of.
@@ -179,14 +180,14 @@ module MGQ_MpPartyBox
   # @param row [MGQ_MpWorldOverview::Row] The player.
   # @return [String] The name: "own", "member", "plain" or AWAY_LABEL.
   def self.color_label(row)
-    away?(row) ? AWAY_LABEL : MGQ_MpUi::PlayerColor.label(row.player, row.member)
+    away?(row) ? AWAY_LABEL : MGQ_MpPlayerColor.label(row.player, row.member)
   end
 end
 
 # The box at the top right of the map, until the player moves it, that lists the player's party:
 # the leader first with a crown, then the others by name, each with the icon of what they do, their
 # formation's highest level and ping, and where they are on a smaller line below. The player's own
-# line, a party member's and anyone else's are named in the colors MGQ_MpUi::PlayerColor gives, a
+# line, a party member's and anyone else's are named in the colors MGQ_MpPlayerColor gives, a
 # member whose connection is down dim with the away icon. Small, it lists only each player's icon,
 # name and ping, at the right edge of the box's place. The title names the hotkey that changes the
 # size at its right. Drawn in the shared style, the box fades in and out. A wider box gives the
@@ -213,7 +214,7 @@ class Sprite_MpPartyBox < Sprite
   PLAYER_ROW = ROW + PLACE_ROW
 
   # Room between the box and the top and right edges of the screen at its default, below a strip
-  # of the mod at the top (see MGQ_MpUi.top_room).
+  # of the mod at the top (see MGQ_MpHud.top_room).
   MARGIN = 8
 
   # Room between the box's side edges and its columns.
@@ -293,7 +294,7 @@ class Sprite_MpPartyBox < Sprite
   #
   # @return [Rect] The place, see MGQ_MpUi::Layout.rect.
   def layout_rect
-    default = Rect.new(Graphics.width - WIDTH - MARGIN, MARGIN + MGQ_MpUi.top_room, WIDTH, @height.to_i)
+    default = Rect.new(Graphics.width - WIDTH - MARGIN, MARGIN + MGQ_MpHud.top_room, WIDTH, @height.to_i)
     MGQ_MpUi::Layout.rect(LAYOUT, default)
   end
 
@@ -551,7 +552,8 @@ end
 # Where the box lies, which the player changes with the left Alt held, through ui_layout.rbx.
 
 begin
-  MGQ_MpUi::Layout.register(Sprite_MpPartyBox::LAYOUT, Sprite_MpPartyBox::LAYOUT_NAME, Sprite_MpPartyBox::WIDTH, Sprite_MpPartyBox::MIN_HEIGHT, :width)
+  Mod_Framework::UI::Layout.register(Sprite_MpPartyBox::LAYOUT, Sprite_MpPartyBox::LAYOUT_NAME, :min_size => [Sprite_MpPartyBox::WIDTH, Sprite_MpPartyBox::MIN_HEIGHT],
+                                     :resizable => :width)
 rescue => e
   MGQ_MpPartyBox.log("layout FAILED: #{e.class}: #{e.message}")
 end

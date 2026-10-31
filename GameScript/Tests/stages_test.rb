@@ -2,6 +2,7 @@
 #  stages_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Checked that the mod stays off without the Mod Framework, and logs whether the framework keeps it off and keeps the game running behind other windows as its first stage loads
 #      Paulinchen  2026-10-30: Created
 #
 #----------------------------------------------------------------
@@ -33,12 +34,15 @@ module MGQ_Multiplayer
   SCRIPTS = %w[core_hooks ui world coop battles]
   BOOT_SCRIPTS = %w[core_hooks ui]
   WORLD_SCRIPTS = %w[world]
-  module Log; def self.write(line); $log << line; end; end
+  module Log; def self.write(line); $log << line; end; def self.settle(open); $calls << [:settled, open]; end; end
+  module Player; def self.readable?; false; end; end
   def self.start; $calls << :start; end
-  def self.install_hooks(run); $calls << [:hooks, run]; end
+  def self.log_framework_gap; $calls << :framework_gap; end
+  def self.install_hooks; $calls << :hooks; end
   def self.available?; true; end
   def self.closing(error); $calls << [:closing, error]; end
 end
+MGQ_Multiplayer.module_eval(source[/  MOD_FRAMEWORK_REQUIRED = .*\n/])
 MGQ_Multiplayer.module_eval(source[/  def self\.path\(name\)\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  def self\.load_scripts\(names = SCRIPTS, part = false\)\n.*?\n  end\n/m])
 MGQ_Multiplayer.module_eval(source[/  def self\.load_script\(name, part\)\n.*?\n  end\n/m])
@@ -69,13 +73,17 @@ Dir.mktmpdir do |game|
                "module MGQ_MpWorld; module Invite; def self.receive(code); $calls << [:invite, code]; true; end; end; end\n" \
                "module MGQ_MpWorldMods; def self.restarted_for(world); $calls << [:restarted_for, world]; end; end\n")
 
-    # Without the Mod Framework, as on the battle server.
+    # Without the Mod Framework, which the files a player removed took away.
+    framework_mods = Mod_Framework.send(:remove_const, :Mods)
     fresh_stages
+    $log.clear
     MGQ_Multiplayer::Stages.when_loaded("test") { $calls << :loaded }
     MGQ_Multiplayer::Stages.boot
-    check("without the framework every script loads at once, the hooks follow the game's start",
-          [$calls, $loaded, MGQ_Multiplayer::Stages.staged?], [[:start, :loaded, [:hooks, true]], %w[core_hooks ui world coop battles], false])
-    check("and the world needs no framework to enter", MGQ_Multiplayer::Stages.enter("the world W"), false)
+    check("without the framework no script loads and the mod stays off, saying why in one line",
+          [$calls, $loaded, MGQ_Multiplayer::Stages.staged?, $log],
+          [[[:settled, false]], [], false, ["Monster Girl Quest! Online needs the Mod Framework 0.1.0 or newer, which is not installed"]])
+    check("and no world enters", MGQ_Multiplayer::Stages.enter("the world W"), false)
+    Mod_Framework.const_set(:Mods, framework_mods)
 
     # Under the Mod Framework.
     module ::Mod_Framework
@@ -118,12 +126,13 @@ Dir.mktmpdir do |game|
     end
     fresh_stages
     MGQ_Multiplayer::Stages.when_loaded("test") { $calls << :loaded }
+    Mod_Framework.define_singleton_method(:keep_running=) { |on| $calls << [:keep_running, on] }
     MGQ_Multiplayer::Stages.boot
     name, options, picked = Mod_Framework::Mods.commands.first
     check("under the framework the title's Multiplayer command comes after Continue, on while the DLL runs",
           [name, options[:after], options[:enabled].call(:window)], ["Multiplayer", :continue, true])
-    check("as the game starts the DLL and the first stage load, through the framework, which counts the mod as used",
-          [$calls, Mod_Framework::Mods.parts, $loaded], [[:start, [:hooks, false]], %w[Scripts/core_hooks.rbx Scripts/ui.rbx], %w[core_hooks ui]])
+    check("as the game starts the DLL starts, the log says whether the framework keeps the mod off, the game keeps running behind other windows and the first stage loads through the framework, which counts the mod as used",
+          [$calls, Mod_Framework::Mods.parts, $loaded], [[:start, :framework_gap, [:keep_running, true], :hooks], %w[Scripts/core_hooks.rbx Scripts/ui.rbx], %w[core_hooks ui]])
     check("the hooks sleep only in a game entered without the mod", [$asleep.call, MGQ_Multiplayer::Stages.staged?], [false, true])
     picked.call(:window)
     check("the command loads the world screens through the framework and opens one", [Mod_Framework::Mods.parts.last, $loaded.last, $calls.last], ["Scripts/world.rbx", "world", [:world_screen, :title]])

@@ -1,59 +1,49 @@
 //----------------------------------------------------------------
-//  UiContext.cs
+//  TopicContext.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-23: Created
+//      Paulinchen  2026-10-31: Created
 //
 //----------------------------------------------------------------
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using MGQOnline.Bridge;
 using MGQOnline.Bridge.Ruby;
 
-namespace MGQOnline.Game.Tests.Ui;
+namespace MGQOnline.Game.Tests;
 
 /// <summary>
-/// A bridge context for the interface's tests, with the tick and drain the scripts would run.
+/// A bridge context for the tests of topics: calls a topic as the scripts would, its request and
+/// reply through Marshal, and keeps the log's lines.
 /// </summary>
-internal sealed class UiContext
+internal sealed class TopicContext
 {
-    /// <summary>
-    /// The drain buffer, larger than any test's events.
-    /// </summary>
-    private readonly byte[] _drain = new byte[1 << 16];
-
     /// <summary>
     /// The reply buffer.
     /// </summary>
     private readonly byte[] _reply = new byte[1 << 16];
 
     /// <summary>
-    /// Creates a context with nothing registered.
+    /// Initializes a new instance of the <see cref="TopicContext"/> class with no topic.
     /// </summary>
-    public UiContext()
+    public TopicContext()
     {
         Context = new BridgeContext(1, Log);
     }
 
     /// <summary>
-    /// Gets the context.
+    /// Gets the context the topics register on.
     /// </summary>
     public BridgeContext Context { get; }
 
     /// <summary>
-    /// Gets the log the context writes.
+    /// Gets the log's lines.
     /// </summary>
     public LineLog Log { get; } = new();
 
     /// <summary>
-    /// Gets the last drain's frame.
-    /// </summary>
-    public long Frame { get; private set; }
-
-    /// <summary>
-    /// Calls a topic as the scripts do, through Marshal both ways.
+    /// Calls a topic.
     /// </summary>
     /// <param name="topic">The topic.</param>
     /// <param name="request">The request, null for none.</param>
@@ -66,7 +56,7 @@ internal sealed class UiContext
     }
 
     /// <summary>
-    /// Calls a topic and takes its value, failing the test on an error reply.
+    /// Calls a topic that must succeed and takes its value.
     /// </summary>
     /// <param name="topic">The topic.</param>
     /// <param name="request">The request, null for none.</param>
@@ -84,37 +74,7 @@ internal sealed class UiContext
     }
 
     /// <summary>
-    /// Ends a frame: drains the events with the next frame's number.
-    /// </summary>
-    /// <returns>Each event as its topic and payload.</returns>
-    public List<(string Topic, RubyValue Payload)> Drain()
-    {
-        Frame++;
-        int length = Context.Drain(Frame, _drain);
-        return length <= 0
-            ? []
-            : RubyMarshal.Read(_drain.AsSpan(0, length)).AsArray().Select(pair => (pair.AsArray()[0].AsText(), pair.AsArray()[1])).ToList();
-    }
-
-    /// <summary>
-    /// Runs a frame's tick, then drains.
-    /// </summary>
-    /// <param name="inputs">Each model's name and input.</param>
-    /// <returns>The frame's events.</returns>
-    public List<(string Topic, RubyValue Payload)> Tick(RubyHash inputs)
-    {
-        RubyHash? answer = Call(UiHostTopic, inputs);
-        Assert.Null(answer);
-        return Drain();
-    }
-
-    /// <summary>
-    /// The tick's topic.
-    /// </summary>
-    private const string UiHostTopic = Game.Ui.UiHost.TickTopic;
-
-    /// <summary>
-    /// A log that keeps its lines.
+    /// The log's lines.
     /// </summary>
     internal sealed class LineLog : IBridgeLog
     {

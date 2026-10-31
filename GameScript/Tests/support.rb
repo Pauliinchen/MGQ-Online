@@ -2,6 +2,7 @@
 #  support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Loaded the Mod Framework's scripts before the mod's, as the game does
 #      Paulinchen  2026-10-28: Stood in for the game's sizes and chest flags the DLL reads from its events database
 #                            - Kept the script's own Classic party's table for the test that builds it
 #      Paulinchen  2026-10-24: Counted the key frames as the tests count the game's
@@ -33,9 +34,8 @@ require "json"
 # Folder of the mod's scripts in the repository.
 SCRIPTS_DIR = File.expand_path("../Multiplayer/Scripts", __dir__)
 
-# The keys Multiplayer.rb reads from Windows, which ui.rbx watches as it loads; a test that reads keys
-# stands in for the rest.
-module MGQ_Multiplayer; module Key; def self.watch(*_codes); end; def self.frame; $frame.to_i; end; end; end
+# The Mod Framework, whose keys, look and boxes the mod's scripts use as they load.
+require_relative "framework_support"
 
 # The mod folder as Multiplayer.rb names it, which the scripts build their files' paths on.
 module MGQ_Multiplayer; MOD_DIR = "Patch\\Multiplayer"; end

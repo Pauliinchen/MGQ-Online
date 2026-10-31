@@ -2,6 +2,8 @@
 #  world.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Dropped the title command and the update message for a game without the Mod Framework, whose Multiplayer command opens the world screen
+#                            - Kept the title's commands off while the update question is still coming
 #      Paulinchen  2026-10-31: Forgot the runs handed to the player once a world closed
 #      Paulinchen  2026-10-30: Measured the game data again once a world's mods loaded
 #                            - Carried a Discord invite taken during a game through the Mod Framework's restart
@@ -145,9 +147,6 @@
 #
 # It must never interrupt the game, so every entry point rescues.
 module MGQ_MpWorld
-  # The title screen's command that opens the world screen.
-  COMMAND_NAME = "Multiplayer"
-
   # Folder of the worlds on this PC, inside the mod folder.
   WORLDS_DIR = "Patch/Multiplayer/Worlds"
 
@@ -697,32 +696,19 @@ module MGQ_MpWorld
     log("the new game of world #{@world.id} started after its question") if @world
   end
 
-  # Adds the world screen's command to the title screen, below Continue.
-  #
-  # @param window [Window_TitleCommand] The title screen's commands.
-  def self.add_title_command(window)
-    return unless MGQ_Multiplayer.available?
-    # Under the Mod Framework the command is the framework's, see MGQ_Multiplayer::Stages.
-    return if defined?(MGQ_Multiplayer::Stages) && MGQ_Multiplayer::Stages.staged?
-
-    list = MGQ_MpGame.get(window, :list)
-    entry = { :name => COMMAND_NAME, :symbol => :mgq_mp_world, :enabled => true, :ext => nil }
-    continue_at = list.index { |command| command[:symbol] == :continue }
-    continue_at ? list.insert(continue_at + 1, entry) : list.push(entry)
-    log_once(:title_command, "title command added")
-  rescue => e
-    log("title command failed: #{e.class}: #{e.message}")
-  end
-
-  # Opens the world screen from the title screen's command, or offers the update once a newer
-  # release is out.
+  # Opens the world screen from the title screen's command, Multiplayer (MGQ_Multiplayer::Stages),
+  # or offers the update once a newer release is out.
   #
   # @param scene [Scene_Title] The title screen.
+  # @return [Symbol, nil] :off while the update is asked, which keeps the title's commands off
+  #   until the Mod Framework answers; nil once the world screen opens.
   def self.open_world_screen(scene)
+    return :off if Update.asking?
     return Update.ask(scene) if MGQ_Multiplayer.outdated?
 
     MGQ_MpGame.call(scene, :close_command_window)
     SceneManager.call(Scene_MpWorlds)
+    nil
   end
 
   # Offers the update on the title screen once a newer release is out, as picking Multiplayer
@@ -806,21 +792,14 @@ module MGQ_MpWorld
     # Why the player is asked to install a step back.
     ROLLBACK_REASON = "This version cannot play online right now."
 
-    # Asks the Mod Framework for the release to play; without it, tells the player how to update.
+    # Asks the Mod Framework for the release to play, the title's commands waiting for the answer.
     #
     # @param scene [Scene_Title] The title screen.
-    # @return [Boolean] Whether the framework asks.
+    # @return [Symbol] :off, so the framework leaves the title's commands to the answer.
     def self.ask(scene)
       commands = MGQ_MpGame.get(scene, :command_window)
       commands.deactivate if commands && !commands.disposed?
       version = MGQ_Multiplayer.newer_version
-      unless defined?(Mod_Framework::Mods) && Mod_Framework::Mods.respond_to?(:require)
-        MGQ_MpWorld.log("release #{version} is the one to play, and no Mod Framework installs it")
-        msgbox(MGQ_Multiplayer.update_message) if respond_to?(:msgbox, true)
-        give_back(commands)
-        return false
-      end
-
       @asking = true
       MGQ_MpWorld.log("asking the Mod Framework for release #{version}#{MGQ_Multiplayer.rollback? ? ', a step back' : ''}")
       Mod_Framework::Mods.require(SLUG, version, :exact => MGQ_Multiplayer.rollback?, :reason => MGQ_Multiplayer.rollback? ? ROLLBACK_REASON : REASON,
@@ -829,7 +808,7 @@ module MGQ_MpWorld
         MGQ_MpWorld.log("the Mod Framework's update to #{version}: #{result}")
         give_back(commands) unless result == :restarting
       end
-      true
+      :off
     end
 
     # Tells whether the Mod Framework asks for the update now.
@@ -2470,13 +2449,6 @@ begin
 
   # A world's new game that asked something first has started once the game sets it up.
   MGQ_MpHooks.before(DataManager.singleton_class, :setup_new_game, "world") { MGQ_MpWorld.new_game_started }
-
-  # The title screen's commands, Multiplayer below Continue, which opens the world screen.
-  MGQ_MpHooks.after(Window_TitleCommand, :make_command_list, "world") { MGQ_MpWorld.add_title_command(self) }
-  MGQ_MpHooks.after(Scene_Title, :create_command_window, "world") do
-    commands = MGQ_MpGame.get(self, :command_window)
-    commands.set_handler(:mgq_mp_world, lambda { MGQ_MpWorld.open_world_screen(self) }) if commands
-  end
 rescue => e
   MGQ_MpWorld.log("title hooks FAILED: #{e.class}: #{e.message}")
 end

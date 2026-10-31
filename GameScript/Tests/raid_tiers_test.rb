@@ -2,6 +2,7 @@
 #  raid_tiers_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Stood in for the Mod Framework's rows
 #      Paulinchen  2026-10-30: Read the stats through the pools' wrap
 #      Paulinchen  2026-10-23: Stood in for the ids coop.rbx makes up
 #      Paulinchen  2026-10-13: Created
@@ -92,13 +93,11 @@ module MGQ_MpWorld
     true
   end
 end
-# Stands in for the Mod Config's rows, noting each in $options.
-module MGQ_MpUi
-  # The first words of the rows of the single player settings.
-  SP_PREFIX = "[MGQ Online SP] "
-  # Notes a row with its name after the prefix, its key and its procs.
-  def self.add_option(key, name, _help, values, read, write, prefix = "[MGQ Online Settings] ")
-    $options << { :key => key, :name => prefix + name, :values => values, :read => read, :write => write }
+# Stands in for the Mod Framework's rows, noting each in $options.
+module Mod_Framework::Options
+  # Notes a row with its name, its key and its procs.
+  def self.keep(key, name, _help, values, read, write)
+    $options << { :key => key, :name => name, :values => values, :read => read, :write => write }
     true
   end
 end

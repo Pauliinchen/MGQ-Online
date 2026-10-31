@@ -2,7 +2,9 @@
 #  world_mods.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Took the world's settings the relay tells every player, instead of the creator's game telling each
+#      Paulinchen  2026-11-01: Added the row of Shared Mod Settings once as the script loads, through the Mod Framework's options, shown only in a world
+#      Paulinchen  2026-10-31: Took the group of its row from MGQ_Multiplayer::OPTION_PREFIX
+#                            - Took the world's settings the relay tells every player, instead of the creator's game telling each
 #      Paulinchen  2026-10-30: Checked the game data once the world's mods loaded and warned in the notification box of a difference
 #                            - Locked the options a world sets through the Mod Framework's options, Mod Config Remake's without it
 #                            - Entered a world that turns other mods off with only the mods its session keeps, and started again for one that turns them off now
@@ -111,7 +113,7 @@ module MGQ_MpWorldMods
   SHARED_OPTION = :mgq_mp_shared_mod_settings
 
   # The row's name, in the group of the mod's settings.
-  ROW_NAME = "#{MGQ_MpUi::OPTION_PREFIX}Shared Mod Settings"
+  ROW_NAME = "#{MGQ_Multiplayer::OPTION_PREFIX}Shared Mod Settings"
 
   # What the row says while On.
   ROW_ON_HELP = "Every player here plays with the creator's mod options."
@@ -783,7 +785,7 @@ module MGQ_MpWorldMods
   # The world being entered or played in.
 
   # Notes the world being entered: its creator, its mods and its settings, which apply once its
-  # game is loaded or started. The row of Shared Mod Settings joins Mod Config.
+  # game is loaded or started.
   #
   # @param listed [MGQ_MpWorld::Directory::ListedWorld, nil] The world, nil when the list lacks it.
   # @param me [String] The player's id.
@@ -794,7 +796,6 @@ module MGQ_MpWorldMods
     world = listed && { "id" => listed.id, "name" => listed.name.to_s, "creator_id" => listed.creator_id.to_s, "creator_name" => listed.creator_name.to_s,
                         "mods" => listed.mods.to_s, "settings" => listed.settings.to_s }
     take(MGQ_Multiplayer::Bridge.call(ENTER_TOPIC, "world" => world, "me" => me.to_s, "fresh" => fresh ? true : false))
-    add_row if @world
   rescue => e
     log("noting the world's mod settings failed: #{e.class}: #{e.message}")
   end
@@ -807,15 +808,22 @@ module MGQ_MpWorldMods
     take(MGQ_Multiplayer::Bridge.call(MODS_TOPIC, mods.to_s)) if @world
   end
 
-  # Forgets the world, its locks, the row of Shared Mod Settings, the settings on their way, whose
-  # answer the directory then drops, and the mods of its session it did not enter with yet.
+  # Forgets the world, its locks, the settings on their way, whose answer the directory then drops,
+  # and the mods of its session it did not enter with yet.
   def self.forget_world
     lock([])
-    remove_row
     take(MGQ_Multiplayer::Bridge.call(FORGET_WORLD_TOPIC))
     @world = nil
     @in_options = false
     @entering = nil
+  end
+
+  # Tells whether the player plays in a world or enters one, which shows the row of Shared Mod
+  # Settings.
+  #
+  # @return [Boolean] Whether they do.
+  def self.in_world?
+    !@world.nil?
   end
 
   # Tells whether the player plays in a world they created.
@@ -916,28 +924,14 @@ module MGQ_MpWorldMods
 
   # Mod Config's row.
 
-  # Adds the row of Shared Mod Settings to the Mod Config, the Mod Framework's or Mod Config
-  # Remake's, once: every player sees whether the world shares its creator's settings, and only the
-  # creator may change it.
+  # Adds the row of Shared Mod Settings to Options > Mods, shown only in a world: every player sees
+  # whether the world shares its creator's settings, only the creator may change it, and no world
+  # sets it.
   def self.add_row
-    return unless (defined?(Mod_Framework::Options) || defined?(ModConfigRemake)) && defined?(NWConst::Config::MOD_CONTENTS)
-
-    menu = NWConst::Config::MOD_CONTENTS
-    return if menu.any? { |entry| entry[:key] == SHARED_OPTION }
-
-    config = NWConst::Config
-    config::DATA[SHARED_OPTION] = [1, 0] if config.const_defined?(:DATA)
-    config::DATA_TEXT[SHARED_OPTION] = { 1 => { :name => "On", :help => ROW_ON_HELP }, 0 => { :name => "Off", :help => ROW_OFF_HELP } } if config.const_defined?(:DATA_TEXT)
-    config::DEFAULT[SHARED_OPTION] = 0 if config.const_defined?(:DEFAULT)
-    # Mod Config Remake's last entry is its Return.
-    menu.insert([menu.size - 1, 0].max, :key => SHARED_OPTION, :name => ROW_NAME, :sub => true, :personal => true,
-                    :help => lambda { MGQ_MpWorldMods.row_help }, :enable => lambda { MGQ_MpWorldMods.own_world? },
-                    :on_change => lambda { |value| MGQ_MpWorldMods.switch(value) })
-  end
-
-  # Takes the row of Shared Mod Settings out of Mod Config Remake.
-  def self.remove_row
-    NWConst::Config::MOD_CONTENTS.delete_if { |entry| entry[:key] == SHARED_OPTION } if defined?(NWConst::Config::MOD_CONTENTS)
+    added = Mod_Framework::Options.add(SHARED_OPTION, ROW_NAME, lambda { MGQ_MpWorldMods.row_help }, { 1 => ["On", ROW_ON_HELP], 0 => ["Off", ROW_OFF_HELP] }, 0,
+                                       :if => lambda { MGQ_MpWorldMods.in_world? }, :enabled => lambda { MGQ_MpWorldMods.own_world? },
+                                       :personal => true) { |value| MGQ_MpWorldMods.switch(value) }
+    log(added ? "added the Shared Mod Settings to Options > Mods" : "no Shared Mod Settings in Options > Mods, see the Mod Framework's log")
   end
 
   # Tells what the row of Shared Mod Settings does, to the creator or to another player.
@@ -1115,4 +1109,10 @@ begin
   MGQ_MpHooks.after(DataManager.singleton_class, :setup_new_game, "world_mods") { MGQ_MpWorldMods.apply }
 rescue => e
   MGQ_MpWorldMods.log("save hooks FAILED: #{e.class}: #{e.message}")
+end
+
+begin
+  MGQ_MpWorldMods.add_row
+rescue => e
+  MGQ_MpWorldMods.log("Shared Mod Settings row FAILED: #{e.class}: #{e.message}")
 end

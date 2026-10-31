@@ -2,7 +2,8 @@
 #  ui_trade.rbx
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
+#      Paulinchen  2026-10-31: Wore the look and scrolled the lists through the Mod Framework
+#                            - Worded what the player reads plainly, leaving causes and internals to the log
 #      Paulinchen  2026-10-24: Gave the help window the boxes' background opacity, the look now worn by every window
 #      Paulinchen  2026-10-22: Let the chat box open in the trade screen, whose gold digits leave the cancel to the open chat box
 #      Paulinchen  2026-10-12: Kept the bag's and the offers' pictures as tall as the rows they show
@@ -168,9 +169,9 @@ end
 # items. The Offers command moves the cursor in, where up and down scroll through a long offer and
 # left and right switch to the other side.
 class Window_MpTradeOffer < Window_Selectable
-  include MGQ_MpUi::Theme::Skinned
+  include Mod_Framework::UI::Themed
   include MGQ_MpTradeUi::VisibleRows
-  include MGQ_MpUi::ScrollingWindow
+  include MGQ_MpScrollingWindow
 
   # Creates the window, inactive.
   #
@@ -313,7 +314,7 @@ end
 # The commands of the trade screen: the bag's categories, the gold, looking through both offers,
 # confirming and cancelling.
 class Window_MpTradeCommand < Window_HorzCommand
-  include MGQ_MpUi::Theme::Skinned
+  include Mod_Framework::UI::Themed
 
   # Creates the commands.
   #
@@ -362,9 +363,9 @@ end
 # The player's bag, one category at a time, with how many of each item the offer holds. Right and
 # left change the amount by one, R and L by ten, confirm offers all or none.
 class Window_MpTradeBag < Window_Selectable
-  include MGQ_MpUi::Theme::Skinned
+  include Mod_Framework::UI::Themed
   include MGQ_MpTradeUi::VisibleRows
-  include MGQ_MpUi::ScrollingWindow
+  include MGQ_MpScrollingWindow
 
   # Creates the list, inactive.
   #
@@ -491,7 +492,7 @@ end
 
 # The gold the player offers, digit by digit: left and right pick a digit, up and down change it.
 class Window_MpTradeGold < Window_Base
-  include MGQ_MpUi::Theme::Skinned
+  include Mod_Framework::UI::Themed
 
   # Digits of the largest amount.
   DIGITS = 9
@@ -552,7 +553,7 @@ class Window_MpTradeGold < Window_Base
       Sound.play_ok
       self.visible = false
       @handlers[:ok].call(amount) if @handlers[:ok]
-    elsif !MGQ_Multiplayer::Capture.on? && MGQ_MpUi.cancel?
+    elsif !Mod_Framework::UI::Capture.on? && MGQ_MpUi.cancel?
       Sound.play_cancel
       self.visible = false
       @handlers[:cancel].call if @handlers[:cancel]
@@ -639,7 +640,7 @@ class Scene_MpTrade < Scene_MenuBase
   #
   # @param window [Window_Base] The window.
   def wear_theme(window)
-    window.extend(MGQ_MpUi::Theme::Skinned)
+    window.extend(Mod_Framework::UI::Themed)
     MGQ_MpUi::Theme.dress(window)
   end
 

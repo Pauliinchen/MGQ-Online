@@ -2,6 +2,7 @@
 //  Exports.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Dropped mp_keep_running, since the Mod Framework keeps the game running behind other windows
 //      Paulinchen  2026-10-30: Dropped mp_update_game, since the Mod Framework installs updates
 //                            - Put back the mods an older release left parked as the DLL starts, in place of the parking
 //      Paulinchen  2026-10-28: Logged the SQLite version the DLL links
@@ -80,26 +81,6 @@ internal static unsafe partial class Exports
         catch (Exception ex)
         {
             Log.Write($"mp_start failed: {ex}");
-            return 0;
-        }
-    }
-
-    /// <summary>
-    /// Keeps the game running while another application is active. Calling it again does nothing.
-    /// </summary>
-    /// <returns>1 when the game keeps running, 0 when it failed.</returns>
-    [UnmanagedCallersOnly(EntryPoint = "mp_keep_running", CallConvs = [typeof(CallConvStdcall)])]
-    public static int KeepRunning()
-    {
-        try
-        {
-            var running = GameWindow.KeepRunning();
-            Log.Write(running ? "the game keeps running in the background" : "the game cannot keep running in the background: its window was not found or not hooked");
-            return running ? 1 : 0;
-        }
-        catch (Exception ex)
-        {
-            Log.Write($"mp_keep_running failed: {ex}");
             return 0;
         }
     }

@@ -2,6 +2,8 @@
 #  pvp_backline_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Checked the option's row in Options > Mods, which the Mod Framework keeps
+#      Paulinchen  2026-10-31: Took the mod's prefix from ui_online.rbx
 #      Paulinchen  2026-10-30: Opened the bridge to the stand-in of the DLL, which checks the Frontlines and names the stream's kinds
 #      Paulinchen  2026-10-23: Stood in for the bridge, whose events coop.rbx registers for
 #      Paulinchen  2026-10-12: Stood in for the Mod Config settings group
@@ -88,12 +90,12 @@ class Scene_Battle
   # Stands in for the Party command's swap: swaps the places $swap names.
   def bench_member_ok; $game_party.swap(*$swap); end
 end
-# Stands in for the game's options, without the Mod Config, which the option goes into.
+# Stands in for the game's options with Options > Mods, which the Mod Framework keeps.
 module NWConst
   # The options' entries, values, texts and defaults.
   module Config
-    # The options' entries, which the option goes before the last of.
-    CONTENTS = [{ :key => :first }, { :key => :last }]
+    # The rows of Options > Mods, which the option goes before the last of.
+    MOD_CONTENTS = [{ :key => :first }, { :key => :return }]
     # Each option's values.
     DATA = {}
     # Each option's names and help of its values.
@@ -201,9 +203,8 @@ $posted = []
 load File.join(SCRIPTS_DIR, "core_log.rbx")
 # Gives the PvP battle the log it writes with.
 module MGQ_MpBattlesPvp; extend MGQ_MpLog; LOG_TAG = "pvp battle"; end
-# Stands in for the mod's UI: the first words of the mod's settings in the Mod Config, as ui.rbx
-# names them.
-module MGQ_MpUi; OPTION_PREFIX = "[MGQ Online Settings] " unless const_defined?(:OPTION_PREFIX); end
+# The first words of the mod's settings in Options > Mods.
+load_script "ui_online"
 load_script "coop"
 load_script "battles_pvp_backline"
 SceneManager.run
@@ -217,9 +218,13 @@ item = Struct.new(:bench, :only) do
   def bench_only?; only; end
 end
 
-# The option goes into the options, with the Backline by default.
+# The option goes into Options > Mods, with the Backline by default.
 config = NWConst::Config
-check("the option goes before the options' last entry", config::CONTENTS.map { |entry| entry[:key] }, [:first, backline::OPTION, :last])
+row = config::MOD_CONTENTS.find { |entry| entry[:key] == backline::OPTION }
+check("the option goes into Options > Mods with its name, help and values",
+      [config::MOD_CONTENTS.map { |entry| entry[:key] }, row[:name], row[:help], config::DATA_TEXT[backline::OPTION].map { |value, text| [value, text[:name]] }],
+      [[:first, backline::OPTION, :return], "[MGQ Online Settings] PvP Backline",
+       "Whether the PvP battles you host and the duels you challenge to have the Backline.\r\n←/→ Toggle", [[0, "With Backline"], [1, "Frontline Only"]]])
 check("with the Backline by default", [config::DEFAULT[backline::OPTION], backline.wanted?], [backline::WITH_BACKLINE, true])
 $game_system.conf[backline::OPTION] = backline::FRONTLINE_ONLY
 check("the player can leave the Backline out", backline.wanted?, false)

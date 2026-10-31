@@ -2,6 +2,8 @@
 #  world_text_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Stood in for the Mod Framework's DLL and mouse
+#                            - Checked that the keys that cancel leave the screen
 #      Paulinchen  2026-10-23: Typed through the stand-in text box, the game's letters too
 #      Paulinchen  2026-10-12: Checked the description scrolled with the mouse wheel and its scrollbar
 #                            - Created
@@ -242,15 +244,8 @@ $typed = ["", 0]
 # The mod's base script: the link hands out $typed, the game runs in the background, the mouse
 # is at $mouse with $wheel notches.
 module MGQ_Multiplayer
-  # The link to the DLL as far as typing goes.
-  module Link
-    # Takes the typing state without keeping it.
-    def self.typing(_on); end
-  end
-  # The game always runs in the background.
-  module Background; def self.running?; true; end; end
   # The mouse at $mouse, with $wheel notches.
-  module Mouse; def self.position; $mouse; end; def self.wheel; $wheel.to_i; end; end
+  module Mod_Framework::UI::Mouse; def self.position; $mouse; end; def self.wheel; $wheel.to_i; end; end
 end
 # The game's sprite, which the interface script builds its boxes on.
 class Sprite; end
@@ -264,8 +259,8 @@ module MGQ_MpWorld
   def self.gamepad_pressed?; false; end
 end
 
-load_script "ui"
-load_script "ui_text_box"
+load_script "ui_online"
+load_script "ui_boxes"
 load_script "world_text"
 
 # The scrollbar of ui.rbx, which records what it was asked to draw.
@@ -426,3 +421,28 @@ scene.update
 ui_frame
 scene.update
 check("Enter hands the text back", MGQ_MpWorld.text_result, [:mod_name, "a" * 120 + "b" * 177])
+
+# Leaving with the keys that cancel, as the player bound them.
+$keys_down = []
+# The keys that went down this frame, which the Mod Framework's keys answer from.
+module Mod_Framework::UI::Key; def self.triggered?(code); $keys_down.include?(code); end; end
+left = Scene_MpText.new
+left.prepare(:mod_name, "The mod's name", "abc", :max_chars => 300)
+left.start
+check("the hint names the keys that leave a text field", left.instance_variable_get(:@edit_window).instance_variable_get(:@hint),
+      "Type on the keyboard. Enter confirms, Esc or Numpad 0 goes back.")
+$keys_down = [Mod_Framework::UI::NUMPAD_ZERO[1]]
+left.update
+check("the numpad's 0 with Num Lock off leaves without a text", [left.scene_changing?, MGQ_MpWorld.text_result], [true, [:mod_name, nil]])
+left.terminate
+digits = Scene_MpText.new
+digits.prepare(:port, "Port", "", :max_chars => 5, :digits => true)
+digits.start
+$keys_down = [Mod_Framework::UI::NUMPAD_ZERO[0]]
+digits.update
+check("in a text of digits the numpad's 0 with Num Lock on stays to type a 0", digits.scene_changing?, false)
+$keys_down = [Mod_Framework::UI::NUMPAD_ZERO[1]]
+digits.update
+check("and with Num Lock off it leaves", digits.scene_changing?, true)
+digits.terminate
+$keys_down = []

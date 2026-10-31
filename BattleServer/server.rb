@@ -2,6 +2,7 @@
 #  server.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Told a server of MGQ Online's battles by MGQ Online's file, which the Mod Framework loads only as the game runs
 #      Paulinchen  2026-10-30: Read a co-op battle's mods without the core library before its child's sandbox
 #      Paulinchen  2026-10-23: Refused MGQ Online's battles without the core library, telling the relay why
 #                            - Derived the story mapping's index for the relay
@@ -81,8 +82,9 @@ module BattleServer
     def run
       boot_seconds = Boot.run
       # MGQ Online in the game folder makes this a server of its co-op battles; without it the
-      # server plays the battles its requests describe. Their hooks never meet in one process.
-      @served = defined?(MGQ_Multiplayer::Link) ? true : false
+      # server plays the battles its requests describe. Their hooks never meet in one process. The
+      # Mod Framework loads MGQ Online only as the game runs, so its file tells.
+      @served = Boot.served_game?
       @served ? ServedBattle.install : HeadlessBattle.install
       @core_library = @served ? Core.library : nil
       # Forked children each load the core themselves; it must never run before a fork.

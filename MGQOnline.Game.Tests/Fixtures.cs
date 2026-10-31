@@ -2,6 +2,7 @@
 //  Fixtures.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Stopped reading the interface's cases, which moved into the Mod Framework
 //      Paulinchen  2026-10-23: Read the interface's cases too
 //                            - Read the golden files of any area
 //                            - Read the world room's cases
@@ -26,13 +27,6 @@ internal static class Fixtures
     /// <param name="name">The file, such as "decode.json".</param>
     /// <returns>Its content.</returns>
     public static JsonElement Wire(string name) => Read("wire", name);
-
-    /// <summary>
-    /// Reads a case file that a script under fixtures/ui wrote.
-    /// </summary>
-    /// <param name="name">The file, such as "text.json".</param>
-    /// <returns>Its content.</returns>
-    public static JsonElement Ui(string name) => Read("ui", name);
 
     /// <summary>
     /// Reads a golden file of an area.

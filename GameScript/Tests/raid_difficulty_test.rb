@@ -2,7 +2,9 @@
 #  raid_difficulty_test.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Expected a Classic party to keep the difficulty each player's own, by the reviewed list
+#      Paulinchen  2026-11-01: Dropped the stand-in of the title screen's commands, which no script hooks any more
+#      Paulinchen  2026-10-31: Loaded ui_online.rbx and ui_boxes.rbx in place of the scripts the Mod Framework took over
+#                            - Expected a Classic party to keep the difficulty each player's own, by the reviewed list
 #      Paulinchen  2026-10-30: Expected the forms without the game data's fields
 #                            - Left the hints fitting their lines to world_data_test.rb
 #      Paulinchen  2026-10-23: Left the calls a new world and an edit hand the directory to the DLL's tests
@@ -58,8 +60,6 @@ class Sprite; def initialize(*); end; end
 Rect = Struct.new(:x, :y, :width, :height)
 # Stands in for the game's title screen.
 class Scene_Title; def start; end; def create_command_window; end; def close_command_window; end; def update; end; def terminate; end; end
-# Stands in for the title screen's commands.
-class Window_TitleCommand; def make_command_list; end; end
 # Stands in for the game's sounds, which play nothing.
 module Sound; %w[cursor ok cancel buzzer].each { |s| define_singleton_method("play_#{s}") {} }; end
 # Stands in for the game's scenes, calling none.
@@ -193,8 +193,8 @@ end
 module MGQ_MpCoop; module Scope; def self.raid?; MGQ_MpWorld.raid?; end; end; end
 
 load_script "world_save_distribution"
-load_script "ui"
-load_script "ui_text_box"
+load_script "ui_online"
+load_script "ui_boxes"
 load_script "world"
 load_script "story_state"
 load_script "world_difficulty"
