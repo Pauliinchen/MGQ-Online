@@ -2,6 +2,7 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-28: Created
 #
 #----------------------------------------------------------------
@@ -14,10 +15,10 @@
 # records what the script did. MGQOnline.Game.Tests replays them against the C# class, and the
 # script tests' stand-in (GameScript/Tests/pages_support.rb) is checked against them.
 #
-# It runs on the coop_events.rbx of commit 68e7b75d, the last that kept the rules, with the
+# It runs on the coop_events.rbx of commit 5bcdc4bf, which still kept the rules, with the
 # stand-ins below, on Ruby 3.3:
 #
-#   git show 68e7b75d:GameScript/Multiplayer/Scripts/coop_events.rbx > old_events.rbx
+#   git show 5bcdc4bf:GameScript/Multiplayer/Scripts/coop_events.rbx > old_events.rbx
 #   ruby fixtures/pages/make_fixtures.rb old_events.rbx
 
 require "json"
@@ -126,7 +127,7 @@ class Game_Party; def gain_item(*); end; def gain_gold(*); end; end
 class Window_Message; def process_input; end; def input_pause; end; end
 module RPG; class SE; def play; end; end; class Item; end; class Weapon; end; class Armor; end; end
 
-script = ARGV[0] || abort("Name the coop_events.rbx of commit 68e7b75d, see the header.")
+script = ARGV[0] || abort("Name the coop_events.rbx of commit 5bcdc4bf, see the header.")
 load File.join(SCRIPTS_DIR, "core_log.rbx")
 load File.join(SCRIPTS_DIR, "core_hooks.rbx")
 load File.join(SCRIPTS_DIR, "core_game_access.rbx")
@@ -386,7 +387,7 @@ scenario("the pages of a former teller go once another tells", [
 ])
 
 lines = SCENARIOS.map { |entry| "    " + JSON.generate(entry) }
-text = "{\n  \"source\": \"coop_events.rbx at 68e7b75d, Ruby #{RUBY_VERSION}\",\n" \
+text = "{\n  \"source\": \"coop_events.rbx at 5bcdc4bf, Ruby #{RUBY_VERSION}\",\n" \
        "  \"frames\": {\"skip_send\": #{EVENTS::SKIP_SEND_FRAMES}, \"read\": #{EVENTS::READ_FRAMES}, \"read_per_character\": #{EVENTS::READ_FRAMES_PER_CHARACTER}, " \
        "\"most_read\": #{EVENTS::MOST_READ_FRAMES}, \"stale\": #{EVENTS::STALE_FRAMES}},\n" \
        "  \"max_heard\": #{EVENTS::MAX_HEARD}, \"max_done\": #{EVENTS::MAX_DONE}, \"catch_up_pages\": #{EVENTS::CATCH_UP_PAGES},\n" \

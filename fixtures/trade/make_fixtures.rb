@@ -2,17 +2,21 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
+#                            - Handed the old script the trade messages the world room now gives C#
+#                            - Left out the notice of an applied trade as the old script words it
+#                            - Wrote the texts C# words anew as C# words them
 #      Paulinchen  2026-10-30: Created
 #
 #----------------------------------------------------------------
 
 # Writes the golden cases of the trade's handshake and session next to this file, cases.json, from
-# trade.rbx as it kept them before they moved to C# (commit eae042b7, which this generator reads
-# through git, so it runs again on later commits). Each scenario is a list of steps; a step's
-# operations run, then its frames (MGQ_MpTrade.tick), and the step records what the operations and
-# the frames did: the trade messages sent, the notices, the relay calls and the trade as it stands.
-# It also records agreed_text and relay_id for a few pairs of players. MGQOnline.Game.Tests replays
-# them against the C# trade.
+# trade.rbx as it kept them before they moved to C# (the trade.rbx of commit 2f89514d, which this
+# generator reads through git, so it runs again on later commits). Each scenario is a list of
+# steps; a step's operations run, then its frames (MGQ_MpTrade.tick), and the step records what
+# the operations and the frames did: the trade messages sent, the notices, the relay calls and the
+# trade as it stands. It also records agreed_text and relay_id for a few pairs of players.
+# MGQOnline.Game.Tests replays them against the C# trade.
 #
 #   ruby fixtures/trade/make_fixtures.rb
 
@@ -20,8 +24,11 @@ require "json"
 require "tempfile"
 require_relative "../../GameScript/Tests/world_support"
 
+# The old trade.rbx took the trade messages itself, which the world room now hands to C#.
+CSHARP_FIELDS.delete("trade")
+
 # The commit whose trade.rbx kept the rules.
-SOURCE_COMMIT = "eae042b7"
+SOURCE_COMMIT = "2f89514d"
 
 # The trade's id the player makes up as the one who offered it.
 TRADE_ID = "0123456789abcdef01234567"
@@ -150,7 +157,13 @@ module MGQ_MpTrade::Recovery
 end
 
 # The notice after an applied trade, which stays the scripts'.
-APPLIED_NOTICE = "Trade with Friend complete. Save your game."
+APPLIED_NOTICE = "Trade with Friend complete. Save your game, the trade could not."
+
+# The notices C# words anew, each the script's text and the one C# shows (TradeTexts).
+REWORDED = {
+  "The trade could not reach the relay. If it went through, it completes the next time you enter the world." =>
+    "The trade could not be completed. If it went through, it completes the next time you enter the world.",
+}
 
 # Records every notice.
 $notices = []
@@ -263,7 +276,7 @@ def scenario(name, steps)
     frames.times { MGQ_MpTrade.tick(true) }
     sent = $sent.map { |seat, text| [seat, text] }.select { |_, text| text.start_with?("trade=") }
     dll = $dll.select { |call| %w[mp_trade_commit mp_trade_cancel].include?(call[0]) }
-    notices = $notices - [APPLIED_NOTICE]
+    notices = ($notices - [APPLIED_NOTICE]).map { |text| REWORDED.fetch(text, text) }
     { "ops" => replayed, "handed" => handed, "frames" => frames,
       "outcome" => JSON.parse(JSON.generate({ "sent" => sent, "notices" => notices, "relay" => dll, "applied" => $applied.dup, "view" => view })) }
   end

@@ -2,13 +2,14 @@
 #  make_setup_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-30: Created
 #
 #----------------------------------------------------------------
 
 # Writes the golden cases of a served battle's setup next to this file, setup.json, from
 # battles_served.rbx and BattleServer/lib/served.rb as they wrote, read and checked it before that
-# moved to C# (commit e2a51fe5, which this generator reads through git, so it runs again on later
+# moved to C# (commit 8d4f6024, which this generator reads through git, so it runs again on later
 # commits): the setup line written from the facts the starter's game collects, the setups read
 # back (lines of other formats and fields of the wrong kind among them), the battle server's
 # refusals, and the scripts' fingerprint over a few scripts. MGQOnline.Game.Tests replays them.
@@ -21,7 +22,7 @@ require "zlib"
 require_relative "../../GameScript/Tests/support"
 
 # The commit whose scripts kept the setup.
-SOURCE_COMMIT = "e2a51fe5"
+SOURCE_COMMIT = "8d4f6024"
 
 # The log stays quiet; the cases record what the rules did, not their lines.
 module MGQ_Multiplayer; module Log; def self.write(_line); end; end; end

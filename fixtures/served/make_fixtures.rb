@@ -2,13 +2,14 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-30: Created
 #
 #----------------------------------------------------------------
 
 # Writes the golden cases of a served battle's front next to this file, front.json, from
 # battles_served.rbx as its starter stood in for the battle server in the world's room before that
-# moved to the DLL (commit e2a51fe5, which this generator reads through git, so it runs again on
+# moved to the DLL (commit 8d4f6024, which this generator reads through git, so it runs again on
 # later commits): the requests to join it the starter passes on to the server (with the states and
 # fields the script hands over and the message that goes out), a player who left the world, the
 # server's messages for the world's room (passed on or dropped), the server's state the starter
@@ -22,7 +23,7 @@ require "tempfile"
 require_relative "../../GameScript/Tests/support"
 
 # The commit whose battles_served.rbx kept the front.
-SOURCE_COMMIT = "e2a51fe5"
+SOURCE_COMMIT = "8d4f6024"
 
 # The battle's id.
 BATTLE = "bf3q2k9x"

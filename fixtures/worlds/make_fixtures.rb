@@ -11,7 +11,7 @@
 # world.ini read and written (ini.json), a world's latest save (saves.json), the game data compared
 # (data.json) and the mod picker (modpick.json). Run it on the world.rbx of the version to record:
 #
-#   git show 2a2c2159:GameScript/Multiplayer/Scripts/world.rbx > world_old.rbx
+#   git show 410dca74:GameScript/Multiplayer/Scripts/world.rbx > world_old.rbx
 #   ruby fixtures/worlds/make_fixtures.rb world_old.rbx
 #
 # The scripts' mods text and mod keys stand in as fixtures/mods/text.json and keys.json show them,

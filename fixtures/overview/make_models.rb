@@ -2,7 +2,8 @@
 #  make_models.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Recorded the World page with the boss tables and the world story it reads
+#      Paulinchen  2026-10-31: Named the commit whose scripts it records
+#                            - Recorded the World page with the boss tables and the world story it reads
 #                            - Left the Frontline level unread in a Classic world
 #                            - Created
 #
@@ -13,11 +14,12 @@
 # before those models moved to MGQOnline.Game/Overview, as golden cases the C# tests replay. It
 # runs the scripts' own methods over stand-ins; make_fixtures.rb runs it.
 #
-#   ruby fixtures/overview/make_models.rb <the Scripts folder of the version to record>
+#   git archive d65f17b4 GameScript/Multiplayer/Scripts | tar -x -C <old tree>
+#   ruby fixtures/overview/make_models.rb <old tree>/GameScript/Multiplayer/Scripts
 
 require "json"
 
-SCRIPTS = ARGV[0] || File.expand_path("../../GameScript/Multiplayer/Scripts", __dir__)
+SCRIPTS = ARGV[0] || abort("Name the Scripts folder of commit d65f17b4, see the header.")
 
 # Reads a script of the Scripts folder.
 #

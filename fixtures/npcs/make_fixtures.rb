@@ -2,6 +2,7 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-30: Created
 #
 #----------------------------------------------------------------
@@ -16,10 +17,10 @@
 # script's own lines about it, its walking and its placing are left out. MGQOnline.Game.Tests
 # replays the cases against the C# machine.
 #
-# It runs on the coop_npcs.rbx of commit eae042b7, the last that kept the rules, with the stand-ins
+# It runs on the coop_npcs.rbx of commit 40f11e4d, which still kept the rules, with the stand-ins
 # below, on Ruby 3.3:
 #
-#   git show eae042b7:GameScript/Multiplayer/Scripts/coop_npcs.rbx > old_npcs.rbx
+#   git show 40f11e4d:GameScript/Multiplayer/Scripts/coop_npcs.rbx > old_npcs.rbx
 #   ruby fixtures/npcs/make_fixtures.rb old_npcs.rbx
 
 require "json"
@@ -57,7 +58,7 @@ module MGQ_MpOverworldSync
 end
 
 # The party's and the map's sends as coop.rbx's tell and coop_scope.rbx's tell_map and Scope.tell
-# of eae042b7 write them: the party's id $party, a Raid World while $raid, the players present
+# of 40f11e4d write them: the party's id $party, a Raid World while $raid, the players present
 # $present.
 module MGQ_MpCoop
   MAP_PREFIX = "map_"
@@ -80,7 +81,7 @@ module MGQ_MpCoop
   end
 end
 
-script = ARGV[0] || abort("Name the coop_npcs.rbx of commit eae042b7, see the header.")
+script = ARGV[0] || abort("Name the coop_npcs.rbx of commit 40f11e4d, see the header.")
 load File.join(SCRIPTS_DIR, "core_log.rbx")
 load File.join(SCRIPTS_DIR, "core_hooks.rbx")
 load File.join(SCRIPTS_DIR, "core_game_access.rbx")
@@ -222,6 +223,6 @@ scenario("in a Raid World the Map Owner sends through the map's gate, and a foll
 
 lines = SCENARIOS.map { |entry| "    " + JSON.generate(entry) }
 constants = { "send_frames" => NPCS::SEND_FRAMES }
-text = "{\n  \"source\": \"coop_npcs.rbx at eae042b7, Ruby #{RUBY_VERSION}\",\n  \"constants\": #{JSON.generate(constants)},\n  \"scenarios\": [\n#{lines.join(",\n")}\n  ]\n}\n"
+text = "{\n  \"source\": \"coop_npcs.rbx at 40f11e4d, Ruby #{RUBY_VERSION}\",\n  \"constants\": #{JSON.generate(constants)},\n  \"scenarios\": [\n#{lines.join(",\n")}\n  ]\n}\n"
 File.write(File.join(__dir__, "cases.json"), text)
 puts "wrote #{SCENARIOS.size} scenarios"

@@ -2,6 +2,8 @@
 #  make_settings.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Named the commit whose scripts it records
+#                            - Wrote the texts C# words anew as C# words them
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
@@ -13,11 +15,12 @@
 # golden cases both sides check. The options are those of OPTIONS, as Mod Config Remake would group
 # them.
 #
-#   ruby fixtures/mods/make_settings.rb <world_mods.rbx of the version to record>
+#   git show 75951eed:GameScript/Multiplayer/Scripts/world_mods.rbx > old_world_mods.rbx
+#   ruby fixtures/mods/make_settings.rb old_world_mods.rbx
 
 require "json"
 
-SOURCE = File.read(ARGV[0] || File.expand_path("../../GameScript/Multiplayer/Scripts/world_mods.rbx", __dir__), :encoding => "UTF-8")
+SOURCE = File.read(ARGV[0] || abort("Name the world_mods.rbx of commit 75951eed, see the header."), :encoding => "UTF-8")
 
 # Takes one part of the script's source.
 #
@@ -147,7 +150,15 @@ details = [
 ].map { |settings, creator| { "settings" => settings, "creator_id" => creator, "text" => M.details_text(Listed.new(settings, creator, "Creator"), "me") } }
 
 options = OPTIONS.map { |name, entries| [name, entries.map { |key, row, values| [key.to_s, M.short_name(:name => row), values.map { |value, text| [M.encode(value), text] }] }] }
-File.write(File.join(__dir__, "settings.json"), JSON.pretty_generate({
+text = JSON.pretty_generate({
   "options" => options, "pairs" => pairs, "shared" => shared, "fits" => fits, "built" => built, "marked" => marked, "merged" => merged, "changes" => changes,
   "relay" => relay, "lists" => lists, "names" => names, "notices" => notices, "details" => details,
-}) + "\n")
+}) + "\n"
+
+# The texts C# words anew, each the script's text and the one SettingNotices writes.
+REWORDED = {
+  "Shared Mod Settings were turned off on the relay:" => "An admin turned Shared Mod Settings off:",
+  "Shared Mod Settings were turned on on the relay:" => "An admin turned Shared Mod Settings on:",
+  "The shared mod settings were changed on the relay:" => "An admin changed the shared mod settings:",
+}
+File.write(File.join(__dir__, "settings.json"), REWORDED.inject(text) { |cases, (old, now)| cases.gsub(old, now) })

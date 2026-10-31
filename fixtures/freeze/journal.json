@@ -1,5 +1,5 @@
 {
-  "source": "battles_raid_freeze.rbx story_diff at 6fde52ff, Ruby 3.3.12",
+  "source": "battles_raid_freeze.rbx story_diff at 1708af2c, Ruby 3.3.12",
   "cases": [
     {
       "name": "a key written twice keeps its first value, a key set back drops out of the diff, a key written only before the mark is none of the journal's",

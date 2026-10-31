@@ -2,6 +2,7 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-28: Created
 #
 #----------------------------------------------------------------
@@ -15,10 +16,10 @@
 # machine, and the script tests' stand-in (GameScript/Tests/gather_support.rb) is checked against
 # them.
 #
-# It runs on the coop_gather.rbx of commit ba956983, the last that kept the rules, with the
+# It runs on the coop_gather.rbx of commit d7bc93af, which still kept the rules, with the
 # stand-ins below, on Ruby 3.3:
 #
-#   git show ba956983:GameScript/Multiplayer/Scripts/coop_gather.rbx > old_gather.rbx
+#   git show d7bc93af:GameScript/Multiplayer/Scripts/coop_gather.rbx > old_gather.rbx
 #   ruby fixtures/gather/make_fixtures.rb old_gather.rbx
 
 require "json"
@@ -110,7 +111,7 @@ end
 # The story's state: the warp ban's switch.
 module MGQ_MpStoryState; WARP_BAN = 100; end
 
-script = ARGV[0] || abort("Name the coop_gather.rbx of commit ba956983, see the header.")
+script = ARGV[0] || abort("Name the coop_gather.rbx of commit d7bc93af, see the header.")
 load File.join(SCRIPTS_DIR, "core_log.rbx")
 load File.join(SCRIPTS_DIR, "core_hooks.rbx")
 load File.join(SCRIPTS_DIR, "core_game_access.rbx")
@@ -317,6 +318,6 @@ scenario("a Raid World's follow is taken at once by a player watching the tellin
 lines = SCENARIOS.map { |entry| "    " + JSON.generate(entry) }
 constants = { "gather_frames" => GATHER::GATHER_FRAMES, "call_frames" => GATHER::CALL_FRAMES, "hold_frames" => GATHER::HOLD_FRAMES, "call_lapse_frames" => GATHER::CALL_LAPSE_FRAMES,
               "asked_lapse_frames" => GATHER::ASKED_LAPSE_FRAMES, "follow_offer_frames" => GATHER::FOLLOW_OFFER_FRAMES, "gather_tiles" => GATHER::GATHER_TILES, "named_missing" => GATHER::NAMED_MISSING }
-text = "{\n  \"source\": \"coop_gather.rbx at ba956983, Ruby #{RUBY_VERSION}\",\n  \"frames\": #{JSON.generate(constants)},\n  \"scenarios\": [\n#{lines.join(",\n")}\n  ]\n}\n"
+text = "{\n  \"source\": \"coop_gather.rbx at d7bc93af, Ruby #{RUBY_VERSION}\",\n  \"frames\": #{JSON.generate(constants)},\n  \"scenarios\": [\n#{lines.join(",\n")}\n  ]\n}\n"
 File.write(File.join(__dir__, "cases.json"), text)
 puts "wrote #{SCENARIOS.size} scenarios"

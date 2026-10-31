@@ -2,6 +2,8 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Named the commit whose scripts it records
+#                            - Wrote the texts C# words anew as C# words them
 #      Paulinchen  2026-10-30: Created
 #
 #----------------------------------------------------------------
@@ -18,8 +20,9 @@
 # replay applies too: a team's members are its lines that start with "member=", a free player is
 # $free, the player's own team and Frontline are set by the operations, and battle ids are counted.
 #
-# It runs on the scripts of the commit that added it, with the stand-ins of
-# GameScript/Tests/world_support.rb, on Ruby 3.3:
+# It runs on the scripts of commit d9752931, which added it, with the stand-ins of
+# GameScript/Tests/world_support.rb, on Ruby 3.3, from a checkout of that commit with this file
+# copied in:
 #
 #   ruby fixtures/duel/make_fixtures.rb
 
@@ -523,5 +526,8 @@ SCENARIOS = {
 }.freeze
 
 cases = { "scenarios" => SCENARIOS.map { |name, steps| { "name" => name, "steps" => play(steps) } } }
-File.write(File.join(__dir__, "cases.json"), JSON.pretty_generate(cases) + "\n")
+# The texts C# words anew, each the script's text and the one DuelHandshake writes.
+REWORDED = { "refused: could not read your team (team)" => "refused: could not start the duel (team)" }
+text = JSON.pretty_generate(cases) + "\n"
+File.write(File.join(__dir__, "cases.json"), REWORDED.inject(text) { |cases_text, (old, now)| cases_text.gsub(old, now) })
 puts "wrote #{cases['scenarios'].size} scenarios to #{File.join(__dir__, 'cases.json')}"

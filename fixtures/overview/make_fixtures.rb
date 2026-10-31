@@ -2,6 +2,8 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Named the commit whose scripts it records
+#                            - Stood in for the world room the titles are written in
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
@@ -11,11 +13,12 @@
 # cases both sides check. It runs the script's own methods over stand-ins with the translated
 # game's variable and switch names.
 #
-#   ruby fixtures/overview/make_fixtures.rb <world_overview.rbx of the version to record>
+#   git show a78f589c:GameScript/Multiplayer/Scripts/world_overview.rbx > old_overview.rbx
+#   ruby fixtures/overview/make_fixtures.rb old_overview.rbx
 
 require "json"
 
-source = File.read(ARGV[0] || File.expand_path("../../GameScript/Multiplayer/Scripts/world_overview.rbx", __dir__), :encoding => "UTF-8")
+source = File.read(ARGV[0] || abort("Name the world_overview.rbx of commit a78f589c, see the header."), :encoding => "UTF-8")
 
 # The translated game's names of the variables and switches the story is read from.
 VARIABLE_NAMES = { 1001 => "Overall Events Progress", 1141 => "天界ルート進行度", 1142 => "魔界ルート進行度", 1143 => "混沌ルート進行度" }
@@ -61,6 +64,13 @@ module MGQ_MpWorld
   def self.difficulty_name(value)
     found = DIFFICULTY_NAMES.find { |entry| entry[0] == value }
     found && found[1]
+  end
+end
+
+# Stands in for the world room, which the titles are written in.
+module MGQ_MpOverworldSync
+  def self.in_world?
+    true
   end
 end
 

@@ -16,8 +16,9 @@
 # The party steps where a player joins while the invite stands no longer come from here: they were
 # written anew from the C# rule once an invite stood for everyone it reached.
 #
-# It runs on the scripts of the commit that added it, with the stand-ins of
-# GameScript/Tests/world_support.rb, on Ruby 3.3:
+# It runs on the scripts of commit 959bdf42, which added it, with the stand-ins of
+# GameScript/Tests/world_support.rb, on Ruby 3.3, from a checkout of that commit with this file
+# copied in:
 #
 #   ruby fixtures/peers/make_fixtures.rb
 

@@ -2,7 +2,8 @@
 #  make_fixtures.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Created
+#      Paulinchen  2026-10-31: Wrote the texts C# words anew as C# words them
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -15,8 +16,8 @@
 # the log, its sounds, notices and sends, the box's text, and the chat's state and lines.
 # MGQOnline.Game.Tests replays them against the C# model through the world room's routes.
 #
-# It runs on the scripts of commit 3ee61503, the last that kept the rules in ui_chat.rbx, through
-# the script tests' stand-ins, on Ruby 3.3, from a checkout of that commit:
+# It runs on the scripts of commit 2f6888c0, which still kept the rules in ui_chat.rbx, through
+# the script tests' stand-ins, on Ruby 3.3, from a checkout of that commit with this file copied in:
 #
 #   ruby fixtures/chat/make_fixtures.rb
 
@@ -320,5 +321,9 @@ scenario("the party chat", [
   { "op" => "tick", "in_world" => false },
 ])
 
-File.write(File.join(__dir__, "cases.json"), JSON.pretty_generate({ "scenarios" => SCENARIOS }) + "\n")
+# The texts C# words anew, each the script's text and the one ChatModel shows.
+REWORDED = { "You are in no party, so nobody hears the party chat." => "You are not in a party." }
+
+text = JSON.pretty_generate({ "scenarios" => SCENARIOS }) + "\n"
+File.write(File.join(__dir__, "cases.json"), REWORDED.inject(text) { |cases, (old, now)| cases.gsub(old, now) })
 puts "wrote #{SCENARIOS.size} scenarios"

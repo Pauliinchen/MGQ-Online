@@ -2,6 +2,7 @@
 #  make_layout_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
@@ -10,9 +11,9 @@
 # MGQ_MpUi::Layout as ui_layout.rbx had it before its rules moved to C# (LayoutModel in
 # MGQOnline.Game), with what each rect answered and what each frame kept in Player.ini, which
 # MGQOnline.Game.Tests replays. The script no longer holds those rules, so hand it the script of
-# commit f67e1fd to write the cases again:
+# commit 40f11e4d to write the cases again:
 #
-#   git show f67e1fd:GameScript/Multiplayer/Scripts/ui_layout.rbx > old_layout.rbx
+#   git show 40f11e4d:GameScript/Multiplayer/Scripts/ui_layout.rbx > old_layout.rbx
 #   ruby fixtures/ui/make_layout_fixtures.rb old_layout.rbx
 
 require "json"
@@ -59,7 +60,7 @@ module MGQ_MpUi
 end
 # The hooks, which the cases call by hand.
 module MGQ_MpHooks; def self.after(*); end; end
-load(ARGV[0] || abort("Name the ui_layout.rbx of commit f67e1fd, see the header."))
+load(ARGV[0] || abort("Name the ui_layout.rbx of commit 40f11e4d, see the header."))
 # The overlay is drawing, which the cases leave out.
 MGQ_MpUi::Layout.define_singleton_method(:draw) { |_offers, _position| }
 

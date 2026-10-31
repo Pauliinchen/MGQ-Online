@@ -2,6 +2,7 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-28: Created
 #
 #----------------------------------------------------------------
@@ -15,10 +16,10 @@
 # classes, and the script tests' stand-in (GameScript/Tests/scene_support.rb) is checked against
 # them.
 #
-# It runs on the coop_scene.rbx of commit c2ef101b, the last that kept the rules, with the
+# It runs on the coop_scene.rbx of commit d7bc93af, which still kept the rules, with the
 # stand-ins below, on Ruby 3.3:
 #
-#   git show c2ef101b:GameScript/Multiplayer/Scripts/coop_scene.rbx > old_scene.rbx
+#   git show d7bc93af:GameScript/Multiplayer/Scripts/coop_scene.rbx > old_scene.rbx
 #   ruby fixtures/scene/make_fixtures.rb old_scene.rbx
 
 require "json"
@@ -168,7 +169,7 @@ module MGQ_MpStoryKeys; def self.applying; yield; end; end
 # This game has every picture.
 module MGQ_MpOverworld; def self.graphic?(_folder, _name); true; end; end
 
-script = ARGV[0] || abort("Name the coop_scene.rbx of commit c2ef101b, see the header.")
+script = ARGV[0] || abort("Name the coop_scene.rbx of commit d7bc93af, see the header.")
 load File.join(SCRIPTS_DIR, "core_log.rbx")
 load File.join(SCRIPTS_DIR, "core_hooks.rbx")
 load File.join(SCRIPTS_DIR, "core_game_access.rbx")
@@ -435,7 +436,7 @@ batch("a kind that is no text", [[7, [15, 1]]])
 batch("a change with a third part", [["picture.rotate", [15, 1], 1]])
 
 File.write(File.join(__dir__, "cases.json"),
-           JSON.pretty_generate({ "source" => "coop_scene.rbx at c2ef101b", "max_batch" => SCENE::MAX_BATCH, "max_batch_bytes" => SCENE::MAX_BATCH_BYTES,
+           JSON.pretty_generate({ "source" => "coop_scene.rbx at d7bc93af", "max_batch" => SCENE::MAX_BATCH, "max_batch_bytes" => SCENE::MAX_BATCH_BYTES,
                                   "max_picture" => SCENE::MAX_PICTURE, "most_amount" => SCENE::MOST_AMOUNT, "most_frames" => SCENE::MOST_FRAMES, "most_shake" => SCENE::MOST_SHAKE,
                                   "queue" => SCENARIOS, "checks" => CHECKS, "batches" => BATCHES }) + "\n")
 puts "wrote #{SCENARIOS.size} queue scenarios, #{CHECKS.size} check cases and #{BATCHES.size} batch cases"

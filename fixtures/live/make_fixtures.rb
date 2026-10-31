@@ -2,6 +2,8 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
+#                            - Wrote the texts C# words anew as C# words them
 #      Paulinchen  2026-10-30: Wrote the golden steps of the host's recording
 #                            - Wrote the golden cases of the command plan and a team duel's sides
 #                            - Wrote the golden cases of the session and of the battle's endings
@@ -10,7 +12,7 @@
 #----------------------------------------------------------------
 
 # Writes the golden cases of the live battle's rules next to this file from the scripts of commit
-# eae042b7, the last that kept them in Ruby (battles_sync*.rbx), which MGQOnline.Game.Tests replays
+# 2f89514d, the last that kept them in Ruby (battles_sync*.rbx), which MGQOnline.Game.Tests replays
 # against MGQOnline.Game's Battles/Live folder and GameScript/Tests/live_support.rb checks its
 # stand-ins against:
 #
@@ -22,7 +24,7 @@
 #
 # It runs on the old scripts with their own test support, on Ruby 3.3:
 #
-#   git archive eae042b7 GameScript fixtures Relay/seed | tar -x -C <old>
+#   git archive 2f89514d GameScript fixtures Relay/seed | tar -x -C <old>
 #   ruby fixtures/live/make_fixtures.rb <old>
 #
 # served_streams.json holds the names line and the sends of served battles as their guests got
@@ -426,7 +428,10 @@ gone = []
   end
 end
 sync.finish
-File.write(File.join(HERE, "verdicts.json"), JSON.pretty_generate({ "early" => early, "guest" => guest, "gone" => gone }) + "\n")
+# The texts C# words anew, each the scripts' text and the one LiveVerdicts shows.
+REWORDED = { "The live battle broke off." => "The battle broke off." }
+text = JSON.pretty_generate({ "early" => early, "guest" => guest, "gone" => gone }) + "\n"
+File.write(File.join(HERE, "verdicts.json"), REWORDED.inject(text) { |cases, (old, now)| cases.gsub(old, now) })
 puts "wrote verdicts.json: #{early.size + guest.size + gone.size} cases"
 
 # The session's scenario: each step what the old scripts did, answered and logged of what the

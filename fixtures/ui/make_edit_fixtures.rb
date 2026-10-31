@@ -2,6 +2,7 @@
 #  make_edit_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
@@ -9,9 +10,9 @@
 # Writes edit.json next to this file: the text box editor's golden cases, played through
 # MGQ_MpUi::TextEdit as ui_text_box.rbx had it before the editor moved to C# (TextEditor in
 # MGQOnline.Game), which MGQOnline.Game.Tests replays. The scripts no longer hold the editor, so
-# hand it the script of commit b20ddf0 to write the cases again:
+# hand it the script of commit a5882d8f to write the cases again:
 #
-#   git show b20ddf0:GameScript/Multiplayer/Scripts/ui_text_box.rbx > old_text_box.rbx
+#   git show a5882d8f:GameScript/Multiplayer/Scripts/ui_text_box.rbx > old_text_box.rbx
 #   ruby fixtures/ui/make_edit_fixtures.rb old_text_box.rbx
 
 require_relative "text_harness"
@@ -49,7 +50,7 @@ end
 
 # The editor and the line breaking it builds on, read out of the script.
 module MGQ_MpUi
-  source = File.read(ARGV[0] || abort("Name the ui_text_box.rbx of commit b20ddf0, see the header."), :encoding => "UTF-8")
+  source = File.read(ARGV[0] || abort("Name the ui_text_box.rbx of commit a5882d8f, see the header."), :encoding => "UTF-8")
   module_eval(source[/^  class TextEdit\n.*?^  end\n/m] || abort("TextEdit is missing from #{ARGV[0]}"))
   module_eval(source[/^  def self\.wrap_spans\(.*?^  end\n/m])
   module_eval(source[/^  def self\.span_of\(.*?^  end\n/m])

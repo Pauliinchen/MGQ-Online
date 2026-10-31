@@ -2,6 +2,7 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Named the commit whose scripts it records
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
@@ -10,13 +11,15 @@
 # of them, as world_screen.rbx's edit_world and difficulty_text decided before the requests moved to
 # WorldRequests in MGQOnline.Game, as golden cases both sides check.
 #
-#   ruby fixtures/requests/make_fixtures.rb <world_screen.rbx> <world.rbx> of the version to record
+#   git show 964960b5:GameScript/Multiplayer/Scripts/world_screen.rbx > old_screen.rbx
+#   git show 964960b5:GameScript/Multiplayer/Scripts/world.rbx > old_world.rbx
+#   ruby fixtures/requests/make_fixtures.rb old_screen.rbx old_world.rbx
 
 require "json"
 
 root = File.expand_path("../..", __dir__)
-screen = File.read(ARGV[0] || File.join(root, "GameScript/Multiplayer/Scripts/world_screen.rbx"), :encoding => "UTF-8")
-world = File.read(ARGV[1] || File.join(root, "GameScript/Multiplayer/Scripts/world.rbx"), :encoding => "UTF-8")
+screen = File.read(ARGV[0] || abort("Name the world_screen.rbx of commit 964960b5, see the header."), :encoding => "UTF-8")
+world = File.read(ARGV[1] || abort("Name the world.rbx of commit 964960b5, see the header."), :encoding => "UTF-8")
 RULES = JSON.parse(File.read(File.join(root, "fixtures/world/rules.json"), :encoding => "UTF-8"))["rules"]
 
 # The world script's rules as fixtures/world/rules.json gives them, with its squad_summary and

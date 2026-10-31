@@ -1,5 +1,5 @@
 {
-  "source": "coop_events.rbx at 68e7b75d, Ruby 3.3.12",
+  "source": "coop_events.rbx at 5bcdc4bf, Ruby 3.3.12",
   "frames": {"skip_send": 10, "read": 60, "read_per_character": 2, "most_read": 180, "stale": 120},
   "max_heard": 30, "max_done": 64, "catch_up_pages": 3,
   "scenarios": [

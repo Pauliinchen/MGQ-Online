@@ -2,6 +2,8 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
+#                            - Wrote the texts C# words anew as C# words them
 #      Paulinchen  2026-10-28: Created
 #
 #----------------------------------------------------------------
@@ -12,10 +14,10 @@
 # of the bridge topic that answers it now (ChoiceTopics), the request as the script builds it and
 # the reply the old rule gave. MGQOnline.Game.Tests replays every case, and the script tests'
 # stand-in (GameScript/Tests/choices_support.rb) is checked against them. The script no longer holds
-# those rules, so hand it the script of commit 71b3a6fe, the last that kept them, to write the cases
+# those rules, so hand it the script of commit 40f11e4d, which still kept them, to write the cases
 # again, on Ruby 3.3:
 #
-#   git show 71b3a6fe:GameScript/Multiplayer/Scripts/coop_choices.rbx > old_choices.rbx
+#   git show 40f11e4d:GameScript/Multiplayer/Scripts/coop_choices.rbx > old_choices.rbx
 #   ruby fixtures/choices/make_fixtures.rb old_choices.rbx
 
 require "json"
@@ -74,7 +76,7 @@ module MGQ_MpWorldStory; def self.decision_routes; $state[:world_routes]; end; e
 # A player as the party knows them.
 Peer = Struct.new(:state)
 
-load(ARGV[0] || abort("Name the coop_choices.rbx of commit 71b3a6fe, see the header."))
+load(ARGV[0] || abort("Name the coop_choices.rbx of commit 40f11e4d, see the header."))
 CHOICES = MGQ_MpCoopChoices
 
 # The switches, variables and companions the rules read, in the order the requests name them.
@@ -142,12 +144,16 @@ end
 # The cases, in the order written.
 CASES = []
 
+# The answers C# words anew, each the script's wording and the one C# gives (StoryChoices).
+REWORDED = [[/'s game tells no story progress\.\z/, "'s story is not known yet."]]
+
 # Records a case.
 #
 # @param topic [String] The topic.
 # @param request [Object] The request.
 # @param reply [Object] The old rule's answer.
 def record(topic, request, reply)
+  reply = REWORDED.inject(reply) { |text, (old, now)| text.sub(old, now) } if reply.is_a?(String)
   CASES << { "topic" => topic, "request" => request, "reply" => reply }
 end
 
@@ -460,6 +466,6 @@ record("choices.table", nil,
          "offer_frames" => CHOICES::OFFER_FRAMES })
 
 lines = CASES.map { |entry| "    " + JSON.generate(entry) }
-text = "{\n  \"source\": \"coop_choices.rbx at 71b3a6fe, Ruby #{RUBY_VERSION}\",\n  \"table\": #{JSON.generate(table)},\n  \"cases\": [\n#{lines.join(",\n")}\n  ]\n}\n"
+text = "{\n  \"source\": \"coop_choices.rbx at 40f11e4d, Ruby #{RUBY_VERSION}\",\n  \"table\": #{JSON.generate(table)},\n  \"cases\": [\n#{lines.join(",\n")}\n  ]\n}\n"
 File.write(File.join(__dir__, "cases.json"), text)
 puts "wrote #{CASES.size} cases"

@@ -13,8 +13,9 @@
 # coming, going and hidden with the players pointed at and the lines logged. MGQOnline.Game.Tests
 # replays them.
 #
-# It runs on the scripts of commit 3ee61503, the last that kept the rules in ui_edge_arrows.rbx,
-# through the script tests' stand-ins, on Ruby 3.3, from a checkout of that commit:
+# It runs on the scripts of commit 2f6888c0, which still kept the rules in ui_edge_arrows.rbx,
+# through the script tests' stand-ins, on Ruby 3.3, from a checkout of that commit with this file
+# copied in:
 #
 #   ruby fixtures/hud/make_arrows_fixtures.rb
 

@@ -2,6 +2,7 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-30: Recorded the invites, the requests to lead and the rivals
 #                            - Wrote the golden scenarios of the matchmaking: offers, holds, the stand-still and the encounter's steps
 #                            - Wrote the golden cases of the battle's level, the roster's lines and the troop's repair
@@ -10,7 +11,7 @@
 #----------------------------------------------------------------
 
 # Writes the golden cases of the co-op battles' rules next to this file from the scripts of commit
-# e2a51fe5, the last that kept them in Ruby (battles_coop*.rbx), which MGQOnline.Game.Tests replays
+# 1a38be7d, the last that kept them in Ruby (battles_coop*.rbx), which MGQOnline.Game.Tests replays
 # against MGQOnline.Game's Coop folder and GameScript/Tests/coop_support.rb checks its stand-ins
 # against:
 #
@@ -28,7 +29,7 @@
 #
 # It runs on the old scripts with their own test support, on Ruby 3.3:
 #
-#   git archive e2a51fe5 GameScript fixtures Relay/seed | tar -x -C <old>
+#   git archive 1a38be7d GameScript fixtures Relay/seed | tar -x -C <old>
 #   ruby fixtures/coop/make_fixtures.rb <old>
 
 require "json"
@@ -53,7 +54,7 @@ JOIN = MGQ_MpBattlesJoin
 # @param name [String] The file.
 # @param content [Hash] Its content.
 def write_cases(name, content)
-  File.write(File.join(HERE, name), JSON.generate({ "source" => "battles_coop*.rbx at e2a51fe5, Ruby #{RUBY_VERSION}" }.merge(content)) + "\n")
+  File.write(File.join(HERE, name), JSON.generate({ "source" => "battles_coop*.rbx at 1a38be7d, Ruby #{RUBY_VERSION}" }.merge(content)) + "\n")
   puts "wrote #{name}"
 end
 

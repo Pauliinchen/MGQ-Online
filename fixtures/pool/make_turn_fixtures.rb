@@ -2,13 +2,14 @@
 #  make_turn_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-30: Created
 #
 #----------------------------------------------------------------
 
 # Writes the golden cases of a raid boss fight's turns next to this file, turns.json, from
 # battles_raid_pool.rbx as it reported and synced its fights before that moved to C# (commit
-# 1f7614f2, which this generator reads through git, so it runs again on later commits), with the
+# e2d9fc67, which this generator reads through git, so it runs again on later commits), with the
 # pools of the ledger's stand-in (GameScript/Tests/pool_support.rb). Each scenario opens a fight and
 # runs steps on it: the enemies as the battle has them, the player's role, time passing, the DLL
 # refusing reports, the relay's word of a pool, and a moment of the battle (its start, a command
@@ -24,7 +25,7 @@ require "tempfile"
 require_relative "../../GameScript/Tests/pool_support"
 
 # The commit whose battles_raid_pool.rbx kept the turns.
-SOURCE_COMMIT = "1f7614f2"
+SOURCE_COMMIT = "e2d9fc67"
 
 # The log stays quiet; the cases record what the rules did, not their lines.
 module MGQ_Multiplayer; module Log; def self.write(_line); end; end; end

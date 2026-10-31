@@ -2,6 +2,7 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-28: Created
 #
 #----------------------------------------------------------------
@@ -14,10 +15,10 @@
 # step records what the script answered. MGQOnline.Game.Tests replays them against the C# machine,
 # and the script tests' stand-in (GameScript/Tests/telling_support.rb) is checked against them.
 #
-# It runs on the coop_events.rbx of commit 71b3a6fe, the last that kept the rules, with the
+# It runs on the coop_events.rbx of commit c2e63c81, which still kept the rules, with the
 # stand-ins below, on Ruby 3.3:
 #
-#   git show 71b3a6fe:GameScript/Multiplayer/Scripts/coop_events.rbx > old_events.rbx
+#   git show c2e63c81:GameScript/Multiplayer/Scripts/coop_events.rbx > old_events.rbx
 #   ruby fixtures/telling/make_fixtures.rb old_events.rbx
 
 require "json"
@@ -122,7 +123,7 @@ class Game_Party; def gain_item(*); end; def gain_gold(*); end; end
 class Window_Message; def process_input; end; def input_pause; end; end
 module RPG; class SE; def play; end; end; class Item; end; class Weapon; end; class Armor; end; end
 
-script = ARGV[0] || abort("Name the coop_events.rbx of commit 71b3a6fe, see the header.")
+script = ARGV[0] || abort("Name the coop_events.rbx of commit c2e63c81, see the header.")
 load File.join(SCRIPTS_DIR, "core_log.rbx")
 load File.join(SCRIPTS_DIR, "core_hooks.rbx")
 load File.join(SCRIPTS_DIR, "core_game_access.rbx")
@@ -301,6 +302,6 @@ scenario("a telling that moved the player ends once the story's next event there
 ])
 
 lines = SCENARIOS.map { |entry| "    " + JSON.generate(entry) }
-text = "{\n  \"source\": \"coop_events.rbx at 71b3a6fe, Ruby #{RUBY_VERSION}\",\n  \"continue_frames\": #{EVENTS::CONTINUE_FRAMES},\n  \"scenarios\": [\n#{lines.join(",\n")}\n  ]\n}\n"
+text = "{\n  \"source\": \"coop_events.rbx at c2e63c81, Ruby #{RUBY_VERSION}\",\n  \"continue_frames\": #{EVENTS::CONTINUE_FRAMES},\n  \"scenarios\": [\n#{lines.join(",\n")}\n  ]\n}\n"
 File.write(File.join(__dir__, "cases.json"), text)
 puts "wrote #{SCENARIOS.size} scenarios"

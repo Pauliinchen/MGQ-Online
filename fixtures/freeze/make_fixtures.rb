@@ -2,12 +2,13 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
 
 # Writes the golden cases of the freeze's write journal next to this file, journal.json, from the
-# whole-story diff that battles_raid_freeze.rbx kept before the journal (story_diff at 6fde52ff,
+# whole-story diff that battles_raid_freeze.rbx kept before the journal (story_diff at 1708af2c,
 # with world_story.rbx's same?). Each case starts from a story, makes writes before and after a
 # mark, and records what the journal answers for the mark (each key written since it once, with its
 # value before its first write since it, in that order) and what the old diff of the story at the
@@ -20,7 +21,7 @@
 require "json"
 
 # The commit whose scripts still diffed whole stories.
-SOURCE = "6fde52ff"
+SOURCE = "1708af2c"
 
 root = File.expand_path("../..", __dir__)
 freeze = `git -C "#{root}" show #{SOURCE}:GameScript/Multiplayer/Scripts/battles_raid_freeze.rbx`

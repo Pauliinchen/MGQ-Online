@@ -2,6 +2,7 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Named the commit whose scripts it records
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
@@ -11,13 +12,14 @@
 # ask_take_start) before the rules moved to EnterRules in MGQOnline.Game, as golden cases both
 # sides check. Each case lists what the screen did, in order.
 #
-#   ruby fixtures/entering/make_fixtures.rb <world_screen.rbx> <world_save_distribution.rbx>
+#   git show fd101786:GameScript/Multiplayer/Scripts/world_screen.rbx > old_screen.rbx
+#   git show fd101786:GameScript/Multiplayer/Scripts/world_save_distribution.rbx > old_distribution.rbx
+#   ruby fixtures/entering/make_fixtures.rb old_screen.rbx old_distribution.rbx
 
 require "json"
 
-SCRIPTS = File.expand_path("../../GameScript/Multiplayer/Scripts", __dir__)
-SCREEN_SOURCE = File.read(ARGV[0] || File.join(SCRIPTS, "world_screen.rbx"), :encoding => "UTF-8")
-DISTRIBUTION_SOURCE = File.read(ARGV[1] || File.join(SCRIPTS, "world_save_distribution.rbx"), :encoding => "UTF-8")
+SCREEN_SOURCE = File.read(ARGV[0] || abort("Name the world_screen.rbx of commit fd101786, see the header."), :encoding => "UTF-8")
+DISTRIBUTION_SOURCE = File.read(ARGV[1] || abort("Name the world_save_distribution.rbx of commit fd101786, see the header."), :encoding => "UTF-8")
 
 # Takes a method's source out of a script.
 #

@@ -2,6 +2,7 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-30: Created
 #
 #----------------------------------------------------------------
@@ -13,10 +14,10 @@
 # is a list of steps; a step's operation runs at its frame, then the step records what the script
 # sent, showed, logged and offered. MGQOnline.Game.Tests replays them against the C# machine.
 #
-# It runs on the coop_teleport.rbx of commit eae042b7, the last that kept the rules, with the
+# It runs on the coop_teleport.rbx of commit 40f11e4d, which still kept the rules, with the
 # stand-ins below, on Ruby 3.3:
 #
-#   git show eae042b7:GameScript/Multiplayer/Scripts/coop_teleport.rbx > old_teleport.rbx
+#   git show 40f11e4d:GameScript/Multiplayer/Scripts/coop_teleport.rbx > old_teleport.rbx
 #   ruby fixtures/teleport/make_fixtures.rb old_teleport.rbx
 
 require "json"
@@ -88,7 +89,7 @@ module MGQ_MpCoop
   end
 end
 
-# The gathering: its near check, the player's place and frame count as coop_gather.rbx of eae042b7
+# The gathering: its near check, the player's place and frame count as coop_gather.rbx of 40f11e4d
 # kept them, and the teleports started, into $come_to.
 module MGQ_MpCoopGather
   GATHER_TILES = 3
@@ -104,7 +105,7 @@ module MGQ_MpCoopGather
   def self.come_to(name, place, warp_ban); $come_to << [name, place, warp_ban]; end
 end
 
-script = ARGV[0] || abort("Name the coop_teleport.rbx of commit eae042b7, see the header.")
+script = ARGV[0] || abort("Name the coop_teleport.rbx of commit 40f11e4d, see the header.")
 load File.join(SCRIPTS_DIR, "core_log.rbx")
 load File.join(SCRIPTS_DIR, "core_hooks.rbx")
 load File.join(SCRIPTS_DIR, "core_game_access.rbx")
@@ -295,6 +296,6 @@ scenario("an answer of an unknown kind ends the request, and an answer nobody as
 
 lines = SCENARIOS.map { |entry| "    " + JSON.generate(entry) }
 constants = { "ask_frames" => TELEPORT::ASK_FRAMES, "nonce_length" => TELEPORT::NONCE_LENGTH, "gather_tiles" => MGQ_MpCoopGather::GATHER_TILES, "field" => TELEPORT::FIELD }
-text = "{\n  \"source\": \"coop_teleport.rbx at eae042b7, Ruby #{RUBY_VERSION}\",\n  \"constants\": #{JSON.generate(constants)},\n  \"scenarios\": [\n#{lines.join(",\n")}\n  ]\n}\n"
+text = "{\n  \"source\": \"coop_teleport.rbx at 40f11e4d, Ruby #{RUBY_VERSION}\",\n  \"constants\": #{JSON.generate(constants)},\n  \"scenarios\": [\n#{lines.join(",\n")}\n  ]\n}\n"
 File.write(File.join(__dir__, "cases.json"), text)
 puts "wrote #{SCENARIOS.size} scenarios"

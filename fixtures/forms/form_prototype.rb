@@ -8,7 +8,7 @@
 #----------------------------------------------------------------
 
 # The world screen's forms as world.rbx held them before their schema moved to WorldForms in
-# MGQOnline.Game (commit 2a2c2159, MGQ_MpWorld::Form), kept unchanged as FormPrototype::Form but for
+# MGQOnline.Game (commit 410dca74, MGQ_MpWorld::Form), kept unchanged as FormPrototype::Form but for
 # the game data's fields, which went once the game data was compared only as the player enters: the
 # source make_fixtures.rb records world.json from, and the stand-in the script tests answer the
 # form.* topics with, checked against world.json as GameScript/Tests/form_support.rb loads.

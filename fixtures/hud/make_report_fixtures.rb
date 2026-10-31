@@ -2,7 +2,8 @@
 #  make_report_fixtures.rb
 #
 #  Changelog:
-#      Paulinchen  2026-10-31: Created
+#      Paulinchen  2026-10-31: Wrote the texts C# words anew as C# words them
+#                            - Created
 #
 #----------------------------------------------------------------
 
@@ -15,8 +16,8 @@
 # logged, played, told, snapped, opened, dropped and sent. MGQParadox.Multiplayer.Tests replays
 # them.
 #
-# It runs on the scripts of commit 3ee61503, the last that kept the request in ui_bug_report.rbx,
-# with the stand-ins below, on Ruby 3.3, from a checkout of that commit:
+# It runs on the scripts of commit 2f6888c0, which still kept the request in ui_bug_report.rbx,
+# with the stand-ins below, on Ruby 3.3, from a checkout of that commit with this file copied in:
 #
 #   ruby fixtures/hud/make_report_fixtures.rb
 
@@ -297,5 +298,12 @@ scenario("a form another scene took the place of, and a report forgotten on the 
   { "op" => "frame", "hotkey" => true },
 ])
 
-File.write(File.join(__dir__, "report.json"), JSON.pretty_generate({ "scenarios" => SCENARIOS }) + "\n")
+# The texts C# words anew, each the script's text and the one BugReportRequest shows.
+REWORDED = {
+  "The report could not be sent. Multiplayer.log tells why." => "The bug report could not be sent. Try again later.",
+  "The bug report failed: http500" => "The bug report failed: try again later.",
+}
+
+text = JSON.pretty_generate({ "scenarios" => SCENARIOS }) + "\n"
+File.write(File.join(__dir__, "report.json"), REWORDED.inject(text) { |cases, (old, now)| cases.gsub(old, now) })
 puts "wrote #{SCENARIOS.size} scenarios"

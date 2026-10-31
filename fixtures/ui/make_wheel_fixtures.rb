@@ -2,6 +2,7 @@
 #  make_wheel_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
@@ -10,9 +11,9 @@
 # through MGQ_MpWheel.steady and every count of choices through MGQ_MpWheel.places, as ui_wheel.rbx
 # had them before the wheels moved to C# (WheelPointer and WheelPlaces in MGQOnline.Game), which
 # MGQOnline.Game.Tests replays. The scripts no longer hold those rules, so hand it the script of
-# commit 8fc9bc6 to write the cases again:
+# commit 8dc31832 to write the cases again:
 #
-#   git show 8fc9bc6:GameScript/Multiplayer/Scripts/ui_wheel.rbx > old_wheel.rbx
+#   git show 8dc31832:GameScript/Multiplayer/Scripts/ui_wheel.rbx > old_wheel.rbx
 #   ruby fixtures/ui/make_wheel_fixtures.rb old_wheel.rbx
 
 require "json"
@@ -36,7 +37,7 @@ end
 
 # The wheels' shared pointing and placing, read out of the script.
 module MGQ_MpWheel
-  source = File.read(ARGV[0] || abort("Name the ui_wheel.rbx of commit 8fc9bc6, see the header."), :encoding => "UTF-8")
+  source = File.read(ARGV[0] || abort("Name the ui_wheel.rbx of commit 8dc31832, see the header."), :encoding => "UTF-8")
   module_eval(source[/^  DIRECTIONS = .*?\n/m] + source[/^  STEPS = \{.*?^  \}\n/m] + source[/^  GRACE_FRAMES = \d+\n/])
   %w[held steady reset side_of\? places].each do |name|
     module_eval(source[/^  def self\.#{name}(\(|\n).*?^  end\n/m] || abort("#{name} is missing"))

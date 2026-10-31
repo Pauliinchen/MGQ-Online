@@ -2,12 +2,13 @@
 #  make_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
 #      Paulinchen  2026-10-30: Created
 #
 #----------------------------------------------------------------
 
 # Writes the golden cases of a Raid World's pool ledger next to this file, ledger.json, from
-# battles_raid_pool.rbx as it kept the ledger before it moved to C# (commit e2a51fe5, which this
+# battles_raid_pool.rbx as it kept the ledger before it moved to C# (commit 1bdba95d, which this
 # generator reads through git, so it runs again on later commits). Each scenario is a list of steps
 # the C# ledger replays: the relay's push of a pool, the player's own report, the relay's answer
 # that settles a report, and time passing; each step records every pool as the player's game knows
@@ -23,7 +24,7 @@ require "tempfile"
 require_relative "../../GameScript/Tests/support"
 
 # The commit whose battles_raid_pool.rbx kept the ledger.
-SOURCE_COMMIT = "e2a51fe5"
+SOURCE_COMMIT = "1bdba95d"
 
 # The log stays quiet; the cases record what the rules did, not their lines.
 module MGQ_Multiplayer; module Log; def self.write(_line); end; end; end

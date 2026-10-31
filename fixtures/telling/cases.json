@@ -1,5 +1,5 @@
 {
-  "source": "coop_events.rbx at 71b3a6fe, Ruby 3.3.12",
+  "source": "coop_events.rbx at c2e63c81, Ruby 3.3.12",
   "continue_frames": 300,
   "scenarios": [
     {"name":"the story's next event in the frame its last one ended goes on with the telling; one after a frame without starts anew","steps":[{"op":"progress","p":12,"answer":{"telling":false,"or_moved":false}},{"op":"start","story":true,"event":52,"answer":{"telling":true,"or_moved":true,"continued":null,"tsm":"12,0,0,0"}},{"op":"frame","answer":{"telling":true,"or_moved":true}},{"op":"progress","p":13,"answer":{"telling":true,"or_moved":true}},{"op":"end","answer":{"telling":false,"or_moved":false}},{"op":"start","story":true,"event":52,"answer":{"telling":true,"or_moved":true,"continued":"frame","tsm":"12,0,0,0"}},{"op":"end","answer":{"telling":false,"or_moved":false}},{"op":"frame","answer":{"telling":false,"or_moved":false}},{"op":"start","story":true,"event":52,"answer":{"telling":true,"or_moved":true,"continued":null,"tsm":"13,0,0,0"}},{"op":"end","answer":{"telling":false,"or_moved":false}},{"op":"frame","answer":{"telling":false,"or_moved":false}}]},

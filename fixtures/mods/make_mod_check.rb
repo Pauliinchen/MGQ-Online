@@ -2,6 +2,8 @@
 #  make_mod_check.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Named the commit whose scripts it records
+#                            - Wrote the texts C# words anew as C# words them
 #      Paulinchen  2026-10-23: Created
 #
 #----------------------------------------------------------------
@@ -11,11 +13,12 @@
 # fit_hashes, installed_version, served_mods) before the check moved to ModCheck in MGQOnline.Game,
 # as golden cases both sides check.
 #
-#   ruby fixtures/mods/make_mod_check.rb <world_mods.rbx of the version to record>
+#   git show 7008eff0:GameScript/Multiplayer/Scripts/world_mods.rbx > old_world_mods.rbx
+#   ruby fixtures/mods/make_mod_check.rb old_world_mods.rbx
 
 require "json"
 
-SOURCE = File.read(ARGV[0] || File.expand_path("../../GameScript/Multiplayer/Scripts/world_mods.rbx", __dir__), :encoding => "UTF-8")
+SOURCE = File.read(ARGV[0] || abort("Name the world_mods.rbx of commit 7008eff0, see the header."), :encoding => "UTF-8")
 
 # Takes one part of the script's source.
 #
@@ -164,4 +167,7 @@ fits = [[["A=#{'1' * 64}", "B=#{'2' * 64}", "C=3"], 70], [["É=#{'1' * 64}", "B=
   { "pairs" => pairs, "most" => most, "fitted" => MGQ_MpWorldMods.fit_hashes(pairs, most) }
 end
 
-File.write(File.join(__dir__, "check.json"), JSON.pretty_generate({ "catalog" => CATALOG, "checks" => checks, "creator" => creator, "fits" => fits }) + "\n")
+# The texts C# words anew, each the script's text and the one ModCheck writes.
+REWORDED = { " Download them and restart?" => " Download them?" }
+text = JSON.pretty_generate({ "catalog" => CATALOG, "checks" => checks, "creator" => creator, "fits" => fits }) + "\n"
+File.write(File.join(__dir__, "check.json"), REWORDED.inject(text) { |cases, (old, now)| cases.gsub(old, now) })

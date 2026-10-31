@@ -2,16 +2,18 @@
 #  make_ask_fixtures.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Read the old scripts from a commit that feat/refactor holds
+#                            - Wrote the texts C# words anew as C# words them
 #      Paulinchen  2026-10-30: Created
 #
 #----------------------------------------------------------------
 
 # Writes the golden scenarios of asking a running battle and of joining one by choice
 # (fixtures/coop/asks.json) from the scripts of a tree whose battles_coop_hotjoin.rbx and
-# battles_coop_join.rbx still ask themselves, as at d213d66f, whose script tests answer the rest of
+# battles_coop_join.rbx still ask themselves, as at cac6caba, whose script tests answer the rest of
 # the co-op topics by stand-ins checked against their own goldens:
 #
-#   git archive d213d66f GameScript fixtures | tar -x -C <old tree>
+#   git archive cac6caba GameScript fixtures | tar -x -C <old tree>
 #   ruby fixtures/coop/make_ask_fixtures.rb <old tree>
 #
 # Each step records the world as the scripts saw it (the players, the party, the facts of the game
@@ -149,12 +151,17 @@ module MGQ_MpBattlesSync
   end
 end
 
+# The texts C# words anew, each the scripts' wording and the one JoinChoice shows, which names no
+# reason.
+REWORDED = [[/(Cannot join [^"]*'s battle): [^"]*\./, '\1.']]
+
 # Writes a fixture.
 #
 # @param name [String] The file's name.
 # @param content [Object] What it holds.
 def write_cases(name, content)
-  File.write(File.join(HERE, name), JSON.pretty_generate(content) + "\n")
+  text = JSON.pretty_generate(content) + "\n"
+  File.write(File.join(HERE, name), REWORDED.inject(text) { |cases, (old, now)| cases.gsub(old, now) })
   puts "wrote #{name}"
 end
 

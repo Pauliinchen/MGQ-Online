@@ -12,9 +12,9 @@
 # fights a boss's pools or its tier, and the map's bar of a troop from the pools or at its tier.
 # MGQOnline.Game.Tests replays them, the pools from a ledger that holds what they hold here.
 #
-# It runs on the scripts of commit 3ee61503, the last that kept these rules in ui_raid_bar.rbx,
+# It runs on the scripts of commit 2f6888c0, which still kept these rules in ui_raid_bar.rbx,
 # through the script tests' stand-ins, the pools' share and HP read out of battles_raid_pool.rbx,
-# on Ruby 3.3, from a checkout of that commit:
+# on Ruby 3.3, from a checkout of that commit with this file copied in:
 #
 #   ruby fixtures/hud/make_bars_fixtures.rb
 
