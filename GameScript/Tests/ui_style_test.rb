@@ -2,6 +2,7 @@
 #  ui_style_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Covered a confirm box that starts on its yes choice and one that keeps its pick on up or down
 #      Paulinchen  2026-10-30: Dropped the checks that restate the style's constants
 #                            - Dropped the fade checks of the box
 #      Paulinchen  2026-10-28: Checked a font named in bytes
@@ -359,6 +360,25 @@ $buttons << :C
 confirm_tick.call
 confirm_tick.call
 check("confirm alone answers no, which is picked first", [answers, $sounds.last], [[false], "cancel"])
+answers = ask_box(confirm)
+$buttons << :UP << :DOWN
+confirm_tick.call
+check("up and down leave the pick on no, so a held walking direction never moves it", $sounds, [])
+confirm.close("test")
+confirm_tick.call
+confirm_tick.call
+$keys_down = []
+$buttons = []
+yes_first = []
+confirm.ask("Restart the game now?", ["Restart", "Later"], :index => 0) { |yes| yes_first << yes }
+started = confirm.instance_variable_get(:@sprite)
+confirm.tick
+ui_frame
+$frame += 1
+$buttons << :C
+confirm_tick.call
+confirm_tick.call
+check("a box asked to start on its yes choice draws the pick there, and confirm alone answers yes", [started.bitmap.fills.last[0], yes_first], [style::PAD, [true]])
 
 # A close from outside and a scene change answer no in the next tick.
 answers = ask_box(confirm)

@@ -2,6 +2,7 @@
 #  bridge_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Started the confirm box with its yes choice picked when asked
 #      Paulinchen  2026-10-23: Stood in for the layout
 #                            - Stood in for the confirm box
 #                            - Stood in for the wheels
@@ -656,7 +657,7 @@ class FakeConfirm
   def initialize(fake, ui)
     @fake = fake
     @last = 0
-    fake.answer(MGQ_MpUi::Confirm::ASK) { |_request| @open ? nil : (@picked = false; @fresh = true; @open = (@last += 1)) }
+    fake.answer(MGQ_MpUi::Confirm::ASK) { |request| @open ? nil : (@picked = request == true; @fresh = true; @open = (@last += 1)) }
     fake.answer(MGQ_MpUi::Confirm::CLOSE) { |request| @open = nil if @open == request[0]; nil }
     ui.model(MGQ_MpUi::Confirm::MODEL) { |input| tick(*input) }
   end

@@ -2,6 +2,7 @@
 //  ConfirmModelTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Covered a box that starts with its yes choice picked
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -64,6 +65,27 @@ public sealed class ConfirmModelTests
         }
 
         Assert.Equal([(true, "accept", UiCue.Ok), (false, "decline", UiCue.Cancel), (false, "cancel", UiCue.Cancel), (false, "confirm", UiCue.Cancel)], answers);
+    }
+
+    /// <summary>
+    /// Asserts that a box asked to start with its yes choice picked answers yes to confirm, and that
+    /// left or right moves the pick back to no.
+    /// </summary>
+    [Fact]
+    public void Ask_StartsOnYesWhenAsked()
+    {
+        var ui = new UiContext();
+        UiTopics.Register(ui.Context);
+        int id = ui.Value(ConfirmModel.AskTopic, true).AsInt();
+        ui.Tick(Keys(id));
+
+        RubyHash answered = Event(ui.Tick(Keys(id, confirm: true)));
+        int next = ui.Value(ConfirmModel.AskTopic, true).AsInt();
+        ui.Tick(Keys(next));
+        RubyHash moved = Event(ui.Tick(Keys(next, sideways: true)));
+
+        Assert.True(answered["answer"].AsBool());
+        Assert.False(moved["picked"].AsBool());
     }
 
     /// <summary>

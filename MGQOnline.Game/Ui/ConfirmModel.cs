@@ -2,6 +2,7 @@
 //  ConfirmModel.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Started a box with its yes choice picked when asked
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -20,7 +21,7 @@ namespace MGQOnline.Game.Ui;
 public sealed class ConfirmModel : IUiModel
 {
     /// <summary>
-    /// Opens a box, answering its id, nil while one is open.
+    /// Opens a box, true to start with its yes choice picked in; its id out, nil while one is open.
     /// </summary>
     public const string AskTopic = "ui.confirm.ask";
 
@@ -50,7 +51,7 @@ public sealed class ConfirmModel : IUiModel
     private int _lastId;
 
     /// <summary>
-    /// Whether the yes choice is picked; the no choice starts picked.
+    /// Whether the yes choice is picked; the no choice starts picked unless the ask says otherwise.
     /// </summary>
     private bool _picked;
 
@@ -67,7 +68,7 @@ public sealed class ConfirmModel : IUiModel
     {
         ArgumentNullException.ThrowIfNull(host);
         _host = host;
-        host.Context.Register(AskTopic, (_, _) =>
+        host.Context.Register(AskTopic, (_, request) =>
         {
             if (_open is not null)
             {
@@ -75,7 +76,7 @@ public sealed class ConfirmModel : IUiModel
             }
 
             _open = ++_lastId;
-            _picked = false;
+            _picked = request is { IsNil: false } && request.AsBool();
             _fresh = true;
             return _lastId;
         });

@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
+#                            - Started the restart question on Restart
 #      Paulinchen  2026-10-30: Started the game again through the Mod Framework, which goes on from the game kept for it
 #                            - Dropped the parked mods, which no world parks any more
 #      Paulinchen  2026-10-23: Started the game again under Wine or Proton too
@@ -139,7 +140,8 @@ module MGQ_MpSinglePlayer
     @now = {}
   end
 
-  # Offers to start the game again once a row changed, on the map while nothing runs there. Called
+  # Offers to start the game again once a row changed, Restart picked first, since the player just
+  # changed a row that needs it, on the map while nothing runs there. Called
   # by the map every frame no scene change is in the way.
   def self.on_map
     return unless @changed && quiet? && !MGQ_MpUi::Confirm.open?
@@ -148,7 +150,7 @@ module MGQ_MpSinglePlayer
       return log("no restart offered: the DLL that starts the game again is missing")
     end
 
-    settle if MGQ_MpUi::Confirm.ask(RESTART_QUESTION, RESTART_CHOICES) { |yes| answered(yes) }
+    settle if MGQ_MpUi::Confirm.ask(RESTART_QUESTION, RESTART_CHOICES, :index => 0) { |yes| answered(yes) }
   rescue => e
     log_once(:on_map, "offering a restart failed: #{e.class}: #{e.message}")
   end

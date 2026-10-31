@@ -2,6 +2,7 @@
 #  single_player_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Checked that the restart question starts on Restart
 #      Paulinchen  2026-10-30: Started the game again through the Mod Framework's stand-in
 #                            - Dropped the parked mods, which no world parks any more
 #      Paulinchen  2026-10-23: Dropped the restart by hand under Wine
@@ -123,7 +124,7 @@ module MGQ_MpNotices; def self.message(key, text, _frames = nil); $notices << [k
 module MGQ_MpWorld::Update; def self.asking?; $update_offer == true; end; end
 # The confirm box: each question noted in $asks with its block in $answer, open while
 # $confirm_open is set.
-MGQ_MpUi::Confirm.define_singleton_method(:ask) { |question, choices, &answer| $asks << [question, choices]; $answer = answer; true }
+MGQ_MpUi::Confirm.define_singleton_method(:ask) { |question, choices, options = {}, &answer| $asks << [question, choices]; $yes_first = options[:index] == 0; $answer = answer; true }
 MGQ_MpUi::Confirm.define_singleton_method(:open?) { $confirm_open == true }
 
 sp = MGQ_MpSinglePlayer
@@ -266,7 +267,7 @@ check("a change at the title, before any game is played, offers nothing", $asks,
 reset
 change
 map_frame
-check("a change while playing outside a world offers to start the game again on the map", $asks, [[sp::RESTART_QUESTION, ["Restart", "Later"]]])
+check("a change while playing outside a world offers to start the game again on the map, Restart picked first", [$asks, $yes_first], [[[sp::RESTART_QUESTION, ["Restart", "Later"]]], true])
 map_frame
 check("once", $asks.size, 1)
 reset

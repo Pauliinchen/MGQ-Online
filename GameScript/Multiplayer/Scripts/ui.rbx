@@ -2,6 +2,7 @@
 #  ui.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Let a confirm box start with its yes choice picked
 #      Paulinchen  2026-10-28: Named the encodings of a text C# lays out, since the game has no Encoding constants
 #                            - Handed a font's name over as text where the game holds it as bytes
 #      Paulinchen  2026-10-24: Counted the confirm box's frames as the title screen does too
@@ -1195,12 +1196,14 @@ module MGQ_MpUi
     #
     # @param question [String] The question, wrapped to the box's width.
     # @param choices [Array<String>] The yes choice's label, such as "Leave", and the no choice's,
-    #   such as "Stay", which starts picked.
+    #   such as "Stay".
+    # @param options [Hash] :index (0 to start with the yes choice picked; the no choice starts
+    #   picked by default).
     # @yieldparam answer [Boolean] true for yes, false for no, for a close from outside and for a
     #   scene change while open. Called once, in the tick after the one that answered, after the
     #   buttons are given back.
     # @return [Boolean] Whether it opened.
-    def self.ask(question, choices, &answer)
+    def self.ask(question, choices, options = {}, &answer)
       if open?
         MGQ_MpUi.log("confirm box refused: one is open (#{@question})")
         return false
@@ -1210,7 +1213,8 @@ module MGQ_MpUi
         return false
       end
 
-      @id = MGQ_Multiplayer::Bridge.call(ASK)
+      @picked = options[:index] == 0
+      @id = MGQ_Multiplayer::Bridge.call(ASK, @picked)
       @open = true
       @answer = nil
       @question = question.to_s
@@ -1218,7 +1222,6 @@ module MGQ_MpUi
       @no = choices[1].to_s
       @block = answer
       @scene = SceneManager.scene
-      @picked = false
       MGQ_Multiplayer::Key.watch(MGQ_MpHotkeys.code(:accept), MGQ_MpHotkeys.code(:decline))
       MGQ_Multiplayer::Capture.start(SCREEN)
       @sprite = Sprite_MpConfirmBox.new
