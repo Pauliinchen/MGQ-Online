@@ -2,6 +2,7 @@
 //  ModCheckTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Covered the creator's hashes of a mod installed after Patch was read
 //      Paulinchen  2026-10-30: Covered the mods a world's session loads and those it turns off now
 //                            - Dropped the install, which the Mod Framework does
 //      Paulinchen  2026-10-23: Created
@@ -34,6 +35,11 @@ public sealed class ModCheckTopicsTests
     private readonly Dictionary<string, string> _files = new() { ["Patch/Level_Cap.rb"] = "aa" };
 
     /// <summary>
+    /// The scripts in Patch.
+    /// </summary>
+    private readonly List<string> _scripts = ["Patch/Level_Cap.rb"];
+
+    /// <summary>
     /// How often each file was hashed.
     /// </summary>
     private readonly Dictionary<string, int> _hashed = [];
@@ -52,7 +58,7 @@ public sealed class ModCheckTopicsTests
         {
             ModCheckTopics topics = new(
                 () => _catalog,
-                () => ["Patch/Level_Cap.rb"],
+                () => [.. _scripts],
                 path =>
                 {
                     _hashed[path] = _hashed.GetValueOrDefault(path) + 1;
@@ -85,6 +91,20 @@ public sealed class ModCheckTopicsTests
         _files["Patch/Level_Cap.rb"] = "bb";
         _topics.Call(ModCheckTopics.ForgetTopic);
         Assert.Empty(_topics.Call(ModCheckTopics.CheckTopic, request)!.AsHash()["rows"].AsArray());
+    }
+
+    /// <summary>
+    /// Asserts that a world made right after a mod outside the catalog was put into Patch carries
+    /// the creator's hash of it, though the check read Patch before, and leaves out the catalog's mod.
+    /// </summary>
+    [Fact]
+    public void CreatorHashes_ReadPatchAsItIsNow()
+    {
+        _topics.Call(ModCheckTopics.CheckTopic, new RubyHash { { "mods", "!Free" }, { "hashes", "" }, { "world", RubyNil.Value } });
+        _scripts.Add("Patch/Free.rb");
+        _files["Patch/Free.rb"] = "ff";
+
+        Assert.Equal("Free=ff", _topics.Call(ModCheckTopics.CreatorHashesTopic, "!Free; !Level Cap")!.AsText());
     }
 
     /// <summary>

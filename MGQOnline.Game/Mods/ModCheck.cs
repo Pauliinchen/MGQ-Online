@@ -2,6 +2,7 @@
 //  ModCheck.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Logged the creator's hashes the catalog makes unneeded
 //      Paulinchen  2026-10-30: Offered the download of a world's mods without a restart
 //      Paulinchen  2026-10-23: Created
 //
@@ -192,14 +193,20 @@ public sealed class ModCheck
     /// so it is only checked for being installed.
     /// </summary>
     /// <param name="mods">The mods as the creator wrote them.</param>
-    /// <param name="log">Takes a line for each mod left out.</param>
+    /// <param name="log">Takes a line for each mod left out or checked by the catalog.</param>
     /// <returns>"name=hash" pairs separated by semicolons.</returns>
     public string CreatorHashes(string? mods, Action<string> log)
     {
         List<string> pairs = [];
         foreach (string name in ModsText.Required(mods))
         {
-            if (ModNamed(name) != null || name.Contains('=', StringComparison.Ordinal) || name.Contains(';', StringComparison.Ordinal) || CodePoints(name) > MaxHashNameChars)
+            if (ModNamed(name) is { } mod)
+            {
+                log($"creator's hash of {name} not needed: the catalog's {mod.Version} is checked");
+                continue;
+            }
+
+            if (name.Contains('=', StringComparison.Ordinal) || name.Contains(';', StringComparison.Ordinal) || CodePoints(name) > MaxHashNameChars)
             {
                 continue;
             }

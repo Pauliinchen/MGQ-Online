@@ -2,6 +2,7 @@
 //  ModCheckTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Read Patch anew for the creator's hashes, so a mod put there right before counts
 //      Paulinchen  2026-10-30: Told the mods a world's session loads and those it turns off now
 //                            - Left installing a world's mods to the Mod Framework
 //      Paulinchen  2026-10-23: Handed the world screen the check
@@ -38,8 +39,8 @@ internal sealed class ModCheckTopics
     public const string CheckTopic = "mods.check";
 
     /// <summary>
-    /// Writes the creator's hashes of the required mods outside the catalog: the mods as written in;
-    /// the "name=hash" pairs out.
+    /// Writes the creator's hashes of the required mods outside the catalog, reading Patch anew: the
+    /// mods as written in; the "name=hash" pairs out.
     /// </summary>
     public const string CreatorHashesTopic = "mods.creator_hashes";
 
@@ -199,7 +200,11 @@ internal sealed class ModCheckTopics
         }, WorldChanges.Mods);
 
         context.Register(CheckTopic, (_, request) => CheckOf(request.AsHash()));
-        context.Register(CreatorHashesTopic, (_, request) => Check().CreatorHashes(Text(request), _log.Write));
+        context.Register(CreatorHashesTopic, (_, request) =>
+        {
+            Forget();
+            return Check().CreatorHashes(Text(request), _log.Write);
+        });
         context.Register(ForgetTopic, (_, _) =>
         {
             Forget();
