@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-31: Expected the plainer texts the player reads
+//                            - Expected the mod settings among the features the game names
 //      Paulinchen  2026-10-30: Cut the squad settings read from text and from JSON to one of each kind
 //      Paulinchen  2026-10-28: Covered seats out of range and squad rules that do not parse refused before the relay
 //      Paulinchen  2026-10-23: Took the squad settings from MGQOnline.Game
@@ -98,7 +99,7 @@ public sealed class WorldDirectoryTests
         var made = Act(creator, directory => directory.Create("Raid Night", "secret", 8, false, false, [], null, WorldType.Raid, CompanionSharing.Story));
         Assert.Equal("done", made["state"]);
         Assert.Contains(List(creator), line => line.StartsWith($"world\t{made["world"]}\t8\t") && line.EndsWith("\traid\tstory\t\t1\t\t0"));
-        Assert.Equal("raid,keys,tracks", relay.LastFeatures);
+        Assert.Equal("raid,keys,tracks,settings", relay.LastFeatures);
     }
 
     /// <summary>

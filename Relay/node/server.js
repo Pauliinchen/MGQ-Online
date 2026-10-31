@@ -6,6 +6,7 @@
 //                            - Turned every game that keeps no keys away from a Raid World
 //                            - Handed the admin routes of a Raid World its story tracks, which act on the world's track
 //                            - Refused a battle as having no battle server while the battle server is out of reach
+//                            - Told a game that takes a world's mod settings from the relay the world's settings as it enters, and every such game once an edit changed them
 //      Paulinchen  2026-10-30: Handed the request's method to the update gate
 //      Paulinchen  2026-10-28: Filled the story tables that hold no rows yet from the seed files at start
 //      Paulinchen  2026-10-23: Kept the story mapping, answered its admin routes and handed it to games
@@ -98,7 +99,7 @@ import { DESIGNER_RELEASE_LIMITS, DesignerReleases, byteRangeOf, designerRelease
 import {
   DESIGN_CLOSE, DESIGN_READER_HEADER, DESIGN_SOCKET, DesignBook, admitDesigner, designRouteOf, gameDesignRouteOf, handleDesignRequest, handleGameDesignRequest, pushedFrame, releaseFrame,
 } from "../core/designs.js";
-import { DIRECTORY_LIMITS, Directory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, raidBossesText, releasedGamesTakeRule, squadText } from "../core/directory.js";
+import { DIRECTORY_LIMITS, Directory, SETTINGS_BY, SETTINGS_FEATURE, WORLD_TYPE, difficultyText, handleDirectoryRequest, modSettingsText, modsRuleText, parseAdmins, raidBossesText, releasedGamesTakeRule, squadText } from "../core/directory.js";
 import {
   DEFAULT_MIN_VERSION, DESIGN_FORMAT_HEADER, DESIGNER_HEADER, DESIGNER_VERSION_HEADER, DRAIN_LIMITS, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE,
   WORLD_ROOM_UPDATE_STATUS, holdsLongMods, listsWorldMods, updateRefusal,
@@ -877,7 +878,7 @@ export function createRelay({
       }
 
       const playsTracks = answer.type === WORLD_TYPE.raid && features.includes(TRACKS_FEATURE);
-      accept((webSocket) => sit(route, answer, webSocket, headerOf(request, VERSION_HEADER)?.slice(0, MAX_VERSION_LENGTH) ?? null, playsTracks));
+      accept((webSocket) => sit(route, answer, webSocket, headerOf(request, VERSION_HEADER)?.slice(0, MAX_VERSION_LENGTH) ?? null, playsTracks, features.includes(SETTINGS_FEATURE)));
     }, (error) => {
       log.error(errorLine(new Date(), `admit ${path}`, error));
       turnAway(500, "the directory failed");
@@ -1056,6 +1057,10 @@ export function createRelay({
     if (answer.modsRule) {
       const { off, mods } = answer.modsRule;
       tellWorld(answer.id, modsRuleText(off, mods), (peer) => holdsLongMods(peer.version) || releasedGamesTakeRule(mods));
+    }
+
+    if (answer.modSettings) {
+      tellWorld(answer.id, modSettingsText(answer.modSettings.by, answer.modSettings.settings), (peer) => peer.settings);
     }
 
     if (answer.bytes) {
@@ -1787,7 +1792,7 @@ export function createRelay({
    *
    * @param {string} roomId The world.
    * @param {string} text The frame.
-   * @param {(peer: {version: string | null, tracks: boolean, record: object}) => boolean} [takes] Which games take the frame, every one unless given.
+   * @param {(peer: {version: string | null, tracks: boolean, settings: boolean, record: object}) => boolean} [takes] Which games take the frame, every one unless given.
    */
   function tellWorld(roomId, text, takes = () => true) {
     for (const peer of worlds.get(roomId) ?? []) {
@@ -1862,12 +1867,13 @@ export function createRelay({
    * Seats a game in its world room and passes its messages on.
    *
    * @param {{roomId: string, name: string}} route The world room and the player's name.
-   * @param {{seats: number, player: string}} admission The world's seats and the player's id, from the directory.
+   * @param {{seats: number, player: string, settings?: string}} admission The world's seats, the player's id and its mod settings, from the directory.
    * @param {import("ws").WebSocket} socket The game's WebSocket.
    * @param {string | null} version The version the game named in VERSION_HEADER, null for none.
    * @param {boolean} [playsTracks] Whether the game plays the Raid World's story on tracks, see TRACKS_FEATURE.
+   * @param {boolean} [takesSettings] Whether the game takes the world's mod settings from the relay, see SETTINGS_FEATURE.
    */
-  function sit(route, admission, socket, version, playsTracks = false) {
+  function sit(route, admission, socket, version, playsTracks = false, takesSettings = false) {
     const earlier = worlds.get(route.roomId) ?? [];
 
     for (const { index, code, reason } of replacedBy(earlier.map((other) => other.record), admission.player).reverse()) {
@@ -1883,9 +1889,13 @@ export function createRelay({
       return;
     }
 
-    const peer = { socket, record: newWorldPeer(seat, { player: admission.player, name: route.name }, clock(), limits), version, tracks: playsTracks };
+    const peer = { socket, record: newWorldPeer(seat, { player: admission.player, name: route.name }, clock(), limits), version, tracks: playsTracks, settings: takesSettings };
     worlds.set(route.roomId, peers);
     socket.send(seatText(seat, peers.map((other) => other.record.seat)));
+
+    if (takesSettings) {
+      socket.send(modSettingsText(SETTINGS_BY.entering, admission.settings ?? ""));
+    }
 
     for (const other of peers) {
       other.socket.send(seatChangeText(IN, seat));

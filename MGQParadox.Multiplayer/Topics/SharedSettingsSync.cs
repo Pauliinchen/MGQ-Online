@@ -2,6 +2,7 @@
 //  SharedSettingsSync.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Took the world's settings from the relay, which tells every player, instead of the creator's game telling each
 //      Paulinchen  2026-10-23: Handed the world screen the details line of the shared settings
 //                            - Created
 //
@@ -61,10 +62,10 @@ internal interface ISettingsDirectory
 
 /// <summary>
 /// The shared mod settings of the world being entered or played in: which settings hold, sending
-/// the creator's to the relay after reading the relay's and merging what changed there, telling the
-/// players, and the notices. The scripts hand the creator's options and apply what this decides,
-/// through steps (see <see cref="StepTopic"/>), since only the running game can read and write Mod
-/// Config.
+/// the creator's to the relay after reading the relay's and merging what changed there, taking the
+/// settings the relay tells every player, and the notices. The scripts hand the creator's options
+/// and apply what this decides, through steps (see <see cref="StepTopic"/>), since only the running
+/// game can read and write Mod Config.
 /// </summary>
 internal sealed class SharedSettingsSync
 {
@@ -110,24 +111,10 @@ internal sealed class SharedSettingsSync
     public const string AppliedTopic = "settings.applied";
 
     /// <summary>
-    /// Takes the settings the world's creator sent: <c>sender</c> (their id), <c>name</c> and <c>text</c> in.
+    /// Takes the world's settings the relay told: <c>by</c> ("creator" or "admin" for a change, empty
+    /// as the game enters the world) and <c>text</c> in.
     /// </summary>
     public const string LiveTopic = "settings.live";
-
-    /// <summary>
-    /// Takes another player's state: <c>seat</c> and <c>crc</c> (the checksum of their game's settings) in.
-    /// </summary>
-    public const string ObserveTopic = "settings.observe";
-
-    /// <summary>
-    /// Notes that another player was told the world's settings: <c>seat</c>, <c>theirs</c> and <c>mine</c> in.
-    /// </summary>
-    public const string ToldTopic = "settings.told";
-
-    /// <summary>
-    /// Forgets what another player was told: the seat in.
-    /// </summary>
-    public const string LeaveTopic = "settings.leave";
 
     /// <summary>
     /// Takes the mods the relay tells the open world names now: the mods as written in.
@@ -176,11 +163,6 @@ internal sealed class SharedSettingsSync
     public const long SendFrames = 1800;
 
     /// <summary>
-    /// Frames a reading of the world's settings on the relay counts as recent, ten seconds.
-    /// </summary>
-    public const long CheckFrames = 600;
-
-    /// <summary>
     /// Frames a notice shows, ten seconds.
     /// </summary>
     public const long NoticeFrames = 600;
@@ -199,6 +181,11 @@ internal sealed class SharedSettingsSync
     /// The reason of a load.
     /// </summary>
     private const string LoadReason = "load";
+
+    /// <summary>
+    /// Who the relay names when an admin changed the settings.
+    /// </summary>
+    private const string AdminBy = "admin";
 
     /// <summary>
     /// The directory.
@@ -224,16 +211,6 @@ internal sealed class SharedSettingsSync
     /// The settings the relay took from this game last, by the world's id.
     /// </summary>
     private readonly Dictionary<string, string> _confirmed = new(StringComparer.Ordinal);
-
-    /// <summary>
-    /// What each other player's game held and the world's settings they were told about, by seat.
-    /// </summary>
-    private readonly Dictionary<int, (string Theirs, string Mine)> _toldPeers = [];
-
-    /// <summary>
-    /// The other players waiting for the relay's settings to be read, with the checksum their game holds, by seat.
-    /// </summary>
-    private readonly Dictionary<int, string> _waiting = [];
 
     /// <summary>
     /// The steps waiting for the scripts.
@@ -316,11 +293,6 @@ internal sealed class SharedSettingsSync
     private bool _checkWanted;
 
     /// <summary>
-    /// The frame the relay's settings were last read at.
-    /// </summary>
-    private long? _checkedAt;
-
-    /// <summary>
     /// The relay's settings as last read, <see langword="null"/> when unknown.
     /// </summary>
     private string? _relayText;
@@ -378,9 +350,6 @@ internal sealed class SharedSettingsSync
         context.Register(StepTopic, (_, _) => Reply(() => { }));
         context.Register(AppliedTopic, (_, request) => Reply(() => Applied(Keys(request.AsHash()["keys"]))));
         context.Register(LiveTopic, (_, request) => Reply(() => Live(request.AsHash())));
-        context.Register(ObserveTopic, (_, request) => Reply(() => Observe(request.AsHash()["seat"].AsInt(), Text(request.AsHash()["crc"]))));
-        context.Register(ToldTopic, (_, request) => Reply(() => Told(request.AsHash())));
-        context.Register(LeaveTopic, (_, request) => Reply(() => Leave(request.AsInt())));
         context.Register(ModsTopic, (_, request) => Reply(() => TakeMods(Text(request))));
         context.Register(OfTopic, (_, request) => SettingsOf(request.AsHash()));
         context.Register(ConfirmedTopic, (_, request) =>
@@ -422,27 +391,6 @@ internal sealed class SharedSettingsSync
     }
 
     /// <summary>
-    /// Writes the checksum of settings, which tells two games' settings apart, as Ruby's
-    /// <c>Zlib.crc32(text).to_s(16)</c> wrote it.
-    /// </summary>
-    /// <param name="text">The settings.</param>
-    /// <returns>The CRC-32 of its UTF-8 bytes in lower-case hexadecimal, without leading zeros.</returns>
-    internal static string CrcOf(string text)
-    {
-        uint crc = 0xFFFFFFFF;
-        foreach (byte value in Encoding.UTF8.GetBytes(text))
-        {
-            crc ^= value;
-            for (int bit = 0; bit < 8; bit++)
-            {
-                crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320 : crc >> 1;
-            }
-        }
-
-        return (~crc).ToString("x", CultureInfo.InvariantCulture);
-    }
-
-    /// <summary>
     /// Runs a change and answers the world as it stands with the steps that wait.
     /// </summary>
     /// <param name="change">The change.</param>
@@ -458,7 +406,7 @@ internal sealed class SharedSettingsSync
     /// <summary>
     /// Describes the world for the scripts.
     /// </summary>
-    /// <returns>Its id, name, creator, mods, settings and their checksum, whether it is the player's own and whether the settings it will have are shared; nil outside a world.</returns>
+    /// <returns>Its id, name, creator, mods, settings, whether it is the player's own and whether the settings it will have are shared; nil outside a world.</returns>
     private RubyValue WorldValue() => _world is not { } world ? RubyNil.Value : new RubyHash
     {
         { "id", world.Id },
@@ -467,7 +415,6 @@ internal sealed class SharedSettingsSync
         { "creator_name", world.CreatorName },
         { "mods", world.Mods },
         { "text", world.Text },
-        { "crc", CrcOf(world.Text) },
         { "own", world.Own },
         { "shared", SharedSettings.IsShared(world.Text) },
         { "latest_shared", SharedSettings.IsShared(LatestText()) },
@@ -530,7 +477,6 @@ internal sealed class SharedSettingsSync
         _loaded = false;
         _stayNoticed = false;
         _stayAt = null;
-        _toldPeers.Clear();
         _wanted = null;
         _wantedBase = null;
         _sending = null;
@@ -750,8 +696,6 @@ internal sealed class SharedSettingsSync
             {
                 _world.Text = sending.Text;
                 _relayText = sending.Text;
-                _checkedAt = _frame;
-                Broadcast(sending.Text);
                 TellCreator(sending);
             }
             else
@@ -796,11 +740,6 @@ internal sealed class SharedSettingsSync
         _wanted = merged;
         _wantedBase = theirs;
         ApplyIfLoaded(merged);
-        if (merged == theirs)
-        {
-            Broadcast(theirs);
-        }
-
         Row();
     }
 
@@ -878,60 +817,43 @@ internal sealed class SharedSettingsSync
 
     /// <summary>
     /// Notes the relay's settings, takes them as the world's when someone else changed them while
-    /// nothing waits to be sent, tells the players waiting for them, and sends what waits.
+    /// nothing waits to be sent, and sends what waits.
     /// </summary>
     /// <param name="text">The relay's settings, <see langword="null"/> when unknown.</param>
     private void CompleteCheck(string? text)
     {
         _checkSince = null;
         _needCheck = false;
-        _checkedAt = _frame;
         _relayText = text;
         if (text != null && text != _world!.Text && _wanted == null)
         {
             TakeRelay(text);
         }
 
-        List<KeyValuePair<int, string>> waiting = [.. _waiting];
-        _waiting.Clear();
-        foreach ((int seat, string theirs) in waiting)
-        {
-            Observe(seat, theirs);
-        }
-
         Pump();
     }
 
     /// <summary>
-    /// Takes settings someone else gave the world on the relay as the world's: the creator's options
-    /// and every player in it get them.
+    /// Takes settings someone else gave the world on the relay as the world's, which the creator's
+    /// options get; the relay tells every other player.
     /// </summary>
     /// <param name="text">The relay's settings.</param>
     private void TakeRelay(string text)
     {
         Adopt(text);
         ApplyIfLoaded(text);
-        Broadcast(text);
         Row();
     }
 
     /// <summary>
-    /// Tells whether the relay's settings were read a moment ago.
-    /// </summary>
-    /// <returns>Whether they were, less than <see cref="CheckFrames"/> ago.</returns>
-    private bool RelayKnown() => _checkSince == null && _checkedAt != null && _frame - _checkedAt < CheckFrames;
-
-    /// <summary>
-    /// Forgets the reading of the relay's settings and the players waiting for it.
+    /// Forgets the reading of the relay's settings.
     /// </summary>
     private void ForgetCheck()
     {
         _checkSince = null;
         _checkWanted = false;
         _needCheck = false;
-        _checkedAt = null;
         _relayText = null;
-        _waiting.Clear();
     }
 
     /// <summary>
@@ -964,68 +886,15 @@ internal sealed class SharedSettingsSync
     }
 
     /// <summary>
-    /// Tells another player the world's settings when their game holds others; first reads the
-    /// relay's, unless that was a moment ago.
+    /// Takes the world's settings the relay told, as the game enters the world and once its creator
+    /// or an admin changed them: they apply at once while a save of the world is loaded, and
+    /// otherwise once one is.
     /// </summary>
-    /// <param name="seat">The player's seat.</param>
-    /// <param name="theirs">The checksum of the settings their game holds.</param>
-    private void Observe(int seat, string theirs)
-    {
-        if (_world is not { Own: true } world)
-        {
-            return;
-        }
-
-        string mine = CrcOf(world.Text);
-        if (theirs.Length == 0 || theirs == mine || (_toldPeers.TryGetValue(seat, out var told) && told == (theirs, mine)))
-        {
-            return;
-        }
-
-        if (!RelayKnown())
-        {
-            _waiting[seat] = theirs;
-            CheckRelay();
-            return;
-        }
-
-        Step("tell", seat, theirs, mine, world.Text);
-    }
-
-    /// <summary>
-    /// Notes that another player was told the world's settings.
-    /// </summary>
-    /// <param name="request">The seat, what their game held and the world's settings' checksum.</param>
-    private void Told(RubyHash request) =>
-        _toldPeers[request["seat"].AsInt()] = (request["theirs"].AsText(), request["mine"].AsText());
-
-    /// <summary>
-    /// Forgets what a player who left was told, so whoever takes their seat is checked anew.
-    /// </summary>
-    /// <param name="seat">The seat.</param>
-    private void Leave(int seat)
-    {
-        _toldPeers.Remove(seat);
-        _waiting.Remove(seat);
-    }
-
-    /// <summary>
-    /// Takes the settings the world's creator sent: they apply at once while a save of the world is
-    /// loaded, and otherwise once one is.
-    /// </summary>
-    /// <param name="request">The sender's id, name and the settings.</param>
+    /// <param name="request">Who changed them and the settings.</param>
     private void Live(RubyHash request)
     {
-        if (_world is not { Own: false } world)
+        if (_world is not { } world)
         {
-            return;
-        }
-
-        string sender = Text(request["sender"]);
-        string name = PlayerIni.Cleaned(Text(request["name"]), "A friend");
-        if (sender.Length == 0 || sender != world.CreatorId)
-        {
-            Log($"ignored mod settings from {name}, who did not create this world");
             return;
         }
 
@@ -1035,9 +904,16 @@ internal sealed class SharedSettingsSync
             return;
         }
 
+        if (world.Own)
+        {
+            CreatorTold(text);
+            return;
+        }
+
+        string name = Text(request["by"]) == AdminBy ? SettingNotices.AdminName : world.CreatorName;
         string before = world.Text;
         world.Text = text;
-        Log($"{name}, the world's creator, changed its mod settings to {(text.Length == 0 ? "none" : text)}");
+        Log($"the relay told the world's mod settings, {(Text(request["by"]).Length == 0 ? "newer than the list" : $"changed by {name}")}: {(text.Length == 0 ? "none" : text)}");
         if (!_loaded)
         {
             Log("they apply once a save of the world is loaded");
@@ -1058,6 +934,27 @@ internal sealed class SharedSettingsSync
         }
 
         Row();
+    }
+
+    /// <summary>
+    /// Takes the settings the relay told the creator's game: those of a request on its way are its
+    /// answer, others someone else gave the world, which become the world's once nothing waits to
+    /// be sent, and are read anew from the relay once the request on its way was answered.
+    /// </summary>
+    /// <param name="text">The settings.</param>
+    private void CreatorTold(string text)
+    {
+        if (_sending is { } sending)
+        {
+            _checkWanted |= sending.Text != text;
+            return;
+        }
+
+        _relayText = text;
+        if (_wanted == null)
+        {
+            TakeRelay(text);
+        }
     }
 
     /// <summary>
@@ -1197,12 +1094,6 @@ internal sealed class SharedSettingsSync
             Step(SharedSettings.IsShared(text) ? "apply" : "unlock", text);
         }
     }
-
-    /// <summary>
-    /// Has the scripts tell every player in the world the settings the relay took.
-    /// </summary>
-    /// <param name="text">The settings.</param>
-    private void Broadcast(string text) => Step("broadcast", text, CrcOf(text));
 
     /// <summary>
     /// Has the scripts show in the row whether the world shares its settings, or will once the request on its way arrived.

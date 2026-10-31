@@ -2,6 +2,7 @@
 #  world_mods_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Checked that the world's settings come from the relay alone
 #      Paulinchen  2026-10-30: Checked the game data measured again and compared once the world's mods loaded, and the warning of a difference
 #                            - Checked that the Mod Framework's options lock the options a world sets
 #                            - Checked the session of a world that turns other mods off and the restart once its rule turns off a mod that runs
@@ -175,6 +176,8 @@ module MGQ_MpOverworldSync
   module Peers; Peer = Struct.new(:seat, :state); end
   # The field of the relay's push of the world's mods rule.
   MODS_RULE_FIELD = "mods_rule_value"
+  # The field of the relay's push of the world's mod settings.
+  MOD_SETTINGS_FIELD = "mod_settings_value"
   # The map is free while $map_busy is not set.
   def self.map_free?; !$map_busy; end
 end
@@ -572,23 +575,19 @@ check("so does a new game in a world", ModConfigRemake.world_keys, [:mod_level_c
 
 $notices.clear
 $settings_steps << [["notify", ["Creator shares mod settings here: 2 options", "of Level Cap and Party Sheet are set for you."]], ["row", true]]
-mods.on_observe(creator)
-check("another player's state goes to the DLL only in their own world", asked.call("settings.observe"), nil)
 mods.take(MGQ_Multiplayer::Bridge.call("settings.step"))
 check("a notice of the DLL shows in its lines, the row shows what it tells", [$notices.sort_by { |key, _| key[1] }.map(&:last), $game_system.conf[row_key]],
       [["Creator shares mod settings here: 2 options", "of Level Cap and Party Sheet are set for you."], 1])
-MGQ_MpOverworldSync.routes["world_mods"].call(creator, { "world_mods" => "abc", :payload => "@shared=o:1;mod_level_cap=i:1" })
-check("settings the creator tells live go to the DLL with who sent them", asked.call("settings.live"), { "sender" => "creator", "name" => "Creator", "text" => "@shared=o:1;mod_level_cap=i:1" })
+MGQ_MpOverworldSync.routes["mod_settings_value"].call(creator, { "mod_settings_value" => "@shared=o:1;mod_level_cap=i:1", "by" => "creator" })
+check("settings another player sends go nowhere", asked.call("settings.live"), nil)
+MGQ_MpOverworldSync.routes["mod_settings_value"].call(nil, { "mod_settings_value" => "@shared=o:1;mod_level_cap=i:1", "by" => "creator", :relay => true })
+check("the settings the relay tells go to the DLL with who changed them", asked.call("settings.live"), { "by" => "creator", "text" => "@shared=o:1;mod_level_cap=i:1" })
 $settings_steps << [["apply_live", "@shared=o:1;mod_level_cap=i:1"]]
 mods.take(MGQ_Multiplayer::Bridge.call("settings.step"))
 check("they apply at once, and the DLL hears which options were set", [$game_system.conf[:mod_level_cap], asked.call("settings.applied")], [1, { "keys" => ["mod_level_cap"] }])
 $settings_steps << [["unlock"]]
 mods.take(MGQ_Multiplayer::Bridge.call("settings.step"))
 check("once the world no longer shares them, the locks are lifted and the values stay", [ModConfigRemake.world_keys, $game_system.conf[:mod_level_cap]], [[], 1])
-check("the player's state tells the checksum of the settings the DLL holds", MGQ_MpOverworldSync.fields.map { |fields| fields.call }.inject({}) { |all, fields| all.merge(fields) }["mod_settings"],
-      Zlib.crc32(shared).to_s(16))
-MGQ_MpOverworldSync.leave.call(creator)
-check("a player who leaves is forgotten by the DLL", asked.call("settings.leave"), 2)
 Scene_Title.new.start
 check("the title screen takes the row away and lets every option be changed again", [row.call, ModConfigRemake.world_keys, asked.call("settings.forget")], [nil, [], nil])
 
@@ -611,12 +610,7 @@ check("leaving the options screen hands the DLL the creator's options", asked.ca
       ["options", ["mod_level_cap", "mod_level_cap=i:1"]])
 row.call[:on_change].call(0)
 check("turning the row off hands the DLL the switch", asked.call("settings.want").values_at("reason", "on"), ["switch", false])
-$told.clear
-$settings_steps << [["broadcast", "@shared=o:1;mod_level_cap=i:1", "1a2b"], ["tell", 4, "ff", "1a2b", "@shared=o:1;mod_level_cap=i:1"]]
-mods.take(MGQ_Multiplayer::Bridge.call("settings.step"))
-check("every player, and a player whose game holds other settings, hears what the DLL says, and the DLL hears who was told",
-      [$told, asked.call("settings.told")], [[[-1, { "world_mods" => "1a2b" }, "@shared=o:1;mod_level_cap=i:1"], [4, { "world_mods" => "1a2b" }, "@shared=o:1;mod_level_cap=i:1"]],
-                                            { "seat" => 4, "theirs" => "ff", "mine" => "1a2b" }])
+check("the creator's game tells no player the settings, which the relay does", $told, [])
 Scene_Title.new.start
 check("the title screen forgets whose world it was", [row.call, mods.own_world?], [nil, false])
 

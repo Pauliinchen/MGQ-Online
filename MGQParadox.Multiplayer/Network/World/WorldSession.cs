@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
+//                            - Handed the world's mod settings the relay tells to the game script as a mod_settings entry
 //      Paulinchen  2026-10-30: Handed a changed boss pool to RaidBosses alone, whose ledger the game script reads
 //      Paulinchen  2026-10-28: Waited for the writer to send what was queued as the world closes and as the game ends
 //      Paulinchen  2026-10-23: Took the squad settings from MGQOnline.Game
@@ -200,6 +201,35 @@ internal sealed class WorldSession
     /// limit, so a broken frame never fills the inbox.
     /// </summary>
     private const int MaxModsRuleLength = 65536;
+
+    /// <summary>
+    /// The kind of an inbox entry that tells the world's mod settings, as the game enters and once
+    /// its creator or an admin changed them, and the word that starts the relay's text frame saying
+    /// so, as Relay/README.md names it.
+    /// </summary>
+    public const string ModSettingsKind = "mod_settings";
+
+    /// <summary>
+    /// The world's mod settings now, in a <see cref="ModSettingsKind"/> entry, empty when it shares none.
+    /// </summary>
+    public const string SettingsHeader = "settings";
+
+    /// <summary>
+    /// Who changed the settings, in a <see cref="ModSettingsKind"/> entry: "creator", "admin", or
+    /// empty for the settings told as the game enters.
+    /// </summary>
+    public const string ByHeader = "by";
+
+    /// <summary>
+    /// Who the relay may name as having changed the settings.
+    /// </summary>
+    private static readonly string[] SettingsChangers = [string.Empty, "creator", "admin"];
+
+    /// <summary>
+    /// The longest settings a <see cref="ModSettingsKind"/> frame may carry, above the relay's own
+    /// limit of 64000 characters, so a broken frame never fills the inbox.
+    /// </summary>
+    private const int MaxModSettingsLength = 131072;
 
     /// <summary>
     /// The kind of an inbox entry that carries another game's message.
@@ -937,7 +967,7 @@ internal sealed class WorldSession
     /// </summary>
     /// <param name="generation">The open this belongs to.</param>
     /// <param name="connection">The connection.</param>
-    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c>, <c>pong</c>, <c>slow chat</c>, <c>story 12</c>, <c>boss 0.25 5000000 0 Queen Harpy</c>, <c>difficulty 2</c>, <c>squad 1 6 2 1</c>, <c>raid_bosses 1</c>, <c>mods_rule 1</c>, a tab and the mods text, or <c>chat Global</c>, a tab and the line.</param>
+    /// <param name="text">The text, such as <c>seat 2 0 1</c>, <c>in 3</c>, <c>out 0</c>, <c>pong</c>, <c>slow chat</c>, <c>story 12</c>, <c>boss 0.25 5000000 0 Queen Harpy</c>, <c>difficulty 2</c>, <c>squad 1 6 2 1</c>, <c>raid_bosses 1</c>, <c>mods_rule 1</c>, a tab and the mods text, <c>mod_settings admin</c>, a tab and the settings, or <c>chat Global</c>, a tab and the line.</param>
     private void TakeText(int generation, Connection connection, string text)
     {
         if (text == RelayWorldChannel.Pong)
@@ -1003,6 +1033,12 @@ internal sealed class WorldSession
         if (text.StartsWith($"{ModsRuleKind} ", StringComparison.Ordinal))
         {
             TakeModsRule(generation, connection, text[(ModsRuleKind.Length + 1)..]);
+            return;
+        }
+
+        if (text.StartsWith($"{ModSettingsKind} ", StringComparison.Ordinal))
+        {
+            TakeModSettings(generation, connection, text[(ModSettingsKind.Length + 1)..]);
             return;
         }
 
@@ -1329,6 +1365,37 @@ internal sealed class WorldSession
         }
 
         Log.Write($"world mods rule changed at the relay: other mods {(value == "1" ? "off" : "allowed")}, mods text of {mods.Length.ToString(CultureInfo.InvariantCulture)} characters");
+    }
+
+    /// <summary>
+    /// Hands the world's mod settings the relay tells to the game script.
+    /// </summary>
+    /// <param name="generation">The open this belongs to.</param>
+    /// <param name="connection">The connection.</param>
+    /// <param name="told">Who changed them, a tab and the settings, as the relay wrote them.</param>
+    private void TakeModSettings(int generation, Connection connection, string told)
+    {
+        var tab = told.IndexOf('\t', StringComparison.Ordinal);
+        var by = tab < 0 ? told : told[..tab];
+        var settings = tab < 0 ? string.Empty : told[(tab + 1)..];
+
+        if (tab < 0 || !SettingsChangers.Contains(by) || settings.Length > MaxModSettingsLength)
+        {
+            Log.Write("world room mod settings text ignored, it names nobody the relay names or its settings are too long");
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (generation != _generation || connection != _connection)
+            {
+                return;
+            }
+
+            Enqueue(new Message([new(Message.Kind, ModSettingsKind), new(SettingsHeader, settings), new(ByHeader, by)]).Encode());
+        }
+
+        Log.Write($"world mod settings told by the relay{(by.Length == 0 ? " as the world is entered" : $", changed by the {by}")}: {settings.Length.ToString(CultureInfo.InvariantCulture)} characters");
     }
 
     /// <summary>

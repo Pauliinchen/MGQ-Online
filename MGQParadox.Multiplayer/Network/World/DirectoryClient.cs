@@ -2,6 +2,7 @@
 //  DirectoryClient.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Named the world's mod settings taken from the relay in the X-MGQ-Features header
 //      Paulinchen  2026-10-30: Dropped the download of an uploaded mod, which the Mod Framework installs
 //      Paulinchen  2026-10-23: Moved the squad settings into MGQOnline.Game
 //                            - Named the default difficulty, the difficulties' names, the default squad settings and the formation sizes for the game script
@@ -105,9 +106,15 @@ internal sealed partial class DirectoryClient
     public const string StoryTracks = "tracks";
 
     /// <summary>
+    /// What this game names in <see cref="FeaturesHeader"/> to be told a world's mod settings by
+    /// the relay, see <see cref="Topics.SharedSettingsSync"/>.
+    /// </summary>
+    public const string ModSettings = "settings";
+
+    /// <summary>
     /// What this game names in <see cref="FeaturesHeader"/>, separated by commas.
     /// </summary>
-    public const string Features = WorldType.Raid + "," + KeyedStories + "," + StoryTracks;
+    public const string Features = WorldType.Raid + "," + KeyedStories + "," + StoryTracks + "," + ModSettings;
 
     /// <summary>
     /// How many outcomes last logged are kept; once full they are forgotten, which only has a repeated request log once more.

@@ -4,6 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-10-31: Wrote every Raid World story key by key and tested that games that keep no keys are turned away
 //                            - Tested an admin's keys reaching the games of a Raid World that plays on tracks
+//                            - Tested the world's mod settings told to the games that take them from the relay
 //      Paulinchen  2026-10-30: Tested that a read of the mod catalog passes without headers, as the Mod Framework sends it
 //      Paulinchen  2026-10-23: Tested the story mapping's admin routes, their log and the games' read of the mapping
 //                            - Tested a Raid World's story tracks over the world room: sync, writes, pushes, telling locks, the mapping's revision
@@ -1419,6 +1420,37 @@ test("every game of a world hears that it turns other mods off, with its mods, o
   await until(async () => heard.includes("mods_rule 1\t!Level Cap;Party Sheet"));
   assert.deepEqual(heard.filter((text) => text.startsWith("mods_rule")), ["mods_rule 1\t!Level Cap", "mods_rule 1\t!Level Cap;Party Sheet"], "an edit that changes neither tells none");
   watcher.socket.close();
+});
+
+test("a game that takes mod settings from the relay hears the world's as it enters and each change over HTTP, a game that does not hears neither", async () => {
+  const room = roomId(140);
+  const creator = playerKey(120);
+  const created = await gameFetch(directoryBase, {
+    method: "POST",
+    headers: { [PLAYER_HEADER]: creator },
+    body: JSON.stringify({ id: room, name: "Shared", seats: 4, playerName: "Creator", authHash: await sha256Hex(AUTH), lock: { salt: "12".repeat(16), iterations: 200_000, box: "ab".repeat(40) }, settings: "@shared=o:1;a=i:1" }),
+  });
+  assert.equal(created.status, 201);
+  const heard = { taking: [], other: [] };
+  // The listeners come before the connection opens, since the world's settings follow the seat at once.
+  const enter = (name, player, headers, texts) => {
+    const socket = new WebSocketClient(`${worldBase}${room}?name=${name}&auth=${AUTH}`, { headers: { ...GAME, ...headers, [PLAYER_HEADER]: playerKey(player) } });
+    socket.on("message", (data) => texts.push(data.toString()));
+    return socket;
+  };
+  const taking = enter("Taking", 121, { [FEATURES_HEADER]: "raid,settings" }, heard.taking);
+  await until(async () => heard.taking.length >= 2);
+  assert.deepEqual(heard.taking, ["seat 0", "mod_settings \t@shared=o:1;a=i:1"]);
+  const other = enter("Other", 122, {}, heard.other);
+  await until(async () => heard.other.length >= 1);
+  assert.deepEqual(heard.other, ["seat 1 0"]);
+
+  const edit = await gameFetch(`${directoryBase}/${room}/edit`, { method: "POST", headers: { [PLAYER_HEADER]: creator }, body: JSON.stringify({ settings: "@shared=o:1;a=i:0" }) });
+  assert.equal(edit.status, 200);
+  await until(async () => heard.taking.includes("mod_settings creator\t@shared=o:1;a=i:0"));
+  assert.deepEqual(heard.other.filter((text) => text.startsWith("mod_settings")), [], "a game that does not name the feature hears no settings");
+  taking.close();
+  other.close();
 });
 
 test("games from 0.6.8 read a world's mods by its id, and released ones keep the list but stay out of a world with more mods than they hold", async () => {

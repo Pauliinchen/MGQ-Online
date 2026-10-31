@@ -2,6 +2,7 @@
 #  world_mods.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Took the world's settings the relay tells every player, instead of the creator's game telling each
 #      Paulinchen  2026-10-30: Checked the game data once the world's mods loaded and warned in the notification box of a difference
 #                            - Locked the options a world sets through the Mod Framework's options, Mod Config Remake's without it
 #                            - Entered a world that turns other mods off with only the mods its session keeps, and started again for one that turns them off now
@@ -121,12 +122,6 @@ module MGQ_MpWorldMods
   # The marker's key, as settings_from reads it.
   MARKER_KEY = :"@shared"
 
-  # The field that marks the creator's message of the world's new settings.
-  LIVE_FIELD = "world_mods"
-
-  # The field of a player's state that holds the checksum of the settings their game applies.
-  STATE_FIELD = "mod_settings"
-
   # An option's name that opens its mod's group, "[Mod Name] Option", as Mod Config Remake reads it.
   MOD_NAME = /\A\s*\[([^\]]+)\]\s*/
 
@@ -185,17 +180,8 @@ module MGQ_MpWorldMods
   # The topic that takes the options set for the creator's live settings.
   APPLIED_TOPIC = "settings.applied"
 
-  # The topic that takes the settings the creator sent live.
+  # The topic that takes the world's settings the relay tells.
   LIVE_TOPIC = "settings.live"
-
-  # The topic that takes another player's state.
-  OBSERVE_TOPIC = "settings.observe"
-
-  # The topic that notes another player was told the world's settings.
-  TOLD_TOPIC = "settings.told"
-
-  # The topic that forgets what a player who left was told.
-  LEAVE_TOPIC = "settings.leave"
 
   # The topic that takes the mods the open world names now.
   MODS_TOPIC = "settings.mods"
@@ -224,15 +210,12 @@ module MGQ_MpWorldMods
     end
   end
 
-  # Takes part in the open world's messages: the creator's settings sent live, each player's state,
-  # which tells the settings their game applies, and the relay's word on the world's mods rule.
+  # Takes part in the open world's messages: the relay's word on the world's settings and on its
+  # mods rule.
   def self.join_world
     return unless defined?(MGQ_MpOverworldSync)
 
-    MGQ_MpOverworldSync.route(LIVE_FIELD) { |peer, message| MGQ_MpWorldMods.take_live(peer, message) }
-    MGQ_MpOverworldSync.on_observe { |peer| MGQ_MpWorldMods.on_observe(peer) }
-    MGQ_MpOverworldSync.on_leave { |peer| MGQ_MpWorldMods.on_leave(peer) }
-    MGQ_MpOverworldSync.state_fields { MGQ_MpWorldMods.state_fields }
+    MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::MOD_SETTINGS_FIELD) { |_peer, message| MGQ_MpWorldMods.settings_pushed(message) } if defined?(MGQ_MpOverworldSync::MOD_SETTINGS_FIELD)
     MGQ_MpOverworldSync.route(MGQ_MpOverworldSync::MODS_RULE_FIELD) { |_peer, message| MGQ_MpWorldMods.rule_pushed(message) } if defined?(MGQ_MpOverworldSync::MODS_RULE_FIELD)
   end
 
@@ -1012,10 +995,9 @@ module MGQ_MpWorldMods
   # Plays one step of the DLL.
   #
   # @param step [Array] Its kind and values: "notify" with the lines, "apply" or "apply_live" with
-  #   the settings, "unlock", "broadcast" with the settings and their checksum, "tell" with the seat,
-  #   the checksum their game holds, the world's and its settings, "row" with whether it shares.
+  #   the settings, "unlock", "row" with whether it shares.
   def self.play(step)
-    kind, first, second, third, fourth = step
+    kind, first = step
     case kind
     when "notify" then notify(first)
     when "apply" then apply_text(first) if $game_system
@@ -1023,8 +1005,6 @@ module MGQ_MpWorldMods
     when "apply_live"
       applied = $game_system ? apply_text(first) : []
       take(MGQ_Multiplayer::Bridge.call(APPLIED_TOPIC, "keys" => applied.map { |key| key.to_s }))
-    when "broadcast" then broadcast(first, second)
-    when "tell" then tell(first, second, third, fourth)
     when "row"
       show_row_value(first)
       refresh_menu
@@ -1033,72 +1013,21 @@ module MGQ_MpWorldMods
     log_once([:step, kind], "playing the DLL's step #{kind} failed: #{e.class}: #{e.message}")
   end
 
-  # Live changes.
+  # The relay's word on the settings.
 
-  # Tells every player in the world the settings the relay took, so they apply at once.
+  # Hands the DLL the world's settings the relay tells, as the game enters the world and once its
+  # creator or an admin changed them, which apply at once while a save of the world is loaded, and
+  # otherwise once one is.
   #
-  # @param text [String] The settings.
-  # @param crc [String] Their checksum.
-  def self.broadcast(text, crc)
-    return unless defined?(MGQ_MpOverworldSync)
+  # @param message [Hash] The push: MGQ_MpOverworldSync::MOD_SETTINGS_FIELD with the settings and
+  #   "by" with who changed them, empty as the game enters, marked :relay by overworld_sync.rbx.
+  def self.settings_pushed(message)
+    return log("ignored mod settings not from the relay") unless message[:relay]
+    return unless @world && MGQ_MpWorld.open?
 
-    sent = MGQ_MpOverworldSync.tell(-1, { LIVE_FIELD => crc }, text)
-    log(sent ? "told every player in the world its new mod settings" : "could not tell the players the new mod settings; each hears of them from the creator's next state")
-  end
-
-  # Tells another player the world's settings, which their game holds otherwise.
-  #
-  # @param seat [Integer] The player's seat.
-  # @param theirs [String] The checksum of the settings their game holds.
-  # @param mine [String] The checksum of the world's settings.
-  # @param text [String] The world's settings.
-  def self.tell(seat, theirs, mine, text)
-    return unless defined?(MGQ_MpOverworldSync) && MGQ_MpOverworldSync.tell(seat, { LIVE_FIELD => mine }, text)
-
-    MGQ_Multiplayer::Bridge.call(TOLD_TOPIC, "seat" => seat, "theirs" => theirs, "mine" => mine)
-    log("told the player on seat #{seat} the world's mod settings, which their game had otherwise")
-  end
-
-  # Hands the DLL another player's state, which tells the settings their game holds. Called
-  # whenever another player tells their state.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
-  def self.on_observe(peer)
-    return unless own_world?
-
-    take(MGQ_Multiplayer::Bridge.call(OBSERVE_TOPIC, "seat" => peer.seat, "crc" => peer.state[STATE_FIELD].to_s))
+    take(MGQ_Multiplayer::Bridge.call(LIVE_TOPIC, "by" => message["by"].to_s, "text" => message[MGQ_MpOverworldSync::MOD_SETTINGS_FIELD].to_s))
   rescue => e
-    log_once(:observe, "telling a player the mod settings failed: #{e.class}: #{e.message}")
-  end
-
-  # Has the DLL forget what another player was told, so whoever takes their seat next is checked
-  # anew. Called as a player leaves the world.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer] The player.
-  def self.on_leave(peer)
-    MGQ_Multiplayer::Bridge.call(LEAVE_TOPIC, peer.seat)
-  rescue => e
-    log_once(:leave, "forgetting a player who left failed: #{e.class}: #{e.message}")
-  end
-
-  # Adds what the player's game holds of the world's settings to the state it tells the others.
-  #
-  # @return [Hash] The checksum of the settings, none outside a world.
-  def self.state_fields
-    @world && MGQ_MpWorld.open? ? { STATE_FIELD => @world["crc"] } : {}
-  end
-
-  # Hands the DLL the settings the world's creator sent, which it applies at once while a save of
-  # the world is loaded, and otherwise once one is.
-  #
-  # @param peer [MGQ_MpOverworldSync::Peers::Peer, nil] Who sent them.
-  # @param message [Hash] The message, the settings under :payload.
-  def self.take_live(peer, message)
-    return unless @world && MGQ_MpWorld.open? && !@world["own"]
-
-    take(MGQ_Multiplayer::Bridge.call(LIVE_TOPIC, "sender" => peer ? peer.state["id"].to_s : "", "name" => peer ? peer.state["name"].to_s : "", "text" => message[:payload].to_s))
-  rescue => e
-    log("taking the world's new mod settings failed: #{e.class}: #{e.message}")
+    log("taking the world's mod settings from the relay failed: #{e.class}: #{e.message}")
   end
 
   # Telling the player.

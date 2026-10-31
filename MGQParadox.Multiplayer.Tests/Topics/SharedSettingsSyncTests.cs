@@ -2,6 +2,7 @@
 //  SharedSettingsSyncTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Covered the settings the relay tells every player, the creator's game included
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -15,7 +16,7 @@ namespace MGQParadox.Multiplayer.Tests.Topics;
 
 /// <summary>
 /// Covers the shared mod settings as the scripts call them: the creator's options sent after the
-/// relay's were read, merged with a change on the relay, told to the players, and the notices.
+/// relay's were read, merged with a change on the relay, the settings the relay tells, and the notices.
 /// </summary>
 public sealed class SharedSettingsSyncTests
 {
@@ -61,7 +62,8 @@ public sealed class SharedSettingsSyncTests
 
     /// <summary>
     /// Asserts that the creator's load reads the relay's settings before it sends, sends nothing while
-    /// they are as wanted, and once the relay took changed options tells every player and the creator.
+    /// they are as wanted, and once the relay took changed options tells the creator, leaving the
+    /// other players to the relay.
     /// </summary>
     [Fact]
     public void Load_ReadsTheRelayFirstThenSendsTheCreatorsOptions()
@@ -79,7 +81,7 @@ public sealed class SharedSettingsSyncTests
 
         _directory.Action = ("done", "settings", null);
         steps = Tick();
-        Assert.Equal(["broadcast", "row"], steps.Select(Kind).Where(kind => kind != "notify"));
+        Assert.Equal(["row"], steps.Select(Kind).Where(kind => kind != "notify"));
         Assert.Equal(Off, Call(SharedSettingsSync.StepTopic)!.AsHash()["world"].AsHash()["text"].AsText());
     }
 
@@ -131,45 +133,59 @@ public sealed class SharedSettingsSyncTests
     }
 
     /// <summary>
-    /// Asserts that a player whose game holds other settings has the relay read first, is told the
-    /// world's once, and again only after their seat was left.
+    /// Asserts that another player takes the settings the relay tells once applied and is told what
+    /// changed and who changed it, the creator or an admin, and that settings the game holds already
+    /// change nothing.
     /// </summary>
     [Fact]
-    public void Observe_TellsAPlayerWhoseGameHoldsOthersOnce()
-    {
-        Enter("creator", On);
-        Call(SharedSettingsSync.ObserveTopic, new RubyHash { { "seat", 2 }, { "crc", "abc" } });
-        Assert.Equal("w1", _directory.Read);
-
-        _directory.Done(On);
-        RubyArray told = Tick();
-        RubyArray tell = Assert.Single(told, step => Kind(step) == "tell").AsArray();
-        Assert.Equal(new RubyArray(["tell", 2, "abc", SharedSettingsSync.CrcOf(On), On]), tell);
-
-        Call(SharedSettingsSync.ToldTopic, new RubyHash { { "seat", 2 }, { "theirs", "abc" }, { "mine", SharedSettingsSync.CrcOf(On) } });
-        Assert.Empty(Steps(Call(SharedSettingsSync.ObserveTopic, new RubyHash { { "seat", 2 }, { "crc", "abc" } })));
-        Call(SharedSettingsSync.LeaveTopic, 2);
-        Assert.Single(Steps(Call(SharedSettingsSync.ObserveTopic, new RubyHash { { "seat", 2 }, { "crc", "abc" } })), step => Kind(step) == "tell");
-    }
-
-    /// <summary>
-    /// Asserts that another player takes the creator's live change once applied and is told what
-    /// changed, and ignores settings from a player who did not create the world.
-    /// </summary>
-    [Fact]
-    public void Live_AppliesTheCreatorsChange()
+    public void Live_AppliesTheSettingsTheRelayTells()
     {
         Enter("me", On);
         Call(SharedSettingsSync.LoadedTopic, Load(""));
         Tick();
 
-        Assert.Empty(Steps(Call(SharedSettingsSync.LiveTopic, new RubyHash { { "sender", "p3" }, { "name", "Stranger" }, { "text", Off } })));
-        Assert.Equal(new RubyArray(["apply_live", Off]), Assert.Single(Steps(Call(SharedSettingsSync.LiveTopic, new RubyHash { { "sender", "creator" }, { "name", "Creator" }, { "text", Off } }))));
+        Assert.Empty(Steps(Call(SharedSettingsSync.LiveTopic, Told("", On))));
+        Assert.Equal(new RubyArray(["apply_live", Off]), Assert.Single(Steps(Call(SharedSettingsSync.LiveTopic, Told("creator", Off)))));
 
         _frame += SharedSettingsSync.NoticeFrames;
         Tick();
         RubyArray steps = Steps(Call(SharedSettingsSync.AppliedTopic, new RubyHash { { "keys", new RubyArray(["mod_level_cap"]) } }));
         Assert.Contains(steps, step => Notice(step) == "Creator changed the shared mod settings: Level Cap: On -> Off.");
+
+        Call(SharedSettingsSync.LiveTopic, Told("admin", On));
+        steps = Steps(Call(SharedSettingsSync.AppliedTopic, new RubyHash { { "keys", new RubyArray(["mod_level_cap"]) } }));
+        Assert.Contains(steps, step => Notice(step) == "An admin changed the shared mod settings: Level Cap: Off -> On.");
+    }
+
+    /// <summary>
+    /// Asserts that the creator's game takes an admin's change the relay tells as the world's, and
+    /// takes the relay telling its own request on its way as nothing new.
+    /// </summary>
+    [Fact]
+    public void Live_TheCreatorTakesAnAdminsChangeButNotItsOwnRequest()
+    {
+        Enter("creator", On);
+        Call(SharedSettingsSync.LoadedTopic, Load(On, ("mod_level_cap", "mod_level_cap=i:1")));
+        _directory.Done(On);
+        Tick();
+
+        RubyArray steps = Steps(Call(SharedSettingsSync.LiveTopic, Told("admin", Off)));
+        Assert.Contains(steps, step => Kind(step) == "apply" && step.AsArray()[1].AsText() == Off);
+        Assert.Contains(steps, step => Notice(step) == "An admin changed the shared mod settings: Level Cap: On -> Off.");
+
+        RubyHash want = Load("", ("mod_level_cap", "mod_level_cap=i:1"));
+        want.Add("reason", "options");
+        Call(SharedSettingsSync.WantTopic, want);
+        _directory.Done(Off);
+        Tick();
+        Assert.Equal(On, _directory.Sent);
+
+        _directory.Read = null;
+        Assert.Empty(Steps(Call(SharedSettingsSync.LiveTopic, Told("creator", On))));
+        _directory.Action = ("done", "settings", null);
+        Tick();
+        Tick();
+        Assert.Null(_directory.Read);
     }
 
     /// <summary>
@@ -213,6 +229,14 @@ public sealed class SharedSettingsSyncTests
             { "known", new RubyArray(mine.Select(pair => (RubyValue)pair.Key)) },
         };
     }
+
+    /// <summary>
+    /// Writes what the relay tells of the world's settings.
+    /// </summary>
+    /// <param name="by">Who changed them, empty as the game enters.</param>
+    /// <param name="settings">The settings.</param>
+    /// <returns>The request.</returns>
+    private static RubyHash Told(string by, string settings) => new() { { "by", by }, { "text", settings } };
 
     /// <summary>
     /// Runs a tick and takes its steps.

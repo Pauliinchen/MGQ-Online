@@ -2,6 +2,7 @@
 //  SettingNotices.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Named an admin who changed the shared mod settings to the other players
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -94,6 +95,11 @@ public sealed class SettingNotices(IReadOnlyList<SettingGroup> groups)
     /// What the creator is told first when options did not fit, how many filled in.
     /// </summary>
     public const string LeftOutText = "{0} option(s) could not be shared.";
+
+    /// <summary>
+    /// Who a player other than the creator is told changed the shared mod settings, when an admin did.
+    /// </summary>
+    public const string AdminName = "An admin";
 
     /// <summary>
     /// What the creator is told once the relay holds settings someone else set, the changes filled in.

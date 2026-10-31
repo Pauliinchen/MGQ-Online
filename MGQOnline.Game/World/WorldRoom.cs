@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-31: Took the party's own messages through the routes of the rules in C#
+//                            - Handed the world's mod settings the relay pushes to the scripts
 //      Paulinchen  2026-10-30: Let a rule in C# take a message without a sender, with its body
 //                            - Let rules in C# take the messages of a field before the scripts
 //      Paulinchen  2026-10-23: Kept a player away whose seat another player took, and told each change of a player's presence
@@ -99,6 +100,7 @@ public sealed class WorldRoom
         ["squad"] = ("squad_value", ["value"]),
         ["raid_bosses"] = ("raid_bosses_value", ["value"]),
         ["mods_rule"] = ("mods_rule_value", ["value", "mods"]),
+        ["mod_settings"] = ("mod_settings_value", ["settings", "by"]),
     };
 
     /// <summary>

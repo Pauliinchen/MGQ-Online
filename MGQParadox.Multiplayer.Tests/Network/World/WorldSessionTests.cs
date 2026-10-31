@@ -2,6 +2,7 @@
 //  WorldSessionTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Covered the world's mod settings the relay tells
 //      Paulinchen  2026-10-31: Expected the plainer texts the player reads
 //      Paulinchen  2026-10-30: Covered the world room refusals in one theory
 //      Paulinchen  2026-10-13: Covered the relay's word of a Classic world's new raid bosses setting
@@ -633,6 +634,30 @@ public sealed class WorldSessionTests
         relay.Tell(room, $"{WorldSession.ModsRuleKind} 0");
         told = NextEntry(session);
         Assert.Equal((WorldSession.ModsRuleKind, "0", string.Empty), (told[Message.Kind], told[WorldSession.ValueHeader], told[WorldSession.ModsHeader]));
+
+        session.Close();
+    }
+
+    /// <summary>
+    /// Asserts that the world's mod settings the relay tells reach the game script as a mod settings
+    /// entry with who changed them, and that a frame naming someone the relay never names is ignored.
+    /// </summary>
+    [Fact]
+    public void ModSettings_ReachTheGame()
+    {
+        using var relay = new TestRelay();
+        var code = MakeWorld(relay, 4);
+        var session = NewSession(relay.Address);
+        var room = Relays.WorldRoomOf(WorldCode.Parse(code)!.Token);
+
+        session.Open(code);
+        AwaitState(session, "open");
+        Drain(session);
+
+        relay.Tell(room, $"{WorldSession.ModSettingsKind} someone\t@shared=o:1");
+        relay.Tell(room, $"{WorldSession.ModSettingsKind} admin\t@shared=o:1;a=i:1");
+        var told = NextEntry(session);
+        Assert.Equal((WorldSession.ModSettingsKind, "@shared=o:1;a=i:1", "admin"), (told[Message.Kind], told[WorldSession.SettingsHeader], told[WorldSession.ByHeader]));
 
         session.Close();
     }

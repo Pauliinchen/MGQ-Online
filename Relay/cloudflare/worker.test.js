@@ -2,6 +2,7 @@
 //  worker.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Tested the world's mod settings told to the games that take them from the relay
 //      Paulinchen  2026-10-30: Tested that a read of the mod catalog passes without headers, as the Mod Framework sends it
 //      Paulinchen  2026-10-21: Tested that every Raid design route answers 404
 //      Paulinchen  2026-10-15: Tested the migration routes through the directory and a world room
@@ -296,9 +297,10 @@ function namespace(make) {
  * world rooms ask it.
  *
  * @param {number} [seats] The seats of the world.
+ * @param {string} [settings] The world's mod settings.
  * @returns {object} The namespace, with `calls`: each route the world rooms asked with its body.
  */
-function fakeDirectory(seats = 32) {
+function fakeDirectory(seats = 32, settings = "") {
   const calls = [];
 
   const answer = async (request) => {
@@ -307,7 +309,7 @@ function fakeDirectory(seats = 32) {
     calls.push({ route, body });
 
     if (route === "admit") {
-      return Response.json({ status: 200, body: {}, seats, player: playerIdFor(body.player) });
+      return Response.json({ status: 200, body: {}, seats, player: playerIdFor(body.player), settings });
     }
 
     return Response.json(route === "say" ? { line: { text: body.text } } : {});
@@ -320,10 +322,11 @@ function fakeDirectory(seats = 32) {
  * Makes a world room over stand-ins.
  *
  * @param {number} [seats] The seats of the world.
+ * @param {string} [settings] The world's mod settings.
  * @returns {{world: World, directory: object}} The world room and its stand-in directory.
  */
-function newWorld(seats = 32) {
-  const directory = fakeDirectory(seats);
+function newWorld(seats = 32, settings = "") {
+  const directory = fakeDirectory(seats, settings);
   return { world: new World(objectState(), { DIRECTORY: directory }), directory };
 }
 
@@ -333,10 +336,11 @@ function newWorld(seats = 32) {
  * @param {World} world The world room.
  * @param {string} key The player's key.
  * @param {string} name The player's name.
+ * @param {object} [headers] More headers the game sends.
  * @returns {Promise<FakeSocket>} The socket the world room holds for the game.
  */
-async function joinWorld(world, key, name) {
-  const request = new Request(`https://relay.test/v1/world/${WORLD}?name=${encodeURIComponent(name)}`, { headers: { [PLAYER_HEADER]: key, [AUTH_HEADER]: AUTH } });
+async function joinWorld(world, key, name, headers = {}) {
+  const request = new Request(`https://relay.test/v1/world/${WORLD}?name=${encodeURIComponent(name)}`, { headers: { [PLAYER_HEADER]: key, [AUTH_HEADER]: AUTH, ...headers } });
   const response = await world.fetch(request);
   assert.equal(response.status, 101, await response.clone().text());
   return response.webSocket.server;
@@ -452,6 +456,16 @@ test("games in a world room get seats, each learns who comes and goes, and the d
 
   const fourth = await joinWorld(world, playerKey(4), "Player 4");
   assert.deepEqual(takeSent(fourth), ["seat 1 0 2"], "the lowest free seat is taken");
+});
+
+test("a game that takes mod settings from the relay hears the world's as it enters and each change, a game that does not hears neither", async () => {
+  const { world } = newWorld(32, "@shared=o:1;a=i:1");
+  const taking = await joinWorld(world, playerKey(1), "Player 1", { [FEATURES_HEADER]: "raid,settings" });
+  const other = await joinWorld(world, playerKey(2), "Player 2");
+  assert.deepEqual([takeSent(taking), takeSent(other)], [["seat 0", "mod_settings \t@shared=o:1;a=i:1", "in 1"], ["seat 1 0"]]);
+
+  await internalTo(world, "mod-settings", { by: "admin", settings: "" });
+  assert.deepEqual([takeSent(taking), takeSent(other)], [["mod_settings admin\t"], []]);
 });
 
 test("a world message goes to every other game, or to the one seat it names, with the sender's seat in front", async () => {

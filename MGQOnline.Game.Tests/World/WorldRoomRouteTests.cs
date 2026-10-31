@@ -2,7 +2,8 @@
 //  WorldRoomRouteTests.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-31: Created
+//      Paulinchen  2026-10-31: Covered the world's mod settings the relay pushes
+//                            - Created
 //
 //----------------------------------------------------------------
 
@@ -66,6 +67,25 @@ public sealed class WorldRoomRouteTests
         Assert.Equal(dropped, rule.Logs.FindAll(line => line.Contains("dropped a probe", System.StringComparison.Ordinal)));
         Assert.Empty(taken);
         Assert.Empty(script.Routed);
+    }
+
+    /// <summary>
+    /// Asserts that the world's mod settings the relay pushes reach the scripts' route as the relay's,
+    /// with who changed them.
+    /// </summary>
+    [Fact]
+    public void Push_HandsTheWorldsModSettingsToTheScripts()
+    {
+        var host = new Recorder();
+        host.Room.SetRoutes([("mod_settings_value", RouteGate.None)]);
+        var headers = new WorldFields();
+        headers.Set("settings", "@shared=o:1");
+        headers.Set("by", "admin");
+        host.Inbox.Enqueue(new InboxEntry("mod_settings", -1, headers, string.Empty));
+        host.Run();
+
+        RoutedMessage routed = Assert.Single(host.Routed);
+        Assert.Equal(("mod_settings_value", "@shared=o:1", "admin", true), (routed.Field, routed.Fields.Text("mod_settings_value"), routed.Fields.Text("by"), routed.Relay));
     }
 
     /// <summary>

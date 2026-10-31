@@ -2,6 +2,7 @@
 //  directory.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Told a world room the mod settings an edit changed, and who changed them, and named a world's settings to the world room that admits a game
 //      Paulinchen  2026-10-23: Named the world's type to the world room that admits a game
 //      Paulinchen  2026-10-22: Sent a released game to update at a world whose mod hashes or settings are longer than it holds
 //                            - Took a world's mods up to 16000 characters and its mod hashes and settings up to 64000 each
@@ -188,6 +189,23 @@ export const RAID_BOSSES_TEXT = "raid_bosses";
  * off now, and which mods it names.
  */
 export const MODS_RULE_TEXT = "mods_rule";
+
+/**
+ * The word that starts the text frame telling a game of a world the world's mod settings: as it
+ * enters, and every game of the world once an edit changed them.
+ */
+export const MOD_SETTINGS_TEXT = "mod_settings";
+
+/**
+ * What a game names in FEATURES_HEADER when it takes a world's mod settings from the relay.
+ */
+export const SETTINGS_FEATURE = "settings";
+
+/**
+ * Who changed a world's mod settings, as the frame names it; nobody in the frame a game hears as it
+ * enters.
+ */
+export const SETTINGS_BY = Object.freeze({ creator: "creator", admin: "admin", entering: "" });
 
 /**
  * Lowercase hexadecimal of any length.
@@ -437,7 +455,7 @@ export class Directory {
    * @param {string} id The world.
    * @param {unknown} key The asking player's key.
    * @param {any} changes Whichever of `seats`, `description`, `mods`, `data`, `modHashes`, `settings`, `difficulty`, `squad`, `raidBosses` and `otherModsOff` change, and for an admin `name`, `featured`, `hidden`, `strict`, `creator` (a player's id), `lock` and `open`.
-   * @returns {Promise<{status: number, body: object, difficulty?: number, squad?: {luka: boolean, formation: number, front: number, raidFront: number}, raidBosses?: boolean, modsRule?: {off: boolean, mods: string}}>} The answer, the difficulty, the squad settings and whether it fights raid bosses, which every game in the world room must be told when they changed, and whether the world turns other mods off with its mods, which every game must be told when either changed.
+   * @returns {Promise<{status: number, body: object, difficulty?: number, squad?: {luka: boolean, formation: number, front: number, raidFront: number}, raidBosses?: boolean, modsRule?: {off: boolean, mods: string}, modSettings?: {by: string, settings: string}}>} The answer, the difficulty, the squad settings and whether it fights raid bosses, which every game in the world room must be told when they changed, whether the world turns other mods off with its mods, which every game must be told when either changed, and its mod settings with who changed them, which every game must be told when they changed.
    */
   async edit(id, key, changes) {
     const { entry, player, refusal } = await this.asCreatorOrAdmin(id, key);
@@ -511,6 +529,8 @@ export class Directory {
     }
 
     const rule = { off: otherModsOffOf(entry), mods: entry.mods ?? "" };
+    const settingsBefore = entry.settings ?? "";
+    const settingsBy = admin && player !== entry.creator.id ? SETTINGS_BY.admin : SETTINGS_BY.creator;
     const difficultyChanged = difficulty !== undefined && difficulty !== entry.difficulty;
     const newSquad = squad !== undefined ? cleanSquad(squad) : undefined;
     const squadChanged = newSquad !== undefined && !sameSquad(newSquad, entry.squad ?? SQUAD_DEFAULTS);
@@ -530,9 +550,10 @@ export class Directory {
 
     const modsRule = { off: otherModsOffOf(entry), mods: entry.mods ?? "" };
     const ruleChanged = modsRule.off !== rule.off || modsRule.mods !== rule.mods;
+    const settingsChanged = (entry.settings ?? "") !== settingsBefore;
 
     await this.store.put(entry);
-    return { status: 200, body: { edited: entry.id }, ...(difficultyChanged ? { difficulty } : {}), ...(squadChanged ? { squad: newSquad } : {}), ...(raidBossesChanged ? { raidBosses } : {}), ...(ruleChanged ? { modsRule } : {}) };
+    return { status: 200, body: { edited: entry.id }, ...(difficultyChanged ? { difficulty } : {}), ...(squadChanged ? { squad: newSquad } : {}), ...(raidBossesChanged ? { raidBosses } : {}), ...(ruleChanged ? { modsRule } : {}), ...(settingsChanged ? { modSettings: { by: settingsBy, settings: entry.settings } } : {}) };
   }
 
   /**
@@ -624,7 +645,7 @@ export class Directory {
    * @param {string | null} [address] The game's address, whose entering a rate limit counts; null for none.
    * @param {string[]} [features] What the game names in FEATURES_HEADER; released games name nothing.
    * @param {boolean} [released] Whether the game is a released one before 0.6.8, which holds no longer mods, mod hashes and settings than RELEASED_MOD_LIMITS.
-   * @returns {Promise<{status: number, body: object, seats?: number, player?: string, type?: string}>} The world's seats, the player's id and the world's type, or why not.
+   * @returns {Promise<{status: number, body: object, seats?: number, player?: string, type?: string, settings?: string}>} The world's seats, the player's id, the world's type and its mod settings, or why not.
    */
   async admit(id, key, auth, address = null, features = [], released = false) {
     if (!this.rates.joins.take(address)) {
@@ -652,7 +673,7 @@ export class Directory {
       return { status: 409, body: { error: "the world's starting save is still being uploaded", code: REFUSAL.pending } };
     }
 
-    return { status: 200, body: { seats: entry.seats, player }, seats: entry.seats, player, type: entry.type ?? WORLD_TYPE.classic };
+    return { status: 200, body: { seats: entry.seats, player }, seats: entry.seats, player, type: entry.type ?? WORLD_TYPE.classic, settings: entry.settings ?? "" };
   }
 
   /**
@@ -1259,6 +1280,17 @@ export function modsRuleText(off, mods) {
 }
 
 /**
+ * Writes the text frame that tells a game of a world the world's mod settings.
+ *
+ * @param {string} by Who changed them, see SETTINGS_BY.
+ * @param {string} settings The settings as kept, which hold no tab or line break.
+ * @returns {string} The frame.
+ */
+export function modSettingsText(by, settings) {
+  return `${MOD_SETTINGS_TEXT} ${by}\t${settings}`;
+}
+
+/**
  * Tells whether released games before 0.6.8 hold a world's mods, mod hashes and settings, each
  * counted as the relay counted it when it took no longer ones.
  *
@@ -1333,7 +1365,7 @@ function cleanSettings(text) {
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {(limit: number) => Promise<Uint8Array | null>} readBytes Reads the request's body as bytes, null when it is longer than the limit.
  * @param {{player?: string | null, auth?: string | null, address?: string | null, modsListed?: boolean}} [client] The PLAYER_HEADER and AUTH_HEADER of the request, which win over the key and auth key in its body or address, the address it came from, and whether the list names each world's mods, mod hashes and settings, as it does unless told otherwise.
- * @returns {Promise<{status: number, body: object, bytes?: Uint8Array | ReadableStream<Uint8Array>, close?: boolean, kick?: string, difficulty?: number, squad?: object, raidBosses?: boolean, modsRule?: {off: boolean, mods: string}, id?: string}>} The answer, sent as the bytes when there are any, and what the platform layer must do beyond it for the world with that id.
+ * @returns {Promise<{status: number, body: object, bytes?: Uint8Array | ReadableStream<Uint8Array>, close?: boolean, kick?: string, difficulty?: number, squad?: object, raidBosses?: boolean, modsRule?: {off: boolean, mods: string}, modSettings?: {by: string, settings: string}, id?: string}>} The answer, sent as the bytes when there are any, and what the platform layer must do beyond it for the world with that id.
  */
 export async function handleDirectoryRequest(directory, method, url, readBody, readBytes, client = {}) {
   const parts = url.pathname.split("/").filter((part) => part.length > 0);

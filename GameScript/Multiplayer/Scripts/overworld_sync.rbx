@@ -2,6 +2,7 @@
 #  overworld_sync.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Named the field of the relay's push of a world's mod settings
 #      Paulinchen  2026-10-23: Left the other players, the inbox, the player's state, ping and status to the DLL, keeping a mirror of the players
 #                            - Handed the DLL the player's frame and the routes with their gates
 #                            - Asked the DLL when the player entered a map they just arrived on
@@ -98,6 +99,11 @@ module MGQ_MpOverworldSync
   # mods off, or its mods, with "1" or "0" and the mods under "mods", which world_mods.rbx
   # registers its route for.
   MODS_RULE_FIELD = "mods_rule_value"
+
+  # The field of the relay's push of a world's mod settings, as the game enters it and once its
+  # creator or an admin changed them, with who changed them under "by", which world_mods.rbx
+  # registers its route for.
+  MOD_SETTINGS_FIELD = "mod_settings_value"
 
   # The bridge topic the player's frame goes to the DLL by, see before_frame.
   ME_TOPIC = "world.me"

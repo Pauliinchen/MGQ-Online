@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-31: Turned every game that keeps no keys away from a Raid World
+//                            - Told a game that takes a world's mod settings from the relay the world's settings as it enters, and every such game once an edit changed them
 //      Paulinchen  2026-10-30: Handed the request's method to the update gate
 //      Paulinchen  2026-10-21: Told every game of a Raid World each pool an admin defeated
 //                            - Told every game of a Raid World the pinned values a story write left out
@@ -66,7 +67,7 @@ import { DurableObject } from "cloudflare:workers";
 import { BATTLE_LIMITS, BATTLE_REFUSAL, battleRouteOf } from "../core/battles.js";
 import { DownloadGate, drainLimited, piecesStream, readLimited } from "../core/bodies.js";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
-import { DIRECTORY_LIMITS, Directory as WorldDirectory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, raidBossesText, sha256Hex, squadText } from "../core/directory.js";
+import { DIRECTORY_LIMITS, Directory as WorldDirectory, SETTINGS_BY, SETTINGS_FEATURE, WORLD_TYPE, difficultyText, handleDirectoryRequest, modSettingsText, modsRuleText, parseAdmins, playerIdOf, raidBossesText, sha256Hex, squadText } from "../core/directory.js";
 import { DESIGN_LIMITS, noDesigns } from "../core/designs.js";
 import { DESIGN_ROUTE, DRAIN_LIMITS, GAME_DESIGN_ROUTE, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, updateRefusal } from "../core/gate.js";
 import { badRequest, notFound, routeIs } from "../core/http.js";
@@ -695,6 +696,10 @@ export class Directory extends DurableObject {
       await internal(worldOf(this.env, answer.id), "mods-rule", answer.modsRule);
     }
 
+    if (answer.modSettings) {
+      await internal(worldOf(this.env, answer.id), "mod-settings", answer.modSettings);
+    }
+
     return respond(answer);
   }
 
@@ -1084,6 +1089,12 @@ export class World extends DurableObject {
       return json(200, {});
     }
 
+    if (url.pathname === "/internal/mod-settings") {
+      const { by, settings } = await request.json();
+      this.tell(modSettingsText(typeof by === "string" ? by : SETTINGS_BY.creator, typeof settings === "string" ? settings : ""), (record) => record.settings === true);
+      return json(200, {});
+    }
+
     if (url.pathname === "/internal/export") {
       return json(200, await exportWorldData(this.storyOf().store, this.bossesOf().store));
     }
@@ -1141,8 +1152,13 @@ export class World extends DurableObject {
 
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment(newWorldPeer(seat, { player: answer.player, name: route.name }, Date.now()));
+    const takesSettings = features.includes(SETTINGS_FEATURE);
+    server.serializeAttachment({ ...newWorldPeer(seat, { player: answer.player, name: route.name }, Date.now()), settings: takesSettings });
     server.send(seatText(seat, records.map((record) => record.seat)));
+
+    if (takesSettings) {
+      server.send(modSettingsText(SETTINGS_BY.entering, answer.settings ?? ""));
+    }
 
     for (const other of present) {
       other.socket.send(seatChangeText(IN, seat));
@@ -1517,12 +1533,13 @@ export class World extends DurableObject {
   }
 
   /**
-   * Sends a text frame to every game in the room, such as what an admin said.
+   * Sends a text frame to the games in the room, such as what an admin said.
    *
    * @param {string} text The frame.
+   * @param {(record: object) => boolean} [takes] Which games take the frame, by their records, every one unless given.
    */
-  tell(text) {
-    for (const peer of this.peers()) {
+  tell(text, takes = () => true) {
+    for (const peer of this.peers().filter((each) => takes(each.record))) {
       try {
         peer.socket.send(text);
       } catch {

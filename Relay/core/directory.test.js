@@ -2,6 +2,7 @@
 //  directory.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Tested the mod settings an edit tells the world room and those the admission names
 //      Paulinchen  2026-10-22: Tested released games sent to update at a world with longer mod hashes or settings
 //                            - Tested the long mods limit, the list without mods, one world by its id and released games sent to update
 //      Paulinchen  2026-10-21: Covered an admin's edit of a world's name, flags, creator, lock, game data and mod hashes
@@ -49,7 +50,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DIRECTORY_LIMITS, Directory, MODS_RULE_TEXT, RAID_BOSSES_TEXT, RELAY_PLAYER, SQUAD_DEFAULTS, cleanName, handleDirectoryRequest, modsRuleText, parseAdmins, playerIdOf, raidBossesText, sha256Hex, squadText } from "./directory.js";
+import { DIRECTORY_LIMITS, Directory, MODS_RULE_TEXT, RAID_BOSSES_TEXT, RELAY_PLAYER, SQUAD_DEFAULTS, cleanName, handleDirectoryRequest, modSettingsText, modsRuleText, parseAdmins, playerIdOf, raidBossesText, sha256Hex, squadText } from "./directory.js";
 import { FEATURE, RateLimiter, parseFeatures } from "./relay.js";
 
 /**
@@ -993,6 +994,18 @@ test("the creator or an admin turns other mods off or on, and the world room is 
   }
 
   assert.equal(await offOf(), false);
+});
+
+test("an edit that changes a world's mod settings names them and who changed them for the world room, and the admission names them", async () => {
+  const { directory } = newDirectory(DIRECTORY_LIMITS, [await playerIdOf(ADMIN)]);
+  await directory.create(await newWorld({ settings: "@shared=o:1;a=i:1" }));
+
+  assert.equal((await directory.admit(WORLD, CREATOR, AUTH)).settings, "@shared=o:1;a=i:1");
+  assert.deepEqual((await directory.edit(WORLD, CREATOR, { settings: "@shared=o:1;a=i:0" })).modSettings, { by: "creator", settings: "@shared=o:1;a=i:0" });
+  assert.equal((await directory.edit(WORLD, CREATOR, { settings: "@shared=o:1;a=i:0", seats: 6 })).modSettings, undefined, "the same settings tell nothing");
+  assert.equal((await directory.edit(WORLD, CREATOR, { seats: 5 })).modSettings, undefined, "an edit without settings tells nothing");
+  assert.deepEqual((await directory.edit(WORLD, ADMIN, { settings: "" })).modSettings, { by: "admin", settings: "" });
+  assert.equal(modSettingsText("admin", "a=i:1"), "mod_settings admin\ta=i:1");
 });
 
 test("modsRuleText writes the frame that tells a world room whether other mods are off and the world's mods", () => {
