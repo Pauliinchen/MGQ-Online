@@ -2,6 +2,7 @@
 //  raid_admin.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Left the sealed story out, which the relay keeps no more
 //      Paulinchen  2026-10-21: Let an admin defeat every pool of a troop at once
 //                            - Handed out a keyed story's keys only when the request asks for them
 //                            - Let an admin set a keyed story's switches, variables and self switches by id
@@ -14,7 +15,6 @@
 // What the relay's admins may look at and set right in a Raid World from outside the game: the
 // story's counters and the boss pools, a boss pool filled up again or defeated, and the route lock
 // taken back.
-// The sealed story stays out, since admins cannot open it anyway.
 
 import { WORLD_TYPE } from "./directory.js";
 import { badRequest, notFound, withJson } from "./http.js";
@@ -64,7 +64,7 @@ export async function handleRaidAdminRequest(world, method, url, rest, readBody,
   if (rest.length === 0 && method === "GET") {
     return asAdmin(header || url.searchParams.get("player"), async () => {
       // A late story's keys run to a megabyte, which only a view of the keys needs.
-      const { blob: _sealed, keyed, keys, ...counters } = (await world.story.get()).body;
+      const { keyed, keys, ...counters } = (await world.story.get()).body;
       const story = url.searchParams.get("keys") === "1" ? { ...counters, keyed: keyed === true, ...(keys ? { keys } : {}) } : counters;
       const pins = pinsView(await world.story.kept());
       const { bosses, regenPerMinute } = (await world.bosses.list(true)).body;

@@ -2,6 +2,7 @@
 //  bosses.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Wrote the Raid World's story key by key
 //      Paulinchen  2026-10-21: Covered an admin defeating every pool of a troop at once
 //      Paulinchen  2026-10-10: Covered boss pools that keep the share of a raid max HP left
 //      Paulinchen  2026-10-09: Created
@@ -359,14 +360,14 @@ test("admins read a Raid World's counters and pools, fill a pool up and take the
   const body = (value) => async () => JSON.stringify(value);
   const none = async () => "";
 
-  await world.story.write(ALICE, { base: 0, counters: { p: 40, r1141: 0, r1142: 0, r1143: 0, clear: [] }, blob: "QUJD" });
+  await world.story.write(ALICE, { base: 0, counters: { p: 40, r1141: 0, r1142: 0, r1143: 0, clear: [] }, set: { v: "1001:n40" } });
   await world.story.lockRoute("mr");
   await world.bosses.report(ALICE, "Morrigan", { battle: "b1", seq: 1, delta: 0.25, max: MAX }, "Luka");
   await world.bosses.report(BOB, "Lilith", { battle: "b2", seq: 1, delta: 0, max: 900, killed: true }, "Alice");
 
   const read = await handleRaidAdminRequest(world, "GET", url("?player=admin"), [], none, null, adminOf);
   assert.equal(read.status, 200);
-  assert.deepEqual([read.body.story.p, read.body.story.route, read.body.story.blob, read.body.regenPerMinute], [40, "mr", undefined, 0.03]);
+  assert.deepEqual([read.body.story.p, read.body.story.route, read.body.story.keys, read.body.regenPerMinute], [40, "mr", undefined, 0.03]);
   assert.deepEqual(read.body.bosses, [
     { key: "Lilith", left: 0, max: 900, defeated: true, at: time.now, by: "Alice", hp: 0, reports: 1, byPlayer: BOB },
     { key: "Morrigan", left: 0.75, max: MAX, defeated: false, at: time.now, by: null, hp: 3_750_000, reports: 1, byPlayer: null },
@@ -382,7 +383,7 @@ test("admins read a Raid World's counters and pools, fill a pool up and take the
   assert.deepEqual([reset.status, reset.body.left, reset.body.reset, reset.boss], [200, 1, true, { key: "Lilith", left: 1, max: 900, defeated: false }]);
 
   const cleared = await handleRaidAdminRequest(world, "POST", url("/route/clear"), ["route", "clear"], body({ player: "admin" }), null, adminOf);
-  assert.deepEqual([cleared.status, cleared.body.route, cleared.body.cleared, cleared.push], [200, "none", true, 3]);
+  assert.deepEqual([cleared.status, cleared.body.route, cleared.body.cleared, cleared.push.rev], [200, "none", true, 3]);
   const again = await handleRaidAdminRequest(world, "POST", url("/route/clear"), ["route", "clear"], body({}), "admin", adminOf);
   assert.deepEqual([again.body.cleared, again.push], [false, undefined]);
   assert.equal((await world.story.lockRoute("ad")).status, 200, "another route may be chosen once the lock is taken back");

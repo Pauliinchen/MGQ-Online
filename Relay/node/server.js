@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-31: Kept the run entries of the story tracks in memory and started the tracks from the keyed story
+//                            - Turned every game that keeps no keys away from a Raid World
 //                            - Refused a battle as having no battle server while the battle server is out of reach
 //      Paulinchen  2026-10-30: Handed the request's method to the update gate
 //      Paulinchen  2026-10-28: Filled the story tables that hold no rows yet from the seed files at start
@@ -93,7 +94,7 @@ import { ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
 import { RELEASE_REPO, RELEASE_ROUTE, ReleaseControl, ReleaseWatch, UPDATE_NAME, handleReleaseRequest, updateLine } from "../core/releases.js";
 import { ReportDesk, handleReportRequest, reportSettingsOf } from "../core/reports.js";
-import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, pinOf, sealedGameRefusal, sealedGameRefused, storyPushText, storyRouteOf } from "../core/story.js";
+import { STORY_LIMITS, WorldStory, handleStoryRequest, keylessGame, keylessGameRefusal, noRaidWorld, pinOf, storyPushText, storyRouteOf } from "../core/story.js";
 import { STORY_TABLES } from "../core/story_catchup.js";
 import { BATTLE_SERVER_AUTHOR, MAPPING_ADMIN_ROUTE, MAPPING_GAME_ROUTE, MAPPING_REFUSAL, StoryMapping, handleMappingGameRequest } from "../core/story_mapping.js";
 import { StoryTracks, TRACKS_FEATURE, TRACK_FRAME } from "../core/story_tracks.js";
@@ -793,8 +794,7 @@ export function createRelay({
         return;
       }
 
-      // A game that keeps a Raid World's story sealed would spoil the keyed story of this world.
-      if (await sealedGameRefused(storyOf(route.roomId), features)) {
+      if (answer.type === WORLD_TYPE.raid && keylessGame(features)) {
         turnAway(WORLD_ROOM_UPDATE_STATUS, UPDATE_NEEDED, WORLD_ROOM_UPDATE_CODE);
         return;
       }
@@ -1369,8 +1369,8 @@ export function createRelay({
       return noRaidWorld();
     }
 
-    if (await sealedGameRefused(storyOf(route.id), parseFeatures(headerOf(request, FEATURES_HEADER)))) {
-      return sealedGameRefusal();
+    if (keylessGame(parseFeatures(headerOf(request, FEATURES_HEADER)))) {
+      return keylessGameRefusal();
     }
 
     const known = new URL(request.url, "http://relay").searchParams.get("known");

@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-31: Covered the keys a keyed story hands its story tracks
+//                            - Wrote every story key by key and covered games that keep no keys being turned away
 //      Paulinchen  2026-10-23: Covered the affection of a keyed story keeping the highest value written
 //                            - Checked partOf against the golden parts the game's StoryParts passes too
 //      Paulinchen  2026-10-21: Covered the pins an older relay kept as rules
@@ -26,7 +27,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  PART, ROUTE, STORY_LIMITS, WorldStory, compareKeys, countersOf, handleStoryRequest, listsOf, mergeCaps, partOf, readCounters, readLists, sealedGameRefusal, sealedGameRefused, storyKey,
+  PART, ROUTE, STORY_LIMITS, WorldStory, compareKeys, countersOf, handleStoryRequest, listsOf, mergeCaps, partOf, readCounters, readLists, keylessGame, keylessGameRefusal, storyKey,
   storyPushText, storyRouteOf, storyText,
 } from "./story.js";
 
@@ -41,14 +42,14 @@ const ALICE = "a1".repeat(16);
 const BOB = "b2".repeat(16);
 
 /**
- * Some sealed story, as base64.
+ * Some keys a write changes, which tell one story from another.
  */
-const BLOB = "c2VhbGVk";
+const SOME = Object.freeze({ v: "70:n1" });
 
 /**
- * Another sealed story.
+ * Other keys a write changes.
  */
-const OTHER_BLOB = "b3RoZXI=";
+const OTHER = Object.freeze({ v: "70:n2" });
 
 /**
  * A frozen raid boss fight of troop 1234 as the games write it, with commas, colons and bars inside.
@@ -100,14 +101,14 @@ function makeStory(limits = STORY_LIMITS) {
  * @param {WorldStory} story The story.
  * @param {number} base The revision the write builds on.
  * @param {object} values The counters that differ from 0.
- * @param {string} [blob] The sealed story.
+ * @param {object} [set] The lists of the keys it changes.
  * @returns {Promise<object>} The answer's body.
  */
-async function accepted(story, base, values, blob = BLOB) {
-  const answer = await story.write(ALICE, { base, counters: counters(values), blob });
+async function accepted(story, base, values, set = SOME) {
+  const answer = await story.write(ALICE, { base, counters: counters(values), set });
   assert.equal(answer.status, 200, JSON.stringify(answer.body));
   assert.equal(answer.body.accepted, true);
-  assert.equal(answer.push, answer.body.rev);
+  assert.equal(answer.push.rev, answer.body.rev);
   assert.equal(answer.body.wrev, answer.body.rev);
   return answer.body;
 }
@@ -196,60 +197,54 @@ test("the world keeps only the highest level caps once more than the limit came 
   assert.deepEqual((await accepted(story, 1, { p: 8, caps: [20] })).caps, [15, 18, 20]);
 });
 
-test("a world nobody wrote a story for answers revision 0 without a sealed story", async () => {
+test("a world nobody wrote a story for answers revision 0 without keys", async () => {
   const { story } = makeStory();
   const answer = await story.get();
   assert.equal(answer.status, 200);
-  assert.deepEqual(answer.body, { rev: 0, wrev: 0, p: 0, r1141: 0, r1142: 0, r1143: 0, clear: [], part: "1", route: "none", done: [], end: null, comps: [], caps: [], checkpoints: [], at: 0, blob: "" });
+  assert.deepEqual(answer.body, { rev: 0, wrev: 0, p: 0, r1141: 0, r1142: 0, r1143: 0, clear: [], part: "1", route: "none", done: [], end: null, comps: [], caps: [], checkpoints: [], at: 0 });
 });
 
 test("a write on the current revision is accepted and counts the revision up, with the same counters too", async () => {
   const { story, time } = makeStory();
   const first = await accepted(story, 0, { p: 5, end: { map: 12, x: 3, y: 4 } });
   assert.equal(first.rev, 1);
-  assert.equal(first.blob, undefined);
+  assert.equal(first.keys, undefined);
   assert.deepEqual(first.end, { map: 12, x: 3, y: 4 });
 
   time.now = 2000;
-  const second = await accepted(story, 1, { p: 5 }, OTHER_BLOB);
+  const second = await accepted(story, 1, { p: 5 }, OTHER);
   assert.equal(second.rev, 2);
   assert.deepEqual(second.end, { map: 12, x: 3, y: 4 }, "an endpoint left out stays");
   assert.equal(second.at, 2000);
 
   const fetched = (await story.get()).body;
   assert.equal(fetched.rev, 2);
-  assert.equal(fetched.blob, OTHER_BLOB);
+  assert.equal(fetched.keys.v, OTHER.v);
 
   const cleared = await accepted(story, 2, { p: 6, end: null });
   assert.equal(cleared.end, null);
 });
 
-test("a write on an older revision gets 409 with the world's story, so two writers never overwrite each other", async () => {
+test("a write on a revision the relay never had gets 409 with the world's story", async () => {
   const { story } = makeStory();
   await accepted(story, 0, { p: 5 });
-  await accepted(story, 1, { p: 6 }, OTHER_BLOB);
+  await accepted(story, 1, { p: 6 }, OTHER);
 
-  const late = await story.write(BOB, { base: 1, counters: counters({ p: 7 }), blob: BLOB });
-  assert.equal(late.status, 409);
-  assert.equal((await story.write(BOB, { base: 3, counters: counters({ p: 7 }), blob: BLOB })).body.code, "rev", "a revision the relay never had");
-  assert.equal(late.body.code, "rev");
-  assert.equal(late.body.rev, 2);
-  assert.equal(late.body.p, 6);
-  assert.equal(late.body.blob, OTHER_BLOB);
-  assert.equal(late.push, undefined);
+  const late = await story.write(BOB, { base: 3, counters: counters({ p: 7 }), set: {} });
+  assert.deepEqual([late.status, late.body.code, late.body.rev, late.body.p, late.body.keys.v, late.push], [409, "rev", 2, 6, OTHER.v, undefined]);
 });
 
 test("a write behind the world's story gets 409 even on the current revision", async () => {
   const { story } = makeStory();
   await accepted(story, 0, { p: 20 });
-  const behind = await story.write(BOB, { base: 1, counters: counters({ p: 19 }), blob: BLOB });
+  const behind = await story.write(BOB, { base: 1, counters: counters({ p: 19 }), set: {} });
   assert.equal(behind.status, 409);
   assert.equal(behind.body.code, "behind");
 });
 
 test("a write into a later part keeps the story before it as that part's checkpoint", async () => {
   const { story, kept } = makeStory();
-  await accepted(story, 0, { p: 18 }, "cGFydDE=");
+  await accepted(story, 0, { p: 18 }, { v: "70:n18" });
   const into2 = await accepted(story, 1, { p: 19 });
   assert.equal(into2.part, "2");
   assert.deepEqual(into2.checkpoints, ["1"]);
@@ -260,7 +255,7 @@ test("a write into a later part keeps the story before it as that part's checkpo
   assert.equal(checkpoint.body.rev, 1);
   assert.equal(checkpoint.body.wrev, 1);
   assert.equal(checkpoint.body.p, 18);
-  assert.equal(checkpoint.body.blob, "cGFydDE=");
+  assert.equal(checkpoint.body.keys.v, "70:n18");
 
   await accepted(story, 2, { p: 25 });
   assert.equal(kept.checkpoints.size, 1, "a write inside a part keeps no checkpoint");
@@ -281,7 +276,7 @@ test("the first route chosen wins, and a finished route returns the world to the
   assert.equal(locked.body.route, "ad");
   assert.equal(locked.body.rev, 2);
   assert.equal(locked.body.wrev, 1);
-  assert.equal(locked.push, 2);
+  assert.equal(locked.push.rev, 2);
   const again = await story.lockRoute("ad");
   assert.equal(again.status, 200, "the same route again");
   assert.equal(again.push, undefined);
@@ -291,7 +286,7 @@ test("the first route chosen wins, and a finished route returns the world to the
   assert.equal(taken.body.code, "route");
   assert.equal(taken.body.route, "ad");
 
-  const wrongRoute = await story.write(BOB, { base: 1, counters: counters({ p: 40, r1142: 1 }), blob: BLOB });
+  const wrongRoute = await story.write(BOB, { base: 1, counters: counters({ p: 40, r1142: 1 }), set: {} });
   assert.equal(wrongRoute.status, 409);
   assert.equal(wrongRoute.body.code, "route");
 
@@ -300,19 +295,19 @@ test("the first route chosen wins, and a finished route returns the world to the
   assert.equal(started.rev, 3, "a write that built on the story before the lock is taken");
   assert.deepEqual(started.checkpoints, ["3"]);
 
-  const offRoute = await story.write(BOB, { base: 3, counters: counters({ p: 41 }), blob: BLOB });
+  const offRoute = await story.write(BOB, { base: 3, counters: counters({ p: 41 }), set: {} });
   assert.equal(offRoute.body.code, "route", "a story with no route under way once the world is on the locked one");
 
-  const otherReturn = await story.write(BOB, { base: 3, counters: counters({ p: 39, clear: ["mr"] }), blob: BLOB });
+  const otherReturn = await story.write(BOB, { base: 3, counters: counters({ p: 39, clear: ["mr"] }), set: {} });
   assert.equal(otherReturn.body.code, "route", "a story back from a route the world never played, though further");
-  const unplayed = await story.write(BOB, { base: 3, counters: counters({ p: 40, r1141: 2, clear: ["mr"] }), blob: BLOB });
+  const unplayed = await story.write(BOB, { base: 3, counters: counters({ p: 40, r1141: 2, clear: ["mr"] }), set: {} });
   assert.equal(unplayed.body.code, "route", "a finish of a route the world never played");
 
   await accepted(story, 3, { p: 40, r1141: 76 });
   const finished = await accepted(story, 4, { p: 40, r1141: 76, clear: ["ad"] });
   assert.deepEqual(finished.done, ["ad"]);
   assert.equal(finished.route, "ad", "the route stays until the world returned");
-  const otherAfterFinish = await story.write(BOB, { base: 5, counters: counters({ p: 40, r1142: 80 }), blob: BLOB });
+  const otherAfterFinish = await story.write(BOB, { base: 5, counters: counters({ p: 40, r1142: 80 }), set: {} });
   assert.equal(otherAfterFinish.body.code, "route", "another route's story before the world returned, though further");
 
   const returned = await accepted(story, 5, { p: 39, clear: ["ad"] });
@@ -331,14 +326,14 @@ test("a story with no route under way goes on while the world has not started th
   await accepted(story, 0, { p: 39 });
   assert.equal((await story.lockRoute("ad")).status, 200);
 
-  const sideEvent = await accepted(story, 2, { p: 39 }, OTHER_BLOB);
+  const sideEvent = await accepted(story, 2, { p: 39 }, OTHER);
   assert.equal(sideEvent.route, "ad", "the lock stays");
   const boss = await accepted(story, 3, { p: 39 });
   assert.equal(boss.wrev, 4);
 
-  const unplayed = await story.write(BOB, { base: 4, counters: counters({ p: 39, clear: ["mr"] }), blob: BLOB });
+  const unplayed = await story.write(BOB, { base: 4, counters: counters({ p: 39, clear: ["mr"] }), set: {} });
   assert.equal(unplayed.body.code, "route", "a finish of a route the world never played");
-  const otherRoute = await story.write(BOB, { base: 4, counters: counters({ p: 40, r1142: 1 }), blob: BLOB });
+  const otherRoute = await story.write(BOB, { base: 4, counters: counters({ p: 40, r1142: 1 }), set: {} });
   assert.equal(otherRoute.body.code, "route", "a start of another route");
   const started = await accepted(story, 4, { p: 40, r1141: 1 });
   assert.equal(started.route, "ad");
@@ -359,10 +354,10 @@ test("a world that finished every route, as a starting save that cleared them ma
   assert.deepEqual(decision.done, all);
 
   assert.equal((await story.lockRoute("ad")).status, 200);
-  const sideEvent = await accepted(story, 2, { p: 40, clear: all }, OTHER_BLOB);
+  const sideEvent = await accepted(story, 2, { p: 40, clear: all }, OTHER);
   assert.equal(sideEvent.route, "ad", "the lock stays through a write at the decision");
 
-  const otherRoute = await story.write(BOB, { base: 3, counters: counters({ p: 40, r1142: 1, clear: all }), blob: BLOB });
+  const otherRoute = await story.write(BOB, { base: 3, counters: counters({ p: 40, r1142: 1, clear: all }), set: {} });
   assert.equal(otherRoute.status, 409, "another route's first step");
   const started = await accepted(story, 3, { p: 40, r1141: 1, clear: all });
   assert.equal(started.route, "ad", "the first step ranks below the decision, and is taken");
@@ -380,17 +375,17 @@ test("a route lock before any write keeps revision 0 for the first write", async
   assert.equal((await story.lockRoute("mr")).status, 200);
   const first = await accepted(story, 1, { p: 40, r1142: 1 });
   assert.equal(first.route, "mr");
-  assert.deepEqual(first.checkpoints, [], "a story without a sealed story leaves no checkpoint");
+  assert.deepEqual(first.checkpoints, [], "a story nobody wrote leaves no checkpoint");
 });
 
 test("leaving Part 3 again for the next route keeps the checkpoint of its first end", async () => {
   const { story } = makeStory();
-  const first = "cGFydDM=";
+  const first = { v: "70:n39" };
   await accepted(story, 0, { p: 39 }, first);
   assert.equal((await story.lockRoute("ad")).status, 200);
   await accepted(story, 2, { p: 40, r1141: 1 });
   await accepted(story, 3, { p: 40, r1141: 76, clear: ["ad"] });
-  await accepted(story, 4, { p: 39, clear: ["ad"] }, OTHER_BLOB);
+  await accepted(story, 4, { p: 39, clear: ["ad"] }, OTHER);
   assert.equal((await story.lockRoute("mr")).status, 200);
 
   const second = await accepted(story, 6, { p: 40, r1142: 1, clear: ["ad"] });
@@ -398,7 +393,7 @@ test("leaving Part 3 again for the next route keeps the checkpoint of its first 
   assert.deepEqual(second.checkpoints, ["3", "ad"]);
 
   const checkpoint = await story.checkpoint("3");
-  assert.equal(checkpoint.body.blob, first);
+  assert.equal(checkpoint.body.keys.v, first.v);
   assert.equal(checkpoint.body.p, 39);
   assert.deepEqual(checkpoint.body.clear, [], "the checkpoint is the story before any route");
 });
@@ -406,7 +401,7 @@ test("leaving Part 3 again for the next route keeps the checkpoint of its first 
 test("a route under way before the Great Decision is refused as behind", async () => {
   const { story } = makeStory();
   await accepted(story, 0, { p: 24 });
-  const early = await story.write(BOB, { base: 1, counters: counters({ p: 24, r1141: 1 }), blob: BLOB });
+  const early = await story.write(BOB, { base: 1, counters: counters({ p: 24, r1141: 1 }), set: {} });
   assert.equal(early.status, 409);
   assert.equal(early.body.code, "behind");
   assert.equal(early.body.r1141, 0);
@@ -416,9 +411,9 @@ test("a story an older relay took with a route before the Great Decision is repa
   const { story, kept } = makeStory();
   await accepted(story, 0, { p: 24 });
   kept.story = { ...kept.story, counters: counters({ p: 24, r1141: 1 }), part: "ad", route: "ad", caps: [25, 65], checkpoints: ["1", "2"] };
-  kept.checkpoints.set("2", { rev: 1, wrev: 1, counters: counters({ p: 24 }), part: "2", route: "none", done: [], end: null, blob: BLOB, at: 1000, by: ALICE });
+  kept.checkpoints.set("2", { rev: 1, wrev: 1, counters: counters({ p: 24 }), part: "2", route: "none", done: [], end: null, lists: {}, at: 1000, by: ALICE });
 
-  const repaired = await accepted(story, 1, { p: 24, caps: [25] }, OTHER_BLOB);
+  const repaired = await accepted(story, 1, { p: 24, caps: [25] }, OTHER);
   assert.equal(repaired.part, "2");
   assert.equal(repaired.r1141, 0);
   assert.equal(repaired.route, "none", "the route lock taken with it goes");
@@ -430,7 +425,7 @@ test("a story an older relay took with a route before the Great Decision is repa
   await accepted(story, 2, { p: 34 });
   const left = await story.checkpoint("2");
   assert.equal(left.status, 200, "Part 2's real end is its checkpoint");
-  assert.equal(left.body.blob, OTHER_BLOB);
+  assert.equal(left.body.keys.v, OTHER.v);
 });
 
 test("shared companions only grow, and the same ids again write nothing", async () => {
@@ -440,7 +435,7 @@ test("shared companions only grow, and the same ids again write nothing", async 
   const added = await story.addCompanions([382, 5, 382]);
   assert.equal(added.status, 200);
   assert.deepEqual(added.body.comps, [5, 382]);
-  assert.equal(added.push, 2);
+  assert.equal(added.push.rev, 2);
   assert.equal(added.body.wrev, 1);
 
   const puts = kept.puts;
@@ -464,19 +459,18 @@ test("too many shared companions are refused", async () => {
 });
 
 test("a wrong write is refused before it counts against the player's writes", async () => {
-  const { story } = makeStory({ ...STORY_LIMITS, maxBlobLength: 8, writes: { burst: 1, refillMs: 60_000 } });
+  const { story } = makeStory({ ...STORY_LIMITS, writes: { burst: 1, refillMs: 60_000 } });
   assert.equal((await story.write(ALICE, null)).status, 400);
-  assert.equal((await story.write(ALICE, { base: -1, counters: counters(), blob: BLOB })).status, 400);
-  assert.equal((await story.write(ALICE, { base: 0, counters: counters(), blob: "" })).status, 400);
-  assert.equal((await story.write(ALICE, { base: 0, counters: counters(), blob: "not base64!" })).status, 400);
-  assert.equal((await story.write(ALICE, { base: 0, counters: counters(), blob: "QUJDREVGR0hJ" })).status, 400);
-  assert.equal((await story.write(ALICE, { base: 0, counters: { p: "1" }, blob: BLOB })).status, 400);
+  assert.equal((await story.write(ALICE, { base: -1, counters: counters(), set: {} })).status, 400);
+  assert.equal((await story.write(ALICE, { base: 0, counters: counters(), blob: "c2VhbGVk" })).status, 400, "a sealed story without keys");
+  assert.equal((await story.write(ALICE, { base: 0, counters: counters(), set: { v: "x" } })).status, 400);
+  assert.equal((await story.write(ALICE, { base: 0, counters: { p: "1" }, set: {} })).status, 400);
 
-  assert.equal((await story.write(ALICE, { base: 0, counters: counters(), blob: BLOB })).status, 200);
-  const tooOften = await story.write(ALICE, { base: 1, counters: counters(), blob: BLOB });
+  assert.equal((await story.write(ALICE, { base: 0, counters: counters(), set: {} })).status, 200);
+  const tooOften = await story.write(ALICE, { base: 1, counters: counters(), set: {} });
   assert.equal(tooOften.status, 429);
   assert.equal(tooOften.body.code, "rate");
-  assert.equal((await story.write(BOB, { base: 1, counters: counters(), blob: BLOB })).status, 200, "each player has writes of their own");
+  assert.equal((await story.write(BOB, { base: 1, counters: counters(), set: {} })).status, 200, "each player has writes of their own");
 });
 
 test("taking back the route lock counts the revision up once and lets another route be chosen", async () => {
@@ -487,9 +481,9 @@ test("taking back the route lock counts the revision up once and lets another ro
   await accepted(story, 0, { p: 40 });
   await story.lockRoute("ad");
   const cleared = await story.clearRoute();
-  assert.deepEqual([cleared.body.cleared, cleared.body.route, cleared.body.blob, cleared.push], [true, "none", undefined, 3]);
+  assert.deepEqual([cleared.body.cleared, cleared.body.route, cleared.push.rev], [true, "none", 3]);
   assert.equal((await story.lockRoute("mr")).body.locked, "mr");
-  assert.equal((await accepted(story, 1, { p: 40, r1142: 1 })).route, "mr", "a write on the last sealed story is still taken");
+  assert.equal((await accepted(story, 1, { p: 40, r1142: 1 })).route, "mr", "a write on the revision before the lock is still taken");
 });
 
 test("taking back the route lock is refused while the world's story is on that route, and the story goes on", async () => {
@@ -500,7 +494,7 @@ test("taking back the route lock is refused while the world's story is on that r
   const puts = kept.puts;
 
   const refused = await story.clearRoute();
-  assert.deepEqual([refused.status, refused.body.code, refused.body.route, refused.body.blob, refused.push], [409, "started", "ad", undefined, undefined]);
+  assert.deepEqual([refused.status, refused.body.code, refused.body.route, refused.push], [409, "started", "ad", undefined]);
   assert.equal(kept.puts, puts, "a refused clear writes nothing");
   assert.equal((await story.lockRoute("mr")).body.code, "route", "the lock stays");
   assert.equal((await accepted(story, 3, { p: 40, r1141: 2 })).route, "ad", "the route's next write is taken");
@@ -541,7 +535,7 @@ test("the routes are read from the address, and the router answers each", async 
 
   const { story } = makeStory();
   const body = (value) => async () => JSON.stringify(value);
-  assert.equal((await handleStoryRequest(story, "POST", [], body({ base: 0, counters: counters({ p: 18 }), blob: BLOB }), ALICE)).status, 200);
+  assert.equal((await handleStoryRequest(story, "POST", [], body({ base: 0, counters: counters({ p: 18 }), set: {} }), ALICE)).status, 200);
   assert.equal((await handleStoryRequest(story, "GET", [], body(null), ALICE)).body.rev, 1);
   assert.equal((await handleStoryRequest(story, "POST", ["route"], body({ route: "ad" }), ALICE)).status, 200);
   assert.equal((await handleStoryRequest(story, "POST", ["companions"], body({ ids: [5] }), ALICE)).status, 200);
@@ -605,7 +599,7 @@ test("a keyed story starts with its first write, takes each key a write changes,
   assert.deepEqual(second.push.delta, { s: "", sf: "6", v: "30:n2", ss: "", ssf: "", a: "", f: "" }, "a key the write leaves as it is changes nothing");
 
   const fetched = (await story.get()).body;
-  assert.deepEqual([fetched.rev, fetched.keyed, fetched.keys, fetched.blob], [2, true, { s: "5", sf: "6", v: "1001:n10,30:n2", ss: "", ssf: "", a: "", f: "" }, undefined]);
+  assert.deepEqual([fetched.rev, fetched.keyed, fetched.keys], [2, true, { s: "5", sf: "6", v: "1001:n10,30:n2", ss: "", ssf: "", a: "", f: "" }]);
   assert.equal((await story.get(2)).body.same, true, "the known revision comes back without its lists");
   assert.equal((await story.get(2)).body.keys, undefined);
   assert.equal((await story.get(1)).body.keys.v, "1001:n10,30:n2");
@@ -706,22 +700,21 @@ test("the rules an older relay pinned keys off with keep those keys off", async 
   assert.equal((await story.get()).body.keys.v, "1001:n37,1201:n0,1219:n3");
 });
 
-test("a sealed story moves to keys with a write on its own revision, after which sealed writes are refused", async () => {
-  const { story } = makeStory();
-  await accepted(story, 0, { p: 5 });
-  await accepted(story, 1, { p: 6 }, OTHER_BLOB);
-  assert.equal((await story.write(ALICE, { base: 1, counters: counters({ p: 6 }), set: { v: "1001:n6" } })).body.code, "rev", "only on the sealed story's revision");
-  assert.deepEqual([await story.keyed(), await story.keys()], [false, undefined]);
-  const moved = await wrote(story, ALICE, 2, { v: "1001:n6,70:n1" }, { p: 6 });
-  assert.equal(moved.push.delta.v, "1001:n6,70:n1");
+test("a story an older relay kept sealed counts as one nobody wrote key by key, and games that keep no keys are turned away", async () => {
+  const { story, kept } = makeStory();
+  kept.story = { ...story.first(), rev: 2, wrev: 2, counters: counters({ p: 6 }), blob: "c2VhbGVk" };
   const fetched = (await story.get()).body;
-  assert.deepEqual([fetched.keyed, fetched.blob, fetched.keys.v, await story.keyed()], [true, undefined, "1001:n6,70:n1", true]);
+  assert.deepEqual([fetched.rev, fetched.p, fetched.keyed, fetched.keys, fetched.blob, await story.keys()], [2, 6, undefined, undefined, undefined, undefined]);
+  assert.equal((await story.write(ALICE, { base: 1, counters: counters({ p: 6 }), set: { v: "1001:n6" } })).body.code, "rev", "only on the story's own revision");
+
+  const first = await wrote(story, ALICE, 2, { v: "1001:n6,70:n1" }, { p: 6 });
+  assert.equal(first.push.delta.v, "1001:n6,70:n1");
+  assert.equal(kept.story.blob, undefined, "the sealed story goes with the first write");
   assert.deepEqual([...(await story.keys())], [["v1001", "n6"], ["v70", "n1"]], "a keyed story hands its keys to the story tracks");
-  const sealed = await story.write(BOB, { base: 3, counters: counters({ p: 7 }), blob: BLOB });
-  assert.deepEqual([sealed.status, sealed.body.code], [409, "update"]);
-  assert.equal(await sealedGameRefused(story, ["raid"]), true);
-  assert.equal(await sealedGameRefused(story, ["raid", "keys"]), false);
-  assert.equal(sealedGameRefusal().body.code, "update");
+
+  assert.equal(keylessGame(["raid"]), true);
+  assert.equal(keylessGame(["raid", "keys"]), false);
+  assert.equal(keylessGameRefusal().body.code, "update");
 });
 
 test("a keyed story's part checkpoint holds its lists, and a route lock pushes the state alone", async () => {

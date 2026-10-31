@@ -2,6 +2,7 @@
 //  worker.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Turned every game that keeps no keys away from a Raid World
 //      Paulinchen  2026-10-30: Handed the request's method to the update gate
 //      Paulinchen  2026-10-21: Told every game of a Raid World each pool an admin defeated
 //                            - Told every game of a Raid World the pinned values a story write left out
@@ -73,7 +74,7 @@ import { MOD_LIMITS, ModCatalog, handleModRequest } from "../core/mods.js";
 import { handleRaidAdminRequest, raidAdminRouteOf } from "../core/raid_admin.js";
 import { RELEASE_REPO, ReleaseWatch, UPDATE_NAME, updateLine } from "../core/releases.js";
 import { ReportDesk, handleReportRequest, reportSettingsOf } from "../core/reports.js";
-import { STORY_LIMITS, WorldStory, handleStoryRequest, noRaidWorld, sealedGameRefusal, sealedGameRefused, storyPushText, storyRouteOf } from "../core/story.js";
+import { STORY_LIMITS, WorldStory, handleStoryRequest, keylessGame, keylessGameRefusal, noRaidWorld, storyPushText, storyRouteOf } from "../core/story.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
 import {
   AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, OUT, PAIRED, PING, PLAYER_HEADER, PONG, RATE_LIMITS, REFUSAL_HEADER, RateLimiter, admit, chatLineOf, chatText,
@@ -113,7 +114,7 @@ const ADDRESS_HEADER = "CF-Connecting-IP";
 const MAX_TEXT_BYTES = 256 * 1024;
 
 /**
- * The storage key of a world room's story, its counters and sealed story in one value, one row
+ * The storage key of a world room's story, its counters and keys in one value, one row
  * written per story write.
  */
 const STORY_KEY = "story";
@@ -1105,8 +1106,7 @@ export class World extends DurableObject {
       return new Response(answer.body.error, { status: answer.status, headers: answer.body.code ? { [REFUSAL_HEADER]: answer.body.code } : {} });
     }
 
-    // A game that keeps a Raid World's story sealed would spoil the keyed story of this world.
-    if (await sealedGameRefused(this.storyOf(), features)) {
+    if (answer.type === WORLD_TYPE.raid && keylessGame(features)) {
       return new Response(UPDATE_NEEDED, { status: WORLD_ROOM_UPDATE_STATUS, headers: { [REFUSAL_HEADER]: WORLD_ROOM_UPDATE_CODE } });
     }
 
@@ -1307,8 +1307,8 @@ export class World extends DurableObject {
       return json(noRaidWorld().status, noRaidWorld().body);
     }
 
-    if (await sealedGameRefused(this.storyOf(), parseFeatures(request.headers.get(FEATURES_HEADER)))) {
-      return json(sealedGameRefusal().status, sealedGameRefusal().body);
+    if (keylessGame(parseFeatures(request.headers.get(FEATURES_HEADER)))) {
+      return json(keylessGameRefusal().status, keylessGameRefusal().body);
     }
 
     const known = new URL(request.url).searchParams.get("known");

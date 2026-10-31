@@ -581,9 +581,9 @@ The player routes take the player's key in `X-MGQ-Player` and the auth key in `X
 
 | Request | Answer |
 |---|---|
-| `GET /v1/worlds/<id>/raid` | 200 `{"story": <state without blob>, "bosses": [*pool* with "hp", "reports", "byPlayer"], "regenPerMinute": 0.03}` (see the story's *state*; `hp` is the HP left now, `round(left * max)`) |
+| `GET /v1/worlds/<id>/raid` | 200 `{"story": <state without keys>, "bosses": [*pool* with "hp", "reports", "byPlayer"], "regenPerMinute": 0.03}` (see the story's *state*; `hp` is the HP left now, `round(left * max)`) |
 | `POST /v1/worlds/<id>/raid/bosses/<key>/reset` | 200 the full *pool* (`left` 1, `max` null) with `reset` (whether there was one); the pool is deleted, so it is full and undefeated, and the next report sets its max again |
-| `POST /v1/worlds/<id>/raid/route/clear` | 200 the story's *state* without `blob`, with `cleared` (whether a route was locked); a cleared lock counts the revision up and pushes `story <rev>`. 409 with the *state* (no `blob`) and `code` `started` while the world's story is on the locked route (`activeRoute(counters)` is the route); that lock ends by itself once the world returns from the route |
+| `POST /v1/worlds/<id>/raid/route/clear` | 200 the story's *state* without keys, with `cleared` (whether a route was locked); a cleared lock counts the revision up and pushes it to every game in the world room. 409 with the *state* and `code` `started` while the world's story is on the locked route (`activeRoute(counters)` is the route); that lock ends by itself once the world returns from the route |
 
 ### Push
 

@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-31: Covered a battle server out of reach
+//                            - Named keys with every game, as a Raid World asks
 //      Paulinchen  2026-10-23: Covered the story index the battle server derives after a change of the mapping's rows
 //                            - Covered a battle the battle server ends in the same breath as it takes it
 //                            - Covered how long a world connection lasts, in a battle and out of one
@@ -48,7 +49,7 @@ const PING_REPLY = Object.freeze({ ok: true, boot_seconds: 1.5, battles: 0, busy
 /**
  * What every game names in X-MGQ-Features.
  */
-const GAME = Object.freeze({ [FEATURES_HEADER]: "raid" });
+const GAME = Object.freeze({ [FEATURES_HEADER]: "raid,keys" });
 
 /**
  * The rates the tests leave unlimited.
