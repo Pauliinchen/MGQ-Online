@@ -2,6 +2,7 @@
 #  core_actors.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Compared a rebuild with its owner's game outside of battle, as that game measured it
 #      Paulinchen  2026-10-11: Named a rebuilt character's owner and its own name
 #      Paulinchen  2026-10-07: Logged once when a hero, a counter or switches cannot be read
 #                            - Logged the builds written, what they lack and each character rebuilt
@@ -38,6 +39,20 @@ module MGQ_MpActors
     actors.map { |actor| "#{MGQ_MpLog.named($data_actors, actor.id)} Lv#{actor.base_level rescue '?'}" }.join(", ")
   rescue
     "?"
+  end
+
+  # Runs a block with the party out of battle, where the game leaves its battle boosters out of the
+  # stats, such as the boost at full HP, as a build's stats are measured on the map.
+  #
+  # @yieldreturn [Object] What the block returns.
+  # @return [Object] What the block returned.
+  def self.outside_battle
+    party = $game_party
+    held = party && MGQ_MpGame.get(party, :in_battle)
+    MGQ_MpGame.set(party, :in_battle, false) if held
+    yield
+  ensure
+    MGQ_MpGame.set(party, :in_battle, held) if held
   end
 
   # Characters' builds as plain numbers, which another game turns back into the characters from its
@@ -673,15 +688,18 @@ class Game_MpActor < Game_Actor
     end
   end
 
-  # Compares the rebuild with what the owner's game showed of the character.
+  # Compares the rebuild with what the owner's game showed of the character, measured as that game
+  # measured it: outside of battle.
   #
   # @return [Array<String>] The stats and rates that differ, none when the rebuild matches.
   def differences
-    stats = (0...MGQ_MpActors::Builds::PARAM_COUNT).map { |id| [Vocab.param(id), param(id).to_i, @member.params[id]] }
-    rates = MGQ_MpActors::Builds::RATES.each_with_index.map do |(id, label), index|
-      [label, (xparam(id) * 1000).round, @member.rates[index] && (@member.rates[index] * 1000).round]
+    MGQ_MpActors.outside_battle do
+      stats = (0...MGQ_MpActors::Builds::PARAM_COUNT).map { |id| [Vocab.param(id), param(id).to_i, @member.params[id]] }
+      rates = MGQ_MpActors::Builds::RATES.each_with_index.map do |(id, label), index|
+        [label, (xparam(id) * 1000).round, @member.rates[index] && (@member.rates[index] * 1000).round]
+      end
+      (stats + rates).select { |_, mine, theirs| theirs && mine != theirs }.map { |label, mine, theirs| "#{label} #{mine} (sent #{theirs})" }
     end
-    (stats + rates).select { |_, mine, theirs| theirs && mine != theirs }.map { |label, mine, theirs| "#{label} #{mine} (sent #{theirs})" }
   end
 
   private

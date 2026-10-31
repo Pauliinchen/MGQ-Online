@@ -2,6 +2,7 @@
 #  battles_coop.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Checked a rebuilt character before its battle start states, as its owner's game measured it
 #      Paulinchen  2026-10-30: Decided offers, held encounters, the stand-still and the encounter's steps through the matchmaking in the DLL
 #                            - Wrote and read the roster and the party, repaired the host's troop and settled departures through the rules in C#
 #                            - Kept invites, requests to lead and rivals in the DLL, which takes their messages and hands the rest over
@@ -1881,7 +1882,8 @@ module MGQ_MpBattlesCoop
   #
   # The game starts a battle only for the characters of its own party, which leaves the counters of
   # a rebuilt one unset; its start goes after the vitals, as the states of a trait for low HP come
-  # only at the start and at a turn's end.
+  # only at the start and at a turn's end. The check goes before the start, whose states its owner's
+  # game did not measure on the map.
   #
   # @param member [MGQ_MpActors::Builds::Member] The character's build.
   # @param name [String] Its owner's name.
@@ -1894,9 +1896,9 @@ module MGQ_MpBattlesCoop
     hp, mp = Array(vitals)
     ally.hp = hp if hp.is_a?(Integer) && hp >= 0
     ally.mp = mp if mp.is_a?(Integer)
+    check(ally)
     ally.on_battle_start
     log_rebuild(ally, member, place, vitals)
-    check(ally)
     ally
   end
 

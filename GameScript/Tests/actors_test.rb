@@ -2,6 +2,7 @@
 #  actors_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Checked that a rebuild measured in battle compares as its owner's game measured it
 #      Paulinchen  2026-10-13: Used a placeholder hero key
 #      Paulinchen  2026-10-11: Checked a rebuilt character's owner and its own name
 #      Paulinchen  2026-10-07: Checked that a hero that cannot be read is logged once
@@ -12,7 +13,7 @@
 
 # Covers how core_actors.rbx writes and reads a character's build: the hero of a replaced Luka,
 # lines without a hero, the fingerprint of the databases builds name, and what a rebuilt character
-# leaves of the player's save alone.
+# leaves of the player's save alone, and how a rebuild compares with its owner's game outside of battle.
 
 require_relative "support"
 
@@ -86,3 +87,20 @@ check("a won battle leaves the player's affection alone", $affection, 7)
 rebuilt.instance_variable_set(:@player, "Player A")
 rebuilt.define_singleton_method(:actor) { Named.new("Alice") }
 check("a rebuilt character names its owner, its own name and both", [rebuilt.owner, rebuilt.base_name, rebuilt.name], ["Player A", "Alice", "Alice (Player A)"])
+
+# A rebuilt character in the host's battle, whose stats the game's battle boosters raise, such as
+# the boost at full HP: it compares with what its owner's game showed as that game measured it, on
+# the map.
+# The game's party, which the battle sets in battle.
+class Game_Party; def in_battle; @in_battle; end; end
+$game_party = Game_Party.new
+# The game's names of the stats.
+module Vocab; def self.param(id); "Stat#{id}"; end; end
+sent = builds.parse(OLD, 4)[0]
+rebuilt.define_singleton_method(:param) { |id| id == 2 && $game_party.in_battle ? sent.params[id] * 1.4 : sent.params[id] }
+rebuilt.define_singleton_method(:xparam) { |id| sent.rates[builds::RATES.keys.index(id)] }
+MGQ_MpGame.set($game_party, :in_battle, true)
+check("a rebuild measured in battle compares as its owner's game measured it, the party still in battle after",
+      [rebuilt.differences, $game_party.in_battle], [[], true])
+rebuilt.define_singleton_method(:param) { |id| id == 2 ? sent.params[id] * 2 : sent.params[id] }
+check("a rebuild that differs outside of battle too still tells", rebuilt.differences, ["Stat2 40 (sent 20)"])
