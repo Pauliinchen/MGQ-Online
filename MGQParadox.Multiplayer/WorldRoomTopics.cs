@@ -2,7 +2,9 @@
 //  WorldRoomTopics.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-31: Registered the overview topics over the room
+//      Paulinchen  2026-10-31: Registered the topics of the raid bars with the raid pools
+//                            - Registered the topics of the edge arrows over the room
+//                            - Registered the overview topics over the room
 //                            - Registered the trades' topics with the other areas over the room
 //                            - Moved the chat's topic to ChatTopics
 //      Paulinchen  2026-10-30: Handed the room to the areas whose rules take its messages
@@ -218,6 +220,7 @@ internal sealed class WorldRoomTopics : IWorldRoomHost
         WorldRoomTopics topics = Register(context, WorldSession.Current, EventTopics.ReadAhead);
         TradeTopics.Register(context, topics._room);
         OverviewTopics.RegisterRoom(context, topics._room);
+        HudTopics.Register(context, topics._room, RaidBosses.Current.Ledger);
         return topics;
     }
 
