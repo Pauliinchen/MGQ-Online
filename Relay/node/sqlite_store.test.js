@@ -5,6 +5,7 @@
 //      Paulinchen  2026-10-31: Covered the story tracks' run entries kept over a restart and dropped with their track
 //                            - Covered the place a world's log starts at kept over a restart
 //                            - Wrote the story kept over a restart key by key
+//                            - Covered the time the world's track last changed kept over a restart
 //      Paulinchen  2026-10-23: Covered the story mapping, its rows' changes and its index kept over a restart, and a batch that fails kept not at all
 //                            - Covered a Raid World's story tracks kept over a restart, a dropped track and a removed world
 //      Paulinchen  2026-10-22: Covered the release control kept over a restart beside the newest release seen
@@ -247,7 +248,7 @@ test("the release control outlasts a restart beside the newest release seen", as
 test("a Raid World's story tracks outlast a restart, a player's track goes with them once dropped, and each world keeps its own until removed", async () => {
   const mapping = async () => ({ rev: 1, tables: { keys: [{ key: "v1001", kind: "one_way" }, { key: "v50", kind: "shared" }], parts: [{ id: "1", gate: 25 }] }, index: null });
   const heard = [];
-  const tracksOver = (stores) => new StoryTracks(stores.tracks(WORLD), { mapping, send: (player, text) => heard.push(JSON.parse(text.slice(6))) });
+  const tracksOver = (stores) => new StoryTracks(stores.tracks(WORLD), { mapping, send: (player, text) => heard.push(JSON.parse(text.slice(6))), clock: () => 5000 });
   const [alice, bob] = ["a1".repeat(16), "b2".repeat(16)];
   const first = openSqliteStores(path);
   const tracks = tracksOver(first);
@@ -262,7 +263,7 @@ test("a Raid World's story tracks outlast a restart, a player's track goes with 
 
   const second = openSqliteStores(path);
   const store = second.tracks(WORLD);
-  assert.deepEqual(await store.getMeta(), { rev: 2, part: "2", route: "none", done: [], checkpoints: ["1"], next: 2, start: [10, 0, 0, 0] });
+  assert.deepEqual(await store.getMeta(), { rev: 2, part: "2", route: "none", done: [], checkpoints: ["1"], next: 2, start: [10, 0, 0, 0], at: 5000 });
   assert.deepEqual(new Map(await store.getKeys("world")), new Map([["v1001", "n19"], ["v50", "n1"]]));
   assert.deepEqual([(await store.getPlayer(bob)).track, (await store.getPlayer(alice)).seq], [{ id: "t1", part: "1", rev: 2 }, 1]);
   assert.deepEqual(new Map(await store.getKeys("t1")), new Map([["v1001", "n10"], ["v50", "n2"]]));

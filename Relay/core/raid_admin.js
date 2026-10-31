@@ -2,7 +2,10 @@
 //  raid_admin.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Refused pins of keys the story mapping does not share on a world whose story runs on tracks
 //      Paulinchen  2026-10-31: Left the sealed story out, which the relay keeps no more
+//                            - Showed, set and pinned the world's track of a world whose story runs on tracks, with its part and routes
+//                            - Took back the route lock of the world's track
 //      Paulinchen  2026-10-21: Let an admin defeat every pool of a troop at once
 //                            - Handed out a keyed story's keys only when the request asks for them
 //                            - Let an admin set a keyed story's switches, variables and self switches by id
@@ -14,13 +17,15 @@
 
 // What the relay's admins may look at and set right in a Raid World from outside the game: the
 // story's counters and the boss pools, a boss pool filled up again or defeated, and the route lock
-// taken back.
+// taken back. A world whose story runs on tracks shows and changes the world's track, never the
+// tracks of players behind; its keyed story only keeps the shared companions and the pins.
 
 import { WORLD_TYPE } from "./directory.js";
 import { badRequest, notFound, withJson } from "./http.js";
 import { isId } from "./ids.js";
 import { VERSION } from "./relay.js";
-import { STORY_LIMITS, noRaidWorld, pinsView } from "./story.js";
+import { STORY_LIMITS, STORY_REFUSAL, listsOf, noRaidWorld, pinsView, readAdminKeys, readPins } from "./story.js";
+import { TRACK_CODE } from "./story_tracks.js";
 
 /**
  * The longest JSON body an admin's request may have.
@@ -39,16 +44,33 @@ export function raidAdminRouteOf(url) {
 }
 
 /**
+ * Makes the state an admin reads of a world whose story runs on tracks, in the shape of a keyed
+ * story's (story.js stateOf), so the same view reads both.
+ *
+ * @param {object} view The world's track, see StoryTracks.view.
+ * @param {object} keyed The keyed story's state, which keeps the shared companions.
+ * @returns {object} The state, with `tracks` true, and `keyed` with the track's `keys` when the view has them.
+ */
+function trackStateOf(view, keyed) {
+  const { counters, keys, ...summary } = view;
+  const state = {
+    rev: summary.rev, wrev: summary.rev, p: counters.p, r1141: counters.r1141, r1142: counters.r1142, r1143: counters.r1143, clear: counters.clear, part: summary.part,
+    route: summary.route, done: summary.done, end: keyed.end, comps: keyed.comps, caps: keyed.caps, checkpoints: summary.checkpoints, at: summary.at, tracks: true,
+  };
+  return keys ? { ...state, keyed: true, keys } : state;
+}
+
+/**
  * Answers a request to a Raid World's admin routes, for the relay's admins only.
  *
- * @param {{story: import("./story.js").WorldStory, bosses: import("./bosses.js").WorldBosses}} world The world's story and boss pools.
+ * @param {{story: import("./story.js").WorldStory, bosses: import("./bosses.js").WorldBosses, tracks?: import("./story_tracks.js").StoryTracks}} world The world's story, boss pools and, on a relay that keeps them, story tracks.
  * @param {string} method The HTTP method.
  * @param {URL} url The request's address, whose `player` names the admin's key when no header does.
  * @param {string[]} rest The address's parts after `raid`, see raidAdminRouteOf.
  * @param {() => Promise<string | null>} readBody Reads the request's body as text, null when it is too large to read.
  * @param {string | null} header The key the PLAYER_HEADER names, which wins over the address and the body.
  * @param {(key: unknown) => Promise<{status: number, body: object, type?: string, player?: string}>} adminOf Asks the directory whether a key is an admin's, and the world's type and the admin's player id.
- * @returns {Promise<{status: number, body: object, push?: number | object, boss?: import("./bosses.js").BossPush, bosses?: import("./bosses.js").BossPush[], audit?: string}>} The answer, the story's change to tell every game when it changed, the pool or pools to tell every game when they changed, and what an admin changed of the story's keys, for the log.
+ * @returns {Promise<{status: number, body: object, push?: number | object, boss?: import("./bosses.js").BossPush, bosses?: import("./bosses.js").BossPush[], audit?: string}>} The answer, the keyed story's change to tell every game when it changed (the tracks tell their games themselves), the pool or pools to tell every game when they changed, and what an admin changed of the story's keys, for the log.
  */
 export async function handleRaidAdminRequest(world, method, url, rest, readBody, header, adminOf) {
   const asAdmin = async (key, work) => {
@@ -61,11 +83,16 @@ export async function handleRaidAdminRequest(world, method, url, rest, readBody,
     return access.type === WORLD_TYPE.raid ? work(access) : noRaidWorld();
   };
 
+  const keyedState = async () => (await world.story.get()).body;
+  const trackState = async (view) => trackStateOf(view, await keyedState());
+
   if (rest.length === 0 && method === "GET") {
     return asAdmin(header || url.searchParams.get("player"), async () => {
       // A late story's keys run to a megabyte, which only a view of the keys needs.
-      const { keyed, keys, ...counters } = (await world.story.get()).body;
-      const story = url.searchParams.get("keys") === "1" ? { ...counters, keyed: keyed === true, ...(keys ? { keys } : {}) } : counters;
+      const withKeys = url.searchParams.get("keys") === "1";
+      const view = world.tracks ? await world.tracks.view(withKeys) : null;
+      const { keyed, keys, ...counters } = await keyedState();
+      const story = view ? await trackState(view) : withKeys ? { ...counters, keyed: keyed === true, ...(keys ? { keys } : {}) } : counters;
       const pins = pinsView(await world.story.kept());
       const { bosses, regenPerMinute } = (await world.bosses.list(true)).body;
       return { status: 200, body: { story, pins, bosses, regenPerMinute } };
@@ -86,14 +113,14 @@ export async function handleRaidAdminRequest(world, method, url, rest, readBody,
 
   if (rest.length === 1 && rest[0] === "keys" && method === "POST") {
     return keyed(async (access, body) => {
-      const answer = await world.story.setKeys(body, access.player);
+      const answer = (await setTrackKeys(world, body, access.player, trackState)) ?? (await world.story.setKeys(body, access.player));
       return answer.status === 200 ? { ...answer, audit: `admin ${access.player} set keys of rev ${answer.body.rev}: ${JSON.stringify(answer.body.set)}` } : answer;
     });
   }
 
   if (rest.length === 1 && rest[0] === "pins" && method === "POST") {
     return keyed(async (access, body) => {
-      const answer = await world.story.pinKeys(body, access.player);
+      const answer = world.tracks && (await world.tracks.started()) ? await pinTrackKeys(world, body, trackState) : await world.story.pinKeys(body, access.player);
       return answer.status === 200 ? { ...answer, audit: `admin ${access.player} pinned ${JSON.stringify(body.keys)}, rev ${answer.body.rev}` } : answer;
     });
   }
@@ -106,8 +133,99 @@ export async function handleRaidAdminRequest(world, method, url, rest, readBody,
   }
 
   if (rest.length === 2 && rest[0] === "route" && rest[1] === "clear" && method === "POST") {
-    return post(() => world.story.clearRoute());
+    return post(async () => {
+      const answer = world.tracks ? await world.tracks.clearRoute() : null;
+
+      if (!answer) {
+        return world.story.clearRoute();
+      }
+
+      const state = await trackState(answer.view);
+      return answer.started
+        ? { status: 409, body: { ...state, error: "the world's story is on the locked route already", code: STORY_REFUSAL.started } }
+        : { status: 200, body: { ...state, cleared: answer.cleared } };
+    });
   }
 
   return notFound("route");
+}
+
+/**
+ * Sets keys of the world's track as an admin asks, for a world whose story runs on tracks.
+ *
+ * @param {{tracks?: import("./story_tracks.js").StoryTracks}} world The world.
+ * @param {any} body The keys, see story.js readAdminKeys.
+ * @param {string} admin The admin's player id.
+ * @param {(view: object) => Promise<object>} trackState Makes the state an admin reads, see trackStateOf.
+ * @returns {Promise<{status: number, body: object} | null>} The world's state with `set` (the lists of the keys that changed); 409 with `code` and `keys` for keys refused, `pinned` for keys pinned at other values, `mapping` for keys the tracks keep not as set; or why the request is wrong; null for a world whose story does not run on tracks.
+ */
+async function setTrackKeys(world, body, admin, trackState) {
+  if (!world.tracks || !(await world.tracks.started())) {
+    return null;
+  }
+
+  const read = readAdminKeys(body, STORY_LIMITS);
+
+  if (read.error) {
+    return badRequest(read.error);
+  }
+
+  const answer = await world.tracks.setKeys(read.keys, admin);
+
+  if (!answer) {
+    return null;
+  }
+
+  if (answer.code === TRACK_CODE.bad) {
+    return badRequest(`keys are named without leading zeros, such as s12, v1201 or ss858.139.A: ${answer.keys.join(", ").slice(0, 200)}`);
+  }
+
+  if (answer.code) {
+    return answer.code === TRACK_CODE.pinned ? { status: 409, body: { error: "an admin pinned these keys at other values", code: answer.code, keys: answer.keys } } : mappingRefusal(answer.keys, true);
+  }
+
+  return { status: 200, body: { ...(await trackState(answer.view)), set: listsOf(answer.changed) } };
+}
+
+/**
+ * Makes the answer to an admin who names keys the story mapping does not share.
+ *
+ * @param {string[]} keys The keys.
+ * @param {boolean} counts Whether counts are among the keys refused, which the relay counts itself.
+ * @returns {{status: number, body: object}} 409 with code `mapping` and `keys`.
+ */
+function mappingRefusal(keys, counts) {
+  const error = `the story mapping leaves these keys to each player, to a scene or a chest${counts ? ", or counts them itself" : ""}`;
+  return { status: 409, body: { error, code: TRACK_CODE.mapping, keys } };
+}
+
+/**
+ * Pins keys as an admin asks for a world whose story runs on tracks: the keyed story keeps the
+ * pins, and the world's track takes their values as a revision every game on it hears.
+ *
+ * @param {{story: import("./story.js").WorldStory, tracks: import("./story_tracks.js").StoryTracks}} world The world.
+ * @param {any} body `keys`, see story.js readPins.
+ * @param {(view: object) => Promise<object>} trackState Makes the state an admin reads, see trackStateOf.
+ * @returns {Promise<{status: number, body: object}>} The world's state with `set` (the lists of the keys that changed) and `pins`, see pinsView; 409 with code `mapping` and `keys` for keys the story mapping does not share; or why the request is wrong.
+ */
+async function pinTrackKeys(world, body, trackState) {
+  const read = readPins(body?.keys, STORY_LIMITS);
+  const refused = read.error ? null : await world.tracks.pinRefusal(read.keys);
+
+  if (refused?.code === TRACK_CODE.bad) {
+    return badRequest(`keys are named without leading zeros, such as s12, v1201 or ss858.139.A: ${refused.keys.join(", ").slice(0, 200)}`);
+  }
+
+  if (refused) {
+    return mappingRefusal(refused.keys, false);
+  }
+
+  const kept = await world.story.keepPins(body);
+
+  if (kept.status !== 200) {
+    return kept;
+  }
+
+  const changed = await world.tracks.pinsChanged();
+  return { status: 200, body: { ...(await trackState(await world.tracks.view(false))), set: listsOf(changed), pins: kept.body.pins } };
 }

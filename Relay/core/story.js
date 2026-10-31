@@ -4,6 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-10-31: Handed a keyed story's keys to the story tracks that start from it
 //                            - Dropped the sealed story and turned away every game that keeps no keys
+//                            - Kept the pins of a world whose story runs on tracks without keys of its own
 //      Paulinchen  2026-10-23: Kept the highest affection any write of a keyed story named
 //                            - Shared the value patterns, the first counters and the clear switches with the story tracks
 //      Paulinchen  2026-10-21: Let an admin set switches, variables and self switches of a keyed story by id as a revision every game takes
@@ -1113,11 +1114,39 @@ export class WorldStory {
   }
 
   /**
+   * Keeps pins as an admin asks for a world whose story runs on tracks, which hold them on the
+   * world's track: the story's keys stay as they are. A key pinned again takes its new value.
+   *
+   * @param {any} request `keys`, see pinKeys.
+   * @returns {Promise<{status: number, body: object}>} `pins`, see pinsView; or why the request is wrong.
+   */
+  async keepPins(request) {
+    const read = readPins(request?.keys, this.limits);
+
+    if (read.error) {
+      return badRequest(read.error);
+    }
+
+    return this.exclusive(async () => {
+      const story = (await this.store.get()) ?? this.first();
+      const pinned = { ...(story.pinned ?? {}), ...Object.fromEntries(read.keys) };
+
+      if (Object.keys(pinned).length > this.limits.maxPins) {
+        return { status: 413, body: { error: `a story keeps at most ${this.limits.maxPins} pinned keys` } };
+      }
+
+      const next = { ...story, pinned };
+      await this.store.put(next, null);
+      return { status: 200, body: { pins: pinsView(next) } };
+    });
+  }
+
+  /**
    * Takes pins off, as an admin asks, so writes change those keys again; the keys keep their
    * values until a write changes them.
    *
    * @param {any} request `keys`, the keys as the story names them, or rules an older relay kept (such as "v1201-1218"), each as kept.
-   * @returns {Promise<{status: number, body: object}>} `cleared` (the keys and rules taken off) and `pins`, see pinsView; or 409 with code `none` for a story that is not keyed; or why the request is wrong.
+   * @returns {Promise<{status: number, body: object}>} `cleared` (the keys and rules taken off) and `pins`, see pinsView; or 409 with code `none` for a world without a story; or why the request is wrong.
    */
   async clearPins(request) {
     const named = request?.keys;
@@ -1129,8 +1158,8 @@ export class WorldStory {
     return this.exclusive(async () => {
       const story = await this.store.get();
 
-      if (!story?.lists) {
-        return { status: 409, body: { error: "only a keyed story pins keys", code: STORY_REFUSAL.none } };
+      if (!story) {
+        return { status: 409, body: { error: "the world has no story to take pins off", code: STORY_REFUSAL.none } };
       }
 
       const pinned = { ...(story.pinned ?? {}) };

@@ -2,6 +2,8 @@
 //  raid_admin.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Covered the pins refused for keys the story mapping does not share
+//      Paulinchen  2026-10-31: Covered the admin view, keys, pins and route lock of a world whose story runs on tracks
 //      Paulinchen  2026-10-21: Created
 //
 //----------------------------------------------------------------
@@ -11,7 +13,8 @@ import assert from "node:assert/strict";
 import { BOSS_LIMITS, WorldBosses } from "./bosses.js";
 import { WORLD_TYPE } from "./directory.js";
 import { handleRaidAdminRequest } from "./raid_admin.js";
-import { STORY_LIMITS, WorldStory } from "./story.js";
+import { STORY_LIMITS, WorldStory, pinOf } from "./story.js";
+import { StoryTracks } from "./story_tracks.js";
 
 /**
  * A player's id.
@@ -29,10 +32,47 @@ const ADMIN_ID = "ad".repeat(16);
 const WORLD = "0123456789abcdef0123456789abcdef";
 
 /**
- * Makes a Raid World's story and boss pools over stores in memory, and a directory that knows the
- * key "admin" as an admin's.
+ * The story mapping a world's tracks play by.
+ */
+const MAPPING = Object.freeze({
+  rev: 1,
+  tables: { keys: [{ key: "v1001", kind: "one_way" }, { key: "v1141", kind: "one_way" }, { key: "v50", kind: "shared" }], events: [], parts: [] },
+  index: null,
+});
+
+/**
+ * Makes one world's track store in memory.
  *
- * @returns {{world: {story: WorldStory, bosses: WorldBosses}, kept: {story: object | undefined, pools: Map<string, object>}, ask: (method: string, path: string, body?: object, key?: string) => Promise<object>}} The world, what its stores keep, and a request to its admin routes, as the admin unless another key is given.
+ * @returns {import("./story_tracks.js").TrackStore} The store.
+ */
+function memoryTrackStore() {
+  const kept = { meta: undefined, keys: new Map(), players: new Map(), checkpoints: new Map() };
+  const keysOf = (track) => kept.keys.get(track) ?? kept.keys.set(track, new Map()).get(track);
+
+  return {
+    getMeta: async () => structuredClone(kept.meta),
+    getKeys: async (track) => [...keysOf(track)],
+    getRuns: async () => [],
+    getPlayer: async (player) => structuredClone(kept.players.get(player)),
+    getCheckpoint: async (part) => structuredClone(kept.checkpoints.get(part)),
+    commit: async ({ meta, keys = [], players = [], checkpoint }) => {
+      kept.meta = meta ? structuredClone(meta) : kept.meta;
+      keys.forEach(({ track, set }) => set.forEach(([key, value]) => keysOf(track).set(key, value)));
+      players.forEach((record) => kept.players.set(record.player, structuredClone(record)));
+
+      if (checkpoint) {
+        kept.checkpoints.set(checkpoint.part, structuredClone(checkpoint.keys));
+      }
+    },
+    remove: async () => {},
+  };
+}
+
+/**
+ * Makes a Raid World's story, story tracks and boss pools over stores in memory, and a directory
+ * that knows the key "admin" as an admin's.
+ *
+ * @returns {{world: {story: WorldStory, bosses: WorldBosses, tracks: StoryTracks}, kept: {story: object | undefined, pools: Map<string, object>}, heard: object[], ask: (method: string, path: string, body?: object, key?: string) => Promise<object>, restart: () => void}} The world, what its stores keep, the track frames its games heard, a request to its admin routes, as the admin unless another key is given, and a relay start that makes the world's tracks anew over the same store.
  */
 function makeWorld() {
   const kept = { story: undefined, pools: new Map() };
@@ -49,7 +89,17 @@ function makeWorld() {
     remove: async (key) => void kept.pools.delete(key),
     removeAll: async () => kept.pools.clear(),
   }, { limits: BOSS_LIMITS });
-  const world = { story, bosses };
+  const heard = [];
+  const trackStore = memoryTrackStore();
+  const tracksOf = () => new StoryTracks(trackStore, {
+    mapping: async () => MAPPING,
+    pins: async () => {
+      const pinned = await story.kept();
+      return { pinOf: (key) => pinOf(pinned, key), keys: Object.keys(pinned?.pinned ?? {}) };
+    },
+    send: (_player, text) => heard.push(JSON.parse(text.slice("track ".length))),
+  });
+  const world = { story, bosses, tracks: tracksOf() };
   const adminOf = async (key) => (key === "admin" ? { status: 200, body: { type: WORLD_TYPE.raid }, type: WORLD_TYPE.raid, player: ADMIN_ID } : { status: 403, body: { error: "only the relay's admins may do this" } });
   const ask = (method, path, body = {}, key = "admin") => {
     const url = new URL(`https://relay/v1/worlds/${WORLD}/raid${path}`);
@@ -57,7 +107,9 @@ function makeWorld() {
     return handleRaidAdminRequest(world, method, url, rest, async () => JSON.stringify(body), key, adminOf);
   };
 
-  return { world, kept, ask };
+  const restart = () => void (world.tracks = tracksOf());
+
+  return { world, kept, heard, ask, restart };
 }
 
 /**
@@ -131,4 +183,51 @@ test("an admin pins keys at values, which sets them for every game and keeps the
   assert.equal((await ask("POST", "/pins", { keys: { x12: true } })).status, 400);
   assert.equal((await ask("POST", "/pins/clear", { keys: "s12" })).status, 400);
   assert.equal((await ask("POST", "/pins", { keys: { s12: true } }, "other")).status, 403);
+});
+
+test("on a world whose story runs on tracks, the admin view, keys, pins and route lock act on the world's track, and its keyed story keeps the companions alone", async () => {
+  const { world, heard, ask } = makeWorld();
+  await world.tracks.enter(ALICE, 0);
+  await world.tracks.frame(ALICE, `track ${JSON.stringify({ t: "sync", level: { best: 99, cap: null }, seed: { v1001: "n40", v50: "n1" } })}`);
+  await world.story.addCompanions([5]);
+  heard.length = 0;
+
+  const view = await ask("GET", "?keys=1");
+  const story = view.body.story;
+  assert.deepEqual([view.status, story.tracks, story.rev, story.wrev, story.part, story.route, story.p, story.comps, story.keyed, story.keys.v], [200, true, 1, 1, "3", "none", 40, [5], true, "1001:n40,50:n1"]);
+  assert.equal((await ask("GET", "")).body.story.keys, undefined, "the keys only when asked for");
+
+  const set = await ask("POST", "/keys", { v: { 50: 4, 1141: 1 } });
+  assert.equal(set.status, 200, JSON.stringify(set.body));
+  assert.deepEqual([set.body.rev, set.body.part, set.body.route, set.body.r1141, set.body.set.v, set.push], [2, "ad", "ad", 1, "50:n4,1141:n1", undefined]);
+  assert.equal(set.audit, `admin ${ADMIN_ID} set keys of rev 2: ${JSON.stringify(set.body.set)}`);
+  assert.deepEqual(heard.map(({ t, rev, keys, world: summary }) => [t, rev, keys, summary.route]), [["push", 2, { v50: "n4", v1141: "n1" }, "ad"]], "every game on the world's track hears it");
+  assert.deepEqual(await ask("POST", "/keys", { s: { 100: true } }).then((answer) => [answer.status, answer.body.code, answer.body.keys]), [409, "mapping", ["s100"]]);
+  assert.equal(await world.story.keys(), undefined, "the keyed story keeps no keys");
+
+  heard.length = 0;
+  const pinned = await ask("POST", "/pins", { keys: { v50: 7 } });
+  assert.deepEqual([pinned.status, pinned.body.rev, pinned.body.set.v, pinned.body.pins.keys], [200, 3, "50:n7", { v50: 7 }]);
+  assert.deepEqual(heard.map(({ rev, keys }) => [rev, keys]), [[3, { v50: "n7" }]]);
+  assert.deepEqual(await ask("POST", "/keys", { v: { 50: 1 } }).then((answer) => [answer.status, answer.body.code, answer.body.keys]), [409, "pinned", ["v50"]]);
+  assert.deepEqual((await ask("POST", "/pins/clear", { keys: ["v50"] })).body.cleared, ["v50"]);
+
+  heard.length = 0;
+  const unshared = await ask("POST", "/pins", { keys: { v50: 2, s100: true } });
+  assert.deepEqual([unshared.status, unshared.body.code, unshared.body.keys], [409, "mapping", ["s100"]]);
+  assert.deepEqual([(await ask("GET", "")).body.pins.keys, heard], [{}, []], "a refused pin keeps nothing and changes nothing");
+
+  const refused = await ask("POST", "/route/clear");
+  assert.deepEqual([refused.status, refused.body.code, refused.body.route], [409, "started", "ad"], "the world is on the locked route");
+});
+
+test("on a world whose story runs on tracks, the admin view answers after the relay starts again, before any game enters", async () => {
+  const { world, ask, restart } = makeWorld();
+  await world.tracks.enter(ALICE, 0);
+  await world.tracks.frame(ALICE, `track ${JSON.stringify({ t: "sync", level: { best: 99, cap: null }, seed: { v1001: "n40" } })}`);
+  restart();
+
+  const view = await ask("GET", "?keys=1");
+  assert.equal(view.status, 200, JSON.stringify(view.body));
+  assert.deepEqual([view.body.story.tracks, view.body.story.rev, view.body.story.part, view.body.story.keys.v], [true, 1, "3", "1001:n40"]);
 });

@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-31: Wrote every Raid World story key by key and tested that games that keep no keys are turned away
+//                            - Tested an admin's keys reaching the games of a Raid World that plays on tracks
 //      Paulinchen  2026-10-30: Tested that a read of the mod catalog passes without headers, as the Mod Framework sends it
 //      Paulinchen  2026-10-23: Tested the story mapping's admin routes, their log and the games' read of the mapping
 //                            - Tested a Raid World's story tracks over the world room: sync, writes, pushes, telling locks, the mapping's revision
@@ -992,6 +993,12 @@ test("games that name tracks play a Raid World's story over the world room: writ
   const closed = new Promise((resolve) => plain.socket.on("close", (code) => resolve(code)));
   plain.socket.send(`track ${JSON.stringify({ t: "sync" })}`);
   assert.equal(await closed, CLOSE.badRequest, "a game that names no tracks sends no track frames");
+
+  const admin = (path, body) => gameFetch(`${directoryBase}/${room}/raid${path}`, { method: body ? "POST" : "GET", headers: { [PLAYER_HEADER]: ADMIN }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  const set = await admin("/keys", { v: { 1001: 5 } });
+  assert.deepEqual(await set.json().then((body) => [set.status, body.tracks, body.p, body.set.v]), [200, true, 5, "1001:n5"]);
+  assert.equal((await viewer.hears((frame) => frame.t === "push" && frame.keys.v1001 === "n5")).track, "world", "an admin's keys reach every game on the world's track");
+  assert.deepEqual(await (await admin("?keys=1")).json().then((body) => [body.story.tracks, body.story.part, body.story.keys.v.split(",")[0]]), [true, "1", "1001:n5"]);
   viewer.socket.close();
 });
 

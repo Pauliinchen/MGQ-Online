@@ -2,10 +2,14 @@
 //  story_tracks.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Refused an admin's pins of keys the story mapping does not share
 //      Paulinchen  2026-10-31: Named the routes the world may take at the Great Decision in its summary
 //                            - Kept the run entries of each track in order and a cursor per player on it
 //                            - Kept the place the world's log starts at in its summary, and its keys there
 //                            - Started a world's tracks from its keyed story
+//                            - Let an admin set keys of the world's track, read its story and take back its route lock
+//                            - Held an admin's pins on the world's track only, so players behind keep their own story
+//                            - Kept when the world's track last changed
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -18,11 +22,12 @@
 // own value. A telling lock per map and track lets one game tell a story event while the others on
 // that track watch. Each track also keeps, in order, the run entries of the events whose writes
 // changed it, for good, which every game on it takes from its player's cursor. Games speak it in
-// `track <JSON>` text frames over their world room.
+// `track <JSON>` text frames over their world room. An admin's keys, pins and route lock act on the
+// world's track only.
 
 import {
-  CLEAR_SWITCHES, FIRST_COUNTERS, FREEZE, FREEZE_ENDED, GREAT_DECISION, ROUTE, ROUTE_COUNTERS, VALUE as STORY_VALUE, activeRoute, compareKeys, countersOf, everyRouteDone, partOf,
-  storyKey,
+  CLEAR_SWITCHES, FIRST_COUNTERS, FREEZE, FREEZE_ENDED, GREAT_DECISION, ROUTE, ROUTE_COUNTERS, VALUE as STORY_VALUE, activeRoute, compareKeys, countersOf, everyRouteDone, listsOf,
+  partOf, storyKey,
 } from "./story.js";
 
 /**
@@ -98,6 +103,9 @@ export const TRACK_CODE = Object.freeze({
   taken: "taken",
   // More telling locks than one player may hold.
   many: "many",
+  // A key an admin sets or pins that the tracks keep not as set: each player's own, a scene, a chest flag,
+  // or a count an admin sets.
+  mapping: "mapping",
 });
 
 /**
@@ -382,9 +390,9 @@ export class StoryTracks {
    * Makes the tracks.
    *
    * @param {TrackStore} store Where they live.
-   * @param {{mapping: () => Promise<object>, pins?: () => Promise<{pinOf: (key: string) => string | undefined, keys: string[]}>, story?: () => Promise<Map<string, string> | undefined>, send: (player: string, text: string) => void, limits?: typeof TRACK_LIMITS}} options The story mapping as games read it; the pins an admin set (the keyed story's, story.js pinOf, which also reads the ranges an older relay pinned at off) with the keys pinned one by one; the keys of the world's keyed story, which a world without tracks starts them from; how a frame reaches a player's game; the limits.
+   * @param {{mapping: () => Promise<object>, pins?: () => Promise<{pinOf: (key: string) => string | undefined, keys: string[]}>, story?: () => Promise<Map<string, string> | undefined>, send: (player: string, text: string) => void, limits?: typeof TRACK_LIMITS, clock?: () => number}} options The story mapping as games read it; the pins an admin set (the keyed story's, story.js pinOf, which also reads the ranges an older relay pinned at off) with the keys pinned one by one; the keys of the world's keyed story, which a world without tracks starts them from; how a frame reaches a player's game; the limits; the clock.
    */
-  constructor(store, { mapping, pins = async () => ({ pinOf: () => undefined, keys: [] }), story = async () => undefined, send, limits = TRACK_LIMITS }) {
+  constructor(store, { mapping, pins = async () => ({ pinOf: () => undefined, keys: [] }), story = async () => undefined, send, limits = TRACK_LIMITS, clock = Date.now }) {
     /** The store. */
     this.store = store;
     /** Reads the story mapping. */
@@ -397,6 +405,8 @@ export class StoryTracks {
     this.send = send;
     /** The limits. */
     this.limits = limits;
+    /** The clock, which dates each revision of the world's track. */
+    this.clock = clock;
     /** The work under way, which every change waits for. */
     this.queue = Promise.resolve();
     /** The world's summary, loaded with the world's keys on first use. */
@@ -553,7 +563,6 @@ export class StoryTracks {
     await this.store.commit(commit);
     online.synced = true;
     const move = await this.moveOn(record);
-    await this.holdPins(record);
     await this.sendState(player, move ? "moved" : why, move);
   }
 
@@ -575,7 +584,7 @@ export class StoryTracks {
     this.recount(draft, () => undefined);
     const counters = countersOf(draft, FIRST_COUNTERS);
     this.world = draft.changed();
-    this.meta = { rev: 1, part: partOf(counters), route: ROUTE.none, done: [...counters.clear], checkpoints: [], next: 1, start: markersOf(this.world) };
+    this.meta = { rev: 1, part: partOf(counters), route: ROUTE.none, done: [...counters.clear], checkpoints: [], next: 1, start: markersOf(this.world), at: this.clock() };
     this.logKeys = new Map(this.world);
     commit.meta = this.meta;
     commit.keys = [...(commit.keys ?? []), { track: WORLD_TRACK, set: [...this.world] }];
@@ -738,7 +747,6 @@ export class StoryTracks {
     const move = record ? await this.moveOn(record) : null;
 
     if (move) {
-      await this.holdPins(record);
       await this.sendState(player, "moved", move);
     }
   }
@@ -830,7 +838,7 @@ export class StoryTracks {
     }
 
     for (const draft of new Set([world, own])) {
-      this.recount(draft, pinOf);
+      this.recount(draft, draft === world ? pinOf : () => undefined);
     }
 
     for (const key of counted) {
@@ -849,7 +857,7 @@ export class StoryTracks {
     }
 
     if (worldChanged.size > 0 || this.meta.route !== before.route) {
-      this.meta.rev += 1;
+      this.meta = { ...this.meta, rev: this.meta.rev + 1, at: this.clock() };
       commit.meta = this.meta;
       commit.keys.push({ track: WORLD_TRACK, set: [...worldChanged] });
     }
@@ -1009,7 +1017,7 @@ export class StoryTracks {
   /**
    * Applies one write to the drafts of a batch by its key's kind.
    *
-   * @param {{record: object, world: Draft, own: Draft, pinOf: (key: string) => string | undefined, route: string, chests: Map<string, string>}} context The batch: the writing player's record, the world's draft and the player's own (the same while they play the world's), the pins, the route locked so far and the chest flags written.
+   * @param {{record: object, world: Draft, own: Draft, pinOf: (key: string) => string | undefined, route: string, chests: Map<string, string>}} context The batch: the writing player's record, the world's draft and the player's own (the same while they play the world's), the pins, which hold the world's draft only, the route locked so far and the chest flags written.
    * @param {string} key The key.
    * @param {string} value The value written.
    * @param {string} site Where the write came from.
@@ -1029,7 +1037,7 @@ export class StoryTracks {
 
     const draft = kind === KIND.freeze || row?.wholeWorld ? context.world : context.own;
     const current = draft.get(key) ?? offOf(key);
-    const pinned = context.pinOf(key);
+    const pinned = draft.id === WORLD_TRACK ? context.pinOf(key) : undefined;
 
     if (pinned !== undefined) {
       return { code: TRACK_CODE.pinned, value: pinned };
@@ -1172,7 +1180,6 @@ export class StoryTracks {
         const commit = { players: [record] };
         this.newTrack(record, left, checkpoint, commit);
         await this.store.commit(commit);
-        await this.holdPins(record);
         await this.sendState(player, "behind", null);
       }
     }
@@ -1216,7 +1223,7 @@ export class StoryTracks {
     }
 
     const before = { ...this.meta };
-    this.meta = { ...this.meta, route, rev: this.meta.rev + 1 };
+    this.meta = { ...this.meta, route, rev: this.meta.rev + 1, at: this.clock() };
     await this.store.commit({ meta: this.meta });
     answer({ granted: true });
     this.pushWorld(before.rev, new Map(), true);
@@ -1359,63 +1366,175 @@ export class StoryTracks {
   }
 
   /**
-   * Holds the keys an admin pins on every track that keeps them, as a revision every game on the
-   * track takes. Called once the pins changed.
+   * Holds the keys an admin pins on the world's track, as a revision every game on it takes. Called
+   * once the pins changed.
    *
-   * @returns {Promise<void>} Completes once told.
+   * @returns {Promise<Map<string, string>>} What changed, empty for a world whose story never ran on tracks.
    */
   pinsChanged() {
     return this.exclusive(async () => {
-      await this.ready();
-
-      if (!this.meta.rev) {
-        return;
+      if (!(await this.hasStarted())) {
+        return new Map();
       }
 
-      const pins = await this.pins();
-      const changed = pinned(new Draft(WORLD_TRACK, this.world), pins, this.rules);
+      await this.ready();
+      const changed = pinned(new Draft(WORLD_TRACK, this.world), await this.pins(), this.rules);
 
       if (changed.size > 0) {
         const rev = this.meta.rev;
-        this.meta = { ...this.meta, rev: rev + 1 };
+        this.meta = { ...this.meta, rev: rev + 1, at: this.clock() };
         await this.store.commit({ meta: this.meta, keys: [{ track: WORLD_TRACK, set: [...changed] }] });
         changed.forEach((value, key) => this.world.set(key, value));
         this.pushWorld(rev, changed, false);
       }
 
-      for (const [player, online] of this.online) {
-        const record = online.synced ? this.players.get(player) : null;
-        const own = record?.track ? await this.holdPins(record, pins) : new Map();
-
-        if (own.size > 0) {
-          this.pushTrack(record, record.track.rev - 1, own);
-        }
-      }
+      return changed;
     });
   }
 
   /**
-   * Holds the pinned keys on a player's own track, as a revision of it. Called inside exclusive.
+   * Tells whether the world's story runs on tracks, without starting them from its keyed story.
    *
-   * @param {object} record The player's record.
-   * @param {{pinOf: (key: string) => string | undefined, keys: string[]}} [pins] The pins, read anew unless given.
-   * @returns {Promise<Map<string, string>>} What changed, empty for a player on the world's track.
+   * @returns {Promise<boolean>} Whether it does.
    */
-  async holdPins(record, pins = null) {
-    if (!record.track) {
-      return new Map();
-    }
+  started() {
+    return this.exclusive(() => this.hasStarted());
+  }
 
-    const keys = await this.trackKeys(record.track.id);
-    const changed = pinned(new Draft(record.track.id, keys), pins ?? (await this.pins()), this.rules);
+  /**
+   * Hands an admin the world's story: its summary, its counters and, when asked, its keys.
+   *
+   * @param {boolean} withKeys Whether to add the keys, as story.js listsOf writes them.
+   * @returns {Promise<{rev: number, part: string, route: string, done: string[], checkpoints: string[], at: number, counters: object, keys?: object} | null>} The story, null for a world whose story never ran on tracks.
+   */
+  view(withKeys) {
+    return this.exclusive(async () => {
+      if (!(await this.hasStarted())) {
+        return null;
+      }
 
-    if (changed.size > 0) {
-      record.track = { ...record.track, rev: record.track.rev + 1 };
-      await this.store.commit({ players: [record], keys: [{ track: record.track.id, set: [...changed] }] });
-      changed.forEach((value, key) => keys.set(key, value));
-    }
+      await this.ready();
+      return this.viewOf(withKeys);
+    });
+  }
 
-    return changed;
+  /**
+   * Sets keys of the world's track as an admin asks, as a revision every game on it takes: counts,
+   * the part, the route lock and the checkpoints follow the keys as they follow a write, players
+   * behind fall behind as for a write, and their own tracks stay as they are.
+   *
+   * @param {Map<string, string>} keys The keys and their values, as story.js readAdminKeys reads them.
+   * @param {string} admin The admin's player id.
+   * @returns {Promise<{changed: Map<string, string>, view: object} | {code: string, keys: string[]} | null>} What changed with the world's story after it, see view; or the keys refused, with TRACK_CODE `bad` for keys the tracks cannot name, `mapping` for keys they keep not as set, `pinned` for keys pinned at other values; null for a world whose story never ran on tracks.
+   */
+  setKeys(keys, admin) {
+    return this.exclusive(async () => {
+      if (!(await this.hasStarted())) {
+        return null;
+      }
+
+      await this.ready();
+      const { pinOf } = await this.pins();
+      const held = [...keys].filter(([key, value]) => pinOf(key) !== undefined && pinOf(key) !== value).map(([key]) => key);
+      const refused = adminRefusal(keys, this.rules, this.limits, false) ?? (held.length > 0 ? { code: TRACK_CODE.pinned, keys: held } : null);
+
+      if (refused) {
+        return refused;
+      }
+
+      const draft = new Draft(WORLD_TRACK, this.world);
+      keys.forEach((value, key) => draft.set(key, value));
+      this.recount(draft, pinOf);
+      const running = activeRoute(countersOf(draft, FIRST_COUNTERS));
+      const changed = draft.changed();
+
+      if (changed.size === 0) {
+        return { changed, view: this.viewOf(true) };
+      }
+
+      const before = { ...this.meta };
+      const checkpoint = this.advanceWorld(draft, { route: running !== ROUTE.none ? running : this.meta.route }, admin);
+      this.meta = { ...this.meta, rev: before.rev + 1, at: this.clock() };
+      await this.store.commit({ meta: this.meta, keys: [{ track: WORLD_TRACK, set: [...changed] }], ...(checkpoint ? { checkpoint } : {}) });
+      changed.forEach((value, key) => this.world.set(key, value));
+      this.mark(WORLD_TRACK, changed, admin);
+      this.pushWorld(before.rev, changed, summaryChanged(before, this.meta));
+
+      if (this.meta.part !== before.part) {
+        await this.leaveBehind(before.part, admin);
+      }
+
+      return { changed, view: this.viewOf(true) };
+    });
+  }
+
+  /**
+   * Tells which keys an admin would pin that the world's track cannot hold, before the keyed story
+   * keeps the pins.
+   *
+   * @param {Map<string, string>} keys The keys and their values, as story.js readPins reads them.
+   * @returns {Promise<{code: string, keys: string[]} | null>} The keys refused, see adminRefusal; null when the track holds them all, or for a world whose story never ran on tracks.
+   */
+  pinRefusal(keys) {
+    return this.exclusive(async () => {
+      if (!(await this.hasStarted())) {
+        return null;
+      }
+
+      await this.ready();
+      return adminRefusal(keys, this.rules, this.limits, true);
+    });
+  }
+
+  /**
+   * Takes back the route locked for the world's track, as an admin asks, so the next player who
+   * chooses sets it again; refused while the world's track is on the locked route.
+   *
+   * @returns {Promise<{cleared: boolean, started?: true, view: object} | null>} Whether a lock was taken back, `started` when the world is on the locked route, and the world's story, see view; null for a world whose story never ran on tracks.
+   */
+  clearRoute() {
+    return this.exclusive(async () => {
+      if (!(await this.hasStarted())) {
+        return null;
+      }
+
+      await this.ready();
+
+      if (this.meta.route === ROUTE.none) {
+        return { cleared: false, view: this.viewOf(false) };
+      }
+
+      if (activeRoute(countersOf(this.world, FIRST_COUNTERS)) === this.meta.route) {
+        return { cleared: false, started: true, view: this.viewOf(false) };
+      }
+
+      const rev = this.meta.rev;
+      this.meta = { ...this.meta, route: ROUTE.none, rev: rev + 1, at: this.clock() };
+      await this.store.commit({ meta: this.meta });
+      this.pushWorld(rev, new Map(), true);
+      return { cleared: true, view: this.viewOf(false) };
+    });
+  }
+
+  /**
+   * Tells whether the world's story ran on tracks, without starting them. Called inside exclusive.
+   *
+   * @returns {Promise<boolean>} Whether it did.
+   */
+  async hasStarted() {
+    return Boolean(this.meta ? this.meta.rev : (await this.store.getMeta())?.rev);
+  }
+
+  /**
+   * Makes the world's story as an admin reads it, see view. Called inside exclusive, once ready.
+   *
+   * @param {boolean} withKeys Whether to add the keys.
+   * @returns {object} The story.
+   */
+  viewOf(withKeys) {
+    const { rev, part, route, done, checkpoints, at = 0 } = this.meta;
+    const story = { rev, part, route, done: [...done], checkpoints: [...checkpoints], at, counters: countersOf(this.world, FIRST_COUNTERS) };
+    return withKeys ? { ...story, keys: listsOf(this.world) } : story;
   }
 
   /**
@@ -1845,11 +1964,28 @@ function stepOf(row, value, draft, world) {
 }
 
 /**
- * Sets the pinned keys a track keeps to their pinned values: each key an admin pinned, and each key
- * the track holds that a range an older relay pinned names. The world's track alone keeps the keys
- * the whole world keeps.
+ * Finds the keys an admin names that the world's track cannot take: TRACK_CODE `bad` for keys or
+ * values the tracks cannot name, else `mapping` for keys the story mapping leaves to each player, to
+ * a scene or a chest, and for counts unless the admin pins them.
  *
- * @param {Draft} draft The track's draft.
+ * @param {Map<string, string>} keys The keys and their values.
+ * @param {TrackRules} rules The story mapping.
+ * @param {typeof TRACK_LIMITS} limits The limits.
+ * @param {boolean} counts Whether counts go in, which the relay recounts unless pinned.
+ * @returns {{code: string, keys: string[]} | null} The keys refused, null when it takes them all.
+ */
+function adminRefusal(keys, rules, limits, counts) {
+  const bad = [...keys].filter(([key, value]) => !KEY.test(key) || !valueFits(key, value, limits)).map(([key]) => key);
+  const unshared = [...keys.keys()].filter((key) => !bad.includes(key) && (!kept(rules.kindOf(key).kind) || (!counts && rules.kindOf(key).kind === KIND.count)));
+  const refused = [[TRACK_CODE.bad, bad], [TRACK_CODE.mapping, unshared]].find(([, named]) => named.length > 0);
+  return refused ? { code: refused[0], keys: refused[1] } : null;
+}
+
+/**
+ * Sets the pinned keys the world's track keeps to their pinned values: each key an admin pinned, and
+ * each key the track holds that a range an older relay pinned names.
+ *
+ * @param {Draft} draft The world's draft.
  * @param {{pinOf: (key: string) => string | undefined, keys: string[]}} pins The pins.
  * @param {TrackRules} rules The story mapping.
  * @returns {Map<string, string>} What changed.
@@ -1861,7 +1997,7 @@ function pinned(draft, { pinOf, keys }, rules) {
     const value = pinOf(key);
     const keeps = draft.keys.has(key) || kept(rules.kindOf(key).kind);
 
-    if (value !== undefined && KEY.test(key) && keeps && (draft.id === WORLD_TRACK || !rules.wholeWorld(key))) {
+    if (value !== undefined && KEY.test(key) && keeps) {
       draft.set(key, value);
     }
   }

@@ -4,6 +4,7 @@
 //  Changelog:
 //      Paulinchen  2026-10-31: Kept the run entries of the story tracks in memory and started the tracks from the keyed story
 //                            - Turned every game that keeps no keys away from a Raid World
+//                            - Handed the admin routes of a Raid World its story tracks, which act on the world's track
 //                            - Refused a battle as having no battle server while the battle server is out of reach
 //      Paulinchen  2026-10-30: Handed the request's method to the update gate
 //      Paulinchen  2026-10-28: Filled the story tables that hold no rows yet from the seed files at start
@@ -1672,7 +1673,7 @@ export function createRelay({
    */
   async function answerRaidAdmin(request, url, route) {
     // Made only once the directory found an admin, so requests for any id keep nothing in memory.
-    const world = { get story() { return storyOf(route.id); }, get bosses() { return bossesOf(route.id); } };
+    const world = { get story() { return storyOf(route.id); }, get bosses() { return bossesOf(route.id); }, get tracks() { return tracksOf(route.id); } };
     const answer = await handleRaidAdminRequest(world, request.method, url, route.rest, () => readText(request), headerOf(request, PLAYER_HEADER), (key) => directory.raidAdmin(route.id, key));
 
     if (answer.audit) {
@@ -1681,10 +1682,6 @@ export function createRelay({
 
     if (answer.push) {
       tellWorld(route.id, storyPushText(answer.push, storyLimits));
-    }
-
-    if (route.rest[0] === "pins" && answer.status === 200) {
-      await tracksOf(route.id).pinsChanged();
     }
 
     for (const boss of [answer.boss, ...(answer.bosses ?? [])].filter(Boolean)) {
@@ -1767,6 +1764,7 @@ export function createRelay({
         },
         story: () => storyOf(id).keys(),
         send: (player, text) => tellWorld(id, text, (peer) => peer.tracks && peer.record.player === player),
+        clock,
       }));
     }
 

@@ -2,7 +2,8 @@
 //  story_tracks.test.js
 //
 //  Changelog:
-//      Paulinchen  2026-10-31: Checked the routes the world's summary names as open at the Great Decision
+//      Paulinchen  2026-10-31: Checked an admin's keys, pins and route lock acting on the world's story only
+//                            - Checked the routes the world's summary names as open at the Great Decision
 //                            - Checked the run entries kept on the tracks and the players' cursors
 //                            - Checked the place a world's log starts at in its summary
 //                            - Checked a world's tracks starting from its keyed story
@@ -247,14 +248,22 @@ test("a frozen fight's end is final", async () => {
   assert.deepEqual((await write(world, ALICE, 2, [["f868", "map:5:6:7|y"]])).keys, { f868: { code: TRACK_CODE.ended, value: "0" } });
 });
 
-test("pinned keys hold against writes, and a new pin reaches every game as a revision", async () => {
-  const world = await startedWorld(3, [BOB], { pins: { v50: "n7" } });
+test("pinned keys hold the world's story against writes, a new pin reaches every game on it as a revision, and players behind keep their own", async () => {
+  const world = await startedWorld(10, [BOB], { pins: { v50: "n7" } });
   assert.deepEqual((await write(world, ALICE, 1, [["v50", "n1"]])).keys, { v50: { code: TRACK_CODE.pinned, value: "n7" } });
+  await write(world, ALICE, 2, [["v1001", "n19"]]);
+  await world.enter(CARA, 2);
+  await world.say(CARA, { t: "sync", level: { best: 3, cap: null }, seed: { v1001: "n2", v60: "n5" } });
+  assert.equal(world.heard(CARA)[0].track, "t1");
+  assert.deepEqual((await write(world, CARA, 1, [["v50", "n1"]], "t1")).keys, {}, "a player behind writes a pinned key on their own track");
 
+  world.heard(CARA);
   world.pins.v60 = "n2";
-  await world.tracks.pinsChanged();
-  const [push] = world.heard(BOB).filter((frame) => frame.t === "push");
+  const changed = await world.tracks.pinsChanged();
+  assert.deepEqual([...changed], [["v50", "n7"], ["v60", "n2"]]);
+  const push = world.heard(BOB).filter((frame) => frame.t === "push").at(-1);
   assert.deepEqual(push.keys, { v50: "n7", v60: "n2" });
+  assert.deepEqual(world.heard(CARA).filter((frame) => frame.t === "push"), [], "the pin leaves a track of one's own as it is");
 });
 
 test("the first route started locks it, another route and an unplayed finish are refused, and the return ends the lock", async () => {
@@ -534,4 +543,62 @@ test("a state hands the world's keys at the start of its log where they differ f
   await kept.enter(ALICE, 0);
   await kept.say(ALICE, { t: "sync", level: { best: 99, cap: null }, cursors: {} });
   assert.deepEqual(kept.heard(ALICE).at(-1).log, { v50: "n4" }, "a world kept from before run entries starts its log as it stands");
+});
+
+test("an admin's keys go on the world's track as a revision every game on it hears, its part following, and leave the tracks of players behind as they are", async () => {
+  assert.equal(await makeWorld().tracks.setKeys(new Map([["v50", "n4"]]), "admin"), null, "a world whose story never ran on tracks");
+
+  const world = await startedWorld(10, [BOB], { pins: { v60: "n2" } });
+  await write(world, ALICE, 1, [["v1001", "n19"]]);
+  await world.enter(CARA, 2);
+  await world.say(CARA, { t: "sync", level: { best: 3, cap: null }, seed: { v1001: "n2", v50: "n5" } });
+  [ALICE, BOB, CARA].forEach((player) => world.heard(player));
+
+  const set = await world.tracks.setKeys(new Map([["v50", "n4"], ["s3101", "1"]]), "admin");
+  assert.deepEqual([...set.changed], [["v50", "n4"], ["s3101", "1"], ["v1354", "n1"]], "a count follows the switches it counts");
+  assert.deepEqual([set.view.rev, set.view.part, set.view.keys.v.split(",").includes("50:n4")], [3, "2", true]);
+  const [push] = world.heard(BOB).filter((frame) => frame.t === "push");
+  assert.deepEqual([push.rev, push.prev, push.keys], [3, 2, { v50: "n4", s3101: "1", v1354: "n1" }]);
+  assert.deepEqual(world.heard(CARA), [], "a player behind keeps their own story");
+
+  const ahead = await world.tracks.setKeys(new Map([["v1001", "n34"]]), "admin");
+  assert.deepEqual([ahead.view.part, ahead.view.checkpoints], ["3", ["1", "2"]], "the part and its checkpoint move as for a write");
+  assert.equal(world.heard(BOB).filter((frame) => frame.t === "push")[0].world.part, "3");
+  assert.deepEqual((await world.tracks.setKeys(new Map([["v1001", "n34"]]), "admin")).changed, new Map(), "a key at its value makes no revision");
+
+  assert.deepEqual(await world.tracks.setKeys(new Map([["v60", "n9"], ["v50", "n1"]]), "admin"), { code: "pinned", keys: ["v60"] });
+  assert.deepEqual(await world.tracks.setKeys(new Map([["s100", "1"], ["s500", "1"], ["v1354", "n4"], ["v50", "n1"]]), "admin"), { code: "mapping", keys: ["s100", "s500", "v1354"] });
+  assert.deepEqual(await world.tracks.setKeys(new Map([["v050", "n1"]]), "admin"), { code: "bad", keys: ["v050"] });
+});
+
+test("an admin reads the world's story with its part and routes, and takes back the route lock unless the world is on that route", async () => {
+  const none = makeWorld();
+  assert.deepEqual([await none.tracks.view(false), await none.tracks.clearRoute()], [null, null], "a world whose story never ran on tracks");
+
+  const world = await startedWorld(40, [BOB]);
+  await world.say(ALICE, { t: "route", route: "mr" });
+  const view = await world.tracks.view(false);
+  assert.deepEqual([view.rev, view.part, view.route, view.done, view.counters.p, view.keys], [2, "3", "mr", [], 40, undefined]);
+  assert.ok(view.at > 0);
+  world.heard(BOB);
+
+  assert.deepEqual(await world.tracks.clearRoute(), { cleared: true, view: await world.tracks.view(false) });
+  assert.equal(world.heard(BOB).find((frame) => frame.t === "push").world.route, "none", "every game hears the lock taken back");
+  assert.equal((await world.tracks.clearRoute()).cleared, false, "no lock to take back");
+
+  await write(world, ALICE, 1, [["v1141", "n1"]]);
+  assert.deepEqual((await world.tracks.clearRoute()).started, true, "the world is on the locked route");
+  const keyed = await world.tracks.view(true);
+  assert.deepEqual([keyed.part, keyed.route, keyed.keys.v], ["ad", "ad", "1001:n40,1141:n1"]);
+});
+
+test("an admin reads the world's story after the relay starts again, before any game enters", async () => {
+  const store = memoryStore();
+  const before = makeWorld({ store });
+  await before.enter(ALICE, 0);
+  await before.say(ALICE, { t: "sync", level: { best: 99, cap: null }, seed: { v1001: "n40" } });
+
+  const after = makeWorld({ store });
+  const [plain, keyed] = [await after.tracks.view(false), await after.tracks.view(true)];
+  assert.deepEqual([plain.rev, plain.part, plain.route, plain.keys, keyed.keys.v], [1, "3", "none", undefined, "1001:n40"]);
 });
