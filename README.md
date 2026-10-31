@@ -15,12 +15,12 @@ Play Monster Girl Quest! Paradox RPG together with friends over the internet, wi
 
 - **Worlds:** up to 32 players on the same maps, with emotes and an overview of everyone online and of your quests under way: the main quest, Amira's side quests and your companions' requests. A world is *Classic*, where each party plays its own story, or a *Raid World*.
 - **Raid Worlds:** the whole world plays one story together, party or not. Everyone on a map watches its scenes, battles pull in the nearest players, and each story boss is one fight the whole world wears down, which waits where it beat you. A player behind catches up as they level, with up to ten times the experience.
-- **Raid bosses everywhere:** a Classic world, or single player through *Mod Config → MGQ Online SP*, can make the story bosses raid bosses of their tier, with their HP bars and without any connection in single player.
+- **Raid bosses everywhere:** a Classic world, or single player through *Options → Mods → MGQ Online SP*, can make the story bosses raid bosses of their tier, with their HP bars and without any connection in single player.
 - **Chat:** global, map, party and whisper chats in tabs, a glow on tabs with unread lines, and speech bubbles over the players on your map.
 - **Turn off other mods:** a world can be played with its own mods and nothing else. Entering it loads only the world's mods, and yours come back when you leave the world.
 - **Parties:** up to four players play the leader's story together and share one team's worth of companions. Teleport to any party member once they allow it, or to the leader at once.
 - **Co-op battles:** party members on the same map join each other's battles, each commanding their own characters.
-- **Duels and PvP battles:** your team against a friend's, live, inside a world or outside one.
+- **Duels and PvP battles:** your team against a friend's, live, inside a world.
 - **Trading:** swap items, equipment, stones and gold with a player on your map; a disconnect never loses or copies anything.
 - **Mods:** install, update and remove mods of the [website](https://mgqonline.org/mods) from the title screen, through the Mod Framework that comes with the mod.
 - **Your interface:** three looks for the mod and the game alike, Monarch, Legacy and the game's own window color, and every box of the mod moves and resizes while you hold the left **Alt**.
@@ -34,7 +34,7 @@ Worlds, Raid Worlds, parties and co-op battles are a **prototype**: expect bugs,
 
 Optional:
 
-- [Discord Rich Presence](https://github.com/Pauliinchen/MGQ-Paradox-Discord-Rich-Presence) 1.5.1 or later: invite friends through Discord instead of sending a join code, show on your profile who you're playing with, and use your Discord name in worlds. With 1.6.1 or later you also invite friends into your world, password included.
+- [Discord Rich Presence](https://github.com/Pauliinchen/MGQ-Paradox-Discord-Rich-Presence) 1.5.1 or later: show on your profile who you're playing with and use your Discord name in worlds. With 1.6.1 or later you also invite friends into your world, password included.
 - [Battle Dialogue](https://github.com/Pauliinchen/MGQ-Paradox-Mod-Collection/tree/main/Battle_Dialogue): shows what characters say in boxes at the screen's sides, so nobody waits for another player to press a key.
 
 The [Mod Framework](https://github.com/Pauliinchen/MGQ-Mod-Framework) comes with the mod: its *Options → Mods* binds other hotkeys and shows which options a world sets.
@@ -59,8 +59,6 @@ While the mod is installed, the game keeps running when its window is in the bac
 3. Everyone confirms on that world and picks *Enter the world*.
 4. On the map, stand next to a friend, press **B** and pick *Invite to a party*; they accept in their own wheel. You now play the leader's story together and fight co-op battles. In a Raid World everyone plays the world's story, and a party gets the first places in battles.
 
-For a PvP battle without a world, press **F11** on the map and host; your friend joins with the join code you send them.
-
 ## Hotkeys
 
 | Hotkey | What it does |
@@ -75,7 +73,7 @@ For a PvP battle without a world, press **F11** on the map and host; your friend
 | **J** | Join the battle of a player next to you in a Raid World, fight a raid boss alongside a full boss battle, or fight a raid boss again where it beat you |
 | **F3** | Report a bug, with a screenshot and your logs, anywhere but the title and game over screens |
 
-Rebind them in *Mod Config → MGQ Online Hotkeys*; the mod's other options are in *MGQ Online Settings*.
+Rebind them in *Options → Mods → MGQ Online Hotkeys*; the mod's other options are in *MGQ Online Settings*.
 
 ## Documentation
 

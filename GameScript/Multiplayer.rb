@@ -311,8 +311,8 @@ module MGQ_Multiplayer
   end
 
   # Tells whether another release of the mod is the one to play, a newer one or a step back the
-  # relay asks for, which MGQ_MpWorld and MGQ_MpBattlesPvp disable themselves for, so two games
-  # speaking a protocol a refactor changed never meet.
+  # relay asks for, which worlds, duels and trades turn themselves off for, so two games speaking a
+  # protocol a refactor changed never meet.
   #
   # @return [Boolean] Whether one was found.
   def self.outdated?

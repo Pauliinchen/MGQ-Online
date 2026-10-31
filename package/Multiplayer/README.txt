@@ -63,10 +63,9 @@ meanwhile.
 UPDATE
 ------
 The Mod Framework, which comes with the mod, counts the updates waiting
-on "Mod browser" on the title screen and installs them, this mod's too.
+on "Browser" in the title's Mods box and installs them, this mod's too.
 When the relay asks for another release, "Multiplayer" on the title
-screen offers it, since everyone needs the same version. Until you
-update, F11 doesn't open PvP battles either.
+screen offers it, since everyone needs the same version.
 
 The framework closes the game, installs the release, shows what's new
 and starts the game again in the Multiplayer menu. This works under Wine
@@ -102,9 +101,6 @@ A world may start its new players from its creator's save. A save can
 run code on your PC, so take it only from creators you trust. The game
 asks first and lets you start at the beginning instead.
 
-For a PvP battle without a world, press F11 on the map and host; your
-friend joins with the join code you send them.
-
 
 HOTKEYS
 -------
@@ -113,14 +109,14 @@ HOTKEYS
    T        chat: /g everyone, /m your map, /p your party, /w one player, /help
             (Alt + Left/Right switches tabs, Alt + drag resizes the chat)
    E        emote wheel
-   F11      World overview, or the PvP battle screen outside a world
+   F11      World overview, in a world and in single player
    Y / N    accept / decline the first invite at the top left
    Tab      make the party box small or full
    H        make the Leader HUD at the top left small or large
    J        join the battle of a player next to you in a Raid World
    F3       report a bug, with a screenshot and your logs
 
-Rebind them in "Mod Config > MGQ Online Hotkeys".
+Rebind them in "Options > Mods > MGQ Online Hotkeys".
 
 
 TROUBLE?

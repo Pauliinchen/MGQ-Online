@@ -31,14 +31,14 @@ Everything Monster Girl Quest! Online does, for players. To install the mod, see
 | **J** | Joins the battle of a player next to you in a Raid World, fights a raid boss alongside a full boss battle, or fights a raid boss again where it beat you, while the prompt below your character shows. |
 | **F3** | Opens the bug report, with a screenshot taken at the press. Works anywhere but the title and game over screens: in a menu it opens at once, in a battle after the battle, and on a busy map once you're free. |
 
-This guide names the default hotkeys. To bind others, open *Mod Config → MGQ Online Hotkeys*, confirm the hotkey's row (*Action Wheel*, *Chat*, *World Overview*, *Accept Notification*, *Decline Notification*, *Emote Wheel*, *Party Box Size*, *Leader HUD Size*, *Join Battle* or *Report a Bug*) and press the new key; **Esc** keeps the old one.
+This guide names the default hotkeys. To bind others, open *Options → Mods → MGQ Online Hotkeys*, confirm the hotkey's row (*Action Wheel*, *Chat*, *World Overview*, *Accept Notification*, *Decline Notification*, *Emote Wheel*, *Party Box Size*, *Leader HUD Size*, *Join Battle* or *Report a Bug*) and press the new key; **Esc** keeps the old one.
 
 - Keys the game uses itself can't be bound: the arrows, Enter, Space, Esc, Z, X, Shift, Ctrl, A, S, D, Q, W, Page Up, Page Down, numpad 0, 2, 4, 6 and 8, F1, F2, F5 to F9 and F12. Neither can a key another hotkey already uses.
 - Your hotkeys are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save and every world, and the texts in the game name the hotkeys you bound.
 
 ## Interface
 
-**Look.** *Mod Config → MGQ Online Settings → Interface Look* sets the colors of every box, frame and window of the mod and of the game's own windows:
+**Look.** *Options → Mods → MGQ Online Settings → Interface Look* sets the colors of every box, frame and window of the mod and of the game's own windows:
 
 - **Monarch** (the default): dark maroon with a gold edge in a black rim, gold titles and dark gold tabs, the look of the raid boss bar.
 - **Legacy**: black glass with a thin grey edge and grey tabs, the look the mod had before.
@@ -57,7 +57,7 @@ With Monarch or Legacy the game's Window Color has no effect. *Look on Game Wind
 
 **Leader HUD.** On the map, the top left shows your Formation Leader: their name and level, their HP and MP, and three thin bars with how far they are to their next base, job and race level. It shows in single player too.
 
-- *Mod Config → MGQ Online Settings → Leader HUD* turns it **On** (the default) or **Off** inside worlds; *MGQ Online SP → Leader HUD* does the same in single player.
+- *Options → Mods → MGQ Online Settings → Leader HUD* turns it **On** (the default) or **Off** inside worlds; *MGQ Online SP → Leader HUD* does the same in single player.
 - *Leader HUD Size* picks **Large** (the default), with their face and the numbers inside the HP and MP bars, or **Small**, with their map sprite and the bars alone. **H** switches between them on the map.
 - Hold the left **Alt** and drag it to move it, like the other boxes.
 - It hides while a message shows at the top of the screen. The map's name, a medal just won and the notification box move below it while it sits at the top left.
@@ -66,12 +66,12 @@ The boxes you can move: the chat (on the map, in battles and in shops, the casin
 
 - A box never gets smaller than it needs to show everything it holds, and never leaves the screen.
 - While **Alt** is held, the mouse only moves and resizes; clicks don't reach the boxes.
-- *Mod Config → MGQ Online Settings → Interface Positions* says *Moved* while any box is moved; pick *Default* to put every box back.
+- *Options → Mods → MGQ Online Settings → Interface Positions* says *Moved* while any box is moved; pick *Default* to put every box back.
 - The look and the places are kept in `Patch\Multiplayer\Player.ini`, so they hold in every save and every world, and a world that sets its mods' options never changes them.
 
 ## Single player
 
-Outside a world, the world features (chat, players, parties, trading) stay hidden, and what follows needs no connection. *Mod Config → MGQ Online SP* holds it:
+Outside a world, the world features (chat, players, parties, trading) stay hidden, and what follows needs no connection. *Options → Mods → MGQ Online SP* holds it:
 
 - **Leader HUD:** the [Leader HUD](#interface) in single player, **On** or **Off**; until you set it, it follows *MGQ Online Settings → Leader HUD*.
 - **Raid Bar on Map** and **Raid Bar in Battle:** the raid bosses' HP bars above the boss on the map and across the top of the battle, each **On** (the default) or **Off**. They count in single player and in Classic Worlds with raid bosses; a Raid World always shows both.
@@ -184,7 +184,7 @@ The details show each mod in a box of its own, as many as fit the row, and count
 - A required mod the list doesn't know is compared with the creator's copy. If yours differs, get the creator's version from the mod's author; nothing downloads it for you.
 - A new version only reaches players the next time they enter.
 
-**The creator's settings.** With *Shared Mod Settings* ticked in the create or edit form, or switched *On* in *Mod Config → MGQ Online Settings → Shared Mod Settings* while the creator plays in the world, the creator's options of the world's mods, required or listed, are the world's settings. Every player in the world gets them at once, and again whenever the creator changes an option; the notification box says what the world sets, and the menu shows those options greyed out as set by the world. Every player sees the row, but only the creator can switch it. Hotkeys and other personal options stay yours, and your own saves keep your own settings. MGQ Online's admins can change a world's settings too; the creator is told what changed.
+**The creator's settings.** With *Shared Mod Settings* ticked in the create or edit form, or switched *On* in *Options → Mods → MGQ Online Settings → Shared Mod Settings* while the creator plays in the world, the creator's options of the world's mods, required or listed, are the world's settings. Every player in the world gets them at once, and again whenever the creator changes an option; the notification box says what the world sets, and the menu shows those options greyed out as set by the world. Every player sees the row, but only the creator can switch it. Hotkeys and other personal options stay yours, and your own saves keep your own settings. MGQ Online's admins can change a world's settings too; the creator is told what changed.
 
 ### Turning off other mods
 
@@ -301,7 +301,7 @@ Press **F11** or pick the middle of the action wheel; **F11**, **B**, cancel, nu
 - **Main quest**, at the top next to Amira: the first sentence of what she tells you to do next in the story.
 - **The list** at the left: the **side quests** Amira tips you about, numbered, and your **companion quests**, the requests on the bulletin board in the Pocket Castle, each with the companion's name. Each shows its first sentence.
 - **The reading pane** at the right: the whole text of the quest you picked, each message as its own paragraph, under a companion quest the companion asking for help.
-- *Mod Config → MGQ Online Settings → Quest Portraits* shows Amira and the companions by their map **Sprites** (the default) or their **Faces**. A companion whose name the translation hasn't reached yet has no portrait.
+- *Options → Mods → MGQ Online Settings → Quest Portraits* shows Amira and the companions by their map **Sprites** (the default) or their **Faces**. A companion whose name the translation hasn't reached yet has no portrait.
 
 The main quest at the top can be picked too. On the World, Quests and Unlocks pages every group in the list folds: confirm or a click on its title (▾ open, ▸ folded) hides or shows its rows. The page shows the quests whether or not Amira's information network or the Pocket Castle is ready yet, and in the game's language, so parts the translation hasn't reached show in Japanese.
 
@@ -344,7 +344,7 @@ A party shares one team's worth of companions. The Frontline's four places and t
 
 Your Formation screens show your whole team: your share of the Frontline as the Frontline, your share of the Backline as the Backline, and the companions past your share in black and white below a line, so you can see who stays home.
 
-- **Followers:** only your share of the Frontline walks behind you, also on the other members' screens; with one place in front, you walk alone. The leader can show nobody but the players instead: *Mod Config → MGQ Online Settings → Party Followers*.
+- **Followers:** only your share of the Frontline walks behind you, also on the other members' screens; with one place in front, you walk alone. The leader can show nobody but the players instead: *Options → Mods → MGQ Online Settings → Party Followers*.
 - **In a Raid World** every player has a squad of their own instead, one Frontline and two Backline characters, and followers are hidden, see [On the map](RAID_WORLDS.md#on-the-map) of the Raid World page.
 - **NPCs:** on a map you share, you all see the same NPCs in the same places. The NPCs move as they do in the game of whoever of you entered the map first. In the Pocket Castle it's always the leader: you see their companions, and one you don't have yourself stands there see-through, a ghost you can't talk to. Your own companions stay yours to talk to.
 
@@ -397,7 +397,7 @@ PvP battles are fought as [duels](#duels) between players of a world.
 Once both games have each other's team, both battles start together. The host's game runs the battle, and the other game shows what happened. You meet your friend's characters as they are: jobs, races, equipment, gems and abilities, pre-battle spells and passives included. A defeated character of your friend stays as a grey silhouette, since their team can still revive it.
 
 - **Backline:** both of you swap your Backline in with the battle's *Party* command, chosen with the round's commands. The character swapped in gives no commands that round, and an attack hits whoever stands in the place it was aimed at once it lands. A fallen character can be swapped out, and a team loses once its whole Frontline is down.
-- **Frontline only:** the host decides. *Mod Config → MGQ Online Settings → PvP Backline* set to *Frontline Only* takes the *Party* command out of the battles you host and the duels you challenge to, for both players.
+- **Frontline only:** the host decides. *Options → Mods → MGQ Online Settings → PvP Backline* set to *Frontline Only* takes the *Party* command out of the battles you host and the duels you challenge to, for both players.
 - **Escape** gives the battle up at once. If your friend leaves or the connection breaks, you win. After waiting 10 seconds for your friend, *Cancel* lets you leave the battle, which also gives it up.
 - **Nothing carries over:** no EXP, gold or items, and your save, the Library and affection are put back exactly as they were.
 
@@ -429,19 +429,14 @@ Your games meet at the mod's **server**, which passes their data on. Every game 
 - **The Global chat is the exception:** every line of a world's Global chat also goes to the server as plain text, which keeps the last 200 lines of each world for its creator and MGQ Online's admins to read. The Map, Party and Whisper chats stay between the players.
 - **What the server keeps:** the list of worlds, with each world's name, description, mods and shared mod settings, a summary of its creator's game data, its players' names and who is online; a Raid World's story progress and its raid bosses' HP; and a trade's encrypted offers until both games completed it. Hidden worlds are listed only for their players and for whoever names their id. A world's password never reaches the server, and a starting save arrives encrypted, but encryption does not make it safe: a save can run code on your PC, so take a world's starting save only from creators you trust; the game asks before taking it.
 - **Bug reports** (**F3** or *Report a Bug*): the title and text you type become a public issue on GitHub, with the mod's and the game's versions, the world's type, a public world's name and where in the game you were, and, when the logs go along, whether the game's last error came from the mod, another mod or the game. The screenshot and the logs, both attached unless you untick them, your name and a hidden world's name reach only the developer.
-- **No addresses:** a join code holds no address, so your friend's game never learns your IP address.
+- **No addresses:** your games meet only at the server, so no player's game learns your IP address.
 
 ## Troubleshooting
 
 | Message or problem | What to do |
 |---|---|
 | *Multiplayer* says a new version is out | Pick *Update and restart* in the Mod Framework's question: the game closes, the mod updates and the game starts again in the Multiplayer menu. Or close the game and run `Update.bat` in `Patch\Mod_Framework`. A Discord invite, or the return to a world after its mods were installed, asks the same while the mod is outdated; after updating, enter the world again yourself. |
-| "Your friend's game is not hosting with this join code right now" | Your friend stopped hosting, or hosted again, which makes a new join code: ask for the new one. Or their game is reconnecting: try again in a minute. |
-| "Nobody joined in time, so hosting stopped" | Hosting waits 30 minutes for a friend. Host again for a new join code. |
-| "Your team is too large to send" | Your party has more characters, skills or equipment than one PvP exchange carries. Leave a few characters out of the party and try again. |
 | "The server could not be reached" | Your internet connection is down, or something such as a firewall blocks the game from going online. |
-| "This join code comes from another version of the mod" | One of you has an older version; both need the same one. |
-| "Your friend has a newer version of MGQ Online" | Your friend has a newer version of the mod; update yours. |
 | "\<world> is not in the list right now" | The world list hasn't loaded yet or couldn't be fetched; the top of the world screen says which. Try again once it has loaded. |
 | "Your game differs from the creator's of \<world>" | Your mods add or remove entries the creator's don't, or the other way round. You play on; the world's details list the mods it needs. |
 | "\<world> needs mods you do not have" | The world requires a mod you don't have. Install it, then enter again. |
@@ -449,6 +444,5 @@ Your games meet at the mod's **server**, which passes their data on. Every game 
 | "Player.ini could not be read; close programs that hold it" | Another program, such as an antivirus, a cloud sync or an editor, holds `Patch\Multiplayer\Player.ini`. Your settings in it stay as they are, but no setting is saved and no world entered until the file can be read again. Close the program, or check that the file is not damaged. |
 | "Update MGQ Online to play online." | Your version of the mod is too old. Install the newest MGQ Online release. |
 | "Update MGQ Online to enter this world." | Your version of the mod is too old for this world. Install the newest MGQ Online release. |
-| "This is a world code" | You pasted a world's code into a PvP join. Enter worlds through *Multiplayer* on the title screen. |
 
 **Logs:** the log is in the `Logs` folder of your game folder, one per day you played, named after the day, such as `Multiplayer 2026-10-07.log`. It tells what the mod did inside the game and what the connection did. Starting the game deletes the logs of earlier days, so send it on the day something went wrong. The quickest way is **F3** (or *Report a Bug* in the action wheel): it sends today's log and a screenshot to the developer with your report. Otherwise please attach the log of the day it went wrong to a [bug report](https://github.com/Pauliinchen/MGQ-Online/issues/new?template=bug_report.yml).

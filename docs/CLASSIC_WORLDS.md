@@ -87,5 +87,5 @@ With *Raid Bosses* ticked in the create or edit form, the world's story bosses f
 - **Every battle fights the boss anew,** at its full raid HP. Nothing keeps its HP between battles, and it never heals over time.
 - **The same bosses count** as in a Raid World: the last fight of each story boss your story hasn't beaten yet, and the six Chaos' Phantoms of the Chaos Domain. Earlier phases of a fight, Hades rematches, the Colosseum and the two Great Decision fights stay as the game has them.
 - **In a co-op battle** the game that runs it decides, and everyone in the battle fights the same raised boss.
-- **HP bars:** in battle the boss's bar across the top of the screen shows its HP, as in a Raid World; on the map its bar shows its full raid HP above it. *Mod Config → MGQ Online SP* turns either bar off for you (see [Single player](GUIDE.md#single-player)).
+- **HP bars:** in battle the boss's bar across the top of the screen shows its HP, as in a Raid World; on the map its bar shows its full raid HP above it. *Options → Mods → MGQ Online SP* turns either bar off for you (see [Single player](GUIDE.md#single-player)).
 - **Changing it:** the creator or an admin can tick or untick it later; everyone in the world reads that the story bosses changed, and it counts from their next boss fight.
