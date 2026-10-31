@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-31: Worded what the player reads plainly, leaving causes and internals to the log
+//                            - Used the join code, which moved beside the world code
 //      Paulinchen  2026-10-30: Left installing a world's mods to the Mod Framework
 //      Paulinchen  2026-10-28: Refused seats out of range and squad rules that do not parse before asking the relay
 //      Paulinchen  2026-10-23: Told the DLL itself what the last action handed back
@@ -57,7 +58,6 @@ using System.Text;
 using System.Threading;
 using MGQOnline.Game.Squads;
 using MGQParadox.Multiplayer.Mods;
-using MGQParadox.Multiplayer.Network.Pvp;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
 

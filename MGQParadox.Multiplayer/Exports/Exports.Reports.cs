@@ -2,7 +2,7 @@
 //  Exports.Reports.cs
 //
 //  Changelog:
-//      Paulinchen  2026-10-31: Kept nothing that reaches mp_report_snap, which no script calls
+//      Paulinchen  2026-10-31: Dropped mp_report_snap, which no script calls
 //      Paulinchen  2026-10-11: Created
 //
 //----------------------------------------------------------------
@@ -20,18 +20,6 @@ namespace MGQParadox.Multiplayer;
 /// </summary>
 internal static unsafe partial class Exports
 {
-    /// <summary>
-    /// Kept for the scripts' list of exports until it goes with the other old exports: the
-    /// screenshot reaches the report through the bridge's <c>ui.report.snap</c>, and nothing keeps
-    /// what comes here.
-    /// </summary>
-    /// <param name="pixels">The screen's pixels, unread.</param>
-    /// <param name="width">The width in pixels, unread.</param>
-    /// <param name="height">The height in pixels, unread.</param>
-    /// <returns>0, as nothing is kept.</returns>
-    [UnmanagedCallersOnly(EntryPoint = "mp_report_snap", CallConvs = [typeof(CallConvStdcall)])]
-    public static int ReportSnap(byte* pixels, int width, int height) => 0;
-
     /// <summary>
     /// Forgets the pending screenshot.
     /// </summary>

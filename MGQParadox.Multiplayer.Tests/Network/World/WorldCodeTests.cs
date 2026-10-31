@@ -2,12 +2,12 @@
 //  WorldCodeTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Used the join code, which moved beside the world code, and checked the world room alone
 //      Paulinchen  2026-10-30: Cut the texts that are no world codes to one of each rule
 //      Paulinchen  2026-09-29: Created
 //
 //----------------------------------------------------------------
 
-using MGQParadox.Multiplayer.Network.Pvp;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.World;
 
@@ -68,12 +68,14 @@ public sealed class WorldCodeTests
     }
 
     /// <summary>
-    /// Asserts that a world's room differs from the PvP room of the same token.
+    /// Asserts that a world's room is the same for every game of the world, differs between worlds,
+    /// and has the form the relay accepts.
     /// </summary>
     [Fact]
-    public void WorldRoom_DiffersFromTheRoomOfTheSameToken()
+    public void WorldRoom_IsStablePerToken()
     {
         Assert.Matches("^[0-9a-f]{32}$", Relays.WorldRoomOf(Token));
-        Assert.NotEqual(Relays.RoomOf(Token), Relays.WorldRoomOf(Token));
+        Assert.Equal(Relays.WorldRoomOf(Token), Relays.WorldRoomOf(Token));
+        Assert.NotEqual(Relays.WorldRoomOf(Token), Relays.WorldRoomOf("zzzzzzzzzzzzzzzz"));
     }
 }

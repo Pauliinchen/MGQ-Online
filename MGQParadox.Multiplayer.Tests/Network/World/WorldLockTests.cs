@@ -2,6 +2,7 @@
 //  WorldLockTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Used the join code, which moved beside the world code
 //      Paulinchen  2026-10-08: Opened a lock made with .NET's PBKDF2
 //      Paulinchen  2026-09-29: Created
 //
@@ -10,7 +11,6 @@
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using MGQParadox.Multiplayer.Network.Pvp;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.World;
 

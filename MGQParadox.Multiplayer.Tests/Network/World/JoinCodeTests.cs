@@ -2,6 +2,7 @@
 //  JoinCodeTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Moved beside the world code's tests and dropped the checks of other versions' codes and the PvP relay room
 //      Paulinchen  2026-10-30: Cut the codes turned down to one of each rule and dropped the relay check RelaysTests holds
 //      Paulinchen  2026-09-29: Covered the join code of token and relay only and codes of other versions
 //                            - Covered version 2 of the join code
@@ -9,13 +10,12 @@
 //
 //----------------------------------------------------------------
 
-using MGQParadox.Multiplayer.Network.Pvp;
-using MGQParadox.Multiplayer.Network.Relay;
+using MGQParadox.Multiplayer.Network.World;
 
-namespace MGQParadox.Multiplayer.Tests.Network.Pvp;
+namespace MGQParadox.Multiplayer.Tests.Network.World;
 
 /// <summary>
-/// Covers the join code a guest needs to reach a hosting game, and the relay room it leads to.
+/// Covers the join code a world code starts with: the world's token and its relay.
 /// </summary>
 public sealed class JoinCodeTests
 {
@@ -61,19 +61,6 @@ public sealed class JoinCodeTests
         Assert.NotNull(JoinCode.Parse("  mgqmp2;abcdefghjkmnpqrs;r1\r\n"));
 
     /// <summary>
-    /// Asserts that codes of every version count as join codes, and nothing else does.
-    /// </summary>
-    [Fact]
-    public void IsOfAnyVersion_KnowsEveryVersion()
-    {
-        Assert.True(JoinCode.IsOfAnyVersion("mgqmp2;abcdefghjkmnpqrs;r1"));
-        Assert.True(JoinCode.IsOfAnyVersion(" mgqmp1;abcdefghjk;47625;203.0.113.7"));
-        Assert.True(JoinCode.IsOfAnyVersion("mgqmp9;anything"));
-        Assert.False(JoinCode.IsOfAnyVersion("hello"));
-        Assert.False(JoinCode.IsOfAnyVersion(null));
-    }
-
-    /// <summary>
     /// Asserts that new tokens read as tokens and differ.
     /// </summary>
     [Fact]
@@ -84,19 +71,5 @@ public sealed class JoinCodeTests
 
         Assert.NotEqual(first, second);
         Assert.NotNull(JoinCode.Parse($"mgqmp2;{first};r1"));
-    }
-
-    /// <summary>
-    /// Asserts that a token's relay room is the same on both sides, differs between tokens, and
-    /// has the form the relay accepts.
-    /// </summary>
-    [Fact]
-    public void RoomOf_IsStablePerToken()
-    {
-        var room = Relays.RoomOf(Token);
-
-        Assert.Equal(room, Relays.RoomOf(Token));
-        Assert.NotEqual(room, Relays.RoomOf("zzzzzzzzzzzzzzzz"));
-        Assert.Matches("^[0-9a-f]{32}$", room);
     }
 }

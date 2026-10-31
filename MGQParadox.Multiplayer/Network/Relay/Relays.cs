@@ -2,6 +2,7 @@
 //  Relays.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Dropped the PvP relay room
 //      Paulinchen  2026-10-15: Moved r1 to the relay on our own server
 //      Paulinchen  2026-10-12: Named the text for a game too old for the relay and read its refusal reason for both kinds of room
 //      Paulinchen  2026-10-06: Pointed every relay at the address in MGQMP_RELAY when it is set
@@ -21,10 +22,10 @@ using System.Text;
 namespace MGQParadox.Multiplayer.Network.Relay;
 
 /// <summary>
-/// The relays the games meet at, which pass their frames on, by the id a join code names them with.
+/// The relays the games meet at, which pass their frames on, by the id a world code names them with.
 /// </summary>
 /// <remarks>
-/// A join code or world code names its relay by id, so an id keeps meaning one relay for every
+/// A world code names its relay by id, so an id keeps meaning one relay for every
 /// version that may still play; r1 moved to its new address only once the old one turned every
 /// version before away.
 /// </remarks>
@@ -44,11 +45,6 @@ internal static class Relays
     /// The response header the relay names why it turned a game away in.
     /// </summary>
     private const string RefusalHeader = "X-MGQ-Refusal";
-
-    /// <summary>
-    /// Separates the room id from anything else ever derived from the same token.
-    /// </summary>
-    private static readonly byte[] RoomInfo = "mgqmp relay room v1"u8.ToArray();
 
     /// <summary>
     /// Separates the world room id from anything else ever derived from the same token.
@@ -105,17 +101,6 @@ internal static class Relays
     /// <returns>The code or text, <see langword="null"/> for none.</returns>
     public static string? RefusalOf(ClientWebSocket socket) =>
         socket.HttpResponseHeaders?.FirstOrDefault(header => string.Equals(header.Key, RefusalHeader, StringComparison.OrdinalIgnoreCase)).Value?.FirstOrDefault();
-
-    /// <summary>
-    /// Names the relay room of a join code.
-    /// </summary>
-    /// <remarks>
-    /// Derived from the token apart from the frames' key, so the relay can learn neither the token
-    /// nor the key from it.
-    /// </remarks>
-    /// <param name="token">The join code's token.</param>
-    /// <returns>32 lowercase hexadecimal characters.</returns>
-    public static string RoomOf(string token) => HexOf(token, RoomInfo);
 
     /// <summary>
     /// Names the world room of a world's token.

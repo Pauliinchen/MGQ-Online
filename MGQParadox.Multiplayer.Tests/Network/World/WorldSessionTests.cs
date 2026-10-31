@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-31: Covered the world's mod settings the relay tells
+//                            - Used the join code, which moved beside the world code
 //      Paulinchen  2026-10-31: Expected the plainer texts the player reads
 //      Paulinchen  2026-10-30: Covered the world room refusals in one theory
 //      Paulinchen  2026-10-13: Covered the relay's word of a Classic world's new raid bosses setting
@@ -30,7 +31,6 @@ using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using MGQParadox.Multiplayer.Network.Pvp;
 using MGQParadox.Multiplayer.Network.Relay;
 using MGQParadox.Multiplayer.Network.Transport;
 using MGQParadox.Multiplayer.Network.World;

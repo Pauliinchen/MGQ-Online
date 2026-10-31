@@ -2,6 +2,7 @@
 #  screen_support.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Stopped calling the deleted mp_dir_refresh as the screen opens
 #      Paulinchen  2026-10-30: Turned off none of the player's mods, without the parking
 #      Paulinchen  2026-10-23: Fetched the list as the DLL's screen does when it opens
 #                            - Created
@@ -274,7 +275,7 @@ end
 #
 # @param fake [FakeBridge] The bridge.
 def answer_screen(fake)
-  fake.answer("screen.open") { $screen_open = true; MGQ_Multiplayer::Link.function('mp_dir_refresh').call; nil }
+  fake.answer("screen.open") { $screen_open = true; nil }
   fake.answer("screen.close") { $screen_open = false; nil }
   fake.answer("screen.texts") { SCREEN_CASES["texts"].reject { |name, _| name == "mod_states" } }
   fake.answer("screen.list") { stand_in_screen_list }

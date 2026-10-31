@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-31: Loaded story_replay.rbx after story_keys.rbx
+#                            - Dropped the PvP link, the trade, raid boss report and directory refresh exports and mp_report_snap, which no script calls
+#                            - Stopped handing the PvP link's state to the Discord mod
 #      Paulinchen  2026-10-30: Loaded the world screens under the Mod Framework only as the player picks Multiplayer, a Discord invite or a restart opens them
 #                            - Took a Discord invite from the game again at the title after the restart
 #                            - Opened the world screen and went on from a game kept for a restart after the Mod Framework started the game again
@@ -209,7 +211,7 @@ module MGQ_Multiplayer
   # File name of the DLL inside the mod folder.
   DLL = "Multiplayer.dll"
 
-  # Frames between two hand-overs to the Discord mod, half a second at 60 frames per second.
+  # Frames between two looks for a Discord invite, half a second at 60 frames per second.
   DISCORD_FRAMES = 30
 
   # Longest player name shown.
@@ -976,19 +978,8 @@ module MGQ_Multiplayer
     end
   end
 
-  # Patch/Multiplayer/Multiplayer.dll's functions: hosting, joining, the first exchange of what each
-  # game hands over, and the messages that follow, all running on threads of the DLL's own.
+  # Patch/Multiplayer/Multiplayer.dll's functions outside the bridge, each loaded once by name.
   module Link
-    # Bytes the DLL may write the connection's state into at first, a PvP battle's team included.
-    # A larger state asks for a larger buffer.
-    STATE_SIZE = 70_000
-
-    # Bytes the DLL may write the connection's state without the friend's team into at first.
-    STATUS_SIZE = 1_024
-
-    # Bytes the DLL may write a message into at first. A larger message asks for a larger buffer.
-    MESSAGE_SIZE = 4_096
-
     # The arguments of an export that writes a text into a buffer, see read: the buffer and its size.
     READ_ARGUMENTS = 'pl'
 
@@ -1004,31 +995,16 @@ module MGQ_Multiplayer
       'mp_keep_running' => 'v',
       'mp_check_for_update' => 'v',
       'mp_newer_version' => READ_ARGUMENTS,
-      'mp_set_player_name' => 'p',
       'mp_player_id' => READ_ARGUMENTS,
       'mp_update_rollback' => 'v',
       'mp_dev_build' => 'v',
       'mp_memory_usage' => READ_ARGUMENTS,
 
-      # The keyboard, the clipboard and the mouse wheel.
+      # The keyboard and the mouse wheel.
       'mp_typing' => 'l',
-      'mp_copy_code' => 'v',
       'mp_mouse_wheel' => 'v',
 
-      # The PvP connection.
-      'mp_host' => 'pp',
-      'mp_join_invite' => 'pp',
-      'mp_join_clipboard' => 'pp',
-      'mp_receive_invite' => 'p',
-      'mp_cancel' => 'v',
-      'mp_send' => 'p',
-      'mp_receive' => READ_ARGUMENTS,
-      'mp_state' => READ_ARGUMENTS,
-      'mp_status' => READ_ARGUMENTS,
-
       # The world directory.
-      'mp_dir_watch' => 'p',
-      'mp_dir_refresh' => 'v',
       'mp_dir_open' => 'p',
       'mp_dir_list' => READ_ARGUMENTS,
 
@@ -1037,16 +1013,6 @@ module MGQ_Multiplayer
       'mp_world_close' => 'v',
       'mp_world_send' => 'lp',
 
-      # The mods a world that turns other mods off does not name, parked outside Patch.
-
-      # Trades.
-      'mp_trade_commit' => 'pppp',
-      'mp_trade_cancel' => 'pp',
-      'mp_trade_state' => READ_ARGUMENTS,
-      'mp_trade_done' => 'pp',
-      'mp_trade_pending' => 'p',
-      'mp_trade_pending_list' => READ_ARGUMENTS,
-
       # A Raid World's shared companions at the relay.
       'mp_raid_story_fetch' => 'p',
       'mp_raid_story_headers' => READ_ARGUMENTS,
@@ -1054,8 +1020,6 @@ module MGQ_Multiplayer
 
       # A Raid World's boss pools at the relay.
       'mp_raid_bosses_fetch' => 'p',
-      'mp_raid_boss_report' => 'pppp',
-      'mp_raid_boss_state' => READ_ARGUMENTS,
 
       # A co-op battle the battle server hosts, and its battle channel.
       'mp_battle_serve' => 'pppp',
@@ -1066,7 +1030,6 @@ module MGQ_Multiplayer
       'mp_battle_close' => 'v',
 
       # Bug reports.
-      'mp_report_snap' => 'pll',
       'mp_report_drop_snap' => 'v',
       'mp_report_send' => 'ppppl',
       'mp_report_state' => READ_ARGUMENTS,
@@ -1082,50 +1045,6 @@ module MGQ_Multiplayer
     # @return [Boolean] Whether the game keeps running.
     def self.keep_running
       function('mp_keep_running').call == 1
-    end
-
-    # Starts hosting.
-    #
-    # @param game [String] What tells this game version's data from another's.
-    # @param payload [String] What the friend gets, such as the player's team.
-    def self.host(game, payload)
-      Discord.share_player_name
-      Log.write("PvP: hosting, handing over #{payload.bytesize} bytes")
-      function('mp_host').call(game + "\0", payload + "\0")
-    end
-
-    # Joins the host of the invite that is waiting.
-    #
-    # @param game [String] What tells this game version's data from another's.
-    # @param payload [String] What the friend gets, such as the player's team.
-    def self.join_invite(game, payload)
-      Discord.share_player_name
-      Log.write("PvP: joining the host of the waiting invite, handing over #{payload.bytesize} bytes")
-      function('mp_join_invite').call(game + "\0", payload + "\0")
-    end
-
-    # Joins the host whose join code is on the clipboard.
-    #
-    # @param game [String] What tells this game version's data from another's.
-    # @param payload [String] What the friend gets, such as the player's team.
-    def self.join_clipboard(game, payload)
-      Discord.share_player_name
-      Log.write("PvP: joining the host whose join code is on the clipboard, handing over #{payload.bytesize} bytes")
-      function('mp_join_clipboard').call(game + "\0", payload + "\0")
-    end
-
-    # Keeps the join code of an invite the player accepted in Discord, until they join with it.
-    #
-    # @param join_code [String] The join code.
-    def self.receive_invite(join_code)
-      function('mp_receive_invite').call(join_code + "\0")
-    end
-
-    # Tells the DLL the player's name, which the friend sees.
-    #
-    # @param name [String] The name.
-    def self.set_player_name(name)
-      function('mp_set_player_name').call(name + "\0")
     end
 
     # Reads the id everyone sees for the player, as the world directory lists it.
@@ -1146,59 +1065,10 @@ module MGQ_Multiplayer
       function('mp_typing').call(on ? 1 : 0)
     end
 
-    # Stops hosting or joining, closes the link, forgets what arrived, and turns down a waiting invite
-    # unless a team had arrived.
-    def self.cancel
-      Log.write("PvP: cancelled hosting or joining, the link closes")
-      function('mp_cancel').call
-    end
-
-    # Puts the join code on the clipboard again.
-    #
-    # @return [Boolean] Whether the clipboard holds the join code again.
-    def self.copy_code
-      function('mp_copy_code').call == 1
-    end
-
-    # Sends a message to the friend.
-    #
-    # @param text [String] The message.
-    # @return [Boolean] false without an open link, or when the message is too long.
-    def self.post(text)
-      function('mp_send').call(text + "\0") == 1
-    end
-
-    # Takes the oldest message from the friend.
-    #
-    # @return [String, nil] The message, nil while none waits.
-    def self.next_message
-      text = read('mp_receive', MESSAGE_SIZE)
-      text.empty? ? nil : text.force_encoding("UTF-8")
-    end
-
-    # Reads how the connection stands.
-    #
-    # @return [Hash] "state" ("idle", "hosting", "joining", "received" or "failed") and whichever
-    #   of "code", "invite", "error", "opponent", "link" ("open", "closed" or "dropped"), "role"
-    #   ("host" or "guest") and "party" apply, what the friend handed over under :payload.
-    def self.state
-      text = read('mp_state', STATE_SIZE)
-      text.empty? ? { "state" => "idle", :payload => "" } : parse(text)
-    end
-
-    # Reads how the connection stands without what the friend handed over, cheap enough for checks
-    # many times a second.
-    #
-    # @return [Hash] See state, with an empty :payload.
-    def self.status
-      text = read('mp_status', STATUS_SIZE)
-      text.empty? ? { "state" => "idle", :payload => "" } : parse(text)
-    end
-
-    # Reads the DLL's description of the connection: key=value lines, an empty line, the payload.
+    # Reads a description an export of the DLL writes: key=value lines, an empty line, the payload.
     #
     # @param text [String] The description.
-    # @return [Hash] See state.
+    # @return [Hash] The values by key, the payload under :payload.
     def self.parse(text)
       head, payload = text.force_encoding("UTF-8").split("\n\n", 2)
       state = { :payload => payload.to_s }
@@ -2047,22 +1917,20 @@ module MGQ_Multiplayer
     end
   end
 
-  # Hands the connection to the Discord mod through MGQ_Discord::Bridge when it is installed, and
-  # takes the invites the player accepted and the player's name from it. Everything here does
-  # nothing without it, and the join code on the clipboard still works.
+  # Takes the world invites the player accepted and the player's name from the Discord mod through
+  # MGQ_Discord::Bridge when it is installed. Everything here does nothing without it.
   module Discord
     # The bridge version this script speaks, see MGQ_Discord::Bridge.
     BRIDGE_VERSION = 1
 
-    # Tells whether the Discord mod can take the connection.
+    # Tells whether the Discord mod can be asked.
     #
     # @return [Boolean] Whether the Discord mod is installed and speaks this script's bridge version.
     def self.available?
       defined?(MGQ_Discord::Bridge) && MGQ_Discord::Bridge::VERSION == BRIDGE_VERSION && MGQ_Discord::Bridge.available? ? true : false
     end
 
-    # Hands the connection to the Discord mod when it changed, and takes an invite the player
-    # accepted in Discord: into a world, or to a PvP battle. Called every frame, acts every
+    # Takes an invite into a world the player accepted in Discord. Called every frame, acts every
     # DISCORD_FRAMES.
     def self.tick
       @frames = (@frames || 0) + 1
@@ -2076,15 +1944,13 @@ module MGQ_Multiplayer
         # An invite into a world opens the world screen, which may not have loaded yet at the title.
         Stages.load_world
         world = defined?(MGQ_MpWorld) && MGQ_MpWorld::Invite.receive(invite)
-        Link.receive_invite(invite) unless world
-        Log.write(world ? "took a Discord invite into a world" : "took a Discord invite to a PvP battle")
+        Log.write(world ? "took a Discord invite into a world" : "dropped a Discord invite that names no world")
       end
-      report(Link.status)
     rescue => e
-      Log.write("discord hand-over failed: #{e.class}: #{e.message}")
+      Log.write("taking a Discord invite failed: #{e.class}: #{e.message}")
     end
 
-    # Tells whether the Discord mod can take the connection, logging when that changes.
+    # Tells whether the Discord mod can be asked, logging when that changes.
     #
     # @return [Boolean] Whether it can, see available?.
     def self.bridge_found?
@@ -2097,11 +1963,11 @@ module MGQ_Multiplayer
 
     # Describes how the Discord mod stands, for the log.
     #
-    # @param found [Boolean] Whether it can take the connection.
+    # @param found [Boolean] Whether it can be asked.
     # @return [String] The description.
     def self.bridge_status(found)
       return "Discord mod found, bridge version #{BRIDGE_VERSION}" if found
-      return "Discord mod not installed, the join code on the clipboard still works" unless defined?(MGQ_Discord::Bridge)
+      return "Discord mod not installed" unless defined?(MGQ_Discord::Bridge)
 
       version = MGQ_Discord::Bridge::VERSION rescue nil
       return "Discord mod speaks bridge version #{version.inspect}, this mod #{BRIDGE_VERSION}: not used" if version != BRIDGE_VERSION
@@ -2111,15 +1977,6 @@ module MGQ_Multiplayer
       "Discord mod could not be asked"
     end
 
-    # Tells the DLL the player's name, which the friend sees: the one on Discord, or the one the
-    # player chose for Multiplayer.
-    def self.share_player_name
-      name = Player.name
-      Link.set_player_name(name) if name
-    rescue => e
-      Log.write("player name failed: #{e.class}: #{e.message}")
-    end
-
     # Reads the player's name on Discord.
     #
     # @return [String, nil] The name, nil without the Discord mod or until Discord told it.
@@ -2127,31 +1984,6 @@ module MGQ_Multiplayer
       available? ? MGQ_Discord::Bridge.player_name : nil
     rescue
       nil
-    end
-
-    # Hands the connection to the Discord mod, unless it did not change since the last time.
-    #
-    # @param state [Hash] How the connection stands, see Link.status.
-    def self.report(state)
-      party = state["party"]
-      current =
-        if party && state["state"] == "hosting" && state["code"]
-          [:hosting, party, state["code"]]
-        elsif party && state["link"] == "open"
-          [:connected, party, MGQ_Multiplayer.clean(state["opponent"])]
-        else
-          [:idle]
-        end
-      return if current == @reported
-
-      @reported = current
-      kind, party, detail = current
-      Log.write(kind == :idle ? "told Discord: idle" : "told Discord: #{kind}, party #{party.to_s[0, 8]}#{kind == :connected ? " with #{detail}" : ''}")
-      case kind
-      when :hosting then MGQ_Discord::Bridge.hosting(party, detail)
-      when :connected then MGQ_Discord::Bridge.connected(party, detail)
-      else MGQ_Discord::Bridge.idle
-      end
     end
   end
 end

@@ -2,6 +2,7 @@
 //  TestRelay.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Dropped the PvP rooms, which no game connects to any more
 //      Paulinchen  2026-10-30: Turned only PvP rooms away with UpdateRefusal, world rooms with WorldRoomRefusal
 //      Paulinchen  2026-10-23: Kept the story tracks' frames games send
 //      Paulinchen  2026-10-22: Listed worlds without their mods for newer games once a test says so, and handed out one world with them
@@ -80,19 +81,12 @@ namespace MGQParadox.Multiplayer.Tests;
 
 /// <summary>
 /// A relay inside the test process, following the protocol of Relay/README.md as far as the tests
-/// need: one host and one guest per room, <c>paired</c> once both are in, <c>ping</c> answered with
-/// <c>pong</c>, binary messages passed on, and the other side closed when one leaves; a world
-/// directory; trades between its players; and world rooms that seat the directory's players, tell
+/// need: a world directory; trades between its players; and world rooms that seat the directory's players, tell
 /// who comes and goes, and pass messages on with the sender's seat in front. A peer that sends
 /// more messages than the relay keeps is closed with 4003, as there.
 /// </summary>
 internal sealed partial class TestRelay : IDisposable
 {
-    /// <summary>
-    /// The close code the relay ends the other side with when one leaves.
-    /// </summary>
-    private const int PeerLeft = 4006;
-
     /// <summary>
     /// The close code of a player the creator removed, and of a connection the same player replaced.
     /// </summary>
@@ -147,11 +141,6 @@ internal sealed partial class TestRelay : IDisposable
     /// Guards the rooms.
     /// </summary>
     private readonly object _gate = new();
-
-    /// <summary>
-    /// The peers of each room, by role.
-    /// </summary>
-    private readonly Dictionary<string, Dictionary<string, Peer?>> _rooms = new();
 
     /// <summary>
     /// The trades by id.
@@ -217,12 +206,6 @@ internal sealed partial class TestRelay : IDisposable
     public TaskCompletionSource? WorldUpgradeHold { get; set; }
 
     /// <summary>
-    /// Turns every PvP room request away with 426 once set, as the relay does a game too old for it,
-    /// naming this text in X-MGQ-Refusal unless it is empty.
-    /// </summary>
-    public string? UpdateRefusal { get; set; }
-
-    /// <summary>
     /// Turns every world room request away with this status, naming the code in X-MGQ-Refusal unless
     /// it is <see langword="null"/>, as the relay does a game too old for it with 400 and "update", and
     /// an older or self-hosted relay may otherwise.
@@ -258,20 +241,6 @@ internal sealed partial class TestRelay : IDisposable
     /// The address path and the version header of every request, in the order they arrived.
     /// </summary>
     public ConcurrentQueue<(string Path, string? Version)> Versions { get; } = new();
-
-    /// <summary>
-    /// How many peers the relay holds in all its rooms.
-    /// </summary>
-    public int Peers
-    {
-        get
-        {
-            lock (_gate)
-            {
-                return _rooms.Values.Sum(room => room.Values.Count(peer => peer != null));
-            }
-        }
-    }
 
     /// <summary>
     /// How many trades the relay keeps.
@@ -410,25 +379,6 @@ internal sealed partial class TestRelay : IDisposable
         }
     }
 
-    /// <summary>
-    /// Closes every room's peers with a close code, as the relay closes a host that waited alone too long.
-    /// </summary>
-    /// <param name="code">The close code.</param>
-    public void CloseRooms(int code)
-    {
-        Peer[] peers;
-
-        lock (_gate)
-        {
-            peers = _rooms.Values.SelectMany(room => room.Values).OfType<Peer>().ToArray();
-        }
-
-        foreach (var peer in peers)
-        {
-            peer.CloseAsync(code).Wait();
-        }
-    }
-
     /// <inheritdoc />
     public void Dispose()
     {
@@ -437,7 +387,7 @@ internal sealed partial class TestRelay : IDisposable
 
         lock (_gate)
         {
-            connected = _rooms.Values.SelectMany(room => room.Values).Concat(_worlds.Values.SelectMany(seats => seats.Values))
+            connected = _worlds.Values.SelectMany(seats => seats.Values)
                 .Concat(_battles.Values.SelectMany(battle => battle.Peers.Values)).OfType<Peer>().ToArray();
         }
 
@@ -485,7 +435,7 @@ internal sealed partial class TestRelay : IDisposable
     }
 
     /// <summary>
-    /// Lets a peer into its room and passes its messages on until it leaves.
+    /// Answers a request by its path, and turns away one that matches none.
     /// </summary>
     /// <param name="context">The request.</param>
     /// <returns>Completes once the peer left.</returns>
@@ -547,90 +497,13 @@ internal sealed partial class TestRelay : IDisposable
             return;
         }
 
-        if (context.Request.IsWebSocketRequest && parts is [_, "room", _] && UpdateRefusal is { } outdated)
-        {
-            if (outdated.Length > 0)
-            {
-                context.Response.Headers["X-MGQ-Refusal"] = outdated;
-            }
-
-            Refuse(context, 426);
-            return;
-        }
-
         if (context.Request.IsWebSocketRequest && parts is [_, "world", _])
         {
             await ServeWorldAsync(context, parts[2]);
             return;
         }
 
-        var role = context.Request.QueryString["role"];
-
-        if (!context.Request.IsWebSocketRequest || parts.Length != 3 || role is not ("host" or "guest"))
-        {
-            Refuse(context, 400);
-            return;
-        }
-
-        var roomId = parts[2];
-
-        lock (_gate)
-        {
-            var room = _rooms.TryGetValue(roomId, out var existing) ? existing : _rooms[roomId] = new Dictionary<string, Peer?>();
-
-            if (room.ContainsKey(role))
-            {
-                Refuse(context, 409);
-                return;
-            }
-
-            // Held while the handshake runs, so a second peer of the role is refused meanwhile.
-            room[role] = null;
-        }
-
-        var peer = new Peer((await context.AcceptWebSocketAsync(null)).WebSocket);
-        Peer? other;
-
-        lock (_gate)
-        {
-            var room = _rooms[roomId];
-            room[role] = peer;
-            other = room.Where(entry => entry.Key != role).Select(entry => entry.Value).FirstOrDefault();
-        }
-
-        if (other != null)
-        {
-            await peer.SendAsync("paired"u8.ToArray(), WebSocketMessageType.Text);
-            await other.SendAsync("paired"u8.ToArray(), WebSocketMessageType.Text);
-        }
-
-        try
-        {
-            while (await ReadAsync(peer.Socket) is { } message)
-            {
-                if (!await TakeMessageAsync(peer))
-                {
-                    break;
-                }
-
-                if (message.Type == WebSocketMessageType.Text)
-                {
-                    await peer.SendAsync("pong"u8.ToArray(), WebSocketMessageType.Text);
-                }
-                else if (OtherOf(roomId, role) is { } partner)
-                {
-                    await partner.SendAsync(message.Data, WebSocketMessageType.Binary);
-                }
-            }
-        }
-        catch
-        {
-            // A cut connection ends the peer like a closed one.
-        }
-        finally
-        {
-            Leave(roomId, role);
-        }
+        Refuse(context, 400);
     }
 
 /// <summary>
@@ -1759,46 +1632,6 @@ private async Task ServeModsAsync(HttpListenerContext context, string[] parts)
     /// <param name="text">The text.</param>
     /// <returns>64 lowercase hexadecimal characters.</returns>
     private static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
-
-    /// <summary>
-    /// Finds the other peer of a room.
-    /// </summary>
-    /// <param name="roomId">The room.</param>
-    /// <param name="role">The role of the peer asking.</param>
-    /// <returns>The other peer, or <see langword="null"/> while there is none.</returns>
-    private Peer? OtherOf(string roomId, string role)
-    {
-        lock (_gate)
-        {
-            return _rooms.TryGetValue(roomId, out var room) ? room.Where(entry => entry.Key != role).Select(entry => entry.Value).FirstOrDefault() : null;
-        }
-    }
-
-    /// <summary>
-    /// Takes a peer out of its room and closes the other one.
-    /// </summary>
-    /// <param name="roomId">The room.</param>
-    /// <param name="role">The leaving peer's role.</param>
-    private void Leave(string roomId, string role)
-    {
-        Peer? other;
-
-        lock (_gate)
-        {
-            other = OtherOf(roomId, role);
-            _rooms[roomId].Remove(role);
-
-            if (_rooms[roomId].Count == 0)
-            {
-                _rooms.Remove(roomId);
-            }
-        }
-
-        if (other != null)
-        {
-            _ = other.Socket.CloseOutputAsync((WebSocketCloseStatus)PeerLeft, "the other side left", CancellationToken.None);
-        }
-    }
 
     /// <summary>
     /// Reads one whole message.

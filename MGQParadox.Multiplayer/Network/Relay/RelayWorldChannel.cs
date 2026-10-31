@@ -2,6 +2,7 @@
 //  RelayWorldChannel.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Named the longest frame itself, since the PvP frame channel that named it is gone
 //      Paulinchen  2026-10-15: Connected to the channel of a battle the battle server hosts
 //      Paulinchen  2026-10-12: Gave up connecting at once when told to stop
 //                            - Read why the relay turned the game away through Relays
@@ -22,7 +23,6 @@ using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
-using MGQParadox.Multiplayer.Network.Transport;
 using MGQParadox.Multiplayer.Network.World;
 
 namespace MGQParadox.Multiplayer.Network.Relay;
@@ -42,9 +42,15 @@ internal sealed class RelayWorldChannel : IDisposable
     public const int Everyone = 255;
 
     /// <summary>
+    /// Longest frame a world room carries. Four late-game builds, with every skill, ability and
+    /// piece of enchanted equipment, take about 35 KB.
+    /// </summary>
+    public const int MaxFrameBytes = 256 * 1024;
+
+    /// <summary>
     /// Longest message the relay passes on, a frame and its seat.
     /// </summary>
-    public const int MaxMessageBytes = IFrameChannel.MaxFrameBytes + 1;
+    public const int MaxMessageBytes = MaxFrameBytes + 1;
 
     /// <summary>
     /// The relay's answer to a ping.

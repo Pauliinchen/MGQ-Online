@@ -2,6 +2,7 @@
 //  VersionHeaderTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Dropped the PvP room, which no game connects to any more
 //      Paulinchen  2026-10-30: Checked the directory and both rooms in one test and dropped the check of the build constant
 //      Paulinchen  2026-10-12: Created
 //
@@ -27,7 +28,7 @@ public sealed class VersionHeaderTests
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(10);
 
     /// <summary>
-    /// Asserts that the directory requests and the world and PvP room connections name the version of this game.
+    /// Asserts that the directory requests and the world room connection name the version of this game.
     /// </summary>
     [Fact]
     public void RelayRequests_NameTheVersion()
@@ -37,11 +38,10 @@ public sealed class VersionHeaderTests
         var token = WorldCode.Parse(WorldDirectoryTests.Act(creator, directory => directory.Create("Iliasburg Crew", "secret", 4, false, false, []))["code"])!.Token;
         WorldDirectoryTests.List(creator);
         using var world = RelayWorldChannel.Connect(relay.Address, Relays.WorldRoomOf(token), WorldDirectoryTests.PlayerKey(7), "Guest", WorldKeys.AuthKeyOf(token), Patience, CancellationToken.None, out _, out _);
-        using var pvp = RelayFrameChannel.Connect(relay.Address, Relays.RoomOf("abcdefghjk"), host: true, Patience);
 
         Assert.NotNull(world);
         var requests = relay.Versions.ToArray();
-        Assert.All(new[] { "/v1/worlds", "/v1/world/", "/v1/room/" }, path => Assert.Contains(requests, request => request.Path.StartsWith(path, StringComparison.Ordinal)));
+        Assert.All(new[] { "/v1/worlds", "/v1/world/" }, path => Assert.Contains(requests, request => request.Path.StartsWith(path, StringComparison.Ordinal)));
         Assert.All(requests, request => Assert.Equal(UpdateCheck.ModVersion, request.Version));
     }
 }

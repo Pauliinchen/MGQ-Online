@@ -2,6 +2,7 @@
 //  WorldCode.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Used the join code, which moved beside the world code
 //      Paulinchen  2026-10-23: Named the seats a new world has unless its creator chooses otherwise
 //      Paulinchen  2026-10-06: Wrote hexadecimal in lowercase at once
 //      Paulinchen  2026-09-29: Created
@@ -12,7 +13,6 @@ using System;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using MGQParadox.Multiplayer.Network.Pvp;
 using MGQParadox.Multiplayer.Network.Relay;
 
 namespace MGQParadox.Multiplayer.Network.World;
@@ -21,8 +21,8 @@ namespace MGQParadox.Multiplayer.Network.World;
 /// What a player needs to enter a world: its token, the relay its games meet at and its number of seats.
 /// </summary>
 /// <remarks>
-/// Unlike a join code it never changes, so whoever holds it may enter the world for as long as the
-/// world exists. It travels like a join code, as Discord's join secret or through the clipboard.
+/// It never changes, so whoever holds it may enter the world for as long as the world exists. It
+/// travels as Discord's join secret or through the clipboard.
 /// </remarks>
 /// <param name="Token">The world's token, which the frames' keys and the world room come from.</param>
 /// <param name="Relay">The id of the relay the world's games meet at, see <see cref="Relays"/>.</param>

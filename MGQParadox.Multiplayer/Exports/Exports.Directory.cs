@@ -2,6 +2,7 @@
 //  Exports.Directory.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Dropped mp_dir_refresh and mp_dir_watch, which no script calls
 //      Paulinchen  2026-10-23: Dropped the exports of the requests and the actions the world screen now sends through the DLL's own steps
 //                            - Took the squad settings from MGQOnline.Game
 //      Paulinchen  2026-10-22: Added mp_dir_open and mp_dir_read
@@ -34,49 +35,10 @@ using MGQParadox.Multiplayer.Network.World;
 namespace MGQParadox.Multiplayer;
 
 /// <summary>
-/// The functions of the world directory: the list of worlds and the actions on them.
+/// The functions of the world directory: opening a world and reading the list of worlds.
 /// </summary>
 internal static unsafe partial class Exports
 {
-    /// <summary>
-    /// Fetches the world list again. Returns at once, the directory is asked on a thread of its own.
-    /// </summary>
-    /// <returns>1 when asked, 0 when it failed.</returns>
-    [UnmanagedCallersOnly(EntryPoint = "mp_dir_refresh", CallConvs = [typeof(CallConvStdcall)])]
-    public static int DirectoryRefresh()
-    {
-        try
-        {
-            WorldDirectory.Current.Refresh();
-            return 1;
-        }
-        catch (Exception ex)
-        {
-            Log.Write($"mp_dir_refresh failed: {ex}");
-            return 0;
-        }
-    }
-
-    /// <summary>
-    /// Sets the hidden worlds the list is asked for too, from the next <c>mp_dir_refresh</c> on.
-    /// </summary>
-    /// <param name="ids">The worlds' ids, UTF-8 and null-terminated, separated by commas; empty for none.</param>
-    /// <returns>1 when set, 0 when it failed.</returns>
-    [UnmanagedCallersOnly(EntryPoint = "mp_dir_watch", CallConvs = [typeof(CallConvStdcall)])]
-    public static int DirectoryWatch(byte* ids)
-    {
-        try
-        {
-            WorldDirectory.Current.Watch(Text(ids).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-            return 1;
-        }
-        catch (Exception ex)
-        {
-            Log.Write($"mp_dir_watch failed: {ex}");
-            return 0;
-        }
-    }
-
     /// <summary>
     /// Opens a world, whose mods, mod hashes and settings the list then carries, see
     /// <see cref="WorldDirectory.Open"/>. Returns at once; they are read on a thread of their own.

@@ -2,6 +2,7 @@
 #  online.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Dropped the stand-in for the deleted mp_raid_boss_report export
 #      Paulinchen  2026-10-30: Named the seats that came onto and left the battle channel in its state, as the DLL's state does
 #                            - Sent the reports of the core's outbox through the relay's connection
 #                            - Handed the relay's word of the boss pools and the server's own reports to the core's ledger
@@ -73,7 +74,6 @@ module Online
       when "mp_world_send" then ->(seat, text) { MGQ_MpBattlesServed.front_out(seat, text.chomp("\0")) ? 1 : 0 }
       # The starter's setup brings the pools, and the relay tells the server of each change.
       when "mp_raid_bosses_fetch" then ->(_world) { 1 }
-      when "mp_raid_boss_report" then ->(_world, key, battle, text) { @bridge && @bridge.report(key.chomp("\0"), battle.chomp("\0"), text.chomp("\0")) ? 1 : 0 }
       else unanswered(name)
       end
     end

@@ -2,6 +2,7 @@
 //  JoinCode.cs
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Moved beside the world code and dropped the check for codes of other versions, which only PvP joins made
 //      Paulinchen  2026-09-29: Named only the token and the relay
 //                            - Told a code of another mod version from no code at all
 //                            - Named the host's relay and lengthened the token
@@ -9,32 +10,23 @@
 //
 //----------------------------------------------------------------
 
-using System;
 using System.Linq;
 using System.Security.Cryptography;
 using MGQParadox.Multiplayer.Network.Relay;
 
-namespace MGQParadox.Multiplayer.Network.Pvp;
+namespace MGQParadox.Multiplayer.Network.World;
 
 /// <summary>
-/// What a guest needs to reach a hosting game: a one-time token and the relay the host waits at.
+/// The start of a world code (<see cref="WorldCode"/>): the world's token and the relay its room is at.
 /// </summary>
-/// <remarks>
-/// It travels as Discord's join secret or through the clipboard, so it is short plain text.
-/// </remarks>
-/// <param name="Token">The one-time token, which the frames' key and the relay room come from.</param>
-/// <param name="Relay">The id of the relay the host waits at, see <see cref="Relays"/>.</param>
+/// <param name="Token">The token, which the world's keys and its room come from.</param>
+/// <param name="Relay">The id of the relay the world's room is at, see <see cref="Relays"/>.</param>
 internal sealed record JoinCode(string Token, string Relay)
 {
     /// <summary>
     /// Starts every code, and changes whenever the exchange changes.
     /// </summary>
     public const string Prefix = "mgqmp2";
-
-    /// <summary>
-    /// Starts the codes of every version of the mod.
-    /// </summary>
-    private const string AnyVersionPrefix = "mgqmp";
 
     /// <summary>
     /// Separates the prefix, token and relay.
@@ -82,14 +74,6 @@ internal sealed record JoinCode(string Token, string Relay)
             ? new JoinCode(fields[1], fields[2])
             : null;
     }
-
-    /// <summary>
-    /// Reports whether a text looks like a join code of any version of the mod, this one included.
-    /// </summary>
-    /// <param name="text">The text.</param>
-    /// <returns><see langword="true"/> when it starts like one.</returns>
-    public static bool IsOfAnyVersion(string? text) =>
-        (text ?? string.Empty).TrimStart().StartsWith(AnyVersionPrefix, StringComparison.Ordinal);
 
     /// <summary>
     /// Reports whether a text could be a token <see cref="NewToken"/> made.

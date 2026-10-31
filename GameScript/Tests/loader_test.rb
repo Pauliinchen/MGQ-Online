@@ -2,6 +2,7 @@
 #  loader_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-10-31: Checked that a script calls every export of the table
 #      Paulinchen  2026-10-30: Checked the scripts of the first two stages and that a script loads once
 #                            - Checked that Multiplayer.rb holds ASCII only and logs and shows the errors of its own load
 #      Paulinchen  2026-10-28: Checked the freeze's load order without its deleted data script
@@ -102,6 +103,10 @@ calls = (Dir[File.join(SCRIPTS_DIR, "*.rbx")] + [File.expand_path("../Multiplaye
   File.read(file, encoding: "UTF-8").scan(/(function|read)\('(mp_[a-z_]+)'/)
 end.uniq
 check("every export the scripts call is in the table", calls.map { |_way, name| name }.uniq - table_names, [])
+named = (Dir[File.join(SCRIPTS_DIR, "*.rbx")] + [File.expand_path("../Multiplayer.rb", __dir__)]).flat_map do |file|
+  File.read(file, encoding: "UTF-8").sub(/    EXPORTS = \{.*?\n    \}\n/m, "").scan(/'(mp_[a-z_]+)'/).flatten
+end
+check("every export of the table is called by a script", table_names - named, [])
 # The game's Win32API refuses an export of more arguments, so the export could not be called at all.
 check("every export takes at most 16 arguments", DLL_EXPORTS.select { |_name, arguments| arguments.size > 16 }.keys, [])
 check("every export read into a buffer takes the buffer and its size",
