@@ -2,6 +2,7 @@
 #  story_keys_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Checked which commands run inside a story reset
 #      Paulinchen  2026-10-31: Kept a Classic leader's writes by the scopes of the reviewed list
 #                            - Checked that a run that changed a world key goes to its story's stream, and its entry to the world's or the party's story
 #      Paulinchen  2026-10-28: Checked that a Classic party's table is asked of the DLL with nothing of the scripts' own
@@ -14,9 +15,9 @@
 # up as the relay's tracks look keys up (fixtures/story/classes.json), and the one hook on the
 # game's writes: which writes a story records, with the event that wrote them, which it never
 # records (the multiplayer's own, a lost battle's defeat scene, another object's), one batch a
-# frame for the DLL, the writes before the mapping came, a Classic leader's writes, a Classic
-# party's table built anew once the chest flags came, and the stream a run that changed a world key
-# goes to with where its entry is handed.
+# frame for the DLL, the commands that run inside a story reset, the writes before the mapping
+# came, a Classic leader's writes, a Classic party's table built anew once the chest flags came, and
+# the stream a run that changed a world key goes to with where its entry is handed.
 
 require_relative "support"
 require_relative "story_support"
@@ -177,6 +178,23 @@ common.update
 keys.flush
 MGQ_Multiplayer::Bridge.frame
 check("the Final Chapter's reset of 1,885 writes goes as one batch", [staged("story.writes").size, staged("story.writes")[0].size, staged("story.writes")[0][0][2]], [1, 1885, "ce:154"])
+
+# A story reset is a list that writes a range of switches or variables at once, as the Final
+# Chapter's reset (common event 154) turns switches 2444 to 2484 off before it takes the route's key
+# items: its commands and those of a common event it calls run inside it. The Queen Harpy's page
+# (map 88, event 4), which writes single keys and adds to a range of variables, runs inside none.
+command = Struct.new(:code, :indent, :parameters)
+final = Game_Interpreter.new
+final.setup([command.new(121, 0, [2444, 2484, 1]), command.new(126, 0, [568, 1, 0, 1])], 0)
+called = Game_Interpreter.new
+called.setup([command.new(126, 0, [569, 1, 0, 1])], 0)
+harpy = Game_Interpreter.new
+harpy.setup([command.new(121, 0, [5, 5, 0]), command.new(122, 0, [10, 12, 1, 0, 1]), command.new(126, 0, [508, 1, 0, 1])], 4, 88)
+inside = []
+final.run { inside << keys.resetting? }
+final.run { called.run { inside << keys.resetting? } }
+harpy.run { inside << keys.resetting? }
+check("a command of a story reset, or of a common event it calls, runs inside it, the Queen Harpy's not", inside, [true, true, false])
 
 # A wait inside a command leaves the update with the command running: another interpreter's write
 # meanwhile names that one, the rest of the command its own.

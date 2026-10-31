@@ -2,6 +2,9 @@
 //  StoryMapping.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Read the whole world's option of a shared self switch's row
+//                            - Kept the found items' marks for the whole world, whatever the mapping's row of them says
+//                            - Kept the marks of the items used up for the whole world too
 //      Paulinchen  2026-10-31: Read the work option of a personal row
 //      Paulinchen  2026-10-28: Read the catch-up tables with the mapping
 //      Paulinchen  2026-10-23: Created
@@ -34,6 +37,16 @@ public static class StoryMapping
         ["chest"] = StoryClass.Chest,
         ["count"] = StoryClass.Kept | StoryClass.Count,
     };
+
+    /// <summary>
+    /// The rules of the found items' marks, the self switches of map 0 (world_catchup.rbx
+    /// FOUND_MAP): the found marks (letter F) and the marks of the items events used up, which the
+    /// whole world keeps in place of the mapping's rows, as the relay's <c>TrackRules</c> does.
+    /// </summary>
+    /// <remarks>
+    /// A relay seeded before the rule keeps a row <c>ss0.*.F</c> without <c>wholeWorld</c>, which comes before <c>ss0.*.*</c>.
+    /// </remarks>
+    private static readonly string[] FoundMarks = ["ss0.*.F", "ss0.*.*"];
 
     /// <summary>
     /// Reads the revision of an answer, which a request that named the revision this game holds
@@ -92,7 +105,14 @@ public static class StoryMapping
                 continue;
             }
 
-            selfRules[key] = On(row, "chest") ? StoryClass.Chest : Text(row, "share") == "shared" ? StoryClass.Kept : StoryClass.Personal;
+            selfRules[key] = On(row, "chest") ? StoryClass.Chest
+                : Text(row, "share") != "shared" ? StoryClass.Personal
+                : On(row, "wholeWorld") ? StoryClass.Kept | StoryClass.WholeWorld : StoryClass.Kept;
+        }
+
+        foreach (string marks in FoundMarks)
+        {
+            selfRules[marks] = StoryClass.Kept | StoryClass.WholeWorld;
         }
 
         foreach (JsonElement row in RowsOf(tables, "parts"))

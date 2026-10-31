@@ -3,6 +3,8 @@
 //
 //  Changelog:
 //      Paulinchen  2026-11-01: Refused an admin's pins of keys the story mapping does not share
+//                            - Kept the found items' marks for the whole world, whatever the mapping's row of them says
+//                            - Kept the marks of the items used up for the whole world too
 //      Paulinchen  2026-10-31: Named the routes the world may take at the Great Decision in its summary
 //                            - Kept the run entries of each track in order and a cursor per player on it
 //                            - Kept the place the world's log starts at in its summary, and its keys there
@@ -163,6 +165,14 @@ const ROUTE_OF_COUNTER = Object.freeze(Object.fromEntries(Object.entries(ROUTE_C
 const ROUTE_OF_CLEAR = Object.freeze(Object.fromEntries(Object.entries(CLEAR_SWITCHES).map(([route, id]) => [`s${id}`, route])));
 
 /**
+ * The rules of the found items' marks, the self switches of map 0 (world_catchup.rbx FOUND_MAP):
+ * the found marks (letter F) and the marks of the items events used up, which the whole world
+ * keeps, players behind included, in place of the mapping's rows: a relay seeded before the rule
+ * keeps a row `ss0.*.F` without `wholeWorld`, which comes before `ss0.*.*`.
+ */
+const FOUND_MARKS = Object.freeze(["ss0.*.F", "ss0.*.*"].map((key) => Object.freeze({ key, share: "shared", wholeWorld: true })));
+
+/**
  * Reads a variable's value as a whole number, which may be longer than a JavaScript number holds.
  *
  * @param {string | undefined} value The value as kept, such as "n12".
@@ -240,6 +250,7 @@ export class TrackRules {
     this.keys = new Map((view.tables.keys ?? []).map((row) => [row.key, row]));
     /** The rows of story_events by key. */
     this.events = new Map((view.tables.events ?? []).map((row) => [row.key, row]));
+    FOUND_MARKS.forEach((row) => this.events.set(row.key, row));
     /** The map events whose self switches the derived index shares, as "map.event". */
     this.index = new Set((view.index?.events ?? []).map(([map, event]) => `${map}.${event}`));
     /** The count keys with the switches each counts. */

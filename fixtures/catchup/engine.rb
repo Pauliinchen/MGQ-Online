@@ -2,6 +2,8 @@
 #  engine.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Handed out found key items too, each once per save, as the C# engine does
+#                            - Took a copy of each key item another player's event used up, once per use and save, as the C# engine does
 #      Paulinchen  2026-10-31: Stopped lifting the warp ban on the maps where warping is free, as the C# engine does
 #                            - Read a world chest without its chest flags, as the C# engine does
 #                            - Played the recruit page of a companion the player missed once a route finished, as the C# engine does
@@ -73,6 +75,10 @@ module CatchupEngine
 
   # See FOUND_MAP.
   FOUND_LETTER = "F"
+
+  # The start of the letter of the self switches of FOUND_MAP that tell which items an event of a
+  # player of the world used up, one for each use.
+  USED_PREFIX = "U"
 
   # The switches and variables the engine reads besides the rows' marks.
   ENGINE_SWITCHES = [ALICE_CHOSEN, ILIAS_CHOSEN] + CLEAR_SWITCHES
@@ -357,6 +363,9 @@ module CatchupEngine
       @items = (request["items"] || {}).dup
       @worn = Array(request["worn"])
       @unlock_ids = Array(request["unlocks"])
+      @key_ids = Array(request["key_items"])
+      @got = Array(request["got"])
+      @spent = Array(request["spent"])
       choices = ChoicesStandIn.personal("raid" => true, "own" => nil)
       @choice_switches = Array(choices["s"])
       @choice_variables = Array(choices["v"])
@@ -374,8 +383,8 @@ module CatchupEngine
 
     # Answers catchup.check.
     #
-    # @return [Hash] "actions", "ledger" (nil while unchanged), "visiting", "ask_side", "orbs" and
-    #   "sharable".
+    # @return [Hash] "actions", "ledger" (nil while unchanged), "visiting", "ask_side", "orbs",
+    #   "sharable", "got", "given", "take" and "spent".
     def check
       answer = {}
       if @request["look"] == "carried"
@@ -394,7 +403,7 @@ module CatchupEngine
         answer["orbs"] = @mode == "world" && orbs_due?
         check_makina
         missed_companions
-        check_found_items
+        answer["got"], answer["given"], answer["take"], answer["spent"] = check_found_items
         check_counts
       end
       answer["visiting"] = @roster.map { |entry| entry[0] }.select { |id| visiting?(id, story_now) }
@@ -1431,35 +1440,66 @@ module CatchupEngine
       @t.makina.any? { |row| row.item == id }
     end
 
-    # Takes back every copy of an item beyond the first.
+    # Hands out every found key item and item unlocking a job or race the save never held, keeps
+    # one of each item unlocking a job or race, and counts the copies another player's event used
+    # up, as FoundItems does for the C# engine; a Makina waits for its level.
     #
-    # @return [Boolean] Whether there were more.
-    def trim_copies(id)
-      key = "i#{id}"
-      held = @items[key]
-      return false unless held > 1
-
-      @actions << ["trim", id, held - 1]
-      @items[key] = 1
-      true
-    end
-
-    # Hands out every found item unlocking a job or race the player lacks, and keeps one of each.
+    # @return [Array<Array>] Every item the save has held, the items given, the items to take a copy
+    #   of and every use the save counted.
     def check_found_items
-      found_ids.each do |id|
-        key = "i#{id}"
-        next unless @items.key?(key) && !makina?(id) && !trim_copies(id) && @items[key] == 0
+      held = {}
+      (@unlock_ids + @key_ids).each { |id| held[id] = @items["i#{id}"] if @items.key?("i#{id}") }
+      had = @got | held.keys.select { |id| held[id] > 0 }
+      found = found_ids.reject { |id| makina?(id) }
+      found.each do |id|
+        next unless held.key?(id) && held[id] > 1 && @unlock_ids.include?(id)
 
-        give("i", id, 1, "found:#{id}", false)
+        @actions << ["trim", id, held[id] - 1]
+        @items["i#{id}"] -= held[id] - 1
+        held[id] = 1
       end
+      spent = @spent.dup
+      used = []
+      takes = []
+      used_ids.sort.each do |use|
+        id = use.split(".", 2)[0].to_i
+        used << id
+        next if spent.include?(use)
+
+        spent << use
+        next unless held[id].to_i > 0
+
+        takes << id
+        held[id] -= 1
+      end
+      gives = []
+      found.each do |id|
+        next unless held[id] == 0 && !used.include?(id) && !had.include?(id)
+
+        had << id
+        gives << id
+      end
+      gives.each { |id| give("i", id, 1, "found:#{id}", false) }
+      takes.each { |id| @items["i#{id}"] -= 1 }
+      [had.sort, gives, takes, spent.sort]
     end
 
     # @return [Array<Integer>] The items found in the player's story and the world's.
     def found_ids
+      marks_on.select { |key| key[2] == FOUND_LETTER }.map { |key| key[1] }.uniq
+    end
+
+    # @return [Array<String>] The uses of items by events in the player's story and the world's, as
+    #   "item.mark".
+    def used_ids
+      marks_on.select { |key| key[2].start_with?(USED_PREFIX) }.map { |key| "#{key[1]}.#{key[2]}" }.uniq
+    end
+
+    # @return [Array<Array>] The self switches of FOUND_MAP on in the player's story and the world's.
+    def marks_on
       stories = [story_now[2]]
       stories << @told[2] if @told
-      keys = stories.flat_map { |selfs| selfs.keys.select { |key| selfs[key] && key[0] == FOUND_MAP && key[2] == FOUND_LETTER } }
-      keys.map { |key| key[1] }.uniq
+      stories.flat_map { |selfs| selfs.keys.select { |key| selfs[key] && key[0] == FOUND_MAP } }
     end
 
     # Plays the recruit page of every story companion the roster lacks once the player's story

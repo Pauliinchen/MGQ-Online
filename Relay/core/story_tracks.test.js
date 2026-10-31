@@ -2,6 +2,8 @@
 //  story_tracks.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Checked that an item any player found reaches players behind and the world from them, though the mapping's row of the found marks predates the rule
+//                            - Checked that the mark of an item an event used up reaches players behind and the world from them
 //      Paulinchen  2026-10-31: Checked an admin's keys, pins and route lock acting on the world's story only
 //                            - Checked the routes the world's summary names as open at the Great Decision
 //                            - Checked the run entries kept on the tracks and the players' cursors
@@ -53,6 +55,7 @@ const MAPPING = Object.freeze({
       { key: "ss9.3.A", share: "personal" },
       { key: "ce154.*", share: "shared" },
       { key: "ss12.5.A", share: "personal", chest: true },
+      { key: "ss0.*.F", share: "shared" },
     ],
     parts: [
       { id: "1", name: "Part 1", ending: [], gate: 25, order: 1 },
@@ -370,6 +373,28 @@ test("affection is the highest any player of the world reached, players behind i
   assert.deepEqual(raised.revs, { world: 3, t1: 1 });
   assert.deepEqual(world.heard(ALICE).filter((frame) => frame.t === "push").at(-1).keys, { v3005: "n20" });
   assert.deepEqual((await write(world, ALICE, 2, [["v3005", "n15", "game:affection"]])).keys, { v3005: { code: TRACK_CODE.oneWay, value: "n20" } });
+});
+
+test("an item any player found reaches the whole world, players behind included, though the mapping's row lacks wholeWorld", async () => {
+  const world = await startedWorld(10);
+  await write(world, ALICE, 1, [["ss0.616.F", "1"], ["v1001", "n19"]]);
+  await world.enter(CARA, 1);
+  await world.say(CARA, { t: "sync", level: { best: 1, cap: null }, seed: { v1001: "n2" } });
+  assert.equal(world.heard(CARA)[0].keys["ss0.616.F"], "1", "a player behind reads what the world found");
+
+  await write(world, CARA, 1, [["ss0.610.F", "1", "map:51:23:1"]], "t1");
+  assert.deepEqual(world.heard(ALICE).filter((frame) => frame.t === "push").at(-1).keys, { "ss0.610.F": "1" }, "the world reads what a player behind found");
+});
+
+test("the mark of an item an event used up reaches the whole world, players behind included", async () => {
+  const world = await startedWorld(10);
+  await write(world, ALICE, 1, [["ss0.508.U1x2y3z", "1", "map:88:4:1"], ["v1001", "n29"]]);
+  await world.enter(CARA, 1);
+  await world.say(CARA, { t: "sync", level: { best: 1, cap: null }, seed: { v1001: "n2" } });
+  assert.equal(world.heard(CARA)[0].keys["ss0.508.U1x2y3z"], "1", "a player behind reads what an event of the world used up");
+
+  await write(world, CARA, 1, [["ss0.508.U9a8b7c", "1", "map:88:4:2"]], "t1");
+  assert.deepEqual(world.heard(ALICE).filter((frame) => frame.t === "push").at(-1).keys, { "ss0.508.U9a8b7c": "1" }, "the world reads what an event of a player behind used up");
 });
 
 test("a repeated batch and one before the sync are answered without applying", async () => {

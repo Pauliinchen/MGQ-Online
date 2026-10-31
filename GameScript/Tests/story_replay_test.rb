@@ -5,6 +5,7 @@
 #      Paulinchen  2026-11-01: Checked that a choice the record lacks is asked with what its cancel answers
 #                            - Covered a replay that costs nothing and follows the opener through the checks of what the party holds
 #                            - Covered a replay done with the receiver's own answer only when it differs from the opener's
+#                            - Covered a replay giving a key item the receiver got as found
 #      Paulinchen  2026-10-31: Checked that a party run's entry is kept in the party's stream at once
 #                            - Covered asking the receiver a number, item or present the record lacks
 #                            - Covered a replay committing only once it finished
@@ -127,7 +128,7 @@ class Game_Party
   attr_accessor :unlock_level
   attr_reader :gold
   def initialize; @items = Hash.new(0); @gold = 0; @unlock_level = 0; end
-  def gain_item(id, amount); @items[id] += amount; end
+  def gain_item(item, amount); @items[item.respond_to?(:id) ? item.id : item] += amount; end
   def lose_item(item, amount); gain_item(item.id, -amount); end
   def gain_gold(amount); @gold += amount; end
   def all_items; @items.keys.sort.select { |id| @items[id] > 0 }.map { |id| $data_items[id] }.compact; end
@@ -208,7 +209,7 @@ class Game_Interpreter
   def game_data_operand(type, param1, _param2); type == 7 ? $game_party.gold : $game_party.item_number(param1); end
   def command_123; $game_self_switches[[@map_id, @event_id, @params[0]]] = @params[1] == 0 if @event_id > 0; end
   def command_125; $game_party.gain_gold(@params[0] == 0 ? @params[2] : -@params[2]); end
-  def command_126; $game_party.gain_item(@params[0], @params[1] == 0 ? @params[3] : -@params[3]); end
+  def command_126; $game_party.gain_item(($data_items && $data_items[@params[0]]) || @params[0], @params[1] == 0 ? @params[3] : -@params[3]); end
   def command_201
     if $game_variables[NWConst::Var::MAP_TRANSFER] > 0
       map_id = $game_variables[NWConst::Var::MAP_TRANSFER]
@@ -678,6 +679,20 @@ $asked[3].call(0)
 check("a receiver who answers as the opener did and fails a later check of their own is not done",
       [done.last["reached"], $game_party.item_number(612), $game_self_switches[[51, 25, "B"]]], [false, 0, false])
 fake.answer("story.replay_take") { |_request| { "do" => "replay", "page" => 1 } }
+
+# A member who got the Fortune Teller Permit as found, from the leader's find, replays the leader's
+# trade, which gives it, and still holds one.
+$data_items[610] = Item.new(610, "Fortune Teller Permit", 6, true)
+module MGQ_MpCoop; def self.route(_field); end; def self.tell(*_fields); true; end; end
+module MGQ_MpCoopStory; def self.lending?; false; end; end
+load_script "story_found"
+new_game
+$game_system = Object.new
+MGQ_MpStoryFound.apply("give" => [610])
+MGQ_MpStoryReplay.receive(entry.merge("id" => "e9", "site" => "map:51:23:1", "keys" => { "ss51.23.B" => "0" }, "inputs" => TRADED))
+MGQ_MpStoryReplay.update
+check("a member who got a key item as found and replays the run that found it holds one, and the next gain gives one again",
+      [$game_self_switches[[51, 23, "B"]], $game_party.item_number(610), MGQ_MpStoryFound.given?($data_items[610])], [true, 1, false])
 
 # The save keeps the DLL's log; a loaded save hands it back with its place.
 logs = []

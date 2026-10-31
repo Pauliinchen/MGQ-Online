@@ -2,6 +2,7 @@
 //  story_mapping.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Let shared self switches be the whole world's, players behind included
 //      Paulinchen  2026-10-31: Let a personal key be one of the game's working values
 //      Paulinchen  2026-10-28: Filled each table that holds no rows from seed rows, once
 //      Paulinchen  2026-10-23: Let shared and one-way keys be the whole world's, players behind included
@@ -451,9 +452,12 @@ export const MAPPING_TABLES = Object.freeze({
       share: oneOf(["shared", "personal"]),
       // A chest's self switch, each player's own (coop_story_rewards.rbx CHESTS).
       chest: optional(ON),
+      // Players behind the world share it with the world too, as the found items' marks, which
+      // reach every player of the world (world_catchup.rbx FOUND_MAP).
+      wholeWorld: optional(ON),
     }),
     key: (row) => row.key,
-    check: (row) => (row.chest && row.share !== "personal" ? { error: "a chest's self switches are each player's own: share must be personal", code: MAPPING_REFUSAL.option } : null),
+    check: checkEvent,
   }),
 });
 
@@ -479,6 +483,21 @@ function checkKey(row) {
   }
 
   return kind.needs && row[kind.needs] === undefined ? { error: `a ${row.kind} key needs ${kind.needs}`, code: MAPPING_REFUSAL.option } : null;
+}
+
+/**
+ * Checks a row of story_events: a chest's self switches are each player's own, and only shared
+ * self switches are the whole world's.
+ *
+ * @param {object} row The row, read field by field.
+ * @returns {{error: string, code: string} | null} Why it is wrong, null when it is not.
+ */
+function checkEvent(row) {
+  if (row.chest && row.share !== "personal") {
+    return { error: "a chest's self switches are each player's own: share must be personal", code: MAPPING_REFUSAL.option };
+  }
+
+  return row.wholeWorld && (row.share !== "shared" || row.chest) ? { error: "only shared self switches are the whole world's", code: MAPPING_REFUSAL.option } : null;
 }
 
 /**

@@ -2,6 +2,7 @@
 #  coop_story.rbx
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Told how many copies of a key item the leader lent the player, which the player never counts as found
 #      Paulinchen  2026-10-31: Gave the leader's story's gifts, companions, skills and departures by replaying the leader's runs instead of messages, and caught a member up by the frozen rows and derived entries only with the history before the log
 #                            - Sent a member's runs of the leader's story with their requests, which the leader keeps for the party and their own game when they changed the leader's story
 #                            - Sent a member's writes of the leader's story to the leader as requests, which the leader's story takes by the reviewed list's merge kinds and sends back by value
@@ -976,13 +977,40 @@ module MGQ_MpCoopStory
       next if wanted == lent
 
       log("#{wanted > lent ? 'lent' : 'gave back'} #{MGQ_MpStoryState.item_label("i#{id}")}: the leader holds #{keys[id].to_i}, the player #{own} of their own, lent #{lent} -> #{wanted}")
-      $game_party.gain_item(item, wanted - lent)
+      lend(item, wanted - lent)
       wanted > 0 ? @lent[id] = wanted : @lent.delete(id)
       (wanted > lent ? lent_now : returned) << item.name
     end
     name = leader.state["name"]
     MGQ_MpOverworldSync.notice("#{name} lent you #{key_list(lent_now)} for the story.") unless lent_now.empty?
     MGQ_MpOverworldSync.notice("#{key_list(returned)} went back to #{name}.") unless returned.empty?
+  end
+
+  # Lends the player copies of a key item, or gives lent ones back, which the player never counts
+  # among the items they found (story_found.rbx).
+  #
+  # @param item [RPG::Item] The key item.
+  # @param amount [Integer] How many, below 0 to give back.
+  def self.lend(item, amount)
+    @lending = true
+    $game_party.gain_item(item, amount)
+  ensure
+    @lending = false
+  end
+
+  # Reports whether the player is lent a key item or gives one back right now.
+  #
+  # @return [Boolean] Whether they are.
+  def self.lending?
+    @lending ? true : false
+  end
+
+  # Counts the copies of a key item the leader lent the player.
+  #
+  # @param id [Integer] The key item.
+  # @return [Integer] How many.
+  def self.lent_count(id)
+    @lent ? @lent[id].to_i : 0
   end
 
   # Names things for a notice: one or two by name, more by their count.

@@ -2,6 +2,7 @@
 //  story_mapping.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Covered the shared self switches the whole world keeps
 //      Paulinchen  2026-10-31: Covered the game's working values among the personal keys
 //      Paulinchen  2026-10-28: Covered the seeding of the tables that hold no rows yet
 //      Paulinchen  2026-10-23: Covered the keys the whole world keeps
@@ -121,6 +122,8 @@ test("an event's self switches name a map's events and letters, a chest's only a
   assert.equal((await edit({ key: "ss6.9.A", share: "personal", chest: true })).status, 200);
   assert.equal((await edit({ key: "ss6.10.A", share: "shared", chest: true })).body.code, MAPPING_REFUSAL.option);
   assert.equal((await edit({ key: "ss07.39.A", share: "shared" })).body.code, MAPPING_REFUSAL.field);
+  assert.equal((await edit({ key: "ss0.*.G", share: "shared", wholeWorld: true })).status, 200);
+  assert.equal((await edit({ key: "ss0.*.H", share: "personal", wholeWorld: true })).body.code, MAPPING_REFUSAL.option, "only shared self switches are the whole world's");
 });
 
 test("a batch applies whole or not at all, and raises the revision once", async () => {

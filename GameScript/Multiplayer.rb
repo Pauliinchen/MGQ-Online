@@ -5,6 +5,7 @@
 #      Paulinchen  2026-11-01: Stopped loading ui_boxes.rbx, whose boxes the Mod Framework's components replaced
 #                            - Dropped the bug report exports, which the bridge's report topics replace
 #                            - Stopped loading world_text.rbx, whose text screen the Mod Framework's text fields replace
+#                            - Loaded story_found.rbx after coop_castle.rbx
 #      Paulinchen  2026-10-31: Named the lowest Mod Framework the mod runs with, and stayed off without it, logging why when it is older or runs without its DLL
 #                            - Took the keys, the mouse, the typing and the game running behind other windows from the Mod Framework
 #                            - Loaded ui_online.rbx and ui_boxes.rbx where ui.rbx and the interface scripts the Mod Framework took over stood
@@ -197,7 +198,7 @@ module MGQ_Multiplayer
   # each other.
   SCRIPTS = %w[
     core_log core_hooks core_game_access core_hotkeys ui_online core_actors core_async overworld_sync ui_actions ui_chat ui_emotes overworld
-    coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs story_state story_keys story_replay coop_story coop_castle
+    coop coop_scope coop_squad coop_events coop_gather coop_teleport coop_scene coop_npcs story_state story_keys story_replay coop_story coop_castle story_found
     world world_mods world_story world_catchup world_catchup_exp world_opening world_difficulty world_gates world_save_distribution world_screen world_save_export coop_choices
     battles battles_raid_bosses battles_coop battles_coop_hotjoin battles_coop_join battles_raid_pool battles_raid_freeze world_freeze battles_raid_tiers battles_coop_level_sync
     battles_sync battles_sync_wire battles_sync_recorder battles_sync_playback battles_sync_live battles_served

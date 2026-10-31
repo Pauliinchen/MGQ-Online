@@ -2,6 +2,10 @@
 #  world_catchup_test.rb
 #
 #  Changelog:
+#      Paulinchen  2026-11-01: Checked that a key item another player found comes once, to a player behind too, and its next gain adds nothing
+#                            - Checked that a Small Medal the player holds is not noted for the world
+#                            - Checked that a key item an event used up leaves every player of the world who holds it, with the Yggdrasil Fruit the Queen Harpy takes
+#                            - Stood in for the replay's name of a command
 #      Paulinchen  2026-10-31: Dropped the warp ban's lift on the maps where warping is free
 #                            - Checked that a missed companion's recruit page is played once a route finished
 #                            - Expected the plainer texts the player reads
@@ -85,8 +89,9 @@
 require_relative "catchup_support"
 
 # Stands in for story_replay.rbx: the pages the catch-up hands the player's game to play, in
-# $derived as [fields, why], with no run of the world's track waiting.
+# $derived as [fields, why], with no run of the world's track waiting, and a command's name.
 module MGQ_MpStoryReplay
+  def self.input_at(site, index); "#{site}@#{index}"; end
   def self.derive(fields, why); ($derived ||= []) << [fields, why]; end
   def self.running?; false; end
   def self.waiting; []; end
@@ -941,13 +946,70 @@ check("another player gets it with the world's story, whatever their level, with
 $game_party.gain_item($data_items[616], 1)
 frames(40)
 check("the replay of the run that found it, which gives another, leaves one", $game_party.items[616], 1)
+
+# A key item another player found comes once, players behind included: the run that found it,
+# replayed once they reach the world's story, or their own run of it gives no second one, and one
+# an event of the player's took later stays away.
+new_game({ 1001 => 7 }, [], 10)
+frames(1)
+checkpoint("1", packed({ 1001 => 18 }, [], { [0, 557, "F"] => true }), "rev" => 33, "part" => "2", "checkpoints" => "1")
+frames(100)
+given = [story.mode, $game_party.items[557]]
+$game_party.gain_item($data_items[557], 1)
+again = $game_party.items[557]
+$game_party.lose_item($data_items[557], 1)
+frames(40)
+check("a key item another player found comes once to a player behind, the run that found it gives no second one, and one an event took stays away",
+      [given, again, $game_party.items[557]], [[:behind, 1], 1, 0])
 new_game({ 1001 => 9 }, [], 10)
 $game_party.items[616] = 1
+$data_items[32] = RPG::Item.new(32, "Small Medal", "[Item] Small medals are scattered all over the world.")
+$game_party.items[32] = 3
 MGQ_MpWorldCatchup.instance_variable_set(:@unlock_ids, nil)
+MGQ_MpStoryFound.instance_variable_set(:@item_ids, nil)
 frames(1)
 relay({ "rev" => 32, "wrev" => 32, "p" => 9, "part" => "1" }, packed({ 1001 => 9 }))
 frames(40)
-check("one the player held before, as from an earlier version, is noted for the world on entering", $game_self_switches[[0, 616, "F"]], true)
+check("one the player held before, as from an earlier version, is noted for the world on entering, a Small Medal not",
+      [$game_self_switches[[0, 616, "F"]], $game_self_switches[[0, 32, "F"]]], [true, false])
+
+# The Queen Harpy event takes the Yggdrasil Fruit (map 88, event 4, page 1, command 63): the use
+# goes to the world, and every player of the world who holds one, as from another player's find,
+# loses it, so Lucretia's page (event 4, page 2), which takes a held Yggdrasil Fruit, does not open
+# early. A player who lacks it loses nothing and gets none from its find.
+fruit = $data_items[508] = RPG::Item.new(508, "Yggdrasil Fruit", "[Key Item] Miraculous medicine capable of purging all diseases.")
+MGQ_MpStoryFound.instance_variable_set(:@item_ids, nil)
+harpy = Game_Interpreter.new
+{ :@map_id => 88, :@event_id => 4, :@list => [], :@index => 63 }.each { |name, value| harpy.instance_variable_set(name, value) }
+new_game({ 1001 => 29, 1011 => 2 }, [], 10)
+$game_party.gain_item(fruit, 1)
+frames(1)
+relay({ "rev" => 34, "wrev" => 34, "p" => 29, "part" => "2" }, packed({ 1001 => 29, 1011 => 2 }))
+frames(40)
+MGQ_MpStoryKeys.executing(harpy)
+$game_party.lose_item(fruit, 1)
+MGQ_MpStoryKeys.executed(harpy)
+marks = $game_self_switches.instance_variable_get(:@data).keys.select { |key| key[0] == 0 && key[1] == 508 && key[2] =~ /\AU[0-9a-z]+\z/ }
+frames(40)
+check("an event of the player's that uses up a key item notes the use for the world once", [marks.size, $game_party.items[508]], [1, 0])
+used = { [0, 508, "F"] => true, marks.first => true }
+new_game({ 1001 => 29, 1011 => 2 }, [], 10)
+frames(1)
+relay({ "rev" => 41, "wrev" => 41, "p" => 29, "part" => "2" }, packed({ 1001 => 29, 1011 => 2 }, [], { [0, 508, "F"] => true }))
+frames(40)
+got = $game_party.items[508]
+relay({ "rev" => 42, "wrev" => 42, "p" => 29, "part" => "2" }, packed({ 1001 => 29, 1011 => 4 }, [], used))
+frames(40)
+check("a player who got the Yggdrasil Fruit from another player's find loses it once that player's event used it up",
+      [got, $game_party.items[508]], [1, 0])
+$game_party.gain_item(fruit, 1)
+frames(40)
+check("the next Yggdrasil Fruit they get stays", $game_party.items[508], 1)
+new_game({ 1001 => 29, 1011 => 4 }, [], 10)
+frames(1)
+relay({ "rev" => 43, "wrev" => 43, "p" => 29, "part" => "2" }, packed({ 1001 => 29, 1011 => 4 }, [], used))
+frames(40)
+check("a player who lacks it loses nothing and gets none from its find", [story.mode, $game_party.items[508]], [:world, 0])
 
 # A job or race item another player found comes to every player of the world at once, though the
 # story gives it further on or on the route the world never took, as the Sealed Orb of Darkness

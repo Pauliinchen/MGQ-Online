@@ -2,6 +2,7 @@
 //  make_classes.mjs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Replaced the case of another self switch of map 0 by the mark of a used up item
 //      Paulinchen  2026-10-23: Created
 //
 //----------------------------------------------------------------
@@ -61,7 +62,7 @@ const MAPPING = {
 const KEYS = [
   ["s7096", null], ["s2029", null], ["s7102", null], ["s23", null], ["s31", null], ["s8000", null], ["v1001", null], ["v1141", "ce:154"],
   ["v1354", null], ["v1062", null], ["v1052", null], ["v3005", null], ["v900", null], ["f868", null],
-  ["ss231.9.A", null], ["ss231.4.B", null], ["ss231.5.B", null], ["ss231.5.A", null], ["ss0.501.F", null], ["ss0.501.A", null],
+  ["ss231.9.A", null], ["ss231.4.B", null], ["ss231.5.B", null], ["ss231.5.A", null], ["ss0.501.F", null], ["ss0.508.U1se3r6i", "map:88:4:1"],
   ["ss12.5.A", null], ["ss12.5.B", null], ["ss40.2.C", null], ["ss40.2.A", null], ["ss7.39.A", null], ["ss7.40.A", null],
   ["ss9.1.A", "ce:154"], ["ss9.1.A", null], ["ss40.2.A", "ce:20"], ["ss231.4.A", "ce:154"], ["ss7.39.A", "ce:20"],
 ];

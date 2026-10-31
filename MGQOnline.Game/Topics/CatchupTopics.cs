@@ -2,6 +2,7 @@
 //  CatchupTopics.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Registered the topic of the items a Classic party found
 //      Paulinchen  2026-10-28: Created
 //
 //----------------------------------------------------------------
@@ -15,7 +16,8 @@ namespace MGQOnline.Game.Topics;
 /// <summary>
 /// The bridge topics of a Raid World's catch-up (world_catchup.rbx), decided by
 /// <see cref="CatchupEngine"/> over the catch-up's tables of the story mapping the DLL holds, one
-/// engine and its save's notes per context.
+/// engine and its save's notes per context, and the topic of the items a Classic party found
+/// (story_found.rbx), decided by <see cref="FoundItems"/> as a Raid World's catch-up decides them.
 /// </summary>
 public static class CatchupTopics
 {
@@ -47,6 +49,11 @@ public static class CatchupTopics
     public const string UnlocksTopic = "catchup.unlocks";
 
     /// <summary>
+    /// What a player of a Classic party gets of the items the party found, see <see cref="FoundItems.Check"/>.
+    /// </summary>
+    public const string FoundTopic = "found.check";
+
+    /// <summary>
     /// Registers the topics on a context, with an engine of the context's own.
     /// </summary>
     /// <param name="context">The context the handshake opened.</param>
@@ -62,6 +69,7 @@ public static class CatchupTopics
         context.Register(NoteTopic, (_, request) => engine.Note(tables() ?? CatchupTables.Empty, request.AsHash()));
         context.Register(HoldTopic, (_, request) => engine.HoldJoin(tables() ?? CatchupTables.Empty, request.AsHash()));
         context.Register(UnlocksTopic, (_, request) => engine.Unlocks(tables() ?? CatchupTables.Empty, request.AsHash()));
+        context.Register(FoundTopic, (_, request) => FoundItems.Check(request.AsHash()));
         return engine;
     }
 }

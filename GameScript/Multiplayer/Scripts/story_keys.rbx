@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-01: Noted a run's checks of what the party holds and of the event's own self switches as inputs, which a replay follows
+#                            - Named every command running now, which tells one use of an item from another
+#                            - Told whether a command runs inside a story reset, whose losses use nothing up
 #      Paulinchen  2026-10-31: Bracketed each run of the player's own game with its shared writes, start values, inputs and resets
 #                            - Logged each run that changed a party or world key with the DLL
 #                            - Told whether a run belongs to a party chest's page
@@ -840,6 +842,47 @@ module MGQ_MpStoryKeys
     @running.empty? ? nil : MGQ_MpStoryReplay.input_at(site_of(@running.last), @indexes.last)
   end
 
+  # Names every command running now, the outermost first, as input_place names one: a common
+  # event's command with the command that called it.
+  #
+  # @return [String, nil] Such as "map:88:4:1@40>ce:153@28", nil outside every command.
+  def self.command_places
+    return nil if @running.empty?
+
+    @running.each_with_index.map { |interpreter, at| MGQ_MpStoryReplay.input_at(site_of(interpreter), @indexes[at]) }.join(">")
+  end
+
+  # Reports whether a command runs inside a story reset: one of the lists running now writes a range
+  # of switches or variables at once, as the returns to an earlier part do (common events 153 to
+  # 155), which also clear the key items the player held.
+  #
+  # @return [Boolean] Whether it does.
+  def self.resetting?
+    @running.any? { |interpreter| reset_list?(MGQ_MpGame.get(interpreter, :list)) }
+  end
+
+  # Reports whether a list writes a range of switches or variables at once.
+  #
+  # @param list [Array, nil] The commands.
+  # @return [Boolean] Whether it does.
+  def self.reset_list?(list)
+    list.is_a?(Array) && list.any? { |command| command.respond_to?(:code) && range_write?(command.code, command.parameters) }
+  end
+
+  # Reports whether a command writes a range of switches or variables at once: Control Switches over
+  # more than one id, or Control Variables setting more than one.
+  #
+  # @param code [Integer] The command's code.
+  # @param params [Array] Its parameters.
+  # @return [Boolean] Whether it does.
+  def self.range_write?(code, params)
+    case code
+    when 121 then params[1] > params[0]
+    when 122 then params[1] > params[0] && params[2] == 0
+    else false
+    end
+  end
+
   # Wraps a choice's handler so the answer is noted as an input of the command that showed it.
   #
   # @param handler [Proc, nil] The game's handler of the answer.
@@ -1248,12 +1291,12 @@ begin
   # reset (script 167's reset_selfswitch_map), or made anew (see run_ended).
   if has.call(Game_Interpreter, :command_121)
     MGQ_MpHooks.after(Game_Interpreter, :command_121, "story_keys") do
-      MGQ_MpStoryKeys.reset("s", @params[0], @params[1], @params[2] == 0 ? "1" : "0") if @params[1] > @params[0]
+      MGQ_MpStoryKeys.reset("s", @params[0], @params[1], @params[2] == 0 ? "1" : "0") if MGQ_MpStoryKeys.range_write?(121, @params)
     end
   end
   if has.call(Game_Interpreter, :command_122)
     MGQ_MpHooks.after(Game_Interpreter, :command_122, "story_keys") do
-      MGQ_MpStoryKeys.reset("v", @params[0], @params[1], MGQ_MpStoryKeys.text_of(1, $game_variables[@params[0]])) if @params[1] > @params[0] && @params[2] == 0
+      MGQ_MpStoryKeys.reset("v", @params[0], @params[1], MGQ_MpStoryKeys.text_of(1, $game_variables[@params[0]])) if MGQ_MpStoryKeys.range_write?(122, @params)
     end
   end
   if has.call(Game_SelfSwitches, :delete)

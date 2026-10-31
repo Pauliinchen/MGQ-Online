@@ -2,6 +2,9 @@
 //  CatchupLook.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Handed out found key items too, each once per save, by the rule both world types share
+//                            - Named the found items it gave, whose next gain adds nothing
+//                            - Took a copy of each key item another player's event used up, once per use and save
 //      Paulinchen  2026-10-31: Stopped lifting the warp ban on the maps where warping is free, since a world never bans warping
 //                            - Played the recruit page of a companion the player missed once a route finished
 //                            - Gave from the rows only the history the world's story was past where its log starts, which the world's track replays after
@@ -34,7 +37,8 @@ namespace MGQOnline.Game.Catchup;
 /// load), "mode" ("world", "behind" or nil), "own", "told" and "before" (stories: "s" the switches
 /// on, "v" [id, value] each, "ss" the self switches on), "roster" ([id, persona, base level, cap]
 /// each), "items" (counts by "i", "w" or "a" and the id), "worn", "unlocks" (the items unlocking a
-/// job or race), "encounters", "summary" (the world's summary),
+/// job or race), "key_items", "got" (the items the save has held), "spent" (the uses of items it
+/// counted, see <see cref="FoundItems"/>), "encounters", "summary" (the world's summary),
 /// "sharing", "starts" ([companion, start level] each) and "start" (the story markers where the
 /// world's log starts, nil while nothing is logged).
 /// </remarks>
@@ -76,6 +80,12 @@ internal sealed class CatchupLook
     /// See <see cref="FoundMap"/>.
     /// </summary>
     private const string FoundLetter = "F";
+
+    /// <summary>
+    /// The start of the letter of the self switches of map <see cref="FoundMap"/> that tell which
+    /// items an event of a player of the world used up, one for each use.
+    /// </summary>
+    private const string UsedPrefix = "U";
 
     /// <summary>
     /// Looks between two looks at the skills, classes and races the story gave the roster, five
@@ -148,6 +158,22 @@ internal sealed class CatchupLook
     /// The items that unlock a job or a race.
     /// </summary>
     private readonly HashSet<long> _unlockIds = [];
+
+    /// <summary>
+    /// The key items, which reach every player once any player found one, as the items unlocking a
+    /// job or a race do.
+    /// </summary>
+    private readonly HashSet<long> _keyIds = [];
+
+    /// <summary>
+    /// The items the save has held before, which a found mark gives none of again.
+    /// </summary>
+    private readonly List<long> _got = [];
+
+    /// <summary>
+    /// The uses of items the save has counted before, as "item.mark".
+    /// </summary>
+    private readonly List<string> _spent = [];
 
     /// <summary>
     /// The switches of every choice's outcomes, each player's own in a Raid World.
@@ -227,6 +253,9 @@ internal sealed class CatchupLook
 
         _worn.UnionWith(Texts(request["worn"]));
         _unlockIds.UnionWith(Numbers(request["unlocks"]));
+        _keyIds.UnionWith(Numbers(request["key_items"]));
+        _got.AddRange(Numbers(request["got"]));
+        _spent.AddRange(Texts(request["spent"]));
         PersonalChoiceKeys choices = StoryChoices.Personal(true, null);
         _choiceSwitches.UnionWith(choices.Switches);
         _choiceVariables.UnionWith(choices.Variables);
@@ -296,7 +325,11 @@ internal sealed class CatchupLook
             answer["orbs"] = _mode == "world" && OrbsDue();
             CheckMakina();
             MissedCompanions();
-            CheckFoundItems();
+            FoundItems found = CheckFoundItems();
+            answer["got"] = new RubyArray(found.Got.Select(id => (RubyValue)id));
+            answer["given"] = new RubyArray(found.Gives.Select(id => (RubyValue)id));
+            answer["take"] = new RubyArray(found.Takes.Select(id => (RubyValue)id));
+            answer["spent"] = new RubyArray(found.Spent.Select(use => (RubyValue)use));
             CheckCounts();
         }
 
@@ -1762,49 +1795,63 @@ internal sealed class CatchupLook
     private bool IsMakina(long id) => _tables.Makina.Any(row => row.Item == id);
 
     /// <summary>
-    /// Takes back every copy of an item beyond the first.
-    /// </summary>
-    /// <param name="id">The item.</param>
-    /// <returns>Whether there were more.</returns>
-    private bool TrimCopies(long id)
-    {
-        string key = "i" + id;
-        long held = _items[key];
-        if (held <= 1)
-        {
-            return false;
-        }
-
-        Act("trim", id, held - 1);
-        _items[key] = 1;
-        return true;
-    }
-
-    /// <summary>
-    /// Hands out every found item unlocking a job or race the player lacks, and keeps one of each.
+    /// Hands out every found key item and item unlocking a job or race the save never held, keeps
+    /// one of each item unlocking a job or race, and counts the copies another player's event used
+    /// up, which the scripts take (<see cref="FoundItems"/>); a Makina waits for its level.
     /// </summary>
     /// <remarks>
     /// A found mark notes a gain wherever it happened, a battle's drop too, which no run hands over.
     /// </remarks>
-    private void CheckFoundItems()
+    /// <returns>The decision, whose items held and given go to the save.</returns>
+    private FoundItems CheckFoundItems()
     {
-        foreach (long id in FoundIds())
+        var held = new Dictionary<long, long>();
+        foreach (long id in _unlockIds.Concat(_keyIds))
         {
-            string key = "i" + id;
-            if (!_items.ContainsKey(key) || IsMakina(id) || TrimCopies(id) || _items[key] != 0)
+            if (_items.TryGetValue("i" + id, out long count))
             {
-                continue;
+                held[id] = count;
             }
+        }
 
+        FoundItems plan = FoundItems.Plan(FoundIds().Where(id => !IsMakina(id)), _got, held, _unlockIds.Contains, UsedIds(), _spent);
+        foreach ((long id, long extra) in plan.Trims)
+        {
+            Act("trim", id, extra);
+            _items["i" + id] -= extra;
+        }
+
+        foreach (long id in plan.Gives)
+        {
             Give("i", id, 1, $"found:{id}", false);
         }
+
+        foreach (long id in plan.Takes)
+        {
+            _items["i" + id] -= 1;
+        }
+
+        return plan;
     }
 
     /// <summary>
     /// Lists the items found in the player's story and the world's.
     /// </summary>
     /// <returns>The items, each once.</returns>
-    private IEnumerable<long> FoundIds()
+    private IEnumerable<long> FoundIds() => MarksOn().Where(key => key.Letter == FoundLetter).Select(key => (long)key.Event).Distinct().ToList();
+
+    /// <summary>
+    /// Lists the uses of items by events in the player's story and the world's.
+    /// </summary>
+    /// <returns>The uses, as "item.mark", each once.</returns>
+    private IEnumerable<string> UsedIds() =>
+        MarksOn().Where(key => key.Letter.StartsWith(UsedPrefix, StringComparison.Ordinal)).Select(key => string.Create(CultureInfo.InvariantCulture, $"{key.Event}.{key.Letter}")).Distinct().ToList();
+
+    /// <summary>
+    /// Lists the self switches of map <see cref="FoundMap"/> on in the player's story and the world's.
+    /// </summary>
+    /// <returns>The self switches.</returns>
+    private IEnumerable<StoryKey> MarksOn()
     {
         IEnumerable<StoryKey> keys = _own.SelfSwitchesOn;
         if (_told is not null)
@@ -1812,7 +1859,7 @@ internal sealed class CatchupLook
             keys = keys.Concat(_told.SelfSwitchesOn);
         }
 
-        return keys.Where(key => key.Id == FoundMap && key.Letter == FoundLetter).Select(key => (long)key.Event).Distinct().ToList();
+        return keys.Where(key => key.Id == FoundMap);
     }
 
     /// <summary>

@@ -3,6 +3,8 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-01: Dropped the stand-in of the player's telling topic, which no script stages
+#                            - Kept the found items' marks the whole world's in the mapping's table
+#                            - Kept the marks of the items used up the whole world's too
 #      Paulinchen  2026-10-28: Added the seat whose ended telling the game waits for to the status
 #      Paulinchen  2026-10-23: Created
 #
@@ -26,7 +28,7 @@ def classes_fixture_table
      [1354, 1354, 17], [1355, 3004, 0], [3005, 3005, 35]],
     0,
     "rev" => 7,
-    "self" => { "ce154.*" => 1, "ce20.A" => 0, "ss0.*.F" => 1, "ss12.5.A" => 8, "ss231.*.*" => 1, "ss231.4.*" => 0, "ss231.5.B" => 1, "ss40.*.C" => 0 },
+    "self" => { "ce154.*" => 1, "ce20.A" => 0, "ss0.*.*" => 33, "ss0.*.F" => 33, "ss12.5.A" => 8, "ss231.*.*" => 1, "ss231.4.*" => 0, "ss231.5.B" => 1, "ss40.*.C" => 0 },
     "index" => [7_000_039, 40_000_002],
     "local_steps" => [[1052, [3, 4, 5], 2, [[484, 30], [483, 0]]]],
     "gates" => { "1" => 25, "2" => 55 })

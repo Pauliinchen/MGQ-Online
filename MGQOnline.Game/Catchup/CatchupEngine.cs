@@ -138,7 +138,7 @@ public sealed class CatchupEngine
     /// </summary>
     /// <param name="tables">The tables.</param>
     /// <param name="request">The snapshot, see <see cref="CatchupLook"/>.</param>
-    /// <returns>"actions", "ledger" (nil while unchanged), "visiting", and for a look every half second "ask_side", "growth", "sharable" and "orbs".</returns>
+    /// <returns>"actions", "ledger" (nil while unchanged), "visiting", and for a look every half second "ask_side", "growth", "sharable", "orbs", "got" (every item the save has held), "given" (the found items given, whose next gain adds nothing), "take" (the items another player's event used up, a copy each) and "spent" (every use of an item the save counted).</returns>
     public RubyHash Check(CatchupTables tables, RubyHash request) => new CatchupLook(this, tables, request).Check();
 
     /// <summary>

@@ -3,6 +3,9 @@
 #
 #  Changelog:
 #      Paulinchen  2026-11-01: Dropped the stand-in of the form window no script draws with any more
+#                            - Made the herb no key item and loaded story_found.rbx
+#                            - Answered that the player plays in no party
+#                            - Took an item through its gain of less than none, as the game does
 #      Paulinchen  2026-10-31: Dropped the maps where warping is free
 #                            - Told the place where the world's log starts with the world's summary
 #      Paulinchen  2026-10-28: Read the generated tables from fixtures/catchup/generated in place of the deleted world_catchup_data.rbx
@@ -117,6 +120,8 @@ module MGQ_MpCoop
   def self.route(*); end
   # Answers that there is no party leader.
   def self.party_leader; nil; end
+  # Answers that the player plays in no party.
+  def self.in_party?; false; end
 end
 # Stands in for the shared events.
 module MGQ_MpCoopEvents
@@ -217,10 +222,10 @@ module RPG
   # An item of the database.
   class Item
     attr_reader :id, :name, :description
-    # Takes the item's id, name and description.
-    def initialize(id, name, description = ""); @id = id; @name = name; @description = description; end
-    # Answers that the item is a key item.
-    def key_item?; true; end
+    # Takes the item's id, name, description and whether it is a key item.
+    def initialize(id, name, description = "", key = true); @id = id; @name = name; @description = description; @key = key; end
+    # Answers whether the item is a key item.
+    def key_item?; @key; end
   end
   # Stands in for a skill.
   Skill = Struct.new(:id, :name)
@@ -239,7 +244,8 @@ $data_actors = Array.new(1000)
 end
 $data_items = Array.new(730)
 [[501, "Purple Orb"], [502, "Pass"], [503, "Key"], [504, "Medal"], [505, "Key to Hades"], [537, "Red Orb"], [538, "Blue Orb"], [540, "Yellow Orb"],
- [541, "Green Orb"], [542, "Silver Orb"], [557, "Remina Key Card"], [600, "Herb"], [700, "Auto Crossbow"], [701, "Bio Blaster"]].each { |id, name| $data_items[id] = RPG::Item.new(id, name) }
+ [541, "Green Orb"], [542, "Silver Orb"], [557, "Remina Key Card"], [700, "Auto Crossbow"], [701, "Bio Blaster"]].each { |id, name| $data_items[id] = RPG::Item.new(id, name) }
+$data_items[600] = RPG::Item.new(600, "Herb", "[Item] Restores HP.", false)
 $data_items[616] = RPG::Item.new(616, "Chef's License", "[Job] Allows access to the Cook job.")
 $data_weapons = Array.new(10)
 $data_armors = Array.new(10)
@@ -308,10 +314,10 @@ class Game_Party
   def persona_change(persona); $game_actors[persona].persona_change(persona); end
   # Answers that no story's temporary party plays.
   def temp_actors_use?; false; end
-  # Adds an item.
-  def gain_item(item, amount); @items[item.id] += amount; end
-  # Takes an item, down to none.
-  def lose_item(item, amount); @items[item.id] = [@items[item.id] - amount, 0].max; end
+  # Adds an item, or takes it down to none for an amount below 0.
+  def gain_item(item, amount); @items[item.id] = [@items[item.id] + amount, 0].max; end
+  # Takes an item through its gain, as the game does.
+  def lose_item(item, amount); gain_item(item, -amount); end
   # Answers how many of an item the party holds.
   def item_number(item); @items[item.id]; end
   # Answers the team's actors.
@@ -392,6 +398,7 @@ $fake = open_rules_bridge
 answer_story($fake)
 load_script "story_state"
 load_script "coop_story"
+load_script "story_found"
 load_script "coop_choices"
 load_script "world_story"
 load_script "world_catchup"

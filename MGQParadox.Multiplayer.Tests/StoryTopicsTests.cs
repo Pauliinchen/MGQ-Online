@@ -2,6 +2,8 @@
 //  StoryTopicsTests.cs
 //
 //  Changelog:
+//      Paulinchen  2026-11-01: Expected the found items' marks to be the whole world's
+//                            - Expected the marks of the items used up to be the whole world's too
 //      Paulinchen  2026-10-28: Checked the relay mirror at the next start, with the relay unreachable, of another relay and without a place to write
 //                            - Built a Classic party's table from the events database and the chest flags of the mapping held
 //                            - Read the events of a mod folder without the events database
@@ -91,7 +93,7 @@ public sealed class StoryTopicsTests
         Assert.Equal(7, table["rev"].AsLong());
         Assert.Equal((7103, 1, 4, 8, 64, 65, 0), (switches.Length, switches[7096], switches[2029], switches[7102], switches[23], switches[31], switches[8]));
         Assert.Equal((3006, 3, 17, 1, 35, 0), (variables.Length, variables[1001], variables[1354], variables[1052], variables[3005], variables[900]));
-        Assert.Equal(new RubyHash { { "ce154.*", 1 }, { "ce20.A", 0 }, { "ss0.*.F", 1 }, { "ss12.5.A", 8 }, { "ss231.*.*", 1 }, { "ss231.4.*", 0 }, { "ss231.5.B", 1 }, { "ss40.*.C", 0 } }, table["self"]);
+        Assert.Equal(new RubyHash { { "ce154.*", 1 }, { "ce20.A", 0 }, { "ss0.*.*", 33 }, { "ss0.*.F", 33 }, { "ss12.5.A", 8 }, { "ss231.*.*", 1 }, { "ss231.4.*", 0 }, { "ss231.5.B", 1 }, { "ss40.*.C", 0 } }, table["self"]);
         Assert.Equal(new RubyArray { 7_000_039, 40_000_002 }, table["index"]);
         Assert.Equal(new RubyArray { new RubyArray { 1052, new RubyArray { 3, 4, 5 }, 2, new RubyArray { new RubyArray { 484, 30 }, new RubyArray { 483, 0 } } } }, table["local_steps"]);
         Assert.Equal((new RubyHash { { "1", 25 }, { "2", 55 } }, 0L), (table["gates"], table["self_default"].AsLong()));

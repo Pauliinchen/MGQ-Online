@@ -6,6 +6,7 @@
 #                            - Let a replay cost the receiver nothing, taking back of the gold and the items only what it gave
 #                            - Followed the opener's path through the checks of what the party holds and of the event's own self switches
 #                            - Counted a replay whose receiver answered a question other than the opener as done with their own answer
+#                            - Let the copy of a key item the receiver got as found stand for the replay's gain of it
 #      Paulinchen  2026-10-31: Replayed a run with the inputs the DLL leaves of the opener's, asking the receiver the choices that are theirs
 #                            - Asked the receiver a number, item or present the record lacks
 #                            - Committed a replay only once it finished
@@ -1488,6 +1489,7 @@ module MGQ_MpStoryReplay
       @made = []
       @reset = []
       @gained = {}
+      @found_copies = []
       @own_way = false
       @committed = false
       @state = :running
@@ -1653,6 +1655,9 @@ module MGQ_MpStoryReplay
     # Tells how much of a change of what the receiver holds the replay makes, and notes what it
     # gained: all of a gain, and of a loss only what the replay itself gained of the same thing.
     #
+    # A copy the receiver got as found (story_found.rbx) stands for one copy of a gain, which still
+    # counts as gained, so a later loss of the replay takes that copy as the opener's run did.
+    #
     # @param what [Object] What changes: :gold, or the item.
     # @param amount [Integer] The change, below 0 for a loss.
     # @return [Integer] The change to make.
@@ -1660,7 +1665,19 @@ module MGQ_MpStoryReplay
       gained = @gained[what].to_i
       change = amount < 0 ? -[-amount, gained].min : amount
       @gained[what] = gained + change
-      change
+      change > 0 && found_copy?(what) ? change - 1 : change
+    end
+
+    # Reports whether the receiver got an item as found that the replay has not counted yet, and
+    # counts it; the save forgets it only once the replay is kept.
+    #
+    # @param what [Object] What changes: :gold, or the item.
+    # @return [Boolean] Whether they did.
+    def found_copy?(what)
+      return false if @found_copies.include?(what) || !defined?(MGQ_MpStoryFound) || !MGQ_MpStoryFound.given?(what)
+
+      @found_copies << what
+      true
     end
 
     # Resets the self switches of maps, the view's at once and the receiver's own once committed.
@@ -1708,6 +1725,7 @@ module MGQ_MpStoryReplay
     # Applies the staged holdings and the own keys' changes to the receiver's objects.
     def keep_changes
       @stage.commit
+      @found_copies.each { |item| MGQ_MpStoryFound.take_given(item) }
       @journal.each { |change| keep_change(*change) }
       $game_map.need_refresh = true unless @writes.empty?
     end
