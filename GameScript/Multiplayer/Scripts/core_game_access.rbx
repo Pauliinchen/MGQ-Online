@@ -3,6 +3,7 @@
 #
 #  Changelog:
 #      Paulinchen  2026-10-31: Named the interpreter a map event or common event holds and the map's parallel common events
+#                            - Gave the game's frame counter a base of 0 while no New Game or load set one
 #      Paulinchen  2026-10-30: Named the features and effects a database entry's file holds
 #      Paulinchen  2026-10-23: Named the world's story a save built on
 #                            - Named whether a vehicle is driven
@@ -204,6 +205,10 @@ module MGQ_MpGame
     :parallax_loop_y => :@parallax_loop_y,
     :parallax_sx => :@parallax_sx,
     :parallax_sy => :@parallax_sy,
+
+    # Graphics: the base the game's frame counter adds to the frames RGSS counted, which only a New
+    # Game or a load sets.
+    :frame_count_base => :@frame_count,
   }
 
   # The fields the game sets only once it needs them, so one that is missing is no reason to log:
@@ -265,4 +270,18 @@ module MGQ_MpGame
     item = table[id]
     item && !item.name.to_s.empty? ? item : nil
   end
+
+  # Gives the game's frame counter a base of 0 while no New Game or load set one, so that
+  # Graphics.frame_count counts from the game's start instead of raising.
+  #
+  # The scripts read the counter as a world's New Game starts the first events, before the game
+  # sets the base.
+  def self.start_frame_count
+    Graphics.frame_count if defined?(Graphics) && Graphics.respond_to?(:frame_count)
+  rescue TypeError
+    set(Graphics, :frame_count_base, 0)
+    log("gave the game's frame counter a base of 0, which no New Game or load set yet")
+  end
 end
+
+MGQ_MpGame.start_frame_count
