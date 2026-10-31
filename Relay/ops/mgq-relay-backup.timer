@@ -1,0 +1,20 @@
+#----------------------------------------------------------------
+#  mgq-relay-backup.timer
+#
+#  Changelog:
+#      Paulinchen  2026-10-22: Created
+#
+#----------------------------------------------------------------
+
+# Starts mgq-relay-backup.service every night; Persistent catches up a run the server was off for.
+
+[Unit]
+Description=Back up the MGQ Online relay database every day
+
+[Timer]
+OnCalendar=*-*-* 04:17:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

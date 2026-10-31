@@ -1,0 +1,24 @@
+{
+  "derivation": "sha256(\"mgqmp designer \" + key) as lowercase hex, first 32 characters",
+  "designers": [
+    {
+      "key": "00112233445566778899aabbccddeeff",
+      "id": "91ed34e44d37441292523754c3a84c2b",
+      "name": "Designer A",
+      "admin": true
+    },
+    {
+      "key": "ffeeddccbbaa99887766554433221100",
+      "id": "6c447a006e88d2506ad9606d12c6361e",
+      "name": "Designer B",
+      "admin": false
+    },
+    {
+      "key": "0123456789abcdef0123456789abcdef",
+      "id": "b0e6ec7997dc2681a7a241cf467c3a4f",
+      "name": null,
+      "admin": false,
+      "listed": false
+    }
+  ]
+}

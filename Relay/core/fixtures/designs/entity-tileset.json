@@ -1,0 +1,7 @@
+{
+  "id": "tileset:5",
+  "kind": "tileset",
+  "schema": 1,
+  "rev": 12,
+  "body": { "ground": [1536, 1544, 1552], "debris": [1560], "groundFallback": 1536, "debrisFallback": 0 }
+}

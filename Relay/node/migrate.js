@@ -2,15 +2,16 @@
 //  migrate.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-21: Copied the Raid design tables and their blobs of a relay that hands out format 2
 //      Paulinchen  2026-10-15: Created
 //
 //----------------------------------------------------------------
 
 // Copies everything a relay keeps into a new SQLite database for the Node relay, through the
 // relay's migration routes (core/migration.js): the worlds with their starting saves, chats,
-// stories, checkpoints and boss pools, the mod catalog with its uploads, and the trades with their
-// sealed offers. Every record is read back from the database and compared with the relay's before
-// the copy counts as done.
+// stories, checkpoints and boss pools, the mod catalog with its uploads, the trades with their
+// sealed offers, and the Raid designs of a relay that keeps them. Every record is read back from
+// the database and compared with the relay's before the copy counts as done.
 //
 //   MGQ_ADMIN_KEY=<an admin's player key> node node/migrate.js <relay address> <new database file>
 
@@ -18,8 +19,9 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
 import { pathToFileURL } from "node:url";
-import { MIGRATION_FORMAT, MIGRATION_ROUTE } from "../core/migration.js";
+import { MIGRATION_FORMAT, MIGRATION_FORMAT_WITHOUT_DESIGNS, MIGRATION_ROUTE } from "../core/migration.js";
 import { PLAYER_HEADER, VERSION } from "../core/relay.js";
+import { openSqliteDesignStore } from "./design_store_sqlite.js";
 import { openSqliteStores } from "./sqlite_store.js";
 
 /**
@@ -56,8 +58,8 @@ export async function migrate({ from, key, database, fetch = globalThis.fetch, l
 
   const list = await get("");
 
-  if (list.format !== MIGRATION_FORMAT) {
-    throw new Error(`the relay hands out format ${list.format}, this tool reads format ${MIGRATION_FORMAT}`);
+  if (list.format !== MIGRATION_FORMAT && list.format !== MIGRATION_FORMAT_WITHOUT_DESIGNS) {
+    throw new Error(`the relay hands out format ${list.format}, this tool reads formats ${MIGRATION_FORMAT_WITHOUT_DESIGNS} and ${MIGRATION_FORMAT}`);
   }
 
   log(`the relay keeps ${list.worlds.length} world(s), ${list.mods.length} mod(s) and ${list.trades.length} trade(s)`);
@@ -106,12 +108,54 @@ export async function migrate({ from, key, database, fetch = globalThis.fetch, l
 
       counts.trades++;
     }
+
+    if (list.format === MIGRATION_FORMAT) {
+      log(`copied and checked ${await copyDesigns(get, database)} Raid design row(s)`);
+    }
   } finally {
     stores.close();
   }
 
   log(`copied and checked ${Object.entries(counts).map(([name, count]) => `${count} ${name}`).join(", ")}`);
   return counts;
+}
+
+/**
+ * Copies a relay's Raid design tables and blobs into the database and compares them once copied.
+ *
+ * @param {(path: string, bytes?: boolean) => Promise<any>} get Reads a migration route of the relay, JSON or bytes.
+ * @param {string} database The new database's file.
+ * @returns {Promise<number>} How many rows it copied.
+ * @throws {Error} When a blob is missing or a row or blob differs once copied.
+ */
+async function copyDesigns(get, database) {
+  const { tables } = await get("/designs");
+  const blobs = new Map();
+
+  for (const { sha256 } of tables.design_blobs ?? []) {
+    const gz = await get(`/designs/blobs/${encodeURIComponent(sha256)}`, true);
+
+    if (!gz) {
+      throw new Error(`the relay lists the Raid design blob ${sha256} but hands out none`);
+    }
+
+    blobs.set(sha256, gz);
+  }
+
+  const designs = openSqliteDesignStore(database);
+
+  try {
+    await designs.importTables(tables, blobs);
+    same("the Raid design tables", JSON.parse(JSON.stringify(await designs.exportTables())), tables);
+
+    for (const [sha256, gz] of blobs) {
+      sameBytes(`the Raid design blob ${sha256}`, await designs.blob(sha256), gz);
+    }
+  } finally {
+    designs.close();
+  }
+
+  return Object.values(tables).reduce((sum, rows) => sum + rows.length, 0);
 }
 
 /**

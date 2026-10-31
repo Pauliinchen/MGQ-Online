@@ -15,17 +15,22 @@
 //                            - Told a player who comes onto a battle that just ended how it ended
 //                            - Kept a world room connection for up to a day, and past that while its player is in a battle on the battle server
 //                            - Closed every connection as a service restart when it stops, and logged its start and the close codes it sends
-//      Paulinchen  2026-10-22: Checked the mod catalog's links half a minute after a start and every five minutes
+//      Paulinchen  2026-10-22: Greeted designers with the design epoch and logged a new epoch after a restore
+//                            - Checked the mod catalog's links half a minute after a start and every five minutes
 //                            - Cleared the current release once the watch saw a newer one published after it was set
 //                            - Listed the worlds without their mods for games from 0.6.8 and sent released games to update at a world whose mods they cannot hold
 //                            - Told no released game in a world room a mods rule longer than its DLL takes
 //                            - Read text bodies of up to 1 MB, four bytes for each character the directory takes
 //                            - Held games to the lowest release an admin set, at once, and answered the release control's routes
+//                            - Told the world rooms of new live builds in the order they went live
+//                            - Built the Raid design with the designer's compiler, published and rolled back builds and served the live build to games
 //      Paulinchen  2026-10-21: Said an admin's line in every world with players online as the relay's own
 //                            - Answered the admins' stats of what the relay carries, the battle server's ping included
 //                            - Told every game and server battle of a Raid World each pool an admin defeated
 //                            - Logged every change an admin made to a Raid World's story keys
 //                            - Told every game of a Raid World the pinned values a story write left out
+//                            - Opened the designer socket and served the newest designer release
+//                            - Answered the Raid designs' entity, push, history and designer routes and kept the designs beside the worlds
 //      Paulinchen  2026-10-15: Marked every player offline as it starts
 //                            - Handed its admins everything it keeps for another relay to take over
 //                            - Started co-op battles on the battle server and carried their channels
@@ -76,6 +81,7 @@
 // database, and follows the core's rules, so it behaves like the Cloudflare relay. It writes one
 // line per request to stdout and every error it catches to stderr.
 
+import { createReadStream } from "node:fs";
 import http from "node:http";
 import net from "node:net";
 import { pathToFileURL } from "node:url";
@@ -86,8 +92,16 @@ import {
   playerMessage, presenceLine, readOpen, readServerLine, serveLine, serverFrame,
 } from "../core/battles.js";
 import { BOSS_LIMITS, WorldBosses, bossRouteOf, bossText, handleBossRequest } from "../core/bosses.js";
+import { memoryDesignStore } from "../core/design_store_memory.js";
+import { DESIGNER_RELEASE_LIMITS, DesignerReleases, byteRangeOf, designerReleaseSettingsOf } from "../core/designer_releases.js";
+import {
+  DESIGN_CLOSE, DESIGN_READER_HEADER, DESIGN_SOCKET, DesignBook, admitDesigner, designRouteOf, gameDesignRouteOf, handleDesignRequest, handleGameDesignRequest, pushedFrame, releaseFrame,
+} from "../core/designs.js";
 import { DIRECTORY_LIMITS, Directory, WORLD_TYPE, difficultyText, handleDirectoryRequest, modsRuleText, parseAdmins, raidBossesText, releasedGamesTakeRule, squadText } from "../core/directory.js";
-import { DEFAULT_MIN_VERSION, DRAIN_LIMITS, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE, WORLD_ROOM_UPDATE_STATUS, holdsLongMods, listsWorldMods, updateRefusal } from "../core/gate.js";
+import {
+  DEFAULT_MIN_VERSION, DESIGN_FORMAT_HEADER, DESIGNER_HEADER, DESIGNER_VERSION_HEADER, DRAIN_LIMITS, UPDATE_NEEDED, VERSION_HEADER, WORLD_ROOM_UPDATE_CODE,
+  WORLD_ROOM_UPDATE_STATUS, holdsLongMods, listsWorldMods, updateRefusal,
+} from "../core/gate.js";
 import { routeIs, withJson } from "../core/http.js";
 import { adminCheck, exportWorldData, handleMigrationRequest, migrationRouteOf } from "../core/migration.js";
 import { ModCatalog, handleModRequest } from "../core/mods.js";
@@ -100,6 +114,7 @@ import { BATTLE_SERVER_AUTHOR, MAPPING_ADMIN_ROUTE, MAPPING_GAME_ROUTE, MAPPING_
 import { StoryTracks, TRACKS_FEATURE, TRACK_FRAME } from "../core/story_tracks.js";
 import { seedStoryTables } from "./story_seed.js";
 import { TradeBook, handleTradeRequest } from "../core/trades.js";
+import { DesignCompiler, designCompilerSettingsOf } from "./design_compiler.js";
 import {
   AUTH_HEADER, CHAT_SLOW, CLOSE, FEATURES_HEADER, IN, LIMITS, OUT, PAIRED, PING, PLAYER_HEADER, PONG, REFUSAL_HEADER, admit, chatLineOf, chatText, newPeer, newWorldPeer,
   overdue, parseFeatures, parseRoute, presenceOf, replacedBy, routeWorldMessage, seatChangeText, seatText, takeChatLine, takeMessage, takeSeat, worldOverdue,
@@ -525,21 +540,29 @@ export async function clearPresence(directory) {
 }
 
 /**
- * Opens the stores the relay keeps its worlds, mods, trades and Raid Worlds' stories and boss
- * pools, the newest release of the mod it has seen, the release control, the story mapping and the Raid Worlds' story tracks in: a SQLite database at a path, or memory without one.
+ * Opens the stores the relay keeps its worlds, mods, trades, Raid Worlds' stories and boss pools,
+ * the newest release of the mod it has seen, the release control, the story mapping, the Raid
+ * Worlds' story tracks and the Raid designs in: a SQLite database at a path, or memory without one.
  *
  * @param {string | undefined} path The database's path, as DATABASE_VARIABLE names it; empty or undefined for memory.
- * @returns {Promise<{directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, releases: import("../core/releases.js").ReleaseStore, mapping: import("../core/story_mapping.js").StoryMappingStore, tracks: (id: string) => import("../core/story_tracks.js").TrackStore, close: () => void}>} The stores, and a way to close them.
+ * @returns {Promise<{directory: import("../core/directory.js").DirectoryStore, mods: import("../core/mods.js").ModStore, trades: import("../core/trades.js").TradeStore, stories: (id: string) => import("../core/story.js").StoryStore, bosses: (id: string) => import("../core/bosses.js").BossStore, releases: import("../core/releases.js").ReleaseStore, mapping: import("../core/story_mapping.js").StoryMappingStore, tracks: (id: string) => import("../core/story_tracks.js").TrackStore, designs: import("../core/designs.js").DesignStore, close: () => void}>} The stores, and a way to close them.
  */
 export async function openStores(path) {
   if (path) {
     const { openSqliteStores } = await import("./sqlite_store.js");
-    return openSqliteStores(path);
+    const { openSqliteDesignStore } = await import("./design_store_sqlite.js");
+    const stores = openSqliteStores(path);
+    const designs = openSqliteDesignStore(path, { log: (line) => console.log(`${new Date().toISOString()} ${line}`) });
+    const close = () => {
+      designs.close();
+      stores.close();
+    };
+    return { ...stores, designs, close };
   }
 
   return {
     directory: memoryStore(), mods: memoryModStore(), trades: memoryTradeStore(), stories: memoryStoryStores(), bosses: memoryBossStores(), releases: memoryReleaseStore(), mapping: memoryMappingStore(), tracks: memoryTrackStores(),
-    close: () => {},
+    designs: memoryDesignStore(), close: () => {},
   };
 }
 
@@ -657,13 +680,23 @@ async function readText(request, limit = MAX_BODY_BYTES, signal) {
 export function addressOf(request) {
   const remote = request.socket.remoteAddress ?? null;
   const forwarded = request.headers["x-forwarded-for"];
-  const local = remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
+  const local = isLoopback(remote);
 
   if (local && typeof forwarded === "string" && forwarded.trim().length > 0) {
     return forwarded.split(",").at(-1).trim();
   }
 
   return remote;
+}
+
+/**
+ * Tells whether an address is this machine's, such as the battle server's beside the relay.
+ *
+ * @param {string | null} address The address, see addressOf.
+ * @returns {boolean} Whether it is.
+ */
+export function isLoopback(address) {
+  return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
 }
 
 /**
@@ -679,10 +712,22 @@ function headerOf(request, name) {
 }
 
 /**
+ * Reads the headers the design routes and the designer socket take.
+ *
+ * @param {http.IncomingMessage} request The request.
+ * @returns {{designer: string | null, player: string | null, version: string | null, format: string | null}} Its DESIGNER_HEADER, PLAYER_HEADER, DESIGNER_VERSION_HEADER and DESIGN_FORMAT_HEADER.
+ */
+function designerClientOf(request) {
+  return {
+    designer: headerOf(request, DESIGNER_HEADER), player: headerOf(request, PLAYER_HEADER), version: headerOf(request, DESIGNER_VERSION_HEADER), format: headerOf(request, DESIGN_FORMAT_HEADER),
+  };
+}
+
+/**
  * Creates a relay server, not yet listening.
  *
- * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk, minVersion?: string, release?: ReleaseControl, releases?: ReleaseWatch | null, mapping?: StoryMapping}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log, the bug report desk, off unless given, the lowest game version served while no admin set one, DEFAULT_MIN_VERSION unless given, which tests change, the release control, loaded, an empty one in memory over minVersion unless given, the watch of the mod's releases, off unless given, the story mapping with the catch-up tables, an empty one in memory unless given, and the Raid Worlds' story track stores.
- * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, tracksOf: (id: string) => StoryTracks, mapping: StoryMapping, check: () => void, sweep: () => Promise<void>, checkRelease: () => Promise<{version: string | null, worlds: number}>, deriveStoryIndex: () => Promise<void>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, a world's story, a world's boss pools, a world's story tracks, the story mapping, a look at the deadlines, a sweep of what is kept too long, a check of the mod's releases, a request for the derived story index, and a way to stop everything.
+ * @param {{limits?: typeof LIMITS, clock?: () => number, checkEveryMs?: number, sweepEveryMs?: number, directory?: Directory, mods?: ModCatalog, trades?: TradeBook, stories?: (id: string) => import("../core/story.js").StoryStore, storyLimits?: typeof STORY_LIMITS, bosses?: (id: string) => import("../core/bosses.js").BossStore, bossLimits?: typeof BOSS_LIMITS, log?: typeof consoleLog, reports?: ReportDesk, minVersion?: string, release?: ReleaseControl, releases?: ReleaseWatch | null, mapping?: StoryMapping, designs?: DesignBook, designerReleaseEveryMs?: number}} [options] Limits, clock, check and sweep intervals, directory, mod catalog, trades, the Raid Worlds' story stores, the stories' limits, the Raid Worlds' boss pool stores, the pools' limits, log, the bug report desk, off unless given, the lowest game version served while no admin set one, DEFAULT_MIN_VERSION unless given, which tests change, the release control, loaded, an empty one in memory over minVersion unless given, the watch of the mod's releases, off unless given, the story mapping with the catch-up tables, an empty one in memory unless given, the Raid Worlds' story track stores, the Raid designs, in memory unless given, and how often the designer releases are checked when the designs serve them.
+ * @returns {{server: http.Server, directory: Directory, mods: ModCatalog, trades: TradeBook, designs: DesignBook, storyOf: (id: string) => WorldStory, bossesOf: (id: string) => WorldBosses, tracksOf: (id: string) => StoryTracks, mapping: StoryMapping, check: () => void, sweep: () => Promise<void>, checkRelease: () => Promise<{version: string | null, worlds: number}>, checkDesignerRelease: () => Promise<string | null>, pingDesigners: () => void, deriveStoryIndex: () => Promise<void>, stop: () => Promise<void>}} The HTTP server to listen with, what it serves, the Raid designs, a world's story, a world's boss pools, a world's story tracks, the story mapping, a look at the deadlines, a sweep of what is kept too long, a check of the mod's releases, a check of the designer releases, a ping of the designer sockets, a request for the derived story index, and a way to stop everything.
  */
 export function createRelay({
   limits = NODE_LIMITS, clock = Date.now, checkEveryMs = CHECK_EVERY_MS, sweepEveryMs = SWEEP_EVERY_MS, directory = new Directory(memoryStore(), { clock }),
@@ -690,6 +735,7 @@ export function createRelay({
   storyLimits = STORY_LIMITS, bosses = memoryBossStores(), bossLimits = BOSS_LIMITS, log = consoleLog, reports = new ReportDesk(reportSettingsOf({}), { clock, log: stamped(log) }),
   minVersion = DEFAULT_MIN_VERSION, release = new ReleaseControl(memoryReleaseStore(), { envMin: minVersion, clock }), releases = null, battleServer = null, battleLimits = BATTLE_LIMITS,
   mapping = new StoryMapping(memoryMappingStore(), { tables: STORY_TABLES, clock }), tracks = memoryTrackStores(),
+  designs = new DesignBook(memoryDesignStore(), { clock, relayAdmins: directory.admins }), designerReleaseEveryMs = DESIGNER_RELEASE_LIMITS.checkEveryMs,
 } = {}) {
   const started = clock();
   /** @type {Map<string, WorldStory>} */
@@ -708,6 +754,9 @@ export function createRelay({
   // Larger messages than the core allows reach it and get its close code; far larger ones never
   // reach memory at all.
   const sockets = new WebSocketServer({ noServer: true, maxPayload: limits.maxMessageBytes * 2 });
+  const designerSockets = new WebSocketServer({ noServer: true, maxPayload: DESIGN_SOCKET.maxFrameBytes });
+  // The designer sockets that answered the last ping.
+  const awakeDesigners = new WeakSet();
   const server = http.createServer((request, response) => {
     const started = performance.now();
     const path = pathOf(request);
@@ -735,7 +784,7 @@ export function createRelay({
       refuse(socket, status, reason, code);
       logged(status);
     };
-    const accept = (seat) => sockets.handleUpgrade(request, socket, head, (webSocket) => {
+    const accept = (seat, socketServer = sockets) => socketServer.handleUpgrade(request, socket, head, (webSocket) => {
       logged(101);
       seat(webSocket);
     });
@@ -743,6 +792,24 @@ export function createRelay({
 
     if (outdated) {
       turnAway(outdated.status, outdated.reason, outdated.code);
+      return;
+    }
+
+    const designRoute = designRouteOf(new URL(request.url, "http://relay"));
+
+    if (designRoute) {
+      admitDesigner(designs, designRoute.rest, designerClientOf(request)).then((admission) => {
+        if (admission.status) {
+          turnAway(admission.status, admission.reason);
+          return;
+        }
+
+        // A close code reaches the designer only on an open socket.
+        accept((webSocket) => (admission.close ? webSocket.close(admission.close.code, admission.close.reason) : seatDesigner(admission, webSocket)), designerSockets);
+      }, (error) => {
+        log.error(errorLine(new Date(), `admit ${path}`, error));
+        turnAway(500, "the designs failed");
+      });
       return;
     }
 
@@ -833,6 +900,33 @@ export function createRelay({
       return;
     }
 
+    if (designRouteOf(url)) {
+      const answer = await answerDesigns(request, url);
+
+      if (answer.pushed) {
+        designs.presence.broadcast(pushedFrame(answer.pushed));
+      }
+
+      if (answer.removed) {
+        designs.presence.disconnect(answer.removed, DESIGN_CLOSE.notDesigner);
+      }
+
+      if (answer.file) {
+        await sendReleaseFile(request, response, answer.file);
+        return;
+      }
+
+      sendDesignAnswer(response, answer);
+      return;
+    }
+
+    if (gameDesignRouteOf(url)) {
+      const address = addressOf(request);
+      const client = { reader: headerOf(request, DESIGN_READER_HEADER), address, local: isLoopback(address), etag: headerOf(request, "If-None-Match") };
+      sendDesignAnswer(response, await handleGameDesignRequest(designs, request.method, url, client, (limit) => drain(request, limit, AbortSignal.timeout(DRAIN_LIMITS.readMs))));
+      return;
+    }
+
     const battleRoute = battleRouteOf(url);
 
     if (battleRoute) {
@@ -884,7 +978,8 @@ export function createRelay({
 
     if (migration) {
       const stores = { directory: directory.store, mods: mods.store, trades: trades.store };
-      const answer = await handleMigrationRequest(stores, (id) => exportWorldData(stories(id), bosses(id)), request.method, migration.rest, headerOf(request, PLAYER_HEADER), adminCheck(directory.admins));
+      const answer = await handleMigrationRequest(stores, (id) => exportWorldData(stories(id), bosses(id)), request.method, migration.rest, headerOf(request, PLAYER_HEADER), adminCheck(directory.admins),
+        designs.store);
       response.writeHead(answer.status, { "Content-Type": answer.bytes ? "application/octet-stream" : "application/json" });
       response.end(answer.bytes ?? JSON.stringify(answer.body));
       return;
@@ -992,6 +1087,158 @@ export function createRelay({
     await drain(request, DRAIN_LIMITS.maxBytes, AbortSignal.timeout(DRAIN_LIMITS.readMs));
     response.writeHead(refusal.status, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ error: refusal.reason }));
+  }
+
+  /**
+   * Answers a request to the Raid designs, for the designers the relay lists and, on the designer
+   * list's routes, its admins.
+   *
+   * @param {http.IncomingMessage} request The request.
+   * @param {URL} url The request's address.
+   * @returns {Promise<{status: number, body: object}>} The answer.
+   */
+  function answerDesigns(request, url) {
+    return handleDesignRequest(designs, request.method, url, designerClientOf(request), (limit) => readText(request, limit), (limit) => drain(request, limit, AbortSignal.timeout(DRAIN_LIMITS.readMs)));
+  }
+
+  /**
+   * Sends a design route's answer: its bytes with their headers, or its JSON body.
+   *
+   * @param {http.ServerResponse} response The response.
+   * @param {{status: number, body: object, bytes?: Uint8Array, headers?: Record<string, string>}} answer The answer.
+   */
+  function sendDesignAnswer(response, answer) {
+    if (answer.bytes) {
+      response.writeHead(answer.status, { ...answer.headers, "Content-Length": answer.bytes.length });
+      response.end(answer.bytes);
+      return;
+    }
+
+    if (answer.status === 304) {
+      response.writeHead(304, answer.headers);
+      response.end();
+      return;
+    }
+
+    response.writeHead(answer.status, { "Content-Type": "application/json" });
+    response.end(JSON.stringify(answer.body));
+  }
+
+  /**
+   * Tells every world room of a new live build and ends the pools of the bosses its catalog removed
+   * or renamed in every Raid World, telling their games; only while DESIGN_WORLD_NOTICE is on.
+   *
+   * @param {{text: string, resetKeys: string[]}} notice The world-room text frame and the boss keys whose pools end.
+   * @returns {Promise<void>} Completes once told.
+   */
+  async function noticeWorlds(notice) {
+    for (const roomId of worlds.keys()) {
+      tellWorld(roomId, notice.text);
+    }
+
+    if (notice.resetKeys.length === 0) {
+      return;
+    }
+
+    for (const entry of (await directory.entries()).filter((each) => each.type === WORLD_TYPE.raid)) {
+      for (const key of notice.resetKeys) {
+        const answer = await bossesOf(entry.id).reset(key);
+
+        if (answer.boss) {
+          tellBosses(entry.id, answer.boss);
+        }
+      }
+    }
+  }
+
+  /**
+   * Sends the newest designer release's exe, or the part of it a Range header asks for.
+   *
+   * @param {http.IncomingMessage} request The request.
+   * @param {http.ServerResponse} response The response.
+   * @param {{path: string, name: string, size: number, sha256: string}} file The exe.
+   * @returns {Promise<void>} Completes once sent.
+   */
+  async function sendReleaseFile(request, response, file) {
+    const range = byteRangeOf(headerOf(request, "Range"), file.size);
+    const common = { "Accept-Ranges": "bytes", ETag: `"${file.sha256}"`, "Cache-Control": "private, no-store" };
+
+    if (!range) {
+      response.writeHead(416, { ...common, "Content-Range": `bytes */${file.size}` });
+      response.end();
+      return;
+    }
+
+    response.writeHead(range.partial ? 206 : 200, {
+      ...common,
+      "Content-Type": "application/octet-stream",
+      "Content-Length": range.end - range.start + 1,
+      "Content-Disposition": `attachment; filename="${file.name}"`,
+      ...(range.partial ? { "Content-Range": `bytes ${range.start}-${range.end}/${file.size}` } : {}),
+    });
+
+    const stream = createReadStream(file.path, { start: range.start, end: range.end });
+    stream.pipe(response);
+    await new Promise((resolve) => {
+      stream.on("error", (error) => {
+        log.error(errorLine(new Date(), "send of the designer release", error));
+        response.destroy();
+        resolve();
+      });
+      response.on("close", () => {
+        stream.destroy();
+        resolve();
+      });
+    });
+  }
+
+  /**
+   * Seats a designer on the designer socket: greets it, takes what it edits and keeps it awake.
+   *
+   * @param {{designer: {id: string, name: string, admin: boolean}, state: {seq: number, epoch: string}}} admission The designer, the newest push's seq and the design epoch, see admitDesigner.
+   * @param {import("ws").WebSocket} socket The designer's socket.
+   */
+  function seatDesigner(admission, socket) {
+    awakeDesigners.add(socket);
+    designs.presence.join(admission.designer, admission.state, socket);
+    socket.on("pong", () => awakeDesigners.add(socket));
+    socket.on("message", (data, binary) => {
+      if (!binary) {
+        designs.presence.editing(socket, data.toString("utf8"));
+      }
+    });
+    socket.on("close", () => designs.presence.leave(socket));
+    socket.on("error", () => socket.terminate());
+  }
+
+  /**
+   * Pings every designer socket and closes those that did not answer the last ping.
+   */
+  function pingDesigners() {
+    for (const socket of designerSockets.clients) {
+      if (!awakeDesigners.has(socket)) {
+        socket.terminate();
+        continue;
+      }
+
+      awakeDesigners.delete(socket);
+      socket.ping();
+    }
+  }
+
+  /**
+   * Reads the newest designer release and tells the designers online of a new one.
+   *
+   * @returns {Promise<string | null>} The version newly served, null when nothing changed or without designer releases.
+   */
+  async function checkDesignerRelease() {
+    const version = designs.releases ? await designs.releases.check() : null;
+
+    if (version) {
+      designs.presence.broadcast(releaseFrame(version));
+    }
+
+    return version;
   }
 
   /**
@@ -1918,6 +2165,7 @@ export function createRelay({
     try {
       await directory.entries();
       await trades.exclusive(() => trades.tidy());
+      await designs.tidyBuilds();
     } catch (error) {
       log.error(errorLine(new Date(), "sweep", error));
     }
@@ -2101,6 +2349,16 @@ export function createRelay({
   firstStoryIndex?.unref();
   const releaseTimer = releases ? setInterval(() => checkRelease().catch((error) => log.error(errorLine(new Date(), "check of the mod's releases", error))), CHECK_RELEASE_EVERY_MS) : null;
   releaseTimer?.unref();
+  const designerPingTimer = setInterval(pingDesigners, DESIGN_SOCKET.pingEveryMs);
+  designerPingTimer.unref();
+  const presenceTimer = setInterval(() => designs.presence.expire(), DESIGN_SOCKET.expireEveryMs);
+  presenceTimer.unref();
+  // The build is live by then, so a failed notice is logged, not answered.
+  designs.worldTeller = (notice) => noticeWorlds(notice).catch((error) => log.error(errorLine(new Date(), "notice of the live design", error)));
+  const designerReleaseTimer = designs.releases
+    ? setInterval(() => checkDesignerRelease().catch((error) => log.error(errorLine(new Date(), "check of the designer releases", error))), designerReleaseEveryMs)
+    : null;
+  designerReleaseTimer?.unref();
 
   /**
    * Closes every connection and the server: ends the battles on the battle server, closes every
@@ -2117,12 +2375,16 @@ export function createRelay({
     clearInterval(modTimer);
     clearInterval(releaseTimer);
     clearInterval(battleTimer);
+    clearInterval(designerPingTimer);
+    clearInterval(presenceTimer);
+    clearInterval(designerReleaseTimer);
 
     for (const link of [...battleLinks.values()]) {
       endBattle(link.world, link.battle, BATTLE_END.server);
     }
 
-    const open = [...sockets.clients].filter((socket) => socket.readyState === socket.OPEN);
+    const all = [...sockets.clients, ...designerSockets.clients];
+    const open = all.filter((socket) => socket.readyState === socket.OPEN);
     log.info(`${new Date().toISOString()} relay stopping after ${Math.round((clock() - started) / 1000)} s, started ${new Date(started).toISOString()}: `
       + `closing ${open.length} connection(s) with ${SERVICE_RESTART.code} ${SERVICE_RESTART.reason}`);
 
@@ -2132,19 +2394,19 @@ export function createRelay({
 
     let waited;
     await Promise.race([
-      Promise.all([...sockets.clients].map((socket) => new Promise((resolve) => socket.once("close", resolve)))),
+      Promise.all(all.map((socket) => new Promise((resolve) => socket.once("close", resolve)))),
       new Promise((resolve) => { waited = setTimeout(resolve, STOP_WAIT_MS); }),
     ]);
     clearTimeout(waited);
 
-    for (const socket of sockets.clients) {
+    for (const socket of all) {
       socket.terminate();
     }
 
     return new Promise((resolve) => server.close(() => resolve()));
   }
 
-  return { server, directory, mods, trades, storyOf, bossesOf, tracksOf, mapping, battles, check, sweep, sweepBattles, checkRelease, deriveStoryIndex, stop };
+  return { server, directory, mods, trades, designs, storyOf, bossesOf, tracksOf, mapping, battles, check, sweep, sweepBattles, checkRelease, checkDesignerRelease, pingDesigners, deriveStoryIndex, stop };
 }
 
 /**
@@ -2169,6 +2431,30 @@ function pingReplyOf(line) {
     const reply = JSON.parse(line);
     return reply !== null && typeof reply === "object" && !Array.isArray(reply) ? reply : null;
   } catch {
+    return null;
+  }
+}
+
+/**
+ * Opens the designer releases the environment sets up and takes up the release kept from before;
+ * a key that is no key leaves them off, so the relay still starts.
+ *
+ * @param {Record<string, string | undefined>} env The environment, see designerReleaseSettingsOf.
+ * @returns {Promise<DesignerReleases | null>} The releases, null while off.
+ */
+export async function openDesignerReleases(env) {
+  const settings = designerReleaseSettingsOf(env);
+
+  if (!settings) {
+    return null;
+  }
+
+  try {
+    const releases = new DesignerReleases(settings, { log: stamped(consoleLog) });
+    await releases.load();
+    return releases;
+  } catch (error) {
+    consoleLog.error(errorLine(new Date(), "designer releases", error));
     return null;
   }
 }
@@ -2205,7 +2491,16 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const battleServer = battleServerOf(process.env[BATTLE_SERVER_VARIABLE]);
   const mapping = new StoryMapping(stores.mapping, { tables: STORY_TABLES });
   await seedStoryTables(mapping, stamped(consoleLog));
-  const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports, minVersion: process.env.MIN_VERSION, release, releases, battleServer, mapping, tracks: stores.tracks });
+  const designerReleases = await openDesignerReleases(process.env);
+  const compilerSettings = designCompilerSettingsOf(process.env);
+  const designs = new DesignBook(stores.designs, {
+    minVersion: process.env.DESIGNER_MIN_VERSION, allowDev: process.env.DESIGNER_ALLOW_DEV === "1", relayAdmins: directory.admins, releases: designerReleases,
+    compiler: compilerSettings ? new DesignCompiler(compilerSettings, { log: stamped(consoleLog) }) : null, worldNotice: process.env.DESIGN_WORLD_NOTICE === "1",
+  });
+  await designs.seedAdmins(parseAdmins(process.env.DESIGNER_ADMINS));
+  await designs.recoverBuilds().catch((error) => consoleLog.error(errorLine(new Date(), "recovery of the design builds", error)));
+  const relay = createRelay({ directory, mods, trades, stories: stores.stories, bosses: stores.bosses, reports, minVersion: process.env.MIN_VERSION, release, releases, battleServer, mapping, tracks: stores.tracks, designs });
+  relay.checkDesignerRelease().catch((error) => consoleLog.error(errorLine(new Date(), "check of the designer releases", error)));
 
   relay.server.listen(port, host, () => console.log(`${new Date().toISOString()} relay listening on ${host}:${port}, ${database ? `database ${database}` : "everything in memory"}, ${battleServer ? `battle server ${battleServer.host}:${battleServer.port}` : "no battle server"}, ${offline} world(s) with players online marked empty`));
 

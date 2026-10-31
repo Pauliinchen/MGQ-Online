@@ -1,0 +1,7 @@
+{
+  "id": "bossFight:126",
+  "kind": "bossFight",
+  "schema": 1,
+  "rev": 16,
+  "body": { "counts": true }
+}

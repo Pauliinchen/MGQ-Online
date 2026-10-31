@@ -1,0 +1,104 @@
+{
+  "exchanges": [
+    {
+      "name": "list",
+      "request": {
+        "method": "GET",
+        "path": "/v1/designs/designers",
+        "headers": {
+          "X-MGQ-Designer": "ffeeddccbbaa99887766554433221100",
+          "X-MGQ-Features": "designer",
+          "X-MGQ-Designer-Version": "1.3.0",
+          "X-MGQ-Design-Format": "1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "designers": [
+            {
+              "id": "91ed34e44d37441292523754c3a84c2b",
+              "name": "Designer A",
+              "admin": true,
+              "online": true,
+              "editing": "boss:1b0a822614f83839e33ac1cbaa895e36"
+            },
+            {
+              "id": "6c447a006e88d2506ad9606d12c6361e",
+              "name": "Designer B",
+              "admin": false,
+              "online": true,
+              "editing": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "add or change a designer",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/designs/designers/b0e6ec7997dc2681a7a241cf467c3a4f",
+        "headers": {
+          "X-MGQ-Designer": "00112233445566778899aabbccddeeff",
+          "X-MGQ-Features": "designer",
+          "X-MGQ-Designer-Version": "1.3.0",
+          "X-MGQ-Design-Format": "1"
+        },
+        "body": {
+          "name": "Designer C",
+          "admin": false
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "b0e6ec7997dc2681a7a241cf467c3a4f",
+          "name": "Designer C",
+          "admin": false
+        }
+      }
+    },
+    {
+      "name": "a relay admin adds a designer",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/designs/designers/b0e6ec7997dc2681a7a241cf467c3a4f",
+        "headers": {
+          "X-MGQ-Player": "aaaabbbbccccddddeeeeffff00001111"
+        },
+        "body": {
+          "name": "Designer C",
+          "admin": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "id": "b0e6ec7997dc2681a7a241cf467c3a4f",
+          "name": "Designer C",
+          "admin": true
+        }
+      }
+    },
+    {
+      "name": "remove a designer",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/designs/designers/b0e6ec7997dc2681a7a241cf467c3a4f",
+        "headers": {
+          "X-MGQ-Designer": "00112233445566778899aabbccddeeff",
+          "X-MGQ-Features": "designer",
+          "X-MGQ-Designer-Version": "1.3.0",
+          "X-MGQ-Design-Format": "1"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "body": {}
+      }
+    }
+  ]
+}
