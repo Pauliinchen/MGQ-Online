@@ -3,6 +3,7 @@
 //
 //  Changelog:
 //      Paulinchen  2026-10-31: Kept the run entries of the story tracks in memory and started the tracks from the keyed story
+//                            - Refused a battle as having no battle server while the battle server is out of reach
 //      Paulinchen  2026-10-30: Handed the request's method to the update gate
 //      Paulinchen  2026-10-28: Filled the story tables that hold no rows yet from the seed files at start
 //      Paulinchen  2026-10-23: Kept the story mapping, answered its admin routes and handed it to games
@@ -1128,7 +1129,8 @@ export function createRelay({
       });
       socket.on("error", (error) => {
         if (!answered) {
-          answer({ refusal: { code: BATTLE_REFUSAL.busy, error: `the battle server is out of reach: ${error.code ?? error.message}` } });
+          log.info(`${new Date().toISOString()} battle ${battle} of world ${world} not served: the battle server is out of reach: ${error.code ?? error.message}`);
+          answer({ refusal: { code: BATTLE_REFUSAL.noServer, error: "the battle server is out of reach" } });
         }
       });
       socket.on("close", () => {

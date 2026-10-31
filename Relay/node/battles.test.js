@@ -2,6 +2,7 @@
 //  battles.test.js
 //
 //  Changelog:
+//      Paulinchen  2026-10-31: Covered a battle server out of reach
 //      Paulinchen  2026-10-23: Covered the story index the battle server derives after a change of the mapping's rows
 //                            - Covered a battle the battle server ends in the same breath as it takes it
 //                            - Covered how long a world connection lasts, in a battle and out of one
@@ -180,9 +181,10 @@ function playerKey(number) {
  *
  * @param {string} world The world's id.
  * @param {object} [fields] More of the world, such as its type.
+ * @param {string} [base] The relay's worlds address.
  */
-async function makeWorld(world, fields = {}) {
-  const response = await fetch(httpBase, {
+async function makeWorld(world, fields = {}, base = httpBase) {
+  const response = await fetch(base, {
     method: "POST",
     headers: GAME,
     body: JSON.stringify({
@@ -219,10 +221,11 @@ async function open(address, headers) {
  *
  * @param {string} world The world.
  * @param {number} player Which player.
+ * @param {string} [base] The relay's WebSocket address.
  * @returns {Promise<{seat: number, connection: object}>} Their seat and connection.
  */
-async function sit(world, player) {
-  const connection = await open(`${wsBase}/world/${world}?name=Player%20${player}`, { ...GAME, [PLAYER_HEADER]: playerKey(player), [AUTH_HEADER]: AUTH });
+async function sit(world, player, base = wsBase) {
+  const connection = await open(`${base}/world/${world}?name=Player%20${player}`, { ...GAME, [PLAYER_HEADER]: playerKey(player), [AUTH_HEADER]: AUTH });
   const seat = Number(String(await connection.next()).split(" ")[1]);
   return { seat, connection };
 }
@@ -423,6 +426,25 @@ test("the battle server's refusal reaches the starter, and so does a server that
   assert.equal((await startBattle(httpBase, world, 1, { battle: "c4", seats: [player.seat], setup: SETUP })).body.code, "timeout");
   serverAnswers = "serving";
   player.connection.socket.close();
+});
+
+test("a battle server out of reach refuses as no battle server, so the starter hosts the battles of its session", async () => {
+  const closed = net.createServer();
+  await new Promise((resolve) => closed.listen(0, "127.0.0.1", resolve));
+  const port = closed.address().port;
+  await new Promise((resolve) => closed.close(resolve));
+  const directory = new Directory(memoryStore(), { clock: () => now, rates: TEST_RATES });
+  const unreachable = createRelay({ clock: () => now, checkEveryMs: 3_600_000, sweepEveryMs: 3_600_000, directory, log: { info: () => {}, error: () => {} },
+                                    battleServer: { host: "127.0.0.1", port }, battleLimits: TEST_BATTLE_LIMITS });
+  await new Promise((resolve) => unreachable.server.listen(0, "127.0.0.1", resolve));
+  const address = `127.0.0.1:${unreachable.server.address().port}/v1`;
+  const world = worldId(20);
+  await makeWorld(world, {}, `http://${address}/worlds`);
+  const player = await sit(world, 1, `ws://${address}`);
+  assert.deepEqual(await startBattle(`http://${address}/worlds`, world, 1, { battle: "d1", seats: [player.seat], setup: SETUP }),
+                   { status: 503, body: { error: "the battle server is out of reach", code: "no_server" } });
+  player.connection.socket.close();
+  await unreachable.stop();
 });
 
 test("a battle no player came onto ends, and the battle server hears of it", async () => {
